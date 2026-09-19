@@ -1176,3 +1176,6 @@ ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
         return ChromeTraceExportRejectReason::UnbalancedFlowNesting;
         return ChromeTraceExportRejectReason::BufferFull;
     return ChromeTraceExportRejectReason::None;
+
+// --- deepen additive from deepen-b16-profiler-preflights-3a15 ---
+    ChromeTraceExportPreflight result{};

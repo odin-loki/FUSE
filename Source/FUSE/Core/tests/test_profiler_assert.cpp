@@ -2920,3 +2920,30 @@ void testChromeTraceExportPreflightUnbalancedScope() {
     testChromeTraceExportPreflightClean();
     testChromeTraceExportPreflightOpenFlowWarning();
     testChromeTraceExportPreflightUnbalancedScope();
+
+// --- deepen additive from deepen-b16-profiler-preflights-3a15 ---
+void testIsValidEventNameGuards() {
+    expectTrue(fuse::profiler::tryEventAt(0u, recorded), "recorded event is retrievable");
+void testExportPreflightEmptyBuffer() {
+void testExportPreflightWithEvents() {
+void testExportPreflightUnbalancedWarnings() {
+        const fuse::profiler::ChromeTraceExportPreflight dirtyPreflight =
+        expectTrue(dirtyPreflight.canExport(), "unbalanced nesting still allows export");
+        expectTrue(!dirtyPreflight.isClean(), "open scope and flow mark preflight dirty");
+        expectTrue(dirtyPreflight.unbalancedScopeNesting, "preflight warns on active scope");
+        expectTrue(dirtyPreflight.unbalancedFlowNesting, "preflight warns on active async flow");
+        expectTrue(dirtyPreflight.hasOpenAsyncFlows, "preflight warns on open async flows");
+        expectTrue(dirtyPreflight.eventCount >= 2u, "preflight counts events recorded before export");
+    const fuse::profiler::ChromeTraceExportPreflight afterScope =
+    const fuse::profiler::ChromeTraceExportPreflight afterReset =
+void testExportPreflightDisabledProfiler() {
+               "tryLastEvent output invalid on empty buffer");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastEvent returns most recent end");
+               "tryLastEvent copies most recent event name");
+    expectTrue(fuse::profiler::isValidProfileEvent(outEvent), "tryLastEvent output is valid");
+    expectTrue(!fuse::profiler::tryLastEvent(outEvent), "tryLastEvent false after reset");
+    expectTrue(outEvent.name == nullptr, "tryLastEvent clears output after reset");
+    testExportPreflightEmptyBuffer();
+    testExportPreflightWithEvents();
+    testExportPreflightUnbalancedWarnings();
+    testExportPreflightDisabledProfiler();
