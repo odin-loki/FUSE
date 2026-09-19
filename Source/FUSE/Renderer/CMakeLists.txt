@@ -1,5 +1,7 @@
 # fuse_rhi — Track B Vulkan bootstrap + render command list (B2.1) + shader scaffold (B2.4)
 
+include("${CMAKE_SOURCE_DIR}/cmake/FuseShaderSpirvRegen.cmake")
+
 set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/atmosphere/atmosphere_params.hpp
     include/fuse/renderer/atmosphere/sky_lut.hpp

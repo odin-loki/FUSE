@@ -61,6 +61,27 @@ void testRuntimeEmbedSwapchainHandoff() {
     expectTrue(session.surfaceHandoffConsumed, "surface handoff consumed on game thread");
 }
 
+void testRuntimeViewportSwapchainRecreateStub() {
+    fuse::editor::EditorHost host;
+    host.runtimeViewport().setProjectLabel("recreate_test");
+    host.runtimeViewport().requestResize(640, 480);
+    host.gameTick();
+
+    host.runtimeViewport().requestResize(1024, 768);
+    host.gameTick();
+
+    const fuse::editor::RuntimeEmbedSession& session = host.runtimeViewport().embedSession();
+    expectTrue(session.swapchainRecreateAttempts >= 1u, "viewport resize queues swapchain recreate");
+#if defined(FUSE_VULKAN_BACKEND)
+    if (session.headlessGpuReady) {
+        expectTrue(session.swapchainRecreateCount >= 1u,
+                   "headless viewport swapchain recreate applied when GPU ready");
+    }
+#endif
+    expectTrue(host.runtimeViewport().panel().width() == 1024u, "final viewport width applied");
+    expectTrue(host.runtimeViewport().panel().height() == 768u, "final viewport height applied");
+}
+
 void testRuntimeEmbedTeardownStress() {
     fuse::editor::EditorHost host;
     constexpr fuse::u32 kCycles = 4u;
@@ -110,6 +131,7 @@ int main() {
     testRuntimeViewportHeadlessTick();
     testRuntimeEmbedSessionCounters();
     testRuntimeEmbedSwapchainHandoff();
+    testRuntimeViewportSwapchainRecreateStub();
     testRuntimeEmbedTeardownStress();
     fuse::core::shutdown();
 

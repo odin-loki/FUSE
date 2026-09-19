@@ -3,7 +3,7 @@ set(FUSE_VULKAN_ICD_LOCK_FILE "${CMAKE_BINARY_DIR}/fuse_vulkan_icd.lock")
 set(FUSE_VULKAN_ICD_LOCK_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/run_vulkan_icd_locked.sh")
 file(TOUCH "${FUSE_VULKAN_ICD_LOCK_FILE}")
 file(WRITE "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
-"#!/usr/bin/env bash\nset -euo pipefail\nflock -x \"${FUSE_VULKAN_ICD_LOCK_FILE}\" bash -c '\n  set -euo pipefail\n  sync\n  sleep 0.05\n  \"$@\"\n  sync\n  sleep 0.25\n' _ \"$@\"\n")
+"#!/usr/bin/env bash\nset -euo pipefail\nflock -x \"${FUSE_VULKAN_ICD_LOCK_FILE}\" bash -c '\n  set -euo pipefail\n  run_icd_test() {\n    sync\n    sleep 0.10\n    \"$@\"\n  }\n  if ! run_icd_test \"$@\"; then\n    status=$?\n    if [ \"$status\" -eq 139 ] || [ \"$status\" -eq 134 ]; then\n      sync\n      sleep 0.50\n      run_icd_test \"$@\"\n    else\n      exit \"$status\"\n    fi\n  fi\n  sync\n  sleep 0.35\n' _ \"$@\"\n")
 file(CHMOD "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
     FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 

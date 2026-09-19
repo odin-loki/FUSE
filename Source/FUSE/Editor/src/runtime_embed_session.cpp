@@ -12,6 +12,11 @@ void RuntimeEmbedSession::reset() {
     wsiPresentPathTicks = 0;
     presentSkippedNoWsiCount = 0;
     surfaceHandoffCount = 0;
+    swapchainWiringAttempts = 0;
+    swapchainWiringReady = 0;
+    swapchainRecreateAttempts = 0;
+    swapchainRecreateCount = 0;
+    usesExternalSwapchain = false;
     submittedFrames = 0;
     worldLoaded = false;
     headlessGpuReady = false;

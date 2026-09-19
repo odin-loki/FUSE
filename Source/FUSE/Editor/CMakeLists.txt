@@ -13,6 +13,7 @@ set(FUSE_EDITOR_API_SOURCES
     src/runtime_viewport.cpp
     src/runtime_embed_session.cpp
     src/viewport_swapchain_wiring.cpp
+    src/viewport_swapchain_recreate.cpp
     src/viewport_vulkan_surface.cpp
     src/gizmo_system.cpp
     src/hierarchy_model.cpp
@@ -39,6 +40,7 @@ set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/runtime_viewport.hpp
     include/fuse/editor/runtime_embed_session.hpp
     include/fuse/editor/viewport_swapchain_wiring.hpp
+    include/fuse/editor/viewport_swapchain_recreate.hpp
     include/fuse/editor/editor_state.hpp
     include/fuse/editor/feature_pane_bridge.hpp
     include/fuse/editor/ai_tree_profile_picker.hpp

@@ -538,6 +538,33 @@ void testRuntimeViewportQtSurfaceHandoffCommand() {
 #endif
 }
 
+void testRuntimeViewportSwapchainRecreateAfterHandoff() {
+    fuse::editor::EditorHost host;
+
+    host.runtimeViewport().setExternalSurfaceHandle(reinterpret_cast<void*>(0x3000u), 800, 600,
+                                                    "unit_test_stub", true);
+    host.gameTick();
+
+    fuse::editor::EditorCommand widthCmd;
+    widthCmd.kind = fuse::editor::CommandKind::SetProperty;
+    widthCmd.propertyName = "viewport.width";
+    widthCmd.propertyValue = "1280";
+    host.postFromUi(std::move(widthCmd));
+
+    fuse::editor::EditorCommand heightCmd;
+    heightCmd.kind = fuse::editor::CommandKind::SetProperty;
+    heightCmd.propertyName = "viewport.height";
+    heightCmd.propertyValue = "720";
+    host.postFromUi(std::move(heightCmd));
+
+    host.gameTick();
+
+    expectTrue(host.runtimeViewport().panel().width() == 1280u,
+               "resize after handoff updates panel width");
+    expectTrue(host.runtimeViewport().embedSession().swapchainRecreateAttempts >= 1u,
+               "resize after handoff queues swapchain recreate");
+}
+
 void testRuntimeViewportHookTicksWithProject() {
     fuse::editor::EditorHost host;
 
@@ -694,6 +721,7 @@ int main() {
     testRuntimeViewportQtSurfaceHandoffCommand();
     testViewportVulkanSurfaceBootstrapStub();
     testViewportVulkanBootstrapTeardownStress();
+    testRuntimeViewportSwapchainRecreateAfterHandoff();
     testRuntimeViewportHookTicksWithProject();
     testAiTreeProfilePickerPostsCommand();
     testAiAgentEntityBindingPostsCommand();

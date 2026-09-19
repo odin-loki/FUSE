@@ -2,6 +2,7 @@
 
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/editor_scene.hpp>
+#include <fuse/editor/viewport_swapchain_recreate.hpp>
 #include <fuse/editor/viewport_swapchain_wiring.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/log/logger.hpp>
@@ -27,6 +28,7 @@ namespace fuse::editor {
 struct RuntimeViewportHeadlessGpuStub {
     std::unique_ptr<fuse::renderer::RhiContext> context;
     std::unique_ptr<fuse::hybrid::HybridRendererBootstrap> hybrid;
+    std::unique_ptr<fuse::renderer::PresentPath> fallbackPresentPath;
     u32 submittedFrames = 0;
     bool externalSwapchainWired = false;
 };
@@ -42,7 +44,17 @@ const RuntimeViewportHeadlessGpuStub* asHeadlessGpuStub(const void* stub) {
 
 RuntimeViewportHook::~RuntimeViewportHook() {
 #if defined(FUSE_VULKAN_BACKEND)
-    delete asHeadlessGpuStub(m_headlessGpuStub);
+    RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    if (gpu != nullptr) {
+        if (gpu->hybrid != nullptr) {
+            gpu->hybrid->shutdown();
+            gpu->hybrid.reset();
+        }
+        if (gpu->context != nullptr) {
+            drainViewportGpuContext(*gpu->context);
+        }
+        delete gpu;
+    }
     m_headlessGpuStub = nullptr;
 #endif
 }
@@ -142,6 +154,35 @@ void RuntimeViewportHook::applyPendingResize_() {
         const u32 appliedWidth = width > 0 ? width : m_panel.width();
         const u32 appliedHeight = height > 0 ? height : m_panel.height();
         m_panel.setDimensions(appliedWidth, appliedHeight);
+
+#if defined(FUSE_VULKAN_BACKEND)
+        RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+        if (gpu != nullptr) {
+            fuse::renderer::PresentPath* presentPath =
+                gpu->hybrid != nullptr ? gpu->hybrid->presentPath() : nullptr;
+            if (presentPath != nullptr) {
+                presentPath->requestResize(appliedWidth, appliedHeight);
+                if (presentPath->hasPendingResize()) {
+                    ++m_embedSession.swapchainRecreateAttempts;
+                }
+                if (presentPath->recreateSwapchain()) {
+                    ++m_embedSession.swapchainRecreateCount;
+                }
+            } else if (gpu->context != nullptr) {
+                const ViewportSwapchainRecreateResult queued = requestViewportSwapchainRecreate(
+                    *gpu->context, gpu->fallbackPresentPath, appliedWidth, appliedHeight);
+                if (queued.attempted) {
+                    ++m_embedSession.swapchainRecreateAttempts;
+                }
+
+                const ViewportSwapchainRecreateResult applied =
+                    applyViewportPendingSwapchainRecreate(*gpu->context, gpu->fallbackPresentPath);
+                if (applied.recreated) {
+                    ++m_embedSession.swapchainRecreateCount;
+                }
+            }
+        }
+#endif
     }
 }
 

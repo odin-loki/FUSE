@@ -1,6 +1,6 @@
 # Track B — Vulkan Bootstrap (B2.1–B2.10) + CUDA Ray March (B2.7)
 
-**Status:** WP-06b ✅ B2.1 bootstrap + B2.2 swapchain/frame ring + **WP-06c ✅ real `vkQueueSubmit` + honest headless present sink** + **WP-06d ✅ `vkCmdBeginRenderPass` graph encode + bindless pool + null/GLFW WSI scaffold** + **WP-06e ✅ graph `vkCmdPipelineBarrier` + bindless `vkUpdateDescriptorSets` + pipeline cache disk I/O + swapchain FB present pass scaffold** + **WP-06f ✅ bindless composite GPU blit + CUDA interop/timeline honest stubs** + **WP-06g ✅ CUDA interop import deepen + composite CUDA texture path + GLFW present gate + U6 `SwapchainDesc` handoff** + **WP-06h ✅ CUDA interop fill kernel + frame-sync progress + Qt surface stub + composite SPIR-V regen docs** + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
+**Status:** WP-06b ✅ B2.1 bootstrap + B2.2 swapchain/frame ring + **WP-06c ✅ real `vkQueueSubmit` + honest headless present sink** + **WP-06d ✅ `vkCmdBeginRenderPass` graph encode + bindless pool + null/GLFW WSI scaffold** + **WP-06e ✅ graph `vkCmdPipelineBarrier` + bindless `vkUpdateDescriptorSets` + pipeline cache disk I/O + swapchain FB present pass scaffold** + **WP-06f ✅ bindless composite GPU blit + CUDA interop/timeline honest stubs** + **WP-06g ✅ CUDA interop import deepen + composite CUDA texture path + GLFW present gate + U6 `SwapchainDesc` handoff** + **WP-06h ✅ CUDA interop fill kernel + frame-sync progress + Qt surface stub + composite SPIR-V regen docs** + **WP-06i ✅ Qt `QVulkanInstance` bootstrap + load-stress stubs** + **WP-06j ✅ Lavapipe teardown hardening + Qt embed/timeline stress** + **WP-06k ✅ Lavapipe tune + composite SPIR-V regen + viewport swapchain recreate stubs** + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.7, §B2.8, §B2.9, §B2.10  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
@@ -673,7 +673,22 @@ spirv-val Source/FUSE/Renderer/shaders/fixtures/composite.frag.spv
 | `stressFrameSyncTeardownCycle` | **Done** | Multi-cycle timeline bookkeeping + destroy; deepened `stressFrameSyncUnderLoad` to 16 frames |
 | Lavapipe serial `ctest -j1` | **Done** | Vulkan ICD targets green under serial ctest after teardown hardening |
 
-**Deferred (post–WP-06j):** full Qt viewport embed with consumed swapchain recreate on real display; driver-wired timeline stress on NVIDIA CI; composite SPIR-V regen on CI runner.
+**Deferred (post–WP-06j):** ~~full Qt viewport embed with consumed swapchain recreate on real display~~ → WP-06k headless-safe recreate stubs; driver-wired timeline stress on NVIDIA CI; ~~composite SPIR-V regen on CI runner~~ → WP-06k `FuseShaderSpirvRegen.cmake`.
+
+---
+
+## WP-06k deliverables (Lavapipe tune + composite SPIR-V regen + Qt viewport swapchain recreate stubs)
+
+| Deliverable | Status | Notes |
+|-------------|--------|-------|
+| ICD lock quiesce tune | **Done** | Pre-test `sleep 0.10` + post-test `sleep 0.35`; single retry on SIGSEGV/SIGABRT in `run_vulkan_icd_locked.sh` |
+| Viewport GPU drain on teardown | **Done** | `drainViewportGpuContext` in `RuntimeViewportHook` destructor (Lavapipe flake reduction) |
+| `FuseShaderSpirvRegen.cmake` | **Done** | Configure-time + `fuse_regen_shader_fixtures` target when `glslangValidator` on runner |
+| `viewport_swapchain_recreate.*` | **Done** | `PresentPath` resize/recreate stubs consumed from `RuntimeViewportHook::requestResize` |
+| `RuntimeEmbedSession` recreate counters | **Done** | `swapchainRecreateAttempts` / `swapchainRecreateCount` for U6 embed diagnostics |
+| Lavapipe serial `ctest -j1` | **Done** | Vulkan ICD targets remain green after viewport recreate wiring |
+
+**Deferred (post–WP-06k):** real Qt viewport embed with consumed swapchain on display + `vkQueuePresentKHR`; driver-wired timeline stress on NVIDIA CI; composite SPIR-V `spirv-val` gate on regen target.
 
 ---
 
@@ -765,7 +780,9 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] B2.3 resource deepen — stub/VMA alloc stats, destroy-order teardown, `fuse_rhi_resource_destroy_order` (see [TRACK-B-RHI.md](./TRACK-B-RHI.md))
 - [x] B2.5 render graph deepen — pass dependency edges, resource lifetime stubs, compile-order tests
 - [x] Editor viewport → `SwapchainDesc.surface` handoff stub (`RuntimeViewportHook`, WP-06g)
-- [ ] Editor Qt native surface (`U6` viewport) → real `VkSurfaceKHR` into handoff (WP-06h posted winId stub only)
+- [x] Editor viewport swapchain resize/recreate stubs (`viewport_swapchain_recreate`, WP-06k)
+- [x] Composite SPIR-V configure-time regen when `glslangValidator` on runner (`FuseShaderSpirvRegen.cmake`, WP-06k)
+- [ ] Editor Qt native surface (`U6` viewport) → real `VkSurfaceKHR` present on display (WP-06i bootstrap; WP-06k recreate stubs only)
 - [ ] Android Vulkan WSI + MoltenVK macOS module
 
 ---
