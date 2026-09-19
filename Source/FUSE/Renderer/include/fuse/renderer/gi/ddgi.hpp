@@ -491,6 +491,8 @@ u32 clampCacheIndex(u32 cache_index, const DDGIDesc& desc, u32 cache_count);
 fuse::math::Vec3 sampleIrradianceAtCacheIndex(const IrradianceCacheEntry* cache,
                                               u32 cache_count,
                                               u32 cache_index);
+/// Minimum irradiance-cache length required for full-grid trilinear sampling.
+u32 requiredCacheCount(const DDGIDesc& desc);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
