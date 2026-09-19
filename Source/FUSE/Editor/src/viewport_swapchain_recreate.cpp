@@ -1,5 +1,7 @@
 #include <fuse/editor/viewport_swapchain_recreate.hpp>
 
+#include <fuse/editor/viewport_present_gate.hpp>
+
 #if defined(FUSE_VULKAN_BACKEND)
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/vk/device.hpp>
@@ -94,7 +96,7 @@ ViewportSwapchainRecreateResult applyViewportPendingSwapchainRecreate(
 }
 
 ViewportSwapchainPresentResult presentViewportSwapchainFrame(
-    fuse::renderer::PresentPath& presentPath) {
+    fuse::renderer::PresentPath& presentPath, const ViewportSwapchainHandoff* handoff) {
     ViewportSwapchainPresentResult result{};
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -107,19 +109,35 @@ ViewportSwapchainPresentResult presentViewportSwapchainFrame(
     presentPath.acquireImage();
     presentPath.markReadyToPresent();
     const u32 realPresentCallsBefore = presentPath.status().realPresentCallCount;
+    const u32 qtRealPresentCallsBefore = presentPath.status().qtRealPresentCallCount;
     result.presented = presentPath.presentImage();
     const fuse::renderer::PresentPathStatus& status = presentPath.status();
     result.headlessHonest = status.headless;
     result.qtPresentGateEnabled = status.qtPresentEnabled;
+    result.desktopPresentRuntimeReady = status.desktopPresentRuntimeReady;
     result.realPresentEligible = status.realPresentCallCount > realPresentCallsBefore;
-    result.presentSkippedNoWsiCount = status.presentSkippedNoWsiCount;
     result.realPresentCallCount = status.realPresentCallCount;
+    result.qtRealPresentCallCount = status.qtRealPresentCallCount;
+    result.presentSkippedNoWsiCount = status.presentSkippedNoWsiCount;
+
+    if (handoff != nullptr) {
+        result.qtRealSurfaceHandoff = handoff->qtRealSurface && !handoff->qtStubSurface;
+        const bool swapchainPresentable = !status.headless && status.width > 0 && status.height > 0;
+        result.viewportQtPresentPathReady =
+            fuse::editor::viewportQtPresentPathReady(*handoff, swapchainPresentable);
+    }
+
+    if (result.qtRealPresentCallCount > qtRealPresentCallsBefore) {
+        result.realPresentEligible = true;
+    }
+
     result.note = result.presented
                       ? (status.headless ? "headless viewport present sink consumed"
                                          : "viewport swapchain present consumed")
                       : status.message.c_str();
 #else
     (void)presentPath;
+    (void)handoff;
     result.note = "vulkan backend disabled";
 #endif
 

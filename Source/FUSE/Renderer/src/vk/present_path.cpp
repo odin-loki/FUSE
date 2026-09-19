@@ -12,6 +12,7 @@ PresentPath::PresentPath(VulkanBootstrap& bootstrap, PresentPathDesc desc)
     m_status.desktopPresentEnabled = desktopGlfwPresentEnabled();
     m_status.qtPresentEnabled = desktopQtPresentEnabled();
     m_status.desktopPresentRuntimeReady = desktopPresentRuntimeReady();
+    m_status.qtPresentRuntimeReady = desktopQtPresentRuntimeReady();
     refreshDimensions();
 }
 
@@ -194,6 +195,8 @@ bool PresentPath::presentImage() {
 
     const bool realPresentEligibleNow =
         realPresentEligible(swapchain, m_status.acquiredImageIndex, frameManager);
+    const bool realQtPresentEligibleNow =
+        realQtPresentEligible(swapchain, m_status.acquiredImageIndex, frameManager);
 
     bool presented = false;
     if (shouldEarlyOutEmptyPresent(swapchain, m_status.acquiredImageIndex, frameManager)) {
@@ -204,6 +207,9 @@ bool PresentPath::presentImage() {
         presented = swapchain->present(slot.renderFinished, m_status.acquiredImageIndex);
         if (presented && realPresentEligibleNow) {
             ++m_status.realPresentCallCount;
+        }
+        if (presented && realQtPresentEligibleNow) {
+            ++m_status.qtRealPresentCallCount;
         }
     }
 

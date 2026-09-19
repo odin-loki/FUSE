@@ -718,7 +718,23 @@ spirv-val Source/FUSE/Renderer/shaders/fixtures/composite.frag.spv
 | `cmake/FuseVulkanMobile.cmake` | **Done** | Android WSI + MoltenVK macOS stub options (docs-only, honest OFF defaults) |
 | Lavapipe serial `ctest -j1` | **Done** | Vulkan ICD targets remain green after Qt present gate wiring |
 
-**Deferred (post–WP-06m):** exercise real `vkQueuePresentKHR` on display with `FUSE_ENABLE_QT_PRESENT=ON` + Qt6 Gui; driver-wired timeline stress on NVIDIA CI; full software placeholder removal (keep fallback for headless CI).
+**Deferred (post–WP-06m):** ~~Qt present path readiness without gate~~ → WP-06n `viewportQtPresentPathReady`; ~~combined frame-sync + interop-fill stress~~ → WP-06n `stressFrameSyncAndInteropFillUnderLoad`; exercise real `vkQueuePresentKHR` on display with `FUSE_ENABLE_QT_PRESENT=ON` + Qt6 Gui; driver-wired timeline stress on NVIDIA CI; full software placeholder removal (keep fallback for headless CI).
+
+---
+
+## WP-06n deliverables (Qt present path readiness + timeline/CUDA combined stress)
+
+| Deliverable | Status | Notes |
+|-------------|--------|-------|
+| `realQtPresentEligible()` | **Done** | Qt-specific `vkQueuePresentKHR` gate separate from GLFW; `PresentPath` tracks `qtRealPresentCallCount` |
+| `viewportQtPresentPathReady()` / `viewportQtPresentPathEligible()` | **Done** | Handoff + swapchain preconditions without requiring gate ON (headless-safe diagnostics) |
+| Viewport present diagnostics deepen | **Done** | `ViewportSwapchainPresentResult` + `RuntimeEmbedSession` counters (`qtPresentPathReadyTicks`, `qtRealPresentCallCount`) |
+| `stressFrameSyncAndInteropFillUnderLoad()` | **Done** | Combined frame-sync bookkeeping + interop fill + job-lane fill stub path |
+| Timeline/CUDA stress iteration deepen | **Done** | Frame-sync load 24 frames; teardown 6×16; interop fill 24 iterations |
+| `RuntimeEmbedSession::reset()` hygiene | **Done** | Restores Qt present counters dropped in prior deepen |
+| Lavapipe serial `ctest -j1` | **Done** | Vulkan ICD targets remain green after Qt present + CUDA stress wiring |
+
+**Deferred (post–WP-06n):** exercise real `vkQueuePresentKHR` on display with `FUSE_ENABLE_QT_PRESENT=ON` + Qt6 Gui; driver-wired timeline stress on NVIDIA CI; full software placeholder removal (keep fallback for headless CI).
 
 ---
 
@@ -817,6 +833,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] Composite SPIR-V `spirv-val` gate on regen target when available (WP-06l)
 - [x] Editor viewport consumed swapchain present after recreate (`presentViewportSwapchainFrame`, WP-06l)
 - [x] Qt `vkQueuePresentKHR` gate + viewport present eligibility (`FUSE_ENABLE_QT_PRESENT`, WP-06m)
+- [x] Qt present path readiness + combined timeline/CUDA stress (`realQtPresentEligible`, `stressFrameSyncAndInteropFillUnderLoad`, WP-06n)
 - [x] Android Vulkan WSI + MoltenVK macOS cmake stubs (`FuseVulkanMobile.cmake`, WP-06m)
 - [ ] Editor Qt native surface (`U6` viewport) → real `vkQueuePresentKHR` on display with gate ON (WP-06i bootstrap; WP-06m gate)
 

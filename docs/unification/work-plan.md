@@ -283,6 +283,19 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 
 ---
 
+### WP-06n — Track B Qt present path readiness + timeline/CUDA combined stress
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M |
+| **Scope** | `realQtPresentEligible()` + `viewportQtPresentPathReady()` toward display present (headless-safe defaults); deepen viewport present diagnostics (`qtPresentPathReadyTicks`, `qtRealPresentCallCount`); `stressFrameSyncAndInteropFillUnderLoad()` + iteration deepen (24-frame load, 6×16 teardown); fix `RuntimeEmbedSession::reset()` counter hygiene; keep serial `ctest -j1` green for Vulkan targets |
+| **MT note** | Viewport present on game thread only; CUDA combined stress stays stub-safe on CI |
+| **Exit** | `fuse_hybrid_vulkan_presentable` Qt present runtime tests; `fuse_editor_host` Qt present path readiness test; `fuse_cuda_interop` combined stress test; Lavapipe ICD tests stable under `ctest -j1` |
+| **Deps** | WP-06m |
+| **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06n |
+
+---
+
 ### WP-07 — U5 Feature modules (parallel per module)
 
 | Field | Value |
@@ -407,7 +420,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U2 incremental — expand Engine probe + SimObject/StringTable route; U6 full Qt `vkQueuePresentKHR` on display with `FUSE_ENABLE_QT_PRESENT=ON`; U7 ispc_texcomp BC7 + libvorbisenc on CI images; Track B post–WP-06m (driver-wired timeline stress on NVIDIA CI, full software placeholder removal).
+**Next:** U2 incremental — expand Engine probe + SimObject/StringTable route; U6 full Qt `vkQueuePresentKHR` on display with `FUSE_ENABLE_QT_PRESENT=ON`; U7 ispc_texcomp BC7 + libvorbisenc on CI images; Track B post–WP-06n (driver-wired timeline stress on NVIDIA CI, full software placeholder removal).
 
 ---
 

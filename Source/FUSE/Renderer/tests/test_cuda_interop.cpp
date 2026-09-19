@@ -113,43 +113,61 @@ void testFrameSyncLoadStressStub() {
         fuse::renderer::cuda::FrameSyncPair::create(nullptr, nullptr);
 
     const fuse::renderer::cuda::FrameSyncLoadStressResult stress =
-        fuse::renderer::cuda::stressFrameSyncUnderLoad(pair, nullptr, nullptr, 16u);
+        fuse::renderer::cuda::stressFrameSyncUnderLoad(pair, nullptr, nullptr, 24u);
 
-    expectTrue(stress.framesAttempted == 16u, "stress attempts requested frame count");
-    expectTrue(stress.framesCompleted == 16u, "stub build completes bookkeeping for each frame");
-    expectTrue(stress.finalProgress.renderLaneSignals == 16u, "render lane signals scale with load");
-    expectTrue(stress.finalProgress.jobLaneWaits == 16u, "job lane waits scale with load");
-    expectTrue(stress.finalProgress.jobLaneSignals == 16u, "job lane signals scale with load");
-    expectTrue(stress.finalProgress.renderLaneWaits == 16u, "render lane waits scale with load");
-    expectTrue(stress.finalProgress.frameIndex == 16u, "final progress tracks last frame index");
+    expectTrue(stress.framesAttempted == 24u, "stress attempts requested frame count");
+    expectTrue(stress.framesCompleted == 24u, "stub build completes bookkeeping for each frame");
+    expectTrue(stress.finalProgress.renderLaneSignals == 24u, "render lane signals scale with load");
+    expectTrue(stress.finalProgress.jobLaneWaits == 24u, "job lane waits scale with load");
+    expectTrue(stress.finalProgress.jobLaneSignals == 24u, "job lane signals scale with load");
+    expectTrue(stress.finalProgress.renderLaneWaits == 24u, "render lane waits scale with load");
+    expectTrue(stress.finalProgress.frameIndex == 24u, "final progress tracks last frame index");
 
     pair.destroy(nullptr);
 }
 
 void testFrameSyncTeardownStressStub() {
     const fuse::renderer::cuda::FrameSyncTeardownStressResult stress =
-        fuse::renderer::cuda::stressFrameSyncTeardownCycle(nullptr, nullptr, nullptr, 4u, 12u);
+        fuse::renderer::cuda::stressFrameSyncTeardownCycle(nullptr, nullptr, nullptr, 6u, 16u);
 
-    expectTrue(stress.teardownCycles == 4u, "teardown stress completes all cycles");
-    expectTrue(stress.framesPerCycle == 12u, "teardown stress records frames per cycle");
-    expectTrue(stress.totalFramesCompleted == 48u, "teardown stress completes every frame");
-    expectTrue(stress.finalProgress.renderLaneSignals == 12u,
+    expectTrue(stress.teardownCycles == 6u, "teardown stress completes all cycles");
+    expectTrue(stress.framesPerCycle == 16u, "teardown stress records frames per cycle");
+    expectTrue(stress.totalFramesCompleted == 96u, "teardown stress completes every frame");
+    expectTrue(stress.finalProgress.renderLaneSignals == 16u,
                "final cycle records render lane signal count");
-    expectTrue(stress.finalProgress.jobLaneWaits == 12u, "final cycle records job lane waits");
+    expectTrue(stress.finalProgress.jobLaneWaits == 16u, "final cycle records job lane waits");
+}
+
+void testFrameSyncInteropCombinedStressStub() {
+    const fuse::renderer::cuda::FrameSyncInteropCombinedStressResult stress =
+        fuse::renderer::cuda::stressFrameSyncAndInteropFillUnderLoad(24u);
+
+    expectTrue(stress.frameSync.framesAttempted == 24u, "combined stress runs frame sync load");
+    expectTrue(stress.frameSync.framesCompleted == 24u, "combined stress completes frame sync bookkeeping");
+    expectTrue(stress.interopFill.attempts == 24u, "combined stress runs interop fill load");
+    expectTrue(stress.jobLaneFillAttempts == 24u, "combined stress runs job-lane fill attempts");
+#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
+    if (fuse::renderer::cuda::interopFillAvailable()) {
+        std::printf("SKIP: interop fill runtime available — combined stub counts deferred\n");
+        return;
+    }
+#endif
+    expectTrue(stress.interopFill.stubPaths == 24u, "combined interop fill stays on stub path");
+    expectTrue(stress.jobLaneFillStubPaths == 24u, "combined job-lane fill stays on stub path");
 }
 
 void testInteropFillLoadStressStub() {
     const fuse::renderer::cuda::InteropFillLoadStressResult stress =
-        fuse::renderer::cuda::stressInteropFillUnderLoad(16u);
+        fuse::renderer::cuda::stressInteropFillUnderLoad(24u);
 
-    expectTrue(stress.attempts == 16u, "interop fill stress runs all iterations");
+    expectTrue(stress.attempts == 24u, "interop fill stress runs all iterations");
 #if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
     if (fuse::renderer::cuda::interopFillAvailable()) {
         std::printf("SKIP: interop fill runtime available — load stress needs exported handle\n");
         return;
     }
 #endif
-    expectTrue(stress.stubPaths == 16u, "CI stub path counts every iteration");
+    expectTrue(stress.stubPaths == 24u, "CI stub path counts every iteration");
     expectTrue(stress.successes == 0u, "CI stub path has no successes without exported handle");
     expectTrue(stress.failures == 0u, "stub path is not counted as hard failure");
 }
@@ -229,6 +247,7 @@ int main() {
     testFrameSyncProgressStub();
     testFrameSyncLoadStressStub();
     testFrameSyncTeardownStressStub();
+    testFrameSyncInteropCombinedStressStub();
     testInteropFillLoadStressStub();
     testInteropFillStub();
     testStreamManagerStub();

@@ -177,17 +177,23 @@ void RuntimeViewportHook::applyPendingResize_() {
                 }
                 if (handoffConsumed) {
                     const ViewportSwapchainPresentResult present =
-                        presentViewportSwapchainFrame(*presentPath);
+                        presentViewportSwapchainFrame(*presentPath, &m_surfaceHandoff);
                     if (present.attempted) {
                         ++m_embedSession.consumedSwapchainPresentTicks;
                         if (present.presented) {
                             ++m_embedSession.swapchainPresentAfterRecreateCount;
+                        }
+                        if (present.viewportQtPresentPathReady) {
+                            ++m_embedSession.qtPresentPathReadyTicks;
                         }
                         if (present.qtPresentGateEnabled && viewportQtPresentEligible(m_surfaceHandoff)) {
                             ++m_embedSession.qtPresentEligibleTicks;
                         }
                         if (present.realPresentCallCount > m_embedSession.realPresentCallCount) {
                             m_embedSession.realPresentCallCount = present.realPresentCallCount;
+                        }
+                        if (present.qtRealPresentCallCount > m_embedSession.qtRealPresentCallCount) {
+                            m_embedSession.qtRealPresentCallCount = present.qtRealPresentCallCount;
                         }
                         if (present.presentSkippedNoWsiCount > m_embedSession.presentSkippedNoWsiCount) {
                             m_embedSession.presentSkippedNoWsiCount = present.presentSkippedNoWsiCount;
@@ -213,6 +219,12 @@ void RuntimeViewportHook::applyPendingResize_() {
                     ++m_embedSession.consumedSwapchainPresentTicks;
                     if (present.presented) {
                         ++m_embedSession.swapchainPresentAfterRecreateCount;
+                    }
+                    if (present.viewportQtPresentPathReady) {
+                        ++m_embedSession.qtPresentPathReadyTicks;
+                    }
+                    if (present.qtRealPresentCallCount > m_embedSession.qtRealPresentCallCount) {
+                        m_embedSession.qtRealPresentCallCount = present.qtRealPresentCallCount;
                     }
                     if (present.presentSkippedNoWsiCount > m_embedSession.presentSkippedNoWsiCount) {
                         m_embedSession.presentSkippedNoWsiCount = present.presentSkippedNoWsiCount;
@@ -434,11 +446,17 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
                                                                  gpu->externalSwapchainWired)) {
                         gpu->hybrid->composer().setSoftwarePlaceholderEnabled(false);
                     }
+                    if (viewportQtPresentPathReady(m_surfaceHandoff, gpu->externalSwapchainWired)) {
+                        ++m_embedSession.qtPresentPathReadyTicks;
+                    }
                     if (viewportQtPresentEligible(m_surfaceHandoff)) {
                         ++m_embedSession.qtPresentEligibleTicks;
                     }
                     if (presentPath->status().realPresentCallCount > m_embedSession.realPresentCallCount) {
                         m_embedSession.realPresentCallCount = presentPath->status().realPresentCallCount;
+                    }
+                    if (presentPath->status().qtRealPresentCallCount > m_embedSession.qtRealPresentCallCount) {
+                        m_embedSession.qtRealPresentCallCount = presentPath->status().qtRealPresentCallCount;
                     }
 #endif
                     if (m_surfaceHandoff.qtRealSurface && m_embedSession.usesExternalSwapchain) {

@@ -42,4 +42,15 @@ struct InteropFillLoadStressResult {
 
 [[nodiscard]] InteropFillLoadStressResult stressInteropFillUnderLoad(u32 iterations);
 
+/// Combined frame-sync + interop-fill stress (WP-06n) — bookkeeping always advances; driver ops when wired.
+struct FrameSyncInteropCombinedStressResult {
+    FrameSyncLoadStressResult frameSync{};
+    InteropFillLoadStressResult interopFill{};
+    u32 jobLaneFillAttempts = 0;
+    u32 jobLaneFillStubPaths = 0;
+};
+
+[[nodiscard]] FrameSyncInteropCombinedStressResult stressFrameSyncAndInteropFillUnderLoad(
+    u32 frameCount);
+
 } // namespace fuse::renderer::cuda

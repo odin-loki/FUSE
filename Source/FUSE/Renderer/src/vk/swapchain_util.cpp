@@ -52,6 +52,18 @@ bool realPresentEligible(const VulkanSwapchain* swapchain, u32 imageIndex,
     return true;
 }
 
+bool realQtPresentEligible(const VulkanSwapchain* swapchain, u32 imageIndex,
+                           const FrameManager* frameManager) {
+    if (swapchain == nullptr || isSwapchainEmpty(*swapchain) || isEmptyAcquireResult(imageIndex) ||
+        frameManager == nullptr || !frameManager->isReady()) {
+        return false;
+    }
+    if (!desktopQtPresentRuntimeReady() || !isSwapchainPresentable(*swapchain)) {
+        return false;
+    }
+    return true;
+}
+
 bool isSwapchainPresentable(const VulkanSwapchain& swapchain) {
     return swapchain.isReady() && swapchain.nativeHandle() != nullptr && swapchain.hasImages();
 }

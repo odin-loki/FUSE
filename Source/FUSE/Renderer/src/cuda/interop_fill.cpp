@@ -183,4 +183,34 @@ InteropFillLoadStressResult stressInteropFillUnderLoad(u32 iterations) {
     return result;
 }
 
+FrameSyncInteropCombinedStressResult stressFrameSyncAndInteropFillUnderLoad(u32 frameCount) {
+    FrameSyncInteropCombinedStressResult result{};
+    if (frameCount == 0u) {
+        return result;
+    }
+
+    FrameSyncPair pair = FrameSyncPair::create(nullptr, nullptr);
+    result.frameSync = stressFrameSyncUnderLoad(pair, nullptr, nullptr, frameCount);
+    result.interopFill = stressInteropFillUnderLoad(frameCount);
+
+    InteropFillDesc jobDesc{};
+    jobDesc.exportedMemoryHandle = reinterpret_cast<void*>(0x10);
+    jobDesc.allocationSize = 4096;
+    jobDesc.width = 64;
+    jobDesc.height = 64;
+    jobDesc.frameSync = &pair;
+
+    for (u32 i = 0; i < frameCount; ++i) {
+        jobDesc.frameIndex = static_cast<u64>(i) + 1u;
+        ++result.jobLaneFillAttempts;
+        const InteropFillResult jobFill = submitInteropFillJob(jobDesc);
+        if (jobFill.stubPath) {
+            ++result.jobLaneFillStubPaths;
+        }
+    }
+
+    pair.destroy(nullptr);
+    return result;
+}
+
 } // namespace fuse::renderer::cuda

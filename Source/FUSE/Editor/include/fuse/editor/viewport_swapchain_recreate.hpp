@@ -11,6 +11,8 @@ class RhiContext;
 
 namespace fuse::editor {
 
+struct ViewportSwapchainHandoff;
+
 /// Result of a headless-safe viewport swapchain resize / recreate toward U6 real display.
 struct ViewportSwapchainRecreateResult {
     bool attempted = false;
@@ -30,8 +32,12 @@ struct ViewportSwapchainPresentResult {
     bool headlessHonest = false;
     bool qtPresentGateEnabled = false;
     bool realPresentEligible = false;
+    bool qtRealSurfaceHandoff = false;
+    bool viewportQtPresentPathReady = false;
+    bool desktopPresentRuntimeReady = false;
     u32 presentSkippedNoWsiCount = 0;
     u32 realPresentCallCount = 0;
+    u32 qtRealPresentCallCount = 0;
     const char* note = nullptr;
 };
 
@@ -49,7 +55,7 @@ void drainViewportGpuContext(fuse::renderer::RhiContext& context);
 
 /// Run acquire → ready → present on an existing viewport present path (headless-safe sink on CI).
 [[nodiscard]] ViewportSwapchainPresentResult presentViewportSwapchainFrame(
-    fuse::renderer::PresentPath& presentPath);
+    fuse::renderer::PresentPath& presentPath, const ViewportSwapchainHandoff* handoff = nullptr);
 
 /// Apply pending recreate, then present when the editor handoff was consumed (U6 embed path).
 [[nodiscard]] ViewportSwapchainRecreateResult applyViewportPendingSwapchainRecreateAndPresent(

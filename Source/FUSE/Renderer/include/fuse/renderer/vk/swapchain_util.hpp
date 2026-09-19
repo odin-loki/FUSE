@@ -46,6 +46,10 @@ bool desktopPresentRuntimeReady();
 /// True when a real `vkQueuePresentKHR` call may proceed for the current swapchain acquire.
 bool realPresentEligible(const VulkanSwapchain* swapchain, u32 imageIndex, const FrameManager* frameManager);
 
+/// True when Qt gate + display + swapchain can call `vkQueuePresentKHR` (excludes GLFW-only path).
+bool realQtPresentEligible(const VulkanSwapchain* swapchain, u32 imageIndex,
+                           const FrameManager* frameManager);
+
 /// True when present should succeed without calling vkQueuePresentKHR.
 inline bool shouldEarlyOutEmptyPresent(const VulkanSwapchain* swapchain,
                                        u32 imageIndex,

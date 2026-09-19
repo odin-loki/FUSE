@@ -595,12 +595,29 @@ void testViewportQtPresentGateHeadlessSafe() {
     expectTrue(handoff.qtRealSurface, "real Qt surface flagged on handoff");
     expectTrue(!fuse::editor::viewportQtPresentEligible(handoff),
                "Qt present ineligible without FUSE_ENABLE_QT_PRESENT on headless CI");
+    expectTrue(!fuse::editor::viewportQtPresentPathEligible(handoff, true),
+               "Qt present path not fully eligible without gate on headless CI");
 #if defined(FUSE_VULKAN_BACKEND)
     if (host.runtimeViewport().embedSession().headlessGpuReady) {
         expectTrue(host.runtimeViewport().embedSession().consumedSwapchainPresentTicks >= 1u,
                    "consumed handoff present cycle on real Qt surface handoff");
     }
 #endif
+}
+
+void testViewportQtPresentPathReadyHeadlessSafe() {
+    fuse::editor::ViewportSwapchainHandoff handoff{};
+    handoff.consumed = true;
+    handoff.qtRealSurface = true;
+    handoff.qtStubSurface = false;
+    handoff.nativeSurface = reinterpret_cast<void*>(0x5000u);
+
+    expectTrue(fuse::editor::viewportQtPresentPathReady(handoff, true),
+               "Qt present path ready when handoff + swapchain preconditions met");
+    expectTrue(!fuse::editor::viewportQtPresentPathReady(handoff, false),
+               "Qt present path not ready without presentable swapchain");
+    expectTrue(!fuse::editor::viewportQtPresentPathEligible(handoff, true),
+               "full Qt eligibility still requires compile-time gate on headless CI");
 }
 
 void testRuntimeViewportHookTicksWithProject() {
@@ -777,6 +794,7 @@ int main() {
     testViewportVulkanBootstrapTeardownStress();
     testRuntimeViewportSwapchainRecreateAfterHandoff();
     testViewportQtPresentGateHeadlessSafe();
+    testViewportQtPresentPathReadyHeadlessSafe();
     testRuntimeViewportHookTicksWithProject();
     testAiTreeProfilePickerPostsCommand();
     testAiAgentEntityBindingPostsCommand();

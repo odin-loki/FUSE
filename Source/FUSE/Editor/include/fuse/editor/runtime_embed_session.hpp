@@ -24,7 +24,9 @@ struct RuntimeEmbedSession {
     u32 swapchainPresentAfterRecreateCount = 0;
     u32 consumedSwapchainPresentTicks = 0;
     u32 qtPresentEligibleTicks = 0;
+    u32 qtPresentPathReadyTicks = 0;
     u32 realPresentCallCount = 0;
+    u32 qtRealPresentCallCount = 0;
     u32 wireDatablockEntries = 0;
     u32 wireMaterialEntries = 0;
     u32 wireEcsMaterialApplied = 0;

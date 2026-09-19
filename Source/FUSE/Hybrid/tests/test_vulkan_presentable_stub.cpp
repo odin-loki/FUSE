@@ -28,6 +28,8 @@ void testDesktopPresentGateDefaultOff() {
                "desktop GLFW present gate OFF by default for headless CI");
     expectTrue(!fuse::renderer::desktopQtPresentEnabled(),
                "desktop Qt present gate OFF by default for headless CI");
+    expectTrue(!fuse::renderer::realQtPresentEligible(nullptr, 0u, nullptr),
+               "realQtPresentEligible rejects null swapchain on headless CI");
 #if defined(FUSE_ENABLE_GLFW_PRESENT) && defined(FUSE_PLATFORM_WINDOW_GLFW)
     if (fuse::platform::windowWsiAvailable()) {
         expectTrue(fuse::renderer::desktopGlfwPresentRuntimeReady(),
@@ -154,6 +156,10 @@ void testPresentPathThroughHybridBootstrap() {
     expectTrue(!presentPath->status().desktopPresentEnabled,
                "desktop GLFW present gate OFF by default");
     expectTrue(!presentPath->status().qtPresentEnabled, "desktop Qt present gate OFF by default");
+    expectTrue(!presentPath->status().qtPresentRuntimeReady,
+               "Qt present runtime unavailable without gate on headless CI");
+    expectTrue(presentPath->status().qtRealPresentCallCount == 0u,
+               "headless CI records no Qt vkQueuePresentKHR calls");
 
     runtime->shutdown();
 }
