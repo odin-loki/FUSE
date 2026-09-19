@@ -3264,3 +3264,13 @@ void testManifoldNormalizeAndIfNeededGuards() {
     expectTrue(stalePreflight.needs_rebuild(), "buffer friction preflight needs rebuild for stale slot");
     expectTrue(stalePreflight.staleCount == 1u, "buffer friction preflight counts one stale slot");
     testNarrowphaseSlotPreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-fd4e ---
+void testContactBufferDeepenFollowUpGuards() {
+        !fuse::physics::narrowphase::writeSlotWithPreflight(0u, selfPair, buffer),
+        fuse::physics::narrowphase::writeSlotWithPreflight(0u, valid, buffer),
+        fuse::physics::narrowphase::compactWithPreflight(buffer) == 2u,
+        fuse::physics::narrowphase::compactAndClampWithPreflight(buffer) == 1u,
+void testContactPairDeepenFollowUpDispatchGuards() {
+void testManifoldGenerateDeepenFollowUpGuards() {
+void testFrictionBasisDeepenFollowUpGuards() {

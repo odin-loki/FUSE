@@ -251,3 +251,6 @@ bool should_skip_friction_basis_beyond_rebuild(
 // --- deepen additive from deepen-narrowphase-b4-guards-2406 ---
 FrictionBasisRejectReason friction_basis_second_reject_reason(
 bool should_skip_friction_basis_second_preflight(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-fd4e ---
+FrictionBasisRejectReason friction_basis_deepen_reject_reason(

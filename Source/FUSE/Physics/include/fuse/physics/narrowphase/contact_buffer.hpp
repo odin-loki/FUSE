@@ -301,3 +301,9 @@ ContactBufferFrictionBasisRejectReason contact_buffer_friction_basis_reject_reas
 
 // --- deepen additive from b4-narrowphase-deepen-guards-9857 ---
     bool needs_build() const { return reason == ContactBufferFrictionBuildRejectReason::None; }
+
+// --- deepen additive from deepen-b4-narrowphase-guards-fd4e ---
+bool writeSlotWithPreflight(u32 slot, const ContactManifold& manifold, ContactBufferSoA& buffer);
+u32 compactWithPreflight(ContactBufferSoA& buffer);
+u32 applyMaxCapacityClampWithPreflight(ContactBufferSoA& buffer);
+u32 compactAndClampWithPreflight(ContactBufferSoA& buffer);

@@ -514,3 +514,10 @@ bool should_skip_friction_basis_second_preflight(
     const FrictionBasisRejectReason reason = friction_basis_second_reject_reason(manifold, epsilon);
     if (reason == FrictionBasisRejectReason::EmptyManifold ||
     if (reason == FrictionBasisRejectReason::StaleBasis) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-fd4e ---
+FrictionBasisRejectReason friction_basis_deepen_reject_reason(const ContactManifold& manifold, f32 epsilon) {
+    const FrictionBasisRejectReason deepenReason = friction_basis_deepen_reject_reason(manifold, epsilon);
+    if (deepenReason == FrictionBasisRejectReason::EmptyManifold ||
+        deepenReason == FrictionBasisRejectReason::InvalidNormal) {
+    if (deepenReason == FrictionBasisRejectReason::None &&

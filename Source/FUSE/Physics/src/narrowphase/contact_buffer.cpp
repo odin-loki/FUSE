@@ -779,3 +779,9 @@ ContactBufferFrictionBasisRejectReason contact_buffer_friction_basis_reject_reas
     case ContactBufferFrictionBuildRejectReason::AllBasesValid:
     return ContactBufferFrictionBuildRejectReason::AllBasesValid;
         preflight.reason == ContactBufferFrictionBuildRejectReason::AllBasesValid;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-fd4e ---
+bool writeSlotWithPreflight(u32 slot, const ContactManifold& manifold, ContactBufferSoA& buffer) {
+u32 compactWithPreflight(ContactBufferSoA& buffer) {
+u32 applyMaxCapacityClampWithPreflight(ContactBufferSoA& buffer) {
+u32 compactAndClampWithPreflight(ContactBufferSoA& buffer) {
