@@ -232,6 +232,7 @@ struct CascadedShadowMapLayout {
     static void sanitizeCascadeSplitMonotonicityIfNeeded(CascadedShadowMapDesc& desc);
     /// Pin the last split only when `needsLastCascadeSplitPin` is true.
     static void sanitizeCascadeSplitPinIfNeeded(CascadedShadowMapDesc& desc);
+    /// Alias for `cascadeSplitsNeedSanitize` — true when any sanitize stage would mutate splits.
     /// Clamp each split to [0, 1], enforce monotonicity, and pin the last slot to 1.0.
     static void sanitizeCascadeSplits(CascadedShadowMapDesc& desc);
     /// Sanitize cascade split fractions in `desc` (alias for `sanitizeCascadeSplits`).
@@ -353,6 +354,8 @@ struct CascadeLightSpaceLayout {
     static bool shouldSkipCascadeShadowBuildForDegenerateRange(u32 cascadeIndex,
     /// Classify per-cascade skip — ignores global bypass reasons.
     static CascadeShadowSkipReason classifyCascadeShadowPerCascadeSkip(u32 cascadeIndex,
+                                                 const CascadedShadowMapDesc& desc,
+                                                 const ShadowCameraParams& camera);
     /// Classify why a cascade build would be skipped — same ordering as `shouldSkipCascadeShadowBuild`.
     static CascadeShadowSkipReason classifyCascadeShadowSkip(u32 cascadeIndex,
                                                              const CascadedShadowMapDesc& desc,
