@@ -1,4 +1,5 @@
 #include "viewport_placeholder_widget.hpp"
+#include "viewport_qt_vulkan_surface.hpp"
 
 #include <fuse/editor/command_queue.hpp>
 
@@ -7,6 +8,7 @@
 #include <QPalette>
 #include <QResizeEvent>
 #include <QShowEvent>
+#include <QWindow>
 
 #include <string>
 
@@ -53,10 +55,29 @@ void ViewportPlaceholderWidget::postVulkanSurfaceHandoffStub() {
 
     postViewportResize();
 
+    ViewportQtVulkanSurface qtSurface;
+    void* surfaceHandle = reinterpret_cast<void*>(winId());
+    bool qtStubSurface = true;
+
+#if defined(FUSE_EDITOR_HAS_QT_VULKAN)
+    QWindow* surfaceWindow = window() ? window()->windowHandle() : nullptr;
+    if (qtSurface.initialize(surfaceWindow)) {
+        surfaceHandle = qtSurface.nativeSurface();
+        qtStubSurface = false;
+    }
+#endif
+
+    EditorCommand stubCmd;
+    stubCmd.kind = CommandKind::SetProperty;
+    stubCmd.propertyName = "viewport.vk_surface_qt_stub";
+    stubCmd.propertyValue = qtStubSurface ? "1" : "0";
+    m_host.postFromUi(std::move(stubCmd));
+
     EditorCommand surfaceCmd;
     surfaceCmd.kind = CommandKind::SetProperty;
     surfaceCmd.propertyName = "viewport.vk_surface_handle";
-    surfaceCmd.propertyValue = std::to_string(static_cast<unsigned long long>(winId()));
+    surfaceCmd.propertyValue = std::to_string(static_cast<unsigned long long>(
+        reinterpret_cast<std::uintptr_t>(surfaceHandle)));
     m_host.postFromUi(std::move(surfaceCmd));
 }
 

@@ -6,6 +6,12 @@
 
 namespace fuse::ecs {
 
+void Registry::ensureInitialized() {
+    if (m_archetypes.empty()) {
+        init(m_max_entities > 0 ? m_max_entities : kMaxEntities);
+    }
+}
+
 void Registry::init(usize max_entities) {
     destroy();
     m_max_entities = max_entities;
@@ -26,6 +32,8 @@ void Registry::destroy() {
 }
 
 EntityID Registry::create() {
+    ensureInitialized();
+
     u32 index = 0;
     u32 generation = 1;
 
@@ -57,6 +65,8 @@ EntityID Registry::create() {
 }
 
 void Registry::destroy_entity(EntityID id) {
+    ensureInitialized();
+
     EntityRecord* rec = record(id);
     if (rec == nullptr) {
         return;
@@ -79,6 +89,9 @@ void Registry::destroy_entity(EntityID id) {
 }
 
 bool Registry::alive(EntityID id) const {
+    if (m_archetypes.empty()) {
+        return false;
+    }
     return record(id) != nullptr;
 }
 
@@ -87,6 +100,7 @@ usize Registry::count() const {
 }
 
 Registry::EntityRecord* Registry::record(EntityID id) {
+    ensureInitialized();
     if (!id.valid() || id.index >= m_records.size()) {
         return nullptr;
     }
@@ -98,6 +112,9 @@ Registry::EntityRecord* Registry::record(EntityID id) {
 }
 
 const Registry::EntityRecord* Registry::record(EntityID id) const {
+    if (m_archetypes.empty()) {
+        return nullptr;
+    }
     if (!id.valid() || id.index >= m_records.size()) {
         return nullptr;
     }
@@ -109,6 +126,8 @@ const Registry::EntityRecord* Registry::record(EntityID id) const {
 }
 
 u32 Registry::find_or_create_archetype(const std::vector<std::type_index>& sorted_types) {
+    ensureInitialized();
+
     const ArchetypeID id = make_archetype_id(sorted_types);
     auto found = m_archetype_lookup.find(id.hash);
     if (found != m_archetype_lookup.end()) {

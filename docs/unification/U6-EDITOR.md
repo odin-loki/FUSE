@@ -76,7 +76,7 @@ Linux umbrella CI configures with `FUSE_BUILD_EDITOR=OFF` (default). Tests:
 |------------|--------|---------|
 | `fuse_editor_command_queue` | `fuse_editor_api_tests` | Mutex-backed queue post/drain + SetProperty coalescing |
 | `fuse_editor_host` | `fuse_editor_host_tests` | PIE, inspector props, UI coalesced property undo/redo, `RuntimeViewportHook` |
-| `fuse_editor_runtime_embed` | `fuse_editor_runtime_embed_tests` | WSI backend label, headless GPU path counters, project world load |
+| `fuse_editor_runtime_embed` | `fuse_editor_runtime_embed_tests` | WSI backend label, headless GPU path counters, swapchain wiring attempts, project world load |
 
 ```bash
 cmake -B build-fuse -G Ninja \
@@ -139,8 +139,10 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 | `FeaturePaneBridge` + property edits (`transform`, `mesh.material_id`, `sdf.blend_alpha`) through queue | Live Qt widgets for mesh/SDF beyond position spinboxes |
 | `PropertyInspector` sections: Transform, Mesh, SDF, RigidBody, Camera, Point/Directional/Spot lights | All ECS types + live renderer preview on slider drag |
 | `CommandStack` property-edit undo/redo + coalesced Qt spinbox drags | — |
-| ECS `Registry::has<Ts...>()` aligned with `each<Ts...>`; cull light path requires Transform + light | — |
-| `RuntimeViewportHook` loads manifest world, mirrors editor entities (parent indices), null WSI headless GPU stub | Real in-process `fuse_runtime` GPU viewport (Qt External surface) |
+| ECS `Registry::has_all<Ts...>()` + lazy init (Linux segfault fix); cull light path requires Transform + light | — |
+| `ViewportSwapchainWiring` consumes External handoff via `VulkanBootstrap::ensureSwapchain` (headless fallback) | Live Qt swapchain present |
+| Optional `QVulkanInstance` surface path in viewport widget (winId stub fallback) | — |
+| `RuntimeViewportHook` loads manifest world, mirrors editor entities (parent indices), null WSI headless GPU stub | Full in-process GPU viewport compositing |
 
 ---
 

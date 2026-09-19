@@ -115,6 +115,15 @@ void testEachIteration() {
     expectEq(seen, 3u, "each visits all transform entities");
 }
 
+void testUninitializedRegistrySafe() {
+    fuse::ecs::Registry reg;
+    const fuse::ecs::EntityID id = reg.create();
+    expectTrue(id.valid(), "lazy init allows create without explicit init()");
+    expectTrue(reg.alive(id), "entity alive after lazy init create");
+    expectTrue(!reg.has_all<fuse::ecs::Transform, fuse::ecs::Mesh>(id),
+               "has_all safe on entity without components");
+}
+
 void testHasAllComponents() {
     fuse::ecs::Registry reg;
     reg.init(64);
@@ -141,6 +150,7 @@ int main() {
     testAddGetRemove();
     testArchetypeGrouping();
     testEachIteration();
+    testUninitializedRegistrySafe();
     testHasAllComponents();
 
     if (g_failures == 0) {

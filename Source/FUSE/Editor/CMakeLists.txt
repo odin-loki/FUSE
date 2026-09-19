@@ -12,6 +12,7 @@ set(FUSE_EDITOR_API_SOURCES
     src/cinematics_seq_import.cpp
     src/runtime_viewport.cpp
     src/runtime_embed_session.cpp
+    src/viewport_swapchain_wiring.cpp
     src/gizmo_system.cpp
     src/hierarchy_model.cpp
     src/material_editor_panel.cpp
@@ -36,6 +37,7 @@ set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/editor_scene.hpp
     include/fuse/editor/runtime_viewport.hpp
     include/fuse/editor/runtime_embed_session.hpp
+    include/fuse/editor/viewport_swapchain_wiring.hpp
     include/fuse/editor/editor_state.hpp
     include/fuse/editor/feature_pane_bridge.hpp
     include/fuse/editor/ai_tree_profile_picker.hpp
@@ -92,7 +94,7 @@ if(FUSE_BUILD_EDITOR)
     if(FUSE_PLATFORM_MOBILE)
         message(WARNING "FUSE_BUILD_EDITOR is desktop-only; skipping fuse_editor on mobile profile")
     else()
-        find_package(Qt6 QUIET COMPONENTS Widgets)
+        find_package(Qt6 QUIET COMPONENTS Widgets Gui)
         if(Qt6_FOUND)
             set(FUSE_EDITOR_QT_AVAILABLE ON CACHE INTERNAL "Qt6 found for fuse_editor")
 
@@ -106,6 +108,8 @@ if(FUSE_BUILD_EDITOR)
                 src/qt/property_pane_widget.hpp
                 src/qt/viewport_placeholder_widget.cpp
                 src/qt/viewport_placeholder_widget.hpp
+                src/qt/viewport_qt_vulkan_surface.cpp
+                src/qt/viewport_qt_vulkan_surface.hpp
                 src/qt/game_loop_thread.cpp
                 src/qt/game_loop_thread.hpp
             )
@@ -115,6 +119,10 @@ if(FUSE_BUILD_EDITOR)
                     fuse_editor_api
                     Qt6::Widgets
             )
+            if(TARGET Qt6::Gui)
+                target_link_libraries(fuse_editor PRIVATE Qt6::Gui)
+                target_compile_definitions(fuse_editor PRIVATE FUSE_EDITOR_HAS_QT_VULKAN=1)
+            endif()
 
             target_compile_features(fuse_editor PRIVATE cxx_std_17)
 

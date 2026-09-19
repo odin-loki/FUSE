@@ -36,6 +36,10 @@ std::string resolveDefaultWorldPath(const project::ProjectManifest& manifest) {
     return joinPath(manifest.projectRoot, manifest.defaultWorld3D);
 }
 
+std::string resolveDefaultWorld2DPath(const project::ProjectManifest& manifest) {
+    return joinPath(manifest.projectRoot, manifest.defaultWorld2D);
+}
+
 SerialiseResult saveForProject(const Scene& scene, const project::ProjectManifest& manifest) {
     SerialiseResult result;
 

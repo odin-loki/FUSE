@@ -44,12 +44,26 @@ void testRuntimeEmbedSessionCounters() {
 #endif
 }
 
+void testRuntimeEmbedSwapchainHandoff() {
+    fuse::editor::EditorHost host;
+    host.runtimeViewport().requestResize(800, 600);
+    host.runtimeViewport().setExternalSurfaceHandle(reinterpret_cast<void*>(0x1u), 800, 600,
+                                                    "unit_test_stub", true);
+    host.gameTick();
+
+    const fuse::editor::RuntimeEmbedSession& session = host.runtimeViewport().embedSession();
+    expectTrue(session.surfaceHandoffCount >= 1u, "surface handoff recorded");
+    expectTrue(session.swapchainWiringAttempts >= 1u, "swapchain wiring attempted");
+    expectTrue(session.surfaceHandoffConsumed, "surface handoff consumed on game thread");
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
     testRuntimeViewportHeadlessTick();
     testRuntimeEmbedSessionCounters();
+    testRuntimeEmbedSwapchainHandoff();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

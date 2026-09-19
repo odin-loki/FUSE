@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <functional>
-#include <type_traits>
 #include <typeindex>
 #include <type_traits>
 #include <unordered_map>
@@ -89,6 +88,8 @@ private:
     };
 
     friend struct Archetype;
+
+    void ensureInitialized();
 
     [[nodiscard]] EntityRecord* record(EntityID id);
     [[nodiscard]] const EntityRecord* record(EntityID id) const;
@@ -219,6 +220,9 @@ bool Registry::has(EntityID id) const {
     if (rec == nullptr) {
         return false;
     }
+    if (rec->archetype_index >= m_archetypes.size()) {
+        return false;
+    }
     return m_archetypes[rec->archetype_index].has_component(std::type_index(typeid(T)));
 }
 
@@ -228,6 +232,9 @@ std::enable_if_t<(sizeof...(Ts) > 1), bool> Registry::has_all(EntityID id) const
 
     const EntityRecord* rec = record(id);
     if (rec == nullptr) {
+        return false;
+    }
+    if (rec->archetype_index >= m_archetypes.size()) {
         return false;
     }
 

@@ -2,6 +2,7 @@
 
 #include <fuse/dimension/idimension.hpp>
 #include <fuse/physics/physics_world_2d.hpp>
+#include <fuse/world2d/fuselevel_bridge.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/scene_snapshot.hpp>
 
@@ -31,10 +32,19 @@ public:
     void loadWorld(dimension::WorldHandle world) override;
     dimension::WorldHandle activeWorld() const override { return m_activeWorld; }
 
+    /// Optional `.fuselevel` path consumed by the next `loadWorld()` call.
+    void setFuselevelPath(std::string path) { m_pendingFuselevelPath = std::move(path); }
+    const std::string& pendingFuselevelPath() const { return m_pendingFuselevelPath; }
+    const FuselevelLoadResult& lastFuselevelLoad() const { return m_lastFuselevelLoad; }
+
+    /// Load a converted 2D world file immediately (also used by `loadWorld()` when a path is set).
+    FuselevelLoadResult loadWorldFromFuselevel(const std::string& fuselevelPath);
+
     SceneObject2D* root() { return m_root.get(); }
     const SceneObject2D* root() const { return m_root.get(); }
 
     void addSprite(SceneObject2D* sprite);
+    void adoptOwnedSprite(std::unique_ptr<SceneObject2D> sprite);
     const SceneSnapshot2D& readSnapshot() const { return m_snapshot; }
     const SceneTransformSoA2D& readTransformSoA() const { return m_transformSoA; }
 
@@ -47,11 +57,15 @@ private:
     void buildSnapshot(frame::FrameCtx& ctx);
     void syncPhysicsFromScene();
     void syncSceneFromPhysics();
+    void clearLoadedSprites_();
 
     bool m_enabled = true;
     dimension::WorldHandle m_activeWorld = dimension::WorldHandle::invalid();
+    std::string m_pendingFuselevelPath;
+    FuselevelLoadResult m_lastFuselevelLoad{};
     std::unique_ptr<SceneObject2D> m_root;
     std::vector<SceneObject2D*> m_sprites;
+    std::vector<std::unique_ptr<SceneObject2D>> m_ownedSprites;
 
     SceneSnapshot2D m_snapshot;
     SceneTransformSoA2D m_transformSoA;

@@ -167,12 +167,21 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         return true;
     }
 
+    if (command.propertyName == "viewport.vk_surface_qt_stub") {
+        host.runtimeViewport().setPendingQtStubSurface(command.propertyValue != "0");
+        return true;
+    }
+
     if (command.propertyName == "viewport.vk_surface_handle") {
         const u64 handleValue = std::strtoull(command.propertyValue.c_str(), nullptr, 10);
         const u32 width = host.runtimeViewport().panel().width();
         const u32 height = host.runtimeViewport().panel().height();
-        host.runtimeViewport().setExternalSurfaceHandle(reinterpret_cast<void*>(handleValue), width,
-                                                        height, "qt_winid_stub", true);
+        RuntimeViewportHook& viewport = host.runtimeViewport();
+        const bool qtStubSurface = viewport.pendingQtStubSurface();
+        viewport.setExternalSurfaceHandle(
+            reinterpret_cast<void*>(handleValue), width, height,
+            qtStubSurface ? "qt_winid_stub" : "qvulkan_instance_surface", qtStubSurface);
+        viewport.setPendingQtStubSurface(true);
         return true;
     }
 

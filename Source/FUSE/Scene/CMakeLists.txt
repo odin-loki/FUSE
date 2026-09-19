@@ -7,6 +7,7 @@ add_library(fuse_scene STATIC
     src/scene_snapshot.cpp
     src/serialiser.cpp
     src/svo.cpp
+    src/wire_stub.cpp
     include/fuse/scene/bvh_stub.hpp
     include/fuse/scene/camera.hpp
     include/fuse/scene/math.hpp
@@ -16,6 +17,7 @@ add_library(fuse_scene STATIC
     include/fuse/scene/scene_snapshot.hpp
     include/fuse/scene/serialiser.hpp
     include/fuse/scene/svo.hpp
+    include/fuse/scene/wire_stub.hpp
 )
 
 add_library(fuse::scene ALIAS fuse_scene)

@@ -12,3 +12,16 @@ target_include_directories(fuse_cook_stubs
 
 target_link_libraries(fuse_cook_stubs PUBLIC fuse_core)
 target_compile_features(fuse_cook_stubs PUBLIC cxx_std_17)
+
+find_package(assimp QUIET)
+if(assimp_FOUND OR ASSIMP_FOUND)
+    target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_ASSIMP=1)
+    if(TARGET assimp::assimp)
+        target_link_libraries(fuse_cook_stubs PRIVATE assimp::assimp)
+    endif()
+endif()
+
+find_package(Vorbis QUIET)
+if(Vorbis_FOUND)
+    target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_OGG_VORBIS=1)
+endif()

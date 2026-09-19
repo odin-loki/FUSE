@@ -11,7 +11,7 @@
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `EntityID` | `include/fuse/ecs/entity.hpp` | Index + generation handle; stale detection O(1) |
-| `Registry` | `include/fuse/ecs/registry.hpp` | Create/destroy, add/remove/get/has, `each` + `each_parallel` bulk iteration |
+| `Registry` | `include/fuse/ecs/registry.hpp` | Create/destroy, add/remove/get/has/has_all, lazy init, `each` + `each_parallel` bulk iteration |
 | `detail::parallel_iteration` / `detail::iteration_parity` | `include/fuse/ecs/detail/` | Shared `normalize_batch_size`; `each`/`each_query` visit-count parity (With/Without overloads); `transform_registries_match` + dirty-root serial/parallel parity helpers |
 | `QueryFilter` / `With` / `Without` | `include/fuse/ecs/query_filter.hpp` | Archetype-scoped query filters; `query_filter_empty` / `query_filter_has_conflict` / `query_filter_equal` / `count_matching_archetypes` / `count_matching_entities`; `each_query` / `each_query_parallel` (B3 deepen) |
 | `Archetype` / `ComponentColumn` | `include/fuse/ecs/archetype.hpp` | SoA columns keyed by `std::type_index`; archetype migration on add/remove |
@@ -122,7 +122,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_ecs|fuse_scene'
 
 | Target | Validates |
 |--------|-----------|
-| `fuse_ecs_registry` | Create/destroy, stale handles, add/get/remove, archetype migration, `each` |
+| `fuse_ecs_registry` | Create/destroy, stale handles, add/get/remove, archetype migration, `each`, `has_all`, lazy-init safety |
 | `fuse_ecs_query_filter` | `archetype_matches` With/Without filters (runtime + compile-time tags, Without-only, multi-Without, conflict guard); `query_filter_empty` / `query_filter_equal` / `count_matching_archetypes` / `count_matching_entities`; `each`/`each_query`/`each_parallel`/`each_query_parallel` include/exclude, empty registry/match, zero-entity archetype, empty-filter-all-archetypes, and serial/parallel parity (atomic visit counts + `each_query_with_without_parallel_matches_serial`) |
 | `fuse_ecs_each_parallel` | `each_parallel` visit/mutation parity vs `each`; `detail::iteration_parity` `each`/`each_query` visit-count + dirty-root parity helpers; batchSize edge cases (0, oversized, empty registry); dirty propagation to clean children and deep hierarchy; `count_dirty_roots`; dirty-root skip guards; empty-registry `TransformSystem::update`; multi-batch/worker serial/parallel matrix parity |
 | `fuse_ecs_transform_system` | `has_any_transforms` / `count_transforms` empty guards; non-transform entity no-op; dirty-root serial/parallel stub parity (empty + many roots); clean-root no-op passes |

@@ -2,6 +2,7 @@
 
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/editor_scene.hpp>
+#include <fuse/editor/viewport_swapchain_wiring.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/platform/window_wsi.hpp>
@@ -22,6 +23,7 @@ namespace fuse::editor {
 struct RuntimeViewportHeadlessGpuStub {
     std::unique_ptr<fuse::renderer::RhiContext> context;
     u32 submittedFrames = 0;
+    bool externalSwapchainWired = false;
 };
 
 RuntimeViewportHeadlessGpuStub* asHeadlessGpuStub(void* stub) {
@@ -276,12 +278,53 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
 
     m_panel.tick(dt);
 
+#if defined(FUSE_VULKAN_BACKEND)
     if (m_surfaceHandoff.pending) {
+        RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+        if (gpu == nullptr) {
+            m_headlessGpuStub = new RuntimeViewportHeadlessGpuStub();
+            gpu = asHeadlessGpuStub(m_headlessGpuStub);
+        }
+
+        if (gpu->context == nullptr) {
+            fuse::renderer::RhiContext::Desc desc{};
+            desc.bootstrap.instance.enableValidation = false;
+            desc.enableRasterPath = false;
+            desc.enableCompositePass = false;
+            gpu->context = fuse::renderer::RhiContext::create(desc);
+            if (gpu->context != nullptr && gpu->context->bootstrap().status().deviceReady) {
+                m_embedSession.headlessGpuReady = true;
+            }
+        }
+
+        ++m_embedSession.swapchainWiringAttempts;
+        if (gpu->context != nullptr) {
+            const ViewportSwapchainWiringResult wiring =
+                wireExternalSwapchainFromHandoff(*gpu->context, m_surfaceHandoff);
+            m_embedSession.surfaceHandoffPending = false;
+            m_embedSession.surfaceHandoffConsumed = wiring.attempted;
+            if (wiring.swapchainReady) {
+                ++m_embedSession.swapchainWiringReady;
+                m_embedSession.usesExternalSwapchain = true;
+                gpu->externalSwapchainWired = true;
+                m_embedSession.usesHeadlessGpuPath = false;
+            }
+        } else {
+            m_surfaceHandoff.pending = false;
+            m_surfaceHandoff.consumed = true;
+            m_embedSession.surfaceHandoffPending = false;
+            m_embedSession.surfaceHandoffConsumed = true;
+        }
+    }
+#else
+    if (m_surfaceHandoff.pending) {
+        ++m_embedSession.swapchainWiringAttempts;
         m_surfaceHandoff.pending = false;
         m_surfaceHandoff.consumed = true;
         m_embedSession.surfaceHandoffPending = false;
         m_embedSession.surfaceHandoffConsumed = true;
     }
+#endif
 
     tickHeadlessPresentStub_(host, dt);
     ++m_runtimeTickCount;

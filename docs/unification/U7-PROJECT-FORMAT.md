@@ -153,6 +153,8 @@ Exit `0` on success; prints one line per registered world / convert note.
 |------|--------|
 | `fuse_project_tests` | Manifest parse, schema rejection, T3D/T2D importer stubs |
 | `fuse_world_converter_tests` | `.mis` hierarchy + datablock wiring stubs; T2D toybox hierarchy |
+| `fuse_world2d_fuselevel_bridge` | T2D `.fuselevel` → `World2D::loadWorld` bridge |
+| `fuse_scene_wire_stub` | `__fuse.wire|*` entity name parser |
 | `fuse_scene_b37_b39` | Serialiser v1/v2 + hierarchy round-trip |
 
 ---
@@ -178,7 +180,7 @@ Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed
 ## 10. Deferred (honest backlog)
 
 - Link Assimp / BC7 / OGG libraries so cook hooks produce real binaries (hooks + stub fallback exist today)
-- Resolve `__fuse.wire|*` stub entities into runtime ECS components / legacy datablock tables
-- T2D toybox → `fuse::world2d::World2D::loadWorld` runtime bridge (`.fuselevel` convert landed)
+- Resolve `__fuse.wire|*` stub entities into runtime ECS components / legacy datablock tables — **parser + World2D load stats landed** (`fuse::scene::parseWireStubEntityName`, `World2D::loadWorldFromFuselevel`)
+- T2D toybox → `fuse::world2d::World2D::loadWorld` runtime bridge — **`.fuselevel` populate + `setFuselevelPath` bridge landed**
 - Asset path remapping via VFS mounts ([vfs-mount-plan.md](./vfs-mount-plan.md))
 - `project.json` `workerCap` override for `computeWorkerCount()`

@@ -238,7 +238,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | In-process PIE; UI thread vs game thread command queue; one feature pane |
 | **Deps** | WP-06, WP-05 |
-| **Status** | 🚧 ECS multi-component `has`, UI coalesced property undo, headless runtime embed (null WSI + optional Vulkan submit); Qt External GPU viewport deferred — [U6-EDITOR.md](./U6-EDITOR.md) |
+| **Status** | 🚧 ECS lazy-init segfault fix + swapchain wiring/QVulkan handoff; headless runtime embed — [U6-EDITOR.md](./U6-EDITOR.md) |
 
 ---
 
@@ -249,7 +249,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | `project.json`, importers, cookers under `Tools/FUSE/` |
 | **Deps** | WP-06 |
-| **Status** | 🚧 T3D datablock wiring stub entities + T2D toybox hierarchy convert + cook encoder hooks (Assimp/BC7/OGG honest stubs) — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
+| **Status** | 🚧 T3D wiring stubs + T2D `loadWorld` fuselevel bridge + cook encoder hooks (Assimp/OGG detected when present) — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
 
 ---
 

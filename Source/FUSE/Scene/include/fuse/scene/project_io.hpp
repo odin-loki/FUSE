@@ -12,6 +12,9 @@ namespace fuse::scene {
 /// Resolved on-disk path for the project's default 3D world (.fuselevel).
 std::string resolveDefaultWorldPath(const project::ProjectManifest& manifest);
 
+/// Resolved on-disk path for the project's default 2D world (.fuselevel).
+std::string resolveDefaultWorld2DPath(const project::ProjectManifest& manifest);
+
 /// Save/load scene via `project.json` `defaultWorld3D` relative path.
 SerialiseResult saveForProject(const Scene& scene, const project::ProjectManifest& manifest);
 SerialiseResult loadForProject(Scene& scene, const project::ProjectManifest& manifest);

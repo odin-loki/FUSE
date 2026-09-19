@@ -3,6 +3,7 @@
 #include <fuse/jobs/parallel_for.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/platform/thread.hpp>
+#include <fuse/world2d/fuselevel_bridge.hpp>
 
 #include <cmath>
 
@@ -14,8 +15,33 @@ World2D::World2D() : m_root(std::make_unique<SceneObject2D>("World2DRoot")) {
 
 World2D::~World2D() = default;
 
+void World2D::clearLoadedSprites_() {
+    if (m_root) {
+        for (SceneObject2D* sprite : m_sprites) {
+            m_root->removeChild(sprite);
+        }
+    }
+    m_sprites.clear();
+    m_ownedSprites.clear();
+    m_physicsBodyIndices.clear();
+    m_snapshot.clear();
+    m_transformSoA.clear();
+    m_cullVisible.clear();
+}
+
+FuselevelLoadResult World2D::loadWorldFromFuselevel(const std::string& fuselevelPath) {
+    clearLoadedSprites_();
+    m_lastFuselevelLoad = populateWorld2DFromFuselevel(*this, fuselevelPath);
+    return m_lastFuselevelLoad;
+}
+
 void World2D::loadWorld(dimension::WorldHandle world) {
     m_activeWorld = world;
+    if (!m_pendingFuselevelPath.empty()) {
+        loadWorldFromFuselevel(m_pendingFuselevelPath);
+        return;
+    }
+
     log::info("World2D: load world handle index=%u gen=%u", world.index(), world.generation());
 }
 
@@ -31,6 +57,13 @@ void World2D::addSprite(SceneObject2D* sprite) {
         const u32 bodyIndex = m_physics.addCircleBody(sprite->x(), sprite->y(), 0.5f, 1.f);
         m_physicsBodyIndices.push_back(bodyIndex);
     }
+}
+
+void World2D::adoptOwnedSprite(std::unique_ptr<SceneObject2D> sprite) {
+    if (sprite == nullptr) {
+        return;
+    }
+    m_ownedSprites.push_back(std::move(sprite));
 }
 
 void World2D::syncPhysicsFromScene() {
