@@ -403,3 +403,8 @@ const char* gridRebuildRejectReasonLabel(GridRebuildRejectReason reason);
 // --- deepen additive from deepen-b5-clustered-lights-161a ---
     static bool tryRebuildLightGridForDesc(ClusterGridSoA& grid,
     static bool tryValidateContiguousOffsetsForDesc(const ClusterGridSoA& grid,
+
+// --- deepen additive from deepen-b5-clustered-lights-c048 ---
+    static bool tryMapScreenDepthToClusterIndex(f32 screenX,
+    static bool tryRebuildLightGrid(ClusterGridSoA& grid,
+    static bool tryValidateContiguousOffsets(const ClusterGridSoA& grid,

@@ -1548,3 +1548,37 @@ void testClusterCoordLookupRejectReasons() {
     expectTrue(grid.grid.empty() && grid.lightList.empty(), "tryRebuild on empty desc clears storage");
     expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLightsAtCoord(grid, zeroDesc, 0u, 0u, 0u, rejectedLights,
                "tryCoordLookup with reason rejects empty grid desc");
+
+// --- deepen additive from deepen-b5-clustered-lights-c048 ---
+    expectTrue(rebuildReason == fuse::renderer::GridRebuildRejectReason::CountMismatch,
+    expectTrue(std::strcmp(fuse::renderer::gridRebuildRejectReasonLabel(rebuildReason), "count_mismatch") == 0,
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryCanRebuildLightGrid(zeroDesc, clusterCount, rebuildReason),
+    expectTrue(rebuildReason == fuse::renderer::GridRebuildRejectReason::EmptyDesc,
+    expectTrue(std::strcmp(fuse::renderer::gridRebuildRejectReasonLabel(rebuildReason), "empty_desc") == 0,
+               "tryRebuildForDesc succeeds on valid desc");
+    expectTrue(dropped == 0u, "tryRebuildForDesc reports zero dropped lights within capacity");
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryRebuildLightGrid(
+               "tryRebuild rejects oversized cluster count without rebuilding");
+               "tryRebuild rejects non-zero count on empty desc without rebuilding");
+    expectTrue(emptyRejectedGrid.grid.empty() && emptyRejectedGrid.lightList.empty(),
+               "tryRebuildForDesc vacuously succeeds on empty desc");
+void testClusterContiguousOffsetPreflightGuards() {
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryValidateContiguousOffsets(grid, clusterCount, offsetReason),
+               "tryValidateContiguousOffsets accepts rebuilt grid");
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryValidateContiguousOffsets(undersized, clusterCount,
+               "tryValidateContiguousOffsets rejects undersized grid");
+    expectTrue(offsetReason == fuse::renderer::GridPopulationRejectReason::UndersizedGrid,
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryValidateContiguousOffsets(brokenOffsets, clusterCount,
+               "tryValidateContiguousOffsets rejects non-contiguous offsets");
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryValidateContiguousOffsetsForDesc(emptyGrid, zeroDesc,
+void testClusterCoordLookupRejectReasonAndScreenMapping() {
+                                                                           tryCoordCount, reason),
+    expectTrue(tryCoordCount == 2u, "tryCoordLookup with reason reports cluster light count");
+    expectTrue(fuse::renderer::ClusterGridLayout::tryMapScreenDepthToClusterIndex(
+               "tryMapScreenDepth accepts valid screen depth");
+    expectTrue(mappedIndex < clusterCount, "tryMapScreenDepth maps to valid cluster index");
+    expectTrue(!fuse::renderer::ClusterGridLayout::tryMapScreenDepthToClusterIndex(
+               "tryMapScreenDepth rejects empty grid desc");
+    expectTrue(rejectedIndex == 99u, "tryMapScreenDepth does not write index on empty grid");
+    testClusterContiguousOffsetPreflightGuards();
+    testClusterCoordLookupRejectReasonAndScreenMapping();
