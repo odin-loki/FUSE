@@ -200,4 +200,21 @@ std::vector<ContactManifold> runNarrowphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Dispatch one pair slot with deepen preflight and finalize guards (B4.4 deepen pass).
+/// Returns an invalid manifold when deepen preflight rejects the pair.
+ContactManifold detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Finalize one detected manifold when finalize preflight allows (B4.4 deepen pass).
+bool finalize_contact_manifold_if_needed(ContactManifold& manifold);
+
+/// Job-safe narrowphase with deepen pair preflight and finalize guards (B4.4 deepen pass).
+void runNarrowphaseDeepenIntoBuffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer);
+
 } // namespace fuse::physics::narrowphase
