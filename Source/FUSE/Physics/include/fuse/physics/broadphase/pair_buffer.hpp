@@ -1982,6 +1982,9 @@ struct PairBufferInvalidateSlotPreflight {
 
 
 
+
+
+
 };
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
@@ -2009,6 +2012,8 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
 /// Non-mutating invalidate-slot predicate — mirrors `preflightPairBufferInvalidateSlot` (B4.2 deepen follow-up pass).
 
 /// Predict whether invalidateSlot would bail before mutation (B4.2 deepen follow-up pass).
+
+
 
 
 

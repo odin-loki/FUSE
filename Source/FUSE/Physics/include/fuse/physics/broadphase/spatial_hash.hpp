@@ -1076,6 +1076,20 @@ FUSE_PHYSICS_INLINE bool wouldSkipShapeCellOccupancy(
 
 /// Preflight skip check for cell occupancy iteration — mirrors `canSkipCellOccupancyIteration` (B4.2 deepen pass).
 
+}
+
+FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
+    u32 maxCells,
+    CellOccupancyRejectReason* reason = nullptr) {
+    const CellOccupancyPreflight preflight = preflightCellOccupancy(range, maxCells);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    return !preflight.canIterate();
+
+    const CellRange3& range,
+
+
+
 
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
@@ -5868,6 +5882,7 @@ bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs,
 /// Early-out when merge-into-buffer preflight would skip (B4.2 deepen pass).
 
 /// Preflight skip check for merge-into-buffer — mirrors `canSkipMergePairsIntoBuffer` (B4.2 deepen pass).
+
 
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
