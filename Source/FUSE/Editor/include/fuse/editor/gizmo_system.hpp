@@ -1000,3 +1000,6 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, 
 
 // --- deepen additive from deepen-b6-gizmo-end-drag-preflight-709c ---
 EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings);
+
+// --- deepen additive from deepen-b6-gizmo-end-drag-preflight-1fb5 ---
+EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis = GizmoAxis::None);

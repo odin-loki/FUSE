@@ -3136,3 +3136,12 @@ void testSnapPreflightNoChange() {
     expectTrue(!validSnapPreflight.invalidSnapStep,
     expectTrue(gizmo.tryEndDrag(result), "tryEndDrag succeeds on active drag");
     expectTrue(!gizmo.tryEndDrag(result), "tryEndDrag rejects when not dragging");
+
+// --- deepen additive from deepen-b6-gizmo-end-drag-preflight-1fb5 ---
+    expectTrue(!noAxisPreflight.canEnd(), "end preflight rejects drag without axis");
+    const fuse::editor::EndDragPreflight validPreflight =
+        fuse::editor::preflightEndDrag(true, fuse::editor::GizmoAxis::X);
+    expectTrue(validPreflight.canEnd(), "end preflight accepts active drag with axis");
+    expectTrue(!validPreflight.notDragging, "valid end preflight clears notDragging");
+    expectTrue(!validPreflight.invalidActiveAxis, "valid end preflight clears invalidActiveAxis");
+    expectTrue(!inactive.changed, "endDrag no-op when inactive via tryEndDrag guard");
