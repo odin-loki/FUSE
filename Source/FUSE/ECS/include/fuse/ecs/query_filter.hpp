@@ -59,6 +59,7 @@ struct QueryFilterPreflight {
     bool has_conflict = false;
     bool empty_table = true;
     /// True when iteration should be skipped (conflict, empty table, or zero matching entity rows).
+    /// True when iteration can be skipped (conflict, empty table, or zero matching entity rows).
     bool skipped = true;
     u32 matching_archetypes = 0;
     u32 matching_entities = 0;
@@ -102,6 +103,8 @@ struct QueryFilterPreflight {
 
 /// Convenience guard — `preflight_query_filter(archetypes, filter).should_skip()`.
 [[nodiscard]] bool should_skip_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
+/// True when query iteration should be skipped (conflict, empty table, or zero matching rows).
+
 
 /// True when `archetype` contains every `with` type and none of the `without` types.
 [[nodiscard]] bool archetype_matches(const Archetype& archetype, const QueryFilter& filter);
