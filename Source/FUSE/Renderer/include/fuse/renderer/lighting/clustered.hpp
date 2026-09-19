@@ -87,6 +87,7 @@ struct ClusterSliceLayout {
 
 enum class ClusterScreenMappingRejectReason : u8;
 /// Why screen-depth → cluster mapping was rejected (B5.4 deepen follow-up).
+/// Why screen-depth → cluster mapping was rejected (B5.4 deepen).
 enum class ClusterScreenMappingRejectReason : u8 {
     None = 0,
     EmptyGrid,
@@ -96,6 +97,16 @@ enum class ClusterScreenMappingRejectReason : u8 {
 
 /// Human-readable label for cluster screen-mapping reject reasons (logging / tests).
 const char* clusterScreenMappingRejectReasonLabel(ClusterScreenMappingRejectReason reason);
+
+/// Why light-grid rebuild preflight rejected the request (B5.4 deepen).
+enum class GridRebuildRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    ClusterCountMismatch,
+};
+
+/// Human-readable label for rebuild reject reasons (logging / tests).
+const char* gridRebuildRejectReasonLabel(GridRebuildRejectReason reason);
 
 /// Tile/cluster indexing helpers — mirrors froxel layout (B5.4 CPU path).
 struct ClusterGridLayout {
@@ -141,6 +152,8 @@ struct ClusterGridLayout {
                                                 const ClusterDesc& desc,
                                                 const ClusterCameraDesc& camera,
                                                 u32& outClusterIndex);
+                                              u32& outClusterIndex,
+                                              ClusterScreenMappingRejectReason& outReason);
 };
 
 /// Why a light-grid rebuild preflight rejected the request (B5.4 deepen).
@@ -198,6 +211,7 @@ struct ClusterLightGridLayout {
     /// Diagnose why rebuild preflight would reject; vacuously succeeds when rebuild is allowed.
     /// Early-out when a light-grid rebuild would operate on an empty cluster desc.
     static bool shouldSkipLightGridRebuild(const ClusterDesc& desc);
+    /// Early-out when offset rebuild should be skipped for an empty desc with non-zero cluster count.
     static u32 rebuildLightGrid(ClusterGridSoA& grid,
                                 const std::vector<std::vector<u32>>& perClusterLights,
                                 u32 maxLightsPerCluster = 0u);
@@ -223,6 +237,9 @@ struct ClusterLightGridLayout {
                                     u32& outLightsDropped,
                                     GridRebuildRejectReason& outReason);
     /// Rebuild for `desc` with preflight guard; returns false when rebuild preflight rejects the request.
+    /// Rebuild with guard preflight; returns false when `canRebuildLightGrid` would reject.
+                                    u32& outDropped,
+    /// Desc-scoped rebuild with guard preflight.
     static bool validateContiguousOffsets(const ClusterGridSoA& grid, u32 clusterCount);
     /// Validate contiguous offsets against the clamped cluster count derived from `desc`.
     static bool validateContiguousOffsetsForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
@@ -391,6 +408,8 @@ bool tryCanLookupAtCoord(const ClusterGridSoA& grid,
 /// Preflight guard before tile/slice coord lookup; false on empty grid or desc mismatch.
 bool canLookupAtCoord(const ClusterGridSoA& grid,
                       u32 sliceZ);
+/// Preflight guard before coord-based cluster lookup; false on empty grid or desc mismatch.
+bool canLookupAtCoord(const ClusterGridSoA& grid, const ClusterDesc& desc);
                          ClusterLookupRejectReason& outReason);
 /// Per-cluster light count at a clamped flat index; returns 0 when grid/desc mismatch or empty.
 u32 clusterLightCountAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 index);
@@ -607,6 +626,9 @@ bool hasAssignedLightsForDesc(const ClusterGridSoA& grid, const ClusterDesc& des
 /// Empty cluster count using the clamped cluster count derived from `desc`; returns 0 on mismatch.
 /// True when at least one cluster holds assigned lights for `desc`; false on mismatch or empty desc.
 /// True when at least one cluster holds assigned lights for a matching desc; false on mismatch.
+/// True when at least one cluster holds assigned lights for `desc`; false on desc mismatch.
+/// Count clusters with at least one assigned light using the clamped cluster count from `desc`.
+/// Count clusters with zero assigned lights using the clamped cluster count from `desc`.
 } // namespace cluster_util
 
 /// Renderer-side point light input (decoupled from ECS).
