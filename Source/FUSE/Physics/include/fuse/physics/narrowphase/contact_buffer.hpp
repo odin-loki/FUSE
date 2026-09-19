@@ -165,6 +165,7 @@ enum class ContactBufferWriteRejectReason : u8 {
 /// Why contact-buffer write-slot would reject (B4.6 deepen pass).
 enum class ContactBufferWriteSlotRejectReason : u8 {
 /// Why contact-buffer write would reject (B4.6 deepen follow-up pass).
+/// Why contact-buffer write would reject (B4.5 deepen follow-up pass).
     OutOfRangeSlot,
     InvalidManifold,
     SelfPair,
@@ -195,6 +196,9 @@ ContactBufferWriteSlotRejectReason contact_buffer_write_slot_reject_reason(
 /// Human-readable label for contact-buffer write reject reasons (B4.6 deepen follow-up pass).
 
 /// Diagnose why write would reject; vacuously succeeds when write may proceed (B4.6 deepen follow-up pass).
+/// Human-readable label for contact-buffer write reject reasons (B4.5 deepen follow-up pass).
+
+/// Diagnose why write would reject; vacuously succeeds when write may proceed (B4.5 deepen follow-up pass).
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold);
@@ -204,6 +208,7 @@ bool contact_buffer_write_rejects_for_reason(
 /// Returns true when `contactBufferWriteRejectReason` matches `expected` (B4.6 deepen pass).
 bool contactBufferWriteRejectsForReason(
 /// Returns true when `contact_buffer_write_reject_reason` matches `expected` (B4.6 deepen follow-up pass).
+/// Returns true when `contact_buffer_write_reject_reason` matches `expected` (B4.5 deepen follow-up pass).
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold,
@@ -226,6 +231,7 @@ bool contact_buffer_write_slot_rejects_for_reason(
 struct ContactBufferWriteSlotPreflight {
     ContactBufferWriteSlotRejectReason reason = ContactBufferWriteSlotRejectReason::None;
 /// Read-only write diagnostics — no mutation (B4.6 deepen follow-up pass).
+/// Const preflight for contact-buffer write dispatch (B4.5 deepen follow-up pass).
     bool outOfRangeSlot = false;
     bool invalidManifold = false;
     bool selfPair = false;
@@ -970,6 +976,39 @@ bool write_contact_buffer_slot_with_preflight(
 /// Returns true when `contact_buffer_clamp_reject_reason` matches `expected` (B4.6 deepen follow-up pass).
 
 /// Read-only max-capacity clamp diagnostics — no mutation (B4.6 deepen follow-up pass).
+
+/// Populate write preflight without mutating the buffer (B4.5 deepen follow-up pass).
+
+/// Returns true when contact-buffer write should be skipped (B4.5 deepen follow-up pass).
+
+/// Write only when preflight passes; no-op otherwise (B4.5 deepen follow-up pass).
+
+/// Why contact-buffer compaction would early-out (B4.5 deepen follow-up pass).
+
+/// Human-readable label for contact-buffer compaction reject reasons (B4.5 deepen follow-up pass).
+
+/// Diagnose why compaction would skip; vacuously succeeds when compaction may proceed (B4.5 deepen follow-up pass).
+
+/// Returns true when `contact_buffer_compaction_reject_reason` matches `expected` (B4.5 deepen follow-up pass).
+
+/// Const preflight for contact-buffer compaction dispatch (B4.5 deepen follow-up pass).
+
+
+/// Populate compaction preflight without mutating the buffer (B4.5 deepen follow-up pass).
+
+/// Non-mutating compaction skip predicate — inverse of `needs_compaction` (B4.5 deepen follow-up pass).
+
+/// Non-mutating compaction predicate — mirrors `preflight_contact_buffer_compaction` (B4.5 deepen follow-up pass).
+
+/// Why contact-buffer max-capacity clamp would early-out (B4.5 deepen follow-up pass).
+
+/// Human-readable label for contact-buffer clamp reject reasons (B4.5 deepen follow-up pass).
+
+/// Diagnose why clamp would skip; vacuously succeeds when clamp may proceed (B4.5 deepen follow-up pass).
+
+/// Returns true when `contact_buffer_clamp_reject_reason` matches `expected` (B4.5 deepen follow-up pass).
+
+/// Const preflight for contact-buffer clamp dispatch (B4.5 deepen follow-up pass).
 struct ContactBufferClampPreflight {
     ContactBufferClampRejectReason reason = ContactBufferClampRejectReason::None;
     bool emptyBuffer = false;
@@ -1094,6 +1133,26 @@ bool write_contact_buffer_slot_with_preflight(
 /// Const preflight for contact-buffer compact-and-clamp (B4.6 deepen pass).
 
 
+};
+
+/// Populate clamp preflight without mutating the buffer (B4.5 deepen follow-up pass).
+
+/// Non-mutating clamp skip predicate — inverse of `needs_clamp` (B4.5 deepen follow-up pass).
+
+/// Non-mutating clamp predicate — mirrors `preflight_contact_buffer_clamp` (B4.5 deepen follow-up pass).
+
+/// Why contact-buffer compact-and-clamp would early-out (B4.5 deepen follow-up pass).
+    EmptyBuffer,
+
+/// Human-readable label for compact-and-clamp reject reasons (B4.5 deepen follow-up pass).
+
+/// Diagnose why compact-and-clamp would skip; vacuously succeeds when work may proceed (B4.5 deepen follow-up pass).
+
+/// Returns true when `contact_buffer_compact_and_clamp_reject_reason` matches `expected` (B4.5 deepen follow-up pass).
+    const ContactBufferSoA& buffer,
+
+/// Const preflight for contact-buffer compact-and-clamp dispatch (B4.5 deepen follow-up pass).
+    bool emptyBuffer = false;
 
     bool needs_compact_and_clamp() const {
         return reason == ContactBufferCompactAndClampRejectReason::None;
@@ -1280,5 +1339,15 @@ void build_contact_buffer_friction_tangents_with_preflight(
 /// Compact only when preflight allows; returns active count (B4.6 deepen follow-up pass).
 
 /// Compact and clamp only when preflight allows; returns active count (B4.6 deepen follow-up pass).
+
+/// Populate compact-and-clamp preflight without mutating the buffer (B4.5 deepen follow-up pass).
+ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp(
+    const ContactBufferSoA& buffer);
+
+/// Non-mutating compact-and-clamp skip predicate — inverse of `needs_compact_and_clamp` (B4.5 deepen follow-up pass).
+bool can_skip_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer);
+
+/// Non-mutating compact-and-clamp predicate — mirrors `preflight_contact_buffer_compact_and_clamp` (B4.5 deepen follow-up pass).
+bool should_run_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer);
 
 } // namespace fuse::physics::narrowphase

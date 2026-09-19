@@ -117,9 +117,9 @@ bool tangentBasisIsBuilt(vec3 normal, vec3 tangent1, vec3 tangent2) {
 
     for (u32 slot = 0; slot < scanCount; ++slot) {
 
-}
 
 void writeSlotFields(ContactBufferSoA& buffer, u32 slot, const ContactManifold& manifold) {
+void writeContactBufferSlot(ContactBufferSoA& buffer, u32 slot, const ContactManifold& manifold) {
     buffer.contactPoints[slot] = manifold.contactPoint;
     buffer.contactNormals[slot] = manifold.contactNormal;
     buffer.penetrationDepths[slot] = manifold.penetrationDepth;
@@ -149,6 +149,20 @@ void writeSlotFields(ContactBufferSoA& buffer, u32 slot, const ContactManifold& 
 
 bool ContactBufferSoA::canAcceptWrites(u32 additionalCount) const {
 
+        }
+
+} // namespace
+
+bool ContactBufferSoA::canSkipCompaction() const {
+    if (canSkipSoAIteration()) {
+        return true;
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    if (scanCount == 0u) {
+
+    for (u32 slot = 0u; slot < scanCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return false;
 
 u32 ContactBufferSoA::countValidSlots() const {
     if (canSkipSoAIteration()) {
@@ -583,6 +597,9 @@ bool ContactBufferSoA::canSkipCompactAndClamp() const {
 
     return slot < validFlags.size() && validFlags[slot] != 0u;
 
+    if (slot >= validFlags.size()) {
+
+
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
 }
@@ -873,25 +890,20 @@ bool ContactBufferSoA::canSkipCompactAndClamp() const {
         return;
     }
     writeSlotFields(*this, slot, manifold);
-}
 
 bool ContactBufferSoA::canWriteSlot(u32 slot, u32 pairSlotCount, const ContactManifold& manifold) {
     return slot < pairSlotCount && manifold.valid && manifold.bodyA != manifold.bodyB;
-}
 
 bool ContactBufferSoA::writeSlotIfValid(u32 slot, const ContactManifold& manifold) {
-    if (!canWriteSlot(slot, pairSlotCount, manifold)) {
         return false;
     writeSlot(slot, manifold);
     return true;
 void ContactBufferSoA::invalidateSlot(u32 slot) {
-    if (slot >= validFlags.size()) {
-        return;
     validFlags[slot] = 0u;
 bool ContactBufferSoA::writeSlotWithPreflight(u32 slot, const ContactManifold& manifold) {
     if (!preflight_contact_buffer_write(*this, slot, manifold).can_write()) {
-    if (pairSlotCount > 0u && slot >= pairSlotCount) {
     pointCounts[slot] = 0u;
+    writeContactBufferSlot(*this, slot, manifold);
 }
 
 void ContactBufferSoA::applyWarmStartStub(u32 slot, ContactManifold& manifold) const {
@@ -1127,6 +1139,8 @@ bool ContactBufferSoA::canSkipClamp() const {
 
 
 
+        activeCount = countValidSlots();
+
     u32 writeIndex = 0;
     for (u32 readIndex = 0; readIndex < pairSlotCount; ++readIndex) {
 
@@ -1320,6 +1334,8 @@ u32 ContactBufferSoA::compactAndClamp() {
     if (can_skip_contact_buffer_compact_and_clamp(*this)) {
     if (canSkipCompactAndClamp()) {
         return 0u;
+        return activeCount;
+    }
 
     compact();
     if (isEmpty()) {
@@ -1449,6 +1465,7 @@ ContactBufferWriteRejectReason contactBufferWriteRejectReason(
 
 
 
+
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold) {
@@ -1481,6 +1498,8 @@ ContactBufferWritePreflight preflightContactBufferWrite(
     u32 slot,
 
     const ContactManifold& manifold) {
+
+
 
 
 
@@ -1588,6 +1607,13 @@ void write_contact_buffer_slot_with_preflight(
 
 
 
+
+
+
+
+
+    if (!preflight_contact_buffer_write(buffer, slot, manifold).can_write()) {
+    writeContactBufferSlot(buffer, slot, manifold);
 
 
 
@@ -1976,6 +2002,18 @@ ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
     ContactBufferCompactAndClampPreflight preflight{};
     preflight.reason = contact_buffer_compact_and_clamp_reject_reason(buffer);
     preflight.emptyBuffer = preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer;
@@ -2187,6 +2225,8 @@ void build_contact_buffer_friction_tangents_with_preflight(
     if (preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork) {
 
     buffer.compact();
+
+
 }
 
 } // namespace fuse::physics::narrowphase
