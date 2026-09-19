@@ -2913,6 +2913,20 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const 
 bool pairBufferInvalidateSlotRejectsForReason(
     PairBufferInvalidateSlotRejectReason expected) {
     return pairBufferInvalidateSlotRejectReason(buffer, slot) == expected;
+bool wouldSkipPairBufferWriteSlot(
+    u32 idxA,
+    u32 idxB,
+    PairBufferWriteSlotRejectReason* reason) {
+    const PairBufferWriteSlotRejectReason rejectReason = pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB);
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    return rejectReason != PairBufferWriteSlotRejectReason::None;
+
+
+    const u32 slotBound = buffer.pairSlotCount > 0u ? buffer.pairSlotCount
+                                                    : static_cast<u32>(buffer.validFlags.size());
+    if (slotBound == 0u || slot >= slotBound) {
+
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
     PairBufferInvalidateSlotPreflight preflight{};
@@ -2934,6 +2948,22 @@ bool wouldSkipPairBufferInvalidateSlot(
 }
 
 
+
+
+
+    const PairBufferSoA& buffer,
+    u32 slot,
+    const PairBufferInvalidateSlotRejectReason rejectReason = pairBufferInvalidateSlotRejectReason(buffer, slot);
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    return rejectReason != PairBufferInvalidateSlotRejectReason::None;
+
+bool wouldSkipPairBufferPush(
+    u32 idxA,
+    u32 idxB,
+    PairBufferPushRejectReason* reason) {
+    const PairBufferPushRejectReason rejectReason = pairBufferPushRejectReason(buffer, idxA, idxB);
+    return rejectReason != PairBufferPushRejectReason::None;
 
 const char* pairBufferToVectorRejectReasonName(PairBufferToVectorRejectReason reason) {
     case PairBufferToVectorRejectReason::None:
