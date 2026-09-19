@@ -22,33 +22,23 @@ ContactIslandGraphBuildRejectReason diagnoseBuildRejectReason(
     for (const narrowphase::ContactManifold& contact : contacts) {
         if (!contact.valid) {
             continue;
-        }
         if (contactBodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
             ++inRangeContactCount;
         } else {
             outOfRangeContact = true;
-        }
-    }
 
     for (const DistanceConstraint& constraint : distanceConstraints) {
         if (contactBodiesInRange(constraint.bodyA, constraint.bodyB, bodyCount)) {
             ++inRangeDistanceCount;
-        } else {
             outOfRangeDistance = true;
-        }
-    }
 
     if (bodyCount == 0u && inRangeContactCount == 0u && inRangeDistanceCount == 0u) {
         return ContactIslandGraphBuildRejectReason::EmptyInput;
-    }
     if (outOfRangeContact) {
         return ContactIslandGraphBuildRejectReason::OutOfRangeContactBodies;
-    }
     if (outOfRangeDistance) {
         return ContactIslandGraphBuildRejectReason::OutOfRangeDistanceBodies;
-    }
     return ContactIslandGraphBuildRejectReason::None;
-}
 
 } // namespace
 
@@ -64,41 +54,44 @@ const char* contactIslandGraphBuildRejectReasonName(ContactIslandGraphBuildRejec
         return "OutOfRangeDistanceBodies";
     default:
         return "Unknown";
-    }
-}
 
 ContactIslandGraphBuildRejectReason contactIslandGraphBuildRejectReason(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints) {
     return diagnoseBuildRejectReason(bodyCount, contacts, distanceConstraints);
-}
 
 bool contactIslandGraphBuildRejectsForReason(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints,
     ContactIslandGraphBuildRejectReason expected) {
     return contactIslandGraphBuildRejectReason(bodyCount, contacts, distanceConstraints) == expected;
-}
 
 ContactIslandGraphBuildPreflight preflightContactIslandGraphBuild(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints) {
     ContactIslandGraphBuildPreflight preflight{};
     preflight.bodyCount = bodyCount;
     preflight.contactSlotCount = static_cast<u32>(contacts.size());
     preflight.distanceSlotCount = static_cast<u32>(distanceConstraints.size());
 
-    for (const narrowphase::ContactManifold& contact : contacts) {
         if (contact.valid) {
             ++preflight.validContactCount;
-        }
         if (contact.valid && contactBodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
             ++preflight.inRangeContactCount;
         } else if (contact.valid) {
             ++preflight.outOfRangeContactBodyCount;
+const char* islandBuildRejectReasonName(IslandBuildRejectReason reason) {
+    case IslandBuildRejectReason::None:
+    case IslandBuildRejectReason::SelfPair:
+        return "SelfPair";
+    case IslandBuildRejectReason::OutOfRangeBody:
+        return "OutOfRangeBody";
+    case IslandBuildRejectReason::InvalidContact:
+        return "InvalidContact";
+
+IslandBuildPreflight preflight_island_build(u32 bodyCount,
+    IslandBuildPreflight preflight{};
+
+        const IslandBuildRejectReason reason = contactBuildRejectReason(contact, bodyCount);
+            break;
+            ++preflight.invalidContactCount;
+            ++preflight.selfPairContactCount;
+            ++preflight.oobContactCount;
         }
     }
 
@@ -108,25 +101,49 @@ ContactIslandGraphBuildPreflight preflightContactIslandGraphBuild(
         } else {
             ++preflight.outOfRangeDistanceBodyCount;
         }
-    }
 
     preflight.reason = diagnoseBuildRejectReason(bodyCount, contacts, distanceConstraints);
     preflight.skipped = preflight.reason == ContactIslandGraphBuildRejectReason::EmptyInput;
     return preflight;
-}
 
 bool canSkipContactIslandGraphBuild(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints) {
     return !preflightContactIslandGraphBuild(bodyCount, contacts, distanceConstraints).can_build();
-}
 
 bool shouldRunContactIslandGraphBuild(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints) {
     return preflightContactIslandGraphBuild(bodyCount, contacts, distanceConstraints).can_build();
+        const IslandBuildRejectReason reason = distanceBuildRejectReason(constraint, bodyCount);
+        switch (reason) {
+        case IslandBuildRejectReason::None:
+            ++preflight.validDistanceCount;
+            break;
+        case IslandBuildRejectReason::SelfPair:
+            ++preflight.selfPairDistanceCount;
+        case IslandBuildRejectReason::OutOfRangeBody:
+            ++preflight.oobDistanceCount;
+        case IslandBuildRejectReason::InvalidContact:
+
+    preflight.skipped = bodyCount == 0u && contacts.empty() && distanceConstraints.empty();
+
+bool should_skip_island_build(u32 bodyCount,
+    return preflight_island_build(bodyCount, contacts, distanceConstraints).skipped;
+
+IslandBuildValidation validate_island_indices(const ContactIslandGraph& graph,
+                                              u32 contactCount,
+                                              u32 distanceCount) {
+    IslandBuildValidation validation{};
+    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
+        const ContactIslandGraph::Island& island = graph.island(islandIndex);
+        for (u32 contactIndex : island.contactIndices) {
+            if (contactIndex >= contactCount) {
+                ++validation.oobContactIndexCount;
+                validation.valid = false;
+        for (u32 distanceIndex : island.distanceIndices) {
+            if (distanceIndex >= distanceCount) {
+                ++validation.oobDistanceIndexCount;
+    return validation;
 }
 
 void ContactIslandGraph::clear() {

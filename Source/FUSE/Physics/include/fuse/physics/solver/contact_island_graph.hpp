@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/physics/config.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/solver/distance_constraint.hpp>
 #include <fuse/types.hpp>
@@ -27,8 +28,6 @@ ContactIslandGraphBuildRejectReason contactIslandGraphBuildRejectReason(
 
 /// Returns true when `contactIslandGraphBuildRejectReason` matches `expected` (B4.4 deepen follow-up pass).
 bool contactIslandGraphBuildRejectsForReason(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints,
     ContactIslandGraphBuildRejectReason expected);
 
@@ -50,24 +49,74 @@ struct ContactIslandGraphBuildPreflight {
     }
 
     bool can_build() const { return reason == ContactIslandGraphBuildRejectReason::None; }
-};
 
 ContactIslandGraphBuildPreflight preflightContactIslandGraphBuild(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Non-mutating build skip predicate — inverse of `can_build` (B4.4 deepen follow-up pass).
 bool canSkipContactIslandGraphBuild(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Non-mutating build predicate — mirrors `preflightContactIslandGraphBuild` (B4.4 deepen follow-up pass).
 bool shouldRunContactIslandGraphBuild(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints);
+/// Diagnostic reason an island-build input is rejected (B4.4 deepen).
+enum class IslandBuildRejectReason : u8 {
+    SelfPair,
+    OutOfRangeBody,
+    InvalidContact,
+
+/// Human-readable label for diagnostics and test assertions (B4.4 deepen).
+const char* islandBuildRejectReasonName(IslandBuildRejectReason reason);
+
+/// True when `bodyIndex` is in range for `bodyCount`.
+FUSE_PHYSICS_INLINE bool is_valid_body_index(u32 bodyIndex, u32 bodyCount) {
+    return bodyCount > 0u && bodyIndex < bodyCount;
+
+/// True when both body indices are in range and distinct.
+FUSE_PHYSICS_INLINE bool is_valid_body_pair(u32 bodyA, u32 bodyB, u32 bodyCount) {
+    if (bodyA == bodyB) {
+        return false;
+    if (bodyCount == 0u) {
+    return bodyA < bodyCount && bodyB < bodyCount;
+
+/// Returns the first reject reason for a contact manifold input, or `None` when valid.
+FUSE_PHYSICS_INLINE IslandBuildRejectReason contactBuildRejectReason(
+    const narrowphase::ContactManifold& contact,
+    u32 bodyCount) {
+    if (!contact.valid) {
+        return IslandBuildRejectReason::InvalidContact;
+    if (contact.bodyA == contact.bodyB) {
+        return IslandBuildRejectReason::SelfPair;
+    if (bodyCount == 0u || contact.bodyA >= bodyCount || contact.bodyB >= bodyCount) {
+        return IslandBuildRejectReason::OutOfRangeBody;
+    return IslandBuildRejectReason::None;
+
+/// Returns the first reject reason for a distance constraint input, or `None` when valid.
+FUSE_PHYSICS_INLINE IslandBuildRejectReason distanceBuildRejectReason(
+    const DistanceConstraint& constraint,
+    if (constraint.bodyA == constraint.bodyB) {
+    if (bodyCount == 0u || constraint.bodyA >= bodyCount || constraint.bodyB >= bodyCount) {
+
+/// Preflight diagnostics for island graph construction (B4.4 deepen).
+struct IslandBuildPreflight {
+    u32 invalidContactCount = 0;
+    u32 oobContactCount = 0;
+    u32 selfPairContactCount = 0;
+    u32 validDistanceCount = 0;
+    u32 oobDistanceCount = 0;
+    u32 selfPairDistanceCount = 0;
+
+    bool can_build() const { return !skipped; }
+
+/// Post-build validation of island constraint index references (B4.4 deepen).
+struct IslandBuildValidation {
+    u32 oobContactIndexCount = 0;
+    u32 oobDistanceIndexCount = 0;
+    bool valid = true;
+
+/// Preflight island graph inputs before union-find build.
+IslandBuildPreflight preflight_island_build(u32 bodyCount,
+
+/// Early-out guard when island build has no bodies and no constraint inputs.
+bool should_skip_island_build(u32 bodyCount,
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -111,5 +160,10 @@ private:
     std::vector<u32> parent_;
     std::vector<Island> islands_;
 };
+
+/// Validate island constraint index references against contact/distance slot counts.
+IslandBuildValidation validate_island_indices(const ContactIslandGraph& graph,
+                                              u32 contactCount,
+                                              u32 distanceCount);
 
 } // namespace fuse::physics
