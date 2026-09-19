@@ -2308,6 +2308,9 @@ ManifoldShallowPrunePreflight preflight_manifold_shallow_prune(
 bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
     if (normalLength <= 1e-8f) {
 
+    if (manifold.empty() || !manifold.hasValidNormal()) {
+
+    return manifold.hasValidNormal();
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

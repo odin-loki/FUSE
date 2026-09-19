@@ -1283,6 +1283,8 @@ bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEps
 
 /// Generate only when finalize preflight passes; no-op otherwise (B4.5 deepen pass).
 
+/// Normalize the contact normal when non-unit; returns false when normal is invalid (B4.3 deepen pass).
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

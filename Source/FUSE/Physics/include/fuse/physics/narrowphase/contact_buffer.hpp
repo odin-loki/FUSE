@@ -87,6 +87,7 @@ struct ContactBufferSoA {
     /// True when `maxCapacity` is set and no additional contacts may be stored after compaction.
     /// True when `maxCapacity` is set and no additional contacts may be pushed.
     /// Inverse of `canApplyMaxCapacityClamp` (B4.5 deepen pass).
+    /// Inverse of `canApplyMaxCapacityClamp` (B4.3 deepen pass).
 
     void reserve(u32 capacity);
     void setMaxCapacity(u32 capacity);
@@ -175,6 +176,7 @@ enum class ContactBufferWriteSlotRejectReason : u8 {
 /// Why contact-buffer write would reject (B4.5 deepen follow-up pass).
     OutOfRangeSlot,
 /// Why contact-buffer write would reject (B4.5 deepen pass).
+/// Why contact-buffer write would reject (B4.3 deepen pass).
     InvalidManifold,
     SelfPair,
 };
@@ -217,6 +219,7 @@ ContactBufferWriteSlotRejectReason contact_buffer_write_slot_reject_reason(
 
 /// Human-readable label for contact-buffer write reject reasons (B4.5 deepen pass).
 
+
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold);
@@ -229,6 +232,7 @@ bool contactBufferWriteRejectsForReason(
 /// Returns true when `contact_buffer_write_reject_reason` matches `expected` (B4.5 deepen follow-up pass).
 /// Returns true when `contactBufferWriteRejectReason` matches `expected` (B4.3 deepen follow-up pass).
 /// Returns true when `contactBufferWriteRejectReason` matches `expected` (B4.5 deepen pass).
+/// Returns true when `contactBufferWriteRejectReason` matches `expected` (B4.3 deepen pass).
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold,
@@ -255,6 +259,7 @@ struct ContactBufferWriteSlotPreflight {
 /// Const preflight for contact-buffer slot write (B4.6 deepen follow-up pass).
     bool outOfRangeSlot = false;
 /// Read-only write diagnostics — no mutation (B4.5 deepen pass).
+/// Read-only write diagnostics — no mutation (B4.3 deepen pass).
     bool invalidManifold = false;
     bool selfPair = false;
 
@@ -512,6 +517,17 @@ bool can_skip_build_friction_tangent_bases(
 
 
 
+
+/// Write only when preflight allows; returns false when skipped (B4.3 deepen pass).
+bool writeContactBufferSlotWithPreflight(
+
+/// Why contact-buffer compaction would early-out (B4.3 deepen pass).
+
+
+
+
+
+
 ContactBufferCompactionPreflight preflightContactBufferCompaction(const ContactBufferSoA& buffer);
 
 bool canSkipContactBufferCompaction(const ContactBufferSoA& buffer);
@@ -734,7 +750,6 @@ bool shouldRunContactBufferClamp(const ContactBufferSoA& buffer);
 
 /// Non-mutating clamp predicate — mirrors `preflightContactBufferClamp` (B4.4 deepen guard pass).
 
-/// Human-readable label for contact-buffer clamp reject reasons (B4.5 deepen pass).
 
 /// Diagnose why clamp would skip; vacuously succeeds when clamp may proceed (B4.5 deepen pass).
 
@@ -1171,6 +1186,10 @@ bool write_contact_buffer_slot_with_preflight(
 
 
 
+/// Why contact-buffer max-capacity clamp would early-out (B4.3 deepen pass).
+
+
+
     ContactBufferClampRejectReason expected);
 
 struct ContactBufferClampPreflight {
@@ -1235,6 +1254,13 @@ bool contactBufferCompactAndClampRejectsForReason(
 
 
 
+
+
+/// Why contact-buffer compact-and-clamp would early-out (B4.3 deepen pass).
+
+
+
+    const ContactBufferSoA& buffer,
     ContactBufferCompactAndClampRejectReason expected);
 
 struct ContactBufferCompactAndClampPreflight {
@@ -1244,6 +1270,8 @@ struct ContactBufferCompactAndClampPreflight {
 /// Read-only compact-and-clamp diagnostics — no mutation (B4.6 deepen pass).
 
     bool needsCompactAndClamp() const { return reason == ContactBufferCompactAndClampRejectReason::None; }
+    bool emptyBuffer = false;
+    bool noWork = false;
 
     bool needsCompactAndClamp() const {
         return reason == ContactBufferCompactAndClampRejectReason::None;
@@ -1595,5 +1623,9 @@ bool shouldRunContactBufferFrictionRebuild(const ContactBufferSoA& buffer, f32 e
 /// Non-mutating compact-and-clamp skip predicate — inverse of `needsCompactAndClamp` (B4.5 deepen pass).
 
 /// Non-mutating compact-and-clamp predicate — mirrors `preflightContactBufferCompactAndClamp` (B4.5 deepen pass).
+
+    const ContactBufferSoA& buffer);
+
+
 
 } // namespace fuse::physics::narrowphase
