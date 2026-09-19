@@ -2076,3 +2076,14 @@ void testCookerUpstreamEstimateAndWouldGuards() {
 
 // --- deepen additive from b79-cooker-hash-deepen-3135 ---
 void testCookerReconcileWouldAndProbeGuards() {
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-6ecd ---
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for should_skip probes ok");
+    expectTrue(cooker.should_skip_upstream_invalidation(manifest, source_a) == false,
+    expectTrue(cooker.should_skip_upstream_invalidation(manifest, ""),
+    expectTrue(cooker.should_skip_stale_dependency_invalidation(manifest),
+    expectTrue(cooker.should_skip_reconcile_invalidation(manifest),
+    expectTrue(fresh.should_skip(), "fresh reconcile estimate should_skip is true");
+    expectTrue(!cooker.should_skip_stale_dependency_invalidation(manifest),
+    expectTrue(!cooker.should_skip_reconcile_invalidation(manifest),
+    expectTrue(!stale.should_skip(), "stale reconcile estimate should_skip is false");

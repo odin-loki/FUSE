@@ -907,3 +907,6 @@ const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason) {
         preflight.reason = CookCacheEntryRejectReason::EmptySourcePath;
         preflight.reason = CookCacheEntryRejectReason::EmptyOutputPath;
     preflight.reason = CookCacheEntryRejectReason::None;
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-6ecd ---
+bool CookCache::should_skip_prune_all() const {

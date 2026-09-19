@@ -123,3 +123,8 @@ private:
 
 // --- deepen additive from deepen-b79-cooker-hash-b8de ---
     [[nodiscard]] bool would_reconcile() const { return total() != 0; }
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-6ecd ---
+    [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
+    [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
+    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;

@@ -256,3 +256,6 @@ struct CookCacheEntryPreflight {
 enum class CookCacheEntryRejectReason : u8 {
     CookCacheEntryRejectReason reason = CookCacheEntryRejectReason::None;
 const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason);
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-6ecd ---
+    [[nodiscard]] bool should_skip_prune_all() const;

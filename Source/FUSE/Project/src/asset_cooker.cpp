@@ -396,3 +396,9 @@ bool AssetCooker::would_invalidate_stale_dependencies(const CookManifest& manife
 
 // --- deepen additive from deepen-b79-cooker-hash-would-probes-69b7 ---
             if (!m_cache.would_invalidate_source(path) && !m_cache.would_invalidate_output(path)) {
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-6ecd ---
+bool AssetCooker::should_skip_upstream_invalidation(const CookManifest& manifest,
+bool AssetCooker::should_skip_stale_dependency_invalidation(const CookManifest& manifest) const {
+bool AssetCooker::should_skip_reconcile_invalidation(const CookManifest& manifest) const {
+    return estimate_reconcile_invalidation(manifest).should_skip();

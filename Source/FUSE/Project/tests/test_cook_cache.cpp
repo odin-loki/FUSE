@@ -1423,3 +1423,16 @@ void testCookHashPreflightUnknownDependencyAndShaderGuards() {
     expectTrue(!cache.would_invalidate_all(), "would_invalidate_all on empty cache");
     expectTrue(cooker.cache().would_invalidate_all(), "would_invalidate_all true when cache populated");
     testCookHashPreflightUnknownDependencyAndShaderGuards();
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-6ecd ---
+    expectTrue(!cooker.cache().should_skip_prune_all(), "should_skip_prune_all false when stale");
+    expectTrue(cooker.cache().should_skip_prune_all() == !cooker.cache().would_prune_all(),
+               "should_skip_prune_all inverts would_prune_all");
+    const fuse::project::CookHashPreflight zero_hash = cache.preflight_store_entry(invalid);
+    expectTrue(zero_hash.should_skip(), "zero content hash fails store preflight");
+    const fuse::project::CookHashPreflight empty_source = cache.preflight_store_entry(invalid);
+    expectTrue(empty_source.should_skip(), "empty source path fails store preflight");
+    expectTrue(!ok.should_skip(), "store preflight should_skip false for valid entry");
+    const fuse::project::CookHashPreflight shader_preflight = cache.preflight_store_entry(shader_entry);
+    expectTrue(shader_preflight.should_skip(), "shader entry fails store preflight");
+               "would_invalidate_stale_upstream true when stale upstream present");
