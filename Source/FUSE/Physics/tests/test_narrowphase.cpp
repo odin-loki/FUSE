@@ -4265,6 +4265,184 @@ void testFrictionBasisDeepenPassGuards() {
         "rebuild_from_preflight produces basis matching current normal");
 }
 
+void testContactPairDeepen2RejectGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 dynamicA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 dynamicB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 zeroMassA = bodies.addBody({0.f, 2.f, 0.f}, 0.f);
+    const fuse::u32 zeroMassB = bodies.addBody({0.f, 3.f, 0.f}, 0.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, zeroMassA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, zeroMassB, {1.f, 0.f, 0.f});
+
+    expectTrue(
+        fuse::physics::narrowphase::is_zero_inv_mass_contact_pair({zeroMassA, zeroMassB}, bodies),
+        "zero-inv-mass guard detects both zero-mass pair");
+    expectTrue(
+        !fuse::physics::narrowphase::is_zero_inv_mass_contact_pair({dynamicA, zeroMassA}, bodies),
+        "zero-inv-mass guard allows mixed mass pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_deepen2_reject_reason({zeroMassA, zeroMassB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::BothZeroInvMass,
+        "deepen2 reject reason flags both zero-inv-mass pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_deepen_reject_reason({zeroMassA, zeroMassB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::None,
+        "first deepen reject reason unchanged for zero-inv-mass pair");
+
+    const fuse::u32 capsuleA = bodies.addBody({4.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 capsuleB = bodies.addBody({5.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, capsuleA, {0.5f, 1.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, capsuleB, {0.5f, 1.f, 0.f});
+    expectTrue(
+        fuse::physics::narrowphase::is_undispatched_shape_pair({capsuleA, capsuleB}, shapes),
+        "undispatched guard flags capsule-capsule pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_deepen2_reject_reason({capsuleA, capsuleB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::NoColliderDispatch,
+        "deepen2 reject reason flags undispatched capsule-capsule pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_deepen_reject_reason({capsuleA, capsuleB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::None,
+        "first deepen reject reason unchanged for undispatched pair");
+
+    const auto zeroMassPreflight =
+        fuse::physics::narrowphase::preflight_contact_pair_deepen2({zeroMassA, zeroMassB}, bodies, shapes);
+    expectTrue(!zeroMassPreflight.can_dispatch(), "deepen2 preflight rejects both zero-inv-mass pair");
+    expectTrue(
+        zeroMassPreflight.reason == fuse::physics::narrowphase::ContactPairRejectReason::BothZeroInvMass,
+        "deepen2 preflight reports BothZeroInvMass");
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_contact_pair_deepen2_dispatch({zeroMassA, zeroMassB}, bodies, shapes),
+        "deepen2 skip guard rejects both zero-inv-mass pair");
+    expectTrue(
+        !fuse::physics::narrowphase::should_skip_contact_pair_deepen2_dispatch({dynamicA, dynamicB}, bodies, shapes),
+        "deepen2 skip guard allows valid pair");
+
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_pair_reject_reason_name(
+                fuse::physics::narrowphase::ContactPairRejectReason::BothZeroInvMass),
+            "BothZeroInvMass") == 0,
+        "reject reason name resolves BothZeroInvMass");
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_pair_reject_reason_name(
+                fuse::physics::narrowphase::ContactPairRejectReason::NoColliderDispatch),
+            "NoColliderDispatch") == 0,
+        "reject reason name resolves NoColliderDispatch");
+}
+
+void testCanSkipNarrowphaseDeepen2Guards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 zeroMassA = bodies.addBody({0.f, 2.f, 0.f}, 0.f);
+    const fuse::u32 zeroMassB = bodies.addBody({0.f, 3.f, 0.f}, 0.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, bodyB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, zeroMassA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, zeroMassB, {1.f, 0.f, 0.f});
+
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_narrowphase_deepen2({}, bodies, shapes),
+        "can_skip_narrowphase_deepen2 on empty pair list");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_narrowphase_deepen2({{zeroMassA, zeroMassB}}, bodies, shapes),
+        "can_skip_narrowphase_deepen2 when all pairs are deepen2-rejected");
+    expectTrue(
+        !fuse::physics::narrowphase::can_skip_narrowphase_deepen2({{bodyA, bodyB}}, bodies, shapes),
+        "can_skip_narrowphase_deepen2 false when dispatchable pair exists");
+    expectTrue(
+        !fuse::physics::narrowphase::can_skip_narrowphase_deepen2(
+            {{zeroMassA, zeroMassB}, {bodyA, bodyB}}, bodies, shapes),
+        "can_skip_narrowphase_deepen2 false when mixed rejected and dispatchable pairs");
+}
+
+void testManifoldNormalizeAndFinalizeDeepenGuards() {
+    fuse::physics::narrowphase::ContactManifold unnormalized{};
+    unnormalized.contactNormal = {0.f, 2.f, 0.f};
+    unnormalized.addPoint({0.f, 0.f, 0.f}, 0.25f);
+    expectTrue(unnormalized.hasUnnormalizedNormal(), "hasUnnormalizedNormal flags non-unit normal");
+    expectTrue(!unnormalized.canSkipNormalizeContactNormal(), "canSkipNormalize false for non-unit normal");
+    unnormalized.normalizeContactNormalIfNeeded();
+    expectNear(unnormalized.contactNormal.length(), 1.f, 1e-4f, "normalizeContactNormalIfNeeded unitizes normal");
+    expectTrue(unnormalized.canSkipNormalizeContactNormal(), "canSkipNormalize true after normalization");
+
+    fuse::physics::narrowphase::ContactManifold ready{};
+    ready.contactNormal = {0.f, 1.f, 0.f};
+    ready.addPoint({0.f, 0.f, 0.f}, 0.25f);
+    const auto readyDeepenPreflight = fuse::physics::narrowphase::preflight_manifold_finalize_deepen(ready);
+    expectTrue(readyDeepenPreflight.can_finalize(), "deepen finalize preflight can finalize ready manifold");
+    expectTrue(!readyDeepenPreflight.needsNormalNormalization, "deepen finalize preflight no normal fixup needed");
+    expectTrue(
+        !fuse::physics::narrowphase::can_skip_manifold_finalize_deepen(ready),
+        "can_skip_manifold_finalize_deepen false for ready manifold");
+
+    fuse::physics::narrowphase::ContactManifold manifold =
+        fuse::physics::narrowphase::collideSphereSphere({0.f, 0.f, 0.f}, 1.f, {1.5f, 0.f, 0.f}, 1.f, 0u, 1u);
+    manifold.contactNormal = manifold.contactNormal * 2.f;
+    expectTrue(
+        fuse::physics::narrowphase::generate_contact_manifold_deepen_if_needed(manifold),
+        "generate_deepen_if_needed finalizes manifold with unnormalized normal");
+    expectTrue(manifold.valid, "generate_deepen_if_needed sets validity on success");
+    expectNear(manifold.contactNormal.length(), 1.f, 1e-4f, "generate_deepen_if_needed normalizes contact normal");
+
+    fuse::physics::narrowphase::ContactManifold clean{};
+    clean.contactNormal = {0.f, 1.f, 0.f};
+    clean.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_manifold_prune(clean),
+        "can_skip_manifold_prune true for clean manifold");
+    expectTrue(
+        !fuse::physics::narrowphase::can_skip_manifold_prune(
+            fuse::physics::narrowphase::ContactManifold{}),
+        "can_skip_manifold_prune false for empty manifold");
+}
+
+void testFrictionBasisDeepenPreflightGuards() {
+    fuse::physics::narrowphase::ContactManifold partial{};
+    partial.contactNormal = {0.f, 1.f, 0.f};
+    partial.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    partial.frictionBasis.tangent1 = {1.f, 0.f, 0.f};
+    expectTrue(
+        fuse::physics::narrowphase::has_partial_friction_basis(partial),
+        "partial guard flags single-axis basis");
+    expectTrue(
+        fuse::physics::narrowphase::friction_basis_needs_completion(partial),
+        "needs_completion true for partial basis");
+
+    const auto partialPreflight =
+        fuse::physics::narrowphase::preflight_friction_basis_rebuild_deepen(partial);
+    expectTrue(partialPreflight.partial, "deepen friction preflight flags partial basis");
+    expectTrue(partialPreflight.needsRebuild, "deepen friction preflight needs rebuild for partial basis");
+    expectTrue(!partialPreflight.can_skip_rebuild(), "deepen friction preflight cannot skip partial basis");
+    expectTrue(
+        !fuse::physics::narrowphase::should_skip_friction_basis_deepen_preflight(partial),
+        "should_skip_deepen_preflight false for partial basis");
+
+    fuse::physics::narrowphase::compute_friction_tangents_deepen_if_needed(partial);
+    expectTrue(partial.hasFrictionBasis(), "compute_deepen_if_needed completes partial basis");
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_friction_basis_deepen_preflight(partial),
+        "should_skip_deepen_preflight true after completion");
+
+    fuse::physics::narrowphase::ContactManifold unnormalized{};
+    unnormalized.contactNormal = {2.f, 0.f, 0.f};
+    unnormalized.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    const auto unnormalizedPreflight =
+        fuse::physics::narrowphase::preflight_friction_basis_rebuild_deepen(unnormalized);
+    expectTrue(
+        unnormalizedPreflight.needsNormalNormalization,
+        "deepen friction preflight flags unnormalized normal");
+    fuse::physics::narrowphase::compute_friction_tangents_deepen_if_needed(unnormalized);
+    expectNear(unnormalized.contactNormal.length(), 1.f, 1e-4f, "compute_deepen_if_needed normalizes contact normal");
+    expectTrue(unnormalized.hasFrictionBasis(), "compute_deepen_if_needed builds basis after normalization");
+}
+
 void testGjkSupportAndEpaStub() {
     const fuse::physics::vec3 hull[] = {
         {-1.f, 0.f, 0.f},
@@ -5062,6 +5240,10 @@ int main() {
     testFrictionBasisPreflightRebuildHelpers();
     testContactPairDeepenPassGuards();
     testFrictionBasisDeepenPassGuards();
+    testContactPairDeepen2RejectGuards();
+    testCanSkipNarrowphaseDeepen2Guards();
+    testManifoldNormalizeAndFinalizeDeepenGuards();
+    testFrictionBasisDeepenPreflightGuards();
     testGjkSupportAndEpaStub();
     testContactPairDeepenFollowUpRejectGuards();
     testManifoldPruneFinalizeFollowUpGuards();
