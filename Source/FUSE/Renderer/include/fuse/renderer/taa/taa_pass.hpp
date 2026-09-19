@@ -479,6 +479,7 @@ public:
     bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
     bool shouldSkipJitterAdvance() const;
+    /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).
@@ -925,6 +926,7 @@ public:
     /// Classify why resolve would skip for this pass (B5.9 deepen).
     /// Pass resolve preflight with mandatory skip-reason output (B5.9 deepen).
     /// True when resolve preflight passes without mutating history (B5.9 deepen).
+    /// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
     bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
     /// Stamp `observed_history_generation` from pass history when still at the no-guard sentinel.
     void stampObservedHistoryGeneration(TaaResolveDesc& desc) const;
