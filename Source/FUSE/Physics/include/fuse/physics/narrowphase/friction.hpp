@@ -119,6 +119,38 @@ bool should_skip_friction_basis_preflight(
     const ContactManifold& manifold,
     f32 epsilon = 1e-4f);
 
+/// Why friction-basis rebuild would early-out (B4.4 deepen pass).
+enum class FrictionBasisRebuildRejectReason : u8 {
+    None = 0,
+    EmptyManifold,
+    InvalidNormal,
+    CanReuse,
+};
+
+/// Human-readable label for friction-basis rebuild reject reasons (logging / tests).
+const char* friction_basis_rebuild_reject_reason_name(FrictionBasisRebuildRejectReason reason);
+
+/// Diagnose why friction-basis rebuild would skip; vacuously succeeds when rebuild may proceed.
+FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Returns true when `friction_basis_rebuild_reject_reason` matches `expected` (B4.4 deepen pass).
+bool friction_basis_rebuild_rejects_for_reason(
+    const ContactManifold& manifold,
+    FrictionBasisRebuildRejectReason expected,
+    f32 epsilon = 1e-4f);
+
+/// Non-mutating friction-basis skip predicate — mirrors `should_skip_friction_basis_preflight` (B4.4 deepen pass).
+bool can_skip_friction_basis_preflight(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Non-mutating friction-basis predicate — inverse of `can_skip_friction_basis_preflight` (B4.4 deepen pass).
+bool should_run_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
 /// Returns true when the normal must be normalized before friction-basis rebuild (B4.4 deepen pass).
 bool should_normalize_contact_normal_before_friction(
     const ContactManifold& manifold,
