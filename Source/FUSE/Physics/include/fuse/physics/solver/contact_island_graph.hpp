@@ -201,6 +201,12 @@ const char* islandGraphBuildRejectReasonName(IslandGraphBuildRejectReason reason
 
 /// Diagnose why island graph build would skip; vacuously succeeds on safe in-range inputs.
 IslandGraphBuildRejectReason islandGraphBuildRejectReason(
+/// Diagnostic reason island graph build would skip partition (B4.4 deepen follow-up).
+    OutOfRangeContactRefs,
+    OutOfRangeDistanceRefs,
+
+
+/// Returns the first reject reason for build inputs, or `None` when build may proceed.
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
