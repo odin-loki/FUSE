@@ -256,6 +256,27 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// True when `finalize_contact_manifold_with_preflight` would be a no-op (B4.3 deepen pass).
+bool can_skip_finalize_contact_manifold_with_preflight(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Finalize only when preflight allows; no-op otherwise (B4.3 deepen pass).
+bool finalize_contact_manifold_if_needed_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// True when `prune_contact_manifold_with_preflight` would be a no-op (B4.3 deepen pass).
+bool can_skip_prune_contact_manifold_with_preflight(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
