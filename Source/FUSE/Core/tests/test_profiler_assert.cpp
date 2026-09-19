@@ -5947,3 +5947,11 @@ void testChromeTraceExportPreflightWouldSkipExtensions() {
     expectTrue(disabledPreflight.wouldSkipSafeExport(), "disabled preflight would skip safe export");
     testScopeAndAsyncFlowPreflights();
     testChromeTraceExportPreflightWouldSkipExtensions();
+
+// --- deepen additive from deepen-b16-profiler-guards-1f3d ---
+    expectTrue(emptyPreflight.canExport(), "empty preflight canExport true when enabled");
+    expectTrue(!emptyPreflight.canExportWithEvents(), "empty preflight canExportWithEvents false");
+    expectTrue(!emptyPreflight.hasExportableEvents(), "empty preflight hasExportableEvents false");
+    const fuse::profiler::ChromeTraceExportPreflight withEventsPreflight =
+    expectTrue(withEventsPreflight.canExportWithEvents(),
+    expectTrue(withEventsPreflight.exportableEventCount == withEventsPreflight.eventCount,
