@@ -892,6 +892,14 @@ bool TaaPass::tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& rea
     return tryPreflightTaaHistoryReadyForResolve(m_history, reason);
 }
 
+bool TaaPass::tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const {
+    return tryPreflightTaaHistoryReuse(m_history, observedGeneration, reason);
+}
+
+bool TaaPass::tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& reason) const {
+    return tryPreflightTaaHistoryReadyForResolve(m_history, reason);
+}
+
 bool TaaPass::preflightResolveBlendWeights(const TaaResolveDesc& desc,
                                            TaaResolveBlendRejectReason* reason) const {
     return preflightTaaResolveBlendWeights(desc, m_history, reason);
@@ -1096,6 +1104,8 @@ TaaResolveBlendRejectReason TaaPass::classifyResolveBlendReject(const TaaResolve
 
 
 
+
+
 bool TaaPass::shouldSkipResolveBlend(const TaaResolveDesc& desc) const {
     return shouldSkipTaaResolveBlend(desc, m_history);
 
@@ -1229,6 +1239,8 @@ TaaJitterGuardRejectReason TaaPass::classifyJitterNdcReject() const {
 
 TaaJitterGuardRejectReason TaaPass::classifyJitterAdvanceReject() const {
     return classifyTaaJitterAdvanceReject(m_jitter.sequenceLength());
+}
+
 
 bool TaaPass::tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const {
     return tryPreflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), reason);
@@ -1267,6 +1279,14 @@ bool TaaPass::shouldSkipJitterSyncAndNdc(u32 frameIndex) const {
 
     return shouldSkipTaaJitterAlignment(frameIndex, m_jitter.monotonicFrameIndex(), m_jitter.index(),
                                         m_jitter.sequenceLength());
+bool TaaPass::tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const {
+    return tryPreflightTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength(), reason);
+}
+
+bool TaaPass::tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const {
+    return tryPreflightTaaJitterAdvance(m_jitter.sequenceLength(), reason);
+
+
 
 bool TaaPass::preflightJitterNdc(TaaJitterGuardRejectReason* reason) const {
     return preflightTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength(), reason);
