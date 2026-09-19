@@ -1290,3 +1290,12 @@ bool should_skip_hrtf_binaural_narrowing_preflight(bool hrtf_enabled, const Vec3
 // --- deepen additive from b7-2-hrtf-reject-reasons-62d8 ---
 HrtfBinauralRejectReason classify_hrtf_binaural_narrow_reject(const HrtfBinauralPreflight& preflight);
 bool try_preflight_hrtf_binaural_narrow(bool hrtf_enabled, const HrtfIrStub& ir,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-75f1 ---
+enum class HrtfPanConvolveRejectReason : u8 {
+const char* hrtf_pan_convolve_reject_reason_label(HrtfPanConvolveRejectReason reason);
+HrtfPanConvolveRejectReason classify_hrtf_pan_convolve_reject(const HrtfPanPathPreflight& preflight);
+                                       HrtfPanConvolveRejectReason* reason = nullptr);
+bool try_preflight_hrtf_pan_convolve(bool hrtf_enabled, const HrtfIrStub& ir,
+                                     const Vec3& rel_listener, HrtfPanConvolveRejectReason& reason);
+bool should_skip_hrtf_pan_convolve(bool hrtf_enabled, const HrtfIrStub& ir,

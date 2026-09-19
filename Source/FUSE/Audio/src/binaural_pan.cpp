@@ -2129,3 +2129,21 @@ bool should_skip_hrtf_binaural_narrowing_preflight(bool hrtf_enabled, const Vec3
     const HrtfBinauralRejectReason spatial_reject = classify_hrtf_binaural_spatial_reject(preflight);
 HrtfBinauralRejectReason classify_hrtf_binaural_narrow_reject(const HrtfBinauralPreflight& preflight) {
 bool try_preflight_hrtf_binaural_narrow(bool hrtf_enabled, const HrtfIrStub& ir,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-75f1 ---
+const char* hrtf_pan_convolve_reject_reason_label(HrtfPanConvolveRejectReason reason) {
+    case HrtfPanConvolveRejectReason::None:
+    case HrtfPanConvolveRejectReason::HrtfDisabled:
+    case HrtfPanConvolveRejectReason::CoLocated:
+    case HrtfPanConvolveRejectReason::EmptyIr:
+    case HrtfPanConvolveRejectReason::MalformedIr:
+HrtfPanConvolveRejectReason classify_hrtf_pan_convolve_reject(const HrtfPanPathPreflight& preflight) {
+        return HrtfPanConvolveRejectReason::None;
+        return HrtfPanConvolveRejectReason::HrtfDisabled;
+        return HrtfPanConvolveRejectReason::CoLocated;
+        return HrtfPanConvolveRejectReason::MalformedIr;
+        return HrtfPanConvolveRejectReason::EmptyIr;
+                                       HrtfPanConvolveRejectReason* reason) {
+bool try_preflight_hrtf_pan_convolve(bool hrtf_enabled, const HrtfIrStub& ir,
+                                     const Vec3& rel_listener, HrtfPanConvolveRejectReason& reason) {
+bool should_skip_hrtf_pan_convolve(bool hrtf_enabled, const HrtfIrStub& ir,

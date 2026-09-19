@@ -2535,3 +2535,17 @@ void testHrtfBinauralRejectReasonEnumsAndPreflightWrappers() {
 // --- deepen additive from b7-2-hrtf-reject-reasons-62d8 ---
                "should_skip_hrtf_ir_ready true on empty IR");
                "should_skip_hrtf_ir_ready false on valid IR");
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-75f1 ---
+void testHrtfPanConvolveRejectReasonGuards() {
+    fuse::audio::HrtfPanConvolveRejectReason reason =
+        fuse::audio::HrtfPanConvolveRejectReason::None;
+    expectTrue(reason == fuse::audio::HrtfPanConvolveRejectReason::None,
+    reason = fuse::audio::HrtfPanConvolveRejectReason::None;
+    expectTrue(reason == fuse::audio::HrtfPanConvolveRejectReason::EmptyIr,
+    expectTrue(reason == fuse::audio::HrtfPanConvolveRejectReason::MalformedIr,
+    expectTrue(fuse::audio::should_skip_hrtf_pan_convolve(true, empty, offset),
+    const fuse::audio::HrtfPanPathPreflight malformed_preflight =
+                   fuse::audio::HrtfPanConvolveRejectReason::EmptyIr),
+    expectTrue(fuse::audio::should_skip_hrtf_binaural_ready(true, valid, co_located, 0.1f, 0.1f),
+    testHrtfPanConvolveRejectReasonGuards();
