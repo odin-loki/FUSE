@@ -1042,6 +1042,14 @@ bool bodiesInRange(u32 bodyA, u32 bodyB, u32 bodyCount) {
 
 } // namespace
 
+namespace {
+
+bool bodiesInRange(u32 bodyA, u32 bodyB, u32 bodyCount) {
+    return bodyA < bodyCount && bodyB < bodyCount;
+}
+
+} // namespace
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
@@ -1126,6 +1134,9 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!bodyIndexInRange(contact.bodyA) || !bodyIndexInRange(contact.bodyB)) {
             continue;
         }
+        if (!bodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
+            continue;
+        }
         unionBodies(contact.bodyA, contact.bodyB);
     }
 
@@ -1176,6 +1187,9 @@ void ContactIslandGraph::build(u32 bodyCount,
             continue;
         }
         if (!bodyIndexInRange(contact.bodyA) || !bodyIndexInRange(contact.bodyB)) {
+            continue;
+        }
+        if (!bodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
             continue;
         }
         const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
