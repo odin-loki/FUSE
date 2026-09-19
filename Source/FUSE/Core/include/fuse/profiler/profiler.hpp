@@ -506,10 +506,6 @@ struct NestingConsistencyPreflight {
         return hasInvalidNameEvents || hasUnpairedScopeEvents || hasUnpairedAsyncFlowEvents;
     bool canExportCleanly() const { return canExportSafely() && !hasExportWarnings(); }
 
-/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
-struct ProfileScopePreflight {
-    bool invalidName = false;
-    bool canEnter = false;
 
 
 
@@ -728,7 +724,6 @@ struct NestingStatePreflight {
         return scopeBalanced && flowBalanced && !flowDepthDetached && !hasOpenAsyncFlows;
 
 /// Read-only async-flow begin diagnostics — mirrors `beginAsyncFlow()` guards.
-    bool profilerDisabled = false;
 
     bool canBegin() const { return !profilerDisabled && !emptyName; }
 
@@ -849,12 +844,25 @@ struct NestingStatePreflight {
 /// Read-only async-flow nesting diagnostics — safe to call before flow begin/end.
 struct AsyncFlowNestingPreflight {
     u32 activeFlowDepth = 0;
-    u32 maxFlowDepth = 0;
-    u32 openFlowCount = 0;
-    bool balanced = true;
-    bool flowDepthDetached = false;
-    bool crossThreadHandoffPending = false;
-    bool hasOpenAsyncFlows = false;
+/// Read-only scope recording diagnostics — safe to call before `FUSE_PROFILE_SCOPE`.
+struct ScopeRecordingPreflight {
+    u32 activeNestingDepth = 0;
+    u32 maxNestingDepth = 0;
+
+    bool wouldSkip() const { return profilerDisabled || invalidName; }
+    bool wouldRecord() const { return !wouldSkip(); }
+
+/// Read-only async-flow begin diagnostics — safe to call before `FUSE_PROFILE_ASYNC_FLOW_BEGIN`.
+
+
+/// Read-only async-flow end diagnostics — safe to call before `FUSE_PROFILE_ASYNC_FLOW_END`.
+    bool noOpenFlows = false;
+
+    bool wouldSkip() const { return profilerDisabled || invalidName || noOpenFlows; }
+
+/// Read-only counter sample diagnostics — safe to call before `FUSE_PROFILE_COUNTER`.
+struct CounterRecordingPreflight {
+
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -1377,6 +1385,16 @@ ScopeNestingPreflight preflightScopeNesting();
 AsyncFlowPreflight preflightAsyncFlow();
 NestingPreflight preflightNesting();
 ProfileScopePreflight preflightProfileScope(const char* name);
+bool wouldSkipScopeRecording(const char* name);
+bool wouldSkipAsyncFlowBegin(const char* name);
+bool wouldSkipAsyncFlowEnd(const char* name);
+bool wouldSkipCounterRecording(const char* track);
+
+ScopeRecordingPreflight preflightScopeRecording(const char* name);
+AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name);
+AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name);
+CounterRecordingPreflight preflightCounterRecording(const char* track);
+
 ChromeTraceExportPreflight preflightChromeTraceExport();
 ProfileScopePreflight preflightProfileScope(const char* name);
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);
