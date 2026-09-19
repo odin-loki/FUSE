@@ -4,6 +4,7 @@
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
@@ -199,5 +200,40 @@ std::vector<ContactManifold> runNarrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+
+/// Const preflight for job-safe narrowphase buffer dispatch (B4.5 deepen pass).
+struct NarrowphaseIntoBufferPreflight {
+    NarrowphaseBatchPreflight batch{};
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && batch.can_dispatch(); }
+    bool can_skip() const { return skipped || batch.can_skip(); }
+};
+
+/// Populate narrowphase-into-buffer preflight without running shape dispatch (B4.5 deepen pass).
+inline NarrowphaseIntoBufferPreflight preflight_run_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphaseIntoBufferPreflight preflight{};
+    preflight.batch = preflight_narrowphase_batch(pairs, bodies, shapes);
+    return preflight;
+}
+
+/// Returns true when narrowphase-into-buffer should be skipped (B4.5 deepen pass).
+inline bool can_skip_run_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflight_run_narrowphase_into_buffer(pairs, bodies, shapes).can_skip();
+}
+
+/// Returns true when narrowphase-into-buffer may proceed (B4.5 deepen pass).
+inline bool should_run_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !can_skip_run_narrowphase_into_buffer(pairs, bodies, shapes);
+}
 
 } // namespace fuse::physics::narrowphase

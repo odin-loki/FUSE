@@ -256,6 +256,21 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// True when `invalidateIfEmpty` would be a no-op (B4.5 deepen pass).
+inline bool can_skip_invalidate_if_empty(const ContactManifold& manifold) {
+    return manifold.empty() && !manifold.valid;
+}
+
+/// Finalize via preflight; no-op when skipped (B4.5 deepen pass).
+inline bool finalize_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f) {
+    return finalize_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
