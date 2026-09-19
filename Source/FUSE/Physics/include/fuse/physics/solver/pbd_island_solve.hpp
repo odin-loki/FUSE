@@ -143,6 +143,54 @@ struct IslandCombinedWarmStartPreflight {
     }
 };
 
+/// Per-island sleep preflight for constraint-solve early-out (B4.4 deepen follow-up).
+struct IslandSleepPreflight {
+    u32 dynamicBodyCount = 0;
+    u32 sleepingBodyCount = 0;
+    u32 awakeBodyCount = 0;
+    bool allDynamicSleeping = false;
+    bool skipped = false;
+
+    bool can_solve() const { return !skipped && !allDynamicSleeping; }
+};
+
+/// Per-island wake preflight for sleeping bodies with external impetus (B4.4 deepen follow-up).
+struct IslandWakePreflight {
+    u32 sleepingBodyCount = 0;
+    u32 wakeCandidateCount = 0;
+    bool skipped = false;
+
+    bool needs_wake() const { return !skipped && wakeCandidateCount > 0u; }
+};
+
+/// Aggregate sleep counts for graph-level constraint-solve guards.
+struct IslandSleepStats {
+    u32 totalIslands = 0;
+    u32 allSleepingCount = 0;
+    u32 hasAwakeCount = 0;
+    u32 emptyCount = 0;
+};
+
+/// Graph-level sleep preflight for batch constraint-solve guards.
+struct IslandSleepGraphPreflight {
+    IslandSleepStats stats{};
+    bool skipped = false;
+
+    bool has_awake_islands() const { return !skipped && stats.hasAwakeCount > 0u; }
+};
+
+/// Combined constraint-solve preflight (dispatch + sleep + timestep guard).
+struct IslandConstraintSolvePreflight {
+    IslandSolvePreflight solve{};
+    IslandSleepPreflight sleep{};
+    bool invalidDt = false;
+    bool skipped = false;
+
+    bool can_solve() const {
+        return !skipped && !invalidDt && solve.can_dispatch() && sleep.can_solve();
+    }
+};
+
 /// True when `islandIndex` is in range for `extract_island`.
 bool island_index_valid(const ContactIslandGraph& graph, u32 islandIndex);
 
@@ -499,5 +547,122 @@ u32 warm_start_all_islands_combined_guarded(SolverWorkBuffers& workBuffers,
                                             f32 dt,
                                             const std::vector<f32>& priorDistanceLambdas,
                                             const std::vector<f32>& priorContactLambdas = {});
+
+/// True when a body carries `RB_STATIC` or `RB_KINEMATIC`.
+bool is_static_or_kinematic_body(const RigidBodySoA& bodies, u32 bodyIndex);
+
+/// True when a body carries `RB_SLEEPING`.
+bool is_sleeping_body(const RigidBodySoA& bodies, u32 bodyIndex);
+
+/// True when a dynamic body is not sleeping.
+bool is_awake_dynamic_body(const RigidBodySoA& bodies, u32 bodyIndex);
+
+/// True when every non-static/kinematic body in the island is sleeping.
+bool island_all_dynamic_bodies_sleeping(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island);
+
+/// True when at least one non-static/kinematic body in the island is awake.
+bool island_has_awake_dynamic_bodies(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island);
+
+/// True when a sleeping body has non-zero force/torque or velocity above `velocityThreshold`.
+bool body_has_wake_impetus(const RigidBodySoA& bodies, u32 bodyIndex, f32 velocityThreshold = 0.f);
+
+/// Preflight sleep state for one island; sets `skipped` for empty islands.
+IslandSleepPreflight preflight_island_sleep(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island);
+
+/// Preflight sleep state by island index; out-of-range indices are marked skipped.
+IslandSleepPreflight preflight_island_sleep_by_index(const ContactIslandGraph& graph,
+                                                     const RigidBodySoA& bodies,
+                                                     u32 islandIndex);
+
+/// Summarize all-sleeping vs has-awake islands for batch guards.
+IslandSleepStats compute_island_sleep_stats(const RigidBodySoA& bodies, const ContactIslandGraph& graph);
+
+/// Count islands where every dynamic body is sleeping.
+u32 count_all_sleeping_islands(const RigidBodySoA& bodies, const ContactIslandGraph& graph);
+
+/// True when at least one island has an awake dynamic body.
+bool has_awake_islands(const RigidBodySoA& bodies, const ContactIslandGraph& graph);
+
+/// Graph-level sleep preflight; sets `skipped` when no islands exist.
+IslandSleepGraphPreflight preflight_island_sleep_graph(const RigidBodySoA& bodies,
+                                                       const ContactIslandGraph& graph);
+
+/// Early-out guard for constraint solve when every dynamic body in the island is sleeping.
+bool should_skip_island_solve_sleeping(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island);
+
+/// Early-out guard for constraint solve by island index (empty, out-of-range, or all-sleeping).
+bool should_skip_island_solve_sleeping_index(const ContactIslandGraph& graph,
+                                             const RigidBodySoA& bodies,
+                                             u32 islandIndex);
+
+/// Collect island indices with at least one awake dynamic body.
+std::vector<u32> collect_awake_dispatchable_island_indices(const RigidBodySoA& bodies,
+                                                           const ContactIslandGraph& graph);
+
+/// Preflight wake candidates among sleeping bodies in one island.
+IslandWakePreflight preflight_island_wake(const RigidBodySoA& bodies,
+                                          const ContactIslandGraph::Island& island,
+                                          f32 velocityThreshold = 0.f);
+
+/// Preflight wake candidates by island index; out-of-range indices are marked skipped.
+IslandWakePreflight preflight_island_wake_by_index(const ContactIslandGraph& graph,
+                                                   const RigidBodySoA& bodies,
+                                                   u32 islandIndex,
+                                                   f32 velocityThreshold = 0.f);
+
+/// Early-out guard for wake preflight on empty islands.
+bool should_skip_island_wake_check(const ContactIslandGraph::Island& island);
+
+/// Combined constraint-solve preflight including sleep and timestep guards.
+IslandConstraintSolvePreflight preflight_island_constraint_solve(const RigidBodySoA& bodies,
+                                                                 const ContactIslandGraph& graph,
+                                                                 u32 islandIndex,
+                                                                 f32 dt);
+
+/// Early-out guard combining dispatch, sleep, and timestep validity.
+bool should_skip_island_constraint_solve(const RigidBodySoA& bodies,
+                                         const ContactIslandGraph& graph,
+                                         u32 islandIndex,
+                                         f32 dt);
+
+/// Guarded dispatch that skips all-sleeping islands in addition to empty/out-of-range jobs.
+bool dispatch_solve_island_sleep_guarded(RigidBodySoA& bodies,
+                                         const ContactIslandGraph& graph,
+                                         u32 islandIndex,
+                                         SolverWorkBuffers& workBuffers,
+                                         const std::vector<DistanceConstraint>& distanceConstraints,
+                                         f32 dt,
+                                         f32 contactCompliance,
+                                         const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
+/// Guarded dispatch with explicit skip/solve outcome including sleep guard.
+IslandDispatchResult dispatch_solve_island_sleep_guarded_result(
+    RigidBodySoA& bodies,
+    const ContactIslandGraph& graph,
+    u32 islandIndex,
+    SolverWorkBuffers& workBuffers,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt,
+    f32 contactCompliance,
+    const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
+/// Batch guarded dispatch over awake islands only; returns count of islands actually solved.
+u32 dispatch_awake_islands(RigidBodySoA& bodies,
+                           const ContactIslandGraph& graph,
+                           SolverWorkBuffers& workBuffers,
+                           const std::vector<DistanceConstraint>& distanceConstraints,
+                           f32 dt,
+                           f32 contactCompliance,
+                           const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
+/// Batch guarded dispatch over awake islands with explicit skip/solve counts.
+IslandBatchDispatchResult dispatch_awake_islands_result(
+    RigidBodySoA& bodies,
+    const ContactIslandGraph& graph,
+    SolverWorkBuffers& workBuffers,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt,
+    f32 contactCompliance,
+    const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
 
 } // namespace fuse::physics
