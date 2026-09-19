@@ -928,6 +928,9 @@ TaaResolveSkipReason TaaPass::classifyResolveSkip(const TaaResolveDesc& desc) co
 
 
 
+
+
+
 bool TaaPass::preflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason* reason) const {
     return preflightTaaHistoryReuse(m_history, observedGeneration, reason);
 
@@ -1136,6 +1139,14 @@ bool TaaPass::tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlend
 
 TaaResolveBlendRejectReason TaaPass::classifyResolveBlendReject(const TaaResolveDesc& desc) const {
     return classifyTaaResolveBlendReject(desc, m_history);
+}
+
+bool TaaPass::tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const {
+    return tryPreflightTaaHistoryReuse(m_history, observedGeneration, reason);
+}
+
+bool TaaPass::tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& reason) const {
+    return tryPreflightTaaHistoryReadyForResolve(m_history, reason);
 }
 
 bool TaaPass::preflightResolveBlendWeights(const TaaResolveDesc& desc,
@@ -1416,6 +1427,7 @@ bool TaaPass::tryComputeExpectedResolveBlendWeights(const TaaResolveDesc& desc,
 
 TaaResolveSkipReason TaaPass::classifyResolveSkip(const TaaResolveDesc& desc) const {
     return classifyTaaResolveSkip(desc, m_history);
+
 
 
 
@@ -1744,6 +1756,12 @@ bool TaaPass::tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason&
     return tryPreflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), reason);
 bool TaaPass::tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const {
     return tryPreflightTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength(), reason);
+
+bool TaaPass::trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason) {
+    if (!m_jitter.syncToFrameIndexIfReady(frameIndex)) {
+        reason = classifyTaaJitterSyncReject(m_jitter.sequenceLength());
+    m_stats.lastJitterNdc = currentJitterNdc();
+    return true;
 
 bool TaaPass::shouldSkipJitterSync(u32 frameIndex) const {
     return shouldSkipTaaJitterSync(frameIndex, m_jitter.sequenceLength());

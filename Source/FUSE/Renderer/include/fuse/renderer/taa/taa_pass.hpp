@@ -332,6 +332,7 @@ public:
     bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
     /// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
     bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
+    /// Classify why resolve would skip — same ordering as `wouldSkipResolve` (B5.9 deepen).
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// Early-out when resolve preflight would bail (B5.9 deepen).
@@ -397,6 +398,12 @@ public:
     /// Classify why pass jitter sync would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterSyncReject() const;
     /// Pass NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
+    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
+    /// Sync jitter when preflight passes; returns false when blocked (B5.9 deepen).
+    bool trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason);
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSync(u32 frameIndex) const;
     /// Sync jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
@@ -941,6 +948,7 @@ public:
     /// Pass resolve preflight with mandatory skip-reason output (B5.9 deepen).
     /// True when resolve preflight passes without mutating history (B5.9 deepen).
     /// Classify why pass resolve would skip (B5.9 deepen).
+    /// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
     bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
     /// Stamp `observed_history_generation` from pass history when still at the no-guard sentinel.
     void stampObservedHistoryGeneration(TaaResolveDesc& desc) const;
