@@ -1056,9 +1056,7 @@ struct IslandSleepWakeStats {
     u32 solvableCount = 0;
     u32 allSleepingCount = 0;
     u32 emptyCount = 0;
-    u32 wakeableCount = 0;
     u32 inactiveCount = 0;
-};
 
 /// Graph-level sleep/wake preflight for selective per-island solve dispatch.
 struct IslandSleepWakeGraphPreflight {
@@ -1164,10 +1162,30 @@ struct IslandSolveSleepPreflight {
 
 /// Graph-level wake counts for batch wake guards.
 struct IslandWakeStats {
-    u32 wakeableCount = 0;
-    bool skipped = false;
 
     bool can_dispatch() const { return !skipped && stats.wakeableCount > 0u; }
+/// Sleep/wake preflight for one island constraint solve pass (B4.4 deepen follow-up).
+struct IslandSleepSolvePreflight {
+    u32 sleepingBodyCount = 0;
+    u32 awakeBodyCount = 0;
+
+    bool can_solve() const { return !skipped && awakeBodyCount > 0u; }
+
+/// Graph-level sleep preflight for island dispatch batching (B4.4 deepen follow-up).
+    u32 sleepingOnlyCount = 0;
+
+    bool can_dispatch() const { return !skipped && awakeCount > 0u; }
+
+/// Wake preflight for sleeping islands with external activity (B4.4 deepen follow-up).
+    u32 sleepingDynamicCount = 0;
+    u32 nonZeroImpulseCount = 0;
+
+        return !skipped && sleepingDynamicCount > 0u &&
+               (awakeDynamicCount > 0u || nonZeroImpulseCount > 0u);
+
+struct IslandSolveBodyPreflight {
+    IslandSleepSolvePreflight sleep{};
+
 };
 
 /// Aggregate contact-impulse warm-start counts for graph-level batch guards.
@@ -2791,6 +2809,83 @@ bool solve_island_job_guarded(RigidBodySoA& bodies,
                               f32 dt,
                               f32 contactCompliance,
                               const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
+/// True when `flags` carries `RB_SLEEPING`.
+bool is_body_sleeping(u32 flags);
+
+/// True when `flags` carries `RB_STATIC` or `RB_KINEMATIC`.
+bool is_body_static_or_kinematic(u32 flags);
+
+/// True when the body is dynamic (non-static, non-kinematic).
+bool is_body_dynamic(u32 flags);
+
+/// True when a dynamic body is not sleeping.
+bool is_body_dynamic_awake(u32 flags);
+
+/// True when every dynamic body in the island carries `RB_SLEEPING`.
+bool island_all_dynamic_bodies_sleeping(const ContactIslandGraph::Island& island,
+                                        const RigidBodySoA& bodies);
+
+/// True when at least one dynamic body in the island is awake.
+bool island_has_awake_dynamic_body(const ContactIslandGraph::Island& island,
+                                   const RigidBodySoA& bodies);
+
+/// Preflight sleep guards for one island; sets `skipped` for empty islands.
+IslandSleepSolvePreflight preflight_island_sleep_solve(const ContactIslandGraph::Island& island,
+                                                       const RigidBodySoA& bodies);
+
+/// Preflight sleep guards by island index; out-of-range indices are marked skipped.
+IslandSleepSolvePreflight preflight_island_sleep_solve_by_index(const ContactIslandGraph& graph,
+                                                                u32 islandIndex,
+                                                                const RigidBodySoA& bodies);
+
+/// Early-out guard when all dynamic bodies in an island are sleeping.
+bool should_skip_solve_sleeping_island(const ContactIslandGraph::Island& island,
+                                       const RigidBodySoA& bodies);
+
+/// Summarize sleeping-only vs awake islands for batch guards.
+IslandSleepGraphPreflight preflight_island_sleep_graph(const ContactIslandGraph& graph,
+                                                       const RigidBodySoA& bodies);
+
+/// Count islands with at least one awake dynamic body.
+u32 count_awake_islands(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
+
+/// True when at least one island has an awake dynamic body.
+bool has_awake_islands(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
+
+/// Early-out guard when every constrained island is sleeping-only.
+bool should_skip_solve_all_sleeping_islands(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
+
+/// Preflight wake for one island; sets `skipped` for empty islands.
+IslandWakePreflight preflight_island_wake(const ContactIslandGraph::Island& island,
+                                         const RigidBodySoA& bodies,
+                                         const std::vector<narrowphase::ContactManifold>& contacts);
+
+/// Early-out guard when a sleeping island has no wake signal.
+bool should_skip_wake_island(const ContactIslandGraph::Island& island,
+                             const RigidBodySoA& bodies,
+                             const std::vector<narrowphase::ContactManifold>& contacts);
+
+/// Clear `RB_SLEEPING` and reset sleep timers for dynamic bodies in one island.
+void wake_island_bodies(const ContactIslandGraph::Island& island, RigidBodySoA& bodies);
+
+/// Guarded wake; returns false when preflight finds no wake signal.
+bool wake_island_bodies_guarded(const ContactIslandGraph::Island& island,
+                              RigidBodySoA& bodies,
+                              const std::vector<narrowphase::ContactManifold>& contacts);
+
+/// Combined constraint-ref + sleep preflight for one island solve pass.
+IslandSolveBodyPreflight preflight_solve_island_with_bodies(
+    const ContactIslandGraph::Island& island,
+    const RigidBodySoA& bodies,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Early-out guard combining constraint refs and sleep preflight.
+bool should_skip_solve_island_with_bodies(const ContactIslandGraph::Island& island,
+                                          const RigidBodySoA& bodies,
+                                          const std::vector<narrowphase::ContactManifold>& contacts,
+                                          const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Preflight island solve dispatch; sets `skipped` when no islands need work.
 IslandSolvePreflight preflight_island_solve(const ContactIslandGraph& graph);
