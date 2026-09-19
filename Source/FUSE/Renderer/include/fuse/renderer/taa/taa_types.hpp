@@ -130,6 +130,24 @@ bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGener
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
 u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history);
+/// True when history is warmed and no longer needs a warm-up frame (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+
+/// Why history warm-up preflight blocked the request (B5.9 deepen).
+enum class TaaHistoryWarmupBlockReason : u8 {
+    None = 0,
+    NotReady,
+    NeedsWarmup,
+};
+/// Human-readable label for history warm-up block reasons (B5.9 deepen).
+const char* taaHistoryWarmupBlockReasonLabel(TaaHistoryWarmupBlockReason reason);
+/// Classify why history warm-up is blocked (B5.9 deepen).
+TaaHistoryWarmupBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history);
+/// True when history is ready and warmed for temporal sampling (B5.9 deepen).
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason* reason = nullptr);
+/// History reuse preflight using `TaaResolveDesc::observed_history_generation` (B5.9 deepen).
+bool preflightTaaResolveHistoryReuse(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                       TaaHistoryReuseBlockReason* reason = nullptr);
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
