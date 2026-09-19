@@ -77,6 +77,11 @@ struct QueryFilterPreflight {
 
     /// True when at least one archetype signature satisfies `filter` (ignores entity row count).
     [[nodiscard]] bool has_signature_match() const { return matching_archetypes > 0; }
+
+    /// True when signature matching should be skipped (conflict, empty table, or zero matches).
+    [[nodiscard]] bool should_skip_match() const {
+        return has_conflict || empty_table || matching_archetypes == 0;
+    }
 };
 
 /// Evaluate runnable/conflict guards without an archetype table (counts remain zero).
@@ -91,6 +96,9 @@ struct QueryFilterPreflight {
 
 /// Convenience guard — `preflight_query_filter(archetypes, filter).can_iterate()`.
 [[nodiscard]] bool can_iterate_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
+
+/// True when archetype signature matching should be skipped (conflict, empty table, or no matches).
+[[nodiscard]] bool should_skip_query_match(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
 
 /// True when `archetype` contains every `with` type and none of the `without` types.
 [[nodiscard]] bool archetype_matches(const Archetype& archetype, const QueryFilter& filter);
