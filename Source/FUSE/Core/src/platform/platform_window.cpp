@@ -192,6 +192,7 @@ bool EventPump::peekEventType(PlatformEventType& outType) const {
 }
 
 bool EventPump::tryPeekEventOfType(PlatformEventType type, PlatformEvent& outEvent) const {
+bool EventPump::peekFirstEventOfType(PlatformEventType type, PlatformEvent& outEvent) const {
     if (m_syntheticHead == m_syntheticTail) {
         outEvent = {};
         return false;
@@ -223,6 +224,17 @@ bool EventPump::tryPollEventOfTypeFor(const Window& window, PlatformEventType ty
                                       PlatformEvent& outEvent) {
     if (!tryPeekEventOfTypeFor(window, type, outEvent)) {
 
+    u32 index = m_syntheticHead;
+    while (index != m_syntheticTail) {
+        const PlatformEvent& pending = m_syntheticEvents[index];
+        if (pending.type == type) {
+            outEvent = pending;
+        }
+
+        index = (index + 1u) % kMaxSyntheticEvents;
+
+    outEvent = {};
+    return false;
 
 bool EventPump::frontEventTypeIs(PlatformEventType type) const {
 bool EventPump::peekEventTypeMatches(PlatformEventType expected) const {
@@ -273,6 +285,15 @@ bool EventPump::tryPeekEventOfType(PlatformEventType type, PlatformEvent& outEve
 
     outEvent = front;
     return true;
+}
+
+bool EventPump::frontEventIsFor(const Window& window) const {
+    PlatformEvent front;
+    if (!peekEvent(front)) {
+        return false;
+    }
+
+    return front.window == &window;
 }
 
 bool EventPump::hasPendingEvents() const {
@@ -347,6 +368,24 @@ bool EventPump::hasPendingEventsFor(const Window& window) const {
     return countPendingEventsFor(window) > 0u;
 }
 
+bool EventPump::hasPendingEventOfTypeFor(PlatformEventType type, const Window& window) const {
+    if (m_syntheticHead == m_syntheticTail) {
+        return false;
+    }
+
+    u32 index = m_syntheticHead;
+    while (index != m_syntheticTail) {
+        const PlatformEvent& pending = m_syntheticEvents[index];
+        if (pending.type == type && pending.window == &window) {
+            return true;
+        }
+
+        index = (index + 1u) % kMaxSyntheticEvents;
+    }
+
+    return false;
+}
+
 u32 EventPump::countPendingEventsFor(const Window& window) const {
     if (m_syntheticHead == m_syntheticTail) {
         return 0;
@@ -386,6 +425,25 @@ u32 EventPump::countPendingEventsOfType(PlatformEventType type) const {
     return count;
 }
 
+u32 EventPump::countPendingEventsOfTypeFor(PlatformEventType type, const Window& window) const {
+    if (m_syntheticHead == m_syntheticTail) {
+        return 0;
+    }
+
+    u32 count = 0;
+    u32 index = m_syntheticHead;
+    while (index != m_syntheticTail) {
+        const PlatformEvent& pending = m_syntheticEvents[index];
+        if (pending.type == type && pending.window == &window) {
+            ++count;
+        }
+
+        index = (index + 1u) % kMaxSyntheticEvents;
+    }
+
+    return count;
+}
+
 bool EventPump::wouldCoalesceResize(const PlatformEvent& event) const {
     if (event.type != PlatformEventType::WindowResized || event.window == nullptr ||
         event.width == 0u || event.height == 0u || m_syntheticHead == m_syntheticTail) {
@@ -411,6 +469,32 @@ bool EventPump::wouldCoalesceResizeFor(const Window& window) const {
 
 
 
+
+bool EventPump::wouldCoalesceResize(const Window& window, u32 width, u32 height) const {
+    if (width == 0u || height == 0u || m_syntheticHead == m_syntheticTail) {
+        return false;
+    }
+
+    u32 index = (m_syntheticTail + kMaxSyntheticEvents - 1u) % kMaxSyntheticEvents;
+    while (true) {
+        const PlatformEvent& pending = m_syntheticEvents[index];
+        if (pending.type == PlatformEventType::WindowResized && pending.window == &window) {
+            return true;
+        }
+
+        if (index == m_syntheticHead) {
+            break;
+        }
+
+        index = (index + kMaxSyntheticEvents - 1u) % kMaxSyntheticEvents;
+    }
+
+    return false;
+}
+
+bool EventPump::wouldCoalesceQuit() const {
+    return m_quitRequested || hasPendingEventOfType(PlatformEventType::Quit);
+}
 
 PendingResizeExtent EventPump::pendingResizeExtentFor(const Window& window) const {
     PendingResizeExtent extent;
@@ -452,9 +536,16 @@ EventPumpStats EventPump::stats() const {
     snapshot.quitRequested = m_quitRequested;
     snapshot.hasPendingQuitEvent = hasPendingEventOfType(PlatformEventType::Quit);
     snapshot.hasPendingResizeEvent = hasPendingEventOfType(PlatformEventType::WindowResized);
+    snapshot.hasPendingCloseEvent = hasPendingEventOfType(PlatformEventType::WindowCloseRequested);
     snapshot.lastCoalescedResizeValid = m_lastCoalescedResize.valid;
     peekEventType(snapshot.frontEventType);
     snapshot.hasPendingResizeEvent = snapshot.pendingResizeEventCount > 0u;
+
+    PlatformEvent front;
+    if (peekEvent(front)) {
+        snapshot.frontEventWindow = front.window;
+    }
+
     return snapshot;
 }
 
@@ -595,6 +686,10 @@ void EventPump::pushWindowFocusLost(Window& window) {
 }
 
 void EventPump::pushWindowCloseRequested(Window& window) {
+    if (hasPendingEventOfTypeFor(PlatformEventType::WindowCloseRequested, window)) {
+        return;
+    }
+
     PlatformEvent event;
     event.type = PlatformEventType::WindowCloseRequested;
     event.window = &window;
@@ -603,6 +698,10 @@ void EventPump::pushWindowCloseRequested(Window& window) {
 
 void EventPump::requestQuit() {
     m_quitRequested = true;
+    if (hasPendingEventOfType(PlatformEventType::Quit)) {
+        return;
+    }
+
     PlatformEvent quitEvent;
     quitEvent.type = PlatformEventType::Quit;
     pushSyntheticEvent(quitEvent);
