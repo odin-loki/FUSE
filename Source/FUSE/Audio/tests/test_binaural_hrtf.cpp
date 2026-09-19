@@ -1304,3 +1304,7 @@ void testHrtfAttenuationCouplingPreflightGuards() {
     testHrtfIrPreflightGuards();
     testHrtfPanPathPreflightGuards();
     testHrtfAttenuationCouplingPreflightGuards();
+
+// --- deepen additive from deepen-hrtf-preflight-guards-fa19 ---
+    const fuse::audio::HrtfPanPathPreflight bypass_disabled =
+    const fuse::audio::HrtfPanPathPreflight bypass_co_located =
