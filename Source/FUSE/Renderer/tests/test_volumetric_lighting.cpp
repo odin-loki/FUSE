@@ -1919,3 +1919,36 @@ void testFroxelDensityLookupRejectAndValidationGuards() {
     expectTrue(populated.matchesDesc(desc), "tryPopulate allocates matching grid");
     expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(populated, zeroDesc, camera, params),
                "tryPopulate rejects empty froxel desc");
+
+// --- deepen additive from deepen-froxel-volumetrics-a5a0 ---
+void testFroxelSampleCoordNormalizeAndBuildGuards() {
+void testFroxelDensityLookupBoundsAndPreflightGuards() {
+    expectTrue(fuse::renderer::froxel_util::tryCanLookupAtIndexBounds(grid, desc, 5u, lookupReason),
+    expectTrue(!fuse::renderer::froxel_util::tryCanLookupAtIndexBounds(grid, desc, 999u, lookupReason),
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndexBounds(grid, desc, 5u, boundedSample, lookupReason),
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtIndexBounds(grid, desc, 999u, boundedSample, lookupReason),
+    expectTrue(fuse::renderer::froxel_util::tryCanLookupAtSampleCoords(grid, desc, inBounds, lookupReason),
+    expectTrue(!fuse::renderer::froxel_util::tryCanLookupAtSampleCoords(grid, desc, outOfRange, lookupReason),
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::SampleCoordsOutOfRange,
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityTrilinearAtCoords(
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityBilinearAtCoords(
+    const fuse::renderer::FroxelGridPreflight preflight =
+        fuse::renderer::froxel_util::preflightFroxelDensityGrid(grid, desc);
+    const fuse::renderer::FroxelGridPreflight emptyPreflight =
+        fuse::renderer::froxel_util::preflightFroxelDensityGrid(grid, zeroDesc);
+    expectTrue(!emptyPreflight.desc_non_empty, "preflight marks empty desc");
+    expectTrue(!emptyPreflight.can_lookup(), "empty desc fails lookup preflight");
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensityStrict(grid, zeroDesc, densityReason),
+    expectTrue(densityReason == fuse::renderer::GridDensityRejectReason::EmptyDesc,
+    expectTrue(std::strcmp(fuse::renderer::gridDensityRejectReasonLabel(densityReason), "empty_desc") == 0,
+    expectTrue(fuse::renderer::froxel_util::tryValidateGridDensity(grid, zeroDesc, densityReason),
+    const fuse::renderer::FroxelPopulatePreflight populatePreflight =
+        fuse::renderer::froxel_util::preflightPopulateFroxelGrid(desc, params);
+    expectTrue(populatePreflight.desc_non_empty, "populate preflight sees non-empty desc");
+    expectTrue(populatePreflight.params_enabled, "populate preflight sees enabled params");
+    expectTrue(populatePreflight.can_populate(), "populate preflight allows analytic populate");
+    const fuse::renderer::FroxelPopulatePreflight disabledPreflight =
+        fuse::renderer::froxel_util::preflightPopulateFroxelGrid(desc, disabled);
+    expectTrue(!disabledPreflight.params_enabled, "populate preflight rejects zero density");
+    expectTrue(!disabledPreflight.can_populate(), "populate preflight blocks disabled params");
+    testFroxelDensityLookupBoundsAndPreflightGuards();

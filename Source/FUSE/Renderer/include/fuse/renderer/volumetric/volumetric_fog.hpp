@@ -596,3 +596,15 @@ bool tryWriteDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc,
 // --- deepen additive from deepen-b511-froxel-density-guards-ca9c ---
     static bool tryAreSampleCoordsInBounds(const FroxelSampleCoords& coords,
 bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-froxel-volumetrics-a5a0 ---
+struct FroxelGridPreflight {
+struct FroxelPopulatePreflight {
+bool tryCanLookupAtIndexBounds(const FroxelDensityGrid& grid,
+bool tryCanLookupAtSampleCoords(const FroxelDensityGrid& grid,
+FroxelGridPreflight preflightFroxelDensityGrid(const FroxelDensityGrid& grid,
+FroxelPopulatePreflight preflightPopulateFroxelGrid(const FroxelGridDesc& desc,
+bool tryValidateGridDensityStrict(const FroxelDensityGrid& grid,
+bool trySampleDensityAtIndexBounds(const FroxelDensityGrid& grid,
+bool trySampleDensityBilinearAtCoords(const FroxelDensityGrid& grid,
+bool trySampleDensityTrilinearAtCoords(const FroxelDensityGrid& grid,

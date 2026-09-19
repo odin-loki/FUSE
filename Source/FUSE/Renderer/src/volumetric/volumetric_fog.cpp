@@ -1484,3 +1484,19 @@ bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
     SampleCoordRejectReason coordReason = SampleCoordRejectReason::None;
     if (!FroxelGridLayout::tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords,
         if (coordReason == SampleCoordRejectReason::EmptyGrid) {
+
+// --- deepen additive from deepen-froxel-volumetrics-a5a0 ---
+    case DensityLookupRejectReason::SampleCoordsOutOfRange:
+bool tryCanLookupAtIndexBounds(const FroxelDensityGrid& grid,
+bool tryCanLookupAtSampleCoords(const FroxelDensityGrid& grid,
+        outReason = DensityLookupRejectReason::SampleCoordsOutOfRange;
+FroxelGridPreflight preflightFroxelDensityGrid(const FroxelDensityGrid& grid,
+    FroxelGridPreflight result{};
+FroxelPopulatePreflight preflightPopulateFroxelGrid(const FroxelGridDesc& desc, const VolumetricFogParams& params) {
+    FroxelPopulatePreflight result{};
+bool tryValidateGridDensityStrict(const FroxelDensityGrid& grid,
+bool trySampleDensityAtIndexBounds(const FroxelDensityGrid& grid,
+    if (!tryCanLookupAtIndexBounds(grid, desc, index, outReason)) {
+bool trySampleDensityBilinearAtCoords(const FroxelDensityGrid& grid,
+    if (!tryCanLookupAtSampleCoords(grid, desc, coords, outReason)) {
+bool trySampleDensityTrilinearAtCoords(const FroxelDensityGrid& grid,
