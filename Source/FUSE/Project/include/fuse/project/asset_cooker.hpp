@@ -13,9 +13,12 @@ struct CookCacheReconcileEstimate {
     u32 stale_dependency_entries = 0;
     u32 prune_invalid_entries = 0;
     u32 prune_stale_entries = 0;
+    /// Populated when `changed_source` is non-empty — mirrors `count_upstream_invalidation` (B7.9 deepen).
+    u32 upstream_invalidation_entries = 0;
 
     [[nodiscard]] u32 total() const {
-        return stale_dependency_entries + prune_invalid_entries + prune_stale_entries;
+        return stale_dependency_entries + prune_invalid_entries + prune_stale_entries +
+               upstream_invalidation_entries;
     }
 };
 
@@ -45,8 +48,9 @@ public:
     /// Read-only prune reconcile probe — mirrors `CookCache::estimate_prune_removals` (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_reconcile() const;
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
+    /// When `changed_source` is non-empty, includes `upstream_invalidation_entries`.
     [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile_invalidation(
-        const CookManifest& manifest) const;
+        const CookManifest& manifest, const std::string& changed_source = "") const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

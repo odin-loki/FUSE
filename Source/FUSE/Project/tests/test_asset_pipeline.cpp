@@ -1628,7 +1628,17 @@ void testCookerReconcileEstimateProbes() {
 
     const fuse::project::CookCacheReconcileEstimate fresh = cooker.estimate_reconcile_invalidation(manifest);
     expectTrue(fresh.total() == 0u, "fresh cache reconcile estimate is zero");
+    expectTrue(fresh.upstream_invalidation_entries == 0u,
+               "fresh reconcile estimate has zero upstream invalidation entries");
     expectTrue(cooker.estimate_prune_reconcile().total() == 0u, "fresh prune reconcile estimate is zero");
+
+    const fuse::u32 upstream_probe = cooker.count_upstream_invalidation(manifest, source_a);
+    const fuse::project::CookCacheReconcileEstimate upstream_plan =
+        cooker.estimate_reconcile_invalidation(manifest, source_a);
+    expectTrue(upstream_plan.upstream_invalidation_entries == upstream_probe,
+               "reconcile estimate upstream field matches upstream invalidation probe");
+    expectTrue(upstream_plan.total() >= upstream_probe,
+               "reconcile estimate total includes upstream invalidation planning");
 
     writeTempFile(source_a, "# reconcile a revised\n");
     const fuse::u32 stale_count = cooker.count_stale_dependency_invalidation(manifest);

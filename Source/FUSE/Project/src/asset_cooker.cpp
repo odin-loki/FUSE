@@ -245,9 +245,13 @@ CookCachePruneEstimate AssetCooker::estimate_prune_reconcile() const {
     return m_cache.estimate_prune_removals();
 }
 
-CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(const CookManifest& manifest) const {
+CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(
+    const CookManifest& manifest, const std::string& changed_source) const {
     CookCacheReconcileEstimate estimate;
     estimate.stale_dependency_entries = count_stale_dependency_invalidation(manifest);
+    if (is_valid_cook_cache_path(changed_source)) {
+        estimate.upstream_invalidation_entries = count_upstream_invalidation(manifest, changed_source);
+    }
 
     const CookCachePruneEstimate prune = m_cache.estimate_prune_removals();
     estimate.prune_invalid_entries = prune.invalid_entries;
