@@ -420,3 +420,9 @@ const char* clusterRebuildRejectReasonLabel(ClusterRebuildRejectReason reason);
                                        ClusterRebuildRejectReason& outReason);
                                           ClusterRebuildRejectReason& outReason,
 bool tryLookupClusterLightsAtScreenDepth(const ClusterGridSoA& grid,
+
+// --- deepen additive from deepen-b5-clustered-lights-preflights-1d04 ---
+enum class ClusterScreenMappingRejectReason : u8;
+                                                ClusterScreenMappingRejectReason& outReason);
+enum class ClusterScreenMappingRejectReason : u8 {
+const char* clusterScreenMappingRejectReasonLabel(ClusterScreenMappingRejectReason reason);

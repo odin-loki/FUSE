@@ -1677,3 +1677,27 @@ void testClusterScreenDepthMappingGuards() {
     expectTrue(clusterIndex < desc.clusterCount(), "tryMap cluster index in bounds");
                "tryMap rejects depth below near plane");
                "tryMap rejects empty grid");
+
+// --- deepen additive from deepen-b5-clustered-lights-preflights-1d04 ---
+void testClusterScreenMappingRejectReasons() {
+    fuse::renderer::ClusterScreenMappingRejectReason mapReason =
+        fuse::renderer::ClusterScreenMappingRejectReason::None;
+               "tryMapScreenDepthToClusterIndex succeeds in range");
+    expectTrue(mapReason == fuse::renderer::ClusterScreenMappingRejectReason::None,
+    expectTrue(std::strcmp(fuse::renderer::clusterScreenMappingRejectReasonLabel(mapReason), "none") == 0,
+               "tryMapScreenDepthToClusterIndex rejects empty grid");
+    expectTrue(mapReason == fuse::renderer::ClusterScreenMappingRejectReason::EmptyGrid,
+    expectTrue(std::strcmp(fuse::renderer::clusterScreenMappingRejectReasonLabel(mapReason), "empty_grid") == 0,
+               "tryMapScreenDepthToClusterIndex rejects depth below near plane");
+    expectTrue(mapReason == fuse::renderer::ClusterScreenMappingRejectReason::DepthOutOfRange,
+    expectTrue(std::strcmp(fuse::renderer::clusterScreenMappingRejectReasonLabel(mapReason), "depth_out_of_range") ==
+               "tryMapScreenDepthToClusterIndex rejects invalid camera");
+    expectTrue(mapReason == fuse::renderer::ClusterScreenMappingRejectReason::InvalidCamera,
+    expectTrue(std::strcmp(fuse::renderer::clusterScreenMappingRejectReasonLabel(mapReason), "invalid_camera") == 0,
+void testGridRebuildRejectReasons() {
+               "canRebuild delegates to tryCanRebuild");
+void testClusterCoordLookupRejectReasonsAndSkipGrid() {
+                   grid, desc, 0u, 0u, 0u, tryCoordLights, tryCoordCount, coordReason),
+    testClusterScreenMappingRejectReasons();
+    testGridRebuildRejectReasons();
+    testClusterCoordLookupRejectReasonsAndSkipGrid();

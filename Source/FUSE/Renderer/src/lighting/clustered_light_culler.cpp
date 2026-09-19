@@ -1060,3 +1060,15 @@ bool cluster_util::tryLookupClusterLightsAtScreenDepth(const ClusterGridSoA& gri
     case GridRebuildRejectReason::DescMismatch:
         outReason = GridRebuildRejectReason::DescMismatch;
     return tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights, maxLightsPerCluster, outLightsDropped,
+
+// --- deepen additive from deepen-b5-clustered-lights-preflights-1d04 ---
+const char* clusterScreenMappingRejectReasonLabel(ClusterScreenMappingRejectReason reason) {
+    case ClusterScreenMappingRejectReason::None:
+    case ClusterScreenMappingRejectReason::EmptyGrid:
+    case ClusterScreenMappingRejectReason::InvalidCamera:
+    case ClusterScreenMappingRejectReason::DepthOutOfRange:
+                                                        ClusterScreenMappingRejectReason& outReason) {
+        outReason = ClusterScreenMappingRejectReason::EmptyGrid;
+        outReason = ClusterScreenMappingRejectReason::InvalidCamera;
+        outReason = ClusterScreenMappingRejectReason::DepthOutOfRange;
+    outReason = ClusterScreenMappingRejectReason::None;
