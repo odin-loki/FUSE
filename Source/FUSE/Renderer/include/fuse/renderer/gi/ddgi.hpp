@@ -680,6 +680,7 @@ enum class ProbeGridSourceRejectReason : u8 {
 bool preflightProbeTrilinearSample(const DDGIDesc& desc,
 
 
+
 /// Human-readable label for probe-grid source reject reasons (logging / tests).
 const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason);
 
@@ -1657,6 +1658,13 @@ bool wouldSkipProbeGridSource(const ProbeGridSource& source);
 /// Early-out when probe cache lookup would be rejected — same ordering as `isProbeCacheAccessible`.
 /// Early-out when index-based probe cache lookup would be rejected; OOB indices that clamp are not skipped.
 bool wouldSkipProbeLookup(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 probe_index, u32 cache_count);
+/// Classify why probe-grid source preflight would reject — same ordering as `tryPreflightProbeGridSource`.
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc);
+/// Diagnose why probe-grid source preflight would reject; vacuously succeeds on sampleable grids.
+bool tryPreflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason& outReason);
+/// Non-mutating probe-grid source preflight — returns true when spatial sampling would proceed.
+bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason* reason = nullptr);
+bool wouldSkipProbeGridSource(const DDGIDesc& desc);
 /// True when `cache` is allocated and sized for every probe in `desc`.
 bool isProbeCacheAccessible(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 cache_count);
 /// Diagnose why probe-grid source preflight would reject; vacuously succeeds on accessible grids.
@@ -2034,6 +2042,7 @@ CacheIndexRejectReason classifyCacheIndexRejectAtCoord(const DDGIDesc& desc,
 /// Early-out when index-based probe lookup would be rejected; OOB indices that clamp are not skipped.
 bool wouldSkipProbeLookupAtIndex(const DDGIDesc& desc,
                                  u32 probe_index,
+/// Early-out when index-based probe lookup would be rejected; in-range indices on accessible caches are not skipped.
 /// Classify why cache-index preflight would reject — same ordering as `tryValidateCacheIndex`.
 CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
 /// Non-mutating cache-index preflight — returns true when lookup would proceed.
@@ -2541,9 +2550,6 @@ bool tryPreflightProbeScheduleAtRate(u32 probe_count,
 u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Schedule preflight with mandatory reject-reason output.
 /// Rate-aware schedule preflight with mandatory reject-reason output.
-                                  u32 probes_per_frame,
-                                  u32 max_indices,
-                                  const u32* out_indices,
 /// True when output capacity would cap scheduled probes below `probes_per_frame`.
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Early-out when probe scheduling would be rejected — same ordering as `tryScheduleProbeUpdates`.
