@@ -206,3 +206,14 @@ bool taaResolveHistoryGenerationIsStale(const TaaResolveDesc& desc, const TaaHis
 bool taaResolveSkipReasonIsBlocking(TaaResolveSkipReason reason);
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-b59-taa-guards-8293 ---
+struct TaaHistoryWarmupPreflight {
+struct TaaHistoryReusePreflight {
+    TaaHistoryWarmupPreflight warmup{};
+struct TaaResolveBlendPreflight {
+TaaHistoryWarmupPreflight preflightTaaHistoryWarmup(const TaaHistoryBuffer& history);
+TaaHistoryReusePreflight preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
+TaaHistoryReusePreflight preflightTaaHistoryReuseForDesc(const TaaHistoryBuffer& history,
+TaaResolveBlendPreflight preflightTaaResolveBlend(bool firstFrame, const TAAParams& params,
+TaaResolveBlendPreflight preflightTaaResolveBlendForDesc(const TaaResolveDesc& desc,

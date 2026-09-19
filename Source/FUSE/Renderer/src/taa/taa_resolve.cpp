@@ -411,3 +411,10 @@ TaaResolveSkipReason preflightTaaResolve(TaaResolveDesc& desc, const TaaHistoryB
 
 // --- deepen additive from deepen-b59-taa-history-blend-guards-748d ---
     return preflightTaaResolve(desc, history);
+
+// --- deepen additive from deepen-b59-taa-guards-8293 ---
+bool TaaResolveBlendPreflight::readyForBlend() const {
+TaaResolveBlendPreflight preflightTaaResolveBlend(bool firstFrame, const TAAParams& params,
+    TaaResolveBlendPreflight preflight{};
+TaaResolveBlendPreflight preflightTaaResolveBlendForDesc(const TaaResolveDesc& desc,
+    TaaResolveBlendPreflight preflight = preflightTaaResolveBlend(firstFrame, desc.params, history);

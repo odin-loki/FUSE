@@ -2861,3 +2861,54 @@ void testResolvePreflightHelpers() {
 void testTaaPassResolvePreflight() {
     testResolvePreflightHelpers();
     testTaaPassResolvePreflight();
+
+// --- deepen additive from deepen-b59-taa-guards-8293 ---
+void testHistoryWarmupPreflight() {
+    const fuse::renderer::TaaHistoryWarmupPreflight unwarmed = fuse::renderer::preflightTaaHistoryWarmup(history);
+    const fuse::renderer::TaaHistoryWarmupPreflight warmed = fuse::renderer::preflightTaaHistoryWarmup(history);
+void testHistoryReusePreflight() {
+    const fuse::renderer::TaaHistoryReusePreflight current =
+        fuse::renderer::preflightTaaHistoryReuse(history, 0u);
+    const fuse::renderer::TaaHistoryReusePreflight stale =
+    const fuse::renderer::TaaHistoryReusePreflight bypass =
+        fuse::renderer::preflightTaaHistoryReuseForDesc(history, desc);
+void testJitterSyncPreflight() {
+    const fuse::renderer::TaaJitterSyncPreflight synced =
+        fuse::renderer::preflightTaaJitterSync(jitter, 5u, 128u, 128u);
+    const fuse::renderer::TaaJitterSyncPreflight drifted =
+    const fuse::renderer::TaaJitterSyncPreflight invalidViewport =
+        fuse::renderer::preflightTaaJitterSync(jitter, 6u, 0u, 128u);
+void testResolveBlendPreflight() {
+    const fuse::renderer::TaaResolveBlendPreflight warmup =
+        fuse::renderer::preflightTaaResolveBlend(true, params, history);
+    const fuse::renderer::TaaResolveBlendPreflight steady =
+        fuse::renderer::preflightTaaResolveBlend(false, params, history);
+    const fuse::renderer::TaaResolveBlendPreflight descPreflight =
+        fuse::renderer::preflightTaaResolveBlendForDesc(desc, history);
+    expectTrue(!descPreflight.history_reuse_allowed, "desc blend preflight blocks stale generation reuse");
+    const fuse::renderer::TaaResolveBlendPreflight currentDescPreflight =
+    expectTrue(currentDescPreflight.history_reuse_allowed,
+void testTaaPassPreflightGuards() {
+    const fuse::renderer::TaaJitterSyncPreflight jitterPreflight = pass->preflightJitterSync(4u);
+    expectTrue(jitterPreflight.synced(), "pass jitter preflight reports synced state");
+    const fuse::renderer::TaaHistoryWarmupPreflight warmupPreflight = pass->preflightHistoryWarmup();
+    expectTrue(warmupPreflight.readyForResolve(), "pass warmup preflight ready for resolve");
+    expectTrue(warmupPreflight.needs_warmup, "pass warmup preflight needs warmup before resolve");
+    const fuse::renderer::TaaResolveBlendPreflight blendPreflight = pass->preflightResolveBlend(resolveDesc);
+    expectTrue(blendPreflight.first_frame, "pass blend preflight marks first frame before resolve");
+    expectTrue(!blendPreflight.history_blend_allowed, "pass blend preflight blocks history before resolve");
+    const fuse::renderer::TaaHistoryReusePreflight reusePreflight = pass->preflightHistoryReuse(0u);
+    expectTrue(reusePreflight.reuse_allowed, "pass reuse preflight allows current generation after resolve");
+    const fuse::renderer::TaaHistoryReusePreflight staleReusePreflight = pass->preflightHistoryReuse(0u);
+    expectTrue(!staleReusePreflight.reuse_allowed,
+    const fuse::renderer::TaaHistoryReusePreflight descReusePreflight =
+        pass->preflightHistoryReuseForDesc(resolveDesc);
+    expectTrue(!descReusePreflight.reuse_allowed, "pass desc reuse preflight blocks after invalidate");
+    const fuse::renderer::TaaResolveBlendPreflight warmedBlendPreflight = pass->preflightResolveBlend(resolveDesc);
+    expectTrue(warmedBlendPreflight.first_frame, "pass blend preflight marks first frame after invalidate");
+    expectTrue(!warmedBlendPreflight.history_blend_allowed,
+    testHistoryWarmupPreflight();
+    testHistoryReusePreflight();
+    testJitterSyncPreflight();
+    testResolveBlendPreflight();
+    testTaaPassPreflightGuards();

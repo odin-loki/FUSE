@@ -207,3 +207,16 @@ void TaaHistoryBuffer::releaseTargets() {
 }
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-b59-taa-guards-8293 ---
+bool TaaHistoryWarmupPreflight::readyForResolve() const {
+bool TaaHistoryWarmupPreflight::warmupComplete() const {
+bool TaaHistoryReusePreflight::canReuseHistory() const {
+TaaHistoryWarmupPreflight preflightTaaHistoryWarmup(const TaaHistoryBuffer& history) {
+    TaaHistoryWarmupPreflight preflight{};
+TaaHistoryReusePreflight preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    TaaHistoryReusePreflight preflight{};
+    preflight.warmup = preflightTaaHistoryWarmup(history);
+TaaHistoryReusePreflight preflightTaaHistoryReuseForDesc(const TaaHistoryBuffer& history,
+        TaaHistoryReusePreflight preflight = preflightTaaHistoryReuse(history, history.invalidateGeneration());
+    return preflightTaaHistoryReuse(history, desc.observed_history_generation);

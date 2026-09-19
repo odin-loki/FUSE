@@ -272,3 +272,8 @@ void TaaJitter::syncToFrameIndex(u32 frameIndex) {
 }
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-b59-taa-guards-8293 ---
+bool TaaJitterSyncPreflight::synced() const {
+TaaJitterSyncPreflight preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height) {
+    TaaJitterSyncPreflight preflight{};

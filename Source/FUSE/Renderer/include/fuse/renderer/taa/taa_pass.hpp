@@ -178,3 +178,10 @@ void resetTaaPassGraphStorage();
 void addTaaPassToGraph(RenderGraph& graph);
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-b59-taa-guards-8293 ---
+    TaaHistoryWarmupPreflight preflightHistoryWarmup() const;
+    TaaHistoryReusePreflight preflightHistoryReuse(u32 observedGeneration) const;
+    TaaHistoryReusePreflight preflightHistoryReuseForDesc(const TaaResolveDesc& desc) const;
+    TaaJitterSyncPreflight preflightJitterSync(u32 frameIndex) const;
+    TaaResolveBlendPreflight preflightResolveBlend(const TaaResolveDesc& desc) const;
