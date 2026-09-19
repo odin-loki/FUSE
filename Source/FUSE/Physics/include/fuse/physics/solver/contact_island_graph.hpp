@@ -79,11 +79,9 @@ u32 count_valid_island_build_distance_constraints(
 
 /// Summarize build inputs; sets `skipped` when `bodyCount` is zero.
 /// Why island graph build would reject inputs (B4.4 deepen follow-up).
-enum class IslandBuildRejectReason : u8 {
     EmptyBodyCount,
     InvalidContactBodyIndex,
     InvalidDistanceBodyIndex,
-/// Why island graph build would early-out (B4.4 deepen follow-up).
     ZeroBodies,
     NoConstraints,
 /// Why island graph build would reject input (B4.4 deepen follow-up).
@@ -231,7 +229,6 @@ bool has_out_of_range_distance_body(u32 bodyCount, const std::vector<DistanceCon
 /// Read-only island build diagnostics — no mutation (B4.4 deepen follow-up).
     u32 distanceCount = 0;
 
-};
 
 /// Populate island build preflight without mutating the graph.
 /// Diagnose why island build would skip; vacuously succeeds when build may proceed.
@@ -255,13 +252,9 @@ const char* islandBuildRejectReasonName(IslandBuildRejectReason reason);
 
 /// Populate island build preflight without mutating the graph (B4.4 deepen follow-up).
 IslandBuildPreflight preflight_island_build(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Returns true when `contactIslandGraphBuildRejectReason` matches `expected` (B4.4 deepen follow-up pass).
 bool contactIslandGraphBuildRejectsForReason(
-    const std::vector<DistanceConstraint>& distanceConstraints,
     ContactIslandGraphBuildRejectReason expected);
 
 /// Read-only island graph build diagnostics — no mutation (B4.4 deepen follow-up pass).
@@ -269,15 +262,11 @@ struct ContactIslandGraphBuildPreflight {
     ContactIslandGraphBuildRejectReason reason = ContactIslandGraphBuildRejectReason::None;
     u32 contactSlotCount = 0;
     u32 distanceSlotCount = 0;
-    u32 validContactCount = 0;
-    u32 inRangeContactCount = 0;
-    u32 inRangeDistanceCount = 0;
     u32 outOfRangeContactBodyCount = 0;
     u32 outOfRangeDistanceBodyCount = 0;
 
     bool has_unsafe_refs() const {
         return outOfRangeContactBodyCount > 0u || outOfRangeDistanceBodyCount > 0u;
-    }
 
     bool can_build() const { return reason == ContactIslandGraphBuildRejectReason::None; }
 
@@ -289,13 +278,11 @@ bool canSkipContactIslandGraphBuild(
 /// Non-mutating build predicate — mirrors `preflightContactIslandGraphBuild` (B4.4 deepen follow-up pass).
 bool shouldRunContactIslandGraphBuild(
 /// Diagnostic reason an island-build input is rejected (B4.4 deepen).
-enum class IslandBuildRejectReason : u8 {
     SelfPair,
     OutOfRangeBody,
     InvalidContact,
 
 /// Human-readable label for diagnostics and test assertions (B4.4 deepen).
-const char* islandBuildRejectReasonName(IslandBuildRejectReason reason);
 
 /// True when `bodyIndex` is in range for `bodyCount`.
 FUSE_PHYSICS_INLINE bool is_valid_body_index(u32 bodyIndex, u32 bodyCount) {
@@ -327,10 +314,8 @@ FUSE_PHYSICS_INLINE IslandBuildRejectReason distanceBuildRejectReason(
     if (bodyCount == 0u || constraint.bodyA >= bodyCount || constraint.bodyB >= bodyCount) {
 
 /// Preflight diagnostics for island graph construction (B4.4 deepen).
-    u32 invalidContactCount = 0;
     u32 oobContactCount = 0;
     u32 selfPairContactCount = 0;
-    u32 validDistanceCount = 0;
     u32 oobDistanceCount = 0;
     u32 selfPairDistanceCount = 0;
 
@@ -346,14 +331,11 @@ IslandBuildPreflight preflight_island_build(u32 bodyCount,
 
 /// Early-out guard when island build has no bodies and no constraint inputs.
 bool should_skip_island_build(u32 bodyCount,
-/// Preflight island graph build; sets `skipped` when `bodyCount` is zero.
 IslandBuildPreflight preflight_island_graph_build(
 
 /// Early-out guard when there are no bodies to partition.
 bool should_skip_island_graph_build(u32 bodyCount);
 /// Diagnostic stats for island graph build preflight (B4.4 deepen follow-up).
-    u32 outOfRangeContactCount = 0;
-    u32 outOfRangeDistanceCount = 0;
     bool invalidBodyCount = false;
 
     bool can_build() const { return !skipped && !invalidBodyCount; }
@@ -381,6 +363,15 @@ bool should_skip_island_build(u32 bodyCount);
 /// Early-out guard when island graph build inputs are degenerate.
 /// Early-out guard when island build inputs cannot produce a meaningful graph.
 bool should_skip_island_build(
+/// Why island graph build would reject or skip constraint union (B4.4 deepen).
+    OutOfRangeBodies,
+
+/// Read-only island graph build diagnostics — no mutation (B4.4 deepen).
+
+
+/// True when `bodyIndex` is in range for island graph union.
+
+/// Preflight island graph build; flags out-of-range body references without mutating.
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -392,6 +383,11 @@ bool build_island_graph_guarded(u32 bodyCount,
 
 /// Returns true when island build preflight accepts the inputs (B4.4 deepen follow-up).
 bool can_build_island_graph(u32 bodyCount,
+/// Early-out guard when island graph build inputs are invalid.
+bool should_skip_island_graph_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -524,10 +520,8 @@ bool build_contact_island_graph_guarded(ContactIslandGraph& graph,
 bool build_guarded(ContactIslandGraph& graph,
 /// Non-mutating island build skip predicate — vacuous zero-body early-out (B4.4 deepen pass).
 bool should_skip_island_build(u32 bodyCount,
-                              const std::vector<narrowphase::ContactManifold>& contacts,
-                              const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Guarded build entry: returns false without mutating when body count is zero.
-                                u32 bodyCount,
+/// Build only when preflight passes; returns false without mutating on reject.
 
 } // namespace fuse::physics
