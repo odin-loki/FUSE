@@ -50,6 +50,28 @@ enum class HrtfPanPreflightRejectReason : u8 {
 enum class HrtfAttenuationCouplingPreflightRejectReason : u8 {
     BypassPath = 1,
     UnityAttenuation = 2,
+/// Empty-IR reject reason for convolution preflight (B7.2 deepen).
+enum class HrtfIrRejectReason {
+    None,
+    NullSamples,
+    ZeroLength,
+
+/// Const preflight for HRTF IR convolution dispatch (B7.2 deepen).
+    HrtfIrRejectReason reason = HrtfIrRejectReason::None;
+    bool rejected = false;
+
+    bool can_convolve() const { return !rejected; }
+
+/// Populate IR preflight without running convolution (B7.2 deepen).
+
+/// Reject reason for an IR stub — \c None when convolution may run.
+HrtfIrRejectReason hrtf_ir_reject_reason(const HrtfIrStub& ir);
+
+/// True when an IR stub is malformed (null samples with non-zero length, or non-null zero-length).
+bool is_malformed_hrtf_ir(const HrtfIrStub& ir);
+
+/// True when empty IR should fall back to ILD/ITD stub pan (alias of \c should_skip_hrtf_convolution).
+bool should_fallback_to_ild_itd_stub(const HrtfIrStub& ir);
 
 /// Listener-local distance below which a source is treated as co-located.
 float hrtf_co_located_epsilon();
@@ -266,6 +288,9 @@ enum class HrtfPanPath {
 /// Why pan-path resolution selected bypass (B7.2 HRTF deepen preflight).
 enum class HrtfPanRejectReason : u8 {
     None = 0,
+/// Pan-path skip reason for spatial preflight (B7.2 deepen).
+enum class HrtfPanPathSkipReason {
+    None,
     Disabled,
     CoLocated,
 };
@@ -336,6 +361,21 @@ struct HrtfPanPathPreflight {
 [[nodiscard]] HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled,
 
 [[nodiscard]] bool can_apply_hrtf_spatial_pan_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+/// Const preflight for HRTF pan routing (B7.2 deepen).
+    HrtfPanPathSkipReason skip_reason = HrtfPanPathSkipReason::None;
+    bool skipped = false;
+
+    bool can_spatialize() const { return !skipped; }
+};
+
+/// Populate pan-path preflight without computing binaural gains (B7.2 deepen).
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+
+/// Populate pan-path preflight when no IR is wired (B7.2 deepen).
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// True when a resolved pan path selects ILD/ITD stub fallback (empty IR).
+bool should_fallback_to_ild_itd_pan_path(HrtfPanPath path);
 
 /// Select pan path from HRTF enable flag, IR stub, and listener-local offset.
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener);
@@ -850,6 +890,29 @@ struct HrtfAttenuationCouplingPreflight {
 
 /// Convenience guard — `preflight_hrtf_attenuation_coupling(...).should_narrow_spatial_image()`.
 [[nodiscard]] bool should_narrow_hrtf_spatial_image_preflight(HrtfPanPath path,
+/// Attenuation-coupling skip reason for spatial narrowing preflight (B7.2 deepen).
+enum class HrtfAttenuationCouplingSkipReason {
+    None,
+    BypassPath,
+    UnityAttenuation,
+
+/// Const preflight for distance/occlusion spatial narrowing (B7.2 deepen).
+    HrtfAttenuationCouplingSkipReason reason = HrtfAttenuationCouplingSkipReason::None;
+    bool skipped = false;
+    float spatial_blend = 1.f;
+
+    bool can_apply() const { return !skipped; }
+
+/// Populate attenuation-coupling preflight without mutating pan gains (B7.2 deepen).
+HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
+    HrtfPanPath path, float distance_attenuation, float occlusion_gain,
+    const HrtfAttenuationCoupling& coupling = {}, const BinauralPanParams& params = {});
+
+/// True when path-aware attenuation coupling can be skipped (B7.2 deepen).
+bool should_skip_hrtf_attenuation_coupling_apply(HrtfPanPath path, float distance_attenuation,
+                                                 float occlusion_gain,
+                                                 const HrtfAttenuationCoupling& coupling = {},
+                                                 const BinauralPanParams& params = {});
 
 /// Clamp distance or occlusion attenuation scalars into [0, 1].
 float clamp_hrtf_attenuation(float attenuation);
