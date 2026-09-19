@@ -4963,3 +4963,34 @@ void testIslandGraphBuildRejectReasonGuards() {
     expectTrue(mixedWake.reason == IslandWakeRejectReason::None, "mixed island has no wake reject reason");
     expectTrue(sleepingWake.reason == IslandWakeRejectReason::NoActiveDynamics,
                                               IslandWakeRejectReason::NoActiveDynamics),
+
+// --- deepen additive from deepen-b4-pbd-island-guards-8369 ---
+void testContactIslandGraphBuildDeepenGuards() {
+    const ContactIslandGraph::BuildPreflight preflight =
+        ContactIslandGraph::preflightBuild(4, contacts, constraints);
+    expectTrue(preflight.reason == ContactIslandGraph::BuildRejectReason::OutOfRangeContactBodies,
+    expectTrue(ContactIslandGraph::buildRejectsForReason(
+                   4, contacts, constraints, ContactIslandGraph::BuildRejectReason::OutOfRangeContactBodies),
+void testIslandBuildDeepenRejectReasons() {
+    const IslandBuildDeepenPreflight deepen = preflight_island_build_deepen(4, contacts, constraints);
+    expectTrue(deepen.reason == IslandBuildRejectReason::OutOfRangeContactBodies,
+               "should_skip_island_build_deepen on unsafe contacts");
+    expectTrue(std::strcmp(island_build_reject_reason_name(IslandBuildRejectReason::EmptyInputs), "EmptyInputs") == 0,
+    const IslandBuildDeepenPreflight emptyDeepen = preflight_island_build_deepen(0, {}, {});
+    expectTrue(emptyDeepen.reason == IslandBuildRejectReason::EmptyInputs,
+void testIslandConstraintSolveDeepenGuards() {
+    const IslandConstraintSolveDeepenPreflight deepen = preflight_island_constraint_solve_deepen(
+    expectTrue(deepen.reason == IslandConstraintSolveRejectReason::NoMovableBodies,
+                   graph.island(0), bodies, contacts, constraints, IslandConstraintSolveRejectReason::NoMovableBodies),
+    expectTrue(should_skip_island_constraint_solve_deepen(graph.island(0), bodies, contacts, constraints),
+    const IslandConstraintSolveDeepenPreflight staleDeepen = preflight_island_constraint_solve_deepen(
+    expectTrue(staleDeepen.reason == IslandConstraintSolveRejectReason::StaleConstraintRefs,
+void testIslandSleepWakeDeepenRejectReasons() {
+    const IslandWakeDeepenPreflight noWake = preflight_island_wake_deepen(graph.island(sleepingIsland), bodies);
+    expectTrue(noWake.reason == IslandWakeRejectReason::NoWakeTarget,
+                   graph.island(sleepingIsland), bodies, IslandWakeRejectReason::NoWakeTarget),
+    expectTrue(should_skip_island_sleep_solve_deepen(graph.island(sleepingIsland), bodies),
+    expectTrue(!should_skip_island_sleep_solve_deepen(graph.island(mixedIsland), bodies),
+               "should_skip_island_sleep_solve_deepen false for mixed island");
+    testIslandBuildDeepenRejectReasons();
+    testIslandSleepWakeDeepenRejectReasons();

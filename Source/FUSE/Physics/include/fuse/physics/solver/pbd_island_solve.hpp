@@ -1695,3 +1695,14 @@ using IslandBuildPreflight = IslandGraphBuildPreflight;
 
 // --- deepen additive from deepen-pbd-island-preflights-e740 ---
         return !skipped && reason == IslandSleepSolveRejectReason::None && allSleeping;
+
+// --- deepen additive from deepen-b4-pbd-island-guards-8369 ---
+    IslandBuildPreflight base{};
+bool should_skip_island_build_deepen(u32 bodyCount,
+    IslandConstraintSolvePreflight base{};
+bool should_skip_island_constraint_solve_deepen(const ContactIslandGraph::Island& island,
+    IslandSleepPreflight base{};
+    IslandWakePreflight base{};
+    IslandWakeDeepenPreflight wake{};
+    IslandConstraintSolveDeepenPreflight solve{};
+    IslandSleepSolveDeepenPreflight sleep{};

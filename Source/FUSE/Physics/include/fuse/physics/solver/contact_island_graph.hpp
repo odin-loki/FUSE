@@ -188,3 +188,11 @@ bool islandUnionRejectsForReason(u32 bodyCount, u32 bodyA, u32 bodyB, IslandUnio
 enum class IslandGraphBuildRejectReason : u8 {
 const char* island_graph_build_reject_reason_name(IslandGraphBuildRejectReason reason);
 IslandGraphBuildRejectReason island_graph_build_reject_reason(
+
+// --- deepen additive from deepen-b4-pbd-island-guards-8369 ---
+    enum class BuildRejectReason : u8 {
+    static const char* buildRejectReasonName(BuildRejectReason reason);
+    static BuildRejectReason buildRejectReason(
+    struct BuildPreflight {
+        BuildRejectReason reason = BuildRejectReason::None;
+    static BuildPreflight preflightBuild(

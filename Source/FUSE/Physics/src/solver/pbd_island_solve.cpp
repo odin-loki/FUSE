@@ -2784,3 +2784,25 @@ IslandWakeGraphRejectPreflight preflight_island_wake_graph_reject(const ContactI
     return should_skip_island_constraint_solve(island, bodies, contacts, distanceConstraints);
     return should_skip_island_sleep_solve(island, bodies);
     return should_skip_island_wake(island, bodies);
+
+// --- deepen additive from deepen-b4-pbd-island-guards-8369 ---
+        deepen.reason = IslandBuildRejectReason::EmptyInputs;
+        deepen.reason = IslandBuildRejectReason::OutOfRangeContactBodies;
+        deepen.reason = IslandBuildRejectReason::OutOfRangeDistanceBodies;
+bool should_skip_island_build_deepen(u32 bodyCount,
+        deepen.reason = IslandConstraintSolveRejectReason::EmptyIsland;
+        deepen.reason = IslandConstraintSolveRejectReason::StaleConstraintRefs;
+        deepen.reason = IslandConstraintSolveRejectReason::NoMovableBodies;
+bool should_skip_island_constraint_solve_deepen(const ContactIslandGraph::Island& island,
+    case IslandSleepSolveRejectReason::OutOfRangeIsland:
+        deepen.reason = IslandSleepSolveRejectReason::EmptyIsland;
+        deepen.reason = IslandSleepSolveRejectReason::AllSleeping;
+    case IslandWakeRejectReason::OutOfRangeIsland:
+        deepen.reason = IslandWakeRejectReason::EmptyIsland;
+        deepen.reason = IslandWakeRejectReason::NoWakeTarget;
+    IslandSolvePipelinePreflight pipeline{};
+        pipeline.sleep.reason = IslandSleepSolveRejectReason::OutOfRangeIsland;
+        pipeline.wake.reason = IslandWakeRejectReason::OutOfRangeIsland;
+        pipeline.solve.reason = IslandConstraintSolveRejectReason::EmptyIsland;
+    const IslandSolvePipelinePreflight pipeline = preflight_island_solve_pipeline(
+    if (should_skip_island_sleep_solve_deepen(island, bodies) ||

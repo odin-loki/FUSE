@@ -448,3 +448,18 @@ IslandGraphBuildRejectReason island_graph_build_reject_reason(
         return IslandGraphBuildRejectReason::EmptyInput;
             return IslandGraphBuildRejectReason::UnsafeContactRefs;
             return IslandGraphBuildRejectReason::UnsafeDistanceRefs;
+
+// --- deepen additive from deepen-b4-pbd-island-guards-8369 ---
+const char* ContactIslandGraph::buildRejectReasonName(BuildRejectReason reason) {
+    case BuildRejectReason::None:
+    case BuildRejectReason::EmptyInputs:
+    case BuildRejectReason::OutOfRangeContactBodies:
+    case BuildRejectReason::OutOfRangeDistanceBodies:
+ContactIslandGraph::BuildRejectReason ContactIslandGraph::buildRejectReason(
+    const BuildPreflight preflight = preflightBuild(bodyCount, contacts, distanceConstraints);
+    return buildRejectReason(bodyCount, contacts, distanceConstraints) == expected;
+ContactIslandGraph::BuildPreflight ContactIslandGraph::preflightBuild(
+        preflight.reason = BuildRejectReason::EmptyInputs;
+        preflight.reason = BuildRejectReason::OutOfRangeContactBodies;
+        preflight.reason = BuildRejectReason::OutOfRangeDistanceBodies;
+    return !preflightBuild(bodyCount, contacts, distanceConstraints).can_build();
