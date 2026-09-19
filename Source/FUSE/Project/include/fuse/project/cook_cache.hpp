@@ -188,6 +188,17 @@ struct CookCacheUpstreamInvalidationEstimate {
     [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
 };
 
+/// Read-only invalidation reconcile breakdown — stale upstream plus prune buckets (B7.9 deepen).
+struct CookCacheInvalidationEstimate {
+    u32 stale_upstream_entries = 0;
+    u32 prune_invalid_entries = 0;
+    u32 prune_stale_entries = 0;
+
+    [[nodiscard]] u32 total() const {
+        return stale_upstream_entries + prune_invalid_entries + prune_stale_entries;
+    }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -565,6 +576,9 @@ public:
     [[nodiscard]] CookCacheUpstreamInvalidationEstimate estimate_upstream_invalidation(
         const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
         const std::vector<CookJob>& jobs) const;
+    /// Combined stale-upstream + prune reconcile breakdown without mutating stats (B7.9 deepen).
+    [[nodiscard]] CookCacheInvalidationEstimate estimate_invalidation_reconcile(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     /// Prune reconcile breakdown without mutating stats (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_removals() const;
     /// Invalidation reconcile breakdown without mutating stats (B7.9 deepen).

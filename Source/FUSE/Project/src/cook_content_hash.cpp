@@ -1656,6 +1656,41 @@ bool tryPreflightCookCacheEntry(const CookCacheEntry& entry, CookHashRejectReaso
     return preflight.can_hash;
 }
 
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_entry(entry)) {
+        preflight.reason = CookHashRejectReason::InvalidCacheEntry;
+        return preflight;
+    }
+
+    switch (entry.kind) {
+    case CookAssetKind::Mesh: {
+        MeshImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_mesh_import_hash(desc);
+    }
+    case CookAssetKind::Texture: {
+        TextureImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_texture_import_hash(desc);
+    }
+    case CookAssetKind::Audio: {
+        AudioImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_audio_import_hash(desc);
+    }
+    case CookAssetKind::Shader:
+        preflight.reason = CookHashRejectReason::UnsupportedAssetKind;
+        return preflight;
+    }
+
+    preflight.reason = CookHashRejectReason::UnsupportedAssetKind;
+    return preflight;
+}
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;

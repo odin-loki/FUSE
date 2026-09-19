@@ -505,6 +505,10 @@ CookCacheUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidatio
 
         if (job.source_path != changed_source) {
             continue;
+    if (m_cache.would_invalidate_source(changed_source)) {
+    }
+
+    for (const CookJob& job : graph.jobs()) {
 
         const std::vector<std::string> downstream =
             m_cache.probe_downstream_sources(job.output_path, graph.edges(), graph.jobs());
@@ -607,27 +611,19 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
     graph.build_from_manifest(manifest);
 
             if (!m_cache.would_invalidate_source(path) && !m_cache.would_invalidate_output(path)) {
-    }
 
     std::vector<std::string> sources;
-    if (m_cache.would_invalidate_source(changed_source)) {
         sources.push_back(changed_source);
 
-    for (const CookJob& job : graph.jobs()) {
         if (job.source_path != changed_source) {
             continue;
 
         const std::vector<std::string> downstream =
             m_cache.probe_downstream_sources(job.output_path, graph.edges(), graph.jobs());
-        for (const std::string& path : downstream) {
             bool already_recorded = false;
             for (const std::string& recorded : sources) {
-                if (recorded == path) {
                     already_recorded = true;
                     break;
-            if (!already_recorded) {
-                sources.push_back(path);
-    return sources;
 
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
     return estimate_stale_dependency_invalidation(manifest);
@@ -1196,23 +1192,10 @@ CookStaleDependencyEstimate AssetCooker::estimate_stale_dependency_reconcile(con
 
 
 
-        }
-    return estimate;
 
-std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
-    const CookManifest& manifest, const std::string& changed_source) const {
-    if (!is_valid_cook_cache_path(changed_source)) {
-        return {};
 
-    CookJobGraph graph;
-    graph.build_from_manifest(manifest);
 
     auto append_unique = [&](const std::string& source_path) {
-        if (!is_valid_cook_cache_path(source_path)) {
-            return;
-        for (const std::string& recorded : sources) {
-            if (recorded == source_path) {
-        sources.push_back(source_path);
 
                 append_unique(source_path);
 }
