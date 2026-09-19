@@ -59,12 +59,24 @@ bool tryPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterGuar
     return preflightTaaJitterSync(frameIndex, sequenceLength, &reason);
 }
 
+bool shouldSkipTaaJitterSync(u32 frameIndex, u32 sequenceLength) {
+    return !preflightTaaJitterSync(frameIndex, sequenceLength);
+}
+
 bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason* reason) {
     const TaaJitterGuardRejectReason reject = classifyTaaJitterNdcReject(width, height, sequenceLength);
     if (reason != nullptr) {
         *reason = reject;
     }
     return reject == TaaJitterGuardRejectReason::None;
+}
+
+bool tryPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason& reason) {
+    return preflightTaaJitterNdc(width, height, sequenceLength, &reason);
+}
+
+bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength) {
+    return !preflightTaaJitterNdc(width, height, sequenceLength);
 }
 
 bool TaaJitterLayout::validateSequenceLength(u32 length) {
@@ -157,6 +169,14 @@ fuse::math::Vec2 TaaJitter::haltonNdcOffset(u32 index, u32 width, u32 height) {
 
 fuse::math::Vec2 TaaJitter::currentPixelOffset() const {
     return TaaJitterLayout::haltonPixelOffset(m_index, m_sequenceLength);
+}
+
+bool TaaJitter::currentPixelOffsetIfReady(fuse::math::Vec2& out) const {
+    if (!canAdvance()) {
+        return false;
+    }
+    out = TaaJitterLayout::haltonPixelOffset(m_index, m_sequenceLength);
+    return true;
 }
 
 fuse::math::Vec2 TaaJitter::currentNdcOffset(u32 width, u32 height) const {

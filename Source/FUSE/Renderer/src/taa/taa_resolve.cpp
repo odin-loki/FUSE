@@ -263,6 +263,51 @@ bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHisto
     return reason == TaaResolveBlendRejectReason::None;
 }
 
+const char* taaResolveReuseBlendRejectReasonLabel(TaaResolveReuseBlendRejectReason reason) {
+    switch (reason) {
+    case TaaResolveReuseBlendRejectReason::None:
+        return "none";
+    case TaaResolveReuseBlendRejectReason::HistoryReuseBlocked:
+        return "history_reuse_blocked";
+    case TaaResolveReuseBlendRejectReason::BlendWeightsRejected:
+        return "blend_weights_rejected";
+    }
+    return "unknown";
+}
+
+TaaResolveReuseBlendRejectReason classifyTaaResolveReuseBlendReject(const TaaResolveDesc& desc,
+                                                                    const TaaHistoryBuffer& history,
+                                                                    u32 observedGeneration) {
+    if (!preflightTaaHistoryReuse(history, observedGeneration)) {
+        return TaaResolveReuseBlendRejectReason::HistoryReuseBlocked;
+    }
+    if (!preflightTaaResolveBlendWeights(desc, history)) {
+        return TaaResolveReuseBlendRejectReason::BlendWeightsRejected;
+    }
+    return TaaResolveReuseBlendRejectReason::None;
+}
+
+bool preflightTaaResolveReuseAndBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                      u32 observedGeneration, TaaResolveReuseBlendRejectReason* reason) {
+    const TaaResolveReuseBlendRejectReason reject =
+        classifyTaaResolveReuseBlendReject(desc, history, observedGeneration);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaResolveReuseBlendRejectReason::None;
+}
+
+bool tryPreflightTaaResolveReuseAndBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                         u32 observedGeneration, TaaResolveReuseBlendRejectReason& reason) {
+    reason = classifyTaaResolveReuseBlendReject(desc, history, observedGeneration);
+    return reason == TaaResolveReuseBlendRejectReason::None;
+}
+
+bool shouldSkipTaaResolveReuseAndBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                       u32 observedGeneration) {
+    return !preflightTaaResolveReuseAndBlend(desc, history, observedGeneration);
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
         return false;
