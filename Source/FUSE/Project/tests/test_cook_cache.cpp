@@ -2017,3 +2017,12 @@ void testCookCachePruneReconcileShouldSkipGuards() {
                "cache should_skip_prune_reconcile matches estimate");
     expectTrue(cooker.cache().would_prune_all() == !estimate.should_skip(),
                "would_prune_all is inverse of estimate should_skip");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-865b ---
+    expectTrue(!mesh_preflight.should_skip(), "readable mesh import preflight should not skip");
+               "should_skip_mesh_import_hash false for readable mesh import");
+    expectTrue(zero_key.should_skip(), "zero source hash preflight should_skip");
+               "should_skip_cook_cache_key mirrors zero source preflight");
+    expectTrue(!valid_key.should_skip(), "valid cache key preflight should not skip");
+               "should_skip_fnv1a64_bytes mirrors null bytes preflight");
+               "should_skip_fnv1a64_bytes false for zero-size null bytes");

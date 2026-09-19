@@ -2359,3 +2359,13 @@ void testCookerReconcileShouldSkipGuards() {
                "cooker should_skip_reconcile matches estimate");
                "cooker should_skip_reconcile false when stale dependencies present");
                "would_invalidate_downstream_of true for chain head output");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-865b ---
+               "fresh cache reconcile would_invalidate is false");
+    expectTrue(!estimate.should_skip(), "stale reconcile estimate should not skip");
+    expectTrue(estimate.should_skip() == cooker.estimate_reconcile_invalidation(manifest).should_skip(),
+               "reconcile estimate should_skip is stable");
+    expectTrue(prune_fresh.should_skip(), "fresh prune reconcile estimate should_skip");
+    expectTrue(cooker.would_reconcile_invalidation(manifest) == !stale.should_skip(),
+               "would_reconcile_invalidation mirrors estimate should_skip");
+               "would_invalidate_downstream_of rejects empty output path");
