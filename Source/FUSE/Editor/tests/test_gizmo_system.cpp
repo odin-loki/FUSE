@@ -4236,3 +4236,15 @@ void testUpdateDragRejectReasonNonFiniteGuards() {
 // --- deepen additive from deepen-gizmo-reject-reasons-3339 ---
     expectTrue(fuse::editor::classifyBeginDragReject(nanBeginPreflight) ==
     expectTrue(fuse::editor::classifyUpdateDragReject(nanUpdatePreflight) ==
+
+// --- deepen additive from b6-gizmo-preflight-deepen-1e54 ---
+void testPickNonFiniteRejectReasonGuards() {
+void testBeginDragNonFiniteRejectReasonGuards() {
+    const fuse::editor::BeginDragPreflight nanPreflight =
+    expectTrue(fuse::editor::classifyBeginDragReject(nanPreflight) ==
+void testUpdateDragNonFiniteRejectReasonGuards() {
+    expectTrue(fuse::editor::preflightSnapDragReady(0.37f, fuse::editor::GizmoMode::Translate, snap,
+               "preflightSnapDragReady accepts valid snap-drag");
+    testPickNonFiniteRejectReasonGuards();
+    testBeginDragNonFiniteRejectReasonGuards();
+    testUpdateDragNonFiniteRejectReasonGuards();
