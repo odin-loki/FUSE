@@ -3783,3 +3783,56 @@ void testTrilinearAndSchedulePreflightGuards() {
                "wouldSkipSampleCoordPreflight false for clampable weights");
                "tryScheduleProbeUpdatesAtRate reports no reject reason on success");
                "tryScheduleProbeUpdatesAtRate reports zero_probes_per_frame reason");
+
+// --- deepen additive from deepen-ddgi-guards-30f9 ---
+void testProbeGridPreflightGuards() {
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeGridReject(desc) ==
+                   fuse::renderer::ProbeGridRejectReason::None,
+               "classifyProbeGridReject none for sampleable grid");
+    expectTrue(fuse::renderer::ProbeGridLayout::preflightProbeGrid(desc),
+               "preflightProbeGrid succeeds for sampleable grid");
+    expectTrue(!fuse::renderer::probeGridRejectReasonIsBlocking(
+                   fuse::renderer::ProbeGridRejectReason::None),
+    expectTrue(fuse::renderer::probeGridRejectReasonIsBlocking(
+                   fuse::renderer::ProbeGridRejectReason::EmptyGrid),
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeGridAccess(desc),
+               "wouldSkipProbeGridAccess false for sampleable grid");
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeIndexReject(desc, 3u) ==
+               "classifyProbeIndexReject none for in-range index");
+    expectTrue(fuse::renderer::ProbeGridLayout::preflightProbeIndex(desc, 3u),
+               "preflightProbeIndex succeeds for in-range index");
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeIndexReject(desc, 99u) ==
+                   fuse::renderer::ProbeGridRejectReason::OutOfRangeProbeIndex,
+               "classifyProbeIndexReject out_of_range_probe_index");
+    expectTrue(std::strcmp(fuse::renderer::probeGridRejectReasonLabel(
+                               fuse::renderer::ProbeGridRejectReason::OutOfRangeProbeIndex),
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeCoordReject(desc, validCoord) ==
+               "classifyProbeCoordReject none for valid coord");
+    expectTrue(fuse::renderer::ProbeGridLayout::preflightProbeCoord(desc, validCoord),
+               "preflightProbeCoord succeeds for valid coord");
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeCoordReject(desc, invalidCoord) ==
+                   fuse::renderer::ProbeGridRejectReason::OutOfRangeProbeCoord,
+               "classifyProbeCoordReject out_of_range_probe_coord");
+    expectTrue(!fuse::renderer::ProbeGridLayout::preflightProbeCoord(desc, invalidCoord),
+               "preflightProbeCoord rejects OOB coord");
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeGridReject(empty) ==
+                   fuse::renderer::ProbeGridRejectReason::EmptyGrid,
+               "classifyProbeGridReject empty_grid");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeGridAccess(empty),
+               "wouldSkipProbeGridAccess true for empty grid");
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeGridReject(notSampleable) ==
+                   fuse::renderer::ProbeGridRejectReason::NotSampleable,
+               "classifyProbeGridReject not_sampleable");
+                               fuse::renderer::ProbeGridRejectReason::NotSampleable),
+void testProbeTrilinearPreflightGuards() {
+                   desc, coords, cache.data(), 8u) == fuse::renderer::ProbeTrilinearSampleRejectReason::None,
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeTrilinearSample(desc, centre, cache.data(), 8u),
+               "preflightProbeTrilinearSample succeeds for interior sample");
+               "coord-based preflightProbeTrilinearSample succeeds");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, centre, cache.data(), 8u),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, centre, nullptr, 8u),
+                   2048u, 64u, 64u, indices, &count) == fuse::renderer::ProbeScheduleRejectReason::None,
+void testProbeKernelPreflightGuards() {
+    testProbeGridPreflightGuards();
+    testProbeTrilinearPreflightGuards();
+    testProbeKernelPreflightGuards();

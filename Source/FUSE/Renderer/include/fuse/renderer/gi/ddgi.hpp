@@ -923,3 +923,16 @@ bool wouldSkipDdgiHostKernelLaunch(const DDGIDesc& desc, const gi::DDGIKernelPar
 
 // --- deepen additive from deepen-ddgi-guards-c2c2 ---
     static bool wouldSkipSampleCoordPreflight(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+
+// --- deepen additive from deepen-ddgi-guards-30f9 ---
+enum class ProbeGridRejectReason : u8 {
+const char* probeGridRejectReasonLabel(ProbeGridRejectReason reason);
+bool probeGridRejectReasonIsBlocking(ProbeGridRejectReason reason);
+    static ProbeGridRejectReason classifyProbeGridReject(const DDGIDesc& desc);
+    static ProbeGridRejectReason classifyProbeIndexReject(const DDGIDesc& desc, u32 probe_index);
+    static ProbeGridRejectReason classifyProbeCoordReject(const DDGIDesc& desc,
+    static bool preflightProbeGrid(const DDGIDesc& desc, ProbeGridRejectReason* reason = nullptr);
+    static bool preflightProbeIndex(const DDGIDesc& desc,
+                                    ProbeGridRejectReason* reason = nullptr);
+    static bool preflightProbeCoord(const DDGIDesc& desc,
+    static bool wouldSkipProbeGridAccess(const DDGIDesc& desc);

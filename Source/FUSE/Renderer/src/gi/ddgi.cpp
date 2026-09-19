@@ -2870,3 +2870,34 @@ ProbeTrilinearSampleRejectReason trilinearRejectFromSampleCoords(ProbeSampleCoor
     return trilinearRejectFromSampleCoords(ProbeGridLayout::classifyProbeSampleCoordsReject(desc, coords));
     return !probeTrilinearSampleRejectReasonIsBlocking(outReason);
         classifyProbeTrilinearSampleReject(desc, coords, cache, cache_count));
+
+// --- deepen additive from deepen-ddgi-guards-30f9 ---
+const char* probeGridRejectReasonLabel(ProbeGridRejectReason reason) {
+    case ProbeGridRejectReason::None:
+    case ProbeGridRejectReason::EmptyGrid:
+    case ProbeGridRejectReason::NotSampleable:
+    case ProbeGridRejectReason::OutOfRangeProbeIndex:
+    case ProbeGridRejectReason::OutOfRangeProbeCoord:
+bool probeGridRejectReasonIsBlocking(ProbeGridRejectReason reason) {
+    return reason != ProbeGridRejectReason::None;
+ProbeGridRejectReason ProbeGridLayout::classifyProbeGridReject(const DDGIDesc& desc) {
+        return ProbeGridRejectReason::EmptyGrid;
+        return ProbeGridRejectReason::NotSampleable;
+    return ProbeGridRejectReason::None;
+ProbeGridRejectReason ProbeGridLayout::classifyProbeIndexReject(const DDGIDesc& desc, u32 probe_index) {
+    const ProbeGridRejectReason gridReason = classifyProbeGridReject(desc);
+    if (gridReason != ProbeGridRejectReason::None) {
+        return ProbeGridRejectReason::OutOfRangeProbeIndex;
+ProbeGridRejectReason ProbeGridLayout::classifyProbeCoordReject(const DDGIDesc& desc,
+        return ProbeGridRejectReason::OutOfRangeProbeCoord;
+bool ProbeGridLayout::preflightProbeGrid(const DDGIDesc& desc, ProbeGridRejectReason* reason) {
+    const ProbeGridRejectReason reject = classifyProbeGridReject(desc);
+    return !probeGridRejectReasonIsBlocking(reject);
+bool ProbeGridLayout::preflightProbeIndex(const DDGIDesc& desc,
+                                          ProbeGridRejectReason* reason) {
+    const ProbeGridRejectReason reject = classifyProbeIndexReject(desc, probe_index);
+bool ProbeGridLayout::preflightProbeCoord(const DDGIDesc& desc,
+    const ProbeGridRejectReason reject = classifyProbeCoordReject(desc, coord);
+bool ProbeGridLayout::wouldSkipProbeGridAccess(const DDGIDesc& desc) {
+    return !preflightProbeGrid(desc);
+    return !preflightProbeTrilinearSample(desc, world_position, cache, cache_count);
