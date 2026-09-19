@@ -1058,6 +1058,38 @@ bool FroxelGridLayout::preflightScreenMapping(f32 screenX,
         *outCoords = coords;
     return mapped && !screenMappingRejectReasonIsBlocking(reject);
 
+bool FroxelGridLayout::wouldClampTileCoords(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc) {
+    if (isEmptyGrid(desc)) {
+        return false;
+    }
+
+    return tileX >= desc.tilesX || tileY >= desc.tilesY || sliceZ >= desc.slicesZ;
+}
+
+bool FroxelGridLayout::tryPreflightTileCoords(u32 tileX,
+                                              u32 tileY,
+                                              u32 sliceZ,
+                                              const FroxelGridDesc& desc,
+                                              SampleCoordRejectReason& outReason) {
+    if (isEmptyGrid(desc)) {
+        outReason = SampleCoordRejectReason::EmptyGrid;
+        return false;
+    }
+
+    if (wouldClampTileCoords(tileX, tileY, sliceZ, desc)) {
+        outReason = SampleCoordRejectReason::OutOfBounds;
+        return false;
+    }
+
+    outReason = SampleCoordRejectReason::None;
+    return true;
+}
+
+bool FroxelGridLayout::canPreflightTileCoords(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc) {
+    SampleCoordRejectReason reason = SampleCoordRejectReason::None;
+    return tryPreflightTileCoords(tileX, tileY, sliceZ, desc, reason);
+}
+
 const char* screenMappingRejectReasonLabel(ScreenMappingRejectReason reason) {
     switch (reason) {
     case ScreenMappingRejectReason::None:
@@ -1456,6 +1488,14 @@ bool canLookupAtCoord(const FroxelDensityGrid& grid,
     return tryCanLookupAtCoord(grid, desc, tileX, tileY, sliceZ, reason);
 }
 
+bool canLookupAtCoord(const FroxelDensityGrid& grid,
+                      const FroxelGridDesc& desc,
+                      u32 /*tileX*/,
+                      u32 /*tileY*/,
+                      u32 /*sliceZ*/) {
+    return canLookupAtIndex(grid, desc, 0u);
+}
+
 bool tryCanLookupAtIndex(const FroxelDensityGrid& grid,
                          u32 /*index*/,
                          const FroxelGridDesc& desc,
@@ -1566,6 +1606,14 @@ bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          DensityLookupRejectReason& outReason) {
     return tryCanLookupAtIndex(grid, desc,
                                FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc), outReason);
+    const u32 index = FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc);
+    if (!tryCanLookupAtIndex(grid, desc, index, outReason)) {
+        return false;
+    }
+
+    if (wouldClampDensityLookupCoord(tileX, tileY, sliceZ, desc)) {
+        outReason = DensityLookupRejectReason::IndexOutOfRange;
+    return true;
 }
 
 bool wouldClampDensityLookupIndex(u32 index, const FroxelGridDesc& desc) {
@@ -1579,7 +1627,6 @@ bool wouldClampDensityLookupCoord(u32 tileX, u32 tileY, u32 sliceZ, const Froxel
 
     return tileX > desc.tilesX - 1u || tileY > desc.tilesY - 1u || sliceZ > desc.slicesZ - 1u;
     return tileX >= desc.tilesX || tileY >= desc.tilesY || sliceZ >= desc.slicesZ;
-}
 
 bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          const FroxelGridDesc& desc,
@@ -1591,13 +1638,11 @@ bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                              FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc), outReason)) {
     const u32 index = FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc);
     if (!tryCanLookupAtIndex(grid, desc, index, outReason)) {
-        return false;
-    }
 
     if (wouldClampDensityLookupCoord(tileX, tileY, sliceZ, desc)) {
         outReason = DensityLookupRejectReason::IndexOutOfRange;
-    }
     return true;
+    return FroxelGridLayout::wouldClampTileCoords(tileX, tileY, sliceZ, desc);
 }
 
 bool canSampleAtCoords(const FroxelDensityGrid& grid,
@@ -2858,6 +2903,7 @@ bool trySampleDensityAtScreen(const FroxelDensityGrid& grid,
                               f32 screenX,
                               f32 screenY,
                               f32 viewDepth,
+                              f32& outDensity,
                               DensityLookupRejectReason& outReason) {
     if (!tryCanLookupAtIndex(grid, desc, 0u, outReason)) {
         outDensity = 0.f;
@@ -2978,6 +3024,14 @@ bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
         }
             screenX, screenY, viewDepth, desc, camera, coords, outMapReason)) {
         outLookupReason = DensityLookupRejectReason::None;
+    ScreenMappingRejectReason mapReason = ScreenMappingRejectReason::None;
+                                                           mapReason)) {
+        outReason = DensityLookupRejectReason::ScreenMappingFailed;
+        return false;
+
+    SampleCoordRejectReason sampleReason = SampleCoordRejectReason::None;
+    if (!tryCanSampleAtCoords(grid, desc, coords, sampleReason)) {
+        outReason = DensityLookupRejectReason::SampleCoordRejected;
         return false;
 
     outDensity = sampleDensityTrilinear(grid, desc, coords);
