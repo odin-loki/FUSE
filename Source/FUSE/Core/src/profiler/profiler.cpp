@@ -481,7 +481,6 @@ namespace {
 
 
     return flowId != 0u && isFlowEventPhase(event.phase) && event.scopeId == flowId
-        && isValidEventName(event.name);
 
 
 
@@ -511,6 +510,9 @@ bool isFlowEvent(const ProfileEvent& event) {
 
 bool eventFlowIdEquals(const ProfileEvent& event, u32 flowId) {
     return isFlowPhaseEvent(event) && event.scopeId == flowId;
+
+    if (!isValidEventName(lhs) || !isValidEventName(rhs)) {
+
 
 
 ProfileScope::ProfileScope(const char* name)
@@ -1714,6 +1716,14 @@ bool wouldSkipCounterSample(const char* track) {
 
 bool wouldSkipChromeTraceExport() {
     return !enabled() || exportableEventCount() == 0u;
+}
+
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
 }
 
 bool hasActiveScope() {
@@ -3660,6 +3670,8 @@ bool tryLastExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -5312,6 +5324,23 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -6107,6 +6136,8 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.hasUnpairedFlowEvents =
         preflight.danglingFlowBeginCount > 0u || preflight.orphanFlowEndCount > 0u;
     preflight.nestingStateConsistent = isNestingStateConsistent();
+    preflight.hasActiveScope = hasActiveScope();
+    preflight.hasActiveAsyncFlowNesting = hasActiveAsyncFlowNesting();
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
@@ -7038,6 +7069,33 @@ bool wouldSkipSafeChromeTraceExport(ProfileRecordSkipReason* reason) {
         *reason = ProfileRecordSkipReason::None;
     }
     return false;
+}
+
+bool wouldSkipScope(const char* name) {
+    return !enabled() || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name, u32 /*flowId*/) {
+    return !enabled() || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/) {
+    if (!enabled() || !isValidEventName(name)) {
+        return true;
+    }
+    return openAsyncFlowCount() == 0u;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !enabled() || !isValidEventName(track);
+}
+
+bool wouldSkipChromeTraceExport() {
+    return !enabled();
+}
+
+bool wouldSkipChromeTraceExportSafely() {
+    return !preflightChromeTraceExport().canExportSafely();
 }
 
 void reset() {

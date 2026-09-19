@@ -424,6 +424,7 @@ struct ChromeTraceExportPreflight {
     bool hasNestingCleanupPending() const {
         return hasUnbalancedNesting() || flowDepthDetached || crossThreadFlowHandoffPending;
     }
+    bool canExportNonEmptyTrace() const { return canExport() && hasExportableEvents(); }
 };
 
 /// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
@@ -1332,6 +1333,7 @@ u32 invalidNameEventCount();
 bool hasInvalidNameEvents();
 u32 exportableEventCount();
 bool hasNonExportableEvents();
+u32 nonExportableEventCount();
 bool isEventExportable(u32 index);
 u32 countEventsWithPhase(EventPhase phase);
 u32 findFirstEventIndexWithPhase(EventPhase phase);
@@ -1361,7 +1363,6 @@ u32 countEventsByFlowId(u32 flowId);
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
-u32 findFirstEventIndexByPhase(EventPhase phase);
 bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
 u32 firstEventIndex();
 u32 ringCapacity();
@@ -1374,14 +1375,7 @@ const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason rea
 bool isValidProfilerName(const char* name);
 bool isEventLookupPreflightOk(u32 index);
 u32 lastEventIndex();
-u32 findLastEventIndexByPhase(EventPhase phase);
-u32 findFirstEventIndexByName(const char* name);
-u32 findLastEventIndexByName(const char* name);
-u32 countEventsByName(const char* name);
 bool hasEventsWithName(const char* name);
-u32 findFirstEventIndexByFlowId(u32 flowId);
-u32 findLastEventIndexByFlowId(u32 flowId);
-u32 countEventsByFlowId(u32 flowId);
 bool hasEventsWithFlowId(u32 flowId);
 bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex);
 bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex);
@@ -1422,7 +1416,6 @@ u32 countBufferedFlowStartsByFlowId(u32 flowId);
 u32 countBufferedFlowFinishesByFlowId(u32 flowId);
 bool isBufferedFlowIdBalanced(u32 flowId);
 bool hasUnbalancedBufferedFlowPairs();
-bool wouldSkipNameLookup(const char* name);
 bool wouldSkipFlowIdLookup(u32 flowId);
 bool isRecordedScopePairingConsistent();
 bool isRecordedAsyncFlowPairingConsistent();
@@ -1578,6 +1571,9 @@ bool wouldSkipAsyncFlowEnd(const char* name, ProfilerRecordSkipReason* reason = 
 bool wouldSkipCounter(const char* track, ProfilerRecordSkipReason* reason = nullptr);
 bool wouldSkipChromeTraceExport(bool requireBalancedNesting = false);
 NestingAsyncFlowPreflight preflightNestingAsyncFlow();
+bool wouldSkipCounterSample(const char* track);
+bool wouldSkipChromeTraceExportSafely();
+
 ChromeTraceExportPreflight preflightChromeTraceExport();
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);
 AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 flowId);
