@@ -4362,3 +4362,25 @@ void testInteractionRejectReasonGuards() {
     expectTrue(!fuse::editor::preflightSnapDragReady(0.25f, fuse::editor::GizmoMode::Translate,
         fuse::editor::preflightSnapDrag(0.25f, fuse::editor::GizmoMode::Translate, snap);
     expectTrue(gizmo.tryPreflightSnapDrag(0.25f, reason),
+
+// --- deepen additive from deepen-gizmo-guards-89fb ---
+               "preflightBeginDragInteractionReady accepts valid screen hit");
+               "preflightBeginDragInteractionReady mirrors canBeginDragInteraction");
+    expectTrue(!fuse::editor::tryPreflightBeginDragInteraction(hit, fuse::editor::GizmoMode::Translate,
+               "tryPreflightBeginDragInteraction rejects non-finite hit");
+    expectTrue(fuse::editor::preflightUpdateDragInteractionReady(hit, true, fuse::editor::GizmoAxis::X,
+               "preflightUpdateDragInteractionReady accepts active drag");
+               "preflightUpdateDragInteractionReady mirrors canUpdateDragInteraction");
+    expectTrue(!fuse::editor::tryPreflightUpdateDragInteraction(hit, true, fuse::editor::GizmoAxis::X,
+               "tryPreflightUpdateDragInteraction rejects non-finite hit");
+    expectTrue(fuse::editor::classifyBeginDragInteractionReject(beginInteraction) ==
+               "classifyBeginDragInteractionReject maps begin preflight flags");
+               "preflightEndDragInteractionReady rejects inactive drag");
+               "preflightEndDragInteractionReady mirrors canEndDragInteraction");
+    expectTrue(fuse::editor::classifyEndDragInteractionReject(endInteraction) ==
+               "classifyEndDragInteractionReject maps end preflight flags");
+               "gizmo preflightBeginDragInteractionReady accepts valid hit");
+               "gizmo preflightUpdateDragInteractionReady accepts active drag");
+               "gizmo preflightEndDragInteractionReady accepts active drag");
+    expectTrue(gizmo.tryPreflightEndDragInteraction(endReason),
+               "gizmo tryPreflightEndDragInteraction accepts active drag");

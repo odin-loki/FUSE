@@ -1286,3 +1286,19 @@ bool tryPreflightEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode m
     [[nodiscard]] bool tryPreflightUpdateInteraction(const GizmoHitTest& hit,
     [[nodiscard]] bool preflightEndInteractionReady(
     [[nodiscard]] bool tryPreflightEndInteraction(GizmoEndDragRejectReason& reason) const;
+
+// --- deepen additive from deepen-gizmo-guards-89fb ---
+GizmoBeginDragRejectReason classifyBeginDragInteractionReject(
+GizmoUpdateDragRejectReason classifyUpdateDragInteractionReject(
+GizmoEndDragRejectReason classifyEndDragInteractionReject(
+bool tryPreflightBeginDragInteraction(const GizmoRay& ray, const GizmoTransform& transform,
+bool tryPreflightBeginDragInteraction(const GizmoHitTest& hit, GizmoMode mode,
+bool tryPreflightUpdateDragInteraction(const GizmoHitTest& hit, bool dragging,
+bool tryPreflightEndDragInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+    [[nodiscard]] bool tryPreflightBeginDragInteraction(const GizmoHitTest& hit,
+    [[nodiscard]] bool tryPreflightBeginDragInteraction(
+        const GizmoHitTest& hit, f32 delta, GizmoUpdateDragRejectReason* reason = nullptr) const;
+    [[nodiscard]] bool tryPreflightUpdateDragInteraction(const GizmoHitTest& hit,
+    [[nodiscard]] bool tryPreflightUpdateDragInteraction(
+        const GizmoHitTest& hit, f32 delta, GizmoUpdateDragRejectReason& reason) const;
+    [[nodiscard]] bool tryPreflightEndDragInteraction(GizmoEndDragRejectReason& reason) const;
