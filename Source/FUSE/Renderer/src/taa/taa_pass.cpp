@@ -374,3 +374,7 @@ TaaJitterSyncPreflight TaaPass::preflightJitterSync(u32 frameIndex) const {
     return preflightTaaJitterSync(m_jitter, frameIndex, m_desc.width, m_desc.height);
 TaaResolveBlendPreflight TaaPass::preflightResolveBlend(const TaaResolveDesc& desc) const {
     return preflightTaaResolveBlendForDesc(desc, m_history);
+
+// --- deepen additive from deepen-b59-taa-jitter-history-preflights-ddf1 ---
+bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* out) const {
+    return preflightTaaResolveBlend(desc, m_history, out);

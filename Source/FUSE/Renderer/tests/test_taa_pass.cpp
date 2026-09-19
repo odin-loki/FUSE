@@ -2918,3 +2918,24 @@ void testHistoryWarmupGuards() {
 void testJitterSyncGuards() {
         fuse::renderer::preflightTaaBlendWeights(desc, history);
 void testTaaPassJitterSyncGuards() {
+
+// --- deepen additive from deepen-b59-taa-jitter-history-preflights-ddf1 ---
+void testHistoryWarmupPreflightGuards() {
+    expectTrue(!fuse::renderer::taaHistoryReusePreflightPasses(history, 0u),
+    expectTrue(fuse::renderer::taaHistoryReusePreflightPasses(history, 0u),
+void testResolveSurfaceAndPreflightHelpers() {
+void testResolveBlendPreflightGuards() {
+    expectTrue(fuse::renderer::preflightTaaBlendWeights(true, params, &warmup),
+    expectTrue(fuse::renderer::preflightTaaBlendWeights(false, params, &steady),
+    expectTrue(fuse::renderer::taaResolveBlendPreflightPasses(desc, history),
+    expectTrue(fuse::renderer::preflightTaaResolveBlend(desc, history, &blend),
+               "preflightTaaResolveBlend succeeds before first resolve");
+               "preflightTaaResolveBlend succeeds after warmup");
+    expectTrue(!fuse::renderer::taaResolveBlendPreflightPasses(desc, history),
+    expectTrue(!fuse::renderer::preflightTaaResolveBlend(desc, history, &blend),
+               "preflightTaaResolveBlend rejects invalid dimensions");
+    expectTrue(pass->preflightResolveBlend(desc, &warmupPassBlend), "pass preflightResolveBlend succeeds before warmup");
+    expectTrue(pass->preflightResolveBlend(desc, &passBlend), "pass preflightResolveBlend succeeds after warmup");
+    testHistoryWarmupPreflightGuards();
+    testResolveSurfaceAndPreflightHelpers();
+    testResolveBlendPreflightGuards();

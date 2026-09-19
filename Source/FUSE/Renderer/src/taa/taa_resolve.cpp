@@ -421,3 +421,11 @@ TaaResolveBlendPreflight preflightTaaResolveBlendForDesc(const TaaResolveDesc& d
 
 // --- deepen additive from deepen-b59-taa-guards-e811 ---
 TaaBlendWeights preflightTaaBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+
+// --- deepen additive from deepen-b59-taa-jitter-history-preflights-ddf1 ---
+bool preflightTaaBlendWeights(bool firstFrame, const TAAParams& params, TaaBlendWeights* out) {
+bool taaResolveBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    if (!preflightTaaResolve(desc, history)) {
+    return preflightTaaBlendWeights(!history.hasValidHistory(), desc.params);
+bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history, TaaBlendWeights* out) {
+    return preflightTaaBlendWeights(!history.hasValidHistory(), desc.params, out);

@@ -185,3 +185,6 @@ void addTaaPassToGraph(RenderGraph& graph);
     TaaHistoryReusePreflight preflightHistoryReuseForDesc(const TaaResolveDesc& desc) const;
     TaaJitterSyncPreflight preflightJitterSync(u32 frameIndex) const;
     TaaResolveBlendPreflight preflightResolveBlend(const TaaResolveDesc& desc) const;
+
+// --- deepen additive from deepen-b59-taa-jitter-history-preflights-ddf1 ---
+    bool preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* out = nullptr) const;

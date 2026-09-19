@@ -220,3 +220,6 @@ TaaHistoryReusePreflight preflightTaaHistoryReuse(const TaaHistoryBuffer& histor
 TaaHistoryReusePreflight preflightTaaHistoryReuseForDesc(const TaaHistoryBuffer& history,
         TaaHistoryReusePreflight preflight = preflightTaaHistoryReuse(history, history.invalidateGeneration());
     return preflightTaaHistoryReuse(history, desc.observed_history_generation);
+
+// --- deepen additive from deepen-b59-taa-jitter-history-preflights-ddf1 ---
+bool taaHistoryReusePreflightPasses(const TaaHistoryBuffer& history, u32 observedGeneration) {
