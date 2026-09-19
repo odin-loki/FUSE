@@ -1394,3 +1394,42 @@ bool hrtf_binaural_reject_reason_blocks_spatial_pan(HrtfBinauralRejectReason rea
     return preflight.convolutionRejectReason;
     return preflight.narrowingRejectReason;
     const HrtfBinauralRejectReason reject = preflight.spatialPanRejectReason;
+
+// --- deepen additive from deepen-b7.2-hrtf-reject-reasons-a8a9 ---
+bool hrtfIrRejectReasonIsBlocking(HrtfIrRejectReason reason) {
+HrtfIrRejectReason classifyHrtfIrReject(const HrtfIrStub& ir) {
+bool tryPreflightHrtfIr(const HrtfIrStub& ir, HrtfIrRejectReason& reason) {
+    reason = classifyHrtfIrReject(ir);
+    return !hrtfIrRejectReasonIsBlocking(reason);
+    preflight.rejectReason = classifyHrtfIrReject(ir);
+bool hrtfPanPathRejectReasonIsBlocking(HrtfPanPathRejectReason reason) {
+HrtfPanPathRejectReason classifyHrtfPanPathReject(bool hrtf_enabled, const Vec3& rel_listener) {
+bool tryPreflightHrtfPanPath(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+    reason = classifyHrtfPanPathReject(hrtf_enabled, rel_listener);
+    return !hrtfPanPathRejectReasonIsBlocking(reason);
+bool tryPreflightHrtfPanPath(bool hrtf_enabled, const Vec3& rel_listener,
+    return tryPreflightHrtfPanPath(hrtf_enabled, make_empty_hrtf_ir(), rel_listener, reason);
+    preflight.rejectReason = classifyHrtfPanPathReject(hrtf_enabled, rel_listener);
+bool hrtfAttenuationCouplingRejectReasonIsBlocking(HrtfAttenuationCouplingRejectReason reason) {
+HrtfAttenuationCouplingRejectReason classifyHrtfAttenuationCouplingReject(
+bool tryPreflightHrtfAttenuationCoupling(HrtfPanPath path, float distance_attenuation,
+    reason = classifyHrtfAttenuationCouplingReject(path, distance_attenuation, occlusion_gain,
+    return !hrtfAttenuationCouplingRejectReasonIsBlocking(reason);
+    preflight.rejectReason = classifyHrtfAttenuationCouplingReject(
+bool hrtfBinauralRejectReasonIsBypass(HrtfBinauralRejectReason reason) {
+bool hrtfBinauralRejectReasonBlocksConvolution(HrtfBinauralRejectReason reason) {
+    return reason == HrtfBinauralRejectReason::EmptyIr
+        || hrtfBinauralRejectReasonIsBypass(reason);
+HrtfBinauralRejectReason classifyHrtfBinauralReject(
+    const HrtfPanPathRejectReason pan_reject = classifyHrtfPanPathReject(hrtf_enabled, rel_listener);
+    const HrtfIrRejectReason ir_reject = classifyHrtfIrReject(ir);
+    if (ir_reject == HrtfIrRejectReason::MalformedIr) {
+    if (ir_reject == HrtfIrRejectReason::NullSamples) {
+    const HrtfAttenuationCouplingRejectReason atten_reject = classifyHrtfAttenuationCouplingReject(
+    if (atten_reject == HrtfAttenuationCouplingRejectReason::UnityAttenuation) {
+bool tryPreflightHrtfBinaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+    reason = classifyHrtfBinauralReject(hrtf_enabled, ir, rel_listener, distance_attenuation,
+    return !hrtfBinauralRejectReasonIsBypass(reason);
+bool tryPreflightHrtfBinaural(bool hrtf_enabled, const Vec3& rel_listener,
+    return tryPreflightHrtfBinaural(hrtf_enabled, make_empty_hrtf_ir(), rel_listener,
+    preflight.rejectReason = classifyHrtfBinauralReject(
