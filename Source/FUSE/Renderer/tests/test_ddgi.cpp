@@ -933,6 +933,37 @@ void testBilinearTileIrradiance() {
     expectNear(nullSample.x, 0.f, 1e-5f, "bilinear null samples returns zero");
 }
 
+void testProbeIndexBoundsHelpers() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    expectTrue(fuse::renderer::ProbeGridLayout::maxProbeIndex(desc) == 7u,
+               "maxProbeIndex returns last probe index");
+    expectTrue(fuse::renderer::ProbeGridLayout::isAtMaxProbeIndex(7u, desc),
+               "last probe index flagged at max");
+    expectTrue(!fuse::renderer::ProbeGridLayout::isAtMaxProbeIndex(6u, desc),
+               "non-last probe index not at max");
+
+    fuse::u32 clamped = 99u;
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeIndex(3u, desc, clamped),
+               "tryClampProbeIndex succeeds on non-empty grid");
+    expectTrue(clamped == 3u, "tryClampProbeIndex preserves in-range index");
+
+    fuse::u32 oobClamped = 0u;
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeIndex(99u, desc, oobClamped),
+               "tryClampProbeIndex succeeds for OOB index");
+    expectTrue(oobClamped == 7u, "tryClampProbeIndex clamps OOB index to max");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    fuse::u32 emptyClamped = 5u;
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryClampProbeIndex(5u, empty, emptyClamped),
+               "tryClampProbeIndex fails on empty grid");
+    expectTrue(emptyClamped == 0u, "tryClampProbeIndex zeroes out_index on empty grid");
+    expectTrue(fuse::renderer::ProbeGridLayout::maxProbeIndex(empty) == 0u,
+               "maxProbeIndex zero on empty grid");
+}
+
 void testProbeSampleCoordGuards() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {2, 2, 2};
@@ -998,6 +1029,47 @@ void testProbeSampleCoordGuards() {
                "tryBuildProbeSampleCoords fails on empty grid");
 }
 
+void testProbeSampleCoordBoundsGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    fuse::renderer::ProbeSampleCoords built{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, built),
+               "buildProbeSampleCoords for bounds test");
+    expectTrue(fuse::renderer::ProbeGridLayout::areProbeSampleCoordsInBounds(desc, built),
+               "built sample coords are in bounds");
+    expectTrue(!fuse::renderer::ProbeGridLayout::isProbeSampleCoordsOutOfRange(desc, built),
+               "built sample coords not out of range");
+
+    fuse::renderer::ProbeSampleCoords oobIndices = built;
+    oobIndices.x0 = 9u;
+    oobIndices.x1 = 9u;
+    expectTrue(!fuse::renderer::ProbeGridLayout::areProbeSampleCoordsInBounds(desc, oobIndices),
+               "OOB corner indices fail in-bounds check");
+    expectTrue(fuse::renderer::ProbeGridLayout::isProbeSampleCoordsOutOfRange(desc, oobIndices),
+               "OOB corner indices flagged out of range");
+
+    fuse::renderer::ProbeSampleCoords oobWeights = built;
+    oobWeights.tx = 2.f;
+    expectTrue(fuse::renderer::ProbeGridLayout::isProbeSampleCoordsOutOfRange(desc, oobWeights),
+               "OOB trilinear weight flagged out of range");
+
+    fuse::renderer::ProbeSampleCoords toClamp = oobIndices;
+    const fuse::u32 originalX0 = toClamp.x0;
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryClampProbeSampleCoords(empty, toClamp),
+               "tryClampProbeSampleCoords rejects empty grid");
+    expectTrue(toClamp.x0 == originalX0, "tryClampProbeSampleCoords leaves coords unchanged on empty grid");
+
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeSampleCoords(desc, toClamp),
+               "tryClampProbeSampleCoords succeeds on non-empty grid");
+    expectTrue(fuse::renderer::ProbeGridLayout::areProbeSampleCoordsInBounds(desc, toClamp),
+               "tryClampProbeSampleCoords yields in-bounds coords");
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, toClamp),
+               "tryClampProbeSampleCoords yields valid sample coords");
+}
+
 void testCacheIndexGuards() {
 
     expectTrue(fuse::renderer::ddgi_util::requiredCacheCount(desc) == 8u,
@@ -1029,6 +1101,28 @@ void testCacheIndexGuards() {
                "requiredCacheCount zero on empty grid");
     expectTrue(!fuse::renderer::ddgi_util::isCacheIndexValid(empty, 0u, 8u),
                "cache index invalid on empty grid");
+    expectTrue(fuse::renderer::ddgi_util::isCacheIndexOutOfRange(empty, 0u, 8u),
+               "cache index out of range on empty grid");
+    expectTrue(fuse::renderer::ddgi_util::isCacheIndexOutOfRange(desc, 3u, 2u),
+               "in-range probe index out of range when cache undersized");
+    expectTrue(!fuse::renderer::ddgi_util::isCacheIndexOutOfRange(desc, 3u, 8u),
+               "in-range probe index not out of range in full cache");
+
+    fuse::u32 cacheClamped = 0u;
+    expectTrue(fuse::renderer::ddgi_util::tryClampCacheIndex(desc, 99u, 8u, cacheClamped),
+               "tryClampCacheIndex succeeds on non-empty grid");
+    expectTrue(cacheClamped == 7u, "tryClampCacheIndex clamps OOB probe index");
+
+    fuse::u32 undersizedClamped = 0u;
+    expectTrue(fuse::renderer::ddgi_util::tryClampCacheIndex(desc, 5u, 2u, undersizedClamped),
+               "tryClampCacheIndex succeeds with undersized cache");
+    expectTrue(undersizedClamped == 1u, "tryClampCacheIndex clamps to last cache entry");
+
+    fuse::u32 emptyClamped = 4u;
+    expectTrue(!fuse::renderer::ddgi_util::tryClampCacheIndex(empty, 0u, 8u, emptyClamped),
+               "tryClampCacheIndex fails on empty grid");
+    expectTrue(emptyClamped == 0u, "tryClampCacheIndex zeroes out_index on empty grid");
+}
 
 void testLaunchProbeUpdateGuards() {
 void testLaunchProbeUpdateIndexGuard() {
@@ -1981,6 +2075,56 @@ void testDdgiLaunchGuards() {
                "trace kernel launch rejects null indices");
     expectTrue(!fuse::renderer::gi::launch_probe_blend_kernel(params, nullptr),
                "blend kernel launch rejects null indices");
+               "tryCanLaunchDdgiProbeUpdate accepts valid indices");
+    expectTrue(reason == fuse::renderer::DdgiLaunchRejectReason::None,
+               "valid launch leaves reject reason None");
+
+               "tryCanLaunchDdgiProbeUpdate rejects null indices");
+               "null indices set NullIndices reject reason");
+    expectTrue(std::string(fuse::renderer::ddgiLaunchRejectReasonLabel(reason)) == "null_indices",
+               "reject reason label for null indices");
+
+               "tryCanLaunchDdgiProbeUpdate rejects zero count");
+    expectTrue(reason == fuse::renderer::DdgiLaunchRejectReason::ZeroCount,
+               "zero count set ZeroCount reject reason");
+
+               "tryCanLaunchDdgiProbeUpdate rejects OOB indices");
+    expectTrue(reason == fuse::renderer::DdgiLaunchRejectReason::OutOfRangeIndex,
+               "OOB indices set OutOfRangeIndex reject reason");
+
+               "tryCanLaunchDdgiProbeUpdate rejects empty grid");
+               "empty grid set EmptyGrid reject reason");
+
+    expectTrue(fuse::renderer::countInvalidLaunchProbeIndices(desc, validIndices, 2u) == 0u,
+               "valid indices have zero invalid launch count");
+    expectTrue(fuse::renderer::countInvalidLaunchProbeIndices(desc, oobIndices, 2u) == 1u,
+               "one OOB index counted as invalid");
+    expectTrue(fuse::renderer::countInvalidLaunchProbeIndices(desc, nullptr, 2u) == 0u,
+               "null buffer yields zero invalid count");
+    expectTrue(fuse::renderer::countInvalidLaunchProbeIndices(empty, validIndices, 2u) == 0u,
+               "empty grid yields zero invalid count");
+}
+
+    params.hysteresis = 0.97f;
+
+               "trace kernel preflight accepts valid params");
+               "blend kernel preflight accepts valid params");
+
+    expectTrue(!fuse::renderer::gi::canLaunchProbeTraceKernel(zeroCount),
+               "trace kernel preflight rejects zero update count");
+
+    expectTrue(!fuse::renderer::gi::canLaunchProbeBlendKernel(nullIndices),
+               "blend kernel preflight rejects null indices");
+
+    fuse::renderer::gi::DDGIKernelParams badHysteresis = params;
+    badHysteresis.hysteresis = 1.5f;
+    expectTrue(!fuse::renderer::gi::canLaunchProbeBlendKernel(badHysteresis),
+               "blend kernel preflight rejects hysteresis > 1");
+    expectTrue(!fuse::renderer::gi::launch_probe_blend_kernel(badHysteresis, nullptr),
+               "blend kernel launch rejects hysteresis > 1");
+
+    expectTrue(!fuse::renderer::gi::canLaunchProbeTraceKernel(zeroRays),
+               "trace kernel preflight rejects zero rays_per_probe");
 }
 
 void testSampleGuards() {
@@ -2346,6 +2490,7 @@ int main() {
     testProbeSampleSkipClassification();
     testResolveSampleDirectionFromSurface();
     testEmptyDirectionGuards();
+    testProbeIndexBoundsHelpers();
     testProbeSampleCoordGuards();
     testProbeSampleCoordsInBounds();
     testTryBuildProbeSampleCoords();
@@ -2357,6 +2502,7 @@ int main() {
     testTryTrilinearDirectionalProbeIrradiance();
     testWouldSkipDdgiProbeUpdate();
     testTryLaunchDdgiProbeUpdate();
+    testProbeSampleCoordBoundsGuards();
     testCacheIndexGuards();
     testCacheIndexRejectReasons();
     testProbeScheduleRejectReasons();

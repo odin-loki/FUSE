@@ -96,6 +96,7 @@ bool preflightProbeBlendKernel(const DDGIKernelParams& params, DdgiKernelLaunchR
 
 /// True when kernel params carry a non-zero probe index list for stub launch.
 
+
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
 /// Launch probe trace kernel with reject-reason diagnostics; false when preflight rejects.
