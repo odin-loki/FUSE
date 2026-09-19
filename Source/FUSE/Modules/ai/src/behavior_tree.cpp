@@ -1,5 +1,6 @@
 #include <fuse/ai/behavior_tree.hpp>
 #include <fuse/ai/node_registry.hpp>
+#include <fuse/ai/parallel_policy.hpp>
 #include <fuse/ai/spatial_query.hpp>
 
 namespace fuse::ai {
@@ -29,9 +30,8 @@ BehaviorTickResult aggregateParallelChildren(const BehaviorTickResult& first,
                                              const ParallelPolicy& policy,
                                              bool secondTicked) {
     const u32 activeChildCount = secondTicked ? kParallelChildCount : 1u;
-    const u32 successNeeded =
-        policy.successThreshold > 0 ? policy.successThreshold : activeChildCount;
-    const u32 failLimit = policy.failThreshold > 0 ? policy.failThreshold : 1u;
+    const u32 successNeeded = effective_success_threshold(policy, activeChildCount);
+    const u32 failLimit = effective_fail_threshold(policy);
 
     u32 successCount = 0;
     u32 failCount = 0;
@@ -116,18 +116,14 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
             return {};
         }
         if (policy.requireNonEmptyBoard && board.isBoardEmpty()) {
-            return {};
-        }
         if (policy.requireValidAgent && !board.isAgentValid(agentIndex)) {
-            return {};
-        }
         if (policy.requireAllyContext && !ally_context_available(ctx.allies)) {
+        if (!parallel_preconditions_satisfied(policy, agentIndex, board, ctx)) {
             return {};
         }
 
-        const u32 failLimit = policy.failThreshold > 0 ? policy.failThreshold : 1u;
-        const u32 successNeeded =
-            policy.successThreshold > 0 ? policy.successThreshold : kParallelChildCount;
+        const u32 failLimit = effective_fail_threshold(policy);
+        const u32 successNeeded = effective_success_threshold(policy, kParallelChildCount);
 
         const BehaviorTickResult first = tickNode(node.childA, agentIndex, agent, board, ctx);
         const u32 failCountAfterFirst =
@@ -441,6 +437,7 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
     case NodeKind::GuardBlackboardEmpty: {
         BehaviorTickResult result;
         result.status = board.isBoardEmpty() ? BehaviorStatus::Success : BehaviorStatus::Failure;
+        result.status = board.isEmpty() ? BehaviorStatus::Success : BehaviorStatus::Failure;
         return result;
     }
     case NodeKind::GuardBlackboardAgentValid: {

@@ -242,6 +242,13 @@ BehaviorNode makeGuardAllyContext(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeGuardBlackboardAgentValid(const NodeLoadSpec& spec) {
+    (void)spec;
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardAgentValid;
+    return node;
+}
+
 BehaviorNode makeGuardValidAllyRadius(const NodeLoadSpec& spec) {
     BehaviorNode node;
     node.kind = NodeKind::GuardValidAllyRadius;

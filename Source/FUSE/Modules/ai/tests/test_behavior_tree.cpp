@@ -115,6 +115,9 @@ void testRegistryBuiltinNodes() {
     expectTrue(registry.hasFactory("bb.condition.no_allies_in_radius"), "bb.condition.no_allies_in_radius registered");
     expectTrue(registry.hasFactory("bb.action.nearest_ally_distance"), "bb.action.nearest_ally_distance registered");
     expectTrue(registry.registeredTypeIds().size() >= 29u, "registry exposes built-in type ids");
+    expectTrue(registry.hasFactory("bb.guard.blackboard_agent_valid"),
+               "bb.guard.blackboard_agent_valid registered");
+    expectTrue(registry.registeredTypeIds().size() >= 26u, "registry exposes built-in type ids");
 }
 
 void testInverterDecorator() {
@@ -908,6 +911,7 @@ void testEmptyBlackboardViewReadsFalse() {
     bool flag = false;
     float scalar = 0.f;
     expectTrue(!emptyView.isBound(), "default blackboard view is not bound");
+    expectTrue(emptyView.isEmpty(), "default blackboard view is empty");
     expectTrue(!emptyView.tryGetFlag(0, 0, flag), "empty blackboard view rejects flag read");
     expectTrue(!emptyView.tryGetScalar(0, 0, scalar), "empty blackboard view rejects scalar read");
     expectTrue(!emptyView.flag(0, 0), "empty blackboard view flag() returns false");
@@ -1162,6 +1166,101 @@ void testBlackboardViewAgentAndFlagHelpers() {
     expectTrue(unbound.agentCount() == 0u, "unbound view reports zero agents");
     expectTrue(!unbound.isAgentValid(0), "unbound view rejects agent index");
     expectTrue(unbound.isFlagEmpty(0, 0), "unbound view treats flag as empty");
+}
+
+void testGuardBlackboardAgentValidLeaf() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.guard.blackboard_agent_valid", 0.f, 0, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, tree), "agent valid guard loads");
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult valid =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(valid.status == fuse::ai::BehaviorStatus::Success,
+               "agent valid guard succeeds for in-range agent");
+
+    const fuse::ai::BehaviorTickResult invalid =
+        tree.tick(1, agent, fuse::ai::BlackboardView(board));
+    expectTrue(invalid.status == fuse::ai::BehaviorStatus::Failure,
+               "agent valid guard fails for out-of-range agent");
+
+    const fuse::ai::BehaviorTickResult unbound =
+        tree.tick(0, agent, fuse::ai::BlackboardView());
+    expectTrue(unbound.status == fuse::ai::BehaviorStatus::Failure,
+               "agent valid guard fails with unbound view");
+}
+
+void testGuardValidAllyRadiusLeaf() {
+    const std::vector<fuse::ai::NodeLoadSpec> validSpecs = {
+        {"bb.guard.valid_ally_radius", 5.f, 0, 1, {}, {}},
+    };
+    const std::vector<fuse::ai::NodeLoadSpec> invalidSpecs = {
+        {"bb.guard.valid_ally_radius", 0.f, 0, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree validTree;
+    fuse::ai::BehaviorTree invalidTree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(validSpecs, 0, validTree), "valid radius guard loads");
+    expectTrue(fuse::ai::loadTreeFromSpecs(invalidSpecs, 0, invalidTree),
+               "invalid radius guard loads");
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult valid =
+        validTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(valid.status == fuse::ai::BehaviorStatus::Success,
+               "valid ally radius guard succeeds for positive threshold");
+
+    const fuse::ai::BehaviorTickResult invalid =
+        invalidTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(invalid.status == fuse::ai::BehaviorStatus::Failure,
+               "valid ally radius guard fails for zero threshold");
+}
+
+void testParallelRequireAgentGuard() {
+    fuse::ai::ParallelPolicy policy;
+    policy.requireValidAgent = true;
+
+    fuse::ai::BehaviorTree tree = makeParallelTree(fuse::ai::NodeKind::ActionSetFlag,
+                                                 fuse::ai::NodeKind::ActionSetFlag,
+                                                 policy);
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult valid =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(valid.status == fuse::ai::BehaviorStatus::Success,
+               "parallel require-agent guard succeeds for valid agent");
+
+    const fuse::ai::BehaviorTickResult invalid =
+        tree.tick(2, agent, fuse::ai::BlackboardView(board));
+    expectTrue(invalid.status == fuse::ai::BehaviorStatus::Failure,
+               "parallel require-agent guard fails for invalid agent");
+    expectTrue(!invalid.wroteFlag, "parallel require-agent guard skips child side effects");
+}
+
+void testParallelRequireAgentTextLoader() {
+    const std::string text = R"(
+bb.action.set_flag flag=0
+bb.action.set_flag flag=1
+bb.parallel children=0,1 require_agent=1
+root=2
+)";
+
+    fuse::ai::BehaviorTree tree;
+    std::string error;
+    expectTrue(fuse::ai::loadTreeFromText(text, tree, &error), "parallel require-agent text loads");
+    expectTrue(tree.node(2).parallelPolicy.requireValidAgent, "text loader sets require_agent");
 }
 
 void testGuardAllyContextLeaf() {
@@ -1549,6 +1648,7 @@ void testRuntimeParallelMultiAgentAggregation() {
 } // namespace
 
 int run_spatial_query_tests();
+int run_parallel_policy_tests();
 
 int main() {
     fuse::core::initialize();
@@ -1597,6 +1697,8 @@ int main() {
     testGuardBlackboardFlagSetLeaf();
     testGuardValidAllyRadiusLeaf();
     testBlackboardViewAgentAndFlagHelpers();
+    testGuardBlackboardAgentValidLeaf();
+    testGuardValidAllyRadiusLeaf();
     testGuardAllyContextLeaf();
     testAnyAllyInRadiusConditionLeaf();
     testAlliesCountActionLeaf();
@@ -1607,11 +1709,14 @@ int main() {
     testParallelGuardTextLoader();
     testNoAlliesInRadiusConditionLeaf();
     testNearestAllyDistanceActionLeaf();
+    testParallelRequireAgentGuard();
+    testParallelRequireAgentTextLoader();
     testNearestAllyActionLeaf();
     testNearestAllyWritesScalarSlot();
     testNearestAllyActionFailsBeyondRadius();
     testParallelSpatialChildStatusAggregation();
     g_failures += run_spatial_query_tests();
+    g_failures += run_parallel_policy_tests();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

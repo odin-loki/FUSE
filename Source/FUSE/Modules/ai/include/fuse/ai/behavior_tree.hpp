@@ -86,6 +86,7 @@ struct ParallelPolicy {
     bool requireValidAgent = false;
     /// When true, fail immediately when the blackboard view is unbound or has zero agents.
     bool requireNonEmptyBoard = false;
+    /// When true, fail immediately when `agentIndex` is out of range for the bound board.
 };
 
 /// Flat behavior-tree node — ore analogue: BadBehaviour composite/decorator/leaf nodes.
