@@ -235,6 +235,13 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
     return !canSkipBroadphasePairGeneration(bodies, shapes);
 }
 
+/// Predict whether broadphase would bail before hash build (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool wouldSkipBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return canSkipBroadphase(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,
@@ -1076,19 +1083,12 @@ FUSE_PHYSICS_INLINE bool wouldSkipShapeCellOccupancy(
 
 /// Preflight skip check for cell occupancy iteration — mirrors `canSkipCellOccupancyIteration` (B4.2 deepen pass).
 
-}
-
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
-    const CellOccupancyPreflight preflight = preflightCellOccupancy(range, maxCells);
-    if (reason != nullptr) {
-        *reason = preflight.reason;
-    return !preflight.canIterate();
-
-    const CellRange3& range,
 
 
+
+
+
+/// Predict whether cell occupancy iteration would bail before hash insertion (B4.2 deepen pass).
 
 
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
@@ -2877,6 +2877,8 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellCapacityCheck(const CellRange3& range, u32
     return canSkipCellCapacityCheck(range, maxCells, maxSpanPerAxis);
 
 FUSE_PHYSICS_INLINE bool wouldSkipCellCapacityCheck(const CellRange2& range, u32 maxCells, u32 maxSpanPerAxis) {
+/// Predict whether per-axis span clamp would be a no-op (B4.2 deepen pass).
+
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
@@ -4454,6 +4456,7 @@ bool wouldSkipRefineBroadphase(const RigidBodySoA& bodies,
 /// Preflight skip check for refine — mirrors `canSkipRefineBroadphase` (B4.2 deepen pass).
 /// Preflight skip check for pair refine — mirrors `canSkipRefineBroadphase` (B4.2 deepen pass).
 /// Non-mutating refine skip alias — mirrors `canSkipRefineBroadphase` (B4.2 deepen pass).
+/// Predict whether refine would bail before invalidating separated pairs (B4.2 deepen pass).
 
 /// Why broadphase pair dedupe would early-out (B4.2 deepen follow-up pass).
 enum class DedupeBroadphaseRejectReason : u8 {
@@ -4589,6 +4592,7 @@ bool wouldSkipDedupeBroadphase(
 /// Preflight skip check for dedupe — mirrors `canSkipDedupeBroadphase` (B4.2 deepen pass).
 /// Preflight skip check for pair dedupe — mirrors `canSkipDedupeBroadphase` (B4.2 deepen pass).
 /// Non-mutating dedupe skip alias — mirrors `canSkipDedupeBroadphase` (B4.2 deepen pass).
+/// Predict whether dedupe would bail before scanning pair slots (B4.2 deepen pass).
 
 /// Why plane/dynamic merge would early-out (B4.2 deepen pass).
 enum class BroadphaseMergeRejectReason : u8 {
@@ -4792,6 +4796,7 @@ bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies,
 /// Early-out when plane/dynamic merge preflight would skip (B4.2 deepen pass).
 /// Preflight skip check for plane/dynamic merge — mirrors `canSkipBroadphaseMerge` (B4.2 deepen pass).
 /// Non-mutating merge skip alias — mirrors `canSkipBroadphaseMerge` (B4.2 deepen pass).
+/// Predict whether plane/dynamic merge would bail before pair generation (B4.2 deepen pass).
 
 /// Why merge-into-buffer would early-out before pushing pairs (B4.2 deepen pass).
 enum class MergePairsIntoBufferRejectReason : u8 {
@@ -5972,6 +5977,8 @@ bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs,
 
 
 /// Non-mutating merge-into-buffer skip alias — mirrors `canSkipMergePairsIntoBuffer` (B4.2 deepen pass).
+
+/// Predict whether merge-into-buffer would bail before pushing pairs (B4.2 deepen pass).
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(

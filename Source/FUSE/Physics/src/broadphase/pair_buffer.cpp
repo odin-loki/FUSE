@@ -2966,27 +2966,8 @@ bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer,
         *reason = reject;
     return reject != PairBufferWriteSlotRejectReason::None;
 
-const char* pairBufferInvalidateSlotRejectReasonName(PairBufferInvalidateSlotRejectReason reason) {
-    switch (reason) {
-    case PairBufferInvalidateSlotRejectReason::None:
-        return "None";
-    case PairBufferInvalidateSlotRejectReason::OutOfRangeSlot:
-        return "OutOfRangeSlot";
-    return "Unknown";
-    case PairBufferInvalidateSlotRejectReason::AlreadyInvalid:
-        return "AlreadyInvalid";
-    }
 
-PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const PairBufferSoA& buffer, u32 slot) {
-    if (slot >= buffer.validFlags.size()) {
-        return PairBufferInvalidateSlotRejectReason::OutOfRangeSlot;
-    return PairBufferInvalidateSlotRejectReason::None;
 
-    const u32 slotBound = buffer.pairSlotCount > 0u ? buffer.pairSlotCount
-                                                    : static_cast<u32>(buffer.validFlags.size());
-    if (slotBound == 0u || slot >= slotBound) {
-    if (!buffer.slotIsValid(slot)) {
-        return PairBufferInvalidateSlotRejectReason::AlreadyInvalid;
     if (buffer.validFlags[slot] == 0u) {
 
 
@@ -3004,7 +2985,7 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const 
 
     if (buffer.canSkipSoAIteration() || slot >= pairBufferSlotBound(buffer)) {
 
-    }
+
 
 bool pairBufferInvalidateSlotRejectsForReason(
     const PairBufferSoA& buffer,
@@ -3089,6 +3070,8 @@ bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer,
 
 
         *reason = reject;
+
+
 
 
 
