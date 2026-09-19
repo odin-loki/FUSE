@@ -535,3 +535,11 @@ ContactBufferCompactPreflight preflightContactBufferCompact(const ContactBufferS
     preflight.allValid = preflight.reason == ContactBufferCompactRejectReason::AllValid;
     return !preflightContactBufferCompact(buffer).needsCompaction();
     return preflightContactBufferCompact(buffer).needsCompaction();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-e6d2 ---
+    if (contactBufferWriteRejectReason(*this, slot, manifold) != ContactBufferWriteRejectReason::None) {
+    if (contactBufferClampRejectReason(*this) != ContactBufferClampRejectReason::None) {
+    return contactBufferCompactionRejectReason(buffer) != ContactBufferCompactionRejectReason::None;
+    return contactBufferCompactionRejectReason(buffer) == ContactBufferCompactionRejectReason::None;
+    return contactBufferClampRejectReason(buffer) != ContactBufferClampRejectReason::None;
+    return contactBufferClampRejectReason(buffer) == ContactBufferClampRejectReason::None;

@@ -2594,3 +2594,26 @@ void testNarrowphasePairSlotPreflightGuards() {
         "should_skip pair slot true for self pair");
     testContactBufferGuardPassPreflights();
     testNarrowphasePairSlotPreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-e6d2 ---
+void testContactPairDeepenPassRejectHelpers() {
+void testManifoldRejectReasonGuards() {
+            clean, fuse::physics::narrowphase::ManifoldPruneRejectReason::AlreadyClean),
+            empty, fuse::physics::narrowphase::FrictionBasisRejectReason::Skipped),
+            needsBuild, fuse::physics::narrowphase::FrictionBasisRejectReason::CanReuse),
+    const auto invalidSlotPreflight =
+        fuse::physics::narrowphase::preflightContactBufferWrite(buffer, 9u, valid);
+    expectTrue(!invalidSlotPreflight.canWrite(), "write preflight rejects invalid slot");
+    const auto validWritePreflight =
+    expectTrue(validWritePreflight.canWrite(), "write preflight accepts valid manifold");
+            buffer, fuse::physics::narrowphase::ContactBufferClampRejectReason::WithinCapacity) == false,
+    expectTrue(emptyPreflight.emptyPairs, "dispatch preflight marks empty pair list");
+    expectTrue(emptyPreflight.can_skip_entire_dispatch(), "dispatch preflight can skip empty list");
+    expectTrue(!emptyPreflight.can_prepare_buffer(), "dispatch preflight cannot prepare empty list");
+    expectTrue(allRejectedPreflight.allPairsDeepenRejected, "dispatch preflight marks all deepen-rejected");
+        allRejectedPreflight.dispatchablePairCount == 0u,
+        fuse::physics::narrowphase::should_skip_narrowphase_pair_slot(sleepingPairs[0], bodies, shapes),
+    expectTrue(!mixedPreflight.can_skip_entire_dispatch(), "dispatch preflight cannot skip mixed list");
+    expectTrue(mixedPreflight.dispatchablePairCount == 1u, "dispatch preflight counts dispatchable pair");
+        !fuse::physics::narrowphase::should_skip_narrowphase_pair_slot(mixedPairs[1], bodies, shapes),
+    testManifoldRejectReasonGuards();
