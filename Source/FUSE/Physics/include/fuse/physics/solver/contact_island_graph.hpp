@@ -37,6 +37,12 @@ struct ContactIslandGraph {
 
     static constexpr u32 invalidIsland = ~0u;
 
+    /// True when both body indices are in range for graph partition.
+    static bool bodies_in_range(u32 bodyA, u32 bodyB, u32 bodyCount);
+
+    /// True when a constraint references the same body on both ends.
+    static bool is_self_contact(u32 bodyA, u32 bodyB);
+
 private:
     void unionBodies(u32 a, u32 b);
     u32 findRoot(u32 index) const;
