@@ -1990,6 +1990,8 @@ u32 count_rejected_contact_pairs(
 bool should_run_narrowphase_batch(
 
 /// Run shape dispatch only when extended deepen preflight allows (B4.6 deepen follow-up pass).
+/// Run shape dispatch only when pair preflight allows (B4.3 deepen pass).
+ContactManifold detect_contacts_pair_with_preflight(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -2127,5 +2129,9 @@ inline bool has_deepen_pass_dispatchable_contact_pair(
 /// True when all pairs are rejected by deepen-pass preflight or the pair list is empty (B4.6 deepen pass).
 inline bool can_skip_narrowphase_deepen_pass(
     return !has_deepen_pass_dispatchable_contact_pair(pairs, bodies, shapes);
+/// True when extended preflight allows pair dispatch (B4.3 deepen pass).
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 } // namespace fuse::physics::narrowphase

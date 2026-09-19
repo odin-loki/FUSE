@@ -361,6 +361,13 @@ struct ContactBufferSoA {
         return slot < validFlags.size() && validFlags[slot] != 0u;
     /// True when no valid slots need friction tangent rebuild (B4.6 deepen follow-up pass).
     bool canSkipFrictionTangentBuild() const;
+    /// True when both dense and slot storage are empty (safe to skip SoA scans) (B4.3 deepen pass).
+    /// True when post-pass truncation would drop contacts (B4.3 deepen pass).
+    /// True when slot storage has no invalid flags (compact is a no-op) (B4.3 deepen pass).
+    /// True when compact+clamp would leave the buffer unchanged (B4.3 deepen pass).
+    /// True when all active contacts already have orthonormal tangent frames (B4.3 deepen pass).
+    bool canSkipBuildFrictionTangentBases() const;
+    /// Count valid flags in prepared slot storage before compaction (B4.3 deepen pass).
 
     void reserve(u32 capacity);
     void setMaxCapacity(u32 capacity);
@@ -519,6 +526,7 @@ enum class ContactBufferWriteSlotRejectReason : u8 {
 /// Why contact-buffer slot write would reject (B4.5 deepen follow-up pass).
 /// Why contact-buffer writeSlot would reject (B4.5 deepen follow-up pass).
 /// Why contact-buffer slot write would reject (B4.6 deepen follow-up pass).
+/// Why contact-buffer slot write would reject (B4.3 deepen pass).
     InvalidManifold,
     SelfPair,
 };
@@ -600,6 +608,9 @@ FUSE_PHYSICS_INLINE ContactBufferWriteSlotRejectReason contact_buffer_write_slot
 
 
 
+/// Human-readable label for contact-buffer write-slot reject reasons (B4.3 deepen pass).
+
+/// Diagnose why writeSlot would reject; vacuously succeeds when write may proceed (B4.3 deepen pass).
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold);
@@ -4092,5 +4103,76 @@ inline u32 compactAndClampContactBufferWithPreflight(ContactBufferSoA& buffer) {
 void build_contact_buffer_friction_tangents_with_preflight(ContactBufferSoA& buffer);
 
 
+/// Returns true when `contact_buffer_write_slot_reject_reason` matches `expected` (B4.3 deepen pass).
+
+/// Read-only write-slot diagnostics — no mutation (B4.3 deepen pass).
+
+
+
+/// Non-mutating write-slot skip predicate — inverse of `canWrite` (B4.3 deepen pass).
+
+/// Non-mutating write-slot predicate — mirrors `preflight_contact_buffer_write_slot` (B4.3 deepen pass).
+
+/// Why contact-buffer toVector would early-out (B4.3 deepen pass).
+
+/// Human-readable label for contact-buffer toVector reject reasons (B4.3 deepen pass).
+
+/// Diagnose why toVector would return empty; vacuously succeeds when export may proceed (B4.3 deepen pass).
+
+/// Returns true when `contact_buffer_to_vector_reject_reason` matches `expected` (B4.3 deepen pass).
+
+/// Read-only toVector diagnostics — no mutation (B4.3 deepen pass).
+
+
+
+/// Non-mutating toVector skip predicate — inverse of `canExport` (B4.3 deepen pass).
+
+/// Non-mutating toVector predicate — mirrors `preflight_contact_buffer_to_vector` (B4.3 deepen pass).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/// Why warm-start stub apply would early-out (B4.3 deepen pass).
+    InvalidSlot,
+
+
+
+
+
+    bool canApply() const { return reason == ContactBufferWarmStartRejectReason::None; }
+
+ContactBufferWarmStartPreflight preflight_contact_buffer_warm_start(const ContactBufferSoA& buffer, u32 slot);
+
+
+
+/// Write slot only when preflight allows; no-op otherwise (B4.3 deepen pass).
+
+/// Compact only when preflight allows; returns active count (B4.3 deepen pass).
+
+/// Compact and clamp only when preflight allows; returns active count (B4.3 deepen pass).
 
 } // namespace fuse::physics::narrowphase

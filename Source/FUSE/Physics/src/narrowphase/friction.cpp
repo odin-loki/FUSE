@@ -1593,4 +1593,5 @@ bool should_run_compute_friction_tangents(const ContactManifold& manifold, f32 e
     return !can_skip_compute_friction_tangents(manifold, epsilon);
 
 
+
 } // namespace fuse::physics::narrowphase

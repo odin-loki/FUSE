@@ -1001,4 +1001,8 @@ bool should_run_compute_friction_tangents(const ContactManifold& manifold, f32 e
 
 /// Build friction tangents only when preflight allows; no-op when skipped (B4.6 deepen follow-up pass).
 
+/// Build friction tangents only when preflight allows; no-op when skipped (B4.3 deepen pass).
+
+/// True when `compute_friction_tangents_with_preflight` would be a no-op (B4.3 deepen pass).
+
 } // namespace fuse::physics::narrowphase

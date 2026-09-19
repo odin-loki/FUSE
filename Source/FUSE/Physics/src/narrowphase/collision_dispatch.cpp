@@ -270,6 +270,9 @@ void run_narrowphase_into_buffer_with_preflight(
     if (can_skip_narrowphase_into_buffer(pairs, bodies, shapes)) {
     return narrowphase_batch_rejects_all(pairs, bodies, shapes);
 
+bool can_skip_run_narrowphase_into_buffer(
+
+    if (can_skip_run_narrowphase_into_buffer(pairs, bodies, shapes)) {
 
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,

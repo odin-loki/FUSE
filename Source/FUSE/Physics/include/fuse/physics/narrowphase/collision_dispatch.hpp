@@ -353,6 +353,13 @@ void runNarrowphaseFilteredIntoBuffer(
 void runNarrowphaseIntoBufferBeyond(
 /// Dispatch only when preflight allows; returns false when skipped (B4.6 deepen follow-up pass).
 bool run_narrowphase_into_buffer_with_preflight(
+/// True when batch preflight reports no dispatchable pairs (B4.3 deepen pass).
+bool can_skip_run_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Narrowphase dispatch only when batch preflight allows; no-op otherwise (B4.3 deepen pass).
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
@@ -384,14 +391,12 @@ NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
 
 /// Const preflight for narrowphase buffer dispatch (B4.6 deepen pass).
 struct NarrowphaseBufferDispatchPreflight {
-    bool skipped = false;
     bool emptyPairs = false;
     bool allRejected = false;
     u32 pairCount = 0u;
     u32 dispatchableCount = 0u;
 
     bool can_dispatch() const { return !skipped; }
-};
 
 /// Populate buffer-dispatch preflight without running shape dispatch (B4.6 deepen pass).
 NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
@@ -402,9 +407,6 @@ NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
 void runNarrowphaseIntoBufferDeepen(
 /// Returns true when into-buffer dispatch should be skipped entirely (B4.6 deepen pass).
 bool can_skip_narrowphase_into_buffer(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Run narrowphase into buffer only when preflight allows; clears buffer when skipped (B4.6 deepen pass).
 void run_narrowphase_into_buffer_with_preflight(

@@ -2641,6 +2641,11 @@ bool can_skip_finalize_contact_manifold_with_preflight(
 
     return !can_skip_finalize_contact_manifold_with_preflight(
 
+bool finalize_contact_manifold_if_needed_with_preflight(
+    if (can_skip_finalize_contact_manifold_with_preflight(
+            manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)) {
+
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {

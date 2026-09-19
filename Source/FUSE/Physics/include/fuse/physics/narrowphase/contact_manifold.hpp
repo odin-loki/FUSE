@@ -1680,6 +1680,13 @@ inline bool can_skip_manifold_prune_finalize(
     return preflight_manifold_prune_finalize(
         .can_skip_prune_finalize();
 
+/// True when `finalize_contact_manifold_with_preflight` would be a no-op (B4.3 deepen pass).
+
+/// Finalize only when preflight allows; no-op otherwise (B4.3 deepen pass).
+bool finalize_contact_manifold_if_needed_with_preflight(
+
+/// True when `prune_contact_manifold_with_preflight` would be a no-op (B4.3 deepen pass).
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
