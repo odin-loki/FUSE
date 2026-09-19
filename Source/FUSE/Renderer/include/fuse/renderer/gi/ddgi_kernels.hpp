@@ -87,6 +87,8 @@ enum class ProbeKernelResourceRejectReason : u8 {
 
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
 const char* probeKernelRejectReasonLabel(ProbeKernelRejectReason reason);
+/// Classify why probe-kernel launch preflight would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
+ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params);
 
 /// True when a kernel reject reason would block launch (B5.6 deepen pass).
 bool probeKernelRejectReasonIsBlocking(ProbeKernelRejectReason reason);
@@ -115,6 +117,7 @@ const char* probeKernelResourceRejectReasonLabel(ProbeKernelResourceRejectReason
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
 /// Early-out when probe trace launch would be rejected.
 /// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
+/// Early-out when probe trace kernel launch would be rejected.
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Diagnose why probe trace launch preflight would reject.
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
@@ -125,6 +128,7 @@ bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
 /// Early-out when probe blend launch would be rejected.
 /// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
+/// Early-out when probe blend kernel launch would be rejected.
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 /// Diagnose why probe blend launch preflight would reject.
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
