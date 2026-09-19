@@ -4431,3 +4431,22 @@ void testTaaPassTryAndClassifyGuards() {
                "pass classifyResolveBlendReject passes before init");
     expectTrue(pass->tryPreflightJitterSync(9u, jitterReason), "pass tryPreflightJitterSync passes after sync");
     expectTrue(pass->tryPreflightJitterAdvance(jitterReason), "pass tryPreflightJitterAdvance still passes");
+
+// --- deepen additive from deepen-b59-taa-pass-preflights-c1fb ---
+void testTaaPassTryAndClassifyPreflights() {
+               "pass tryPreflightResolveBlendWeights reason is None before warmup resolve");
+               "pass classifyResolveBlendReject is None before warmup resolve");
+    expectTrue(pass->tryComputeResolveBlendWeights(resolveDesc, blendWeights, blendReason),
+               "pass tryComputeResolveBlendWeights current is 1.0 on warmup frame");
+               "pass tryPreflightHistoryReuse reason is NotWarm before warmup resolve");
+               "pass tryPreflightHistoryReuse passes after warmup resolve");
+               "pass tryPreflightHistoryReuse reason is None after warmup resolve");
+               "pass tryComputeResolveBlendWeights passes after warmup resolve");
+               "pass tryComputeResolveBlendWeights history matches blend factor");
+    expectTrue(invalidSeqPass->tryPreflightJitterSync(0u, jitterReason),
+               "pass tryPreflightJitterSync passes with normalized sequence");
+               "pass classifyJitterSyncReject is None with normalized sequence");
+               "pass tryPreflightJitterNdc rejects zero width");
+               "pass tryPreflightJitterNdc reason is InvalidViewport");
+               "pass classifyJitterNdcReject is InvalidViewport");
+    testTaaPassTryAndClassifyPreflights();
