@@ -3274,3 +3274,11 @@ bool wouldSkipProbeGridSource(const ProbeVolume& volume, const DDGIDesc& desc) {
 // --- deepen additive from deepen-b56-ddgi-guards-650e ---
     outReason = classifyProbeGridSourceReject(desc);
     return !probeGridSourceRejectReasonIsBlocking(outReason);
+
+// --- deepen additive from deepen-b56-ddgi-guards-e427 ---
+bool preflightProbeTrilinearSampleAtCoords(const DDGIDesc& desc,
+bool wouldSkipProbeTrilinearSampleAtCoords(const DDGIDesc& desc,
+    return !preflightProbeTrilinearSampleAtCoords(desc, coords, cache, cache_count);
+    return preflightProbeTrilinearSampleAtCoords(desc, coords, cache, cache_count, reason);
+    ProbeScheduleRejectReason reject = ProbeScheduleRejectReason::None;
+    const bool ok = tryCanScheduleProbeUpdatesAtRate(

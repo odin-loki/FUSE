@@ -1072,3 +1072,7 @@ ProbeGridSourceRejectReason classifyProbeGridSourceReject(const ProbeVolume& vol
 bool preflightProbeGridSource(const ProbeVolume& volume,
 bool wouldSkipProbeGridSource(const ProbeData& data, const DDGIDesc& desc);
 bool wouldSkipProbeGridSource(const ProbeVolume& volume, const DDGIDesc& desc);
+
+// --- deepen additive from deepen-b56-ddgi-guards-e427 ---
+bool preflightProbeTrilinearSampleAtCoords(const DDGIDesc& desc,
+bool wouldSkipProbeTrilinearSampleAtCoords(const DDGIDesc& desc,

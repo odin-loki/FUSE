@@ -4553,3 +4553,27 @@ void testDdgiScheduleAtRatePreflight() {
 void testDdgiDeepenPassTwoGuards() {
                "wouldSkipProbeLookupAtIndex false for valid index");
                "wouldSkipProbeLookupAtIndex true for OOB probe index");
+
+// --- deepen additive from deepen-b56-ddgi-guards-e427 ---
+    expectTrue(!fuse::renderer::preflightProbeGridSource(empty, &reason),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeGrid(desc) ==
+               "wouldSkipProbeGrid matches shouldSkipProbeGrid");
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeTrilinearSampleAtCoords(
+               "preflightProbeTrilinearSampleAtCoords succeeds on accessible grid");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSampleAtCoords(
+               "wouldSkipProbeTrilinearSampleAtCoords false for valid sample");
+               "preflightProbeTrilinearSample succeeds for interior world position");
+               "wouldSkipProbeTrilinearSample false for valid world sample");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSampleAtCoords(
+               "wouldSkipProbeTrilinearSampleAtCoords true for unordered corners");
+               "wouldSkipProbeTrilinearSample true for empty grid");
+               "preflightProbeTrilinearSample rejects empty grid");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeLookup(desc, cache.data(), 8u) ==
+               "wouldSkipProbeLookup matches shouldSkipProbeLookup");
+               "preflightProbeScheduleAtRate with reason succeeds for valid rate");
+void testProbeKernelPreflightHelpers() {
+    expectTrue(fuse::renderer::gi::preflightProbeTraceKernel(params, &reason),
+               "preflightProbeTraceKernel with reason succeeds for valid params");
+    expectTrue(!fuse::renderer::gi::preflightProbeTraceKernel(zeroCount, &reason),
+    expectTrue(!fuse::renderer::gi::preflightProbeBlendKernel(zeroCount, &reason),
+    testProbeKernelPreflightHelpers();
