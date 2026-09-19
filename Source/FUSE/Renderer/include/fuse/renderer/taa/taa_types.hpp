@@ -70,6 +70,18 @@ enum class TaaResolveSkipReason : u8 {
     StaleHistoryGeneration,
 };
 
+/// Per-reason resolve skip breakdown for preflight bookkeeping (B5.9 deepen).
+struct TaaResolveSkipCounts {
+    u32 total = 0;
+    u32 historyNotReady = 0;
+    u32 invalidDimensions = 0;
+    u32 dimensionMismatch = 0;
+    u32 missingSurfaces = 0;
+    u32 missingVelocityBuffer = 0;
+    u32 missingDepthBuffer = 0;
+    u32 staleHistoryGeneration = 0;
+};
+
 /// Clamp TAA tuning knobs to safe ranges for the CPU resolve stub.
 TAAParams clampTaaParams(const TAAParams& raw);
 /// True when `raw` is already within clamp ranges (no normalization required).
@@ -122,7 +134,6 @@ enum class TaaHistoryReuseBlockReason : u8 {
     NotReady,
     NotWarm,
     StaleGeneration,
-};
 /// Human-readable label for history reuse block reasons (B5.9 deepen).
 const char* taaHistoryReuseBlockReasonLabel(TaaHistoryReuseBlockReason reason);
 /// Classify why history reuse is blocked for an observed invalidate epoch (B5.9 deepen).
@@ -147,14 +158,11 @@ bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history);
 bool shouldSkipTaaHistoryResolve(const TaaHistoryBuffer& history);
 /// History resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
 bool tryPreflightTaaHistoryReadyForResolve(const TaaHistoryBuffer& history,
-                                           TaaHistoryReuseBlockReason& reason);
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
-    None = 0,
     InvalidWeights,
     InconsistentWithReuse,
-};
 /// Human-readable label for resolve blend reject reasons (B5.9 deepen).
 const char* taaResolveBlendRejectReasonLabel(TaaResolveBlendRejectReason reason);
 /// Classify why resolve blend weights would be rejected (B5.9 deepen).
@@ -171,6 +179,12 @@ bool shouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffe
 /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
 bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                       TaaBlendWeights& outWeights, TaaResolveBlendRejectReason& reason);
+/// Clamp an effective blend weight to [0, 1].
+f32 clampEffectiveBlend(f32 effectiveBlend);
+/// History accumulation weight — complement of the current-frame effective blend.
+f32 computeHistoryBlendWeight(f32 effectiveBlend);
+/// History accumulation weight from frame state and params.
+f32 computeHistoryBlendWeight(bool firstFrame, const TAAParams& params);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
@@ -208,5 +222,9 @@ bool taaResolveHasDimensionMismatch(const TaaResolveDesc& desc, const TaaHistory
 bool taaResolveHistoryGenerationIsStale(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when resolve would bail before history update (`skip_reason != None`).
 bool taaResolveSkipReasonIsBlocking(TaaResolveSkipReason reason);
+/// Increment `counts` for one classified skip reason (no-op when `None`).
+void accumulateTaaResolveSkipReason(TaaResolveSkipCounts& counts, TaaResolveSkipReason reason);
+/// Build a single-reason skip breakdown from one classified reason.
+TaaResolveSkipCounts taaResolveSkipCountsFromReason(TaaResolveSkipReason reason);
 
 } // namespace fuse::renderer

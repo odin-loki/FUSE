@@ -11,6 +11,13 @@ namespace fuse::renderer {
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// Stamp observed generation then classify — convenience preflight for resolve callers.
 TaaResolveSkipReason preflightTaaResolve(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Boolean preflight — true when resolve would bail before history update.
+bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                          TaaResolveSkipReason* reason = nullptr);
+/// True when required current/output surfaces are present.
+bool taaResolveSurfacesComplete(const TaaResolveDesc& desc);
+/// True when rejection surfaces are present when enforcement is enabled.
+bool taaResolveRejectionSurfacesComplete(const TaaResolveDesc& desc);
 /// True when resolve dimensions match allocated history buffer size.
 bool taaResolveDimensionsMatch(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when pass viewport dimensions match the resolve request.

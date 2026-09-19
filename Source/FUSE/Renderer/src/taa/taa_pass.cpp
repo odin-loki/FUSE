@@ -232,6 +232,8 @@ bool TaaPass::tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) cons
     return tryPreflightTaaJitterAdvance(m_jitter.sequenceLength(), reason);
 bool TaaPass::viewportMatchesResolve(const TaaResolveDesc& desc) const {
     return taaViewportDimensionsMatchPass(m_desc.width, m_desc.height, desc);
+f32 TaaPass::effectiveBlendForNextResolve() const {
+    return computeEffectiveBlend(!m_history.hasValidHistory(), m_desc.params);
 }
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {

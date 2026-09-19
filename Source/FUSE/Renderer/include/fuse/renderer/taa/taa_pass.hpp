@@ -151,6 +151,10 @@ public:
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
+    /// True when history targets are warm enough for temporal reuse.
+    bool canReadHistory() const { return m_history.canReadForResolve(); }
+    /// Effective current-frame blend for the next resolve (1.0 while history is cold).
+    f32 effectiveBlendForNextResolve() const;
     /// Preflight resolve without mutating history (delegates to `TaaResolve::wouldSkip`).
     bool wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
     /// Classify why resolve would skip — same ordering as `wouldSkipResolve` (B5.9 deepen).

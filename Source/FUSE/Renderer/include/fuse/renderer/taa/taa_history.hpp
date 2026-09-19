@@ -20,6 +20,8 @@ public:
     bool hasValidHistory() const { return m_validity.hasValidHistory; }
     /// True when history targets are ready and warmed for temporal reuse (B5.9 deepen).
     bool canReuseHistory() const;
+    /// True when ping-pong targets are allocated and history is warm enough to sample.
+    bool canReadForResolve() const { return m_ready && m_validity.hasValidHistory; }
     /// True until the first successful resolve warms the ping-pong targets.
     bool needsWarmup() const { return !m_validity.hasValidHistory; }
     /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
@@ -59,5 +61,10 @@ private:
     u32 m_activeIndex = 0;
     bool m_ready = false;
 };
+
+/// True when history targets are allocated and warmed for resolve input reuse.
+bool canReadHistoryForResolve(const TaaHistoryBuffer& history);
+/// True when history is allocated but still awaiting the first successful resolve.
+bool historyAwaitingWarmup(const TaaHistoryBuffer& history);
 
 } // namespace fuse::renderer

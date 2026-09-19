@@ -20,6 +20,10 @@ bool taaResolveSkipReasonIsBlocking(TaaResolveSkipReason reason) {
     return reason != TaaResolveSkipReason::None;
 }
 
+bool taaResolveSurfacesComplete(const TaaResolveDesc& desc) {
+    return desc.surfaces.current_frame != nullptr && desc.surfaces.output != nullptr;
+}
+
 bool taaResolveDimensionsMatch(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     return history.matchesDimensions(desc.width, desc.height);
 }
@@ -113,7 +117,7 @@ TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const Ta
     if (taaResolveHasDimensionMismatch(desc, history)) {
         return TaaResolveSkipReason::DimensionMismatch;
     }
-    if (desc.surfaces.current_frame == nullptr || desc.surfaces.output == nullptr) {
+    if (!taaResolveSurfacesComplete(desc)) {
         return TaaResolveSkipReason::MissingSurfaces;
     }
 
@@ -262,6 +266,22 @@ bool taaResolveRequiresDepth(const TAAParams& params) {
 
 bool taaResolveRequiresRejectionSurfaces(const TAAParams& params) {
     return taaResolveRequiresVelocity(params) || taaResolveRequiresDepth(params);
+bool taaResolveRejectionSurfacesComplete(const TaaResolveDesc& desc) {
+    if (!desc.enforce_rejection_surfaces) {
+        return true;
+    }
+
+    const TAAParams params = clampTaaParams(desc.params);
+    if (taaResolveRequiresVelocity(params) && desc.surfaces.velocity_buffer == nullptr) {
+        return false;
+    if (taaResolveRequiresDepth(params) && desc.surfaces.depth_buffer == nullptr) {
+
+bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                          TaaResolveSkipReason* reason) {
+    const TaaResolveSkipReason skip = classifyTaaResolveSkip(desc, history);
+    if (reason != nullptr) {
+        *reason = skip;
+    return taaResolveSkipReasonIsBlocking(skip);
 }
 
 f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params) {
@@ -273,6 +293,43 @@ f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params) {
 
 f32 computeEffectiveBlendForHistory(const TaaHistoryBuffer& history, const TAAParams& params) {
     return computeEffectiveBlend(!history.hasValidHistory(), params);
+f32 clampEffectiveBlend(f32 effectiveBlend) {
+    return clampF32(effectiveBlend, 0.f, 1.f);
+}
+
+f32 computeHistoryBlendWeight(f32 effectiveBlend) {
+    return 1.f - clampEffectiveBlend(effectiveBlend);
+
+f32 computeHistoryBlendWeight(bool firstFrame, const TAAParams& params) {
+    return computeHistoryBlendWeight(computeEffectiveBlend(firstFrame, params));
+
+void accumulateTaaResolveSkipReason(TaaResolveSkipCounts& counts, TaaResolveSkipReason reason) {
+    if (!taaResolveSkipReasonIsBlocking(reason)) {
+        return;
+
+    ++counts.total;
+    switch (reason) {
+    case TaaResolveSkipReason::HistoryNotReady:
+        ++counts.historyNotReady;
+        break;
+    case TaaResolveSkipReason::InvalidDimensions:
+        ++counts.invalidDimensions;
+    case TaaResolveSkipReason::DimensionMismatch:
+        ++counts.dimensionMismatch;
+    case TaaResolveSkipReason::MissingSurfaces:
+        ++counts.missingSurfaces;
+    case TaaResolveSkipReason::MissingVelocityBuffer:
+        ++counts.missingVelocityBuffer;
+    case TaaResolveSkipReason::MissingDepthBuffer:
+        ++counts.missingDepthBuffer;
+    case TaaResolveSkipReason::StaleHistoryGeneration:
+        ++counts.staleHistoryGeneration;
+    default:
+
+TaaResolveSkipCounts taaResolveSkipCountsFromReason(TaaResolveSkipReason reason) {
+    TaaResolveSkipCounts counts{};
+    accumulateTaaResolveSkipReason(counts, reason);
+    return counts;
 }
 
 const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason) {
@@ -304,11 +361,7 @@ void TaaResolve::resetBookkeeping() {
 
 bool TaaResolve::wouldSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                            TaaResolveSkipReason* reason) const {
-    const TaaResolveSkipReason skip = classifyTaaResolveSkip(desc, history);
-    if (reason != nullptr) {
-        *reason = skip;
-    }
-    return taaResolveSkipReasonIsBlocking(skip);
+    return shouldSkipTaaResolve(desc, history, reason);
 }
 
 bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, void* /*cudaStream*/) {
