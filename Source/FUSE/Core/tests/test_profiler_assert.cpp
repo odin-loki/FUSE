@@ -3602,3 +3602,19 @@ void testChromeTraceExportPreflightCapacityAndExportability() {
 void testChromeTraceExportPreflightOrphanFlowEnds() {
     testChromeTraceExportPreflightCapacityAndExportability();
     testChromeTraceExportPreflightOrphanFlowEnds();
+
+// --- deepen additive from deepen-fuse-b16-profiler-guards-4db5 ---
+void testExportableEventIndexLookupGuard() {
+void testTryExportableEventLookupGuard() {
+    expectTrue(fuse::profiler::tryFirstExportableEvent(outEvent), "tryFirstExportableEvent true after recording");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Begin, "tryFirstExportableEvent copies begin phase");
+               "tryFirstExportableEvent copies scope name");
+               "tryFirstExportableEvent output passes isExportableProfileEvent");
+    expectTrue(fuse::profiler::tryLastExportableEvent(outEvent), "tryLastExportableEvent true after recording");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastExportableEvent copies end phase");
+               "tryLastExportableEvent copies scope name");
+void testReconcileDetachedFlowNestingGuard() {
+void testChromeTraceExportPreflightInvalidNamesAndBufferFull() {
+    expectTrue(!disabledPreflight.canExportClean(), "preflight canExportClean false when disabled");
+void testIsExportableProfileEventGuard() {
+    testChromeTraceExportPreflightInvalidNamesAndBufferFull();
