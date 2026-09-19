@@ -3553,3 +3553,21 @@ void testCanInteractionGuards() {
     testBeginDragPreflightFiniteGuards();
     testUpdateDragFiniteAndScreenMissPreflight();
     testSnapDragPreflight();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-31c7 ---
+    const fuse::editor::UpdateDragPreflight activePreflight = fuse::editor::preflightUpdateDrag(
+    expectTrue(activePreflight.canUpdate(), "update preflight accepts in-bounds axis hit");
+    expectTrue(!activePreflight.screenMiss, "in-bounds update clears screenMiss");
+    const fuse::editor::UpdateDragPreflight noModePreflight =
+    expectTrue(noModePreflight.canUpdate(),
+    const fuse::editor::UpdateDragPreflight scaleCenterPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(scaleCenterPreflight.canUpdate(),
+    expectTrue(!scaleCenterPreflight.screenMiss,
+    const fuse::editor::UpdateDragPreflight scaleMissPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(scaleMissPreflight.screenMiss,
+    expectTrue(!scaleMissPreflight.canUpdate(), "scale mode update rejects screen miss");
+    expectTrue(!gizmo.tryUpdateDrag(hit, result), "tryUpdateDrag rejects screen miss during drag");
+void testUpdateInteractionScreenMissPreflight() {
+    const fuse::editor::UpdateInteractionPreflight activeUpdate =
+    const fuse::editor::UpdateInteractionPreflight deadZoneUpdate =
+    testUpdateInteractionScreenMissPreflight();
