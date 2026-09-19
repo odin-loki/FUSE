@@ -3102,3 +3102,25 @@ bool tryPreflightIslandBuild(u32 bodyCount,
 // --- deepen additive from deepen-b4-pbd-island-reject-reasons-5ccf ---
 const char* island_pipeline_dispatch_reject_reason_name(IslandPipelineDispatchRejectReason reason) {
 IslandPipelineDispatchRejectReason island_pipeline_dispatch_reject_reason(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-a769 ---
+IslandDispatchRejectReason classify_dispatch_dt_reject(f32 dt) {
+IslandSolveRejectReason classify_solve_dt_reject(f32 dt) {
+        return IslandSolveRejectReason::NonFiniteDt;
+    case IslandDispatchRejectReason::NothingDispatchable:
+    case IslandSolveRejectReason::OutOfRangeIslandIndex:
+    case IslandSolveRejectReason::NonFiniteDt:
+    case IslandSolveRejectReason::NoInRangeConstraints:
+    preflight.invalidDt = preflight.reason != IslandSolveRejectReason::None;
+    if (preflight.reason == IslandSolveRejectReason::None && should_skip_island_solve_job(job)) {
+        preflight.reason = IslandSolveRejectReason::EmptyIsland;
+        preflight.reason = IslandSolveRejectReason::NoInRangeConstraints;
+        preflight.reason = IslandDispatchRejectReason::NothingDispatchable;
+    preflight.invalidDt = preflight.reason != IslandDispatchRejectReason::None;
+    if (preflight.reason == IslandDispatchRejectReason::None && preflight.solve.skipped) {
+        preflight.reason = IslandSolveRejectReason::NoMovableBodies;
+    if (preflight.refs.reason != IslandSolveRejectReason::None) {
+    } else if (preflight.bodies.reason != IslandSolveRejectReason::None) {
+        preflight.reason = IslandSleepRejectReason::NotAllSleeping;
+IslandSolveRejectReason island_solve_job_reject_reason(const IslandSolveJob& job, f32 dt) {
+IslandSolveRejectReason island_constraint_solve_reject_reason(

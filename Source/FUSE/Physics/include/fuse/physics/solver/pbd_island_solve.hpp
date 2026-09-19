@@ -1829,3 +1829,18 @@ IslandWakeGraphRejectReason classifyIslandWakeGraphReject(const IslandWakeGraphP
         return !skipped && reason == IslandWakeGraphRejectReason::None && stats.wakeableCount > 0u;
 const char* island_pipeline_dispatch_reject_reason_name(IslandPipelineDispatchRejectReason reason);
 IslandPipelineDispatchRejectReason island_pipeline_dispatch_reject_reason(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-a769 ---
+IslandSolveRejectReason island_constraint_solve_reject_reason(
+IslandSolveRejectReason island_solve_job_reject_reason(const IslandSolveJob& job, f32 dt);
+    bool can_dispatch() const { return reason == IslandDispatchRejectReason::None && !skipped && stats.dispatchableCount > 0u; }
+    bool can_dispatch() const { return reason == IslandDispatchRejectReason::None && !skipped && !invalidDt && solve.can_dispatch(); }
+    bool can_dispatch() const { return reason == IslandSolveRejectReason::None && !skipped && !invalidDt && constraintCount > 0u; }
+        return reason == IslandSolveRejectReason::None && !skipped &&
+    bool can_build() const { return reason == IslandGraphBuildRejectReason::None && !skipped && !has_unsafe_refs(); }
+    bool can_solve() const { return reason == IslandSolveRejectReason::None && !skipped && movableCount > 0u; }
+    bool can_solve() const { return reason == IslandSolveRejectReason::None && !skipped && refs.can_solve() && bodies.can_solve(); }
+    bool can_skip_solve() const { return reason == IslandSleepRejectReason::None && !skipped && allSleeping; }
+        return reason == IslandWakeRejectReason::None && !skipped && hasMixedSleepState && activeDynamicCount > 0u;
+        return reason == IslandSleepGraphRejectReason::None && !skipped &&
+    bool can_wake() const { return reason == IslandWakeGraphRejectReason::None && !skipped && stats.wakeableCount > 0u; }
