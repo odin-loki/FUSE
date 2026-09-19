@@ -596,6 +596,17 @@ bool TaaJitter::advanceIfReady() {
     return true;
 }
 
+bool TaaJitter::advanceIfAlignedToFrameIndex(u32 expectedFrameIndex) {
+    if (!isAlignedToFrameIndex(expectedFrameIndex)) {
+        return false;
+    }
+    return advanceIfReady();
+}
+
+bool preflightTaaJitterAlignment(u32 expectedFrameIndex, const TaaJitter& jitter) {
+    return jitter.isAlignedToFrameIndex(expectedFrameIndex);
+}
+
 void TaaJitter::advance() {
     ++m_monotonicFrame;
     m_index = TaaJitterLayout::frameIndexInSequence(m_monotonicFrame, m_sequenceLength);

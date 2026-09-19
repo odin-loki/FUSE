@@ -417,6 +417,18 @@ bool TaaPass::advanceJitterIfReady() {
     return true;
 }
 
+bool TaaPass::advanceJitterIfAligned(u32 expectedFrameIndex) {
+    if (!m_jitter.advanceIfAlignedToFrameIndex(expectedFrameIndex)) {
+        return false;
+    }
+    m_stats.lastJitterNdc = currentJitterNdc();
+    return true;
+}
+
+bool TaaPass::preflightJitterAlignment(u32 expectedFrameIndex) const {
+    return preflightTaaJitterAlignment(expectedFrameIndex, m_jitter);
+}
+
 TaaBlendWeights TaaPass::expectedResolveBlendWeights(const TaaResolveDesc& desc) const {
     return computeTaaResolveBlendWeights(desc, m_history);
 }
@@ -553,6 +565,8 @@ TaaResolveBlendMode TaaPass::classifyResolveBlendMode(const TaaResolveDesc& desc
 bool TaaPass::jitterNeedsSyncToFrameIndex(u32 frameIndex) const {
     return m_jitter.needsSyncToFrameIndex(frameIndex);
 
+bool TaaPass::preflightResolveDesc(const TaaResolveDesc& desc, TaaResolveDescPreflight* result) const {
+    return preflightTaaResolveDesc(desc, m_history, result);
 }
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {

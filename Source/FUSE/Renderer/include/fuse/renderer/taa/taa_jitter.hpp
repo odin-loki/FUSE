@@ -195,6 +195,8 @@ public:
     bool advanceIfReady();
     /// Advance only when the jitter sequence is valid; returns false when blocked (B5.9 deepen).
     bool advanceIfPossible();
+    /// Advance only when aligned to `expectedFrameIndex`; returns false when drifted (B5.9 deepen).
+    bool advanceIfAlignedToFrameIndex(u32 expectedFrameIndex);
     void reset();
     /// Align jitter state to a monotonic frame counter (wraps with sequence period).
     void syncToFrameIndex(u32 frameIndex);
@@ -326,5 +328,7 @@ bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex,
                             TaaJitterSyncBlockReason* reason = nullptr);
 /// True when jitter monotonic counter or slot differs from `frameIndex` (B5.9 deepen).
 bool taaJitterNeedsResyncToFrameIndex(const TaaJitter& jitter, u32 frameIndex);
+/// True when jitter monotonic counter and slot match `expectedFrameIndex` (B5.9 deepen).
+bool preflightTaaJitterAlignment(u32 expectedFrameIndex, const TaaJitter& jitter);
 
 } // namespace fuse::renderer

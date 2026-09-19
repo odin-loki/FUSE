@@ -113,6 +113,10 @@ public:
     bool canProduceJitterNdc() const;
     /// Advance jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool advanceJitterIfReady();
+    /// Advance jitter only when aligned to `expectedFrameIndex`; returns false when drifted (B5.9 deepen).
+    bool advanceJitterIfAligned(u32 expectedFrameIndex);
+    /// True when pass jitter monotonic counter and slot match `expectedFrameIndex` (B5.9 deepen).
+    bool preflightJitterAlignment(u32 expectedFrameIndex) const;
     /// Expected blend weights for the next resolve (B5.9 deepen).
     TaaBlendWeights expectedResolveBlendWeights(const TaaResolveDesc& desc) const;
     /// True when resolve would sample warmed history this frame (B5.9 deepen).
@@ -276,6 +280,8 @@ public:
     /// True when pass jitter slot differs from the frame-index mapping (B5.9 deepen).
     bool jitterNeedsSyncToFrameIndex(u32 frameIndex) const;
     /// Combined resolve-frame preflight — skip check then blend-weight validation (B5.9 deepen).
+    /// Preflight resolve skip and blend-weight guards for one resolve request (B5.9 deepen).
+    bool preflightResolveDesc(const TaaResolveDesc& desc, TaaResolveDescPreflight* result = nullptr) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
