@@ -984,3 +984,14 @@ bool probeCoordRejectReasonIsBlocking(ProbeCoordRejectReason reason);
                                       ProbeCoordRejectReason& outReason);
     static ProbeCoordRejectReason classifyProbeCoordReject(const DDGIDesc& desc, const ProbeGridCoord& coord);
                                     ProbeCoordRejectReason* reason = nullptr);
+
+// --- deepen additive from deepen-ddgi-b56-guards-012a ---
+    static bool tryProbeCoordFromIndex(const DDGIDesc& desc,
+    static ProbeGridSourceRejectReason classifyProbeCoordFromIndex(const DDGIDesc& desc, u32 probe_index);
+    static bool preflightProbeCoordFromIndex(const DDGIDesc& desc,
+    static bool wouldSkipProbeCoordFromIndex(const DDGIDesc& desc, u32 probe_index);
+    static bool tryProbeIndexFromCoord(const DDGIDesc& desc,
+    static ProbeGridSourceRejectReason classifyProbeIndexFromCoord(const DDGIDesc& desc,
+    static bool preflightProbeIndexFromCoord(const DDGIDesc& desc,
+    static bool wouldSkipProbeIndexFromCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
+bool tryPreflightProbeTrilinearSample(const DDGIDesc& desc,

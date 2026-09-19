@@ -3026,3 +3026,31 @@ ProbeCoordRejectReason ProbeGridLayout::classifyProbeCoordReject(const DDGIDesc&
                                           ProbeCoordRejectReason* reason) {
     const ProbeCoordRejectReason reject = classifyProbeCoordReject(desc, coord);
     return !probeCoordRejectReasonIsBlocking(reject);
+
+// --- deepen additive from deepen-ddgi-b56-guards-012a ---
+    case ProbeGridSourceRejectReason::OutOfRangeProbeIndex:
+    case ProbeGridSourceRejectReason::InvalidProbeCoord:
+    outReason = classifyDdgiProbeUpdateReject(desc, probe_indices, probe_count);
+    return !probeUpdateLaunchRejectReasonIsBlocking(outReason);
+bool ProbeGridLayout::tryProbeCoordFromIndex(const DDGIDesc& desc,
+        outReason = ProbeGridSourceRejectReason::OutOfRangeProbeIndex;
+ProbeGridSourceRejectReason ProbeGridLayout::classifyProbeCoordFromIndex(const DDGIDesc& desc,
+    tryProbeCoordFromIndex(desc, probe_index, coord, reason);
+bool ProbeGridLayout::preflightProbeCoordFromIndex(const DDGIDesc& desc,
+    ProbeGridSourceRejectReason reject = ProbeGridSourceRejectReason::None;
+    const bool ok = tryProbeCoordFromIndex(desc, probe_index, coord, reject);
+bool ProbeGridLayout::wouldSkipProbeCoordFromIndex(const DDGIDesc& desc, u32 probe_index) {
+    return !preflightProbeCoordFromIndex(desc, probe_index);
+bool ProbeGridLayout::tryProbeIndexFromCoord(const DDGIDesc& desc,
+        outReason = ProbeGridSourceRejectReason::InvalidProbeCoord;
+ProbeGridSourceRejectReason ProbeGridLayout::classifyProbeIndexFromCoord(const DDGIDesc& desc,
+    tryProbeIndexFromCoord(desc, coord, index, reason);
+bool ProbeGridLayout::preflightProbeIndexFromCoord(const DDGIDesc& desc,
+    const bool ok = tryProbeIndexFromCoord(desc, coord, index, reject);
+bool ProbeGridLayout::wouldSkipProbeIndexFromCoord(const DDGIDesc& desc, const ProbeGridCoord& coord) {
+    return !preflightProbeIndexFromCoord(desc, coord);
+bool tryPreflightProbeTrilinearSample(const DDGIDesc& desc,
+    return !cacheIndexRejectReasonIsBlocking(outReason);
+    return !probeScheduleRejectReasonIsBlocking(outReason);
+    outReason = classifyProbeScheduleRejectAtRate(
+    return !probeKernelRejectReasonIsBlocking(outReason);
