@@ -1365,6 +1365,7 @@ RefineBroadphasePreflight preflightRefineBroadphase(
     preflight.noValidPairs = !buffer.hasValidPairs();
     preflight.emptyInput = canSkipBroadphase(bodies, shapes);
     preflight.validPairCount = buffer.countValidSlots();
+    preflight.activePairCount = buffer.activeCount;
     preflight.reason = refineBroadphaseRejectReason(bodies, shapes, buffer);
 
 bool canSkipRefineBroadphase(
@@ -1571,6 +1572,8 @@ BroadphaseMergePreflight preflightBroadphaseMerge(
     std::vector<u32> dynamicBodies;
     u32 planeBodyCount = 0u;
     u32 dynamicBodyCount = 0u;
+    std::unordered_set<u32> planeBodies;
+    std::unordered_set<u32> dynamicBodies;
 
     for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
         const u32 bodyIndex = shapes.bodyIndices[shapeIndex];
@@ -1642,6 +1645,13 @@ BroadphaseMergeScan scanBroadphaseMergeBodies(
     preflight.dynamicBodyCount = static_cast<u32>(dynamicBodies.size());
     preflight.emptyPlaneBodies = preflight.planeBodyCount == 0u;
     preflight.emptyDynamicBodies = preflight.dynamicBodyCount == 0u;
+            planeBodies.insert(bodyIndex);
+            dynamicBodies.insert(bodyIndex);
+
+    preflight.stats.planeBodyCount = static_cast<u32>(planeBodies.size());
+    preflight.stats.dynamicBodyCount = static_cast<u32>(dynamicBodies.size());
+    preflight.emptyPlaneBodies = preflight.stats.planeBodyCount == 0u;
+    preflight.emptyDynamicBodies = preflight.stats.dynamicBodyCount == 0u;
     if (preflight.emptyPlaneBodies) {
         preflight.reason = BroadphaseMergeRejectReason::EmptyPlaneBodies;
     } else if (preflight.emptyDynamicBodies) {

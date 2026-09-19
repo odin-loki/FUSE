@@ -186,6 +186,12 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
     return !canSkipBroadphase(bodies, shapes);
 }
 
+/// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
+}
 
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
@@ -2424,6 +2430,7 @@ struct RefineBroadphasePreflight {
     bool emptyInput = false;
     bool noValidPairs = false;
     u32 validPairCount = 0;
+    u32 activePairCount = 0;
 
     bool canRefine() const { return reason == RefineBroadphaseRejectReason::None; }
 
@@ -2665,12 +2672,19 @@ bool shouldRunRefineBroadphase(
 
     BroadphaseMergeRejectReason expected);
 
+/// Plane/dynamic body counts for merge preflight (B4.2 deepen pass).
+struct BroadphaseMergeStats {
+    u32 planeBodyCount = 0;
+    u32 dynamicBodyCount = 0;
+};
+
 /// Read-only plane/dynamic merge diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct BroadphaseMergePreflight {
     BroadphaseMergeRejectReason reason = BroadphaseMergeRejectReason::None;
     MergeBroadphaseRejectReason expected);
 
     MergeBroadphaseRejectReason reason = MergeBroadphaseRejectReason::None;
+    BroadphaseMergeStats stats{};
     bool emptyPlaneBodies = false;
     bool emptyDynamicBodies = false;
     u32 planeBodyCount = 0;
