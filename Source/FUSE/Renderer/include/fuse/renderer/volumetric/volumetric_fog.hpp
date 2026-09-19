@@ -689,3 +689,6 @@ enum class FroxelSampleCoordsRejectReason : u8 {
 const char* froxelSampleCoordsRejectReasonLabel(FroxelSampleCoordsRejectReason reason);
                                         FroxelSampleCoordsRejectReason& outReason);
 bool tryValidateDensityLookupIndex(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-53be ---
+bool tryCanSampleDensityTrilinear(const FroxelDensityGrid& grid,

@@ -2493,3 +2493,25 @@ void testFroxelValidateCoordsDensitySizingAndTrilinearGuards() {
                "wouldSkipFroxelPopulate true for zero density");
                "wouldSkipFroxelPopulate mirrors !canPopulateFromAnalyticFog");
                "wouldSkipFroxelPopulate true for invalid camera");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-53be ---
+void testFroxelCoordLookupScreenPopulateAndTrilinearGuards() {
+               "tryCanLookupAtCoord succeeds for in-bounds coords");
+               "trySampleDensityAtCoord with reason succeeds for in-bounds coords");
+    expectNear(coordSample, 3.5f, 1e-5f, "trySampleDensityAtCoord with reason returns written density");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtCoord(emptyGrid, desc, 0u, 0u, 0u, rejectedCoord, lookupReason),
+               "trySampleDensityAtCoord with reason rejects empty storage");
+    fuse::renderer::DensityLookupRejectReason screenLookupReason = fuse::renderer::DensityLookupRejectReason::None;
+    expectTrue(screenLookupReason == fuse::renderer::DensityLookupRejectReason::None,
+    expectTrue(screenLookupReason == fuse::renderer::DensityLookupRejectReason::ScreenMappingFailed,
+    expectTrue(std::strcmp(fuse::renderer::densityLookupRejectReasonLabel(screenLookupReason),
+    expectTrue(fuse::renderer::froxel_util::tryCanSampleDensityTrilinear(grid, desc, inBounds, trilinearReason),
+               "tryCanSampleDensityTrilinear succeeds for in-bounds coords");
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleDensityTrilinear(grid, desc, hardOob, trilinearReason),
+               "tryCanSampleDensityTrilinear rejects hard OOB coords");
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleDensityTrilinear(emptyGrid, desc, inBounds, trilinearReason),
+               "tryCanSampleDensityTrilinear rejects empty storage");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::LookupFailed,
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityTrilinear(grid, desc, hardOob, rejectedTrilinear, sampleReason),
+               "trySampleDensityTrilinear rejects hard OOB coords");
+    expectNear(rejectedTrilinear, 0.f, 1e-6f, "trySampleDensityTrilinear zeroes output on hard OOB rejection");

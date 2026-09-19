@@ -1746,3 +1746,10 @@ bool tryValidateDensityLookupIndex(const FroxelDensityGrid& grid,
         outReason = FroxelTrilinearSampleRejectReason::EmptyStorage;
         outReason = FroxelTrilinearSampleRejectReason::UndersizedStorage;
         outReason = FroxelTrilinearSampleRejectReason::DescMismatch;
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-53be ---
+    case FroxelTrilinearSampleRejectReason::LookupFailed:
+bool tryCanSampleDensityTrilinear(const FroxelDensityGrid& grid,
+        outReason = FroxelTrilinearSampleRejectReason::LookupFailed;
+    return trySampleDensityAtScreen(grid, desc, camera, screenX, screenY, viewDepth, outDensity, lookupReason,
+        outLookupReason = DensityLookupRejectReason::ScreenMappingFailed;
