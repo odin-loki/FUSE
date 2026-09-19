@@ -1829,6 +1829,100 @@ void testInteractionPhaseRouting() {
     expectTrue(!activeInteraction.canBegin(), "dragging phase rejects begin action");
 }
 
+void testRayNormalizationPreflight() {
+    fuse::editor::GizmoRay unitRay = rayAlongX();
+    expectTrue(fuse::editor::isRayNormalized(unitRay), "unit ray is normalized");
+    expectTrue(!fuse::editor::isRayEmpty(unitRay), "normalized ray is not empty");
+
+    fuse::editor::GizmoRay scaledRay = rayAlongX();
+    scaledRay.direction = {2.f, 0.f, 0.f};
+    expectTrue(!fuse::editor::isRayNormalized(scaledRay), "scaled ray is not normalized");
+    expectTrue(!fuse::editor::isRayEmpty(scaledRay), "scaled ray is not empty");
+
+    fuse::editor::GizmoRay emptyRay{};
+    expectTrue(!fuse::editor::isRayNormalized(emptyRay), "empty ray is not normalized");
+
+    fuse::editor::GizmoTransform transform{};
+    const fuse::editor::PickPreflight unitPick = fuse::editor::preflightPick(
+        unitRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(unitPick.canPick(), "pick preflight accepts normalized ray");
+    expectTrue(!unitPick.nonUnitRay, "pick preflight clears nonUnitRay on normalized ray");
+
+    const fuse::editor::PickPreflight scaledPick = fuse::editor::preflightPick(
+        scaledRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(scaledPick.nonUnitRay, "pick preflight marks non-unit ray");
+    expectTrue(scaledPick.canPick(), "pick preflight still allows non-unit ray pick");
+    expectTrue(scaledPick.axis == fuse::editor::GizmoAxis::X,
+               "non-unit ray pick still resolves axis");
+}
+
+void testSnapDeltaPreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+
+    const fuse::editor::SnapDeltaPreflight disabled =
+        fuse::editor::preflightSnapDelta(0.37f, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(disabled.snapDisabled, "snap-delta preflight marks disabled snap");
+    expectTrue(!disabled.canApply(), "snap-delta preflight rejects disabled snap");
+    expectNear(disabled.snappedDelta, 0.37f, 0.001f,
+               "snap-delta preflight returns raw delta when snap disabled");
+
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+    const fuse::editor::SnapDeltaPreflight degraded =
+        fuse::editor::preflightSnapDelta(0.37f, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(degraded.isDegraded(), "snap-delta preflight marks degraded snap");
+    expectTrue(!degraded.canApply(), "snap-delta preflight rejects degraded snap");
+    expectNear(degraded.snappedDelta, 0.37f, 0.001f,
+               "snap-delta preflight returns raw delta when snap degraded");
+
+    snap.gridSize = 0.5f;
+    const fuse::editor::SnapDeltaPreflight valid =
+        fuse::editor::preflightSnapDelta(0.37f, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(valid.canApply(), "snap-delta preflight accepts valid snap");
+    expectNear(valid.snappedDelta, 0.5f, 0.001f, "snap-delta preflight computes snapped delta");
+    expectTrue(fuse::editor::canSnapDelta(0.37f, fuse::editor::GizmoMode::Translate, snap),
+               "canSnapDelta accepts valid translate snap");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    const fuse::editor::SnapDeltaPreflight gizmoDelta = gizmo.preflightSnapDelta(0.37f);
+    expectTrue(gizmoDelta.canApply(), "gizmo snap-delta preflight accepts valid snap");
+    expectTrue(gizmo.canSnapDelta(0.37f), "gizmo canSnapDelta accepts valid snap");
+    expectNear(gizmo.preflightSnapDelta(0.37f).snappedDelta, 0.5f, 0.001f,
+               "gizmo snap-delta preflight computes snapped delta");
+}
+
+void testGizmoPhaseRoutingWrappers() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    expectTrue(gizmo.interactionPhase() == fuse::editor::GizmoInteractionPhase::Idle,
+               "gizmo interactionPhase reports idle when not dragging");
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo canActOnPhase allows begin when idle");
+
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.interactionPhase() == fuse::editor::GizmoInteractionPhase::Dragging,
+               "gizmo interactionPhase reports dragging when active");
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo canActOnPhase allows update when dragging");
+
+    hit.screenX = -5.f;
+    expectTrue(!gizmo.canActOnPhase(hit),
+               "gizmo canActOnPhase rejects update when hit is out of bounds");
+    gizmo.endDrag();
+}
+
 void testCanInteractionPredicates() {
     fuse::editor::GizmoSnapSettings snap{};
     snap.translateSnap = true;
@@ -1951,6 +2045,9 @@ int main() {
     testHitTestInvalidDimensionsGuards();
     testIsSnapDegradedHelper();
     testInteractionPhaseRouting();
+    testRayNormalizationPreflight();
+    testSnapDeltaPreflight();
+    testGizmoPhaseRoutingWrappers();
     testCanInteractionPredicates();
 
     if (g_failures != 0) {
