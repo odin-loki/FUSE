@@ -1643,9 +1643,78 @@ struct IslandBuildResult {
     bool unsafeRefs = false;
     IslandBuildStats stats{};
 
+/// Why island constraint solve would reject one island (B4.4 deepen follow-up pass).
+enum class IslandConstraintSolveRejectReason : u8 {
+    None = 0,
+    EmptyIsland,
+    StaleRefs,
+    NoMovableBodies,
+    AllSleeping,
+};
+
+/// Human-readable label for island constraint-solve reject reasons (B4.4 deepen follow-up pass).
+const char* island_constraint_solve_reject_reason_name(IslandConstraintSolveRejectReason reason);
+
+/// Diagnose why one island constraint solve would skip.
+IslandConstraintSolveRejectReason island_constraint_solve_reject_reason(
+    const ContactIslandGraph::Island& island,
+    const RigidBodySoA& bodies,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Returns true when `island_constraint_solve_reject_reason` matches `expected`.
+bool island_constraint_solve_rejects_for_reason(
+    const ContactIslandGraph::Island& island,
+    const RigidBodySoA& bodies,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    IslandConstraintSolveRejectReason expected);
+
+/// Why island sleep preflight would skip solve for one island (B4.4 deepen follow-up pass).
+enum class IslandSleepSolveRejectReason : u8 {
+    None = 0,
+    EmptyIsland,
+    AllSleeping,
+};
+
+/// Human-readable label for island sleep-solve reject reasons (B4.4 deepen follow-up pass).
+const char* island_sleep_solve_reject_reason_name(IslandSleepSolveRejectReason reason);
+
+/// Diagnose why one island is eligible for sleep-solve early-out.
+IslandSleepSolveRejectReason island_sleep_solve_reject_reason(const ContactIslandGraph::Island& island,
+                                                              const RigidBodySoA& bodies);
+
+/// Returns true when `island_sleep_solve_reject_reason` matches `expected`.
+bool island_sleep_solve_rejects_for_reason(const ContactIslandGraph::Island& island,
+                                           const RigidBodySoA& bodies,
+                                           IslandSleepSolveRejectReason expected);
+
+/// Why island wake preflight would skip sleeper activation (B4.4 deepen follow-up pass).
+enum class IslandWakeRejectReason : u8 {
+    None = 0,
+    EmptyIsland,
+    NoActiveDynamic,
+    UniformSleepState,
+};
+
+/// Human-readable label for island wake reject reasons (B4.4 deepen follow-up pass).
+const char* island_wake_reject_reason_name(IslandWakeRejectReason reason);
+
+/// Diagnose why one island does not need sleeper activation.
+IslandWakeRejectReason island_wake_reject_reason(const ContactIslandGraph::Island& island,
+                                                 const RigidBodySoA& bodies);
+
+/// Returns true when `island_wake_reject_reason` matches `expected`.
+bool island_wake_rejects_for_reason(const ContactIslandGraph::Island& island,
+                                    const RigidBodySoA& bodies,
+                                    IslandWakeRejectReason expected);
+
 /// Preflight diagnostics for island graph build inputs (B4.4 deepen).
 struct IslandBuildPreflight {
     IslandBuildRejectReason reason = IslandBuildRejectReason::None;
+    IslandGraphBuildRejectReason reason = IslandGraphBuildRejectReason::None;
+    IslandBuildStats stats{};
+    bool skipped = false;
 
     bool has_unsafe_refs() const {
         return stats.outOfRangeContactBodyCount > 0u || stats.outOfRangeDistanceBodyCount > 0u;
@@ -1678,6 +1747,8 @@ struct IslandBuildResult {
     bool unsafeRefs = false;
     bool degenerateRefs = false;
     IslandBuildStats stats{};
+        return !skipped && reason == IslandGraphBuildRejectReason::None && !has_unsafe_refs();
+    }
 };
 
 
@@ -1871,6 +1942,10 @@ struct IslandConstraintSolveResult {
     u32 islandIndex = ContactIslandGraph::invalidIsland;
     bool can_solve() const { return reason == IslandConstraintSolveRejectReason::None; }
     bool can_solve() const { return !skipped && reason == IslandConstraintSolveRejectReason::None; }
+    bool can_solve() const {
+        return !skipped && reason == IslandConstraintSolveRejectReason::None && refs.can_solve() &&
+               bodies.can_solve();
+    }
 };
 
 /// Aggregate constraint-solve participation counts for graph-level batch guards.
@@ -2181,6 +2256,7 @@ enum class IslandSleepSolveRejectReason : u8 {
     bool can_skip_solve() const { return reason == IslandSleepRejectReason::AllSleeping; }
     bool can_skip_solve() const {
         return !skipped && reason == IslandSleepRejectReason::AllSleeping;
+        return !skipped && (reason == IslandSleepSolveRejectReason::AllSleeping || allSleeping);
     }
 };
 
@@ -2374,14 +2450,11 @@ struct IslandSleepWakePreflight {
 
 
     bool should_wake_before_solve() const { return !skipped && wake.should_wake_sleepers(); }
-};
 
 /// Per-island wake outcome for batch guards.
 struct IslandWakeResult {
     bool woke = false;
     u32 islandIndex = ContactIslandGraph::invalidIsland;
-    bool skipped = false;
-};
 
 /// Batch wake summary for graph-level guards.
 struct IslandBatchWakeResult {
@@ -2407,17 +2480,10 @@ struct IslandSolveableGraphPreflight {
     bool invalidDt = false;
 
     bool can_dispatch() const { return !skipped && !invalidDt && stats.solveableCount > 0u; }
-    bool skipped = false;
 
 
-};
 
 /// Combined sleep + wake + constraint-solve preflight for one island solve pipeline.
-struct IslandSolvePipelinePreflight {
-    IslandSleepPreflight sleep{};
-    IslandWakePreflight wake{};
-    IslandConstraintSolvePreflight constraintSolve{};
-    bool skipped = false;
 
     bool can_skip_sleeping_solve() const { return !skipped && sleep.can_skip_solve(); }
     bool should_wake_sleepers() const { return !skipped && wake.should_wake_sleepers(); }
@@ -10144,5 +10210,50 @@ IslandBatchSleepSkipDispatchResult dispatch_all_islands_with_wake_result(
     f32 dt,
     f32 contactCompliance,
     const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
+/// Per-island constraint solve outcome with reject reason (B4.4 deepen follow-up pass).
+struct IslandConstraintSolveResult {
+    bool solved = false;
+    bool skipped = false;
+    IslandConstraintSolveRejectReason reason = IslandConstraintSolveRejectReason::None;
+};
+
+/// Guarded island constraint solve using full constraint-ref + body participation preflight.
+bool solve_island_job_guarded(RigidBodySoA& bodies,
+                              const ContactIslandGraph::Island& island,
+                              SolverWorkBuffers& workBuffers,
+                              const std::vector<DistanceConstraint>& distanceConstraints,
+                              f32 dt,
+                              f32 contactCompliance,
+                              const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
+/// Guarded island constraint solve with explicit skip/solve outcome and reject reason.
+IslandConstraintSolveResult solve_island_job_guarded_result(
+    RigidBodySoA& bodies,
+    const ContactIslandGraph::Island& island,
+    SolverWorkBuffers& workBuffers,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt,
+    f32 contactCompliance,
+    const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
+/// Wake sleepers when needed, then run guarded constraint solve for one island.
+IslandConstraintSolveResult solve_island_job_with_wake_guarded(
+    RigidBodySoA& bodies,
+    const ContactIslandGraph::Island& island,
+    SolverWorkBuffers& workBuffers,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt,
+    f32 contactCompliance,
+    const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
+/// Guarded dispatch from a pre-extracted job with constraint-solve preflight.
+IslandDispatchResult dispatch_solve_island_job_guarded(RigidBodySoA& bodies,
+                                                     const IslandSolveJob& job,
+                                                     SolverWorkBuffers& workBuffers,
+                                                     const std::vector<DistanceConstraint>& distanceConstraints,
+                                                     f32 dt,
+                                                     f32 contactCompliance,
+                                                     const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
 
 } // namespace fuse::physics
