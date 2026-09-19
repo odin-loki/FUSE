@@ -3618,3 +3618,23 @@ void testChromeTraceExportPreflightInvalidNamesAndBufferFull() {
     expectTrue(!disabledPreflight.canExportClean(), "preflight canExportClean false when disabled");
 void testIsExportableProfileEventGuard() {
     testChromeTraceExportPreflightInvalidNamesAndBufferFull();
+
+// --- deepen additive from deepen-b16-profiler-guards-9145 ---
+void testNullAndEmptyEventNameSplitGuards() {
+void testEventNameAtAndTryEventPhaseAtGuards() {
+    expectTrue(fuse::profiler::tryEventPhaseAt(1u, outPhase), "tryEventPhaseAt true for counter");
+    expectTrue(outPhase == fuse::profiler::EventPhase::Counter, "tryEventPhaseAt copies counter phase");
+    expectTrue(fuse::profiler::tryEventPhaseAt(2u, outPhase), "tryEventPhaseAt true for end");
+    expectTrue(!fuse::profiler::tryEventPhaseAt(3u, outPhase), "tryEventPhaseAt false past event count");
+    expectTrue(fuse::profiler::tryFindLastEventByPhase(fuse::profiler::EventPhase::FlowFinish, outEvent),
+               "tryFindLastEventByPhase finds flow finish");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::FlowFinish, "tryFindLastEventByPhase copies phase");
+               "tryFindLastEventByPhase copies flow name");
+    expectTrue(!fuse::profiler::tryFindLastEventByPhase(
+               "tryFindLastEventByPhase false for absent phase");
+    expectTrue(outEvent.name == nullptr, "tryFindLastEventByPhase clears output for absent phase");
+void testCanEndAsyncFlowAndOrphanGuards() {
+    expectTrue(!openPreflight.isExportRecommended(),
+    expectTrue(detachedPreflight.flowDepthDetached, "preflight extended marks detached flow depth");
+    expectTrue(!detachedPreflight.isExportRecommended(),
+    expectTrue(detachedPreflight.nonExportableEventCount == 0u,
