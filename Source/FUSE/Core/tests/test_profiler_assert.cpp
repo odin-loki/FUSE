@@ -3974,3 +3974,18 @@ void testChromeTraceExportPreflightEventPairing() {
     expectTrue(unmatchedPreflight.hasEventPairingMismatch(),
     expectTrue(!unmatchedPreflight.canExportSafely(),
     testChromeTraceExportPreflightEventPairing();
+
+// --- deepen additive from deepen-b16-profiler-guards-54be ---
+void testHasEventsByPhaseGuard() {
+               "tryFindFirstEventByPhase locates scope begin");
+               "tryFindFirstEventByPhase copies begin phase");
+               "tryFindFirstEventByPhase copies begin name");
+    expectTrue(fuse::profiler::tryFindLastEventByPhase(fuse::profiler::EventPhase::End, outEvent),
+               "tryFindLastEventByPhase locates scope end");
+               "tryFindLastEventByPhase copies end phase");
+               "tryFindFirstEventByPhase locates counter sample");
+    expectTrue(outEvent.counterIntValue == 8, "tryFindFirstEventByPhase copies counter payload");
+void testTryLastExportableEventGuard() {
+               "tryLastExportableEvent ignores empty-name counter attempts");
+               "tryLastExportableEvent still returns last valid end after empty-name attempt");
+void testReconcilePendingFlowHandoffGuard() {
