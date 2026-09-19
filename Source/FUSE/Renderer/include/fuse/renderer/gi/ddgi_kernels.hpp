@@ -112,13 +112,10 @@ ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params
 /// Classify kernel launch rejection including grid index validation — same ordering as grid-aware preflight.
 ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params, const DDGIDesc& desc);
 /// Classify why probe trace kernel launch would reject.
-ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
 /// Classify why probe blend kernel launch would reject.
-ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 
 /// Classify why probe trace kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
 
-/// Classify why probe blend kernel launch would reject — same ordering as `tryCanLaunchProbeBlendKernel`.
 
 
 
@@ -136,17 +133,11 @@ ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& p
 /// Classify why grid-aware probe kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernelWithGrid`.
 ProbeKernelRejectReason classifyProbeKernelRejectWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
 
-/// Classify why probe trace kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
-ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
 
-/// Classify why probe blend kernel launch would reject — same ordering as `tryCanLaunchProbeBlendKernel`.
-ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 
 /// Classify why probe trace launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
-ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
 
 /// Classify why probe blend launch would reject — same ordering as `tryCanLaunchProbeBlendKernel`.
-ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 
 /// Early-out when either probe kernel launch would be rejected.
 bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
