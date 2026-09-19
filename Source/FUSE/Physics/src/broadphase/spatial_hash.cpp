@@ -1063,3 +1063,13 @@ bool should_skip_shape_cell_insert(const CellRange3& range, u32 maxCells) {
 bool should_skip_shape_cell_insert(const CellRange2& range, u32 maxCells) {
         if (should_skip_shape_cell_insert(range)) {
     if (should_skip_broadphase_build(bodies, shapes)) {
+
+// --- deepen additive from deepen-b4-broadphase-preflight-guards-3caf ---
+DedupeBroadphasePreflight preflight_dedupe_broadphase(const PairBufferSoA& buffer) {
+bool should_skip_dedupe_broadphase(const PairBufferSoA& buffer) {
+CellOccupancyPreflight preflight_cell_occupancy_2d(const CellRange2& range, u32 maxCells) {
+bool should_skip_shape_cell_insertion(const CellRange3& range, u32 maxCells) {
+bool should_skip_shape_cell_insertion_2d(const CellRange2& range, u32 maxCells) {
+        if (should_skip_shape_cell_insertion_2d(range, maxOccupancy)) {
+    if (should_skip_shape_cell_insertion(range, maxOccupancy)) {
+    if (should_skip_dedupe_broadphase(buffer)) {

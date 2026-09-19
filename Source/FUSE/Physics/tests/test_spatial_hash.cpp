@@ -2626,3 +2626,34 @@ void testPairBufferCompactionPreflightGuards() {
     expectTrue(!fuse::physics::broadphase::should_skip_pair_buffer_compaction(buffer),
                "should_skip_pair_buffer_compaction false when invalid slots exist");
     testPairBufferCompactionPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-preflight-guards-3caf ---
+    expectTrue(emptyPreflight.skipped, "preflight skips empty scene");
+    expectTrue(!emptyPreflight.can_dispatch(), "preflight cannot dispatch empty scene");
+    const auto singletonPreflight = fuse::physics::broadphase::preflight_broadphase(bodies, shapes);
+    expectTrue(singletonPreflight.skipped, "preflight skips singleton scene");
+    expectTrue(!validPreflight.skipped, "preflight does not skip populated scene");
+    expectTrue(validPreflight.can_dispatch(), "preflight can dispatch populated scene");
+    expectTrue(emptyPreflight.skipped, "refine preflight skips empty buffer");
+    expectTrue(!emptyPreflight.can_refine(), "refine preflight cannot refine empty buffer");
+               "should_skip_refine_broadphase on empty buffer");
+    const auto singletonPreflight =
+    expectTrue(singletonPreflight.skippedBroadphase, "refine preflight skips singleton broadphase");
+    expectTrue(singletonPreflight.skipped, "refine preflight skips singleton scene");
+    const auto emptyPreflight = fuse::physics::broadphase::preflight_dedupe_broadphase(buffer);
+    expectTrue(!emptyPreflight.can_dedupe(), "dedupe preflight cannot dedupe empty buffer");
+    expectTrue(fuse::physics::broadphase::should_skip_dedupe_broadphase(buffer),
+               "should_skip_dedupe_broadphase on empty buffer");
+    const auto singlePreflight = fuse::physics::broadphase::preflight_dedupe_broadphase(buffer);
+    const auto sortedPreflight = fuse::physics::broadphase::preflight_dedupe_broadphase(buffer);
+    expectTrue(sortedPreflight.skipped, "dedupe preflight skips sorted unique pairs");
+    const auto duplicatePreflight = fuse::physics::broadphase::preflight_dedupe_broadphase(duplicateBuffer);
+    expectTrue(!duplicatePreflight.skipped, "dedupe preflight does not skip duplicate pairs");
+    expectTrue(duplicatePreflight.can_dedupe(), "dedupe preflight can dedupe duplicate pairs");
+    expectTrue(!fuse::physics::broadphase::should_skip_shape_cell_insertion(smallRange, 8u),
+    expectTrue(fuse::physics::broadphase::should_skip_shape_cell_insertion(smallRange, 7u),
+    expectTrue(emptyPreflight.skipped, "preflight skips empty range");
+    expectEq(emptyPreflight.budgetRemaining, 4u, "empty range leaves full budget");
+    const auto planePreflight = fuse::physics::broadphase::preflight_cell_occupancy_2d(planeRange, 4u);
+    expectTrue(planePreflight.exceedsBudget, "2D preflight flags over-budget range");
+    expectTrue(fuse::physics::broadphase::should_skip_shape_cell_insertion_2d(planeRange, 4u),
