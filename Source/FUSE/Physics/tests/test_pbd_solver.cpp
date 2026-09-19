@@ -5104,3 +5104,29 @@ void testSolveIslandJobGuardedAndSolveableDispatch() {
     testIslandDispatchRejectReasons();
     testIslandSolveRejectReasons();
     testIslandSolvePipelinePreflight();
+
+// --- deepen additive from deepen-pbd-island-b4-738d ---
+        island_build_reject_reason(4, {}, constraints) == IslandBuildRejectReason::None,
+    expectTrue(std::strcmp(island_build_reject_reason_name(IslandBuildRejectReason::OutOfRangeRefs),
+    expectTrue(preflight.reason == IslandBuildRejectReason::OutOfRangeRefs,
+    expectTrue(island_dispatch_rejects_for_reason(graph, 1.f / 60.f, IslandDispatchRejectReason::EmptyGraph),
+    expectTrue(island_dispatch_rejects_for_reason(graph, 0.f, IslandDispatchRejectReason::InvalidDt),
+    expectTrue(island_dispatch_reject_reason(graph, 1.f / 60.f) == IslandDispatchRejectReason::None,
+    expectTrue(std::strcmp(island_dispatch_reject_reason_name(IslandDispatchRejectReason::EmptyGraph),
+    const IslandDispatchPreflight preflight = preflight_island_dispatch(graph, 1.f / 60.f);
+    expectTrue(preflight.reason == IslandDispatchRejectReason::None, "dispatch preflight records none reason");
+    expectTrue(island_solve_job_rejects_for_reason(emptyJob, 1.f / 60.f, IslandSolveJobRejectReason::None),
+        island_solve_job_reject_reason(outOfRangeJob, 1.f / 60.f) == IslandSolveJobRejectReason::OutOfRangeIndex,
+    expectTrue(island_solve_job_rejects_for_reason(outOfRangeJob, 0.f, IslandSolveJobRejectReason::OutOfRangeIndex),
+    expectTrue(island_solve_job_rejects_for_reason(loneJob, 1.f / 60.f, IslandSolveJobRejectReason::EmptyIsland),
+    const IslandSolveJobPreflight jobPreflight = preflight_solve_island_job(emptyJob, 1.f / 60.f);
+    expectTrue(jobPreflight.reason == IslandSolveJobRejectReason::None, "job preflight records none reason");
+    expectTrue(combinedPreflight.reason == IslandConstraintSolveRejectReason::NoMovableBodies,
+    expectTrue(std::strcmp(island_wake_reject_reason_name(IslandWakeRejectReason::NoWakeTarget), "NoWakeTarget") == 0,
+    expectTrue(wakePreflight.reason == IslandWakeRejectReason::None, "wake preflight records none reason");
+void testContactIslandGraphHasIslandGuards() {
+    expectTrue(!should_skip_island_pipeline_dispatch(graph, bodies, 1.f / 60.f),
+    expectTrue(mixedResult.dispatchReason == IslandSolveJobRejectReason::None,
+    expectTrue(mixedResult.constraintReason == IslandConstraintSolveRejectReason::None,
+    expectTrue(sleepingResult.constraintReason == IslandConstraintSolveRejectReason::NoMovableBodies,
+    expectTrue(should_skip_island_pipeline_dispatch(emptyGraph, bodies, 1.f / 60.f),

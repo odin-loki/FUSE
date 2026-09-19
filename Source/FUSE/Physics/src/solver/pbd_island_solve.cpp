@@ -2892,3 +2892,21 @@ bool should_skip_island_solve_pipeline(u32 bodyCount,
     const IslandDispatchRejectReason rejectReason = island_dispatch_reject_reason(graph, bodies, dt);
     if (rejectReason != IslandDispatchRejectReason::None) {
     if (should_skip_island_solve_pipeline(bodies.count(),
+
+// --- deepen additive from deepen-pbd-island-b4-738d ---
+IslandBuildRejectReason diagnose_island_build_reject(
+IslandDispatchRejectReason diagnose_island_dispatch_reject(const ContactIslandGraph& graph, f32 dt) {
+        return IslandDispatchRejectReason::EmptyGraph;
+IslandSolveJobRejectReason diagnose_island_solve_job_reject(const IslandSolveJob& job, f32 dt) {
+IslandConstraintSolveRejectReason diagnose_island_constraint_solve_reject(
+IslandSleepRejectReason diagnose_island_sleep_reject(const ContactIslandGraph::Island& island,
+IslandWakeRejectReason diagnose_island_wake_reject(const ContactIslandGraph::Island& island,
+    case IslandDispatchRejectReason::EmptyGraph:
+const char* island_solve_job_reject_reason_name(IslandSolveJobRejectReason reason) {
+IslandPipelineDispatchPreflight preflight_island_pipeline_dispatch(const ContactIslandGraph& graph,
+    preflight.skipped = preflight.dispatchReason != IslandDispatchRejectReason::None;
+    if (result.dispatchReason != IslandSolveJobRejectReason::None) {
+    if (result.constraintReason != IslandConstraintSolveRejectReason::None) {
+    if (result.wakeReason == IslandWakeRejectReason::None) {
+    if (diagnose_island_sleep_reject(island, bodies) == IslandSleepRejectReason::AllSleeping) {
+    const IslandPipelineDispatchPreflight preflight = preflight_island_pipeline_dispatch(graph, bodies, dt);

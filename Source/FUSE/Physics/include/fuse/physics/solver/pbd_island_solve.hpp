@@ -1750,3 +1750,13 @@ const char* island_dispatch_reject_reason_name(IslandDispatchRejectReason reason
     IslandDispatchRejectReason rejectReason = IslandDispatchRejectReason::None;
     bool can_run() const { return !skipped && rejectReason == IslandDispatchRejectReason::None; }
 bool should_skip_island_solve_pipeline(u32 bodyCount,
+
+// --- deepen additive from deepen-pbd-island-b4-738d ---
+const char* island_solve_job_reject_reason_name(IslandSolveJobRejectReason reason);
+    IslandWakeRejectReason wakeReason = IslandWakeRejectReason::None;
+    IslandConstraintSolveRejectReason constraintReason = IslandConstraintSolveRejectReason::None;
+    IslandSolveJobRejectReason dispatchReason = IslandSolveJobRejectReason::None;
+    IslandDispatchRejectReason dispatchReason = IslandDispatchRejectReason::None;
+    IslandDispatchPreflight solve{};
+    bool can_dispatch() const { return !skipped && dispatchReason == IslandDispatchRejectReason::None; }
+IslandPipelineDispatchPreflight preflight_island_pipeline_dispatch(const ContactIslandGraph& graph,
