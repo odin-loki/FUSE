@@ -543,6 +543,49 @@ bool wouldSkipProbeTraceKernelWithGrid(const DDGIDesc& desc, const DDGIKernelPar
 /// Early-out when grid-aware probe blend launch would be rejected.
 bool wouldSkipProbeBlendKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
 
+/// Why a grid-backed CUDA probe-kernel launch preflight rejected the request (B5.6 deepen pass).
+enum class ProbeKernelGridRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    NullProbeIndices,
+    ZeroUpdateCount,
+    ZeroRaysPerProbe,
+    OutOfRangeProbeIndex,
+};
+
+/// Human-readable label for grid-backed kernel reject reasons (logging / tests).
+const char* probeKernelGridRejectReasonLabel(ProbeKernelGridRejectReason reason);
+
+/// True when a grid-backed kernel reject reason would block launch (B5.6 deepen pass).
+bool probeKernelGridRejectReasonIsBlocking(ProbeKernelGridRejectReason reason);
+
+/// Classify why grid-backed probe kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernelWithGrid`.
+ProbeKernelGridRejectReason classifyProbeKernelGridReject(const DDGIDesc& desc, const DDGIKernelParams& params);
+
+/// Diagnose why grid-backed probe trace launch preflight would reject.
+bool tryCanLaunchProbeTraceKernelWithGrid(const DDGIDesc& desc,
+                                          const DDGIKernelParams& params,
+                                          ProbeKernelGridRejectReason& outReason);
+
+/// Diagnose why grid-backed probe blend launch preflight would reject.
+bool tryCanLaunchProbeBlendKernelWithGrid(const DDGIDesc& desc,
+                                          const DDGIKernelParams& params,
+                                          ProbeKernelGridRejectReason& outReason);
+
+/// Non-mutating grid-backed kernel launch preflight — returns true when both kernels would proceed.
+bool preflightProbeKernelLaunchWithGrid(const DDGIDesc& desc,
+                                        const DDGIKernelParams& params,
+                                        ProbeKernelGridRejectReason* reason = nullptr);
+
+/// Early-out when grid-backed probe kernel launch would be rejected (B5.6 deepen pass).
+bool wouldSkipProbeKernelLaunchWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
+
+/// Early-out when grid-backed probe trace launch would be rejected.
+bool wouldSkipProbeTraceKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
+
+/// Early-out when grid-backed probe blend launch would be rejected.
+bool wouldSkipProbeBlendKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
+
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
 /// Launch probe trace kernel with reject-reason diagnostics; false when preflight rejects.
