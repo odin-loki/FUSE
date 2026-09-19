@@ -344,6 +344,8 @@ struct AsyncFlowEndPreflight {
 
 /// Read-only nesting and async-flow diagnostics — safe before scope/flow entry.
 struct NestingAsyncFlowPreflight {
+/// Read-only scope/async-flow nesting diagnostics — safe before recording or export.
+struct NestingPreflight {
     u32 activeScopeNestingDepth = 0;
     u32 activeFlowNestingDepth = 0;
     u32 maxScopeNestingDepth = 0;
@@ -351,6 +353,8 @@ struct NestingAsyncFlowPreflight {
     u32 openAsyncFlowCount = 0;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
+    bool scopeNestingBalanced = true;
+    bool flowNestingBalanced = true;
     bool hasOpenAsyncFlows = false;
     bool flowDepthDetached = false;
     bool crossThreadFlowHandoffPending = false;
@@ -762,6 +766,8 @@ struct NestingStatePreflight {
 
     bool canNestScope() const { return !crossThreadFlowHandoffPending; }
     bool canNestAsyncFlow() const { return !crossThreadFlowHandoffPending; }
+    bool isBalanced() const { return scopeNestingBalanced && flowNestingBalanced; }
+    bool hasPendingHandoff() const { return crossThreadFlowHandoffPending; }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -876,6 +882,12 @@ bool wouldSkipAsyncFlowEnd(const char* name);
 bool wouldSkipCounterSample(const char* track);
 bool wouldSkipChromeTraceExport();
 bool wouldSkipChromeTraceExportSafely();
+
+bool wouldSkipProfileScope(const char* name);
+bool wouldSkipAsyncFlowBegin(const char* name);
+bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId);
+bool wouldSkipCounterSample(const char* track);
+bool wouldSkipChromeTraceExport();
 
 bool hasEvents();
 bool isBufferEmpty();

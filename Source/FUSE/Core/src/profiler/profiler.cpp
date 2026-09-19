@@ -1412,6 +1412,29 @@ bool wouldSkipChromeTraceExportSafely() {
     return !preflightChromeTraceExport().canExportSafely();
 }
 
+bool wouldSkipProfileScope(const char* name) {
+    return !enabled() || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+    return !enabled() || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/) {
+    if (!enabled() || !isValidEventName(name)) {
+        return true;
+    }
+    return openAsyncFlowCount() == 0u;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !enabled() || !isValidEventName(track);
+}
+
+bool wouldSkipChromeTraceExport() {
+    return !enabled();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -4315,6 +4338,29 @@ bool isAsyncFlowEvent(const ProfileEvent& event, u32 flowId) {
 
 
         if (isAsyncFlowEvent(eventAt(i), flowId)) {
+
+bool eventNameMatches(const char* eventName, const char* searchName) {
+    if (!isValidEventName(eventName) || !isValidEventName(searchName)) {
+    return std::strcmp(eventName, searchName) == 0;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
