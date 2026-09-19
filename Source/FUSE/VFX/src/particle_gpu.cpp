@@ -994,3 +994,16 @@ std::vector<u8> ParticleGpuMirror::tryPackToDeviceLayout() const {
 bool ParticleGpuDispatchPreflight::ready_for_stub(u32 slot_count, u32 emit_count) const {
 ParticleGpuDispatchPreflight ParticleGpuDispatch::preflight(u32 slot_count, u32 emit_count) const {
 bool ParticleGpuMirrorPreflight::can_unpack(const std::vector<u8>& bytes, u32 capacity) const {
+
+// --- deepen additive from deepen-b77-vfx-gpu-emission-buffer-guards-1d7a ---
+bool ParticleGpuBuffersPreflight::can_bind() const {
+bool ParticleGpuBuffersPreflight::is_empty_capacity() const {
+ParticleGpuBuffersPreflight ParticleGpuBuffers::preflight() const {
+    ParticleGpuBuffersPreflight result{};
+bool ParticleGpuMirror::tryPackToDeviceLayout(std::vector<u8>& out) const {
+    return should_skip_sim_when_empty(alive_count);
+ParticleGpuFrameLaunchPreflight ParticleGpuFramePlan::launchPreflight() const {
+    ParticleGpuFrameLaunchPreflight result{};
+bool ParticleGpuFrameLaunchPreflight::ready_for_stub() const {
+bool should_skip_sim_when_empty(u32 alive_count) {
+bool should_skip_pack(u32 capacity) {

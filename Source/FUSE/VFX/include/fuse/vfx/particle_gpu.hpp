@@ -323,3 +323,14 @@ struct FramePlanPreflight {
 
 // --- deepen additive from deepen-vfx-gpu-dispatch-mirror-guards-9299 ---
     [[nodiscard]] ParticleGpuDispatchPreflight preflight(u32 slot_count, u32 emit_count) const;
+
+// --- deepen additive from deepen-b77-vfx-gpu-emission-buffer-guards-1d7a ---
+struct ParticleGpuBuffersPreflight {
+    [[nodiscard]] ParticleGpuBuffersPreflight preflight() const;
+    [[nodiscard]] bool tryPackToDeviceLayout(std::vector<u8>& out) const;
+struct ParticleGpuFrameLaunchPreflight {
+    ParticleGpuFramePreflight frame{};
+    ParticleGpuBuffersPreflight buffers{};
+    [[nodiscard]] ParticleGpuFrameLaunchPreflight launchPreflight() const;
+[[nodiscard]] bool should_skip_sim_when_empty(u32 alive_count);
+[[nodiscard]] bool should_skip_pack(u32 capacity);

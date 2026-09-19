@@ -2330,3 +2330,23 @@ void testParticleGpuMirrorPackGuards() {
              "tryPackToDeviceLayout returns full layout on ok guard");
     expectTrue(mirror.tryPackToDeviceLayout().empty(), "tryPackToDeviceLayout blocks on alive count mismatch");
     const fuse::vfx::ParticleGpuMirrorPreflight stale = mirror.preflightFromCpu(cpu);
+
+// --- deepen additive from deepen-b77-vfx-gpu-emission-buffer-guards-1d7a ---
+void testParticleGpuEmitGuard() {
+void testParticleGpuBuffersPreflight() {
+    using fuse::vfx::ParticleGpuBuffersPreflight;
+    const ParticleGpuBuffersPreflight preflight = buffers.preflight();
+void testParticleGpuFrameLaunchGuards() {
+    const fuse::vfx::ParticleGpuFrameLaunchPreflight launch = active.launchPreflight();
+    expectTrue(fuse::vfx::should_skip_sim_when_empty(0u), "should_skip_sim_when_empty for zero alive");
+    const fuse::vfx::ParticleGpuFrameLaunchPreflight empty_launch = empty_alive.launchPreflight();
+    expectTrue(idle.launchPreflight().ready_for_stub(), "idle frame launch preflight is ready");
+    expectTrue(idle.launchPreflight().buffers.is_empty_capacity(), "idle frame has empty capacity buffers");
+void testParticleGpuEmptyBufferPackGuards() {
+    expectTrue(fuse::vfx::should_skip_pack(0u), "should_skip_pack for zero capacity");
+    expectTrue(!mirror.tryPackToDeviceLayout(packed), "tryPackToDeviceLayout fails on empty mirror");
+    expectTrue(packed.empty(), "tryPackToDeviceLayout clears output on failure");
+    expectTrue(mirror.tryPackToDeviceLayout(packed), "tryPackToDeviceLayout succeeds on valid mirror");
+    expectTrue(!packed.empty(), "tryPackToDeviceLayout produces bytes");
+    expectTrue(!mirror.tryPackToDeviceLayout(packed), "tryPackToDeviceLayout fails on stale alive_count");
+    testParticleGpuBuffersPreflight();
