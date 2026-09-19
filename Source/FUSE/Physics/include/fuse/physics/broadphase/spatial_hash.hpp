@@ -830,6 +830,8 @@ struct MergePairsIntoBufferPreflight {
     MergePairsIntoBufferRejectReason reason = MergePairsIntoBufferRejectReason::None;
     bool emptyPairs = false;
     bool bufferFull = false;
+    bool insufficientCapacity = false;
+    u32 pairsThatFit = 0;
 
     bool canMerge() const { return reason == MergePairsIntoBufferRejectReason::None; }
 };
@@ -844,6 +846,72 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 /// Non-mutating merge-into-buffer predicate — mirrors `preflightMergePairsIntoBuffer` (B4.2 deepen pass).
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
 
+/// Why shape cell insertion would skip occupancy iteration (B4.2 deepen pass).
+enum class ShapeCellInsertionRejectReason : u8 {
+    None = 0,
+    EmptyRange,
+    ExceedsSpan,
+    ExceedsBudget,
+};
+
+/// Human-readable label for shape cell-insertion reject reasons (logging / tests).
+const char* shapeCellInsertionRejectReasonName(ShapeCellInsertionRejectReason reason);
+
+/// Diagnose why shape cell insertion would skip; vacuously succeeds when insertion may proceed.
+ShapeCellInsertionRejectReason shapeCellInsertionRejectReason(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy);
+
+ShapeCellInsertionRejectReason shapeCellInsertionRejectReason(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy);
+
+/// Returns true when `shapeCellInsertionRejectReason` matches `expected` (B4.2 deepen pass).
+bool shapeCellInsertionRejectsForReason(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy,
+    ShapeCellInsertionRejectReason expected);
+
+bool shapeCellInsertionRejectsForReason(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy,
+    ShapeCellInsertionRejectReason expected);
+
+/// Combined cell-span and occupancy preflight for shape→cell insertion (B4.2 deepen pass).
+struct ShapeCellInsertionPreflight {
+    ShapeCellInsertionRejectReason reason = ShapeCellInsertionRejectReason::None;
+    bool emptyRange = false;
+    bool exceedsSpan = false;
+    bool exceedsBudget = false;
+    u32 occupancyCount = 0;
+
+    bool canInsert() const { return reason == ShapeCellInsertionRejectReason::None; }
+};
+
+ShapeCellInsertionPreflight preflightShapeCellInsertion(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy);
+
+ShapeCellInsertionPreflight preflightShapeCellInsertion(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy);
+
+/// Non-mutating shape cell-insertion skip predicate — inverse of `canInsert` (B4.2 deepen pass).
+bool canSkipShapeCellInsertion(const CellRange3& range, u32 maxSpanPerAxis, u32 maxOccupancy);
+
+bool canSkipShapeCellInsertion(const CellRange2& range, u32 maxSpanPerAxis, u32 maxOccupancy);
+
+/// Non-mutating shape cell-insertion predicate — mirrors `preflightShapeCellInsertion` (B4.2 deepen pass).
+bool shouldRunShapeCellInsertion(const CellRange3& range, u32 maxSpanPerAxis, u32 maxOccupancy);
+
+bool shouldRunShapeCellInsertion(const CellRange2& range, u32 maxSpanPerAxis, u32 maxOccupancy);
+
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
     const RigidBodySoA& bodies,
@@ -856,11 +924,48 @@ bool refineBroadphasePairsParallelWithPreflight(
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer);
 
-/// Dedupe pair buffer only when `preflightDedupeBroadphase` allows (B4.2 deepen follow-up pass).
-void dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer);
+/// Dedupe pair buffer only when `preflightDedupeBroadphase` allows; returns false when skipped (B4.2 deepen pass).
+bool dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer);
 
-/// Merge candidate pairs into buffer only when `preflightMergePairsIntoBuffer` allows (B4.2 deepen follow-up pass).
-void mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer);
+/// Merge candidate pairs into buffer only when `preflightMergePairsIntoBuffer` allows (B4.2 deepen pass).
+/// Returns the number of pairs pushed (0 when merge is skipped).
+u32 mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer);
+
+/// Combined plane/dynamic merge and buffer-capacity diagnostics — no mutation (B4.2 deepen pass).
+struct BroadphaseMergeIntoBufferPreflight {
+    BroadphaseMergeRejectReason sceneReason = BroadphaseMergeRejectReason::None;
+    MergePairsIntoBufferRejectReason bufferReason = MergePairsIntoBufferRejectReason::None;
+    bool emptyPlaneBodies = false;
+    bool emptyDynamicBodies = false;
+    bool emptyPairs = false;
+    bool bufferFull = false;
+    bool insufficientCapacity = false;
+
+    bool canMerge() const {
+        return sceneReason == BroadphaseMergeRejectReason::None &&
+               bufferReason == MergePairsIntoBufferRejectReason::None;
+    }
+};
+
+BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer);
+
+/// Non-mutating combined merge skip predicate — inverse of `canMerge` (B4.2 deepen pass).
+bool canSkipBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer);
+
+/// Non-mutating combined merge predicate — mirrors `preflightBroadphaseMergeIntoBuffer` (B4.2 deepen pass).
+bool shouldRunBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer);
 
 /// CPU stub of the CUDA broad-phase pipeline (B4.2).
 /// Phase 1 jobifies shape→cell insertion; phase 2 jobifies per-cell candidate generation
