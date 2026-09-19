@@ -1386,3 +1386,6 @@ EventLookupRejectReason exportableEventLookupRejectReason(u32 index) {
 
 // --- deepen additive from deepen-profiler-b16-guards-183a ---
 bool tryFindEventIndexByName(const char* name, u32& outIndex) {
+
+// --- deepen additive from deepen-b16-profiler-guards-512e ---
+        if (tryExportableEventAt(i, outEvent)) {

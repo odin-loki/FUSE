@@ -4045,3 +4045,21 @@ void testChromeTraceExportPreflightTrimAndOrphanFlags() {
                "tryFindFirstEventIndexByName succeeds after blank-name attempts");
     expectTrue(fuse::profiler::tryExportableEventAt(scopeIndex, scopeEvent),
     testChromeTraceExportPreflightTrimAndOrphanFlags();
+
+// --- deepen additive from deepen-b16-profiler-guards-512e ---
+void testHasActiveScopesAndFlowNestingConsistencyGuards() {
+    expectTrue(emptyPreflight.scopeBeginEventCount == 0u,
+    expectTrue(emptyPreflight.counterEventCount == 0u,
+    expectTrue(emptyPreflight.flowStartEventCount == 0u,
+    expectTrue(!emptyPreflight.hasActiveScopes, "empty preflight has no active scopes");
+        expectTrue(activePreflight.hasActiveScopes, "active preflight marks active scopes");
+        expectTrue(activePreflight.scopeBeginEventCount == 1u,
+        expectTrue(activePreflight.counterEventCount == 1u,
+        expectTrue(activePreflight.flowStartEventCount == 1u,
+    expectTrue(!closedPreflight.hasActiveScopes, "closed preflight clears active scopes");
+    expectTrue(closedPreflight.scopeBeginEventCount == 1u,
+    expectTrue(closedPreflight.counterEventCount == 1u,
+    expectTrue(closedPreflight.flowStartEventCount == 1u,
+    expectTrue(fuse::profiler::tryFirstExportableEvent(beginEvent),
+               "tryFirstExportableEvent succeeds after empty-name attempts");
+               "tryFirstExportableEvent copies valid scope after empty-name attempts");
