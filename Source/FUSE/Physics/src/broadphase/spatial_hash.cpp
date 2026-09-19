@@ -2771,6 +2771,7 @@ BroadphaseMergeScan scanBroadphaseMergeBodies(
 
 
 
+
     if (preflight.emptyPlaneBodies) {
         preflight.reason = BroadphaseMergeRejectReason::EmptyPlaneBodies;
     } else if (preflight.emptyDynamicBodies) {
