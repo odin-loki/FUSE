@@ -224,6 +224,27 @@ u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest
     return removed;
 }
 
+u32 AssetCooker::estimate_upstream_dependency_invalidation(const CookManifest& manifest,
+                                                           const std::string& changed_source) const {
+    if (!is_valid_cook_cache_path(changed_source) || m_cache.empty()) {
+        return 0;
+    }
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+    if (graph.empty()) {
+        return m_cache.estimate_invalidation_by_source(changed_source);
+    }
+
+    u32 estimate = m_cache.estimate_invalidation_by_source(changed_source);
+    for (const CookJob& job : graph.jobs()) {
+        if (job.source_path == changed_source) {
+            estimate += m_cache.estimate_invalidation_downstream_of(job.output_path, graph.edges(), graph.jobs());
+        }
+    }
+    return estimate;
+}
+
 u32 AssetCooker::estimate_stale_dependency_hashes(const CookManifest& manifest) const {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);

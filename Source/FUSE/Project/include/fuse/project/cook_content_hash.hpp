@@ -40,6 +40,12 @@ const char* cookHashPreflightRejectReasonLabel(CookHashPreflightRejectReason rea
                                                     u64 upstream_hash,
                                                     CookHashPreflightRejectReason* reason = nullptr);
 
+/// Preflight guard before `hash_upstream_dependencies` — true when deps would fold cleanly.
+[[nodiscard]] bool preflight_hash_upstream_dependencies(
+    const std::vector<std::string>& dependency_output_paths,
+    const CookManifest& manifest,
+    CookHashPreflightRejectReason* reason = nullptr);
+
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
 [[nodiscard]] u64 fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] u64 fnv1a64_combine(u64 left, u64 right);

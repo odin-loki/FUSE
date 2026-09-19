@@ -1223,7 +1223,10 @@ void testCookCacheUpstreamInvalidation() {
                "downstream entry cached before upstream change");
 
     writeTempFile(sourceA, "# upstream a revised\n");
+    const fuse::u32 estimate = cooker.estimate_upstream_dependency_invalidation(manifest, sourceA);
+    expectTrue(estimate >= 2u, "upstream change yields non-zero upstream invalidation estimate");
     const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
+    expectTrue(removed == estimate, "upstream invalidation estimate matches actual invalidation count");
     expectTrue(removed >= 2u, "upstream change invalidates downstream dependents");
     expectTrue(cooker.cache().lookup(downstream_hash) == fuse::project::CookCacheLookup::Miss,
                "downstream cache misses after upstream invalidation");

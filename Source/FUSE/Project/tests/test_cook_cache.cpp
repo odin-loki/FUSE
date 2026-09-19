@@ -485,6 +485,27 @@ void testCookHashPreflightGuards() {
                "zero source hash reports ZeroSourceHash");
     expectTrue(fuse::project::preflight_combine_cook_cache_key(99u, 0u, &reason),
                "valid source hash passes combine preflight with zero upstream");
+
+    fuse::project::CookManifest manifest;
+    expectTrue(fuse::project::preflight_hash_upstream_dependencies({}, manifest, &reason),
+               "empty dependency list passes upstream preflight");
+    expectTrue(fuse::project::preflight_hash_upstream_dependencies({""}, manifest, &reason),
+               "all-empty dependency paths pass upstream preflight");
+
+    const std::string dep = writeTempFile("/tmp/fuse_b79_preflight_upstream.obj", "# upstream dep\n");
+    fuse::project::CookManifestEntry asset;
+    asset.kind = fuse::project::CookAssetKind::Mesh;
+    asset.source_path = dep;
+    asset.output_path = "/tmp/fuse_b79_preflight_upstream.fusemesh";
+    manifest.assets.push_back(asset);
+
+    expectTrue(fuse::project::preflight_hash_upstream_dependencies({asset.output_path}, manifest, &reason),
+               "manifest-backed dependency passes upstream preflight");
+    expectTrue(!fuse::project::preflight_hash_upstream_dependencies({"/tmp/fuse_b79_missing_upstream.fusemesh"},
+                                                                    manifest, &reason),
+               "unknown dependency output fails upstream preflight");
+    expectTrue(reason == fuse::project::CookHashPreflightRejectReason::MissingFile,
+               "unknown dependency output reports MissingFile");
 }
 
 void testCookCacheInvalidationProbes() {
@@ -518,6 +539,15 @@ void testCookCacheInvalidationProbes() {
                "matching current hash estimates zero stale-content removals");
     expectTrue(cooker.cache().estimate_stale_content_invalidation(source, seeded.content_hash + 1u) == 1u,
                "mismatched current hash estimates one stale-content removal");
+
+    expectTrue(cooker.cache().probe_would_invalidate_output(desc.output_path),
+               "probe reports known output would invalidate");
+    expectTrue(!cooker.cache().probe_would_invalidate_output(""),
+               "probe rejects empty output path");
+    expectTrue(!cooker.cache().probe_would_invalidate_stale_content(source, seeded.content_hash),
+               "matching hash probe reports no stale-content invalidation");
+    expectTrue(cooker.cache().probe_would_invalidate_stale_content(source, seeded.content_hash + 1u),
+               "mismatched hash probe reports stale-content invalidation");
 
     const fuse::u64 invalidations_before = cooker.cache().stats().invalidations;
     expectTrue(cooker.cache().entry_count() == 1u, "probes leave cache untouched");

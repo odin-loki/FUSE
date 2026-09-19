@@ -106,6 +106,9 @@ public:
         const std::vector<CookJob>& jobs) const;
     [[nodiscard]] bool probe_would_invalidate_hash(u64 content_hash) const;
     [[nodiscard]] bool probe_would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool probe_would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool probe_would_invalidate_stale_content(const std::string& source_path,
+                                                            u64 current_content_hash) const;
 
     /// Reconcile estimators — non-mutating mirrors of `prune_*` (B7.9 deepen).
     [[nodiscard]] u32 estimate_prune_stale_entries() const;

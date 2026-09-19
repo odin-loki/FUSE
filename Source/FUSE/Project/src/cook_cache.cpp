@@ -476,6 +476,15 @@ bool CookCache::probe_would_invalidate_source(const std::string& source_path) co
     return estimate_invalidation_by_source(source_path) > 0;
 }
 
+bool CookCache::probe_would_invalidate_output(const std::string& output_path) const {
+    return estimate_invalidation_by_output(output_path) > 0;
+}
+
+bool CookCache::probe_would_invalidate_stale_content(const std::string& source_path,
+                                                     u64 current_content_hash) const {
+    return estimate_stale_content_invalidation(source_path, current_content_hash) > 0;
+}
+
 u32 CookCache::estimate_prune_invalid_entries() const {
     if (m_entries.empty()) {
         return 0;
