@@ -58,6 +58,7 @@ struct CookHashPreflight {
 
 const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 
+[[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] CookHashPreflight preflight_file_content_hash(const std::string& path);
 [[nodiscard]] CookHashPreflight preflight_mesh_import_hash(const MeshImportDesc& desc);
 [[nodiscard]] CookHashPreflight preflight_texture_import_hash(const TextureImportDesc& desc);

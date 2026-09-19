@@ -241,6 +241,14 @@ u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifes
     return count;
 }
 
+u32 AssetCooker::count_prune_reconcile() const {
+    return m_cache.estimate_prune_reconcile();
+}
+
+u32 AssetCooker::estimate_manifest_cache_reconcile(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) + count_prune_reconcile();
+}
+
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
