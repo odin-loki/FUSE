@@ -2187,3 +2187,10 @@ bool try_preflight_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight,
 
 // --- deepen additive from binaural-hrtf-reject-reasons-c7a9 ---
                                  HrtfPanPath* path, HrtfPanPathRejectReason* reason) {
+
+// --- deepen additive from b72-hrtf-reject-reason-wrappers-bfe2 ---
+                                                  HrtfBinauralConvolutionRejectReason expected) {
+bool hrtf_binaural_narrowing_rejects_for_reason(const HrtfBinauralPreflight& preflight,
+                                                HrtfBinauralNarrowingRejectReason expected) {
+                                             HrtfBinauralNarrowingRejectReason* reason,
+                                           HrtfBinauralNarrowingRejectReason& reason,

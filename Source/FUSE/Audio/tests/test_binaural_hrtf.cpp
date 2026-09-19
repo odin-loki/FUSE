@@ -2610,3 +2610,11 @@ void testHrtfPanConvolveRejectReasonGuards() {
 
 // --- deepen additive from deepen-b72-hrtf-reject-reasons-d3d0 ---
                "preflight_hrtf_binaural_ready mirrors should_skip inverse on stub path");
+
+// --- deepen additive from b72-hrtf-reject-reason-wrappers-bfe2 ---
+                   bypass_preflight, fuse::audio::HrtfPanPathRejectReason::HrtfDisabled),
+    fuse::audio::HrtfBinauralRejectReason spatial_reason =
+    expectTrue(spatial_reason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(spatial_reason == fuse::audio::HrtfBinauralRejectReason::HrtfDisabled,
+    expectTrue(spatial_reason == fuse::audio::HrtfBinauralRejectReason::CoLocated,
+    expectTrue(narrow_reason == fuse::audio::HrtfBinauralNarrowingRejectReason::BypassPath,
