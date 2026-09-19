@@ -947,6 +947,9 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!contactPairEligibleForBuild(contact.bodyA, contact.bodyB, bodyCount)) {
             continue;
         }
+        if (contact.bodyA >= bodyCount || contact.bodyB >= bodyCount) {
+            continue;
+        }
         unionBodies(contact.bodyA, contact.bodyB);
     }
 
@@ -1012,6 +1015,9 @@ void ContactIslandGraph::build(u32 bodyCount,
             continue;
         }
         if (!contactPairEligibleForBuild(contact.bodyA, contact.bodyB, bodyCount)) {
+            continue;
+        }
+        if (contact.bodyA >= bodyCount || contact.bodyB >= bodyCount) {
             continue;
         }
         const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
