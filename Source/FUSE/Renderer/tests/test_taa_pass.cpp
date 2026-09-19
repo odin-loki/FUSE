@@ -4827,3 +4827,10 @@ void testTaaPassTryClassifyGuardWrappers() {
 // --- deepen additive from deepen-taa-pass-b59-guards-1b8e ---
                "pass classifyJitterSyncReject matches module classifier");
                "pass classifyResolveBlendReject matches module classifier");
+
+// --- deepen additive from deepen-b59-taa-pass-guards-adaf ---
+               "pass tryPreflightResolve reason is InvalidDimensions for zero width");
+               "pass classifyJitterSyncReject passes with fallback sequence length");
+    expectTrue(invalidPass->tryPreflightJitterSync(2u, jitterReason),
+               "pass tryPreflightJitterSync passes with fallback sequence length");
+               "pass tryPreflightJitterSync reason is None with fallback sequence length");
