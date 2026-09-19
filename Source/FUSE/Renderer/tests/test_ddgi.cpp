@@ -4888,3 +4888,13 @@ void testTrilinearAndCachePreflightGuards() {
                "preflightCacheLookup rejects undersized cache");
                "classifyProbeScheduleRejectAtRate zero rate");
     testTrilinearAndCachePreflightGuards();
+
+// --- deepen additive from deepen-ddgi-b56-guards-f136 ---
+    expectTrue(fuse::renderer::gi::tryCanLaunchProbeKernels(validParams, reason),
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeKernels(nullIndices, reason),
+               "tryCanLaunchProbeKernels rejects null indices");
+               "tryLaunch_probe_kernels rejects null indices");
+               "combined tryLaunch null indices reason");
+               "wouldSkip true for empty grid");
+void testTrilinearCachePreflightDeepenGuards() {
+    testTrilinearCachePreflightDeepenGuards();
