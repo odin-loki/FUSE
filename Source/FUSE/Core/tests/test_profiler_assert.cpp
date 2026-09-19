@@ -4965,3 +4965,29 @@ void testScopeAndAsyncFlowPreflightGuards() {
     expectTrue(closedFlowPreflight.balanced, "flow preflight balanced after flow end");
     expectTrue(!closedFlowPreflight.hasOpenFlows, "flow preflight clears open flows after end");
     testScopeAndAsyncFlowPreflightGuards();
+
+// --- deepen additive from b16-profiler-deepen-guards-6464 ---
+void testWouldSkipProfilerGuards() {
+    expectTrue(fuse::profiler::wouldSkipProfileScope(nullptr), "wouldSkipProfileScope true for null name");
+    expectTrue(fuse::profiler::wouldSkipProfileScope(""), "wouldSkipProfileScope true for empty name");
+               "wouldSkipProfileScope false for valid name");
+    expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow(nullptr, flowId),
+               "wouldSkipBeginAsyncFlow true for null name");
+    expectTrue(!fuse::profiler::wouldSkipBeginAsyncFlow("valid_flow", flowId),
+               "wouldSkipBeginAsyncFlow false for valid begin");
+    expectTrue(fuse::profiler::wouldSkipEndAsyncFlow("orphan_flow", flowId),
+               "wouldSkipEndAsyncFlow true for orphan finish");
+    expectTrue(!fuse::profiler::wouldSkipEndAsyncFlow("skip_flow", flowId),
+               "wouldSkipEndAsyncFlow false after begin");
+               "wouldSkipCounterSample true for empty track");
+               "wouldSkipCounterSample false for valid track");
+    expectTrue(fuse::profiler::wouldSkipProfileScope("ignored_scope"),
+    expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow("ignored_flow", flowId),
+               "wouldSkipBeginAsyncFlow true when disabled");
+    expectTrue(fuse::profiler::wouldSkipCounterSample("ignored_counter"),
+               "wouldSkipProfileScope agrees with scope preflight");
+    expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow("valid_flow", flowId)
+               "wouldSkipBeginAsyncFlow agrees with begin preflight");
+    expectTrue(fuse::profiler::wouldSkipCounterSample("valid_counter")
+                       || fuse::profiler::preflightProfileScope("valid_counter").invalidName),
+               "wouldSkipCounterSample agrees with counter name guards");

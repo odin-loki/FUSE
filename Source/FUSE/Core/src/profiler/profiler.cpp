@@ -1459,3 +1459,10 @@ bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/, ProfileSkipReason* 
 bool wouldSkipCounter(const char* track, ProfileSkipReason* reason) {
 bool wouldSkipChromeTraceExport(ProfileSkipReason* reason) {
 bool wouldSkipChromeTraceExportSafely(ProfileSkipReason* reason) {
+
+// --- deepen additive from b16-profiler-deepen-guards-6464 ---
+    return !preflightProfileScope(name).canEnter;
+bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId) {
+    return !preflightBeginAsyncFlow(name, flowId).canBegin;
+bool wouldSkipEndAsyncFlow(const char* name, u32 flowId) {
+    return !preflightEndAsyncFlow(name, flowId).canEnd;
