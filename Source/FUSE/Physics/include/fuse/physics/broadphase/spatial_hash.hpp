@@ -3358,12 +3358,18 @@ u32 estimateCellPairCount(const std::vector<u32>& occupants);
     InsufficientOccupants,
 
 
+
 /// Diagnose why cell pair generation would skip; vacuously succeeds when generation may proceed.
 CellPairGenRejectReason cellPairGenRejectReason(u32 occupantCount);
 
 
 bool cellPairGenRejectsForReason(u32 occupantCount, CellPairGenRejectReason expected);
 
+CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants);
+
+/// Returns true when `cellPairGenRejectReason` matches `expected` (B4.2 deepen pass).
+
+bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenRejectReason expected);
 
 /// Read-only cell-pair generation diagnostics — no mutation (B4.2 deepen pass).
 struct CellPairGenPreflight {
@@ -3428,12 +3434,14 @@ bool shouldRunCellShapeInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& ra
     bool insufficientOccupants = false;
     u32 pairCount = 0;
 
+
 };
 
 CellPairGenPreflight preflightCellPairGen(u32 occupantCount);
 
 CellPairGenPreflight preflightCellPairGen(const std::vector<u32>& occupants);
 
+/// Non-mutating cell-pair generation skip predicate — inverse of `canGenerate` (B4.2 deepen pass).
 bool canSkipCellPairGen(u32 occupantCount);
 
 bool canSkipCellPairGen(const std::vector<u32>& occupants);
@@ -3448,10 +3456,13 @@ u32 estimateCellPairCount(u32 uniqueBodyCount);
 
 u32 estimateCellPairCount(const std::vector<u32>& occupants);
 
+/// Why shape→cell insertion would early-out (B4.2 deepen pass).
 enum class CellCapacityInsertRejectReason : u8 {
     None = 0,
     OutOfRangeBody,
     EmptyRange,
+    ExceedsBudget,
+};
 
 /// Human-readable label for cell-capacity insert reject reasons (logging / tests).
 const char* cellCapacityInsertRejectReasonName(CellCapacityInsertRejectReason reason);
@@ -3465,6 +3476,15 @@ CellCapacityInsertRejectReason cellCapacityInsertRejectReason(
 bool cellCapacityInsertRejectsForReason(
     CellCapacityInsertRejectReason expected);
 
+    const CellRange3& range,
+    u32 maxCells,
+    u32 bodyIndex,
+
+CellCapacityInsertRejectReason cellCapacityInsertRejectReason(
+    const CellRange2& range,
+
+    u32 bodyCount,
+
 
 /// Read-only shape→cell insertion diagnostics — no mutation (B4.2 deepen pass).
 struct CellCapacityInsertPreflight {
@@ -3477,6 +3497,16 @@ struct CellCapacityInsertPreflight {
 
 CellCapacityInsertPreflight preflightCellCapacityInsert(
 
+    bool exceedsBudget = false;
+
+};
+
+    const CellRange3& range,
+    u32 maxCells,
+    u32 bodyIndex,
+    u32 bodyCount);
+
+    const CellRange2& range,
 
 /// Non-mutating cell-capacity insert skip predicate — inverse of `canInsert` (B4.2 deepen pass).
 bool canSkipCellCapacityInsert(const CellRange3& range, u32 maxCells, u32 bodyIndex, u32 bodyCount);

@@ -2473,6 +2473,14 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(
     if (buffer.pairSlotCount > 0u && slot >= buffer.pairSlotCount) {
 
 
+
+
+
+
+
+
+
+
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
     PairBufferInvalidateSlotPreflight preflight{};
     preflight.reason = pairBufferInvalidateSlotRejectReason(buffer, slot);
@@ -3105,6 +3113,9 @@ bool shouldRunPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalC
 
 
     preflight.outOfSlot = preflight.reason == PairBufferInvalidateSlotRejectReason::OutOfSlot;
+
+
+
 
 
 

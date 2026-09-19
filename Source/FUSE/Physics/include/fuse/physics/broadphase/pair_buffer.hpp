@@ -1913,6 +1913,8 @@ bool shouldAcceptPairBufferPairs(const PairBufferSoA& buffer, u32 additionalCoun
     bool outOfSlot = false;
 
 
+
+
     const PairBufferSoA& buffer,
     u32 slot,
     u32 idxA,
@@ -2005,6 +2007,8 @@ enum class PairBufferInvalidateSlotRejectReason : u8 {
     OutOfSlot,
     AlreadyInvalid,
 
+
+
 /// Human-readable label for pair-buffer invalidate-slot reject reasons (logging / tests).
 const char* pairBufferInvalidateSlotRejectReasonName(PairBufferInvalidateSlotRejectReason reason);
 
@@ -2018,6 +2022,9 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(
     const PairBufferSoA& buffer,
     u32 slot);
 
+/// Returns true when `pairBufferInvalidateSlotRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferInvalidateSlotRejectsForReason(
+    const PairBufferSoA& buffer,
     u32 slot,
     PairBufferInvalidateSlotRejectReason expected);
 
@@ -2029,6 +2036,7 @@ struct PairBufferInvalidateSlotPreflight {
     bool canInvalidate() const { return reason == PairBufferInvalidateSlotRejectReason::None; }
     bool outOfSlot = false;
     bool alreadyInvalid = false;
+
 
 };
 
