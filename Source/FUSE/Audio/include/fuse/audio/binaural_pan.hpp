@@ -313,6 +313,7 @@ enum class HrtfIrSkipReason : u8 {
 
 /// Preflight diagnostics for HRTF IR convolution dispatch.
 
+
     bool skipped = false;
     HrtfIrSkipReason reason = HrtfIrSkipReason::None;
 
@@ -1408,6 +1409,9 @@ HrtfAttenuationCouplingSkipReason classify_hrtf_attenuation_coupling_skip(
 
 
 
+
+
+
 /// True when an attenuation-coupling skip reason blocks spatial narrowing.
 bool hrtf_attenuation_coupling_skip_reason_is_blocking(HrtfAttenuationCouplingSkipReason reason);
 
@@ -1470,6 +1474,7 @@ bool preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenu
                                        float occlusion_gain,
                                        const HrtfAttenuationCoupling& coupling = {},
                                        const BinauralPanParams& params = {});
+
 
     HrtfPanPath path, float distance_attenuation, float occlusion_gain,
     const HrtfAttenuationCoupling& coupling = {}, const BinauralPanParams& params = {});
