@@ -3042,3 +3042,20 @@ void testSnapPreflightNoChange() {
     expectTrue(gizmo.preflightSnap(onGrid).noChange,
     expectTrue(!gizmo.preflightSnap(offGrid).noChange,
     testSnapPreflightNoChange();
+
+// --- deepen additive from deepen-gizmo-preflights-9967 ---
+    expectTrue(gizmo.tryUpdateDrag(hit, result), "tryUpdateDrag accepts active drag with valid hit");
+    expectTrue(result.changed, "valid tryUpdateDrag marks result changed");
+    expectTrue(result.active, "valid tryUpdateDrag keeps drag active");
+    expectTrue(gizmo.isDragging(), "valid tryUpdateDrag keeps drag session active");
+    expectTrue(!result.changed, "empty viewport tryUpdateDrag leaves result unchanged");
+    expectTrue(gizmo.isDragging(), "empty viewport tryUpdateDrag keeps drag session active");
+    const fuse::editor::EndDragPreflight activePreflight = fuse::editor::preflightEndDrag(true);
+    expectTrue(!activePreflight.notDragging, "active end preflight clears notDragging");
+    expectTrue(!gizmo.isDragging(), "inactive tryEndDrag keeps drag inactive");
+    expectTrue(result.changed, "valid tryEndDrag marks result changed");
+    expectTrue(!result.active, "valid tryEndDrag deactivates drag");
+    expectTrue(!gizmo.isDragging(), "valid tryEndDrag ends drag session");
+    expectTrue(result.axis == fuse::editor::GizmoAxis::X, "valid tryEndDrag preserves axis");
+    expectTrue(!gizmo.tryEndDrag(result), "tryEndDrag rejects after drag already ended");
+    expectTrue(!result.changed, "post-end tryEndDrag leaves result unchanged");

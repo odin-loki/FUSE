@@ -2279,3 +2279,6 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, 
 SnapPreflight GizmoSystem::preflightSnap(const GizmoTransform& transform) const {
     return fuse::editor::preflightSnap(m_mode, m_snap, transform);
     return fuse::editor::preflightUpdateDrag(hit, m_dragging, m_mode);
+
+// --- deepen additive from deepen-gizmo-preflights-9967 ---
+    return fuse::editor::preflightUpdateDrag(hit, m_dragging);
