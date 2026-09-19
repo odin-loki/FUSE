@@ -3329,3 +3329,35 @@ void testTryExportChromeTraceJsonRejectsOpenFlow() {
     testPreflightProfilerStateDetachedFlow();
     testPreflightChromeTraceNestingGuard();
     testPreflightChromeTraceNestingDisabledProfiler();
+
+// --- deepen additive from deepen-b16-profiler-guards-3935 ---
+void testRejectedInvalidNameCountGuard() {
+    expectTrue(!fuse::profiler::hasRejectedInvalidNames(),
+    expectTrue(fuse::profiler::hasRejectedInvalidNames(), "hasRejectedInvalidNames true after rejects");
+    expectTrue(!fuse::profiler::hasRejectedInvalidNames(), "reset clears hasRejectedInvalidNames");
+void testRemainingEventCapacityGuard() {
+void testFindEventIndexAndCountByPhaseGuard() {
+void testTryFindEventByScopeIdGuard() {
+    expectTrue(!fuse::profiler::tryFindEventByScopeId(1u, outEvent),
+               "tryFindEventByScopeId false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryFindEventByScopeId clears output on empty buffer");
+    expectTrue(fuse::profiler::tryFindEventByScopeId(scopeId, outEvent),
+               "tryFindEventByScopeId true for recorded scope id");
+               "tryFindEventByScopeId returns first matching event");
+               "tryFindEventByScopeId copies matching scope name");
+    expectTrue(fuse::profiler::tryFindEventByScopeId(flowId, flowEvent),
+               "tryFindEventByScopeId true for distinct async flow id");
+               "tryFindEventByScopeId finds flow start by flow id");
+               "tryFindEventByScopeId preserves flow name");
+void testTryEventAtReverseGuard() {
+    expectTrue(!fuse::profiler::tryEventAtReverse(0u, outEvent),
+               "tryEventAtReverse false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryEventAtReverse clears output on empty buffer");
+    expectTrue(fuse::profiler::tryEventAtReverse(0u, outEvent), "tryEventAtReverse true for newest event");
+    expectTrue(fuse::profiler::tryEventAtReverse(1u, outEvent), "tryEventAtReverse true for prior event");
+    expectTrue(fuse::profiler::tryEventAtReverse(2u, outEvent), "tryEventAtReverse true for oldest event");
+    expectTrue(!fuse::profiler::tryEventAtReverse(3u, outEvent),
+               "tryEventAtReverse false when reverse index is out of range");
+void testChromeTraceExportPreflightGuardDiagnostics() {
+    expectTrue(preflight.hasRejectedInvalidNames, "preflight marks rejected invalid names");
+    testChromeTraceExportPreflightGuardDiagnostics();

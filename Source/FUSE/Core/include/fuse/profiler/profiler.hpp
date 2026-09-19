@@ -395,3 +395,7 @@ bool tryFindEventByName(const char* name, u32 startIndex, u32& outIndex, Profile
 
 // --- deepen additive from deepen-b16-profiler-guards-1296 ---
 bool preflightChromeTraceNesting(ChromeTraceExportRejectReason* reason = nullptr);
+
+// --- deepen additive from deepen-b16-profiler-guards-3935 ---
+bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent);
+bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent);

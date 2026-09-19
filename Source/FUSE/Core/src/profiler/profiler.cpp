@@ -1280,3 +1280,8 @@ bool preflightChromeTraceNesting(ChromeTraceExportRejectReason* reason) {
     case ChromeTraceExportRejectReason::NoExportableEvents:
     case ChromeTraceExportRejectReason::FlowDepthDetached:
     if (!preflightChromeTraceNesting(reason)) {
+
+// --- deepen additive from deepen-b16-profiler-guards-3935 ---
+bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent) {
+    return tryEventAt(count - 1u - reverseIndex, outEvent);
+bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent) {
