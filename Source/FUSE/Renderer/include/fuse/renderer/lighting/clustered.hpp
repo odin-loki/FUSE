@@ -133,6 +133,8 @@ enum class GridRebuildRejectReason : u8 {
     None = 0,
     EmptyGrid,
     ClusterCountMismatch,
+/// Why light-grid rebuild preflight rejected the request (B5.4 deepen).
+    CountMismatch,
 };
 
 /// Human-readable label for rebuild reject reasons (logging / tests).
@@ -150,12 +152,23 @@ struct ClusterLightGridLayout {
                                        GridRebuildRejectReason& outReason);
     /// Early-out when rebuild should be skipped for an empty desc with non-zero cluster count.
     static bool shouldSkipLightGridRebuild(const ClusterDesc& desc, u32 clusterCount);
+    /// Early-out when rebuild preflight would reject the request.
     static u32 rebuildLightGrid(ClusterGridSoA& grid,
                                 const std::vector<std::vector<u32>>& perClusterLights,
                                 u32 maxLightsPerCluster = 0u);
     /// Rebuild using the clamped cluster count from `desc`; early-outs when the grid is empty.
     static u32 rebuildLightGridForDesc(ClusterGridSoA& grid,
                                        const ClusterDesc& desc,
+                                       const std::vector<std::vector<u32>>& perClusterLights,
+                                       u32 maxLightsPerCluster = 0u);
+    /// Rebuild with guard preflight; returns false and preserves `grid` when preflight rejects.
+    static bool tryRebuildLightGrid(ClusterGridSoA& grid,
+                                    const ClusterDesc& desc,
+                                    u32 clusterCount,
+                                    u32 maxLightsPerCluster,
+                                    u32& outDropped);
+    /// Desc-scoped rebuild with guard preflight; returns false and preserves `grid` on rejection.
+    static bool tryRebuildLightGridForDesc(ClusterGridSoA& grid,
     static bool validateContiguousOffsets(const ClusterGridSoA& grid, u32 clusterCount);
     /// Validate contiguous offsets against the clamped cluster count derived from `desc`.
     static bool validateContiguousOffsetsForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
