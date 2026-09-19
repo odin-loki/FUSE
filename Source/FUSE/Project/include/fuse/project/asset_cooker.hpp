@@ -19,6 +19,14 @@ struct CookCacheReconcileEstimate {
     }
 };
 
+/// Read-only upstream invalidation breakdown for a changed source (B7.9 deepen).
+struct CookCacheUpstreamReconcileEstimate {
+    u32 direct_source_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
+};
+
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
 class AssetCooker {
 public:
@@ -40,6 +48,12 @@ public:
     /// Read-only upstream invalidation probe — guarded on empty `changed_source` (B7.9 deepen).
     [[nodiscard]] u32 count_upstream_invalidation(const CookManifest& manifest,
                                                   const std::string& changed_source) const;
+    /// Read-only output-path invalidation probe — guarded on empty `changed_output` (B7.9 deepen).
+    [[nodiscard]] u32 count_output_invalidation(const CookManifest& manifest,
+                                                const std::string& changed_output) const;
+    /// Upstream invalidation breakdown for `changed_source` — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
+    [[nodiscard]] CookCacheUpstreamReconcileEstimate estimate_upstream_reconcile(
+        const CookManifest& manifest, const std::string& changed_source) const;
     /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
     [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
     /// Read-only prune reconcile probe — mirrors `CookCache::estimate_prune_removals` (B7.9 deepen).
@@ -47,6 +61,22 @@ public:
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
     [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile_invalidation(
         const CookManifest& manifest) const;
+    /// True when `estimate_reconcile_invalidation(manifest).total()` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool would_reconcile_invalidation(const CookManifest& manifest) const;
+    /// True when `count_upstream_invalidation` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_upstream_invalidation(const CookManifest& manifest,
+                                                   const std::string& changed_source) const;
+    /// Deduplicated source paths `invalidate_upstream_dependency` would touch (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_upstream_invalidation_sources(
+        const CookManifest& manifest, const std::string& changed_source) const;
+
+    [[nodiscard]] inline bool should_skip_reconcile_invalidation(const CookManifest& manifest) const {
+        return !would_reconcile_invalidation(manifest);
+    }
+    [[nodiscard]] inline bool should_skip_upstream_invalidation(const CookManifest& manifest,
+                                                              const std::string& changed_source) const {
+        return !would_upstream_invalidation(manifest, changed_source);
+    }
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
