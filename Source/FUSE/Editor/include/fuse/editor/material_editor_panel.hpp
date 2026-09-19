@@ -53,6 +53,12 @@ public:
     [[nodiscard]] bool needsPanelRefresh() const { return m_binding.needsPanelRefresh(); }
     [[nodiscard]] bool hasAnyPropertyDirty() const { return m_binding.hasAnyPropertyDirty(); }
     [[nodiscard]] u32 propertyDirtyMask() const { return m_binding.dirtyPropertyMask(); }
+    /// Panel refresh guard — selection must be active and refresh pending (B6.7 deepen follow-up).
+    [[nodiscard]] bool canRefreshPanel() const {
+        return hasSelectedMaterial() && needsPanelRefresh();
+    }
+    [[nodiscard]] bool hasPendingPropertyDirty() const { return m_binding.hasAnyPropertyDirty(); }
+    [[nodiscard]] u32 propertyDirtyMask() const { return m_binding.propertyDirtyMask(); }
     [[nodiscard]] u32 coalescedPropertyDirtyCount() const { return m_binding.coalescedDirtyCount(); }
     /// Refresh guard — selection bound and property table live (B6.7 deepen follow-up).
     [[nodiscard]] bool canRefreshPanel() const {
@@ -89,6 +95,8 @@ public:
     /// Guarded refresh — returns false when nothing pending or panel unbound (B6.7 deepen follow-up).
     /// Guarded panel refresh — no-op when binding is clean (B6.7 deepen).
     bool tryRefreshPanel();
+    /// Guarded panel refresh — no-op when nothing is pending (B6.7 deepen follow-up).
+    bool refreshPanelIfNeeded();
     void clearPreviewDirty() { m_previewDirty = false; }
     void clearEditDirty() { m_editDirty = false; }
 

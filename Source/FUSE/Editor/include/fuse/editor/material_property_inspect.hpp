@@ -129,5 +129,11 @@ struct MaterialInspectorRefreshInfo {
 
 /// True when no inspector property bits are set in `dirtyMask` (B6.7 deepen).
 [[nodiscard]] bool isMaterialPropertyDirtyMaskEmpty(u32 dirtyMask);
+/// Dirty-mask bit for one inspector property (B6.7 deepen follow-up).
+
+/// True when the dirty mask has no property bits set (B6.7 deepen follow-up).
+
+/// Count set property bits in a dirty mask (B6.7 deepen follow-up).
+[[nodiscard]] u32 countMaterialPropertyDirtyBits(u32 dirtyMask);
 
 } // namespace fuse::editor

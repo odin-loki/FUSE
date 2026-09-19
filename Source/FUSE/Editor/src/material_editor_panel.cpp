@@ -117,6 +117,7 @@ void MaterialEditorPanel::refreshPanel() {
 bool MaterialEditorPanel::tryRefreshPanel() {
     if (!canRefreshPanel()) {
     if (!canRefreshPanel() || shouldSkipPanelRefresh()) {
+bool MaterialEditorPanel::refreshPanelIfNeeded() {
         return false;
     }
     refreshPanel();

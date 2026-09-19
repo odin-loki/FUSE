@@ -186,6 +186,9 @@ bool isPropertyDirtyMaskEmpty(u32 dirtyMask) {
     return dirtyMask == 0u;
 
 u32 materialPropertyDirtyCount(u32 dirtyMask) {
+
+
+u32 countMaterialPropertyDirtyBits(u32 dirtyMask) {
     u32 count = 0u;
     for (u32 i = 0u; i < materialPropertyCount(); ++i) {
         if ((dirtyMask & materialPropertyDirtyBit(materialPropertyIdAt(i))) != 0u) {
