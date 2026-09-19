@@ -746,11 +746,8 @@ IslandBuildStats compute_island_build_stats(const ContactIslandGraph& graph,
                                             const IslandBuildPreflight& inputPreflight);
 /// Early-out guard when build inputs cannot form any constrained partition.
 bool should_skip_island_graph_build(u32 bodyCount,
-                                    const std::vector<narrowphase::ContactManifold>& contacts,
-                                    const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Guarded island graph build; returns false when preflight skips build.
-                                u32 bodyCount,
 
 /// Preflight post-build integrity for body and constraint index coverage.
 IslandGraphIntegrityPreflight preflight_island_graph_integrity(const ContactIslandGraph& graph,
@@ -760,5 +757,13 @@ IslandGraphIntegrityPreflight preflight_island_graph_integrity(const ContactIsla
 /// Early-out guard when a built graph carries out-of-range body or constraint refs.
 bool should_skip_island_graph_integrity(const ContactIslandGraph& graph,
 /// Early-out guard when a built graph fails integrity preflight.
+/// True when contact body indices are within `[0, bodyCount)`.
+bool contact_body_indices_in_range(const narrowphase::ContactManifold& contact, u32 bodyCount);
+
+/// True when distance constraint body indices are within `[0, bodyCount)`.
+bool distance_body_indices_in_range(const DistanceConstraint& constraint, u32 bodyCount);
+
+/// True when `bodyA` and `bodyB` refer to the same body index (degenerate pair).
+bool constraint_pair_is_degenerate(u32 bodyA, u32 bodyB);
 
 } // namespace fuse::physics
