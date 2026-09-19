@@ -455,6 +455,27 @@ bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
         && isValidEventName(event.name);
 }
 
+namespace {
+
+bool eventMatchesName(const ProfileEvent& event, const char* name) {
+    if (!isValidEventName(name) || !isValidEventName(event.name)) {
+        return false;
+    }
+    return std::strcmp(event.name, name) == 0;
+}
+
+bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
+    if (flowId == 0u) {
+        return false;
+    }
+    if (event.phase != EventPhase::FlowStart && event.phase != EventPhase::FlowFinish) {
+        return false;
+    }
+    return isValidEventName(event.name) && event.scopeId == flowId;
+}
+
+} // namespace
+
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
@@ -1230,6 +1251,14 @@ bool hasActiveAsyncFlowNesting() {
 bool isNestingPreflightClean() {
     return isScopeNestingBalanced() && isFlowNestingBalanced() && !isFlowDepthDetached()
         && !isCrossThreadFlowHandoffPending();
+}
+
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
 }
 
 bool hasEvents() {
@@ -2640,6 +2669,16 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
+
+
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -3545,6 +3584,20 @@ bool tryFirstFlowEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
     return isValidProfileEvent(outEvent) && isFlowPhaseEvent(outEvent);
 
+
+
+
+
+
+
+
+
+        if (eventMatchesFlowId(event, flowId)) {
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -4423,6 +4476,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
     if (!g_enabled.load(std::memory_order_acquire) || shouldRejectEventName(name)) {
     if (!wouldRecordWithName(name)) {
     if (!g_enabled.load(std::memory_order_acquire) || !shouldRecordEventName(name)) {
+
         return;
     }
 
