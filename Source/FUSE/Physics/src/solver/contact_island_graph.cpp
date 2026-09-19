@@ -43,6 +43,10 @@ void ContactIslandGraph::unionBodies(u32 a, u32 b) {
     }
 }
 
+bool ContactIslandGraph::bodyIndexInRange(u32 bodyIndex) const {
+    return bodyIndex < parent_.size();
+}
+
 void ContactIslandGraph::build(u32 bodyCount,
                                const std::vector<narrowphase::ContactManifold>& contacts,
                                const std::vector<DistanceConstraint>& distanceConstraints) {
@@ -56,10 +60,16 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!contact.valid) {
             continue;
         }
+        if (!bodyIndexInRange(contact.bodyA) || !bodyIndexInRange(contact.bodyB)) {
+            continue;
+        }
         unionBodies(contact.bodyA, contact.bodyB);
     }
 
     for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (!bodyIndexInRange(constraint.bodyA) || !bodyIndexInRange(constraint.bodyB)) {
+            continue;
+        }
         unionBodies(constraint.bodyA, constraint.bodyB);
     }
 
@@ -84,6 +94,9 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!contact.valid) {
             continue;
         }
+        if (!bodyIndexInRange(contact.bodyA) || !bodyIndexInRange(contact.bodyB)) {
+            continue;
+        }
         const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
         if (islandIndex != invalidIsland) {
             islands_[islandIndex].contactIndices.push_back(contactIndex);
@@ -92,6 +105,9 @@ void ContactIslandGraph::build(u32 bodyCount,
 
     for (u32 distanceIndex = 0; distanceIndex < distanceConstraints.size(); ++distanceIndex) {
         const DistanceConstraint& constraint = distanceConstraints[distanceIndex];
+        if (!bodyIndexInRange(constraint.bodyA) || !bodyIndexInRange(constraint.bodyB)) {
+            continue;
+        }
         const u32 islandIndex = rootToIsland[findRoot(constraint.bodyA)];
         if (islandIndex != invalidIsland) {
             islands_[islandIndex].distanceIndices.push_back(distanceIndex);

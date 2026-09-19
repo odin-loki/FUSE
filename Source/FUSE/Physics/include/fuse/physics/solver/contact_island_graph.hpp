@@ -38,6 +38,7 @@ struct ContactIslandGraph {
     static constexpr u32 invalidIsland = ~0u;
 
 private:
+    bool bodyIndexInRange(u32 bodyIndex) const;
     void unionBodies(u32 a, u32 b);
     u32 findRoot(u32 index) const;
     void compressPath(u32 index);
