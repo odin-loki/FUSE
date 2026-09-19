@@ -1628,3 +1628,25 @@ void testCookHashPreflightShouldSkipHelpers() {
     expectTrue(!fuse::project::CookCache::should_skip_prune_all(cooker.cache()),
                "should_skip_prune_all false when stale entry present");
     testCookHashPreflightShouldSkipHelpers();
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-6648 ---
+void testCookHashPreflightShouldSkipGuards() {
+    expectTrue(fuse::project::preflight_file_content_hash("").should_skip(),
+               "preflight should_skip for empty path");
+               "should_skip_file_content_hash mirrors preflight for empty path");
+    expectTrue(fuse::project::should_skip_mesh_import_hash(desc) ==
+                   fuse::project::preflight_mesh_import_hash(desc).should_skip(),
+               "should_skip_mesh_import_hash matches preflight should_skip");
+    expectTrue(fuse::project::should_skip_mesh_import_hash(desc), "empty mesh input should skip hash");
+    expectTrue(!fuse::project::should_skip_combine_cook_cache_key(99u, 0),
+void testCookCacheEntryPreflightAndStoreSkipGuards() {
+    expectTrue(!fuse::project::should_skip_cook_cache_store(valid), "valid entry should not skip store");
+    expectTrue(fuse::project::preflight_cook_cache_entry(invalid).should_skip(),
+    expectTrue(fuse::project::should_skip_cook_cache_store(invalid), "invalid entry should skip store");
+    expectTrue(cache.should_skip_prune_all(), "empty cache should skip prune_all");
+               "would_invalidate_source true for seeded source");
+               "would_invalidate_output true for seeded output");
+    expectTrue(!cooker.cache().should_skip_prune_all(), "stale entry should not skip prune_all");
+    expectTrue(!estimate.should_skip(), "stale estimate should not skip prune");
+    testCookHashPreflightShouldSkipGuards();
+    testCookCacheEntryPreflightAndStoreSkipGuards();
