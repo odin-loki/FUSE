@@ -196,3 +196,6 @@ struct CookCacheEntryPreflight {
     [[nodiscard]] bool should_skip() const { return !would_invalidate(); }
     [[nodiscard]] bool would_reconcile() const { return total_removable > 0; }
     [[nodiscard]] bool should_skip() const { return !would_reconcile(); }
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-34cc ---
+    [[nodiscard]] bool would_change() const { return total_removable() > 0; }

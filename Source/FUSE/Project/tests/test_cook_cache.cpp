@@ -955,3 +955,9 @@ void testCookContentHashPreflightGuards() {
     expectTrue(empty_estimate.should_skip(), "empty cache reconcile estimate should skip");
     expectTrue(cooker.cache().estimate_prune_all().should_skip(),
     testCookContentHashPreflightGuards();
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-34cc ---
+    const fuse::project::CookHashPreflight empty_path = fuse::project::preflight_hash_file_content("");
+    const fuse::project::CookHashPreflight missing =
+    const fuse::project::CookHashPreflight mesh_empty_input = fuse::project::preflight_mesh_import(mesh);
+    const fuse::project::CookHashPreflight mesh_empty_output = fuse::project::preflight_mesh_import(mesh);
