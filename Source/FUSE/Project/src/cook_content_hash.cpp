@@ -29,6 +29,8 @@ u64 hash_bool(bool value) {
 u64 fnv1a64_bytes(const u8* data, usize size) {
     if (size == 0) {
         return kFnvOffset;
+    if (data == nullptr && size > 0) {
+        return 0;
     }
 
     u64 hash = kFnvOffset;

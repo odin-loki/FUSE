@@ -282,7 +282,6 @@ void testHashUpstreamDependenciesEmptyPathGuards() {
     const fuse::u64 without_empty = fuse::project::hash_upstream_dependencies({asset.output_path}, manifest);
     expectTrue(with_empty == without_empty, "empty dependency paths are skipped when folding upstream hash");
     expectTrue(without_empty != 0, "non-empty dependency path yields non-zero upstream hash");
-}
 
 void testHashManifestEntryEmptyDependencyGuards() {
     const std::string source = writeTempFile("/tmp/fuse_b79_manifest_dep.obj", "# manifest dep\n");
@@ -299,7 +298,6 @@ void testHashManifestEntryEmptyDependencyGuards() {
     expectTrue(fuse::project::hash_manifest_entry(with_empty_dep) ==
                    fuse::project::hash_manifest_entry(without_dep),
                "empty manifest dependencies are skipped when hashing");
-}
 
 void testCookCacheLookupOutEntryGuard() {
     fuse::project::CookCache cache;
@@ -314,19 +312,15 @@ void testCookCacheLookupOutEntryGuard() {
                "zero-hash lookup misses on empty cache");
     expectTrue(out.content_hash == sentinel.content_hash, "zero-hash lookup does not write out_entry");
     expectTrue(out.source_path == sentinel.source_path, "zero-hash lookup preserves out_entry source path");
-}
 
 void testCookCacheLookupEmptyCacheMissCounts() {
-    fuse::project::CookCache cache;
     const fuse::u64 misses_before = cache.stats().misses;
 
     expectTrue(cache.lookup(77u) == fuse::project::CookCacheLookup::Miss,
                "valid hash misses on empty cache");
     expectTrue(cache.stats().misses == misses_before + 1u, "empty-cache lookup records one miss");
-}
 
 void testCookCacheShaderKindStalePrune() {
-    fuse::project::CookCache cache;
 
     fuse::project::CookCacheEntry shader_entry;
     shader_entry.content_hash = 303;
@@ -339,7 +333,6 @@ void testCookCacheShaderKindStalePrune() {
     expectTrue(cache.has_prunable_entries(), "shader entry is prunable because recompute yields zero key");
     expectTrue(cache.prune_stale_entries() == 1u, "shader entry pruned as stale");
     expectTrue(cache.empty(), "cache empty after shader stale prune");
-}
 
 void testCookCacheLoadPrunesStaleEntries() {
     const std::string source = writeTempFile("/tmp/fuse_b79_load_prune.obj", "# load prune v1\n");
@@ -360,7 +353,6 @@ void testCookCacheLoadPrunesStaleEntries() {
     expectTrue(loaded.load(cachePath), "stale cache JSON loads");
     expectTrue(loaded.empty(), "load prunes stale entries after content change");
     expectTrue(loaded.stats().invalidations >= 1u, "load-time stale prune counts as invalidation");
-}
 
 void testCookCacheEmptyPathTextureAudioGuards() {
     fuse::project::TextureImportDesc tex;
@@ -372,10 +364,61 @@ void testCookCacheEmptyPathTextureAudioGuards() {
     audio.input_path = "/tmp/fuse_b79_audio_empty.wav";
     audio.output_path = "";
     expectTrue(fuse::project::hash_audio_import(audio) == 0, "empty audio output path yields zero hash");
-}
 
 void testCookCacheLoadPreservesEntriesWithoutOnDiskSource() {
     const std::string cachePath = "/tmp/fuse_b79_missing_source_load.json";
+void testCookContentHashByteSpanGuards() {
+    expectTrue(!fuse::project::is_hashable_byte_span(nullptr, 0), "null zero-length span is not hashable");
+    expectTrue(!fuse::project::is_hashable_byte_span(nullptr, 4u), "null non-zero span is not hashable");
+
+    const fuse::u8 byte = 7;
+    expectTrue(fuse::project::is_hashable_byte_span(&byte, 1u), "non-null span is hashable");
+    expectTrue(fuse::project::fnv1a64_bytes(nullptr, 4u) == 0, "null non-zero span hashes to zero");
+    expectTrue(fuse::project::fnv1a64_bytes(&byte, 1u) != 0, "valid span yields non-zero hash");
+
+void testCookCacheInvalidVsStalePruneGuards() {
+
+    fuse::project::CookCacheEntry invalid;
+    invalid.content_hash = 0;
+    invalid.source_path = "/tmp/fuse_b79_split_invalid.obj";
+    invalid.output_path = "/tmp/fuse_b79_split_invalid.fusemesh";
+    cache.store(invalid);
+    expectTrue(cache.entry_count() == 0u, "store rejects invalid entry for split prune guard");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_split_stale.obj", "# split stale v1\n");
+    desc.output_path = "/tmp/fuse_b79_split_stale.fusemesh";
+
+    const fuse::project::CookRecord first = cooker.cook_mesh(desc);
+    expectTrue(first.ok, "seed cook for split prune guard ok");
+    expectTrue(!cooker.cache().has_invalid_entries(), "fresh cook cache has no invalid entries");
+    expectTrue(!cooker.cache().has_stale_entries(), "fresh cook cache has no stale entries");
+    expectTrue(!cooker.cache().has_prunable_entries(), "fresh cook cache is not prunable");
+
+    writeTempFile(source, "# split stale v2\n");
+    expectTrue(!cooker.cache().has_invalid_entries(), "stale content does not mark invalid entries");
+    expectTrue(cooker.cache().has_stale_entries(), "stale content marks stale entries");
+    expectTrue(cooker.cache().has_prunable_entries(), "stale cache is prunable");
+    expectTrue(cooker.cache().prune_invalid_entries() == 0u, "invalid prune no-op on stale-only cache");
+    expectTrue(cooker.cache().prune_stale_entries() == 1u, "stale prune removes stale entry");
+    expectTrue(!cooker.cache().has_stale_entries(), "cache is clean after stale prune");
+
+void testCookCacheLoadCorruptPreservesEntries() {
+
+    fuse::project::CookCacheEntry valid;
+    valid.content_hash = 601;
+    valid.source_path = "/tmp/fuse_b79_corrupt_load.obj";
+    valid.output_path = "/tmp/fuse_b79_corrupt_load.fusemesh";
+    cache.store(valid);
+    expectTrue(cache.entry_count() == 1u, "entry seeded before corrupt load");
+
+    const std::string corruptPath = "/tmp/fuse_b79_corrupt_cache.json";
+    writeTempFile(corruptPath, "{ not a cook cache document }\n");
+    expectTrue(!cache.load(corruptPath), "corrupt cache JSON load fails");
+    expectTrue(cache.entry_count() == 1u, "corrupt load preserves existing entries");
+    expectTrue(cache.contains(601u), "seeded entry remains after corrupt load");
+
+void testCookCachePruneInvalidEntriesOnLoad() {
+    const std::string cachePath = "/tmp/fuse_b79_prune_invalid_load.json";
     {
         std::ofstream out(cachePath, std::ios::binary);
         out << R"({
@@ -778,12 +821,15 @@ int main() {
     testCookCacheLookupEmptyCacheMissCounts();
     testCookCachePruneAll();
     testCookCacheStaleContentInvalidationGuards();
+    testCookContentHashByteSpanGuards();
     testCookCacheHasPrunableEntriesAndCleanPruneGuards();
+    testCookCacheInvalidVsStalePruneGuards();
     testCookCacheInvalidateUnknownHashGuards();
     testCookCacheLoadMissingFilePreservesEntries();
     testCookCacheShaderKindStalePrune();
     testCookCacheLoadPrunesStaleEntries();
     testCookCacheLoadPreservesEntriesWithoutOnDiskSource();
+    testCookCacheLoadCorruptPreservesEntries();
     testCookCachePruneAllMixedInvalidAndStale();
     testCookHashPreflightGuards();
     testCookHashPreflightFnvAndCombineGuards();

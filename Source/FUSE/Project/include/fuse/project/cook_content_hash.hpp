@@ -31,7 +31,10 @@ struct CookHashPreflight {
     [[nodiscard]] bool ok() const { return can_hash; }
     /// True when hashing should be skipped — mirrors `!ok()` (B7.9 deepen).
     [[nodiscard]] bool should_skip() const { return !can_hash; }
-};
+/// Non-null buffer with at least one byte — required before hashing raw spans (B7.9 deepen).
+[[nodiscard]] inline bool is_hashable_byte_span(const u8* data, usize size) {
+    return data != nullptr && size > 0;
+}
 
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
 [[nodiscard]] u64 fnv1a64_bytes(const u8* data, usize size);
