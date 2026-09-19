@@ -4527,3 +4527,9 @@ void testTaaPassTryPreflightAndCompositeGuards() {
     expectTrue(pass->tryPreflightJitterAdvance(jitterReject), "pass tryPreflightJitterAdvance passes before init");
     expectTrue(zeroSeqPass->classifyJitterSyncReject() ==
     expectTrue(!zeroWidthPass->tryPreflightJitterNdc(jitterReject),
+
+// --- deepen additive from deepen-b59-taa-guards-4155 ---
+               "pass classifyResolveBlendReject is None before first resolve");
+               "pass preflightResolve passes after init");
+    expectTrue(invalidJitterPass->tryPreflightJitterAdvance(jitterReject),
+               "pass tryPreflightJitterAdvance passes after fallback sequence");
