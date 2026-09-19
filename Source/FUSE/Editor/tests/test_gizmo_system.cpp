@@ -1503,6 +1503,195 @@ void testInteractionPreflightCombined() {
     gizmo.endDrag();
 }
 
+void testHitTestInvalidDimensionsGuards() {
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = -100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    expectTrue(fuse::editor::isHitTestDimensionsInvalid(hit),
+               "negative viewport width is invalid dimensions");
+    expectTrue(!fuse::editor::isHitTestEmpty(hit),
+               "negative viewport width is not classified as empty");
+    expectTrue(fuse::editor::isHitTestValid(hit),
+               "invalid-dimension hit still has non-zero magnitude width");
+
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = -50.f;
+    expectTrue(fuse::editor::isHitTestDimensionsInvalid(hit),
+               "negative viewport height is invalid dimensions");
+
+    hit.viewportHeight = 100.f;
+    expectTrue(!fuse::editor::isHitTestDimensionsInvalid(hit),
+               "positive viewport dimensions clear invalid-dimension guard");
+
+    const fuse::editor::PickPreflight invalidPick =
+        fuse::editor::preflightPick(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(invalidPick.canPick(), "valid-dimension pick preflight accepts in-bounds hit");
+    hit.viewportWidth = -100.f;
+    const fuse::editor::PickPreflight negativeWidthPick =
+        fuse::editor::preflightPick(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(negativeWidthPick.invalidDimensions,
+               "pick preflight marks invalid viewport dimensions");
+    expectTrue(!negativeWidthPick.canPick(), "pick preflight rejects invalid viewport dimensions");
+
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = -50.f;
+    const fuse::editor::BeginDragPreflight beginPreflight = fuse::editor::preflightBeginDrag(
+        hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(beginPreflight.invalidDimensions,
+               "begin preflight marks invalid viewport dimensions");
+    expectTrue(!beginPreflight.canBegin, "begin preflight rejects invalid viewport dimensions");
+
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    const fuse::editor::UpdateDragPreflight updatePreflight = fuse::editor::preflightUpdateDrag(
+        hit, true, fuse::editor::GizmoAxis::X);
+    expectTrue(updatePreflight.canUpdate(), "valid hit clears update invalid-dimension guard");
+
+    hit.viewportWidth = -100.f;
+    const fuse::editor::UpdateDragPreflight invalidUpdatePreflight =
+        fuse::editor::preflightUpdateDrag(hit, true, fuse::editor::GizmoAxis::X);
+    expectTrue(invalidUpdatePreflight.invalidDimensions,
+               "update preflight marks invalid viewport dimensions");
+    expectTrue(!invalidUpdatePreflight.canUpdate(),
+               "update preflight rejects invalid viewport dimensions");
+
+    fuse::editor::GizmoAxis axis = fuse::editor::GizmoAxis::X;
+    expectTrue(!fuse::editor::tryPickAxis(hit, fuse::editor::GizmoMode::Translate, axis),
+               "tryPickAxis rejects invalid viewport dimensions");
+    expectTrue(axis == fuse::editor::GizmoAxis::None,
+               "invalid-dimension pick leaves axis unset");
+
+    fuse::editor::GizmoSystem gizmo;
+    expectTrue(!gizmo.canPickAxis(hit), "gizmo canPickAxis rejects invalid viewport dimensions");
+    expectTrue(!gizmo.canBeginDrag(hit), "gizmo canBeginDrag rejects invalid viewport dimensions");
+
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    expectTrue(fuse::editor::preflightPick(hit, fuse::editor::GizmoMode::Translate).canPick() ==
+                   fuse::editor::canPickSnap(hit, fuse::editor::GizmoMode::Translate, {}),
+               "canPickSnap mirrors pick preflight on valid hit");
+}
+
+void testIsSnapDegradedHelper() {
+    fuse::editor::GizmoSnapSettings snap{};
+    expectTrue(!fuse::editor::isSnapDegraded(fuse::editor::GizmoMode::Translate, snap),
+               "isSnapDegraded false when snap disabled");
+
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+    expectTrue(fuse::editor::isSnapDegraded(fuse::editor::GizmoMode::Translate, snap),
+               "isSnapDegraded true when translate snap enabled with zero step");
+
+    const fuse::editor::SnapPreflight degradedPreflight =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(degradedPreflight.isDegraded(), "snap preflight isDegraded marks invalid step");
+    expectTrue(!degradedPreflight.canApply(), "degraded snap cannot apply");
+
+    snap.gridSize = 1.f;
+    expectTrue(!fuse::editor::isSnapDegraded(fuse::editor::GizmoMode::Translate, snap),
+               "isSnapDegraded false when translate snap step is valid");
+    expectTrue(fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, snap).canApply(),
+               "valid snap preflight can apply");
+}
+
+void testInteractionPhaseRouting() {
+    expectTrue(fuse::editor::interactionPhase(false) == fuse::editor::GizmoInteractionPhase::Idle,
+               "interactionPhase reports idle when not dragging");
+    expectTrue(fuse::editor::interactionPhase(true) ==
+                   fuse::editor::GizmoInteractionPhase::Dragging,
+               "interactionPhase reports dragging when active");
+
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::InteractionPreflight idleInteraction = fuse::editor::preflightInteraction(
+        hit, false, fuse::editor::GizmoAxis::None, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(idleInteraction.phase() == fuse::editor::GizmoInteractionPhase::Idle,
+               "interaction preflight reports idle phase");
+    expectTrue(idleInteraction.canActOnPhase(), "idle phase allows begin action");
+    expectTrue(!idleInteraction.canUpdate(), "idle phase rejects update action");
+
+    const fuse::editor::InteractionPreflight activeInteraction = fuse::editor::preflightInteraction(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(activeInteraction.phase() == fuse::editor::GizmoInteractionPhase::Dragging,
+               "interaction preflight reports dragging phase");
+    expectTrue(activeInteraction.canActOnPhase(), "dragging phase allows update action");
+    expectTrue(!activeInteraction.canBegin(), "dragging phase rejects begin action");
+}
+
+void testCanInteractionPredicates() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    expectTrue(fuse::editor::canPickSnap(hit, fuse::editor::GizmoMode::Translate, snap),
+               "canPickSnap accepts valid screen hit");
+    expectTrue(fuse::editor::canBeginInteraction(hit, fuse::editor::GizmoMode::Translate, snap),
+               "canBeginInteraction accepts valid screen hit");
+    expectTrue(!fuse::editor::canBeginInteraction(hit, fuse::editor::GizmoMode::Translate, snap,
+                                                  true),
+               "canBeginInteraction rejects while dragging");
+    expectTrue(fuse::editor::canUpdateInteraction(hit, true, fuse::editor::GizmoAxis::X,
+                                                  fuse::editor::GizmoMode::Translate, snap),
+               "canUpdateInteraction accepts active drag");
+    expectTrue(!fuse::editor::canUpdateInteraction(hit, false, fuse::editor::GizmoAxis::None,
+                                                 fuse::editor::GizmoMode::Translate, snap),
+               "canUpdateInteraction rejects inactive drag");
+    expectTrue(fuse::editor::canEndInteraction(true, fuse::editor::GizmoAxis::X,
+                                               fuse::editor::GizmoMode::Translate, snap),
+               "canEndInteraction accepts active drag");
+    expectTrue(!fuse::editor::canEndInteraction(false, fuse::editor::GizmoAxis::None,
+                                                fuse::editor::GizmoMode::Translate, snap),
+               "canEndInteraction rejects inactive drag");
+
+    fuse::editor::GizmoTransform transform{};
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    expectTrue(fuse::editor::canPickSnap(xRay, transform, fuse::editor::GizmoMode::Translate,
+                                         fuse::editor::GizmoSpace::World,
+                                         fuse::editor::GizmoSystem::kAxisLength,
+                                         fuse::editor::GizmoSystem::kPickRadius, snap),
+               "canPickSnap accepts valid ray");
+    expectTrue(fuse::editor::canBeginInteraction(
+                   xRay, transform, fuse::editor::GizmoMode::Translate,
+                   fuse::editor::GizmoSpace::World, fuse::editor::GizmoSystem::kAxisLength,
+                   fuse::editor::GizmoSystem::kPickRadius, snap),
+               "canBeginInteraction accepts valid ray");
+
+    expectTrue(fuse::editor::canBeginDrag(hit, fuse::editor::GizmoMode::Translate, snap),
+               "canBeginDrag with settings accepts valid screen hit");
+    expectTrue(fuse::editor::canBeginDrag(xRay, transform, fuse::editor::GizmoMode::Translate,
+                                          fuse::editor::GizmoSpace::World,
+                                          fuse::editor::GizmoSystem::kAxisLength,
+                                          fuse::editor::GizmoSystem::kPickRadius, snap),
+               "canBeginDrag with settings accepts valid ray");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    expectTrue(gizmo.canPickSnap(hit), "gizmo canPickSnap accepts valid screen hit");
+    expectTrue(gizmo.canBeginInteraction(hit), "gizmo canBeginInteraction accepts valid screen hit");
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.canUpdateInteraction(hit), "gizmo canUpdateInteraction accepts active drag");
+    expectTrue(gizmo.canEndInteraction(), "gizmo canEndInteraction accepts active drag");
+    gizmo.endDrag();
+}
+
 } // namespace
 
 int main() {
@@ -1554,6 +1743,10 @@ int main() {
     testUpdateInteractionPreflight();
     testEndInteractionPreflight();
     testInteractionPreflightCombined();
+    testHitTestInvalidDimensionsGuards();
+    testIsSnapDegradedHelper();
+    testInteractionPhaseRouting();
+    testCanInteractionPredicates();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test failure(s)\n", g_failures);
