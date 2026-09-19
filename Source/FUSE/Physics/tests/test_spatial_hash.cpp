@@ -3186,3 +3186,7 @@ void testBroadphaseMergeStatsPreflight() {
     testPairBufferCompactClampRejectReasonGuards();
     testRefineBroadphaseActivePairCountPreflight();
     testBroadphaseMergeStatsPreflight();
+
+// --- deepen additive from deepen-b4-broadphase-guards-ce99 ---
+    const fuse::physics::broadphase::CellOccupancyPreflight atBudget =
+    const fuse::physics::broadphase::PairBufferWriteSlotPreflight invalidWrite =

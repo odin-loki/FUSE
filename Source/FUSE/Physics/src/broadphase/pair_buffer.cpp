@@ -977,3 +977,6 @@ PairBufferCompactClampPreflight preflightPairBufferCompactClamp(const PairBuffer
     preflight.needsClamp = preflightPairBufferClamp(buffer).needsClamp();
     return !preflightPairBufferCompactClamp(buffer).canRun();
     return preflightPairBufferCompactClamp(buffer).canRun();
+
+// --- deepen additive from deepen-b4-broadphase-guards-ce99 ---
+    const PairBufferWriteSlotPreflight preflight = preflightPairBufferWriteSlot(*this, slot, idxA, idxB);
