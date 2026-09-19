@@ -620,6 +620,30 @@ const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason
     case DedupeBroadphaseRejectReason::AlreadyUnique:
         return "AlreadyUnique";
 
+const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason) {
+    switch (reason) {
+    case CellSpanClampRejectReason::None:
+        return "None";
+    case CellSpanClampRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellSpanClampRejectReason::WithinSpan:
+        return "WithinSpan";
+    case CellSpanClampRejectReason::UnlimitedSpan:
+        return "UnlimitedSpan";
+    }
+    return "Unknown";
+}
+
+const char* broadphasePairSlotRejectReasonName(BroadphasePairSlotRejectReason reason) {
+    switch (reason) {
+    case BroadphasePairSlotRejectReason::None:
+        return "None";
+    case BroadphasePairSlotRejectReason::ZeroPairSlots:
+        return "ZeroPairSlots";
+    }
+    return "Unknown";
+}
+
 const char* mergeBroadphaseRejectReasonName(BroadphaseMergeRejectReason reason) {
     switch (reason) {
     case BroadphaseMergeRejectReason::None:
@@ -1163,6 +1187,7 @@ void runBroadphaseIntoBufferInternal(
     const PairSlotPreflight slotPreflight = preflightPairSlots(totalCellSlots, buffer);
     if (slotPreflight.skipped) {
     if (!shouldRunBroadphaseCellPairGeneration(totalCellSlots)) {
+    if (!shouldRunBroadphasePairSlotWrite(totalCellSlots)) {
         return;
     }
 

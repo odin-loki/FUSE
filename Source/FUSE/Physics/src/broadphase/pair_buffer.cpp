@@ -181,6 +181,7 @@ void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB, u32 bodyCount) {
     if (!preflightPairBufferSlotWrite(*this, slot, idxA, idxB).canWrite()) {
     const PairBufferWriteSlotPreflight preflight = preflightPairBufferWriteSlot(*this, slot, idxA, idxB);
     if (!preflight.canWrite()) {
+    if (!shouldRunPairBufferWriteSlot(*this, slot, idxA, idxB)) {
         return;
     }
 
@@ -2300,6 +2301,9 @@ bool pairBufferWriteSlotRejectsForReason(
     return pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB) == expected;
 
 PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+
+
+
     PairBufferWriteSlotPreflight preflight{};
     preflight.reason = pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB);
     preflight.outOfRangeSlot = preflight.reason == PairBufferWriteSlotRejectReason::OutOfRangeSlot;
@@ -2922,5 +2926,8 @@ bool canSkipPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCou
 
 bool shouldAcceptPairBufferPairs(const PairBufferSoA& buffer, u32 additionalCount) {
     return preflightPairBufferAcceptPairs(buffer, additionalCount).canAccept();
+
+
+
 
 } // namespace fuse::physics::broadphase

@@ -1493,6 +1493,7 @@ bool canSkipPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount);
 /// Non-mutating merge predicate — mirrors `preflightPairBufferMerge` (B4.2 deepen pass).
 bool shouldRunPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount);
 /// Why pair-buffer slot write would reject (B4.2 deepen pass).
+/// Why pair-buffer writeSlot would reject (B4.2 deepen pass).
 enum class PairBufferWriteSlotRejectReason : u8 {
     None = 0,
     OutOfRangeSlot,
@@ -1503,6 +1504,9 @@ enum class PairBufferWriteSlotRejectReason : u8 {
 const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason);
 
 /// Diagnose why write-slot would reject; vacuously succeeds when write may proceed.
+/// Human-readable label for pair-buffer writeSlot reject reasons (logging / tests).
+
+/// Diagnose why writeSlot would reject; vacuously succeeds when writeSlot may proceed.
 PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
     const PairBufferSoA& buffer,
     u32 slot,
@@ -1515,6 +1519,11 @@ bool pairBufferWriteSlotRejectsForReason(
     PairBufferWriteSlotRejectReason expected);
 
 /// Read-only write-slot diagnostics — no mutation (B4.2 deepen pass).
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+
+/// Read-only writeSlot diagnostics — no mutation (B4.2 deepen pass).
 struct PairBufferWriteSlotPreflight {
     PairBufferWriteSlotRejectReason reason = PairBufferWriteSlotRejectReason::None;
     bool outOfRangeSlot = false;
@@ -1557,5 +1566,17 @@ bool canSkipPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCou
 
 /// Non-mutating bulk-accept predicate — mirrors `preflightPairBufferAcceptPairs` (B4.2 deepen pass).
 bool shouldAcceptPairBufferPairs(const PairBufferSoA& buffer, u32 additionalCount);
+};
+
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Non-mutating writeSlot skip predicate — inverse of `canWrite` (B4.2 deepen pass).
+bool canSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
+
+/// Non-mutating writeSlot predicate — mirrors `preflightPairBufferWriteSlot` (B4.2 deepen pass).
+bool shouldRunPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
 
 } // namespace fuse::physics::broadphase
