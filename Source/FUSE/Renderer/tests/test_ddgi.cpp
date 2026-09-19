@@ -4591,3 +4591,20 @@ void testDdgiDeepenPass2Guards() {
                "preflightCacheIndexLookup count-only rejects OOB index");
                "classifyProbeScheduleRejectAtRate none for valid rate-aware inputs");
                "preflightProbeScheduleAtRate succeeds for valid rate-aware inputs");
+
+// --- deepen additive from deepen-ddgi-guards-273e ---
+               "classifyProbeGridSourceReject none for valid grid");
+               "preflightProbeGridSource succeeds for valid grid");
+               "wouldSkipProbeGridSource false for valid grid");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeGridSource(zeroRes),
+               "wouldSkipProbeGridSource true for zero irradiance_res");
+                   fuse::renderer::ProbeGridSourceRejectReason::ZeroProbeSpacing,
+               "classifyProbeGridSourceReject zero_probe_spacing");
+    expectTrue(!fuse::renderer::preflightProbeGridSource(zeroSpacing),
+               "preflightProbeGridSource rejects zero spacing");
+               "wouldSkipProbeSampleCoordPreflight true for OOB indices");
+void testTryPreflightProbeKernelLaunch() {
+    expectTrue(fuse::renderer::gi::tryPreflightProbeKernelLaunch(validParams, reason),
+    expectTrue(!fuse::renderer::gi::tryPreflightProbeKernelLaunch(nullIndices, reason),
+               "tryPreflightProbeKernelLaunch rejects null indices");
+    testTryPreflightProbeKernelLaunch();
