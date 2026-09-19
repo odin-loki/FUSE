@@ -357,6 +357,10 @@ enum class PairBufferClampRejectReason : u8 {
 
 /// Why max-capacity clamp would early-out (B4.2 deepen pass).
 
+
+
+
+
 const char* pairBufferClampRejectReasonName(PairBufferClampRejectReason reason);
 
 /// Diagnose why clamp would skip; vacuously succeeds when clamp may proceed.
@@ -436,6 +440,7 @@ enum class PairBufferDedupeRejectReason : u8 {
 /// Non-mutating clamp skip predicate — inverse of `preflightPairBufferClamp` (B4.2 deepen pass).
 
 
+
 /// Human-readable label for pair-buffer dedupe reject reasons (logging / tests).
 const char* pairBufferDedupeRejectReasonName(PairBufferDedupeRejectReason reason);
 
@@ -472,6 +477,7 @@ struct PairBufferDedupePreflight {
 
 
 /// Returns true when `pairBufferDedupeRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+
 
 
 
@@ -828,5 +834,8 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
 
 
 /// Non-mutating sort skip predicate — inverse of `preflightPairBufferSort` (B4.2 deepen pass).
+};
+
+PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer);
 
 } // namespace fuse::physics::broadphase

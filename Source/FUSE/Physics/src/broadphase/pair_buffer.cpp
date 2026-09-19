@@ -1583,6 +1583,7 @@ const char* pairBufferPushRejectReasonName(PairBufferPushRejectReason reason) {
     case PairBufferPushRejectReason::AtCapacity:
         return "AtCapacity";
     return "Unknown";
+    }
 
 PairBufferPushRejectReason pairBufferPushRejectReason(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
     if (!isValidCandidatePair(idxA, idxB)) {
@@ -1590,6 +1591,7 @@ PairBufferPushRejectReason pairBufferPushRejectReason(const PairBufferSoA& buffe
     if (buffer.isFull()) {
         return PairBufferPushRejectReason::AtCapacity;
     return PairBufferPushRejectReason::None;
+    }
 
 bool pairBufferPushRejectsForReason(
     const PairBufferSoA& buffer,
@@ -1600,10 +1602,16 @@ bool pairBufferPushRejectsForReason(
 
 const char* pairBufferCompactionRejectReasonName(PairBufferCompactionRejectReason reason) {
     case PairBufferCompactionRejectReason::None:
+}
+
+    switch (reason) {
+        return "None";
     case PairBufferCompactionRejectReason::EmptyBuffer:
         return "EmptyBuffer";
     case PairBufferCompactionRejectReason::AllValid:
         return "AllValid";
+    }
+    return "Unknown";
 
 PairBufferCompactionRejectReason pairBufferCompactionRejectReason(const PairBufferSoA& buffer) {
     if (buffer.canSkipSoAIteration()) {
@@ -1699,6 +1707,26 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
 
 bool canSkipPairBufferSort(const PairBufferSoA& buffer) {
     return !preflightPairBufferSort(buffer).needsSort();
-}
+
+
+    const PairBufferSoA& buffer,
+
+
+    switch (reason) {
+        return "None";
+        return "EmptyBuffer";
+    return "Unknown";
+
+    if (buffer.canSkipSoAIteration()) {
+
+
+
+
+
+
+PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
+    PairBufferCompactAndClampPreflight preflight{};
+
+    const u32 projectedCount = buffer.countValidSlots();
 
 } // namespace fuse::physics::broadphase

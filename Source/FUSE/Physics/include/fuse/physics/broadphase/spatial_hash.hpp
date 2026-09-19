@@ -713,7 +713,7 @@ FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellOccupancyPrefli
 /// Non-mutating cell-occupancy skip predicate — inverse of `preflightCellOccupancy` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
     return !preflightCellOccupancy(range, maxCells).canIterate();
-}
+
 
 FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
     return !preflightCellOccupancy(range, maxCells).canIterate();
@@ -2010,6 +2010,9 @@ bool shouldRunRefineBroadphase(
 
 
 
+
+
+
     BroadphaseMergeRejectReason expected);
 
 /// Read-only plane/dynamic merge diagnostics — no mutation (B4.2 deepen follow-up pass).
@@ -2112,7 +2115,6 @@ bool canSkipBroadphaseMerge(
 /// Non-mutating merge launch predicate — mirrors `preflightBroadphaseMerge` (B4.2 deepen pass).
 bool shouldRunBroadphaseMerge(
 
-/// Non-mutating merge skip predicate — inverse of `preflightBroadphaseMerge().canMerge()`.
 
 /// Non-mutating merge predicate — inverse of `canSkipBroadphaseMerge` (B4.2 deepen pass).
 
@@ -2132,8 +2134,7 @@ bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSo
 /// Non-mutating merge predicate — inverse of `canSkipBroadphaseMerge`.
 
 /// Non-mutating merge skip predicate — inverse of `canMerge` (B4.2 deepen follow-up pass).
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
+
 
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.

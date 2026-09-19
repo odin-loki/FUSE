@@ -690,6 +690,13 @@ CellOccupancyPreflight preflightCellOccupancy(const CellRange3& range, u32 maxCe
 }
 
 CellOccupancyPreflight preflightCellOccupancy(const CellRange2& range, u32 maxCells) {
+    CellOccupancyPreflight preflight{};
+    preflight.reason = cellOccupancyRejectReason(range, maxCells);
+    preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    return preflight;
+}
 
 namespace {
 
@@ -1465,6 +1472,8 @@ bool shouldRunRefineBroadphase(
     if (!hasPlaneBodies) {
         return BroadphaseMergeRejectReason::EmptyPlaneBodies;
     return BroadphaseMergeRejectReason::EmptyDynamicBodies;
+    const BroadphaseMergePreflight preflight = preflightBroadphaseMerge(bodies, shapes);
+    return preflight.reason;
 
 bool broadphaseMergeRejectsForReason(
     const RigidBodySoA& bodies,
@@ -1684,6 +1693,7 @@ CandidatePairRejectReason candidatePairRejectReason(
 
     return CandidatePairRejectReason::None;
     preflight.reason = broadphaseMergeRejectReason(bodies, shapes);
+    }
     return preflight;
 
     const PairBufferSoA& buffer) {
@@ -1788,6 +1798,10 @@ MergeBroadphaseRejectReason mergeBroadphaseRejectReason(
 bool canSkipBroadphaseMerge(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
+    return !preflightBroadphaseMerge(bodies, shapes).canMerge();
+}
+
+bool canSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
     return !preflightBroadphaseMerge(bodies, shapes).canMerge();
 }
 
