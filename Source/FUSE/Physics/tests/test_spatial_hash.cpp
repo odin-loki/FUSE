@@ -4397,3 +4397,24 @@ void testPairBufferWouldSkipWriteAndInvalidateGuards() {
                "wouldSkipBroadphaseMerge false with plane and dynamic bodies");
              "wouldSkipBroadphaseMerge reports None for mergeable scene");
     expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(pairs, mergeBuffer) ==
+
+// --- deepen additive from deepen-b4-broadphase-wouldskip-9e44 ---
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 0u),
+               "wouldSkipPairBufferInvalidateSlot true on empty buffer");
+               "canSkipPairBufferInvalidateSlot agrees with wouldSkip on empty buffer");
+               "wouldSkipPairBufferInvalidateSlot fills reject reason for already-invalid slot");
+             "wouldSkipPairBufferInvalidateSlot reports AlreadyInvalid reason");
+void testPairBufferWriteSlotWouldSkipGuards() {
+    fuse::physics::broadphase::PairBufferWriteSlotRejectReason skipReason =
+    expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(buffer, 0u, 0u, 1u, &skipReason),
+               "wouldSkipPairBufferWriteSlot agrees with canSkipPairBufferWriteSlot for self-pair");
+    expectTrue(!fuse::physics::broadphase::wouldSkipCellSpanClamp(spanRange, 4u, &spanReason),
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(spanRange, 4u) ==
+               "wouldSkipCellSpanClamp agrees with canSkipCellSpanClamp for over-span range");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(validRange, 0u),
+               "wouldSkipCellSpanClamp true when maxSpanPerAxis is unlimited");
+             "wouldSkipDedupeBroadphase reports SinglePair reason");
+             "wouldSkipBroadphaseMerge reports EmptyPlaneBodies reason");
+    expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(emptyPairs, mergeBuffer, &mergeIntoReason),
+               "wouldSkipMergePairsIntoBuffer true for empty pair list");
+             "wouldSkipMergePairsIntoBuffer reports EmptyPairs reason");

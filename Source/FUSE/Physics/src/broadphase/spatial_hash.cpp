@@ -1789,3 +1789,15 @@ bool wouldSkipCellOccupancyIteration(
 bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer) {
 bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
 bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
+
+// --- deepen additive from deepen-b4-broadphase-wouldskip-9e44 ---
+bool wouldSkipRefineBroadphase(const RigidBodySoA& bodies,
+bool wouldSkipCellOccupancyIteration(const CellRange3& range,
+    const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
+    return rejectReason != CellOccupancyRejectReason::None;
+bool wouldSkipCellOccupancyIteration(const CellRange2& range,
+bool wouldSkipCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis, CellSpanRejectReason* reason) {
+            *reason = CellSpanRejectReason::None;
+    const CellSpanRejectReason rejectReason = cellSpanRejectReason(range, maxSpanPerAxis);
+    return rejectReason != CellSpanRejectReason::ExceedsSpan;
+bool wouldSkipCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis, CellSpanRejectReason* reason) {
