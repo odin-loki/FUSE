@@ -234,6 +234,8 @@ const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
         return "AnyTrigger";
     case ContactPairRejectReason::BothMassless:
         return "BothMassless";
+    case ContactPairRejectReason::BothPlanes:
+        return "BothPlanes";
     }
     return "Unknown";
 }
@@ -500,6 +502,10 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
+    if (is_plane_plane_contact_pair(pair, shapes)) {
+        return ContactPairRejectReason::BothPlanes;
+    }
+
     const ContactPairRejectReason baseReason = contact_pair_reject_reason(pair, bodies, shapes);
     if (baseReason != ContactPairRejectReason::None) {
         return baseReason;
