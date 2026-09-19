@@ -227,6 +227,7 @@ bool isValidEventName(const char* name);
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
+      m_active(g_enabled.load(std::memory_order_acquire) && name != nullptr) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -299,23 +300,18 @@ bool hasOpenAsyncFlows() {
 
 bool isScopeNestingBalanced() {
     return nestingDepth() == 0u;
-}
 
 bool isFlowNestingBalanced() {
     return flowNestingDepth() == 0u;
-}
 
 bool hasUnbalancedNesting() {
     return !isScopeNestingBalanced() || !isFlowNestingBalanced();
-}
 
 bool isFlowDepthDetached() {
     return flowNestingDepth() != openAsyncFlowCount();
-}
 
 bool isCrossThreadFlowHandoffPending() {
     return isFlowDepthDetached() && flowNestingDepth() > 0u;
-}
 
 NestingAsyncFlowPreflight preflightNestingAndAsyncFlow() {
     NestingAsyncFlowPreflight preflight{};
@@ -330,7 +326,6 @@ NestingAsyncFlowPreflight preflightNestingAndAsyncFlow() {
     preflight.flowDepthDetached = isFlowDepthDetached();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
     return preflight;
-}
 
 bool hasEvents() {
     return eventCount() > 0u;
@@ -342,6 +337,10 @@ bool isBufferEmpty() {
 
 bool isBufferFull() {
     return eventCount() >= kRingCapacity;
+bool hasOpenAsyncFlows() {
+    return openAsyncFlowCount() > 0u;
+
+    return eventCount() >= ringCapacity();
 
 bool isEventIndexValid(u32 index) {
     return index < eventCount();

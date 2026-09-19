@@ -176,6 +176,7 @@ NestingAsyncFlowPreflight preflightNestingAndAsyncFlow();
 
 bool hasEvents();
 bool isBufferEmpty();
+
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
 /// True for null, empty, or whitespace-only names — diagnostic only; does not affect recording guards.
