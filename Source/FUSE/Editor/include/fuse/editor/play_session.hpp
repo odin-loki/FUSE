@@ -26,10 +26,8 @@ struct FixedStepPreflight {
 
 /// Read-only variable-tick guard diagnostics (B6.12 deepen follow-up — inactive tick).
 struct VariableTickPreflight {
-    bool skipped = false;
     bool wouldSimulate = false;
     bool wouldAdvanceAccumulator = false;
-};
 
 /// Captured dirty-flag metadata for PIE restore (B6.12 deepen follow-up).
 struct DirtySnapshotInfo {
@@ -37,33 +35,19 @@ struct DirtySnapshotInfo {
     bool sceneModified = false;
     u32 entityCount = 0;
     u32 dirtyEntityCount = 0;
-};
 
 /// Captured world snapshot metadata for PIE restore (B6.12 deepen follow-up).
 struct WorldSnapshotInfo {
-    bool captured = false;
-    u32 entityCount = 0;
-};
 
 /// Read-only world-snapshot drain diagnostics (B6.12 deepen follow-up — drain guard).
 struct WorldSnapshotPreflight {
-    bool captured = false;
-    u32 entityCount = 0;
-    bool skipped = false;
 
     bool canDrain() const { return captured; }
-};
 
 /// Read-only dirty-snapshot restore diagnostics (B6.12 deepen follow-up — restore guard).
 struct DirtySnapshotPreflight {
-    bool captured = false;
-    bool sceneModified = false;
-    u32 entityCount = 0;
-    u32 dirtyEntityCount = 0;
-    bool skipped = false;
 
     bool canRestore() const { return captured; }
-};
 
 /// Combined PIE frame preflight — variable tick plus fixed-step drain (B6.12 deepen follow-up).
 struct TickFixedStepPreflight {
@@ -73,6 +57,20 @@ struct TickFixedStepPreflight {
     bool canSimulateVariableTick() const { return !variableTickSkipped; }
     bool canDrainFixedStep() const { return fixedStep.canDrain(); }
     bool canSimulateFrame() const { return canSimulateVariableTick() || canDrainFixedStep(); }
+/// Preflight result for fixed-step drain without mutating the session (B6.12 deepen follow-up).
+    bool skipped = true;
+    f32 fixedDt = 0.f;
+    u32 pendingSteps = 0;
+    u32 stepsAllowed = 0;
+    u32 stepsDeferred = 0;
+    bool cappedByMaxSteps = false;
+
+    bool canDrain() const { return !skipped && stepsAllowed > 0; }
+
+/// Preflight result for dirty-flag restore without mutating editor state (B6.12 deepen follow-up).
+    bool sceneModifiedCaptured = false;
+
+    bool canRestore() const { return !skipped; }
 };
 
 /// ECS world snapshot for PIE restore (B6.12 deepen — transform payloads per entity).
@@ -127,14 +125,12 @@ public:
     /// Preflight variable tick plus fixed-step drain for one PIE frame.
     TickFixedStepPreflight preflightTickFixedStep(f32 dt, f32 fixedDt,
                                                   const PlayModePhysicsState& physics,
-                                                  u32 maxSteps = 0) const;
     /// Preflight a variable tick without mutating session state.
     VariableTickPreflight preflightVariableTick(f32 dt, const PlayModePhysicsState& physics) const;
     bool shouldSkipVariableTick(f32 dt, const PlayModePhysicsState& physics) const;
     bool shouldSkipFixedStepDrain(f32 fixedDt, const PlayModePhysicsState& physics) const;
     bool hasPendingFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics) const;
     bool canConsumeFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics,
-                              u32 maxSteps = 0) const;
     /// Sub-fixed remainder left in `tickAccumulator()` after pending slices.
     f32 fixedAccumulatorRemainder(f32 fixedDt) const;
     bool shouldSkipDirtySnapshotRestore() const { return !m_hasDirtySnapshot; }
@@ -150,7 +146,6 @@ public:
     }
     bool dirtySnapshotSceneModified() const {
         return m_hasDirtySnapshot && m_dirtySnapshot.sceneModified;
-    }
     DirtySnapshotInfo dirtySnapshotInfo() const;
     ecs::EntityID dirtySnapshotEntityAt(usize index) const;
     bool transformDirtyAt(usize index) const;
@@ -161,6 +156,12 @@ public:
     bool worldSnapshotContainsEntity(ecs::EntityID entityId) const;
     bool shouldSkipWorldSnapshotDrain() const;
     bool shouldSkipDirtySnapshotDrain() const;
+    /// Preflight fixed-step drain: pending slices, maxSteps cap, and deferred remainder.
+    /// True when `tick(dt)` would be a no-op for the current session/physics/dt.
+    /// True when `consumeFixedSteps(fixedDt)` would be a no-op for the current session/physics/fixedDt.
+    DirtySnapshotPreflight preflightDirtySnapshotRestore() const;
+    /// True when `drainDirtySnapshot` would be guarded with no captured snapshot.
+    bool shouldSkipDirtySnapshotDrain() const { return !m_hasDirtySnapshot; }
     bool hasWorldSnapshot() const { return m_hasWorldSnapshot; }
     bool hasDirtySnapshot() const { return m_hasDirtySnapshot; }
 

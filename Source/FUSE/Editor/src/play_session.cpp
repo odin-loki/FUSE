@@ -145,6 +145,15 @@ FixedStepPreflight PlaySession::preflightFixedSteps(f32 fixedDt, const PlayModeP
     preflight.maxSteps = maxSteps;
 
     if (shouldSkipFixedStepDrain(fixedDt, physics)) {
+    FixedStepPreflight preflight;
+    preflight.fixedDt = fixedDt;
+
+        return preflight;
+    }
+
+    preflight.skipped = false;
+    preflight.pendingSteps = pendingFixedStepCount(fixedDt);
+    if (preflight.pendingSteps == 0) {
         preflight.skipped = true;
         return preflight;
     }
@@ -159,8 +168,6 @@ FixedStepPreflight PlaySession::preflightFixedSteps(f32 fixedDt, const PlayModeP
     preflight.allowed = preflight.pending < maxSteps ? preflight.pending : maxSteps;
     preflight.deferred = preflight.pending > preflight.allowed ? preflight.pending - preflight.allowed : 0;
     preflight.wouldCap = preflight.deferred > 0;
-    return preflight;
-}
 
 TickFixedStepPreflight PlaySession::preflightTickFixedStep(f32 dt, f32 fixedDt,
                                                            const PlayModePhysicsState& physics,
@@ -168,74 +175,60 @@ TickFixedStepPreflight PlaySession::preflightTickFixedStep(f32 dt, f32 fixedDt,
     TickFixedStepPreflight preflight{};
     preflight.variableTickSkipped = shouldSkipVariableTick(dt, physics);
     preflight.fixedStep = preflightFixedSteps(fixedDt, physics, maxSteps);
-    return preflight;
-}
 
 VariableTickPreflight PlaySession::preflightVariableTick(f32 dt,
                                                          const PlayModePhysicsState& physics) const {
     VariableTickPreflight preflight{};
     preflight.skipped = shouldSkipVariableTick(dt, physics);
     if (preflight.skipped) {
-        return preflight;
-    }
 
     preflight.wouldSimulate = true;
     preflight.wouldAdvanceAccumulator = dt > 0.f;
-    return preflight;
-}
 
 bool PlaySession::hasPendingFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics) const {
     if (shouldSkipFixedStepDrain(fixedDt, physics)) {
         return false;
-    }
 
     return pendingFixedStepCount(fixedDt) > 0;
-}
 
 bool PlaySession::canConsumeFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics,
-                                       u32 maxSteps) const {
     const FixedStepPreflight preflight = preflightFixedSteps(fixedDt, physics, maxSteps);
     return !preflight.skipped && preflight.allowed > 0;
-}
 
 f32 PlaySession::fixedAccumulatorRemainder(f32 fixedDt) const {
     if (fixedDt <= 0.f) {
         return 0.f;
-    }
 
     return m_tickAccumulator - static_cast<f32>(pendingFixedStepCount(fixedDt)) * fixedDt;
-}
 
 DirtySnapshotPreflight PlaySession::preflightDirtySnapshot() const {
     DirtySnapshotPreflight preflight{};
 
     if (shouldSkipDirtySnapshotRestore()) {
         preflight.skipped = true;
-        return preflight;
-    }
 
     preflight.captured = true;
     preflight.sceneModified = m_dirtySnapshot.sceneModified;
     preflight.entityCount = static_cast<u32>(m_dirtySnapshot.transformDirty.size());
     preflight.dirtyEntityCount = dirtySnapshotDirtyEntityCount();
-    return preflight;
-}
 
 WorldSnapshotPreflight PlaySession::preflightWorldSnapshot() const {
     WorldSnapshotPreflight preflight{};
 
     if (shouldSkipWorldSnapshotRestore()) {
-        preflight.skipped = true;
-        return preflight;
-    }
 
-    preflight.captured = true;
     preflight.entityCount = static_cast<u32>(m_worldSnapshot.entities.size());
+        preflight.stepsAllowed = preflight.pendingSteps;
+    } else {
+        preflight.stepsAllowed = std::min(preflight.pendingSteps, maxSteps);
+        preflight.cappedByMaxSteps = preflight.stepsAllowed < preflight.pendingSteps;
+    preflight.stepsDeferred = preflight.pendingSteps - preflight.stepsAllowed;
     return preflight;
 }
 
 bool PlaySession::shouldSkipVariableTick(f32 dt, const PlayModePhysicsState& physics) const {
     return !m_controller.isPlaying() || !physics.simulationActive || dt <= 0.f;
+    return !m_controller.isPlaying() || !physics.simulationActive || dt < 0.f;
 }
 
 bool PlaySession::shouldSkipFixedStepDrain(f32 fixedDt, const PlayModePhysicsState& physics) const {
@@ -252,93 +245,66 @@ DirtySnapshotInfo PlaySession::dirtySnapshotInfo() const {
     info.sceneModified = m_dirtySnapshot.sceneModified;
     info.entityCount = static_cast<u32>(m_dirtySnapshot.transformDirty.size());
     info.dirtyEntityCount = dirtySnapshotDirtyEntityCount();
-    return info;
-}
 
 ecs::EntityID PlaySession::dirtySnapshotEntityAt(usize index) const {
     if (!m_hasDirtySnapshot || index >= m_dirtySnapshot.transformDirty.size()) {
         return ecs::EntityID{};
-    }
 
     return m_dirtySnapshot.transformDirty[index].first;
-}
 
 bool PlaySession::transformDirtyAt(usize index) const {
-    if (!m_hasDirtySnapshot || index >= m_dirtySnapshot.transformDirty.size()) {
         return false;
-    }
 
     return m_dirtySnapshot.transformDirty[index].second;
-}
 
 bool PlaySession::transformDirtyForEntity(ecs::EntityID entityId) const {
     if (!m_hasDirtySnapshot || !entityId.valid()) {
-        return false;
-    }
 
     for (const std::pair<ecs::EntityID, bool>& entry : m_dirtySnapshot.transformDirty) {
         if (entry.first == entityId) {
             return entry.second;
-        }
-    }
 
-    return false;
-}
 
 u32 PlaySession::dirtySnapshotDirtyEntityCount() const {
-    if (!m_hasDirtySnapshot) {
         return 0;
-    }
 
     u32 dirtyCount = 0;
-    for (const std::pair<ecs::EntityID, bool>& entry : m_dirtySnapshot.transformDirty) {
         if (entry.second) {
             ++dirtyCount;
-        }
-    }
 
     return dirtyCount;
-}
 
 WorldSnapshotInfo PlaySession::worldSnapshotInfo() const {
     WorldSnapshotInfo info{};
     info.captured = m_hasWorldSnapshot;
     if (!m_hasWorldSnapshot) {
-        return info;
-    }
 
     info.entityCount = static_cast<u32>(m_worldSnapshot.entities.size());
-    return info;
-}
 
 ecs::EntityID PlaySession::worldSnapshotEntityAt(usize index) const {
     if (!m_hasWorldSnapshot || index >= m_worldSnapshot.entities.size()) {
-        return ecs::EntityID{};
-    }
 
     return m_worldSnapshot.entities[index].first;
-}
 
 bool PlaySession::worldSnapshotContainsEntity(ecs::EntityID entityId) const {
     if (!m_hasWorldSnapshot || !entityId.valid()) {
-        return false;
-    }
 
     for (const std::pair<ecs::EntityID, ecs::Transform>& entry : m_worldSnapshot.entities) {
-        if (entry.first == entityId) {
             return true;
-        }
-    }
 
-    return false;
-}
 
 bool PlaySession::shouldSkipWorldSnapshotDrain() const {
     return !m_hasWorldSnapshot;
-}
 
 bool PlaySession::shouldSkipDirtySnapshotDrain() const {
     return !m_hasDirtySnapshot;
+DirtySnapshotPreflight PlaySession::preflightDirtySnapshotRestore() const {
+    DirtySnapshotPreflight preflight;
+        return preflight;
+
+    preflight.skipped = false;
+    preflight.entityCount = static_cast<u32>(m_dirtySnapshot.transformDirty.size());
+    preflight.sceneModifiedCaptured = m_dirtySnapshot.sceneModified;
 }
 
 PlayWorldSnapshot PlaySession::captureWorldSnapshot(EditorScene& editorScene) const {
