@@ -4444,3 +4444,6 @@ void testEndDragInteractionRejectReasonGuards() {
 
 // --- deepen additive from deepen-gizmo-b6-guards-8ebd ---
                "tryPreflightSnapDrag accepts valid delta and snap after step reset");
+
+// --- deepen additive from deepen-gizmo-b6-guards-cc01 ---
+               "tryPreflightSnapDrag accepts valid delta after step reset");
