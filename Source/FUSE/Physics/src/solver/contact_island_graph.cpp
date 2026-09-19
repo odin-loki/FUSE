@@ -4,6 +4,61 @@
 
 namespace fuse::physics {
 
+bool island_body_index_in_range(u32 bodyIndex, u32 bodyCount) {
+    return bodyIndex < bodyCount;
+}
+
+const char* island_graph_build_reject_reason_name(IslandGraphBuildRejectReason reason) {
+    switch (reason) {
+    case IslandGraphBuildRejectReason::None:
+        return "None";
+    case IslandGraphBuildRejectReason::EmptyInputs:
+        return "EmptyInputs";
+    case IslandGraphBuildRejectReason::OutOfRangeContactBody:
+        return "OutOfRangeContactBody";
+    case IslandGraphBuildRejectReason::OutOfRangeDistanceBody:
+        return "OutOfRangeDistanceBody";
+    default:
+        return "Unknown";
+    }
+}
+
+IslandGraphBuildRejectReason island_graph_build_reject_reason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (!contact.valid) {
+            continue;
+        }
+        if (!island_body_index_in_range(contact.bodyA, bodyCount) ||
+            !island_body_index_in_range(contact.bodyB, bodyCount)) {
+            return IslandGraphBuildRejectReason::OutOfRangeContactBody;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (!island_body_index_in_range(constraint.bodyA, bodyCount) ||
+            !island_body_index_in_range(constraint.bodyB, bodyCount)) {
+            return IslandGraphBuildRejectReason::OutOfRangeDistanceBody;
+        }
+    }
+
+    if (bodyCount == 0u && contacts.empty() && distanceConstraints.empty()) {
+        return IslandGraphBuildRejectReason::EmptyInputs;
+    }
+
+    return IslandGraphBuildRejectReason::None;
+}
+
+bool island_graph_build_rejects_for_reason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    IslandGraphBuildRejectReason expected) {
+    return island_graph_build_reject_reason(bodyCount, contacts, distanceConstraints) == expected;
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
@@ -56,10 +111,18 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!contact.valid) {
             continue;
         }
+        if (!island_body_index_in_range(contact.bodyA, bodyCount) ||
+            !island_body_index_in_range(contact.bodyB, bodyCount)) {
+            continue;
+        }
         unionBodies(contact.bodyA, contact.bodyB);
     }
 
     for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (!island_body_index_in_range(constraint.bodyA, bodyCount) ||
+            !island_body_index_in_range(constraint.bodyB, bodyCount)) {
+            continue;
+        }
         unionBodies(constraint.bodyA, constraint.bodyB);
     }
 
@@ -84,6 +147,10 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!contact.valid) {
             continue;
         }
+        if (!island_body_index_in_range(contact.bodyA, bodyCount) ||
+            !island_body_index_in_range(contact.bodyB, bodyCount)) {
+            continue;
+        }
         const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
         if (islandIndex != invalidIsland) {
             islands_[islandIndex].contactIndices.push_back(contactIndex);
@@ -92,6 +159,10 @@ void ContactIslandGraph::build(u32 bodyCount,
 
     for (u32 distanceIndex = 0; distanceIndex < distanceConstraints.size(); ++distanceIndex) {
         const DistanceConstraint& constraint = distanceConstraints[distanceIndex];
+        if (!island_body_index_in_range(constraint.bodyA, bodyCount) ||
+            !island_body_index_in_range(constraint.bodyB, bodyCount)) {
+            continue;
+        }
         const u32 islandIndex = rootToIsland[findRoot(constraint.bodyA)];
         if (islandIndex != invalidIsland) {
             islands_[islandIndex].distanceIndices.push_back(distanceIndex);
@@ -104,6 +175,18 @@ void ContactIslandGraph::build(u32 bodyCount,
         }
         return left.bodyIndices.front() < right.bodyIndices.front();
     });
+}
+
+bool ContactIslandGraph::build_guarded(u32 bodyCount,
+                                       const std::vector<narrowphase::ContactManifold>& contacts,
+                                       const std::vector<DistanceConstraint>& distanceConstraints) {
+    if (island_graph_build_reject_reason(bodyCount, contacts, distanceConstraints) !=
+        IslandGraphBuildRejectReason::None) {
+        clear();
+        return false;
+    }
+    build(bodyCount, contacts, distanceConstraints);
+    return true;
 }
 
 u32 ContactIslandGraph::constrainedIslandCount() const {
