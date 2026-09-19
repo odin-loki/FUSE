@@ -4199,3 +4199,30 @@ void testSolveIslandJobGuardedSleepAndRefs() {
     const IslandConstraintSolvePreflight contactSolve =
     expectTrue(!should_skip_island_constraint_solve(graph.island(contactIsland), bodies, contacts, constraints),
                "should_skip false for wakeable contact island");
+
+// --- deepen additive from deepen-pbd-island-guards-12c0 ---
+    expectTrue(should_skip_island_build(0, contacts, constraints), "should_skip build on zero bodies");
+    const IslandSleepSolvePreflight sleepPreflight = preflight_island_sleep_solve(island, bodies);
+    expectTrue(sleepPreflight.awakeBodyCount == 1u, "sleep preflight counts awake bodies");
+    expectTrue(sleepPreflight.can_solve(), "mixed sleep/awake island can solve");
+    expectTrue(!should_skip_solve_sleeping_island(island, bodies),
+    const IslandSleepSolvePreflight allSleepPreflight = preflight_island_sleep_solve(island, allSleepingBodies);
+    expectTrue(!allSleepPreflight.can_solve(), "all-sleeping dynamic island cannot solve");
+    expectTrue(should_skip_solve_sleeping_island(island, allSleepingBodies),
+    const IslandSleepGraphPreflight graphPreflight = preflight_island_sleep_graph(graph, allSleepingBodies);
+    expectTrue(graphPreflight.sleepingOnlyCount >= 1u, "graph sleep preflight counts sleeping-only islands");
+    expectTrue(graphPreflight.awakeCount == 0u, "graph sleep preflight has no awake islands");
+    expectTrue(!graphPreflight.can_dispatch(), "graph sleep preflight cannot dispatch all sleeping");
+    expectTrue(should_skip_solve_all_sleeping_islands(graph, allSleepingBodies),
+               "should_skip all sleeping graph dispatch");
+    const IslandWakePreflight wakePreflight = preflight_island_wake(island, allSleepingBodies, contacts);
+    expectTrue(wakePreflight.sleepingDynamicCount == 2u, "wake preflight counts sleeping dynamics");
+    expectTrue(wakePreflight.nonZeroImpulseCount == 1u, "wake preflight counts non-zero impulses");
+    expectTrue(wakePreflight.should_wake(), "wake preflight should wake on external impulse");
+    expectTrue(!should_skip_wake_island(island, allSleepingBodies, contacts),
+               "should_skip wake false when impulse signal exists");
+void testPreflightSolveIslandWithBodiesGuards() {
+    const IslandSolveBodyPreflight preflight =
+    expectTrue(should_skip_solve_island_with_bodies(island, bodies, contacts, constraints),
+    expectTrue(awakePreflight.can_solve(), "combined body preflight can solve with awake body");
+    testPreflightSolveIslandWithBodiesGuards();
