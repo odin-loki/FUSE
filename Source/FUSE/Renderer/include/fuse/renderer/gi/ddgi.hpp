@@ -751,6 +751,8 @@ bool preflightProbeTrilinearSample(const DDGIDesc& desc,
 /// Why probe-grid source validation rejected the DDGI desc (B5.6 deepen pass).
     NonPositiveSpacing,
 
+/// Why probe-grid source validation rejected the request (B5.6 deepen).
+
 /// Human-readable label for probe-grid source reject reasons (logging / tests).
 const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason);
 
@@ -1591,15 +1593,22 @@ const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
 
 /// Why a probe-update launch preflight rejected the request (B5.6 deepen).
 enum class ProbeUpdateLaunchRejectReason : u8 {
-    None = 0,
-    EmptyGrid,
     NullIndices,
     ZeroCount,
-    OutOfRangeIndex,
-};
 
 /// Human-readable label for probe-update launch reject reasons (logging / tests).
 const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason);
+/// Classify why probe-grid source validation would reject — same ordering as `tryValidateProbeGridSource`.
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc);
+
+/// Non-mutating probe-grid source preflight — returns true when the desc is usable.
+bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason* reason = nullptr);
+
+/// Early-out when probe-grid source validation would be rejected.
+bool wouldSkipProbeGridSource(const DDGIDesc& desc);
+
+/// Diagnose why probe-grid source validation would reject; vacuously succeeds on valid descs.
+bool tryValidateProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason& outReason);
 
 /// CPU-side probe grid helpers — mirrors CUDA scheduling without GPU.
 namespace ddgi_util {
@@ -2600,6 +2609,7 @@ ProbeScheduleRejectReason classifyProbeScheduleRejectAtRate(u32 probe_count,
 /// Non-mutating rate-aware schedule preflight — returns true when scheduling would proceed.
 bool preflightProbeScheduleAtRate(u32 probe_count,
 /// Classify why rate-aware probe scheduling would be rejected.
+/// Classify why rate-aware probe scheduling would be rejected — same ordering as `tryCanScheduleProbeUpdatesAtRate`.
                                                             u32 probes_per_frame,
                                                             u32 max_indices,
                                                             const u32* out_indices,
@@ -2621,6 +2631,9 @@ bool preflightProbeScheduleAtRate(u32 probe_count,
                                   u32 max_indices,
                                   const u32* out_indices,
 /// Schedule probe updates with rate-aware preflight; false when preflight rejects.
+                                  u32* out_count,
+                                  ProbeScheduleRejectReason* reason = nullptr);
+/// Schedule probe updates at rate with reject-reason diagnostics; false when preflight rejects.
 bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
                                    u32 probe_count,
                                    u32 probes_per_frame,
