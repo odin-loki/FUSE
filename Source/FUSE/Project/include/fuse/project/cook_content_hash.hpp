@@ -17,6 +17,7 @@ enum class CookHashRejectReason : u8 {
     EmptyOutputPath,
     SourceUnreadable,
     EmptyDependencyList,
+    UnresolvedDependency,
     ZeroSourceHash,
 };
 
@@ -70,5 +71,12 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 /// Fold source/upstream preflight — upstream zero is allowed on valid source keys (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+/// Empty-path guard for mtime reads — mirrors `file_mtime_ns` (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_file_mtime_ns(const std::string& path);
+/// Single dependency output path must resolve in the manifest (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_upstream_dependency_path(const std::string& dependency_output_path,
+                                                                 const CookManifest& manifest);
+/// FNV combine preflight — rejects zero left operand (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_fnv1a64_combine(u64 left, u64 right);
 
 } // namespace fuse::project
