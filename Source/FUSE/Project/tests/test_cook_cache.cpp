@@ -1285,3 +1285,9 @@ void testCookHashPreflightCacheEntryAndManifestDeps() {
                "would_invalidate_stale_content true when current hash differs from stored entry");
 void testCookHashPreflightMtimeGuards() {
     testCookHashPreflightMtimeGuards();
+
+// --- deepen additive from deepen-b79-cooker-hash-4c3d ---
+void testCookCacheWouldInvalidateGuards() {
+    expectTrue(seeded.ok, "seed cook for would_invalidate guards ok");
+    expectTrue(!cooker.cache().would_invalidate_source(""), "empty source would_invalidate is guarded");
+    expectTrue(!cooker.cache().would_invalidate(0), "zero hash would_invalidate is guarded");
