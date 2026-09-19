@@ -60,6 +60,15 @@ public:
         return false;
     }
 
+    /// Resolve entity world position, or return `fallback` when lookup fails.
+    Vec3 resolve_or(const std::string& target_id, const Vec3& fallback) const {
+        Vec3 out{};
+        if (try_resolve(target_id, out)) {
+            return out;
+        }
+        return fallback;
+    }
+
 private:
     ResolveFn resolve_fn_;
     TryResolveFn try_resolve_fn_;
@@ -95,9 +104,6 @@ Vec3 fallback_camera_look_at(const CameraKeyframe& keyframe,
 
 /// `resolve_look_at_world` plus coincident-position fallback via `fallback_camera_look_at`.
 Vec3 resolve_look_at_world_with_fallback(const CameraKeyframe& keyframe,
-                                         const LookAtResolver& resolver,
-                                         const Vec3& camera_position,
-                                         float default_look_distance = kDefaultCameraLookAtDistance);
 
 /// Unique non-empty entity ids referenced by `keyframes` (editor resolver wiring stub).
 std::vector<std::string> collect_camera_look_at_target_ids(

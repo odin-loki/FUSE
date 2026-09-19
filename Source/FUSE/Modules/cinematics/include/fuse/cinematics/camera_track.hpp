@@ -40,6 +40,7 @@ constexpr float kDefaultCameraFovDeg = 60.f;
 constexpr float default_camera_fov_deg() { return kDefaultCameraFovDeg; }
 
 /// Default look-at distance (world units along -Z) when a fixed keyframe omits aim.
+/// Default look-at offset distance when synthesizing a pose from position alone.
 constexpr float kDefaultCameraLookAtDistance = 10.f;
 
 struct CameraSample {
@@ -72,6 +73,9 @@ bool camera_sample_is_default(const CameraSample& sample);
 
 /// Clamp FOV on a sampled pose; leaves other fields untouched (export / gameplay guard).
 void normalize_camera_sample(CameraSample& sample);
+/// Pose with `position` and a -Z look-at offset (editor placeholder stub).
+CameraSample default_camera_sample_at_position(const Vec3& position,
+                                               float look_distance = kDefaultCameraLookAtDistance);
 
 /// True when `keyframes` has no entries (editor / rail guard).
 bool camera_keyframes_empty(const std::vector<CameraKeyframe>& keyframes);
@@ -126,6 +130,8 @@ void normalize_camera_keyframes(std::vector<CameraKeyframe>& keyframes);
 
 /// Reset `keyframe` to editor defaults (time 0, fixed look-at, default FOV).
 void reset_camera_keyframe_to_defaults(CameraKeyframe& keyframe);
+/// Clamp FOV on a sampled pose without changing aim or roll (output guard).
+void sanitize_camera_sample(CameraSample& sample);
 
 /// Sample a single keyframe without interpolation (hold pose stub).
 CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,

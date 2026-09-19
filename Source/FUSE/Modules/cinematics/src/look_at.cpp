@@ -78,21 +78,16 @@ Vec3 resolve_look_at_world_or_default(const CameraKeyframe& keyframe,
 
     if (camera_keyframe_look_at_unset(keyframe)) {
         return default_camera_look_at_for_position(keyframe.position, default_distance);
-    }
 
     return keyframe.look_at;
-}
 
 Vec3 resolve_look_at_world_with_fallback(const CameraKeyframe& keyframe,
-                                         const LookAtResolver& resolver,
                                          const Vec3& camera_position,
                                          float default_look_distance) {
     const Vec3 resolved = resolve_look_at_world(keyframe, resolver);
     if (camera_look_distance(camera_position, resolved) <= kLookAtCoincidentEpsilon) {
         return default_camera_look_at_for_position(camera_position, default_look_distance);
-    }
     return resolved;
-}
 
 std::vector<std::string> collect_camera_look_at_target_ids(
     const std::vector<CameraKeyframe>& keyframes) {

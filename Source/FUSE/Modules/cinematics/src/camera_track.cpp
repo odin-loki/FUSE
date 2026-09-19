@@ -1,5 +1,6 @@
 #include <fuse/cinematics/camera_track.hpp>
 
+#include <fuse/cinematics/interpolate.hpp>
 #include <fuse/cinematics/look_at.hpp>
 
 #include <algorithm>
@@ -134,6 +135,7 @@ CameraSample default_camera_sample() {
 }
 
 CameraSample default_camera_sample_at(const Vec3& position, float look_distance) {
+CameraSample default_camera_sample_at_position(const Vec3& position, float look_distance) {
     CameraSample sample;
     sample.position = position;
     sample.look_at = default_camera_look_at_for_position(position, look_distance);
@@ -156,26 +158,21 @@ bool camera_track_is_empty(const CameraTrack& track) {
 
 size_t camera_keyframe_count(const std::vector<CameraKeyframe>& keyframes) {
     return keyframes.size();
-}
 
 bool camera_track_covers_time(const std::vector<CameraKeyframe>& keyframes, TimelineMs time_ms) {
     if (keyframes.empty()) {
         return false;
-    }
 
     TimelineMs start_ms = keyframes.front().time_ms;
     TimelineMs end_ms = keyframes.front().time_ms;
     for (const CameraKeyframe& keyframe : keyframes) {
         start_ms = std::min(start_ms, keyframe.time_ms);
         end_ms = std::max(end_ms, keyframe.time_ms);
-    }
 
     return time_ms >= start_ms && time_ms <= end_ms;
-}
 
 bool camera_keyframe_fov_unset(float field_of_view) {
     return field_of_view <= 0.f;
-}
 
 bool camera_fov_in_valid_range(float fov_deg) {
     return fov_deg >= kMinFovDeg && fov_deg <= kMaxFovDeg;
@@ -195,42 +192,31 @@ bool camera_sample_is_default(const CameraSample& sample) {
            && sample.position.z == defaults.position.z && sample.look_at.x == defaults.look_at.x
            && sample.look_at.y == defaults.look_at.y && sample.look_at.z == defaults.look_at.z
            && camera_fov_uses_default(sample.field_of_view) && sample.roll_deg == defaults.roll_deg;
-}
 
 float effective_camera_fov(float field_of_view) {
     if (!std::isfinite(field_of_view) || camera_keyframe_fov_unset(field_of_view)) {
         return kDefaultCameraFovDeg;
-    }
     return clamp_fov(field_of_view);
-}
 
 bool camera_keyframe_look_at_unset(const CameraKeyframe& keyframe) {
     if (keyframe.look_at_mode != CameraLookAtMode::FixedPoint) {
         return false;
-    }
 
     return keyframe.look_at.x == 0.f && keyframe.look_at.y == 0.f && keyframe.look_at.z == 0.f;
-}
 
 void apply_camera_keyframe_defaults(CameraKeyframe& keyframe) {
     if (camera_keyframe_fov_unset(keyframe.field_of_view)) {
         keyframe.field_of_view = kDefaultCameraFovDeg;
     } else {
         keyframe.field_of_view = clamp_fov(keyframe.field_of_view);
-    }
 
     if (camera_keyframe_look_at_unset(keyframe)) {
         keyframe.look_at = default_camera_look_at_for_position(keyframe.position, kDefaultCameraLookAtDistance);
-    }
-}
 
 CameraKeyframe make_default_camera_keyframe(TimelineMs time_ms) {
     CameraKeyframe keyframe;
     keyframe.time_ms = time_ms;
-    keyframe.field_of_view = kDefaultCameraFovDeg;
-    keyframe.look_at = default_camera_look_at_for_position(keyframe.position, kDefaultCameraLookAtDistance);
     return keyframe;
-}
 
 bool camera_keyframe_uses_entity_look_at(const CameraKeyframe& keyframe) {
     return keyframe.look_at_mode == CameraLookAtMode::TargetEntity && !keyframe.look_at_target_id.empty();
@@ -262,6 +248,8 @@ void normalize_camera_keyframes(std::vector<CameraKeyframe>& keyframes) {
 void reset_camera_keyframe_to_defaults(CameraKeyframe& keyframe) {
     keyframe = {};
     keyframe.field_of_view = kDefaultCameraFovDeg;
+void sanitize_camera_sample(CameraSample& sample) {
+    sample.field_of_view = clamp_fov(sample.field_of_view);
 }
 
 CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,
@@ -364,6 +352,7 @@ CameraSample sample_camera_pose(const std::vector<CameraKeyframe>& keyframes,
     sample.field_of_view = sample_camera_field_of_view(keyframes, time_ms, ease);
     sample.roll_deg = sample_camera_roll(keyframes, time_ms, ease);
     normalize_camera_sample(sample);
+    sanitize_camera_sample(sample);
     return sample;
 }
 
@@ -452,6 +441,7 @@ CameraSample CameraTrack::sample_at(TimelineMs time_ms,
     sample.field_of_view = sample_camera_field_of_view(keyframes_, time_ms, ease);
     sample.roll_deg = sample_camera_roll(keyframes_, time_ms, ease);
     normalize_camera_sample(sample);
+    sanitize_camera_sample(sample);
     return sample;
 }
 
