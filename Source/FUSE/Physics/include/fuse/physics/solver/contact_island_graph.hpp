@@ -37,6 +37,23 @@ struct ContactIslandGraph {
 
     static constexpr u32 invalidIsland = ~0u;
 
+    /// True when `bodyIndex` is in range for union-find partitioning.
+    static bool partitionBodyInRange(u32 bodyCount, u32 bodyIndex);
+
+    /// True when both contact body indices are in range for partitioning.
+    static bool contactPartitionInRange(u32 bodyCount, const narrowphase::ContactManifold& contact);
+
+    /// True when both distance-constraint body indices are in range for partitioning.
+    static bool distancePartitionInRange(u32 bodyCount, const DistanceConstraint& constraint);
+
+    /// Count valid contacts whose body indices are in range for partitioning.
+    static u32 countUnionableContacts(u32 bodyCount,
+                                      const std::vector<narrowphase::ContactManifold>& contacts);
+
+    /// Count distance constraints whose body indices are in range for partitioning.
+    static u32 countUnionableDistanceConstraints(u32 bodyCount,
+                                                 const std::vector<DistanceConstraint>& constraints);
+
 private:
     void unionBodies(u32 a, u32 b);
     u32 findRoot(u32 index) const;
