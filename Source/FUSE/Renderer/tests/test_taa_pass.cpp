@@ -4726,3 +4726,6 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 // --- deepen additive from deepen-taa-pass-guards-35c6 ---
     expectTrue(pass->tryPreflightJitterSync(11u, jitterReject),
+
+// --- deepen additive from deepen-b59-taa-pass-try-classify-e4ae ---
+    fuse::renderer::TaaJitterGuardRejectReason jitterReason = fuse::renderer::TaaJitterGuardRejectReason::None;
