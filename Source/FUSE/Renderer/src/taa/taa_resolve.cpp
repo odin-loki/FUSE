@@ -94,6 +94,51 @@ bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& hi
     return !preflightTaaResolve(desc, history);
 }
 
+bool preflightTaaResolveWithBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                          TaaResolveSkipReason* skipReason,
+                                          TaaResolveBlendRejectReason* blendReason) {
+    const TaaResolveSkipReason skip = classifyTaaResolveSkip(desc, history);
+    if (skipReason != nullptr) {
+        *skipReason = skip;
+    }
+    if (taaResolveSkipReasonIsBlocking(skip)) {
+        if (blendReason != nullptr) {
+            *blendReason = TaaResolveBlendRejectReason::None;
+        }
+        return false;
+    }
+
+    const TaaResolveBlendRejectReason blend = classifyTaaResolveBlendReject(desc, history);
+    if (blendReason != nullptr) {
+        *blendReason = blend;
+    }
+    return blend == TaaResolveBlendRejectReason::None;
+}
+
+bool tryPreflightTaaResolveWithBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                            TaaResolveSkipReason& skipReason,
+                                            TaaResolveBlendRejectReason& blendReason) {
+    return preflightTaaResolveWithBlendWeights(desc, history, &skipReason, &blendReason);
+}
+
+bool shouldSkipTaaResolveWithBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !preflightTaaResolveWithBlendWeights(desc, history);
+}
+
+bool preflightTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                TaaResolveSkipReason* skipReason, TaaResolveBlendRejectReason* blendReason) {
+    return preflightTaaResolveWithBlendWeights(desc, history, skipReason, blendReason);
+}
+
+bool tryPreflightTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                    TaaResolveSkipReason& skipReason, TaaResolveBlendRejectReason& blendReason) {
+    return tryPreflightTaaResolveWithBlendWeights(desc, history, skipReason, blendReason);
+}
+
+bool shouldSkipTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return shouldSkipTaaResolveWithBlendWeights(desc, history);
+}
+
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!history.isReady()) {
         return TaaResolveSkipReason::HistoryNotReady;

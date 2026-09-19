@@ -145,6 +145,34 @@ bool shouldSkipTaaHistoryResolve(const TaaHistoryBuffer& history);
 bool tryPreflightTaaHistoryReadyForResolve(const TaaHistoryBuffer& history,
                                            TaaHistoryReuseBlockReason& reason);
 
+/// Warm-up lifecycle for temporal history reuse (B5.9 deepen).
+enum class TaaHistoryWarmupState : u8 {
+    NotReady = 0,
+    NeedsWarmup,
+    Complete,
+};
+/// Human-readable label for history warm-up states (B5.9 deepen).
+const char* taaHistoryWarmupStateLabel(TaaHistoryWarmupState state);
+/// Classify history warm-up lifecycle state (B5.9 deepen).
+TaaHistoryWarmupState classifyTaaHistoryWarmupState(const TaaHistoryBuffer& history);
+/// True when history buffers are allocated and warmed for temporal reuse (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+/// True when history warm-up is complete (B5.9 deepen).
+bool preflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history,
+                                       TaaHistoryWarmupState* state = nullptr);
+/// History warm-up preflight with mandatory state output (B5.9 deepen).
+bool tryPreflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history, TaaHistoryWarmupState& state);
+/// Early-out when history warm-up is not complete (B5.9 deepen).
+bool shouldSkipTaaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+/// True when history is warmed and generation matches for temporal blending (B5.9 deepen).
+bool preflightTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration,
+                                         TaaHistoryReuseBlockReason* reason = nullptr);
+/// Temporal-blend preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration,
+                                             TaaHistoryReuseBlockReason& reason);
+/// Early-out when temporal history blending should be skipped (B5.9 deepen).
+bool shouldSkipTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration);
+
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
     None = 0,
@@ -167,6 +195,16 @@ bool shouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffe
 /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
 bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                       TaaBlendWeights& outWeights, TaaResolveBlendRejectReason& reason);
+/// True when resolve preflight and blend-weight preflight both pass (B5.9 deepen).
+bool preflightTaaResolveWithBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                          TaaResolveSkipReason* skipReason = nullptr,
+                                          TaaResolveBlendRejectReason* blendReason = nullptr);
+/// Combined resolve + blend preflight with mandatory reject-reason outputs (B5.9 deepen).
+bool tryPreflightTaaResolveWithBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                            TaaResolveSkipReason& skipReason,
+                                            TaaResolveBlendRejectReason& blendReason);
+/// Early-out when combined resolve + blend preflight would reject (B5.9 deepen).
+bool shouldSkipTaaResolveWithBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

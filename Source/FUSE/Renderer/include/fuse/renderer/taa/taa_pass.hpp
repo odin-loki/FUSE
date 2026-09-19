@@ -99,6 +99,29 @@ public:
     bool shouldSkipHistoryResolve() const;
     /// Early-out when resolve preflight would skip (B5.9 deepen).
     bool shouldSkipResolve(const TaaResolveDesc& desc) const;
+    /// True when pass jitter slot/monotonic state matches `frameIndex` (B5.9 deepen).
+    bool preflightJitterAlignment(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Early-out when pass jitter alignment preflight would reject (B5.9 deepen).
+    bool shouldSkipJitterAlignment(u32 frameIndex) const;
+    /// True when pass jitter must resync before sampling offsets for `frameIndex` (B5.9 deepen).
+    bool jitterNeedsSyncToFrameIndex(u32 frameIndex) const;
+    /// Classify pass history warm-up lifecycle state (B5.9 deepen).
+    TaaHistoryWarmupState classifyHistoryWarmupState() const;
+    /// True when pass history warm-up is complete (B5.9 deepen).
+    bool preflightHistoryWarmupComplete(TaaHistoryWarmupState* state = nullptr) const;
+    /// Early-out when pass history warm-up is not complete (B5.9 deepen).
+    bool shouldSkipHistoryWarmupComplete() const;
+    /// True when pass history is warmed and generation matches for temporal blending (B5.9 deepen).
+    bool preflightHistoryForTemporalBlend(u32 observedGeneration,
+                                          TaaHistoryReuseBlockReason* reason = nullptr) const;
+    /// Early-out when pass temporal history blending should be skipped (B5.9 deepen).
+    bool shouldSkipHistoryForTemporalBlend(u32 observedGeneration) const;
+    /// True when resolve and blend-weight preflights both pass (B5.9 deepen).
+    bool preflightResolveWithBlendWeights(const TaaResolveDesc& desc,
+                                          TaaResolveSkipReason* skipReason = nullptr,
+                                          TaaResolveBlendRejectReason* blendReason = nullptr) const;
+    /// Early-out when combined resolve + blend preflight would reject (B5.9 deepen).
+    bool shouldSkipResolveWithBlendWeights(const TaaResolveDesc& desc) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
