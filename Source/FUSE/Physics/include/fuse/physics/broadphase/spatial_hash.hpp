@@ -1518,3 +1518,14 @@ FUSE_PHYSICS_INLINE CellPairGenPreflight preflightCellPairGen(usize occupantCoun
     preflight.singletonOccupant = preflight.reason == CellPairGenRejectReason::SingletonOccupant;
     return !preflightCellPairGen(occupantCount).canGenerate();
     return preflightCellPairGen(occupantCount).canGenerate();
+
+// --- deepen additive from b4-broadphase-deepen-guards-388f ---
+        return CellPairGenRejectReason::EmptyOccupants;
+FUSE_PHYSICS_INLINE CellPairGenPreflight preflightCellPairGen(u32 uniqueOccupantCount) {
+    preflight.reason = cellPairGenRejectReason(uniqueOccupantCount);
+    preflight.emptyOccupants = preflight.reason == CellPairGenRejectReason::EmptyOccupants;
+    return !preflightCellPairGen(uniqueOccupantCount).canGenerate();
+    return preflightCellPairGen(uniqueOccupantCount).canGenerate();
+    return static_cast<CellCapacityInsertRejectReason>(
+        static_cast<u8>(cellOccupancyRejectReason(range, maxCells)));
+    const CellOccupancyPreflight occupancy = preflightCellOccupancy(range, maxCells);

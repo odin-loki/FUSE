@@ -1485,3 +1485,6 @@ CellShapeInsertPreflight preflightShapeCellInsert(
         return ShapeCellInsertRejectReason::ExceedsBudget;
     preflight.emptyRange = preflight.reason == ShapeCellInsertRejectReason::EmptyRange;
     preflight.exceedsBudget = preflight.reason == ShapeCellInsertRejectReason::ExceedsBudget;
+
+// --- deepen additive from b4-broadphase-deepen-guards-388f ---
+    return preflightCellPairGen(bodyCount).pairCount;

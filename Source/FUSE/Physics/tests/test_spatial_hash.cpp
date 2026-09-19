@@ -3735,3 +3735,22 @@ void testCellShapeInsertRejectReasonGuards() {
              static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertRejectReason::ExceedsBudget),
     const fuse::physics::broadphase::ShapeCellInsertPreflight preflight =
         fuse::physics::broadphase::preflightShapeCellInsert(0u, 4u, validRange, 8u);
+
+// --- deepen additive from b4-broadphase-deepen-guards-388f ---
+    expectTrue(validPreflight.canWrite(), "write-slot preflight accepts valid slot");
+    const fuse::physics::broadphase::PairBufferWriteSlotPreflight invalidPreflight =
+        fuse::physics::broadphase::preflightPairBufferWriteSlot(buffer, 3u, 2u, 3u);
+    expectTrue(invalidPreflight.outOfRangeSlot, "write-slot preflight marks out-of-range slot");
+    expectTrue(!invalidPreflight.canWrite(), "write-slot preflight rejects out-of-range slot");
+                   1u, fuse::physics::broadphase::CellPairGenRejectReason::SingletonOccupant),
+        fuse::physics::broadphase::preflightCellPairGen(4u);
+    expectTrue(multiPreflight.canGenerate(), "cell-pair preflight accepts multiple occupants");
+    expectEq(multiPreflight.pairCount, 6u, "cell-pair preflight reports pair count");
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellCapacityInsertRejectReason(validRange, 8u)),
+                   validRange, 8u, fuse::physics::broadphase::CellCapacityInsertRejectReason::None),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellCapacityInsertRejectReason(inverted, 4u)),
+    const fuse::physics::broadphase::CellCapacityInsertPreflight insertPreflight =
+    expectTrue(insertPreflight.canInsert(), "cell-capacity insert preflight accepts valid range");
+    expectEq(insertPreflight.occupancyCount, 8u, "cell-capacity insert preflight reports occupancy count");
+        fuse::physics::broadphase::preflightCellCapacityInsert(planeRange, 10u);
+    expectTrue(planePreflight.canInsert(), "2D cell-capacity insert preflight accepts valid range");
