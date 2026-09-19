@@ -3199,3 +3199,27 @@ void testPreflightProbeKernels() {
     testPreflightProbeSchedule();
     testPreflightDdgiProbeUpdate();
     testPreflightProbeKernels();
+
+// --- deepen additive from deepen-ddgi-guards-badf ---
+               "buildProbeSampleCoords for wouldSkip test");
+               "wouldSkip false for valid trilinear sample");
+               "build coords for wouldSkipTrilinearSampleAtCoords test");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearSampleAtCoords(desc, coords, cache.data(), 8u),
+               "wouldSkip false for valid coord-based sample");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearSampleAtCoords(desc, coords, nullptr, 8u),
+               "wouldSkip true for null cache coord-based sample");
+               "wouldSkip true for undersized cache trilinear sample");
+               "wouldSkip true for empty grid trilinear sample");
+               "wouldSkip false for valid cache read");
+               "wouldSkip true for undersized cache read");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipReadIrradianceAtIndex(desc, cache.data(), 8u, 99u),
+               "wouldSkip true for OOB probe index read");
+               "wouldSkip true for zero rays per probe");
+    expectTrue(fuse::renderer::gi::wouldSkipProbeBlendKernel(zeroRays),
+               "wouldSkip true for zero rays per probe on blend");
+    expectTrue(!fuse::renderer::tryCanLaunchDdgiProbeUpdate(desc, duplicateIndices, 2u, reason),
+               "tryCanLaunch rejects duplicate probe indices");
+    expectTrue(reason == fuse::renderer::ProbeUpdateLaunchRejectReason::DuplicateProbeIndex,
+    expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(reason), "duplicate_probe_index") == 0,
+    expectTrue(fuse::renderer::wouldSkipDdgiProbeUpdate(desc, duplicateIndices, 2u),
+               "wouldSkip true for duplicate probe indices");

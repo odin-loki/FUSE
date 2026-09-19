@@ -851,3 +851,6 @@ bool wouldSkipTrilinearProbeIrradiance(const DDGIDesc& desc,
 bool wouldSkipTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
 bool tryValidateScheduledProbeIndices(const DDGIDesc& desc,
 bool wouldSkipScheduledProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count);
+
+// --- deepen additive from deepen-ddgi-guards-badf ---
+bool wouldSkipTrilinearSampleAtCoords(const DDGIDesc& desc,

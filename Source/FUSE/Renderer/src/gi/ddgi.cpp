@@ -2614,3 +2614,9 @@ bool wouldSkipScheduledProbeUpdate(const DDGIDesc& desc, const u32* probe_indice
     ProbeKernelRejectReason localReason = ProbeKernelRejectReason::None;
     const bool launchable = tryCanLaunchProbeTraceKernel(params, localReason);
     const bool launchable = tryCanLaunchProbeBlendKernel(params, localReason);
+
+// --- deepen additive from deepen-ddgi-guards-badf ---
+    case ProbeUpdateLaunchRejectReason::DuplicateProbeIndex:
+bool wouldSkipTrilinearSampleAtCoords(const DDGIDesc& desc,
+    return wouldSkipTrilinearSampleAtCoords(desc, coords, cache, cache_count);
+                outReason = ProbeUpdateLaunchRejectReason::DuplicateProbeIndex;
