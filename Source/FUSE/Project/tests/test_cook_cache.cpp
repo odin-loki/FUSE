@@ -1191,3 +1191,18 @@ void testCookHashPreflightCacheableKeyGuards() {
     const fuse::project::CookCacheEntryPreflight ok =
     expectTrue(cooker.cache().would_invalidate_all(), "would_invalidate_all on populated cache is true");
     testCookHashPreflightCacheableKeyGuards();
+
+// --- deepen additive from deepen-b79-cooker-hash-4ea3 ---
+void testCookHashPreflightMtimeAndDependencyGuards() {
+    const fuse::project::CookHashPreflight empty_mtime = fuse::project::preflight_file_mtime_ns("");
+    expectTrue(empty_mtime.reason == fuse::project::CookHashRejectReason::EmptyPath,
+    const fuse::project::CookHashPreflight zero_combine = fuse::project::preflight_fnv1a64_combine(0, 42u);
+void testCookCacheInvalidationEstimateGuards() {
+    expectTrue(!cache.would_invalidate_any("/tmp/fuse_b79_est_source.obj"), "empty cache would_invalidate_any false");
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_est_source.obj"),
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_est_output.fusemesh"),
+    expectTrue(!cooker.cache().would_invalidate_source(""), "empty source path guarded");
+    expectTrue(!cooker.cache().would_invalidate_output(""), "empty output path guarded");
+    expectTrue(cooker.cache().would_invalidate_any(source, desc.output_path, seeded.content_hash),
+               "would_invalidate_any true for populated cache");
+    testCookHashPreflightMtimeAndDependencyGuards();

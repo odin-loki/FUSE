@@ -537,3 +537,8 @@ CookHashPreflight preflight_manifest_dependency_coverage(
 
 // --- deepen additive from deepen-b79-cooker-hash-guards-e0db ---
     const CookHashPreflight combined = preflight_combine_cook_cache_key(source_hash, upstream_hash);
+
+// --- deepen additive from deepen-b79-cooker-hash-4ea3 ---
+CookHashPreflight preflight_upstream_dependency_path(const std::string& dependency_output_path,
+CookHashPreflight preflight_file_mtime_ns(const std::string& path) {
+CookHashPreflight preflight_fnv1a64_combine(u64 left, u64 /*right*/) {
