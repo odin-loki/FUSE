@@ -166,6 +166,19 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 
 ---
 
+### WP-06e — Track B graph barriers + bindless updates + cache I/O + swapchain present FB
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M |
+| **Scope** | Graph-planned `vkCmdPipelineBarrier`; bindless `vkUpdateDescriptorSets` on register/unregister; pipeline cache disk serialize/restore; swapchain per-image FB + present-pass encode when WSI acquire valid; keep null WSI + Lavapipe headless green |
+| **MT note** | GPU encode + descriptor updates on render thread / resource init path only |
+| **Exit** | `fuse_vulkan_phase2_integration` asserts barrier encode; `fuse_bindless_descriptors` descriptor update/clear; `fuse_pipeline_cache` disk round-trip; headless swapchain has no present FB |
+| **Deps** | WP-06d |
+| **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06e |
+
+---
+
 ### WP-07 — U5 Feature modules (parallel per module)
 
 | Field | Value |
@@ -290,7 +303,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U6 GPU viewport embed; U7 full T3D field extraction + production asset cooks; Track B post–WP-06d (swapchain FB present pass, graph barriers, bindless descriptor updates, pipeline cache disk I/O).
+**Next:** U6 GPU viewport embed; U7 full T3D field extraction + production asset cooks; Track B post–WP-06e (`vkQueuePresentKHR` desktop GLFW, Editor Qt surface, composite blit into swapchain).
 
 ---
 

@@ -190,6 +190,10 @@ bool bindlessSlotGenerationMatches(BindlessSlotHandle handle, u32 liveGeneration
     return handle.isValid() && occupied && handle.generation == liveGeneration;
 }
 
+bool bindlessNativeHandleReady(void* nativeHandle) {
+    return nativeHandle != nullptr && reinterpret_cast<uintptr_t>(nativeHandle) > 0x10000u;
+}
+
 BindlessSlotPreflight preflightBindlessSlotHandle(BindlessSlotHandle handle, u32 heapCapacity, u32 slotGeneration,
                                                   bool occupied, bool initialized) {
     BindlessSlotPreflight result{};
@@ -240,12 +244,15 @@ void BindlessDescriptors::init(const VulkanDevice& device) {
         return;
     }
 
+    m_device = &device;
     m_textureSlots.clear();
     m_bufferSlots.clear();
     m_samplerSlots.clear();
     m_freeTextureIndices.clear();
     m_freeBufferIndices.clear();
     m_freeSamplerIndices.clear();
+    m_descriptorUpdateCount = 0;
+    m_descriptorClearCount = 0;
 
     (void)device;
 #if defined(FUSE_VULKAN_BACKEND)
@@ -277,6 +284,97 @@ void BindlessDescriptors::destroy(const VulkanDevice& device) {
     m_freeBufferIndices.clear();
     m_freeSamplerIndices.clear();
     m_initialized = false;
+    m_device = nullptr;
+    m_descriptorUpdateCount = 0;
+    m_descriptorClearCount = 0;
+}
+
+void BindlessDescriptors::updateVulkanDescriptor(BindlessSlotHandle handle, const Texture* texture,
+                                               const Buffer* buffer, void* samplerHandle, bool clear) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!vulkanDescriptorsReady() || m_device == nullptr || !m_device->isValid() || !handle.isValid()) {
+        return;
+    }
+    if (!clear && rejectStaleSlotHandle(handle)) {
+        return;
+    }
+
+    const BindlessBindingIndex binding = bindingIndexForHandle(handle);
+    if (!clear && binding.binding == 0u && binding.arrayIndex == 0u &&
+        rejectStaleSlotHandle(handle)) {
+        return;
+    }
+
+    auto vkDevice = static_cast<VkDevice>(m_device->nativeHandle());
+    VkDescriptorSet set = static_cast<VkDescriptorSet>(m_set);
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = set;
+    write.dstBinding = binding.binding;
+    write.dstArrayElement = binding.arrayIndex;
+    write.descriptorCount = 1;
+
+    VkDescriptorImageInfo imageInfo{};
+    VkDescriptorBufferInfo bufferInfo{};
+    VkSampler sampler = VK_NULL_HANDLE;
+
+    switch (handle.kind) {
+    case BindlessHeapKind::Texture: {
+        write.descriptorType =
+            slotIsStorageTexture(handle.index) ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
+                                               : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        if (!clear && texture != nullptr && bindlessNativeHandleReady(texture->view)) {
+            imageInfo.imageView = static_cast<VkImageView>(texture->view);
+            imageInfo.imageLayout = slotIsStorageTexture(handle.index) ? VK_IMAGE_LAYOUT_GENERAL
+                                                                       : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        } else if (!clear) {
+            return;
+        }
+        write.pImageInfo = &imageInfo;
+        break;
+    }
+    case BindlessHeapKind::Buffer: {
+        write.descriptorType =
+            slotIsUniformBuffer(handle.index) ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+                                              : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        if (!clear && buffer != nullptr && bindlessNativeHandleReady(buffer->handle)) {
+            bufferInfo.buffer = static_cast<VkBuffer>(buffer->handle);
+            bufferInfo.offset = 0;
+            bufferInfo.range = buffer->desc.size > 0 ? buffer->desc.size : VK_WHOLE_SIZE;
+        } else if (!clear) {
+            return;
+        }
+        write.pBufferInfo = &bufferInfo;
+        break;
+    }
+    case BindlessHeapKind::Sampler: {
+        write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+        if (!clear && bindlessNativeHandleReady(samplerHandle)) {
+            sampler = static_cast<VkSampler>(samplerHandle);
+        } else if (!clear) {
+            return;
+        }
+        imageInfo.sampler = sampler;
+        write.pImageInfo = &imageInfo;
+        break;
+    }
+    }
+
+    vkUpdateDescriptorSets(vkDevice, 1, &write, 0, nullptr);
+    if (clear) {
+        ++m_descriptorClearCount;
+    } else {
+        ++m_descriptorUpdateCount;
+        Slot& slot = slotsFor(handle.kind)[handle.index];
+        slot.descriptorWritten = true;
+    }
+#else
+    (void)handle;
+    (void)texture;
+    (void)buffer;
+    (void)samplerHandle;
+    (void)clear;
+#endif
 }
 
 const std::vector<BindlessDescriptors::Slot>& BindlessDescriptors::slotsFor(BindlessHeapKind kind) const {
@@ -349,8 +447,12 @@ void BindlessDescriptors::freeSlot(std::vector<Slot>& slots, std::vector<u32>& f
     }
 
     Slot& slot = slots[handle.index];
+    if (slot.descriptorWritten) {
+        updateVulkanDescriptor(handle, nullptr, nullptr, nullptr, true);
+    }
     slot.occupied = false;
     slot.storage = false;
+    slot.descriptorWritten = false;
     ++slot.generation;
     if (slot.generation == 0) {
         slot.generation = 1;
@@ -604,33 +706,51 @@ u32 BindlessDescriptors::heapCapacity(BindlessHeapKind kind) const {
 }
 
 u32 BindlessDescriptors::registerTexture(const Texture& texture, bool storage) {
-    (void)texture;
     const BindlessSlotHandle handle = allocateTextureSlot(storage);
-    return handle.isValid() ? handle.index : UINT32_MAX;
+    if (!handle.isValid()) {
+        return UINT32_MAX;
+    }
+    if (bindlessNativeHandleReady(texture.view)) {
+        updateVulkanDescriptor(handle, &texture, nullptr, nullptr, false);
+    }
+    return handle.index;
 }
 
 u32 BindlessDescriptors::registerBuffer(const Buffer& buffer, bool uniform) {
-    (void)buffer;
     const BindlessSlotHandle handle = allocateBufferSlot(uniform);
-    return handle.isValid() ? handle.index : UINT32_MAX;
+    if (!handle.isValid()) {
+        return UINT32_MAX;
+    }
+    if (bindlessNativeHandleReady(buffer.handle)) {
+        updateVulkanDescriptor(handle, nullptr, &buffer, nullptr, false);
+    }
+    return handle.index;
 }
 
 u32 BindlessDescriptors::registerSampler(void* samplerHandle) {
-    (void)samplerHandle;
     const BindlessSlotHandle handle = allocateSamplerSlot();
-    return handle.isValid() ? handle.index : UINT32_MAX;
+    if (!handle.isValid()) {
+        return UINT32_MAX;
+    }
+    if (bindlessNativeHandleReady(samplerHandle)) {
+        updateVulkanDescriptor(handle, nullptr, nullptr, samplerHandle, false);
+    }
+    return handle.index;
 }
 
 void BindlessDescriptors::unregisterTexture(u32 index) {
-    freeTextureSlot(BindlessSlotHandle{BindlessHeapKind::Texture, index, slotGeneration(BindlessHeapKind::Texture, index)});
+    freeTextureSlot(BindlessSlotHandle{BindlessHeapKind::Texture, index,
+                                       slotGeneration(BindlessHeapKind::Texture, index)});
 }
 
 void BindlessDescriptors::unregisterBuffer(u32 index) {
-    freeBufferSlot(BindlessSlotHandle{BindlessHeapKind::Buffer, index, slotGeneration(BindlessHeapKind::Buffer, index)});
+    freeBufferSlot(BindlessSlotHandle{BindlessHeapKind::Buffer, index,
+                                      slotGeneration(BindlessHeapKind::Buffer, index)});
 }
 
 void BindlessDescriptors::unregisterSampler(u32 index) {
-    freeSamplerSlot(BindlessSlotHandle{BindlessHeapKind::Sampler, index, slotGeneration(BindlessHeapKind::Sampler, index)});
+    freeSamplerSlot(BindlessSlotHandle{BindlessHeapKind::Sampler, index,
+                                        slotGeneration(BindlessHeapKind::Sampler, index)});
 }
 
 u32 BindlessDescriptors::registeredTextureCount() const {
@@ -646,18 +766,27 @@ u32 BindlessDescriptors::registeredSamplerCount() const {
 }
 
 BindlessSlotHandle BindlessDescriptors::registerTextureSlot(const Texture& texture, bool storage) {
-    (void)texture;
-    return allocateTextureSlot(storage);
+    const BindlessSlotHandle handle = allocateTextureSlot(storage);
+    if (handle.isValid() && bindlessNativeHandleReady(texture.view)) {
+        updateVulkanDescriptor(handle, &texture, nullptr, nullptr, false);
+    }
+    return handle;
 }
 
 BindlessSlotHandle BindlessDescriptors::registerBufferSlot(const Buffer& buffer, bool uniform) {
-    (void)buffer;
-    return allocateBufferSlot(uniform);
+    const BindlessSlotHandle handle = allocateBufferSlot(uniform);
+    if (handle.isValid() && bindlessNativeHandleReady(buffer.handle)) {
+        updateVulkanDescriptor(handle, nullptr, &buffer, nullptr, false);
+    }
+    return handle;
 }
 
 BindlessSlotHandle BindlessDescriptors::registerSamplerSlot(void* samplerHandle) {
-    (void)samplerHandle;
-    return allocateSamplerSlot();
+    const BindlessSlotHandle handle = allocateSamplerSlot();
+    if (handle.isValid() && bindlessNativeHandleReady(samplerHandle)) {
+        updateVulkanDescriptor(handle, nullptr, nullptr, samplerHandle, false);
+    }
+    return handle;
 }
 
 void BindlessDescriptors::unregisterSlot(BindlessSlotHandle handle) {

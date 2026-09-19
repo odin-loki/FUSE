@@ -87,10 +87,22 @@ VkFrameEncodeContext RasterPath::vulkanEncodeContext() const {
     context.active = context.renderPass != nullptr && context.framebuffer != nullptr &&
                      context.graphicsPipeline != nullptr && context.vertexBuffer != nullptr &&
                      context.width > 0u && context.height > 0u;
+    context.barrierImage = m_colorImage;
 #else
     (void)0;
 #endif
     return context;
+}
+
+void* RasterPath::barrierImageHandle() const {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_stats.pipelineReady || m_colorImage == nullptr) {
+        return nullptr;
+    }
+    return m_colorImage;
+#else
+    return nullptr;
+#endif
 }
 
 bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {

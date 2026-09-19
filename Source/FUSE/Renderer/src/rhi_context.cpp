@@ -1,6 +1,7 @@
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/vk/queue_submit.hpp>
+#include <fuse/renderer/vk/swapchain_util.hpp>
 
 #include <string>
 
@@ -115,6 +116,26 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
                 encodeContext = &encodeContextStorage;
             }
         }
+
+#if defined(FUSE_VULKAN_BACKEND)
+        VulkanSwapchain* swapchain = m_bootstrap->swapchain();
+        if (encodeContext != nullptr && swapchain != nullptr && swapchain->hasPresentTargets() &&
+            !isEmptyAcquireResult(m_acquiredSwapchainImage)) {
+            encodeContextStorage.presentRenderPass = swapchain->presentRenderPass();
+            encodeContextStorage.presentFramebuffer =
+                swapchain->framebufferForImage(m_acquiredSwapchainImage);
+            encodeContextStorage.presentBarrierImage =
+                swapchain->imageHandleForIndex(m_acquiredSwapchainImage);
+            encodeContextStorage.presentWidth = swapchain->info().width;
+            encodeContextStorage.presentHeight = swapchain->info().height;
+            encodeContextStorage.presentActive =
+                encodeContextStorage.presentFramebuffer != nullptr &&
+                encodeContextStorage.presentRenderPass != nullptr;
+            encodeContext = &encodeContextStorage;
+        } else if (encodeContextStorage.active) {
+            encodeContext = &encodeContextStorage;
+        }
+#endif
 
         populateRenderGraphFromCommandList(m_renderGraph, commands, compositeBlend);
         m_renderGraph.compile();

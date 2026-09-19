@@ -40,6 +40,9 @@ public:
     /// Offscreen targets for frame-slot `vkCmdBeginRenderPass` encoding.
     VkFrameEncodeContext vulkanEncodeContext() const;
 
+    /// Offscreen color image for graph-planned layout barriers.
+    void* barrierImageHandle() const;
+
     /// Updates CPU stats from mirrored commands (GPU work lives in graph execute path).
     void updateStatsFromCommands(const RenderCommandList& commands);
 

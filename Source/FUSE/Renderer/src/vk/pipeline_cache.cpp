@@ -4,6 +4,10 @@
 #include <vulkan/vulkan.h>
 #endif
 
+#include <cstdio>
+#include <fstream>
+#include <vector>
+
 namespace fuse::renderer {
 
 std::unique_ptr<PipelineCache> PipelineCache::create(VulkanDevice& device) {
@@ -18,33 +22,50 @@ PipelineCache::~PipelineCache() {
     shutdown();
 }
 
-bool PipelineCache::initialize(VulkanDevice& device) {
-    m_device = &device;
-
+bool PipelineCache::recreate(VulkanDevice& device, const void* initialData, usize initialSize) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!device.isValid()) {
         m_info.message = "Vulkan device unavailable";
         return false;
     }
 
+    if (m_handle != nullptr) {
+        vkDestroyPipelineCache(static_cast<VkDevice>(device.nativeHandle()),
+                               static_cast<VkPipelineCache>(m_handle), nullptr);
+        m_handle = nullptr;
+    }
+
     VkPipelineCacheCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    createInfo.initialDataSize = initialSize;
+    createInfo.pInitialData = initialData;
+
     VkPipelineCache pipelineCache = VK_NULL_HANDLE;
     if (vkCreatePipelineCache(static_cast<VkDevice>(device.nativeHandle()), &createInfo, nullptr,
                               &pipelineCache) != VK_SUCCESS) {
         m_info.message = "vkCreatePipelineCache failed";
+        m_info.valid = false;
         return false;
     }
 
+    m_device = &device;
     m_handle = pipelineCache;
     m_info.valid = true;
-    m_info.message = "in-memory pipeline cache ready";
+    m_info.dataByteCount = static_cast<u32>(initialSize);
+    m_info.message = initialData != nullptr ? "pipeline cache restored from blob"
+                                            : "in-memory pipeline cache ready";
     return true;
 #else
-    m_info.valid = true;
-    m_info.message = "pipeline cache placeholder (stub backend)";
-    return true;
+    (void)device;
+    (void)initialData;
+    (void)initialSize;
+    return false;
 #endif
+}
+
+bool PipelineCache::initialize(VulkanDevice& device) {
+    m_device = &device;
+    return recreate(device, nullptr, 0);
 }
 
 void PipelineCache::shutdown() {
@@ -89,6 +110,65 @@ bool PipelineCache::snapshotData(std::vector<u8>& outData) const {
 #else
     return false;
 #endif
+}
+
+bool PipelineCache::restoreFromData(const std::vector<u8>& data) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_device == nullptr || !m_device->isValid()) {
+        return false;
+    }
+    return recreate(*m_device, data.empty() ? nullptr : data.data(), data.size());
+#else
+    (void)data;
+    return false;
+#endif
+}
+
+bool PipelineCache::writeCacheFile(const char* path) const {
+    if (path == nullptr) {
+        return false;
+    }
+
+    std::vector<u8> blob;
+    if (!snapshotData(blob)) {
+        return false;
+    }
+
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) {
+        return false;
+    }
+    if (!blob.empty()) {
+        out.write(reinterpret_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.size()));
+    }
+    return out.good();
+}
+
+bool PipelineCache::readCacheFile(const char* path) {
+    if (path == nullptr) {
+        return false;
+    }
+
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in.is_open()) {
+        return false;
+    }
+
+    const std::streamsize size = in.tellg();
+    if (size < 0) {
+        return false;
+    }
+    in.seekg(0, std::ios::beg);
+
+    std::vector<u8> blob(static_cast<size_t>(size));
+    if (size > 0) {
+        in.read(reinterpret_cast<char*>(blob.data()), size);
+        if (!in.good()) {
+            return false;
+        }
+    }
+
+    return restoreFromData(blob);
 }
 
 } // namespace fuse::renderer

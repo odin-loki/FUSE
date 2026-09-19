@@ -62,6 +62,8 @@ void testPhase2HeadlessIntegration() {
         expectTrue(rhi->lastRecordedCommandCount() > 0u, "command recorder captured work");
         expectTrue(rhi->commandRecorder().vulkanRenderPassBeginCount() >= 1u,
                    "render graph encoded vkCmdBeginRenderPass on headless ICD");
+        expectTrue(rhi->commandRecorder().vulkanPipelineBarrierCount() >= 1u,
+                   "render graph encoded vkCmdPipelineBarrier on headless ICD");
         expectTrue(rhi->compositePass() != nullptr, "CompositePass lazy-created on submit");
         expectTrue(rhi->lastCompositeStats().framesRecorded == frameIndex + 1u,
                    "CompositePass stats advance per frame");

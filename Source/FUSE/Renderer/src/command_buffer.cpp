@@ -1,4 +1,5 @@
 #include <fuse/renderer/command_buffer.hpp>
+#include <fuse/renderer/render_graph.hpp>
 
 #include <cstring>
 
@@ -28,6 +29,8 @@ void CommandBufferRecorder::reset() {
     m_pendingClearG = 0.f;
     m_pendingClearB = 0.f;
     m_vulkanRenderPassBeginCount = 0;
+    m_vulkanPipelineBarrierCount = 0;
+    m_vulkanPresentRenderPassBeginCount = 0;
     m_records.clear();
 }
 
@@ -102,6 +105,144 @@ bool CommandBufferRecorder::shouldEncodeRasterPass(const char* passName) const {
         return false;
     }
     return std::strcmp(passName, "clear3d") == 0 || std::strcmp(passName, "sprites2d") == 0;
+}
+
+void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLayout) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || m_encodeContext == nullptr ||
+        !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    void* barrierImage = m_encodeContext->barrierImage;
+    if (barrierImage == nullptr && m_encodeContext->presentBarrierImage != nullptr) {
+        barrierImage = m_encodeContext->presentBarrierImage;
+    }
+    if (barrierImage == nullptr) {
+        return;
+    }
+
+    const auto from = static_cast<RGImageLayout>(fromLayout);
+    const auto to = static_cast<RGImageLayout>(toLayout);
+    if (from == RGImageLayout::Undefined && to == RGImageLayout::Undefined) {
+        return;
+    }
+
+    auto toVkLayout = [](RGImageLayout layout) -> VkImageLayout {
+        switch (layout) {
+        case RGImageLayout::ColorAttachment:
+            return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        case RGImageLayout::DepthAttachment:
+            return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        case RGImageLayout::ShaderReadOnly:
+            return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        case RGImageLayout::TransferSrc:
+            return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        case RGImageLayout::TransferDst:
+            return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        case RGImageLayout::PresentSrc:
+            return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        case RGImageLayout::General:
+            return VK_IMAGE_LAYOUT_GENERAL;
+        default:
+            return VK_IMAGE_LAYOUT_UNDEFINED;
+        }
+    };
+
+    auto layoutStageAccess = [](RGImageLayout layout, VkPipelineStageFlags& stage, VkAccessFlags& access) {
+        stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        access = 0;
+        switch (layout) {
+        case RGImageLayout::ColorAttachment:
+            stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            break;
+        case RGImageLayout::ShaderReadOnly:
+            stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            access = VK_ACCESS_SHADER_READ_BIT;
+            break;
+        case RGImageLayout::TransferSrc:
+            stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            access = VK_ACCESS_TRANSFER_READ_BIT;
+            break;
+        case RGImageLayout::TransferDst:
+            stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            access = VK_ACCESS_TRANSFER_WRITE_BIT;
+            break;
+        case RGImageLayout::PresentSrc:
+            stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+            access = 0;
+            break;
+        case RGImageLayout::General:
+            stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+            access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            break;
+        default:
+            break;
+        }
+    };
+
+    VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    VkAccessFlags srcAccess = 0;
+    VkPipelineStageFlags dstStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    VkAccessFlags dstAccess = 0;
+    if (from != RGImageLayout::Undefined) {
+        layoutStageAccess(from, srcStage, srcAccess);
+    }
+    if (to != RGImageLayout::Undefined) {
+        layoutStageAccess(to, dstStage, dstAccess);
+    }
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = toVkLayout(from);
+    barrier.newLayout = toVkLayout(to);
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = static_cast<VkImage>(barrierImage);
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = srcAccess;
+    barrier.dstAccessMask = dstAccess;
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    vkCmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    ++m_vulkanPipelineBarrierCount;
+#else
+    (void)fromLayout;
+    (void)toLayout;
+#endif
+}
+
+void CommandBufferRecorder::encodePresentSwapchainPass() {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || m_encodeContext == nullptr || !m_encodeContext->presentActive ||
+        m_encodeContext->presentRenderPass == nullptr || m_encodeContext->presentFramebuffer == nullptr ||
+        !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    if (m_insideRenderPass) {
+        endVulkanRenderPass();
+    }
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = static_cast<VkRenderPass>(m_encodeContext->presentRenderPass);
+    renderPassInfo.framebuffer = static_cast<VkFramebuffer>(m_encodeContext->presentFramebuffer);
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = {m_encodeContext->presentWidth, m_encodeContext->presentHeight};
+
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdEndRenderPass(commandBuffer);
+    ++m_vulkanPresentRenderPassBeginCount;
+#else
+    (void)0;
+#endif
 }
 
 void CommandBufferRecorder::beginVulkanRenderPass() {
@@ -217,6 +358,8 @@ void CommandBufferRecorder::pipelineBarrier(u32 textureId, u32 fromLayout, u32 t
     record.fromLayout = fromLayout;
     record.toLayout = toLayout;
     m_records.push_back(record);
+
+    encodeVulkanPipelineBarrier(fromLayout, toLayout);
 }
 
 void CommandBufferRecorder::clearColor(float r, float g, float b) {
@@ -283,6 +426,7 @@ void CommandBufferRecorder::present() {
         return;
     }
     push(CommandRecordKind::Present);
+    encodePresentSwapchainPass();
 }
 
 } // namespace fuse::renderer

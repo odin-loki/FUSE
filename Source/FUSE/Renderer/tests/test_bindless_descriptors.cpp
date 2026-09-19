@@ -1,4 +1,5 @@
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/types.hpp>
@@ -718,6 +719,42 @@ void testVulkanDescriptorPoolScaffold() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testDescriptorUpdatesOnRegisterUnregister() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady || !bindless.vulkanDescriptorsReady()) {
+        bindless.destroy(*bootstrap->device());
+        return;
+    }
+
+    fuse::renderer::ResourceManager resources;
+    expectTrue(resources.init(*bootstrap->device(), bindless), "resource manager init");
+
+    fuse::renderer::BufferDesc bufferDesc{};
+    bufferDesc.size = 256;
+    bufferDesc.usage = fuse::renderer::BufferUsage::Uniform;
+    bufferDesc.memoryUsage = fuse::renderer::MemoryUsage::CpuToGpu;
+    const fuse::renderer::BufferHandle bufferHandle = resources.createBuffer(bufferDesc);
+    expectTrue(bufferHandle.isValid(), "buffer created for bindless update");
+
+    const fuse::renderer::Buffer* buffer = resources.getBuffer(bufferHandle);
+    expectTrue(buffer != nullptr && buffer->bindlessIndex != UINT32_MAX, "buffer bindless index assigned");
+    if (fuse::renderer::bindlessNativeHandleReady(buffer->handle)) {
+        expectTrue(bindless.descriptorUpdateCount() >= 1u, "register issued vkUpdateDescriptorSets");
+    }
+
+    resources.destroyBuffer(bufferHandle);
+    if (fuse::renderer::bindlessNativeHandleReady(buffer->handle)) {
+        expectTrue(bindless.descriptorClearCount() >= 1u, "unregister issued descriptor clear write");
+    }
+#endif
+
+    bindless.destroy(*bootstrap->device());
+}
+
 void testPreflightFreeFunction() {
     const fuse::renderer::BindlessSlotHandle handle{fuse::renderer::BindlessHeapKind::Buffer, 2u, 5u};
     const fuse::renderer::BindlessSlotPreflight match =
@@ -770,6 +807,7 @@ int main() {
     testHeapAtCapacityGuard();
     testCanFreeSlotGuard();
     testVulkanDescriptorPoolScaffold();
+    testDescriptorUpdatesOnRegisterUnregister();
     testPreflightFreeFunction();
 
     fuse::core::shutdown();

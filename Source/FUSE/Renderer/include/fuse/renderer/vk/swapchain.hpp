@@ -78,6 +78,12 @@ public:
     void* nativeHandle() const { return m_handle; }
     const std::vector<SwapchainImageInfo>& images() const { return m_images; }
 
+    /// Present-pass targets — valid when real `VkSwapchainKHR` images exist.
+    bool hasPresentTargets() const { return m_presentRenderPass != nullptr && !m_framebuffers.empty(); }
+    void* presentRenderPass() const { return m_presentRenderPass; }
+    void* framebufferForImage(u32 imageIndex) const;
+    void* imageHandleForIndex(u32 imageIndex) const;
+
     /// Returns image index or UINT32_MAX when headless / not acquired.
     u32 acquireNextImage(void* imageAvailableSemaphore);
     bool present(void* renderFinishedSemaphore, u32 imageIndex);
@@ -89,6 +95,7 @@ private:
     bool initialize(VulkanDevice& device, const SwapchainDesc& desc);
     void shutdown(VulkanDevice& device);
     bool createSwapchainResources(VulkanDevice& device, const SwapchainDesc& desc);
+    void destroyPresentTargets(VulkanDevice& device);
 
     SwapchainInfo m_info;
     SurfaceDesc m_surfaceDesc{};
@@ -98,6 +105,8 @@ private:
     void* m_physicalDevice = nullptr;
     void* m_graphicsQueue = nullptr;
     u32 m_graphicsQueueFamily = 0;
+    void* m_presentRenderPass = nullptr;
+    std::vector<void*> m_framebuffers;
     std::vector<SwapchainImageInfo> m_images;
 };
 

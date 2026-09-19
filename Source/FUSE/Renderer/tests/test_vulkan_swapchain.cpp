@@ -52,6 +52,7 @@ void testHeadlessSwapchainRecordsDesc() {
     expectTrue(swapchain != nullptr, "swapchain object allocated");
     expectTrue(swapchain->isHeadless(), "headless path selected without surface");
     expectTrue(!swapchain->isReady(), "no VkSwapchainKHR without surface");
+    expectTrue(!swapchain->hasPresentTargets(), "headless swapchain has no present framebuffers");
     expectTrue(swapchain->info().width == 1920u, "width recorded");
     expectTrue(swapchain->info().height == 1080u, "height recorded");
     expectTrue(swapchain->info().imageCount == 3u, "triple-buffer count recorded");

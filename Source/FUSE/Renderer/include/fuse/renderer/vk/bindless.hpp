@@ -70,6 +70,9 @@ bool bindlessHeapAtCapacity(u32 slotCount, u32 freeCount, u32 maxCapacity);
 /// True when handle generation matches the live slot row (occupied required).
 bool bindlessSlotGenerationMatches(BindlessSlotHandle handle, u32 liveGeneration, bool occupied);
 
+/// True when a native handle looks like a real Vulkan object (stub allocators use small integers).
+bool bindlessNativeHandleReady(void* nativeHandle);
+
 /// Preflight for bindless slot lookup / free without touching heap tables (B2.3 deepen follow-up).
 struct BindlessSlotPreflight {
     bool initialized = false;
@@ -175,6 +178,9 @@ public:
     void* poolHandle() const { return m_pool; }
     bool vulkanDescriptorsReady() const { return m_pool != nullptr && m_layout != nullptr && m_set != nullptr; }
 
+    u32 descriptorUpdateCount() const { return m_descriptorUpdateCount; }
+    u32 descriptorClearCount() const { return m_descriptorClearCount; }
+
     u32 registeredTextureCount() const;
     u32 registeredBufferCount() const;
     u32 registeredSamplerCount() const;
@@ -184,6 +190,7 @@ private:
         u32 generation = 0;
         bool occupied = false;
         bool storage = false;
+        bool descriptorWritten = false;
     };
 
     BindlessSlotHandle allocateSlot(std::vector<Slot>& slots, std::vector<u32>& freeList, u32 maxCount,
@@ -192,7 +199,10 @@ private:
     const std::vector<Slot>& slotsFor(BindlessHeapKind kind) const;
     std::vector<Slot>& slotsFor(BindlessHeapKind kind);
     u32 maxCountFor(BindlessHeapKind kind) const;
+    void updateVulkanDescriptor(BindlessSlotHandle handle, const Texture* texture, const Buffer* buffer,
+                                void* samplerHandle, bool clear);
 
+    const VulkanDevice* m_device = nullptr;
     void* m_pool = nullptr;
     void* m_layout = nullptr;
     void* m_set = nullptr;
@@ -204,6 +214,8 @@ private:
     std::vector<u32> m_freeBufferIndices;
     std::vector<u32> m_freeSamplerIndices;
     bool m_initialized = false;
+    u32 m_descriptorUpdateCount = 0;
+    u32 m_descriptorClearCount = 0;
 };
 
 } // namespace fuse::renderer

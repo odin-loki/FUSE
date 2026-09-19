@@ -31,6 +31,14 @@ add_executable(fuse_bindless_descriptors test_bindless_descriptors.cpp)
 target_link_libraries(fuse_bindless_descriptors PRIVATE fuse_rhi)
 add_test(NAME fuse_bindless_descriptors COMMAND fuse_bindless_descriptors)
 
+add_executable(fuse_pipeline_cache test_pipeline_cache.cpp)
+target_link_libraries(fuse_pipeline_cache PRIVATE fuse_rhi)
+target_compile_definitions(fuse_pipeline_cache PRIVATE
+    FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
+)
+add_test(NAME fuse_pipeline_cache COMMAND fuse_pipeline_cache)
+set_tests_properties(fuse_pipeline_cache PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
+
 add_executable(fuse_shader_pipeline test_shader_pipeline.cpp)
 target_link_libraries(fuse_shader_pipeline PRIVATE fuse_rhi)
 target_compile_definitions(fuse_shader_pipeline PRIVATE

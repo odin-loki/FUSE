@@ -30,15 +30,25 @@ struct CommandRecord {
     u32 drawCount = 0;
 };
 
-/// Offscreen raster targets for real `vkCmdBeginRenderPass` encoding (B2.5 / B2.8).
+/// Offscreen raster + optional swapchain present targets for real `vkCmd*` encoding (B2.5 / B2.8).
 struct VkFrameEncodeContext {
     void* renderPass = nullptr;
     void* framebuffer = nullptr;
     void* graphicsPipeline = nullptr;
     void* vertexBuffer = nullptr;
+    /// Backbuffer image for graph-planned `vkCmdPipelineBarrier` (offscreen color target).
+    void* barrierImage = nullptr;
     u32 width = 0;
     u32 height = 0;
     bool active = false;
+
+    /// Swapchain present pass — used when WSI acquire yields a valid image index.
+    void* presentRenderPass = nullptr;
+    void* presentFramebuffer = nullptr;
+    void* presentBarrierImage = nullptr;
+    u32 presentWidth = 0;
+    u32 presentHeight = 0;
+    bool presentActive = false;
 };
 
 /// Command-buffer recorder — logical commands for tests; optional real `vkCmd*` when backend active.
@@ -65,12 +75,16 @@ public:
     bool vulkanEncodeActive() const { return m_vulkanEncodeActive; }
     bool vulkanRecordingComplete() const { return m_vulkanRecordingComplete; }
     u32 vulkanRenderPassBeginCount() const { return m_vulkanRenderPassBeginCount; }
+    u32 vulkanPipelineBarrierCount() const { return m_vulkanPipelineBarrierCount; }
+    u32 vulkanPresentRenderPassBeginCount() const { return m_vulkanPresentRenderPassBeginCount; }
 
 private:
     void push(CommandRecordKind kind);
     bool shouldEncodeRasterPass(const char* passName) const;
     void beginVulkanRenderPass();
     void endVulkanRenderPass();
+    void encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLayout);
+    void encodePresentSwapchainPass();
     void encodeDraw(u32 instanceCount);
 
     const VkFrameEncodeContext* m_encodeContext = nullptr;
@@ -84,6 +98,8 @@ private:
     float m_pendingClearG = 0.f;
     float m_pendingClearB = 0.f;
     u32 m_vulkanRenderPassBeginCount = 0;
+    u32 m_vulkanPipelineBarrierCount = 0;
+    u32 m_vulkanPresentRenderPassBeginCount = 0;
     std::vector<CommandRecord> m_records;
 };
 

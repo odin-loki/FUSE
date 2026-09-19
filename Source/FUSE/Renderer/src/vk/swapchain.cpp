@@ -55,6 +55,20 @@ VulkanSwapchain::~VulkanSwapchain() {
                 image.view = nullptr;
             }
         }
+        if (m_presentRenderPass != nullptr) {
+            vkDestroyRenderPass(static_cast<VkDevice>(m_device),
+                                static_cast<VkRenderPass>(m_presentRenderPass),
+                                nullptr);
+            m_presentRenderPass = nullptr;
+        }
+        for (void* framebuffer : m_framebuffers) {
+            if (framebuffer != nullptr) {
+                vkDestroyFramebuffer(static_cast<VkDevice>(m_device),
+                                     static_cast<VkFramebuffer>(framebuffer),
+                                     nullptr);
+            }
+        }
+        m_framebuffers.clear();
     }
 #endif
     m_images.clear();
@@ -115,6 +129,34 @@ bool VulkanSwapchain::initialize(VulkanDevice& device, const SwapchainDesc& desc
 #endif
 }
 
+void VulkanSwapchain::destroyPresentTargets(VulkanDevice& device) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_device == nullptr) {
+        m_presentRenderPass = nullptr;
+        m_framebuffers.clear();
+        return;
+    }
+
+    auto vkDevice = static_cast<VkDevice>(m_device);
+    for (void*& framebuffer : m_framebuffers) {
+        if (framebuffer != nullptr) {
+            vkDestroyFramebuffer(vkDevice, static_cast<VkFramebuffer>(framebuffer), nullptr);
+            framebuffer = nullptr;
+        }
+    }
+    m_framebuffers.clear();
+
+    if (m_presentRenderPass != nullptr) {
+        vkDestroyRenderPass(vkDevice, static_cast<VkRenderPass>(m_presentRenderPass), nullptr);
+        m_presentRenderPass = nullptr;
+    }
+#else
+    (void)device;
+    m_presentRenderPass = nullptr;
+    m_framebuffers.clear();
+#endif
+}
+
 void VulkanSwapchain::shutdown(VulkanDevice& device) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (m_handle != nullptr && m_device != nullptr) {
@@ -132,6 +174,7 @@ void VulkanSwapchain::shutdown(VulkanDevice& device) {
         }
     }
     m_images.clear();
+    destroyPresentTargets(device);
 #else
     (void)device;
 #endif
@@ -267,6 +310,71 @@ bool VulkanSwapchain::createSwapchainResources(VulkanDevice& device, const Swapc
         m_images[i].index = i;
     }
 
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = chosenFormat.format;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference colorRef{};
+    colorRef.attachment = 0;
+    colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorRef;
+
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
+
+    VkRenderPass presentRenderPass = VK_NULL_HANDLE;
+    if (vkCreateRenderPass(vkDevice, &renderPassInfo, nullptr, &presentRenderPass) != VK_SUCCESS) {
+        m_info.message = "Swapchain present render pass creation failed";
+        shutdown(device);
+        return false;
+    }
+    m_presentRenderPass = presentRenderPass;
+
+    m_framebuffers.resize(m_images.size(), nullptr);
+    for (u32 i = 0; i < m_images.size(); ++i) {
+        VkImageView attachments[] = {static_cast<VkImageView>(m_images[i].view)};
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = presentRenderPass;
+        framebufferInfo.attachmentCount = 1;
+        framebufferInfo.pAttachments = attachments;
+        framebufferInfo.width = extent.width;
+        framebufferInfo.height = extent.height;
+        framebufferInfo.layers = 1;
+
+        VkFramebuffer framebuffer = VK_NULL_HANDLE;
+        if (vkCreateFramebuffer(vkDevice, &framebufferInfo, nullptr, &framebuffer) != VK_SUCCESS) {
+            m_info.message = "Swapchain framebuffer creation failed";
+            shutdown(device);
+            return false;
+        }
+        m_framebuffers[i] = framebuffer;
+    }
+
     return true;
 #else
     (void)device;
@@ -364,6 +472,20 @@ bool VulkanSwapchain::present(void* renderFinishedSemaphore, u32 imageIndex) {
     (void)imageIndex;
     return false;
 #endif
+}
+
+void* VulkanSwapchain::framebufferForImage(u32 imageIndex) const {
+    if (imageIndex >= m_framebuffers.size()) {
+        return nullptr;
+    }
+    return m_framebuffers[imageIndex];
+}
+
+void* VulkanSwapchain::imageHandleForIndex(u32 imageIndex) const {
+    if (imageIndex >= m_images.size()) {
+        return nullptr;
+    }
+    return m_images[imageIndex].image;
 }
 
 } // namespace fuse::renderer
