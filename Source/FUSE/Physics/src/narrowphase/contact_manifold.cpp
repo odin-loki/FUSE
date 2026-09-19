@@ -2577,6 +2577,9 @@ bool can_skip_normalize_contact_normal(const ContactManifold& manifold, f32 leng
 
     if (is_contact_manifold_finalized(manifold, frictionEpsilon, frictionEpsilon)) {
 
+
+    if (normalLength < 1e-8f) {
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {

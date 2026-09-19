@@ -1466,6 +1466,9 @@ bool is_contact_manifold_finalized(
 
 /// Finalize only when preflight reports finalize may proceed; no-op otherwise (B4.5 deepen pass).
 
+
+/// Normalize contact normal only when `needsNormalNormalization` is true (B4.6 deepen pass).
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

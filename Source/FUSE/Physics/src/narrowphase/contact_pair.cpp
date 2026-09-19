@@ -873,6 +873,7 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
         return ContactPairRejectReason::BothCcd;
     if (is_undispatched_shape_pair(pair, shapes)) {
         return ContactPairRejectReason::NoDispatchPath;
+        return ContactPairRejectReason::UnsupportedShapePair;
     return ContactPairRejectReason::None;
 
 bool contact_pair_deepen_rejects_for_reason(
@@ -957,26 +958,14 @@ bool can_skip_contact_pair_deepen_dispatch(
 }
 
 bool should_run_contact_pair_deepen_dispatch(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return !can_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
-}
 
 bool contact_pair_deepen_rejects_for_reason(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     ContactPairRejectReason expected) {
     return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
-}
 
-bool should_run_contact_pair_deepen_dispatch(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
-}
 
 bool can_skip_narrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
@@ -994,10 +983,25 @@ bool has_dispatchable_contact_pair(
         return false;
     return count_dispatchable_contact_pairs(pairs, bodies, shapes) > 0u;
 
-bool contact_pair_deepen_rejects_for_reason(
-    const CollisionShapeSoA& shapes,
-    ContactPairRejectReason expected) {
-    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
+bool hasNarrowphaseDispatch(CollisionShapeType typeA, CollisionShapeType typeB) {
+    if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Sphere) {
+        return true;
+    if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Plane) {
+    if (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Sphere) {
+    if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Box) {
+    if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Sphere) {
+    if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Capsule) {
+    if (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Sphere) {
+    if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Box) {
+
+bool is_undispatched_shape_pair(
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    return !hasNarrowphaseDispatch(typeA, typeB);
 
 bool is_plane_plane_contact_pair(
     const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
@@ -3487,6 +3491,13 @@ bool compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 eps
 
     compute_friction_tangents(manifold);
     return manifold.hasFrictionBasis();
+}
+
+bool narrowphase_batch_has_rejected_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflight_narrowphase_batch(pairs, bodies, shapes).rejectedCount > 0u;
 }
 
 } // namespace fuse::physics::narrowphase

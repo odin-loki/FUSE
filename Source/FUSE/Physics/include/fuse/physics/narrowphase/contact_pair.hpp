@@ -1227,6 +1227,8 @@ bool is_mesh_shape_contact_pair(
 /// Returns true when either plane shape has a zero-length normal (B4.6 deepen pass).
 bool is_degenerate_plane_normal_pair(
 
+/// Returns true when the resolved shape types have no narrowphase dispatch handler (B4.6 deepen pass).
+
 /// Const preflight for narrowphase batch dispatch (B4.5 deepen follow-up pass).
 struct NarrowphaseBatchPreflight {
     NarrowphaseBatchRejectReason reason = NarrowphaseBatchRejectReason::None;
@@ -1765,7 +1767,6 @@ ContactManifold detect_contacts_pair_deepen(
 ContactManifold detect_contacts_pair_with_deepen_preflight(
 
 /// Run shape dispatch for one pair after extended deepen preflight (B4.6 deepen follow-up pass).
-ContactManifold detect_contacts_pair_deepen(
 
 /// Returns true when `preflight_narrowphase_batch` reports the expected dispatchable count (B4.6 deepen follow-up pass).
 bool narrowphase_batch_has_dispatchable_count(
@@ -1780,5 +1781,8 @@ u32 count_contact_pairs_rejected_for_reason(
 bool narrowphase_batch_all_reject_for_reason(
 /// Finalize friction tangents only when preflight allows; no-op when skipped (B4.5 deepen pass).
 bool compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Returns true when batch preflight reports at least one rejected pair (B4.6 deepen pass).
+bool narrowphase_batch_has_rejected_pairs(
 
 } // namespace fuse::physics::narrowphase

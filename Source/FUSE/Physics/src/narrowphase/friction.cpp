@@ -1565,4 +1565,5 @@ FrictionBasisRejectReason friction_basis_stale_reject_reason(
 bool invalidate_friction_basis_if_stale(ContactManifold& manifold, f32 epsilon) {
     if (!friction_basis_is_stale(manifold, epsilon)) {
 
+
 } // namespace fuse::physics::narrowphase
