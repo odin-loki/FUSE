@@ -141,8 +141,21 @@ bool isSnapStepValid(GizmoMode mode, const GizmoSnapSettings& settings);
 /// True when snap is enabled with a usable step for the active mode (B6.4 deepen pass).
 bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings);
 
-/// True when snap is enabled but the mode step is unusable (B6.4 deepen pass).
-bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings);
+/// Read-only ray diagnostics — no mutation (B6.4 deepen pass — pick guard).
+struct RayPreflight {
+    bool emptyRay = false;
+    bool unnormalized = false;
+
+    bool canUse() const { return !emptyRay; }
+};
+
+RayPreflight preflightRay(const GizmoRay& ray);
+
+/// True when ray direction is non-zero but not unit length (B6.4 deepen pass).
+bool isRayUnnormalized(const GizmoRay& ray);
+
+/// Non-mutating ray predicate — same guards as `preflightRay` (B6.4 deepen pass).
+bool canUseRayForPick(const GizmoRay& ray);
 
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
 struct PickPreflight {
@@ -254,6 +267,7 @@ struct PickInteractionPreflight {
 
     bool canPick() const { return pick.canPick(); }
     bool snapWillApply() const { return snap.canApply(); }
+    bool snapDegraded() const { return snap.isDegraded(); }
 };
 
 PickInteractionPreflight preflightPickInteraction(const GizmoRay& ray, const GizmoTransform& transform,
@@ -352,6 +366,7 @@ struct PickSnapPreflight {
 
     bool canPick() const { return pick.canPick(); }
     bool canSnap() const { return snap.canApply(); }
+    bool snapDegraded() const { return snap.isDegraded(); }
 };
 
 /// Combined begin-drag + snap diagnostics — no mutation (B6.4 deepen pass).
@@ -361,6 +376,7 @@ struct BeginInteractionPreflight {
 
     bool canBegin() const { return begin.canBegin; }
     bool snapReady() const { return snap.canApply(); }
+    bool snapDegraded() const { return begin.snapDegraded || snap.isDegraded(); }
 };
 
 /// Combined update-drag + snap diagnostics — no mutation (B6.4 deepen pass).
@@ -406,6 +422,39 @@ struct InteractionPreflight {
             return canBegin();
         case GizmoInteractionPhase::Dragging:
             return canUpdate();
+        }
+        return false;
+    }
+
+    /// Any interaction path allowed for the active lifecycle phase (B6.4 deepen pass).
+    bool canInteract() const {
+        switch (phase()) {
+        case GizmoInteractionPhase::Idle:
+            return canBegin() || canPick();
+        case GizmoInteractionPhase::Dragging:
+            return canUpdate() || canEnd();
+        }
+        return false;
+    }
+
+    /// Snap is enabled but the mode step is unusable for the active phase (B6.4 deepen pass).
+    bool isSnapDegraded() const {
+        switch (phase()) {
+        case GizmoInteractionPhase::Idle:
+            return begin.snapDegraded() || pickSnap.snapDegraded();
+        case GizmoInteractionPhase::Dragging:
+            return update.snapDegraded() || end.snapDegraded();
+        }
+        return false;
+    }
+
+    /// Snap will apply on the primary action for the active phase (B6.4 deepen pass).
+    bool snapWillApplyOnPhase() const {
+        switch (phase()) {
+        case GizmoInteractionPhase::Idle:
+            return begin.snapReady();
+        case GizmoInteractionPhase::Dragging:
+            return update.snap.canApply();
         }
         return false;
     }
@@ -459,6 +508,12 @@ bool canUpdateInteraction(const GizmoHitTest& hit, bool dragging, GizmoAxis acti
 /// Non-mutating end-interaction predicate — same guards as `preflightEndInteraction` (B6.4 deepen pass).
 bool canEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
                        const GizmoSnapSettings& settings);
+
+/// Non-mutating phase-routing predicates — same guards as `InteractionPreflight` (B6.4 deepen pass).
+bool canActOnPhase(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                   const GizmoSnapSettings& settings);
+bool canInteract(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                 const GizmoSnapSettings& settings);
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       GizmoMode mode, GizmoSpace space, f32 axisLength,
@@ -600,6 +655,9 @@ public:
                                            const GizmoTransform& transform) const;
     [[nodiscard]] bool canUpdateInteraction(const GizmoHitTest& hit) const;
     [[nodiscard]] bool canEndInteraction() const;
+    /// Phase-routing predicates — same guards as `preflightInteraction` (B6.4 deepen pass).
+    [[nodiscard]] bool canActOnPhase(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canInteract(const GizmoHitTest& hit) const;
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
