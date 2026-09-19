@@ -108,6 +108,41 @@ struct ProbeValidityFlags {
     bool has_trilinear_neighbourhood = false;
 };
 
+/// Why probe sample coord validation rejected a trilinear lookup (B5.6 deepen).
+enum class ProbeSampleCoordsRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    OutOfRangeIndices,
+    OutOfRangeWeights,
+    UnorderedCorners,
+};
+
+/// Human-readable label for sample-coords reject reasons (logging / tests).
+const char* probeSampleCoordsRejectReasonLabel(ProbeSampleCoordsRejectReason reason);
+
+/// Why a cache-index guard rejected a probe lookup (B5.6 deepen).
+enum class CacheIndexRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    ProbeIndexOutOfRange,
+    CacheUndersized,
+};
+
+/// Human-readable label for cache-index reject reasons (logging / tests).
+const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
+
+/// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
+enum class DdgiLaunchRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    NullIndices,
+    ZeroCount,
+    OutOfRangeIndex,
+};
+
+/// Human-readable label for launch reject reasons (logging / tests).
+const char* ddgiLaunchRejectReasonLabel(DdgiLaunchRejectReason reason);
+
 /// Continuous octahedral tile sample coordinates for bilinear irradiance lookup.
 struct DdgiTileBilinearCoords {
     u32 texel_u0 = 0;

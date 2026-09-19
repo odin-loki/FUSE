@@ -141,6 +141,8 @@ bool tryCanLaunchDdgiKernels(const ::fuse::renderer::DDGIDesc& desc,
 
 /// Diagnose why probe blend preflight would reject; vacuously succeeds when launch is allowed.
 
+
+
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
 /// Launch probe trace kernel with reject-reason diagnostics; false when preflight rejects.
