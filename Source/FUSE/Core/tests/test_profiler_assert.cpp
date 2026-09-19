@@ -2530,3 +2530,6 @@ int main() {
 // --- deepen additive from deepen-b16-profiler-guards-77ef ---
 void testRingCapacityAndBufferFullGuards() {
 void testNullNameScopeGuard() {
+
+// --- deepen additive from deepen-b16-profiler-guards-2e20 ---
+void testOpenAsyncFlowCountGuards() {
