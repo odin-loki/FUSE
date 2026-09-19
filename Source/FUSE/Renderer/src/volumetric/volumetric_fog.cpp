@@ -2237,3 +2237,11 @@ SampleCoordRejectReason classifyFroxelSampleCoordReject(const FroxelDensityGrid&
     if (sampleReject == SampleCoordRejectReason::InvalidWeights) {
 bool preflightPopulate(const FroxelGridDesc& desc,
     outReason = classifyPopulateReject(desc, camera, params);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-1e4c ---
+    return sampleCoordRejectReasonIsBlocking(classifySampleCoordReject(coords, desc));
+    const DensityLookupRejectReason indexReason = classifyDensityLookupReject(grid, desc, 0u);
+    if (densityLookupRejectReasonIsBlocking(indexReason)) {
+    outReason = classifyDensityLookupRejectAtCoord(grid, desc, tileX, tileY, sliceZ);
+    const DensityLookupRejectReason lookupReason = classifyDensityLookupReject(grid, desc, 0u);
+    if (densityLookupRejectReasonIsBlocking(lookupReason)) {

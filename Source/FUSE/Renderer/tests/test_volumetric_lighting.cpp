@@ -3504,3 +3504,8 @@ void testFroxelClassifyAndBlockingGuards() {
                "preflightPopulate agrees with canPopulateFromAnalyticFog for valid inputs");
     expectTrue(fuse::renderer::froxel_util::preflightGridDensity(grid, desc) ==
                "preflightGridDensity agrees with validateGridDensity for accessible grid");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-1e4c ---
+               "preflightScreenMapping returns mapped coords on success");
+               "preflightScreenMapping returns in-range sample coords");
+               "classifyFroxelPopulateReject empty_desc");
