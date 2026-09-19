@@ -226,4 +226,88 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Non-mutating pair-dispatch skip predicate — mirrors `should_skip_contact_pair_dispatch` (B4.5 deepen follow-up pass).
+bool would_skip_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating deepen pair-dispatch skip predicate — mirrors `should_skip_contact_pair_deepen_dispatch` (B4.5 deepen follow-up pass).
+bool would_skip_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating batch skip predicate — mirrors `narrowphase_batch_rejects_all` (B4.5 deepen follow-up pass).
+bool would_skip_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Detect contacts only when base pair preflight allows; returns invalid manifold when skipped (B4.5 deepen follow-up pass).
+ContactManifold try_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Detect contacts only when deepen pair preflight allows; returns invalid manifold when skipped (B4.5 deepen follow-up pass).
+ContactManifold try_detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Finalize only when `can_finalize_contact_manifold` passes; no-op otherwise (B4.5 deepen follow-up pass).
+bool try_generate_contact_manifold(ContactManifold& manifold);
+
+} // namespace fuse::physics::narrowphase
+
+#include <fuse/physics/config.hpp>
+
+namespace fuse::physics::narrowphase {
+
+FUSE_PHYSICS_INLINE bool would_skip_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return should_skip_contact_pair_dispatch(pair, bodies, shapes);
+}
+
+FUSE_PHYSICS_INLINE bool would_skip_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
+FUSE_PHYSICS_INLINE bool would_skip_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return narrowphase_batch_rejects_all(pairs, bodies, shapes);
+}
+
+FUSE_PHYSICS_INLINE ContactManifold try_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (would_skip_contact_pair_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
+}
+
+FUSE_PHYSICS_INLINE ContactManifold try_detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (would_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
+}
+
+FUSE_PHYSICS_INLINE bool try_generate_contact_manifold(ContactManifold& manifold) {
+    return generate_contact_manifold_if_needed(manifold);
+}
+
 } // namespace fuse::physics::narrowphase
