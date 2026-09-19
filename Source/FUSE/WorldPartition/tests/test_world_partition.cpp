@@ -2094,3 +2094,7 @@ int main() {
     std::fprintf(stderr, "fuse_world_partition_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b76-partition-streaming-queue-residency-guards-9350 ---
+void testStreamingRequestQueuePendingGuards() {
+void testResidencyFocusDistanceGuards() {

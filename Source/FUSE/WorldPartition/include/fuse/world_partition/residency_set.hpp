@@ -432,3 +432,6 @@ template <typename ScoreFn>
 }
 
 } // namespace fuse::world_partition
+
+// --- deepen additive from deepen-b76-partition-streaming-queue-residency-guards-9350 ---
+[[nodiscard]] inline bool try_update_focus_distance(ResidencySet& set, GridCoord coord, f32 focus_distance) {
