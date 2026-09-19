@@ -149,6 +149,15 @@ u32 hrtf_ir_stub_sample_count(const HrtfIrStub& ir);
     [[nodiscard]] bool should_skip() const { return empty_ir; }
 
 /// Preflight an HRTF IR stub without mutating state.
+/// Read-only empty-IR diagnostics — no mutation (B7.2 deepen follow-up).
+    bool null_samples = false;
+    bool zero_length = false;
+    bool empty_ir = false;
+
+    [[nodiscard]] bool can_use_convolution() const { return !empty_ir; }
+    [[nodiscard]] bool should_fallback_to_ild_itd() const { return empty_ir; }
+
+/// Preflight HRTF IR stub validity without mutating state.
 [[nodiscard]] HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
 
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
@@ -319,6 +328,15 @@ bool should_skip_hrtf_pan_path(HrtfPanPath path);
 
 /// Preflight pan-path resolution when no IR is wired.
 [[nodiscard]] HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled,
+    bool bypass = false;
+    bool ild_itd_stub = false;
+    bool convolution = false;
+
+    [[nodiscard]] bool will_use_convolution() const { return convolution; }
+
+/// Preflight HRTF pan routing without mutating state.
+
+/// Preflight HRTF pan routing when no IR is wired.
 
 /// True when the resolved path produces a lateral spatial image (not centre bypass).
 bool is_spatial_hrtf_pan_path(HrtfPanPath path);
@@ -749,6 +767,15 @@ struct HrtfSpatialPanPreflight {
 /// Preflight attenuation coupling for a resolved pan path.
 
 /// Preflight attenuation coupling from HRTF enable flag, IR stub, and listener offset.
+
+    bool bypass_path = false;
+    bool unity_attenuation = false;
+    bool will_narrow = false;
+
+    [[nodiscard]] bool can_apply_coupling() const { return will_narrow; }
+    [[nodiscard]] bool should_skip() const { return !will_narrow; }
+
+/// Preflight attenuation coupling without mutating binaural gains.
 
 /// Combined spatial blend from distance attenuation and occlusion LF gain.
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,

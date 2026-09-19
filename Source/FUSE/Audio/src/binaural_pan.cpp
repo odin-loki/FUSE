@@ -277,6 +277,7 @@ HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub
     result.path = resolve_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
     return result;
     HrtfPanPathPreflight preflight;
+    HrtfPanPathPreflight preflight{};
     preflight.hrtf_disabled = !hrtf_enabled;
     preflight.co_located = is_co_located_hrtf_source(rel_listener);
     preflight.empty_ir = is_empty_hrtf_ir(ir);
@@ -285,6 +286,9 @@ HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub
     preflight.uses_convolution = hrtf_pan_path_uses_convolution(preflight.path);
     preflight.uses_ild_itd_stub = hrtf_pan_path_uses_ild_itd_stub(preflight.path);
     return preflight;
+    preflight.ild_itd_stub = hrtf_pan_path_uses_ild_itd_stub(preflight.path);
+    preflight.convolution = hrtf_pan_path_uses_convolution(preflight.path);
+}
 
 HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener) {
     return preflight_hrtf_pan_path(hrtf_enabled, make_empty_hrtf_ir(), rel_listener);
@@ -847,6 +851,18 @@ HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
         preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
     return preflight_hrtf_attenuation_coupling(pan_preflight.path, distance_attenuation,
                                                occlusion_gain);
+}
+
+HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(HrtfPanPath path,
+                                                                     float distance_attenuation,
+                                                                     float occlusion_gain) {
+    HrtfAttenuationCouplingPreflight preflight{};
+    preflight.path = path;
+    preflight.bypass_path = is_hrtf_pan_path_bypass(path);
+    preflight.unity_attenuation = is_unity_hrtf_attenuation(distance_attenuation, occlusion_gain);
+    preflight.will_narrow =
+        should_narrow_hrtf_spatial_image(path, distance_attenuation, occlusion_gain);
+    return preflight;
 }
 
 float compute_hrtf_distance_factor(float distance_attenuation,
