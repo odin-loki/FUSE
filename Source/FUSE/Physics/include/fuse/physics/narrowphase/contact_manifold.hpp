@@ -302,3 +302,8 @@ bool should_skip_finalize_contact_manifold(const ContactManifold& manifold);
 ManifoldFinalizePreflight preflight_manifold_finalize(const ContactManifold& manifold);
 bool should_skip_manifold_finalize(const ContactManifold& manifold);
 bool can_finalize_with_preflight(const ManifoldFinalizePreflight& preflight);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-a773 ---
+        return reason == ManifoldPruneRejectReason::None &&
+        return reason == ManifoldPruneRejectReason::None && hasShallow;
+    bool can_finalize() const { return reason == ManifoldFinalizeRejectReason::None; }

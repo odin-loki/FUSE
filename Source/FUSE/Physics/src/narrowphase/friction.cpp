@@ -331,3 +331,13 @@ FrictionBasisRebuildPreflight preflight_friction_basis_rebuild(
 // --- deepen additive from deepen-b4-narrowphase-guards-914a ---
 FrictionBasisPreflight preflight_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
 bool should_skip_friction_basis_preflight(const ContactManifold& manifold) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-a773 ---
+    case FrictionBasisRejectReason::SkippedManifold:
+    case FrictionBasisRejectReason::ValidCachedBasis:
+        return FrictionBasisRejectReason::SkippedManifold;
+        return FrictionBasisRejectReason::ValidCachedBasis;
+    FrictionBasisRejectReason expected,
+    if (preflight.reason == FrictionBasisRejectReason::SkippedManifold) {
+    if (preflight.reason == FrictionBasisRejectReason::ValidCachedBasis) {
+    return friction_basis_reject_reason(manifold, epsilon) != FrictionBasisRejectReason::None;

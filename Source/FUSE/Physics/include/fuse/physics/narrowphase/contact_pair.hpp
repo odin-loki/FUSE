@@ -294,3 +294,14 @@ ContactPairDispatchPreflight preflight_contact_pair_dispatch(
 
 // --- deepen additive from b4-narrowphase-deepen-guards-f32b ---
     ContactPairRejectPreflight reject{};
+
+// --- deepen additive from b4-narrowphase-deepen-guards-a773 ---
+    bool can_dispatch() const { return reason == ContactPairRejectReason::None; }
+enum class NarrowphaseRejectReason : u8 {
+const char* narrowphase_reject_reason_name(NarrowphaseRejectReason reason);
+NarrowphaseRejectReason narrowphase_reject_reason(
+    NarrowphaseRejectReason expected);
+struct NarrowphasePairListPreflight {
+    NarrowphaseRejectReason reason = NarrowphaseRejectReason::None;
+    bool can_dispatch() const { return reason == NarrowphaseRejectReason::None; }
+NarrowphasePairListPreflight preflight_narrowphase_pair_list(

@@ -703,3 +703,21 @@ ContactPairDispatchPreflight preflight_contact_pair_dispatch(
 // --- deepen additive from deepen-b4-narrowphase-guards-7360 ---
     const ManifoldFinalizePreflight finalizePreflight = preflight_manifold_finalize(manifold);
     if (finalizePreflight.wouldBeEmptyAfterPrune) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-a773 ---
+const char* narrowphase_reject_reason_name(NarrowphaseRejectReason reason) {
+    case NarrowphaseRejectReason::None:
+    case NarrowphaseRejectReason::EmptyPairList:
+    case NarrowphaseRejectReason::AllPairsRejected:
+NarrowphaseRejectReason narrowphase_reject_reason(
+        return NarrowphaseRejectReason::EmptyPairList;
+            return NarrowphaseRejectReason::None;
+    return NarrowphaseRejectReason::AllPairsRejected;
+    NarrowphaseRejectReason expected) {
+NarrowphasePairListPreflight preflight_narrowphase_pair_list(
+    NarrowphasePairListPreflight preflight{};
+    preflight.emptyPairList = preflight.reason == NarrowphaseRejectReason::EmptyPairList;
+    preflight.allPairsRejected = preflight.reason == NarrowphaseRejectReason::AllPairsRejected;
+    if (preflight.reason == NarrowphaseRejectReason::None) {
+            if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+    return narrowphase_reject_reason(pairs, bodies, shapes) != NarrowphaseRejectReason::None;

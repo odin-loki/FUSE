@@ -2119,3 +2119,48 @@ void testManifoldPrunePreflightShallowFlag() {
 // --- deepen additive from deepen-b4-narrowphase-guards-7360 ---
 void testRunNarrowphaseDeepenDispatchGuards() {
 void testBuildFrictionTangentBasesReuseGuard() {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-a773 ---
+void testNarrowphaseRejectReasonGuards() {
+            {}, bodies, shapes, fuse::physics::narrowphase::NarrowphaseRejectReason::EmptyPairList),
+                fuse::physics::narrowphase::NarrowphaseRejectReason::AllPairsRejected),
+            {{bodyA, bodyB}}, bodies, shapes, fuse::physics::narrowphase::NarrowphaseRejectReason::None),
+void testContactPairDeepenRejectsForReasonGuards() {
+void testNarrowphasePairListPreflightGuards() {
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_narrowphase_pair_list({}, bodies, shapes);
+    expectTrue(!emptyPreflight.can_dispatch(), "empty pair-list preflight cannot dispatch");
+    expectTrue(emptyPreflight.emptyPairList, "empty pair-list preflight marks empty list");
+    expectTrue(!rejectedPreflight.can_dispatch(), "all-rejected pair-list preflight cannot dispatch");
+    expectTrue(rejectedPreflight.allPairsRejected, "all-rejected pair-list preflight marks all rejected");
+    const auto mixedPreflight = fuse::physics::narrowphase::preflight_narrowphase_pair_list(
+    expectTrue(mixedPreflight.can_dispatch(), "mixed pair-list preflight can dispatch");
+    expectTrue(mixedPreflight.dispatchablePairCount == 1u, "mixed pair-list preflight counts dispatchable pairs");
+void testManifoldPruneRejectReasonGuards() {
+            clean, fuse::physics::narrowphase::ManifoldPruneRejectReason::NoPruningNeeded),
+            allSeparated, fuse::physics::narrowphase::ManifoldPruneRejectReason::WouldBeEmptyAfterPrune),
+                fuse::physics::narrowphase::ManifoldPruneRejectReason::WouldBeEmptyAfterPrune),
+            dirty, fuse::physics::narrowphase::ManifoldPruneRejectReason::None),
+        dirtyPreflight.reason == fuse::physics::narrowphase::ManifoldPruneRejectReason::NoPruningNeeded,
+void testManifoldFinalizeRejectReasonGuards() {
+            empty, fuse::physics::narrowphase::ManifoldFinalizeRejectReason::EmptyManifold),
+            ready, fuse::physics::narrowphase::ManifoldFinalizeRejectReason::None),
+    expectTrue(readyPreflight.can_finalize(), "finalize preflight accepts ready manifold with reason None");
+        readyPreflight.reason == fuse::physics::narrowphase::ManifoldFinalizeRejectReason::None,
+            separated, fuse::physics::narrowphase::ManifoldFinalizeRejectReason::WouldBeEmptyAfterPrune),
+void testFrictionBasisRejectReasonGuards() {
+            empty, fuse::physics::narrowphase::FrictionBasisRejectReason::SkippedManifold),
+            needsBuild, fuse::physics::narrowphase::FrictionBasisRejectReason::None),
+        !fuse::physics::narrowphase::should_skip_friction_basis_preflight(needsBuild),
+        "should_skip_friction_basis_preflight false when rebuild may proceed");
+            needsBuild, fuse::physics::narrowphase::FrictionBasisRejectReason::ValidCachedBasis),
+                fuse::physics::narrowphase::FrictionBasisRejectReason::ValidCachedBasis),
+    const auto reusePreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(needsBuild);
+    expectTrue(reusePreflight.can_skip_rebuild(), "friction preflight can skip valid cached basis");
+        reusePreflight.reason == fuse::physics::narrowphase::FrictionBasisRejectReason::ValidCachedBasis,
+    expectTrue(stalePreflight.needsRebuild, "stale friction preflight needs rebuild");
+    expectTrue(!stalePreflight.can_skip_rebuild(), "stale friction preflight cannot skip rebuild");
+    testNarrowphaseRejectReasonGuards();
+    testNarrowphasePairListPreflightGuards();
+    testManifoldPruneRejectReasonGuards();
+    testManifoldFinalizeRejectReasonGuards();
+    testFrictionBasisRejectReasonGuards();

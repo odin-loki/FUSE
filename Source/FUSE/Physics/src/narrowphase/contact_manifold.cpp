@@ -629,3 +629,14 @@ bool can_finalize_with_preflight(const ManifoldFinalizePreflight& preflight) {
 
 // --- deepen additive from deepen-b4-narrowphase-guards-5111 ---
     const ManifoldFinalizePreflight preflight = preflight_manifold_finalize(manifold);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-a773 ---
+    case ManifoldPruneRejectReason::WouldBeEmptyAfterPrune:
+    case ManifoldPruneRejectReason::NoPruningNeeded:
+        return ManifoldPruneRejectReason::WouldBeEmptyAfterPrune;
+        return ManifoldPruneRejectReason::NoPruningNeeded;
+    if (preflight.reason == ManifoldPruneRejectReason::EmptyManifold) {
+    preflight.wouldBeEmpty = preflight.reason == ManifoldPruneRejectReason::WouldBeEmptyAfterPrune;
+    case ManifoldFinalizeRejectReason::WouldBeEmptyAfterPrune:
+        return ManifoldFinalizeRejectReason::WouldBeEmptyAfterPrune;
+    if (preflight.reason == ManifoldFinalizeRejectReason::EmptyManifold) {
