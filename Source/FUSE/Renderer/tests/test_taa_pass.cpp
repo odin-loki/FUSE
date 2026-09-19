@@ -4769,3 +4769,7 @@ void testTaaPassTryClassifyGuardWrappers() {
                "pass tryPreflightJitterSync reason is None with sanitized default sequence");
                "pass tryPreflightResolve fails for invalid dimensions");
                "pass tryPreflightResolve reason is InvalidDimensions");
+
+// --- deepen additive from deepen-b59-taa-pass-guards-63b1 ---
+               "pass classifyJitterAdvanceReject passes after init");
+               "pass tryPreflightJitterNdc fails for zero width");
