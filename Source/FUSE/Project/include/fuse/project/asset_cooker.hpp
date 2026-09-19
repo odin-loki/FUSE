@@ -532,6 +532,7 @@ public:
     /// Read-only reconcile skip probes — mirror estimate/count guards (B7.9 deepen).
     /// True when `estimate_prune_reconcile()` would report nothing to remove (B7.9 deepen).
     /// True when `estimate_reconcile_invalidation` would report nothing to invalidate (B7.9 deepen).
+    /// True when `estimate_prune_reconcile` would remove nothing (B7.9 deepen).
     [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
