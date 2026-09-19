@@ -2657,3 +2657,20 @@ void testPairBufferCompactionPreflightGuards() {
     const auto planePreflight = fuse::physics::broadphase::preflight_cell_occupancy_2d(planeRange, 4u);
     expectTrue(planePreflight.exceedsBudget, "2D preflight flags over-budget range");
     expectTrue(fuse::physics::broadphase::should_skip_shape_cell_insertion_2d(planeRange, 4u),
+
+// --- deepen additive from deepen-b4-broadphase-guards-4311 ---
+void testCellOccupancyPreflightReasonGuards() {
+                 fuse::physics::broadphase::broadphaseMergeRejectReason(bodies, shapes)),
+    expectTrue(std::strcmp(fuse::physics::broadphase::broadphaseMergeRejectReasonName(
+    expectTrue(fuse::physics::broadphase::broadphaseMergeRejectsForReason(
+                 fuse::physics::broadphase::pairBufferPushRejectReason(buffer, 1u, 1u)),
+                   buffer, 1u, 1u, fuse::physics::broadphase::PairBufferPushRejectReason::InvalidPair),
+                   buffer, fuse::physics::broadphase::PairBufferCompactionRejectReason::EmptyBuffer),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferCompactionRejectReason(sparseBuffer)),
+    expectTrue(fuse::physics::broadphase::preflightPairBufferCompaction(sparseBuffer).needsCompaction(),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferClampRejectReason(overflowBuffer)),
+    expectTrue(fuse::physics::broadphase::preflightPairBufferClamp(overflowBuffer).needsClamp(),
+void testPairBufferDedupeSortRejectReasonGuards() {
+void testShouldRunBroadphaseAndRefineGuards() {
+    testCellOccupancyPreflightReasonGuards();
+    testPairBufferDedupeSortRejectReasonGuards();

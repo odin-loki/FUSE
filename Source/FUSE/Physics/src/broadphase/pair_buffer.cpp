@@ -809,3 +809,10 @@ bool PairBufferPreflight::can_push(u32 additionalCount) const {
 PairBufferPreflight preflight_pair_buffer(const PairBufferSoA& buffer) {
     PairBufferPreflight preflight{};
 bool should_skip_pair_buffer_compaction(const PairBufferSoA& buffer) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-4311 ---
+        if (preflight.reason == PairBufferPushRejectReason::AtCapacity) {
+    const PairBufferCompactionPreflight preflight = preflightPairBufferCompaction(*this);
+    if (preflight.reason == PairBufferCompactionRejectReason::EmptyBuffer) {
+    if (preflight.reason == PairBufferCompactionRejectReason::AllValid) {
+    if (!preflightPairBufferSort(*this).needsSort()) {

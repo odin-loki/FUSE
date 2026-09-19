@@ -1073,3 +1073,13 @@ bool should_skip_shape_cell_insertion_2d(const CellRange2& range, u32 maxCells) 
         if (should_skip_shape_cell_insertion_2d(range, maxOccupancy)) {
     if (should_skip_shape_cell_insertion(range, maxOccupancy)) {
     if (should_skip_dedupe_broadphase(buffer)) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-4311 ---
+    const BroadphaseMergePreflight mergePreflight = preflightBroadphaseMerge(bodies, shapes);
+    preflight.reason = broadphaseMergeRejectReason(bodies, shapes);
+const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) {
+BroadphaseMergeRejectReason broadphaseMergeRejectReason(
+            return BroadphaseMergeRejectReason::None;
+        return BroadphaseMergeRejectReason::EmptyPlaneBodies;
+    return BroadphaseMergeRejectReason::EmptyDynamicBodies;
+    return broadphaseMergeRejectReason(bodies, shapes) == expected;
