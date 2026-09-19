@@ -4902,3 +4902,66 @@ void testTryEventByNameAndFlowIdGuard() {
                "wouldSkip-guarded empty/null attempts record nothing");
     if (!fuse::profiler::wouldSkipProfileScope("recorded_scope")) {
                "valid scope records when wouldSkipProfileScope is false");
+
+// --- deepen additive from deepen-b16-profiler-guards-355d ---
+    expectTrue(fuse::profiler::wouldSkipProfileScope(nullptr, &reason),
+    expectTrue(fuse::profiler::wouldSkipProfileScope("", &reason),
+    expectTrue(fuse::profiler::wouldSkipProfileScope("ignored_scope", &reason),
+               "wouldSkip guards do not record events by themselves");
+               "wouldSkip false for valid flow begin");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("valid_flow", flowId),
+               "wouldSkip true for flow end with no open flow");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("valid_flow", flowId, &reason),
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("", &reason),
+               "wouldSkip true for empty flow begin name");
+    expectTrue(!fuse::profiler::wouldSkipCounter("valid_counter"),
+               "wouldSkip false for valid counter track");
+    expectTrue(fuse::profiler::wouldSkipCounter(nullptr, &reason),
+               "wouldSkip true for null counter track");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowEnd("paired_flow", flowId),
+               "wouldSkip false for paired flow end");
+               "wouldSkip false for export when enabled");
+               "wouldSkip safely false on empty balanced buffer");
+    expectTrue(fuse::profiler::wouldSkipChromeTraceExport(&reason),
+               "wouldSkip true for export when disabled");
+    expectTrue(fuse::profiler::wouldSkipChromeTraceExportSafely(&reason),
+               "wouldSkip safely true when disabled");
+                   "wouldSkip safely true with active scope");
+               "wouldSkip safely true after cross-thread handoff");
+    expectTrue(fuse::profiler::tryFindFirstEventByName("lookup_inner", outEvent),
+               "tryFindFirstEventByName succeeds for inner begin");
+    expectTrue(fuse::profiler::tryFindLastEventByName("lookup_inner", outEvent),
+               "tryFindLastEventByName succeeds for inner end");
+               "tryFindFirstEventByName false for missing name");
+    expectTrue(fuse::profiler::tryFindFirstEventByFlowId(innerFlowId, outEvent),
+               "tryFindFirstEventByFlowId succeeds for inner flow start");
+    expectTrue(outEvent.scopeId == innerFlowId, "tryFindFirstEventByFlowId preserves flow id");
+    expectTrue(fuse::profiler::tryFindLastEventByFlowId(innerFlowId, outEvent),
+               "tryFindLastEventByFlowId succeeds for inner flow finish");
+void testScopeAndAsyncFlowPreflightGuards() {
+    const fuse::profiler::ScopeNestingPreflight emptyScopePreflight =
+    expectTrue(emptyScopePreflight.balanced, "scope preflight balanced on reset");
+    expectTrue(emptyScopePreflight.activeDepth == 0u, "scope preflight active depth zero on reset");
+    expectTrue(!emptyScopePreflight.hasActiveScope, "scope preflight has no active scope on reset");
+    expectTrue(emptyScopePreflight.canEnterScope(), "scope preflight allows entry on reset");
+    const fuse::profiler::AsyncFlowPreflight emptyFlowPreflight = fuse::profiler::preflightAsyncFlow();
+    expectTrue(emptyFlowPreflight.balanced, "flow preflight balanced on reset");
+    expectTrue(emptyFlowPreflight.openFlowCount == 0u, "flow preflight open count zero on reset");
+    expectTrue(!emptyFlowPreflight.hasOpenFlows, "flow preflight has no open flows on reset");
+    expectTrue(emptyFlowPreflight.canBeginFlow(), "flow preflight allows begin on reset");
+    expectTrue(!emptyFlowPreflight.canEndFlow(), "flow preflight blocks end with no open flows");
+        const fuse::profiler::ScopeNestingPreflight activeScopePreflight =
+        expectTrue(!activeScopePreflight.balanced, "scope preflight unbalanced inside active scope");
+        expectTrue(activeScopePreflight.hasActiveScope, "scope preflight marks active scope");
+        expectTrue(activeScopePreflight.activeDepth == 1u, "scope preflight reports active depth");
+        const fuse::profiler::AsyncFlowPreflight activeFlowPreflight = fuse::profiler::preflightAsyncFlow();
+        expectTrue(activeFlowPreflight.hasOpenFlows, "flow preflight marks open flow");
+        expectTrue(activeFlowPreflight.openFlowCount == 1u, "flow preflight tracks open flow count");
+        expectTrue(activeFlowPreflight.canEndFlow(), "flow preflight allows end with open flow");
+        expectTrue(!activeFlowPreflight.balanced, "flow preflight unbalanced with open flow");
+    const fuse::profiler::ScopeNestingPreflight closedScopePreflight =
+    expectTrue(closedScopePreflight.balanced, "scope preflight balanced after scope end");
+    const fuse::profiler::AsyncFlowPreflight closedFlowPreflight = fuse::profiler::preflightAsyncFlow();
+    expectTrue(closedFlowPreflight.balanced, "flow preflight balanced after flow end");
+    expectTrue(!closedFlowPreflight.hasOpenFlows, "flow preflight clears open flows after end");
+    testScopeAndAsyncFlowPreflightGuards();

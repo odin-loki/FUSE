@@ -514,3 +514,12 @@ bool wouldSkipChromeTraceExportSafely();
 
 // --- deepen additive from deepen-b16-profiler-guards-f01b ---
 bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId);
+
+// --- deepen additive from deepen-b16-profiler-guards-355d ---
+enum class ProfileSkipReason : u8 {
+bool wouldSkipProfileScope(const char* name, ProfileSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowBegin(const char* name, ProfileSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId, ProfileSkipReason* reason = nullptr);
+bool wouldSkipCounter(const char* track, ProfileSkipReason* reason = nullptr);
+bool wouldSkipChromeTraceExport(ProfileSkipReason* reason = nullptr);
+bool wouldSkipChromeTraceExportSafely(ProfileSkipReason* reason = nullptr);

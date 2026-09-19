@@ -1451,3 +1451,11 @@ bool wouldSkipChromeTraceExportSafely() {
 
 // --- deepen additive from deepen-b16-profiler-guards-f01b ---
 bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/) {
+
+// --- deepen additive from deepen-b16-profiler-guards-355d ---
+bool wouldSkipProfileScope(const char* name, ProfileSkipReason* reason) {
+bool wouldSkipAsyncFlowBegin(const char* name, ProfileSkipReason* reason) {
+bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/, ProfileSkipReason* reason) {
+bool wouldSkipCounter(const char* track, ProfileSkipReason* reason) {
+bool wouldSkipChromeTraceExport(ProfileSkipReason* reason) {
+bool wouldSkipChromeTraceExportSafely(ProfileSkipReason* reason) {
