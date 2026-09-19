@@ -188,6 +188,9 @@ bool distance_refs_in_range(u32 bodyCount, const DistanceConstraint& constraint)
 
 
 /// Diagnose why island graph build would reject; vacuously succeeds on safe in-range inputs.
+
+
+/// Returns the first reject reason for graph build inputs, or `None` when build may proceed.
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -202,6 +205,23 @@ bool island_graph_build_rejects_for_reason(
     bool can_build() const { return !skipped && reason == IslandGraphBuildRejectReason::None; }
 
 /// Populate build preflight without mutating a graph (B4.4 deepen follow-up pass).
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+
+/// Read-only island graph build diagnostics — no mutation (B4.4 deepen follow-up pass).
+struct IslandGraphBuildPreflight {
+    u32 bodyCount = 0;
+    u32 validContactCount = 0;
+    u32 inRangeContactCount = 0;
+    u32 inRangeDistanceCount = 0;
+    u32 outOfRangeContactBodyCount = 0;
+    u32 outOfRangeDistanceBodyCount = 0;
+
+    bool can_build() const { return reason == IslandGraphBuildRejectReason::None; }
+};
+
+/// Populate graph build preflight without mutating a graph (B4.4 deepen follow-up pass).
 IslandGraphBuildPreflight preflight_island_graph_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -749,6 +769,8 @@ bool should_skip_island_graph_build(u32 bodyCount,
 /// Early-out guard when build inputs cannot form a safe constrained partition.
 /// Returns true when graph build should be skipped before partition (B4.4 deepen follow-up).
 /// True when island graph build should early-out before union-find (B4.4 deepen follow-up pass).
+/// Non-mutating predicate — true when graph build inputs are safe (B4.4 deepen follow-up pass).
+bool can_build_island_graph(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -816,6 +838,7 @@ struct ContactIslandGraph {
     IslandGraphBuildOutcome build_guarded(u32 bodyCount,
     /// Guarded build; returns false and clears when preflight skips unsafe inputs.
     /// Guarded build; clears the graph and returns false when preflight rejects inputs.
+    /// Build only when `can_build_island_graph` passes; clears and returns false otherwise.
 
     void clear();
 
