@@ -56,6 +56,10 @@ struct CompletedLodResidencyRequest {
 /// Apply a completion snapshot when LOD promotion/demotion finishes (stub sync helper).
 void sync_morph_after_residency(TerrainChunk& chunk, const LodResidencyMorphSnapshot& snapshot);
 
+/// Priority ordering: higher priority first, unload before load at equal priority, FIFO tie-break.
+[[nodiscard]] int compare_lod_residency_request_order(f32 priority_a, LodResidencyRequestKind kind_a, u64 sequence_a,
+                                                      f32 priority_b, LodResidencyRequestKind kind_b, u64 sequence_b);
+
 /// Worker-side mesh/heightfield I/O stub — production wiring reads chunk assets from disk.
 using LodResidencyWorkFn = std::function<bool(u32 chunk_index, LodResidencyRequestKind kind)>;
 
