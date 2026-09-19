@@ -4666,3 +4666,7 @@ void testTaaPassTryAndClassifyGuardWrappers() {
 void testTaaPassTryClassifyGuardWrappers() {
                "pass tryPreflightResolve passes before first resolve");
                "pass tryPreflightResolve skip reason is None before first resolve");
+
+// --- deepen additive from deepen-taa-pass-guards-8135 ---
+               "pass tryPreflightResolve passes for valid resolve desc");
+               "pass tryPreflightResolve fails for zero width");
