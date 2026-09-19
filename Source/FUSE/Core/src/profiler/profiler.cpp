@@ -295,6 +295,14 @@ bool hasOpenAsyncFlows() {
     return openAsyncFlowCount() > 0u;
 }
 
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveFlowDepth() {
+    return flowNestingDepth() > 0u;
+}
+
 bool isScopeNestingBalanced() {
     return nestingDepth() == 0u;
 }
@@ -309,6 +317,10 @@ bool hasUnbalancedNesting() {
 
 bool isFlowDepthDetached() {
     return flowNestingDepth() != openAsyncFlowCount();
+}
+
+bool wouldRecordEvent(const char* name) {
+    return enabled() && isValidEventName(name);
 }
 
 bool hasEvents() {
@@ -346,8 +358,29 @@ u32 exportableEventCount() {
     return count;
 }
 
+u32 invalidNameEventCount() {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (!isValidEventName(eventAt(i).name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
+}
+
+bool isFirstEventIndex(u32 index) {
+    const u32 first = firstEventIndex();
+    return first != kInvalidEventIndex && index == first;
+}
+
+bool isLastEventIndex(u32 index) {
+    const u32 last = lastEventIndex();
+    return last != kInvalidEventIndex && index == last;
 }
 
 const ProfileEvent& emptyProfileEvent() {
@@ -375,6 +408,16 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
 
     outEvent = eventAt(index);
     return isValidProfileEvent(outEvent);
+}
+
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventExportable(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return true;
 }
 
 bool tryFirstEvent(ProfileEvent& outEvent) {
@@ -430,6 +473,8 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.bufferFull = isBufferFull();
+    preflight.invalidNameEventCount = invalidNameEventCount();
     return preflight;
 }
 
@@ -565,7 +610,7 @@ std::string exportChromeTraceJson() {
 
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.name == nullptr) {
+        if (!isValidEventName(event.name)) {
             continue;
         }
 
