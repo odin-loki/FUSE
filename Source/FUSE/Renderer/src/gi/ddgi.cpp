@@ -2157,3 +2157,16 @@ bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, DdgiKernelLaun
         outReason = DdgiKernelLaunchRejectReason::NullProbeIndices;
         outReason = DdgiKernelLaunchRejectReason::ZeroRaysPerProbe;
     outReason = DdgiKernelLaunchRejectReason::None;
+
+// --- deepen additive from deepen-ddgi-b56-guards-7061 ---
+    case ProbeSampleCoordsRejectReason::InvalidSpacing:
+    case CacheIndexRejectReason::NotSampleable:
+        outReason = ProbeSampleCoordsRejectReason::InvalidSpacing;
+bool tryCanLookupCacheAtProbeIndex(const DDGIDesc& desc,
+        outReason = CacheIndexRejectReason::NotSampleable;
+    case DdgiKernelRejectReason::NullProbeIndices:
+    case DdgiKernelRejectReason::ZeroProbeCount:
+bool preflightDDGIKernelParams(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason) {
+        outReason = DdgiKernelRejectReason::ZeroProbeCount;
+        outReason = DdgiKernelRejectReason::NullProbeIndices;
+    return preflightDDGIKernelParams(params, reason);

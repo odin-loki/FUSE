@@ -742,3 +742,6 @@ const char* ddgiLaunchRejectReasonLabel(DdgiLaunchRejectReason reason);
 // --- deepen additive from deepen-ddgi-b56-guards-5dea ---
 bool tryIsCacheIndexValid(const DDGIDesc& desc,
                                  DdgiLaunchRejectReason& outReason);
+
+// --- deepen additive from deepen-ddgi-b56-guards-7061 ---
+    bool tryCanLookupCacheAtProbeIndex(const DDGIDesc& desc,

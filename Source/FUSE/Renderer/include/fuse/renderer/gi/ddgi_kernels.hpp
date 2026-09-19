@@ -102,3 +102,6 @@ bool tryCanLaunchDdgiKernels(const ::fuse::renderer::DDGIDesc& desc,
 enum class DdgiKernelLaunchRejectReason : u8 {
 const char* ddgiKernelLaunchRejectReasonLabel(DdgiKernelLaunchRejectReason reason);
 bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, DdgiKernelLaunchRejectReason& outReason);
+
+// --- deepen additive from deepen-ddgi-b56-guards-7061 ---
+bool preflightDDGIKernelParams(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason);
