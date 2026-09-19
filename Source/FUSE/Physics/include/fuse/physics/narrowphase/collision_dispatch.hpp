@@ -200,4 +200,29 @@ std::vector<ContactManifold> runNarrowphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Const preflight for narrowphase buffer output dispatch (B4.6 deepen pass).
+struct NarrowphaseBufferDispatchPreflight {
+    u32 pairCount = 0u;
+    bool emptyPairList = false;
+    bool canFinalizeBuffer = false;
+
+    bool can_dispatch() const { return pairCount > 0u; }
+};
+
+/// Populate buffer-dispatch preflight without running shape dispatch (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
+    const std::vector<broadphase::CandidatePair>& pairs) {
+    NarrowphaseBufferDispatchPreflight preflight{};
+    preflight.pairCount = static_cast<u32>(pairs.size());
+    preflight.emptyPairList = pairs.empty();
+    preflight.canFinalizeBuffer = !preflight.emptyPairList;
+    return preflight;
+}
+
+/// Returns true when narrowphase buffer finalize should be skipped (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE bool can_skip_narrowphase_buffer_finalize(
+    const std::vector<broadphase::CandidatePair>& pairs) {
+    return preflight_narrowphase_buffer_dispatch(pairs).emptyPairList;
+}
+
 } // namespace fuse::physics::narrowphase
