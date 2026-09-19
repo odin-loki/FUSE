@@ -94,6 +94,35 @@ bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& hi
     return !preflightTaaResolve(desc, history);
 }
 
+bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveSkipReason* skipReason, TaaResolveBlendRejectReason* blendReason) {
+    const TaaResolveSkipReason skip = classifyTaaResolveSkip(desc, history);
+    if (skipReason != nullptr) {
+        *skipReason = skip;
+    }
+    if (taaResolveSkipReasonIsBlocking(skip)) {
+        if (blendReason != nullptr) {
+            *blendReason = TaaResolveBlendRejectReason::None;
+        }
+        return false;
+    }
+
+    const TaaResolveBlendRejectReason blendReject = classifyTaaResolveBlendReject(desc, history);
+    if (blendReason != nullptr) {
+        *blendReason = blendReject;
+    }
+    return blendReject == TaaResolveBlendRejectReason::None;
+}
+
+bool tryPreflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                 TaaResolveSkipReason& skipReason, TaaResolveBlendRejectReason& blendReason) {
+    return preflightTaaResolveFrame(desc, history, &skipReason, &blendReason);
+}
+
+bool shouldSkipTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !preflightTaaResolveFrame(desc, history);
+}
+
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!history.isReady()) {
         return TaaResolveSkipReason::HistoryNotReady;
