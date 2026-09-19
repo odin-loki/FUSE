@@ -21,6 +21,13 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+void expectEq(fuse::u32 actual, fuse::u32 expected, const char* message) {
+    if (actual != expected) {
+        std::fprintf(stderr, "FAIL: %s (expected %u, got %u)\n", message, expected, actual);
+        ++g_failures;
+    }
+}
+
 void expectNear(fuse::physics::f32 actual, fuse::physics::f32 expected, fuse::physics::f32 tolerance, const char* message) {
     if (std::fabs(actual - expected) > tolerance) {
         std::fprintf(stderr, "FAIL: %s (got %.6f expected %.6f)\n", message, actual, expected);
@@ -1516,6 +1523,170 @@ void testManifoldPruneFinalizeFollowUpGuards() {
         "finalize reject reason name resolves NoPenetratingPoints");
 }
 
+void testContactBufferPreflightGuards() {
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+
+    fuse::physics::narrowphase::ContactManifold valid{};
+    valid.valid = true;
+    valid.bodyA = 0u;
+    valid.bodyB = 1u;
+    valid.contactNormal = {0.f, 1.f, 0.f};
+    valid.penetrationDepth = 0.5f;
+    valid.addPoint({0.f, 0.f, 0.f}, 0.5f);
+
+    const auto validWritePreflight =
+        fuse::physics::narrowphase::preflight_contact_buffer_write(buffer, 0u, valid);
+    expectTrue(validWritePreflight.canWrite(), "write preflight allows valid manifold");
+    expectTrue(
+        validWritePreflight.reason == fuse::physics::narrowphase::ContactBufferWriteRejectReason::None,
+        "write preflight reports None for valid manifold");
+
+    fuse::physics::narrowphase::ContactManifold selfPair = valid;
+    selfPair.bodyB = selfPair.bodyA;
+    const auto selfWritePreflight =
+        fuse::physics::narrowphase::preflight_contact_buffer_write(buffer, 0u, selfPair);
+    expectTrue(!selfWritePreflight.canWrite(), "write preflight rejects self pair");
+    expectTrue(selfWritePreflight.selfPair, "write preflight marks self pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_buffer_write_rejects_for_reason(
+            buffer, 0u, selfPair, fuse::physics::narrowphase::ContactBufferWriteRejectReason::SelfPair),
+        "write rejects_for_reason matches self pair");
+
+    fuse::physics::narrowphase::ContactManifold invalid{};
+    invalid.bodyA = 0u;
+    invalid.bodyB = 1u;
+    const auto invalidWritePreflight =
+        fuse::physics::narrowphase::preflight_contact_buffer_write(buffer, 0u, invalid);
+    expectTrue(!invalidWritePreflight.canWrite(), "write preflight rejects invalid manifold");
+    expectTrue(invalidWritePreflight.invalidManifold, "write preflight marks invalid manifold");
+
+    const auto outOfRangePreflight =
+        fuse::physics::narrowphase::preflight_contact_buffer_write(buffer, 4u, valid);
+    expectTrue(!outOfRangePreflight.canWrite(), "write preflight rejects out-of-range slot");
+    expectTrue(outOfRangePreflight.outOfRangeSlot, "write preflight marks out-of-range slot");
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_buffer_write_reject_reason_name(
+                fuse::physics::narrowphase::ContactBufferWriteRejectReason::OutOfRangeSlot),
+            "OutOfRangeSlot") == 0,
+        "write reject reason name resolves OutOfRangeSlot");
+
+    buffer.writeSlot(0u, valid);
+    buffer.writeSlot(1u, valid);
+    expectTrue(buffer.slotIsValid(0u), "slotIsValid true for written slot");
+    expectTrue(!buffer.slotIsValid(2u), "slotIsValid false for unused slot");
+    expectTrue(buffer.countValidSlots() == 2u, "countValidSlots reports prepared valid slots");
+    expectTrue(buffer.canSkipCompaction(), "canSkipCompaction true when all slots valid");
+
+    buffer.invalidateSlot(1u);
+    expectTrue(!buffer.slotIsValid(1u), "invalidateSlot clears valid flag");
+    expectTrue(!buffer.canSkipCompaction(), "canSkipCompaction false after invalidation");
+
+    const auto compactionPreflight = fuse::physics::narrowphase::preflight_contact_buffer_compaction(buffer);
+    expectTrue(compactionPreflight.needsCompaction(), "compaction preflight needs compaction after invalidation");
+    expectTrue(
+        fuse::physics::narrowphase::should_run_contact_buffer_compaction(buffer),
+        "should_run_contact_buffer_compaction after invalidation");
+    expectEq(buffer.compact(), 1u, "compact gathers surviving valid slot");
+    expectTrue(buffer.canSkipCompaction(), "canSkipCompaction true after compact");
+
+    const auto allValidPreflight = fuse::physics::narrowphase::preflight_contact_buffer_compaction(buffer);
+    expectTrue(!allValidPreflight.needsCompaction(), "compaction preflight skips all-valid buffer");
+    expectTrue(allValidPreflight.allValid, "compaction preflight marks all-valid buffer");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_contact_buffer_compaction(buffer),
+        "can_skip_contact_buffer_compaction on all-valid buffer");
+
+    fuse::physics::narrowphase::ContactBufferSoA emptyBuffer;
+    const auto emptyCompactionPreflight =
+        fuse::physics::narrowphase::preflight_contact_buffer_compaction(emptyBuffer);
+    expectTrue(!emptyCompactionPreflight.needsCompaction(), "compaction preflight skips empty buffer");
+    expectTrue(emptyCompactionPreflight.emptyBuffer, "compaction preflight marks empty buffer");
+    expectTrue(
+        fuse::physics::narrowphase::contact_buffer_compaction_rejects_for_reason(
+            emptyBuffer, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::EmptyBuffer),
+        "compaction rejects_for_reason flags empty buffer");
+    expectEq(emptyBuffer.compact(), 0u, "compact early-outs on empty buffer via preflight");
+
+    fuse::physics::narrowphase::ContactBufferSoA clampBuffer;
+    clampBuffer.setMaxCapacity(1u);
+    clampBuffer.preparePairSlots(2u);
+    clampBuffer.writeSlot(0u, valid);
+    clampBuffer.writeSlot(1u, valid);
+    clampBuffer.compact();
+    expectTrue(clampBuffer.canApplyMaxCapacityClamp(), "canApplyMaxCapacityClamp true when over max");
+    expectTrue(!clampBuffer.canSkipMaxCapacityClamp(), "canSkipMaxCapacityClamp false when over max");
+
+    const auto clampPreflight = fuse::physics::narrowphase::preflight_contact_buffer_clamp(clampBuffer);
+    expectTrue(clampPreflight.needsClamp(), "clamp preflight needs clamp when over max");
+    expectEq(clampBuffer.applyMaxCapacityClamp(), 1u, "applyMaxCapacityClamp truncates to max capacity");
+    expectTrue(clampBuffer.droppedCount == 1u, "droppedCount tracks clamped contacts");
+
+    const auto withinClampPreflight = fuse::physics::narrowphase::preflight_contact_buffer_clamp(clampBuffer);
+    expectTrue(!withinClampPreflight.needsClamp(), "clamp preflight skips within-capacity buffer");
+    expectTrue(withinClampPreflight.withinCapacity, "clamp preflight marks within-capacity buffer");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_contact_buffer_clamp(clampBuffer),
+        "can_skip_contact_buffer_clamp on within-capacity buffer");
+
+    fuse::physics::narrowphase::ContactBufferSoA compactClampBuffer;
+    compactClampBuffer.preparePairSlots(0u);
+    expectTrue(compactClampBuffer.canSkipSoAIteration(), "canSkipSoAIteration true after zero prepare");
+    expectEq(
+        compactClampBuffer.compactAndClamp(),
+        0u,
+        "compactAndClamp early-outs via preflight on empty buffer");
+    expectTrue(
+        fuse::physics::narrowphase::contact_buffer_compact_and_clamp_rejects_for_reason(
+            compactClampBuffer,
+            fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::EmptyBuffer),
+        "compactAndClamp rejects_for_reason flags empty buffer");
+
+    fuse::physics::narrowphase::ContactBufferSoA noWorkBuffer;
+    noWorkBuffer.preparePairSlots(1u);
+    noWorkBuffer.writeSlot(0u, valid);
+    noWorkBuffer.compact();
+    const auto noWorkPreflight =
+        fuse::physics::narrowphase::preflight_contact_buffer_compact_and_clamp(noWorkBuffer);
+    expectTrue(noWorkPreflight.noWork, "compactAndClamp preflight marks no-work buffer");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_contact_buffer_compact_and_clamp(noWorkBuffer),
+        "can_skip_contact_buffer_compact_and_clamp on no-work buffer");
+    expectEq(noWorkBuffer.compactAndClamp(), 1u, "compactAndClamp no-op preserves active count");
+}
+
+void testNarrowphaseDispatchPreflightGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 dynamicA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 dynamicB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicB, {1.f, 0.f, 0.f});
+
+    const auto emptyPreflight =
+        fuse::physics::narrowphase::preflight_narrowphase_dispatch({}, bodies, shapes);
+    expectTrue(emptyPreflight.emptyPairs, "dispatch preflight marks empty pair list");
+    expectTrue(emptyPreflight.can_skip(), "dispatch preflight can skip empty pair list");
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_narrowphase_dispatch({}, bodies, shapes),
+        "should_skip_narrowphase_dispatch on empty pair list");
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> validPairs = {{dynamicA, dynamicB}};
+    const auto validPreflight =
+        fuse::physics::narrowphase::preflight_narrowphase_dispatch(validPairs, bodies, shapes);
+    expectTrue(!validPreflight.emptyPairs, "dispatch preflight does not mark non-empty pair list");
+    expectTrue(validPreflight.can_dispatch(), "dispatch preflight can dispatch valid pair");
+    expectTrue(
+        !fuse::physics::narrowphase::should_skip_narrowphase_dispatch(validPairs, bodies, shapes),
+        "should_skip_narrowphase_dispatch false for dispatchable pair");
+
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    fuse::physics::narrowphase::runNarrowphaseIntoBuffer({}, bodies, shapes, buffer);
+    expectTrue(buffer.isEmpty(), "runNarrowphaseIntoBuffer leaves empty buffer for empty pair list");
+    expectTrue(buffer.canSkipSoAIteration(), "empty dispatch leaves buffer in skip-iteration state");
+}
+
 void testFrictionBasisFollowUpRejectGuards() {
     fuse::physics::narrowphase::ContactManifold empty{};
     expectTrue(
@@ -1613,6 +1784,8 @@ int main() {
     testGjkSupportAndEpaStub();
     testContactPairDeepenFollowUpRejectGuards();
     testManifoldPruneFinalizeFollowUpGuards();
+    testContactBufferPreflightGuards();
+    testNarrowphaseDispatchPreflightGuards();
     testFrictionBasisFollowUpRejectGuards();
 
     if (g_failures == 0) {
