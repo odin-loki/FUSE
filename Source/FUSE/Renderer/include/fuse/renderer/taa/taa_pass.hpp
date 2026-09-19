@@ -132,6 +132,10 @@ public:
     /// Frames remaining before temporal reuse — 0 when warmed (B5.9 deepen).
     /// True when pass history buffers are allocated and ready for resolve (B5.9 deepen).
     bool historyReadyForResolve() const;
+    /// True when pass history still needs its first resolve frame (B5.9 deepen).
+    bool preflightHistoryWarmup(TaaHistoryWarmupRejectReason* reason = nullptr) const;
+    /// Early-out when pass history warm-up is complete or not ready (B5.9 deepen).
+    bool shouldSkipHistoryWarmup() const;
     /// True when pass history is warmed and may be sampled (B5.9 deepen).
     bool canReuseHistory() const;
     /// True when pass history is ready, warmed, and generation matches for reuse (B5.9 deepen).
@@ -394,6 +398,13 @@ public:
     /// Alias for `shouldSkipResolveBlend` — same ordering as blend preflight (B5.9 deepen).
     bool wouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// Early-out when pass jitter NDC production would be blocked (B5.9 deepen).
+    bool resolveBlendWeightsReady(const TaaResolveDesc& desc) const;
+    /// Early-out when resolve would apply a non-zero history blend weight (B5.9 deepen).
+    bool shouldSkipResolveHistoryBlend(const TaaResolveDesc& desc) const;
+    /// Early-out when pass jitter sync to `frameIndex` would be rejected (B5.9 deepen).
+    /// Early-out when pass jitter NDC production would be rejected (B5.9 deepen).
+    /// True when pass jitter can advance (B5.9 deepen).
+    /// Early-out when pass jitter advance would be rejected (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

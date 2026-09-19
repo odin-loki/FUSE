@@ -1182,6 +1182,22 @@ bool shouldSkipTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffe
     return !preflightTaaResolveFrame(desc, history);
 }
 
+bool taaResolveBlendWeightsReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolveBlendWeights(desc, history);
+}
+
+bool shouldSkipTaaResolveHistoryBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !taaResolveAppliesHistoryBlend(desc, history);
+}
+
+bool tryPreflightTaaResolveHistoryBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                        TaaResolveBlendRejectReason& reason) {
+    if (!preflightTaaResolveBlendWeights(desc, history, &reason)) {
+        return false;
+    }
+    return taaResolveAppliesHistoryBlend(desc, history);
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
     if (taaResolveBypassesHistoryGenerationGuard(desc)) {

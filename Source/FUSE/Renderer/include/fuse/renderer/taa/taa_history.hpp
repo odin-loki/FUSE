@@ -44,6 +44,7 @@ public:
     /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
     u32 warmupFramesRemaining() const;
     /// True when history warm-up is complete (B5.9 deepen).
+    /// True when history has completed warm-up and may be temporally reused (B5.9 deepen).
     bool warmupComplete() const;
     /// True when history is ready, warmed, and generation matches for reuse (B5.9 deepen).
     bool reuseReady(u32 observedGeneration) const;
