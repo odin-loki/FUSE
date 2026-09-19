@@ -8,6 +8,41 @@
 
 namespace fuse::physics {
 
+/// Input coverage for contact island graph build (out-of-range body-index guards).
+struct ContactIslandBuildStats {
+    u32 bodyCount = 0;
+    u32 contactSlotCount = 0;
+    u32 distanceSlotCount = 0;
+    u32 validContactCount = 0;
+    u32 inRangeContactCount = 0;
+    u32 inRangeDistanceCount = 0;
+    u32 outOfRangeContactBodyCount = 0;
+    u32 outOfRangeDistanceBodyCount = 0;
+};
+
+/// Preflight diagnostics for contact island graph build inputs (B4.4 deepen).
+struct ContactIslandBuildPreflight {
+    ContactIslandBuildStats stats{};
+    bool skipped = false;
+
+    bool has_unsafe_refs() const {
+        return stats.outOfRangeContactBodyCount > 0u || stats.outOfRangeDistanceBodyCount > 0u;
+    }
+
+    bool can_build() const { return !skipped && !has_unsafe_refs(); }
+};
+
+/// Preflight contact island graph build inputs; sets `skipped` when nothing can partition.
+ContactIslandBuildPreflight preflight_contact_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Early-out guard when build inputs cannot form any constrained partition.
+bool should_skip_contact_island_build(u32 bodyCount,
+                                      const std::vector<narrowphase::ContactManifold>& contacts,
+                                      const std::vector<DistanceConstraint>& distanceConstraints);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
@@ -24,6 +59,11 @@ struct ContactIslandGraph {
     void build(u32 bodyCount,
                const std::vector<narrowphase::ContactManifold>& contacts,
                const std::vector<DistanceConstraint>& distanceConstraints);
+
+    /// Guarded build; returns false and clears when preflight skips build.
+    bool buildGuarded(u32 bodyCount,
+                      const std::vector<narrowphase::ContactManifold>& contacts,
+                      const std::vector<DistanceConstraint>& distanceConstraints);
 
     void clear();
 
