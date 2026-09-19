@@ -499,3 +499,13 @@ PairBufferSlotReservationPreflight preflightPairBufferSlotReservation(
 
 // --- deepen additive from deepen-b4-broadphase-guards-c372 ---
     bool needsWork() const { return reason == PairBufferCompactAndClampRejectReason::None; }
+
+// --- deepen additive from deepen-b4-broadphase-guards-15cc ---
+enum class PairBufferMergeIntoRejectReason : u8 {
+const char* pairBufferMergeIntoRejectReasonName(PairBufferMergeIntoRejectReason reason);
+PairBufferMergeIntoRejectReason pairBufferMergeIntoRejectReason(
+    PairBufferMergeIntoRejectReason expected);
+struct PairBufferMergeIntoPreflight {
+    PairBufferMergeIntoRejectReason reason = PairBufferMergeIntoRejectReason::None;
+    bool canMerge() const { return reason == PairBufferMergeIntoRejectReason::None; }
+PairBufferMergeIntoPreflight preflightPairBufferMergeInto(const PairBufferSoA& buffer, u32 pairCount);

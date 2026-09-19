@@ -1304,3 +1304,18 @@ FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp(const CellRang
 FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
     return !preflightCellSpanClamp(range, maxSpanPerAxis).needsClamp();
     return preflightCellSpanClamp(range, maxSpanPerAxis).needsClamp();
+
+// --- deepen additive from deepen-b4-broadphase-guards-15cc ---
+        return CellSpanClampRejectReason::UnboundedSpan;
+    bool canClamp() const { return reason == CellSpanClampRejectReason::None; }
+    preflight.unboundedSpan = preflight.reason == CellSpanClampRejectReason::UnboundedSpan;
+    return !preflightCellSpanClamp(range, maxSpanPerAxis).canClamp();
+    return preflightCellSpanClamp(range, maxSpanPerAxis).canClamp();
+enum class BroadphaseMergeIntoBufferRejectReason : u8 {
+const char* mergeIntoBufferBroadphaseRejectReasonName(BroadphaseMergeIntoBufferRejectReason reason);
+BroadphaseMergeIntoBufferRejectReason mergeIntoBufferBroadphaseRejectReason(
+    BroadphaseMergeIntoBufferRejectReason expected);
+struct BroadphaseMergeIntoBufferPreflight {
+    BroadphaseMergeIntoBufferRejectReason reason = BroadphaseMergeIntoBufferRejectReason::None;
+    bool canMerge() const { return reason == BroadphaseMergeIntoBufferRejectReason::None; }
+BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(

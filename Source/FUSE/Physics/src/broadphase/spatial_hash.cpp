@@ -1203,3 +1203,23 @@ const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason) {
     case CellSpanClampRejectReason::EmptyRange:
     case CellSpanClampRejectReason::WithinSpanLimit:
     case CellSpanClampRejectReason::UnlimitedSpan:
+
+// --- deepen additive from deepen-b4-broadphase-guards-15cc ---
+    case CellSpanClampRejectReason::UnboundedSpan:
+const char* mergeIntoBufferBroadphaseRejectReasonName(BroadphaseMergeIntoBufferRejectReason reason) {
+    case BroadphaseMergeIntoBufferRejectReason::None:
+    case BroadphaseMergeIntoBufferRejectReason::SceneNotMergeable:
+    case BroadphaseMergeIntoBufferRejectReason::BufferFull:
+BroadphaseMergeIntoBufferRejectReason mergeIntoBufferBroadphaseRejectReason(
+        return BroadphaseMergeIntoBufferRejectReason::SceneNotMergeable;
+        return BroadphaseMergeIntoBufferRejectReason::BufferFull;
+    return BroadphaseMergeIntoBufferRejectReason::None;
+    BroadphaseMergeIntoBufferRejectReason expected) {
+    return mergeIntoBufferBroadphaseRejectReason(bodies, shapes, buffer) == expected;
+BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
+    BroadphaseMergeIntoBufferPreflight preflight{};
+    preflight.reason = mergeIntoBufferBroadphaseRejectReason(bodies, shapes, buffer);
+        preflight.reason == BroadphaseMergeIntoBufferRejectReason::SceneNotMergeable;
+    preflight.bufferFull = preflight.reason == BroadphaseMergeIntoBufferRejectReason::BufferFull;
+    return !preflightBroadphaseMergeIntoBuffer(bodies, shapes, buffer).canMerge();
+    return preflightBroadphaseMergeIntoBuffer(bodies, shapes, buffer).canMerge();
