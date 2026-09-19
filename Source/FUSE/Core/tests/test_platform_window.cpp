@@ -1404,3 +1404,7 @@ int main() {
 // --- deepen additive from deepen-b17-eventpump-peek-stats-4ba6 ---
 void testEventPumpPeekEventTypeMatchesEmptyQueueGuard() {
 void testEventPumpCoalesceRejectsZeroDimensionIncoming() {
+
+// --- deepen additive from deepen-eventpump-peek-resize-guards-1448 ---
+void testEventPumpCountPendingEventsOfTypeEmptyQueueGuard() {
+void testEventPumpCoalesceInvalidDimensionGuard() {
