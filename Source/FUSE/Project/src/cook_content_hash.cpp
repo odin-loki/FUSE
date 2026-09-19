@@ -1,5 +1,7 @@
 #include <fuse/project/cook_content_hash.hpp>
 
+#include <fuse/project/cook_cache.hpp>
+
 #include <filesystem>
 #include <fstream>
 
@@ -185,6 +187,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "empty_dependency_list";
     case CookHashRejectReason::ZeroSourceHash:
         return "zero_source_hash";
+    case CookHashRejectReason::InvalidCacheEntry:
+        return "invalid_cache_entry";
     }
     return "unknown";
 }
@@ -321,6 +325,30 @@ CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
 CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     (void)upstream_hash;
     return preflight_cook_cache_key(source_hash, upstream_hash);
+}
+
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+    if (entry.source_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (entry.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+    if (!is_valid_cook_cache_entry(entry)) {
+        preflight.reason = CookHashRejectReason::InvalidCacheEntry;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
 }
 
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
