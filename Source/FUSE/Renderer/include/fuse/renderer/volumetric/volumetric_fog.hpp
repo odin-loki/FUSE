@@ -209,6 +209,9 @@ enum class FroxelTrilinearSampleRejectReason : u8 {
     HardOutOfBounds,
     InvalidWeights,
     GridInaccessible,
+/// Why coord-based froxel trilinear sampling preflight rejected the request (B5.11 deepen).
+    DescMismatch,
+    EmptyStorage,
 };
 
 /// Human-readable label for trilinear sample reject reasons (logging / tests).
@@ -477,6 +480,10 @@ struct FroxelGridLayout {
     /// Classify sample-coord reject — same ordering as `tryPreflightSampleCoords` (B5.11 deepen).
     /// Classify why sample-coord preflight would reject or warn (B5.11 deepen).
     /// Sample-coord preflight with optional reject-reason output (B5.11 deepen).
+    /// True when slice corners or `tz` exceed grid bounds or lie outside [0, 1].
+    static bool isTrilinearSliceOutOfRange(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+    /// True when slice interpolation would be clamped before trilinear sampling.
+    /// Strict sample-coord validation; false on empty desc, hard OOB corners, or invalid weights.
 };
 
 /// Why screen-depth → sample-coord mapping rejected the request (B5.11 deepen).
@@ -1041,6 +1048,9 @@ SampleCoordRejectReason classifyTrilinearSampleReject(const FroxelDensityGrid& g
                                  SampleCoordRejectReason& reason);
 /// Early-out when trilinear sample preflight would reject (B5.11 deepen).
 bool shouldSkipTrilinearSample(const FroxelDensityGrid& grid,
+/// Early-out when trilinear sampling should be skipped for inaccessible storage or hard OOB coords.
+bool shouldSkipFroxelTrilinearSample(const FroxelDensityGrid& grid,
+/// Combined grid + sample-coord trilinear preflight with reject-reason diagnostics.
 /// True when at least one froxel exceeds `epsilon`; false when storage is empty.
 bool hasNonZeroDensity(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Early-out when the grid is inaccessible or uniformly below `epsilon`.
@@ -1120,6 +1130,7 @@ bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
                                    const FroxelGridDesc& desc,
                                    GridDensityRejectReason& outReason,
 /// Diagnose density validation against the clamped froxel count derived from `desc`.
+/// Diagnose density validation against `desc`; vacuously succeeds when `desc` is empty.
 /// Diagnose the first density invariant that fails; vacuously succeeds when `desc` is empty.
 bool tryValidateGridDensity(const FroxelDensityGrid& grid,
                             GridDensityRejectReason& outReason,
@@ -1142,6 +1153,12 @@ bool tryValidateSampleCoords(const FroxelSampleCoords& coords,
                              SampleCoordBoundsRejectReason& outReason);
 /// Validate density counts against the clamped froxel count derived from `desc`.
 bool validateDensityCountsForDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon = 1e-6f);
+/// Non-zero froxel count using the clamped froxel count derived from `desc`; returns 0 on mismatch.
+u32 countNonZeroFroxelsForDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon = 1e-6f);
+/// Empty froxel count using the clamped froxel count derived from `desc`; returns froxelCount on mismatch.
+u32 countEmptyFroxelsForDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon = 1e-6f);
+/// True when grid is accessible but every froxel is at or below `epsilon`.
+bool isDensityFullyEmpty(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon = 1e-6f);
 /// Read density with guard preflight; returns false when `canLookupAtIndex` would reject the request.
 bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
                              u32 index,
@@ -1410,8 +1427,8 @@ bool trySampleDensityAtScreen(const FroxelDensityGrid& grid,
                               f32& outDensity,
                               ScreenMappingRejectReason& outScreenReason,
                               FroxelTrilinearSampleRejectReason& outReason);
-                              ScreenMappingRejectReason& outMapReason,
-                              SampleCoordRejectReason& outSampleReason);
+/// Screen-depth → density lookup with lookup reject-reason diagnostics.
+bool tryLookupDensityFromScreen(const FroxelDensityGrid& grid,
 void populateFromAnalyticFog(FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              const FroxelCameraDesc& camera,
@@ -1453,6 +1470,8 @@ bool preflightFroxelPopulate(const FroxelGridDesc& desc,
                                 const VolumetricFogParams& params);
 /// Grid-only populate preflight without reject-reason diagnostics.
 bool canPreflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+/// True when `desc` has a non-zero clamped froxel count (populate preflight wrapper).
+bool canPopulateFromAnalyticFogForDesc(const FroxelGridDesc& desc);
 /// Diagnose why analytic populate would skip meaningful fill.
 bool tryCanPopulateFromAnalyticFog(const FroxelGridDesc& desc,
                                    FroxelPopulateRejectReason& outReason);
