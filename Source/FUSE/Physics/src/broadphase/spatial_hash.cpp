@@ -2826,6 +2826,7 @@ bool wouldSkipRefineBroadphase(
 bool wouldSkipRefineBroadphase(const RigidBodySoA& bodies,
     const RefineBroadphaseRejectReason reject = refineBroadphaseRejectReason(bodies, shapes, buffer);
         *reason = reject;
+    return reject != RefineBroadphaseRejectReason::None;
 
 DedupeBroadphaseRejectReason dedupeBroadphaseRejectReason(const PairBufferSoA& buffer) {
     if (buffer.canSkipSoAIteration()) {
@@ -3032,7 +3033,7 @@ bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer) {
 
     const DedupeBroadphaseRejectReason reject = dedupeBroadphaseRejectReason(buffer);
         *reason = reject;
-    }
+    return reject != DedupeBroadphaseRejectReason::None;
 
 BroadphaseMergePreflight preflightBroadphaseMerge(
     const RigidBodySoA& bodies,
@@ -3590,6 +3591,17 @@ bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies,
         *reason = rejectReason;
     }
     return rejectReason != BroadphaseMergeRejectReason::None;
+}
+
+bool wouldSkipBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason* reason) {
+    const BroadphaseMergeRejectReason reject = mergeBroadphaseRejectReason(bodies, shapes);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject != BroadphaseMergeRejectReason::None;
 }
 
 const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReason reason) {
@@ -4750,6 +4762,7 @@ bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, cons
 bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs,
     const MergePairsIntoBufferRejectReason reject = mergePairsIntoBufferRejectReason(pairs, buffer);
         *reason = reject;
+    return reject != MergePairsIntoBufferRejectReason::None;
 
 void refineBroadphasePairsParallel(
     const RigidBodySoA& bodies,
