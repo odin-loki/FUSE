@@ -3493,3 +3493,28 @@ void testTaaPassWarmupAndJitterReadyGuards() {
                "pass preflightJitterNdc reject reason is None before init");
     expectTrue(!zeroPass->preflightJitterNdc(&rejectReason),
                "zero-width pass preflightJitterNdc reject reason is InvalidViewport");
+
+// --- deepen additive from deepen-b59-taa-guards-ceb9 ---
+    expectTrue(std::strcmp(fuse::renderer::taaHistoryWarmupRejectReasonLabel(
+                               fuse::renderer::TaaHistoryWarmupRejectReason::None),
+                               fuse::renderer::TaaHistoryWarmupRejectReason::NotReady),
+                               fuse::renderer::TaaHistoryWarmupRejectReason::AlreadyWarm),
+    expectTrue(fuse::renderer::classifyTaaHistoryWarmupReject(emptyHistory) ==
+                   fuse::renderer::TaaHistoryWarmupRejectReason::NotReady,
+    fuse::renderer::TaaHistoryWarmupRejectReason reason =
+        fuse::renderer::TaaHistoryWarmupRejectReason::None;
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryWarmup(emptyHistory, reason),
+               "tryPreflight warmup fails for empty history");
+    expectTrue(reason == fuse::renderer::TaaHistoryWarmupRejectReason::NotReady,
+               "tryPreflight warmup reason is NotReady for empty history");
+    expectTrue(reason == fuse::renderer::TaaHistoryWarmupRejectReason::None,
+    expectTrue(fuse::renderer::classifyTaaHistoryWarmupReject(history) ==
+                   fuse::renderer::TaaHistoryWarmupRejectReason::AlreadyWarm,
+    expectTrue(reason == fuse::renderer::TaaHistoryWarmupRejectReason::AlreadyWarm,
+void testJitterShouldSkipAndTryNdcGuards() {
+void testTaaPassWarmupAndJitterSkipGuards() {
+    fuse::renderer::TaaHistoryWarmupRejectReason warmupReason =
+    expectTrue(warmupReason == fuse::renderer::TaaHistoryWarmupRejectReason::NotReady,
+    expectTrue(pass->preflightJitterSync(4u), "pass jitter sync preflight passes before init");
+    expectTrue(pass->preflightJitterNdc(), "pass NDC jitter preflight passes before init");
+    expectTrue(!zeroPass->preflightJitterNdc(), "zero-width pass NDC preflight fails");

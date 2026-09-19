@@ -511,3 +511,6 @@ bool TaaPass::wouldSkipJitterSync(u32 frameIndex) const {
     return m_jitter.wouldSkipSyncToFrameIndex(frameIndex);
 bool TaaPass::trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason& outReason) {
     if (!m_jitter.trySyncToFrameIndexIfReady(frameIndex, outReason)) {
+
+// --- deepen additive from deepen-b59-taa-guards-ceb9 ---
+bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupRejectReason* reason) const {

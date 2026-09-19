@@ -272,3 +272,6 @@ void addTaaPassToGraph(RenderGraph& graph);
                                          TaaResolveBlendRejectReason& outReason) const;
     bool wouldSkipJitterSync(u32 frameIndex) const;
     bool trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason& outReason);
+
+// --- deepen additive from deepen-b59-taa-guards-ceb9 ---
+    bool preflightHistoryWarmup(TaaHistoryWarmupRejectReason* reason = nullptr) const;

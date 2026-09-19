@@ -326,3 +326,10 @@ bool preflightTaaResolveTemporal(const TaaResolveDesc& desc, const TaaHistoryBuf
 // --- deepen additive from deepen-b59-taa-guards-614c ---
 bool wouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
 bool wouldRejectTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+
+// --- deepen additive from deepen-b59-taa-guards-ceb9 ---
+enum class TaaHistoryWarmupRejectReason : u8 {
+const char* taaHistoryWarmupRejectReasonLabel(TaaHistoryWarmupRejectReason reason);
+TaaHistoryWarmupRejectReason classifyTaaHistoryWarmupReject(const TaaHistoryBuffer& history);
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupRejectReason* reason = nullptr);
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupRejectReason& reason);

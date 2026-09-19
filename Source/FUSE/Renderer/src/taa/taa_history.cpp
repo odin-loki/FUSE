@@ -292,3 +292,20 @@ bool wouldInvalidateHistoryIfStale(const TaaHistoryBuffer& history, u32 observed
 
 // --- deepen additive from deepen-b59-taa-guards-614c ---
 bool wouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration) {
+
+// --- deepen additive from deepen-b59-taa-guards-ceb9 ---
+const char* taaHistoryWarmupRejectReasonLabel(TaaHistoryWarmupRejectReason reason) {
+    case TaaHistoryWarmupRejectReason::None:
+    case TaaHistoryWarmupRejectReason::NotReady:
+    case TaaHistoryWarmupRejectReason::AlreadyWarm:
+TaaHistoryWarmupRejectReason classifyTaaHistoryWarmupReject(const TaaHistoryBuffer& history) {
+        return TaaHistoryWarmupRejectReason::NotReady;
+        return TaaHistoryWarmupRejectReason::AlreadyWarm;
+    return TaaHistoryWarmupRejectReason::None;
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupRejectReason* reason) {
+    const TaaHistoryWarmupRejectReason reject = classifyTaaHistoryWarmupReject(history);
+    return reject == TaaHistoryWarmupRejectReason::None;
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupRejectReason& reason) {
+    reason = classifyTaaHistoryWarmupReject(history);
+    return reason == TaaHistoryWarmupRejectReason::None;
+    return !preflightTaaHistoryWarmup(history);
