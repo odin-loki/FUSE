@@ -208,6 +208,14 @@ fuse::math::Vec2 TaaJitter::currentPixelOffset() const {
     return TaaJitterLayout::haltonPixelOffset(m_index, m_sequenceLength);
 }
 
+bool TaaJitter::currentPixelOffsetIfReady(fuse::math::Vec2& out) const {
+    if (!canAdvance()) {
+        return false;
+    }
+    out = currentPixelOffset();
+    return true;
+}
+
 fuse::math::Vec2 TaaJitter::currentNdcOffset(u32 width, u32 height) const {
     if (!canProduceNdcOffset(width, height)) {
         return {};
@@ -217,6 +225,16 @@ fuse::math::Vec2 TaaJitter::currentNdcOffset(u32 width, u32 height) const {
 
 bool TaaJitter::currentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out) const {
     if (!canProduceNdcOffset(width, height)) {
+        return false;
+    }
+    out = TaaJitterLayout::haltonNdcOffset(m_index, width, height, m_sequenceLength);
+    return true;
+}
+
+bool TaaJitter::tryCurrentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out,
+                                           TaaJitterGuardRejectReason& reason) const {
+    reason = classifyTaaJitterNdcReject(width, height, m_sequenceLength);
+    if (reason != TaaJitterGuardRejectReason::None) {
         return false;
     }
     out = TaaJitterLayout::haltonNdcOffset(m_index, width, height, m_sequenceLength);
@@ -248,8 +266,26 @@ bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
     return true;
 }
 
+bool TaaJitter::trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason) {
+    reason = classifyTaaJitterSyncReject(m_sequenceLength);
+    if (reason != TaaJitterGuardRejectReason::None) {
+        return false;
+    }
+    syncToFrameIndex(frameIndex);
+    return true;
+}
+
 bool TaaJitter::advanceIfReady() {
     if (!canAdvance()) {
+        return false;
+    }
+    advance();
+    return true;
+}
+
+bool TaaJitter::tryAdvanceIfReady(TaaJitterGuardRejectReason& reason) {
+    reason = classifyTaaJitterAdvanceReject(m_sequenceLength);
+    if (reason != TaaJitterGuardRejectReason::None) {
         return false;
     }
     advance();

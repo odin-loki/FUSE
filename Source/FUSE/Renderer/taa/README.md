@@ -23,12 +23,18 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaJitterLayout::fillHaltonSequence(length, out)` — fills a Halton (2,3) table; returns false on null/invalid length
 - `TaaJitter` honours `TaaJitterDesc::sequence_length` (default 8) when advancing and wrapping
 - `TaaJitter::syncToFrameIndex(frame)` — align jitter state to a wrapped monotonic frame counter
+- `TaaJitter::trySyncToFrameIndexIfReady(frame, reason)` — sync with reject-reason diagnostics
+- `TaaJitter::tryAdvanceIfReady(reason)` — advance with reject-reason diagnostics
+- `TaaJitter::currentPixelOffsetIfReady(out)` — pixel offset only when sequence is valid
+- `TaaJitter::tryCurrentNdcOffsetIfReady(w, h, out, reason)` — NDC offset with reject-reason diagnostics
 - `TaaJitter::monotonicFrameIndex()` — monotonic frame counter incremented by `advance`, set by `syncToFrameIndex`
 
 ## History validity (B5.9 deepen)
 
 - `TaaHistoryBuffer::hasValidHistory()` — false until the first successful resolve
 - `TaaHistoryBuffer::needsWarmup()` — inverse of `hasValidHistory` for resolve warm-up gating
+- `taaHistoryWarmupReady(history)` / `preflightTaaHistoryWarmup` / `tryPreflightTaaHistoryWarmup` — warmup preflight guards
+- `taaHistoryResolveReady(history)` / `preflightTaaHistoryReadyForResolve` — resolve-readiness preflight guards
 - `TaaHistoryBuffer::accumulatedFrames()` — monotonic frame counter reset on invalidate/resize
 - `TaaHistoryBuffer::invalidateGeneration()` — bumped on invalidate/resize for stale-history detection
 - `TaaHistoryBuffer::isHistoryStale(observedGeneration)` — true when a consumer's epoch differs from current history
@@ -59,6 +65,10 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::historyInvalidateGeneration()` — current history invalidate epoch
 - `TaaPass::stampObservedHistoryGeneration(desc)` — stamp observed generation from pass history
 - `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter
+- `TaaPass::trySyncJitterToFrameIndexIfReady(frame, reason)` / `tryAdvanceJitterIfReady(reason)` — jitter sync/advance with diagnostics
+- `TaaPass::tryPreflightHistoryWarmup` / `tryPreflightHistoryReuse` / `tryPreflightHistoryReadyForResolve` — history guard try-preflights
+- `TaaPass::tryPreflightResolveBlendWeights` / `tryPreflightResolve` — resolve blend and resolve try-preflights
+- `TaaPass::shouldSkipJitterAdvance()` — early-out when jitter advance preflight would reject
 
 ## Pipeline (stub)
 
