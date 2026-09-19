@@ -1451,3 +1451,17 @@ void testPreflightHrtfSpatialPan() {
     const fuse::audio::HrtfPanPathPreflight co_located =
     expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling_apply(
     expectTrue(!fuse::audio::should_skip_hrtf_attenuation_coupling_apply(
+
+// --- deepen additive from deepen-hrtf-preflights-981f ---
+    expectTrue(malformed_preflight.reason == fuse::audio::HrtfIrRejectReason::ZeroLength,
+    fuse::audio::HrtfIrRejectReason reason = fuse::audio::HrtfIrRejectReason::None;
+    expectTrue(reason == fuse::audio::HrtfIrRejectReason::None, "bool preflight reason is None");
+    expectTrue(convolution.reject_reason == fuse::audio::HrtfPanPathRejectReason::None,
+    expectTrue(disabled.reject_reason == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
+    expectTrue(co_located.reject_reason == fuse::audio::HrtfPanPathRejectReason::CoLocated,
+    fuse::audio::HrtfPanPathRejectReason reason = fuse::audio::HrtfPanPathRejectReason::None;
+    expectTrue(reason == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
+    expectTrue(narrowed.reject_reason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+    const fuse::audio::HrtfAttenuationCouplingPreflight bypassed =
+        fuse::audio::HrtfAttenuationCouplingRejectReason::None;
+    expectTrue(reason == fuse::audio::HrtfAttenuationCouplingRejectReason::PanBypassed,

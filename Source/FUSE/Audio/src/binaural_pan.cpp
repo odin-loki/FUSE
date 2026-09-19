@@ -956,3 +956,20 @@ bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
     if (reason == HrtfIrRejectReason::None) {
 bool should_skip_hrtf_attenuation_coupling_apply(HrtfPanPath path, float distance_attenuation,
     const HrtfAttenuationCouplingPreflight preflight =
+
+// --- deepen additive from deepen-hrtf-preflights-981f ---
+HrtfIrRejectReason classify_hrtf_ir_reject(const HrtfIrStub& ir) {
+HrtfIrPreflight make_hrtf_ir_preflight(const HrtfIrStub& ir) {
+bool preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason* reason) {
+    const HrtfIrPreflight preflight = make_hrtf_ir_preflight(ir);
+HrtfPanPathRejectReason classify_hrtf_pan_path_reject(bool hrtf_enabled,
+HrtfPanPathPreflight make_hrtf_pan_path_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+    const HrtfPanPathPreflight preflight =
+    case HrtfAttenuationCouplingRejectReason::PanBypassed:
+HrtfAttenuationCouplingRejectReason classify_hrtf_attenuation_coupling_reject(
+        return HrtfAttenuationCouplingRejectReason::PanBypassed;
+HrtfAttenuationCouplingPreflight make_hrtf_attenuation_coupling_preflight(
+    preflight.bypass_path = should_skip_hrtf_attenuation_coupling(path);
+        && should_skip_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params);
+    preflight.skipped = preflight.reject_reason != HrtfAttenuationCouplingRejectReason::None;
+                                        HrtfAttenuationCouplingRejectReason* reason,

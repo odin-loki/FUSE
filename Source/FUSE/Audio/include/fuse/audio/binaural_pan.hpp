@@ -643,3 +643,13 @@ enum class HrtfIrRejectReason {
 enum class HrtfPanPathSkipReason {
 enum class HrtfAttenuationCouplingSkipReason {
 bool should_skip_hrtf_attenuation_coupling_apply(HrtfPanPath path, float distance_attenuation,
+
+// --- deepen additive from deepen-hrtf-preflights-981f ---
+HrtfIrRejectReason classify_hrtf_ir_reject(const HrtfIrStub& ir);
+bool preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason* reason);
+HrtfPanPathRejectReason classify_hrtf_pan_path_reject(bool hrtf_enabled, const Vec3& rel_listener);
+    HrtfPanPathRejectReason reject_reason = HrtfPanPathRejectReason::None;
+                              HrtfPanPathRejectReason* reason);
+HrtfAttenuationCouplingRejectReason classify_hrtf_attenuation_coupling_reject(
+    HrtfAttenuationCouplingRejectReason reject_reason = HrtfAttenuationCouplingRejectReason::None;
+                                        HrtfAttenuationCouplingRejectReason* reason,
