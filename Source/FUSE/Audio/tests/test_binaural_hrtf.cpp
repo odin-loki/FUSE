@@ -1561,3 +1561,10 @@ void testHrtfGuardedPanPreflight() {
     const fuse::audio::HrtfGuardedPanPreflight unity =
     expectTrue(unity.should_skip_coupling(), "unity attenuation skips bundled coupling");
     testHrtfGuardedPanPreflight();
+
+// --- deepen additive from deepen-b7-2-hrtf-composite-preflights-84ae ---
+void testHrtfBinauralCompositePreflight() {
+    const fuse::audio::HrtfBinauralPreflight disabled_preflight =
+    const fuse::audio::HrtfBinauralPreflight for_path_preflight =
+    const fuse::audio::HrtfBinauralPreflight bypass_for_path =
+    testHrtfBinauralCompositePreflight();

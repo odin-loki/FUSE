@@ -1030,3 +1030,11 @@ HrtfAttenuationCouplingPreflight preflightHrtfAttenuationCoupling(
 // --- deepen additive from deepen-b72-hrtf-preflight-guards-f1c9 ---
 HrtfGuardedPanPreflight preflight_hrtf_guarded_pan(bool hrtf_enabled, const HrtfIrStub& ir,
     HrtfGuardedPanPreflight preflight;
+
+// --- deepen additive from deepen-b7-2-hrtf-composite-preflights-84ae ---
+HrtfBinauralPreflight preflight_hrtf_binaural_for_path(HrtfPanPath path, const HrtfIrStub& ir,
+    preflight.panPath.skipped = should_skip_hrtf_pan_path(path);
+HrtfBinauralPreflight preflight_hrtf_binaural_for_path(HrtfPanPath path, float distance_attenuation,
+bool can_apply_binaural_hrtf_pan(const HrtfBinauralPreflight& preflight) {
+bool can_convolve_binaural_hrtf(const HrtfBinauralPreflight& preflight) {
+bool can_narrow_binaural_hrtf_spatial_image(const HrtfBinauralPreflight& preflight) {

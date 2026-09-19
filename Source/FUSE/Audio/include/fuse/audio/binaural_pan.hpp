@@ -705,3 +705,11 @@ struct HrtfGuardedPanPreflight {
     HrtfPanPathPreflight pan_path{};
     [[nodiscard]] bool should_skip_coupling() const { return coupling.should_skip(); }
 HrtfGuardedPanPreflight preflight_hrtf_guarded_pan(bool hrtf_enabled, const HrtfIrStub& ir,
+
+// --- deepen additive from deepen-b7-2-hrtf-composite-preflights-84ae ---
+    HrtfAttenuationCouplingPreflight attenuation{};
+HrtfBinauralPreflight preflight_hrtf_binaural_for_path(HrtfPanPath path, const HrtfIrStub& ir,
+HrtfBinauralPreflight preflight_hrtf_binaural_for_path(HrtfPanPath path, float distance_attenuation,
+bool can_apply_binaural_hrtf_pan(const HrtfBinauralPreflight& preflight);
+bool can_convolve_binaural_hrtf(const HrtfBinauralPreflight& preflight);
+bool can_narrow_binaural_hrtf_spatial_image(const HrtfBinauralPreflight& preflight);
