@@ -2394,3 +2394,11 @@ bool probeSchedulePreflight(u32 probe_count,
     return probeSchedulePreflight(probe_count, max_indices, out_indices, out_count, reason);
 bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, const u32* out_count) {
     if (!probeSchedulePreflight(probe_count, max_indices, out_indices, out_count, outReason)) {
+
+// --- deepen additive from deepen-ddgi-guards-eb89 ---
+    case ProbeSampleCoordsRejectReason::NonSampleableGrid:
+        outReason = ProbeSampleCoordsRejectReason::NonSampleableGrid;
+    case ProbeKernelRejectReason::NullBlendSurfaces:
+    return tryValidateProbeBlendKernelSurfaces(params, reason);
+bool tryValidateProbeBlendKernelSurfaces(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
+        outReason = ProbeKernelRejectReason::NullBlendSurfaces;

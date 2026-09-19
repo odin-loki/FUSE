@@ -124,3 +124,6 @@ bool tryCanLaunchProbeTraceKernelWithResources(const DDGIKernelParams& params,
                                                ProbeKernelRejectReason& outLaunchReason,
                                                ProbeKernelResourceRejectReason& outResourceReason);
 bool tryCanLaunchProbeBlendKernelWithResources(const DDGIKernelParams& params,
+
+// --- deepen additive from deepen-ddgi-guards-eb89 ---
+bool tryValidateProbeBlendKernelSurfaces(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);

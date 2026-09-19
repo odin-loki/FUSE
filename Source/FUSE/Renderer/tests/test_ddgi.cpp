@@ -2725,3 +2725,13 @@ void testCacheLookupRejectReasons() {
                "tryLaunch blend rejects null probe indices");
                "tryLaunch blend null indices reports null_probe_indices reason");
     testCacheLookupRejectReasons();
+
+// --- deepen additive from deepen-ddgi-guards-eb89 ---
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::NonSampleableGrid,
+    expectTrue(std::strcmp(fuse::renderer::probeSampleCoordsRejectReasonLabel(reason), "non_sampleable_grid") == 0,
+    expectTrue(!fuse::renderer::gi::tryValidateProbeBlendKernelSurfaces(nullSurfaces, reason),
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::NullBlendSurfaces,
+    expectTrue(std::strcmp(fuse::renderer::gi::probeKernelRejectReasonLabel(reason), "null_blend_surfaces") == 0,
+    expectTrue(fuse::renderer::gi::tryCanLaunchProbeBlendKernel(nullSurfaces, reason),
+    expectTrue(count == 4u, "trySchedule writes scheduled count");
+               "wouldSkipProbeSchedule false for schedulable inputs");
