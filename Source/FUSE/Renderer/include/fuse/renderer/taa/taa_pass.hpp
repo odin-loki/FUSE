@@ -284,6 +284,8 @@ public:
     /// History reuse preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const;
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
+    /// History resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& reason) const;
     /// True when expected resolve blend weights pass validation and reuse policy (B5.9 deepen).
     bool preflightResolveBlendWeights(const TaaResolveDesc& desc,
                                       TaaResolveBlendRejectReason* reason = nullptr) const;
@@ -377,6 +379,14 @@ public:
     /// Classify why pass jitter sync to a frame counter would be rejected (B5.9 deepen).
     /// Classify why pass jitter sync to `frameIndex` would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterSyncReject(u32 frameIndex) const;
+    /// Classify why jitter sync to a frame counter would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
+    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
+    /// Classify why NDC jitter production would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterNdcReject() const;
+    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
     /// True when pass jitter can sync to `frameIndex` (B5.9 deepen).
     bool preflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Classify why jitter sync to a frame counter would be rejected (B5.9 deepen).
@@ -949,6 +959,7 @@ public:
     bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
     /// Preflight resolve without mutating history (B5.9 deepen).
     bool preflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
+    /// Classify why resolve would skip (B5.9 deepen).
     /// Preflight resolve without mutating history (delegates to `TaaResolve::wouldSkip`).
     bool wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
     /// Compute expected blend weights for a resolve request without mutating history (B5.9 deepen).

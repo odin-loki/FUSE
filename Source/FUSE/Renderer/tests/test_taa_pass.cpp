@@ -9440,6 +9440,9 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 
 
+
+
+
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
                "pass tryPreflightHistoryReuse fails before init");
     expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
@@ -10362,6 +10365,10 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
 
 
 
+
+
+
+
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
     bootstrapDesc.createSwapchain = false;
@@ -10709,6 +10716,10 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
 
     expectTrue(pass->tryPreflightResolve(resolveDesc, skipReason),
     expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::None,
+               "pass tryPreflightResolve passes after init");
+               "pass tryPreflightResolve skip reason is None after init");
+    expectTrue(pass->classifyResolveSkip(resolveDesc) == fuse::renderer::TaaResolveSkipReason::None,
+               "pass classifyResolveSkip is None after init");
 
     expectTrue(pass->resolveFrame(resolveDesc), "initial resolve warms pass history");
 
@@ -10740,6 +10751,16 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
     expectTrue(pass->classifyHistoryReuseBlock(0u) ==
                    fuse::renderer::TaaHistoryReuseBlockReason::StaleGeneration,
                "pass classifyHistoryReuseBlock reports StaleGeneration after invalidate");
+    expectTrue(pass->classifyHistoryReuseBlock(0u) == fuse::renderer::TaaHistoryReuseBlockReason::None,
+               "pass classifyHistoryReuseBlock is None after warmup");
+
+    expectTrue(pass->tryPreflightResolveBlendWeights(resolveDesc, blendReason),
+               "pass tryComputeResolveBlendWeights passes after warmup");
+    expectNear(weights.current, 0.3f, 1e-5f, "pass tryCompute steady current weight after warmup");
+    expectNear(weights.history, 0.7f, 1e-5f, "pass tryCompute steady history weight after warmup");
+               "pass classifyResolveBlendReject is None after warmup");
+
+               "pass classifyHistoryReuseBlock is StaleGeneration after invalidate");
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
                "pass tryPreflightHistoryReuse fails after invalidate");
     expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::StaleGeneration,
