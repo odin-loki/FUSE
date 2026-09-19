@@ -235,6 +235,10 @@ struct ChromeTraceExportPreflight {
     bool hasExportBlockers() const {
         return profilerDisabled || hasUnbalancedNesting() || flowDepthDetached
             || crossThreadFlowHandoffPending || hasUnpairedAsyncFlowsInBuffer || hasInvalidNameEvents;
+    bool hasActiveNesting() const {
+        return activeScopeNestingDepth > 0u || activeFlowNestingDepth > 0u;
+    }
+
     bool canExportSafely() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending
             && !hasUnpairedFlowEvents && !hasInvalidNameEvents;
@@ -590,63 +594,21 @@ struct NestingStatePreflight {
 
 
 
-};
 
 /// Read-only scope/async-flow nesting diagnostics — safe before recording or export.
-struct NestingAsyncFlowPreflight {
-    u32 activeScopeNestingDepth = 0;
-    u32 activeFlowNestingDepth = 0;
-    u32 openAsyncFlowCount = 0;
     u32 maxScopeNestingDepth = 0;
     u32 maxFlowNestingDepth = 0;
-    bool scopeNestingBalanced = true;
-    bool flowNestingBalanced = true;
-    bool hasOpenAsyncFlows = false;
-    bool flowDepthDetached = false;
-    bool crossThreadFlowHandoffPending = false;
 
-    bool isBalanced() const {
         return scopeNestingBalanced && flowNestingBalanced && !flowDepthDetached && !crossThreadFlowHandoffPending;
-    }
     bool hasUnbalancedNesting() const { return !scopeNestingBalanced || !flowNestingBalanced; }
-};
 
-/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
-struct ProfileScopePreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool canEnter = false;
 
-/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
-struct AsyncFlowBeginPreflight {
-    bool canBegin = false;
 
-/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
-struct AsyncFlowEndPreflight {
-    bool wouldUnderflowOpenCount = false;
-    bool canEnd = false;
-};
 
-/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
-struct ProfileScopePreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool canEnter = false;
-};
 
-/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
-struct AsyncFlowBeginPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool canBegin = false;
-};
 
-/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
-struct AsyncFlowEndPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool wouldUnderflowOpenCount = false;
-    bool canEnd = false;
+
+        return canExportSafely() && !hasInvalidNameEvents && !ringBufferFull;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -747,6 +709,7 @@ bool isAsyncFlowIdPaired(u32 flowId);
 bool hasUnpairedAsyncFlowsInBuffer();
 u32 unpairedAsyncFlowIdCount();
 bool isScopeNameBalancedInBuffer(const char* name);
+bool isNestingPreflightClean();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();

@@ -1225,6 +1225,11 @@ bool hasActiveAsyncFlowNesting() {
     return flowNestingDepth() > 0u;
 }
 
+bool isNestingPreflightClean() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !isFlowDepthDetached()
+        && !isCrossThreadFlowHandoffPending();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -2607,16 +2612,19 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
-            return true;
-        }
 
-    outEvent = ProfileEvent{};
-    return false;
 
-    if (flowId == 0u) {
 
-    const u32 total = eventCount();
-            outEvent = event;
+
+
+
+
+
+
+
+
+
+
 
 
 u32 firstEventIndex() {
@@ -3449,12 +3457,25 @@ bool isFlowPairedInBuffer(u32 flowId) {
         } else if (event.phase == EventPhase::FlowFinish) {
             ++finishCount;
     return startCount == 1u && finishCount == 1u;
-        }
 
-    std::unordered_map<u32, FlowPairCounts> counts;
-    accumulateFlowPairCounts(counts);
 
-    for (const auto& entry : counts) {
+
+
+
+    return isValidEventName(event.name) && isValidEventName(name)
+        && std::strcmp(event.name, name) == 0;
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
