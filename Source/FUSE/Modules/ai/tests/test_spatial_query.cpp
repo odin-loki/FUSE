@@ -208,7 +208,6 @@ void testRadiusFilterPolicyValidation() {
     expectTrue(!fuse::ai::is_radius_filter_policy_valid(policy),
                "zero radius policy is invalid");
 
-    policy.radius = 5.f;
     policy.minCount = 0;
     const fuse::ai::RadiusFilterPolicy normalized =
         fuse::ai::normalize_radius_filter_policy(policy);
@@ -230,6 +229,18 @@ void testCountAlliesOutsideRadius() {
                "has_ally_outside_radius false when radius covers squad");
     expectTrue(fuse::ai::count_allies_outside_radius(0, 1, 0.f, 0.f, 10.f, {}) == 0u,
                "outside count is zero for empty ally list");
+void testIsValidRadiusPolicy() {
+    expectTrue(fuse::ai::is_valid_radius_policy(policy), "positive radius and minCount is valid");
+
+    expectTrue(!fuse::ai::is_valid_radius_policy(policy), "zero radius policy is invalid");
+
+    expectTrue(!fuse::ai::is_valid_radius_policy(policy), "zero minCount policy is invalid");
+
+void testEffectiveMinCount() {
+    policy.minCount = 3;
+    expectTrue(fuse::ai::effective_min_count(policy) == 3u, "effective_min_count preserves positive minCount");
+
+    expectTrue(fuse::ai::effective_min_count(policy) == 1u, "effective_min_count defaults zero to one");
 }
 
 void testNearestAllyDistanceSq() {
@@ -296,6 +307,8 @@ int run_spatial_query_tests() {
     testHasAnyAllyInRadius();
     testAllyContextAvailable();
     testIsValidAllyRadius();
+    testIsValidRadiusPolicy();
+    testEffectiveMinCount();
     testRadiusSqFromPolicy();
     testRadiusFilterPolicyValidation();
     testCountAlliesOutsideRadius();

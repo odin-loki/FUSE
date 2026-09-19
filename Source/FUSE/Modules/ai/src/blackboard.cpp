@@ -139,6 +139,7 @@ bool BlackboardView::isFlagSet(u32 agentIndex, u32 flagIndex) const {
         return false;
     }
     return value;
+    return !isFlagEmpty(agentIndex, flagIndex);
 }
 
 } // namespace fuse::ai

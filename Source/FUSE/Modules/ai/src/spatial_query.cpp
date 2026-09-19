@@ -35,6 +35,14 @@ bool is_valid_ally_radius(float radius) {
     return radius > 0.f;
 }
 
+bool is_valid_radius_policy(const RadiusFilterPolicy& policy) {
+    return is_valid_ally_radius(policy.radius) && policy.minCount > 0;
+}
+
+u32 effective_min_count(const RadiusFilterPolicy& policy) {
+    return policy.minCount > 0 ? policy.minCount : 1u;
+}
+
 float effective_radius(const RadiusFilterPolicy& policy) {
     return clamp_radius_(policy.radius);
 }

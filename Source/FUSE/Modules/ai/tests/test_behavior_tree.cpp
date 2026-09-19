@@ -118,6 +118,10 @@ void testRegistryBuiltinNodes() {
     expectTrue(registry.hasFactory("bb.guard.blackboard_agent_valid"),
                "bb.guard.blackboard_agent_valid registered");
     expectTrue(registry.registeredTypeIds().size() >= 26u, "registry exposes built-in type ids");
+    expectTrue(registry.hasFactory("bb.guard.blackboard_flag_set"), "bb.guard.blackboard_flag_set registered");
+    expectTrue(registry.hasFactory("bb.guard.blackboard_scalar_set"), "bb.guard.blackboard_scalar_set registered");
+    expectTrue(registry.hasFactory("bb.guard.spatial_radius_valid"), "bb.guard.spatial_radius_valid registered");
+    expectTrue(registry.registeredTypeIds().size() >= 28u, "registry exposes built-in type ids");
 }
 
 void testInverterDecorator() {
@@ -1160,12 +1164,133 @@ void testBlackboardViewAgentAndFlagHelpers() {
     expectTrue(view.isScalarEmpty(0, 2) == false, "non-zero scalar is not empty");
     expectTrue(view.isScalarSet(0, 2), "non-zero scalar reads as set");
     expectTrue(!view.isScalarSet(0, 0), "zero scalar is not set");
+    expectTrue(view.isFlagSet(1, 0), "isFlagSet mirrors non-empty flag");
+    expectTrue(!view.isFlagSet(0, 0), "isFlagSet false for cleared flag");
+    expectTrue(view.isScalarEmpty(0, 1), "unset scalar reads as empty");
+    expectTrue(view.isScalarSet(0, 2), "isScalarSet true for non-zero scalar");
+    expectTrue(!view.isScalarSet(0, 1), "isScalarSet false for zero scalar");
 
     const fuse::ai::BlackboardView unbound;
     expectTrue(unbound.isBoardEmpty(), "unbound view is board empty");
     expectTrue(unbound.agentCount() == 0u, "unbound view reports zero agents");
     expectTrue(!unbound.isAgentValid(0), "unbound view rejects agent index");
     expectTrue(unbound.isFlagEmpty(0, 0), "unbound view treats flag as empty");
+    expectTrue(!unbound.isFlagSet(0, 0), "unbound view isFlagSet returns false");
+    expectTrue(!unbound.isScalarSet(0, 0), "unbound view isScalarSet returns false");
+}
+
+void testGuardBlackboardAgentValidLeaf() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.guard.blackboard_agent_valid", 0.f, 0, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, tree), "agent valid guard loads");
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(2);
+
+    const fuse::ai::BehaviorTickResult valid =
+        tree.tick(1, agent, fuse::ai::BlackboardView(board));
+    expectTrue(valid.status == fuse::ai::BehaviorStatus::Success,
+               "agent valid guard succeeds for in-range agent");
+
+    const fuse::ai::BehaviorTickResult invalid =
+        tree.tick(2, agent, fuse::ai::BlackboardView(board));
+    expectTrue(invalid.status == fuse::ai::BehaviorStatus::Failure,
+               "agent valid guard fails for out-of-range agent");
+
+    const fuse::ai::BehaviorTickResult unbound =
+        tree.tick(0, agent, fuse::ai::BlackboardView());
+    expectTrue(unbound.status == fuse::ai::BehaviorStatus::Failure,
+               "agent valid guard fails with unbound view");
+}
+
+void testGuardBlackboardFlagSetLeaf() {
+    fuse::ai::NodeLoadSpec spec;
+    spec.typeId = "bb.guard.blackboard_flag_set";
+    spec.flagIndex = 2;
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs({spec}, 0, tree), "flag set guard loads");
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult unset =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(unset.status == fuse::ai::BehaviorStatus::Failure,
+               "flag set guard fails when flag is false");
+
+    board.setFlag(0, 2, true);
+    const fuse::ai::BehaviorTickResult set =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(set.status == fuse::ai::BehaviorStatus::Success,
+               "flag set guard succeeds when flag is true");
+
+    const fuse::ai::BehaviorTickResult unbound =
+        tree.tick(0, agent, fuse::ai::BlackboardView());
+    expectTrue(unbound.status == fuse::ai::BehaviorStatus::Failure,
+               "flag set guard fails with unbound view");
+}
+
+void testGuardBlackboardScalarSetLeaf() {
+    fuse::ai::NodeLoadSpec spec;
+    spec.typeId = "bb.guard.blackboard_scalar_set";
+    spec.scalarSlot = 1;
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs({spec}, 0, tree), "scalar set guard loads");
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult unset =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(unset.status == fuse::ai::BehaviorStatus::Failure,
+               "scalar set guard fails when slot is zero");
+
+    board.setScalar(0, 1, 1.5f);
+    const fuse::ai::BehaviorTickResult set =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(set.status == fuse::ai::BehaviorStatus::Success,
+               "scalar set guard succeeds when slot is non-zero");
+
+    const fuse::ai::BehaviorTickResult unbound =
+        tree.tick(0, agent, fuse::ai::BlackboardView());
+    expectTrue(unbound.status == fuse::ai::BehaviorStatus::Failure,
+               "scalar set guard fails with unbound view");
+}
+
+void testGuardSpatialRadiusValidLeaf() {
+    const std::vector<fuse::ai::NodeLoadSpec> validSpecs = {
+        {"bb.guard.spatial_radius_valid", 5.f, 0, 1, {}, {}},
+    };
+    const std::vector<fuse::ai::NodeLoadSpec> invalidSpecs = {
+        {"bb.guard.spatial_radius_valid", 0.f, 0, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree validTree;
+    fuse::ai::BehaviorTree invalidTree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(validSpecs, 0, validTree), "spatial radius guard loads");
+    expectTrue(fuse::ai::loadTreeFromSpecs(invalidSpecs, 0, invalidTree), "zero radius guard loads");
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult valid =
+        validTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(valid.status == fuse::ai::BehaviorStatus::Success,
+               "spatial radius guard succeeds for positive radius");
+
+    const fuse::ai::BehaviorTickResult invalid =
+        invalidTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(invalid.status == fuse::ai::BehaviorStatus::Failure,
+               "spatial radius guard fails for zero radius");
 }
 
 void testGuardBlackboardAgentValidLeaf() {
@@ -1364,6 +1489,30 @@ void testParallelRequireBoardGuard() {
     expectTrue(!unbound.wroteFlag, "parallel require-board guard skips child side effects");
 }
 
+void testParallelRequireValidAgentGuard() {
+    fuse::ai::ParallelPolicy policy;
+    policy.requireValidAgent = true;
+
+    fuse::ai::BehaviorTree tree = makeParallelTree(fuse::ai::NodeKind::ActionSetFlag,
+                                                 fuse::ai::NodeKind::ActionSetFlag,
+                                                 policy);
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult valid =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(valid.status == fuse::ai::BehaviorStatus::Success,
+               "parallel require-agent guard succeeds for valid agent index");
+
+    const fuse::ai::BehaviorTickResult invalid =
+        tree.tick(1, agent, fuse::ai::BlackboardView(board));
+    expectTrue(invalid.status == fuse::ai::BehaviorStatus::Failure,
+               "parallel require-agent guard fails for out-of-range agent");
+    expectTrue(!invalid.wroteFlag, "parallel require-agent guard skips child side effects");
+}
+
 void testParallelRequireAlliesGuard() {
     fuse::ai::ParallelPolicy policy;
     policy.requireAllyContext = true;
@@ -1443,6 +1592,7 @@ void testParallelGuardTextLoader() {
 bb.action.set_flag flag=0
 bb.action.set_flag flag=1
 bb.parallel children=0,1 require_board=1 require_allies=1 require_agent=1 require_nonempty_board=1
+bb.parallel children=0,1 require_board=1 require_allies=1 require_agent=1
 root=2
 )";
 
@@ -1479,7 +1629,6 @@ void testNoAlliesInRadiusConditionLeaf() {
 
     const std::vector<fuse::ai::NodeLoadSpec> wideSpecs = {
         {"bb.condition.no_allies_in_radius", 100.f, 0, 1, {}, {}},
-    };
     fuse::ai::BehaviorTree wideTree;
     expectTrue(fuse::ai::loadTreeFromSpecs(wideSpecs, 0, wideTree), "wide no-allies tree loads");
 
@@ -1487,7 +1636,6 @@ void testNoAlliesInRadiusConditionLeaf() {
         wideTree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
     expectTrue(blocked.status == fuse::ai::BehaviorStatus::Failure,
                "no allies in radius fails when allies are within radius");
-}
 
 void testNearestAllyDistanceActionLeaf() {
     fuse::ai::NodeLoadSpec spec;
@@ -1495,20 +1643,11 @@ void testNearestAllyDistanceActionLeaf() {
     spec.flagIndex = 1;
     spec.scalarSlot = 0;
 
-    fuse::ai::BehaviorTree tree;
     expectTrue(fuse::ai::loadTreeFromSpecs({spec}, 0, tree), "nearest ally distance action loads");
 
-    fuse::ai::AgentSnapshot agent;
-    agent.teamId = 1;
-    fuse::ai::Blackboard board;
-    board.resize(1);
 
-    const std::vector<fuse::ai::AllyCandidate> allies = makeTestAllies();
-    fuse::ai::BehaviorEvalContext ctx;
-    ctx.allies = &allies;
 
     const fuse::ai::BehaviorTickResult result =
-        tree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
     expectTrue(result.status == fuse::ai::BehaviorStatus::Success,
                "nearest ally distance action succeeds");
     expectTrue(result.wroteScalar && result.scalarIndex == 0u,
@@ -1696,6 +1835,7 @@ int main() {
     testGuardBlackboardScalarSetLeaf();
     testGuardBlackboardFlagSetLeaf();
     testGuardValidAllyRadiusLeaf();
+    testGuardSpatialRadiusValidLeaf();
     testBlackboardViewAgentAndFlagHelpers();
     testGuardBlackboardAgentValidLeaf();
     testGuardValidAllyRadiusLeaf();
@@ -1703,6 +1843,7 @@ int main() {
     testAnyAllyInRadiusConditionLeaf();
     testAlliesCountActionLeaf();
     testParallelRequireBoardGuard();
+    testParallelRequireValidAgentGuard();
     testParallelRequireAlliesGuard();
     testParallelRequireValidAgentGuard();
     testParallelRequireNonEmptyBoardGuard();
