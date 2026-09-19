@@ -1033,3 +1033,8 @@ void testHistogramAccumulateInvalidParamsGuard() {
 // --- deepen additive from deepen-b510-post-tonemap-guards-2f90 ---
 void testAutoExposureParamsValidAndAdaptGuards() {
 void testHistogramPercentileAndBinGuards() {
+
+// --- deepen additive from deepen-b510-post-tonemap-01dd ---
+void testHistogramUtilAverageMeteringGuards() {
+void testAutoExposureUpdateWithParamsGuards() {
+void testTonemapCurveFilmicAndDisplayRangeGuards() {
