@@ -1911,4 +1911,31 @@ inline bool contact_pair_deepen_rejects_plane_plane(
     return is_plane_plane_contact_pair(pair, shapes) && is_unsupported_shape_pair(pair, shapes);
 }
 
+/// Returns true when extended deepen preflight allows shape dispatch (B4.6 deepen pass).
+inline bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
+/// Detect contacts only when deepen preflight allows; invalid manifold otherwise (B4.6 deepen pass).
+inline ContactManifold detect_contacts_pair_with_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
+}
+
+/// Returns true when base pair preflight allows dispatch (B4.6 deepen pass).
+inline bool should_run_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_dispatch(pair, bodies, shapes);
+}
+
 } // namespace fuse::physics::narrowphase

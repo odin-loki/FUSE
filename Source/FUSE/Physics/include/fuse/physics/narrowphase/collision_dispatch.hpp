@@ -533,5 +533,27 @@ FUSE_PHYSICS_INLINE void runNarrowphaseIntoBufferIfNeeded(
         buffer.clear();
         return;
     runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
+/// Const preflight for narrowphase batch dispatch into a contact buffer (B4.6 deepen pass).
+
+
+/// Populate dispatch preflight without running shape dispatch (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE NarrowphaseDispatchPreflight preflight_run_narrowphase(
+    NarrowphaseDispatchPreflight preflight{};
+
+/// Returns true when narrowphase batch dispatch should be skipped (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE bool can_skip_run_narrowphase(
+    return preflight_run_narrowphase(pairs, bodies, shapes).can_skip();
+
+/// Returns true when narrowphase batch dispatch may proceed (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE bool should_run_narrowphase(
+    return preflight_run_narrowphase(pairs, bodies, shapes).can_dispatch();
+
+/// Job-safe narrowphase with batch preflight early-out when all pairs are rejected (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE void runNarrowphaseIntoBufferWithPreflight(
+    const NarrowphaseDispatchPreflight preflight = preflight_run_narrowphase(pairs, bodies, shapes);
+    const u32 pairCount = static_cast<u32>(pairs.size());
+    if (!preflight.can_dispatch()) {
+        buffer.preparePairSlots(pairCount);
+        compact_and_clamp_contact_buffer_with_preflight(buffer);
 
 } // namespace fuse::physics::narrowphase

@@ -1506,6 +1506,11 @@ inline bool can_skip_finalize_contact_manifold_with_preflight(
 /// Returns true when `generate_contact_manifold_if_needed` would be a no-op (B4.6 deepen pass).
 inline bool can_skip_generate_contact_manifold_if_needed(const ContactManifold& manifold) {
     return manifold.empty() || !manifold.hasValidNormal() || !manifold.hasPenetratingPoints();
+inline bool should_run_manifold_prune(
+    return !should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+
+inline bool should_run_manifold_finalize(
+    return !can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
