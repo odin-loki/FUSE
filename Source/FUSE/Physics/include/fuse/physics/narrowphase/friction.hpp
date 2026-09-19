@@ -140,6 +140,11 @@ bool should_skip_friction_basis_preflight(
     const ContactManifold& manifold,
     f32 epsilon = 1e-4f);
 
+/// Non-mutating friction-basis rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.5 deepen pass).
+bool should_run_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
 /// Returns true when the normal must be normalized before friction-basis rebuild (B4.4 deepen pass).
 bool should_normalize_contact_normal_before_friction(
     const ContactManifold& manifold,

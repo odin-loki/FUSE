@@ -591,11 +591,45 @@ bool is_plane_plane_contact_pair(
     return typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Plane;
 }
 
+const char* narrowphase_dispatch_reject_reason_name(NarrowphaseDispatchRejectReason reason) {
+    switch (reason) {
+    case NarrowphaseDispatchRejectReason::None:
+        return "None";
+    case NarrowphaseDispatchRejectReason::EmptyPairList:
+        return "EmptyPairList";
+    case NarrowphaseDispatchRejectReason::AllPairsRejected:
+        return "AllPairsRejected";
+    }
+    return "Unknown";
+}
+
+NarrowphaseDispatchRejectReason narrowphase_dispatch_reject_reason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (pairs.empty()) {
+        return NarrowphaseDispatchRejectReason::EmptyPairList;
+    }
+    if (count_dispatchable_contact_pairs(pairs, bodies, shapes) == 0u) {
+        return NarrowphaseDispatchRejectReason::AllPairsRejected;
+    }
+    return NarrowphaseDispatchRejectReason::None;
+}
+
+bool narrowphase_dispatch_rejects_for_reason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    NarrowphaseDispatchRejectReason expected) {
+    return narrowphase_dispatch_reject_reason(pairs, bodies, shapes) == expected;
+}
+
 NarrowphaseBatchPreflight preflight_narrowphase_batch(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     NarrowphaseBatchPreflight preflight{};
+    preflight.reason = narrowphase_dispatch_reject_reason(pairs, bodies, shapes);
     preflight.pairCount = static_cast<u32>(pairs.size());
     preflight.dispatchableCount = count_dispatchable_contact_pairs(pairs, bodies, shapes);
     preflight.rejectedCount = preflight.pairCount - preflight.dispatchableCount;
@@ -607,6 +641,34 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return preflight_narrowphase_batch(pairs, bodies, shapes).can_skip();
+}
+
+bool should_run_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_dispatch(pair, bodies, shapes);
+}
+
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
+bool can_skip_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return narrowphase_batch_rejects_all(pairs, bodies, shapes);
+}
+
+bool should_run_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !can_skip_narrowphase_batch(pairs, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase
