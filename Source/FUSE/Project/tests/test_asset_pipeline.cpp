@@ -1162,6 +1162,9 @@ void testCookCacheStaleDependencyHashInvalidation() {
 void testCookCacheStaleDependencyHashEstimator() {
     const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_a.obj", "# est a\n");
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_b.obj", "# est b\n");
+void testCookCacheStaleDependencyEstimatorProbe() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_a.obj", "# estimator a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_b.obj", "# estimator b\n");
 
     fuse::project::CookManifest manifest;
 
@@ -1190,8 +1193,25 @@ void testCookCacheStaleDependencyHashEstimator() {
 
     const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
     expectTrue(removed == estimate, "dependency reconcile estimate matches actual invalidation count");
-    expectTrue(cooker.estimate_stale_dependency_hashes(manifest) == 0u,
                "clean cache estimates zero after reconcile");
+    expectTrue(batch.ok, "estimator probe seeds cache");
+
+    const fuse::project::CookCacheInvalidationProbe clean_probe =
+        cooker.estimate_stale_dependency_invalidation(manifest);
+    expectTrue(!clean_probe.would_invalidate(), "clean cache stale-dependency estimator reports no removal");
+    expectTrue(cooker.estimate_cache_reconcile().total_prunable() == 0u,
+               "clean cache reconcile estimate is zero");
+
+    writeTempFile(sourceA, "# estimator a revised\n");
+    const fuse::project::CookCacheInvalidationProbe dirty_probe =
+    expectTrue(dirty_probe.would_invalidate(), "upstream change estimator reports pending invalidation");
+    expectTrue(dirty_probe.would_invalidate_count >= 1u, "stale dependency estimator counts at least one entry");
+
+    const fuse::u64 invalidations_before = cooker.cache().stats().invalidations;
+    expectTrue(removed >= dirty_probe.would_invalidate_count,
+               "actual stale dependency invalidation meets estimator lower bound");
+    expectTrue(cooker.cache().stats().invalidations > invalidations_before,
+               "stale dependency invalidation bumps stats after estimator probe");
 }
 
 void testCookCacheUpstreamInvalidation() {
@@ -2112,6 +2132,7 @@ int main() {
     testCookCacheInvalidateChain();
     testCookCacheStaleDependencyHashInvalidation();
     testCookCacheStaleDependencyHashEstimator();
+    testCookCacheStaleDependencyEstimatorProbe();
     testCookCacheUpstreamInvalidation();
     testCookCacheRoundTrip();
     testCookCacheEmptyKeyPaths();

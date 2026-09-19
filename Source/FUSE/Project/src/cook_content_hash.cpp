@@ -369,12 +369,19 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "zero_content_hash";
     }
     return "unknown";
-}
 
 CookHashPreflight preflight_file_content_hash(const std::string& path) {
     CookHashPreflight preflight;
     if (path.empty()) {
         preflight.reason = CookHashRejectReason::EmptyPath;
+CookContentHashPreflight preflight_file_content_hash(const std::string& path) {
+    CookContentHashPreflight preflight;
+        preflight.empty_path = true;
+        return preflight;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(std::filesystem::path(path), ec)) {
+        preflight.missing_file = true;
         return preflight;
     }
 
@@ -386,142 +393,76 @@ CookHashPreflight preflight_file_content_hash(const std::string& path) {
 
     preflight.can_hash = true;
     preflight.reason = CookHashRejectReason::None;
-    return preflight;
-}
 
 CookHashPreflight preflight_mesh_import_hash(const MeshImportDesc& desc) {
     CookHashPreflight preflight;
     if (desc.input_path.empty()) {
         preflight.reason = CookHashRejectReason::EmptyInputPath;
-        return preflight;
-    }
     if (desc.output_path.empty()) {
         preflight.reason = CookHashRejectReason::EmptyOutputPath;
-        return preflight;
-    }
     return preflight_file_content_hash(desc.input_path);
-}
 
 CookHashPreflight preflight_texture_import_hash(const TextureImportDesc& desc) {
-    CookHashPreflight preflight;
-    if (desc.input_path.empty()) {
-        preflight.reason = CookHashRejectReason::EmptyInputPath;
-        return preflight;
-    }
-    if (desc.output_path.empty()) {
-        preflight.reason = CookHashRejectReason::EmptyOutputPath;
-        return preflight;
-    }
-    return preflight_file_content_hash(desc.input_path);
-}
 
 CookHashPreflight preflight_audio_import_hash(const AudioImportDesc& desc) {
-    CookHashPreflight preflight;
-    if (desc.input_path.empty()) {
-        preflight.reason = CookHashRejectReason::EmptyInputPath;
-        return preflight;
-    }
-    if (desc.output_path.empty()) {
-        preflight.reason = CookHashRejectReason::EmptyOutputPath;
-        return preflight;
-    }
-    return preflight_file_content_hash(desc.input_path);
-}
 
 CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry) {
-    CookHashPreflight preflight;
     if (entry.source_path.empty()) {
-        preflight.reason = CookHashRejectReason::EmptyInputPath;
-        return preflight;
-    }
     if (entry.output_path.empty()) {
-        preflight.reason = CookHashRejectReason::EmptyOutputPath;
-        return preflight;
-    }
     return preflight_file_content_hash(entry.source_path);
-}
 
 CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
                                                      const CookManifest& manifest) {
-    CookHashPreflight preflight;
     bool has_non_empty = false;
     for (const std::string& dependency_output : dependency_output_paths) {
         if (!dependency_output.empty()) {
             has_non_empty = true;
             break;
-        }
-    }
     if (!has_non_empty) {
         preflight.reason = CookHashRejectReason::EmptyDependencyList;
-        return preflight;
-    }
 
-    for (const std::string& dependency_output : dependency_output_paths) {
         if (dependency_output.empty()) {
             continue;
-        }
         for (const CookManifestEntry& asset : manifest.assets) {
             if (asset.output_path == dependency_output) {
                 const CookHashPreflight source_preflight = preflight_file_content_hash(asset.source_path);
                 if (!source_preflight.can_hash) {
                     return source_preflight;
-                }
-                break;
-            }
-        }
-    }
 
-    preflight.can_hash = true;
-    preflight.reason = CookHashRejectReason::None;
-    return preflight;
-}
 
 CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 /*upstream_hash*/) {
-    CookHashPreflight preflight;
     if (source_hash == 0) {
         preflight.reason = CookHashRejectReason::ZeroSourceHash;
-        return preflight;
-    }
 
-    preflight.can_hash = true;
-    preflight.reason = CookHashRejectReason::None;
-    return preflight;
-}
 
 CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
-    CookHashPreflight preflight;
     if (!is_valid_fnv1a64_input(data, size)) {
         preflight.reason = CookHashRejectReason::NullData;
-        return preflight;
-    }
 
-    preflight.can_hash = true;
-    preflight.reason = CookHashRejectReason::None;
-    return preflight;
-}
 
 CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     (void)upstream_hash;
     return preflight_cook_cache_key(source_hash, upstream_hash);
-}
 
 CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
-    CookHashPreflight preflight;
     if (!is_valid_cook_cache_key(entry.content_hash)) {
         preflight.reason = CookHashRejectReason::ZeroContentHash;
-        return preflight;
-    }
-    if (entry.source_path.empty()) {
-        preflight.reason = CookHashRejectReason::EmptyInputPath;
-        return preflight;
-    }
-    if (entry.output_path.empty()) {
-        preflight.reason = CookHashRejectReason::EmptyOutputPath;
-        return preflight;
-    }
 
-    preflight.can_hash = true;
-    preflight.reason = CookHashRejectReason::None;
+        preflight.unreadable_file = true;
+
+CookImportHashPreflight preflight_mesh_import(const MeshImportDesc& desc) {
+    CookImportHashPreflight preflight;
+        preflight.empty_input_path = true;
+        preflight.empty_output_path = true;
+    if (preflight.can_hash()) {
+        preflight.source_unhashable = !preflight_file_content_hash(desc.input_path).can_hash();
+
+CookImportHashPreflight preflight_texture_import(const TextureImportDesc& desc) {
+
+CookImportHashPreflight preflight_audio_import(const AudioImportDesc& desc) {
+
+CookImportHashPreflight preflight_manifest_entry(const CookManifestEntry& entry) {
+        preflight.source_unhashable = !preflight_file_content_hash(entry.source_path).can_hash();
     return preflight;
 }
 

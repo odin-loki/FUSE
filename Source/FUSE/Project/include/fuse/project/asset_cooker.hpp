@@ -92,6 +92,10 @@ public:
     [[nodiscard]] CookCacheReconcileEstimate estimate_invalidate_stale_dependency_hashes(
     /// Non-mutating estimate of entries `invalidate_stale_dependency_hashes` would drop (B7.9 deepen).
     [[nodiscard]] u32 estimate_stale_dependency_hashes(const CookManifest& manifest) const;
+    /// Non-destructive reconcile estimate for invalid/stale cache records (B7.9 deepen).
+    [[nodiscard]] CookCacheReconcileEstimate estimate_cache_reconcile() const;
+    /// Non-destructive estimate of stale upstream dependency invalidations (B7.9 deepen).
+    [[nodiscard]] CookCacheInvalidationProbe estimate_stale_dependency_invalidation(
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

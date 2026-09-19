@@ -61,6 +61,25 @@ const char* cookHashPreflightRejectReasonLabel(CookHashPreflightRejectReason rea
 [[nodiscard]] bool preflight_combine_cook_cache_key(u64 source_hash,
                                                     u64 upstream_hash,
 
+/// Preflight for file-content hashing — identifies empty paths and unreadable sources (B7.9 deepen).
+struct CookContentHashPreflight {
+    bool empty_path = false;
+    bool missing_file = false;
+    bool unreadable_file = false;
+
+    [[nodiscard]] bool can_hash() const { return !empty_path && !missing_file && !unreadable_file; }
+};
+
+/// Preflight for import descriptor hashing — mirrors `hash_*_import` rejection paths (B7.9 deepen).
+struct CookImportHashPreflight {
+    bool empty_input_path = false;
+    bool empty_output_path = false;
+    bool source_unhashable = false;
+
+    [[nodiscard]] bool can_hash() const {
+        return !empty_input_path && !empty_output_path && !source_unhashable;
+    }
+
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
 [[nodiscard]] u64 fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] u64 fnv1a64_combine(u64 left, u64 right);
@@ -176,5 +195,11 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 /// Structural cache-entry preflight — mirrors `is_valid_cook_cache_entry` guards (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+/// Non-destructive guards before hashing — do not alter `hash_*` return values (B7.9 deepen).
+[[nodiscard]] CookContentHashPreflight preflight_file_content_hash(const std::string& path);
+[[nodiscard]] CookImportHashPreflight preflight_mesh_import(const MeshImportDesc& desc);
+[[nodiscard]] CookImportHashPreflight preflight_texture_import(const TextureImportDesc& desc);
+[[nodiscard]] CookImportHashPreflight preflight_audio_import(const AudioImportDesc& desc);
+[[nodiscard]] CookImportHashPreflight preflight_manifest_entry(const CookManifestEntry& entry);
 
 } // namespace fuse::project

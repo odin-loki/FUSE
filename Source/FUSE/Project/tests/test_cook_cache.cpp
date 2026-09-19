@@ -946,6 +946,161 @@ void testCookImportHashPreflightGuards() {
     expectTrue(reconciled >= estimate.total_entries(),
                "actual reconcile matches or exceeds estimate");
 
+void testContentHashPreflightGuards() {
+    expectTrue(!fuse::project::is_valid_content_hash(0), "zero content hash is invalid");
+    expectTrue(fuse::project::is_valid_content_hash(42u), "non-zero content hash is valid");
+
+    const fuse::project::CookContentHashPreflight empty_path =
+        fuse::project::preflight_file_content_hash("");
+    expectTrue(empty_path.empty_path, "preflight marks empty path");
+    expectTrue(!empty_path.can_hash(), "empty path preflight cannot hash");
+
+    const fuse::project::CookContentHashPreflight missing =
+        fuse::project::preflight_file_content_hash("/tmp/fuse_b79_preflight_missing.obj");
+    expectTrue(missing.missing_file, "preflight marks missing file");
+    expectTrue(!missing.can_hash(), "missing file preflight cannot hash");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_preflight_ok.obj", "# preflight ok\n");
+    const fuse::project::CookContentHashPreflight ok = fuse::project::preflight_file_content_hash(source);
+    expectTrue(ok.can_hash(), "readable file preflight can hash");
+    expectTrue(fuse::project::is_valid_content_hash(fuse::project::hash_file_content(source)),
+               "preflight agrees with hash_file_content on valid path");
+
+    fuse::project::MeshImportDesc mesh;
+    mesh.input_path = "";
+    mesh.output_path = "/tmp/fuse_b79_preflight_mesh.fusemesh";
+    const fuse::project::CookImportHashPreflight mesh_preflight = fuse::project::preflight_mesh_import(mesh);
+    expectTrue(mesh_preflight.empty_input_path, "mesh preflight marks empty input");
+    expectTrue(!mesh_preflight.can_hash(), "mesh preflight rejects empty input");
+
+    mesh.input_path = source;
+    const fuse::project::CookImportHashPreflight mesh_ok = fuse::project::preflight_mesh_import(mesh);
+    expectTrue(mesh_ok.can_hash(), "mesh preflight accepts valid descriptor");
+    expectTrue(fuse::project::hash_mesh_import(mesh) != 0, "hash agrees with mesh preflight");
+}
+
+void testCookCachePreflightAndLookupGuards() {
+    fuse::project::CookCacheEntry invalid;
+    invalid.content_hash = 0;
+    invalid.source_path = "/tmp/fuse_b79_preflight_store.obj";
+    invalid.output_path = "/tmp/fuse_b79_preflight_store.fusemesh";
+
+    const fuse::project::CookCacheStorePreflight store_preflight =
+        fuse::project::preflight_cook_cache_store(invalid);
+    expectTrue(store_preflight.zero_content_hash, "store preflight marks zero hash");
+    expectTrue(!store_preflight.can_store(), "zero-hash entry cannot store");
+
+    fuse::project::CookCache cache;
+    const fuse::project::CookCacheLookupPreflight empty_lookup = cache.preflight_lookup(77u);
+    expectTrue(empty_lookup.cache_empty, "preflight lookup marks empty cache");
+    expectTrue(!empty_lookup.would_hit(), "empty cache preflight would miss");
+
+    fuse::project::CookCacheEntry valid = invalid;
+    valid.content_hash = 808;
+    cache.store(valid);
+    const fuse::project::CookCacheLookupPreflight hit_lookup = fuse::project::preflight_cook_cache_lookup(cache, 808u);
+    expectTrue(hit_lookup.would_hit(), "preflight lookup would hit stored entry");
+    expectTrue(cache.preflight_lookup(0).zero_content_hash, "zero-hash lookup preflight guarded");
+}
+
+void testCookCacheInvalidationProbes() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_probe_mesh.obj", "# probe mesh\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_probe_mesh.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord cooked = cooker.cook_mesh(desc);
+    expectTrue(cooked.ok, "seed cook for probe tests ok");
+
+    fuse::project::CookCache& cache = cooker.cache();
+    const fuse::u64 invalidations_before = cache.stats().invalidations;
+
+    const fuse::project::CookCacheInvalidationProbe unknown_hash = cache.probe_invalidate(cooked.content_hash + 1u);
+    expectTrue(!unknown_hash.would_invalidate(), "unknown hash probe reports no removal");
+    expectTrue(cache.stats().invalidations == invalidations_before, "probe does not bump invalidation stats");
+
+    const fuse::project::CookCacheInvalidationProbe known_hash = cache.probe_invalidate(cooked.content_hash);
+    expectTrue(known_hash.would_invalidate(), "known hash probe reports removal");
+    expectTrue(known_hash.would_invalidate_count == 1u, "known hash probe counts one entry");
+
+    const fuse::project::CookCacheInvalidationProbe source_probe = cache.probe_invalidate_source(source);
+    expectTrue(source_probe.would_invalidate_count == 1u, "source probe counts seeded entry");
+
+    const fuse::project::CookCacheInvalidationProbe stale_probe =
+        cache.probe_invalidate_stale_content_for_source(source, cooked.content_hash + 1u);
+    expectTrue(stale_probe.would_invalidate_count == 1u, "stale-content probe counts mismatched entry");
+    expectTrue(cache.probe_invalidate_stale_content_for_source(source, 0u).invalid_args,
+               "stale-content probe rejects zero current hash");
+
+    const fuse::project::CookCacheInvalidationProbe output_probe =
+        cache.probe_invalidate_output(desc.output_path);
+    expectTrue(output_probe.would_invalidate_count == 1u, "output probe counts seeded entry");
+
+    expectTrue(cache.probe_invalidate_source("").invalid_args, "empty source probe guarded");
+    expectTrue(!cache.probe_invalidate_downstream_of("", {}, {}).would_invalidate(),
+               "empty downstream probe guarded");
+}
+
+void testCookCacheReconcileEstimatorGuards() {
+    fuse::project::CookCache cache;
+    const fuse::project::CookCacheReconcileEstimate empty_estimate = cache.estimate_reconcile();
+    expectTrue(!empty_estimate.needs_reconcile(), "empty cache reconcile estimate is clean");
+    expectTrue(empty_estimate.total_prunable() == 0u, "empty cache prunable total is zero");
+    expectTrue(!cache.has_invalid_entries(), "empty cache has no invalid entries");
+    expectTrue(!cache.has_stale_entries(), "empty cache has no stale entries");
+    expectTrue(cache.count_prunable_entries() == 0u, "empty cache prunable count is zero");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_estimate_stale.obj", "# estimate v1\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_estimate_stale.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord cooked = cooker.cook_mesh(desc);
+    expectTrue(cooked.ok, "seed cook for reconcile estimate ok");
+    expectTrue(!cooker.estimate_cache_reconcile().needs_reconcile(), "fresh cache reconcile estimate is clean");
+
+    writeTempFile(source, "# estimate v2\n");
+    const fuse::project::CookCacheReconcileEstimate stale_estimate = cooker.cache().estimate_reconcile();
+    expectTrue(stale_estimate.needs_reconcile(), "stale cache reconcile estimate is dirty");
+    expectTrue(stale_estimate.stale_entry_count == 1u, "stale reconcile estimate counts one stale entry");
+    expectTrue(cooker.cache().count_prunable_entries() == 1u, "count_prunable matches reconcile estimate");
+    expectTrue(cooker.cache().has_stale_entries(), "has_stale_entries agrees with estimate");
+
+    const fuse::u32 removed = cooker.cache().prune_all();
+    expectTrue(removed == stale_estimate.total_prunable(), "prune_all removes estimated prunable count");
+    expectTrue(!cooker.estimate_cache_reconcile().needs_reconcile(), "post-prune reconcile estimate is clean");
+}
+
+void testCookCacheStaleClassificationGuards() {
+    fuse::project::CookCacheEntry invalid;
+    invalid.content_hash = 0;
+    invalid.source_path = "/tmp/fuse_b79_classify_invalid.obj";
+    invalid.output_path = "/tmp/fuse_b79_classify_invalid.fusemesh";
+    expectTrue(fuse::project::is_invalid_cook_cache_entry(invalid), "zero-key entry is invalid");
+    expectTrue(!fuse::project::is_stale_cook_cache_entry(invalid), "invalid entry is not classified stale");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_classify_stale.obj", "# classify v1\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_classify_stale.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord cooked = cooker.cook_mesh(desc);
+    expectTrue(cooked.ok, "seed cook for classification ok");
+
+    fuse::project::CookCacheEntry fresh;
+    fresh.content_hash = cooked.content_hash;
+    fresh.source_path = source;
+    fresh.output_path = desc.output_path;
+    fresh.kind = fuse::project::CookAssetKind::Mesh;
+    expectTrue(!fuse::project::is_stale_cook_cache_entry(fresh), "fresh entry is not stale");
+
+    writeTempFile(source, "# classify v2\n");
+    expectTrue(fuse::project::is_stale_cook_cache_entry(fresh), "unchanged record is stale after source edit");
+}
+
 void testCookCachePruneInvalidEntriesOnLoad() {
     const std::string source = writeTempFile("/tmp/fuse_b79_prune_load_valid.obj", "# prune load valid\n");
     fuse::project::MeshImportDesc desc;
@@ -1256,6 +1411,10 @@ int main() {
     testCookCachePruneEstimateAndProbes();
     testCookHashPreflightGuards();
     testCookCacheReconcileEstimators();
+    testContentHashPreflightGuards();
+    testCookCachePreflightAndLookupGuards();
+    testCookCacheReconcileEstimatorGuards();
+    testCookCacheStaleClassificationGuards();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
