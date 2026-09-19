@@ -117,6 +117,20 @@ FUSE_PHYSICS_INLINE bool canSkipBroadphase(
     return canSkipBroadphasePairGeneration(bodies, shapes);
 }
 
+/// Non-mutating broadphase predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
+}
+
+/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphase(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,
@@ -670,6 +684,47 @@ bool canSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA&
 
 /// Non-mutating merge predicate — mirrors `preflightBroadphaseMerge` (B4.2 deepen pass).
 bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
+
+/// Read-only merge-into-buffer diagnostics — no mutation (B4.2 deepen pass).
+struct BroadphaseMergeBufferPreflight {
+    BroadphaseMergeRejectReason sceneReason = BroadphaseMergeRejectReason::None;
+    bool emptyPlaneBodies = false;
+    bool emptyDynamicBodies = false;
+    bool bufferFull = false;
+
+    bool canMergeIntoBuffer() const {
+        return sceneReason == BroadphaseMergeRejectReason::None && !bufferFull;
+    }
+};
+
+BroadphaseMergeBufferPreflight preflightBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Non-mutating merge-into-buffer skip predicate — inverse of `canMergeIntoBuffer` (B4.2 deepen pass).
+bool canSkipBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Non-mutating merge-into-buffer predicate — mirrors `preflightBroadphaseMergeIntoBuffer` (B4.2 deepen pass).
+bool shouldRunBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Count candidate pairs that would survive refine (B4.2 deepen pass).
+u32 countRefinableBroadphasePairs(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// True when at least one pair would survive refine (B4.2 deepen pass).
+bool hasRefinableBroadphasePair(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
