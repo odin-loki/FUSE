@@ -686,3 +686,7 @@ bool should_skip_prune_contact_manifold(
 
 // --- deepen additive from b4-narrowphase-guards-deepen-ea96 ---
 bool can_dispatch_contact_pair(const ContactPairPreflight& preflight) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-5111 ---
+ContactPairDispatchPreflight preflight_contact_pair_dispatch(
+    ContactPairDispatchPreflight preflight{};

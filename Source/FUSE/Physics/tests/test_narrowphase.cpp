@@ -2045,3 +2045,23 @@ void testManifoldPruneShallowPreflightGuards() {
         !fuse::physics::narrowphase::should_skip_friction_basis_rebuild_preflight(stalePreflight),
     testContactPairPreflightDeepenGuards();
     testManifoldPruneShallowPreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-5111 ---
+void testContactPairKinematicSleepingRejectGuards() {
+void testContactPairDispatchPreflightGuards() {
+    expectTrue(validPreflight.can_dispatch(), "dispatch preflight allows valid pair");
+    expectTrue(validPreflight.has_valid_bodies, "dispatch preflight marks valid bodies");
+    expectTrue(validPreflight.has_valid_shapes, "dispatch preflight marks valid shapes");
+    expectTrue(!selfPreflight.can_dispatch(), "dispatch preflight rejects self pair");
+    expectTrue(!selfPreflight.has_valid_bodies, "self pair fails body validity");
+    expectTrue(!emptyPreflight.can_finalize(), "empty manifold cannot finalize");
+    const auto unnormalizedPreflight = fuse::physics::narrowphase::preflight_manifold_finalize(unnormalized);
+    expectTrue(unnormalizedPreflight.needsNormalization, "finalize preflight flags non-unit normal");
+    expectTrue(separatedPreflight.noPenetrating, "finalize preflight flags all-separated points");
+    expectTrue(emptyPreflight.skipped, "friction rebuild preflight skips empty manifold");
+    expectTrue(emptyPreflight.skipTangents, "friction rebuild preflight marks skip tangents");
+    expectTrue(needsPreflight.needs_rebuild(), "rebuild preflight true without cached basis");
+    expectTrue(cachedPreflight.can_skip_rebuild(), "rebuild preflight skips valid cached basis");
+    expectTrue(stalePreflight.isStale, "rebuild preflight flags stale cached basis");
+    expectTrue(stalePreflight.needs_rebuild(), "rebuild preflight requires refresh for stale basis");
+    testContactPairDispatchPreflightGuards();
