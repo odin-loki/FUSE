@@ -2473,6 +2473,11 @@ bool can_skip_manifold_prune_after_normalize(
 bool prune_and_finalize_contact_manifold(
     if (!prune_contact_manifold_if_needed(
     return finalize_contact_manifold_if_needed(
+}
+
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};

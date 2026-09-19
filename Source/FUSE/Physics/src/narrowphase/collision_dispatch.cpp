@@ -104,6 +104,11 @@ void runNarrowphaseIntoBuffer(
 
     const u32 pairCount = static_cast<u32>(pairs.size());
     const u32 pairCount = preflight.pairCount;
+    if (pairCount == 0u) {
+        buffer.preparePairSlots(0u);
+        return;
+    }
+
     buffer.preparePairSlots(pairCount);
     if (pairCount == 0u) {
         return;
@@ -130,6 +135,7 @@ void runNarrowphaseIntoBuffer(
         if (should_skip_narrowphase_pair_slot(pairs[pairIndex], bodies, shapes)) {
         if (should_skip_contact_pair_dispatch(pairs[pairIndex], bodies, shapes)) {
         if (should_skip_narrowphase_pair_slot(pairIndex, pairs[pairIndex], bodies, shapes)) {
+        if (!should_run_contact_pair_dispatch(pairs[pairIndex], bodies, shapes)) {
         }
 
         ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
@@ -211,7 +217,9 @@ void runNarrowphaseIntoBufferBeyond(
         }
     }
 
-    buffer.compactAndClamp();
+    if (should_run_contact_buffer_compact_and_clamp(buffer)) {
+        buffer.compactAndClamp();
+    }
 }
 
 bool can_skip_narrowphase_beyond(

@@ -1404,6 +1404,8 @@ bool can_skip_manifold_prune_after_normalize(
 /// Prune then finalize using preflight guards; returns false when either step fails (B4.6 deepen pass).
 bool prune_and_finalize_contact_manifold(
 
+
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
