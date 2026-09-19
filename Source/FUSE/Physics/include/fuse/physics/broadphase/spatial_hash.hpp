@@ -174,6 +174,22 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
     return preflightBroadphase(bodies, shapes).canRun();
 }
 
+/// Early-out when broadphase would reject — same ordering as `broadphaseRejectReason` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool wouldSkipBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return canSkipBroadphase(bodies, shapes);
+}
+
+/// Diagnose broadphase preflight with mandatory reject reason (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool tryPreflightBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseRejectReason& reason) {
+    reason = broadphaseRejectReason(bodies, shapes);
+    return reason == BroadphaseRejectReason::None;
+}
+
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
 FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
     return cellSize > 0.f ? cellSize : 1.f;
@@ -371,6 +387,32 @@ FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange3& range, 
 
 FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
     return !preflightCellOccupancy(range, maxCells).canIterate();
+}
+
+/// Early-out when cell occupancy iteration would reject — same ordering as `cellOccupancyRejectReason` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
+    return canSkipCellOccupancyIteration(range, maxCells);
+}
+
+FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
+    return canSkipCellOccupancyIteration(range, maxCells);
+}
+
+/// Diagnose cell-occupancy preflight with mandatory reject reason (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool tryPreflightCellOccupancy(
+    const CellRange3& range,
+    u32 maxCells,
+    CellOccupancyRejectReason& reason) {
+    reason = cellOccupancyRejectReason(range, maxCells);
+    return reason == CellOccupancyRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE bool tryPreflightCellOccupancy(
+    const CellRange2& range,
+    u32 maxCells,
+    CellOccupancyRejectReason& reason) {
+    reason = cellOccupancyRejectReason(range, maxCells);
+    return reason == CellOccupancyRejectReason::None;
 }
 
 /// Non-mutating cell-occupancy predicate — mirrors `preflightCellOccupancy` (B4.2 deepen pass).
@@ -731,6 +773,20 @@ bool shouldRunRefineBroadphase(
     const CollisionShapeSoA& shapes,
     const PairBufferSoA& buffer);
 
+/// Early-out when refine would reject — same ordering as `refineBroadphaseRejectReason` (B4.2 deepen pass).
+bool wouldSkipRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer,
+    RefineBroadphaseRejectReason* reason = nullptr);
+
+/// Diagnose refine preflight with mandatory reject reason (B4.2 deepen pass).
+bool tryPreflightRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer,
+    RefineBroadphaseRejectReason& reason);
+
 /// Why broadphase pair dedupe would early-out (B4.2 deepen follow-up pass).
 enum class DedupeBroadphaseRejectReason : u8 {
     None = 0,
@@ -763,6 +819,12 @@ bool shouldRunDedupeBroadphase(const PairBufferSoA& buffer);
 
 /// Non-mutating dedupe skip predicate — inverse of `shouldRunDedupeBroadphase` (B4.2 deepen follow-up pass).
 bool canSkipDedupeBroadphase(const PairBufferSoA& buffer);
+
+/// Early-out when dedupe would reject — same ordering as `dedupeBroadphaseRejectReason` (B4.2 deepen pass).
+bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason* reason = nullptr);
+
+/// Diagnose dedupe preflight with mandatory reject reason (B4.2 deepen pass).
+bool tryPreflightDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason& reason);
 
 /// Why plane/dynamic merge would early-out (B4.2 deepen pass).
 enum class BroadphaseMergeRejectReason : u8 {
@@ -804,6 +866,18 @@ bool canSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA&
 /// Non-mutating merge predicate — mirrors `preflightBroadphaseMerge` (B4.2 deepen pass).
 bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 
+/// Early-out when plane/dynamic merge would reject — same ordering as `mergeBroadphaseRejectReason` (B4.2 deepen pass).
+bool wouldSkipBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason* reason = nullptr);
+
+/// Diagnose plane/dynamic merge preflight with mandatory reject reason (B4.2 deepen pass).
+bool tryPreflightBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason& reason);
+
 /// Why merge-into-buffer would early-out before pushing pairs (B4.2 deepen pass).
 enum class MergePairsIntoBufferRejectReason : u8 {
     None = 0,
@@ -843,6 +917,18 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 
 /// Non-mutating merge-into-buffer predicate — mirrors `preflightMergePairsIntoBuffer` (B4.2 deepen pass).
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
+
+/// Early-out when merge-into-buffer would reject — same ordering as `mergePairsIntoBufferRejectReason` (B4.2 deepen pass).
+bool wouldSkipMergePairsIntoBuffer(
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer,
+    MergePairsIntoBufferRejectReason* reason = nullptr);
+
+/// Diagnose merge-into-buffer preflight with mandatory reject reason (B4.2 deepen pass).
+bool tryPreflightMergePairsIntoBuffer(
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer,
+    MergePairsIntoBufferRejectReason& reason);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
