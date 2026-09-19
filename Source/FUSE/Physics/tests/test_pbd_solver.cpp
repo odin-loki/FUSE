@@ -2998,3 +2998,11 @@ void testFrameLambdaWarmStartPreflightSkip() {
     testPreflightIslandSolveGuards();
     testWarmStartPreflightGuards();
     testFrameLambdaWarmStartPreflightSkip();
+
+// --- deepen additive from deepen-b4-pbd-island-preflight-warmstart-4254 ---
+void testIslandIndexDispatchableGuard() {
+    expectTrue(should_skip_frame_warm_start(emptyGraph, priorDistance, priorContact),
+               "should_skip_frame_warm_start on empty graph");
+    expectTrue(should_skip_frame_warm_start(graph, {}, {}),
+               "should_skip_frame_warm_start when no prior data");
+void testWarmStartAllIslandsGuarded() {

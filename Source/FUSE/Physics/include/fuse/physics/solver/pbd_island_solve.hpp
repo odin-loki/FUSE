@@ -1143,3 +1143,7 @@ bool should_skip_island_solve(const IslandSolveJob& job);
 bool should_skip_all_island_solves(const ContactIslandGraph& graph);
                                  IslandWarmStartPreflight& out);
                                        const IslandWarmStartPreflight& preflight);
+
+// --- deepen additive from deepen-b4-pbd-island-preflight-warmstart-4254 ---
+    IslandSolvePreflight preflight{};
+bool should_skip_frame_warm_start(const ContactIslandGraph& graph,
