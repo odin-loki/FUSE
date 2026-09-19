@@ -799,3 +799,10 @@ int main() {
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b79-cooker-hash-prune-guards-0c0b ---
+void testCookContentHashNullAndReadableGuards() {
+void testCookCacheInvalidAndStaleEntryHelpers() {
+void testCookCacheHasInvalidAndStaleEntryGuards() {
+    testCookCacheInvalidAndStaleEntryHelpers();
+    testCookCacheHasInvalidAndStaleEntryGuards();
