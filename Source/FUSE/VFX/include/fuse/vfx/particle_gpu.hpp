@@ -316,3 +316,7 @@ struct FramePlanPreflight {
 [[nodiscard]] DispatchPreflight preflight_dispatch(u32 capacity, u32 emit_count);
 [[nodiscard]] FramePlanPreflight preflight_frame_plan(u32 capacity, u32 emit_count, u32 alive_count);
 [[nodiscard]] ParticleGpuSlotOffsetPreflight preflight_slot_offset(ParticleGpuColumn column, u32 capacity, u32 slot);
+
+// --- deepen additive from deepen-vfx-gpu-dispatch-mirror-guards-d3c0 ---
+    [[nodiscard]] ParticleGpuDispatchPreflight preflight(u32 capacity, u32 emit_count) const;
+    [[nodiscard]] std::vector<u8> tryPackToDeviceLayout() const;

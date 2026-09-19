@@ -983,3 +983,9 @@ DispatchPreflight preflight_dispatch(u32 capacity, u32 emit_count) {
 FramePlanPreflight preflight_frame_plan(u32 capacity, u32 emit_count, u32 alive_count) {
 ParticleGpuSlotOffsetPreflight preflight_slot_offset(ParticleGpuColumn column, u32 capacity, u32 slot) {
     ParticleGpuSlotOffsetPreflight result{};
+
+// --- deepen additive from deepen-vfx-gpu-dispatch-mirror-guards-d3c0 ---
+ParticleGpuDispatchPreflight ParticleGpuDispatch::preflight(u32 capacity, u32 emit_count) const {
+    ParticleGpuDispatchPreflight result{};
+bool ParticleGpuMirrorPreflight::can_unpack(const std::vector<u8>& bytes, u32 particle_capacity) const {
+std::vector<u8> ParticleGpuMirror::tryPackToDeviceLayout() const {

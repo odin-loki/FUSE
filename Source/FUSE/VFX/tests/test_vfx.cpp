@@ -2304,3 +2304,16 @@ void testParticleGpuSlotOffsetGuards() {
     const fuse::vfx::FramePlanPreflight active = preflight_frame_plan(100u, 200u, 48u);
     const fuse::vfx::FramePlanPreflight from_plan = plan.preflight();
     const fuse::vfx::FramePlanPreflight idle = preflight_frame_plan(0u, 0u, 0u);
+
+// --- deepen additive from deepen-vfx-gpu-dispatch-mirror-guards-d3c0 ---
+    const fuse::vfx::ParticleGpuDispatchPreflight active_preflight = active.preflight(100u, 200u);
+    const fuse::vfx::ParticleGpuDispatchPreflight idle_preflight = idle.preflight(0u, 0u);
+    const fuse::vfx::ParticleGpuDispatchPreflight sim_only_preflight = sim_only.preflight(256u, 0u);
+void testParticleGpuDispatchThreadSlotGuards() {
+void testParticleGpuSlotLocateAndIndexGuards() {
+void testParticleGpuMirrorPackUnpackGuards() {
+    expectTrue(mirror.tryPackToDeviceLayout().empty(), "uninitialized mirror tryPack returns empty");
+    const std::vector<fuse::u8> packed = mirror.tryPackToDeviceLayout();
+    expectTrue(!packed.empty(), "synced mirror tryPack returns packed bytes");
+    expectTrue(mirror.tryPackToDeviceLayout().empty(), "stale alive_count blocks tryPack");
+    expectTrue(!mirror.tryPackToDeviceLayout().empty(), "repaired alive_count restores tryPack");
