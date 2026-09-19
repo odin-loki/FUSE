@@ -224,3 +224,7 @@ struct FrictionBasisNormalizePreflight {
     FrictionBasisPreflight rebuild{};
 FrictionBasisNormalizePreflight preflight_friction_basis_normalize_rebuild(
 bool should_skip_friction_basis_normalize_rebuild(
+
+// --- deepen additive from deepen-b4-narrowphase-9067 ---
+               reason == FrictionBasisRejectReason::EmptyManifold ||
+               reason == FrictionBasisRejectReason::InvalidNormal || canReuse;

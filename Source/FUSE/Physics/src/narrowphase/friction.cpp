@@ -457,3 +457,10 @@ bool should_skip_friction_basis_normalize_rebuild(
 // --- deepen additive from deepen-b4-narrowphase-6c66 ---
     if (!preflightContactBufferFrictionBuild(buffer).canBuild()) {
     buildContactBufferFrictionTangentBasesWithPreflight(buffer);
+
+// --- deepen additive from deepen-b4-narrowphase-9067 ---
+        preflight.reason = FrictionBasisRejectReason::EmptyManifold;
+        preflight.reason = FrictionBasisRejectReason::InvalidNormal;
+    preflight.reason = FrictionBasisRejectReason::None;
+    if (preflight.reason == FrictionBasisRejectReason::EmptyManifold ||
+        preflight.reason == FrictionBasisRejectReason::InvalidNormal) {

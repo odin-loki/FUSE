@@ -774,3 +774,8 @@ ContactManifoldWritePreflight preflight_contact_manifold_buffer_write(const Cont
     ContactManifoldWritePreflight preflight{};
     preflight.skipped = preflight.reason != ContactManifoldWriteRejectReason::None;
 bool should_skip_contact_manifold_buffer_write(const ContactManifold& manifold) {
+
+// --- deepen additive from deepen-b4-narrowphase-9067 ---
+    case ManifoldPruneRejectReason::ExceedsMaxPoints:
+        return ManifoldPruneRejectReason::ExceedsMaxPoints;
+    case ManifoldFinalizeRejectReason::MissingFrictionBasis:

@@ -639,3 +639,6 @@ u32 ContactBufferSoA::compactAndClampWithPreflight() {
     case ContactBufferFrictionBasisRejectReason::NoValidContacts:
         return ContactBufferFrictionBasisRejectReason::NoValidContacts;
     preflight.noValidContacts = preflight.reason == ContactBufferFrictionBasisRejectReason::NoValidContacts;
+
+// --- deepen additive from deepen-b4-narrowphase-9067 ---
+    const ContactBufferCompactAndClampPreflight preflight = preflight_contact_buffer_compact_and_clamp(*this);

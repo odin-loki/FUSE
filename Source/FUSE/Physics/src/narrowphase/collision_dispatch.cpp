@@ -90,3 +90,8 @@ NarrowphaseRunPreflight preflightNarrowphaseRun(
 void runNarrowphaseIntoBufferWithPreflight(
             buffer.writeSlotWithPreflight(pairIndex, manifold);
     buffer.compactAndClampWithPreflight();
+
+// --- deepen additive from deepen-b4-narrowphase-9067 ---
+        if (!should_skip_narrowphase_pair_slot(pair, bodies, shapes)) {
+NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
+    NarrowphaseIntoBufferPreflight preflight{};

@@ -839,3 +839,8 @@ bool should_skip_narrowphase_run(
 
 // --- deepen additive from deepen-b4-narrowphase-6c66 ---
     if (!preflightContactBufferWrite(buffer, slot, manifold).canWrite()) {
+
+// --- deepen additive from deepen-b4-narrowphase-9067 ---
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    NarrowphasePairSlotPreflight preflight{};
+bool should_skip_narrowphase_pair_slot(

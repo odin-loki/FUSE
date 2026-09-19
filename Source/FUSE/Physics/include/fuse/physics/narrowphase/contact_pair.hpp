@@ -363,3 +363,8 @@ NarrowphaseRunPreflight preflight_run_narrowphase(
 ContactPairRejectReason first_contact_pair_deepen_reject_reason(
 NarrowphaseRunPreflight preflight_narrowphase_run(
 bool should_skip_narrowphase_run(
+
+// --- deepen additive from deepen-b4-narrowphase-9067 ---
+struct NarrowphasePairSlotPreflight {
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+bool should_skip_narrowphase_pair_slot(

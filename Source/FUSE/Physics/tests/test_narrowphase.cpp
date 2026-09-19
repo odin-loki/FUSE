@@ -2820,3 +2820,22 @@ void testFrictionBasisPass6Preflights() {
     expectTrue(!frictionPreflight.can_rebuild(), "friction preflight rejects empty buffer");
         buffer.buildFrictionTangentBasesWithPreflight(),
     testFrictionBasisPass6Preflights();
+
+// --- deepen additive from deepen-b4-narrowphase-9067 ---
+    expectTrue(writePreflight.can_write(), "contact-buffer write preflight allows valid manifold");
+        !fuse::physics::narrowphase::should_skip_contact_buffer_write(buffer, 0u, valid),
+            buffer, 1u, selfPair, fuse::physics::narrowphase::ContactBufferWriteRejectReason::SelfPair),
+            fuse::physics::narrowphase::ContactBufferCompactionRejectReason::AllValid,
+    const auto clampPreflight = fuse::physics::narrowphase::preflight_contact_buffer_clamp(clampBuffer);
+    expectTrue(clampPreflight.needs_clamp(), "contact-buffer clamp preflight needs clamp over capacity");
+            emptyBuffer, fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::EmptyBuffer),
+void testNarrowphaseIntoBufferPreflightGuards() {
+    const auto slotPreflight =
+    expectTrue(slotPreflight.can_dispatch(), "narrowphase pair-slot preflight allows valid pair");
+    expectTrue(slotPreflight.canWriteSlot, "narrowphase pair-slot preflight can write slot");
+            fuse::physics::narrowphase::ContactPairRejectReason::BothSleeping) == 1u,
+void testManifoldGenerateWithPreflightGuards() {
+            overCap, fuse::physics::narrowphase::ManifoldPruneRejectReason::ExceedsMaxPoints),
+                fuse::physics::narrowphase::ManifoldPruneRejectReason::ExceedsMaxPoints),
+    testNarrowphaseIntoBufferPreflightGuards();
+    testManifoldGenerateWithPreflightGuards();
