@@ -668,3 +668,7 @@ bool tryCanSampleAtCoordsStrict(const FroxelDensityGrid& grid,
 
 // --- deepen additive from deepen-froxel-b511-guards-9658 ---
     static bool wouldClampCounts(const FroxelGridDesc& raw);
+
+// --- deepen additive from deepen-b511-froxel-guards-62b9 ---
+                              ScreenMappingRejectReason& outScreenReason);
+                              ScreenMappingRejectReason& outScreenReason,

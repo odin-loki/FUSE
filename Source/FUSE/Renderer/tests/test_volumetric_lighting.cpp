@@ -2319,3 +2319,18 @@ void testFroxelCoordLookupPopulateAndCornerPreflightGuards() {
     expectTrue(fuse::renderer::FroxelGridLayout::tryPreflightSampleCoords(extremeWeights, desc, sampleReason),
                "tryPreflightSampleCoords warns but succeeds for OOB weights");
     testFroxelCoordLookupPopulateAndCornerPreflightGuards();
+
+// --- deepen additive from deepen-b511-froxel-guards-62b9 ---
+void testFroxelCoordLookupAndScreenSampleGuards() {
+               "tryCanLookupAtCoord accepts accessible grid");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, desc, 3u, 1u, 2u, coordSample, lookupReason),
+    expectNear(coordSample, 2.f, 1e-5f, "trySampleDensityAtCoord with reason returns last-cell density");
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtCoord(grid, desc, 1u, 0u, 1u, 3.25f, lookupReason),
+    expectNear(rejectedIndexSample, 0.f, 1e-6f, "trySampleDensityAtIndex with reason zeroes output on rejection");
+               "trySampleDensityAtScreen with reasons matches unguarded screen sample");
+    expectNear(rejectedScreen, 0.f, 1e-6f, "trySampleDensityAtScreen with reasons zeroes output on rejection");
+    expectTrue(std::strcmp(fuse::renderer::screenMappingRejectReasonLabel(screenReason), "depth_out_of_range") == 0,
+               "tryPopulateFromAnalyticFog with reason succeeds for valid inputs");
+               "tryPopulateFromAnalyticFog with reason fills all froxels on success");
+               "tryPopulateFromAnalyticFog with reason returns false when preflight rejects fill");
+    expectTrue(skipped.matchesDesc(desc), "tryPopulateFromAnalyticFog with reason still allocates on rejected fill");

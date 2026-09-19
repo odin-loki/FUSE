@@ -1674,3 +1674,13 @@ bool tryCanSampleAtCoordsStrict(const FroxelDensityGrid& grid,
 // --- deepen additive from deepen-froxel-b511-guards-9658 ---
         outReason = SampleCoordRejectReason::InvalidCorners;
     case SampleCoordRejectReason::InvalidCorners:
+
+// --- deepen additive from deepen-b511-froxel-guards-62b9 ---
+    ScreenMappingRejectReason screenReason = ScreenMappingRejectReason::None;
+    return trySampleDensityAtScreen(grid, desc, camera, screenX, screenY, viewDepth, outDensity, screenReason);
+                              ScreenMappingRejectReason& outScreenReason) {
+    return trySampleDensityAtScreen(grid, desc, camera, screenX, screenY, viewDepth, outDensity, outScreenReason,
+                              ScreenMappingRejectReason& outScreenReason,
+        outScreenReason = ScreenMappingRejectReason::None;
+        outSampleReason = lookupReason == DensityLookupRejectReason::EmptyGrid ? SampleCoordRejectReason::EmptyGrid
+    if (!trySampleDensityTrilinear(grid, desc, coords, outDensity, outSampleReason)) {
