@@ -4477,3 +4477,32 @@ void testActiveScopeAndFlowNestingGuards() {
                "tryFirstEventByFlowId succeeds for outer start");
     expectTrue(fuse::profiler::tryLastEventByFlowId(innerFlowId, outEvent),
                "tryLastEventByFlowId succeeds for inner finish");
+
+// --- deepen additive from deepen-b16-profiler-name-flow-lookup-6e19 ---
+    expectTrue(!fuse::profiler::tryFirstEventByFlowId(1u, outEvent),
+               "tryFirstEventByFlowId false on empty buffer");
+    expectTrue(fuse::profiler::tryFirstEventByName("try_lookup_flow", outEvent),
+               "tryFirstEventByName succeeds for flow start");
+               "tryFirstEventByName copies flow start phase");
+    expectTrue(outEvent.scopeId == flowId, "tryFirstEventByName preserves flow id");
+    expectTrue(fuse::profiler::tryLastEventByName("try_lookup_flow", outEvent),
+               "tryLastEventByName succeeds for flow finish");
+               "tryLastEventByName copies flow finish phase");
+               "tryFirstEventByName succeeds for counter");
+               "tryFirstExportableEvent succeeds after recording");
+               "tryLastExportableEvent succeeds after recording");
+void testPreflightNestingStateGuard() {
+    expectTrue(resetPreflight.isScopeNestingBalanced(), "nesting preflight balanced on reset");
+    expectTrue(resetPreflight.isFlowNestingBalanced(), "flow nesting preflight balanced on reset");
+    expectTrue(!resetPreflight.hasOpenAsyncFlows, "nesting preflight has no open flows on reset");
+        const fuse::profiler::NestingStatePreflight flowPreflight = fuse::profiler::preflightNestingState();
+        expectTrue(flowPreflight.activeFlowNestingDepth == 1u,
+        expectTrue(flowPreflight.openAsyncFlowCount == 1u,
+    expectTrue(closedPreflight.isScopeNestingBalanced(), "nesting preflight balanced after teardown");
+    expectTrue(closedPreflight.isFlowNestingBalanced(), "flow nesting preflight balanced after teardown");
+void testPreflightAsyncFlowBeginEndGuard() {
+    const fuse::profiler::AsyncFlowBeginPreflight validBegin = fuse::profiler::preflightBeginAsyncFlow("valid_flow");
+    const fuse::profiler::AsyncFlowEndPreflight validEnd = fuse::profiler::preflightEndAsyncFlow("valid_flow");
+    const fuse::profiler::AsyncFlowBeginPreflight disabledBegin = fuse::profiler::preflightBeginAsyncFlow("disabled");
+    testPreflightNestingStateGuard();
+    testPreflightAsyncFlowBeginEndGuard();
