@@ -2310,3 +2310,38 @@ void testPairBufferWouldRejectAdditionalPairs() {
     expectTrue(!buffer.wouldRejectAdditionalPairs(1u), "partial buffer accepts one more pair");
 void testCanSkipBroadphaseRefineGuard() {
 void testMaxCellSpanAxisGuards() {
+
+// --- deepen additive from deepen-b4-broadphase-preflights-82c3 ---
+void testShapeCellOccupancyPreflight() {
+    const auto planePreflight =
+    expectTrue(planePreflight.exceedsBudget, "2D preflight flags range above span budget");
+    expectTrue(!planePreflight.can_insert(), "over-budget 2D range cannot insert");
+    const auto emptyPreflight = fuse::physics::broadphase::preflight_broadphase(bodies, shapes);
+    expectTrue(emptyPreflight.skipped, "empty scene preflight is skipped");
+    expectTrue(!emptyPreflight.can_run(), "empty scene preflight cannot run");
+    const auto validPreflight = fuse::physics::broadphase::preflight_broadphase(bodies, shapes);
+    expectTrue(!validPreflight.skipped, "populated scene preflight is not skipped");
+    expectTrue(validPreflight.can_run(), "populated scene preflight can run");
+    expectEq(validPreflight.bodyCount, 1u, "preflight reports body count");
+    expectEq(validPreflight.shapeCount, 1u, "preflight reports shape count");
+void testBroadphaseRefinePreflightGuards() {
+    const auto emptyPreflight =
+    expectTrue(emptyPreflight.skipped, "refine preflight skips empty input and buffer");
+    expectTrue(!emptyPreflight.can_refine(), "empty refine preflight cannot refine");
+    const auto validPreflight =
+    expectTrue(!validPreflight.skipped, "refine preflight does not skip valid buffer");
+    expectTrue(validPreflight.can_refine(), "refine preflight can refine valid buffer");
+    expectEq(validPreflight.pairCount, 1u, "refine preflight reports pair count");
+void testPairBufferDedupePreflights() {
+    const auto emptyPreflight = buffer.preflight_dedupe();
+    expectTrue(emptyPreflight.skipped, "empty buffer skips dedupe preflight");
+    expectTrue(!emptyPreflight.needs_dedupe(), "empty buffer does not need dedupe");
+    const auto singlePreflight = buffer.preflight_dedupe();
+    expectTrue(singlePreflight.skipped, "single-pair buffer skips dedupe preflight");
+    const auto duplicatePreflight = buffer.preflight_dedupe();
+    expectTrue(!duplicatePreflight.skipped, "duplicate buffer runs dedupe preflight");
+    expectEq(duplicatePreflight.duplicateCount, 1u, "preflight counts duplicate pairs");
+    expectTrue(duplicatePreflight.needs_dedupe(), "duplicate buffer needs dedupe");
+    testShapeCellOccupancyPreflight();
+    testBroadphaseRefinePreflightGuards();
+    testPairBufferDedupePreflights();

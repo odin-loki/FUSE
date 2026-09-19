@@ -1124,3 +1124,11 @@ const char* candidate_pair_reject_reason_name(CandidatePairRejectReason reason);
 
 // --- deepen additive from deepen-b4-broadphase-guards-b3ad ---
     return candidatePairRejectReason(bodyA, bodyB, bodyCount) != CandidatePairRejectReason::None;
+
+// --- deepen additive from deepen-b4-broadphase-preflights-82c3 ---
+struct ShapeCellOccupancyPreflight {
+FUSE_PHYSICS_INLINE ShapeCellOccupancyPreflight preflight_shape_cell_occupancy(
+    ShapeCellOccupancyPreflight preflight{};
+BroadphasePreflight preflight_broadphase(
+struct BroadphaseRefinePreflight {
+BroadphaseRefinePreflight preflight_broadphase_refine(

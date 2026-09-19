@@ -787,3 +787,6 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
     const CandidatePairRejectReason rejectReason = candidatePairRejectReason(idxA, idxB);
     if (rejectReason != CandidatePairRejectReason::None) {
         lastRejectReason = CandidatePairRejectReason::BufferFull;
+
+// --- deepen additive from deepen-b4-broadphase-preflights-82c3 ---
+PairBufferSoA::DedupePreflight PairBufferSoA::preflight_dedupe() const {

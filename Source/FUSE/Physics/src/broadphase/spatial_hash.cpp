@@ -991,3 +991,14 @@ CandidatePairRejectReason candidatePairRejectReason(
     if (indexReason != CandidatePairRejectReason::None) {
         return CandidatePairRejectReason::AabbSeparated;
     return CandidatePairRejectReason::None;
+
+// --- deepen additive from deepen-b4-broadphase-preflights-82c3 ---
+BroadphasePreflight preflight_broadphase(
+BroadphaseRefinePreflight preflight_broadphase_refine(
+    BroadphaseRefinePreflight preflight{};
+        const ShapeCellOccupancyPreflight occupancyPreflight =
+        if (!occupancyPreflight.can_insert()) {
+    const ShapeCellOccupancyPreflight occupancyPreflight = preflight_shape_cell_occupancy(range, maxSpan);
+    const PairBufferSoA::DedupePreflight preflight = buffer.preflight_dedupe();
+    const BroadphasePreflight preflight = preflight_broadphase(bodies, shapes);
+    const BroadphaseRefinePreflight preflight = preflight_broadphase_refine(bodies, shapes, buffer);

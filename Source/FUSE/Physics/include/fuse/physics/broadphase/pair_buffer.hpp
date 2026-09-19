@@ -435,3 +435,7 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
 
 // --- deepen additive from deepen-b4-broadphase-guards-bcce ---
     bool wouldRejectAdditionalPairs(u32 additionalCount = 1u) const;
+
+// --- deepen additive from deepen-b4-broadphase-preflights-82c3 ---
+    struct DedupePreflight {
+    DedupePreflight preflight_dedupe() const;
