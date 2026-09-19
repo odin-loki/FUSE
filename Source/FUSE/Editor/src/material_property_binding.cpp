@@ -299,6 +299,7 @@ bool MaterialPropertyBinding::tryRefreshFromEditState(const MaterialEditState& s
 
     if (!isBound()) {
     if (shouldSkipPanelRefresh()) {
+    if (!canMarkPanelRefreshed()) {
         return false;
     }
     markPanelRefreshed();

@@ -125,4 +125,9 @@ struct MaterialInspectorRefreshInfo {
 [[nodiscard]] bool isMaterialPropertyRefreshPending(const MaterialPropertyBinding& binding,
                                                     MaterialPropertyId id);
 
+/// Count dirty inspector properties encoded in `dirtyMask` (B6.7 deepen).
+
+/// True when no inspector property bits are set in `dirtyMask` (B6.7 deepen).
+[[nodiscard]] bool isMaterialPropertyDirtyMaskEmpty(u32 dirtyMask);
+
 } // namespace fuse::editor

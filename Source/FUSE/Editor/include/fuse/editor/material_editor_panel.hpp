@@ -72,6 +72,9 @@ public:
 
     /// Panel refresh guard — selection active and refresh pending (B6.7 deepen).
     [[nodiscard]] bool canRefreshPanel() const;
+    [[nodiscard]] u32 propertyDirtyMask() const { return m_binding.propertyDirtyMask(); }
+    /// Panel refresh guard — binding reports pending refresh (B6.7 deepen).
+    [[nodiscard]] bool canRefreshPanel() const { return needsPanelRefresh(); }
 
     bool selectMaterial(u32 materialId);
     bool setRoughness(f32 roughness, CommandStack& cmds);
@@ -84,6 +87,7 @@ public:
     /// Guarded panel refresh — no-op when refresh not needed (B6.7 deepen).
     /// Guarded refresh — no-op when panel cannot refresh (B6.7 deepen follow-up).
     /// Guarded refresh — returns false when nothing pending or panel unbound (B6.7 deepen follow-up).
+    /// Guarded panel refresh — no-op when binding is clean (B6.7 deepen).
     bool tryRefreshPanel();
     void clearPreviewDirty() { m_previewDirty = false; }
     void clearEditDirty() { m_editDirty = false; }

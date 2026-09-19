@@ -201,6 +201,12 @@ bool isMaterialPropertyRefreshPending(const MaterialPropertyBinding& binding, Ma
     if (!isMaterialPropertyIdValid(id) || shouldSkipMaterialPanelRefresh(binding)) {
         return false;
     return binding.isPropertyDirty(id);
+        const u32 bit = materialPropertyDirtyBit(materialPropertyIdAt(i));
+        if ((dirtyMask & bit) != 0u) {
+        }
+
+bool isMaterialPropertyDirtyMaskEmpty(u32 dirtyMask) {
+    return materialPropertyDirtyCount(dirtyMask) == 0u;
 }
 
 } // namespace fuse::editor
