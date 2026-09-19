@@ -98,6 +98,16 @@ public:
                                           const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;
+    /// Entries whose on-disk source no longer matches stored hash — excludes structurally invalid rows (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_entries() const;
+    /// Source paths with stale content keys — one push per matching entry (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_content_sources() const;
+
+    /// Read-only invalidation would-* probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
@@ -116,5 +126,8 @@ private:
     std::vector<CookCacheEntry> m_entries;
     CookCacheStats m_stats;
 };
+
+/// Read-only preflight for cache entry storage — mirrors `store()` guards (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 
 } // namespace fuse::project
