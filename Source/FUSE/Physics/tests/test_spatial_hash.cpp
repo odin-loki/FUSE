@@ -4473,3 +4473,20 @@ void testPairBufferWouldSkipGuards() {
     expectTrue(fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(writeBuffer, 0u, 1u, 1u),
                "wouldSkipPairBufferWriteSlot true for invalid pair");
     expectTrue(fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(writeBuffer, 0u, 1u, 1u) ==
+
+// --- deepen additive from b4-broadphase-deepen-guards-82a8 ---
+             "wouldSkipPairBufferInvalidateSlot reports OutOfRangeSlot reason");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(buffer, 0u, 1u, 1u, &skipReason),
+    fuse::physics::broadphase::CellOccupancyRejectReason skipReason =
+    expectTrue(!fuse::physics::broadphase::wouldSkipCellOccupancyIteration(validRange, 8u, &skipReason),
+    expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(validRange, 7u, &skipReason),
+    const fuse::physics::broadphase::CellOccupancyPreflight shapePreflight =
+    expectTrue(shapePreflight.canIterate(), "preflightShapeCellOccupancy accepts range within params budget");
+    expectTrue(!fuse::physics::broadphase::wouldSkipShapeCellOccupancy(validRange, params),
+               "wouldSkipShapeCellOccupancy false within params budget");
+    expectTrue(fuse::physics::broadphase::wouldSkipShapeCellOccupancy(validRange, params, &skipReason),
+               "wouldSkipShapeCellOccupancy true when params budget exceeded");
+             "wouldSkipShapeCellOccupancy reports ExceedsBudget");
+    expectTrue(fuse::physics::broadphase::wouldSkipShapeCellOccupancy(planeRange, params, &skipReason),
+               "2D wouldSkipShapeCellOccupancy true over params budget");
+             "2D wouldSkipShapeCellOccupancy reports ExceedsBudget");
