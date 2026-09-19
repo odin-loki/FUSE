@@ -297,8 +297,6 @@ bool canRecordScope(const char* name) {
 }
 
 bool canBeginAsyncFlow(const char* name) {
-    return enabled() && isValidEventName(name);
-}
 
 bool canEndAsyncFlow(const char* name) {
     return enabled() && isValidEventName(name)
@@ -306,7 +304,6 @@ bool canEndAsyncFlow(const char* name) {
 
 bool canSampleCounter(const char* track) {
     return enabled() && isValidEventName(track);
-}
 
 
 void beginFrame() {
@@ -340,6 +337,7 @@ u32 exportableEventCount() {
         if (isValidProfileEvent(eventAt(i))) {
             ++exportable;
     return exportable;
+
 
 
 u32 maxNestingDepth() {
@@ -1154,6 +1152,16 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 }
 
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -1363,6 +1371,7 @@ bool hasExportableEvents() {
 
 bool isChromeTraceExportEmpty() {
     return !hasExportableEvents();
+
 
 
 
