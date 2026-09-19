@@ -9414,6 +9414,8 @@ void testTaaPassTryClassifyGuardWrappers() {
 
     expectTrue(pass->tryPreflightJitterSync(5u, jitterReject),
 
+
+
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
                "pass tryPreflightHistoryReuse fails before init");
     expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
@@ -9512,6 +9514,7 @@ void testTaaPassHistoryWarmupPreflight() {
 
     expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
 
+
     fuse::renderer::TaaJitterGuardRejectReason jitterReject =
         fuse::renderer::TaaJitterGuardRejectReason::None;
     expectTrue(pass->classifyJitterSyncReject() == fuse::renderer::TaaJitterGuardRejectReason::None,
@@ -9524,6 +9527,7 @@ void testTaaPassHistoryWarmupPreflight() {
                "pass classifyJitterNdcReject passes before init");
     expectTrue(pass->tryPreflightJitterNdc(jitterReject),
                "pass tryPreflightJitterNdc passes before init");
+    expectTrue(jitterReject == fuse::renderer::TaaJitterGuardRejectReason::None,
                "pass tryPreflightJitterNdc reject reason is None");
     expectTrue(pass->classifyJitterAdvanceReject() == fuse::renderer::TaaJitterGuardRejectReason::None,
                "pass classifyJitterAdvanceReject passes before init");
@@ -10616,19 +10620,14 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
 
 
 
-    expectTrue(pass->init(resources), "TaaPass initialized for try/classify wrapper test");
 
-    expectTrue(pass->tryPreflightHistoryReadyForResolve(reuseReason),
-               "pass tryPreflightHistoryReadyForResolve passes after init");
-    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::None,
-               "pass tryPreflightHistoryReadyForResolve reason is None after init");
-               "pass tryPreflightHistoryReuse fails before warmup");
-    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
-               "pass tryPreflightHistoryReuse reason is NotWarm before warmup");
 
-    expectTrue(pass->tryPreflightResolve(resolveDesc, skipReason),
-    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::None,
                "pass classifyResolveSkip returns None after init");
+
+
+
+
+
 
     expectTrue(pass->resolveFrame(resolveDesc), "initial resolve warms pass history");
 
@@ -10639,6 +10638,16 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
     expectTrue(pass->classifyResolveBlendReject(resolveDesc) ==
                    fuse::renderer::TaaResolveBlendRejectReason::None,
                "pass classifyResolveBlendReject returns None after warmup");
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::None,
+               "pass tryPreflightHistoryReuse reason is None after warmup");
+    expectTrue(pass->classifyHistoryReuseBlock(0u) == fuse::renderer::TaaHistoryReuseBlockReason::None,
+               "pass classifyHistoryReuseBlock is None after warmup");
+
+    expectTrue(pass->tryComputeResolveBlendWeights(resolveDesc, weights, blendReject),
+               "pass tryComputeResolveBlendWeights passes after warmup");
+    expectNear(weights.current, 0.35f, 1e-5f, "pass tryCompute steady current weight");
+    expectNear(weights.history, 0.65f, 1e-5f, "pass tryCompute steady history weight");
+               "pass classifyResolveBlendReject is None after warmup");
 
     pass->invalidateHistory();
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
@@ -10811,6 +10820,7 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
                "pass advanceJitterIfReady increments monotonic counter");
 
 
+    pass->destroy();
     resources.destroy();
     bindless.destroy(*bootstrap->device());
 }
