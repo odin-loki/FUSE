@@ -4657,3 +4657,38 @@ void testProbeKernelPreflightDeepenGuards() {
                "preflightProbeTraceKernel reports zero_update_count reason");
                "preflightProbeBlendKernel reports zero_update_count reason");
     testProbeKernelPreflightDeepenGuards();
+
+// --- deepen additive from deepen-ddgi-b56-guards-a7b9 ---
+void testDdgiDeepenGuardPass2() {
+               "classifyProbeGridSourceReject none for valid desc");
+    fuse::renderer::ProbeGridSourceRejectReason gridReason =
+    expectTrue(!fuse::renderer::tryValidateProbeGridSource(empty, gridReason),
+               "tryValidateProbeGridSource rejects empty grid");
+    expectTrue(gridReason == fuse::renderer::ProbeGridSourceRejectReason::EmptyGrid,
+    expectTrue(std::strcmp(fuse::renderer::probeGridSourceRejectReasonLabel(gridReason), "empty_grid") == 0,
+    expectTrue(fuse::renderer::preflightProbeGridSource(badSpacing),
+               "preflightProbeGridSource succeeds for soft invalid_spacing");
+                   desc, built, cache.data(), 8u) == fuse::renderer::ProbeTrilinearSampleRejectReason::None,
+    expectTrue(fuse::renderer::gi::classifyProbeKernelGridReject(desc, kernelParams) ==
+                   fuse::renderer::gi::ProbeKernelGridRejectReason::None,
+               "classifyProbeKernelGridReject none for valid params");
+    expectTrue(fuse::renderer::gi::preflightProbeKernelLaunchWithGrid(desc, kernelParams),
+               "preflightProbeKernelLaunchWithGrid succeeds for valid params");
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeKernelLaunchWithGrid(desc, kernelParams),
+               "wouldSkipProbeKernelLaunchWithGrid false for valid params");
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeTraceKernelWithGrid(desc, kernelParams),
+               "wouldSkipProbeTraceKernelWithGrid false for valid params");
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeBlendKernelWithGrid(desc, kernelParams),
+               "wouldSkipProbeBlendKernelWithGrid false for valid params");
+    expectTrue(!fuse::renderer::gi::probeKernelGridRejectReasonIsBlocking(
+                   fuse::renderer::gi::ProbeKernelGridRejectReason::None),
+    expectTrue(fuse::renderer::gi::classifyProbeKernelGridReject(desc, oobParams) ==
+                   fuse::renderer::gi::ProbeKernelGridRejectReason::OutOfRangeProbeIndex,
+               "classifyProbeKernelGridReject out_of_range_probe_index");
+    expectTrue(fuse::renderer::gi::wouldSkipProbeKernelLaunchWithGrid(desc, oobParams),
+               "wouldSkipProbeKernelLaunchWithGrid true for OOB indices");
+    expectTrue(std::strcmp(fuse::renderer::gi::probeKernelGridRejectReasonLabel(
+                               fuse::renderer::gi::ProbeKernelGridRejectReason::OutOfRangeProbeIndex),
+    expectTrue(fuse::renderer::gi::classifyProbeKernelGridReject(empty, emptyGridParams) ==
+                   fuse::renderer::gi::ProbeKernelGridRejectReason::EmptyGrid,
+               "classifyProbeKernelGridReject empty_grid");

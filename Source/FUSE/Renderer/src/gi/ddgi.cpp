@@ -3308,3 +3308,37 @@ bool preflightProbeTrilinearSample(const ProbeGridSource& source,
     return preflightProbeTrilinearSample(source.desc, coords, source.cache, source.cache_count, reason);
 bool wouldSkipProbeTrilinearSample(const ProbeGridSource& source, const ProbeSampleCoords& coords) {
     return !preflightProbeTrilinearSample(source, coords);
+
+// --- deepen additive from deepen-ddgi-b56-guards-a7b9 ---
+const char* probeKernelGridRejectReasonLabel(ProbeKernelGridRejectReason reason) {
+    case ProbeKernelGridRejectReason::None:
+    case ProbeKernelGridRejectReason::EmptyGrid:
+    case ProbeKernelGridRejectReason::NullProbeIndices:
+    case ProbeKernelGridRejectReason::ZeroUpdateCount:
+    case ProbeKernelGridRejectReason::ZeroRaysPerProbe:
+    case ProbeKernelGridRejectReason::OutOfRangeProbeIndex:
+bool probeKernelGridRejectReasonIsBlocking(ProbeKernelGridRejectReason reason) {
+    return reason != ProbeKernelGridRejectReason::None;
+ProbeKernelGridRejectReason classifyProbeKernelGridReject(const DDGIDesc& desc, const DDGIKernelParams& params) {
+    ProbeKernelGridRejectReason reason = ProbeKernelGridRejectReason::None;
+    tryCanLaunchProbeTraceKernelWithGrid(desc, params, reason);
+bool tryCanLaunchProbeTraceKernelWithGrid(const DDGIDesc& desc,
+                                          ProbeKernelGridRejectReason& outReason) {
+        outReason = ProbeKernelGridRejectReason::EmptyGrid;
+        outReason = ProbeKernelGridRejectReason::ZeroUpdateCount;
+        outReason = ProbeKernelGridRejectReason::NullProbeIndices;
+        outReason = ProbeKernelGridRejectReason::ZeroRaysPerProbe;
+            outReason = ProbeKernelGridRejectReason::OutOfRangeProbeIndex;
+    outReason = ProbeKernelGridRejectReason::None;
+bool tryCanLaunchProbeBlendKernelWithGrid(const DDGIDesc& desc,
+    return tryCanLaunchProbeTraceKernelWithGrid(desc, params, outReason);
+bool preflightProbeKernelLaunchWithGrid(const DDGIDesc& desc,
+                                        ProbeKernelGridRejectReason* reason) {
+    const ProbeKernelGridRejectReason reject = classifyProbeKernelGridReject(desc, params);
+    return !probeKernelGridRejectReasonIsBlocking(reject);
+bool wouldSkipProbeKernelLaunchWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params) {
+    return !preflightProbeKernelLaunchWithGrid(desc, params);
+bool wouldSkipProbeTraceKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params) {
+    return !tryCanLaunchProbeTraceKernelWithGrid(desc, params, reason);
+bool wouldSkipProbeBlendKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params) {
+    return !tryCanLaunchProbeBlendKernelWithGrid(desc, params, reason);

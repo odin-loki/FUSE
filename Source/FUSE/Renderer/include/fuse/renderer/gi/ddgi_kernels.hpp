@@ -189,3 +189,17 @@ bool preflightPopulatedProbeKernelLaunch(DDGIKernelParams& params,
 
 // --- deepen additive from deepen-ddgi-guards-a008 ---
 bool preflightDDGIKernelParams(DDGIKernelParams& params,
+
+// --- deepen additive from deepen-ddgi-b56-guards-a7b9 ---
+enum class ProbeKernelGridRejectReason : u8 {
+const char* probeKernelGridRejectReasonLabel(ProbeKernelGridRejectReason reason);
+bool probeKernelGridRejectReasonIsBlocking(ProbeKernelGridRejectReason reason);
+ProbeKernelGridRejectReason classifyProbeKernelGridReject(const DDGIDesc& desc, const DDGIKernelParams& params);
+bool tryCanLaunchProbeTraceKernelWithGrid(const DDGIDesc& desc,
+                                          ProbeKernelGridRejectReason& outReason);
+bool tryCanLaunchProbeBlendKernelWithGrid(const DDGIDesc& desc,
+bool preflightProbeKernelLaunchWithGrid(const DDGIDesc& desc,
+                                        ProbeKernelGridRejectReason* reason = nullptr);
+bool wouldSkipProbeKernelLaunchWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
+bool wouldSkipProbeTraceKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
+bool wouldSkipProbeBlendKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
