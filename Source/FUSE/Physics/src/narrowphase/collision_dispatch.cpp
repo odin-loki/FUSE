@@ -10,19 +10,30 @@ void runNarrowphaseIntoBuffer(
     const CollisionShapeSoA& shapes,
     ContactBufferSoA& buffer) {
     const u32 pairCount = static_cast<u32>(pairs.size());
+    if (pairCount == 0u) {
+        buffer.preparePairSlots(0u);
+        return;
+    }
+
     buffer.preparePairSlots(pairCount);
 
     // Per-pair slots are job-safe (disjoint writes). Serial dispatch on the CPU stub avoids
     // scheduler reference-capture flakes seen when stacking parallel broadphase + narrowphase
     // under core::initialize(); the slot layout matches the future parallel_for kernel path.
     for (u32 pairIndex = 0; pairIndex < pairCount; ++pairIndex) {
+        if (!should_run_contact_pair_dispatch(pairs[pairIndex], bodies, shapes)) {
+            continue;
+        }
+
         ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
         if (generate_contact_manifold(manifold)) {
             buffer.writeSlot(pairIndex, manifold);
         }
     }
 
-    buffer.compactAndClamp();
+    if (should_run_contact_buffer_compact_and_clamp(buffer)) {
+        buffer.compactAndClamp();
+    }
 }
 
 std::vector<ContactManifold> runNarrowphase(
