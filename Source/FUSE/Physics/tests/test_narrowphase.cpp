@@ -2065,3 +2065,33 @@ void testContactPairDispatchPreflightGuards() {
     expectTrue(stalePreflight.isStale, "rebuild preflight flags stale cached basis");
     expectTrue(stalePreflight.needs_rebuild(), "rebuild preflight requires refresh for stale basis");
     testContactPairDispatchPreflightGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-f32b ---
+    expectTrue(!validReject.rejected, "reject preflight allows valid pair");
+    expectTrue(validReject.can_dispatch(), "reject preflight can_dispatch for valid pair");
+    expectTrue(!validReject.selfPair, "valid pair is not self pair");
+    expectTrue(selfReject.rejected, "reject preflight marks self pair");
+    expectTrue(selfReject.selfPair, "reject preflight flags selfPair");
+    expectTrue(staticReject.rejected, "reject preflight marks both-static pair");
+    expectTrue(staticReject.bothStatic, "reject preflight flags bothStatic");
+    const auto dispatchPreflight =
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight allows valid pair");
+    expectTrue(!dispatchPreflight.skipped, "dispatch preflight does not skip valid pair");
+    expectTrue(readyPreflight.hasValidNormal, "finalize preflight sees valid normal");
+    expectTrue(readyPreflight.hasPenetrating, "finalize preflight sees penetrating points");
+        "should_skip false for ready manifold");
+    expectTrue(!separatedPreflight.can_finalize(), "finalize preflight rejects separated points");
+        "should_skip true for separated manifold");
+    const auto missingPreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(fresh);
+    expectTrue(missingPreflight.missing, "rebuild preflight flags missing basis");
+    expectTrue(missingPreflight.needs_rebuild(), "rebuild preflight needs build when missing");
+        !fuse::physics::narrowphase::should_skip_friction_basis_rebuild(fresh),
+        "should_skip false when basis missing");
+    const auto cachedPreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(fresh);
+    expectTrue(cachedPreflight.canReuse, "rebuild preflight canReuse valid cached basis");
+        fuse::physics::narrowphase::should_skip_friction_basis_rebuild(fresh),
+        "should_skip true when basis cached");
+    expectTrue(stalePreflight.stale, "rebuild preflight flags stale basis");
+    expectTrue(stalePreflight.needs_rebuild(), "rebuild preflight needs rebuild when stale");
+    const auto skippedPreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(empty);
+    expectTrue(skippedPreflight.skipped, "rebuild preflight skips empty manifold");

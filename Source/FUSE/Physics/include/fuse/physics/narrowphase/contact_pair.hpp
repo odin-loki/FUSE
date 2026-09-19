@@ -291,3 +291,6 @@ bool can_dispatch_contact_pair(const ContactPairPreflight& preflight);
 struct ContactPairDispatchPreflight {
 ContactPairDispatchPreflight preflight_contact_pair_dispatch(
     ContactPairDispatchPreflight preflight{};
+
+// --- deepen additive from b4-narrowphase-deepen-guards-f32b ---
+    ContactPairRejectPreflight reject{};

@@ -690,3 +690,12 @@ bool can_dispatch_contact_pair(const ContactPairPreflight& preflight) {
 // --- deepen additive from deepen-b4-narrowphase-guards-5111 ---
 ContactPairDispatchPreflight preflight_contact_pair_dispatch(
     ContactPairDispatchPreflight preflight{};
+
+// --- deepen additive from b4-narrowphase-deepen-guards-f32b ---
+    preflight.selfPair = preflight.reason == ContactPairRejectReason::SelfPair;
+    preflight.outOfRangeBody = preflight.reason == ContactPairRejectReason::OutOfRangeBody;
+    preflight.missingShape = preflight.reason == ContactPairRejectReason::MissingShape;
+    preflight.bothTriggers = preflight.reason == ContactPairRejectReason::BothTriggers;
+    preflight.unsupportedShapePair = preflight.reason == ContactPairRejectReason::UnsupportedShapePair;
+    preflight.bothStatic = preflight.reason == ContactPairRejectReason::BothStatic;
+    preflight.degenerateShape = preflight.reason == ContactPairRejectReason::DegenerateShape;
