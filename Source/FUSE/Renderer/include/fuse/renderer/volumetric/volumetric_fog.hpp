@@ -785,3 +785,13 @@ bool wouldClampTrilinearDensitySample(const FroxelDensityGrid& grid,
 bool canPreflightTrilinearDensitySample(const FroxelDensityGrid& grid,
 bool tryPreflightTrilinearDensitySample(const FroxelDensityGrid& grid,
 bool tryValidatePopulateResult(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-b511-froxel-guards-1123 ---
+    static SampleCoordRejectReason classifySampleCoordsReject(const FroxelSampleCoords& coords,
+    static bool preflightScreenDepthToSampleCoords(f32 screenX,
+                                                   ScreenMappingRejectReason* outReason = nullptr);
+DensityLookupRejectReason classifyDensityLookupRejectAtIndex(const FroxelDensityGrid& grid,
+bool tryCanSampleAtTrilinear(const FroxelDensityGrid& grid,
+bool preflightFroxelTrilinearSample(const FroxelDensityGrid& grid,
+                                    FroxelTrilinearSampleRejectReason* outReason = nullptr);
+                          GridDensityRejectReason* outReason = nullptr,

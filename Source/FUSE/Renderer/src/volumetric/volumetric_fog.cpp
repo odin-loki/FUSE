@@ -2025,3 +2025,28 @@ bool tryValidatePopulateResult(const FroxelDensityGrid& grid,
         outReason = sampleReason == SampleCoordRejectReason::OutOfBounds
                         ? FroxelTrilinearSampleRejectReason::HardOutOfBounds
     return !tryCanSampleTrilinearAtCoords(grid, desc, coords, reason);
+
+// --- deepen additive from deepen-b511-froxel-guards-1123 ---
+SampleCoordRejectReason FroxelGridLayout::classifySampleCoordsReject(const FroxelSampleCoords& coords,
+ScreenMappingRejectReason FroxelGridLayout::classifyScreenMappingReject(f32 /*screenX*/,
+bool FroxelGridLayout::preflightScreenDepthToSampleCoords(f32 screenX,
+                                                          ScreenMappingRejectReason* outReason) {
+    if (screenMappingRejectReasonIsBlocking(reject)) {
+    if (screenMappingRejectReasonIsBlocking(outReason)) {
+    outReason = classifySampleCoordsReject(coords, desc);
+    return !sampleCoordRejectReasonIsBlocking(outReason);
+    return reason != GridDensityRejectReason::None;
+DensityLookupRejectReason classifyDensityLookupRejectAtIndex(const FroxelDensityGrid& grid,
+        return FroxelTrilinearSampleRejectReason::EmptyGrid;
+        return FroxelTrilinearSampleRejectReason::InaccessibleGrid;
+    switch (FroxelGridLayout::classifySampleCoordsReject(coords, desc)) {
+        return FroxelTrilinearSampleRejectReason::None;
+        return FroxelTrilinearSampleRejectReason::ClampableWeights;
+        return FroxelTrilinearSampleRejectReason::InvalidSampleCoords;
+bool tryCanSampleAtTrilinear(const FroxelDensityGrid& grid,
+    outReason = classifyFroxelTrilinearSampleReject(grid, desc, coords);
+    return !froxelTrilinearSampleRejectReasonIsBlocking(outReason);
+bool preflightFroxelTrilinearSample(const FroxelDensityGrid& grid,
+                                    FroxelTrilinearSampleRejectReason* outReason) {
+    if (froxelTrilinearSampleRejectReasonIsBlocking(reject)) {
+                          GridDensityRejectReason* outReason,
