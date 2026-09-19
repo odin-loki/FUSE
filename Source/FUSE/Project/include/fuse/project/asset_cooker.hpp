@@ -165,6 +165,7 @@ struct CookUpstreamInvalidateEstimate {
     /// True when reconcile can be skipped — mirrors `!would_reconcile()` (B7.9 deepen).
     /// True when no reconcile invalidation work is pending (B7.9 deepen).
     /// True when reconcile invalidation would be a no-op — mirrors `total() == 0` (B7.9 deepen).
+
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -481,6 +482,10 @@ public:
     /// Read-only upstream invalidation predicate — mirrors `count_upstream_invalidation` (B7.9 deepen).
     /// Read-only stale dependency-hash invalidation predicate (B7.9 deepen).
     /// Skip guards — mirror count/would_invalidate probes without mutating cache (B7.9 deepen).
+    /// True when upstream invalidation probes report zero removals (B7.9 deepen).
+    /// True when stale dependency-hash reconcile probes report zero removals (B7.9 deepen).
+    /// True when prune reconcile estimate is empty (B7.9 deepen).
+    /// True when combined reconcile estimate is empty (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
