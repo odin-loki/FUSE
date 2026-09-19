@@ -1769,3 +1769,16 @@ bool wouldSkipShapeCellInsert(
         *reason = cellSpanRejectReason(range, maxSpanPerAxis);
     CellOccupancyRejectReason* reason = nullptr);
     const CellOccupancyPreflight preflight = preflightCellOccupancy(range, maxCells);
+
+// --- deepen additive from deepen-b4-broadphase-guards-04aa ---
+FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
+FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
+FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+FUSE_PHYSICS_INLINE ShapeCellInsertionPreflight preflightShapeCellInsertion2D(const CellRange2& range, u32 maxCells) {
+FUSE_PHYSICS_INLINE bool wouldSkipShapeCellInsertion(const CellRange3& range, u32 maxCells) {
+FUSE_PHYSICS_INLINE bool wouldSkipShapeCellInsertion2D(const CellRange2& range, u32 maxCells) {
+    return !preflightShapeCellInsertion2D(range, maxCells).canInsert();
+bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer);
+bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
+bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);

@@ -4318,3 +4318,31 @@ void testWouldSkipBroadphaseGuards() {
                "wouldSkipCellSpanClamp false for over-span range");
     expectTrue(fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(buffer, 0u, 1u, 1u, &writeReason),
              "wouldSkipPairBufferWriteSlot reports InvalidPair");
+
+// --- deepen additive from deepen-b4-broadphase-guards-04aa ---
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 2u),
+    expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(buffer, 0u, 0u, 1u),
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(buffer, 0u, 1u, 1u) ==
+               "wouldSkipPairBufferWriteSlot agrees with canSkipPairBufferWriteSlot");
+void testWouldSkipCellCapacityGuards() {
+    expectTrue(!fuse::physics::broadphase::wouldSkipCellOccupancyIteration(validRange, 8u),
+    expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(validRange, 7u),
+               "wouldSkipCellOccupancyIteration agrees with canSkipCellOccupancyIteration");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(validRange, 4u),
+    expectTrue(!fuse::physics::broadphase::wouldSkipCellSpanClamp(validRange, 1u),
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(validRange, 3u) ==
+               "wouldSkipCellSpanClamp agrees with canSkipCellSpanClamp");
+    const fuse::physics::broadphase::ShapeCellInsertionPreflight insertionPreflight =
+    expectTrue(insertionPreflight.canInsert(), "shape cell insertion preflight accepts within budget");
+    expectTrue(!fuse::physics::broadphase::wouldSkipShapeCellInsertion(validRange, 8u),
+               "wouldSkipShapeCellInsertion false within budget");
+    expectTrue(fuse::physics::broadphase::wouldSkipShapeCellInsertion(validRange, 7u),
+               "wouldSkipShapeCellInsertion true over budget");
+    expectTrue(fuse::physics::broadphase::wouldSkipShapeCellInsertion2D(planeRange, 4u),
+               "2D wouldSkipShapeCellInsertion true over budget");
+void testWouldSkipRefineDedupeMergeGuards() {
+    expectTrue(fuse::physics::broadphase::wouldSkipRefineBroadphase(bodies, shapes, buffer),
+    expectTrue(fuse::physics::broadphase::wouldSkipDedupeBroadphase(buffer),
+    expectTrue(fuse::physics::broadphase::wouldSkipBroadphaseMerge(bodies, shapes),
+    expectTrue(!fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(pairs, buffer),
+    expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(pairs, buffer),

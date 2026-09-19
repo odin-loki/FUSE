@@ -1201,3 +1201,7 @@ bool wouldSkipPairBufferSlotReservation(
     PairBufferSlotReservationRejectReason* reason) {
     const PairBufferSlotReservationPreflight preflight = preflightPairBufferSlotReservation(buffer, slotCount);
     const PairBufferWriteSlotPreflight preflight = preflightPairBufferWriteSlot(buffer, slot, idxA, idxB);
+
+// --- deepen additive from deepen-b4-broadphase-guards-04aa ---
+bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {
+bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {

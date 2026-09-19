@@ -1782,3 +1782,10 @@ bool wouldSkipBroadphase(
 bool wouldSkipCellOccupancyIteration(
     CellOccupancyRejectReason* reason) {
     const CellOccupancyPreflight preflight = preflightCellOccupancy(range, maxCells);
+
+// --- deepen additive from deepen-b4-broadphase-guards-04aa ---
+        if (wouldSkipShapeCellInsertion2D(range, maxOccupancy)) {
+    if (wouldSkipShapeCellInsertion(range, maxOccupancy)) {
+bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer) {
+bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
+bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
