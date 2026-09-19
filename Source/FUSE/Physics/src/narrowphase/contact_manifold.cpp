@@ -664,3 +664,6 @@ ManifoldFinalizeDeepenPreflight preflight_manifold_finalize_deepen(
     preflight.wouldBeEmptyAfterPrune = basePreflight.wouldBeEmptyAfterPrune;
     preflight.needsFrictionBasis = basePreflight.needsFrictionBasis;
     preflight.canReuseFrictionBasis = basePreflight.canReuseFrictionBasis;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1764 ---
+    if (preflight.skipped || preflight.reason != ManifoldPruneRejectReason::None) {

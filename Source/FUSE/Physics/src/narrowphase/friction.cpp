@@ -360,3 +360,9 @@ bool should_skip_friction_basis_deepen_preflight(
 WarmStartFrictionPreflight preflight_warm_start_friction(
     WarmStartFrictionPreflight preflight{};
 bool should_skip_warm_start_friction(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1764 ---
+    case FrictionBasisRejectReason::MissingBasis:
+    case FrictionBasisRejectReason::StaleBasis:
+        return FrictionBasisRejectReason::StaleBasis;
+        return FrictionBasisRejectReason::MissingBasis;

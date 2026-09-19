@@ -2306,3 +2306,9 @@ void testWarmStartFrictionPreflightGuards() {
     testContactBufferPreflightGuards();
     testContactBufferFrictionRebuildPreflightGuards();
     testWarmStartFrictionPreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1764 ---
+            needsBuild, fuse::physics::narrowphase::FrictionBasisRejectReason::MissingBasis),
+        needsPreflight.reason == fuse::physics::narrowphase::FrictionBasisRejectReason::MissingBasis,
+            stale, fuse::physics::narrowphase::FrictionBasisRejectReason::StaleBasis),
+                fuse::physics::narrowphase::FrictionBasisRejectReason::StaleBasis),
