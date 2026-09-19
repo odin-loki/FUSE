@@ -47,6 +47,10 @@ TaaJitterGuardRejectReason classifyTaaJitterNdcReject(u32 width, u32 height, u32
     return TaaJitterGuardRejectReason::None;
 }
 
+TaaJitterGuardRejectReason classifyTaaJitterAdvanceReject(u32 sequenceLength) {
+    return classifyTaaJitterSyncReject(sequenceLength);
+}
+
 bool preflightTaaJitterSync(u32 /*frameIndex*/, u32 sequenceLength, TaaJitterGuardRejectReason* reason) {
     const TaaJitterGuardRejectReason reject = classifyTaaJitterSyncReject(sequenceLength);
     if (reason != nullptr) {
@@ -59,12 +63,40 @@ bool tryPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterGuar
     return preflightTaaJitterSync(frameIndex, sequenceLength, &reason);
 }
 
+bool shouldSkipTaaJitterSync(u32 frameIndex, u32 sequenceLength) {
+    return !preflightTaaJitterSync(frameIndex, sequenceLength);
+}
+
 bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason* reason) {
     const TaaJitterGuardRejectReason reject = classifyTaaJitterNdcReject(width, height, sequenceLength);
     if (reason != nullptr) {
         *reason = reject;
     }
     return reject == TaaJitterGuardRejectReason::None;
+}
+
+bool tryPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason& reason) {
+    return preflightTaaJitterNdc(width, height, sequenceLength, &reason);
+}
+
+bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength) {
+    return !preflightTaaJitterNdc(width, height, sequenceLength);
+}
+
+bool preflightTaaJitterAdvance(u32 sequenceLength, TaaJitterGuardRejectReason* reason) {
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterAdvanceReject(sequenceLength);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaJitterGuardRejectReason::None;
+}
+
+bool tryPreflightTaaJitterAdvance(u32 sequenceLength, TaaJitterGuardRejectReason& reason) {
+    return preflightTaaJitterAdvance(sequenceLength, &reason);
+}
+
+bool shouldSkipTaaJitterAdvance(u32 sequenceLength) {
+    return !preflightTaaJitterAdvance(sequenceLength);
 }
 
 bool TaaJitterLayout::validateSequenceLength(u32 length) {

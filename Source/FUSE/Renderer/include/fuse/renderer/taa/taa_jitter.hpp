@@ -23,14 +23,29 @@ TaaJitterGuardRejectReason classifyTaaJitterSyncReject(u32 sequenceLength = kTaa
 /// Classify why NDC jitter production would be rejected (B5.9 deepen).
 TaaJitterGuardRejectReason classifyTaaJitterNdcReject(u32 width, u32 height,
                                                       u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Classify why jitter advance would be rejected (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterAdvanceReject(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// True when jitter can sync to `frameIndex` for the given sequence (B5.9 deepen).
 bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
                              TaaJitterGuardRejectReason* reason = nullptr);
 /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
 bool tryPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter sync preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterSync(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// True when NDC jitter can be produced for viewport and sequence (B5.9 deepen).
 bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
                             TaaJitterGuardRejectReason* reason = nullptr);
+/// NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason& reason);
+/// Early-out when NDC jitter preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// True when jitter can advance for the given sequence (B5.9 deepen).
+bool preflightTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                               TaaJitterGuardRejectReason* reason = nullptr);
+/// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterAdvance(u32 sequenceLength, TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter advance preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
