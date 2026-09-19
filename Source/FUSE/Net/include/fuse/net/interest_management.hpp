@@ -265,3 +265,8 @@ struct RadiusFilterPreflight {
 [[nodiscard]] InterestDiffPreflight preflight_interest_diff_apply(const InterestSetDiff& diff,
 [[nodiscard]] bool should_skip_interest_diff_apply(const InterestSetDiff& diff, const InterestScopeSet& scope);
 [[nodiscard]] bool should_skip_radius_filter(const std::vector<InterestCandidate>& candidates,
+
+// --- deepen additive from deepen-b74-net-interest-diff-radius-preflight-80ee ---
+struct InterestDiffApplyPreflight {
+[[nodiscard]] InterestDiffApplyPreflight preflight_interest_diff_apply(const InterestSetDiff& diff,
+    [[nodiscard]] RadiusFilterPreflight preflight_registered_radius_filter() const;

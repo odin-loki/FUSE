@@ -939,3 +939,28 @@ void run_interest_management_tests() {
                "should_skip_radius_filter on zero relevance radii");
     expectTrue(!fuse::net::should_skip_radius_filter(candidates, policy),
                "should_skip_radius_filter allows non-empty in-range candidates");
+
+// --- deepen additive from deepen-b74-net-interest-diff-radius-preflight-80ee ---
+    const fuse::net::InterestDiffApplyPreflight empty_apply_preflight =
+    expectTrue(empty_apply_preflight.should_skip(), "empty diff preflight should_skip");
+    const fuse::net::InterestDiffApplyPreflight enter_preflight =
+    expectTrue(!fuse::net::should_skip_interest_diff_apply(enter_only_diff, preflight_scope),
+               "should_skip rejects enter-only diff");
+    const fuse::net::InterestDiffApplyPreflight leave_preflight =
+    const fuse::net::InterestDiffApplyPreflight redundant_preflight =
+    expectTrue(fuse::net::should_skip_interest_diff_apply(redundant_diff, preflight_scope),
+               "should_skip accepts redundant diff");
+    expectTrue(empty_radius_preflight.should_skip(), "empty candidates radius preflight should_skip");
+    expectTrue(fuse::net::should_skip_radius_filter(policy, empty_candidates),
+    const fuse::net::RadiusFilterPreflight active_radius_preflight =
+    expectTrue(!fuse::net::should_skip_radius_filter(policy, candidates),
+               "should_skip rejects active radius filter");
+    const fuse::net::RadiusFilterPreflight disabled_radius_preflight =
+    expectTrue(fuse::net::should_skip_radius_filter(disabled_policy, disabled_candidates),
+               "should_skip accepts disabled radii without prior scope");
+    const fuse::net::RadiusFilterPreflight hysteresis_radius_preflight =
+    expectTrue(!fuse::net::should_skip_radius_filter(disabled_policy, disabled_candidates, disabled_prior),
+               "should_skip rejects hysteresis retention path");
+    const fuse::net::RadiusFilterPreflight registered_preflight =
+    expectTrue(!preflight_manager.preflight_registered_radius_filter().should_skip(),
+               "registered should_skip false when filter active");
