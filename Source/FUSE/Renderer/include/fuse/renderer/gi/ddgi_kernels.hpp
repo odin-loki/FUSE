@@ -57,6 +57,8 @@ void populateDDGIKernelParams(DDGIKernelParams& params,
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
 /// Diagnose why probe trace launch preflight would reject.
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// Diagnose why either probe kernel launch preflight would reject — same ordering as trace preflight.
+bool tryCanLaunchProbeKernels(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
 /// Preflight guard before probe blend kernel launch.
 bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
@@ -80,5 +82,9 @@ bool launch_probe_blend_kernel(const DDGIKernelParams& params, void* cuda_stream
 bool tryLaunch_probe_blend_kernel(const DDGIKernelParams& params,
                                   void* cuda_stream,
                                   ProbeKernelRejectReason& outReason);
+/// Launch trace + blend kernels with reject-reason diagnostics; false when preflight rejects.
+bool tryLaunch_probe_kernels(const DDGIKernelParams& params,
+                             void* cuda_stream,
+                             ProbeKernelRejectReason& outReason);
 
 } // namespace fuse::renderer::gi
