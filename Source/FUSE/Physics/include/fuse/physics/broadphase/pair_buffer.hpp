@@ -1420,5 +1420,70 @@ bool canSkipPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount);
 
 /// Non-mutating merge predicate — mirrors `preflightPairBufferMerge` (B4.2 deepen pass).
 bool shouldRunPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount);
+/// Why pair-buffer slot write would reject (B4.2 deepen pass).
+enum class PairBufferWriteSlotRejectReason : u8 {
+    None = 0,
+    OutOfRangeSlot,
+    InvalidPair,
+};
+
+/// Human-readable label for pair-buffer write-slot reject reasons (logging / tests).
+const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason);
+
+/// Diagnose why write-slot would reject; vacuously succeeds when write may proceed.
+PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Returns true when `pairBufferWriteSlotRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferWriteSlotRejectsForReason(
+    u32 idxB,
+    PairBufferWriteSlotRejectReason expected);
+
+/// Read-only write-slot diagnostics — no mutation (B4.2 deepen pass).
+struct PairBufferWriteSlotPreflight {
+    PairBufferWriteSlotRejectReason reason = PairBufferWriteSlotRejectReason::None;
+    bool outOfRangeSlot = false;
+    bool invalidPair = false;
+
+    bool canWrite() const { return reason == PairBufferWriteSlotRejectReason::None; }
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+
+/// Non-mutating write-slot skip predicate — inverse of `canWrite` (B4.2 deepen pass).
+
+/// Non-mutating write-slot predicate — mirrors `preflightPairBufferWriteSlot` (B4.2 deepen pass).
+
+/// Why pair-buffer bulk accept would reject (B4.2 deepen pass).
+enum class PairBufferAcceptPairsRejectReason : u8 {
+
+/// Human-readable label for pair-buffer accept-pairs reject reasons (logging / tests).
+const char* pairBufferAcceptPairsRejectReasonName(PairBufferAcceptPairsRejectReason reason);
+
+/// Diagnose why bulk accept would reject; vacuously succeeds when accept may proceed.
+PairBufferAcceptPairsRejectReason pairBufferAcceptPairsRejectReason(
+    u32 additionalCount);
+
+/// Returns true when `pairBufferAcceptPairsRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferAcceptPairsRejectsForReason(
+    u32 additionalCount,
+    PairBufferAcceptPairsRejectReason expected);
+
+/// Read-only bulk-accept diagnostics — no mutation (B4.2 deepen pass).
+struct PairBufferAcceptPairsPreflight {
+    PairBufferAcceptPairsRejectReason reason = PairBufferAcceptPairsRejectReason::None;
+    u32 additionalCount = 0;
+
+    bool canAccept() const { return reason == PairBufferAcceptPairsRejectReason::None; }
+
+PairBufferAcceptPairsPreflight preflightPairBufferAcceptPairs(
+
+/// Non-mutating bulk-accept skip predicate — inverse of `canAccept` (B4.2 deepen pass).
+bool canSkipPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount);
+
+/// Non-mutating bulk-accept predicate — mirrors `preflightPairBufferAcceptPairs` (B4.2 deepen pass).
+bool shouldAcceptPairBufferPairs(const PairBufferSoA& buffer, u32 additionalCount);
 
 } // namespace fuse::physics::broadphase

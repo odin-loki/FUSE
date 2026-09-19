@@ -235,15 +235,13 @@ bool PairBufferSoA::wouldRejectAdditionalPairs(u32 additionalCount) const {
 
 bool PairBufferSoA::canSkipDedupe() const {
     if (canSkipSoAIteration()) {
-        return true;
-    }
 
     const u32 validCount = countValidSlots();
     return validCount <= 1u;
-}
 
 bool PairBufferSoA::canSkipCompactAndClamp() const {
     return canSkipSoAIteration() || countValidSlots() == 0u;
+    return preflightPairBufferAcceptPairs(*this, additionalCount).canAccept();
 }
 
 bool PairBufferSoA::canApplyMaxCapacityClamp() const {
@@ -2208,6 +2206,26 @@ bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer) {
 
     u32 idxB,
 
+const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason) {
+    case PairBufferWriteSlotRejectReason::None:
+    case PairBufferWriteSlotRejectReason::OutOfRangeSlot:
+        return "OutOfRangeSlot";
+    case PairBufferWriteSlotRejectReason::InvalidPair:
+    }
+
+PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
+    u32 slot,
+    u32 idxB) {
+    if (slot >= buffer.pairSlotCount) {
+        return PairBufferWriteSlotRejectReason::OutOfRangeSlot;
+        return PairBufferWriteSlotRejectReason::InvalidPair;
+    return PairBufferWriteSlotRejectReason::None;
+
+bool pairBufferWriteSlotRejectsForReason(
+    PairBufferWriteSlotRejectReason expected) {
+    return pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB) == expected;
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
     PairBufferWriteSlotPreflight preflight{};
     preflight.reason = pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB);
     preflight.outOfRangeSlot = preflight.reason == PairBufferWriteSlotRejectReason::OutOfRangeSlot;
@@ -2795,5 +2813,40 @@ bool canSkipPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount) {
 
 bool shouldRunPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount) {
     return preflightPairBufferMerge(buffer, pairCount).canMerge();
+}
+
+
+
+const char* pairBufferAcceptPairsRejectReasonName(PairBufferAcceptPairsRejectReason reason) {
+    switch (reason) {
+    case PairBufferAcceptPairsRejectReason::None:
+        return "None";
+    case PairBufferAcceptPairsRejectReason::ExceedsCapacity:
+    return "Unknown";
+
+PairBufferAcceptPairsRejectReason pairBufferAcceptPairsRejectReason(
+    const PairBufferSoA& buffer,
+    u32 additionalCount) {
+    if (additionalCount == 0u) {
+        return PairBufferAcceptPairsRejectReason::None;
+    if (buffer.maxCapacity > 0u && buffer.activeCount + additionalCount > buffer.maxCapacity) {
+        return PairBufferAcceptPairsRejectReason::ExceedsCapacity;
+
+bool pairBufferAcceptPairsRejectsForReason(
+    u32 additionalCount,
+    PairBufferAcceptPairsRejectReason expected) {
+    return pairBufferAcceptPairsRejectReason(buffer, additionalCount) == expected;
+
+PairBufferAcceptPairsPreflight preflightPairBufferAcceptPairs(
+    PairBufferAcceptPairsPreflight preflight{};
+    preflight.additionalCount = additionalCount;
+    preflight.reason = pairBufferAcceptPairsRejectReason(buffer, additionalCount);
+    preflight.exceedsCapacity = preflight.reason == PairBufferAcceptPairsRejectReason::ExceedsCapacity;
+
+bool canSkipPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount) {
+    return !preflightPairBufferAcceptPairs(buffer, additionalCount).canAccept();
+
+bool shouldAcceptPairBufferPairs(const PairBufferSoA& buffer, u32 additionalCount) {
+    return preflightPairBufferAcceptPairs(buffer, additionalCount).canAccept();
 
 } // namespace fuse::physics::broadphase

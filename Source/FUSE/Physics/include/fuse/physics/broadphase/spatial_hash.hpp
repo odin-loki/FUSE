@@ -2123,6 +2123,62 @@ FUSE_PHYSICS_INLINE u32 cellOccupancyBudgetFromSpan(u32 maxSpanPerAxis) {
 
 FUSE_PHYSICS_INLINE u32 cellOccupancyBudgetFromSpan2D(u32 maxSpanPerAxis) {
     return effectiveSpan * effectiveSpan;
+/// Why cell-span clamp would early-out (B4.2 deepen pass).
+enum class CellSpanClampRejectReason : u8 {
+    None = 0,
+    EmptyRange,
+    UnlimitedSpan,
+};
+
+/// Human-readable label for cell-span clamp reject reasons (logging / tests).
+const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason);
+
+/// Diagnose why cell-span clamp would skip; vacuously succeeds when clamp may proceed.
+FUSE_PHYSICS_INLINE CellSpanClampRejectReason cellSpanClampRejectReason(
+    const CellRange3& range,
+    u32 maxSpanPerAxis) {
+    if (isEmptyCellRange(range)) {
+        return CellSpanClampRejectReason::EmptyRange;
+        return CellSpanClampRejectReason::UnlimitedSpan;
+    return CellSpanClampRejectReason::None;
+
+    const CellRange2& range,
+
+/// Returns true when `cellSpanClampRejectReason` matches `expected` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool cellSpanClampRejectsForReason(
+    u32 maxSpanPerAxis,
+    CellSpanClampRejectReason expected) {
+    return cellSpanClampRejectReason(range, maxSpanPerAxis) == expected;
+
+
+/// Read-only cell-span clamp diagnostics — no mutation (B4.2 deepen pass).
+struct CellSpanClampPreflight {
+    CellSpanClampRejectReason reason = CellSpanClampRejectReason::None;
+    bool emptyRange = false;
+    bool unlimitedSpan = false;
+
+    bool needsClamp() const { return reason == CellSpanClampRejectReason::None; }
+
+FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    CellSpanClampPreflight preflight{};
+    preflight.reason = cellSpanClampRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellSpanClampRejectReason::EmptyRange;
+    preflight.unlimitedSpan = preflight.reason == CellSpanClampRejectReason::UnlimitedSpan;
+    return preflight;
+
+FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+
+/// Non-mutating cell-span clamp skip predicate — inverse of `needsClamp` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    return !preflightCellSpanClamp(range, maxSpanPerAxis).needsClamp();
+
+FUSE_PHYSICS_INLINE bool canSkipCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+
+/// Non-mutating cell-span clamp predicate — mirrors `preflightCellSpanClamp` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    return preflightCellSpanClamp(range, maxSpanPerAxis).needsClamp();
+
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
 
 /// Limit per-axis cell span from the range center (CUDA occupancy iteration guard stub).
 FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerAxis) {
@@ -2897,6 +2953,9 @@ struct MergePairsIntoBufferPreflight {
     MergePairsIntoBufferRejectReason reason = MergePairsIntoBufferRejectReason::None;
     bool emptyPairs = false;
     bool bufferFull = false;
+    bool partialCapacity = false;
+    u32 mergeablePairCount = 0;
+    u32 requestedPairCount = 0;
 
     bool canMerge() const { return reason == MergePairsIntoBufferRejectReason::None; }
 

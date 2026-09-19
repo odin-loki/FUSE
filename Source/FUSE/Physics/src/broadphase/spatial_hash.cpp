@@ -1029,6 +1029,7 @@ void dedupeBuffer(PairBufferSoA& buffer) {
     if (should_skip_dedupe_broadphase(buffer)) {
     if (canSkipDedupeBroadphase(buffer) || buffer.canSkipDedupePass()) {
     if (canSkipDedupeBroadphase(buffer) || canSkipPairBufferDedupe(buffer)) {
+    if (!shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
@@ -1308,6 +1309,13 @@ bool canSkipBroadphaseCellPairGeneration(u32 totalCellSlots) {
 
 bool shouldRunBroadphaseCellPairGeneration(u32 totalCellSlots) {
     return preflightBroadphaseCellPairs(totalCellSlots).canGenerate();
+
+const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason) {
+    case CellSpanClampRejectReason::None:
+    case CellSpanClampRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellSpanClampRejectReason::UnlimitedSpan:
+        return "UnlimitedSpan";
 
 RefineBroadphaseRejectReason refineBroadphaseRejectReason(
     const RigidBodySoA& bodies,
@@ -1990,9 +1998,31 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     const std::vector<CandidatePair>& pairs,
     const PairBufferSoA& buffer) {
     MergePairsIntoBufferPreflight preflight{};
+    preflight.requestedPairCount = static_cast<u32>(pairs.size());
     preflight.reason = mergePairsIntoBufferRejectReason(pairs, buffer);
     preflight.emptyPairs = preflight.reason == MergePairsIntoBufferRejectReason::EmptyPairs;
     preflight.bufferFull = preflight.reason == MergePairsIntoBufferRejectReason::BufferFull;
+
+    if (preflight.reason == MergePairsIntoBufferRejectReason::None) {
+        u32 mergeableCount = 0u;
+        u32 remainingSlots = buffer.remainingCapacity();
+        for (const CandidatePair& pair : pairs) {
+            if (!isValidCandidatePair(pair.bodyA, pair.bodyB)) {
+                continue;
+            }
+            if (remainingSlots == 0u) {
+                break;
+            }
+            ++mergeableCount;
+            if (remainingSlots != UINT32_MAX) {
+                --remainingSlots;
+            }
+        }
+        preflight.mergeablePairCount = mergeableCount;
+        preflight.partialCapacity =
+            mergeableCount > 0u && mergeableCount < preflight.requestedPairCount;
+    }
+
     return preflight;
 }
 
