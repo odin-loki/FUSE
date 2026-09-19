@@ -5,6 +5,8 @@
 #include <fuse/platform/thread.hpp>
 #include <fuse/world2d/fuselevel_bridge.hpp>
 
+#include <filesystem>
+
 #include <cmath>
 
 namespace fuse::world2d {
@@ -35,10 +37,21 @@ FuselevelLoadResult World2D::loadWorldFromFuselevel(const std::string& fuselevel
     return m_lastFuselevelLoad;
 }
 
+void World2D::setProjectWorldSource(std::string projectRoot, std::string defaultWorld2DRel) {
+    m_projectRoot = std::move(projectRoot);
+    m_defaultWorld2DRel = std::move(defaultWorld2DRel);
+}
+
 void World2D::loadWorld(dimension::WorldHandle world) {
     m_activeWorld = world;
     if (!m_pendingFuselevelPath.empty()) {
         loadWorldFromFuselevel(m_pendingFuselevelPath);
+        return;
+    }
+
+    if (!m_projectRoot.empty() && !m_defaultWorld2DRel.empty()) {
+        std::filesystem::path worldPath = std::filesystem::path(m_projectRoot) / m_defaultWorld2DRel;
+        loadWorldFromFuselevel(worldPath.lexically_normal().string());
         return;
     }
 

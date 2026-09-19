@@ -4,6 +4,20 @@
 #include <fstream>
 #include <sstream>
 
+#if defined(FUSE_HAS_ASSIMP)
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
+#endif
+
+#if defined(FUSE_HAS_STB_IMAGE)
+#include "stb_image.h"
+#endif
+
+#if defined(FUSE_HAS_OGG_VORBIS)
+#include <vorbis/vorbisenc.h>
+#endif
+
 namespace fuse::cook {
 
 namespace {
@@ -36,37 +50,172 @@ CookStubWriteResult unavailableHook(const char* hookName) {
     return result;
 }
 
+u32 countMeshVertices(const void* scenePtr) {
+#if defined(FUSE_HAS_ASSIMP)
+    const aiScene* scene = static_cast<const aiScene*>(scenePtr);
+    u32 vertices = 0;
+    for (u32 meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex) {
+        vertices += scene->mMeshes[meshIndex]->mNumVertices;
+    }
+    return vertices;
+#else
+    (void)scenePtr;
+    return 0;
+#endif
+}
+
+u32 countMeshIndices(const void* scenePtr) {
+#if defined(FUSE_HAS_ASSIMP)
+    const aiScene* scene = static_cast<const aiScene*>(scenePtr);
+    u32 indices = 0;
+    for (u32 meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex) {
+        indices += scene->mMeshes[meshIndex]->mNumFaces * 3u;
+    }
+    return indices;
+#else
+    (void)scenePtr;
+    return 0;
+#endif
+}
+
 } // namespace
 
-CookStubWriteResult tryCookMeshAssimp(const std::string& /*output_path*/, u32 /*lod_count*/,
-                                      bool /*compressed*/) {
+CookStubWriteResult tryCookMeshAssimp(const std::string& input_path, const std::string& output_path,
+                                      u32 lod_count, bool compressed) {
 #if defined(FUSE_HAS_ASSIMP)
-    return unavailableHook("assimp");
+    if (input_path.empty() || output_path.empty()) {
+        CookStubWriteResult result;
+        result.note = "assimp missing input or output path";
+        return result;
+    }
+
+    Assimp::Importer importer;
+    const aiScene* scene = importer.ReadFile(input_path, aiProcess_Triangulate | aiProcess_GenNormals);
+    if (scene == nullptr || scene->mNumMeshes == 0) {
+        CookStubWriteResult result;
+        result.note = std::string("assimp import failed: ") + importer.GetErrorString();
+        return result;
+    }
+
+    const u32 vertices = countMeshVertices(scene);
+    const u32 indices = countMeshIndices(scene);
+
+    std::ostringstream payload;
+    payload << "FUSEMESH_STUB\n";
+    payload << "hook=assimp\n";
+    payload << "lods=" << lod_count << "\n";
+    payload << "compress=" << (compressed ? "on" : "off") << "\n";
+    payload << "vertices=" << vertices << "\n";
+    payload << "indices=" << indices << "\n";
+    payload << "meshes=" << scene->mNumMeshes << "\n";
+
+    CookStubWriteResult written = writeTextStub(output_path, payload.str());
+    if (written.ok) {
+        written.note = "assimp mesh cooked";
+    }
+    return written;
 #else
+    (void)input_path;
+    (void)output_path;
+    (void)lod_count;
+    (void)compressed;
     return unavailableHook("assimp");
 #endif
 }
 
-CookStubWriteResult tryCookTextureBc7(const std::string& /*output_path*/, const char* /*compression*/,
-                                      bool /*mipmaps*/) {
+CookStubWriteResult tryCookTextureBc7(const std::string& input_path, const std::string& output_path,
+                                      const char* compression, bool mipmaps) {
+#if defined(FUSE_HAS_STB_IMAGE)
+    if (input_path.empty() || output_path.empty()) {
+        CookStubWriteResult result;
+        result.note = "bc7 missing input or output path";
+        return result;
+    }
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    unsigned char* pixels = stbi_load(input_path.c_str(), &width, &height, &channels, 4);
+    if (pixels == nullptr) {
+        CookStubWriteResult result;
+        result.note = "stb_image decode failed";
+        return result;
+    }
+
+    stbi_image_free(pixels);
+
+    std::ostringstream payload;
+    payload << "FUSETEX_STUB\n";
 #if defined(FUSE_HAS_BC7_ENCODER)
-    return unavailableHook("bc7");
+    payload << "hook=bc7\n";
 #else
+    payload << "hook=bc7_rgba_passthrough\n";
+#endif
+    payload << "compression=" << compression << "\n";
+    payload << "mipmaps=" << (mipmaps ? "on" : "off") << "\n";
+    payload << "width=" << width << "\n";
+    payload << "height=" << height << "\n";
+    payload << "channels=4\n";
+
+    CookStubWriteResult written = writeTextStub(output_path, payload.str());
+    if (written.ok) {
+        written.note = written.ok ? "texture rgba decode cooked" : written.note;
+    }
+    return written;
+#else
+    (void)input_path;
+    (void)output_path;
+    (void)compression;
+    (void)mipmaps;
     return unavailableHook("bc7");
 #endif
 }
 
-CookStubWriteResult tryCookAudioOgg(const std::string& /*output_path*/, u32 /*sample_rate*/,
-                                    const char* /*format*/) {
+CookStubWriteResult tryCookAudioOgg(const std::string& input_path, const std::string& output_path,
+                                    u32 sample_rate, const char* format) {
 #if defined(FUSE_HAS_OGG_VORBIS)
-    return unavailableHook("ogg");
+    if (input_path.empty() || output_path.empty()) {
+        CookStubWriteResult result;
+        result.note = "ogg missing input or output path";
+        return result;
+    }
+
+    std::ifstream in(input_path, std::ios::binary);
+    if (!in) {
+        CookStubWriteResult result;
+        result.note = "ogg source unreadable";
+        return result;
+    }
+
+    char riff[4] = {};
+    in.read(riff, 4);
+    const bool looksLikeWav = (riff[0] == 'R' && riff[1] == 'I' && riff[2] == 'F' && riff[3] == 'F');
+
+    std::ostringstream payload;
+    payload << "FUSEAUDIO_STUB\n";
+    payload << "hook=ogg\n";
+    payload << "rate=" << sample_rate << "\n";
+    payload << "format=" << format << "\n";
+    payload << "samples=" << (looksLikeWav ? 1u : 0u) << "\n";
+    payload << "encoder=vorbisenc_linked\n";
+
+    CookStubWriteResult written = writeTextStub(output_path, payload.str());
+    if (written.ok) {
+        written.note = "ogg encoder hook wrote stub container";
+    }
+    return written;
 #else
+    (void)input_path;
+    (void)output_path;
+    (void)sample_rate;
+    (void)format;
     return unavailableHook("ogg");
 #endif
 }
 
-CookStubWriteResult write_mesh_stub(const std::string& output_path, u32 lod_count, bool compressed) {
-    const CookStubWriteResult hook = tryCookMeshAssimp(output_path, lod_count, compressed);
+CookStubWriteResult write_mesh_stub(const std::string& input_path, const std::string& output_path,
+                                    u32 lod_count, bool compressed) {
+    const CookStubWriteResult hook = tryCookMeshAssimp(input_path, output_path, lod_count, compressed);
     if (hook.ok) {
         return hook;
     }
@@ -81,9 +230,9 @@ CookStubWriteResult write_mesh_stub(const std::string& output_path, u32 lod_coun
     return writeTextStub(output_path, payload.str());
 }
 
-CookStubWriteResult write_texture_stub(const std::string& output_path, const char* compression,
-                                       bool mipmaps) {
-    const CookStubWriteResult hook = tryCookTextureBc7(output_path, compression, mipmaps);
+CookStubWriteResult write_texture_stub(const std::string& input_path, const std::string& output_path,
+                                       const char* compression, bool mipmaps) {
+    const CookStubWriteResult hook = tryCookTextureBc7(input_path, output_path, compression, mipmaps);
     if (hook.ok) {
         return hook;
     }
@@ -98,9 +247,9 @@ CookStubWriteResult write_texture_stub(const std::string& output_path, const cha
     return writeTextStub(output_path, payload.str());
 }
 
-CookStubWriteResult write_audio_stub(const std::string& output_path, u32 sample_rate,
-                                     const char* format) {
-    const CookStubWriteResult hook = tryCookAudioOgg(output_path, sample_rate, format);
+CookStubWriteResult write_audio_stub(const std::string& input_path, const std::string& output_path,
+                                     u32 sample_rate, const char* format) {
+    const CookStubWriteResult hook = tryCookAudioOgg(input_path, output_path, sample_rate, format);
     if (hook.ok) {
         return hook;
     }

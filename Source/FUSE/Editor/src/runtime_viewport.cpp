@@ -9,6 +9,7 @@
 #include <fuse/project/loader.hpp>
 #include <fuse/scene/project_io.hpp>
 #include <fuse/scene/serialiser.hpp>
+#include <fuse/scene/wire_runtime_bind.hpp>
 
 #include <vector>
 
@@ -160,6 +161,11 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
 
     m_embedSession.loadedWorldPath = fuse::scene::resolveDefaultWorldPath(projectLoad.manifest);
     m_embedSession.worldEntityCount = runtimeScene.entityCount();
+    fuse::scene::LegacyDatablockTable wireTable;
+    const fuse::scene::WireRuntimeBindResult wireBindings =
+        fuse::scene::populateLegacyTableFromScene(runtimeScene, wireTable);
+    m_embedSession.wireDatablockEntries = wireBindings.datablockEntries;
+    m_embedSession.wireMaterialEntries = wireBindings.materialEntries;
     m_embedSession.worldLoaded = true;
     m_embedded = true;
 

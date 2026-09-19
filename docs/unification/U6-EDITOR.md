@@ -140,9 +140,9 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 | `PropertyInspector` sections: Transform, Mesh, SDF, RigidBody, Camera, Point/Directional/Spot lights | All ECS types + live renderer preview on slider drag |
 | `CommandStack` property-edit undo/redo + coalesced Qt spinbox drags | — |
 | ECS `Registry::has_all<Ts...>()` + lazy init (Linux segfault fix); cull light path requires Transform + light | — |
-| `ViewportSwapchainWiring` consumes External handoff via `VulkanBootstrap::ensureSwapchain` (headless fallback) | Live Qt swapchain present |
+| `ViewportSwapchainWiring` consumes External handoff via `VulkanBootstrap::ensureSwapchain` (headless fallback; Qt winId stub short-circuits safely) | Live Qt swapchain present |
 | Optional `QVulkanInstance` surface path in viewport widget (winId stub fallback) | — |
-| `RuntimeViewportHook` loads manifest world, mirrors editor entities (parent indices), null WSI headless GPU stub | Full in-process GPU viewport compositing |
+| `RuntimeViewportHook` loads manifest world, populates legacy wire table stats, mirrors editor entities (parent indices), null WSI headless GPU stub | Full in-process GPU viewport compositing |
 
 ---
 

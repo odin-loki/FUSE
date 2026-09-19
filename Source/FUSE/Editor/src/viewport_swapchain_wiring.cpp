@@ -25,6 +25,15 @@ ViewportSwapchainWiringResult wireExternalSwapchainFromHandoff(fuse::renderer::R
         return result;
     }
 
+    if (handoff.qtStubSurface) {
+        result.attempted = true;
+        result.fellBackToHeadless = true;
+        result.note = "qt_winid_stub_not_vk_surface";
+        handoff.pending = false;
+        handoff.consumed = true;
+        return result;
+    }
+
     fuse::renderer::SwapchainDesc desc = handoff.swapchainDesc;
     if (desc.width == 0) {
         desc.width = handoff.width > 0 ? handoff.width : 640u;

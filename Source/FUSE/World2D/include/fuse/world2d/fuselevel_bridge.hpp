@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/scene/wire_runtime_bind.hpp>
 #include <fuse/types.hpp>
 
 #include <string>
@@ -20,6 +21,8 @@ struct FuselevelLoadResult {
     u32 entityCount = 0;
     u32 wireStubCount = 0;
     u32 wireStubResolved = 0;
+    fuse::scene::WireRuntimeBindResult wireBindings{};
+    fuse::scene::LegacyDatablockTable legacyTable{};
     std::string note;
     std::vector<WireStubRuntimeEntry> wireStubs;
 };

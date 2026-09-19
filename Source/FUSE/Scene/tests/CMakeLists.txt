@@ -34,3 +34,10 @@ add_executable(fuse_scene_wire_stub_tests
 
 target_link_libraries(fuse_scene_wire_stub_tests PRIVATE fuse_scene)
 add_test(NAME fuse_scene_wire_stub COMMAND fuse_scene_wire_stub_tests)
+
+add_executable(fuse_scene_wire_runtime_bind_tests
+    test_wire_runtime_bind.cpp
+)
+
+target_link_libraries(fuse_scene_wire_runtime_bind_tests PRIVATE fuse_scene fuse_ecs fuse_project fuse_world_converter)
+add_test(NAME fuse_scene_wire_runtime_bind COMMAND fuse_scene_wire_runtime_bind_tests)

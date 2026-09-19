@@ -171,16 +171,26 @@ Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed
 
 | Writer | Hook | Output marker |
 |--------|------|---------------|
-| `write_mesh_stub` | Assimp (`FUSE_HAS_ASSIMP`) | `FUSEMESH_STUB` |
-| `write_texture_stub` | BC7 (`FUSE_HAS_BC7_ENCODER`) | `FUSETEX_STUB` |
-| `write_audio_stub` | OGG Vorbis (`FUSE_HAS_OGG_VORBIS`) | `FUSEAUDIO_STUB` |
+| `write_mesh_stub` | Assimp (`FUSE_HAS_ASSIMP`) — passes `input_path` | `FUSEMESH_STUB` |
+| `write_texture_stub` | STB decode (`FUSE_HAS_STB_IMAGE`) + optional BC7 (`FUSE_HAS_BC7_ENCODER`) | `FUSETEX_STUB` |
+| `write_audio_stub` | OGG Vorbis (`FUSE_HAS_OGG_VORBIS`) — WAV sniff stub when linked | `FUSEAUDIO_STUB` |
 
 `fuselevel_cook_stub.*` populates `hierarchyLinks` from `ConvertResult::wiringStubCount` on `--fuselevel` cooks.
 
-## 10. Deferred (honest backlog)
+## 10. Wire runtime binding (wave 6 progress)
 
-- Link Assimp / BC7 / OGG libraries so cook hooks produce real binaries (hooks + stub fallback exist today)
-- Resolve `__fuse.wire|*` stub entities into runtime ECS components / legacy datablock tables — **parser + World2D load stats landed** (`fuse::scene::parseWireStubEntityName`, `World2D::loadWorldFromFuselevel`)
-- T2D toybox → `fuse::world2d::World2D::loadWorld` runtime bridge — **`.fuselevel` populate + `setFuselevelPath` bridge landed**
+| API | Role |
+|-----|------|
+| `fuse::scene::populateLegacyTableFromScene` | Distill `__fuse.wire|datablock|*` / `material|*` into `LegacyDatablockTable` |
+| `fuse::scene::applyWireBindingsToEcs` | Apply material wires to `ecs::Mesh::material_id` by owner entity name |
+| `World2D::setProjectWorldSource` | `loadWorld()` resolves `projectRoot + defaultWorld2D` when no explicit fuselevel path is set |
+
+CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`.
+
+## 11. Deferred (honest backlog)
+
+- Link Assimp / BC7 encoder / libvorbisenc so cook hooks produce real binaries (STB RGBA decode path + stub fallback exist today)
+- Full ECS spawn-component bind for datablock wires (table + resolve counts landed; spawn leaf deferred)
+- T2D toybox → full runtime module bridge beyond `.fuselevel` populate
 - Asset path remapping via VFS mounts ([vfs-mount-plan.md](./vfs-mount-plan.md))
 - `project.json` `workerCap` override for `computeWorkerCount()`

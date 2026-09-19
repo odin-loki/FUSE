@@ -8,6 +8,7 @@ add_library(fuse_scene STATIC
     src/serialiser.cpp
     src/svo.cpp
     src/wire_stub.cpp
+    src/wire_runtime_bind.cpp
     include/fuse/scene/bvh_stub.hpp
     include/fuse/scene/camera.hpp
     include/fuse/scene/math.hpp
@@ -18,6 +19,7 @@ add_library(fuse_scene STATIC
     include/fuse/scene/serialiser.hpp
     include/fuse/scene/svo.hpp
     include/fuse/scene/wire_stub.hpp
+    include/fuse/scene/wire_runtime_bind.hpp
 )
 
 add_library(fuse::scene ALIAS fuse_scene)

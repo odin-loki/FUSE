@@ -2,6 +2,7 @@
 
 #include <fuse/log/logger.hpp>
 #include <fuse/scene/serialiser.hpp>
+#include <fuse/scene/wire_runtime_bind.hpp>
 #include <fuse/scene/wire_stub.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/world_2d.hpp>
@@ -72,6 +73,7 @@ FuselevelLoadResult populateWorld2DFromFuselevel(World2D& world, const std::stri
     }
 
     result.entityCount = entityCount;
+    result.wireBindings = fuse::scene::populateLegacyTableFromScene(scene, result.legacyTable);
     result.ok = true;
     result.note = result.entityCount > 0 ? "fuselevel scene graph populated" : "fuselevel contained no scene nodes";
     fuse::log::info("World2D: loaded %u entities (%u wire stubs, %u parsed) from %s", result.entityCount,

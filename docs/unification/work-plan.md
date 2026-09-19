@@ -238,7 +238,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | In-process PIE; UI thread vs game thread command queue; one feature pane |
 | **Deps** | WP-06, WP-05 |
-| **Status** | 🚧 ECS lazy-init segfault fix + swapchain wiring/QVulkan handoff; headless runtime embed — [U6-EDITOR.md](./U6-EDITOR.md) |
+| **Status** | 🚧 Wave 6: Qt winId stub short-circuit + wire table stats on world load; headless runtime embed — [U6-EDITOR.md](./U6-EDITOR.md) |
 
 ---
 
@@ -249,7 +249,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | `project.json`, importers, cookers under `Tools/FUSE/` |
 | **Deps** | WP-06 |
-| **Status** | 🚧 T3D wiring stubs + T2D `loadWorld` fuselevel bridge + cook encoder hooks (Assimp/OGG detected when present) — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
+| **Status** | 🚧 Wave 6: wire runtime bind + `setProjectWorldSource` + STB texture decode cook path — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
 
 ---
 

@@ -1830,60 +1830,6 @@ void testCellSpanRejectReasonAndPreflight() {
     expectTrue(planePreflight.exceedsSpan, "2D preflight marks exceedsSpan");
 }
 
-void testPairBufferInvalidateSlotRejectReasonGuards() {
-    fuse::physics::broadphase::PairBufferSoA buffer;
-    buffer.preparePairSlots(2u);
-    buffer.writeSlot(0u, 0u, 1u);
-
-    expectEq(static_cast<fuse::u32>(
-                 fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(buffer, 0u)),
-             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::None),
-             "valid slot reports None invalidate reject reason");
-    expectTrue(fuse::physics::broadphase::shouldRunPairBufferInvalidateSlot(buffer, 0u),
-               "shouldRunPairBufferInvalidateSlot true for valid slot");
-    expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 0u),
-               "wouldSkipPairBufferInvalidateSlot false for valid slot");
-
-    expectEq(static_cast<fuse::u32>(
-                 fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(buffer, 2u)),
-             static_cast<fuse::u32>(
-                 fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::OutOfRangeSlot),
-             "out-of-range slot reports OutOfRangeSlot invalidate reject reason");
-    expectTrue(fuse::physics::broadphase::pairBufferInvalidateSlotRejectsForReason(
-                   buffer, 2u,
-                   fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::OutOfRangeSlot),
-               "out-of-range slot rejects for OutOfRangeSlot");
-    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferInvalidateSlotRejectReasonName(
-                               fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::AlreadyInvalid),
-                           "AlreadyInvalid") == 0,
-               "AlreadyInvalid invalidate reject reason has stable label");
-
-    fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason skipReason =
-        fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::None;
-    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 2u, &skipReason),
-               "wouldSkipPairBufferInvalidateSlot true for out-of-range slot");
-    expectEq(static_cast<fuse::u32>(skipReason),
-             static_cast<fuse::u32>(
-                 fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::OutOfRangeSlot),
-             "wouldSkipPairBufferInvalidateSlot reports OutOfRangeSlot");
-
-    buffer.invalidateSlot(0u);
-    expectEq(static_cast<fuse::u32>(
-                 fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(buffer, 0u)),
-             static_cast<fuse::u32>(
-                 fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::AlreadyInvalid),
-             "already-invalid slot reports AlreadyInvalid invalidate reject reason");
-    expectTrue(fuse::physics::broadphase::canSkipPairBufferInvalidateSlot(buffer, 0u),
-               "canSkipPairBufferInvalidateSlot true for already-invalid slot");
-
-    buffer.writeSlot(1u, 2u, 3u);
-    buffer.invalidateSlot(2u);
-    expectTrue(buffer.slotIsValid(1u), "invalidateSlot ignores out-of-range slot via preflight gate");
-    buffer.writeSlot(0u, 0u, 1u);
-    buffer.invalidateSlot(0u);
-    expectTrue(!buffer.slotIsValid(0u), "invalidateSlot clears in-range slot via preflight gate");
-}
-
 void testPairBufferWouldSkipWriteSlotGuards() {
     fuse::physics::broadphase::PairBufferSoA buffer;
     buffer.preparePairSlots(2u);

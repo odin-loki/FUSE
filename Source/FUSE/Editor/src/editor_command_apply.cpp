@@ -182,7 +182,7 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         viewport.setExternalSurfaceHandle(
             reinterpret_cast<void*>(handleValue), width, height,
             qtStubSurface ? "qt_winid_stub" : "qvulkan_instance_surface", qtStubSurface);
-        viewport.setPendingQtStubSurface(true);
+        viewport.setPendingQtStubSurface(qtStubSurface);
         return true;
     }
 

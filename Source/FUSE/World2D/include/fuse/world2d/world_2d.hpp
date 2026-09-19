@@ -35,6 +35,12 @@ public:
     /// Optional `.fuselevel` path consumed by the next `loadWorld()` call.
     void setFuselevelPath(std::string path) { m_pendingFuselevelPath = std::move(path); }
     const std::string& pendingFuselevelPath() const { return m_pendingFuselevelPath; }
+
+    /// Optional project root + `defaultWorld2D` relative path for `loadWorld()` when no fuselevel path is set.
+    void setProjectWorldSource(std::string projectRoot, std::string defaultWorld2DRel);
+    const std::string& projectRoot() const { return m_projectRoot; }
+    const std::string& defaultWorld2DRel() const { return m_defaultWorld2DRel; }
+
     const FuselevelLoadResult& lastFuselevelLoad() const { return m_lastFuselevelLoad; }
 
     /// Load a converted 2D world file immediately (also used by `loadWorld()` when a path is set).
@@ -62,6 +68,8 @@ private:
     bool m_enabled = true;
     dimension::WorldHandle m_activeWorld = dimension::WorldHandle::invalid();
     std::string m_pendingFuselevelPath;
+    std::string m_projectRoot;
+    std::string m_defaultWorld2DRel;
     FuselevelLoadResult m_lastFuselevelLoad{};
     std::unique_ptr<SceneObject2D> m_root;
     std::vector<SceneObject2D*> m_sprites;

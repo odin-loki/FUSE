@@ -133,8 +133,8 @@ CookRecord AssetCooker::cook_mesh(const MeshImportDesc& desc) {
                          note.str().c_str());
     if (record.ok && !record.cache_hit) {
         const fuse::cook::CookStubWriteResult written =
-            fuse::cook::write_mesh_stub(desc.output_path, desc.generate_lods ? desc.lod_count : 0u,
-                                        desc.compress);
+            fuse::cook::write_mesh_stub(desc.input_path, desc.output_path,
+                                        desc.generate_lods ? desc.lod_count : 0u, desc.compress);
         record = finalizeStubCook_(std::move(record), written);
     }
     return record;
@@ -151,7 +151,8 @@ CookRecord AssetCooker::cook_texture(const TextureImportDesc& desc) {
                          note.str().c_str());
     if (record.ok && !record.cache_hit) {
         const fuse::cook::CookStubWriteResult written =
-            fuse::cook::write_texture_stub(desc.output_path, compression, desc.generate_mipmaps);
+            fuse::cook::write_texture_stub(desc.input_path, desc.output_path, compression,
+                                            desc.generate_mipmaps);
         record = finalizeStubCook_(std::move(record), written);
     }
     return record;
@@ -167,7 +168,8 @@ CookRecord AssetCooker::cook_audio(const AudioImportDesc& desc) {
                          note.str().c_str());
     if (record.ok && !record.cache_hit) {
         const fuse::cook::CookStubWriteResult written =
-            fuse::cook::write_audio_stub(desc.output_path, desc.target_sample_rate, format);
+            fuse::cook::write_audio_stub(desc.input_path, desc.output_path, desc.target_sample_rate,
+                                         format);
         record = finalizeStubCook_(std::move(record), written);
     }
     return record;
