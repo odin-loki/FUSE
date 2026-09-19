@@ -249,8 +249,6 @@ const char* islandBuildRejectReasonName(IslandBuildRejectReason reason);
 /// Diagnose why island build would skip or reject constraint wiring.
 
 /// Read-only island build launch diagnostics — no mutation (B4.4 deepen follow-up).
-    u32 ownedContactCount = 0;
-    u32 ownedDistanceCount = 0;
 
 
 /// Populate island build preflight without mutating the graph (B4.4 deepen follow-up).
@@ -435,7 +433,6 @@ bool is_distance_constraint_valid_for_island_build(const DistanceConstraint& con
 /// True when `bodyCount` is usable for island graph construction (B4.4 deepen).
 
 /// Preflight island graph inputs; marks `skipped` when there is nothing to partition.
-};
 
 /// True when both contact body indices are in `[0, bodyCount)`.
 bool contact_references_in_range_body(u32 bodyA, u32 bodyB, u32 bodyCount);
@@ -443,6 +440,16 @@ bool contact_references_in_range_body(u32 bodyA, u32 bodyB, u32 bodyCount);
 /// True when both distance-constraint body indices are in `[0, bodyCount)`.
 bool distance_constraint_references_in_range_body(const DistanceConstraint& constraint, u32 bodyCount);
 
+/// Reject reason for island graph build preflight (additive guards only).
+    OutOfRangeBodyRef,
+
+    u32 outOfRangeBodyRefCount = 0;
+    bool rejected = false;
+
+    bool can_build() const { return !rejected; }
+    bool has_constraints() const { return validContactCount > 0u || validDistanceCount > 0u; }
+
+/// Returns a reject reason when inputs reference out-of-range body indices.
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -453,6 +460,12 @@ bool distance_constraint_references_in_range_body(const DistanceConstraint& cons
 bool should_skip_island_build(u32 bodyCount,
                               const std::vector<narrowphase::ContactManifold>& contacts,
                               const std::vector<DistanceConstraint>& distanceConstraints);
+/// Preflight island graph build inputs without mutating a graph.
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+
+/// Early-out guard when island build inputs are rejected.
+bool should_skip_island_build(
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
