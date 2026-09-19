@@ -48,7 +48,8 @@ void PairBufferSoA::preparePairSlots(u32 slotCount) {
 }
 
 void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB) {
-    if (slot >= pairSlotCount || !isValidCandidatePair(idxA, idxB)) {
+    const PairBufferWriteSlotPreflight preflight = preflightPairBufferWriteSlot(*this, slot, idxA, idxB);
+    if (!preflight.canWrite()) {
         return;
     }
 
@@ -145,7 +146,7 @@ u32 PairBufferSoA::compact() {
 }
 
 void PairBufferSoA::sortCanonical() {
-    if (!preflightPairBufferSort(*this).needsSort()) {
+    if (!shouldRunPairBufferSort(*this)) {
         return;
     }
 
@@ -463,15 +464,101 @@ PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer)
     return preflight;
 }
 
+PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer) {
+    PairBufferSortPreflight preflight{};
+    preflight.reason = pairBufferSortRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == PairBufferSortRejectReason::EmptyBuffer;
+    preflight.singlePair = preflight.reason == PairBufferSortRejectReason::SinglePair;
+    return preflight;
+}
+
 bool canSkipPairBufferDedupe(const PairBufferSoA& buffer) {
     return !preflightPairBufferDedupe(buffer).canDedupe();
 }
 
-PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer) {
-    PairBufferSortPreflight preflight{};
-    preflight.emptyBuffer = buffer.canSkipSoAIteration();
-    preflight.singlePair = !preflight.emptyBuffer && buffer.activeCount <= 1u;
+bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer) {
+    return preflightPairBufferDedupe(buffer).canDedupe();
+}
+
+const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason) {
+    switch (reason) {
+    case PairBufferWriteSlotRejectReason::None:
+        return "None";
+    case PairBufferWriteSlotRejectReason::InvalidPair:
+        return "InvalidPair";
+    case PairBufferWriteSlotRejectReason::OutOfRangeSlot:
+        return "OutOfRangeSlot";
+    }
+    return "Unknown";
+}
+
+PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB) {
+    if (slot >= buffer.pairSlotCount) {
+        return PairBufferWriteSlotRejectReason::OutOfRangeSlot;
+    }
+    if (!isValidCandidatePair(idxA, idxB)) {
+        return PairBufferWriteSlotRejectReason::InvalidPair;
+    }
+    return PairBufferWriteSlotRejectReason::None;
+}
+
+bool pairBufferWriteSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB,
+    PairBufferWriteSlotRejectReason expected) {
+    return pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB) == expected;
+}
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB) {
+    PairBufferWriteSlotPreflight preflight{};
+    preflight.reason = pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB);
+    preflight.invalidPair = preflight.reason == PairBufferWriteSlotRejectReason::InvalidPair;
+    preflight.outOfRangeSlot = preflight.reason == PairBufferWriteSlotRejectReason::OutOfRangeSlot;
     return preflight;
+}
+
+const char* pairBufferSortRejectReasonName(PairBufferSortRejectReason reason) {
+    switch (reason) {
+    case PairBufferSortRejectReason::None:
+        return "None";
+    case PairBufferSortRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case PairBufferSortRejectReason::SinglePair:
+        return "SinglePair";
+    }
+    return "Unknown";
+}
+
+PairBufferSortRejectReason pairBufferSortRejectReason(const PairBufferSoA& buffer) {
+    if (buffer.canSkipSoAIteration()) {
+        return PairBufferSortRejectReason::EmptyBuffer;
+    }
+    if (buffer.activeCount <= 1u) {
+        return PairBufferSortRejectReason::SinglePair;
+    }
+    return PairBufferSortRejectReason::None;
+}
+
+bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortRejectReason expected) {
+    return pairBufferSortRejectReason(buffer) == expected;
+}
+
+bool canSkipPairBufferSort(const PairBufferSoA& buffer) {
+    return !preflightPairBufferSort(buffer).needsSort();
+}
+
+bool shouldRunPairBufferSort(const PairBufferSoA& buffer) {
+    return preflightPairBufferSort(buffer).needsSort();
 }
 
 } // namespace fuse::physics::broadphase
