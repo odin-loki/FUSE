@@ -59,6 +59,18 @@ bool tryPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterGuar
     return preflightTaaJitterSync(frameIndex, sequenceLength, &reason);
 }
 
+bool shouldSkipTaaJitterSync(u32 sequenceLength) {
+    return !preflightTaaJitterSync(0u, sequenceLength);
+}
+
+bool tryPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason& reason) {
+    return preflightTaaJitterNdc(width, height, sequenceLength, &reason);
+}
+
+bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength) {
+    return !preflightTaaJitterNdc(width, height, sequenceLength);
+}
+
 bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason* reason) {
     const TaaJitterGuardRejectReason reject = classifyTaaJitterNdcReject(width, height, sequenceLength);
     if (reason != nullptr) {
@@ -132,6 +144,16 @@ fuse::math::Vec2 TaaJitterLayout::ndcOffsetForFrameIndex(u32 frameIndex, u32 wid
     return haltonNdcOffset(slot, width, height, sequenceLength);
 }
 
+bool TaaJitterLayout::tryComputeNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
+                                                         u32 sequenceLength, fuse::math::Vec2& out,
+                                                         TaaJitterGuardRejectReason& reason) {
+    if (!preflightTaaJitterNdc(width, height, sequenceLength, &reason)) {
+        return false;
+    }
+    out = ndcOffsetForFrameIndex(frameIndex, width, height, sequenceLength);
+    return true;
+}
+
 bool TaaJitterLayout::fillHaltonSequence(u32 length, fuse::math::Vec2* out) {
     if (out == nullptr || !validateSequenceLength(length)) {
         return false;
@@ -168,6 +190,15 @@ fuse::math::Vec2 TaaJitter::currentNdcOffset(u32 width, u32 height) const {
 
 bool TaaJitter::currentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out) const {
     if (!canProduceNdcOffset(width, height)) {
+        return false;
+    }
+    out = TaaJitterLayout::haltonNdcOffset(m_index, width, height, m_sequenceLength);
+    return true;
+}
+
+bool TaaJitter::tryCurrentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out,
+                                           TaaJitterGuardRejectReason& reason) const {
+    if (!preflightTaaJitterNdc(width, height, m_sequenceLength, &reason)) {
         return false;
     }
     out = TaaJitterLayout::haltonNdcOffset(m_index, width, height, m_sequenceLength);

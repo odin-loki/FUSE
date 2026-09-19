@@ -24,11 +24,16 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaJitter` honours `TaaJitterDesc::sequence_length` (default 8) when advancing and wrapping
 - `TaaJitter::syncToFrameIndex(frame)` — align jitter state to a wrapped monotonic frame counter
 - `TaaJitter::monotonicFrameIndex()` — monotonic frame counter incremented by `advance`, set by `syncToFrameIndex`
+- `shouldSkipTaaJitterSync` / `shouldSkipTaaJitterNdc` — early-out when jitter sync/NDC preflight would reject
+- `tryPreflightTaaJitterNdc` — NDC jitter preflight with mandatory reject-reason output
+- `TaaJitterLayout::tryComputeNdcOffsetForFrameIndex` — NDC jitter for a frame counter with reject-reason diagnostics
+- `TaaJitter::tryCurrentNdcOffsetIfReady` — NDC offset with mandatory reject-reason diagnostics
 
 ## History validity (B5.9 deepen)
 
 - `TaaHistoryBuffer::hasValidHistory()` — false until the first successful resolve
 - `TaaHistoryBuffer::needsWarmup()` — inverse of `hasValidHistory` for resolve warm-up gating
+- `shouldSkipTaaHistoryWarmup` / `tryPreflightTaaHistoryWarmup` — warm-up completion preflight with reject-reason diagnostics
 - `TaaHistoryBuffer::accumulatedFrames()` — monotonic frame counter reset on invalidate/resize
 - `TaaHistoryBuffer::invalidateGeneration()` — bumped on invalidate/resize for stale-history detection
 - `TaaHistoryBuffer::isHistoryStale(observedGeneration)` — true when a consumer's epoch differs from current history
@@ -45,6 +50,7 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaResolveSkipReason::StaleHistoryGeneration` — `observed_history_generation` differs from `invalidateGeneration()`
 - `taaResolveSkipReasonLabel(reason)` — stable string label for skip reasons
 - `classifyTaaResolveSkip(desc, history)` — public skip classifier (same ordering as `wouldSkip`)
+- `tryPreflightTaaResolve` / `shouldSkipTaaResolve` — resolve preflight with mandatory skip-reason output
 - `taaResolveDimensionsValid(w, h)` / `taaResolveDimensionsMatch(desc, history)` — dimension preflight helpers
 - `taaResolveBypassesHistoryGenerationGuard(desc)` — true when `observed_history_generation` uses the no-guard sentinel
 - `taaResolveSkipReasonIsBlocking(reason)` — true when resolve would bail before history update
@@ -59,6 +65,9 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::historyInvalidateGeneration()` — current history invalidate epoch
 - `TaaPass::stampObservedHistoryGeneration(desc)` — stamp observed generation from pass history
 - `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter
+- `TaaPass::tryPreflightJitterNdc` / `shouldSkipJitterNdc` / `shouldSkipJitterSync` — pass-level jitter guard wrappers
+- `TaaPass::tryPreflightHistoryWarmup` / `shouldSkipHistoryWarmup` — pass-level warm-up guard wrappers
+- `TaaPass::tryPreflightResolve` / `shouldSkipResolve` — pass-level resolve skip guard wrappers
 
 ## Pipeline (stub)
 
