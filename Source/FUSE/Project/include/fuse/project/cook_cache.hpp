@@ -207,3 +207,6 @@ struct CookCacheEntryPreflight {
         preflight.reason = CookHashRejectReason::EmptyInputPath;
         preflight.reason = CookHashRejectReason::EmptyOutputPath;
     preflight.reason = CookHashRejectReason::None;
+
+// --- deepen additive from deepen-b79-cooker-hash-028a ---
+[[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);

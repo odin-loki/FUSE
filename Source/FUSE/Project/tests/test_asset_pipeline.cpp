@@ -1955,3 +1955,9 @@ void testCookCachePreflightAndReconcileEstimators() {
 // --- deepen additive from deepen-b79-cooker-hash-guards-709d ---
     entryA.output_path = "/tmp/fuse_b79_reconcile_a.fusemesh";
     entryB.output_path = "/tmp/fuse_b79_reconcile_b.fusemesh";
+
+// --- deepen additive from deepen-b79-cooker-hash-028a ---
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entryA.output_path,
+               "would_invalidate_downstream rejects empty graph");
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entryA.output_path, graph.edges(), graph.jobs()),
+               "would_invalidate_downstream reports dependent entries");

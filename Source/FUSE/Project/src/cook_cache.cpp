@@ -849,3 +849,11 @@ CookCacheEntryPreflight preflight_cache_entry(const CookCacheEntry& entry) {
 // --- deepen additive from b79-hash-preflight-probes-15d5 ---
 bool CookCache::probe_would_invalidate_output(const std::string& output_path) const {
 bool CookCache::probe_would_invalidate_stale_content(const std::string& source_path,
+
+// --- deepen additive from deepen-b79-cooker-hash-028a ---
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        preflight.reason = CookHashRejectReason::None;
