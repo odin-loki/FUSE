@@ -256,6 +256,135 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Why manifold normalize would early-out (B4.6 deepen pass).
+enum class ManifoldNormalizeRejectReason : u8 {
+    None = 0,
+    EmptyManifold,
+    InvalidNormal,
+};
+
+/// Human-readable label for manifold normalize reject reasons (B4.6 deepen pass).
+inline const char* manifold_normalize_reject_reason_name(ManifoldNormalizeRejectReason reason) {
+    switch (reason) {
+    case ManifoldNormalizeRejectReason::None:
+        return "None";
+    case ManifoldNormalizeRejectReason::EmptyManifold:
+        return "EmptyManifold";
+    case ManifoldNormalizeRejectReason::InvalidNormal:
+        return "InvalidNormal";
+    }
+    return "Unknown";
+}
+
+/// Diagnose why contact-normal normalization would skip (B4.6 deepen pass).
+inline ManifoldNormalizeRejectReason manifold_normalize_reject_reason(const ContactManifold& manifold) {
+    if (manifold.empty()) {
+        return ManifoldNormalizeRejectReason::EmptyManifold;
+    }
+    if (!manifold.hasValidNormal()) {
+        return ManifoldNormalizeRejectReason::InvalidNormal;
+    }
+    return ManifoldNormalizeRejectReason::None;
+}
+
+/// Returns true when `manifold_normalize_reject_reason` matches `expected` (B4.6 deepen pass).
+inline bool manifold_normalize_rejects_for_reason(
+    const ContactManifold& manifold,
+    ManifoldNormalizeRejectReason expected) {
+    return manifold_normalize_reject_reason(manifold) == expected;
+}
+
+/// Read-only normalize diagnostics — no mutation (B4.6 deepen pass).
+struct ManifoldNormalizePreflight {
+    ManifoldNormalizeRejectReason reason = ManifoldNormalizeRejectReason::None;
+    bool skipped = false;
+    bool needsNormalize = false;
+
+    bool can_normalize() const {
+        return !skipped && reason == ManifoldNormalizeRejectReason::None && needsNormalize;
+    }
+
+    bool can_skip_normalize() const {
+        return skipped || reason != ManifoldNormalizeRejectReason::None || !needsNormalize;
+    }
+};
+
+/// Populate normalize preflight without mutating the manifold (B4.6 deepen pass).
+inline ManifoldNormalizePreflight preflight_manifold_normalize(
+    const ContactManifold& manifold,
+    f32 lengthEpsilon = 1e-4f) {
+    ManifoldNormalizePreflight preflight{};
+    preflight.reason = manifold_normalize_reject_reason(manifold);
+    if (preflight.reason != ManifoldNormalizeRejectReason::None) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    preflight.needsNormalize = manifold.needsNormalNormalization(lengthEpsilon);
+    return preflight;
+}
+
+/// Returns true when contact-normal normalization should be skipped (B4.6 deepen pass).
+inline bool can_skip_manifold_normalize(const ContactManifold& manifold, f32 lengthEpsilon = 1e-4f) {
+    return preflight_manifold_normalize(manifold, lengthEpsilon).can_skip_normalize();
+}
+
+/// Normalize contact normal only when preflight allows; returns false when skipped (B4.6 deepen pass).
+inline bool normalize_contact_normal_with_preflight(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f) {
+    const ManifoldNormalizePreflight preflight = preflight_manifold_normalize(manifold, lengthEpsilon);
+    if (!preflight.can_normalize()) {
+        return false;
+    }
+    const f32 normalLength = manifold.contactNormal.length();
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    return true;
+}
+
+/// Combined prune+finalize preflight for deepen-pass dispatch (B4.6 deepen pass).
+struct ManifoldPruneFinalizePreflight {
+    ManifoldPrunePreflight prune{};
+    ManifoldFinalizePreflight finalize{};
+    bool skipped = false;
+
+    bool can_prune() const { return !skipped && prune.can_prune_in_place(); }
+
+    bool can_finalize() const { return !skipped && finalize.can_finalize(); }
+
+    bool can_skip_prune_finalize() const {
+        return skipped || (!can_prune() && !can_finalize());
+    }
+};
+
+/// Populate combined prune/finalize preflight without mutation (B4.6 deepen pass).
+inline ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f,
+    f32 frictionEpsilon = 1e-4f) {
+    ManifoldPruneFinalizePreflight preflight{};
+    preflight.prune = preflight_manifold_prune(
+        manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    if (preflight.prune.reason != ManifoldPruneRejectReason::None) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    preflight.finalize = preflight_manifold_finalize(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    return preflight;
+}
+
+/// Returns true when combined prune/finalize should be skipped (B4.6 deepen pass).
+inline bool can_skip_manifold_prune_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f,
+    f32 frictionEpsilon = 1e-4f) {
+    return preflight_manifold_prune_finalize(
+               manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth, frictionEpsilon)
+        .can_skip_prune_finalize();
+}
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
