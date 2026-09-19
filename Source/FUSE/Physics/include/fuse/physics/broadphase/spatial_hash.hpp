@@ -1184,3 +1184,6 @@ bool should_skip_broadphase_refine(
 bool should_skip_broadphase_build(
 bool should_skip_shape_cell_insert(const CellRange3& range, u32 maxCells = 0u);
 bool should_skip_shape_cell_insert(const CellRange2& range, u32 maxCells = 0u);
+
+// --- deepen additive from deepen-b4-broadphase-preflights-fb35 ---
+    preflight.exceedsBudget = cellOccupancyRejectReason(range, maxCells) ==
