@@ -1860,6 +1860,7 @@ bool pairBufferWriteSlotRejectsForReason(
 
 /// Read-only slot-write diagnostics — no mutation (B4.2 deepen follow-up pass).
 /// Read-only slot-write diagnostics — no mutation (B4.2 deepen pass).
+/// Read-only write-slot diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct PairBufferWriteSlotPreflight {
     PairBufferWriteSlotRejectReason reason = PairBufferWriteSlotRejectReason::None;
     bool outOfRangeSlot = false;
@@ -1911,6 +1912,7 @@ bool shouldAcceptPairBufferPairs(const PairBufferSoA& buffer, u32 additionalCoun
 
 
     bool outOfSlot = false;
+
 
 
 
@@ -2008,6 +2010,7 @@ enum class PairBufferInvalidateSlotRejectReason : u8 {
     AlreadyInvalid,
 
 
+/// Why pair-buffer slot invalidation would reject (B4.2 deepen follow-up pass).
 
 /// Human-readable label for pair-buffer invalidate-slot reject reasons (logging / tests).
 const char* pairBufferInvalidateSlotRejectReasonName(PairBufferInvalidateSlotRejectReason reason);
@@ -2022,13 +2025,14 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(
     const PairBufferSoA& buffer,
     u32 slot);
 
-/// Returns true when `pairBufferInvalidateSlotRejectReason` matches `expected` (B4.2 deepen pass).
+/// Returns true when `pairBufferInvalidateSlotRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 bool pairBufferInvalidateSlotRejectsForReason(
     const PairBufferSoA& buffer,
     u32 slot,
     PairBufferInvalidateSlotRejectReason expected);
 
 /// Read-only invalidate-slot diagnostics — no mutation (B4.2 deepen pass).
+/// Read-only invalidate-slot diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct PairBufferInvalidateSlotPreflight {
     PairBufferInvalidateSlotRejectReason reason = PairBufferInvalidateSlotRejectReason::None;
     bool outOfRangeSlot = false;
@@ -2069,5 +2073,41 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(
 
 /// Non-mutating slot-invalidate predicate — mirrors `preflightPairBufferInvalidateSlot` (B4.2 deepen pass).
 bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
+/// Why pair-buffer slot reservation would reject (B4.2 deepen follow-up pass).
+enum class PairBufferSlotReservationRejectReason : u8 {
+    None = 0,
+    ZeroSlots,
+    ExceedsCapacity,
+};
+
+/// Human-readable label for pair-buffer slot-reservation reject reasons (logging / tests).
+const char* pairBufferSlotReservationRejectReasonName(PairBufferSlotReservationRejectReason reason);
+
+/// Diagnose why slot reservation would reject; vacuously succeeds when reservation may proceed.
+PairBufferSlotReservationRejectReason pairBufferSlotReservationRejectReason(
+    const PairBufferSoA& buffer,
+    u32 slotCount);
+
+/// Returns true when `pairBufferSlotReservationRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool pairBufferSlotReservationRejectsForReason(
+    u32 slotCount,
+    PairBufferSlotReservationRejectReason expected);
+
+/// Read-only slot-reservation diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferSlotReservationPreflight {
+    PairBufferSlotReservationRejectReason reason = PairBufferSlotReservationRejectReason::None;
+    bool zeroSlots = false;
+    bool exceedsCapacity = false;
+    u32 requestedSlots = 0;
+
+    bool canReserve() const { return reason == PairBufferSlotReservationRejectReason::None; }
+
+PairBufferSlotReservationPreflight preflightPairBufferSlotReservation(
+
+/// Non-mutating slot-reservation skip predicate — inverse of `canReserve` (B4.2 deepen follow-up pass).
+bool canSkipPairBufferSlotReservation(const PairBufferSoA& buffer, u32 slotCount);
+
+/// Non-mutating slot-reservation predicate — mirrors `preflightPairBufferSlotReservation` (B4.2 deepen follow-up pass).
+bool shouldRunPairBufferSlotReservation(const PairBufferSoA& buffer, u32 slotCount);
 
 } // namespace fuse::physics::broadphase

@@ -909,7 +909,6 @@ CellPairGenPreflight preflightCellPairGenerationImpl(const std::vector<u32>& occ
     preflight.pairCount = estimateCellPairCount(preflight.uniqueOccupantCount);
     return preflight;
 
-u32 countPairsForCell(const std::vector<u32>& occupants) {
     const CellPairGenPreflight preflight = preflightCellPairGenerationImpl(occupants);
     if (!preflight.canGenerate()) {
     return preflight.pairCount;
@@ -924,6 +923,13 @@ void generatePairsForCell(const std::vector<u32>& occupants, std::vector<Candida
 
 
     if (!fuse::physics::broadphase::shouldRunCellPairGen(occupants)) {
+u32 cellPairCountForOccupants(const std::vector<u32>& occupants) {
+    const u32 uniqueCount = static_cast<u32>(uniqueOccupants(occupants).size());
+    return estimatePairCountForUniqueBodies(uniqueCount);
+
+    return cellPairCountForOccupants(occupants);
+
+    if (!shouldRunCellPairGen(occupants)) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -945,6 +951,7 @@ void writePairsForCellSlots(
     if (canSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
     if (!shouldRunCellPairGeneration(occupants)) {
     if (!fuse::physics::broadphase::shouldRunCellPairGen(occupants)) {
+    if (!shouldRunCellPairGen(occupants)) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -2087,6 +2094,12 @@ BroadphaseMergeScan scanBroadphaseMergeBodies(
     preflight.stats.dynamicBodyCount = static_cast<u32>(dynamicBodies.size());
     preflight.emptyPlaneBodies = preflight.stats.planeBodyCount == 0u;
     preflight.emptyDynamicBodies = preflight.stats.dynamicBodyCount == 0u;
+
+    const std::vector<u32> uniquePlaneBodies = uniqueOccupants(planeBodies);
+    const std::vector<u32> uniqueDynamicBodies = uniqueOccupants(dynamicBodies);
+    preflight.planeBodyCount = static_cast<u32>(uniquePlaneBodies.size());
+    preflight.dynamicBodyCount = static_cast<u32>(uniqueDynamicBodies.size());
+    preflight.estimatedMergePairs = preflight.planeBodyCount * preflight.dynamicBodyCount;
     if (preflight.emptyPlaneBodies) {
         preflight.reason = BroadphaseMergeRejectReason::EmptyPlaneBodies;
     } else if (preflight.emptyDynamicBodies) {
@@ -2678,7 +2691,6 @@ namespace {
 u32 uniqueOccupantCount(const std::vector<u32>& occupants) {
     if (occupants.size() < 2u) {
         return occupants.size();
-    }
     std::vector<u32> uniqueBodies = occupants;
     std::sort(uniqueBodies.begin(), uniqueBodies.end());
     uniqueBodies.erase(std::unique(uniqueBodies.begin(), uniqueBodies.end()), uniqueBodies.end());
@@ -2721,7 +2733,6 @@ const char* cellShapeInsertRejectReasonName(CellShapeInsertRejectReason reason) 
     case CellShapeInsertRejectReason::ExceedsBudget:
         return "ExceedsBudget";
 
-namespace {
 
 CellShapeInsertRejectReason cellShapeInsertRejectReasonImpl(
     u32 bodyIndex,
@@ -2767,7 +2778,6 @@ bool shouldRunCellShapeInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& ra
     return preflightCellShapeInsert(bodyIndex, bodyCount, range, maxCells).canInsert();
 
 bool shouldRunCellShapeInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxCells) {
-}
 
 CellPairGenPreflight buildCellPairGenPreflight(u32 uniqueBodyCount) {
 
@@ -2778,7 +2788,6 @@ CellPairGenPreflight buildCellPairGenPreflight(u32 uniqueBodyCount) {
         preflight.insufficientOccupants = true;
     } else {
         preflight.reason = CellPairGenRejectReason::None;
-    return preflight;
 
 CellCapacityInsertRejectReason cellCapacityInsertRejectReasonImpl(
     const CellOccupancyPreflight& occupancyPreflight,
@@ -2791,10 +2800,7 @@ CellCapacityInsertRejectReason cellCapacityInsertRejectReasonImpl(
     return CellCapacityInsertRejectReason::None;
 
 CellCapacityInsertPreflight buildCellCapacityInsertPreflight(
-    }
 
-    u32 bodyIndex,
-    if (bodyCount > 0u && bodyIndex >= bodyCount) {
 
     CellCapacityInsertPreflight preflight{};
     preflight.occupancyCount = occupancyPreflight.occupancyCount;
@@ -2835,17 +2841,6 @@ u32 estimateCellPairCount(u32 uniqueBodyCount) {
     return estimatePairCountForUniqueBodies(uniqueBodyCount);
 
     return estimateCellPairCount(uniqueOccupantCount(occupants));
-    return preflight;
-}
-
-} // namespace
-
-
-CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants) {
-
-
-bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenRejectReason expected) {
-    return cellPairGenRejectReason(occupants) == expected;
 
 
 
@@ -2854,17 +2849,18 @@ bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenR
 
 
 
-u32 estimateCellPairCount(const std::vector<u32>& occupants) {
+
+
+
+
+
 
 const char* cellCapacityInsertRejectReasonName(CellCapacityInsertRejectReason reason) {
-    switch (reason) {
     case CellCapacityInsertRejectReason::None:
-        return "None";
     case CellCapacityInsertRejectReason::OutOfRangeBody:
     case CellCapacityInsertRejectReason::EmptyRange:
         return "EmptyRange";
     case CellCapacityInsertRejectReason::ExceedsBudget:
-    return "Unknown";
 
 CellCapacityInsertRejectReason cellCapacityInsertRejectReason(
     return preflightCellCapacityInsert(range, maxCells, bodyIndex, bodyCount).reason;
@@ -2888,23 +2884,33 @@ bool shouldRunCellCapacityInsert(const CellRange3& range, u32 maxCells, u32 body
     return preflightCellCapacityInsert(range, maxCells, bodyIndex, bodyCount).canInsert();
 
 bool shouldRunCellCapacityInsert(const CellRange2& range, u32 maxCells, u32 bodyIndex, u32 bodyCount) {
-        return "OutOfRangeBody";
-        return "ExceedsBudget";
-    }
-
-    const CellRange3& range,
-    u32 maxCells,
-    u32 bodyIndex,
-    u32 bodyCount) {
-
-    const CellRange2& range,
-
-    u32 bodyCount,
 
 
 
 
 
+
+
+
+
+
+u32 countUniqueCellOccupants(const std::vector<u32>& occupants) {
+    return static_cast<u32>(uniqueOccupants(occupants).size());
+
+    return cellPairCountForOccupants(occupants);
+
+    case CellPairGenRejectReason::EmptyOccupants:
+        return "EmptyOccupants";
+
+        return CellPairGenRejectReason::EmptyOccupants;
+    if (countUniqueCellOccupants(occupants) < 2u) {
+        return CellPairGenRejectReason::InsufficientOccupants;
+
+
+    preflight.emptyOccupants = preflight.reason == CellPairGenRejectReason::EmptyOccupants;
+    preflight.insufficientOccupants = preflight.reason == CellPairGenRejectReason::InsufficientOccupants;
+    preflight.uniqueOccupantCount = countUniqueCellOccupants(occupants);
+    preflight.estimatedPairCount = estimateCellPairCount(occupants);
 
 
 }
