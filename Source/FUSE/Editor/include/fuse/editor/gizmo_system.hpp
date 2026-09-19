@@ -1446,6 +1446,8 @@ struct UpdateDragInteractionPreflight {
     /// Enabled snap with unusable step — drag update still applies without delta rounding (B6.4 deepen pass).
     bool snapDragDegraded() const { return snapDrag.isDegraded(); }
     bool snapDegraded() const { return drag.snapDegraded; }
+    /// Enabled snap with unusable step — update still applies without delta rounding (B6.4 deepen pass).
+    bool snapDegraded() const { return drag.snapDegraded || snapDrag.isDegraded(); }
 };
 
 UpdateDragInteractionPreflight preflightUpdateDragInteraction(const GizmoHitTest& hit, bool dragging,
@@ -2593,14 +2595,6 @@ enum class GizmoSnapDragRejectReason : u8 {
 
 /// Why end-drag preflight rejected the request (B6.4 deepen pass).
 enum class GizmoEndDragRejectReason : u8 {
-
-/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
-enum class GizmoSnapDragRejectReason : u8 {
-    None = 0,
-    DeltaNonFinite,
-    SnapDisabled,
-    InvalidStep,
-};
 
 /// Why snap-drag preflight rejected the request (B6.4 deepen pass).
 enum class GizmoSnapDragRejectReason : u8 {

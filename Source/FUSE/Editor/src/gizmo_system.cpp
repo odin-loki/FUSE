@@ -6067,16 +6067,23 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
     }
     if (preflight.snapDisabled) {
         return GizmoSnapDragRejectReason::SnapDisabled;
-    }
     if (preflight.invalidStep) {
         return GizmoSnapDragRejectReason::InvalidStep;
-    }
     return GizmoSnapDragRejectReason::None;
-}
 
 bool preflightSnapDragReady(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings,
                             GizmoSnapDragRejectReason* reason) {
     const SnapDragPreflight preflight = preflightSnapDrag(delta, mode, settings);
+GizmoEndDragRejectReason classifyEndDragReject(const EndDragPreflight& preflight) {
+    if (preflight.notDragging) {
+        return GizmoEndDragRejectReason::NotDragging;
+    return GizmoEndDragRejectReason::None;
+
+bool preflightPickReady(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                        GizmoSpace space, f32 axisLength, f32 pickRadius,
+                        GizmoPickRejectReason* reason) {
+    const PickPreflight preflight =
+        preflightPick(ray, transform, mode, space, axisLength, pickRadius);
     if (reason != nullptr) {
         *reason = classifySnapDragReject(preflight);
     }
