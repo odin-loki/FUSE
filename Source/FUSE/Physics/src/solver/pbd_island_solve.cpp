@@ -3072,3 +3072,29 @@ IslandSolveRejectReason islandSolveJobRejectReason(const IslandSolveJob& job, f3
     case IslandWakeRejectReason::NoMixedState:
         return IslandWakeRejectReason::NoMixedState;
                                 IslandGraphBuildRejectReason* reason) {
+
+// --- deepen additive from deepen-pbd-island-guards-92a3 ---
+    case IslandSolveRejectReason::OutOfRangeRefs:
+IslandGraphBuildRejectReason classifyIslandGraphBuildReject(const IslandBuildPreflight& preflight) {
+        return IslandGraphBuildRejectReason::EmptyInput;
+        return IslandGraphBuildRejectReason::OutOfRangeContactRefs;
+        return IslandGraphBuildRejectReason::OutOfRangeDistanceRefs;
+    return IslandGraphBuildRejectReason::None;
+IslandDispatchRejectReason classifyIslandDispatchReject(const IslandDispatchPreflight& preflight) {
+IslandSolveJobRejectReason classifyIslandSolveJobReject(const IslandSolveJobPreflight& preflight) {
+IslandSolveRejectReason classifyIslandConstraintSolveReject(const IslandConstraintSolvePreflight& preflight) {
+        return IslandSolveRejectReason::OutOfRangeRefs;
+IslandSleepRejectReason classifyIslandSleepReject(const IslandSleepPreflight& preflight) {
+IslandSleepGraphRejectReason classifyIslandSleepGraphReject(const IslandSleepGraphPreflight& preflight) {
+IslandWakeRejectReason classifyIslandWakeReject(const IslandWakePreflight& preflight) {
+IslandWakeGraphRejectReason classifyIslandWakeGraphReject(const IslandWakeGraphPreflight& preflight) {
+bool tryPreflightIslandBuild(u32 bodyCount,
+                             IslandGraphBuildRejectReason& reason) {
+    preflight.reason = classifyIslandSolveJobReject(preflight);
+    preflight.reason = classifyIslandDispatchReject(preflight);
+    preflight.reason = classifyIslandGraphBuildReject(preflight);
+        preflight.reason = classifyIslandConstraintSolveReject(preflight);
+        preflight.reason = classifyIslandSleepReject(preflight);
+        preflight.reason = classifyIslandWakeReject(preflight);
+    preflight.reason = classifyIslandSleepGraphReject(preflight);
+    preflight.reason = classifyIslandWakeGraphReject(preflight);

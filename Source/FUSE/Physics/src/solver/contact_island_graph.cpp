@@ -508,3 +508,6 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
                                        IslandGraphBuildRejectReason* reason) {
     const IslandGraphBuildRejectReason rejectReason =
     if (rejectReason != IslandGraphBuildRejectReason::None) {
+
+// --- deepen additive from deepen-pbd-island-guards-92a3 ---
+        islandGraphBuildRejectReason(bodyCount, contacts, distanceConstraints);

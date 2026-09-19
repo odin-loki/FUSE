@@ -1811,3 +1811,15 @@ IslandWakeRejectReason islandWakeGraphRejectReason(const ContactIslandGraph& gra
 
 // --- deepen additive from deepen-pbd-island-reject-reasons-40bb ---
                                 IslandGraphBuildRejectReason* reason = nullptr);
+
+// --- deepen additive from deepen-pbd-island-guards-92a3 ---
+IslandGraphBuildRejectReason classifyIslandGraphBuildReject(const IslandBuildPreflight& preflight);
+bool tryPreflightIslandBuild(u32 bodyCount,
+                             IslandGraphBuildRejectReason& reason);
+IslandDispatchRejectReason classifyIslandDispatchReject(const IslandDispatchPreflight& preflight);
+IslandSolveJobRejectReason classifyIslandSolveJobReject(const IslandSolveJobPreflight& preflight);
+IslandSolveRejectReason classifyIslandConstraintSolveReject(const IslandConstraintSolvePreflight& preflight);
+IslandSleepRejectReason classifyIslandSleepReject(const IslandSleepPreflight& preflight);
+IslandSleepGraphRejectReason classifyIslandSleepGraphReject(const IslandSleepGraphPreflight& preflight);
+IslandWakeRejectReason classifyIslandWakeReject(const IslandWakePreflight& preflight);
+IslandWakeGraphRejectReason classifyIslandWakeGraphReject(const IslandWakeGraphPreflight& preflight);
