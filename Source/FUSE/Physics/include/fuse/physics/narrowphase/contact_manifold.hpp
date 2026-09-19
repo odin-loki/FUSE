@@ -1207,23 +1207,18 @@ const char* manifold_shallow_prune_reject_reason_name(ManifoldShallowPruneReject
 /// Diagnose why shallow prune would skip; vacuously succeeds when shallow prune may proceed (B4.6 deepen pass).
 ManifoldShallowPruneRejectReason manifold_shallow_prune_reject_reason(
 /// Diagnose why shallow prune would skip; vacuously succeeds when prune may proceed (B4.6 deepen pass).
-    const ContactManifold& manifold,
     f32 minDepth);
 
 /// Returns true when `manifold_shallow_prune_reject_reason` matches `expected` (B4.6 deepen pass).
 bool manifold_shallow_prune_rejects_for_reason(
     ManifoldShallowPruneRejectReason expected,
-    const ContactManifold& manifold,
-    f32 minDepth);
 
 /// Const preflight for shallow manifold prune dispatch (B4.6 deepen pass).
 struct ManifoldShallowPrunePreflight {
     ManifoldShallowPruneRejectReason reason = ManifoldShallowPruneRejectReason::None;
-    bool skipped = false;
     bool hasShallow = false;
 
     bool can_prune() const { return !skipped && reason == ManifoldShallowPruneRejectReason::None; }
-};
 
 /// Populate shallow prune preflight without mutating the manifold (B4.6 deepen pass).
 ManifoldShallowPrunePreflight preflight_manifold_shallow_prune(
@@ -1274,6 +1269,7 @@ bool generate_contact_manifold_with_preflight(ContactManifold& manifold);
 /// Prune only when skip-guard reports work is needed; returns true when points remain (B4.6 deepen pass).
 
 /// Finalize only when skip-guard allows; no-op otherwise (B4.6 deepen pass).
+
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

@@ -725,4 +725,5 @@ ContactNormalNormalizePreflight preflight_contact_normal_normalize(
 /// Normalize contact normal only when preflight allows; returns false when skipped (B4.6 deepen pass).
 bool normalize_contact_normal_with_preflight(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
 
+
 } // namespace fuse::physics::narrowphase

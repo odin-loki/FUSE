@@ -1321,7 +1321,6 @@ struct NarrowphaseRunPreflight {
     bool canSkip = false;
 
     bool can_run() const { return !canSkip && !emptyInput; }
-};
 
 /// Populate run preflight without mutating buffers or running shape dispatch (B4.6 deepen pass).
 NarrowphaseRunPreflight preflight_run_narrowphase(
@@ -1351,22 +1350,15 @@ bool can_write_contact_manifold_to_buffer(const ContactManifold& manifold);
 /// Write a finalized manifold to a buffer slot only when preflight allows (B4.6 deepen pass).
 bool write_contact_manifold_to_buffer_with_preflight(
     ContactBufferSoA& buffer,
-    u32 slot,
     const ContactManifold& manifold);
 /// Count pairs rejected by a specific deepen reason (B4.6 deepen pass).
 u32 count_contact_pairs_rejected_for_reason(
     ContactPairRejectReason reason);
 
-/// Const preflight for per-slot narrowphase dispatch (B4.6 deepen pass).
-struct NarrowphasePairSlotPreflight {
-    ContactPairRejectReason reason = ContactPairRejectReason::None;
-    bool rejected = false;
     bool canWriteSlot = false;
 
-    bool can_dispatch() const { return !rejected; }
 
 /// Populate per-slot dispatch preflight without running shape dispatch (B4.6 deepen pass).
-NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
 
 /// Returns true when narrowphase should skip this pair slot before dispatch (B4.6 deepen pass).
 bool should_skip_narrowphase_pair_slot(
@@ -1376,5 +1368,8 @@ bool should_skip_contact_pair_dispatch_preflight(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+
+/// Finalize manifold with prune+finalize preflight gates (B4.6 deepen pass).
+bool generate_contact_manifold_deepen(ContactManifold& manifold);
 
 } // namespace fuse::physics::narrowphase

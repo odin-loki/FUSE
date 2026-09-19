@@ -1371,4 +1371,5 @@ ContactNormalNormalizePreflight preflight_contact_normal_normalize(
 bool normalize_contact_normal_with_preflight(ContactManifold& manifold, f32 lengthEpsilon) {
     if (!preflight_contact_normal_normalize(manifold, lengthEpsilon).can_normalize()) {
 
+
 } // namespace fuse::physics::narrowphase
