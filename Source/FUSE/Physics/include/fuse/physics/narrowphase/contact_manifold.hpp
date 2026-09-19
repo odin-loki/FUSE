@@ -8,6 +8,25 @@ namespace fuse::physics::narrowphase {
 
 constexpr u32 kMaxContactPointsPerManifold = 4u;
 
+/// Const preflight for manifold prune dispatch (B4.4 deepen pass).
+struct ManifoldPrunePreflight {
+    bool hasSeparated = false;
+    bool hasDuplicates = false;
+    bool exceedsMaxPoints = false;
+    bool hasShallow = false;
+    bool wouldBeEmpty = false;
+    bool skipped = false;
+
+    bool needs_pruning() const {
+        return !skipped && (hasSeparated || hasDuplicates || exceedsMaxPoints || hasShallow);
+    }
+
+    bool can_prune_in_place() const { return needs_pruning() && !wouldBeEmpty; }
+
+    /// True when no prune step would mutate slots (B4.5 deepen pass).
+    bool can_skip() const { return skipped || !needs_pruning(); }
+};
+
 struct ContactPoint {
     vec3 point{};
     f32 penetration = 0.f;
@@ -169,7 +188,6 @@ struct ContactManifold {
 
         f32 separationEpsilon = 1e-6f,
         f32 duplicateEpsilon = 1e-4f);
-};
 
 /// Why manifold prune would early-out (B4.5 deepen follow-up pass).
 enum class ManifoldPruneRejectReason : u8 {
@@ -198,10 +216,11 @@ struct ManifoldPrunePreflight {
     bool wouldBeEmpty = false;
     bool needsNormalNormalize = false;
     bool skipped = false;
+    /// True when shallow penetration prune would be a no-op (B4.5 deepen pass).
+    bool canSkipPruneShallowPenetrations(f32 minDepth) const;
 
-    bool needs_pruning() const {
-        return !skipped && (hasSeparated || hasDuplicates || exceedsMaxPoints);
-    }
+    /// Prune shallow penetrations only when needed; returns true when points remain (B4.5 deepen pass).
+    bool pruneShallowPenetrationsIfNeeded(f32 minDepth);
 
     bool needs_shallow_pruning(f32 minDepth) const { return !skipped && hasShallow; }
 
@@ -210,6 +229,12 @@ struct ManifoldPrunePreflight {
     bool can_skip_prune(f32 shallowMinDepth = 0.f) const {
         return skipped || reason != ManifoldPruneRejectReason::None ||
                (!needs_pruning() && !needs_shallow_pruning(shallowMinDepth));
+    /// Prune using preflight result; returns true when points remain (B4.5 deepen pass).
+    bool pruneFromPreflight(
+        const ManifoldPrunePreflight& preflight,
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f);
+};
 
 /// Populate prune preflight from a manifold without mutating slots (B4.4 deepen pass).
 ManifoldPrunePreflight preflight_manifold_prune(
@@ -281,6 +306,16 @@ bool can_prune_manifold_in_place(
 bool manifold_needs_prune(
     u32 maxPoints = kMaxContactPointsPerManifold,
     f32 shallowPenetration = 1e-6f);
+
+/// Extended preflight including shallow-penetration flag when `shallowMinDepth > 0` (B4.5 deepen pass).
+ManifoldPrunePreflight preflight_manifold_prune_ex(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// True when preflight reports no pruning work (B4.5 deepen pass).
+bool can_skip_manifold_prune(const ManifoldPrunePreflight& preflight);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
