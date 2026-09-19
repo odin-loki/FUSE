@@ -22,6 +22,10 @@ bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history) {
     return !history.hasValidHistory();
 }
 
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return history.isReady() && !taaHistoryNeedsWarmup(history);
+}
+
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history) {
     return history.isReady();
 }
@@ -55,6 +59,10 @@ bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observedGeneratio
 
 bool TaaHistoryBuffer::canReuseHistory() const {
     return taaHistoryCanReuse(*this);
+}
+
+bool TaaHistoryBuffer::warmupComplete() const {
+    return taaHistoryWarmupComplete(*this);
 }
 
 u32 TaaHistoryBuffer::warmupFramesRemaining() const {
