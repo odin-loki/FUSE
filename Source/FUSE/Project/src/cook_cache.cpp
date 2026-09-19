@@ -712,6 +712,9 @@ CookHashPreflight CookCache::preflight_store_entry(const CookCacheEntry& entry) 
     case CookAssetKind::Shader:
         preflight.reason = CookHashRejectReason::SourceUnreadable;
         return preflight;
+    default:
+        preflight.reason = CookHashRejectReason::SourceUnreadable;
+        return preflight;
     }
 }
 
