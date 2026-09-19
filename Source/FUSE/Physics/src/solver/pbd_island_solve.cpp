@@ -1933,3 +1933,8 @@ bool should_skip_contact_impulse_warm_start_island(const ContactIslandGraph::Isl
 bool should_skip_contact_impulse_warm_start_island_index(const ContactIslandGraph& graph, u32 islandIndex) {
     return should_skip_contact_impulse_warm_start_island(graph.island(islandIndex));
 IslandCombinedWarmStartPreflight preflight_warm_start_island_combined(
+
+// --- deepen additive from deepen-b4-pbd-island-dispatch-warmstart-guards-c488 ---
+bool should_skip_island_dispatch_job(const IslandSolveJob& job, f32 dt) {
+    return !is_valid_island_solve_dt(dt) || should_skip_island_solve_job(job);
+    if (should_skip_island_dispatch_job(job, dt)) {

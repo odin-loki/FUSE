@@ -3036,3 +3036,19 @@ void testPreflightWarmStartIslandCombinedGuards() {
     expectTrue(combinedPreflight.can_warm_start(), "combined island can warm-start");
     testPreflightContactImpulseWarmStartGuards();
     testPreflightWarmStartIslandCombinedGuards();
+
+// --- deepen additive from deepen-b4-pbd-island-dispatch-warmstart-guards-c488 ---
+void testShouldSkipIslandDispatchJobGuard() {
+    expectTrue(should_skip_island_dispatch_job(invalid, 1.f / 60.f),
+    expectTrue(should_skip_island_dispatch_job(invalid, 0.f),
+            foundEmptySkip = should_skip_island_dispatch_job(job, 1.f / 60.f);
+            foundConstrainedDispatch = !should_skip_island_dispatch_job(job, 1.f / 60.f);
+            expectTrue(should_skip_island_dispatch_job(job, 0.f),
+    expectTrue(foundEmptySkip, "should_skip_island_dispatch_job covers empty island");
+    expectTrue(foundConstrainedDispatch, "should_skip_island_dispatch_job allows constrained island");
+        const IslandContactImpulseWarmStartPreflight preflight =
+    expectTrue(!constrainedPreflight.invalidDt, "valid dt passes impulse preflight");
+    expectTrue(constrainedPreflight.can_warm_start(), "contact island can impulse warm-start");
+    expectTrue(invalidDtPreflight.invalidDt, "zero dt fails impulse preflight");
+    expectTrue(!invalidDtPreflight.can_warm_start(), "impulse warm-start blocked for invalid dt");
+void testWarmStartGraphContactImpulsesGuarded() {

@@ -1154,3 +1154,6 @@ IslandContactImpulseWarmStartPreflight preflight_contact_impulse_warm_start_isla
 bool should_skip_contact_impulse_warm_start_island(const ContactIslandGraph::Island& island);
 bool should_skip_contact_impulse_warm_start_island_index(const ContactIslandGraph& graph, u32 islandIndex);
 IslandCombinedWarmStartPreflight preflight_warm_start_island_combined(
+
+// --- deepen additive from deepen-b4-pbd-island-dispatch-warmstart-guards-c488 ---
+bool should_skip_island_dispatch_job(const IslandSolveJob& job, f32 dt);
