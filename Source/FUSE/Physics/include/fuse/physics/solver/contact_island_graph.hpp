@@ -463,6 +463,30 @@ bool distance_constraint_references_in_range_body(const DistanceConstraint& cons
 /// True when `bodyCount` is usable for island graph build (zero is valid).
 
 /// Preflight island graph inputs; sets `skipped` when there is nothing to partition.
+/// Why island graph build would skip (B4.4 deepen follow-up).
+enum class ContactIslandGraphBuildRejectReason {
+    None,
+    UnsafeRefs,
+    SelfContact,
+
+/// Input coverage for island graph build (out-of-range and degenerate ref guards).
+struct ContactIslandGraphBuildStats {
+    u32 selfContactCount = 0;
+
+/// Preflight diagnostics for island graph build inputs (B4.4 deepen follow-up).
+    ContactIslandGraphBuildStats stats{};
+
+        return stats.outOfRangeContactBodyCount > 0u || stats.outOfRangeDistanceBodyCount > 0u;
+
+    bool has_self_contacts() const { return stats.selfContactCount > 0u; }
+
+    bool can_build() const {
+        return !skipped && reason == ContactIslandGraphBuildRejectReason::None && !has_unsafe_refs() &&
+               !has_self_contacts();
+
+/// Human-readable label for build reject reasons (logging / tests).
+
+/// Diagnose island graph build inputs without mutating a graph.
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -480,6 +504,8 @@ IslandBuildPreflight preflight_island_build(
 /// Early-out guard when island build inputs are rejected.
 bool should_skip_island_build(
 /// Early-out guard when build inputs are empty (zero bodies and no constraints).
+/// Non-mutating build skip predicate — inverse of guarded build (B4.4 deepen follow-up).
+bool shouldSkipContactIslandGraphBuild(u32 bodyCount,
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -512,6 +538,7 @@ struct ContactIslandGraph {
     /// Guarded build: returns false when preflight skips; otherwise identical to `build`.
     /// Guarded build — returns false when preflight skips the empty no-op path.
     /// Guarded build wrapper; returns false when preflight skips (B4.4 deepen).
+    /// Guarded build; clears graph and returns false when preflight rejects inputs.
 
     void clear();
 
