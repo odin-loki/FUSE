@@ -71,12 +71,18 @@ const char* probeSampleCoordsRejectReasonLabel(ProbeSampleCoordsRejectReason rea
         return "empty_grid";
     case ProbeSampleCoordsRejectReason::NotSampleableGrid:
         return "not_sampleable_grid";
+    case ProbeSampleCoordsRejectReason::InvalidSpacing:
+        return "invalid_spacing";
+    case ProbeSampleCoordsRejectReason::NotSampleable:
+        return "not_sampleable";
     case ProbeSampleCoordsRejectReason::OutOfRangeIndices:
         return "out_of_range_indices";
     case ProbeSampleCoordsRejectReason::OutOfRangeWeights:
         return "out_of_range_weights";
     case ProbeSampleCoordsRejectReason::UnorderedCorners:
         return "unordered_corners";
+    case ProbeSampleCoordsRejectReason::UndersizedCache:
+        return "undersized_cache";
     }
     return "unknown";
 
@@ -110,8 +116,12 @@ const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason) {
         return "none";
     case CacheIndexRejectReason::EmptyGrid:
         return "empty_grid";
+    case CacheIndexRejectReason::NotSampleable:
+        return "not_sampleable";
     case CacheIndexRejectReason::OutOfRangeProbeIndex:
         return "out_of_range_probe_index";
+    case CacheIndexRejectReason::ZeroCache:
+        return "zero_cache";
     case CacheIndexRejectReason::UndersizedCache:
         return "undersized_cache";
     case CacheIndexRejectReason::NullCache:
@@ -133,6 +143,17 @@ bool cacheIndexRejectReasonIsBlocking(CacheIndexRejectReason reason) {
 }
 
 const char* probeTrilinearSampleRejectReasonLabel(ProbeTrilinearSampleRejectReason reason) {
+const char* sampleRequestRejectReasonLabel(SampleRequestRejectReason reason) {
+    switch (reason) {
+    case SampleRequestRejectReason::None:
+        return "none";
+    case SampleRequestRejectReason::NotSampleable:
+        return "not_sampleable";
+    case SampleRequestRejectReason::UndersizedCache:
+        return "undersized_cache";
+    return "unknown";
+
+const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason) {
     switch (reason) {
     case ProbeTrilinearSampleRejectReason::None:
         return "none";
@@ -363,13 +384,15 @@ u32 ProbeGridLayout::maxProbeIndex(const DDGIDesc& desc) {
         return 0u;
     }
     return count - 1u;
-}
 
 bool ProbeGridLayout::isAtMaxProbeIndex(u32 probe_index, const DDGIDesc& desc) {
     if (isEmptyGrid(desc)) {
         return false;
-    }
     return probe_index == maxProbeIndex(desc);
+    return count == 0u ? 0u : count - 1u;
+
+    const u32 count = ddgi_util::probeCount(desc);
+    return count > 0u && probe_index == count - 1u;
 
 u32 ProbeGridLayout::clampProbeIndex(u32 probe_index, const DDGIDesc& desc) {
     const u32 count = ddgi_util::probeCount(desc);
@@ -745,12 +768,11 @@ bool ProbeGridLayout::isProbeSampleCoordsOutOfRange(const DDGIDesc& desc, const 
     return !areProbeSampleCoordsInBounds(desc, coords);
 bool ProbeGridLayout::canBuildProbeSampleCoords(const DDGIDesc& desc) {
     return ddgi_util::canSampleProbeGrid(desc);
-}
 
 bool ProbeGridLayout::isSampleCoordsOutOfRange(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
-    if (isEmptyGrid(desc)) {
-        return true;
     return !isValidProbeSampleCoords(desc, coords);
+    return !isEmptyGrid(desc) && desc.probe_spacing.x > 0.f && desc.probe_spacing.y > 0.f &&
+           desc.probe_spacing.z > 0.f;
 }
 
 bool ProbeGridLayout::buildProbeSampleCoords(const DDGIDesc& desc,
@@ -887,6 +909,7 @@ const char* launchRejectReasonLabel(LaunchRejectReason reason) {
     case LaunchRejectReason::ProbeIndexOutOfRange:
     case LaunchRejectReason::ZeroRaysPerProbe:
         return "zero_rays_per_probe";
+    if (isEmptyGrid(desc)) {
 }
 
 fuse::math::Vec2 DdgiIrradianceEncoding::clampEncodedUV(const fuse::math::Vec2& encoded) {
@@ -1678,15 +1701,13 @@ bool tryIsCacheIndexValid(const DDGIDesc& desc,
     }
     if (!ProbeGridLayout::isValidProbeIndex(desc, probe_index)) {
         outReason = CacheIndexRejectReason::InvalidProbeIndex;
-        return false;
-    }
     if (probe_index >= cache_count) {
         outReason = CacheIndexRejectReason::UndersizedCache;
-        return false;
-    }
 
     outReason = CacheIndexRejectReason::None;
     return true;
+bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count) {
+    return !isCacheIndexValid(desc, probe_index, cache_count);
 }
 
 bool canLookupCacheAtIndex(const DDGIDesc& desc, u32 cache_count) {
@@ -1711,73 +1732,33 @@ bool tryCanLookupCacheAtProbeIndex(const DDGIDesc& desc,
     }
     if (!isCacheIndexValid(desc, probe_index, cache_count)) {
         outReason = CacheIndexRejectReason::OutOfRangeIndex;
-        return false;
-    }
 
     outReason = CacheIndexRejectReason::None;
     return true;
-}
 
 bool isCacheIndexValidForClampedIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count) {
     if (!canLookupCacheAtIndex(desc, cache_count)) {
-        return false;
-    }
     const u32 clamped = ProbeGridLayout::clampProbeIndex(probe_index, desc);
     return clamped < cache_count;
-}
 
 bool tryIsCacheIndexValid(const DDGIDesc& desc,
                           u32 probe_index,
                           u32 cache_count,
                           CacheIndexRejectReason& outReason) {
-    outReason = CacheIndexRejectReason::None;
     if (ProbeGridLayout::isEmptyGrid(desc)) {
         outReason = CacheIndexRejectReason::EmptyGrid;
-        return false;
-    }
     if (!ProbeGridLayout::isValidProbeIndex(desc, probe_index)) {
         outReason = CacheIndexRejectReason::ProbeIndexOutOfRange;
-        return false;
-    }
     if (probe_index >= cache_count) {
         outReason = CacheIndexRejectReason::CacheUndersized;
-        return false;
-    }
-    return true;
-}
 
 bool tryValidateCacheSizedForGrid(const DDGIDesc& desc,
-                                  u32 cache_count,
-                                  CacheIndexRejectReason& outReason) {
-    outReason = CacheIndexRejectReason::None;
-    if (ProbeGridLayout::isEmptyGrid(desc)) {
-        outReason = CacheIndexRejectReason::EmptyGrid;
-        return false;
-    }
-    if (!isCacheSizedForGrid(desc, cache_count)) {
-        outReason = CacheIndexRejectReason::CacheUndersized;
-        return false;
-    }
-    return true;
-}
 
-bool tryIsCacheIndexValid(const DDGIDesc& desc,
-                          u32 probe_index,
-                          u32 cache_count,
-                          CacheIndexRejectReason& outReason) {
-    if (ProbeGridLayout::isEmptyGrid(desc)) {
-        outReason = CacheIndexRejectReason::EmptyGrid;
-        return false;
-    }
-    if (!ProbeGridLayout::isValidProbeIndex(desc, probe_index)) {
         outReason = CacheIndexRejectReason::OutOfRangeProbe;
-        return false;
-    }
-    if (probe_index >= cache_count) {
-        outReason = CacheIndexRejectReason::UndersizedCache;
-        return false;
-    }
 
+    if (cache_count == 0u) {
+        outReason = CacheIndexRejectReason::ZeroCache;
+    if (!tryValidateCacheIndex(desc, probe_index, cache_count, outReason)) {
     outReason = CacheIndexRejectReason::None;
     return true;
 }
@@ -1786,6 +1767,7 @@ bool canSampleAtProbeCoords(const DDGIDesc& desc,
                             const ProbeSampleCoords& coords,
                             u32 cache_count) {
     ProbeSampleCoordRejectReason reason = ProbeSampleCoordRejectReason::None;
+    ProbeSampleCoordsRejectReason reason = ProbeSampleCoordsRejectReason::None;
     return tryCanSampleAtProbeCoords(desc, coords, cache_count, reason);
 }
 
@@ -1799,20 +1781,14 @@ bool tryCanSampleAtProbeCoords(const DDGIDesc& desc,
     }
     if (!isCacheSizedForGrid(desc, cache_count)) {
         outReason = ProbeSampleCoordRejectReason::OutOfBounds;
-        return false;
-    }
     if (!ProbeGridLayout::isValidProbeSampleCoords(desc, coords)) {
         outReason = probeSampleCoordRejectFromValidity(desc, coords);
-        return false;
-    }
 
     outReason = ProbeSampleCoordRejectReason::None;
     return true;
-}
 
 bool canLookupCacheAtIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count) {
     return isCacheIndexValid(desc, probe_index, cache_count);
-}
 
 bool tryCanLookupCacheAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1820,39 +1796,24 @@ bool tryCanLookupCacheAtIndex(const DDGIDesc& desc,
                               CacheLookupRejectReason& outReason) {
     if (ProbeGridLayout::isEmptyGrid(desc) || !canSampleProbeGrid(desc)) {
         outReason = CacheLookupRejectReason::EmptyGrid;
-        return false;
-    }
-    if (!isCacheSizedForGrid(desc, cache_count)) {
         outReason = CacheLookupRejectReason::UndersizedCache;
-        return false;
-    }
     if (!ProbeGridLayout::isValidProbeIndex(desc, probe_index) || probe_index >= cache_count) {
         outReason = CacheLookupRejectReason::ProbeIndexOutOfRange;
-        return false;
-    }
 
     outReason = CacheLookupRejectReason::None;
-    return true;
-}
 
 bool shouldSkipProbeSample(const DDGIDesc& desc, u32 cache_count) {
     return !canSampleProbeGrid(desc) || !isCacheSizedForGrid(desc, cache_count);
-}
 
 bool shouldSkipProbeUpdate(const DDGIDesc& desc) {
     return ProbeGridLayout::isEmptyGrid(desc);
-}
 
 bool canSampleAtProbeCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords, u32 cache_count) {
     if (shouldSkipProbeSample(desc, cache_count)) {
-        return false;
-    }
     return ProbeGridLayout::isValidProbeSampleCoords(desc, coords);
-}
 
 bool tryCanSampleAtProbeCoords(const DDGIDesc& desc,
                                const ProbeSampleCoords& coords,
-                               u32 cache_count,
                                ProbeSampleRejectReason& outReason) {
     CacheLookupRejectReason cacheReason = CacheLookupRejectReason::None;
     if (!tryCanLookupCacheAtIndex(desc, 0u, cache_count, cacheReason)) {
@@ -1863,15 +1824,9 @@ bool tryCanSampleAtProbeCoords(const DDGIDesc& desc,
         case CacheLookupRejectReason::UndersizedCache:
         case CacheLookupRejectReason::ProbeIndexOutOfRange:
             outReason = ProbeSampleRejectReason::OutOfBounds;
-            break;
         case CacheLookupRejectReason::None:
             outReason = ProbeSampleRejectReason::None;
-            break;
-        }
-        return false;
-    }
 
-    if (!ProbeGridLayout::isValidProbeSampleCoords(desc, coords)) {
         if (!ProbeGridLayout::areProbeSampleCoordsInBounds(desc, coords)) {
             const u32 max_x = desc.grid_dims.x - 1u;
             const u32 max_y = desc.grid_dims.y - 1u;
@@ -1881,12 +1836,24 @@ bool tryCanSampleAtProbeCoords(const DDGIDesc& desc,
             outReason = indicesInRange ? ProbeSampleRejectReason::InvalidWeights
                                          : ProbeSampleRejectReason::OutOfBounds;
         } else {
-            outReason = ProbeSampleRejectReason::OutOfBounds;
-        }
-        return false;
-    }
 
-    outReason = ProbeSampleRejectReason::None;
+                               ProbeSampleCoordsRejectReason& outReason) {
+        outReason = ProbeSampleCoordsRejectReason::NotSampleable;
+    if (!ProbeGridLayout::tryValidateProbeSampleCoords(desc, coords, outReason)) {
+        outReason = ProbeSampleCoordsRejectReason::UndersizedCache;
+
+    const auto corner_valid = [&](u32 x, u32 y, u32 z) {
+        const ProbeGridCoord probe_coord{x, y, z};
+        const u32 index = ProbeGridLayout::probeIndexFromCoord(desc, probe_coord);
+        return isCacheIndexValid(desc, index, cache_count);
+    };
+
+    if (!corner_valid(coords.x0, coords.y0, coords.z0) || !corner_valid(coords.x1, coords.y0, coords.z0) ||
+        !corner_valid(coords.x0, coords.y1, coords.z0) || !corner_valid(coords.x1, coords.y1, coords.z0) ||
+        !corner_valid(coords.x0, coords.y0, coords.z1) || !corner_valid(coords.x1, coords.y0, coords.z1) ||
+        !corner_valid(coords.x0, coords.y1, coords.z1) || !corner_valid(coords.x1, coords.y1, coords.z1)) {
+
+    outReason = ProbeSampleCoordsRejectReason::None;
     return true;
 }
 
@@ -1914,6 +1881,22 @@ bool tryIsValidSampleRequest(const DDGIDesc& desc,
     }
 
     outReason = CacheLookupRejectReason::None;
+    return true;
+}
+
+bool tryValidateSampleRequest(const DDGIDesc& desc,
+                              const DDGISampleRequest& /*request*/,
+                              u32 cache_count,
+                              SampleRequestRejectReason& outReason) {
+    if (!canSampleProbeGrid(desc)) {
+        outReason = SampleRequestRejectReason::NotSampleable;
+        return false;
+    }
+    if (!isCacheSizedForGrid(desc, cache_count)) {
+        outReason = SampleRequestRejectReason::UndersizedCache;
+        return false;
+    }
+    outReason = SampleRequestRejectReason::None;
     return true;
 }
 
@@ -2730,6 +2713,18 @@ void populateDDGIKernelParams(DDGIKernelParams& params,
     params.hysteresis = desc.hysteresis;
     params.max_ray_distance = desc.max_ray_distance;
     params.frame_seed = frame_seed;
+
+bool preflightProbeKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
+    if (!tryCanLaunchProbeTraceKernel(params, outReason)) {
+        return false;
+    }
+    if (params.rays_per_probe == 0u) {
+        outReason = ProbeKernelRejectReason::ZeroRaysPerProbe;
+        return false;
+    }
+    outReason = ProbeKernelRejectReason::None;
+    return true;
+}
 
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
     if (params.probe_update_count == 0u) {
