@@ -2202,3 +2202,55 @@ const char* probeSampleCoordRejectReasonLabel(ProbeSampleCoordRejectReason reaso
         outReason = ProbeSampleCoordRejectReason::OutOfBounds;
 bool tryCanLaunchProbeKernel(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason) {
     return tryCanLaunchProbeKernel(params, outReason);
+
+// --- deepen additive from ddgi-probe-grid-guards-03fa ---
+                                                ProbeSampleRejectReason& outReason) {
+        outReason = ProbeSampleRejectReason::EmptyGrid;
+    outReason = ProbeSampleRejectReason::None;
+const char* probeSampleRejectReasonLabel(ProbeSampleRejectReason reason) {
+    case ProbeSampleRejectReason::None:
+    case ProbeSampleRejectReason::EmptyGrid:
+    case ProbeSampleRejectReason::OutOfBounds:
+    case ProbeSampleRejectReason::InvalidWeights:
+const char* cacheLookupRejectReasonLabel(CacheLookupRejectReason reason) {
+    case CacheLookupRejectReason::None:
+    case CacheLookupRejectReason::EmptyGrid:
+    case CacheLookupRejectReason::UndersizedCache:
+    case CacheLookupRejectReason::ProbeIndexOutOfRange:
+const char* launchRejectReasonLabel(LaunchRejectReason reason) {
+    case LaunchRejectReason::None:
+    case LaunchRejectReason::EmptyGrid:
+    case LaunchRejectReason::NullIndices:
+    case LaunchRejectReason::ZeroCount:
+    case LaunchRejectReason::ProbeIndexOutOfRange:
+    case LaunchRejectReason::ZeroRaysPerProbe:
+bool tryCanLookupCacheAtIndex(const DDGIDesc& desc,
+                              CacheLookupRejectReason& outReason) {
+        outReason = CacheLookupRejectReason::EmptyGrid;
+        outReason = CacheLookupRejectReason::UndersizedCache;
+        outReason = CacheLookupRejectReason::ProbeIndexOutOfRange;
+    outReason = CacheLookupRejectReason::None;
+    CacheLookupRejectReason cacheReason = CacheLookupRejectReason::None;
+    if (!tryCanLookupCacheAtIndex(desc, 0u, cache_count, cacheReason)) {
+            outReason = ProbeSampleRejectReason::OutOfBounds;
+            outReason = indicesInRange ? ProbeSampleRejectReason::InvalidWeights
+                                         : ProbeSampleRejectReason::OutOfBounds;
+bool tryIsValidSampleRequest(const DDGIDesc& desc,
+        outReason = LaunchRejectReason::EmptyGrid;
+        outReason = LaunchRejectReason::NullIndices;
+        outReason = LaunchRejectReason::ZeroCount;
+        outReason = LaunchRejectReason::ZeroRaysPerProbe;
+            outReason = LaunchRejectReason::ProbeIndexOutOfRange;
+    outReason = LaunchRejectReason::None;
+const char* kernelLaunchRejectReasonLabel(KernelLaunchRejectReason reason) {
+    case KernelLaunchRejectReason::None:
+    case KernelLaunchRejectReason::NullIndices:
+    case KernelLaunchRejectReason::ZeroCount:
+    case KernelLaunchRejectReason::ZeroRaysPerProbe:
+    KernelLaunchRejectReason reason = KernelLaunchRejectReason::None;
+bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, KernelLaunchRejectReason& outReason) {
+        outReason = KernelLaunchRejectReason::NullIndices;
+        outReason = KernelLaunchRejectReason::ZeroCount;
+        outReason = KernelLaunchRejectReason::ZeroRaysPerProbe;
+    outReason = KernelLaunchRejectReason::None;
+bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, KernelLaunchRejectReason& outReason) {

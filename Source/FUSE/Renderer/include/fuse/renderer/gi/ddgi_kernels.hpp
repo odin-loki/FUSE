@@ -105,3 +105,9 @@ bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, DdgiKernelLaun
 
 // --- deepen additive from deepen-ddgi-b56-guards-7061 ---
 bool preflightDDGIKernelParams(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason);
+
+// --- deepen additive from ddgi-probe-grid-guards-03fa ---
+enum class KernelLaunchRejectReason : u8 {
+const char* kernelLaunchRejectReasonLabel(KernelLaunchRejectReason reason);
+bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, KernelLaunchRejectReason& outReason);
+bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, KernelLaunchRejectReason& outReason);

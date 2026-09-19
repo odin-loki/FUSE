@@ -753,3 +753,15 @@ bool tryValidateCacheSizedForGrid(const DDGIDesc& desc,
 enum class ProbeSampleCoordRejectReason : u8 {
 const char* probeSampleCoordRejectReasonLabel(ProbeSampleCoordRejectReason reason);
                                           ProbeSampleCoordRejectReason& outReason);
+
+// --- deepen additive from ddgi-probe-grid-guards-03fa ---
+enum class ProbeSampleRejectReason : u8 {
+const char* probeSampleRejectReasonLabel(ProbeSampleRejectReason reason);
+enum class CacheLookupRejectReason : u8 {
+const char* cacheLookupRejectReasonLabel(CacheLookupRejectReason reason);
+enum class LaunchRejectReason : u8 {
+const char* launchRejectReasonLabel(LaunchRejectReason reason);
+                                            ProbeSampleRejectReason& outReason);
+bool tryCanLookupCacheAtIndex(const DDGIDesc& desc,
+                              CacheLookupRejectReason& outReason);
+bool tryIsValidSampleRequest(const DDGIDesc& desc,
