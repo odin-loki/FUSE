@@ -226,4 +226,16 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Returns true when extended deepen preflight allows dispatch (B4.6 deepen pass).
+bool is_dispatchable_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns first deepen-rejected pair reason in batch, or `None` when all pairs dispatchable (B4.6 deepen pass).
+ContactPairRejectReason narrowphase_batch_first_reject_reason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase
