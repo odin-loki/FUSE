@@ -566,6 +566,7 @@ enum class ProbeGridSourceRejectReason : u8 {
     EmptyGrid,
     ZeroIrradianceRes,
     ZeroSpacing,
+/// Why probe-grid source preflight rejected the request (B5.6 deepen pass).
 };
 
 /// Human-readable label for probe-grid source reject reasons (logging / tests).
@@ -1643,6 +1644,10 @@ bool tryCanSampleProbeGrid(const DDGIDesc& desc, ProbeGridRejectReason& outReaso
 ProbeGridRejectReason classifyProbeGridReject(const DDGIDesc& desc);
 /// Non-mutating probe-grid preflight — returns true when spatial sampling would proceed.
 bool preflightProbeGrid(const DDGIDesc& desc, ProbeGridRejectReason* reason = nullptr);
+/// Diagnose why probe-grid source preflight would reject; vacuously succeeds on sampleable grids.
+/// Classify why probe-grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
+/// Non-mutating probe-grid source preflight — returns true when the grid can supply samples.
+/// Early-out when probe-grid source preflight would be rejected.
 /// Early-out when probe irradiance lookup should be skipped for an empty or non-sampleable grid.
 bool shouldSkipProbeGrid(const DDGIDesc& desc);
 /// Early-out when the probe grid cannot serve as an irradiance sample source (B5.6 deepen pass).
@@ -1937,12 +1942,7 @@ bool wouldSkipProbeTrilinearSampleAtCoords(const DDGIDesc& desc,
 /// Non-mutating world-position trilinear sample preflight — builds coords then delegates.
 bool preflightTrilinearProbeSampleAtWorld(const DDGIDesc& desc,
 bool wouldSkipProbeTrilinearSampleAtWorld(const DDGIDesc& desc,
-                                      u32 cache_count,
-bool tryValidateScheduledCacheIndices(const DDGIDesc& desc,
-                                      const IrradianceCacheEntry* cache,
-                                      const u32* probe_indices,
-                                      u32 probe_count,
-                                    u32 cache_count);
+/// Trilinear sample preflight — soft-succeeds on clampable weights (B5.6 deepen pass).
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
