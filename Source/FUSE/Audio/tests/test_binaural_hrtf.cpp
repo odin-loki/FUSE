@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 namespace {
 
@@ -530,6 +531,18 @@ void testHrtfIrPreflight() {
     expectTrue(malformed_preflight.malformedIr, "preflight marks malformed IR");
     expectTrue(malformed_preflight.emptyIr, "malformed IR is treated as empty");
     expectTrue(!malformed_preflight.can_convolve(), "malformed IR cannot convolve");
+    expectTrue(malformed_preflight.reason == fuse::audio::HrtfIrRejectReason::MalformedIr,
+               "malformed IR preflight carries malformed reject reason");
+    expectTrue(empty_preflight.reason == fuse::audio::HrtfIrRejectReason::NullSamples,
+               "canonical empty IR rejects with null_samples reason");
+    expectTrue(valid_preflight.reason == fuse::audio::HrtfIrRejectReason::None,
+               "valid IR preflight has none reject reason");
+    expectTrue(fuse::audio::hrtf_ir_rejects_for_reason(empty,
+                                                       fuse::audio::HrtfIrRejectReason::NullSamples),
+               "hrtf_ir_rejects_for_reason matches empty IR");
+    expectTrue(std::string(fuse::audio::hrtf_ir_reject_reason_label(
+                   fuse::audio::HrtfIrRejectReason::MalformedIr)) == "malformed_ir",
+               "IR reject reason label for malformed_ir");
 }
 
 void testHrtfPanPathPreflight() {
@@ -576,6 +589,20 @@ void testHrtfPanPathPreflight() {
     expectTrue(no_ir_preflight.path
                    == fuse::audio::resolve_hrtf_pan_path(true, offset),
                "no-IR preflight path matches resolve_hrtf_pan_path");
+
+    expectTrue(stub_preflight.reason == fuse::audio::HrtfPanPathRejectReason::None,
+               "spatial stub path has none pan reject reason");
+    expectTrue(disabled_preflight.reason == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
+               "disabled HRTF pan preflight carries hrtf_disabled reject reason");
+    expectTrue(co_located_preflight.reason == fuse::audio::HrtfPanPathRejectReason::CoLocated,
+               "co-located pan preflight carries co_located reject reason");
+    expectTrue(fuse::audio::hrtf_pan_path_rejects_for_reason(false, offset,
+                                                             fuse::audio::HrtfPanPathRejectReason::
+                                                                 HrtfDisabled),
+               "hrtf_pan_path_rejects_for_reason matches disabled HRTF");
+    expectTrue(std::string(fuse::audio::hrtf_pan_path_reject_reason_label(
+                   fuse::audio::HrtfPanPathRejectReason::CoLocated)) == "co_located",
+               "pan-path reject reason label for co_located");
 }
 
 void testHrtfAttenuationCouplingPreflight() {
@@ -626,6 +653,23 @@ void testHrtfAttenuationCouplingPreflight() {
                "bypass preflight leaves gains unchanged");
     expectNear(bypassed.right, wide.right, 1e-5f,
                "bypass preflight leaves gains unchanged");
+
+    expectTrue(unity_preflight.reason == fuse::audio::HrtfAttenuationCouplingRejectReason::
+                                             UnityAttenuation,
+               "unity attenuation preflight carries unity_attenuation reject reason");
+    expectTrue(bypass_preflight.reason == fuse::audio::HrtfAttenuationCouplingRejectReason::
+                                               BypassPath,
+               "bypass path preflight carries bypass_path reject reason");
+    expectTrue(narrow_preflight.reason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+               "narrowing path has none attenuation reject reason");
+    expectTrue(fuse::audio::hrtf_attenuation_coupling_rejects_for_reason(
+                   fuse::audio::HrtfPanPath::Bypass, 0.1f, 0.1f,
+                   fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath),
+               "attenuation coupling rejects bypass path");
+    expectTrue(std::string(fuse::audio::hrtf_attenuation_coupling_reject_reason_label(
+                   fuse::audio::HrtfAttenuationCouplingRejectReason::UnityAttenuation))
+                   == "unity_attenuation",
+               "attenuation reject reason label for unity_attenuation");
 }
 
 void testBinauralPanGainSampleHelpers() {
@@ -741,6 +785,32 @@ void testHrtfBinauralPreflight() {
                "Vec3 coupled helper routes through composite preflight");
     expectNear(vec3_coupled.right, vec3_from_preflight.right, 1e-5f,
                "Vec3 coupled helper routes through composite preflight");
+
+    expectTrue(stub_preflight.rejectReason == fuse::audio::HrtfBinauralRejectReason::None,
+               "spatial stub composite preflight has none reject reason");
+    expectTrue(bypass_preflight.rejectReason == fuse::audio::HrtfBinauralRejectReason::HrtfDisabled,
+               "disabled composite preflight carries hrtf_disabled reject reason");
+    expectTrue(co_located_preflight.rejectReason == fuse::audio::HrtfBinauralRejectReason::CoLocated,
+               "co-located composite preflight carries co_located reject reason");
+    expectTrue(fuse::audio::hrtf_binaural_reject_reason(bypass_preflight)
+                   == bypass_preflight.rejectReason,
+               "hrtf_binaural_reject_reason mirrors stored rejectReason");
+    expectTrue(fuse::audio::hrtf_binaural_rejects_for_reason(
+                   bypass_preflight, fuse::audio::HrtfBinauralRejectReason::HrtfDisabled),
+               "hrtf_binaural_rejects_for_reason matches disabled bypass");
+    expectTrue(stub_preflight.ir.reason == fuse::audio::HrtfIrRejectReason::NullSamples,
+               "composite preflight carries empty-IR reject reason");
+    expectTrue(stub_preflight.panPath.reason == fuse::audio::HrtfPanPathRejectReason::None,
+               "composite preflight carries pan-path reject reason");
+    expectTrue(stub_preflight.attenuationCoupling.reason
+                   == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+               "composite preflight carries attenuation reject reason on narrow path");
+    expectTrue(conv_preflight.attenuationCoupling.reason
+                   == fuse::audio::HrtfAttenuationCouplingRejectReason::UnityAttenuation,
+               "unity composite preflight carries unity attenuation reject reason");
+    expectTrue(std::string(fuse::audio::hrtf_binaural_reject_reason_label(
+                   fuse::audio::HrtfBinauralRejectReason::HrtfDisabled)) == "hrtf_disabled",
+               "composite reject reason label for hrtf_disabled");
 }
 
 } // namespace
