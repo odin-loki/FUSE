@@ -6994,6 +6994,10 @@ void testNonFiniteRejectReasonGuards() {
                    fuse::editor::GizmoPickRejectReason::NonFiniteHit,
                "classifyPickReject maps nonFiniteHit flag");
 
+    expectTrue(std::strcmp(fuse::editor::gizmoPickRejectReasonLabel(
+                   fuse::editor::GizmoPickRejectReason::NonFiniteHit),
+               "NonFiniteHit") == 0,
+               "pick reject reason label for NonFiniteHit");
 
     fuse::editor::GizmoBeginDragRejectReason beginReason =
         fuse::editor::GizmoBeginDragRejectReason::None;
@@ -7039,6 +7043,9 @@ void testNonFiniteRejectReasonGuards() {
     fuse::editor::GizmoUpdateDragRejectReason updateReason =
         fuse::editor::GizmoUpdateDragRejectReason::None;
     expectTrue(!gizmo.tryPreflightUpdateDrag(hit, updateReason),
+    gizmo.beginDrag(hit, transform);
+
+               "gizmo tryPreflightUpdateDrag rejects non-finite hit");
     expectTrue(updateReason == fuse::editor::GizmoUpdateDragRejectReason::NonFiniteHit,
                "non-finite hit update reject reason is NonFiniteHit");
     expectTrue(std::strcmp(fuse::editor::gizmoUpdateDragRejectReasonLabel(
@@ -7179,7 +7186,6 @@ void testNonFiniteRejectReasonClassification() {
 
     expectTrue(gizmo.shouldSkipUpdateDrag(hit), "gizmo shouldSkipUpdateDrag true for non-finite hit");
     gizmo.endDrag();
-}
 
 
 void testInvalidDimensionsRejectReasonGuards() {
@@ -7238,6 +7244,7 @@ void testInvalidDimensionsRejectReasonGuards() {
                    fuse::editor::GizmoUpdateDragRejectReason::NonFiniteHit),
                "update reject reason label for NonFiniteHit");
 
+
 void testSnapDragRejectReasonGuards() {
     fuse::editor::GizmoSnapSettings snap{};
     snap.translateSnap = true;
@@ -7275,6 +7282,10 @@ void testSnapDragRejectReasonGuards() {
                "shouldSkipSnapDrag false for valid delta");
 
 
+
+
+    expectTrue(!fuse::editor::preflightSnapDragReady(0.37f, fuse::editor::GizmoMode::Translate,
+                                                     snap, &reason),
                "preflightSnapDragReady rejects disabled snap");
     expectTrue(reason == fuse::editor::GizmoSnapDragRejectReason::SnapDisabled,
                "disabled snap-drag reject reason is SnapDisabled");
@@ -7316,10 +7327,15 @@ void testSnapDragRejectReasonGuards() {
 
                    fuse::editor::GizmoSnapDragRejectReason::SnapDisabled,
                "classifySnapDragReject maps snapDisabled flag");
+    expectTrue(fuse::editor::classifySnapDragReject(
+                   fuse::editor::preflightSnapDrag(0.37f, fuse::editor::GizmoMode::Translate,
+                                                   snap)) ==
     expectTrue(std::strcmp(fuse::editor::gizmoSnapDragRejectReasonLabel(
                    fuse::editor::GizmoSnapDragRejectReason::DeltaNonFinite),
                "DeltaNonFinite") == 0,
                "snap-drag reject reason label for DeltaNonFinite");
+    expectTrue(fuse::editor::shouldSkipSnapDrag(0.37f, fuse::editor::GizmoMode::Translate, snap),
+               "shouldSkipSnapDrag true when step invalid");
 
     fuse::editor::GizmoSystem gizmo;
     snap.gridSize = 0.5f;
@@ -7373,13 +7389,17 @@ void testNonFiniteRejectReasonGuards() {
                    fuse::editor::GizmoPickRejectReason::NonFiniteRay,
                "classifyPickReject maps nonFiniteRay flag");
 
-    snap.translateSnap = true;
 
     expectTrue(!gizmo.shouldSkipSnapDrag(0.37f), "gizmo shouldSkipSnapDrag false when valid");
 
     expectTrue(gizmo.preflightSnapDragReady(0.37f) ==
                    fuse::editor::canSnapDragDelta(0.37f, fuse::editor::GizmoMode::Translate, snap),
                "preflightSnapDragReady mirrors canSnapDragDelta on valid delta");
+
+    expectTrue(!gizmo.preflightSnapDragReady(std::numeric_limits<fuse::f32>::infinity(), &reason),
+               "gizmo preflightSnapDragReady rejects non-finite delta");
+    expectTrue(reason == fuse::editor::GizmoSnapDragRejectReason::DeltaNonFinite,
+               "gizmo non-finite snap-drag reject reason is DeltaNonFinite");
 
 void testRejectReasonMirrorsExistingPreflights() {
     fuse::editor::GizmoHitTest hit{};
