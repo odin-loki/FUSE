@@ -1019,3 +1019,8 @@ u32 CascadeLightSpaceLayout::buildAllCascadeLightSpaceMatrices(
 }
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-csm-sanitize-skip-guards-8bc6 ---
+    return cascadeShadowSkipReasonIsBlocking(classifyCascadePopulationEarlyOut(camera, lightDirection));
+    return !cascadeShadowSkipReasonIsBlocking(skip);
+    if (cascadeShadowSkipReasonIsBlocking(populationEarlyOut)) {

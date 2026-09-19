@@ -1644,3 +1644,6 @@ int main() {
     std::fprintf(stderr, "fuse_shadow_system: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-csm-sanitize-skip-guards-8bc6 ---
+    expectTrue(!cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason::None), "none is not blocking");
