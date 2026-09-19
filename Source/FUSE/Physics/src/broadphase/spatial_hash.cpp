@@ -36,6 +36,18 @@ const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     return "Unknown";
 }
 
+const char* cellSpanCapacityRejectReasonName(CellSpanCapacityRejectReason reason) {
+    switch (reason) {
+    case CellSpanCapacityRejectReason::None:
+        return "None";
+    case CellSpanCapacityRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellSpanCapacityRejectReason::ExceedsSpanPerAxis:
+        return "ExceedsSpanPerAxis";
+    }
+    return "Unknown";
+}
+
 const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
     switch (reason) {
     case BroadphaseRejectReason::None:
@@ -270,7 +282,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (!shouldRunDedupeBroadphase(buffer)) {
+    if (!shouldRunDedupeBroadphase(buffer) || !shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
@@ -415,10 +427,13 @@ void refineBroadphasePairsParallelImpl(
         const u32 bodyA = buffer.bodyA[pairIndex];
         const u32 bodyB = buffer.bodyB[pairIndex];
         if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
-            buffer.invalidateSlot(pairIndex);
+            if (shouldRunPairBufferInvalidate(buffer, pairIndex)) {
+                buffer.invalidateSlot(pairIndex);
+            }
             return;
         }
-        if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
+        if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes) &&
+            shouldRunPairBufferInvalidate(buffer, pairIndex)) {
             buffer.invalidateSlot(pairIndex);
         }
     });
