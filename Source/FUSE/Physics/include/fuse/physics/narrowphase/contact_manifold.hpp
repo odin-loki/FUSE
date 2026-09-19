@@ -1281,6 +1281,8 @@ bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEps
 
 /// Prune only when `preflight_manifold_prune` reports work; returns true when points remain (B4.6 deepen pass).
 
+/// Generate only when finalize preflight passes; no-op otherwise (B4.5 deepen pass).
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

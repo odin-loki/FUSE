@@ -2406,4 +2406,18 @@ bool finalize_contact_manifold_if_needed(ContactManifold& manifold) {
     return finalize_contact_manifold_with_preflight(manifold);
 }
 
+u32 count_rejected_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflight_narrowphase_batch(pairs, bodies, shapes).rejectedCount;
+}
+
+bool contact_pair_deepen_rejected(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
 } // namespace fuse::physics::narrowphase

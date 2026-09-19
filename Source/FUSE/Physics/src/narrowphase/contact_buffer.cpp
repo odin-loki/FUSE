@@ -60,6 +60,9 @@ bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
 
 
 
+
+
+
 u32 ContactBufferSoA::countValidSlots() const {
     if (canSkipSoAIteration()) {
         return 0u;
@@ -638,6 +641,11 @@ void ContactBufferSoA::invalidateSlot(u32 slot) {
 
 
 
+
+
+
+
+
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
 }
@@ -904,7 +912,6 @@ bool ContactBufferSoA::slotIsValid(u32 slot) const {
     if (contactBufferWriteRejectReason(*this, slot, manifold) != ContactBufferWriteRejectReason::None) {
     if (!canWriteSlot(slot, pairSlotCount, manifold)) {
     if (!manifoldIsWritable(manifold) || slot >= pairSlotCount) {
-    if (slot >= validFlags.size()) {
     if (pairSlotCount > 0u && slot >= pairSlotCount) {
     return validFlags[slot] != 0u;
 
@@ -930,10 +937,7 @@ bool ContactBufferSoA::canSkipCompactAndClamp() const {
 
     if (!preflight.can_write()) {
     if (should_skip_contact_buffer_write_slot(*this, slot, manifold)) {
-void ContactBufferSoA::invalidateSlot(u32 slot) {
-        return;
-    validFlags[slot] = 0u;
-    pointCounts[slot] = 0u;
+
 
 
         return;
@@ -1777,6 +1781,7 @@ ContactBufferWriteRejectReason contactBufferWriteRejectReason(
 
 
 
+
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold) {
@@ -1890,12 +1895,8 @@ ContactBufferWritePreflight preflight_contact_buffer_write(const ContactManifold
 
 
 
-    }
 
-    const ContactBufferSoA& buffer,
-    u32 slot,
 
-    const ContactManifold& manifold) {
 
 bool write_contact_buffer_slot_with_preflight(
     ContactBufferSoA& buffer,
@@ -2251,7 +2252,6 @@ ContactBufferCompactAndClampRejectReason contact_buffer_compact_and_clamp_reject
 bool contact_buffer_compact_and_clamp_rejects_for_reason(
     ContactBufferCompactAndClampRejectReason expected) {
     return contact_buffer_compact_and_clamp_reject_reason(buffer) == expected;
-    return preflight;
 
 
 
@@ -2661,6 +2661,28 @@ bool canSkipContactBufferFrictionRebuild(const ContactBufferSoA& buffer, f32 eps
 bool shouldRunContactBufferFrictionRebuild(const ContactBufferSoA& buffer, f32 epsilon) {
     return preflightContactBufferFrictionRebuild(buffer, epsilon).needsRebuild();
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool writeContactSlotWithPreflight(
 
 
 

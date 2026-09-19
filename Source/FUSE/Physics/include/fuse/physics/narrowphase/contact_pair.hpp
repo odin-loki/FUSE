@@ -1272,6 +1272,14 @@ ContactPairDispatchPreflight preflight_contact_pair_dispatch(
 /// Run shape dispatch only when extended deepen preflight passes (B4.3 deepen follow-up pass).
 /// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
 ContactManifold detect_contacts_pair_with_preflight(
+/// Count pairs rejected by extended deepen preflight (B4.5 deepen pass).
+u32 count_rejected_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when extended deepen preflight rejects this pair (B4.5 deepen pass).
+bool contact_pair_deepen_rejected(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
