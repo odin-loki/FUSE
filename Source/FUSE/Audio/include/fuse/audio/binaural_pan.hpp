@@ -292,6 +292,20 @@ HrtfIrRejectReason classify_hrtf_ir_reject(const HrtfIrStub& ir);
 
 /// True when IR stub passes convolution preflight (B7.2 deepen).
 bool preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason* reason);
+/// Reject reason for empty-HRTF IR preflight.
+enum class HrtfIrPreflightReject : u8 {
+
+/// Empty-HRTF IR preflight — read-only guard diagnostics before convolution dispatch.
+    bool ready = false;
+    bool skipConvolution = true;
+    HrtfIrPreflightReject reject = HrtfIrPreflightReject::None;
+
+    bool can_convolve() const { return ready && !skipConvolution; }
+
+/// Populate empty-HRTF IR preflight without mutating the stub.
+
+/// Returns true when IR preflight reports a convolution-ready stub.
+bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrPreflightReject* reject = nullptr);
 
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
@@ -467,7 +481,6 @@ HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub
     bool should_skip_attenuation_coupling() const { return should_skip_pan(); }
     bool can_apply_spatial_pan() const { return !should_skip_spatial_pan(); }
     bool uses_convolution() const { return path == HrtfPanPath::Convolution; }
-};
 
 /// Preflight pan routing from HRTF enable flag, IR stub, and listener-local offset.
 
@@ -489,11 +502,28 @@ bool uses_ild_itd_stub_hrtf_pan_path(const HrtfPanPathPreflight& preflight);
 
     bool can_spatial_pan() const;
     bool should_skip_pan() const;
-};
 
 /// Diagnose pan-path routing before spatial pan or coupling.
 
 /// Diagnose pan-path routing when no IR is wired.
+/// Reject reason for HRTF pan-path preflight.
+enum class HrtfPanPathPreflightReject : u8 {
+    Disabled,
+
+/// HRTF pan-path preflight — read-only routing diagnostics before spatial pan dispatch.
+    bool skipSpatialPan = true;
+    bool skipConvolution = true;
+    HrtfPanPathPreflightReject reject = HrtfPanPathPreflightReject::None;
+
+    bool is_spatial() const { return !skipSpatialPan; }
+
+/// Populate pan-path preflight from HRTF enable flag, IR stub, and listener-local offset.
+
+/// Populate pan-path preflight when no IR is wired.
+
+/// Returns true when pan-path preflight selects a spatial path (ILD/ITD or convolution).
+bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+                                 HrtfPanPathPreflightReject* reject = nullptr);
 
 /// True when a resolved pan path bypasses HRTF (disabled or co-located).
 bool is_hrtf_pan_bypassed(HrtfPanPath path);
@@ -1092,13 +1122,9 @@ HrtfAttenuationCouplingRejectReason classify_hrtf_attenuation_coupling_reject(
     float spatial_blend = 1.f;
 
     bool can_apply_coupling() const { return !skipped; }
-};
 
 /// Populate attenuation-coupling preflight without mutating gains (B7.2 deepen).
 HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
-    HrtfPanPath path, float distance_attenuation, float occlusion_gain,
-    const HrtfAttenuationCoupling& coupling = {},
-    const BinauralPanParams& params = {});
 
 /// Non-mutating narrowing predicate — mirrors \c HrtfAttenuationCouplingPreflight::can_narrow.
 bool can_narrow_hrtf_spatial_image(const HrtfAttenuationCouplingPreflight& preflight);
@@ -1117,9 +1143,7 @@ bool is_unity_hrtf_attenuation(float distance_attenuation, float occlusion_gain)
 
 /// Read-only attenuation-coupling diagnostics — no mutation (B7.2 deepen follow-up).
     bool bypass_pan_path = false;
-    bool unity_attenuation = false;
     bool unity_spatial_blend = false;
-    float spatial_blend = 1.f;
 
     bool should_skip_coupling() const { return bypass_pan_path || unity_spatial_blend; }
     bool should_narrow_spatial_image() const { return !should_skip_coupling(); }
@@ -1131,7 +1155,6 @@ bool is_unity_hrtf_attenuation(float distance_attenuation, float occlusion_gain)
 /// Preflight pan path plus attenuation coupling in one read-only bundle.
     bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener, float distance_attenuation,
     float occlusion_gain, const HrtfAttenuationCoupling& coupling = {},
-const char* hrtf_attenuation_coupling_reject_reason_label(HrtfAttenuationCouplingRejectReason reason);
 
 /// Diagnose why attenuation-coupling preflight would reject.
 bool try_preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
@@ -1147,10 +1170,21 @@ bool preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenu
                                              HrtfAttenuationCouplingPreflightRejectReason* reason =
                                                  nullptr);
 /// True when attenuation coupling may narrow the spatial image (B7.2 deepen).
-                                        float occlusion_gain,
                                         HrtfAttenuationCouplingRejectReason* reason,
-                                        const HrtfAttenuationCoupling& coupling = {},
-                                        const BinauralPanParams& params = {});
+/// Reject reason for attenuation-coupling preflight.
+enum class HrtfAttenuationCouplingPreflightReject : u8 {
+
+/// Attenuation-coupling preflight — read-only diagnostics before spatial blend narrowing.
+    bool applyCoupling = false;
+    bool narrowImage = false;
+    HrtfAttenuationCouplingPreflightReject reject = HrtfAttenuationCouplingPreflightReject::None;
+
+    bool can_skip() const { return !narrowImage; }
+
+/// Populate attenuation-coupling preflight for a resolved pan path.
+
+/// Returns true when attenuation coupling should narrow the binaural image.
+                                             HrtfAttenuationCouplingPreflightReject* reject = nullptr,
 
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
