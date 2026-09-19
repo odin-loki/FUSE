@@ -1567,6 +1567,43 @@ void testCookCachePruneInvalidEntries() {
     expectTrue(invalidOnly.prune_invalid_entries() == 0u, "prune on empty cache after rejected load");
 }
 
+void testCookerInvalidationCountProbes() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_count_chain_a.obj", "# count chain a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_count_chain_b.obj", "# count chain b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_count_chain_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_count_chain_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
+    expectTrue(cooked.ok, "manifest cook for count probes ok");
+    expectTrue(cooker.cache().entry_count() == 2u, "two entries seeded for count probes");
+
+    const fuse::u32 upstream_count = cooker.count_upstream_invalidation(manifest, sourceA);
+    expectTrue(upstream_count >= 2u, "upstream count probe estimates chain removals");
+
+    const fuse::u32 empty_upstream_count = cooker.count_upstream_invalidation(manifest, "");
+    expectTrue(empty_upstream_count == 0u, "empty changed source upstream count is zero");
+
+    const fuse::u32 stale_count_before = cooker.count_stale_dependency_invalidation(manifest);
+    expectTrue(stale_count_before == 0u, "fresh cache stale dependency count is zero");
+
+    const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
+    expectTrue(removed >= upstream_count, "upstream invalidation removes at least probed count");
+    expectTrue(cooker.cache().entry_count() == 0u, "cache empty after probed upstream invalidation");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 
@@ -1648,6 +1685,7 @@ int main() {
     testCookCacheRoundTrip();
     testCookCacheEmptyKeyPaths();
     testCookDirtyInvalidatesCache();
+    testCookerInvalidationCountProbes();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
