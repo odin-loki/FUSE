@@ -2347,3 +2347,7 @@ bool preflightScreenDepthToFroxelIndex(f32 screenX,
     const bool ok = FroxelGridLayout::tryMapScreenDepthToFroxelIndex(
     const bool ok = tryPreflightSampleCoords(coords, desc, rejectReason);
     return ok && !sampleCoordRejectReasonIsBlocking(rejectReason);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-c843 ---
+    if (outCoords != nullptr && !screenMappingRejectReasonIsBlocking(reject)) {
+    const bool mapped = preflightScreenDepthToSampleCoords(

@@ -3860,3 +3860,9 @@ void testFroxelRejectClassifyAndPreflightGuards() {
 // --- deepen additive from deepen-froxel-volumetric-guards-15f7 ---
                "preflightDensityLookupAtIndex succeeds with clamp warning for OOB index");
                "preflightDensityTrilinearSample rejects hard OOB tile");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-c843 ---
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightScreenDepthToFroxelIndex(
+               "preflightScreenDepthToFroxelIndex rejects empty grid");
+               "preflightScreenDepthToSampleCoords returns mapped coords on success");
+               "preflightScreenDepthToSampleCoords mapped coords in range");
