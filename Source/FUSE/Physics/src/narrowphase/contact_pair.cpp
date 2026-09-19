@@ -937,3 +937,9 @@ NarrowphasePairDispatchPreflight preflight_narrowphase_pair_dispatch(
 // --- deepen additive from deepen-narrowphase-b4-guards-3d95 ---
     case ContactPairRejectReason::NoDispatchPath:
         return ContactPairRejectReason::NoDispatchPath;
+
+// --- deepen additive from b4-narrowphase-b46-deepen-ee53 ---
+    case ContactPairRejectReason::UnsupportedMeshPair:
+    case ContactPairRejectReason::DegeneratePlaneNormal:
+        return ContactPairRejectReason::UnsupportedMeshPair;
+        return ContactPairRejectReason::DegeneratePlaneNormal;

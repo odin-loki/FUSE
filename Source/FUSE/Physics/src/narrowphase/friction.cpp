@@ -521,3 +521,6 @@ FrictionBasisRejectReason friction_basis_deepen_reject_reason(const ContactManif
     if (deepenReason == FrictionBasisRejectReason::EmptyManifold ||
         deepenReason == FrictionBasisRejectReason::InvalidNormal) {
     if (deepenReason == FrictionBasisRejectReason::None &&
+
+// --- deepen additive from b4-narrowphase-b46-deepen-ee53 ---
+FrictionBasisRejectReason friction_basis_stale_reject_reason(

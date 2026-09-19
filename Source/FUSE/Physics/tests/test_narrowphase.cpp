@@ -3274,3 +3274,15 @@ void testContactBufferDeepenFollowUpGuards() {
 void testContactPairDeepenFollowUpDispatchGuards() {
 void testManifoldGenerateDeepenFollowUpGuards() {
 void testFrictionBasisDeepenFollowUpGuards() {
+
+// --- deepen additive from b4-narrowphase-b46-deepen-ee53 ---
+void testContactPairDeepenB46RejectGuards() {
+            fuse::physics::narrowphase::ContactPairRejectReason::UnsupportedMeshPair,
+            fuse::physics::narrowphase::ContactPairRejectReason::DegeneratePlaneNormal,
+            fuse::physics::narrowphase::ContactPairRejectReason::UnsupportedMeshPair) == 2u,
+            fuse::physics::narrowphase::ContactPairRejectReason::UnsupportedMeshPair),
+                fuse::physics::narrowphase::ContactPairRejectReason::DegeneratePlaneNormal),
+            ready, fuse::physics::narrowphase::ManifoldFinalizeRejectReason::AlreadyFinalized),
+                fuse::physics::narrowphase::ManifoldFinalizeRejectReason::AlreadyFinalized),
+void testFrictionBasisB46RejectGuards() {
+void testContactBufferB46Guards() {

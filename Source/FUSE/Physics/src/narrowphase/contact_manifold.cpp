@@ -829,3 +829,7 @@ ManifoldFinalizeRejectReason manifold_finalize_second_reject_reason(
     const ManifoldFinalizeRejectReason reason = manifold_finalize_second_reject_reason(
     if (reason != ManifoldFinalizeRejectReason::None &&
         reason != ManifoldFinalizeRejectReason::NeedsNormalNormalize) {
+
+// --- deepen additive from b4-narrowphase-b46-deepen-ee53 ---
+    case ManifoldFinalizeRejectReason::AlreadyFinalized:
+    if (expected == ManifoldFinalizeRejectReason::AlreadyFinalized) {
