@@ -4064,3 +4064,12 @@ void testFroxelDeepenIsBlockingAndPreflightGuards() {
     expectTrue(fuse::renderer::froxel_util::preflightDensityLookupAtIndex(grid, desc, 0u) ==
                "preflightDensityLookupAtIndex mirrors canLookupAtIndex on accessible grid");
                "preflightFroxelPopulate mirrors canPopulateFromAnalyticFog on valid inputs");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-81fc ---
+               "classifySampleCoordReject reports out_of_bounds for hard OOB");
+               "preflightSampleCoords rejects hard OOB coords");
+               "preflightScreenMapping reports no reject reason in range");
+               "classifyScreenMappingReject reports empty_grid for empty desc");
+               "classifyDensityLookupRejectAtCoord reports none for in-range coords");
+               "preflightTrilinearSample still succeeds for clampable weights");
+               "classifyFroxelTrilinearSampleReject reports invalid_sample_coords for hard OOB");
