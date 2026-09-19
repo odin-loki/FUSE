@@ -1480,10 +1480,15 @@ void testCookCacheContainsHelper() {
 }
 
 void testCookCachePruneInvalidEntries() {
+    const std::string validSource = writeTempFile("/tmp/fuse_b79_valid_entry.obj", "# valid entry\n");
+
     fuse::project::CookCacheEntry valid;
-    valid.content_hash = 42;
-    valid.source_path = "/tmp/fuse_b79_valid_entry.obj";
+    valid.source_path = validSource;
     valid.output_path = "/tmp/fuse_b79_valid_entry.fusemesh";
+    valid.content_hash = fuse::project::combine_cook_cache_key(
+        fuse::project::hash_mesh_import(
+            fuse::project::MeshImportDesc{validSource, "/tmp/fuse_b79_valid_entry.fusemesh"}),
+        0);
     expectTrue(fuse::project::is_valid_cook_cache_entry(valid), "valid entry passes validation");
 
     fuse::project::CookCacheEntry invalid = valid;
@@ -1506,14 +1511,19 @@ void testCookCachePruneInvalidEntries() {
     expectTrue(cache.prune_invalid_entries() == 0u, "prune_invalid on valid-only cache is a no-op");
     expectTrue(cache.contains(valid.content_hash), "valid entry remains after invalid prune");
 
+    const std::string loadedSource = writeTempFile("/tmp/fuse_b79_valid.obj", "# loaded valid\n");
+    fuse::project::MeshImportDesc loadedDesc;
+    loadedDesc.input_path = loadedSource;
+    loadedDesc.output_path = "/tmp/fuse_b79_valid.fusemesh";
+    const fuse::u64 loadedHash = fuse::project::combine_cook_cache_key(
+        fuse::project::hash_mesh_import(loadedDesc), 0);
+
     const std::string cachePath = "/tmp/fuse_b79_invalid_cache.json";
     {
         std::ofstream out(cachePath, std::ios::binary);
-        out << R"({
-  "schemaVersion": 1,
-  "entries": [
-    {
-      "contentHash": 101,
+        out << "{\n  \"schemaVersion\": 1,\n  \"entries\": [\n    {\n";
+        out << "      \"contentHash\": " << loadedHash << ",\n";
+        out << R"(
       "upstreamHash": 0,
       "outputPath": "/tmp/fuse_b79_valid.fusemesh",
       "sourcePath": "/tmp/fuse_b79_valid.obj",
@@ -1541,7 +1551,7 @@ void testCookCachePruneInvalidEntries() {
     fuse::project::CookCache loaded;
     expectTrue(loaded.load(cachePath), "mixed cache JSON loads");
     expectTrue(loaded.entry_count() == 1u, "load keeps first valid entry and rejects invalid trailing records");
-    expectTrue(loaded.contains(101u), "valid loaded entry remains addressable");
+    expectTrue(loaded.contains(loadedHash), "valid loaded entry remains addressable");
 
     const std::string invalidOnlyPath = "/tmp/fuse_b79_invalid_only_cache.json";
     {
@@ -1608,7 +1618,6 @@ void testCookerWouldInvalidateProbes() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_would_inv_a.obj", "# would inv a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_would_inv_b.obj", "# would inv b\n");
 
-    fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
     entry_a.kind = fuse::project::CookAssetKind::Mesh;
     entry_a.source_path = source_a;
@@ -1622,7 +1631,6 @@ void testCookerWouldInvalidateProbes() {
     entry_b.dependencies.push_back(entry_a.output_path);
     manifest.assets.push_back(entry_b);
 
-    fuse::project::AssetCooker cooker;
     expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would_invalidate probes ok");
     expectTrue(!cooker.would_invalidate_upstream_dependency(manifest, ""),
                "empty changed source upstream would_invalidate is false");
@@ -1636,19 +1644,16 @@ void testCookerWouldInvalidateProbes() {
                "stale dependency would_invalidate true after upstream change");
     expectTrue(cooker.count_stale_dependency_invalidation(manifest) >= 1u,
                "stale dependency count agrees with would_invalidate probe");
-}
 
 void testCookerReconcileEstimateShouldSkip() {
     const std::string source = writeTempFile("/tmp/fuse_b79_reconcile_skip.obj", "# reconcile skip\n");
 
-    fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry;
     entry.kind = fuse::project::CookAssetKind::Mesh;
     entry.source_path = source;
     entry.output_path = "/tmp/fuse_b79_reconcile_skip.fusemesh";
     manifest.assets.push_back(entry);
 
-    fuse::project::AssetCooker cooker;
     expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for reconcile should_skip ok");
 
     const fuse::project::CookCacheReconcileEstimate fresh = cooker.estimate_reconcile_invalidation(manifest);
@@ -1661,31 +1666,17 @@ void testCookerReconcileEstimateShouldSkip() {
     expectTrue(!stale.should_skip(), "stale reconcile estimate should not skip");
     expectTrue(!cooker.estimate_prune_reconcile().should_skip(),
                "stale prune reconcile estimate should not skip");
-}
 
 void testCookerReconcileEstimateProbes() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_reconcile_a.obj", "# reconcile a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_reconcile_b.obj", "# reconcile b\n");
 
-    fuse::project::CookManifest manifest;
-    fuse::project::CookManifestEntry entry_a;
-    entry_a.kind = fuse::project::CookAssetKind::Mesh;
-    entry_a.source_path = source_a;
     entry_a.output_path = "/tmp/fuse_b79_reconcile_a.fusemesh";
-    manifest.assets.push_back(entry_a);
 
-    fuse::project::CookManifestEntry entry_b;
-    entry_b.kind = fuse::project::CookAssetKind::Mesh;
-    entry_b.source_path = source_b;
     entry_b.output_path = "/tmp/fuse_b79_reconcile_b.fusemesh";
-    entry_b.dependencies.push_back(entry_a.output_path);
-    manifest.assets.push_back(entry_b);
 
-    fuse::project::AssetCooker cooker;
-    const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
     expectTrue(cooked.ok, "manifest cook for reconcile estimate ok");
 
-    const fuse::project::CookCacheReconcileEstimate fresh = cooker.estimate_reconcile_invalidation(manifest);
     expectTrue(fresh.total() == 0u, "fresh cache reconcile estimate is zero");
     expectTrue(cooker.estimate_prune_reconcile().total() == 0u, "fresh prune reconcile estimate is zero");
 
@@ -1693,7 +1684,6 @@ void testCookerReconcileEstimateProbes() {
     const fuse::u32 stale_count = cooker.count_stale_dependency_invalidation(manifest);
     expectTrue(stale_count >= 1u, "stale dependency reconcile count is non-zero after upstream change");
 
-    const fuse::project::CookCacheReconcileEstimate stale = cooker.estimate_reconcile_invalidation(manifest);
     expectTrue(stale.stale_dependency_entries == stale_count,
                "reconcile estimate stale count matches dependency probe");
     expectTrue(stale.total() >= stale_count, "reconcile estimate total includes stale dependency count");
@@ -1706,26 +1696,15 @@ void testCookerReconcileEstimateProbes() {
                "stale dependency reconcile estimate zero after stale invalidation");
     expectTrue(after.prune_stale_entries >= 1u,
                "changed upstream entry remains stale for prune reconcile");
-}
 
 void testCookerUpstreamReconcileProbes() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_up_reconcile_a.obj", "# up reconcile a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_up_reconcile_b.obj", "# up reconcile b\n");
     const std::string source_c = writeTempFile("/tmp/fuse_b79_up_reconcile_c.obj", "# up reconcile c\n");
 
-    fuse::project::CookManifest manifest;
-    fuse::project::CookManifestEntry entry_a;
-    entry_a.kind = fuse::project::CookAssetKind::Mesh;
-    entry_a.source_path = source_a;
     entry_a.output_path = "/tmp/fuse_b79_up_reconcile_a.fusemesh";
-    manifest.assets.push_back(entry_a);
 
-    fuse::project::CookManifestEntry entry_b;
-    entry_b.kind = fuse::project::CookAssetKind::Mesh;
-    entry_b.source_path = source_b;
     entry_b.output_path = "/tmp/fuse_b79_up_reconcile_b.fusemesh";
-    entry_b.dependencies.push_back(entry_a.output_path);
-    manifest.assets.push_back(entry_b);
 
     fuse::project::CookManifestEntry entry_c;
     entry_c.kind = fuse::project::CookAssetKind::Mesh;
@@ -1734,7 +1713,6 @@ void testCookerUpstreamReconcileProbes() {
     entry_c.dependencies.push_back(entry_b.output_path);
     manifest.assets.push_back(entry_c);
 
-    fuse::project::AssetCooker cooker;
     expectTrue(cooker.cook_manifest(manifest).ok, "chain manifest cook for upstream reconcile ok");
     expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would_reconcile is false");
 
@@ -1760,38 +1738,21 @@ void testCookerUpstreamReconcileProbes() {
     const fuse::project::CookCacheReconcileEstimate reconcile = cooker.estimate_reconcile_invalidation(manifest);
     expectTrue(reconcile.stale_dependency_entries >= 1u, "reconcile estimate includes stale dependency count");
     expectTrue(reconcile.total() >= 1u, "reconcile estimate total is non-zero after upstream change");
-}
 
 void testCookCacheDownstreamSourceProbe() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_downstream_a.obj", "# downstream a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_downstream_b.obj", "# downstream b\n");
     const std::string source_c = writeTempFile("/tmp/fuse_b79_downstream_c.obj", "# downstream c\n");
 
-    fuse::project::CookManifest manifest;
-    fuse::project::CookManifestEntry entry_a;
-    entry_a.kind = fuse::project::CookAssetKind::Mesh;
-    entry_a.source_path = source_a;
     entry_a.output_path = "/tmp/fuse_b79_downstream_a.fusemesh";
-    manifest.assets.push_back(entry_a);
 
-    fuse::project::CookManifestEntry entry_b;
-    entry_b.kind = fuse::project::CookAssetKind::Mesh;
-    entry_b.source_path = source_b;
     entry_b.output_path = "/tmp/fuse_b79_downstream_b.fusemesh";
-    entry_b.dependencies.push_back(entry_a.output_path);
-    manifest.assets.push_back(entry_b);
 
-    fuse::project::CookManifestEntry entry_c;
-    entry_c.kind = fuse::project::CookAssetKind::Mesh;
-    entry_c.source_path = source_c;
     entry_c.output_path = "/tmp/fuse_b79_downstream_c.fusemesh";
-    entry_c.dependencies.push_back(entry_b.output_path);
-    manifest.assets.push_back(entry_c);
 
     fuse::project::CookJobGraph graph;
     graph.build_from_manifest(manifest);
 
-    fuse::project::AssetCooker cooker;
     expectTrue(cooker.cook_manifest(manifest).ok, "chain manifest cook for downstream probe ok");
     expectTrue(cooker.cache().entry_count() == 3u, "three entries seeded for downstream probe");
 
@@ -1804,11 +1765,8 @@ void testCookCacheDownstreamSourceProbe() {
     for (const std::string& path : probed) {
         if (path == source_b) {
             has_middle = true;
-        }
         if (path == source_c) {
             has_tail = true;
-        }
-    }
     expectTrue(has_middle, "downstream probe includes middle source");
     expectTrue(has_tail, "downstream probe includes tail source");
     expectTrue(probed[0] == entry_a.output_path, "downstream probe starts at producer output path");
@@ -1821,6 +1779,75 @@ void testCookCacheDownstreamSourceProbe() {
                "would_invalidate_downstream guarded on empty output path");
     expectTrue(cooker.cache().probe_downstream_sources("", graph.edges(), graph.jobs()).empty(),
                "empty output path downstream probe is guarded");
+void testCombineCookCacheKeyZeroSourceGuard() {
+    expectTrue(fuse::project::combine_cook_cache_key(0, 0) == 0, "all-zero cache key stays zero");
+    expectTrue(fuse::project::combine_cook_cache_key(0, 42u) == 0,
+               "zero source with non-zero upstream stays zero");
+    expectTrue(!fuse::project::is_valid_combined_cook_cache_key(0, 42u),
+               "combined key invalid when source hash is zero");
+    expectTrue(fuse::project::is_valid_combined_cook_cache_key(99u, 0u),
+               "combined key valid when only upstream is zero");
+    expectTrue(fuse::project::is_valid_combined_cook_cache_key(99u, 42u),
+               "combined key valid when both hashes are non-zero");
+
+void testCookCachePruneAll() {
+    fuse::project::CookCache cache;
+    expectTrue(cache.prune_all() == 0u, "prune_all on empty cache is a no-op");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_prune_all_live.obj", "# prune all v1\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_prune_all_live.fusemesh";
+
+    const fuse::project::CookRecord first = cooker.cook_mesh(desc);
+    expectTrue(first.ok, "seed cook for prune_all ok");
+    expectTrue(cooker.cache().entry_count() == 1u, "one live entry before prune_all");
+    expectTrue(cooker.cache().prune_all() == 0u, "prune_all on fresh valid entry is a no-op");
+    expectTrue(cooker.cache().contains(first.content_hash), "valid entry survives prune_all");
+
+    writeTempFile(source, "# prune all v2\n");
+    const fuse::u32 removed = cooker.cache().prune_all();
+    expectTrue(removed == 1u, "prune_all removes stale live entry");
+    expectTrue(cooker.cache().empty(), "cache empty after prune_all");
+
+void testCookCacheLoadPrunesStale() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_load_prune.obj", "# load prune v1\n");
+
+    desc.output_path = "/tmp/fuse_b79_load_prune.fusemesh";
+
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for load prune ok");
+
+    const std::string cachePath = "/tmp/fuse_b79_load_prune_cache.json";
+    expectTrue(cooker.cache().save(cachePath), "cache saves before source change");
+
+    writeTempFile(source, "# load prune v2\n");
+
+    fuse::project::CookCache loaded;
+    expectTrue(loaded.load(cachePath), "stale cache JSON loads");
+    expectTrue(loaded.empty(), "load auto-prunes stale entries");
+    expectTrue(loaded.entry_count() == 0u, "no entries remain after load prune");
+
+void testAssetCookerInvalidateEarlyOuts() {
+
+    expectTrue(cooker.invalidate_upstream_dependency(manifest, "") == 0u,
+               "upstream invalidation rejects empty source path");
+    expectTrue(cooker.invalidate_stale_dependency_hashes(manifest) == 0u,
+               "stale dependency invalidation on empty manifest is a no-op");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_early_out_mesh.obj", "# early out\n");
+    entry.output_path = "/tmp/fuse_b79_early_out_mesh.fusemesh";
+
+    expectTrue(cooker.invalidate_upstream_dependency(manifest, source) == 0u,
+               "upstream invalidation on empty cache is a no-op");
+               "stale dependency invalidation on empty cache is a no-op");
+
+    desc.output_path = entry.output_path;
+    expectTrue(seeded.ok, "seed cook for early-out invalidation ok");
+    expectTrue(cooker.cache().entry_count() == 1u, "cache seeded for early-out tests");
+
+               "upstream invalidation still rejects empty path with populated cache");
+    expectTrue(cooker.cache().entry_count() == 1u, "empty-path upstream invalidation leaves cache intact");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -1897,6 +1924,10 @@ int main() {
     testCookContentHashGuardHelpers();
     testCookCacheContainsHelper();
     testCookCachePruneInvalidEntries();
+    testCombineCookCacheKeyZeroSourceGuard();
+    testCookCachePruneAll();
+    testCookCacheLoadPrunesStale();
+    testAssetCookerInvalidateEarlyOuts();
     testCookManifestCacheHitsOnSecondRun();
     testCookCacheInvalidateChain();
     testCookCacheStaleDependencyHashInvalidation();
