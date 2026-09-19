@@ -382,6 +382,45 @@ FUSE_PHYSICS_INLINE bool shouldRunCellOccupancyIteration(const CellRange2& range
     return preflightCellOccupancy(range, maxCells).canIterate();
 }
 
+/// Cell-capacity preflight for shape occupancy iteration via `SpatialHashParams` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightShapeCellOccupancy(
+    const CellRange3& range,
+    const SpatialHashParams& params) {
+    return preflightCellOccupancy(range, params.maxCellOccupancy);
+}
+
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightShapeCellOccupancy(
+    const CellRange2& range,
+    const SpatialHashParams& params) {
+    return preflightCellOccupancy(range, params.maxCellOccupancy);
+}
+
+/// Non-mutating shape cell-occupancy skip predicate — inverse of `canIterate` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipShapeCellOccupancyIteration(
+    const CellRange3& range,
+    const SpatialHashParams& params) {
+    return !preflightShapeCellOccupancy(range, params).canIterate();
+}
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellOccupancyIteration(
+    const CellRange2& range,
+    const SpatialHashParams& params) {
+    return !preflightShapeCellOccupancy(range, params).canIterate();
+}
+
+/// Non-mutating shape cell-occupancy predicate — mirrors `preflightShapeCellOccupancy` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellOccupancyIteration(
+    const CellRange3& range,
+    const SpatialHashParams& params) {
+    return preflightShapeCellOccupancy(range, params).canIterate();
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellOccupancyIteration(
+    const CellRange2& range,
+    const SpatialHashParams& params) {
+    return preflightShapeCellOccupancy(range, params).canIterate();
+}
+
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     const CellRange3& range,
