@@ -1402,3 +1402,9 @@ bool should_skip_island_solve_refs(const ContactIslandGraph::Island& island,
 IslandSolveBodiesPreflight preflight_island_solve_bodies_by_index(const ContactIslandGraph& graph,
 struct IslandSolvePreflightCombined {
 IslandSolvePreflightCombined preflight_island_solve_combined(
+
+// --- deepen additive from deepen-pbd-island-guards-358e ---
+struct IslandSolveParticipationPreflight {
+bool should_skip_island_solve_all_sleeping(const ContactIslandGraph::Island& island,
+bool should_skip_island_solve_no_participation(const ContactIslandGraph::Island& island,
+IslandSolveParticipationPreflight preflight_island_solve_participation(

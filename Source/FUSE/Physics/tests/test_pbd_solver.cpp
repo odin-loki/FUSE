@@ -4077,3 +4077,40 @@ void testPreflightIslandSleepGraphGuards() {
     const IslandSolvePreflightCombined sleepingCombined = preflight_island_solve_combined(
     const IslandSolvePreflightCombined awakeCombined = preflight_island_solve_combined(
     testPreflightIslandSleepGraphGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-358e ---
+               "should_skip false when build preflight can build");
+    const IslandBuildPreflight allStale = preflight_island_build(2, staleContacts, staleConstraints);
+    expectTrue(allStale.reason == IslandBuildRejectReason::AllConstraintsStale,
+    expectTrue(should_skip_island_build(2, staleContacts, staleConstraints),
+               "should_skip true when all constraint refs are stale");
+    expectTrue(!sleepingPreflight.can_attempt_sleep(),
+    expectTrue(should_skip_island_solve_all_sleeping(graph.island(sleepingIsland), bodies),
+               "should_skip all-sleeping island solve");
+    expectTrue(awakePreflight.can_attempt_sleep(), "awake island can attempt sleep");
+    expectTrue(!awakePreflight.all_dynamic_sleeping(), "awake island is not all sleeping");
+    expectTrue(!should_skip_island_solve_all_sleeping(graph.island(awakeIsland), bodies),
+    expectTrue(wakePreflight.should_wake(), "sleeping island with constraints is wake candidate");
+    expectTrue(wakePreflight.ownedConstraintCount == 1u, "wake preflight counts owned constraints");
+    const IslandWakePreflight awakeWakePreflight = preflight_island_wake(graph.island(awakeIsland), bodies);
+    expectTrue(!awakeWakePreflight.should_wake(), "all-awake island is not a wake candidate");
+    expectTrue(awakeWakePreflight.awakeBodyCount == 2u, "wake preflight counts awake bodies");
+    expectTrue(awakeWakePreflight.sleepingBodyCount == 0u, "awake island has no sleeping bodies");
+void testPreflightIslandSolveParticipationGuards() {
+    const IslandSolveParticipationPreflight inactivePreflight =
+    expectTrue(!inactivePreflight.can_solve(), "sleeping/static island has no participation");
+    expectTrue(should_skip_island_solve_no_participation(graph.island(inactiveIsland), bodies),
+               "should_skip no-participation island solve");
+    expectTrue(inactivePreflight.sleepingBodyCount == 1u,
+    expectTrue(inactivePreflight.staticOrKinematicBodyCount == 1u,
+    const IslandSolveParticipationPreflight activePreflight =
+    expectTrue(activePreflight.can_solve(), "awake dynamic island can participate in solve");
+    expectTrue(!should_skip_island_solve_no_participation(graph.island(activeIsland), bodies),
+               "should_skip false when island has participating bodies");
+    expectTrue(activePreflight.participatingBodyCount == 2u,
+void testIslandSleepWakeGraphGuards() {
+    expectTrue(!should_skip_island_wake_graph(graph, bodies),
+               "should_skip wake graph false when candidates exist");
+    expectTrue(should_skip_island_wake_graph(emptyGraph, bodies),
+               "should_skip wake graph true for empty graph");
+    testPreflightIslandSolveParticipationGuards();

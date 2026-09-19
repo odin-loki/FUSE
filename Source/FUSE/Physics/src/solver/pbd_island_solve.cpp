@@ -2254,3 +2254,11 @@ IslandSolvePreflightCombined preflight_island_solve_combined(
     IslandSolvePreflightCombined preflight{};
     if (should_skip_sleeping_island_solve(island, bodies) ||
         should_skip_island_solve_bodies(island, bodies)) {
+
+// --- deepen additive from deepen-pbd-island-guards-358e ---
+        const IslandSleepPreflight sleepPreflight = preflight_island_sleep(island, bodies);
+        const IslandWakePreflight wakePreflight = preflight_island_wake(island, bodies);
+bool should_skip_island_solve_all_sleeping(const ContactIslandGraph::Island& island,
+IslandSolveParticipationPreflight preflight_island_solve_participation(
+    IslandSolveParticipationPreflight preflight{};
+bool should_skip_island_solve_no_participation(const ContactIslandGraph::Island& island,
