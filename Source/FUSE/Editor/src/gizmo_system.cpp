@@ -2321,3 +2321,14 @@ f32 GizmoSystem::trySnapDragDelta(f32 delta) const {
     return fuse::editor::trySnapDragDelta(delta, m_mode, m_snap);
     const UpdateDragPreflight preflight = preflightUpdateDrag(hit);
     const f32 delta = this->trySnapDragDelta(dx + dy);
+
+// --- deepen additive from deepen-b6-gizmo-preflight-guards-e028 ---
+GizmoInteractionPreflight preflightInteraction(const GizmoRay& ray, const GizmoTransform& transform,
+    GizmoInteractionPreflight preflight{};
+        preflightUpdateDrag({}, dragging, activeAxis, mode, settings);
+GizmoInteractionPreflight preflightInteraction(const GizmoHitTest& hit, GizmoMode mode,
+    preflight.begin = preflightBeginDrag(hit, mode, settings, dragging);
+GizmoInteractionPreflight GizmoSystem::preflightInteraction(const GizmoHitTest& hit) const {
+    return fuse::editor::preflightInteraction(hit, m_mode, m_dragging, m_activeAxis, m_snap);
+GizmoInteractionPreflight GizmoSystem::preflightInteraction(
+    return fuse::editor::preflightInteraction(ray, transform, m_mode, m_space, kAxisLength,

@@ -1006,3 +1006,10 @@ EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis = GizmoAxi
 
 // --- deepen additive from deepen-gizmo-preflight-guards-ff59 ---
     [[nodiscard]] f32 trySnapDragDelta(f32 delta) const;
+
+// --- deepen additive from deepen-b6-gizmo-preflight-guards-e028 ---
+struct GizmoInteractionPreflight {
+GizmoInteractionPreflight preflightInteraction(const GizmoRay& ray, const GizmoTransform& transform,
+GizmoInteractionPreflight preflightInteraction(const GizmoHitTest& hit, GizmoMode mode,
+    [[nodiscard]] GizmoInteractionPreflight preflightInteraction(const GizmoHitTest& hit) const;
+    [[nodiscard]] GizmoInteractionPreflight preflightInteraction(
