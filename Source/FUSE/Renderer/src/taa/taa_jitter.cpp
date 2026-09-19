@@ -25,6 +25,8 @@ const char* taaJitterGuardRejectReasonLabel(TaaJitterGuardRejectReason reason) {
         return "invalid_sequence";
     case TaaJitterGuardRejectReason::InvalidViewport:
         return "invalid_viewport";
+    case TaaJitterGuardRejectReason::MisalignedFrame:
+        return "misaligned_frame";
     }
     return "unknown";
 }
@@ -97,6 +99,38 @@ bool tryPreflightTaaJitterAdvance(u32 sequenceLength, TaaJitterGuardRejectReason
 
 bool shouldSkipTaaJitterAdvance(u32 sequenceLength) {
     return !preflightTaaJitterAdvance(sequenceLength);
+}
+
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(u32 frameIndex, u32 monotonicFrame, u32 slot,
+                                                            u32 sequenceLength) {
+    const TaaJitterGuardRejectReason syncReject = classifyTaaJitterSyncReject(sequenceLength);
+    if (syncReject != TaaJitterGuardRejectReason::None) {
+        return syncReject;
+    }
+    if (monotonicFrame != frameIndex ||
+        !TaaJitterLayout::jitterSlotMatchesFrameIndex(frameIndex, slot, sequenceLength)) {
+        return TaaJitterGuardRejectReason::MisalignedFrame;
+    }
+    return TaaJitterGuardRejectReason::None;
+}
+
+bool preflightTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot, u32 sequenceLength,
+                                 TaaJitterGuardRejectReason* reason) {
+    const TaaJitterGuardRejectReason reject =
+        classifyTaaJitterAlignmentReject(frameIndex, monotonicFrame, slot, sequenceLength);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaJitterGuardRejectReason::None;
+}
+
+bool tryPreflightTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot, u32 sequenceLength,
+                                    TaaJitterGuardRejectReason& reason) {
+    return preflightTaaJitterAlignment(frameIndex, monotonicFrame, slot, sequenceLength, &reason);
+}
+
+bool shouldSkipTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot, u32 sequenceLength) {
+    return !preflightTaaJitterAlignment(frameIndex, monotonicFrame, slot, sequenceLength);
 }
 
 bool TaaJitterLayout::validateSequenceLength(u32 length) {
@@ -206,6 +240,14 @@ fuse::math::Vec2 TaaJitter::haltonNdcOffset(u32 index, u32 width, u32 height) {
 
 fuse::math::Vec2 TaaJitter::currentPixelOffset() const {
     return TaaJitterLayout::haltonPixelOffset(m_index, m_sequenceLength);
+}
+
+bool TaaJitter::currentPixelOffsetIfReady(fuse::math::Vec2& out) const {
+    if (!canAdvance()) {
+        return false;
+    }
+    out = currentPixelOffset();
+    return true;
 }
 
 fuse::math::Vec2 TaaJitter::currentNdcOffset(u32 width, u32 height) const {

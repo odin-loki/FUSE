@@ -14,6 +14,7 @@ enum class TaaJitterGuardRejectReason : u8 {
     None = 0,
     InvalidSequence,
     InvalidViewport,
+    MisalignedFrame,
 };
 
 /// Human-readable label for jitter guard reject reasons (B5.9 deepen).
@@ -46,6 +47,19 @@ bool preflightTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLen
 bool tryPreflightTaaJitterAdvance(u32 sequenceLength, TaaJitterGuardRejectReason& reason);
 /// Early-out when jitter advance preflight would reject (B5.9 deepen).
 bool shouldSkipTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Classify why jitter alignment to a frame counter would be rejected (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(u32 frameIndex, u32 monotonicFrame, u32 slot,
+                                                            u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// True when jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
+bool preflightTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot,
+                                 u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                                 TaaJitterGuardRejectReason* reason = nullptr);
+/// Jitter alignment preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot, u32 sequenceLength,
+                                    TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter alignment preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot,
+                                  u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -88,6 +102,8 @@ public:
     explicit TaaJitter(const TaaJitterDesc& desc = {});
 
     fuse::math::Vec2 currentPixelOffset() const;
+    /// Pixel offset only when the sequence is valid; returns false when blocked (B5.9 deepen).
+    bool currentPixelOffsetIfReady(fuse::math::Vec2& out) const;
     fuse::math::Vec2 currentNdcOffset(u32 width, u32 height) const;
     /// NDC offset only when viewport and sequence are valid; returns false when blocked (B5.9 deepen).
     bool currentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out) const;
