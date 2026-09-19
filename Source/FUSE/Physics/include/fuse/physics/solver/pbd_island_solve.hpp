@@ -1853,3 +1853,26 @@ IslandSleepRejectReason islandSleepRejectReason(const IslandSleepPreflight& pref
 IslandWakeRejectReason islandWakeRejectReason(const IslandWakePreflight& preflight);
 IslandSleepGraphRejectReason islandSleepGraphRejectReason(const IslandSleepGraphPreflight& preflight);
 IslandWakeGraphRejectReason islandWakeGraphRejectReason(const IslandWakeGraphPreflight& preflight);
+
+// --- deepen additive from deepen-pbd-island-guards-3648 ---
+IslandGraphBuildRejectReason classify_island_build_reject(const IslandBuildPreflight& preflight);
+IslandDispatchRejectReason classify_island_dispatch_reject(const IslandDispatchPreflight& preflight);
+IslandSolveRejectReason classify_island_solve_job_reject(const IslandSolveJobPreflight& preflight);
+IslandSolveRejectReason classify_island_constraint_solve_reject(const IslandConstraintSolvePreflight& preflight);
+IslandSleepRejectReason classify_island_sleep_reject(const IslandSleepPreflight& preflight);
+IslandSleepRejectReason classify_island_sleep_graph_reject(const IslandSleepGraphPreflight& preflight);
+IslandWakeRejectReason classify_island_wake_reject(const IslandWakePreflight& preflight);
+IslandWakeRejectReason classify_island_wake_graph_reject(const IslandWakeGraphPreflight& preflight);
+bool try_preflight_island_build(
+                                     IslandDispatchRejectReason* reason = nullptr);
+bool try_preflight_island_dispatch(const ContactIslandGraph& graph,
+                                   IslandDispatchRejectReason& reason);
+                                      IslandSolveRejectReason* reason = nullptr);
+bool try_preflight_solve_island_job(const IslandSolveJob& job,
+                                    IslandSolveRejectReason& reason);
+                                  IslandSleepRejectReason* reason = nullptr);
+bool try_preflight_island_sleep(const ContactIslandGraph::Island& island,
+                                IslandSleepRejectReason& reason);
+                                 IslandWakeRejectReason* reason = nullptr);
+bool try_preflight_island_wake(const ContactIslandGraph::Island& island,
+                               IslandWakeRejectReason& reason);

@@ -3141,3 +3141,38 @@ IslandWakeGraphRejectReason islandWakeGraphRejectReason(const IslandWakeGraphPre
     preflight.reason = islandWakeRejectReason(preflight);
     preflight.reason = islandSleepGraphRejectReason(preflight);
     preflight.reason = islandWakeGraphRejectReason(preflight);
+
+// --- deepen additive from deepen-pbd-island-guards-3648 ---
+    case IslandSolveRejectReason::OutOfRangeIndex:
+    case IslandSolveRejectReason::NoConstraints:
+IslandGraphBuildRejectReason classify_island_build_reject(const IslandBuildPreflight& preflight) {
+IslandDispatchRejectReason classify_island_dispatch_reject(const IslandDispatchPreflight& preflight) {
+IslandSolveRejectReason classify_island_solve_job_reject(const IslandSolveJobPreflight& preflight) {
+    if (preflight.reason != IslandSolveRejectReason::None) {
+        return preflight.constraintCount == 0u ? IslandSolveRejectReason::NoConstraints
+                                             : IslandSolveRejectReason::EmptyIsland;
+IslandSolveRejectReason classify_island_constraint_solve_reject(const IslandConstraintSolvePreflight& preflight) {
+IslandSleepRejectReason classify_island_sleep_reject(const IslandSleepPreflight& preflight) {
+    if (preflight.reason != IslandSleepRejectReason::None) {
+IslandSleepRejectReason classify_island_sleep_graph_reject(const IslandSleepGraphPreflight& preflight) {
+IslandWakeRejectReason classify_island_wake_reject(const IslandWakePreflight& preflight) {
+    if (preflight.reason != IslandWakeRejectReason::None) {
+IslandWakeRejectReason classify_island_wake_graph_reject(const IslandWakeGraphPreflight& preflight) {
+bool try_preflight_island_build(
+                                     IslandDispatchRejectReason* reason) {
+bool try_preflight_island_dispatch(const ContactIslandGraph& graph,
+                                   IslandDispatchRejectReason& reason) {
+                                      IslandSolveRejectReason* reason) {
+    const IslandSolveJobPreflight preflight = preflight_solve_island_job(job, dt);
+bool try_preflight_solve_island_job(const IslandSolveJob& job,
+                                    IslandSolveRejectReason& reason) {
+                                  IslandSleepRejectReason* reason) {
+bool try_preflight_island_sleep(const ContactIslandGraph::Island& island,
+                                IslandSleepRejectReason& reason) {
+                                 IslandWakeRejectReason* reason) {
+bool try_preflight_island_wake(const ContactIslandGraph::Island& island,
+                               IslandWakeRejectReason& reason) {
+        preflight.reason = IslandSolveRejectReason::InvalidDt;
+        preflight.reason = job.constraintCount == 0u ? IslandSolveRejectReason::NoConstraints
+        preflight.reason = IslandSolveRejectReason::StaleConstraintRefs;
+        preflight.reason = IslandWakeRejectReason::UniformSleepState;

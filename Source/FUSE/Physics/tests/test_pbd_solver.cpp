@@ -5516,3 +5516,33 @@ void testRejectReasonMirrorsExistingPreflights() {
     expectTrue(emptyJobPreflight.reason == IslandSolveJobRejectReason::EmptyJob,
     const IslandWakePreflight noWake = preflight_island_wake(graph.island(sleepingIsland), bodies);
     expectTrue(wakeGraph.reason == IslandWakeGraphRejectReason::NoWakeableIslands,
+
+// --- deepen additive from deepen-pbd-island-guards-3648 ---
+void testIslandGraphBuildRejectReasons() {
+    expectTrue(reason == IslandGraphBuildRejectReason::OutOfRangeContactBody,
+void testIslandDispatchSolveRejectReasons() {
+    expectTrue(classify_island_dispatch_reject(validDispatch) == IslandDispatchRejectReason::None,
+    IslandDispatchRejectReason dispatchReason = IslandDispatchRejectReason::None;
+    expectTrue(dispatchReason == IslandDispatchRejectReason::InvalidDt,
+    expectTrue(emptySolve.reason == IslandDispatchRejectReason::NoDispatchableIslands,
+    const IslandSolveJobPreflight jobPreflight = preflight_solve_island_job(job, 1.f / 60.f);
+    expectTrue(jobPreflight.reason == IslandSolveRejectReason::None,
+    IslandSolveRejectReason solveReason = IslandSolveRejectReason::None;
+    expectTrue(solveReason == IslandSolveRejectReason::None,
+    expectTrue(emptyJobPreflight.reason == IslandSolveRejectReason::NoConstraints,
+    expectTrue(classify_island_solve_job_reject(emptyJobPreflight) ==
+                   IslandSolveRejectReason::NoConstraints,
+    expectTrue(classify_island_constraint_solve_reject(solvePreflight) ==
+void testIslandSleepWakeRejectReasons() {
+    IslandSleepRejectReason sleepReason = IslandSleepRejectReason::None;
+    expectTrue(sleepReason == IslandSleepRejectReason::NotAllSleeping,
+    IslandWakeRejectReason wakeReason = IslandWakeRejectReason::None;
+    expectTrue(sleepingWake.reason == IslandWakeRejectReason::UniformSleepState,
+    expectTrue(wakeReason == IslandWakeRejectReason::UniformSleepState,
+    expectTrue(sleepGraph.reason == IslandSleepRejectReason::None,
+    expectTrue(wakeGraph.reason == IslandWakeRejectReason::None,
+    expectTrue(classify_island_wake_graph_reject(wakeGraph) == IslandWakeRejectReason::None,
+    expectTrue(allSleepGraph.reason == IslandSleepRejectReason::NotAllSleeping,
+    testIslandGraphBuildRejectReasons();
+    testIslandDispatchSolveRejectReasons();
+    testIslandSleepWakeRejectReasons();
