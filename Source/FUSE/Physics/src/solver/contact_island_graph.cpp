@@ -480,3 +480,12 @@ ContactIslandGraphBuildPreflight preflight_contact_island_graph_build(
         return IslandGraphBuildRejectReason::UnsafeContactRef;
         return IslandGraphBuildRejectReason::UnsafeDistanceRef;
     preflight.skipped = preflight.reason == IslandGraphBuildRejectReason::EmptyInput;
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-b344 ---
+const char* islandGraphBuildRejectReasonName(IslandGraphBuildRejectReason reason) {
+    case IslandGraphBuildRejectReason::OutOfRangeRefs:
+IslandGraphBuildRejectReason islandGraphBuildRejectReason(
+        return IslandGraphBuildRejectReason::OutOfRangeRefs;
+    return islandGraphBuildRejectReason(bodyCount, contacts, distanceConstraints) == expected;
+    if (islandGraphBuildRejectReason(bodyCount, contacts, distanceConstraints) !=
+        IslandGraphBuildRejectReason::None) {

@@ -3016,3 +3016,22 @@ IslandConstraintRefsRejectReason island_constraint_refs_reject_reason(
     preflight.hasMixedSleepState = preflight.reason == IslandWakeRejectReason::None;
     preflight.skipped = preflight.reason == IslandSleepGraphRejectReason::AllIslandsSleeping;
     preflight.skipped = preflight.reason == IslandWakeGraphRejectReason::NoWakeableIslands;
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-b344 ---
+const char* islandSolveRejectReasonName(IslandSolveRejectReason reason) {
+    case IslandSolveRejectReason::NoDispatchableIslands:
+IslandSolveRejectReason islandSolveRejectReason(const ContactIslandGraph& graph) {
+    return IslandSolveRejectReason::NoDispatchableIslands;
+bool islandSolveRejectsForReason(const ContactIslandGraph& graph, IslandSolveRejectReason expected) {
+    return islandSolveRejectReason(graph) == expected;
+    preflight.reason = islandSolveRejectReason(graph);
+    preflight.noDispatchableIslands = preflight.reason == IslandSolveRejectReason::NoDispatchableIslands;
+    preflight.noDispatchableIslands = preflight.reason == IslandDispatchRejectReason::NoDispatchableIslands;
+    preflight.reason = islandGraphBuildRejectReason(bodyCount, contacts, distanceConstraints);
+    preflight.emptyInput = preflight.reason == IslandGraphBuildRejectReason::EmptyInput;
+    preflight.outOfRangeRefs = preflight.reason == IslandGraphBuildRejectReason::OutOfRangeRefs;
+    preflight.staleConstraintRefs = preflight.reason == IslandConstraintSolveRejectReason::StaleConstraintRefs;
+        preflight.reason = IslandSleepRejectReason::EmptyIsland;
+    case IslandSleepGraphRejectReason::NoSolveableIslands:
+    return IslandSleepGraphRejectReason::NoSolveableIslands;
+    preflight.noSolveableIslands = preflight.reason == IslandSleepGraphRejectReason::NoSolveableIslands;

@@ -1791,3 +1791,10 @@ IslandConstraintRefsRejectReason island_constraint_refs_reject_reason(
     bool can_solve() const { return reason == IslandConstraintRefsRejectReason::None; }
     bool can_build() const { return reason == IslandGraphBuildRejectReason::None; }
     bool should_wake_sleepers() const { return reason == IslandWakeRejectReason::None; }
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-b344 ---
+const char* islandSolveRejectReasonName(IslandSolveRejectReason reason);
+IslandSolveRejectReason islandSolveRejectReason(const ContactIslandGraph& graph);
+bool islandSolveRejectsForReason(const ContactIslandGraph& graph, IslandSolveRejectReason expected);
+    bool can_dispatch() const { return !skipped && reason == IslandSolveRejectReason::None; }
+    bool can_skip_solve() const { return !skipped && reason == IslandSleepRejectReason::AllSleeping; }

@@ -206,3 +206,7 @@ ContactIslandGraphBuildPreflight preflight_contact_island_graph_build(
 
 // --- deepen additive from deepen-pbd-island-reject-reasons-a31f ---
     bool can_build() const { return reason == IslandGraphBuildRejectReason::None; }
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-b344 ---
+const char* islandGraphBuildRejectReasonName(IslandGraphBuildRejectReason reason);
+IslandGraphBuildRejectReason islandGraphBuildRejectReason(
