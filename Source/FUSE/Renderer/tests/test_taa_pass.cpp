@@ -4863,3 +4863,7 @@ void testTaaPassTryClassifyGuardWrappers() {
                "pass classifyJitterSyncReject matches subsystem helper");
                "pass classifyJitterNdcReject matches subsystem helper");
                "pass classifyResolveBlendReject matches subsystem helper");
+
+// --- deepen additive from deepen-b59-taa-try-classify-wrappers-90db ---
+    expectTrue(invalidSeqPass->tryPreflightJitterSync(3u, jitterReject),
+               "pass tryPreflightJitterSync reject reason is None with fallback");
