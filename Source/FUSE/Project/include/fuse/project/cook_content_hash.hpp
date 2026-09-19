@@ -26,6 +26,43 @@ namespace fuse::project {
 /// Combine source/descriptor hash with upstream dependency hash for cache lookup.
 [[nodiscard]] u64 combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
+/// Why a cook cache key preflight rejected the fold (B7.9 deepen).
+enum class CookCacheKeyRejectReason : u8 {
+    None,
+    ZeroSourceHash,
+    UncacheableFold,
+};
+
+/// Read-only cache-key diagnostics — no mutation (B7.9 deepen).
+struct CookCacheKeyPreflight {
+    bool valid = false;
+    CookCacheKeyRejectReason reason = CookCacheKeyRejectReason::None;
+    u64 combined_key = 0;
+
+    [[nodiscard]] bool canCache() const { return valid; }
+};
+
+/// Preflight guard before cache lookup/store — true when the combined key is cacheable.
+[[nodiscard]] CookCacheKeyPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash);
+
+/// Why a file-content hash preflight rejected the path (B7.9 deepen).
+enum class CookFileHashRejectReason : u8 {
+    None,
+    EmptyPath,
+    UnreadableSource,
+};
+
+/// Read-only file hash diagnostics — no mutation (B7.9 deepen).
+struct CookFileHashPreflight {
+    bool valid = false;
+    CookFileHashRejectReason reason = CookFileHashRejectReason::None;
+
+    [[nodiscard]] bool canHash() const { return valid; }
+};
+
+/// Preflight guard before hashing source bytes — true when `hash_file_content` would be non-zero.
+[[nodiscard]] CookFileHashPreflight preflight_file_content_hash(const std::string& path);
+
 /// Content hash over source bytes plus import descriptor knobs (identical inputs → identical hash).
 [[nodiscard]] u64 hash_mesh_import(const MeshImportDesc& desc);
 [[nodiscard]] u64 hash_texture_import(const TextureImportDesc& desc);

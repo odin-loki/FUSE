@@ -30,6 +30,31 @@ struct CookCacheStats {
     u64 invalidations = 0;
 };
 
+/// Non-mutating prune estimate — mirrors `prune_*` without touching stats (B7.9 deepen).
+struct CookCachePruneEstimate {
+    u32 invalid_count = 0;
+    u32 stale_count = 0;
+
+    [[nodiscard]] u32 total() const { return invalid_count + stale_count; }
+    [[nodiscard]] bool would_prune() const { return total() > 0; }
+};
+
+/// Non-mutating invalidation probe — mirrors `invalidate_*` without mutation (B7.9 deepen).
+struct CookCacheInvalidationProbe {
+    u32 affected_count = 0;
+
+    [[nodiscard]] bool would_invalidate() const { return affected_count > 0; }
+};
+
+/// Non-mutating reconcile estimate for manifest-driven cache invalidation (B7.9 deepen).
+struct CookCacheReconcileEstimate {
+    u32 direct_count = 0;
+    u32 downstream_count = 0;
+
+    [[nodiscard]] u32 total() const { return direct_count + downstream_count; }
+    [[nodiscard]] bool would_reconcile() const { return total() > 0; }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -50,6 +75,9 @@ struct CookCacheStats {
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     return is_valid_cook_cache_key(combine_cook_cache_key(source_hash, upstream_hash));
 }
+
+/// Preflight guard before storing a cache record — true when entry passes structural and key checks.
+[[nodiscard]] CookCacheKeyPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -81,6 +109,28 @@ public:
     u32 prune_all();
     /// True when invalid or stale records are present — `prune_*` would remove at least one (B7.9 deepen).
     [[nodiscard]] bool has_prunable_entries() const;
+    /// Count entries `prune_all` would remove — no-op on empty cache (B7.9 deepen).
+    [[nodiscard]] CookCachePruneEstimate estimate_prune_all() const;
+    /// Count prunable entries without touching hit/miss/invalidation stats (B7.9 deepen).
+    [[nodiscard]] u32 estimate_prunable_entries() const;
+
+    /// Probe stale-content invalidation for `source_path` — guarded like `invalidate_stale_content_for_source`.
+    [[nodiscard]] CookCacheInvalidationProbe probe_stale_content_for_source(const std::string& source_path,
+                                                                            u64 current_content_hash) const;
+    /// Probe upstream-hash invalidation — guarded like `invalidate_stale_upstream_hashes`.
+    [[nodiscard]] CookCacheInvalidationProbe probe_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Source paths that would be removed by `invalidate_stale_upstream_hashes` — one per affected entry.
+    [[nodiscard]] std::vector<std::string> probe_stale_upstream_source_paths(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Probe transitive downstream invalidation — guarded like `invalidate_downstream_of`.
+    [[nodiscard]] CookCacheInvalidationProbe probe_downstream_of(const std::string& output_path,
+                                                                 const std::vector<CookJobDependencyEdge>& edges,
+                                                                 const std::vector<CookJob>& jobs) const;
+    /// Probe source-path invalidation — guarded like `invalidate_source`.
+    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate_source(const std::string& source_path) const;
+    /// Probe output-path invalidation — guarded like `invalidate_output`.
+    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate_output(const std::string& output_path) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

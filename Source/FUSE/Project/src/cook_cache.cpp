@@ -81,6 +81,23 @@ std::string escapeJson(const std::string& text) {
 
 } // namespace
 
+CookCacheKeyPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookCacheKeyPreflight preflight{};
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookCacheKeyRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+
+    if (!is_valid_cook_cache_path(entry.source_path) || !is_valid_cook_cache_path(entry.output_path)) {
+        preflight.reason = CookCacheKeyRejectReason::UncacheableFold;
+        return preflight;
+    }
+
+    preflight.valid = true;
+    preflight.combined_key = entry.content_hash;
+    return preflight;
+}
+
 CookCacheEntry* CookCache::find_entry_(u64 content_hash) {
     for (CookCacheEntry& entry : m_entries) {
         if (entry.content_hash == content_hash) {
@@ -339,6 +356,145 @@ bool CookCache::has_prunable_entries() const {
         }
     }
     return false;
+}
+
+CookCachePruneEstimate CookCache::estimate_prune_all() const {
+    CookCachePruneEstimate estimate;
+    if (m_entries.empty()) {
+        return estimate;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (!is_valid_cook_cache_entry(entry)) {
+            ++estimate.invalid_count;
+        } else if (is_stale_cache_entry_(entry)) {
+            ++estimate.stale_count;
+        }
+    }
+    return estimate;
+}
+
+u32 CookCache::estimate_prunable_entries() const {
+    return estimate_prune_all().total();
+}
+
+CookCacheInvalidationProbe CookCache::probe_stale_content_for_source(const std::string& source_path,
+                                                                     u64 current_content_hash) const {
+    CookCacheInvalidationProbe probe;
+    if (!is_valid_cook_cache_path(source_path) || !is_valid_cook_cache_key(current_content_hash) ||
+        m_entries.empty()) {
+        return probe;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.source_path == source_path && entry.content_hash != current_content_hash) {
+            ++probe.affected_count;
+        }
+    }
+    return probe;
+}
+
+CookCacheInvalidationProbe CookCache::probe_stale_upstream_hashes(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    CookCacheInvalidationProbe probe;
+    if (m_entries.empty() || source_upstream_by_path.empty()) {
+        return probe;
+    }
+
+    for (const auto& pair : source_upstream_by_path) {
+        const std::string& source_path = pair.first;
+        if (!is_valid_cook_cache_path(source_path)) {
+            continue;
+        }
+        const u64 current_upstream = pair.second;
+
+        for (const CookCacheEntry& entry : m_entries) {
+            if (entry.source_path == source_path && entry.upstream_hash != current_upstream) {
+                ++probe.affected_count;
+            }
+        }
+    }
+    return probe;
+}
+
+std::vector<std::string> CookCache::probe_stale_upstream_source_paths(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    if (m_entries.empty() || source_upstream_by_path.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> stale_sources;
+    for (const auto& pair : source_upstream_by_path) {
+        const std::string& source_path = pair.first;
+        if (!is_valid_cook_cache_path(source_path)) {
+            continue;
+        }
+        const u64 current_upstream = pair.second;
+
+        for (const CookCacheEntry& entry : m_entries) {
+            if (entry.source_path == source_path && entry.upstream_hash != current_upstream) {
+                stale_sources.push_back(source_path);
+            }
+        }
+    }
+    return stale_sources;
+}
+
+CookCacheInvalidationProbe CookCache::probe_invalidate_source(const std::string& source_path) const {
+    CookCacheInvalidationProbe probe;
+    if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
+        return probe;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.source_path == source_path) {
+            ++probe.affected_count;
+        }
+    }
+    return probe;
+}
+
+CookCacheInvalidationProbe CookCache::probe_invalidate_output(const std::string& output_path) const {
+    CookCacheInvalidationProbe probe;
+    if (!is_valid_cook_cache_path(output_path) || m_entries.empty()) {
+        return probe;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.output_path == output_path) {
+            ++probe.affected_count;
+        }
+    }
+    return probe;
+}
+
+CookCacheInvalidationProbe CookCache::probe_downstream_of(const std::string& output_path,
+                                                          const std::vector<CookJobDependencyEdge>& edges,
+                                                          const std::vector<CookJob>& jobs) const {
+    if (!is_valid_cook_cache_path(output_path) || m_entries.empty()) {
+        return {};
+    }
+
+    CookCacheInvalidationProbe probe = probe_invalidate_source(output_path);
+
+    for (const CookJobDependencyEdge& edge : edges) {
+        const CookJob* from_job = find_job_by_id(jobs, edge.from_job_id);
+        if (!from_job || from_job->output_path != output_path) {
+            continue;
+        }
+
+        const CookJob* to_job = find_job_by_id(jobs, edge.to_job_id);
+        if (!to_job) {
+            continue;
+        }
+
+        probe.affected_count += probe_invalidate_source(to_job->source_path).affected_count;
+        const CookCacheInvalidationProbe downstream =
+            probe_downstream_of(to_job->output_path, edges, jobs);
+        probe.affected_count += downstream.affected_count;
+    }
+
+    return probe;
 }
 
 bool CookCache::contains(u64 content_hash) const {

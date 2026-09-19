@@ -102,6 +102,48 @@ u64 combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     return fnv1a64_combine(source_hash, upstream_hash);
 }
 
+CookCacheKeyPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    CookCacheKeyPreflight preflight{};
+    if (source_hash == 0) {
+        preflight.reason = CookCacheKeyRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+
+    preflight.combined_key = combine_cook_cache_key(source_hash, upstream_hash);
+    if (preflight.combined_key == 0) {
+        preflight.reason = CookCacheKeyRejectReason::UncacheableFold;
+        return preflight;
+    }
+
+    preflight.valid = true;
+    preflight.reason = CookCacheKeyRejectReason::None;
+    return preflight;
+}
+
+CookFileHashPreflight preflight_file_content_hash(const std::string& path) {
+    CookFileHashPreflight preflight{};
+    if (path.empty()) {
+        preflight.reason = CookFileHashRejectReason::EmptyPath;
+        return preflight;
+    }
+
+    std::error_code ec;
+    if (!std::filesystem::exists(std::filesystem::path(path), ec)) {
+        preflight.reason = CookFileHashRejectReason::UnreadableSource;
+        return preflight;
+    }
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        preflight.reason = CookFileHashRejectReason::UnreadableSource;
+        return preflight;
+    }
+
+    preflight.valid = true;
+    preflight.reason = CookFileHashRejectReason::None;
+    return preflight;
+}
+
 u64 hash_mesh_import(const MeshImportDesc& desc) {
     if (desc.input_path.empty() || desc.output_path.empty()) {
         return 0;
