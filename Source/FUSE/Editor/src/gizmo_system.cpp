@@ -356,10 +356,6 @@ bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings) {
     return isSnapEnabled(mode, settings) && isSnapStepValid(mode, settings);
 }
 
-bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings) {
-    return isSnapEnabled(mode, settings) && !isSnapStepValid(mode, settings);
-}
-
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
                             GizmoSpace space, f32 axisLength, f32 pickRadius) {
     PickPreflight preflight{};
@@ -546,6 +542,7 @@ PickInteractionPreflight preflightPickInteraction(const GizmoRay& ray,
     PickInteractionPreflight preflight{};
     preflight.pick = preflightPick(ray, transform, mode, space, axisLength, pickRadius);
     preflight.snap = preflightSnap(mode, settings);
+    preflight.snapDegraded = isSnapDegraded(mode, settings);
     return preflight;
 }
 
@@ -554,6 +551,7 @@ PickInteractionPreflight preflightPickInteraction(const GizmoHitTest& hit, Gizmo
     PickInteractionPreflight preflight{};
     preflight.pick = preflightPick(hit, mode);
     preflight.snap = preflightSnap(mode, settings);
+    preflight.snapDegraded = isSnapDegraded(mode, settings);
     return preflight;
 }
 
@@ -585,6 +583,7 @@ UpdateDragInteractionPreflight preflightUpdateDragInteraction(const GizmoHitTest
     UpdateDragInteractionPreflight preflight{};
     preflight.drag = preflightUpdateDrag(hit, dragging, activeAxis, mode, settings);
     preflight.snap = preflightSnap(mode, settings);
+    preflight.snapDegraded = isSnapDegraded(mode, settings);
     return preflight;
 }
 
@@ -678,6 +677,24 @@ PickSnapPreflight preflightPickSnap(const GizmoHitTest& hit, GizmoMode mode,
     return preflight;
 }
 
+SnapInteractionPreflight preflightSnapInteraction(GizmoInteractionPhase phase, GizmoMode mode,
+                                                  const GizmoSnapSettings& settings) {
+    SnapInteractionPreflight preflight{};
+    preflight.phase = phase;
+    preflight.snap = preflightSnap(mode, settings);
+    return preflight;
+}
+
+bool canApplySnapInteraction(GizmoInteractionPhase phase, GizmoMode mode,
+                             const GizmoSnapSettings& settings) {
+    return preflightSnapInteraction(phase, mode, settings).canApply();
+}
+
+bool isSnapInteractionDegraded(GizmoInteractionPhase phase, GizmoMode mode,
+                               const GizmoSnapSettings& settings) {
+    return preflightSnapInteraction(phase, mode, settings).isDegraded();
+}
+
 BeginInteractionPreflight preflightBeginInteraction(
     const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode, GizmoSpace space,
     f32 axisLength, f32 pickRadius, const GizmoSnapSettings& settings, bool alreadyDragging) {
@@ -723,6 +740,8 @@ InteractionPreflight preflightInteraction(const GizmoHitTest& hit, bool dragging
     preflight.begin = preflightBeginInteraction(hit, mode, settings, dragging);
     preflight.update = preflightUpdateInteraction(hit, dragging, activeAxis, mode, settings);
     preflight.end = preflightEndInteraction(dragging, activeAxis, mode, settings);
+    preflight.snapInteraction =
+        preflightSnapInteraction(preflight.phase(), mode, settings);
     return preflight;
 }
 
@@ -738,6 +757,8 @@ InteractionPreflight preflightInteraction(const GizmoRay& ray, const GizmoTransf
                                                 pickRadius, settings, dragging);
     preflight.update = preflightUpdateInteraction({}, dragging, activeAxis, mode, settings);
     preflight.end = preflightEndInteraction(dragging, activeAxis, mode, settings);
+    preflight.snapInteraction =
+        preflightSnapInteraction(preflight.phase(), mode, settings);
     return preflight;
 }
 
@@ -1302,6 +1323,18 @@ bool GizmoSystem::canUpdateInteraction(const GizmoHitTest& hit) const {
 
 bool GizmoSystem::canEndInteraction() const {
     return fuse::editor::canEndInteraction(m_dragging, m_activeAxis, m_mode, m_snap);
+}
+
+SnapInteractionPreflight GizmoSystem::preflightSnapInteraction() const {
+    return fuse::editor::preflightSnapInteraction(interactionPhase(m_dragging), m_mode, m_snap);
+}
+
+bool GizmoSystem::canApplySnapOnPhase() const {
+    return preflightSnapInteraction().canApply();
+}
+
+bool GizmoSystem::isSnapDegradedOnPhase() const {
+    return preflightSnapInteraction().isDegraded();
 }
 
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
