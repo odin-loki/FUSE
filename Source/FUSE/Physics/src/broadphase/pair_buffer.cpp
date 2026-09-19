@@ -1229,3 +1229,12 @@ bool wouldSkipPairBufferToVector(const PairBufferSoA& buffer, PairBufferToVector
     const PairBufferToVectorRejectReason reject = pairBufferToVectorRejectReason(buffer);
     return reject != PairBufferToVectorRejectReason::None;
 bool invalidatePairBufferSlotWithPreflight(PairBufferSoA& buffer, u32 slot) {
+
+// --- deepen additive from b4-broadphase-wouldskip-invalidate-24a4 ---
+bool wouldSkipPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
+bool wouldSkipPairBufferCompaction(const PairBufferSoA& buffer) {
+bool wouldSkipPairBufferClamp(const PairBufferSoA& buffer) {
+bool wouldSkipPairBufferDedupe(const PairBufferSoA& buffer) {
+bool wouldSkipPairBufferSort(const PairBufferSoA& buffer) {
+bool wouldSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
+bool wouldSkipPairBufferToVector(const PairBufferSoA& buffer) {

@@ -4525,3 +4525,17 @@ void testWouldSkipBroadphaseGuardHelpers() {
 void testWouldSkipBroadphaseHelperGuards() {
                "wouldSkipMergePairsIntoBuffer false for non-empty pairs into empty buffer");
                "wouldSkipMergePairsIntoBuffer agrees with canSkipMergePairsIntoBuffer on full buffer");
+
+// --- deepen additive from b4-broadphase-wouldskip-invalidate-24a4 ---
+               "wouldSkipPairBufferInvalidateSlot true after slot cleared");
+void testWouldSkipBroadphaseGuardParity() {
+    expectTrue(!fuse::physics::broadphase::wouldSkipBroadphase(bodies, shapes),
+    expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(validRange, 8u) ==
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferPush(buffer, 2u, 2u),
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferCompaction(buffer) ==
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferDedupe(buffer) ==
+               "wouldSkipPairBufferDedupe agrees with canSkipPairBufferDedupe");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferCompactAndClamp(buffer) ==
+               "wouldSkipPairBufferCompactAndClamp agrees with canSkipPairBufferCompactAndClamp");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferToVector(buffer) ==
+               "wouldSkipPairBufferToVector agrees with canSkipPairBufferToVector");
