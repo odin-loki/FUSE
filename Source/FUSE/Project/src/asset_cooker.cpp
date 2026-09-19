@@ -430,3 +430,6 @@ bool AssetCooker::should_skip_reconcile_invalidation(const CookManifest& manifes
 
 // --- deepen additive from deepen-b79-cook-hash-guards-c358 ---
     return m_cache.should_skip_prune();
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-82e9 ---
+    return m_cache.should_skip_prune_reconcile();

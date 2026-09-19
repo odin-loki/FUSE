@@ -1997,3 +1997,11 @@ void testCookCachePruneReconcileShouldSkipGuards() {
                "would_invalidate_stale_content guarded on empty cache");
                "would_invalidate_stale_upstream guarded on empty cache");
     expectTrue(!cooker.cache().estimate_prune_removals().should_skip(),
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-82e9 ---
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_inv.obj", 0u),
+    expectTrue(empty.should_skip(), "empty prune estimate should_skip");
+    expectTrue(!estimate.should_skip(), "stale shader estimate should not skip");
+    expectTrue(!cache.should_skip_prune_reconcile(), "stale shader cache should not skip prune reconcile");
+               "empty mesh input preflight should_skip");
+               "should_skip_combine_cook_cache_key true for zero source");
