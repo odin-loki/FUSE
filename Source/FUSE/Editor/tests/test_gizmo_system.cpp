@@ -7600,6 +7600,131 @@ void testDragInteractionActOnPhase() {
     gizmo.endDrag();
 }
 
+void testNonFiniteInputGuards() {
+    const fuse::f32 nan = std::numeric_limits<fuse::f32>::quiet_NaN();
+    const fuse::f32 inf = std::numeric_limits<fuse::f32>::infinity();
+
+    expectTrue(!fuse::editor::isScalarFinite(nan), "NaN scalar is non-finite");
+    expectTrue(!fuse::editor::isScalarFinite(inf), "Inf scalar is non-finite");
+    expectTrue(fuse::editor::isScalarFinite(1.f), "finite scalar passes guard");
+
+    fuse::math::Vec3 finiteVec{1.f, 2.f, 3.f};
+    expectTrue(fuse::editor::isVec3Finite(finiteVec), "finite vector passes guard");
+    fuse::math::Vec3 nanVec{nan, 0.f, 0.f};
+    expectTrue(!fuse::editor::isVec3Finite(nanVec), "vector with NaN component fails guard");
+
+    fuse::editor::GizmoRay finiteRay = rayAlongX();
+    expectTrue(!fuse::editor::isRayNonFinite(finiteRay), "valid ray is finite");
+    fuse::editor::GizmoRay nanRay = finiteRay;
+    nanRay.direction.x = nan;
+    expectTrue(fuse::editor::isRayNonFinite(nanRay), "ray with NaN direction is non-finite");
+
+    fuse::editor::GizmoHitTest finiteHit{};
+    finiteHit.viewportWidth = 100.f;
+    finiteHit.viewportHeight = 100.f;
+    finiteHit.screenX = 10.f;
+    finiteHit.screenY = 50.f;
+    expectTrue(!fuse::editor::isHitTestNonFinite(finiteHit), "valid hit test is finite");
+
+    fuse::editor::GizmoHitTest nanHit = finiteHit;
+    nanHit.screenX = nan;
+    expectTrue(fuse::editor::isHitTestNonFinite(nanHit), "hit with NaN screenX is non-finite");
+
+    const fuse::editor::PickPreflight nanRayPick = fuse::editor::preflightPick(
+        nanRay, {}, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(nanRayPick.nonFiniteRay, "pick preflight marks non-finite ray");
+    expectTrue(!nanRayPick.canPick(), "pick preflight rejects non-finite ray");
+
+    const fuse::editor::PickPreflight nanHitPick =
+        fuse::editor::preflightPick(nanHit, fuse::editor::GizmoMode::Translate);
+    expectTrue(nanHitPick.nonFiniteHit, "pick preflight marks non-finite hit");
+    expectTrue(!nanHitPick.canPick(), "pick preflight rejects non-finite hit");
+
+    const fuse::editor::BeginDragPreflight nanBegin = fuse::editor::preflightBeginDrag(
+        nanHit, fuse::editor::GizmoMode::Translate);
+    expectTrue(nanBegin.nonFiniteHit, "begin preflight marks non-finite hit");
+    expectTrue(!nanBegin.canBegin, "begin preflight rejects non-finite hit");
+
+    const fuse::editor::UpdateDragPreflight nanUpdate = fuse::editor::preflightUpdateDrag(
+        nanHit, true, fuse::editor::GizmoAxis::X);
+    expectTrue(nanUpdate.nonFiniteHit, "update preflight marks non-finite hit");
+    expectTrue(!nanUpdate.canUpdate(), "update preflight rejects non-finite hit");
+
+    fuse::editor::GizmoSystem gizmo;
+    expectTrue(!gizmo.canPickAxis(nanHit), "gizmo canPickAxis rejects non-finite hit");
+    expectTrue(!gizmo.canBeginDrag(nanHit), "gizmo canBeginDrag rejects non-finite hit");
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(finiteHit, transform);
+    expectTrue(!gizmo.canUpdateDrag(nanHit), "gizmo canUpdateDrag rejects non-finite hit");
+    gizmo.endDrag();
+}
+
+void testInteractionActionRouting() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::InteractionPreflight idleInteraction = fuse::editor::preflightInteraction(
+        hit, false, fuse::editor::GizmoAxis::None, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(idleInteraction.canAct(fuse::editor::GizmoInteractionAction::Pick),
+               "idle interaction allows pick action");
+    expectTrue(idleInteraction.canAct(fuse::editor::GizmoInteractionAction::Begin),
+               "idle interaction allows begin action");
+    expectTrue(!idleInteraction.canAct(fuse::editor::GizmoInteractionAction::Update),
+               "idle interaction rejects update action");
+    expectTrue(!idleInteraction.canAct(fuse::editor::GizmoInteractionAction::End),
+               "idle interaction rejects end action");
+    expectTrue(fuse::editor::canActOnInteraction(idleInteraction,
+                                                 fuse::editor::GizmoInteractionAction::Begin),
+               "canActOnInteraction mirrors idle begin routing");
+
+    const fuse::editor::InteractionPreflight activeInteraction = fuse::editor::preflightInteraction(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(activeInteraction.canAct(fuse::editor::GizmoInteractionAction::Update),
+               "active interaction allows update action");
+    expectTrue(activeInteraction.canAct(fuse::editor::GizmoInteractionAction::End),
+               "active interaction allows end action");
+    expectTrue(!activeInteraction.canAct(fuse::editor::GizmoInteractionAction::Begin),
+               "active interaction rejects begin action");
+    expectTrue(fuse::editor::canActOnInteraction(activeInteraction,
+                                                 fuse::editor::GizmoInteractionAction::End),
+               "canActOnInteraction mirrors active end routing");
+}
+
+void testDragLifecycleSnapPreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    const fuse::editor::DragLifecycleSnapPreflight validLifecycle =
+        fuse::editor::preflightDragLifecycleSnap(fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validLifecycle.allCanApply(), "lifecycle snap preflight reports all phases ready");
+    expectTrue(!validLifecycle.anyDegraded(), "valid snap is not degraded across lifecycle");
+
+    snap.gridSize = 0.f;
+    const fuse::editor::DragLifecycleSnapPreflight degradedLifecycle =
+        fuse::editor::preflightDragLifecycleSnap(fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!degradedLifecycle.allCanApply(),
+               "lifecycle snap preflight rejects invalid step across phases");
+    expectTrue(degradedLifecycle.anyDegraded(),
+               "lifecycle snap preflight marks degraded across phases");
+    expectTrue(degradedLifecycle.begin.isDegraded(), "begin phase snap is degraded");
+    expectTrue(degradedLifecycle.update.isDegraded(), "update phase snap is degraded");
+    expectTrue(degradedLifecycle.end.isDegraded(), "end phase snap is degraded");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    const fuse::editor::DragLifecycleSnapPreflight gizmoLifecycle = gizmo.preflightDragLifecycleSnap();
+    expectTrue(gizmoLifecycle.anyDegraded(), "gizmo lifecycle snap preflight marks degraded");
+}
+
 void testCanInteractionPredicates() {
     fuse::editor::GizmoSnapSettings snap{};
     snap.translateSnap = true;
@@ -8399,6 +8524,8 @@ int main() {
     testInteractionPreflightSnapRouting();
     testModeChangePreflightGuards();
     testCanActOnPhaseGuards();
+    testInteractionActionRouting();
+    testDragLifecycleSnapPreflight();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test failure(s)\n", g_failures);

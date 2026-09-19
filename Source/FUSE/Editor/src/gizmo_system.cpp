@@ -668,6 +668,23 @@ bool isRayNonFinite(const GizmoRay& ray) {
            !std::isfinite(ray.direction.y) || !std::isfinite(ray.direction.z);
 }
 
+bool isScalarFinite(f32 value) {
+    return std::isfinite(value);
+}
+
+bool isVec3Finite(const math::Vec3& value) {
+    return isScalarFinite(value.x) && isScalarFinite(value.y) && isScalarFinite(value.z);
+}
+
+bool isRayNonFinite(const GizmoRay& ray) {
+    return !isVec3Finite(ray.origin) || !isVec3Finite(ray.direction);
+}
+
+bool isHitTestNonFinite(const GizmoHitTest& hit) {
+    return !isScalarFinite(hit.screenX) || !isScalarFinite(hit.screenY) ||
+           !isScalarFinite(hit.viewportWidth) || !isScalarFinite(hit.viewportHeight);
+}
+
 GizmoInteractionPhase interactionPhase(bool dragging) {
     return dragging ? GizmoInteractionPhase::Dragging : GizmoInteractionPhase::Idle;
 
@@ -1395,6 +1412,11 @@ PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform
 
     if (isRayEmpty(ray)) {
         preflight.emptyRay = true;
+        return preflight;
+    }
+
+    if (isRayEmpty(ray)) {
+        preflight.emptyRay = true;
 
 
     if (!isTransformFinite(transform)) {
@@ -1439,6 +1461,10 @@ PickPreflight preflightPick(const GizmoHitTest& hit, GizmoMode mode) {
 
     if (!isHitTestScreenFinite(hit)) {
         preflight.nonFiniteScreen = true;
+    if (isHitTestNonFinite(hit)) {
+        preflight.nonFiniteHit = true;
+        return preflight;
+    }
 
     if (isHitTestEmpty(hit)) {
         preflight.emptyHit = true;
@@ -2374,6 +2400,7 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
     } else if (isHitTestNonFinite(hit)) {
     } else if (!isHitTestScreenFinite(hit)) {
         preflight.nonFiniteScreen = true;
+        preflight.nonFiniteHit = true;
     } else if (isHitTestEmpty(hit)) {
         preflight.emptyHit = true;
     } else if (isHitTestCoordinatesInvalid(hit)) {
@@ -3130,11 +3157,18 @@ bool canInteract(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, G
     return preflightInteraction(hit, dragging, activeAxis, mode, settings).canInteract();
 
 bool canInteract(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
-}
 
-                 const GizmoSnapSettings& settings) {
 
         .canInteract();
+bool canActOnInteraction(const InteractionPreflight& preflight, GizmoInteractionAction action) {
+    return preflight.canAct(action);
+
+DragLifecycleSnapPreflight preflightDragLifecycleSnap(GizmoMode mode,
+    DragLifecycleSnapPreflight preflight{};
+    const SnapPreflight snap = preflightSnap(mode, settings);
+    preflight.begin = snap;
+    preflight.update = snap;
+    preflight.end = snap;
 }
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
@@ -4788,6 +4822,10 @@ bool GizmoSystem::canUseRay(const GizmoRay& ray) const {
 
 bool GizmoSystem::canActOnPhase(const GizmoHitTest& hit) const {
     return preflightInteraction(hit).canActOnPhase();
+
+DragLifecycleSnapPreflight GizmoSystem::preflightDragLifecycleSnap() const {
+    return fuse::editor::preflightDragLifecycleSnap(m_mode, m_snap);
+}
 
 bool GizmoSystem::canPickSnap(const GizmoHitTest& hit) const {
     return fuse::editor::canPickSnap(hit, m_mode, m_snap);
