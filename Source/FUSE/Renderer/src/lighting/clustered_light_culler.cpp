@@ -145,6 +145,16 @@ bool cluster_util::isClusterGridAccessible(const ClusterGridSoA& grid, const Clu
 
     return !isLightGridAccessible(grid, desc);
 
+    return ClusterGridLayout::shouldSkipClusterGrid(desc);
+}
+
+bool cluster_util::hasAssignedLights(const ClusterGridSoA& grid, const ClusterDesc& desc) {
+    if (!isGridAccessible(grid, desc)) {
+        return false;
+    return countAssignedLights(grid, ClusterDesc::clampCounts(desc).clusterCount()) > 0u;
+
+bool cluster_util::shouldSkipClusterLighting(const ClusterGridSoA& grid, const ClusterDesc& desc) {
+    return shouldSkipClusterLookup(grid, desc) || !hasAssignedLights(grid, desc);
 }
 
 bool cluster_util::canLookupAtCoord(const ClusterGridSoA& grid,
@@ -202,12 +212,27 @@ u32 cluster_util::clusterLightCountAtCoord(const ClusterGridSoA& grid,
     if (!isClusterGridAccessible(grid, desc)) {
     if (!isLightGridAccessible(grid, desc)) {
     if (!isGridAccessible(grid, desc)) {
+    if (ClusterGridLayout::isEmptyGrid(desc) || !gridMatchesDesc(grid, desc)) {
         return 0u;
     }
 
     const u32 index = ClusterGridLayout::clusterIndexClamped(tileX, tileY, sliceZ, desc);
     return clusterLightCount(grid, index);
 }
+
+bool cluster_util::tryClusterLightCountAtIndex(const ClusterGridSoA& grid,
+                                                const ClusterDesc& desc,
+                                                u32 index,
+                                                u32& outCount,
+                                                ClusterLookupRejectReason& outReason) {
+    if (!tryCanLookupAtIndex(grid, desc, index, outReason)) {
+        outCount = 0u;
+        return false;
+    }
+
+    outCount = clusterLightCountAtIndex(grid, desc, index);
+    outReason = ClusterLookupRejectReason::None;
+    return true;
 
 bool cluster_util::tryAssignLight(std::vector<u32>& clusterLights, u32 lightIdx, u32 maxLightsPerCluster) {
     if (maxLightsPerCluster > 0u && clusterLights.size() >= maxLightsPerCluster) {
@@ -489,6 +514,7 @@ bool cluster_util::tryLookupClusterLightsFromScreen(const ClusterGridSoA& grid,
 
     outReason = ClusterLookupRejectReason::None;
 
+
 u32 cluster_util::clusterLightCount(const ClusterGridSoA& grid, u32 clusterIdx) {
     if (clusterIdx >= grid.grid.size()) {
         return 0u;
@@ -571,9 +597,7 @@ bool cluster_util::hasAssignedLights(const ClusterGridSoA& grid, u32 clusterCoun
 bool cluster_util::isGridPopulationEmpty(const ClusterGridSoA& grid, u32 clusterCount) {
     if (clusterCount == 0u) {
         return true;
-    }
     return !hasAssignedLights(grid, clusterCount);
-}
 
 u32 cluster_util::countNonEmptyClustersForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc) {
     if (!gridMatchesDesc(grid, desc)) {
@@ -609,6 +633,13 @@ bool cluster_util::validatePopulationCounts(const ClusterGridSoA& grid, u32 clus
         return false;
     }
     return countAssignedLights(grid, clusterCount) == grid.lightList.size();
+}
+
+bool cluster_util::validatePopulationCountsForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc) {
+    if (!gridMatchesDesc(grid, desc)) {
+        return false;
+    }
+    return validatePopulationCounts(grid, ClusterDesc::clampCounts(desc).clusterCount());
 }
 
 bool cluster_util::tryValidateGridPopulation(const ClusterGridSoA& grid,
@@ -717,6 +748,10 @@ bool cluster_util::tryValidateGridPopulationForDesc(const ClusterGridSoA& grid,
 
 bool cluster_util::hasAssignedLights(const ClusterGridSoA& grid, u32 clusterCount) {
     return countNonEmptyClusters(grid, clusterCount) > 0u;
+}
+
+bool ClusterGridLayout::shouldSkipClusterGrid(const ClusterDesc& desc) {
+    return isEmptyGrid(desc);
 }
 
 bool ClusterGridLayout::isEmptyGrid(const ClusterDesc& desc) {
