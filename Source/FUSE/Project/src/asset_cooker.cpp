@@ -979,6 +979,8 @@ CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(
 
 
 
+
+
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
 
@@ -1128,6 +1130,23 @@ bool AssetCooker::would_stale_dependency_invalidate(const CookManifest& manifest
 bool AssetCooker::should_skip_reconcile_invalidation(const CookManifest& manifest) const {
     return estimate_reconcile_invalidation(manifest).should_skip();
         }
+    return estimate;
+
+CookStaleDependencyEstimate AssetCooker::estimate_stale_dependency_reconcile(const CookManifest& manifest) const {
+    CookStaleDependencyEstimate estimate;
+    if (m_cache.empty()) {
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    for (const CookJob& job : graph.jobs()) {
+
+    estimate.stale_upstream_entries = m_cache.count_stale_upstream_hashes(source_upstream);
+
+    const std::vector<std::string> stale_sources = m_cache.probe_stale_upstream_sources(source_upstream);
+    for (const std::string& stale_source : stale_sources) {
+            if (job.source_path == stale_source) {
+                estimate.downstream_cascade_entries +=
     return estimate;
 }
 

@@ -130,6 +130,22 @@ struct CookUpstreamInvalidationEstimate {
     [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
 };
 
+/// Upstream invalidation breakdown — direct source entries plus downstream dependents (B7.9 deepen).
+struct CookUpstreamInvalidationEstimate {
+    u32 direct_source_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
+};
+
+/// Stale dependency-hash reconcile breakdown — upstream mismatches plus downstream cascade (B7.9 deepen).
+struct CookStaleDependencyEstimate {
+    u32 stale_upstream_entries = 0;
+    u32 downstream_cascade_entries = 0;
+
+    [[nodiscard]] u32 total() const { return stale_upstream_entries + downstream_cascade_entries; }
+};
+
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
 class AssetCooker {
 public:
@@ -383,6 +399,7 @@ public:
     /// True when reconcile invalidation can be skipped — mirrors `CookCacheReconcileEstimate::should_skip` (B7.9 deepen).
     [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
     /// Upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` guards (B7.9 deepen).
+    /// Stale dependency-hash reconcile breakdown — mirrors `invalidate_stale_dependency_hashes` (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

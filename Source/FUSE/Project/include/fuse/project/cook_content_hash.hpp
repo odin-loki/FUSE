@@ -398,5 +398,9 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
     return !preflight_combine_cook_cache_key(source_hash, upstream_hash).ok();
 /// Manifest entry cook-key preflight — import hash plus upstream dependency fold (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_manifest_cook_key(const CookManifestEntry& entry,
+/// Import descriptor cook-key preflight — import hash plus optional upstream fold (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_mesh_import_cook_key(const MeshImportDesc& desc, u64 upstream_hash = 0);
+[[nodiscard]] CookHashPreflight preflight_texture_import_cook_key(const TextureImportDesc& desc, u64 upstream_hash = 0);
+[[nodiscard]] CookHashPreflight preflight_audio_import_cook_key(const AudioImportDesc& desc, u64 upstream_hash = 0);
 
 } // namespace fuse::project

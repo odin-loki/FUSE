@@ -222,6 +222,7 @@ CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) 
         return preflight;
 
     preflight.reason = CookHashRejectReason::SourceUnreadable;
+
 }
 
 CookCacheEntry* CookCache::find_entry_(u64 content_hash) {
@@ -3437,11 +3438,15 @@ bool CookCache::would_invalidate_output(const std::string& output_path) const {
 
 
 
+
 bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
                                                           u64 current_content_hash) const {
     return count_stale_content_for_source(source_path, current_content_hash) != 0;
 
 bool CookCache::would_invalidate_stale_upstream_hashes(
+}
+
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
     return count_stale_upstream_hashes(source_upstream_by_path) != 0;
 }
 
@@ -3514,13 +3519,32 @@ bool CookCache::would_invalidate_any(const std::string& source_path, const std::
                .total() != 0;
 }
 
+bool CookCache::would_prune_invalid() const {
+    return estimate_prune_removals().invalid_entries != 0;
+
+bool CookCache::would_prune_stale() const {
+    return estimate_prune_removals().stale_entries != 0;
+}
+
 std::vector<u64> CookCache::probe_invalidation_hashes_for_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
         return {};
+    }
 
     std::vector<u64> hashes;
     for (const CookCacheEntry& entry : m_entries) {
         if (entry.source_path == source_path) {
+            hashes.push_back(entry.content_hash);
+        }
+    return hashes;
+
+std::vector<u64> CookCache::probe_invalidation_hashes_for_output(const std::string& output_path) const {
+    if (!is_valid_cook_cache_path(output_path) || m_entries.empty()) {
+        return {};
+
+    std::vector<u64> hashes;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.output_path == output_path) {
             hashes.push_back(entry.content_hash);
     return hashes;
 }

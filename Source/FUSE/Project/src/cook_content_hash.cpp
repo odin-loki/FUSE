@@ -1441,6 +1441,101 @@ CookHashPreflight preflight_manifest_cook_key(const CookManifestEntry& entry, co
     return preflight_combine_cook_cache_key(source_hash, upstream_hash);
 }
 
+namespace {
+
+CookHashPreflight preflight_import_cook_key_(const CookHashPreflight& import_preflight, u64 source_hash,
+                                             u64 upstream_hash) {
+    if (!import_preflight.can_hash) {
+        return import_preflight;
+    }
+    return preflight_combine_cook_cache_key(source_hash, upstream_hash);
+}
+
+} // namespace
+
+CookHashPreflight preflight_mesh_import_cook_key(const MeshImportDesc& desc, u64 upstream_hash) {
+    const CookHashPreflight import_preflight = preflight_mesh_import_hash(desc);
+    if (!import_preflight.can_hash) {
+        return import_preflight;
+    }
+    return preflight_import_cook_key_(import_preflight, hash_mesh_import(desc), upstream_hash);
+}
+
+CookHashPreflight preflight_texture_import_cook_key(const TextureImportDesc& desc, u64 upstream_hash) {
+    const CookHashPreflight import_preflight = preflight_texture_import_hash(desc);
+    if (!import_preflight.can_hash) {
+        return import_preflight;
+    }
+    return preflight_import_cook_key_(import_preflight, hash_texture_import(desc), upstream_hash);
+}
+
+CookHashPreflight preflight_audio_import_cook_key(const AudioImportDesc& desc, u64 upstream_hash) {
+    const CookHashPreflight import_preflight = preflight_audio_import_hash(desc);
+    if (!import_preflight.can_hash) {
+        return import_preflight;
+    }
+    return preflight_import_cook_key_(import_preflight, hash_audio_import(desc), upstream_hash);
+}
+
+CookHashPreflight preflight_manifest_cook_key(const CookManifestEntry& entry, const CookManifest& manifest) {
+    const CookHashPreflight entry_preflight = preflight_manifest_entry_hash(entry);
+    if (!entry_preflight.can_hash) {
+        return entry_preflight;
+    }
+
+    bool has_non_empty_dependency = false;
+    for (const std::string& dependency : entry.dependencies) {
+        if (!dependency.empty()) {
+            has_non_empty_dependency = true;
+            break;
+        }
+    }
+    if (!entry.dependencies.empty() && !has_non_empty_dependency) {
+        CookHashPreflight preflight;
+        preflight.reason = CookHashRejectReason::EmptyDependencyList;
+        return preflight;
+    }
+
+    u64 upstream_hash = 0;
+    if (has_non_empty_dependency) {
+        const CookHashPreflight upstream_preflight =
+            preflight_upstream_dependencies_hash(entry.dependencies, manifest);
+        if (!upstream_preflight.can_hash) {
+            return upstream_preflight;
+        }
+        upstream_hash = hash_upstream_dependencies(entry.dependencies, manifest);
+    }
+
+    u64 source_hash = 0;
+    switch (entry.kind) {
+    case CookAssetKind::Mesh: {
+        MeshImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        source_hash = hash_mesh_import(desc);
+        break;
+    }
+    case CookAssetKind::Texture: {
+        TextureImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        source_hash = hash_texture_import(desc);
+        break;
+    }
+    case CookAssetKind::Audio: {
+        AudioImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        source_hash = hash_audio_import(desc);
+        break;
+    }
+    case CookAssetKind::Shader:
+        return entry_preflight;
+    }
+
+    return preflight_combine_cook_cache_key(source_hash, upstream_hash);
+}
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;

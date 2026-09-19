@@ -3589,6 +3589,7 @@ void testCookerProbeUpstreamInvalidationSources() {
     entry_b.output_path = "/tmp/fuse_b79_probe_up_b.fusemesh";
 
 
+
     fuse::project::CookManifestEntry entry_c;
     entry_c.kind = fuse::project::CookAssetKind::Mesh;
     entry_c.source_path = source_c;
@@ -3600,6 +3601,7 @@ void testCookerProbeUpstreamInvalidationSources() {
     expectTrue(cooker.cache().entry_count() == 3u, "three entries seeded for upstream estimate");
 
     fuse::project::AssetCooker cooker;
+
 
     const fuse::project::CookUpstreamInvalidationEstimate estimate =
         cooker.estimate_upstream_invalidation(manifest, source_a);
@@ -3625,6 +3627,8 @@ void testCookerProbeUpstreamInvalidationSources() {
         cooker.estimate_upstream_invalidation(manifest, "");
     expectTrue(empty.total() == 0u, "empty changed source upstream estimate is zero");
 
+    const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, source_a);
+    expectTrue(removed >= estimate.total(), "upstream invalidation removes at least estimated total");
 }
 
 void testCookerWouldReconcileInvalidation() {
@@ -3859,9 +3863,63 @@ void testCookCacheDownstreamWouldInvalidateProbe() {
     expectTrue(cooker.would_reconcile_invalidation(manifest),
                "stale upstream would_reconcile_invalidation is true");
 
+
+
     expectTrue(estimate.total() > 0u, "stale cache reconcile estimate is non-zero");
     expectTrue(cooker.would_reconcile_invalidation(manifest) == (estimate.total() != 0u),
                "would_reconcile matches estimate total");
+}
+
+void testCookerStaleDependencyReconcileEstimate() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_stale_est_a.obj", "# stale est a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_stale_est_b.obj", "# stale est b\n");
+    const std::string source_c = writeTempFile("/tmp/fuse_b79_stale_est_c.obj", "# stale est c\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry_a;
+    entry_a.kind = fuse::project::CookAssetKind::Mesh;
+    entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_stale_est_a.fusemesh";
+    manifest.assets.push_back(entry_a);
+
+    fuse::project::CookManifestEntry entry_b;
+    entry_b.kind = fuse::project::CookAssetKind::Mesh;
+    entry_b.source_path = source_b;
+    entry_b.output_path = "/tmp/fuse_b79_stale_est_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::CookManifestEntry entry_c;
+    entry_c.kind = fuse::project::CookAssetKind::Mesh;
+    entry_c.source_path = source_c;
+    entry_c.output_path = "/tmp/fuse_b79_stale_est_c.fusemesh";
+    entry_c.dependencies.push_back(entry_b.output_path);
+    manifest.assets.push_back(entry_c);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for stale dependency estimate ok");
+
+    const fuse::project::CookStaleDependencyEstimate fresh = cooker.estimate_stale_dependency_reconcile(manifest);
+    expectTrue(fresh.total() == 0u, "fresh cache stale dependency estimate is zero");
+
+    writeTempFile(source_a, "# stale est a revised\n");
+    const fuse::project::CookStaleDependencyEstimate stale = cooker.estimate_stale_dependency_reconcile(manifest);
+    expectTrue(stale.stale_upstream_entries >= 1u, "stale upstream entries counted after source change");
+    expectTrue(stale.downstream_cascade_entries >= 1u,
+               "downstream cascade entries counted after upstream hash change on middle job");
+    expectTrue(stale.total() >= 2u, "stale dependency estimate total includes cascade");
+
+    expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes(
+                   {{source_b, fuse::project::hash_upstream_dependencies({entry_a.output_path}, manifest)}}),
+               "would_invalidate_stale_upstream true when upstream hash mismatches");
+
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= stale.stale_upstream_entries,
+               "stale dependency invalidation removes at least upstream estimate");
+
+    const fuse::project::CookStaleDependencyEstimate after = cooker.estimate_stale_dependency_reconcile(manifest);
+    expectTrue(after.stale_upstream_entries == 0u,
+               "stale upstream estimate zero after stale dependency invalidation");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
