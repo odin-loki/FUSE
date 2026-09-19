@@ -847,6 +847,12 @@ bool hasActiveAsyncFlowNesting() {
     return flowNestingDepth() > 0u;
 }
 
+u32 flowDepthMismatch() {
+    const u32 localDepth = flowNestingDepth();
+    const u32 openCount = openAsyncFlowCount();
+    return localDepth > openCount ? localDepth - openCount : openCount - localDepth;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -937,6 +943,15 @@ bool isBlankEventName(const char* name) {
 
 bool isFirstEventIndex(u32 index) {
     return hasEvents() && index == 0u;
+bool isNullOrEmptyEventName(const char* name) {
+    return !isValidEventName(name);
+}
+
+bool wouldRecordWithName(const char* name) {
+    return enabled() && isValidEventName(name);
+
+bool isValidProfileEvent(const ProfileEvent& event) {
+    return isValidEventName(event.name);
 }
 
 bool isLastEventIndex(u32 index) {
@@ -1303,6 +1318,11 @@ u32 findLastEventIndexByPhase(EventPhase phase) {
 
 
 
+
+
+u32 findFirstEventIndexByName(const char* name) {
+
+
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
     return kEmpty;
@@ -1519,6 +1539,22 @@ bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
     return true;
 }
 
+bool tryEventAtPhase(u32 index, EventPhase phase, ProfileEvent& outEvent) {
+    if (!isEventIndexValid(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    const ProfileEvent& event = eventAt(index);
+    if (event.phase != phase || !isValidProfileEvent(event)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = event;
+    return true;
+}
+
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
     if (index == kInvalidEventIndex) {
@@ -1700,6 +1736,8 @@ bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent) {
     if (reverseIndex >= count) {
     const u32 index = firstEventIndex();
     const u32 index = firstExportableEventIndex();
+bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByPhase(phase);
         outEvent = ProfileEvent{};
         return false;
     }
@@ -1754,7 +1792,11 @@ bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
         outEvent = ProfileEvent{};
         return false;
 
-    return tryExportableEventAt(index, outEvent);
+    return tryEventAt(index, outEvent);
+
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByName(name);
+
 
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
@@ -1940,6 +1982,10 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.remainingCapacity = remainingEventCapacity();
     preflight.allEventsExportable =
         preflight.eventCount == 0u || preflight.exportableEventCount == preflight.eventCount;
+    preflight.nonExportableEventCount =
+        preflight.eventCount > preflight.exportableEventCount
+            ? preflight.eventCount - preflight.exportableEventCount
+            : 0u;
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();

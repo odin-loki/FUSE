@@ -446,6 +446,7 @@ struct NestingStatePreflight {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !bufferFull;
     bool isExportRecommended() const {
         return canExport() && hasExportableEvents() && !hasUnbalancedNesting() && !flowDepthDetached;
+    bool isNestingClean() const { return !hasUnbalancedNesting() && !flowDepthDetached; }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -520,6 +521,7 @@ bool wouldRecordEvent(const char* name);
 void reconcileDetachedFlowNesting();
 bool hasActiveScope();
 bool hasActiveAsyncFlowNesting();
+u32 flowDepthMismatch();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();
@@ -565,6 +567,8 @@ ChromeExportPreflight preflightChromeExport();
 
 u32 ringBufferCapacity();
 bool wouldRecordEventName(const char* name);
+bool isNullOrEmptyEventName(const char* name);
+bool wouldRecordWithName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool canRecordEvent(const char* name);
 bool canBeginAsyncFlow(const char* name);
@@ -588,6 +592,9 @@ u32 findFirstEventIndexOfPhase(EventPhase phase);
 u32 firstExportableEventIndex();
 u32 lastExportableEventIndex();
 u32 lastEventIndexByPhase(EventPhase phase);
+u32 findFirstEventIndexByPhase(EventPhase phase);
+u32 findLastEventIndexByPhase(EventPhase phase);
+u32 findFirstEventIndexByName(const char* name);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
@@ -602,6 +609,9 @@ bool tryFirstExportableEvent(ProfileEvent& outEvent);
 bool tryLastExportableEvent(ProfileEvent& outEvent);
 bool tryEventPhaseAt(u32 index, EventPhase& outPhase);
 bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent);
+bool tryEventAtPhase(u32 index, EventPhase phase, ProfileEvent& outEvent);
+bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 bool canEndAsyncFlow();
 bool wouldIgnoreOrphanAsyncFlowEnd();
