@@ -151,6 +151,11 @@ struct CookStaleDependencyEstimate {
         const u32 sum = total();
         return sum > overlapping_entries ? sum - overlapping_entries : 0;
     }
+
+    /// True when reconcile invalidation would be a no-op (B7.9 deepen).
+    [[nodiscard]] bool should_skip() const { return total() == 0; }
+    /// True when at least one reconcile path would remove entries (B7.9 deepen).
+    [[nodiscard]] bool would_reconcile() const { return total() != 0; }
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -411,6 +416,11 @@ public:
     [[nodiscard]] std::vector<std::string> probe_reconcile_sources(const CookManifest& manifest) const;
     /// Read-only upstream invalidation predicate — guarded on empty `changed_source` (B7.9 deepen).
     /// Read-only stale dependency-hash reconcile predicate (B7.9 deepen).
+    /// True when `invalidate_upstream_dependency` would be a no-op — guarded on empty `changed_source` (B7.9 deepen).
+    [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
+    /// True when `invalidate_stale_dependency_hashes` would be a no-op (B7.9 deepen).
+    [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
+    /// True when combined reconcile invalidation would be a no-op (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

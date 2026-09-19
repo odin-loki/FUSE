@@ -1067,7 +1067,6 @@ CookCacheInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
 
 
 
-    std::vector<std::string> sources;
     append_unique_upstream_source_(sources, changed_source);
     if (m_cache.would_invalidate_source(changed_source)) {
     estimate.direct_entries = m_cache.count_by_source(changed_source);
@@ -1213,10 +1212,8 @@ CookStaleDependencyEstimate AssetCooker::estimate_stale_dependency_reconcile(con
     auto append_unique = [&](const std::string& source_path) {
 
                 append_unique(source_path);
-    }
 
     for (const std::string& stale_upstream : m_cache.probe_stale_upstream_sources_unique(source_upstream)) {
-        for (const std::string& recorded : sources) {
             if (recorded == stale_upstream) {
             sources.push_back(stale_upstream);
 
@@ -1228,14 +1225,14 @@ CookStaleDependencyEstimate AssetCooker::estimate_stale_dependency_reconcile(con
 
 
 
-bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
-                                              const std::string& changed_source) const {
-    return count_upstream_invalidation(manifest, changed_source) != 0;
 
-}
 
-bool AssetCooker::would_stale_dependency_invalidation(const CookManifest& manifest) const {
-    return count_stale_dependency_invalidation(manifest) != 0;
+bool AssetCooker::should_skip_upstream_invalidation(const CookManifest& manifest,
+    return count_upstream_invalidation(manifest, changed_source) == 0;
+
+bool AssetCooker::should_skip_stale_dependency_invalidation(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) == 0;
+
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

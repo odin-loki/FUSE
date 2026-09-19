@@ -1761,6 +1761,30 @@ bool CookCache::would_invalidate_all() const {
     return !m_entries.empty();
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) != 0;
+}
+
+bool CookCache::would_invalidate_stale_upstream_hashes(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    return count_stale_upstream_hashes(source_upstream_by_path) != 0;
+}
+
+bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
+                                             const std::vector<CookJobDependencyEdge>& edges,
+                                             const std::vector<CookJob>& jobs) const {
+    return count_downstream_of(output_path, edges, jobs) != 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
 
@@ -2713,11 +2737,8 @@ bool CookCache::probe_stale_content_for_source(const std::string& source_path) c
             return true;
     }
 
-    for (const CookCacheEntry& entry : m_entries) {
-            continue;
-        if (!is_valid_cook_cache_entry(entry)) {
-        if (is_stale_cache_entry_(entry)) {
-    return false;
+
+
 
 namespace {
 
@@ -3322,6 +3343,26 @@ CookCacheInvalidationSurface CookCache::estimate_invalidation_surface() const {
     surface.invalid_entries = count_invalid_entries();
     surface.stale_entries = count_stale_entries();
     return surface;
+bool CookCache::should_skip_prune_all() const {
+    return !would_prune_all();
+
+    if (!is_valid_cook_cache_path(entry.source_path)) {
+    if (!is_valid_cook_cache_path(entry.output_path)) {
+
+    switch (entry.kind) {
+    case CookAssetKind::Mesh: {
+        MeshImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_mesh_import_hash(desc);
+    case CookAssetKind::Texture: {
+        TextureImportDesc desc;
+        return preflight_texture_import_hash(desc);
+    case CookAssetKind::Audio: {
+        AudioImportDesc desc;
+        return preflight_audio_import_hash(desc);
+    case CookAssetKind::Shader:
+        preflight.reason = CookHashRejectReason::SourceUnreadable;
 
 std::vector<std::string> CookCache::probe_stale_content_sources() const {
     if (m_entries.empty()) {

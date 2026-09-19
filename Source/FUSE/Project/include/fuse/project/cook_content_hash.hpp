@@ -121,6 +121,7 @@ struct CookCacheKeyPreflight {
 
     [[nodiscard]] bool can_combine() const { return !zero_source_hash; }
     [[nodiscard]] bool should_skip() const { return !can_combine(); }
+    /// True when hashing should be skipped — mirrors net preflight `should_skip` (B7.9 deepen).
 };
 
 /// True when hash preflight succeeded — mirrors `CookHashPreflight::ok()` (B7.9 deepen).
