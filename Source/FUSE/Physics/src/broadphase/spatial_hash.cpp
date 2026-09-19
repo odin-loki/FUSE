@@ -609,6 +609,13 @@ const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason) 
         return "EmptyRange";
     case ShapeCellInsertRejectReason::ExceedsBudget:
         return "ExceedsBudget";
+
+const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason) {
+    case CellPairGenRejectReason::None:
+    case CellPairGenRejectReason::EmptyOccupants:
+        return "EmptyOccupants";
+    case CellPairGenRejectReason::SingleOccupant:
+        return "SingleOccupant";
     }
     return "Unknown";
 }
@@ -928,6 +935,13 @@ u32 cellPairCountForOccupants(const std::vector<u32>& occupants) {
     return estimatePairCountForUniqueBodies(uniqueCount);
 
     return cellPairCountForOccupants(occupants);
+
+u32 countPairsForOccupantsInternal(const std::vector<u32>& occupants) {
+    if (occupants.size() < 2u) {
+    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
+    return estimatePairCountForUniqueBodies(static_cast<u32>(uniqueBodies.size()));
+
+    return countPairsForOccupantsInternal(occupants);
 
     if (!shouldRunCellPairGen(occupants)) {
         return;
@@ -2100,6 +2114,7 @@ BroadphaseMergeScan scanBroadphaseMergeBodies(
     preflight.planeBodyCount = static_cast<u32>(uniquePlaneBodies.size());
     preflight.dynamicBodyCount = static_cast<u32>(uniqueDynamicBodies.size());
     preflight.estimatedMergePairs = preflight.planeBodyCount * preflight.dynamicBodyCount;
+
     if (preflight.emptyPlaneBodies) {
         preflight.reason = BroadphaseMergeRejectReason::EmptyPlaneBodies;
     } else if (preflight.emptyDynamicBodies) {
@@ -2911,6 +2926,16 @@ u32 countUniqueCellOccupants(const std::vector<u32>& occupants) {
     preflight.insufficientOccupants = preflight.reason == CellPairGenRejectReason::InsufficientOccupants;
     preflight.uniqueOccupantCount = countUniqueCellOccupants(occupants);
     preflight.estimatedPairCount = estimateCellPairCount(occupants);
+
+
+
+u32 countPairsForCellOccupants(const std::vector<u32>& occupants) {
+    return countPairsForOccupantsInternal(occupants);
+
+
+
+    preflight.uniqueBodyCount = countUniqueCellOccupants(occupants);
+    preflight.pairCount = countPairsForCellOccupants(occupants);
 
 
 }
