@@ -1662,3 +1662,25 @@ bool should_skip_island_graph_solve(const ContactIslandGraph& graph,
 IslandFullSolvePreflight preflight_island_full_solve(const ContactIslandGraph::Island& island,
 IslandFullSolvePreflight preflight_island_full_solve_by_index(const ContactIslandGraph& graph,
 bool should_skip_island_full_solve(const ContactIslandGraph::Island& island,
+
+// --- deepen additive from deepen-b4-pbd-island-preflights-fd1e ---
+IslandBuildRejectReason islandBuildRejectReason(
+struct IslandBuildRejectPreflight {
+    IslandBuildPreflight build{};
+    bool can_build() const { return reason == IslandBuildRejectReason::None && build.can_build(); }
+IslandBuildRejectPreflight preflight_island_build_reject(
+    bool can_solve() const { return reason == IslandConstraintSolveRejectReason::None && solve.can_solve(); }
+IslandConstraintSolveRejectPreflight preflight_island_constraint_solve_reject(
+const char* islandSleepRejectReasonName(IslandSleepRejectReason reason);
+IslandSleepRejectReason islandSleepRejectReason(const ContactIslandGraph::Island& island,
+struct IslandSleepRejectPreflight {
+    bool can_skip_solve() const { return reason == IslandSleepRejectReason::None && sleep.can_skip_solve(); }
+IslandSleepRejectPreflight preflight_island_sleep_reject(const ContactIslandGraph::Island& island,
+IslandSleepRejectPreflight preflight_island_sleep_reject_by_index(const ContactIslandGraph& graph,
+        return reason == IslandWakeRejectReason::None && wake.should_wake_sleepers();
+IslandWakeRejectPreflight preflight_island_wake_reject(const ContactIslandGraph::Island& island,
+IslandWakeRejectPreflight preflight_island_wake_reject_by_index(const ContactIslandGraph& graph,
+        return reason == IslandSleepGraphRejectReason::None && sleep.has_solveable_islands();
+IslandSleepGraphRejectPreflight preflight_island_sleep_graph_reject(const ContactIslandGraph& graph,
+    bool can_wake() const { return reason == IslandWakeGraphRejectReason::None && wake.can_wake(); }
+IslandWakeGraphRejectPreflight preflight_island_wake_graph_reject(const ContactIslandGraph& graph,

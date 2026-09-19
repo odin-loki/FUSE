@@ -4875,3 +4875,43 @@ void testSolveIslandJobGuardedAndFullDispatch() {
     const IslandSolveBodiesPreflight bodiesPreflight = preflight_island_solve_bodies_by_index(graph, 0u, bodies);
     expectTrue(bodiesPreflight.can_solve(), "solve bodies by index allows mixed island");
     testPreflightIslandFullSolveGuards();
+
+// --- deepen additive from deepen-b4-pbd-island-preflights-fd1e ---
+void testIslandUnionRejectReasonAndBuildRange() {
+    expectTrue(islandUnionRejectsForReason(4u, 8u, 1u, IslandUnionRejectReason::OutOfRangeBodyA),
+    expectTrue(islandUnionRejectsForReason(4u, 1u, 9u, IslandUnionRejectReason::OutOfRangeBodyB),
+    expectTrue(std::strcmp(islandUnionRejectReasonName(IslandUnionRejectReason::OutOfRangeBodyA),
+    expectTrue(islandBuildRejectsForReason(4u, contacts, constraints, IslandBuildRejectReason::OutOfRangeContactRef),
+    expectTrue(std::strcmp(islandBuildRejectReasonName(IslandBuildRejectReason::OutOfRangeContactRef),
+    const IslandBuildRejectPreflight rejectPreflight = preflight_island_build_reject(4u, contacts, constraints);
+    expectTrue(!rejectPreflight.can_build(), "reject preflight cannot build unsafe refs");
+    expectTrue(rejectPreflight.unsafeContactRefs, "reject preflight marks unsafe contact refs");
+    expectTrue(islandBuildRejectsForReason(0u, {}, {}, IslandBuildRejectReason::EmptyInput),
+    const IslandBuildRejectPreflight emptyReject = preflight_island_build_reject(0u, {}, {});
+    expectTrue(emptyReject.emptyInput, "reject preflight marks empty input");
+                   mixedIsland, bodies, contacts, constraints, IslandConstraintSolveRejectReason::None),
+    expectTrue(islandConstraintSolveRejectsForReason(sleepingIsland,
+    expectTrue(islandConstraintSolveRejectsForReason(staleIsland,
+    const IslandConstraintSolveRejectPreflight rejectPreflight =
+    expectTrue(rejectPreflight.noMovableBodies, "reject preflight marks no movable bodies");
+    expectTrue(islandSleepRejectsForReason(graph.island(mixedIsland),
+                                           IslandSleepRejectReason::HasActiveDynamics),
+    expectTrue(islandSleepRejectsForReason(graph.island(sleepingIsland),
+                                           IslandSleepRejectReason::None),
+    const IslandSleepRejectPreflight mixedSleepReject = preflight_island_sleep_reject(graph.island(mixedIsland), bodies);
+    expectTrue(mixedSleepReject.hasActiveDynamics, "sleep reject preflight marks active dynamics");
+    expectTrue(!mixedSleepReject.can_skip_solve(), "mixed island cannot skip solve via sleep reject");
+    const IslandSleepRejectPreflight sleepingSleepReject =
+    expectTrue(sleepingSleepReject.can_skip_solve(), "all-sleeping island can skip solve via sleep reject");
+    const IslandSleepRejectPreflight outOfRangeSleep =
+    expectTrue(outOfRangeSleep.reason == IslandSleepRejectReason::OutOfRangeIndex,
+    expectTrue(islandWakeRejectsForReason(graph.island(mixedIsland),
+    expectTrue(islandWakeRejectsForReason(graph.island(sleepingIsland),
+    const IslandWakeRejectPreflight mixedWakeReject = preflight_island_wake_reject(graph.island(mixedIsland), bodies);
+    expectTrue(mixedWakeReject.should_wake_sleepers(), "mixed island wake reject preflight should wake");
+    const IslandSleepGraphRejectPreflight sleepGraphReject = preflight_island_sleep_graph_reject(graph, bodies);
+    expectTrue(sleepGraphReject.has_solveable_islands(), "sleep graph reject preflight has solveable islands");
+    const IslandWakeGraphRejectPreflight wakeGraphReject = preflight_island_wake_graph_reject(graph, bodies);
+    expectTrue(wakeGraphReject.can_wake(), "wake graph reject preflight can wake");
+    expectTrue(islandWakeGraphRejectsForReason(graph, bodies, IslandWakeGraphRejectReason::None),
+    testIslandUnionRejectReasonAndBuildRange();

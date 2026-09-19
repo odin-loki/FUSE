@@ -2719,3 +2719,48 @@ IslandFullSolvePreflight preflight_island_full_solve_by_index(const ContactIslan
 bool should_skip_island_full_solve(const ContactIslandGraph::Island& island,
         const IslandFullSolvePreflight preflight =
     if (should_skip_island_full_solve(island, bodies, contacts, distanceConstraints, dt)) {
+
+// --- deepen additive from deepen-b4-pbd-island-preflights-fd1e ---
+    case IslandBuildRejectReason::OutOfRangeContactRef:
+    case IslandBuildRejectReason::OutOfRangeDistanceRef:
+IslandBuildRejectReason islandBuildRejectReason(
+        return IslandBuildRejectReason::OutOfRangeContactRef;
+        return IslandBuildRejectReason::OutOfRangeDistanceRef;
+    return islandBuildRejectReason(bodyCount, contacts, distanceConstraints) == expected;
+IslandBuildRejectPreflight preflight_island_build_reject(
+    IslandBuildRejectPreflight preflight{};
+    preflight.reason = islandBuildRejectReason(bodyCount, contacts, distanceConstraints);
+    preflight.emptyInput = preflight.reason == IslandBuildRejectReason::EmptyInput;
+    preflight.unsafeContactRefs = preflight.reason == IslandBuildRejectReason::OutOfRangeContactRef;
+    preflight.unsafeDistanceRefs = preflight.reason == IslandBuildRejectReason::OutOfRangeDistanceRef;
+IslandConstraintSolveRejectPreflight preflight_island_constraint_solve_reject(
+    preflight.reason = islandConstraintSolveRejectReason(island, bodies, contacts, distanceConstraints);
+    preflight.emptyIsland = preflight.reason == IslandConstraintSolveRejectReason::EmptyIsland;
+    preflight.staleRefs = preflight.reason == IslandConstraintSolveRejectReason::StaleRefs;
+    preflight.noMovableBodies = preflight.reason == IslandConstraintSolveRejectReason::NoMovableBodies;
+const char* islandSleepRejectReasonName(IslandSleepRejectReason reason) {
+    case IslandSleepRejectReason::HasActiveDynamics:
+IslandSleepRejectReason islandSleepRejectReason(const ContactIslandGraph::Island& island,
+        return IslandSleepRejectReason::HasActiveDynamics;
+    return islandSleepRejectReason(island, bodies) == expected;
+IslandSleepRejectPreflight preflight_island_sleep_reject(const ContactIslandGraph::Island& island,
+    IslandSleepRejectPreflight preflight{};
+    preflight.reason = islandSleepRejectReason(island, bodies);
+    preflight.emptyIsland = preflight.reason == IslandSleepRejectReason::EmptyIsland;
+    preflight.hasActiveDynamics = preflight.reason == IslandSleepRejectReason::HasActiveDynamics;
+IslandSleepRejectPreflight preflight_island_sleep_reject_by_index(const ContactIslandGraph& graph,
+        preflight.reason = IslandSleepRejectReason::OutOfRangeIndex;
+IslandWakeRejectPreflight preflight_island_wake_reject(const ContactIslandGraph::Island& island,
+    preflight.emptyIsland = preflight.reason == IslandWakeRejectReason::EmptyIsland;
+    preflight.noMixedSleepState = preflight.reason == IslandWakeRejectReason::NoMixedSleepState;
+    preflight.noActiveDynamic = preflight.reason == IslandWakeRejectReason::NoActiveDynamic;
+IslandWakeRejectPreflight preflight_island_wake_reject_by_index(const ContactIslandGraph& graph,
+        preflight.reason = IslandWakeRejectReason::OutOfRangeIndex;
+    case IslandSleepGraphRejectReason::AllSleepingOrEmpty:
+    const IslandSleepGraphPreflight sleepGraph = preflight_island_sleep_graph(graph, bodies);
+    return IslandSleepGraphRejectReason::AllSleepingOrEmpty;
+IslandSleepGraphRejectPreflight preflight_island_sleep_graph_reject(const ContactIslandGraph& graph,
+    preflight.allSleepingOrEmpty = preflight.reason == IslandSleepGraphRejectReason::AllSleepingOrEmpty;
+    const IslandWakeGraphPreflight wakeGraph = preflight_island_wake_graph(graph, bodies);
+IslandWakeGraphRejectPreflight preflight_island_wake_graph_reject(const ContactIslandGraph& graph,
+    preflight.noWakeableIslands = preflight.reason == IslandWakeGraphRejectReason::NoWakeableIslands;

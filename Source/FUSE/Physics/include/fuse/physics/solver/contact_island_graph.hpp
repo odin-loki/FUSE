@@ -174,3 +174,9 @@ bool should_skip_contact_island_build(u32 bodyCount,
 // --- deepen additive from deepen-pbd-island-b4-guards-e0ed ---
 IslandGraphBuildPreflight preflight_contact_island_graph_build(
 bool should_skip_contact_island_graph_build(
+
+// --- deepen additive from deepen-b4-pbd-island-preflights-fd1e ---
+enum class IslandUnionRejectReason : u8 {
+const char* islandUnionRejectReasonName(IslandUnionRejectReason reason);
+IslandUnionRejectReason islandUnionRejectReason(u32 bodyCount, u32 bodyA, u32 bodyB);
+bool islandUnionRejectsForReason(u32 bodyCount, u32 bodyA, u32 bodyB, IslandUnionRejectReason expected);

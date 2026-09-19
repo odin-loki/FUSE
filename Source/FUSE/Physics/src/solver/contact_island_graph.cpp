@@ -411,3 +411,16 @@ bool should_skip_contact_island_build(u32 bodyCount,
 IslandGraphBuildPreflight preflight_contact_island_graph_build(
 bool should_skip_contact_island_graph_build(
     if (should_skip_contact_island_graph_build(bodyCount, contacts, distanceConstraints)) {
+
+// --- deepen additive from deepen-b4-pbd-island-preflights-fd1e ---
+    return islandUnionRejectReason(bodyCount, bodyA, bodyB) == IslandUnionRejectReason::None;
+const char* islandUnionRejectReasonName(IslandUnionRejectReason reason) {
+    case IslandUnionRejectReason::None:
+    case IslandUnionRejectReason::OutOfRangeBodyA:
+    case IslandUnionRejectReason::OutOfRangeBodyB:
+IslandUnionRejectReason islandUnionRejectReason(u32 bodyCount, u32 bodyA, u32 bodyB) {
+        return IslandUnionRejectReason::OutOfRangeBodyA;
+        return IslandUnionRejectReason::OutOfRangeBodyB;
+    return IslandUnionRejectReason::None;
+bool islandUnionRejectsForReason(u32 bodyCount, u32 bodyA, u32 bodyB, IslandUnionRejectReason expected) {
+    return islandUnionRejectReason(bodyCount, bodyA, bodyB) == expected;
