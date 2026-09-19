@@ -578,3 +578,10 @@ bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason = null
     bool wouldSkipExport() const { return profilerDisabled; }
     bool wouldSkipSafeExport() const { return !canExportSafely(); }
 bool wouldSkipScope(const char* name);
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-b790 ---
+struct ProfilerNestingPreflight {
+ProfilerNestingPreflight preflightNesting();
+bool preflightBeginAsyncFlow(const char* name);
+bool preflightEndAsyncFlow(const char* name);
+bool wouldSkipAsyncFlow(const char* name);

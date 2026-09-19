@@ -5338,3 +5338,50 @@ void testWouldSkipMirrorsRecordingGuards() {
     expectTrue(fuse::profiler::wouldSkipCounter("") == true,
                "wouldSkipCounter mirrors empty-name guard");
     expectTrue(fuse::profiler::eventCount() == 2u, "valid events still record after wouldSkip probes");
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-b790 ---
+               "wouldSkipProfileScope false for valid name when enabled");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlow("valid_flow"),
+               "wouldSkipAsyncFlow false for valid name when enabled");
+               "wouldSkipCounter false for valid track when enabled");
+               "wouldSkipChromeTraceExportSafely false on clean reset state");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlow(nullptr),
+               "wouldSkipAsyncFlow true for null name");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlow("ignored"),
+               "wouldSkipAsyncFlow true when profiler disabled");
+               "wouldSkipChromeTraceExportSafely true when profiler disabled");
+    if (!fuse::profiler::wouldSkipCounter("budget")) {
+    if (!fuse::profiler::wouldSkipAsyncFlow("io_flow")) {
+               "wouldSkipChromeTraceExportSafely true with open async flow");
+               "wouldSkipChromeTraceExportSafely false after flow closes");
+void testPreflightNestingHelpers() {
+    const fuse::profiler::ProfilerNestingPreflight resetPreflight = fuse::profiler::preflightNesting();
+    expectTrue(resetPreflight.canRecord(), "preflightNesting canRecord on reset");
+    expectTrue(!resetPreflight.flowDepthDetached, "preflightNesting flow depth attached on reset");
+               "preflightNesting no handoff pending on reset");
+    expectTrue(fuse::profiler::preflightBeginAsyncFlow("valid_flow"),
+               "preflightBeginAsyncFlow true for valid name");
+    expectTrue(!fuse::profiler::preflightEndAsyncFlow("valid_flow"),
+               "preflightEndAsyncFlow false with no open flows");
+    expectTrue(!fuse::profiler::preflightBeginAsyncFlow(nullptr),
+               "preflightBeginAsyncFlow false for null name");
+    expectTrue(!fuse::profiler::preflightEndAsyncFlow(""),
+               "preflightEndAsyncFlow false for empty name");
+    expectTrue(fuse::profiler::preflightEndAsyncFlow("preflight_flow"),
+               "preflightEndAsyncFlow true with matching open flow");
+        const fuse::profiler::ProfilerNestingPreflight activePreflight = fuse::profiler::preflightNesting();
+                   "preflightNesting marks active scope as unbalanced");
+                   "preflightNesting preserves open flow depth inside scope");
+    const fuse::profiler::ProfilerNestingPreflight closedPreflight = fuse::profiler::preflightNesting();
+    expectTrue(fuse::profiler::tryFirstEventByName("lookup_outer", byName),
+               "tryFirstEventByName succeeds for outer scope");
+    expectTrue(fuse::profiler::tryLastEventByName("lookup_inner", byName),
+    expectTrue(!fuse::profiler::tryFirstEventByName("missing", byName),
+    expectTrue(byName.name == nullptr, "tryFirstEventByName clears output on miss");
+void testFindFlowEventIndexGuard() {
+    expectTrue(fuse::profiler::tryFirstFlowEvent(outerFlowId, flowEvent),
+               "tryFirstFlowEvent succeeds for outer flow");
+    expectTrue(flowEvent.scopeId == outerFlowId, "tryFirstFlowEvent preserves flow id");
+    expectTrue(!fuse::profiler::tryFirstFlowEvent(outerFlowId + 999u, flowEvent),
+    expectTrue(flowEvent.name == nullptr, "tryFirstFlowEvent clears output on miss");
+    testPreflightNestingHelpers();

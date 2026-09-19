@@ -1521,3 +1521,15 @@ bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason) {
 
 // --- deepen additive from deepen-b16-profiler-guards-7260 ---
 bool wouldSkipScope(const char* name) {
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-b790 ---
+bool wouldSkipRecording(const char* name) {
+ProfilerNestingPreflight preflightNesting() {
+    ProfilerNestingPreflight preflight{};
+bool preflightBeginAsyncFlow(const char* name) {
+    return !wouldSkipRecording(name);
+bool preflightEndAsyncFlow(const char* name) {
+    return !wouldSkipRecording(name) && openAsyncFlowCount() > 0u;
+    return wouldSkipRecording(name);
+bool wouldSkipAsyncFlow(const char* name) {
+    return wouldSkipRecording(track);
