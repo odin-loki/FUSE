@@ -4427,3 +4427,14 @@ void testEndDragInteractionRejectReasonGuards() {
 
 // --- deepen additive from deepen-gizmo-preflight-guards-6188 ---
                "tryPreflightSnapDrag accepts valid delta and snap after reset");
+
+// --- deepen additive from deepen-gizmo-guards-0a0a ---
+    expectTrue(!fuse::editor::tryPreflightPick(invalidDims, fuse::editor::GizmoMode::Translate,
+               "tryPreflightPick rejects invalid viewport dimensions");
+    expectTrue(screenReason == fuse::editor::GizmoPickRejectReason::InvalidDimensions,
+                   fuse::editor::GizmoPickRejectReason::InvalidDimensions),
+    expectTrue(!fuse::editor::tryPreflightBeginDrag(invalidDims, fuse::editor::GizmoMode::Translate,
+    expectTrue(reason == fuse::editor::GizmoBeginDragRejectReason::InvalidDimensions,
+               "tryPreflightUpdateDrag rejects invalid viewport dimensions");
+    expectTrue(reason == fuse::editor::GizmoUpdateDragRejectReason::InvalidDimensions,
+                   fuse::editor::GizmoUpdateDragRejectReason::InvalidDimensions),
