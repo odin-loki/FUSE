@@ -1280,3 +1280,8 @@ void testCookHashPreflightCacheEntryAndManifestDeps() {
                    fuse::project::CookHashRejectReason::UnsupportedAssetKind)) == "unsupported_asset_kind",
     testCookCacheProbeInvalidEntrySources();
     testCookHashPreflightCacheEntryAndManifestDeps();
+
+// --- deepen additive from deepen-b79-cooker-hash-1159 ---
+               "would_invalidate_stale_content true when current hash differs from stored entry");
+void testCookHashPreflightMtimeGuards() {
+    testCookHashPreflightMtimeGuards();

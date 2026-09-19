@@ -114,3 +114,6 @@ private:
 
 // --- deepen additive from deepen-b79-cooker-hash-guards-82a4 ---
     [[nodiscard]] bool would_invalidate_stale_dependencies(const CookManifest& manifest) const;
+
+// --- deepen additive from deepen-b79-cooker-hash-1159 ---
+    [[nodiscard]] bool would_stale_dependency_invalidate(const CookManifest& manifest) const;
