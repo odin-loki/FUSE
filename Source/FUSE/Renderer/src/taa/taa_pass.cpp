@@ -81,8 +81,28 @@ bool TaaPass::syncJitterToFrameIndexIfReady(u32 frameIndex) {
     return true;
 }
 
+bool TaaPass::trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason) {
+    if (!m_jitter.trySyncToFrameIndexIfReady(frameIndex, reason)) {
+        return false;
+    }
+    m_stats.lastJitterNdc = currentJitterNdc();
+    return true;
+}
+
+bool TaaPass::syncJitterToFrameIndexAndProduceNdcIfReady(u32 frameIndex, fuse::math::Vec2& out) {
+    if (!m_jitter.syncToFrameIndexAndProduceNdcIfReady(frameIndex, m_desc.width, m_desc.height, out)) {
+        return false;
+    }
+    m_stats.lastJitterNdc = out;
+    return true;
+}
+
 bool TaaPass::jitterAlignedToFrameIndex(u32 frameIndex) const {
     return m_jitter.isAlignedToFrameIndex(frameIndex);
+}
+
+bool TaaPass::preflightJitterAlignment(u32 frameIndex, TaaJitterGuardRejectReason* reason) const {
+    return m_jitter.preflightAlignmentToFrameIndex(frameIndex, reason);
 }
 
 void TaaPass::invalidateHistory() {
@@ -167,12 +187,30 @@ bool TaaPass::shouldSkipResolveBlend(const TaaResolveDesc& desc) const {
     return shouldSkipTaaResolveBlend(desc, m_history);
 }
 
+bool TaaPass::preflightResolveTemporalBlend(const TaaResolveDesc& desc,
+                                            TaaResolveTemporalBlendRejectReason* reason) const {
+    return preflightTaaResolveTemporalBlend(desc, m_history, reason);
+}
+
+bool TaaPass::shouldSkipResolveTemporalBlend(const TaaResolveDesc& desc) const {
+    return shouldSkipTaaResolveTemporalBlend(desc, m_history);
+}
+
 bool TaaPass::preflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason* reason) const {
     return preflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), reason);
 }
 
 bool TaaPass::shouldSkipJitterSync(u32 frameIndex) const {
     return shouldSkipTaaJitterSync(frameIndex, m_jitter.sequenceLength());
+}
+
+bool TaaPass::preflightJitterSyncAndNdc(u32 frameIndex, TaaJitterGuardRejectReason* reason) const {
+    return preflightTaaJitterSyncAndNdc(frameIndex, m_desc.width, m_desc.height, m_jitter.sequenceLength(),
+                                      reason);
+}
+
+bool TaaPass::shouldSkipJitterSyncAndNdc(u32 frameIndex) const {
+    return shouldSkipTaaJitterSyncAndNdc(frameIndex, m_desc.width, m_desc.height, m_jitter.sequenceLength());
 }
 
 bool TaaPass::preflightJitterNdc(TaaJitterGuardRejectReason* reason) const {
@@ -185,6 +223,23 @@ bool TaaPass::shouldSkipJitterNdc() const {
 
 bool TaaPass::shouldSkipHistoryWarmup() const {
     return shouldSkipTaaHistoryWarmup(m_history);
+}
+
+bool TaaPass::historyWarmupComplete() const {
+    return taaHistoryWarmupComplete(m_history);
+}
+
+bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason) const {
+    return preflightTaaHistoryWarmup(m_history, reason);
+}
+
+bool TaaPass::preflightHistoryTemporalSample(u32 observedGeneration,
+                                             TaaHistoryReuseBlockReason* reason) const {
+    return preflightTaaHistoryTemporalSample(m_history, observedGeneration, reason);
+}
+
+bool TaaPass::shouldSkipHistoryTemporalSample(u32 observedGeneration) const {
+    return shouldSkipTaaHistoryTemporalSample(m_history, observedGeneration);
 }
 
 bool TaaPass::historyReadyForResolve() const {
