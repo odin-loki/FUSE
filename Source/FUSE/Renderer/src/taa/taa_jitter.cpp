@@ -195,6 +195,13 @@ fuse::math::Vec2 TaaJitterLayout::safeNdcOffsetForFrameIndex(u32 frameIndex, u32
 
 bool TaaJitterLayout::monotonicFrameMatchesSlot(u32 frameIndex, u32 slot, u32 sequenceLength) {
     return slot == frameIndexInSequence(frameIndex, sequenceLength);
+bool TaaJitterLayout::jitterSyncMatches(u32 observedFrameIndex, u32 expectedFrameIndex, u32 sequenceLength) {
+    const u32 period = sequencePeriod(sequenceLength);
+    if (period == 0u) {
+        return false;
+    }
+    return frameIndexInSequence(observedFrameIndex, sequenceLength) ==
+           frameIndexInSequence(expectedFrameIndex, sequenceLength);
 }
 
 bool TaaJitterLayout::fillHaltonSequence(u32 length, fuse::math::Vec2* out) {
@@ -273,6 +280,11 @@ bool TaaJitter::advanceIfPossible() {
     }
     advance();
     return true;
+}
+
+bool TaaJitter::isSyncedToFrameIndex(u32 frameIndex) const {
+    return m_monotonicFrame == frameIndex &&
+           m_index == TaaJitterLayout::frameIndexInSequence(frameIndex, m_sequenceLength);
 }
 
 void TaaJitter::reset() {

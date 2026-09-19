@@ -133,6 +133,8 @@ public:
     bool shouldSkipJitterAdvance() const;
     /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
+    /// True when jitter monotonic frame and slot match `frameIndex` (B5.9 deepen).
+    bool isJitterSyncedToFrameIndex(u32 frameIndex) const;
     /// True when resolve request passes all preflight guards (B5.9 deepen).
     bool canResolveFrame(const TaaResolveDesc& desc) const;
     /// Stamp generation and return whether resolve can proceed (B5.9 deepen).
@@ -149,6 +151,8 @@ public:
     /// Monotonic frame counter owned by pass jitter (B5.9 deepen).
     u32 jitterMonotonicFrameIndex() const { return m_jitter.monotonicFrameIndex(); }
     /// True when pass jitter is aligned to a monotonic frame counter (B5.9 deepen).
+    /// Preflight resolve blend weights without mutating history (B5.9 deepen).
+    bool preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* out = nullptr) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
