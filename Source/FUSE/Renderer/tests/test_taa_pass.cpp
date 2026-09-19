@@ -4402,3 +4402,7 @@ void testTaaPassTryPreflightAndClassifyWrappers() {
     expectTrue(zeroWidthPass->classifyJitterNdcReject() ==
     expectTrue(!zeroWidthPass->tryPreflightJitterNdc(jitterReason),
     testTaaPassTryPreflightAndClassifyWrappers();
+
+// --- deepen additive from deepen-taa-pass-guards-f637 ---
+               "pass classifyResolveBlendReject is None before warmup");
+               "pass preflightResolve passes before warmup");
