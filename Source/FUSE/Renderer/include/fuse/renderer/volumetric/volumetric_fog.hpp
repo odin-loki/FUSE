@@ -897,6 +897,20 @@ bool canSampleTrilinear(const FroxelDensityGrid& grid,
 bool wouldClampTrilinearSample(const FroxelDensityGrid& grid,
 /// Trilinear sample preflight without reject-reason diagnostics.
 bool tryPreflightTrilinearSample(const FroxelDensityGrid& grid,
+/// Non-mutating preflight for coord-based density sampling without reject-reason diagnostics.
+bool preflightSampleAtCoords(const FroxelDensityGrid& grid,
+/// Non-mutating preflight for coord-based density sampling with reject-reason diagnostics.
+/// True when interpolation weights or corner indices would be clamped before coord-based sampling.
+bool wouldClampSampleAtCoords(const FroxelDensityGrid& grid,
+/// Non-mutating preflight for trilinear density sampling without reject-reason diagnostics.
+/// Non-mutating preflight for trilinear density sampling with reject-reason diagnostics.
+/// Non-mutating preflight for index-based density lookup without reject-reason diagnostics.
+bool preflightDensityLookupAtIndex(const FroxelDensityGrid& grid,
+                                   u32 index);
+/// Non-mutating preflight for index-based density lookup with reject-reason diagnostics.
+/// Non-mutating preflight for tile/slice coord density lookup without reject-reason diagnostics.
+bool preflightDensityLookupAtCoord(const FroxelDensityGrid& grid,
+/// Non-mutating preflight for tile/slice coord density lookup with reject-reason diagnostics.
 /// True when at least one froxel exceeds `epsilon`; false when storage is empty.
 bool hasNonZeroDensity(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Early-out when the grid is inaccessible or uniformly below `epsilon`.
@@ -1249,12 +1263,15 @@ bool trySampleDensityAtScreen(const FroxelDensityGrid& grid,
 /// Screen-space sample with screen-mapping and sample-coord reject-reason diagnostics.
 /// Screen-space sample with mapping and sample-coord reject-reason diagnostics.
 /// Screen-space sample with trilinear preflight reject-reason diagnostics.
+/// Screen-space sample with guard preflight and screen-mapping + sample-coord reject-reason diagnostics.
                               f32 screenX,
                               f32 screenY,
                               f32 viewDepth,
                               f32& outDensity,
                               ScreenMappingRejectReason& outScreenReason,
                               FroxelTrilinearSampleRejectReason& outReason);
+                              ScreenMappingRejectReason& outMapReason,
+                              SampleCoordRejectReason& outSampleReason);
 void populateFromAnalyticFog(FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              const FroxelCameraDesc& camera,
@@ -1300,6 +1317,8 @@ bool froxelPopulateReady(const FroxelGridDesc& desc,
 /// Non-mutating populate preflight; optional reject-reason output.
 bool preflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,
                                       FroxelPopulateRejectReason* outReason = nullptr);
+/// Non-mutating preflight for analytic populate without reject-reason diagnostics.
+/// Non-mutating preflight for analytic populate with reject-reason diagnostics.
 /// Guarded populate — always mirrors `populateFromAnalyticFog`; returns false when preflight rejects fill.
 /// Populate with guard preflight; returns false when `canPopulateFroxelGrid` would reject the request.
 bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
