@@ -4531,3 +4531,20 @@ void testDdgiLookupSkipGuards() {
     expectTrue(fuse::renderer::ddgi_util::tryValidateCacheIndexAtCoord(desc, cache.data(), coord, 8u, cacheReason),
 void testDdgiScheduleAtRatePreflight() {
     testDdgiScheduleAtRatePreflight();
+
+// --- deepen additive from deepen-ddgi-guards-f9cb ---
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(data, mismatched) ==
+                   fuse::renderer::ProbeGridSourceRejectReason::DescMismatch,
+               "classifyProbeGridSourceReject desc_mismatch for data");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeGridSource(data, mismatched),
+               "wouldSkip true for mismatched probe data");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(volume, desc) ==
+                   fuse::renderer::ProbeGridSourceRejectReason::InvalidHandles,
+               "classifyProbeGridSourceReject invalid_handles without GPU allocation");
+                   fuse::renderer::ProbeGridSourceRejectReason::UndersizedVolume,
+               "classifyProbeGridSourceReject undersized_volume for short probe count");
+                   fuse::renderer::ProbeGridSourceRejectReason::DescMismatch),
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(data, empty) ==
+                               fuse::renderer::ProbeGridSourceRejectReason::UndersizedVolume),
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearProbeSampleAtCoords(desc, built, cache.data(), 8u),
+               "preflightTrilinearProbeSampleAtCoords succeeds for valid sample");

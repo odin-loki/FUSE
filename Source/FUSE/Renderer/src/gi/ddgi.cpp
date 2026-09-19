@@ -3249,3 +3249,24 @@ bool preflightDDGIKernelParams(DDGIKernelParams& params,
         return tryValidateCacheIndex(desc, ProbeGridLayout::probeIndexFromCoord(desc, clamped), cache_count,
     return tryValidateCacheIndex(desc, ProbeGridLayout::probeIndexFromCoord(desc, coord), cache_count, outReason);
     return !tryValidateCacheIndexAtCoord(desc, coord, cache_count, reason);
+
+// --- deepen additive from deepen-ddgi-guards-f9cb ---
+    case ProbeGridSourceRejectReason::DescMismatch:
+    case ProbeGridSourceRejectReason::InvalidHandles:
+    case ProbeGridSourceRejectReason::UndersizedVolume:
+        outReason = ProbeGridSourceRejectReason::DescMismatch;
+        outReason = ProbeGridSourceRejectReason::InvalidHandles;
+bool tryValidateProbeGridSource(const ProbeVolume& volume,
+        outReason = volume.probe_count < probeCount(desc) ? ProbeGridSourceRejectReason::UndersizedVolume
+                                                         : ProbeGridSourceRejectReason::DescMismatch;
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const ProbeData& data, const DDGIDesc& desc) {
+    tryValidateProbeGridSource(data, desc, reason);
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const ProbeVolume& volume, const DDGIDesc& desc) {
+    tryValidateProbeGridSource(volume, desc, reason);
+    const ProbeGridSourceRejectReason reject = classifyProbeGridSourceReject(data, desc);
+bool preflightProbeGridSource(const ProbeVolume& volume,
+    const ProbeGridSourceRejectReason reject = classifyProbeGridSourceReject(volume, desc);
+bool wouldSkipProbeGridSource(const ProbeData& data, const DDGIDesc& desc) {
+    return !preflightProbeGridSource(data, desc);
+bool wouldSkipProbeGridSource(const ProbeVolume& volume, const DDGIDesc& desc) {
+    return !preflightProbeGridSource(volume, desc);
