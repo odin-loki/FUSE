@@ -35,4 +35,36 @@ std::vector<ContactManifold> runNarrowphase(
     return buffer.toVector();
 }
 
+void runNarrowphaseIntoBufferWithDeepenPreflight(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer) {
+    const u32 pairCount = static_cast<u32>(pairs.size());
+    buffer.preparePairSlots(pairCount);
+
+    for (u32 pairIndex = 0u; pairIndex < pairCount; ++pairIndex) {
+        if (should_skip_contact_pair_deepen_dispatch(pairs[pairIndex], bodies, shapes)) {
+            continue;
+        }
+
+        ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
+        if (finalize_contact_manifold_with_preflight(manifold)) {
+            write_contact_manifold_to_buffer_with_preflight(buffer, pairIndex, manifold);
+        }
+    }
+
+    buffer.compactAndClamp();
+}
+
+std::vector<ContactManifold> runNarrowphaseDeepen(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactBufferSoA buffer;
+    buffer.reserve(static_cast<u32>(pairs.size()));
+    runNarrowphaseIntoBufferWithDeepenPreflight(pairs, bodies, shapes, buffer);
+    return buffer.toVector();
+}
+
 } // namespace fuse::physics::narrowphase

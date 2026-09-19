@@ -4,6 +4,294 @@
 
 namespace fuse::physics::narrowphase {
 
+u32 ContactBufferSoA::remainingCapacity() const {
+    if (maxCapacity == 0u) {
+        return UINT32_MAX;
+    }
+    if (activeCount >= maxCapacity) {
+        return 0u;
+    }
+    return maxCapacity - activeCount;
+}
+
+bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
+    return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
+}
+
+bool ContactBufferSoA::slotIsValid(u32 slot) const {
+    return slot < validFlags.size() && validFlags[slot] != 0u;
+}
+
+u32 ContactBufferSoA::countValidSlots() const {
+    if (canSkipSoAIteration()) {
+        return 0u;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    u32 validCount = 0u;
+    for (u32 slot = 0u; slot < scanCount; ++slot) {
+        if (validFlags[slot] != 0u) {
+            ++validCount;
+        }
+    }
+    return validCount;
+}
+
+bool ContactBufferSoA::canSkipCompaction() const {
+    if (canSkipSoAIteration()) {
+        return true;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    if (scanCount == 0u) {
+        return true;
+    }
+
+    for (u32 slot = 0u; slot < scanCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return false;
+        }
+    }
+    return true;
+}
+
+const char* contactBufferWriteRejectReasonName(ContactBufferWriteRejectReason reason) {
+    switch (reason) {
+    case ContactBufferWriteRejectReason::None:
+        return "None";
+    case ContactBufferWriteRejectReason::OutOfRangeSlot:
+        return "OutOfRangeSlot";
+    case ContactBufferWriteRejectReason::InvalidManifold:
+        return "InvalidManifold";
+    case ContactBufferWriteRejectReason::SelfPair:
+        return "SelfPair";
+    }
+    return "Unknown";
+}
+
+ContactBufferWriteRejectReason contactBufferWriteRejectReason(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold) {
+    if (slot >= buffer.pairSlotCount) {
+        return ContactBufferWriteRejectReason::OutOfRangeSlot;
+    }
+    if (!manifold.valid) {
+        return ContactBufferWriteRejectReason::InvalidManifold;
+    }
+    if (manifold.bodyA == manifold.bodyB) {
+        return ContactBufferWriteRejectReason::SelfPair;
+    }
+    return ContactBufferWriteRejectReason::None;
+}
+
+bool contactBufferWriteRejectsForReason(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold,
+    ContactBufferWriteRejectReason expected) {
+    return contactBufferWriteRejectReason(buffer, slot, manifold) == expected;
+}
+
+ContactBufferWritePreflight preflightContactBufferWrite(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold) {
+    ContactBufferWritePreflight preflight{};
+    preflight.reason = contactBufferWriteRejectReason(buffer, slot, manifold);
+    preflight.outOfRangeSlot = preflight.reason == ContactBufferWriteRejectReason::OutOfRangeSlot;
+    preflight.invalidManifold = preflight.reason == ContactBufferWriteRejectReason::InvalidManifold;
+    preflight.selfPair = preflight.reason == ContactBufferWriteRejectReason::SelfPair;
+    return preflight;
+}
+
+bool canSkipContactBufferWrite(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold) {
+    return !preflightContactBufferWrite(buffer, slot, manifold).canWrite();
+}
+
+const char* contactBufferCompactionRejectReasonName(ContactBufferCompactionRejectReason reason) {
+    switch (reason) {
+    case ContactBufferCompactionRejectReason::None:
+        return "None";
+    case ContactBufferCompactionRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferCompactionRejectReason::AllValid:
+        return "AllValid";
+    }
+    return "Unknown";
+}
+
+ContactBufferCompactionRejectReason contactBufferCompactionRejectReason(const ContactBufferSoA& buffer) {
+    if (buffer.canSkipSoAIteration()) {
+        return ContactBufferCompactionRejectReason::EmptyBuffer;
+    }
+    if (buffer.canSkipCompaction()) {
+        return ContactBufferCompactionRejectReason::AllValid;
+    }
+    return ContactBufferCompactionRejectReason::None;
+}
+
+bool contactBufferCompactionRejectsForReason(
+    const ContactBufferSoA& buffer,
+    ContactBufferCompactionRejectReason expected) {
+    return contactBufferCompactionRejectReason(buffer) == expected;
+}
+
+ContactBufferCompactionPreflight preflightContactBufferCompaction(const ContactBufferSoA& buffer) {
+    ContactBufferCompactionPreflight preflight{};
+    preflight.reason = contactBufferCompactionRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferCompactionRejectReason::EmptyBuffer;
+    preflight.allValid = preflight.reason == ContactBufferCompactionRejectReason::AllValid;
+    return preflight;
+}
+
+bool canSkipContactBufferCompaction(const ContactBufferSoA& buffer) {
+    return !preflightContactBufferCompaction(buffer).needsCompaction();
+}
+
+bool shouldRunContactBufferCompaction(const ContactBufferSoA& buffer) {
+    return preflightContactBufferCompaction(buffer).needsCompaction();
+}
+
+const char* contactBufferClampRejectReasonName(ContactBufferClampRejectReason reason) {
+    switch (reason) {
+    case ContactBufferClampRejectReason::None:
+        return "None";
+    case ContactBufferClampRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferClampRejectReason::WithinCapacity:
+        return "WithinCapacity";
+    }
+    return "Unknown";
+}
+
+ContactBufferClampRejectReason contactBufferClampRejectReason(const ContactBufferSoA& buffer) {
+    if (buffer.canSkipSoAIteration()) {
+        return ContactBufferClampRejectReason::EmptyBuffer;
+    }
+    if (!buffer.canApplyMaxCapacityClamp()) {
+        return ContactBufferClampRejectReason::WithinCapacity;
+    }
+    return ContactBufferClampRejectReason::None;
+}
+
+bool contactBufferClampRejectsForReason(
+    const ContactBufferSoA& buffer,
+    ContactBufferClampRejectReason expected) {
+    return contactBufferClampRejectReason(buffer) == expected;
+}
+
+ContactBufferClampPreflight preflightContactBufferClamp(const ContactBufferSoA& buffer) {
+    ContactBufferClampPreflight preflight{};
+    preflight.reason = contactBufferClampRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferClampRejectReason::EmptyBuffer;
+    preflight.withinCapacity = preflight.reason == ContactBufferClampRejectReason::WithinCapacity;
+    return preflight;
+}
+
+bool canSkipContactBufferClamp(const ContactBufferSoA& buffer) {
+    return !preflightContactBufferClamp(buffer).needsClamp();
+}
+
+bool shouldRunContactBufferClamp(const ContactBufferSoA& buffer) {
+    return preflightContactBufferClamp(buffer).needsClamp();
+}
+
+const char* contactBufferCompactAndClampRejectReasonName(ContactBufferCompactAndClampRejectReason reason) {
+    switch (reason) {
+    case ContactBufferCompactAndClampRejectReason::None:
+        return "None";
+    case ContactBufferCompactAndClampRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferCompactAndClampRejectReason::NoWork:
+        return "NoWork";
+    }
+    return "Unknown";
+}
+
+ContactBufferCompactAndClampRejectReason contactBufferCompactAndClampRejectReason(
+    const ContactBufferSoA& buffer) {
+    if (buffer.canSkipSoAIteration()) {
+        return ContactBufferCompactAndClampRejectReason::EmptyBuffer;
+    }
+    if (!shouldRunContactBufferCompaction(buffer) && !shouldRunContactBufferClamp(buffer)) {
+        const u32 validCount = buffer.countValidSlots();
+        if (buffer.pairSlotCount > 0u && buffer.activeCount != validCount) {
+            return ContactBufferCompactAndClampRejectReason::None;
+        }
+        if (buffer.activeCount != validCount) {
+            return ContactBufferCompactAndClampRejectReason::None;
+        }
+        return ContactBufferCompactAndClampRejectReason::NoWork;
+    }
+    return ContactBufferCompactAndClampRejectReason::None;
+}
+
+bool contactBufferCompactAndClampRejectsForReason(
+    const ContactBufferSoA& buffer,
+    ContactBufferCompactAndClampRejectReason expected) {
+    return contactBufferCompactAndClampRejectReason(buffer) == expected;
+}
+
+ContactBufferCompactAndClampPreflight preflightContactBufferCompactAndClamp(const ContactBufferSoA& buffer) {
+    ContactBufferCompactAndClampPreflight preflight{};
+    preflight.reason = contactBufferCompactAndClampRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer;
+    preflight.noWork = preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork;
+    return preflight;
+}
+
+bool canSkipContactBufferCompactAndClamp(const ContactBufferSoA& buffer) {
+    return !preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp();
+}
+
+bool shouldRunContactBufferCompactAndClamp(const ContactBufferSoA& buffer) {
+    return preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp();
+}
+
+const char* contactBufferFrictionBuildRejectReasonName(ContactBufferFrictionBuildRejectReason reason) {
+    switch (reason) {
+    case ContactBufferFrictionBuildRejectReason::None:
+        return "None";
+    case ContactBufferFrictionBuildRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferFrictionBuildRejectReason::NoValidContacts:
+        return "NoValidContacts";
+    }
+    return "Unknown";
+}
+
+ContactBufferFrictionBuildRejectReason contactBufferFrictionBuildRejectReason(const ContactBufferSoA& buffer) {
+    if (buffer.canSkipSoAIteration()) {
+        return ContactBufferFrictionBuildRejectReason::EmptyBuffer;
+    }
+    if (buffer.countValidSlots() == 0u) {
+        return ContactBufferFrictionBuildRejectReason::NoValidContacts;
+    }
+    return ContactBufferFrictionBuildRejectReason::None;
+}
+
+bool contactBufferFrictionBuildRejectsForReason(
+    const ContactBufferSoA& buffer,
+    ContactBufferFrictionBuildRejectReason expected) {
+    return contactBufferFrictionBuildRejectReason(buffer) == expected;
+}
+
+ContactBufferFrictionBuildPreflight preflightContactBufferFrictionBuild(const ContactBufferSoA& buffer) {
+    ContactBufferFrictionBuildPreflight preflight{};
+    preflight.reason = contactBufferFrictionBuildRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferFrictionBuildRejectReason::EmptyBuffer;
+    preflight.noValidContacts = preflight.reason == ContactBufferFrictionBuildRejectReason::NoValidContacts;
+    return preflight;
+}
+
+bool canSkipContactBufferFrictionBuild(const ContactBufferSoA& buffer) {
+    return !preflightContactBufferFrictionBuild(buffer).canBuild();
+}
+
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
 }
@@ -52,7 +340,7 @@ void ContactBufferSoA::preparePairSlots(u32 pairCount) {
 }
 
 void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
-    if (slot >= pairSlotCount || !manifold.valid || manifold.bodyA == manifold.bodyB) {
+    if (!preflightContactBufferWrite(*this, slot, manifold).canWrite()) {
         return;
     }
 
@@ -95,13 +383,21 @@ void ContactBufferSoA::applyWarmStartStub(u32 slot, ContactManifold& manifold) c
 }
 
 void ContactBufferSoA::buildFrictionTangentBases() {
-    for (u32 slot = 0u; slot < activeCount; ++slot) {
-        if (validFlags[slot] == 0u) {
+    buildContactBufferFrictionTangentBasesWithPreflight(*this);
+}
+
+void buildContactBufferFrictionTangentBasesWithPreflight(ContactBufferSoA& buffer) {
+    if (!preflightContactBufferFrictionBuild(buffer).canBuild()) {
+        return;
+    }
+
+    for (u32 slot = 0u; slot < buffer.activeCount; ++slot) {
+        if (buffer.validFlags[slot] == 0u) {
             continue;
         }
-        const TangentBasis basis = buildTangentBasis(contactNormals[slot]);
-        tangent1[slot] = basis.tangent1;
-        tangent2[slot] = basis.tangent2;
+        const TangentBasis basis = buildTangentBasis(buffer.contactNormals[slot]);
+        buffer.tangent1[slot] = basis.tangent1;
+        buffer.tangent2[slot] = basis.tangent2;
     }
 }
 
@@ -113,8 +409,21 @@ TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {
 }
 
 u32 ContactBufferSoA::compact() {
-    u32 writeIndex = 0;
-    for (u32 readIndex = 0; readIndex < pairSlotCount; ++readIndex) {
+    const ContactBufferCompactionPreflight compactionPreflight = preflightContactBufferCompaction(*this);
+    if (compactionPreflight.reason == ContactBufferCompactionRejectReason::EmptyBuffer) {
+        activeCount = 0u;
+        pairSlotCount = 0u;
+        return activeCount;
+    }
+
+    if (compactionPreflight.reason == ContactBufferCompactionRejectReason::AllValid) {
+        activeCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+        pairSlotCount = activeCount;
+        return activeCount;
+    }
+
+    u32 writeIndex = 0u;
+    for (u32 readIndex = 0u; readIndex < pairSlotCount; ++readIndex) {
         if (validFlags[readIndex] == 0u) {
             continue;
         }
@@ -151,7 +460,7 @@ u32 ContactBufferSoA::compact() {
 }
 
 u32 ContactBufferSoA::applyMaxCapacityClamp() {
-    if (maxCapacity == 0u || activeCount <= maxCapacity) {
+    if (!preflightContactBufferClamp(*this).needsClamp()) {
         return activeCount;
     }
 
@@ -232,6 +541,16 @@ u32 ContactBufferSoA::applyMaxCapacityClamp() {
 }
 
 u32 ContactBufferSoA::compactAndClamp() {
+    const ContactBufferCompactAndClampPreflight preflight = preflightContactBufferCompactAndClamp(*this);
+    if (preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer) {
+        activeCount = 0u;
+        pairSlotCount = 0u;
+        return activeCount;
+    }
+    if (preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork) {
+        return activeCount;
+    }
+
     compact();
     return applyMaxCapacityClamp();
 }
@@ -265,9 +584,13 @@ ContactManifold ContactBufferSoA::manifoldAt(u32 index) const {
 }
 
 std::vector<ContactManifold> ContactBufferSoA::toVector() const {
+    if (canSkipSoAIteration()) {
+        return {};
+    }
+
     std::vector<ContactManifold> manifolds;
     manifolds.reserve(activeCount);
-    for (u32 i = 0; i < activeCount; ++i) {
+    for (u32 i = 0u; i < activeCount; ++i) {
         if (validFlags[i] != 0u) {
             manifolds.push_back(manifoldAt(i));
         }

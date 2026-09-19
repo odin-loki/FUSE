@@ -528,6 +528,55 @@ bool finalize_contact_manifold_with_preflight(
     return generate_contact_manifold(manifold);
 }
 
+const char* contact_manifold_write_reject_reason_name(ContactManifoldWriteRejectReason reason) {
+    switch (reason) {
+    case ContactManifoldWriteRejectReason::None:
+        return "None";
+    case ContactManifoldWriteRejectReason::EmptyManifold:
+        return "EmptyManifold";
+    case ContactManifoldWriteRejectReason::InvalidNormal:
+        return "InvalidNormal";
+    case ContactManifoldWriteRejectReason::NotFinalized:
+        return "NotFinalized";
+    case ContactManifoldWriteRejectReason::SelfPair:
+        return "SelfPair";
+    }
+    return "Unknown";
+}
+
+ContactManifoldWriteRejectReason contact_manifold_write_reject_reason(const ContactManifold& manifold) {
+    if (manifold.empty()) {
+        return ContactManifoldWriteRejectReason::EmptyManifold;
+    }
+    if (!manifold.hasValidNormal()) {
+        return ContactManifoldWriteRejectReason::InvalidNormal;
+    }
+    if (!manifold.valid) {
+        return ContactManifoldWriteRejectReason::NotFinalized;
+    }
+    if (manifold.bodyA == manifold.bodyB) {
+        return ContactManifoldWriteRejectReason::SelfPair;
+    }
+    return ContactManifoldWriteRejectReason::None;
+}
+
+bool contact_manifold_write_rejects_for_reason(
+    const ContactManifold& manifold,
+    ContactManifoldWriteRejectReason expected) {
+    return contact_manifold_write_reject_reason(manifold) == expected;
+}
+
+ContactManifoldWritePreflight preflight_contact_manifold_buffer_write(const ContactManifold& manifold) {
+    ContactManifoldWritePreflight preflight{};
+    preflight.reason = contact_manifold_write_reject_reason(manifold);
+    preflight.skipped = preflight.reason != ContactManifoldWriteRejectReason::None;
+    return preflight;
+}
+
+bool should_skip_contact_manifold_buffer_write(const ContactManifold& manifold) {
+    return !preflight_contact_manifold_buffer_write(manifold).can_write();
+}
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {

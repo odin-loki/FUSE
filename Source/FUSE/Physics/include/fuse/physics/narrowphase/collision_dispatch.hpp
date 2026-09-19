@@ -200,4 +200,17 @@ std::vector<ContactManifold> runNarrowphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Job-safe narrowphase with extended deepen preflight rejects (B4.6 deepen pass).
+void runNarrowphaseIntoBufferWithDeepenPreflight(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer);
+
+/// CPU stub with extended deepen preflight rejects (B4.6 deepen pass).
+std::vector<ContactManifold> runNarrowphaseDeepen(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase
