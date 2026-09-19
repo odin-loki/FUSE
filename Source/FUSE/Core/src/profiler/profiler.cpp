@@ -409,6 +409,13 @@ bool wouldSkipRecording(const char* name) {
     return !g_enabled.load(std::memory_order_acquire) || !hasUsableName(name);
     return event.name != nullptr && std::strcmp(event.name, name) == 0;
 
+void assignSkipReason(ProfilerSkipReason* reason, ProfilerSkipReason value) {
+
+
+    return flowId != 0u
+        && (event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)
+        && event.scopeId == flowId
+        && isValidEventName(event.name);
 
 } // namespace
 
@@ -3450,6 +3457,12 @@ bool tryFirstExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 bool tryLastExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
+
+
+
+
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -4972,6 +4985,17 @@ bool isFlowIdTracked(u32 flowId) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -5321,8 +5345,6 @@ AsyncFlowPreflight preflightAsyncFlow() {
     preflight.depthDetached = isFlowDepthDetached();
     preflight.crossThreadHandoffPending = isCrossThreadFlowHandoffPending();
     preflight.hasOpenFlows = hasOpenAsyncFlows();
-NestingPreflight preflightNesting() {
-    NestingPreflight preflight{};
 
 
 bool wouldSkipProfileScope(const char* name) {
@@ -5404,13 +5426,6 @@ CounterSamplePreflight preflightCounterSample(const char* track) {
         preflight.reason = CounterSampleSkipReason::ProfilerDisabled;
         preflight.reason = CounterSampleSkipReason::InvalidName;
 
-NestingStatePreflight preflightNestingState() {
-    NestingStatePreflight preflight{};
-    preflight.activeScopeNestingDepth = scopeNestingDepth();
-    preflight.activeFlowNestingDepth = flowNestingDepth();
-    preflight.openAsyncFlowCount = openAsyncFlowCount();
-    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
-    preflight.flowDepthDetached = isFlowDepthDetached();
 
 ChromeTraceExportSkipReason chromeTraceExportSkipReason() {
         return ChromeTraceExportSkipReason::ProfilerDisabled;
@@ -5451,22 +5466,58 @@ bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason) {
     preflight.hasActiveScopes = hasActiveScopes();
 
     preflight.consistent = isFlowNestingConsistent();
-    return preflight;
-    }
-    if (isCrossThreadFlowHandoffPending()) {
-    if (isFlowDepthDetached()) {
     if (!isFlowPairingConsistent()) {
         return ChromeTraceExportRejectReason::UnpairedFlowEvents;
 
-    switch (reason) {
-        return "none";
-        return "profiler_disabled";
-        return "unbalanced_nesting";
-        return "flow_depth_detached";
-        return "cross_thread_flow_handoff_pending";
     case ChromeTraceExportRejectReason::UnpairedFlowEvents:
         return "unpaired_flow_events";
-    return "unknown";
+bool wouldSkipProfileScope(const char* name, ProfilerSkipReason* reason) {
+        assignSkipReason(reason, ProfilerSkipReason::ProfilerDisabled);
+
+    if (!isValidEventName(name)) {
+        assignSkipReason(reason, ProfilerSkipReason::InvalidName);
+
+    assignSkipReason(reason, ProfilerSkipReason::None);
+    return false;
+
+bool wouldSkipAsyncFlowBegin(const char* name, ProfilerSkipReason* reason) {
+    return wouldSkipProfileScope(name, reason);
+
+bool wouldSkipAsyncFlowEnd(const char* name, ProfilerSkipReason* reason) {
+
+
+    if (openAsyncFlowCount() == 0u) {
+        assignSkipReason(reason, ProfilerSkipReason::NoOpenAsyncFlow);
+
+
+bool wouldSkipCounter(const char* track, ProfilerSkipReason* reason) {
+    return wouldSkipProfileScope(track, reason);
+
+bool wouldSkipChromeTraceExport(ProfilerSkipReason* reason) {
+
+    if (exportableEventCount() == 0u) {
+        assignSkipReason(reason, ProfilerSkipReason::NoExportableEvents);
+
+
+bool wouldSkipSafeChromeTraceExport(ProfilerSkipReason* reason) {
+    const ChromeTraceExportPreflight preflight = preflightChromeTraceExport();
+
+    if (!preflight.canExport()) {
+
+    if (!preflight.hasExportableEvents()) {
+
+    if (preflight.hasUnbalancedNesting()) {
+        assignSkipReason(reason, ProfilerSkipReason::UnbalancedNesting);
+
+    if (preflight.flowDepthDetached) {
+        assignSkipReason(reason, ProfilerSkipReason::FlowDepthDetached);
+
+    if (preflight.crossThreadFlowHandoffPending) {
+        assignSkipReason(reason, ProfilerSkipReason::CrossThreadFlowHandoffPending);
+
+
+ProfilerNestingPreflight preflightNesting() {
+    ProfilerNestingPreflight preflight{};
 }
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {

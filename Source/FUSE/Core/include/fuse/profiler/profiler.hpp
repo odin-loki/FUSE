@@ -150,11 +150,11 @@ enum class CounterSampleSkipReason : u8 {
 
 /// Why chrome trace export would be skipped or blocked (B1.6 deepen).
 enum class ChromeTraceExportSkipReason : u8 {
-    None = 0,
-};
 
 
     UnpairedFlowEvents,
+/// Classify why a profiler record or export would be skipped — mirrors hot-path guard ordering.
+enum class ProfilerSkipReason : u8 {
 };
 
 struct ProfileEvent {
@@ -946,6 +946,25 @@ struct AsyncFlowPreflight {
     bool canEndFlow() const { return !profilerDisabled && openCount > 0u; }
 };
 
+/// Read-only nesting/async-flow diagnostics — safe to call before recording scopes or flows.
+struct ProfilerNestingPreflight {
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+    u32 maxScopeNestingDepth = 0;
+    u32 maxFlowNestingDepth = 0;
+    u32 openAsyncFlowCount = 0;
+    bool scopeNestingBalanced = true;
+    bool flowNestingBalanced = true;
+    bool hasOpenAsyncFlows = false;
+    bool flowDepthDetached = false;
+    bool crossThreadFlowHandoffPending = false;
+
+    bool hasUnbalancedNesting() const { return !scopeNestingBalanced || !flowNestingBalanced; }
+    bool isHealthy() const {
+        return !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
+    }
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -1502,6 +1521,14 @@ bool wouldSkipAsyncFlowBegin(const char* name, u32 flowId);
 bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId);
 bool wouldSkipSafeChromeTraceExport();
 
+bool wouldSkipProfileScope(const char* name, ProfilerSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowBegin(const char* name, ProfilerSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowEnd(const char* name, ProfilerSkipReason* reason = nullptr);
+bool wouldSkipCounter(const char* track, ProfilerSkipReason* reason = nullptr);
+bool wouldSkipChromeTraceExport(ProfilerSkipReason* reason = nullptr);
+bool wouldSkipSafeChromeTraceExport(ProfilerSkipReason* reason = nullptr);
+
+ProfilerNestingPreflight preflightNesting();
 ChromeTraceExportPreflight preflightChromeTraceExport();
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);
 AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 flowId);
