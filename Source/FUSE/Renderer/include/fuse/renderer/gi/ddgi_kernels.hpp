@@ -239,6 +239,17 @@ bool preflightProbeKernelLaunchForDesc(const DDGIDesc& desc,
 /// Early-out when kernel launch would be rejected for `desc` + params.
 bool wouldSkipProbeKernelLaunchForDesc(const DDGIDesc& desc, const DDGIKernelParams& params);
 
+/// Classify why grid-aware probe kernel launch would reject — includes index range checks.
+ProbeKernelRejectReason classifyProbeKernelReject(const DDGIDesc& desc, const DDGIKernelParams& params);
+
+/// Non-mutating grid-aware kernel launch preflight — validates probe indices against `desc`.
+bool preflightProbeKernelLaunch(const DDGIDesc& desc,
+                                const DDGIKernelParams& params,
+                                ProbeKernelRejectReason* reason = nullptr);
+
+/// Early-out when grid-aware probe kernel launch would be rejected.
+bool wouldSkipProbeKernelLaunch(const DDGIDesc& desc, const DDGIKernelParams& params);
+
 /// Populate kernel params from desc + scheduled indices without changing launch guards.
 void populateDDGIKernelParams(DDGIKernelParams& params,
                               const DDGIDesc& desc,
@@ -287,6 +298,9 @@ bool canLaunchProbeTraceKernel(const DDGIKernelParams& params, const DDGIDesc& d
 /// Diagnose why probe trace launch preflight would reject — includes grid index validation.
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params,
                                   const DDGIDesc& desc,
+/// Grid-aware probe trace preflight — validates scheduled indices against `desc`.
+bool tryCanLaunchProbeTraceKernel(const DDGIDesc& desc,
+                                  const DDGIKernelParams& params,
                                   ProbeKernelRejectReason& outReason);
 
 /// Preflight guard before probe blend kernel launch.
@@ -297,6 +311,10 @@ bool canLaunchProbeBlendKernel(const DDGIKernelParams& params, const DDGIDesc& d
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 /// Diagnose why probe blend launch preflight would reject — includes grid index validation.
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params,
+/// Grid-aware probe blend preflight — validates scheduled indices against `desc`.
+bool tryCanLaunchProbeBlendKernel(const DDGIDesc& desc,
+                                  const DDGIKernelParams& params,
+                                  ProbeKernelRejectReason& outReason);
 /// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
 /// Diagnose probe-world-position readiness for trace launch (B5.6 deepen).
 bool tryPreflightProbeTraceWorldPositions(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
