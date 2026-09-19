@@ -1736,3 +1736,12 @@ int main() {
     expectTrue(cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason::DegenerateCascadeRange),
 void testSplitBypassGuards() {
 void testSplitSkipGuardHelpers() {
+
+// --- deepen additive from deepen-b55-csm-split-guards-09c0 ---
+void testPerCascadeShadowGuardHelpers() {
+    expectTrue(CascadeLightSpaceLayout::wouldSkipCascadeShadowBuild(1u, flatDesc, camera, sunDirection, &skipReason),
+               "wouldSkip reports skip for zero-thickness cascade");
+               "wouldSkip writes empty-frustum reason");
+    expectTrue(!CascadeLightSpaceLayout::wouldSkipCascadeShadowBuild(0u, desc, camera, sunDirection, &skipReason),
+               "wouldSkip allows valid cascade");
+    expectTrue(skipReason == CascadeShadowSkipReason::None, "wouldSkip clears reason for valid cascade");
