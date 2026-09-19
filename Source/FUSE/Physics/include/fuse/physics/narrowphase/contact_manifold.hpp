@@ -368,3 +368,9 @@ struct ContactManifoldWritePreflight {
     bool can_write() const { return !skipped && reason == ContactManifoldWriteRejectReason::None; }
 ContactManifoldWritePreflight preflight_contact_manifold_buffer_write(const ContactManifold& manifold);
 bool should_skip_contact_manifold_buffer_write(const ContactManifold& manifold);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1644 ---
+struct ManifoldShallowPrunePreflight {
+    ManifoldShallowPruneRejectReason reason = ManifoldShallowPruneRejectReason::None;
+    bool can_prune() const { return !skipped && reason == ManifoldShallowPruneRejectReason::None; }
+ManifoldShallowPrunePreflight preflight_manifold_shallow_prune(

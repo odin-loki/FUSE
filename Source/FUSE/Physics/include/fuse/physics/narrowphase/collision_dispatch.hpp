@@ -239,3 +239,7 @@ NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
 // --- deepen additive from b4-narrowphase-deepen-e124 ---
 NarrowphaseIntoBufferPreflight preflightNarrowphaseIntoBuffer(
 bool should_skip_narrowphase_into_buffer(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1644 ---
+NarrowphaseDispatchPreflight preflight_run_narrowphase_into_buffer(
+bool should_skip_narrowphase_dispatch(

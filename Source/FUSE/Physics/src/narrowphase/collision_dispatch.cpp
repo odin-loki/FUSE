@@ -104,3 +104,7 @@ bool should_skip_narrowphase_into_buffer(
     return !preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).can_run();
     const NarrowphaseIntoBufferPreflight preflight = preflightNarrowphaseIntoBuffer(pairs, bodies, shapes);
         if (should_skip_narrowphase_pair_slot(pairIndex, pairs[pairIndex], bodies, shapes)) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1644 ---
+NarrowphaseDispatchPreflight preflight_run_narrowphase_into_buffer(
+bool should_skip_narrowphase_dispatch(

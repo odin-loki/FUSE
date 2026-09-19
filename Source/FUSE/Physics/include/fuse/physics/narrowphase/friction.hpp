@@ -228,3 +228,13 @@ bool should_skip_friction_basis_normalize_rebuild(
 // --- deepen additive from deepen-b4-narrowphase-9067 ---
                reason == FrictionBasisRejectReason::EmptyManifold ||
                reason == FrictionBasisRejectReason::InvalidNormal || canReuse;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1644 ---
+enum class ContactNormalNormalizeRejectReason : u8 {
+const char* contact_normal_normalize_reject_reason_name(ContactNormalNormalizeRejectReason reason);
+ContactNormalNormalizeRejectReason contact_normal_normalize_reject_reason(
+    ContactNormalNormalizeRejectReason expected,
+struct ContactNormalNormalizePreflight {
+    ContactNormalNormalizeRejectReason reason = ContactNormalNormalizeRejectReason::None;
+    bool can_normalize() const { return !skipped && reason == ContactNormalNormalizeRejectReason::None; }
+ContactNormalNormalizePreflight preflight_contact_normal_normalize(

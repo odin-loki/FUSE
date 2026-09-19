@@ -240,3 +240,13 @@ struct ContactBufferFrictionBasesPreflight {
     bool needsRebuild() const { return reason == ContactBufferFrictionBasesRejectReason::None; }
 ContactBufferFrictionBasesPreflight preflightContactBufferFrictionBases(const ContactBufferSoA& buffer);
 bool buildContactBufferFrictionBasesWithPreflight(ContactBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1644 ---
+enum class ContactBufferFrictionTangentRejectReason : u8 {
+    ContactBufferFrictionTangentRejectReason reason);
+ContactBufferFrictionTangentRejectReason contact_buffer_friction_tangent_reject_reason(
+    ContactBufferFrictionTangentRejectReason expected,
+struct ContactBufferFrictionTangentPreflight {
+    ContactBufferFrictionTangentRejectReason reason = ContactBufferFrictionTangentRejectReason::None;
+        return reason == ContactBufferFrictionTangentRejectReason::None;
+ContactBufferFrictionTangentPreflight preflight_contact_buffer_friction_tangents(

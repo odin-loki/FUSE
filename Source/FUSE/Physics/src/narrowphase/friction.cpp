@@ -464,3 +464,19 @@ bool should_skip_friction_basis_normalize_rebuild(
     preflight.reason = FrictionBasisRejectReason::None;
     if (preflight.reason == FrictionBasisRejectReason::EmptyManifold ||
         preflight.reason == FrictionBasisRejectReason::InvalidNormal) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1644 ---
+const char* contact_normal_normalize_reject_reason_name(ContactNormalNormalizeRejectReason reason) {
+    case ContactNormalNormalizeRejectReason::None:
+    case ContactNormalNormalizeRejectReason::EmptyManifold:
+    case ContactNormalNormalizeRejectReason::InvalidNormal:
+    case ContactNormalNormalizeRejectReason::AlreadyUnit:
+ContactNormalNormalizeRejectReason contact_normal_normalize_reject_reason(
+        return ContactNormalNormalizeRejectReason::EmptyManifold;
+        return ContactNormalNormalizeRejectReason::InvalidNormal;
+        return ContactNormalNormalizeRejectReason::AlreadyUnit;
+    return ContactNormalNormalizeRejectReason::None;
+    ContactNormalNormalizeRejectReason expected,
+ContactNormalNormalizePreflight preflight_contact_normal_normalize(
+    ContactNormalNormalizePreflight preflight{};
+    if (preflight.reason != ContactNormalNormalizeRejectReason::None) {

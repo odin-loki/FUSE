@@ -2862,3 +2862,33 @@ void testManifoldGenerateWithPreflightGuards() {
         "should_skip_pair_slot on self pair");
 void testFrictionBasisEnsureWithPreflight() {
     testFrictionBasisEnsureWithPreflight();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1644 ---
+            fuse::physics::narrowphase::ContactBufferWriteRejectReason::OutOfRangeSlot,
+            fuse::physics::narrowphase::ContactBufferWriteRejectReason::InvalidManifold,
+    expectTrue(compactionPreflight.needsCompaction(), "compaction preflight needs compaction work");
+    expectTrue(clampPreflight.needsClamp(), "clamp preflight needs clamp work");
+    const auto tangentPreflight =
+        tangentPreflight.needsFrictionTangentBuild(),
+                fuse::physics::narrowphase::ContactBufferFrictionTangentRejectReason::AllValid),
+    const auto validPreflight = fuse::physics::narrowphase::preflight_contact_pair_dispatch(
+    expectTrue(!validPreflight.rejected, "dispatch preflight does not reject valid pair");
+    const auto sleepingPreflight = fuse::physics::narrowphase::preflight_contact_pair_dispatch(
+    expectTrue(!sleepingPreflight.can_dispatch(), "dispatch preflight rejects both-sleeping pair");
+        fuse::physics::narrowphase::should_skip_contact_pair_dispatch_preflight(
+        "should_skip dispatch preflight on rejected pair");
+            fuse::physics::narrowphase::ManifoldShallowPruneRejectReason::NoShallowPenetrations,
+    expectTrue(shallowPreflight.can_prune(), "shallow prune preflight allows mixed manifold");
+    expectTrue(shallowPreflight.hasShallow, "shallow prune preflight detects shallow slot");
+void testContactNormalNormalizePreflightGuards() {
+            fuse::physics::narrowphase::ContactNormalNormalizeRejectReason::EmptyManifold),
+            fuse::physics::narrowphase::ContactNormalNormalizeRejectReason::AlreadyUnit),
+    const auto normalizePreflight =
+    expectTrue(normalizePreflight.can_normalize(), "normalize preflight allows non-unit normal");
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight can dispatch with one valid pair");
+    expectTrue(!dispatchPreflight.can_skip(), "dispatch preflight does not skip mixed batch");
+        !fuse::physics::narrowphase::should_skip_narrowphase_dispatch(mixedPairs, bodies, shapes),
+        "should_skip dispatch false for mixed batch");
+        fuse::physics::narrowphase::should_skip_narrowphase_dispatch(
+        "should_skip dispatch true when all pairs rejected");
+    testContactNormalNormalizePreflightGuards();

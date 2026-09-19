@@ -844,3 +844,6 @@ bool should_skip_narrowphase_run(
 NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
     NarrowphasePairSlotPreflight preflight{};
 bool should_skip_narrowphase_pair_slot(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1644 ---
+bool should_skip_contact_pair_dispatch_preflight(

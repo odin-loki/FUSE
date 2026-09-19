@@ -779,3 +779,10 @@ bool should_skip_contact_manifold_buffer_write(const ContactManifold& manifold) 
     case ManifoldPruneRejectReason::ExceedsMaxPoints:
         return ManifoldPruneRejectReason::ExceedsMaxPoints;
     case ManifoldFinalizeRejectReason::MissingFrictionBasis:
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1644 ---
+    case ManifoldShallowPruneRejectReason::NoShallowPenetrations:
+        return ManifoldShallowPruneRejectReason::NoShallowPenetrations;
+ManifoldShallowPrunePreflight preflight_manifold_shallow_prune(
+    ManifoldShallowPrunePreflight preflight{};
+    if (preflight.reason != ManifoldShallowPruneRejectReason::None) {
