@@ -50,6 +50,18 @@ u64 file_mtime_ns(const std::string& path) {
     return static_cast<u64>(ftime.time_since_epoch().count());
 }
 
+CookHashPreflight preflight_file_mtime_ns(const std::string& path) {
+    CookHashPreflight preflight;
+    if (path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyPath;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
 u64 hash_file_content(const std::string& path) {
     if (path.empty()) {
         return 0;

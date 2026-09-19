@@ -634,6 +634,65 @@ void testCookCachePruneInvalidEntriesOnLoad() {
     expectTrue(loaded.contains(valid_hash), "valid loaded entry remains addressable");
 }
 
+void testCookCacheWouldInvalidateProbes() {
+    fuse::project::CookCache cache;
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_would_source.obj"),
+               "would_invalidate_source on empty cache is false");
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_would_output.fusemesh"),
+               "would_invalidate_output on empty cache is false");
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_stale.obj", 42u),
+               "would_invalidate_stale_content on empty cache is false");
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_would_up.obj", 1u}}),
+               "would_invalidate_stale_upstream on empty cache is false");
+    expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_would_down.fusemesh", {}, {}),
+               "would_invalidate_downstream on empty cache is false");
+
+    const fuse::project::CookCacheInvalidationSurface empty_surface = cache.estimate_invalidation_surface();
+    expectTrue(empty_surface.entry_count == 0u, "empty cache invalidation surface entry count is zero");
+    expectTrue(empty_surface.reconcile_total() == 0u, "empty cache invalidation surface reconcile is zero");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_would_mesh.obj", "# would mesh\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_would_mesh.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for would_invalidate probes ok");
+
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source reports seeded entry");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path),
+               "would_invalidate_output reports seeded entry");
+    expectTrue(!cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash),
+               "would_invalidate_stale_content false when hash matches");
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash + 1u),
+               "would_invalidate_stale_content true when hash mismatches");
+
+    writeTempFile(source, "# would mesh updated\n");
+    const fuse::u64 updated_hash = fuse::project::hash_mesh_import(desc);
+    expectTrue(updated_hash != seeded.content_hash, "source change yields new content hash");
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, updated_hash),
+               "would_invalidate_stale_content true when current hash differs from stored entry");
+
+    const fuse::project::CookCacheInvalidationSurface surface = cooker.cache().estimate_invalidation_surface();
+    expectTrue(surface.entry_count == 1u, "invalidation surface reports one entry");
+    expectTrue(surface.prunable_entries == 1u, "invalidation surface reports one prunable entry");
+    expectTrue(surface.stale_entries == 1u, "invalidation surface reports one stale entry");
+    expectTrue(surface.reconcile_total() == surface.prunable_entries,
+               "invalidation surface reconcile total matches prunable count");
+}
+
+void testCookHashPreflightMtimeGuards() {
+    const fuse::project::CookHashPreflight empty_mtime = fuse::project::preflight_file_mtime_ns("");
+    expectTrue(!empty_mtime.ok(), "empty path fails mtime preflight");
+    expectTrue(empty_mtime.reason == fuse::project::CookHashRejectReason::EmptyPath,
+               "empty path mtime preflight reason is EmptyPath");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_preflight_mtime.obj", "# mtime preflight\n");
+    expectTrue(fuse::project::preflight_file_mtime_ns(source).ok(), "readable path passes mtime preflight");
+    expectTrue(fuse::project::file_mtime_ns(source) != 0, "mtime preflight success implies non-zero mtime");
+}
+
 } // namespace
 
 int main() {
@@ -664,6 +723,8 @@ int main() {
     testCookCachePruneReconcileEstimateGuards();
     testCookCacheProbeStaleContentSources();
     testCookCachePruneInvalidEntriesOnLoad();
+    testCookCacheWouldInvalidateProbes();
+    testCookHashPreflightMtimeGuards();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
