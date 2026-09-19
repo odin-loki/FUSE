@@ -493,6 +493,7 @@ public:
     [[nodiscard]] bool should_skip_lookup(u64 content_hash) const;
     /// True when `store` would reject the entry — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
     [[nodiscard]] bool should_skip_store(const CookCacheEntry& entry) const;
+    [[nodiscard]] bool would_invalidate_all() const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
@@ -568,6 +569,7 @@ public:
     /// Deduplicated source paths that `invalidate_stale_upstream_hashes` would touch (B7.9 deepen).
     /// Deduplicated count of `probe_stale_upstream_sources` (B7.9 deepen).
     [[nodiscard]] u32 count_stale_upstream_sources(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;
@@ -884,5 +886,16 @@ private:
 /// Free-function preflights — delegate to cache helpers without requiring a populated cache (B7.9 deepen).
 /// Read-only preflight for cache entry storage — mirrors `store()` guards (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+[[nodiscard]] inline bool should_skip_prune(const CookCache& cache) {
+    return !cache.has_prunable_entries();
+}
+[[nodiscard]] inline bool should_skip_invalidate(u64 content_hash, const CookCache& cache) {
+    return !cache.would_invalidate(content_hash);
+[[nodiscard]] inline bool should_skip_invalidate_source(const CookCache& cache, const std::string& source_path) {
+    return !cache.would_invalidate_source(source_path);
+[[nodiscard]] inline bool should_skip_invalidate_output(const CookCache& cache, const std::string& output_path) {
+    return !cache.would_invalidate_output(output_path);
+[[nodiscard]] inline bool should_skip_store_cache_entry(const CookCacheEntry& entry) {
+    return preflight_cook_cache_entry(entry).should_skip();
 
 } // namespace fuse::project

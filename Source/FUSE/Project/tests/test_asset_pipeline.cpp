@@ -3342,6 +3342,7 @@ void testCookerWouldReconcileAfterUpstreamChange() {
                "leaf output would_invalidate_downstream is false when no dependents cached");
     entry_b.output_path = "/tmp/fuse_b79_up_reconcile_b.fusemesh";
 
+
     fuse::project::CookManifestEntry entry_c;
     entry_c.kind = fuse::project::CookAssetKind::Mesh;
     entry_c.source_path = source_c;
@@ -3350,6 +3351,9 @@ void testCookerWouldReconcileAfterUpstreamChange() {
     manifest.assets.push_back(entry_c);
 
     expectTrue(cooker.cook_manifest(manifest).ok, "chain manifest cook for upstream reconcile ok");
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.should_skip_reconcile_invalidation(manifest), "fresh cache should_skip_reconcile is true");
+    expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would_reconcile is false");
 
     const fuse::project::CookCacheUpstreamReconcileEstimate upstream =
         cooker.estimate_upstream_reconcile(manifest, source_a);
@@ -3365,6 +3369,24 @@ void testCookerWouldReconcileAfterUpstreamChange() {
 
     writeTempFile(source_a, "# up reconcile a revised\n");
     expectTrue(cooker.would_reconcile_invalidation(manifest), "stale dependency makes would_reconcile true");
+    expectTrue(cooker.would_upstream_invalidation(manifest, source_a),
+               "would_upstream_invalidation true for seeded chain head");
+    expectTrue(cooker.should_skip_upstream_invalidation(manifest, ""),
+               "should_skip_upstream true for empty changed source");
+
+    const std::vector<std::string> probed = cooker.probe_upstream_invalidation_sources(manifest, source_a);
+    expectTrue(probed[0] == source_a, "upstream probe starts at changed source");
+
+    expectTrue(cooker.probe_upstream_invalidation_sources(manifest, "").empty(),
+               "empty changed source upstream probe is guarded");
+
+    const fuse::u32 output_count = cooker.count_output_invalidation(manifest, entry_a.output_path);
+    expectTrue(output_count >= 1u, "output invalidation count includes dependents");
+    expectTrue(cooker.count_output_invalidation(manifest, "") == 0u,
+               "empty changed output invalidation count is zero");
+
+    expectTrue(!cooker.should_skip_reconcile_invalidation(manifest),
+               "should_skip_reconcile false after upstream change");
 
     const fuse::project::CookCacheReconcileEstimate reconcile = cooker.estimate_reconcile_invalidation(manifest);
     expectTrue(reconcile.stale_dependency_entries >= 1u, "reconcile estimate includes stale dependency count");
@@ -3475,10 +3497,15 @@ void testCookerReconcilePreflightGuards() {
 
 void testCookerWouldReconcileInvalidationGuard() {
 
+void testCookCacheWouldInvalidateDownstreamProbe() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_would_down_a.obj", "# would down a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_would_down_b.obj", "# would down b\n");
+
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
     entry_a.kind = fuse::project::CookAssetKind::Mesh;
     entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_would_down_a.fusemesh";
     manifest.assets.push_back(entry_a);
 
     fuse::project::CookManifestEntry entry_b;
@@ -3540,6 +3567,22 @@ void testCookerWouldReconcileInvalidationGuard() {
     const fuse::project::CookCacheReconcileEstimate stale = cooker.estimate_reconcile_invalidation(manifest);
     expectTrue(stale.would_reconcile(), "reconcile estimate would_reconcile true after upstream change");
     expectTrue(!stale.should_skip(), "reconcile estimate should_skip false after upstream change");
+    entry_b.output_path = "/tmp/fuse_b79_would_down_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "chain cook for would_invalidate_downstream ok");
+
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()),
+               "would_invalidate_downstream_of reports dependents");
+    expectTrue(!cooker.cache().would_invalidate_downstream_of("", graph.edges(), graph.jobs()),
+               "empty output path would_invalidate_downstream is guarded");
+    expectTrue(!cooker.cache().would_invalidate_downstream_of(entry_b.output_path, graph.edges(), graph.jobs()),
+               "leaf output would_invalidate_downstream is false when no dependents cached");
 }
 
 void testCookCacheDownstreamSourceProbe() {

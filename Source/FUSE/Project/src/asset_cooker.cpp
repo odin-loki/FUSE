@@ -227,6 +227,8 @@ CookUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
     const CookManifest& manifest, const std::string& changed_source) const {
     CookUpstreamInvalidationEstimate estimate;
     if (!is_valid_cook_cache_path(changed_source)) {
+    return estimate_upstream_reconcile(manifest, changed_source).total();
+
 u32 AssetCooker::count_output_invalidation(const CookManifest& manifest,
                                            const std::string& changed_output) const {
     if (!is_valid_cook_cache_path(changed_output)) {
@@ -489,15 +491,16 @@ u32 AssetCooker::count_upstream_invalidation(const CookManifest& manifest,
 
 
 
-                }
 
     if (m_cache.would_invalidate_source(changed_source)) {
-        bool already_recorded = false;
-        for (const std::string& recorded : sources) {
             if (recorded == changed_source) {
-                already_recorded = true;
-                break;
             sources.insert(sources.begin(), changed_source);
+
+
+CookCacheUpstreamReconcileEstimate AssetCooker::estimate_upstream_reconcile(
+    CookCacheUpstreamReconcileEstimate estimate;
+
+
 
 }
 
@@ -1064,6 +1067,8 @@ std::vector<std::string> AssetCooker::probe_reconcile_sources(const CookManifest
     std::vector<std::string> sources;
 CookUpstreamInvalidateEstimate AssetCooker::estimate_upstream_invalidation(
     CookUpstreamInvalidateEstimate estimate;
+}
+
 
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
@@ -1131,6 +1136,9 @@ CookCacheInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
 
 
 
+
+    std::vector<std::string> sources;
+    }
 
 
         const std::vector<std::string> downstream =
@@ -1292,6 +1300,14 @@ bool AssetCooker::should_skip_prune_reconcile() const {
 bool AssetCooker::would_invalidate_upstream_dependency(const CookManifest& manifest,
 
 bool AssetCooker::would_invalidate_stale_dependency_hashes(const CookManifest& manifest) const {
+            bool already_recorded = false;
+            for (const std::string& recorded : sources) {
+                if (recorded == source_path) {
+                    already_recorded = true;
+                    break;
+                }
+            if (!already_recorded) {
+                sources.push_back(source_path);
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
