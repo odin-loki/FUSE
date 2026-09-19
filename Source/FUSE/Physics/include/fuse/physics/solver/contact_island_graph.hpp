@@ -8,6 +8,26 @@
 
 namespace fuse::physics {
 
+/// Read-only scan of island graph build inputs (B4.4 deepen follow-up pass).
+struct IslandBuildInputCoverage {
+    u32 bodyCount = 0;
+    u32 contactSlotCount = 0;
+    u32 distanceSlotCount = 0;
+    u32 validContactCount = 0;
+    u32 inRangeContactCount = 0;
+    u32 inRangeDistanceCount = 0;
+    u32 outOfRangeContactCount = 0;
+    u32 outOfRangeDistanceCount = 0;
+
+    bool hasUnsafeRefs() const {
+        return outOfRangeContactCount > 0u || outOfRangeDistanceCount > 0u;
+    }
+
+    bool isEmptyInput() const {
+        return bodyCount == 0u && inRangeContactCount == 0u && inRangeDistanceCount == 0u;
+    }
+};
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
@@ -24,6 +44,26 @@ struct ContactIslandGraph {
     void build(u32 bodyCount,
                const std::vector<narrowphase::ContactManifold>& contacts,
                const std::vector<DistanceConstraint>& distanceConstraints);
+
+    /// Scan build inputs without mutating the graph (B4.4 deepen follow-up pass).
+    static IslandBuildInputCoverage scanBuildInputs(
+        u32 bodyCount,
+        const std::vector<narrowphase::ContactManifold>& contacts,
+        const std::vector<DistanceConstraint>& distanceConstraints);
+
+    /// True when both contact body indices fit within `bodyCount` (B4.4 deepen follow-up pass).
+    static bool contactInRange(const narrowphase::ContactManifold& contact, u32 bodyCount);
+
+    /// True when both distance constraint body indices fit within `bodyCount` (B4.4 deepen follow-up pass).
+    static bool distanceInRange(const DistanceConstraint& constraint, u32 bodyCount);
+
+    /// True when scanned inputs have no out-of-range constraint refs (B4.4 deepen follow-up pass).
+    static bool canAcceptBuildInputs(const IslandBuildInputCoverage& coverage);
+
+    /// Guarded build; clears and returns false when inputs are empty or unsafe (B4.4 deepen follow-up pass).
+    bool buildGuarded(u32 bodyCount,
+                      const std::vector<narrowphase::ContactManifold>& contacts,
+                      const std::vector<DistanceConstraint>& distanceConstraints);
 
     void clear();
 
