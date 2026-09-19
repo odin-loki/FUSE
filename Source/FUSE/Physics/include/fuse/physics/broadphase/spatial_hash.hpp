@@ -1734,3 +1734,12 @@ bool mergeBroadphasePlaneDynamicWithPreflight(
 // --- deepen additive from deepen-b4-broadphase-guards-c32b ---
     ShapeCellInsertionRejectReason expected);
 u32 mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-broadphase-wouldskip-4c27 ---
+FUSE_PHYSICS_INLINE bool wouldSkipBroadphase(
+    BroadphaseRejectReason* reason = nullptr) {
+    const BroadphaseRejectReason rejectReason = broadphaseRejectReason(bodies, shapes);
+    return rejectReason != BroadphaseRejectReason::None;
+    const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
+    return rejectReason != CellOccupancyRejectReason::None;
+    const CellSpanRejectReason rejectReason = cellSpanRejectReason(range, maxSpanPerAxis);

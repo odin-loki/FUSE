@@ -1751,3 +1751,13 @@ ShapeCellInsertionPreflight preflightShapeCellInsertion(
     preflight.insufficientCapacity = bufferPreflight.insufficientCapacity;
     return !preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer).canMerge();
     return preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer).canMerge();
+
+// --- deepen additive from deepen-b4-broadphase-wouldskip-4c27 ---
+    const RefineBroadphaseRejectReason rejectReason = refineBroadphaseRejectReason(bodies, shapes, buffer);
+    return rejectReason != RefineBroadphaseRejectReason::None;
+    const DedupeBroadphaseRejectReason rejectReason = dedupeBroadphaseRejectReason(buffer);
+    return rejectReason != DedupeBroadphaseRejectReason::None;
+    const BroadphaseMergeRejectReason rejectReason = mergeBroadphaseRejectReason(bodies, shapes);
+    return rejectReason != BroadphaseMergeRejectReason::None;
+    const MergePairsIntoBufferRejectReason rejectReason = mergePairsIntoBufferRejectReason(pairs, buffer);
+    return rejectReason != MergePairsIntoBufferRejectReason::None;

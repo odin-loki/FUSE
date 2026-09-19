@@ -1184,3 +1184,13 @@ void dedupePairBufferSoAWithPreflight(PairBufferSoA& buffer) {
         return PairBufferInvalidateSlotRejectReason::EmptyBuffer;
     preflight.emptyBuffer = preflight.reason == PairBufferInvalidateSlotRejectReason::EmptyBuffer;
 bool invalidateSlotWithPreflight(PairBufferSoA& buffer, u32 slot) {
+
+// --- deepen additive from deepen-b4-broadphase-wouldskip-4c27 ---
+    const PairBufferWriteSlotRejectReason rejectReason = pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB);
+    return rejectReason != PairBufferWriteSlotRejectReason::None;
+    const PairBufferInvalidateSlotRejectReason rejectReason = pairBufferInvalidateSlotRejectReason(buffer, slot);
+    return rejectReason != PairBufferInvalidateSlotRejectReason::None;
+bool wouldSkipPairBufferPush(
+    PairBufferPushRejectReason* reason) {
+    const PairBufferPushRejectReason rejectReason = pairBufferPushRejectReason(buffer, idxA, idxB);
+    return rejectReason != PairBufferPushRejectReason::None;
