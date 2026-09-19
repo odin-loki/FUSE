@@ -303,3 +303,11 @@ const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason);
 
 // --- deepen additive from deepen-b79-cooker-hash-guards-6648 ---
 [[nodiscard]] inline bool should_skip_cook_cache_store(const CookCacheEntry& entry) {
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-287f ---
+    [[nodiscard]] bool should_skip_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool should_skip_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool should_skip_invalidate_stale_content_for_source(const std::string& source_path,
+    [[nodiscard]] bool should_skip_invalidate_stale_upstream_hashes(
+    [[nodiscard]] bool should_skip_invalidate_downstream_of(const std::string& output_path,
+    [[nodiscard]] static bool should_skip_store(const CookCacheEntry& entry);

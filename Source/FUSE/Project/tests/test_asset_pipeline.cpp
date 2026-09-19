@@ -2155,3 +2155,17 @@ void testCookerShouldSkipReconcileGuards() {
     expectTrue(!cooker.estimate_reconcile_invalidation(manifest).should_skip(),
     expectTrue(removed >= 1u, "stale dependency invalidation runs after should_skip probe");
                "should_skip stale dependency after invalidation");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-287f ---
+               "should_skip_upstream false when chain entries exist");
+               "should_skip_upstream matches zero count probe");
+               "should_skip_stale_dependency true on fresh cache");
+    expectTrue(cooker.should_skip_prune_reconcile(), "should_skip_prune_reconcile true on fresh cache");
+               "reconcile estimate should_skip on fresh cache");
+               "should_skip_stale_dependency false after upstream change");
+    expectTrue(cooker.should_skip_stale_dependency_invalidation(manifest) == (stale_count == 0u),
+               "should_skip_stale_dependency mirrors count probe");
+               "would_invalidate_downstream_of true for chained manifest");
+    expectTrue(!cooker.cache().should_skip_invalidate_downstream_of(entry_a.output_path, graph.edges(),
+               "should_skip_invalidate_downstream_of false for chained manifest");
+               "should_skip_stale_dependency true after stale invalidation");

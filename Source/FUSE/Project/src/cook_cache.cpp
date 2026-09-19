@@ -949,3 +949,13 @@ bool CookCache::should_skip_invalidate_stale_upstream_hashes(
 bool CookCache::should_skip_invalidate_downstream_of(const std::string& output_path,
     return !cache.would_invalidate_downstream_of(output_path, edges, jobs);
 bool CookCache::should_skip_prune_all(const CookCache& cache) {
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-287f ---
+bool CookCache::should_skip_invalidate_source(const std::string& source_path) const {
+    return !would_invalidate_source(source_path);
+bool CookCache::should_skip_invalidate_output(const std::string& output_path) const {
+    return !would_invalidate_output(output_path);
+    return !would_invalidate_stale_content_for_source(source_path, current_content_hash);
+    return !would_invalidate_stale_upstream_hashes(source_upstream_by_path);
+    return !would_invalidate_downstream_of(output_path, edges, jobs);
+bool CookCache::should_skip_store(const CookCacheEntry& entry) {

@@ -1666,3 +1666,31 @@ void testCookCacheEntryPreflightAndStoreSkipGuards() {
     expectTrue(!cooker.cache().should_skip_prune(), "stale entry should not skip prune");
     expectTrue(cooker.cache().estimate_prune_removals().should_skip() == false,
                "prune estimate should_skip false when stale");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-287f ---
+    expectTrue(!fuse::project::preflight_cook_cache_key(99u, 42u).should_skip(),
+    expectTrue(fuse::project::should_skip_file_content_hash(""), "should_skip rejects empty path");
+    expectTrue(fuse::project::should_skip_cook_cache_key(0, 42u), "should_skip rejects zero source hash");
+    expectTrue(!fuse::project::should_skip_cook_cache_key(99u, 0), "should_skip allows zero upstream");
+    expectTrue(fuse::project::should_skip_fnv1a64_bytes(nullptr, 4u), "should_skip rejects null bytes");
+    expectTrue(!fuse::project::should_skip_fnv1a64_bytes(nullptr, 0), "should_skip allows zero-size null bytes");
+               "should_skip combine rejects zero source");
+    expectTrue(!fuse::project::should_skip_mesh_import_hash(desc), "should_skip mesh import ok for readable source");
+               "mesh should_skip matches preflight should_skip");
+               "should_skip upstream deps for empty list");
+void testCookCacheWouldInvalidateAndShouldSkipGuards() {
+    expectTrue(cache.should_skip_invalidate_source("/tmp/fuse_b79_skip_inv.obj"),
+               "should_skip_invalidate_source on empty cache");
+    expectTrue(cache.should_skip_invalidate_output("/tmp/fuse_b79_skip_inv.fusemesh"),
+               "should_skip_invalidate_output on empty cache");
+    expectTrue(cache.should_skip_prune_all(), "should_skip_prune_all on empty cache");
+    expectTrue(cache.estimate_prune_removals().should_skip(), "prune estimate should_skip on empty cache");
+    expectTrue(fuse::project::CookCache::should_skip_store(invalid), "should_skip_store rejects invalid entry");
+    expectTrue(cooker.cache().would_invalidate(seeded.content_hash), "would_invalidate seeded hash");
+    expectTrue(!cooker.cache().should_skip_invalidate_source(source),
+    expectTrue(cooker.cache().should_skip_invalidate_stale_content_for_source(source, seeded.content_hash),
+               "should_skip_stale_content true for matching hash");
+               "would_invalidate still true before prune — hash key unchanged");
+    expectTrue(removed == 1u, "prune removes stale entry for should_skip parity");
+    expectTrue(cooker.cache().should_skip_invalidate(seeded.content_hash),
+               "should_skip_invalidate true after prune removes entry");
