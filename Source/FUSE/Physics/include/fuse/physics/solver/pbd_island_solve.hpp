@@ -1844,3 +1844,12 @@ IslandSolveRejectReason island_solve_job_reject_reason(const IslandSolveJob& job
         return reason == IslandWakeRejectReason::None && !skipped && hasMixedSleepState && activeDynamicCount > 0u;
         return reason == IslandSleepGraphRejectReason::None && !skipped &&
     bool can_wake() const { return reason == IslandWakeGraphRejectReason::None && !skipped && stats.wakeableCount > 0u; }
+
+// --- deepen additive from deepen-pbd-island-guards-cb8c ---
+IslandSolveRejectReason islandSolveRejectReason(const IslandSolvePreflight& preflight);
+IslandDispatchRejectReason islandDispatchRejectReason(const IslandDispatchPreflight& preflight);
+IslandSolveJobRejectReason islandSolveJobRejectReason(const IslandSolveJobPreflight& preflight);
+IslandSleepRejectReason islandSleepRejectReason(const IslandSleepPreflight& preflight);
+IslandWakeRejectReason islandWakeRejectReason(const IslandWakePreflight& preflight);
+IslandSleepGraphRejectReason islandSleepGraphRejectReason(const IslandSleepGraphPreflight& preflight);
+IslandWakeGraphRejectReason islandWakeGraphRejectReason(const IslandWakeGraphPreflight& preflight);

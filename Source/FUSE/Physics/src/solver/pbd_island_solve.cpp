@@ -3124,3 +3124,20 @@ IslandSolveRejectReason classify_solve_dt_reject(f32 dt) {
         preflight.reason = IslandSleepRejectReason::NotAllSleeping;
 IslandSolveRejectReason island_solve_job_reject_reason(const IslandSolveJob& job, f32 dt) {
 IslandSolveRejectReason island_constraint_solve_reject_reason(
+
+// --- deepen additive from deepen-pbd-island-guards-cb8c ---
+IslandSolveRejectReason islandSolveRejectReason(const IslandSolvePreflight& preflight) {
+IslandDispatchRejectReason islandDispatchRejectReason(const IslandDispatchPreflight& preflight) {
+IslandSolveJobRejectReason islandSolveJobRejectReason(const IslandSolveJobPreflight& preflight) {
+IslandSleepRejectReason islandSleepRejectReason(const IslandSleepPreflight& preflight) {
+IslandSleepGraphRejectReason islandSleepGraphRejectReason(const IslandSleepGraphPreflight& preflight) {
+IslandWakeRejectReason islandWakeRejectReason(const IslandWakePreflight& preflight) {
+IslandWakeGraphRejectReason islandWakeGraphRejectReason(const IslandWakeGraphPreflight& preflight) {
+    preflight.reason = islandSolveJobRejectReason(preflight);
+    preflight.reason = islandSolveRejectReason(preflight);
+    preflight.reason = islandDispatchRejectReason(preflight);
+    preflight.reason = islandConstraintSolveRejectReason(preflight);
+    preflight.reason = islandSleepRejectReason(preflight);
+    preflight.reason = islandWakeRejectReason(preflight);
+    preflight.reason = islandSleepGraphRejectReason(preflight);
+    preflight.reason = islandWakeGraphRejectReason(preflight);

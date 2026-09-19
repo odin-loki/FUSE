@@ -5506,3 +5506,13 @@ void testRejectReasonMirrorsExistingPreflights() {
 
 // --- deepen additive from deepen-b4-pbd-island-reject-reasons-aaff ---
     expectTrue(preflight.reason == IslandGraphBuildRejectReason::OutOfRangeDistanceBodies,
+
+// --- deepen additive from deepen-pbd-island-guards-cb8c ---
+    expectTrue(buildPreflight.reason == IslandGraphBuildRejectReason::OutOfRangeContactBodies,
+    const IslandSolvePreflight emptySolve = preflight_island_solve(emptyGraph);
+    expectTrue(emptySolve.reason == IslandSolveRejectReason::NoDispatchableIslands,
+    expectTrue(std::strcmp(islandSolveRejectReasonName(emptySolve.reason),
+    const IslandSolveJobPreflight emptyJobPreflight = preflight_solve_island_job(emptyJob, 1.f / 60.f);
+    expectTrue(emptyJobPreflight.reason == IslandSolveJobRejectReason::EmptyJob,
+    const IslandWakePreflight noWake = preflight_island_wake(graph.island(sleepingIsland), bodies);
+    expectTrue(wakeGraph.reason == IslandWakeGraphRejectReason::NoWakeableIslands,
