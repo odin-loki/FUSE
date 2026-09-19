@@ -296,3 +296,6 @@ FUSE_PHYSICS_INLINE NarrowphaseDispatchRejectReason narrowphase_dispatch_reject_
     NarrowphaseDispatchRejectReason expected) {
 FUSE_PHYSICS_INLINE NarrowphaseDispatchPreflight preflight_run_narrowphase_into_buffer(
     preflight.rejected = preflight.reason != NarrowphaseDispatchRejectReason::None;
+
+// --- deepen additive from b4-narrowphase-deepen-guards-04be ---
+inline NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(

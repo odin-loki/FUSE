@@ -601,3 +601,26 @@ struct ContactBufferBuildFrictionPreflight {
     ContactBufferBuildFrictionRejectReason reason = ContactBufferBuildFrictionRejectReason::None;
     bool can_build() const { return reason == ContactBufferBuildFrictionRejectReason::None; }
 ContactBufferBuildFrictionPreflight preflight_contact_buffer_build_friction(const ContactBufferSoA& buffer);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-04be ---
+    ContactBufferFrictionBasisRejectReason expected,
+ContactBufferFrictionBasisPreflight preflight_contact_buffer_friction_bases(
+inline const char* contact_buffer_write_slot_reject_reason_name(ContactBufferWriteSlotRejectReason reason) {
+inline const char* contact_buffer_compaction_reject_reason_name(ContactBufferCompactionRejectReason reason) {
+inline ContactBufferCompactionPreflight preflight_contact_buffer_compaction(const ContactBufferSoA& buffer) {
+inline ContactBufferClampRejectReason contact_buffer_clamp_reject_reason(const ContactBufferSoA& buffer) {
+inline const char* contact_buffer_to_vector_reject_reason_name(ContactBufferToVectorRejectReason reason) {
+inline ContactBufferToVectorRejectReason contact_buffer_to_vector_reject_reason(const ContactBufferSoA& buffer) {
+inline ContactBufferToVectorPreflight preflight_contact_buffer_to_vector(const ContactBufferSoA& buffer) {
+    ContactBufferFrictionBasisRejectReason reason) {
+    case ContactBufferFrictionBasisRejectReason::None:
+    case ContactBufferFrictionBasisRejectReason::EmptyBuffer:
+    case ContactBufferFrictionBasisRejectReason::AllValid:
+inline ContactBufferFrictionBasisRejectReason contact_buffer_friction_basis_reject_reason(
+        return ContactBufferFrictionBasisRejectReason::EmptyBuffer;
+            return ContactBufferFrictionBasisRejectReason::None;
+    return ContactBufferFrictionBasisRejectReason::AllValid;
+inline ContactBufferFrictionBasisPreflight preflight_contact_buffer_friction_bases(
+    ContactBufferFrictionBasisPreflight preflight{};
+    preflight.emptyBuffer = preflight.reason == ContactBufferFrictionBasisRejectReason::EmptyBuffer;
+    preflight.allValid = preflight.reason == ContactBufferFrictionBasisRejectReason::AllValid;

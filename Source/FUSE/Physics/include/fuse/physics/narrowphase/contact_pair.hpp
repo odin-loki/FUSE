@@ -463,3 +463,6 @@ FUSE_PHYSICS_INLINE ContactPairRejectReason contact_pair_deepen_followup_reject_
 FUSE_PHYSICS_INLINE bool should_skip_contact_pair_deepen_followup_dispatch(
     return contact_pair_deepen_followup_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
     if (should_skip_friction_basis_preflight(manifold, epsilon)) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-04be ---
+    ContactPairDeepenPreflight pair{};

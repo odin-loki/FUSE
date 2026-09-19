@@ -3499,3 +3499,17 @@ void testFrictionBasisPreflightWrapperGuards() {
             buffer, fuse::physics::narrowphase::ContactBufferToVectorRejectReason::None),
 void testManifoldPruneFinalizeFollowUpCanSkipGuards() {
 void testFrictionBasisFollowUpCanSkipGuards() {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-04be ---
+            buffer, 2u, valid, fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::OutOfRangeSlot),
+            buffer, fuse::physics::narrowphase::ContactBufferFrictionBasisRejectReason::AllValid),
+    const auto validPreflight = fuse::physics::narrowphase::preflight_detect_contacts_pair(
+    expectTrue(validPreflight.can_detect(), "detect preflight accepts valid pair");
+    const auto rejectedPreflight = fuse::physics::narrowphase::preflight_detect_contacts_pair(
+    expectTrue(!rejectedPreflight.can_detect(), "detect preflight rejects any-trigger pair");
+void testManifoldPruneAndFinalizePreflightGuards() {
+    expectTrue(readyPreflight.can_prune_and_finalize(), "combined preflight accepts ready manifold");
+void testFrictionComputeTangentsPreflightGuards() {
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight can dispatch valid pair");
+    testManifoldPruneAndFinalizePreflightGuards();
+    testFrictionComputeTangentsPreflightGuards();

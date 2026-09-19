@@ -398,3 +398,13 @@ ManifoldFinalizeRejectReason manifold_finalize_second_reject_reason(
 
 // --- deepen additive from b4-narrowphase-deepen-guards-ea87 ---
         return skipped || reason != ManifoldPruneRejectReason::None || !needs_shallow_pruning(shallowMinDepth);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-04be ---
+struct ManifoldPruneAndFinalizePreflight {
+        return !skipped && finalize.can_finalize() && prune.reason == ManifoldPruneRejectReason::None;
+ManifoldPruneAndFinalizePreflight preflight_manifold_prune_and_finalize(
+inline ManifoldPruneAndFinalizePreflight preflight_manifold_prune_and_finalize(
+    ManifoldPruneAndFinalizePreflight preflight{};
+    const ManifoldPruneAndFinalizePreflight preflight = preflight_manifold_prune_and_finalize(
+        if (preflight.finalize.reason == ManifoldFinalizeRejectReason::AllSeparatedAfterPrune ||
+            preflight.prune.reason == ManifoldPruneRejectReason::AllSeparated) {
