@@ -374,5 +374,6 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 /// Manifest entry plus upstream dependency preflight — empty deps skip upstream fold (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_manifest_entry_with_dependencies(const CookManifestEntry& entry,
 /// Structural cache-entry preflight — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
+/// Manifest entry plus upstream dependency preflight — guarded on empty deps (B7.9 deepen).
 
 } // namespace fuse::project

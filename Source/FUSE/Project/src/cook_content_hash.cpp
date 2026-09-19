@@ -1123,6 +1123,20 @@ CookHashPreflight preflight_manifest_entry_with_dependencies(const CookManifestE
     return preflight;
 }
 
+CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry& entry,
+                                                         const CookManifest& manifest) {
+    const CookHashPreflight entry_preflight = preflight_manifest_entry_hash(entry);
+    if (!entry_preflight.can_hash) {
+        return entry_preflight;
+    }
+
+    if (entry.dependencies.empty()) {
+        return entry_preflight;
+    }
+
+    return preflight_upstream_dependencies_hash(entry.dependencies, manifest);
+}
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;

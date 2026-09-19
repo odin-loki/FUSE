@@ -155,6 +155,14 @@ struct CookUpstreamInvalidationEstimate {
     [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
 };
 
+/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
+struct CookUpstreamReconcileEstimate {
+    u32 direct_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
+};
+
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
 class AssetCooker {
 public:
@@ -381,6 +389,8 @@ public:
     /// Structured upstream invalidation probe — guarded on empty `changed_source` (B7.9 deepen).
     /// True when `estimate_prune_reconcile().total()` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_prune_reconcile() const;
+    [[nodiscard]] CookUpstreamReconcileEstimate estimate_upstream_invalidation(
+    /// True when `estimate_upstream_invalidation(manifest, changed_source).total()` is non-zero (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

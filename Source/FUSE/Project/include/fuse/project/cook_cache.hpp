@@ -369,6 +369,7 @@ struct CookCacheInvalidationEstimate {
 /// Read-only store preflight — mirrors `store` structural guards (B7.9 deepen).
     return preflight_cook_cache_key(entry.content_hash, entry.upstream_hash);
 /// Structural + source-readability preflight for cache records — mirrors `CookCache::store` guards (B7.9 deepen).
+/// Read-only structural preflight for cache records — mirrors `store` guards (B7.9 deepen).
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -488,8 +489,8 @@ public:
     /// Deduplicated stale-upstream source count — one increment per matching source path (B7.9 deepen).
     [[nodiscard]] u32 count_unique_stale_upstream_hashes(
     /// Deduplicated stale-upstream source paths — mirrors `invalidate_stale_upstream_hashes` (B7.9 deepen).
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    [[nodiscard]] u32 count_unique_stale_upstream_sources(
+    /// Deduplicated stale-upstream source count — mirrors `probe_unique_stale_upstream_sources` (B7.9 deepen).
+    /// Deduplicated stale-upstream sources — one push per matching source path (B7.9 deepen).
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;
