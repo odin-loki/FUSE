@@ -1043,3 +1043,9 @@ bool pairBufferPrepareSlotsRejectsForReason(u32 slotCount, PairBufferPrepareSlot
 
 // --- deepen additive from deepen-b4-broadphase-guards-6421 ---
     if (preflightPairBufferCompaction(buffer).needsCompaction()) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-1618 ---
+    case PairBufferAcceptPairsRejectReason::AtCapacity:
+    return PairBufferAcceptPairsRejectReason::AtCapacity;
+PairBufferAcceptPairsPreflight preflightPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount) {
+    preflight.atCapacity = preflight.reason == PairBufferAcceptPairsRejectReason::AtCapacity;

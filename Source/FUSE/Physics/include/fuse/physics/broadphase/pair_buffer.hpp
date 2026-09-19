@@ -546,3 +546,6 @@ PairBufferPrepareSlotsRejectReason pairBufferPrepareSlotsRejectReason(u32 slotCo
 bool pairBufferPrepareSlotsRejectsForReason(u32 slotCount, PairBufferPrepareSlotsRejectReason expected);
     PairBufferPrepareSlotsRejectReason reason = PairBufferPrepareSlotsRejectReason::None;
     bool canPrepare() const { return reason == PairBufferPrepareSlotsRejectReason::None; }
+
+// --- deepen additive from deepen-b4-broadphase-guards-1618 ---
+PairBufferAcceptPairsPreflight preflightPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount);

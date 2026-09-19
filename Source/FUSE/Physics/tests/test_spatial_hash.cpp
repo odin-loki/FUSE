@@ -3352,3 +3352,32 @@ void testMergePairsIntoBufferRejectsForReasonGuards() {
                    pairs, buffer, fuse::physics::broadphase::MergePairsIntoBufferRejectReason::None),
 void testBroadphaseDedupeAndClampPreflightIntegration() {
     testBroadphaseDedupeAndClampPreflightIntegration();
+
+// --- deepen additive from deepen-b4-broadphase-guards-1618 ---
+                 fuse::physics::broadphase::pairBufferAcceptPairsRejectReason(buffer, 3u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferAcceptPairsRejectReason::AtCapacity),
+                               fuse::physics::broadphase::PairBufferAcceptPairsRejectReason::AtCapacity),
+                 fuse::physics::broadphase::pairBufferAcceptPairsRejectReason(buffer, 1u)),
+    const fuse::physics::broadphase::PairBufferAcceptPairsPreflight preflight =
+        fuse::physics::broadphase::preflightPairBufferAcceptPairs(buffer, 1u);
+void testCellSpanRejectReasonAndPreflightGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellSpanRejectReason(validRange, 8u)),
+                   validRange, 2u, fuse::physics::broadphase::CellSpanRejectReason::ExceedsSpanLimit),
+                               fuse::physics::broadphase::CellSpanRejectReason::ExceedsSpanLimit),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellSpanRejectReason(inverted, 4u)),
+        fuse::physics::broadphase::preflightCellSpan2D(planeRange, 2u);
+    expectTrue(!planePreflight.canClamp(), "2D span preflight rejects over-limit range");
+                   planeRange, 2u, fuse::physics::broadphase::CellSpanRejectReason::ExceedsSpanLimit),
+void testRefineBroadphasePreflightRejectsForReasonGuards() {
+    expectTrue(fuse::physics::broadphase::refineBroadphasePreflightRejectsForReason(
+void testDedupeBroadphasePreflightRejectsForReasonGuards() {
+    expectTrue(fuse::physics::broadphase::dedupeBroadphasePreflightRejectsForReason(
+                   buffer, fuse::physics::broadphase::DedupeBroadphaseRejectReason::SinglePair),
+                   buffer, fuse::physics::broadphase::DedupeBroadphaseRejectReason::None),
+void testMergeBroadphasePreflightRejectsForReasonGuards() {
+    expectTrue(fuse::physics::broadphase::mergeBroadphasePreflightRejectsForReason(
+                   bodies, shapes, fuse::physics::broadphase::BroadphaseMergeRejectReason::None),
+    testCellSpanRejectReasonAndPreflightGuards();
+    testRefineBroadphasePreflightRejectsForReasonGuards();
+    testDedupeBroadphasePreflightRejectsForReasonGuards();
+    testMergeBroadphasePreflightRejectsForReasonGuards();

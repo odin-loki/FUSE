@@ -1280,3 +1280,12 @@ BroadphaseCellPairPreflight preflightBroadphaseCellPairGeneration(u32 totalCellS
     preflight.zeroCellSlots = preflight.reason == BroadphaseCellPairRejectReason::ZeroCellSlots;
     return !preflightBroadphaseCellPairGeneration(totalCellSlots).canDispatch();
     return preflightBroadphaseCellPairGeneration(totalCellSlots).canDispatch();
+
+// --- deepen additive from deepen-b4-broadphase-guards-1618 ---
+    case CellSpanRejectReason::ExceedsSpanLimit:
+bool refineBroadphasePreflightRejectsForReason(
+    return preflightRefineBroadphase(bodies, shapes, buffer).reason == expected;
+bool dedupeBroadphasePreflightRejectsForReason(
+    return preflightDedupeBroadphase(buffer).reason == expected;
+bool mergeBroadphasePreflightRejectsForReason(
+    return preflightBroadphaseMerge(bodies, shapes).reason == expected;

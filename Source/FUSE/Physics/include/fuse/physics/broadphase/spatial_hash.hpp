@@ -1371,3 +1371,14 @@ FUSE_PHYSICS_INLINE BroadphasePairSlotPreflight preflightBroadphasePairSlots(u32
     return preflightCellSpanClamp(range, maxSpanPerAxis).withinSpanLimit();
     bool canDispatch() const { return reason == BroadphaseCellPairRejectReason::None; }
 BroadphaseCellPairPreflight preflightBroadphaseCellPairGeneration(u32 totalCellSlots);
+
+// --- deepen additive from deepen-b4-broadphase-guards-1618 ---
+        return CellSpanRejectReason::ExceedsSpanLimit;
+    preflight.exceedsSpanLimit = preflight.reason == CellSpanRejectReason::ExceedsSpanLimit;
+    return !preflightCellSpan(range, maxSpanPerAxis).canClamp();
+    const CellSpanPreflight preflight = preflightCellSpan2D(range, maxSpanPerAxis);
+    return preflightCellSpan(range, maxSpanPerAxis).canClamp();
+    return preflightCellSpan2D(range, maxSpanPerAxis).canClamp();
+bool refineBroadphasePreflightRejectsForReason(
+bool dedupeBroadphasePreflightRejectsForReason(
+bool mergeBroadphasePreflightRejectsForReason(
