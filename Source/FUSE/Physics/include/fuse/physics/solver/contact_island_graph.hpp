@@ -203,3 +203,6 @@ ContactIslandGraphBuildPreflight preflight_contact_island_graph_build(
 // --- deepen additive from deepen-pbd-island-pipeline-guards-6b7f ---
     IslandGraphBuildRejectReason reason = IslandGraphBuildRejectReason::None;
     bool can_build() const { return !skipped && reason == IslandGraphBuildRejectReason::None; }
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-a31f ---
+    bool can_build() const { return reason == IslandGraphBuildRejectReason::None; }

@@ -5203,3 +5203,42 @@ void testIslandWarmStartRejectReasonGuards() {
 void testDispatchSolveIslandJobGuarded() {
     expectTrue(sleepingResult.reason == IslandDispatchRejectReason::AllSleeping,
     testIslandWarmStartRejectReasonGuards();
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-a31f ---
+             static_cast<u32>(IslandGraphBuildRejectReason::OutOfRangeContactBody),
+                   4, contacts, constraints, IslandGraphBuildRejectReason::OutOfRangeContactBody),
+             static_cast<u32>(IslandGraphBuildRejectReason::OutOfRangeDistanceBody),
+             static_cast<u32>(IslandGraphBuildRejectReason::EmptyInput),
+             static_cast<u32>(IslandGraphBuildRejectReason::None),
+void testIslandGraphBuildRejectReasonNames() {
+    expectTrue(std::strcmp(island_graph_build_reject_reason_name(IslandGraphBuildRejectReason::EmptyInput),
+             static_cast<u32>(IslandDispatchRejectReason::NoDispatchableIslands),
+             static_cast<u32>(IslandDispatchRejectReason::None),
+             static_cast<u32>(IslandDispatchRejectReason::InvalidDt),
+    expectEq(static_cast<u32>(invalidPreflight.reason),
+             static_cast<u32>(IslandSolveJobRejectReason::EmptyJob),
+             static_cast<u32>(IslandSolveJobRejectReason::InvalidDt),
+             static_cast<u32>(IslandSolveJobRejectReason::None),
+    expectTrue(island_solve_job_rejects_for_reason(job, dt, IslandSolveJobRejectReason::None),
+             static_cast<u32>(IslandConstraintRefsRejectReason::None),
+             static_cast<u32>(IslandConstraintRefsRejectReason::NoInRangeRefs),
+             static_cast<u32>(IslandConstraintSolveRejectReason::NoMovableBodies),
+                   island, bodies, contacts, {}, IslandConstraintSolveRejectReason::NoMovableBodies),
+             static_cast<u32>(IslandConstraintSolveRejectReason::None),
+             static_cast<u32>(IslandSleepRejectReason::None),
+             static_cast<u32>(IslandSleepRejectReason::AllSleeping),
+             static_cast<u32>(IslandSleepRejectReason::OutOfRangeIndex),
+             static_cast<u32>(IslandWakeRejectReason::None),
+             static_cast<u32>(IslandWakeRejectReason::NoWakeTarget),
+             static_cast<u32>(IslandSleepGraphRejectReason::None),
+             static_cast<u32>(IslandWakeGraphRejectReason::None),
+             static_cast<u32>(IslandSleepGraphRejectReason::AllIslandsSleeping),
+             static_cast<u32>(IslandWakeGraphRejectReason::NoWakeableIslands),
+    const IslandSleepPreflight sleepPreflight = preflight_island_sleep(graph.island(mixedIsland), bodies);
+    expectEq(static_cast<u32>(sleepPreflight.reason),
+    expectEq(static_cast<u32>(wakeGraphPreflight.reason),
+void testIslandRejectReasonNames() {
+    expectTrue(std::strcmp(island_solve_job_reject_reason_name(IslandSolveJobRejectReason::EmptyJob),
+    expectTrue(std::strcmp(island_sleep_reject_reason_name(IslandSleepRejectReason::AllSleeping),
+    testIslandGraphBuildRejectReasonNames();
+    testIslandRejectReasonNames();

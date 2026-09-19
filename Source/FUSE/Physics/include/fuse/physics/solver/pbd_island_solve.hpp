@@ -1781,3 +1781,13 @@ IslandWarmStartRejectReason islandWarmStartRejectReason(
         return reason == IslandConstraintSolveRejectReason::None && !skipped && refs.can_solve() &&
     bool can_dispatch() const { return reason == IslandDispatchRejectReason::None && !skipped; }
 IslandDispatchRejectReason islandDispatchRejectReason(const IslandSolveJob& job, f32 dt);
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-a31f ---
+enum class IslandConstraintRefsRejectReason : u8 {
+const char* island_constraint_refs_reject_reason_name(IslandConstraintRefsRejectReason reason);
+IslandConstraintRefsRejectReason island_constraint_refs_reject_reason(
+    IslandConstraintRefsRejectReason expected);
+    IslandConstraintRefsRejectReason reason = IslandConstraintRefsRejectReason::None;
+    bool can_solve() const { return reason == IslandConstraintRefsRejectReason::None; }
+    bool can_build() const { return reason == IslandGraphBuildRejectReason::None; }
+    bool should_wake_sleepers() const { return reason == IslandWakeRejectReason::None; }

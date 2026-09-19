@@ -2995,3 +2995,24 @@ IslandWarmStartRejectReason islandWarmStartRejectReason(
         return IslandWarmStartRejectReason::NoImpulses;
                                      IslandWarmStartRejectReason expected) {
     return islandWarmStartRejectReason(island, priorDistanceLambdas, priorContactLambdas) == expected;
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-a31f ---
+const char* island_constraint_refs_reject_reason_name(IslandConstraintRefsRejectReason reason) {
+    case IslandConstraintRefsRejectReason::None:
+    case IslandConstraintRefsRejectReason::EmptyIsland:
+    case IslandConstraintRefsRejectReason::NoInRangeRefs:
+IslandConstraintRefsRejectReason island_constraint_refs_reject_reason(
+        return IslandConstraintRefsRejectReason::EmptyIsland;
+        return IslandConstraintRefsRejectReason::NoInRangeRefs;
+    return IslandConstraintRefsRejectReason::None;
+    IslandConstraintRefsRejectReason expected) {
+    const IslandConstraintRefsRejectReason refsReason =
+    if (refsReason == IslandConstraintRefsRejectReason::EmptyIsland) {
+    if (refsReason == IslandConstraintRefsRejectReason::NoInRangeRefs) {
+    preflight.invalidDt = preflight.reason == IslandSolveJobRejectReason::InvalidDt;
+    preflight.skipped = preflight.reason == IslandSolveJobRejectReason::EmptyJob;
+    preflight.skipped = preflight.reason == IslandConstraintRefsRejectReason::EmptyIsland;
+    preflight.skipped = preflight.reason == IslandDispatchRejectReason::NoDispatchableIslands;
+    preflight.hasMixedSleepState = preflight.reason == IslandWakeRejectReason::None;
+    preflight.skipped = preflight.reason == IslandSleepGraphRejectReason::AllIslandsSleeping;
+    preflight.skipped = preflight.reason == IslandWakeGraphRejectReason::NoWakeableIslands;
