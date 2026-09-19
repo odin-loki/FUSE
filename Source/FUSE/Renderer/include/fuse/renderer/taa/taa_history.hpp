@@ -24,6 +24,8 @@ public:
     u32 warmupFramesRemaining() const;
     /// True when history is ready, warmed, and generation matches for reuse (B5.9 deepen).
     bool reuseReady(u32 observedGeneration) const;
+    /// Early-out when temporal reuse should be skipped for the observed epoch (B5.9 deepen).
+    bool shouldSkipReuse(u32 observedGeneration) const;
     u32 accumulatedFrames() const { return m_validity.accumulatedFrames; }
     u32 invalidateGeneration() const { return m_validity.invalidateGeneration; }
     /// True when a consumer's observed generation differs from the current history epoch.
