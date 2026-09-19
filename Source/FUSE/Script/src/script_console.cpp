@@ -68,9 +68,31 @@ bool shouldRecordHistory(const std::string& command, const std::string& /*args*/
 
 bool hasNonWhitespaceArgs(const char* args) {
     return args != nullptr && trim(args).empty() == false;
-}
+bool isMetaCommandName(const std::string& command) {
+    return command == "help" || command == "list" || command == "describe" || command == "complete" ||
+           command == "suggest" || command == "resolve" || command == "repeat" || command == "history";
 
 } // namespace
+
+bool ScriptConsole::is_meta_command(const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    return isMetaCommandName(name);
+}
+
+bool ScriptConsole::would_record_history(const char* line) const {
+    if (line == nullptr) {
+        return false;
+    }
+
+    std::string command;
+    std::string args;
+    if (!splitCommandLine(line, command, args)) {
+        return false;
+    }
+
+    return !isMetaCommandName(command);
+}
 
 bool ScriptConsole::is_meta_command(const char* name) {
     if (name == nullptr || name[0] == '\0') {
@@ -202,9 +224,10 @@ ScriptConsoleCommandResult ScriptConsole::executeLine_(const char* line, bool re
 
     if (result.ok()) {
         if (!is_meta_command(command.c_str())) {
+        if (!isMetaCommandName(command)) {
             m_lastExecutedLine = trimmed_line;
         }
-        if (record_history && shouldRecordHistory(command, args)) {
+        if (record_history && !isMetaCommandName(command)) {
             m_history.push(line);
             resetHistoryNavigation();
         }
@@ -226,7 +249,7 @@ void ScriptConsole::registerBuiltIns_() {
                                               "no command to repeat"};
         }
 
-        return console.executeLine_(console.m_lastExecutedLine.c_str(), true);
+        return console.executeLine_(console.m_lastExecutedLine.c_str(), false);
     });
 
     m_commands.register_built_in("help", [](ScriptConsole& console, const char* /*args*/) {
@@ -276,6 +299,7 @@ void ScriptConsole::registerBuiltIns_() {
     m_commands.register_built_in("resolve", [](ScriptConsole& console, const char* args) {
         if (!hasNonWhitespaceArgs(args)) {
         const std::string partial = trim(args != nullptr ? args : "");
+        const std::string partial = trim(args != nullptr ? std::string(args) : std::string());
         if (partial.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
                                               "resolve requires a partial command name"};

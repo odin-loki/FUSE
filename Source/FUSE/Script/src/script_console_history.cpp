@@ -170,6 +170,11 @@ bool ScriptConsoleHistoryBuffer::is_at_navigation_end() const {
 bool ScriptConsoleHistoryBuffer::is_navigating() const {
 }
 
+    if (m_size == 0) {
+        return true;
+    return m_navigationCursor >= static_cast<s32>(m_size);
+}
+
 u32 ScriptConsoleHistoryBuffer::ringIndex_(u32 offset) const {
     return (m_start + offset) % m_capacity;
 }
