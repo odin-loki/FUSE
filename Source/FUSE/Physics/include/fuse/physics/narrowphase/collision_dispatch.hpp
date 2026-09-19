@@ -727,4 +727,12 @@ inline bool can_skip_narrowphase_into_buffer(
         buffer.preparePairSlots(static_cast<u32>(pairs.size()));
         buffer.compactAndClampIfNeeded();
 
+
+inline NarrowphaseIntoBufferPreflight preflight_run_narrowphase_into_buffer(
+
+/// Returns true when narrowphase-into-buffer should be skipped (B4.5 deepen pass).
+    return preflight_run_narrowphase_into_buffer(pairs, bodies, shapes).can_skip();
+
+/// Returns true when narrowphase-into-buffer may proceed (B4.5 deepen pass).
+
 } // namespace fuse::physics::narrowphase

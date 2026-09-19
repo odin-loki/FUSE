@@ -1700,6 +1700,11 @@ inline bool prune_contact_manifold_if_needed(
 
 /// Finalize only when preflight allows; alias of `finalize_contact_manifold_with_preflight` (B4.5 deepen pass).
 inline bool finalize_contact_manifold_if_needed(
+/// True when `invalidateIfEmpty` would be a no-op (B4.5 deepen pass).
+inline bool can_skip_invalidate_if_empty(const ContactManifold& manifold) {
+    return manifold.empty() && !manifold.valid;
+
+/// Finalize via preflight; no-op when skipped (B4.5 deepen pass).
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
