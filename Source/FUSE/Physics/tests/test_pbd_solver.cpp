@@ -5674,3 +5674,7 @@ void testIslandPipelineDispatchGuarded() {
     expectTrue(reason == IslandDispatchRejectReason::InvalidDt,
     expectTrue(preflight_island_dispatch_ready(graph, dt) == !should_skip_island_dispatch(graph, dt),
                "preflight_island_dispatch_ready mirrors should_skip_island_dispatch");
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-8917 ---
+    expectTrue(!should_skip_island_solve_pipeline(4, contacts, constraints, graph, bodies, dt),
+               "should_skip_island_solve_pipeline false for mixed graph");

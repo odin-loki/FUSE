@@ -1926,3 +1926,7 @@ bool should_skip_island_pipeline_dispatch(u32 bodyCount,
 IslandSolveRejectReason classify_island_solve_reject(const IslandConstraintSolvePreflight& preflight);
 IslandGraphBuildRejectReason classify_island_graph_build_reject(const IslandBuildPreflight& preflight);
 bool try_preflight_island_pipeline_dispatch(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-8917 ---
+    IslandPipelineDispatchRejectReason rejectReason = IslandPipelineDispatchRejectReason::None;
+    bool can_run() const { return !skipped && rejectReason == IslandPipelineDispatchRejectReason::None; }

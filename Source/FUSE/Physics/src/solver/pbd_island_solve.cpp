@@ -3263,3 +3263,6 @@ IslandGraphBuildRejectReason classify_island_graph_build_reject(const IslandBuil
         return IslandGraphBuildRejectReason::UnsafeContactRefs;
         return IslandGraphBuildRejectReason::UnsafeDistanceRefs;
 bool try_preflight_island_pipeline_dispatch(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-8917 ---
+                        preflight.rejectReason != IslandPipelineDispatchRejectReason::None;
