@@ -4,11 +4,20 @@
 
 namespace fuse::physics::narrowphase {
 
+bool can_skip_narrowphase_dispatch(const std::vector<broadphase::CandidatePair>& pairs) {
+    return pairs.empty();
+}
+
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     ContactBufferSoA& buffer) {
+    if (can_skip_narrowphase_dispatch(pairs)) {
+        buffer.clear();
+        return;
+    }
+
     const u32 pairCount = static_cast<u32>(pairs.size());
     buffer.preparePairSlots(pairCount);
 

@@ -200,4 +200,7 @@ std::vector<ContactManifold> runNarrowphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// True when narrowphase pair dispatch can be skipped entirely (empty pair list) (B4.6 deepen pass).
+bool can_skip_narrowphase_dispatch(const std::vector<broadphase::CandidatePair>& pairs);
+
 } // namespace fuse::physics::narrowphase
