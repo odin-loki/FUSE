@@ -36,6 +36,8 @@ bool is_clear_blocker_factor(float factor);
 bool is_fully_blocked_blocker_factor(float factor);
 /// True when the blocker list is null or empty — skips segment-vs-AABB evaluation.
 bool has_empty_occlusion_blockers(const AABB* blockers, u32 blocker_count);
+/// True when blocker list is null or empty — skips segment-vs-AABB evaluation.
+bool should_skip_occlusion_blockers(const AABB* blockers, u32 blocker_count);
 
 /// Co-located listener/source positions skip segment-vs-AABB blocker evaluation.
 bool should_skip_blocker_evaluation(const Vec3& listener, const Vec3& source);

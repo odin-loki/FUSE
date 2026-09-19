@@ -33,6 +33,7 @@ bool is_clear_blocker_factor(float factor) {
 bool is_fully_blocked_blocker_factor(float factor) {
     return clamp_blocker_factor(factor) >= 1.f;
 bool has_empty_occlusion_blockers(const AABB* blockers, u32 blocker_count) {
+bool should_skip_occlusion_blockers(const AABB* blockers, u32 blocker_count) {
 }
 
 bool should_skip_blocker_evaluation(const Vec3& listener, const Vec3& source) {
@@ -272,6 +273,7 @@ float compute_effective_visibility(const Vec3& listener, const Vec3& source,
     const float visibility = clamp_occlusion_visibility(source_occlusion);
     if (should_skip_occlusion_blocker_raycast(source_occlusion, blockers, blocker_count)) {
     if (has_empty_occlusion_blockers(blockers, blocker_count)
+    if (should_skip_occlusion_blockers(blockers, blocker_count)
         || is_fully_occluded_occlusion(visibility)) {
         return is_fully_occluded_occlusion(visibility) ? 0.f : visibility;
     }
@@ -296,6 +298,7 @@ OcclusionAttenuation evaluate_occlusion_from_blockers(const Vec3& listener, cons
                                                       u32 blocker_count,
                                                       const OcclusionParams& params) {
     if (should_skip_occlusion_blocker_attenuation(listener, source, blockers, blocker_count)) {
+    if (should_skip_occlusion_blockers(blockers, blocker_count)) {
         return evaluate_occlusion_attenuation(source_occlusion, params);
     }
     const float visibility =

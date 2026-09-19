@@ -4,6 +4,12 @@
 
 namespace fuse::audio {
 
+namespace {
+
+constexpr float kWetMixEpsilon = 1e-6f;
+
+} // namespace
+
 bool has_reverb_zones(const ReverbZoneParams* zones, u32 zone_count) {
     return zones != nullptr && zone_count > 0;
 }
@@ -131,6 +137,15 @@ float compute_effective_wet_mix(const ReverbZoneBlend& blend) {
     return clamp_wet_mix(blend.wet_dry) * clamp_wet_mix(blend.send_level);
 }
 
+bool is_near_zero_wet_mix(float wet_mix) {
+    return clamp_wet_mix(wet_mix) <= kWetMixEpsilon;
+}
+
+bool should_skip_reverb_wet_mix(const ReverbZoneBlend& blend) {
+    return !has_active_reverb_blend(blend)
+        || is_near_zero_wet_mix(compute_effective_wet_mix(blend));
+}
+
 bool is_dry_reverb_blend(const ReverbZoneBlend& blend) {
     return !has_active_reverb_blend(blend) || is_near_zero_wet_mix(compute_effective_wet_mix(blend));
     return should_skip_reverb_wet_mix(blend);
@@ -145,7 +160,6 @@ bool is_near_zero_wet_mix(float wet_mix) {
     constexpr float kDryEpsilon = 1e-7f;
     return clamp_wet_mix(wet_mix) <= kDryEpsilon;
     return clamp_wet_mix(wet_mix) <= kWetMixNearZeroEpsilon;
-}
 
 bool should_skip_reverb_wet_mix(const ReverbZoneBlend& blend) {
     return !should_apply_reverb_wet_mix(blend);
@@ -154,21 +168,25 @@ bool should_skip_reverb_wet_mix(const ReverbZoneBlend& blend) {
 
 bool is_unity_wet_mix(float wet_mix) {
     return clamp_wet_mix(wet_mix) >= 1.f - kWetMixDryEpsilon;
-}
 
 bool should_skip_reverb_wet_mix(const Vec3& listener, const ReverbZoneParams* zones,
                                 u32 zone_count) {
     return should_skip_reverb_wet_mix(blend_reverb_zones(listener, zones, zone_count));
-}
 
 bool should_skip_reverb_wet_convolution(const ReverbZoneBlend& blend) {
-    return !should_apply_reverb_wet_mix(blend);
+    return !should_skip_reverb_wet_mix(blend);
+
+bool should_skip_reverb_zone_blend(const Vec3& listener, const ReverbZoneParams* zones,
+    if (!has_reverb_zones(zones, zone_count)) {
+        return true;
+    return count_listener_reverb_zones(listener, zones, zone_count) == 0;
 }
 
 float compute_effective_wet_mix(const Vec3& listener, const ReverbZoneParams* zones,
                                 u32 zone_count) {
     if (should_skip_listener_reverb_zones(listener, zones, zone_count)) {
     if (should_skip_reverb_zone_blend(zones, zone_count)) {
+    if (should_skip_reverb_zone_blend(listener, zones, zone_count)) {
         return 0.f;
     }
     return compute_effective_wet_mix(blend_reverb_zones(listener, zones, zone_count));
@@ -202,6 +220,12 @@ bool should_skip_reverb_sample_blend(const Vec3& listener, const ReverbZoneParam
 
 float blend_reverb_sample(float dry, float wet, const Vec3& listener, const ReverbZoneParams* zones,
     if (should_skip_reverb_sample_blend(listener, zones, zone_count)) {
+                          u32 zone_count) {
+    if (should_skip_reverb_zone_blend(listener, zones, zone_count)) {
+        return dry;
+    }
+    const ReverbZoneBlend blend = blend_reverb_zones(listener, zones, zone_count);
+    if (should_skip_reverb_wet_mix(blend)) {
         return dry;
 float blend_reverb_sample(float dry, float wet, const ReverbZoneBlend& blend) {
     if (should_skip_reverb_wet_mix(blend)) {

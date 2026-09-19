@@ -113,6 +113,12 @@ bool is_unity_wet_mix(float wet_mix);
 /// One-shot wet-mix skip from listener position and zone list (empty list → skip).
 bool should_skip_reverb_wet_mix(const Vec3& listener, const ReverbZoneParams* zones,
 bool should_skip_reverb_wet_convolution(const ReverbZoneBlend& blend);
+/// True when reverb wet convolution should be skipped for this blend.
+
+/// True when wet mix is at or below the dry-path epsilon.
+
+/// True when zone blending yields no active zones (empty list or listener outside all zones).
+bool should_skip_reverb_zone_blend(const Vec3& listener, const ReverbZoneParams* zones,
 
 /// Effective wet mix scalar [0, 1] from a zone blend result.
 float compute_effective_wet_mix(const ReverbZoneBlend& blend);
