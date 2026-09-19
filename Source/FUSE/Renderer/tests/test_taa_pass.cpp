@@ -2982,3 +2982,22 @@ void testJitterSyncPreflightGuards() {
     expectTrue(pass->preflightResolveBlend(resolveDesc, &snapshot), "pass preflight passes after warmup");
     testHistoryReuseRejectReasons();
     testJitterSyncPreflightGuards();
+
+// --- deepen additive from deepen-b59-taa-guards-f9b0 ---
+void testHistoryWarmupGuardHelpers() {
+    const fuse::renderer::TaaResolveBlendPreflight emptyPreflight =
+        fuse::renderer::preflightTaaResolveBlend(desc, emptyHistory);
+    expectTrue(!fuse::renderer::taaResolveBlendPreflightValid(emptyPreflight),
+    const fuse::renderer::TaaResolveBlendPreflight warmupPreflight =
+        fuse::renderer::preflightTaaResolveBlend(desc, history);
+    expectTrue(fuse::renderer::taaResolveBlendPreflightValid(warmupPreflight),
+    expectTrue(warmupPreflight.first_frame, "warmup preflight marks first frame");
+    expectTrue(!warmupPreflight.history_reuse, "warmup preflight blocks history reuse");
+    expectNear(warmupPreflight.weights.current, 1.f, 1e-5f, "warmup preflight uses full current weight");
+    const fuse::renderer::TaaResolveBlendPreflight steadyPreflight =
+    expectTrue(steadyPreflight.history_reuse, "steady preflight allows history reuse");
+    expectTrue(!steadyPreflight.first_frame, "steady preflight is not first frame");
+    const fuse::renderer::TaaResolveBlendPreflight passPreflight = pass->preflightResolveBlend(desc);
+    expectTrue(fuse::renderer::taaResolveBlendPreflightValid(passPreflight),
+               "pass preflightResolveBlend is valid for warmed history");
+    expectTrue(passPreflight.history_reuse, "pass preflight allows history reuse");

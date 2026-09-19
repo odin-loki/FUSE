@@ -434,3 +434,8 @@ bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer
                               TaaResolveBlendPreflight* out) {
     TaaResolveBlendPreflight snapshot{};
     snapshot.resolve_would_pass = !taaResolveSkipReasonIsBlocking(snapshot.resolve_skip_reason);
+
+// --- deepen additive from deepen-b59-taa-guards-f9b0 ---
+TaaResolveBlendPreflight preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+bool taaResolveBlendPreflightValid(const TaaResolveBlendPreflight& preflight) {
+    const TaaResolveBlendPreflight preflight = preflightTaaResolveBlend(desc, history);
