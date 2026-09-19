@@ -119,6 +119,15 @@ bool isHitTestOutOfBounds(const GizmoHitTest& hit);
 /// True when viewport width/height are negative (B6.4 deepen pass).
 bool isHitTestDimensionsInvalid(const GizmoHitTest& hit);
 
+/// True when a scalar gizmo input is finite (B6.4 deepen pass — finite guard).
+bool isFiniteGizmoScalar(f32 value);
+
+/// True when ray origin and direction contain only finite values (B6.4 deepen pass — finite guard).
+bool isRayFinite(const GizmoRay& ray);
+
+/// True when screen coordinates and viewport dimensions are finite (B6.4 deepen pass — finite guard).
+bool isHitTestFinite(const GizmoHitTest& hit);
+
 /// Current drag lifecycle phase (B6.4 deepen pass).
 GizmoInteractionPhase interactionPhase(bool dragging);
 
@@ -138,13 +147,12 @@ bool isSnapStepValid(GizmoMode mode, const GizmoSnapSettings& settings);
 /// True when snap is enabled with a usable step for the active mode (B6.4 deepen pass).
 bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings);
 
-/// True when snap is enabled but the mode step is unusable (B6.4 deepen pass).
-bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings);
-
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
 struct PickPreflight {
     bool emptyRay = false;
     bool emptyHit = false;
+    bool nonFiniteRay = false;
+    bool nonFiniteHit = false;
     bool invalidPickConfig = false;
     bool invalidDimensions = false;
     bool outOfBounds = false;
@@ -153,8 +161,8 @@ struct PickPreflight {
     GizmoAxis axis = GizmoAxis::None;
 
     bool canPick() const {
-        return !emptyRay && !emptyHit && !invalidPickConfig && !invalidDimensions && !outOfBounds &&
-               !screenMiss && !pickMiss;
+        return !emptyRay && !emptyHit && !nonFiniteRay && !nonFiniteHit && !invalidPickConfig &&
+               !invalidDimensions && !outOfBounds && !screenMiss && !pickMiss;
     }
 };
 
@@ -174,6 +182,19 @@ struct SnapPreflight {
 
 SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings);
 
+/// Read-only snap-drag diagnostics — no mutation (B6.4 deepen pass — snap guard).
+struct SnapDragPreflight {
+    bool deltaNonFinite = false;
+    bool snapDisabled = false;
+    bool invalidStep = false;
+
+    bool canApply() const { return !deltaNonFinite && !snapDisabled && !invalidStep; }
+    /// Enabled snap with unusable step — drag delta still applies without rounding (B6.4 deepen pass).
+    bool isDegraded() const { return !deltaNonFinite && !snapDisabled && invalidStep; }
+};
+
+SnapDragPreflight preflightSnapDrag(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
+
 /// Guarded transform snap — returns false when snap cannot apply (B6.4 deepen follow-up).
 bool trySnapTransform(const GizmoTransform& transform, GizmoMode mode,
                       const GizmoSnapSettings& settings, GizmoTransform& out);
@@ -188,12 +209,15 @@ math::Vec3 snapScaleVec(const math::Vec3& scale, const GizmoSnapSettings& settin
 
 /// Non-mutating snap-drag predicate — same guards as `trySnapDragDelta` (B6.4 deepen follow-up).
 bool canSnapDragDelta(GizmoMode mode, const GizmoSnapSettings& settings);
+bool canSnapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
 
 /// Read-only begin-drag diagnostics — no mutation (B6.4 deepen pass).
 struct BeginDragPreflight {
     bool canBegin = false;
     bool emptyHit = false;
     bool emptyRay = false;
+    bool nonFiniteHit = false;
+    bool nonFiniteRay = false;
     bool invalidPickConfig = false;
     bool invalidDimensions = false;
     bool outOfBounds = false;
@@ -210,6 +234,7 @@ struct BeginDragPreflight {
 struct UpdateDragPreflight {
     bool notDragging = false;
     bool emptyHit = false;
+    bool nonFiniteHit = false;
     bool invalidDimensions = false;
     bool outOfBounds = false;
     bool invalidActiveAxis = false;
@@ -217,7 +242,8 @@ struct UpdateDragPreflight {
     bool snapDegraded = false;
 
     bool canUpdate() const {
-        return !notDragging && !emptyHit && !invalidDimensions && !outOfBounds && !invalidActiveAxis;
+        return !notDragging && !emptyHit && !nonFiniteHit && !invalidDimensions && !outOfBounds &&
+               !invalidActiveAxis;
     }
 };
 
@@ -251,6 +277,8 @@ struct PickInteractionPreflight {
 
     bool canPick() const { return pick.canPick(); }
     bool snapWillApply() const { return snap.canApply(); }
+    bool pickBlocked() const { return !canPick(); }
+    bool snapBlocked() const { return !snapWillApply(); }
 };
 
 PickInteractionPreflight preflightPickInteraction(const GizmoRay& ray, const GizmoTransform& transform,
@@ -281,9 +309,11 @@ BeginDragInteractionPreflight preflightBeginDragInteraction(const GizmoHitTest& 
 struct UpdateDragInteractionPreflight {
     UpdateDragPreflight drag{};
     SnapPreflight snap{};
+    SnapDragPreflight snapDrag{};
 
     bool canUpdate() const { return drag.canUpdate(); }
     bool snapWillApply() const { return snap.canApply(); }
+    bool snapDragWillApply() const { return snapDrag.canApply(); }
 };
 
 UpdateDragInteractionPreflight preflightUpdateDragInteraction(const GizmoHitTest& hit, bool dragging,
@@ -392,6 +422,8 @@ struct InteractionPreflight {
 
     bool canPick() const { return pickSnap.canPick(); }
     bool canApplySnap() const { return pickSnap.canSnap(); }
+    bool pickBlocked() const { return !canPick(); }
+    bool snapBlocked() const { return !canApplySnap(); }
     bool canBegin() const { return !dragging && begin.canBegin(); }
     bool canUpdate() const { return dragging && update.canUpdate(); }
     bool canEnd() const { return dragging && end.canEnd(); }
@@ -675,6 +707,7 @@ public:
     [[nodiscard]] PickInteractionPreflight preflightPickInteraction(
         const GizmoHitTest& hit) const;
     [[nodiscard]] SnapPreflight preflightSnap() const;
+    [[nodiscard]] SnapDragPreflight preflightSnapDrag(f32 delta) const;
     [[nodiscard]] bool canApplySnapNow() const;
     [[nodiscard]] bool trySnapTransform(const GizmoTransform& transform,
                                         GizmoTransform& out) const;
