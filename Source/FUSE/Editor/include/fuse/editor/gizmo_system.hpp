@@ -1244,3 +1244,12 @@ ModeChangePreflight preflightModeChange(GizmoMode current, GizmoMode next, bool 
 ModeChangePreflight preflightCycleMode(GizmoMode current, bool dragging);
     [[nodiscard]] ModeChangePreflight preflightModeChange(GizmoMode mode) const;
     [[nodiscard]] ModeChangePreflight preflightCycleMode() const;
+
+// --- deepen additive from deepen-gizmo-preflights-c18e ---
+struct DragLifecycleSnapPreflight {
+    SnapPreflight begin{};
+    SnapPreflight update{};
+    SnapPreflight end{};
+DragLifecycleSnapPreflight preflightDragLifecycleSnap(GizmoMode mode,
+bool canActOnInteraction(const InteractionPreflight& preflight, GizmoInteractionAction action);
+    [[nodiscard]] DragLifecycleSnapPreflight preflightDragLifecycleSnap() const;

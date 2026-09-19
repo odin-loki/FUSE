@@ -2892,3 +2892,10 @@ ModeChangePreflight GizmoSystem::preflightCycleMode() const {
     return fuse::editor::preflightCycleMode(m_mode, m_dragging);
     return preflightModeChange(mode).canChange();
     return preflightCycleMode().canChange();
+
+// --- deepen additive from deepen-gizmo-preflights-c18e ---
+bool canActOnInteraction(const InteractionPreflight& preflight, GizmoInteractionAction action) {
+DragLifecycleSnapPreflight preflightDragLifecycleSnap(GizmoMode mode,
+    DragLifecycleSnapPreflight preflight{};
+DragLifecycleSnapPreflight GizmoSystem::preflightDragLifecycleSnap() const {
+    return fuse::editor::preflightDragLifecycleSnap(m_mode, m_snap);

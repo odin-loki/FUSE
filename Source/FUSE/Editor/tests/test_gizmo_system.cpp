@@ -4089,3 +4089,13 @@ void testModeChangePreflightGuards() {
     expectTrue(gizmo.preflightCycleMode().wouldCancelDrag,
     testInteractionPreflightSnapRouting();
     testModeChangePreflightGuards();
+
+// --- deepen additive from deepen-gizmo-preflights-c18e ---
+    const fuse::editor::BeginDragPreflight nanBegin = fuse::editor::preflightBeginDrag(
+    const fuse::editor::UpdateDragPreflight nanUpdate = fuse::editor::preflightUpdateDrag(
+void testDragLifecycleSnapPreflight() {
+    const fuse::editor::DragLifecycleSnapPreflight validLifecycle =
+        fuse::editor::preflightDragLifecycleSnap(fuse::editor::GizmoMode::Translate, snap);
+    const fuse::editor::DragLifecycleSnapPreflight degradedLifecycle =
+    const fuse::editor::DragLifecycleSnapPreflight gizmoLifecycle = gizmo.preflightDragLifecycleSnap();
+    testDragLifecycleSnapPreflight();
