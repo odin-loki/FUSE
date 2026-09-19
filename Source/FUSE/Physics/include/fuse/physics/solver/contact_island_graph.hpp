@@ -235,6 +235,7 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
 
 
 /// Diagnose why island graph build would skip; vacuously succeeds when build may proceed (B4.4 deepen follow-up pass).
+
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
