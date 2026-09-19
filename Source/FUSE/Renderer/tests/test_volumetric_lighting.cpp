@@ -3613,3 +3613,11 @@ void testFroxelClassifyRejectAndPreflightReadyGuards() {
                "preflightFroxelPopulateReady rejects invalid camera");
                "preflightFroxelPopulateReady reports invalid_camera reject reason");
     testFroxelClassifyRejectAndPreflightReadyGuards();
+
+// --- deepen additive from deepen-b511-froxel-volumetrics-5ada ---
+               "preflightDensityLookup still succeeds for clampable OOB index");
+    expectTrue(fuse::renderer::froxel_util::classifyDensityLookupCoordReject(grid, desc, 3u, 1u, 2u) ==
+               "classifyDensityLookupCoordReject none for in-range coords");
+               "preflightFroxelTrilinearSample still succeeds for clampable weights");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelTrilinearSample(emptyGrid, desc, inBounds),
+               "preflightScreenDepthMapping returns mapped sample coords");

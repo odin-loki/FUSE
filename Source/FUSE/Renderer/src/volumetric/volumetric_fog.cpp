@@ -2278,3 +2278,6 @@ bool preflightDensityLookupReady(const FroxelDensityGrid& grid,
 bool preflightDensityLookupAtCoordReady(const FroxelDensityGrid& grid,
 bool preflightFroxelTrilinearSampleReady(const FroxelDensityGrid& grid,
 bool preflightFroxelPopulateReady(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-b511-froxel-volumetrics-5ada ---
+    if (reject == ScreenMappingRejectReason::None) {
