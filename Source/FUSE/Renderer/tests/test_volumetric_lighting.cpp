@@ -3998,3 +3998,10 @@ void testFroxelIsBlockingAndPreflightGuards() {
                "preflightSampleCoords mirrors canPreflightSampleCoords for in-bounds coords");
                "preflightDensityLookup mirrors canLookupAtIndex for accessible grid");
                "preflightFroxelPopulate mirrors canPopulateFromAnalyticFog for valid inputs");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-c8fa ---
+void testFroxelBlockingClassifyAndPreflightGuards() {
+    expectTrue(fuse::renderer::screenMappingRejectReasonIsBlocking(ScreenMappingRejectReason::DepthOutOfRange),
+    expectTrue(!fuse::renderer::densityLookupRejectReasonIsBlocking(DensityLookupRejectReason::None),
+               "preflightGridDensity rejects undersized grid");
+    testFroxelBlockingClassifyAndPreflightGuards();
