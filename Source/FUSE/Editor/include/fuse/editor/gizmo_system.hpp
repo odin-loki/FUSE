@@ -175,6 +175,8 @@ bool isHitTestFinite(const GizmoHitTest& hit);
 GizmoInteractionPhase interactionPhase(bool dragging);
 /// Screen coordinates outside the viewport rectangle (B6.4 deepen pass).
 bool isScreenHitOutOfBounds(const GizmoHitTest& hit);
+/// True when the viewport is valid and screen coordinates lie inside it (B6.4 deepen pass).
+bool isHitTestInBounds(const GizmoHitTest& hit);
 
 /// Convenience inverse of `isRayEmpty` / `isHitTestEmpty` (B6.4 deepen follow-up).
 bool isRayValid(const GizmoRay& ray);
@@ -536,6 +538,7 @@ struct UpdateDragPreflight {
     bool emptyHit = false;
     bool outOfBounds = false;
     bool screenOutOfBounds = false;
+    bool screenMiss = false;
     bool invalidActiveAxis = false;
     bool screenMiss = false;
     /// Snap is enabled but the mode step is unusable — update still applies (B6.4 deepen pass).
@@ -552,6 +555,7 @@ struct UpdateDragPreflight {
         return !notDragging && !emptyHit && !invalidActiveAxis && !outOfBounds;
         return !notDragging && !emptyHit && !outOfBounds && !invalidActiveAxis;
         return !notDragging && !emptyHit && !invalidActiveAxis && !screenMiss;
+        return !notDragging && !emptyHit && !outOfBounds && !screenMiss && !invalidActiveAxis;
     }
     bool canUpdate() const { return reason == UpdateDragRejectReason::None; }
 };
@@ -1637,6 +1641,8 @@ public:
     [[nodiscard]] f32 trySnapDragDelta(f32 delta) const;
     /// Combined pick / snap / drag interaction diagnostics (B6.4 deepen pass).
     [[nodiscard]] InteractionPreflight preflightInteraction(const GizmoRay& ray,
+    [[nodiscard]] bool canUpdateDrag(const GizmoHitTest& hit, GizmoMode mode,
+                                     const GizmoSnapSettings& settings) const;
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
@@ -1675,6 +1681,8 @@ public:
     [[nodiscard]] bool canUpdateDragInteraction(const GizmoHitTest& hit) const;
     [[nodiscard]] bool canEndDragInteraction() const;
     [[nodiscard]] bool canDragInteraction(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canEndDrag() const;
+    [[nodiscard]] bool canEndDrag(GizmoMode mode, const GizmoSnapSettings& settings) const;
     /// Guarded end-drag — returns false when preflight rejects (B6.4 deepen pass).
     bool tryEndDrag(GizmoResult& out);
     /// Guarded update-drag — returns false when preflight rejects the hit (B6.4 deepen follow-up).
