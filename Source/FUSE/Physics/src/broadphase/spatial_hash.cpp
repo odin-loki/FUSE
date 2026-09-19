@@ -1252,6 +1252,7 @@ void populateShapeCells(
         if (canSkipCellCapacityInsert(range, maxOccupancy)) {
         if (!shouldRunCellCapacityInsert(range, maxOccupancy)) {
         if (!preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert()) {
+        if (canSkipShapeCellInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
             return;
         return ShapeCellInsertRejectReason::None;
 
@@ -1421,6 +1422,7 @@ void populateShapeCells(
     if (canSkipCellCapacityInsert(range, maxOccupancy)) {
     if (!shouldRunCellCapacityInsert(range, maxOccupancy)) {
     if (!preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert()) {
+    if (canSkipShapeCellInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
         return;
     if (isEmptyCellRange(range)) {
     if (params.maxCellOccupancyPerShape > 0u) {
@@ -3490,6 +3492,31 @@ bool canSkipCellPairGeneration(u32 occupantCount, u32 uniqueOccupantCount) {
 
 bool shouldRunCellPairGeneration(u32 occupantCount, u32 uniqueOccupantCount) {
     return preflightCellPairGeneration(occupantCount, uniqueOccupantCount).canGenerate();
+
+    case CellPairGenRejectReason::SingletonOccupant:
+        return "SingletonOccupant";
+
+const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason) {
+    case ShapeCellInsertRejectReason::None:
+    case ShapeCellInsertRejectReason::OutOfRangeBody:
+    case ShapeCellInsertRejectReason::EmptyRange:
+    case ShapeCellInsertRejectReason::ExceedsOccupancy:
+        return "ExceedsOccupancy";
+
+        return ShapeCellInsertRejectReason::EmptyRange;
+    if (exceedsCellOccupancyBudget(range, maxOccupancy)) {
+        return ShapeCellInsertRejectReason::ExceedsOccupancy;
+
+
+
+
+    preflight.emptyRange = preflight.reason == ShapeCellInsertRejectReason::EmptyRange;
+    preflight.exceedsOccupancy = preflight.reason == ShapeCellInsertRejectReason::ExceedsOccupancy;
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+
+
+
+
 
 }
 
