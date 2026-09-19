@@ -47,8 +47,31 @@ struct ContactBufferSoA {
     ContactManifold manifoldAt(u32 index) const;
     std::vector<ContactManifold> toVector() const;
 
+    /// Returns true when every active slot has a valid orthonormal friction basis (B4.6 deepen pass).
+    bool canSkipFrictionRebuild(f32 epsilon = 1e-4f) const;
+
+    /// Rebuild tangent SoA columns only for slots missing or stale bases (B4.6 deepen pass).
+    void rebuildFrictionTangentBasesIfNeeded(f32 epsilon = 1e-4f);
+
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
 };
+
+/// Const preflight for buffer friction-basis rebuild (B4.6 deepen pass).
+struct ContactBufferFrictionPreflight {
+    u32 activeCount = 0u;
+    u32 needsRebuildCount = 0u;
+    bool skipped = false;
+
+    bool can_skip_rebuild() const { return skipped || needsRebuildCount == 0u; }
+};
+
+/// Populate buffer friction preflight without mutating tangent columns (B4.6 deepen pass).
+ContactBufferFrictionPreflight preflight_buffer_friction_rebuild(
+    const ContactBufferSoA& buffer,
+    f32 epsilon = 1e-4f);
+
+/// Returns true when buffer friction rebuild should be skipped (B4.6 deepen pass).
+bool should_skip_buffer_friction_rebuild(const ContactBufferSoA& buffer, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
