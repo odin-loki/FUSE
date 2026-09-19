@@ -1891,6 +1891,170 @@ void testCanInteractionPredicates() {
     gizmo.endDrag();
 }
 
+void testHitTestPreflightGuards() {
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::HitTestPreflight validPreflight = fuse::editor::preflightHitTest(hit);
+    expectTrue(validPreflight.canUse(), "hit-test preflight accepts valid viewport hit");
+    expectTrue(fuse::editor::canUseHitTest(hit), "canUseHitTest accepts valid viewport hit");
+    expectTrue(!fuse::editor::isHitTestRejected(hit), "valid hit is not rejected");
+
+    hit.viewportWidth = 0.f;
+    const fuse::editor::HitTestPreflight emptyPreflight = fuse::editor::preflightHitTest(hit);
+    expectTrue(emptyPreflight.emptyHit, "hit-test preflight marks empty viewport");
+    expectTrue(!emptyPreflight.canUse(), "hit-test preflight rejects empty viewport");
+    expectTrue(fuse::editor::isHitTestRejected(hit), "empty viewport is rejected");
+
+    hit.viewportWidth = -100.f;
+    hit.viewportHeight = 100.f;
+    const fuse::editor::HitTestPreflight invalidPreflight = fuse::editor::preflightHitTest(hit);
+    expectTrue(invalidPreflight.invalidDimensions,
+               "hit-test preflight marks invalid viewport dimensions");
+    expectTrue(!invalidPreflight.canUse(), "hit-test preflight rejects invalid dimensions");
+
+    hit.viewportWidth = 100.f;
+    hit.screenX = -5.f;
+    const fuse::editor::HitTestPreflight outOfBoundsPreflight = fuse::editor::preflightHitTest(hit);
+    expectTrue(outOfBoundsPreflight.outOfBounds, "hit-test preflight marks out-of-bounds hit");
+    expectTrue(!outOfBoundsPreflight.canUse(), "hit-test preflight rejects out-of-bounds hit");
+
+    fuse::editor::GizmoSystem gizmo;
+    hit.screenX = 10.f;
+    expectTrue(gizmo.preflightHitTest(hit).canUse(), "gizmo hit-test preflight accepts valid hit");
+    expectTrue(gizmo.canUseHitTest(hit), "gizmo canUseHitTest accepts valid hit");
+}
+
+void testRayPreflightGuards() {
+    fuse::editor::GizmoRay emptyRay{};
+    const fuse::editor::RayPreflight emptyPreflight =
+        fuse::editor::preflightRay(emptyRay, fuse::editor::GizmoSystem::kAxisLength,
+                                  fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(emptyPreflight.emptyRay, "ray preflight marks empty ray");
+    expectTrue(!emptyPreflight.canUse(), "ray preflight rejects empty ray");
+    expectTrue(fuse::editor::isRayRejected(emptyRay, fuse::editor::GizmoSystem::kAxisLength,
+                                           fuse::editor::GizmoSystem::kPickRadius),
+               "empty ray is rejected");
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    const fuse::editor::RayPreflight validPreflight =
+        fuse::editor::preflightRay(xRay, fuse::editor::GizmoSystem::kAxisLength,
+                                   fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(validPreflight.canUse(), "ray preflight accepts valid ray");
+    expectTrue(fuse::editor::canUseRay(xRay, fuse::editor::GizmoSystem::kAxisLength,
+                                       fuse::editor::GizmoSystem::kPickRadius),
+               "canUseRay accepts valid ray");
+
+    const fuse::editor::RayPreflight invalidConfigPreflight =
+        fuse::editor::preflightRay(xRay, 0.f, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(invalidConfigPreflight.invalidPickConfig,
+               "ray preflight marks invalid pick config");
+    expectTrue(!invalidConfigPreflight.canUse(), "ray preflight rejects invalid pick config");
+
+    fuse::editor::GizmoSystem gizmo;
+    expectTrue(gizmo.preflightRay(xRay).canUse(), "gizmo ray preflight accepts valid ray");
+    expectTrue(gizmo.canUseRay(xRay), "gizmo canUseRay accepts valid ray");
+}
+
+void testInteractionSnapDegradedAggregate() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::InteractionPreflight idleDegraded = fuse::editor::preflightInteraction(
+        hit, false, fuse::editor::GizmoAxis::None, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(idleDegraded.snapDegraded(), "idle interaction marks snap degraded on begin path");
+    expectTrue(idleDegraded.begin.begin.snapDegraded,
+               "idle interaction embeds begin snap degraded flag");
+
+    const fuse::editor::InteractionPreflight activeDegraded = fuse::editor::preflightInteraction(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(activeDegraded.snapDegraded(), "active interaction marks snap degraded on update");
+    expectTrue(activeDegraded.update.snapDegraded(), "active interaction embeds update degraded");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::InteractionPreflight validSnap = fuse::editor::preflightInteraction(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!validSnap.snapDegraded(), "valid snap clears interaction snapDegraded aggregate");
+}
+
+void testDragInteractionCanActOnPhase() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::DragInteractionPreflight inactive =
+        fuse::editor::preflightDragInteraction(hit, false, fuse::editor::GizmoAxis::None,
+                                               fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!inactive.canActOnPhase(), "inactive drag rejects canActOnPhase");
+
+    const fuse::editor::DragInteractionPreflight active =
+        fuse::editor::preflightDragInteraction(hit, true, fuse::editor::GizmoAxis::X,
+                                               fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(active.canActOnPhase(), "active drag allows canActOnPhase on valid hit");
+
+    hit.viewportWidth = 0.f;
+    const fuse::editor::DragInteractionPreflight emptyHit =
+        fuse::editor::preflightDragInteraction(hit, true, fuse::editor::GizmoAxis::X,
+                                               fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!emptyHit.canActOnPhase(), "drag canActOnPhase blocked on empty viewport");
+    expectTrue(emptyHit.canEnd(), "drag end still allowed when update blocked");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    hit.viewportWidth = 100.f;
+    hit.screenX = 10.f;
+    fuse::editor::GizmoTransform transform{};
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo canActOnPhase allows begin when idle");
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo canActOnPhase allows update when dragging");
+    hit.viewportWidth = 0.f;
+    expectTrue(!gizmo.canActOnPhase(hit),
+               "gizmo canActOnPhase rejects update on empty viewport");
+    gizmo.endDrag();
+}
+
+void testGizmoCanActOnPhaseRouting() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    fuse::editor::GizmoTransform transform{};
+
+    const fuse::editor::InteractionPreflight idle = gizmo.preflightInteraction(hit);
+    expectTrue(idle.canActOnPhase(), "gizmo interaction preflight routes begin when idle");
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo canActOnPhase mirrors idle begin routing");
+
+    gizmo.beginDrag(hit, transform);
+    const fuse::editor::InteractionPreflight active = gizmo.preflightInteraction(hit);
+    expectTrue(active.canActOnPhase(), "gizmo interaction preflight routes update when dragging");
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo canActOnPhase mirrors active update routing");
+    gizmo.endDrag();
+}
+
 } // namespace
 
 int main() {
@@ -1952,6 +2116,11 @@ int main() {
     testIsSnapDegradedHelper();
     testInteractionPhaseRouting();
     testCanInteractionPredicates();
+    testHitTestPreflightGuards();
+    testRayPreflightGuards();
+    testInteractionSnapDegradedAggregate();
+    testDragInteractionCanActOnPhase();
+    testGizmoCanActOnPhaseRouting();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test failure(s)\n", g_failures);
