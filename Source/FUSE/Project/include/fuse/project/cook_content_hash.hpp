@@ -2,6 +2,10 @@
 
 #include <fuse/project/cook_manifest.hpp>
 #include <fuse/project/import_desc.hpp>
+
+namespace fuse::project {
+struct CookCacheEntry;
+} // namespace fuse::project
 #include <fuse/types.hpp>
 
 #include <string>
@@ -335,5 +339,6 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 /// Manifest entry plus dependency source readability — additive over `preflight_manifest_entry_hash` (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_manifest_entry_with_dependencies_hash(
     const CookManifestEntry& entry, const CookManifest& manifest);
+/// Structural cache-entry preflight — mirrors `is_valid_cook_cache_entry` without storing (B7.9 deepen).
 
 } // namespace fuse::project

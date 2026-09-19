@@ -819,6 +819,13 @@ CookHashPreflight preflight_cacheable_cook_cache_key(u64 source_hash, u64 upstre
 
     if (combine_cook_cache_key(source_hash, upstream_hash) == 0) {
         preflight.reason = CookHashRejectReason::ZeroSourceHash;
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookHashRejectReason::InvalidCacheKey;
+    if (entry.source_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+    if (entry.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
         return preflight;
     }
 

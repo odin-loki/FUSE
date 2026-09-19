@@ -2862,6 +2862,9 @@ void testCookCacheWouldInvalidateMirrorsCount() {
 void testCookerUpstreamInvalidationWouldAndProbe() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_up_would_a.obj", "# up would a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_up_would_b.obj", "# up would b\n");
+void testCookerUpstreamInvalidationEstimateProbes() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_up_est_a.obj", "# upstream est a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_up_est_b.obj", "# upstream est b\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
@@ -2869,6 +2872,7 @@ void testCookerUpstreamInvalidationWouldAndProbe() {
     entry_a.source_path = source_a;
     entry_a.output_path = "/tmp/fuse_b79_would_reconcile_a.fusemesh";
     entry_a.output_path = "/tmp/fuse_b79_up_would_a.fusemesh";
+    entry_a.output_path = "/tmp/fuse_b79_up_est_a.fusemesh";
     manifest.assets.push_back(entry_a);
 
     fuse::project::CookManifestEntry entry_b;
@@ -2876,6 +2880,7 @@ void testCookerUpstreamInvalidationWouldAndProbe() {
     entry_b.source_path = source_b;
     entry_b.output_path = "/tmp/fuse_b79_would_reconcile_b.fusemesh";
     entry_b.output_path = "/tmp/fuse_b79_up_would_b.fusemesh";
+    entry_b.output_path = "/tmp/fuse_b79_up_est_b.fusemesh";
     entry_b.dependencies.push_back(entry_a.output_path);
     manifest.assets.push_back(entry_b);
 
@@ -2962,8 +2967,41 @@ void testCookCacheUniqueStaleUpstreamProbe() {
     expectTrue(unique.size() >= 1u, "unique upstream probe finds stale downstream source");
     expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes(source_upstream),
                "would_invalidate_stale_upstream mirrors count probe");
-    expectTrue(cooker.would_reconcile_invalidation(manifest),
                "would_reconcile_invalidation true after upstream hash drift");
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for upstream estimate probes ok");
+    expectTrue(cooker.cache().entry_count() == 2u, "two entries seeded for upstream estimate probes");
+
+    const fuse::project::CookCacheUpstreamInvalidationEstimate empty =
+        cooker.estimate_upstream_invalidation(manifest, "");
+    expectTrue(empty.total() == 0u, "empty changed source upstream estimate is zero");
+    expectTrue(!cooker.would_upstream_invalidation(manifest, ""), "empty changed source would_upstream is false");
+               "empty changed source upstream probe is empty");
+
+    const fuse::project::CookCacheUpstreamInvalidationEstimate estimate =
+        cooker.estimate_upstream_invalidation(manifest, source_a);
+    expectTrue(estimate.direct_source_entries == 1u, "upstream estimate counts direct source entry");
+    expectTrue(estimate.downstream_entries >= 1u, "upstream estimate counts downstream entries");
+    expectTrue(estimate.total() == cooker.count_upstream_invalidation(manifest, source_a),
+               "upstream estimate total matches count probe");
+               "would_upstream true for seeded changed source");
+
+    expectTrue(probed.size() >= 2u, "upstream probe lists changed source and dependents");
+
+void testCookerWouldReconcileInvalidationProbe() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_would_reconcile.obj", "# would reconcile v1\n");
+
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_would_reconcile.fusemesh";
+    manifest.assets.push_back(entry);
+
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would_reconcile probe ok");
+
+    writeTempFile(source, "# would reconcile v2\n");
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "stale content makes would_reconcile true");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest).prune_stale_entries >= 1u,
+               "stale reconcile estimate includes prune stale count");
 }
 
 void testCookCacheDownstreamSourceProbe() {
@@ -3019,6 +3057,10 @@ void testCookCacheDownstreamSourceProbe() {
 
     const fuse::u32 counted = cooker.cache().count_downstream_of(entry_a.output_path, graph.edges(), graph.jobs());
     expectTrue(counted == 2u, "downstream count matches dependent entries only");
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()),
+               "would_invalidate_downstream true for seeded chain");
+    expectTrue(!cooker.cache().would_invalidate_downstream_of("", graph.edges(), graph.jobs()),
+               "empty output path would_invalidate_downstream is guarded");
     expectTrue(cooker.cache().probe_downstream_sources("", graph.edges(), graph.jobs()).empty(),
                "empty output path downstream probe is guarded");
 }
@@ -3314,6 +3356,8 @@ int main() {
     testCookCacheWouldInvalidateMirrorsCount();
     testCookerUpstreamInvalidationWouldAndProbe();
     testCookCacheUniqueStaleUpstreamProbe();
+    testCookerUpstreamInvalidationEstimateProbes();
+    testCookerWouldReconcileInvalidationProbe();
     testCookCacheDownstreamSourceProbe();
     testCookCachePreflightAndReconcileEstimators();
     testCookCacheReconcileEstimators();

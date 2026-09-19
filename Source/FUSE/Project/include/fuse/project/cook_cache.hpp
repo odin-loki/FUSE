@@ -370,6 +370,7 @@ public:
     [[nodiscard]] u32 count_prune_all() const;
     /// Source paths whose stored content keys differ from a fresh recompute — mirrors `prune_stale_entries` (B7.9 deepen).
     /// Deduplicated source paths with stale upstream hashes (B7.9 deepen).
+    /// Deduplicated stale upstream sources — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
