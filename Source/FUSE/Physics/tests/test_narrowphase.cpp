@@ -3048,3 +3048,12 @@ void testGenerateContactManifoldWithPreflightGuard() {
 void testComputeFrictionTangentsWithPreflightGuard() {
     testGenerateContactManifoldWithPreflightGuard();
     testComputeFrictionTangentsWithPreflightGuard();
+
+// --- deepen additive from deepen-narrowphase-b4-guards-1d13 ---
+        fuse::physics::narrowphase::preflightContactBufferWrite(buffer, 1u, selfPair);
+    expectTrue(!selfPreflight.canWrite(), "write preflight rejects self pair");
+        emptyPreflight.reason == fuse::physics::narrowphase::ContactBufferCompactionRejectReason::EmptyBuffer,
+        fuse::physics::narrowphase::preflightContactBufferClamp(buffer).needsClamp(),
+                fuse::physics::narrowphase::ContactPairRejectReason::BothPlanes),
+void testNormalizeAndRebuildFrictionBasisPreflight() {
+    testNormalizeAndRebuildFrictionBasisPreflight();
