@@ -301,3 +301,6 @@ bool should_skip_island_build(u32 bodyCount) {
 // --- deepen additive from deepen-pbd-island-guards-a261 ---
 IslandBuildPreflight preflight_island_graph_build(
 bool should_skip_island_graph_build(u32 bodyCount) {
+
+// --- deepen additive from deepen-pbd-island-sleep-build-guards-9e33 ---
+    if (should_skip_island_build(bodyCount, contacts, distanceConstraints)) {

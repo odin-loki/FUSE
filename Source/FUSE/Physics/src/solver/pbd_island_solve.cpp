@@ -2074,3 +2074,19 @@ bool should_skip_sleep_detection_for_body(const RigidBodySoA& bodies, u32 bodyIn
 IslandSleepWakePreflight preflight_island_sleep_wake(
     IslandSleepWakePreflight preflight{};
 IslandSleepWakePreflight preflight_island_sleep_wake_by_index(
+
+// --- deepen additive from deepen-pbd-island-sleep-build-guards-9e33 ---
+                                        IslandSleepPreflight& preflight) {
+    const IslandSleepPreflight preflight = preflight_island_sleep(island, bodies);
+bool should_skip_awake_island_dispatch(const ContactIslandGraph& graph, const RigidBodySoA& bodies) {
+bool should_skip_sleeping_island_solve(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies) {
+bool should_skip_sleeping_island_solve_index(const ContactIslandGraph& graph,
+    return should_skip_sleeping_island_solve(graph.island(islandIndex), bodies);
+    if (should_skip_island_wake(island)) {
+bool should_skip_island_wake(const ContactIslandGraph::Island& island) {
+    const IslandWakePreflight preflight = preflight_island_wake(island, bodies, contacts);
+IslandConstraintSolvePreflight preflight_solve_island(const ContactIslandGraph::Island& island,
+IslandConstraintSolvePreflight preflight_solve_island_by_index(const ContactIslandGraph& graph,
+bool should_skip_solve_island_preflight(const ContactIslandGraph::Island& island,
+    if (should_skip_solve_island_preflight(island, bodies, distanceConstraints, workBuffers, dt)) {
+    if (should_skip_sleeping_island_solve(*job.island, bodies)) {
