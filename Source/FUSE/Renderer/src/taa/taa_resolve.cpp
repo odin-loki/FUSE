@@ -84,6 +84,22 @@ bool preflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& his
     return !taaResolveSkipReasonIsBlocking(skip);
 }
 
+bool preflightTaaResolveWithBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                  TaaResolveSkipReason* skipReason,
+                                  TaaResolveBlendRejectReason* blendReason) {
+    const bool resolvePasses = preflightTaaResolve(desc, history, skipReason);
+    const bool blendPasses = preflightTaaResolveBlendWeights(desc, history, blendReason);
+    return resolvePasses && blendPasses;
+}
+
+bool preflightTaaResolveHistoryReuse(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                     TaaHistoryReuseBlockReason* reason) {
+    const u32 observedGeneration = taaResolveBypassesHistoryGenerationGuard(desc)
+                                         ? history.invalidateGeneration()
+                                         : desc.observed_history_generation;
+    return preflightTaaHistoryReuse(history, observedGeneration, reason);
+}
+
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!history.isReady()) {
         return TaaResolveSkipReason::HistoryNotReady;

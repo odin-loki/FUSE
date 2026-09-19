@@ -9,6 +9,22 @@ namespace fuse::renderer {
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
 
+/// Why jitter sync preflight blocked the request (B5.9 deepen).
+enum class TaaJitterSyncBlockReason : u8 {
+    None = 0,
+    InvalidSequence,
+    InvalidViewport,
+};
+/// Human-readable label for jitter sync block reasons (B5.9 deepen).
+const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason);
+/// Classify why jitter cannot sync to a monotonic frame counter (B5.9 deepen).
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(u32 /*frameIndex*/, u32 width, u32 height,
+                                                    u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// True when jitter can sync to `frameIndex` for the given viewport and sequence (B5.9 deepen).
+bool preflightTaaJitterSync(u32 frameIndex, u32 width, u32 height,
+                            u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                            TaaJitterSyncBlockReason* reason = nullptr);
+
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
     static f32 halton(u32 index, u32 base);
@@ -55,6 +71,11 @@ public:
     void syncToFrameIndex(u32 frameIndex);
     /// Sync only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool syncToFrameIndexIfReady(u32 frameIndex);
+    /// Sync only when viewport and sequence preflight pass; returns false when blocked (B5.9 deepen).
+    bool syncToFrameIndexIfViewportReady(u32 frameIndex, u32 width, u32 height);
+    /// True when jitter can sync to `frameIndex` for the given viewport (B5.9 deepen).
+    bool preflightSyncToFrameIndex(u32 frameIndex, u32 width, u32 height,
+                                   TaaJitterSyncBlockReason* reason = nullptr) const;
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
 
