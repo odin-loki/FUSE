@@ -3426,3 +3426,15 @@ void testFroxelClassifyAndIsBlockingGuards() {
                "classifyFroxelSampleCoordReject empty_grid for zero desc");
                "classifyFroxelPopulateReject empty_desc for zero desc");
                "classifyGridDensityReject none vacuously for empty desc");
+
+// --- deepen additive from b511-froxel-classify-preflight-336a ---
+               "classifyDensityLookupReject none for valid coords");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookup(grid, desc, 99u, 99u, 99u),
+               "preflightDensityLookup succeeds for clampable OOB coords");
+               "classifyTrilinearSampleReject none for valid coords");
+               "preflightTrilinearSample succeeds for valid coords");
+    expectTrue(fuse::renderer::froxel_util::classifyTrilinearSampleReject(grid, desc, warnTrilinear) ==
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSample(grid, desc, warnTrilinear),
+               "classifyTrilinearSampleReject invalid_sample_coords for hard OOB tile coord");
+    expectTrue(!fuse::renderer::froxel_util::preflightTrilinearSample(grid, desc, hardOob),
+               "classifyFroxelPopulateReject empty_desc for zero-dimension desc");
