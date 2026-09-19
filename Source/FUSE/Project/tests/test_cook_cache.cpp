@@ -1299,3 +1299,12 @@ void testCookCacheWouldInvalidateGuards() {
     expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would.obj", 42u),
     expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_would.fusemesh", {}, {}),
                "would_invalidate_stale_content true after source content change");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-93a9 ---
+    const fuse::project::CookHashPreflight zero_key = fuse::project::preflight_cook_cache_entry(invalid_key);
+    const fuse::project::CookHashPreflight empty_src = fuse::project::preflight_cook_cache_entry(empty_source);
+    expectTrue(empty_src.reason == fuse::project::CookHashRejectReason::EmptyInputPath,
+    expectTrue(cache.would_invalidate_stale_upstream_hashes(upstream),
+               "would_invalidate_stale_upstream true when stale entries exist");
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes(fresh_upstream),
+               "would_invalidate_stale_upstream false when hashes match");

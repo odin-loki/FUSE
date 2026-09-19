@@ -241,3 +241,6 @@ struct CookCacheEntryPreflight {
 
 // --- deepen additive from deepen-b79-cooker-hash-guards-82a4 ---
         preflight.reason = CookHashRejectReason::SourceUnreadable;
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-93a9 ---
+        preflight.reason = CookHashRejectReason::InvalidCacheKey;
