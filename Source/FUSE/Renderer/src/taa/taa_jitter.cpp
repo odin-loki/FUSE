@@ -2,6 +2,54 @@
 
 namespace fuse::renderer {
 
+const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason) {
+    switch (reason) {
+    case TaaJitterSyncBlockReason::None:
+        return "none";
+    case TaaJitterSyncBlockReason::InvalidSequence:
+        return "invalid_sequence";
+    case TaaJitterSyncBlockReason::InvalidViewport:
+        return "invalid_viewport";
+    }
+    return "unknown";
+}
+
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(u32 sequenceLength) {
+    if (!TaaJitterLayout::validateSequenceLength(sequenceLength)) {
+        return TaaJitterSyncBlockReason::InvalidSequence;
+    }
+    return TaaJitterSyncBlockReason::None;
+}
+
+TaaJitterSyncBlockReason classifyTaaJitterSyncViewportBlock(u32 width, u32 height, u32 sequenceLength) {
+    if (!TaaJitterLayout::validateViewportDimensions(width, height)) {
+        return TaaJitterSyncBlockReason::InvalidViewport;
+    }
+    return classifyTaaJitterSyncBlock(sequenceLength);
+}
+
+const char* taaJitterAdvanceBlockReasonLabel(TaaJitterAdvanceBlockReason reason) {
+    switch (reason) {
+    case TaaJitterAdvanceBlockReason::None:
+        return "none";
+    case TaaJitterAdvanceBlockReason::InvalidSequence:
+        return "invalid_sequence";
+    case TaaJitterAdvanceBlockReason::InvalidViewport:
+        return "invalid_viewport";
+    }
+    return "unknown";
+}
+
+TaaJitterAdvanceBlockReason classifyTaaJitterAdvanceBlock(u32 width, u32 height, u32 sequenceLength) {
+    if (!TaaJitterLayout::validateSequenceLength(sequenceLength)) {
+        return TaaJitterAdvanceBlockReason::InvalidSequence;
+    }
+    if (!TaaJitterLayout::validateViewportDimensions(width, height)) {
+        return TaaJitterAdvanceBlockReason::InvalidViewport;
+    }
+    return TaaJitterAdvanceBlockReason::None;
+}
+
 f32 TaaJitterLayout::halton(u32 index, u32 base) {
     if (base < 2u) {
         return 0.f;
@@ -141,8 +189,62 @@ bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
     return true;
 }
 
+bool TaaJitter::syncToFrameIndexIfViewportReady(u32 frameIndex, u32 width, u32 height) {
+    if (classifyTaaJitterSyncViewportBlock(width, height, m_sequenceLength) != TaaJitterSyncBlockReason::None) {
+        return false;
+    }
+    syncToFrameIndex(frameIndex);
+    return true;
+}
+
+bool TaaJitter::trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncBlockReason& outReason) {
+    outReason = classifyTaaJitterSyncBlock(m_sequenceLength);
+    if (outReason != TaaJitterSyncBlockReason::None) {
+        return false;
+    }
+    syncToFrameIndex(frameIndex);
+    return true;
+}
+
+bool TaaJitter::trySyncToFrameIndexIfViewportReady(u32 frameIndex, u32 width, u32 height,
+                                                   TaaJitterSyncBlockReason& outReason) {
+    outReason = classifyTaaJitterSyncViewportBlock(width, height, m_sequenceLength);
+    if (outReason != TaaJitterSyncBlockReason::None) {
+        return false;
+    }
+    syncToFrameIndex(frameIndex);
+    return true;
+}
+
 bool TaaJitter::advanceIfReady() {
     if (!canAdvance()) {
+        return false;
+    }
+    advance();
+    return true;
+}
+
+bool TaaJitter::advanceIfViewportReady(u32 width, u32 height) {
+    if (classifyTaaJitterAdvanceBlock(width, height, m_sequenceLength) != TaaJitterAdvanceBlockReason::None) {
+        return false;
+    }
+    advance();
+    return true;
+}
+
+bool TaaJitter::tryAdvanceIfReady(TaaJitterAdvanceBlockReason& outReason) {
+    if (classifyTaaJitterSyncBlock(m_sequenceLength) == TaaJitterSyncBlockReason::InvalidSequence) {
+        outReason = TaaJitterAdvanceBlockReason::InvalidSequence;
+        return false;
+    }
+    outReason = TaaJitterAdvanceBlockReason::None;
+    advance();
+    return true;
+}
+
+bool TaaJitter::tryAdvanceIfViewportReady(u32 width, u32 height, TaaJitterAdvanceBlockReason& outReason) {
+    outReason = classifyTaaJitterAdvanceBlock(width, height, m_sequenceLength);
+    if (outReason != TaaJitterAdvanceBlockReason::None) {
         return false;
     }
     advance();
