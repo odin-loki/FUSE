@@ -2084,3 +2084,7 @@ void testRejectReasonMirrorsExistingPreflights() {
                                                              fuse::audio::HrtfPanPathRejectReason::CoLocatedSource),
     expectTrue(conv_preflight.reason == fuse::audio::HrtfPanPathRejectReason::None,
                    co_located_preflight, fuse::audio::HrtfBinauralRejectReason::CoLocatedSource),
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-cf7e ---
+    expectTrue(stub_preflight.convolutionReason == fuse::audio::HrtfConvolutionRejectReason::EmptyIr,
+                   fuse::audio::HrtfConvolutionRejectReason::EmptyIr),

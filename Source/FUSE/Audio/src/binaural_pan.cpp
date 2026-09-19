@@ -1528,3 +1528,13 @@ HrtfBinauralRejectReason composite_hrtf_binaural_reject_reason(
     const HrtfPanPathPreflight& panPath, const HrtfAttenuationCouplingPreflight& attenuationCoupling) {
         return HrtfBinauralRejectReason::CoLocatedSource;
     case HrtfBinauralRejectReason::CoLocatedSource:
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-cf7e ---
+bool hrtf_ir_rejects_for_reason(const HrtfIrPreflight& preflight, HrtfIrRejectReason expected) {
+bool hrtf_pan_path_rejects_for_reason(const HrtfPanPathPreflight& preflight,
+    case HrtfConvolutionRejectReason::EmptyIr:
+HrtfConvolutionRejectReason classify_hrtf_convolution_reject(const HrtfBinauralPreflight& preflight) {
+bool hrtf_convolution_rejects_for_reason(const HrtfBinauralPreflight& preflight,
+HrtfBinauralRejectReason binaural_reject_from_pan_path(HrtfPanPathRejectReason reason) {
+HrtfConvolutionRejectReason convolution_reject_reason_from_preflight(
+        return HrtfConvolutionRejectReason::EmptyIr;

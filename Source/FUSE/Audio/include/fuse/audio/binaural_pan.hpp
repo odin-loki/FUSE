@@ -994,3 +994,9 @@ bool tryPreflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
 bool tryPreflight_hrtf_attenuation_coupling(
 bool tryPreflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
 bool tryPreflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-cf7e ---
+bool hrtf_ir_rejects_for_reason(const HrtfIrPreflight& preflight, HrtfIrRejectReason expected);
+bool hrtf_pan_path_rejects_for_reason(const HrtfPanPathPreflight& preflight,
+HrtfConvolutionRejectReason classify_hrtf_convolution_reject(const HrtfBinauralPreflight& preflight);
+bool hrtf_convolution_rejects_for_reason(const HrtfBinauralPreflight& preflight,
