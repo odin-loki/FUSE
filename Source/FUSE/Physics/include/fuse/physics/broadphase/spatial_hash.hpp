@@ -367,6 +367,10 @@ FUSE_PHYSICS_INLINE bool wouldSkipBroadphase(
         *reason = rejectReason;
     }
     return rejectReason != BroadphaseRejectReason::None;
+/// Predict broadphase skip — same ordering as `broadphaseRejectReason` (B4.2 deepen pass).
+    const BroadphaseRejectReason reject = broadphaseRejectReason(bodies, shapes);
+        *reason = reject;
+    return reject != BroadphaseRejectReason::None;
 }
 
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
@@ -880,33 +884,20 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancyForParams(
 /// Diagnose shape cell insertion using params occupancy budget (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReasonForParams(
     const CellRange3& range,
-    const SpatialHashParams& params) {
     return cellOccupancyRejectReason(range, params.maxCellOccupancy);
-}
 
-FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReasonForParams(
-    const CellRange2& range,
-    const SpatialHashParams& params) {
-    return cellOccupancyRejectReason(range, params.maxCellOccupancy);
-}
 
 /// Non-mutating shape cell-insertion skip predicate — params-level occupancy guard (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange3& range, const SpatialHashParams& params) {
     return !preflightCellOccupancyForParams(range, params).canIterate();
-}
 
 FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange2& range, const SpatialHashParams& params) {
-    return !preflightCellOccupancyForParams(range, params).canIterate();
-}
 
 /// Non-mutating shape cell-insertion predicate — inverse of `canSkipShapeCellInsertion` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange3& range, const SpatialHashParams& params) {
     return preflightCellOccupancyForParams(range, params).canIterate();
-}
 
 FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange2& range, const SpatialHashParams& params) {
-    return preflightCellOccupancyForParams(range, params).canIterate();
-}
 
 /// Shape cell-insertion preflight — occupancy gate for `populateShapeCells` (B4.2 deepen pass).
 struct ShapeCellInsertionPreflight {
@@ -919,78 +910,44 @@ FUSE_PHYSICS_INLINE ShapeCellInsertionPreflight preflightShapeCellInsertion(cons
     ShapeCellInsertionPreflight preflight{};
     preflight.occupancy = preflightCellOccupancy(range, maxCells);
     return preflight;
-}
 
 FUSE_PHYSICS_INLINE ShapeCellInsertionPreflight preflightShapeCellInsertion(const CellRange2& range, u32 maxCells) {
-    ShapeCellInsertionPreflight preflight{};
-    preflight.occupancy = preflightCellOccupancy(range, maxCells);
-    return preflight;
-}
 
 /// Non-mutating shape cell-insertion predicate — mirrors `populateShapeCells` occupancy gate (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange3& range, u32 maxCells) {
     return preflightShapeCellInsertion(range, maxCells).canInsert();
-}
 
 FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange2& range, u32 maxCells) {
-    return preflightShapeCellInsertion(range, maxCells).canInsert();
-}
 
 /// Non-mutating shape cell-insertion skip predicate — inverse of `canInsert` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange3& range, u32 maxCells) {
     return !shouldRunShapeCellInsertion(range, maxCells);
-}
 
 FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange2& range, u32 maxCells) {
-    return !shouldRunShapeCellInsertion(range, maxCells);
-}
 
 /// Unified cell-capacity preflight wrapping occupancy budget diagnostics (B4.2 deepen pass).
 struct CellCapacityPreflight {
-    CellOccupancyPreflight occupancy{};
     u32 budgetRemaining = 0;
 
-    bool canInsert() const { return occupancy.canIterate(); }
-};
 
 FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity(const CellRange3& range, u32 maxCells) {
     CellCapacityPreflight preflight{};
-    preflight.occupancy = preflightCellOccupancy(range, maxCells);
     preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
-    return preflight;
-}
 
 FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity(const CellRange2& range, u32 maxCells) {
-    CellCapacityPreflight preflight{};
-    preflight.occupancy = preflightCellOccupancy(range, maxCells);
-    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
-    return preflight;
-}
 
 /// Non-mutating shape cell-insertion predicate — mirrors `preflightCellCapacity` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange3& range, u32 maxCells) {
     return preflightCellCapacity(range, maxCells).canInsert();
-}
 
-FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange2& range, u32 maxCells) {
-    return preflightCellCapacity(range, maxCells).canInsert();
-}
 
 /// Non-mutating shape cell-insertion skip predicate — inverse of `shouldRunShapeCellInsertion` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange3& range, u32 maxCells) {
-    return !shouldRunShapeCellInsertion(range, maxCells);
-}
 
-FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange2& range, u32 maxCells) {
-    return !shouldRunShapeCellInsertion(range, maxCells);
-}
 
 /// Why shape→cell hash insertion would skip for a clamped range (B4.2 deepen follow-up pass).
 enum class ShapeCellInsertionRejectReason : u8 {
     None = 0,
     EmptyRange,
     ExceedsOccupancyBudget,
-};
 
 /// Human-readable label for shape cell-insertion reject reasons (logging / tests).
 const char* shapeCellInsertionRejectReasonName(ShapeCellInsertionRejectReason reason);
@@ -999,216 +956,84 @@ const char* shapeCellInsertionRejectReasonName(ShapeCellInsertionRejectReason re
 FUSE_PHYSICS_INLINE ShapeCellInsertionRejectReason shapeCellInsertionRejectReason(const CellRange3& range, u32 maxCells) {
     return static_cast<ShapeCellInsertionRejectReason>(
         static_cast<u8>(cellOccupancyRejectReason(range, maxCells)));
-}
 
 FUSE_PHYSICS_INLINE ShapeCellInsertionRejectReason shapeCellInsertionRejectReason(const CellRange2& range, u32 maxCells) {
-    return static_cast<ShapeCellInsertionRejectReason>(
-        static_cast<u8>(cellOccupancyRejectReason(range, maxCells)));
-}
 
 /// Returns true when `shapeCellInsertionRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool shapeCellInsertionRejectsForReason(
-    const CellRange3& range,
     u32 maxCells,
     ShapeCellInsertionRejectReason expected) {
     return shapeCellInsertionRejectReason(range, maxCells) == expected;
-}
 
-FUSE_PHYSICS_INLINE bool shapeCellInsertionRejectsForReason(
-    const CellRange2& range,
-    u32 maxCells,
-    ShapeCellInsertionRejectReason expected) {
-    return shapeCellInsertionRejectReason(range, maxCells) == expected;
-}
 
 /// Shape→cell insertion preflight for hash population (B4.2 deepen follow-up pass).
-struct ShapeCellInsertionPreflight {
     ShapeCellInsertionRejectReason reason = ShapeCellInsertionRejectReason::None;
     bool emptyRange = false;
     bool exceedsBudget = false;
     u32 occupancyCount = 0;
-    u32 budgetRemaining = 0;
 
     bool canInsert() const { return reason == ShapeCellInsertionRejectReason::None; }
-};
 
-FUSE_PHYSICS_INLINE ShapeCellInsertionPreflight preflightShapeCellInsertion(const CellRange3& range, u32 maxCells) {
-    ShapeCellInsertionPreflight preflight{};
     preflight.reason = shapeCellInsertionRejectReason(range, maxCells);
     preflight.emptyRange = preflight.reason == ShapeCellInsertionRejectReason::EmptyRange;
     preflight.exceedsBudget = preflight.reason == ShapeCellInsertionRejectReason::ExceedsOccupancyBudget;
     preflight.occupancyCount = estimateCellOccupancyCount(range);
-    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
-    return preflight;
-}
 
-FUSE_PHYSICS_INLINE ShapeCellInsertionPreflight preflightShapeCellInsertion(const CellRange2& range, u32 maxCells) {
-    ShapeCellInsertionPreflight preflight{};
-    preflight.reason = shapeCellInsertionRejectReason(range, maxCells);
-    preflight.emptyRange = preflight.reason == ShapeCellInsertionRejectReason::EmptyRange;
-    preflight.exceedsBudget = preflight.reason == ShapeCellInsertionRejectReason::ExceedsOccupancyBudget;
-    preflight.occupancyCount = estimateCellOccupancyCount(range);
-    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
-    return preflight;
-}
 
 /// Non-mutating shape cell-insertion skip predicate — inverse of `canInsert` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange3& range, u32 maxCells) {
     return !preflightShapeCellInsertion(range, maxCells).canInsert();
-}
 
-FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange2& range, u32 maxCells) {
-    return !preflightShapeCellInsertion(range, maxCells).canInsert();
-}
 
 /// Non-mutating shape cell-insertion predicate — mirrors `preflightShapeCellInsertion` (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange3& range, u32 maxCells) {
-    return preflightShapeCellInsertion(range, maxCells).canInsert();
-}
 
-FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange2& range, u32 maxCells) {
-    return preflightShapeCellInsertion(range, maxCells).canInsert();
-}
 
 /// Shape hash-insert preflight — occupancy gate for `populateShapeCells` (B4.2 deepen pass).
 struct ShapeCellHashInsertPreflight {
-    CellOccupancyPreflight occupancy{};
 
-    bool canInsert() const { return occupancy.canIterate(); }
-};
 
 FUSE_PHYSICS_INLINE ShapeCellHashInsertPreflight preflightShapeCellHashInsert(const CellRange3& range, u32 maxCells) {
     ShapeCellHashInsertPreflight preflight{};
-    preflight.occupancy = preflightCellOccupancy(range, maxCells);
-    return preflight;
-}
 
 FUSE_PHYSICS_INLINE ShapeCellHashInsertPreflight preflightShapeCellHashInsert2D(const CellRange2& range, u32 maxCells) {
-    ShapeCellHashInsertPreflight preflight{};
-    preflight.occupancy = preflightCellOccupancy(range, maxCells);
-    return preflight;
-}
 
 /// Non-mutating shape hash-insert skip predicate — inverse of `canInsert` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool canSkipShapeCellHashInsert(const CellRange3& range, u32 maxCells) {
     return !preflightShapeCellHashInsert(range, maxCells).canInsert();
-}
 
 FUSE_PHYSICS_INLINE bool canSkipShapeCellHashInsert(const CellRange2& range, u32 maxCells) {
     return !preflightShapeCellHashInsert2D(range, maxCells).canInsert();
-}
 
 /// Non-mutating shape hash-insert predicate — mirrors `populateShapeCells` occupancy gate (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool shouldRunShapeCellHashInsert(const CellRange3& range, u32 maxCells) {
     return preflightShapeCellHashInsert(range, maxCells).canInsert();
-}
 
 FUSE_PHYSICS_INLINE bool shouldRunShapeCellHashInsert(const CellRange2& range, u32 maxCells) {
     return preflightShapeCellHashInsert2D(range, maxCells).canInsert();
-}
 
 /// Early-out when cell-occupancy preflight would reject — same ordering as `cellOccupancyRejectReason` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    const CellRange3& range,
-    u32 maxCells,
     CellOccupancyRejectReason* reason = nullptr) {
     const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
     if (reason != nullptr) {
         *reason = rejectReason;
-    }
     return rejectReason != CellOccupancyRejectReason::None;
-}
 
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    const CellRange2& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
-    const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
-    if (reason != nullptr) {
-        *reason = rejectReason;
-    }
-    return rejectReason != CellOccupancyRejectReason::None;
-}
 
 /// Preflight cell-occupancy iteration without mutation; optional reject-reason output (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    const CellRange3& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
-    const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
-    if (reason != nullptr) {
-        *reason = rejectReason;
-    }
-    return rejectReason != CellOccupancyRejectReason::None;
-}
 
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    const CellRange2& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
-    const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
-    if (reason != nullptr) {
-        *reason = rejectReason;
-    }
-    return rejectReason != CellOccupancyRejectReason::None;
-}
 
-/// Early-out when cell-occupancy preflight would reject — same ordering as `cellOccupancyRejectReason` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    const CellRange3& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
-    const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
-    if (reason != nullptr) {
-        *reason = rejectReason;
-    }
-    return rejectReason != CellOccupancyRejectReason::None;
-}
 
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    const CellRange2& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
-    const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
-    if (reason != nullptr) {
-        *reason = rejectReason;
-    }
-    return rejectReason != CellOccupancyRejectReason::None;
-}
 
 /// Non-mutating cell-occupancy skip predicate — mirrors `canSkipCellOccupancyIteration` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
     return canSkipCellOccupancyIteration(range, maxCells);
-}
 
 FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
-    return canSkipCellOccupancyIteration(range, maxCells);
-}
 
-/// Early-out when cell-occupancy preflight would reject — same ordering as `cellOccupancyRejectReason` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    const CellRange3& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
-    const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
-    if (reason != nullptr) {
-        *reason = rejectReason;
-    }
-    return rejectReason != CellOccupancyRejectReason::None;
-}
 
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    const CellRange2& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
-    const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
-    if (reason != nullptr) {
-        *reason = rejectReason;
-    }
-    return rejectReason != CellOccupancyRejectReason::None;
-}
 
 /// Preflight cell-occupancy iteration without mutating the range — optional `reason` out-param (B4.2 deepen follow-up pass).
+/// Predict cell-occupancy iteration skip — same ordering as `cellOccupancyRejectReason` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
     const CellRange3& range,
     u32 maxCells,
@@ -1241,50 +1066,19 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
         *reason = rejectReason;
     }
     return rejectReason != CellOccupancyRejectReason::None;
-}
 
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
     const CellRange2& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
-    const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
-    if (reason != nullptr) {
-        *reason = rejectReason;
-    }
-    return rejectReason != CellOccupancyRejectReason::None;
-}
 
 /// Predict whether cell-occupancy iteration would bail (B4.2 deepen follow-up pass).
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    const CellRange3& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
     const CellOccupancyPreflight preflight = preflightCellOccupancy(range, maxCells);
-    if (reason != nullptr) {
         *reason = preflight.reason;
-    }
     return !preflight.canIterate();
-}
 
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    const CellRange2& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
-    const CellOccupancyPreflight preflight = preflightCellOccupancy(range, maxCells);
-    if (reason != nullptr) {
-        *reason = preflight.reason;
-    }
-    return !preflight.canIterate();
-}
 
-/// Predict cell-occupancy iteration skip — same ordering as `cellOccupancyRejectReason` (B4.2 deepen pass).
 bool wouldSkipCellOccupancyIteration(const CellRange3& range,
-                                       u32 maxCells,
                                        CellOccupancyRejectReason* reason = nullptr);
 
 bool wouldSkipCellOccupancyIteration(const CellRange2& range,
-                                       u32 maxCells,
-                                       CellOccupancyRejectReason* reason = nullptr);
 
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
@@ -2962,12 +2756,15 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(
 }
 
 /// Preflight cell-span clamp skip check with optional reject reason (B4.2 deepen pass).
+/// Predict cell-span clamp skip — same ordering as `cellSpanRejectReason` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(
     const CellRange3& range,
     u32 maxSpanPerAxis,
     CellSpanRejectReason* reason = nullptr) {
     if (reason != nullptr) {
         *reason = cellSpanRejectReason(range, maxSpanPerAxis);
+    const CellSpanRejectReason reject = cellSpanRejectReason(range, maxSpanPerAxis);
+        *reason = reject;
     }
     return canSkipCellSpanClamp(range, maxSpanPerAxis);
 }
@@ -2978,6 +2775,8 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(
     CellSpanRejectReason* reason = nullptr) {
     if (reason != nullptr) {
         *reason = cellSpanRejectReason(range, maxSpanPerAxis);
+    const CellSpanRejectReason reject = cellSpanRejectReason(range, maxSpanPerAxis);
+        *reason = reject;
     }
     return canSkipCellSpanClamp(range, maxSpanPerAxis);
 }
@@ -2988,8 +2787,6 @@ bool wouldSkipCellSpanClamp(const CellRange3& range,
                             CellSpanRejectReason* reason = nullptr);
 
 bool wouldSkipCellSpanClamp(const CellRange2& range,
-                            u32 maxSpanPerAxis,
-                            CellSpanRejectReason* reason = nullptr);
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
@@ -6060,6 +5857,7 @@ bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, cons
 
 /// Predict whether merge-into-buffer would bail before mutation (B4.2 deepen follow-up pass).
 bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs,
+
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
