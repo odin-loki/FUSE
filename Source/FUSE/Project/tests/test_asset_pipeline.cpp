@@ -1917,3 +1917,6 @@ int main() {
 
 // --- deepen additive from deepen-b79-cooker-hash-e7c4 ---
 void testCombineCookCacheKeyZeroSourceGuard() {
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-1c96 ---
+void testAssetCookerInvalidationEmptyGuards() {
