@@ -256,6 +256,42 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Alias for `should_skip_manifold_prune` (B4.6 deepen pass).
+inline bool wouldSkipManifoldPrune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f) {
+    return should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+/// Alias for `can_skip_manifold_finalize` (B4.6 deepen pass).
+inline bool wouldSkipManifoldFinalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f) {
+    return can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
+/// Prune only when preflight allows; returns false when skipped (B4.6 deepen pass).
+inline bool tryPruneContactManifold(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f) {
+    return prune_contact_manifold_with_preflight(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+/// Finalize only when preflight allows; returns false when skipped (B4.6 deepen pass).
+inline bool tryFinalizeContactManifold(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f) {
+    return finalize_contact_manifold_with_preflight(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
