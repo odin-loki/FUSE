@@ -2091,3 +2091,13 @@ bool try_preflight_hrtf_binaural_coupling(bool hrtf_enabled, const HrtfIrStub& i
 bool try_preflight_hrtf_binaural_coupling(bool hrtf_enabled, const Vec3& rel_listener,
 bool should_skip_hrtf_binaural_coupling_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
 bool should_skip_hrtf_binaural_coupling_preflight(bool hrtf_enabled, const Vec3& rel_listener,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-aba4 ---
+HrtfIrRejectReason classify_hrtf_ir_reject_reason(const HrtfIrStub& ir) {
+    const HrtfIrRejectReason reject = classify_hrtf_ir_reject_reason(ir);
+HrtfPanPathRejectReason classify_hrtf_pan_path_reject_reason(bool hrtf_enabled, const HrtfIrStub& ir,
+HrtfPanPathRejectReason classify_hrtf_pan_path_reject_reason(bool hrtf_enabled,
+bool try_preflight_hrtf_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+HrtfAttenuationCouplingRejectReason classify_hrtf_attenuation_coupling_reject_reason(
+HrtfBinauralRejectReason classify_hrtf_binaural_reject_reason(bool hrtf_enabled, const HrtfIrStub& ir,
+HrtfBinauralRejectReason classify_hrtf_binaural_reject_reason(bool hrtf_enabled,

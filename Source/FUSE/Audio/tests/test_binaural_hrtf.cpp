@@ -2492,3 +2492,18 @@ void testHrtfPanPathRejectReasonNoIrOverload() {
                "should_skip_hrtf_binaural_convolution_preflight true for empty IR");
     expectTrue(!fuse::audio::should_skip_hrtf_binaural_coupling_preflight(true, empty, offset,
                "should_skip_hrtf_binaural_coupling_preflight false when narrowing applies");
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-aba4 ---
+void testHrtfIrRejectReasonEnumsAndPreflightWrappers() {
+void testHrtfPanPathRejectReasonEnumsAndPreflightWrappers() {
+    fuse::audio::HrtfPanPathRejectReason rejectReason = fuse::audio::HrtfPanPathRejectReason::None;
+    expectTrue(rejectReason == fuse::audio::HrtfPanPathRejectReason::CoLocated,
+    expectTrue(stub_preflight.rejectReason == fuse::audio::HrtfPanPathRejectReason::None,
+void testHrtfAttenuationCouplingRejectReasonEnumsAndPreflightWrappers() {
+    expectTrue(rejectReason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+void testHrtfBinauralRejectReasonEnumsAndPreflightWrappers() {
+    expectTrue(rejectReason == fuse::audio::HrtfBinauralRejectReason::CoLocated,
+    testHrtfIrRejectReasonEnumsAndPreflightWrappers();
+    testHrtfPanPathRejectReasonEnumsAndPreflightWrappers();
+    testHrtfAttenuationCouplingRejectReasonEnumsAndPreflightWrappers();
+    testHrtfBinauralRejectReasonEnumsAndPreflightWrappers();
