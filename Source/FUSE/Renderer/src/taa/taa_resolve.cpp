@@ -717,3 +717,23 @@ bool preflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistory
 bool tryPreflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
     return preflightTaaResolveFrameGuards(desc, history, &skipReason, &blendReason);
     return !preflightTaaResolveFrameGuards(desc, history);
+
+// --- deepen additive from deepen-taa-b59-guards-2768 ---
+const char* taaResolveWithBlendRejectReasonLabel(TaaResolveWithBlendRejectReason reason) {
+    case TaaResolveWithBlendRejectReason::None:
+    case TaaResolveWithBlendRejectReason::ResolveBlocked:
+    case TaaResolveWithBlendRejectReason::BlendRejected:
+TaaResolveWithBlendRejectReason classifyTaaResolveWithBlendReject(const TaaResolveDesc& desc,
+        return TaaResolveWithBlendRejectReason::ResolveBlocked;
+        return TaaResolveWithBlendRejectReason::BlendRejected;
+    return TaaResolveWithBlendRejectReason::None;
+                                  TaaResolveWithBlendRejectReason* reason) {
+    const TaaResolveWithBlendRejectReason reject = classifyTaaResolveWithBlendReject(desc, history);
+    return reject == TaaResolveWithBlendRejectReason::None;
+bool tryPreflightTaaResolveWithBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                     TaaResolveWithBlendRejectReason& reason) {
+    reason = classifyTaaResolveWithBlendReject(desc, history);
+    return reason == TaaResolveWithBlendRejectReason::None;
+    return !preflightTaaResolveWithBlend(desc, history);
+bool tryComputeTaaResolveBlendWeightsIfResolveReady(const TaaResolveDesc& desc,
+    if (reason != TaaResolveWithBlendRejectReason::None) {

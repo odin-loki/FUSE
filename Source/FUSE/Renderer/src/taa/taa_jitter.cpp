@@ -433,3 +433,14 @@ bool TaaJitterLayout::tryNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 h
 // --- deepen additive from deepen-taa-b59-guards-d5f5 ---
 bool TaaJitter::trySyncToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason) {
     if (!preflightTaaJitterSync(frameIndex, m_sequenceLength, &reason)) {
+
+// --- deepen additive from deepen-taa-b59-guards-2768 ---
+    case TaaJitterGuardRejectReason::Misaligned:
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(const TaaJitter& jitter, u32 frameIndex) {
+    const TaaJitterGuardRejectReason syncReject = classifyTaaJitterSyncReject(jitter.sequenceLength());
+        return TaaJitterGuardRejectReason::Misaligned;
+bool preflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex, TaaJitterGuardRejectReason* reason) {
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterAlignmentReject(jitter, frameIndex);
+bool tryPreflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex, TaaJitterGuardRejectReason& reason) {
+    return preflightTaaJitterAlignment(jitter, frameIndex, &reason);
+    return !preflightTaaJitterAlignment(jitter, frameIndex);

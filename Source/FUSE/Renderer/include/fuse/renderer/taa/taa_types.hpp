@@ -400,3 +400,13 @@ TaaFrameGuardPreflight preflightTaaFrameGuards(const TaaResolveDesc& desc, const
 // --- deepen additive from deepen-taa-b59-guards-d5f5 ---
 bool preflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
 bool tryPreflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+
+// --- deepen additive from deepen-taa-b59-guards-2768 ---
+enum class TaaResolveWithBlendRejectReason : u8 {
+const char* taaResolveWithBlendRejectReasonLabel(TaaResolveWithBlendRejectReason reason);
+TaaResolveWithBlendRejectReason classifyTaaResolveWithBlendReject(const TaaResolveDesc& desc,
+bool preflightTaaResolveWithBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                  TaaResolveWithBlendRejectReason* reason = nullptr);
+bool tryPreflightTaaResolveWithBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                     TaaResolveWithBlendRejectReason& reason);
+bool tryComputeTaaResolveBlendWeightsIfResolveReady(const TaaResolveDesc& desc,

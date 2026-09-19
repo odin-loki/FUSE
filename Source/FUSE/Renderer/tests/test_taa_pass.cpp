@@ -3977,3 +3977,46 @@ void testTaaPassDeepenFrameGuards() {
 void testHistoryWarmupBlockGuards() {
                "tryPreflightTaaJitterAdvance reject reason is InvalidSequence");
     expectNear(weights.history, 0.85f, 1e-5f, "pass tryCompute steady history weight");
+
+// --- deepen additive from deepen-taa-b59-guards-2768 ---
+void testHistoryWarmupBlockPreflight() {
+void testJitterAlignmentPreflight() {
+                               fuse::renderer::TaaJitterGuardRejectReason::Misaligned),
+    expectTrue(fuse::renderer::classifyTaaJitterAlignmentReject(jitter, 5u) ==
+                   fuse::renderer::TaaJitterGuardRejectReason::Misaligned,
+    expectTrue(!fuse::renderer::preflightTaaJitterAlignment(jitter, 5u, &rejectReason),
+               "preflightTaaJitterAlignment fails when misaligned");
+    expectTrue(rejectReason == fuse::renderer::TaaJitterGuardRejectReason::Misaligned,
+    expectTrue(fuse::renderer::tryPreflightTaaJitterAlignment(jitter, 5u, rejectReason),
+               "tryPreflightTaaJitterAlignment passes when aligned");
+    expectTrue(fuse::renderer::classifyTaaJitterAlignmentReject(fallbackJitter, 0u) ==
+void testResolveWithBlendPreflight() {
+    expectTrue(std::strcmp(fuse::renderer::taaResolveWithBlendRejectReasonLabel(
+                               fuse::renderer::TaaResolveWithBlendRejectReason::ResolveBlocked),
+                               fuse::renderer::TaaResolveWithBlendRejectReason::BlendRejected),
+    expectTrue(fuse::renderer::classifyTaaResolveWithBlendReject(desc, emptyHistory) ==
+                   fuse::renderer::TaaResolveWithBlendRejectReason::ResolveBlocked,
+    fuse::renderer::TaaResolveWithBlendRejectReason rejectReason =
+        fuse::renderer::TaaResolveWithBlendRejectReason::None;
+    expectTrue(!fuse::renderer::tryPreflightTaaResolveWithBlend(desc, emptyHistory, rejectReason),
+               "tryPreflightTaaResolveWithBlend fails for empty history");
+    expectTrue(rejectReason == fuse::renderer::TaaResolveWithBlendRejectReason::ResolveBlocked,
+    expectTrue(fuse::renderer::preflightTaaResolveWithBlend(desc, history, &rejectReason),
+    expectTrue(rejectReason == fuse::renderer::TaaResolveWithBlendRejectReason::None,
+    expectTrue(fuse::renderer::tryComputeTaaResolveBlendWeightsIfResolveReady(desc, history, weights,
+               "tryComputeTaaResolveBlendWeightsIfResolveReady passes for valid resolve");
+               "tryComputeTaaResolveBlendWeightsIfResolveReady passes after warmup");
+    expectTrue(fuse::renderer::classifyTaaResolveWithBlendReject(desc, history) ==
+void testTaaPassWarmupAndCompositePreflightWrappers() {
+    expectTrue(pass->preflightJitterAdvance(), "pass preflightJitterAdvance passes with default sequence");
+               "pass tryPreflightHistoryWarmup fails before first resolve");
+    expectTrue(pass->tryPreflightJitterSync(4u, jitterReason), "pass tryPreflightJitterSync succeeds");
+    expectTrue(pass->preflightJitterAlignment(4u, &jitterReason),
+               "pass preflightJitterAlignment passes after sync");
+    expectTrue(pass->preflightJitterAdvance(&jitterReason), "pass preflightJitterAdvance passes");
+    fuse::renderer::TaaResolveWithBlendRejectReason compositeReason =
+    expectTrue(pass->preflightResolveWithBlend(resolveDesc, &compositeReason),
+    testHistoryWarmupBlockPreflight();
+    testJitterAlignmentPreflight();
+    testResolveWithBlendPreflight();
+    testTaaPassWarmupAndCompositePreflightWrappers();

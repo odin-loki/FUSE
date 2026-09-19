@@ -224,3 +224,8 @@ TaaJitterFramePreflight preflightTaaJitterFrame(u32 frameIndex, u32 width, u32 h
 
 // --- deepen additive from deepen-taa-b59-guards-d5f5 ---
     bool trySyncToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason);
+
+// --- deepen additive from deepen-taa-b59-guards-2768 ---
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(const TaaJitter& jitter, u32 frameIndex);
+bool preflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex,
+bool tryPreflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex,
