@@ -58,6 +58,8 @@ struct ChromeTraceExportPreflight {
     bool ringBufferFull = false;
     bool hasInvalidNameEvents = false;
     bool crossThreadFlowHandoffPending = false;
+    u32 ignoredAsyncFlowEndCount = 0;
+    bool hasIgnoredAsyncFlowEnds = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -86,6 +88,15 @@ private:
 bool enabled();
 void setEnabled(bool enabled);
 
+/// True when a profiler label/track name is non-null and non-empty.
+bool isValidEventName(const char* name);
+
+/// Preflight guards for record entry points — false when disabled or name is invalid.
+bool canRecordScope(const char* name);
+bool canBeginAsyncFlow(const char* name);
+bool canEndAsyncFlow(const char* name);
+bool canSampleCounter(const char* track);
+
 void beginFrame();
 void endFrame();
 
@@ -104,12 +115,15 @@ bool isFlowNestingBalanced();
 bool hasUnbalancedNesting();
 bool isFlowDepthDetached();
 bool isCrossThreadFlowHandoffPending();
+/// True when scope/flow nesting is balanced and no async flows remain open.
+bool isProfilerGuardStateBalanced();
+u32 ignoredAsyncFlowEndCount();
+bool hasIgnoredAsyncFlowEnds();
 
 bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
-bool isValidEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
@@ -121,12 +135,22 @@ u32 lastEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 countEventsByName(const char* name);
+bool tryFindEventIndexByName(const char* name, u32& outIndex);
+u32 findFirstEventIndexByScopeId(u32 scopeId);
+u32 countEventsByScopeId(u32 scopeId);
+u32 firstExportableEventIndex();
+u32 lastExportableEventIndex();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
+bool tryFirstExportableEvent(ProfileEvent& outEvent);
+bool tryLastExportableEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
