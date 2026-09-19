@@ -2317,3 +2317,7 @@ SampleCoordRejectReason FroxelGridLayout::classifyFroxelSampleCoordsReject(const
     outReason = classifyDensityLookupAtCoordReject(grid, desc, tileX, tileY, sliceZ);
         classifyDensityLookupAtCoordReject(grid, desc, tileX, tileY, sliceZ));
         FroxelGridLayout::classifyFroxelSampleCoordsReject(coords, desc);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-997a ---
+ScreenMappingRejectReason FroxelGridLayout::classifyScreenDepthToSampleCoordsReject(
+    const SampleCoordRejectReason sampleReject = FroxelGridLayout::classifySampleCoordReject(coords, desc);

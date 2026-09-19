@@ -3709,3 +3709,13 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "preflightDensityLookupAtCoord succeeds when OOB coords clamp");
     expectTrue(!fuse::renderer::FroxelGridLayout::preflightScreenDepthMapping(0.5f, 0.5f, 10.f, zeroDesc, camera),
                "preflightScreenDepthMapping rejects empty froxel desc");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-997a ---
+    expectTrue(fuse::renderer::sampleCoordRejectReasonIsBlocking(fuse::renderer::SampleCoordRejectReason::EmptyGrid),
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookup(grid, desc, 99u, 99u, 99u, &lookupReason),
+               "preflightDensityTrilinearSample reports clampable_weights");
+               "preflightFroxelPopulate reports zero_density");
+    expectTrue(fuse::renderer::FroxelGridLayout::classifyScreenDepthToSampleCoordsReject(
+               "classifyScreenDepthToSampleCoordsReject none for in-range depth");
+               "classifyScreenDepthToSampleCoordsReject depth_out_of_range for below-near depth");
+               "classifyScreenDepthToSampleCoordsReject empty_grid for empty desc");
