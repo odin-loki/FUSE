@@ -2878,3 +2878,17 @@ HitTestPreflight GizmoSystem::preflightHitTest(const GizmoHitTest& hit) const {
     return fuse::editor::preflightHitTest(hit);
 RayPreflight GizmoSystem::preflightRay(const GizmoRay& ray) const {
     return fuse::editor::preflightRay(ray, kAxisLength, kPickRadius);
+
+// --- deepen additive from deepen-gizmo-preflight-guards-fbfd ---
+ModeChangePreflight preflightModeChange(GizmoMode current, GizmoMode next, bool dragging) {
+    ModeChangePreflight preflight{};
+ModeChangePreflight preflightCycleMode(GizmoMode current, bool dragging) {
+    return preflightModeChange(current, cycleGizmoMode(current), dragging);
+    return preflightModeChange(current, next, dragging).canChange();
+    return preflightCycleMode(current, dragging).canChange();
+ModeChangePreflight GizmoSystem::preflightModeChange(GizmoMode mode) const {
+    return fuse::editor::preflightModeChange(m_mode, mode, m_dragging);
+ModeChangePreflight GizmoSystem::preflightCycleMode() const {
+    return fuse::editor::preflightCycleMode(m_mode, m_dragging);
+    return preflightModeChange(mode).canChange();
+    return preflightCycleMode().canChange();

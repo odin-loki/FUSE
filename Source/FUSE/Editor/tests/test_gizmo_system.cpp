@@ -4070,3 +4070,22 @@ void testHitTestPreflightGuards() {
     const fuse::editor::InteractionPreflight idle = gizmo.preflightInteraction(hit);
     const fuse::editor::InteractionPreflight active = gizmo.preflightInteraction(hit);
     testHitTestPreflightGuards();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-fbfd ---
+void testInteractionPreflightSnapRouting() {
+    const fuse::editor::InteractionPreflight idleValid = fuse::editor::preflightInteraction(
+    const fuse::editor::InteractionPreflight activeValid = fuse::editor::preflightInteraction(
+void testModeChangePreflightGuards() {
+    const fuse::editor::ModeChangePreflight unchanged = fuse::editor::preflightModeChange(
+    const fuse::editor::ModeChangePreflight idleChange = fuse::editor::preflightModeChange(
+    const fuse::editor::ModeChangePreflight draggingChange = fuse::editor::preflightModeChange(
+    const fuse::editor::ModeChangePreflight cyclePreflight =
+        fuse::editor::preflightCycleMode(fuse::editor::GizmoMode::Scale, true);
+    expectTrue(cyclePreflight.canChange(), "cycle preflight accepts mode cycle while dragging");
+    expectTrue(cyclePreflight.wouldCancelDrag, "cycle preflight marks drag cancellation");
+    const fuse::editor::ModeChangePreflight gizmoPreflight =
+        gizmo.preflightModeChange(fuse::editor::GizmoMode::Rotate);
+    expectTrue(gizmoPreflight.wouldCancelDrag, "gizmo mode preflight marks drag cancellation");
+    expectTrue(gizmo.preflightCycleMode().wouldCancelDrag,
+    testInteractionPreflightSnapRouting();
+    testModeChangePreflightGuards();

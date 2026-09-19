@@ -1236,3 +1236,11 @@ HitTestPreflight preflightHitTest(const GizmoHitTest& hit);
 RayPreflight preflightRay(const GizmoRay& ray, f32 axisLength, f32 pickRadius);
     [[nodiscard]] HitTestPreflight preflightHitTest(const GizmoHitTest& hit) const;
     [[nodiscard]] RayPreflight preflightRay(const GizmoRay& ray) const;
+
+// --- deepen additive from deepen-gizmo-preflight-guards-fbfd ---
+struct ModeChangePreflight {
+    bool wouldCancelDrag = false;
+ModeChangePreflight preflightModeChange(GizmoMode current, GizmoMode next, bool dragging);
+ModeChangePreflight preflightCycleMode(GizmoMode current, bool dragging);
+    [[nodiscard]] ModeChangePreflight preflightModeChange(GizmoMode mode) const;
+    [[nodiscard]] ModeChangePreflight preflightCycleMode() const;
