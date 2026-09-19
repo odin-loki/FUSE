@@ -191,9 +191,12 @@ u32 nestingDepth();
 
 u32 ringBufferCapacity();
 
+bool isValidProfileName(const char* name);
 bool hasEvents();
 bool hasExportableEvents();
 bool hasOpenAsyncFlows();
+bool isScopeNestingBalanced();
+bool isFlowNestingBalanced();
 bool isBufferEmpty();
 
 bool isBufferFull();
@@ -335,6 +338,19 @@ bool tryEventAt(u32 index, ProfileEvent& out);
 
 /// Safe indexed lookup — returns nullptr when `index` is out of range (B1.6 deepen).
 const ProfileEvent* eventAtOrNull(u32 index);
+/// Read-only chrome export diagnostics — inspect buffer and nesting guard state before export.
+    bool profilerEnabled = false;
+    bool hasExportableEvents = false;
+    bool bufferEmpty = true;
+    bool hasOpenAsyncFlows = false;
+    bool scopeNestingBalanced = true;
+    bool flowNestingBalanced = true;
+    u32 eventCount = 0;
+    u32 exportableEventCount = 0;
+    u32 frameIndex = 0;
+
+    [[nodiscard]] bool canExport() const { return profilerEnabled; }
+
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();

@@ -313,6 +313,10 @@ u32 openAsyncFlowCount() {
     return g_openAsyncFlowCount.load(std::memory_order_acquire);
 }
 
+bool isValidProfileName(const char* name) {
+    return isValidEventName(name);
+}
+
 bool hasOpenAsyncFlows() {
     return openAsyncFlowCount() > 0u;
 }
@@ -348,6 +352,7 @@ NestingAsyncFlowPreflight preflightNestingAndAsyncFlow() {
 u32 ringBufferCapacity() {
     return kRingCapacity;
 }
+
 
 }
 
@@ -463,6 +468,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.can_export = preflight.scope_nesting_balanced && preflight.flow_nesting_balanced;
     return preflight;
 
+
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
     return kEmpty;
@@ -486,6 +492,7 @@ const ProfileEvent& emptyProfileEvent() {
 
 
 
+    const u32 count = eventCount();
     const u32 head = g_writeHead.load(std::memory_order_acquire);
     const u32 start = head >= count ? head - count : 0u;
     const u32 ringIndex = (start + index) % kRingCapacity;
@@ -835,6 +842,7 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 void endAsyncFlow(const char* name, u32 flowId) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
     if (name == nullptr) {
+    if (!isValidEventName(name)) {
         return;
     }
 
@@ -950,6 +958,16 @@ ChromeExportPreflight preflightChromeExport() {
     preflight.flowNestingBalanced = isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.canExport = true;
+ChromeTraceExportPreflight preflightChromeTraceExport() {
+    ChromeTraceExportPreflight preflight{};
+    preflight.profilerEnabled = enabled();
+
+    const u32 count = preflight.eventCount;
+    for (u32 i = 0; i < count; ++i) {
+        if (isValidProfileEvent(eventAt(i))) {
+            ++preflight.exportableEventCount;
+        }
+    preflight.hasExportableEvents = preflight.exportableEventCount > 0u;
     return preflight;
 }
 
