@@ -3667,3 +3667,10 @@ void testDdgiTryPreflightDeepenGuards() {
                "tryPreflightProbeTraceKernel rejects zero rays per probe");
                "tryPreflightProbeTraceKernel zero rays reports zero_rays_per_probe reason");
     testDdgiTryPreflightDeepenGuards();
+
+// --- deepen additive from deepen-ddgi-guards-f003 ---
+                   desc, preflightCoords, cache.data(), 8u) ==
+                   desc, preflightCoords, cache.data(), 8u),
+               "classifyProbeTrilinearSampleReject null cache at world position");
+               "preflightCacheIndexLookup index-only succeeds for valid index");
+               "classifyCacheIndexReject index-only out_of_range_probe_index");

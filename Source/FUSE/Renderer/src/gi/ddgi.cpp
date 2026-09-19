@@ -2809,3 +2809,6 @@ ProbeScheduleRejectReason classifyProbeScheduleAtRateReject(u32 probe_count,
 bool tryPreflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
 bool tryPreflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
     return tryCanLaunchProbeBlendKernel(params, outReason);
+
+// --- deepen additive from deepen-ddgi-guards-f003 ---
+    return probeTrilinearSampleRejectReasonIsBlocking(reject);
