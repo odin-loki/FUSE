@@ -3856,3 +3856,7 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "preflightDensityLookupAtCoord succeeds with clamp warning for OOB coords");
     expectTrue(!fuse::renderer::froxel_util::preflightDensityTrilinearSample(emptyGrid, desc, inBounds),
                "preflightDensityTrilinearSample rejects empty storage");
+
+// --- deepen additive from deepen-froxel-volumetric-guards-15f7 ---
+               "preflightDensityLookupAtIndex succeeds with clamp warning for OOB index");
+               "preflightDensityTrilinearSample rejects hard OOB tile");
