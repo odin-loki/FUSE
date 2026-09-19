@@ -1567,6 +1567,45 @@ void testCookCachePruneInvalidEntries() {
     expectTrue(invalidOnly.prune_invalid_entries() == 0u, "prune on empty cache after rejected load");
 }
 
+void testCookerReconcileEstimators() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_chain_a.obj", "# est chain a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_chain_b.obj", "# est chain b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_est_chain_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_est_chain_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
+    expectTrue(cooked.ok, "manifest cook for reconcile estimators ok");
+    expectTrue(cooker.count_prune_removals() == 0u, "fresh cache prune estimator is zero");
+    expectTrue(!cooker.would_reconcile_stale_dependencies(manifest),
+               "fresh cache would not reconcile stale dependencies");
+    expectTrue(cooker.count_stale_content_invalidation(manifest) == 0u,
+               "fresh cache stale-content estimator is zero");
+
+    writeTempFile(sourceA, "# est chain a revised\n");
+    expectTrue(cooker.count_stale_content_invalidation(manifest) >= 1u,
+               "source change raises stale-content estimator");
+    expectTrue(cooker.count_prune_removals() >= 1u, "stale entries raise prune estimator");
+    expectTrue(cooker.would_reconcile_stale_dependencies(manifest),
+               "upstream hash change triggers stale dependency reconcile probe");
+
+    const fuse::u32 pruned = cooker.cache().prune_all();
+    expectTrue(pruned >= 1u, "prune_all removes stale entries estimated by reconcile probes");
+    expectTrue(cooker.count_prune_removals() == 0u, "prune estimator zero after reconcile");
+}
+
 void testCookerInvalidationCountProbes() {
     const std::string sourceA = writeTempFile("/tmp/fuse_b79_count_chain_a.obj", "# count chain a\n");
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_count_chain_b.obj", "# count chain b\n");
@@ -1686,6 +1725,7 @@ int main() {
     testCookCacheEmptyKeyPaths();
     testCookDirtyInvalidatesCache();
     testCookerInvalidationCountProbes();
+    testCookerReconcileEstimators();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
