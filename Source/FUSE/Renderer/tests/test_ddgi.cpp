@@ -2695,3 +2695,33 @@ void testProbeSchedulePreflights() {
                "wouldSkip false for valid sample coords");
                "wouldSkip true for unordered corners");
     testProbeSchedulePreflights();
+
+// --- deepen additive from deepen-ddgi-guards-46cb ---
+void testCacheLookupRejectReasons() {
+    expectTrue(fuse::renderer::ddgi_util::tryValidateCacheLookup(desc, cache.data(), 3u, 8u, reason),
+               "tryValidateCacheLookup succeeds for accessible cache");
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::None, "accessible cache reports no reject reason");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateCacheLookup(desc, nullptr, 3u, 8u, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateCacheLookup(desc, cache.data(), 99u, 8u, reason),
+               "tryValidateCacheLookup rejects OOB probe index");
+    expectTrue(fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 64u, reason),
+               "tryCanSchedule succeeds for valid counts");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(2048u, 64u),
+               "wouldSkip false for valid schedule counts");
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(0u, 64u, reason),
+               "tryCanSchedule rejects zero probe count");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(0u, 64u),
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 0u, reason),
+               "tryCanSchedule rejects zero max indices");
+    expectTrue(count == 64u, "trySchedule writes scheduled count");
+    expectTrue(indices[0] == 0u && indices[63] == 63u, "trySchedule writes expected indices");
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 2048u, 64u, nullptr, 64u, &ignoredCount, reason),
+               "trySchedule rejects null index buffer");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::NullIndices,
+               "trySchedule rejects null count pointer");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::NullCount,
+               "trySchedule zero probe count reports zero_probe_count reason");
+    expectTrue(count == 0u, "trySchedule zero probe count clears output count");
+               "tryLaunch blend rejects null probe indices");
+               "tryLaunch blend null indices reports null_probe_indices reason");
+    testCacheLookupRejectReasons();
