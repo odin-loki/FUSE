@@ -482,6 +482,18 @@ enum class ProbeScheduleRejectReason : u8 {
 /// Human-readable label for probe-schedule reject reasons (logging / tests).
 const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
 
+/// Why probe-update scheduling preflight rejected the request (B5.6 deepen).
+enum class ProbeScheduleRejectReason : u8 {
+    None = 0,
+    NullOutput,
+    NullCount,
+    ZeroProbeCount,
+    ZeroMaxIndices,
+};
+
+/// Human-readable label for probe-schedule reject reasons (logging / tests).
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
+
 /// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
 enum class ProbeUpdateLaunchRejectReason : u8 {
     NullIndices,
@@ -723,6 +735,8 @@ struct ProbeGridLayout {
     /// Early-out when sample-coord validation would reject — same ordering as `isValidProbeSampleCoords`.
     /// Preflight guard before trilinear sample-coord use — same ordering as `isValidProbeSampleCoords`.
     /// Diagnose why sample-coord preflight would reject; vacuously succeeds on valid coords.
+    /// Early-out when sample-coord validation would reject — same ordering as `tryValidateProbeSampleCoords`.
+    /// Classify why sample-coord validation would reject; returns `None` on valid coords.
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -1147,6 +1161,8 @@ bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_ind
 /// Preflight guard before probe scheduling; false on null outputs or zero `max_indices`.
 /// Preflight guard before probe scheduling; false on zero probe count or null outputs.
                                 const u32* out_count,
+/// Preflight guard before probe-update scheduling; false on null output or zero capacity.
+/// Early-out when probe-update scheduling would be rejected — same ordering as `canScheduleProbeUpdates`.
 bool tryScheduleProbeUpdates(u32 frame_index,
                              u32 probe_count,
                              u32 probes_per_frame,

@@ -265,7 +265,6 @@ bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 /// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
-bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
