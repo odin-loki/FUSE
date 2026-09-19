@@ -3919,3 +3919,21 @@ void testSnapNegativeStepPreflight() {
     expectTrue(!negativePreflight.canApply(), "snap preflight rejects negative step");
     testRayUnnormalizedPreflight();
     testSnapNegativeStepPreflight();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-8907 ---
+    const fuse::editor::PickInteractionPreflight degradedRay =
+    const fuse::editor::PickInteractionPreflight degradedHit =
+    const fuse::editor::PickInteractionPreflight validSnap =
+    const fuse::editor::UpdateDragInteractionPreflight valid =
+    const fuse::editor::PickSnapPreflight degraded =
+    const fuse::editor::PickSnapPreflight valid =
+void testSnapInteractionPreflight() {
+    const fuse::editor::SnapInteractionPreflight idleDegraded = fuse::editor::preflightSnapInteraction(
+    const fuse::editor::SnapInteractionPreflight dragDegraded = fuse::editor::preflightSnapInteraction(
+    const fuse::editor::SnapInteractionPreflight validDrag = fuse::editor::preflightSnapInteraction(
+    expectTrue(gizmo.preflightSnapInteraction().canApply(),
+void testInteractionPreflightSnapOnPhase() {
+    expectTrue(gizmo.preflightInteraction(hit).snapDegraded(),
+    expectTrue(!gizmo.preflightInteraction(hit).snapWillApplyOnPhase(),
+    testSnapInteractionPreflight();
+    testInteractionPreflightSnapOnPhase();

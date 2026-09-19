@@ -1204,3 +1204,9 @@ GizmoPreflightRouter preflightGizmoRouter(const GizmoRay& ray, const GizmoTransf
 struct SnapPhasePreflight {
 SnapPhasePreflight preflightSnapPhase(GizmoMode mode, const GizmoSnapSettings& settings,
     [[nodiscard]] SnapPhasePreflight preflightSnapPhase() const;
+
+// --- deepen additive from deepen-gizmo-preflight-guards-8907 ---
+struct SnapInteractionPreflight {
+SnapInteractionPreflight preflightSnapInteraction(GizmoInteractionPhase phase, GizmoMode mode,
+    SnapInteractionPreflight snapInteraction{};
+    [[nodiscard]] SnapInteractionPreflight preflightSnapInteraction() const;
