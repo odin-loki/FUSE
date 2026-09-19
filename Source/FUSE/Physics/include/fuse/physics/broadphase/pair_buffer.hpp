@@ -648,3 +648,7 @@ bool tryPreflightPairBufferWriteSlot(
     PairBufferWriteSlotRejectReason& reason);
 bool tryPreflightPairBufferInvalidateSlot(
     PairBufferInvalidateSlotRejectReason& reason);
+
+// --- deepen additive from b4-broadphase-preflight-deepen-73d8 ---
+    PairBufferWriteSlotRejectReason& outReason);
+    PairBufferInvalidateSlotRejectReason& outReason);

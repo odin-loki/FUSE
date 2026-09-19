@@ -1246,3 +1246,11 @@ bool tryPreflightPairBufferWriteSlot(
 bool tryPreflightPairBufferInvalidateSlot(
     PairBufferInvalidateSlotRejectReason& reason) {
     return reason == PairBufferInvalidateSlotRejectReason::None;
+
+// --- deepen additive from b4-broadphase-preflight-deepen-73d8 ---
+    PairBufferWriteSlotRejectReason& outReason) {
+    outReason = pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB);
+    return outReason == PairBufferWriteSlotRejectReason::None;
+    PairBufferInvalidateSlotRejectReason& outReason) {
+    outReason = pairBufferInvalidateSlotRejectReason(buffer, slot);
+    return outReason == PairBufferInvalidateSlotRejectReason::None;

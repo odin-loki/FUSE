@@ -1814,3 +1814,17 @@ bool tryPreflightBroadphaseMerge(
 bool tryPreflightMergePairsIntoBuffer(
     MergePairsIntoBufferRejectReason& reason) {
     return reason == MergePairsIntoBufferRejectReason::None;
+
+// --- deepen additive from b4-broadphase-preflight-deepen-73d8 ---
+    RefineBroadphaseRejectReason& outReason) {
+    outReason = refineBroadphaseRejectReason(bodies, shapes, buffer);
+    return outReason == RefineBroadphaseRejectReason::None;
+bool tryPreflightDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason& outReason) {
+    outReason = dedupeBroadphaseRejectReason(buffer);
+    return outReason == DedupeBroadphaseRejectReason::None;
+    BroadphaseMergeRejectReason& outReason) {
+    outReason = mergeBroadphaseRejectReason(bodies, shapes);
+    return outReason == BroadphaseMergeRejectReason::None;
+    MergePairsIntoBufferRejectReason& outReason) {
+    outReason = mergePairsIntoBufferRejectReason(pairs, buffer);
+    return outReason == MergePairsIntoBufferRejectReason::None;

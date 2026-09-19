@@ -1844,3 +1844,12 @@ bool tryPreflightBroadphaseMerge(
     BroadphaseMergeRejectReason& reason);
 bool tryPreflightMergePairsIntoBuffer(
     MergePairsIntoBufferRejectReason& reason);
+
+// --- deepen additive from b4-broadphase-preflight-deepen-73d8 ---
+    CellOccupancyRejectReason& outReason) {
+    outReason = cellOccupancyRejectReason(range, maxCells);
+    return outReason == CellOccupancyRejectReason::None;
+    RefineBroadphaseRejectReason& outReason);
+bool tryPreflightDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason& outReason);
+    BroadphaseMergeRejectReason& outReason);
+    MergePairsIntoBufferRejectReason& outReason);
