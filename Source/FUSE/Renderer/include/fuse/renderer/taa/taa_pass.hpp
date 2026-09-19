@@ -328,20 +328,17 @@ public:
     bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// True when history reuse and resolve blend-weight preflights both pass (B5.9 deepen).
     bool preflightTemporalBlend(const TaaResolveDesc& desc,
-                                TaaHistoryReuseBlockReason* reuseReason = nullptr,
-                                TaaResolveBlendRejectReason* blendReason = nullptr) const;
     /// Early-out when temporal blend preflight would reject reuse or blend weights (B5.9 deepen).
     bool shouldSkipTemporalBlend(const TaaResolveDesc& desc) const;
     /// True when pass history has completed warm-up (B5.9 deepen).
     bool isHistoryWarmed() const;
-    /// True when combined resolve temporal-blend preflight passes (B5.9 deepen).
-    bool preflightResolveTemporalBlend(const TaaResolveDesc& desc,
-                                       TaaResolveTemporalRejectReason* reason = nullptr) const;
-    /// Early-out when combined resolve temporal-blend preflight would reject (B5.9 deepen).
-    bool shouldSkipResolveTemporalBlend(const TaaResolveDesc& desc) const;
     bool resolveBlendReady(const TaaResolveDesc& desc) const;
     /// Classify why pass jitter sync would be rejected (B5.9 deepen).
     /// Classify why pass jitter sync to `frameIndex` would be rejected (B5.9 deepen).
+    /// Classify why resolve blend weights would be rejected (B5.9 deepen).
+    TaaResolveBlendRejectReason classifyResolveBlendReject(const TaaResolveDesc& desc) const;
+    /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
+    bool tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSync(u32 frameIndex) const;
     /// Sync jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
