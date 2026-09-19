@@ -3987,3 +3987,19 @@ void testMergePairsIntoBufferPreflightFields() {
     expectTrue(fullPreflight.bufferFull, "full merge preflight marks bufferFull");
     testDedupeBroadphasePairBufferPreflightParity();
     testMergePairsIntoBufferPreflightFields();
+
+// --- deepen additive from deepen-b4-broadphase-guards-1cf6 ---
+    const fuse::physics::broadphase::CellCapacityPreflight withinBudget =
+        fuse::physics::broadphase::preflightCellCapacity(validRange, 8u);
+    const fuse::physics::broadphase::CellCapacityPreflight overBudget =
+        fuse::physics::broadphase::preflightCellCapacity(validRange, 7u);
+    const fuse::physics::broadphase::BroadphaseMergeIntoBufferPreflight emptyScenePreflight =
+        fuse::physics::broadphase::preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer);
+    expectTrue(!emptyScenePreflight.canMergeIntoBuffer(), "empty scene cannot merge into buffer");
+    expectTrue(emptyScenePreflight.emptyMergeScene, "merge-into-buffer preflight marks empty merge scene");
+    const fuse::physics::broadphase::BroadphaseMergeIntoBufferPreflight validPreflight =
+    expectTrue(validPreflight.canMergeIntoBuffer(), "mergeable scene can merge pairs into empty buffer");
+    const fuse::physics::broadphase::BroadphaseMergeIntoBufferPreflight fullPreflight =
+    expectTrue(!fullPreflight.canMergeIntoBuffer(), "full buffer cannot merge additional pairs");
+    expectTrue(fullPreflight.bufferFull, "merge-into-buffer preflight marks buffer full");
+    expectEq(static_cast<fuse::u32>(fullPreflight.bufferReason),

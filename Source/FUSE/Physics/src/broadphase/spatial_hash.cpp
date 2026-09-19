@@ -1637,3 +1637,13 @@ MergeBroadphasePushPreflight preflightMergeBroadphasePush(
     return refinePairSlotRejectReason(pairIndex, bodies, shapes, buffer) == expected;
     preflight.reason = refinePairSlotRejectReason(pairIndex, bodies, shapes, buffer);
     preflight.separated = preflight.reason == RefinePairSlotRejectReason::Separated;
+
+// --- deepen additive from deepen-b4-broadphase-guards-1cf6 ---
+    preflight.mergeReason = mergePreflight.reason;
+    preflight.emptyMergeScene = !mergePreflight.canMerge();
+    const MergePairsIntoBufferPreflight bufferPreflight = preflightMergePairsIntoBuffer(pairs, buffer);
+    preflight.bufferReason = bufferPreflight.reason;
+    preflight.emptyPairs = bufferPreflight.emptyPairs;
+    preflight.bufferFull = bufferPreflight.bufferFull;
+    return !preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer).canMergeIntoBuffer();
+    return preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer).canMergeIntoBuffer();

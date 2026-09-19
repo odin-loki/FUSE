@@ -1634,3 +1634,12 @@ MergeBroadphasePushPreflight preflightMergeBroadphasePush(
     bool passesRefine() const { return reason == RefinePairSlotRejectReason::None; }
         return reason == RefinePairSlotRejectReason::InvalidPair ||
                reason == RefinePairSlotRejectReason::Separated;
+
+// --- deepen additive from deepen-b4-broadphase-guards-1cf6 ---
+FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity(const CellRange3& range, u32 maxCells) {
+FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity(const CellRange2& range, u32 maxCells) {
+    return preflightCellCapacity(range, maxCells).canInsert();
+    BroadphaseMergeRejectReason mergeReason = BroadphaseMergeRejectReason::None;
+    MergePairsIntoBufferRejectReason bufferReason = MergePairsIntoBufferRejectReason::None;
+        return mergeReason == BroadphaseMergeRejectReason::None &&
+               bufferReason == MergePairsIntoBufferRejectReason::None;
