@@ -534,6 +534,7 @@ enum class ProbeGridSourceKind : u8 {
 
 /// Why probe-grid source validation rejected the descriptor (B5.6 deepen pass).
 /// Why probe grid source preflight rejected the request (B5.6 deepen).
+/// Why probe grid source validation rejected the desc (B5.6 deepen pass).
     None = 0,
     EmptyGrid,
     ZeroIrradianceRes,
@@ -558,6 +559,20 @@ const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason)
 /// True when a probe-grid-source reject reason would block sampling (B5.6 deepen pass).
 /// True when a probe-grid source reject reason would block validation (B5.6 deepen pass).
 bool probeGridSourceRejectReasonIsBlocking(ProbeGridSourceRejectReason reason);
+
+/// True when a probe-grid source reject reason would block init/update (B5.6 deepen pass).
+
+/// Classify why probe-grid source validation would reject — same ordering as `tryValidateProbeGridSource`.
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc);
+
+/// Diagnose why probe-grid source validation would reject; vacuously succeeds on valid descs.
+bool tryValidateProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason& outReason);
+
+/// True when `desc` satisfies probe-volume allocation requirements.
+bool validateProbeGridSource(const DDGIDesc& desc);
+
+/// Non-mutating probe-grid source preflight — returns true when init/update would proceed.
+bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason* reason = nullptr);
 
 /// Why a cache-index lookup preflight rejected the request (B5.6 deepen).
 enum class CacheIndexRejectReason : u8 {
@@ -1943,6 +1958,7 @@ bool tryPreflightTrilinearProbeSample(const DDGIDesc& desc,
 /// Diagnose why trilinear probe sample preflight would reject; soft-fails on clampable coords.
 /// Preflight guard before trilinear probe sampling; false on inaccessible grid or hard OOB coords.
 /// Preflight guard before coord-based probe trilinear sampling; soft-fails on clampable weights.
+/// Preflight guard before trilinear probe sampling; soft-fails on clampable sample coords.
 bool canTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
                                      const ProbeSampleCoords& coords,
                                      const IrradianceCacheEntry* cache,
@@ -2111,6 +2127,13 @@ bool wouldSkipCacheSampling(const DDGIDesc& desc,
 ProbeTrilinearSampleRejectReason classifyTrilinearSampleRejectAtCoords(const DDGIDesc& desc,
 bool preflightTrilinearSampleAtCoords(const DDGIDesc& desc,
 ProbeTrilinearSampleRejectReason classifyTrilinearSampleRejectAtWorld(const DDGIDesc& desc,
+/// Diagnose why trilinear sample preflight would reject; warns on clampable coords.
+                                        const ProbeSampleCoords& coords,
+                                        const IrradianceCacheEntry* cache,
+bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
+                                   u32 cache_count);
+bool preflightTrilinearProbeSample(const DDGIDesc& desc,
+                                   ProbeTrilinearSampleRejectReason* reason = nullptr);
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -2355,6 +2378,10 @@ bool preflightCacheIndexLookupAtCoord(const DDGIDesc& desc,
 bool wouldClampCacheIndexCoordForLookup(const DDGIDesc& desc, const ProbeGridCoord& coord);
 /// Non-mutating cache-index preflight without a cache pointer — index/capacity only.
 /// Non-mutating cache-index preflight without cache pointer — index + count only.
+/// Non-mutating cache storage preflight — returns true when cache-backed sampling would proceed.
+bool preflightCacheLookup(const DDGIDesc& desc,
+/// Early-out when cache-backed sampling would be rejected — same ordering as `preflightCacheLookup`.
+bool wouldSkipCacheLookup(const DDGIDesc& desc,
 /// True when `probe_index` exceeds the valid probe range on a non-empty grid.
 bool wouldClampProbeIndexForLookup(u32 probe_index, const DDGIDesc& desc);
 /// Minimum irradiance cache entries required for full-grid sampling; 0 on empty grid.
