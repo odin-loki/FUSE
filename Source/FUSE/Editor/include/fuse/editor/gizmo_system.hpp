@@ -1188,3 +1188,14 @@ bool shouldSkipBeginDragInteraction(const BeginDragInteractionPreflight& preflig
 bool shouldSkipUpdateDragInteraction(const UpdateDragInteractionPreflight& preflight);
 bool shouldSkipEndDragInteraction(const EndDragInteractionPreflight& preflight);
 bool shouldSkipInteraction(const InteractionPreflight& preflight);
+
+// --- deepen additive from deepen-gizmo-preflight-guards-cebc ---
+struct GizmoPreflightRouter {
+    InteractionPreflight interaction{};
+    DragInteractionPreflight drag{};
+    PickInteractionPreflight pickInteraction{};
+    BeginDragInteractionPreflight beginDragInteraction{};
+GizmoPreflightRouter preflightGizmoRouter(const GizmoHitTest& hit, bool dragging,
+GizmoPreflightRouter preflightGizmoRouter(const GizmoRay& ray, const GizmoTransform& transform,
+    [[nodiscard]] GizmoPreflightRouter preflightRouter(const GizmoHitTest& hit) const;
+    [[nodiscard]] GizmoPreflightRouter preflightRouter(const GizmoRay& ray,

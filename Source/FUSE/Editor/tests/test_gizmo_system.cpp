@@ -3863,3 +3863,24 @@ void testRayAndScreenFiniteGuards() {
 void testPickSnapPreflightSnapDegraded() {
     const fuse::editor::PickSnapPreflight degradedPickSnap =
     testPickSnapPreflightSnapDegraded();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-cebc ---
+void testInteractionPreflightSnapHelpers() {
+    const fuse::editor::InteractionPreflight idleDegraded = fuse::editor::preflightInteraction(
+    const fuse::editor::InteractionPreflight activeDegraded = fuse::editor::preflightInteraction(
+    const fuse::editor::InteractionPreflight outOfBoundsActive = fuse::editor::preflightInteraction(
+void testGizmoPreflightRouter() {
+    const fuse::editor::GizmoPreflightRouter idleRouter = fuse::editor::preflightGizmoRouter(
+    const fuse::editor::GizmoPreflightRouter activeRouter = fuse::editor::preflightGizmoRouter(
+    const fuse::editor::GizmoPreflightRouter blockedUpdateRouter =
+        fuse::editor::preflightGizmoRouter(hit, true, fuse::editor::GizmoAxis::X,
+    const fuse::editor::GizmoPreflightRouter rayRouter = fuse::editor::preflightGizmoRouter(
+void testGizmoSystemPreflightRouter() {
+    const fuse::editor::GizmoPreflightRouter idleRouter = gizmo.preflightRouter(hit);
+    expectTrue(gizmo.preflightRouter(hit).canRouteUpdate(),
+    expectTrue(!gizmo.preflightRouter(hit).canRoutePrimary(),
+    expectTrue(gizmo.preflightRouter(hit).canRouteEndOnPhase(),
+    expectTrue(gizmo.preflightRouter(xRay, transform).canRouteEnd(),
+    testInteractionPreflightSnapHelpers();
+    testGizmoPreflightRouter();
+    testGizmoSystemPreflightRouter();

@@ -2787,3 +2787,23 @@ GizmoInteractionRejectReason InteractionPreflight::primaryRejectReason() const {
         return classifyBeginDragReject(begin.begin);
         return classifyUpdateDragReject(update.update);
     return fuse::editor::shouldSkipInteraction(preflightInteraction(hit));
+
+// --- deepen additive from deepen-gizmo-preflight-guards-cebc ---
+GizmoPreflightRouter preflightGizmoRouter(const GizmoHitTest& hit, bool dragging,
+    GizmoPreflightRouter router{};
+    router.interaction = preflightInteraction(hit, dragging, activeAxis, mode, settings);
+    router.drag = preflightDragInteraction(hit, dragging, activeAxis, mode, settings);
+    router.pickInteraction = preflightPickInteraction(hit, mode, settings);
+    router.beginDragInteraction = preflightBeginDragInteraction(hit, mode, settings, dragging);
+GizmoPreflightRouter preflightGizmoRouter(const GizmoRay& ray, const GizmoTransform& transform,
+    router.drag = preflightDragInteraction({}, dragging, activeAxis, mode, settings);
+    router.beginDragInteraction = preflightBeginDragInteraction(
+    return preflightGizmoRouter(hit, dragging, activeAxis, mode, settings).canRouteAny();
+    return preflightGizmoRouter(ray, transform, dragging, activeAxis, mode, space, axisLength,
+GizmoPreflightRouter GizmoSystem::preflightRouter(const GizmoHitTest& hit) const {
+    return fuse::editor::preflightGizmoRouter(hit, m_dragging, m_activeAxis, m_mode, m_snap);
+GizmoPreflightRouter GizmoSystem::preflightRouter(const GizmoRay& ray,
+    return fuse::editor::preflightGizmoRouter(ray, transform, m_dragging, m_activeAxis, m_mode,
+    return preflightRouter(hit).canRouteAny();
+    return preflightRouter(ray, transform).canRouteAny();
+    return preflightRouter(hit).canRouteActOrEnd();
