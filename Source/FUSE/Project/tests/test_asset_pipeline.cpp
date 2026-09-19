@@ -1706,6 +1706,47 @@ void testCookCacheDownstreamSourceProbe() {
                "empty output path downstream probe is guarded");
 }
 
+void testCookerUpstreamEstimateAndReconcileWouldProbes() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_up_est_a.obj", "# upstream est a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_up_est_b.obj", "# upstream est b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry_a;
+    entry_a.kind = fuse::project::CookAssetKind::Mesh;
+    entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_up_est_a.fusemesh";
+    manifest.assets.push_back(entry_a);
+
+    fuse::project::CookManifestEntry entry_b;
+    entry_b.kind = fuse::project::CookAssetKind::Mesh;
+    entry_b.source_path = source_b;
+    entry_b.output_path = "/tmp/fuse_b79_up_est_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for upstream estimate ok");
+    expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would_reconcile is false");
+
+    const fuse::project::CookUpstreamInvalidationEstimate upstream =
+        cooker.estimate_upstream_invalidation(manifest, source_a);
+    expectTrue(upstream.direct_entries == 1u, "upstream estimate direct entries for changed source");
+    expectTrue(upstream.downstream_entries >= 1u, "upstream estimate includes downstream entries");
+    expectTrue(upstream.total() == cooker.count_upstream_invalidation(manifest, source_a),
+               "upstream estimate total matches count probe");
+
+    const std::vector<std::string> closure = cooker.probe_upstream_invalidation_closure(manifest, source_a);
+    expectTrue(closure.size() >= 2u, "upstream closure probe lists changed source and dependents");
+    expectTrue(cooker.probe_upstream_invalidation_closure(manifest, "").empty(),
+               "empty changed source upstream closure probe is guarded");
+
+    writeTempFile(source_a, "# upstream est a revised\n");
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "stale cache would_reconcile is true");
+
+    const fuse::project::CookCacheReconcileEstimate reconcile = cooker.estimate_reconcile_invalidation(manifest);
+    expectTrue(reconcile.total() > 0u, "stale reconcile estimate is non-zero after upstream change");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 
@@ -1789,6 +1830,7 @@ int main() {
     testCookDirtyInvalidatesCache();
     testCookerInvalidationCountProbes();
     testCookerReconcileEstimateProbes();
+    testCookerUpstreamEstimateAndReconcileWouldProbes();
     testCookCacheDownstreamSourceProbe();
 
     fuse::core::shutdown();

@@ -70,5 +70,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 /// Fold source/upstream preflight — upstream zero is allowed on valid source keys (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+/// Shared empty-path guard for import descriptors — mirrors mesh/texture/audio hash preconditions (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_import_paths(const std::string& input_path,
+                                                       const std::string& output_path);
 
 } // namespace fuse::project
