@@ -64,7 +64,7 @@ bool ToiBufferSoA::slotIsValid(u32 slot) const {
 void ToiBufferSoA::invalidateSlot(u32 slot) {
     if (slot >= validFlags.size()) {
 void ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
-    if (slot >= pairSlotCount || !result.valid || !isToiInWindow(result.toi)) {
+    if (!slotInRange(slot) || pairSlotCount == 0u || !result.valid || !isToiInWindow(result.toi)) {
         return;
     }
     validFlags[slot] = 0u;
@@ -121,7 +121,7 @@ bool ToiBufferSoA::canApplyMaxCapacityClamp() const {
 }
 
 void ToiBufferSoA::invalidateSlot(u32 slot) {
-    if (slot >= validFlags.size()) {
+    if (!slotInRange(slot)) {
         return;
     }
     if (pairSlotCount > 0u && slot >= pairSlotCount) {
@@ -130,14 +130,49 @@ void ToiBufferSoA::invalidateSlot(u32 slot) {
     validFlags[slot] = 0u;
 }
 
+u32 ToiBufferSoA::remainingCapacity() const {
+    if (maxCapacity == 0u) {
+        return UINT32_MAX;
+    }
+    return activeCount < maxCapacity ? maxCapacity - activeCount : 0u;
+}
+
+bool ToiBufferSoA::canApplyMaxCapacityClamp() const {
+    return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
+}
+
+bool ToiBufferSoA::canSkipCompactAndSort() const {
+    if (canSkipSoAIteration()) {
+        return true;
+    }
+    // Slot writes keep activeCount at zero until compact gathers valid flags.
+    if (pairSlotCount > 0u && activeCount == 0u && countValidSlots() > 0u) {
+        return false;
+    }
+    if (!canSkipCompaction()) {
+        return false;
+    }
+    if (!canSkipSort()) {
+        return false;
+    }
+    return !canApplyMaxCapacityClamp();
+}
+
+bool ToiBufferSoA::slotInRange(u32 slot) const {
+    if (pairSlotCount > 0u) {
+        return slot < pairSlotCount;
+    }
+    return slot < activeCount && slot < validFlags.size();
+}
+
 bool ToiBufferSoA::slotIsValid(u32 slot) const {
     if (slot >= validFlags.size()) {
         return false;
     }
     if (pairSlotCount > 0u && slot >= pairSlotCount) {
-        return false;
-    }
     return validFlags[slot] != 0u;
+    if (!slotInRange(slot) || validFlags[slot] == 0u) {
+    return isToiInWindow(toiValues[slot]);
 }
 
 u32 ToiBufferSoA::countValidSlots() const {
@@ -430,6 +465,7 @@ u32 ToiBufferSoA::compactAndSort() {
         activeCount = 0u;
     if (canSkipSoAIteration()) {
         return 0u;
+        return activeCount;
     }
 
     compact();
