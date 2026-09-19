@@ -528,3 +528,13 @@ PairBufferMergeRejectReason pairBufferMergeRejectReason(
     PairBufferMergeRejectReason reason = PairBufferMergeRejectReason::None;
     bool canMerge() const { return reason == PairBufferMergeRejectReason::None; }
 PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount);
+
+// --- deepen additive from deepen-b4-broadphase-guards-ff66 ---
+enum class PairBufferAcceptPairsRejectReason : u8 {
+const char* pairBufferAcceptPairsRejectReasonName(PairBufferAcceptPairsRejectReason reason);
+PairBufferAcceptPairsRejectReason pairBufferAcceptPairsRejectReason(
+    PairBufferAcceptPairsRejectReason expected);
+struct PairBufferAcceptPairsPreflight {
+    PairBufferAcceptPairsRejectReason reason = PairBufferAcceptPairsRejectReason::None;
+    bool canAccept() const { return reason == PairBufferAcceptPairsRejectReason::None; }
+PairBufferAcceptPairsPreflight preflightPairBufferAcceptPairs(

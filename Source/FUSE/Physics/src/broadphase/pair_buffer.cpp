@@ -1001,3 +1001,20 @@ PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u
     preflight.atCapacity = preflight.reason == PairBufferMergeRejectReason::AtCapacity;
     return !preflightPairBufferMerge(buffer, pairCount).canMerge();
     return preflightPairBufferMerge(buffer, pairCount).canMerge();
+
+// --- deepen additive from deepen-b4-broadphase-guards-ff66 ---
+    return preflightPairBufferAcceptPairs(*this, additionalCount).canAccept();
+const char* pairBufferAcceptPairsRejectReasonName(PairBufferAcceptPairsRejectReason reason) {
+    case PairBufferAcceptPairsRejectReason::None:
+    case PairBufferAcceptPairsRejectReason::ExceedsCapacity:
+PairBufferAcceptPairsRejectReason pairBufferAcceptPairsRejectReason(
+        return PairBufferAcceptPairsRejectReason::None;
+        return PairBufferAcceptPairsRejectReason::ExceedsCapacity;
+    PairBufferAcceptPairsRejectReason expected) {
+    return pairBufferAcceptPairsRejectReason(buffer, additionalCount) == expected;
+PairBufferAcceptPairsPreflight preflightPairBufferAcceptPairs(
+    PairBufferAcceptPairsPreflight preflight{};
+    preflight.reason = pairBufferAcceptPairsRejectReason(buffer, additionalCount);
+    preflight.exceedsCapacity = preflight.reason == PairBufferAcceptPairsRejectReason::ExceedsCapacity;
+    return !preflightPairBufferAcceptPairs(buffer, additionalCount).canAccept();
+    return preflightPairBufferAcceptPairs(buffer, additionalCount).canAccept();

@@ -3222,3 +3222,29 @@ void testBroadphaseMergeBufferRejectReasonGuards() {
     testPairBufferMergeRejectReasonGuards();
     testCellSpanRejectReasonGuards();
     testBroadphaseMergeBufferRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-ff66 ---
+        fuse::physics::broadphase::preflightPairBufferWriteSlot(buffer, 1u, 2u, 3u);
+void testPairBufferAcceptPairsRejectReasonGuards() {
+                 fuse::physics::broadphase::pairBufferAcceptPairsRejectReason(buffer, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferAcceptPairsRejectReason::None),
+    const fuse::physics::broadphase::PairBufferAcceptPairsPreflight emptyAccept =
+        fuse::physics::broadphase::preflightPairBufferAcceptPairs(buffer, 2u);
+                 fuse::physics::broadphase::pairBufferAcceptPairsRejectReason(buffer, 2u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferAcceptPairsRejectReason::ExceedsCapacity),
+    expectTrue(fuse::physics::broadphase::pairBufferAcceptPairsRejectsForReason(
+                   buffer, 2u, fuse::physics::broadphase::PairBufferAcceptPairsRejectReason::ExceedsCapacity),
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferAcceptPairsRejectReasonName(
+                               fuse::physics::broadphase::PairBufferAcceptPairsRejectReason::ExceedsCapacity),
+                 fuse::physics::broadphase::cellSpanClampRejectReason(inverted, 4u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanClampRejectReason::EmptyRange),
+        fuse::physics::broadphase::preflightCellSpanClamp(validRange, 4u);
+void testMergePairsIntoBufferPartialCapacityPreflight() {
+    const fuse::physics::broadphase::MergePairsIntoBufferPreflight partialPreflight =
+        fuse::physics::broadphase::preflightMergePairsIntoBuffer(pairs, partialBuffer);
+    expectTrue(partialPreflight.canMerge(), "partial-capacity buffer can merge some pairs");
+    expectEq(partialPreflight.mergeablePairCount, 1u, "partial-capacity preflight counts mergeable pairs");
+    expectTrue(partialPreflight.partialCapacity, "partial-capacity preflight marks partial merge");
+    expectEq(partialPreflight.requestedPairCount, 2u, "partial-capacity preflight records requested count");
+    testPairBufferAcceptPairsRejectReasonGuards();
+    testMergePairsIntoBufferPartialCapacityPreflight();

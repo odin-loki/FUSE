@@ -1230,3 +1230,6 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
     preflight.sceneRejected = preflight.reason == BroadphaseMergeBufferRejectReason::SceneRejected;
     preflight.refineReason = refineBroadphaseRejectReason(bodies, shapes, buffer);
     preflight.dedupeReason = dedupeBroadphaseRejectReason(buffer);
+
+// --- deepen additive from deepen-b4-broadphase-guards-ff66 ---
+    if (preflight.reason == MergePairsIntoBufferRejectReason::None) {
