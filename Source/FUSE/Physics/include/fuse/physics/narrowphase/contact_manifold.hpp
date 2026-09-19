@@ -131,6 +131,7 @@ struct ContactManifold {
 enum class ManifoldPruneRejectReason : u8 {
     None = 0,
     EmptyManifold,
+    InvalidNormal,
     AllSeparated,
 };
 
@@ -252,6 +253,23 @@ bool prune_contact_manifold_with_preflight(
 /// Finalize only when preflight passes; no-op otherwise (B4.5 deepen follow-up pass).
 bool finalize_contact_manifold_with_preflight(
     ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Normalize `contactNormal` when non-unit; returns false when the normal is invalid (B4.6 deepen pass).
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Non-mutating prune predicate — inverse of `should_skip_manifold_prune` (B4.6 deepen pass).
+bool should_run_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.6 deepen pass).
+bool should_run_manifold_finalize(
+    const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
