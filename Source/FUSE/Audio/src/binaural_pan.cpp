@@ -1562,3 +1562,10 @@ bool should_skip_hrtf_pan_convolution_preflight(bool hrtf_enabled, const HrtfIrS
     return !preflight.should_skip();
 bool should_skip_hrtf_binaural_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
 bool should_skip_hrtf_binaural_preflight(bool hrtf_enabled, const Vec3& rel_listener,
+
+// --- deepen additive from b72-hrtf-reject-reasons-97fb ---
+    return preflight.panPath.reason == HrtfPanPathRejectReason::HrtfDisabled
+        ? HrtfBinauralRejectReason::HrtfDisabled
+        : preflight.panPath.reason == HrtfPanPathRejectReason::CoLocated
+            ? HrtfBinauralRejectReason::CoLocated
+            : HrtfBinauralRejectReason::None;
