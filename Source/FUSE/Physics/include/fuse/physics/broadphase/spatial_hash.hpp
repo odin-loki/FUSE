@@ -117,6 +117,13 @@ FUSE_PHYSICS_INLINE bool canSkipBroadphase(
     return canSkipBroadphasePairGeneration(bodies, shapes);
 }
 
+/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphase(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,
@@ -631,6 +638,33 @@ bool shouldRunDedupeBroadphase(const PairBufferSoA& buffer);
 /// Non-mutating dedupe skip predicate — inverse of `shouldRunDedupeBroadphase` (B4.2 deepen follow-up pass).
 bool canSkipDedupeBroadphase(const PairBufferSoA& buffer);
 
+/// Combined refine + dedupe diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct RefineDedupeBroadphasePreflight {
+    RefineBroadphasePreflight refine{};
+    DedupeBroadphasePreflight dedupe{};
+
+    bool canRefine() const { return refine.canRefine(); }
+    bool canDedupe() const { return dedupe.canDedupe(); }
+    bool canRefineDedupe() const { return canRefine() && canDedupe(); }
+};
+
+RefineDedupeBroadphasePreflight preflightRefineDedupeBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Non-mutating refine+dedupe skip predicate — true when either stage would early-out (B4.2 deepen follow-up pass).
+bool canSkipRefineDedupeBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Non-mutating refine+dedupe predicate — mirrors `preflightRefineDedupeBroadphase` (B4.2 deepen follow-up pass).
+bool shouldRunRefineDedupeBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
 /// Why plane/dynamic merge would early-out (B4.2 deepen pass).
 enum class BroadphaseMergeRejectReason : u8 {
     None = 0,
@@ -670,6 +704,26 @@ bool canSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA&
 
 /// Non-mutating merge predicate — mirrors `preflightBroadphaseMerge` (B4.2 deepen pass).
 bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
+
+/// Combined broadphase launch + merge diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct BroadphaseMergeLaunchPreflight {
+    BroadphasePreflight broadphase{};
+    BroadphaseMergePreflight merge{};
+
+    bool canRunBroadphase() const { return broadphase.canRun(); }
+    bool canMerge() const { return merge.canMerge(); }
+    bool canLaunchMerge() const { return canRunBroadphase() && canMerge(); }
+};
+
+BroadphaseMergeLaunchPreflight preflightBroadphaseMergeLaunch(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating merge-launch skip predicate — true when broadphase or merge would early-out (B4.2 deepen follow-up pass).
+bool canSkipBroadphaseMergeLaunch(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
+
+/// Non-mutating merge-launch predicate — mirrors `preflightBroadphaseMergeLaunch` (B4.2 deepen follow-up pass).
+bool shouldRunBroadphaseMergeLaunch(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
