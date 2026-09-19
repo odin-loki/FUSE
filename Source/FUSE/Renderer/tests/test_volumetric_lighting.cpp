@@ -3894,3 +3894,10 @@ void testFroxelRejectClassifyAndPreflightGuards() {
     expectTrue(fuse::renderer::classifyGridDensityReject(undersized, desc) ==
     expectTrue(!fuse::renderer::preflightGridDensity(undersized, desc),
     expectTrue(!fuse::renderer::preflightFroxelPopulate(desc, camera, zeroDensity),
+
+// --- deepen additive from deepen-b511-froxel-classify-preflight-2ecc ---
+               "preflightSampleCoords succeeds when weights will clamp");
+    expectTrue(mappedIndex < desc.froxelCount(), "preflightScreenDepthToFroxelIndex returns in-bounds index");
+               "preflightFroxelTrilinearSample succeeds when weights will clamp");
+                   fuse::renderer::GridDensityRejectReason::DescMismatch),
+               "preflightScreenDepthMapping rejects empty grid");
