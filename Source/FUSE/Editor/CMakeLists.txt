@@ -71,7 +71,7 @@ target_link_libraries(fuse_editor_api PUBLIC fuse_core fuse_ecs fuse_scene fuse_
 target_compile_features(fuse_editor_api PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_VULKAN)
-    target_link_libraries(fuse_editor_api PUBLIC fuse_rhi)
+    target_link_libraries(fuse_editor_api PUBLIC fuse_rhi fuse_hybrid)
     if(FUSE_VULKAN_BACKEND)
         target_compile_definitions(fuse_editor_api PUBLIC FUSE_VULKAN_BACKEND=1)
     endif()

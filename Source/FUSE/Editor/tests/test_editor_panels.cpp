@@ -39,7 +39,6 @@ void testPropertyInspectorListsComponents() {
 
     const fuse::ecs::EntityID entity = scene.registry().create();
     scene.registry().add<fuse::ecs::Transform>(entity);
-    scene.registry().add<fuse::ecs::SDFObject>(entity);
 
     fuse::editor::EditorState state;
     state.primarySelection = entity;
@@ -48,7 +47,7 @@ void testPropertyInspectorListsComponents() {
     inspector.sync(state, scene);
 
     expectTrue(inspector.hasSelection(), "inspector tracks primary selection");
-    expectTrue(inspector.sections().size() == 2u, "transform + sdf sections exposed");
+    expectTrue(inspector.sections().size() == 1u, "transform section exposed before sdf attach");
 
     fuse::editor::CommandStack cmds;
     fuse::ecs::vec3 newPos{3.f, 4.f, 5.f, 1.f};
@@ -57,6 +56,10 @@ void testPropertyInspectorListsComponents() {
 
     const fuse::ecs::Transform* transform = scene.registry().get<fuse::ecs::Transform>(entity);
     expectTrue(transform != nullptr && transform->position.x == 3.f, "transform position updated");
+
+    scene.registry().add<fuse::ecs::SDFObject>(entity);
+    inspector.sync(state, scene);
+    expectTrue(inspector.sections().size() == 2u, "transform + sdf sections exposed after sdf attach");
 
     expectTrue(inspector.setSdfBlendAlpha(0.25f, scene, cmds), "sdf alpha edit accepted");
     expectTrue(cmds.appliedCount() == 2u, "sdf alpha posts second command");
@@ -1067,63 +1070,3 @@ int main() {
     std::fprintf(stderr, "fuse_editor_panels_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
-
-// --- deepen additive from deepen-b6-material-inspector-guards-5414 ---
-void testMaterialPropertyBindingRefreshGuards() {
-    expectTrue(!binding.tryRefreshFromEditState(state), "tryRefresh fails when unbound");
-               "tryClearPropertyDirty fails when unbound");
-    expectTrue(bound.tryIsPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
-    expectTrue(bound.tryRefreshFromEditState(external), "tryRefresh succeeds when bound");
-    expectTrue(panel.editState().roughness == 0.9f, "tryRefresh mirrors external state");
-    expectTrue(bound.tryClearPropertyDirty(fuse::editor::MaterialPropertyId::Metallic),
-               "tryClearPropertyDirty succeeds for valid id");
-               "tryClearPropertyDirty clears metallic dirty bit");
-    expectTrue(bound.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed succeeds when bound");
-    expectTrue(!bound.needsPanelRefresh(), "tryMarkPanelRefreshed clears refresh pending");
-void testMaterialPropertyInspectRefreshGuards() {
-    expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel fails without selection");
-    expectTrue(panel.tryRefreshPanel(), "tryRefreshPanel succeeds with selection");
-    expectTrue(!panel.needsPanelRefresh(), "tryRefreshPanel clears binding refresh pending");
-    expectTrue(!panel.previewDirty(), "tryRefreshPanel clears preview dirty");
-    expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel fails after empty-catalog sync");
-
-// --- deepen additive from deepen-b6-material-inspector-property-binding-guards-b7b9 ---
-    expectTrue(!binding.tryRefreshFromEditState(state), "tryRefreshFromEditState fails when unbound");
-    expectTrue(binding.tryBind(0u, 1u, state), "tryBind succeeds for valid slot");
-    expectTrue(binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed clears pending refresh");
-    expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel no-op when clean");
-    expectTrue(!panel.needsPanelRefresh(), "tryRefreshPanel clears panel refresh flag");
-
-// --- deepen additive from deepen-b6-material-inspector-binding-refresh-guards-eedc ---
-void testMaterialPropertyBindingDirtyMaskGuards() {
-               "tryClear rejects clean binding");
-    expectTrue(!binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed rejects clean binding");
-    binding.tryBind(0u, 1u, state);
-               "tryIsPropertyDirty reports roughness dirty");
-               "tryClear clears dirty roughness");
-    expectTrue(binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed drains dirty state");
-    expectTrue(!binding.tryRefreshFromEditState(state), "tryRefresh rejects unbound binding");
-    expectTrue(binding.tryRefreshFromEditState(incoming), "tryRefresh accepts bound binding");
-    expectTrue(state.roughness == 1.f, "tryRefresh clamps incoming roughness");
-    expectTrue(state.metallic == 0.f, "tryRefresh clamps incoming metallic");
-void testMaterialEditorPanelRefreshGuards() {
-    expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel rejects clean panel");
-    expectTrue(panel.tryRefreshPanel(), "tryRefreshPanel drains dirty panel");
-    expectTrue(!panel.needsPanelRefresh(), "tryRefreshPanel clears refresh flag");
-    expectTrue(!panel.tryRefreshPanel(), "second tryRefreshPanel is a no-op");
-
-// --- deepen additive from deepen-b6-material-inspector-ec25 ---
-    expectTrue(binding.tryClearPropertyDirty(fuse::editor::MaterialPropertyId::Metallic),
-               "tryClearPropertyDirty accepts valid id");
-               "tryClearPropertyDirty clears metallic bit");
-    expectTrue(!binding.tryClearPropertyDirty(static_cast<fuse::editor::MaterialPropertyId>(99)),
-               "tryClearPropertyDirty rejects invalid id");
-    expectTrue(binding.tryBind(0u, 1u, editState), "tryBind succeeds for refresh guard test");
-    expectTrue(binding.tryRefreshFromEditState(state), "tryRefresh succeeds when bound");
-    expectTrue(editState.roughness == 1.f, "tryRefresh clamps roughness into edit state");
-    expectTrue(editState.metallic == 0.f, "tryRefresh clamps metallic into edit state");
-    expectTrue(editState.baseColorR == 1.f, "tryRefresh clamps base color into edit state");
-    expectTrue(editState.shadingModel == 5u, "tryRefresh clamps shading model into edit state");
-    expectTrue(!binding.hasAnyPropertyDirty(), "tryRefresh clears dirty mask");
-void testMaterialPropertyBindingPanelRefreshGuards() {
-    expectTrue(!binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed guarded when unbound");

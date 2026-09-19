@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/dimension/world_handle.hpp>
+#include <fuse/project/importer_extract.hpp>
 #include <fuse/project/manifest.hpp>
 
 #include <string>
@@ -20,6 +21,8 @@ struct ImportRecord {
     dimension::WorldHandle worldHandle = dimension::WorldHandle::invalid();
     bool ok = false;
     std::string note;
+    T3DMissionExtract t3dExtract;
+    T2DModuleExtract t2dExtract;
 };
 
 struct ImportDryRunResult {

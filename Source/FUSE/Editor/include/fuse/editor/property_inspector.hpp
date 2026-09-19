@@ -33,6 +33,8 @@ public:
 
     bool setTransformPosition(const ecs::vec3& position, EditorScene& scene, CommandStack& cmds);
     bool setSdfBlendAlpha(f32 alpha, EditorScene& scene, CommandStack& cmds);
+    bool setDirectionalIntensity(f32 intensity, EditorScene& scene, CommandStack& cmds);
+    bool setSpotIntensity(f32 intensity, EditorScene& scene, CommandStack& cmds);
 
     /// Mesh material slot helpers for material inspector wiring (B6.7 deepen).
     [[nodiscard]] bool getMeshMaterialId(const EditorScene& scene, u32& out) const;

@@ -1,5 +1,6 @@
 #include <fuse/editor/editor_host.hpp>
 
+#include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -187,6 +188,28 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         return true;
     }
 
+    if (command.propertyName == "directional.intensity") {
+        ecs::DirectionalLight* light = registry.get<ecs::DirectionalLight>(entity);
+        if (light == nullptr) {
+            return false;
+        }
+
+        light->intensity = std::strtof(command.propertyValue.c_str(), nullptr);
+        host.editorState().sceneModified = true;
+        return true;
+    }
+
+    if (command.propertyName == "spot.intensity") {
+        ecs::SpotLight* light = registry.get<ecs::SpotLight>(entity);
+        if (light == nullptr) {
+            return false;
+        }
+
+        light->intensity = std::strtof(command.propertyValue.c_str(), nullptr);
+        host.editorState().sceneModified = true;
+        return true;
+    }
+
     return false;
 }
 
@@ -293,6 +316,26 @@ void EditorHost::applyCommand_(const EditorCommand& command) {
     }
 }
 
+void EditorHost::drainPropertyCommandQueue_() {
+    m_commandStack.pendingQueue().drain();
+    for (const EditorCommand& command : m_commandStack.pendingQueue().lastDrainedBatch()) {
+        applyCommand_(command);
+        ++m_commandsAppliedLastTick;
+    }
+}
+
+void EditorHost::undoPropertyEdit() {
+    ensureInitialized_();
+    m_commandStack.undo();
+    drainPropertyCommandQueue_();
+}
+
+void EditorHost::redoPropertyEdit() {
+    ensureInitialized_();
+    m_commandStack.redo();
+    drainPropertyCommandQueue_();
+}
+
 void EditorHost::gameTick() {
     ensureInitialized_();
 
@@ -302,6 +345,8 @@ void EditorHost::gameTick() {
         applyCommand_(command);
         ++m_commandsAppliedLastTick;
     }
+
+    drainPropertyCommandQueue_();
 
     m_runtimeViewport.tick(*this, kEditorTickDt);
 

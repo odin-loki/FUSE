@@ -32,6 +32,11 @@ public:
     void postUndoRequested();
     void postRedoRequested();
 
+    /// Game-thread property edit helpers — record undo via host `CommandStack`.
+    bool editTransformPosition(const ecs::vec3& position);
+    void undoPropertyEdit();
+    void redoPropertyEdit();
+
 private:
     EditorHost& m_host;
     PropertyInspector m_inspector;

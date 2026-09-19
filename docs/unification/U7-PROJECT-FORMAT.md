@@ -13,9 +13,11 @@ FUSE projects are directories containing a versioned `project.json` manifest. Th
 | Component | Path | Role |
 |-----------|------|------|
 | Manifest loader | `fuse/project/loader.hpp` | Parse `project.json` from directory or file |
-| T3D mission importer | `fuse/project/importer.hpp` | `.mis` → World3D placeholder |
-| T2D module importer | `fuse/project/importer.hpp` | `main.cs` / `.cs` → World2D placeholder |
+| T3D mission importer | `fuse/project/importer.hpp` | `.mis` → World3D placeholder + `T3DMissionExtract` (SimObjects, materials, datablocks) |
+| T2D module importer | `fuse/project/importer.hpp` | `main.cs` / `.cs` → World2D placeholder + `T2DModuleExtract` scene-node stubs |
+| Field extractors | `fuse/project/importer_extract.hpp` | Shared parsers for mission/module text |
 | World converter | `fuse/project/world_converter.hpp` | `.mis` / `.cs` → `.fuselevel` (hierarchy-aware) |
+| Asset cook stub writers | `Tools/FUSE/Cook/` (`fuse_cook_stubs`) | `FUSEMESH_STUB` / `FUSETEX_STUB` / `FUSEAUDIO_STUB` placeholder outputs |
 | CLI dry-run | `Tools/FUSE/fuse_import` | Headless import validation |
 | CLI convert | `Tools/FUSE/fuse_convert` | Legacy source → `.fuselevel` |
 | Cook stub | `Tools/FUSE/Cook/fuselevel_cook_stub.*` | `fuse_cook --fuselevel` wrapper |
@@ -158,10 +160,23 @@ Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed
 
 ---
 
-## 9. Deferred (honest backlog)
+## 9. Cook stubs (`Tools/FUSE/Cook`)
 
-- Full T3D SimObject field extraction (materials, datablocks, spawn classes)
-- T2D scene graph import from toybox modules
+`fuse_cook_stubs` (linked by `fuse_project`) writes placeholder binaries on `AssetCooker` cache miss:
+
+| Writer | Output marker |
+|--------|---------------|
+| `write_mesh_stub` | `FUSEMESH_STUB` |
+| `write_texture_stub` | `FUSETEX_STUB` |
+| `write_audio_stub` | `FUSEAUDIO_STUB` |
+
+`fuselevel_cook_stub.*` remains on the `fuse_cook` executable for `--fuselevel` mission/module cooks.
+
+## 10. Deferred (honest backlog)
+
+- Real mesh/texture/audio encoders (Assimp, BC7, OGG) replacing stub headers
+- Full T3D datablock/material resolution (refs extracted; wiring deferred)
+- T2D toybox scene graph → `World2D` conversion (node scan only today)
 - Asset path remapping via VFS mounts ([vfs-mount-plan.md](./vfs-mount-plan.md))
 - `project.json` `workerCap` override for `computeWorkerCount()`
 - Real mesh/texture/audio cooks (stubs exist under `fuse_cook`; not production pipelines)

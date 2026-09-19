@@ -67,4 +67,17 @@ void FeaturePaneBridge::postRedoRequested() {
     m_host.postFromUi(std::move(cmd));
 }
 
+bool FeaturePaneBridge::editTransformPosition(const ecs::vec3& position) {
+    syncPropertyPane();
+    return m_inspector.setTransformPosition(position, m_host.editorScene(), m_host.commandStack());
+}
+
+void FeaturePaneBridge::undoPropertyEdit() {
+    m_host.undoPropertyEdit();
+}
+
+void FeaturePaneBridge::redoPropertyEdit() {
+    m_host.redoPropertyEdit();
+}
+
 } // namespace fuse::editor

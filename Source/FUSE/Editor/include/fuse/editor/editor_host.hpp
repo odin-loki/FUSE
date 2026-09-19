@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/editor/command_queue.hpp>
+#include <fuse/editor/command_stack.hpp>
 #include <fuse/editor/editor_scene.hpp>
 #include <fuse/editor/editor_state.hpp>
 #include <fuse/editor/play_mode_controller.hpp>
@@ -26,6 +27,9 @@ public:
 
     UndoStack& undoStack() { return m_undoStack; }
     const UndoStack& undoStack() const { return m_undoStack; }
+
+    CommandStack& commandStack() { return m_commandStack; }
+    const CommandStack& commandStack() const { return m_commandStack; }
 
     EditorScene& editorScene();
     const EditorScene& editorScene() const;
@@ -54,13 +58,19 @@ public:
     void setSelectedAiTreeProfileId(u32 profileId);
     void setLoadedCinematicsSeqAsset(std::string assetText);
 
+    /// Undo/redo property edits recorded on the game-thread `CommandStack`.
+    void undoPropertyEdit();
+    void redoPropertyEdit();
+
 private:
     friend class RuntimeViewportHook;
 
     void ensureInitialized_();
     void applyCommand_(const EditorCommand& command);
+    void drainPropertyCommandQueue_();
 
     CommandQueue m_queue;
+    CommandStack m_commandStack;
     UndoStack m_undoStack;
     EditorScene m_editorScene;
     EditorState m_state;

@@ -75,7 +75,8 @@ Linux umbrella CI configures with `FUSE_BUILD_EDITOR=OFF` (default). Tests:
 | CTest name | Binary | Purpose |
 |------------|--------|---------|
 | `fuse_editor_command_queue` | `fuse_editor_api_tests` | Mutex-backed queue post/drain + payload FIFO |
-| `fuse_editor_host` | `fuse_editor_host_tests` | `EditorHost` game-tick drain, PIE, inspector props, undo/redo, `RuntimeViewportHook` |
+| `fuse_editor_host` | `fuse_editor_host_tests` | `EditorHost` game-tick drain, PIE, inspector props, `CommandStack` property undo/redo, `RuntimeViewportHook` |
+| `fuse_editor_runtime_embed` | `fuse_editor_runtime_embed_tests` | `RuntimeViewportHook` + `RuntimeEmbedSession` headless present counters |
 
 ```bash
 cmake -B build-fuse -G Ninja \
@@ -121,7 +122,8 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 |--------|-------|
 | `fuse/editor/command_queue.hpp` | `EditorCommand`, `CommandQueue` (mutex + deque); kinds include `Undo`/`Redo` |
 | `fuse/editor/editor_host.hpp` | `EditorHost` — `postFromUi()` / `gameTick()` + in-process PIE |
-| `fuse/editor/feature_pane_bridge.hpp` | Feature-pane hook — posts commands for play/stop/selection/property edits |
+| `fuse/editor/feature_pane_bridge.hpp` | Feature-pane hook — posts commands for play/stop/selection/property edits; game-thread `CommandStack` undo |
+| `fuse/editor/command_stack.hpp` | Property-edit undo/redo — owned by `EditorHost`, drained on `gameTick()` |
 | `fuse/editor/runtime_viewport.hpp` | Viewport ↔ runtime scene embed hook (headless-safe) |
 | `fuse/editor/runtime_embed_session.hpp` | Embed session counters (world load, present stub ticks) |
 
@@ -135,7 +137,9 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 | `EditorHost` applies project + PIE + selection + delete/reparent on game thread | Timelines, addon feature panes |
 | Headless cross-thread queue proof (32 UI posts → game drain) | Thread-safe payload coalescing beyond counters |
 | `FeaturePaneBridge` + property edits (`transform`, `mesh.material_id`, `sdf.blend_alpha`) through queue | Live Qt widgets for mesh/SDF beyond position spinboxes |
-| Undo/redo through queue (`Undo`/`Redo` command kinds) | Undo for all property edits (not just delete/reparent) |
+| `PropertyInspector` sections: Transform, Mesh, SDF, RigidBody, Camera, Point/Directional/Spot lights | All ECS types + live renderer preview on slider drag |
+| `CommandStack` property-edit undo/redo on `EditorHost` (game-thread drain) | Coalesced property undo from Qt thread |
+| Undo/redo through queue (`Undo`/`Redo` for scene graph; `CommandStack` for property edits) | Coalesced property undo from Qt thread |
 | `RuntimeViewportHook` loads manifest world + mirrors editor entities + headless present stub | Real in-process `fuse_runtime` GPU viewport (Vulkan/Metal/GLES) |
 
 ---

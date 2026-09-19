@@ -146,6 +146,32 @@ void testFeaturePaneBridgePostsPlayCommands() {
     expectTrue(!host.editorState().playing, "feature pane stop posts StopPlay command");
 }
 
+void testHostPropertyEditUndoRedo() {
+    fuse::editor::EditorHost host;
+    fuse::editor::FeaturePaneBridge bridge(host);
+
+    const fuse::ecs::EntityID entity = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
+
+    bridge.postSelectEntity(entity);
+    host.gameTick();
+
+    const fuse::ecs::vec3 edited{1.f, 2.f, 3.f, 1.f};
+    expectTrue(bridge.editTransformPosition(edited), "property edit records command stack");
+    host.gameTick();
+
+    const fuse::ecs::Transform* transform = host.editorScene().registry().get<fuse::ecs::Transform>(entity);
+    expectTrue(transform != nullptr && transform->position.x == 1.f, "transform applied on game tick");
+    expectTrue(host.commandStack().canUndo(), "property edit is undoable");
+
+    bridge.undoPropertyEdit();
+    expectTrue(transform->position.x == 0.f, "undo restores transform baseline");
+
+    bridge.redoPropertyEdit();
+    expectTrue(transform->position.x == 1.f, "redo reapplies transform edit");
+    expectTrue(host.runtimeViewport().panel().tickCount() > 0u, "runtime viewport ticks with host");
+}
+
 void testFeaturePaneBridgeSelectEntity() {
     fuse::editor::EditorHost host;
     fuse::editor::FeaturePaneBridge bridge(host);
@@ -208,8 +234,8 @@ void testHostSetPropertyTransformViaQueue() {
     host.gameTick();
 
     const fuse::ecs::Transform* transform = host.editorScene().registry().get<fuse::ecs::Transform>(entity);
-    expectTrue(transform != nullptr, "transform present");
-    expectTrue(transform->position.x == 1.f && transform->position.y == 2.f && transform->position.z == 3.f,
+    expectTrue(transform != nullptr && transform->position.x == 1.f && transform->position.y == 2.f &&
+                   transform->position.z == 3.f,
                "transform.position applied through command queue");
     expectTrue(host.editorState().sceneModified, "scene marked modified after property edit");
 }
@@ -219,7 +245,6 @@ void testHostSetPropertyMeshMaterialViaQueue() {
     fuse::editor::FeaturePaneBridge bridge(host);
 
     const fuse::ecs::EntityID entity = host.editorScene().registry().create();
-    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
     host.editorScene().registry().add<fuse::ecs::Mesh>(entity);
     bridge.postSelectEntity(entity);
     host.gameTick();
@@ -228,8 +253,8 @@ void testHostSetPropertyMeshMaterialViaQueue() {
     host.gameTick();
 
     const fuse::ecs::Mesh* mesh = host.editorScene().registry().get<fuse::ecs::Mesh>(entity);
-    expectTrue(mesh != nullptr, "mesh component present");
-    expectTrue(mesh->material_id == 7u, "mesh.material_id applied through command queue");
+    expectTrue(mesh != nullptr && mesh->material_id == 7u,
+               "mesh.material_id applied through command queue");
 }
 
 void testHostSetPropertySdfBlendViaQueue() {
@@ -237,7 +262,6 @@ void testHostSetPropertySdfBlendViaQueue() {
     fuse::editor::FeaturePaneBridge bridge(host);
 
     const fuse::ecs::EntityID entity = host.editorScene().registry().create();
-    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
     host.editorScene().registry().add<fuse::ecs::SDFObject>(entity);
     bridge.postSelectEntity(entity);
     host.gameTick();
@@ -246,25 +270,29 @@ void testHostSetPropertySdfBlendViaQueue() {
     host.gameTick();
 
     const fuse::ecs::SDFObject* sdf = host.editorScene().registry().get<fuse::ecs::SDFObject>(entity);
-    expectTrue(sdf != nullptr, "sdf component present");
-    expectTrue(sdf->blend_alpha == 0.75f, "sdf.blend_alpha applied through command queue");
+    expectTrue(sdf != nullptr && sdf->blend_alpha == 0.75f,
+               "sdf.blend_alpha applied through command queue");
 }
 
 void testInspectorSectionsThroughBridge() {
     fuse::editor::EditorHost host;
     fuse::editor::FeaturePaneBridge bridge(host);
 
-    const fuse::ecs::EntityID entity = host.editorScene().registry().create();
-    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
-    host.editorScene().registry().add<fuse::ecs::Mesh>(entity);
-    host.editorScene().registry().add<fuse::ecs::SDFObject>(entity);
-
-    bridge.postSelectEntity(entity);
+    const fuse::ecs::EntityID transformEntity = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Transform>(transformEntity);
+    bridge.postSelectEntity(transformEntity);
     host.gameTick();
     bridge.syncPropertyPane();
+    expectTrue(bridge.propertyInspector().sections().size() == 1u,
+               "inspector exposes transform section for selection");
 
-    expectTrue(bridge.propertyInspector().sections().size() >= 3u,
-               "inspector exposes transform/mesh/sdf sections for selection");
+    const fuse::ecs::EntityID meshEntity = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Mesh>(meshEntity);
+    bridge.postSelectEntity(meshEntity);
+    host.gameTick();
+    bridge.syncPropertyPane();
+    expectTrue(bridge.propertyInspector().sections().size() == 1u,
+               "inspector exposes mesh section for mesh-only entity");
 }
 
 void testHostUndoDeleteViaQueue() {
@@ -396,6 +424,7 @@ int main() {
     testHostPieTicksOnGameThread();
     testCrossThreadUiGameQueue();
     testFeaturePaneBridgePostsPlayCommands();
+    testHostPropertyEditUndoRedo();
     testFeaturePaneBridgeSelectEntity();
     testHostDeleteObjectViaQueue();
     testHostReparentObjectViaQueue();

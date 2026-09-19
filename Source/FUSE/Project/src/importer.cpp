@@ -1,5 +1,6 @@
 #include <fuse/project/importer.hpp>
 
+#include <fuse/project/importer_extract.hpp>
 #include <fuse/log/logger.hpp>
 
 #include <cctype>
@@ -145,10 +146,15 @@ ImportRecord importT3DMission(const std::string& missionPath, u32 worldIndex) {
         return record;
     }
 
-    record.worldName = extractT3DMissionName(text);
+    record.t3dExtract = extractT3DMissionFields(text);
+    record.worldName = record.t3dExtract.missionName.empty() ? extractT3DMissionName(text)
+                                                             : record.t3dExtract.missionName;
     record.worldHandle = makeWorldHandle(worldIndex);
     record.ok = true;
-    record.note = "stub World3D placeholder registered";
+    record.note = "stub World3D placeholder registered (" +
+                  std::to_string(record.t3dExtract.simObjects.size()) + " simobjects, " +
+                  std::to_string(record.t3dExtract.materials.size()) + " materials, " +
+                  std::to_string(record.t3dExtract.datablocks.size()) + " datablocks)";
     log::info("importT3DMission: %s -> world '%s' handle=%u",
               missionPath.c_str(),
               record.worldName.c_str(),
@@ -167,10 +173,13 @@ ImportRecord importT2DModule(const std::string& modulePath, u32 worldIndex) {
         return record;
     }
 
-    record.worldName = extractT2DModuleName(text, modulePath);
+    record.t2dExtract = extractT2DModuleFields(text, modulePath);
+    record.worldName = record.t2dExtract.moduleName.empty() ? extractT2DModuleName(text, modulePath)
+                                                            : record.t2dExtract.moduleName;
     record.worldHandle = makeWorldHandle(worldIndex);
     record.ok = true;
-    record.note = "stub World2D placeholder registered";
+    record.note = "stub World2D placeholder registered (" +
+                  std::to_string(record.t2dExtract.sceneNodes.size()) + " scene nodes)";
     log::info("importT2DModule: %s -> world '%s' handle=%u",
               modulePath.c_str(),
               record.worldName.c_str(),

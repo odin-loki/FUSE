@@ -212,7 +212,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | In-process PIE; UI thread vs game thread command queue; one feature pane |
 | **Deps** | WP-06, WP-05 |
-| **Status** | 🚧 Advancing — inspector props + undo/redo through queue; `RuntimeViewportHook` embed stub; Qt property pane when Qt6 present — [U6-EDITOR.md](./U6-EDITOR.md) |
+| **Status** | 🚧 `CommandStack` property undo + expanded inspector sections + `RuntimeViewportHook` headless present; Qt GPU viewport deferred — [U6-EDITOR.md](./U6-EDITOR.md) |
 
 ---
 
@@ -223,7 +223,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | `project.json`, importers, cookers under `Tools/FUSE/` |
 | **Deps** | WP-06 |
-| **Status** | 🚧 Advancing — loader + importers + `.fuselevel` v2 hierarchy + `fuse_convert` / `fuse_cook --fuselevel` stubs — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
+| **Status** | 🚧 `.fuselevel` v2 + `fuse_convert` + T3D/T2D field extractors + mesh/texture/audio cook stub writers — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
 
 ---
 
@@ -280,8 +280,8 @@ WP-00 → WP-01 → WP-02 ──────────────────
 | **U3** | Shared services | I/O job publishes handle; TSan plan live |
 | **U4** | Hybrid demo | `parallel_for` cull + SoA; frame barrier; software demo ✅ — real GLES/Vulkan present ❌ Track B |
 | **U5** | Feature modules | Five `fuse_*` targets; `fuse_ai` BT slice + tests — 🚧 scaffolds + ore backlog ([U5-MODULES.md](./U5-MODULES.md)) |
-| **U6** | Editor PIE | UI/game thread queue + inspector/undo through queue + runtime viewport embed stub — 🚧 GPU viewport remains |
-| **U7** | Project format | `fuse_project` + `.fuselevel` v2 hierarchy + converters/cook stubs — 🚧 full asset pipeline deferred |
+| **U6** | Editor PIE | UI/game thread queue + property `CommandStack` undo + runtime viewport embed — 🚧 Qt GPU viewport remains |
+| **U7** | Project format | `fuse_project` + `.fuselevel` v2 + field extractors + cook stub writers — 🚧 real encoders deferred |
 | **U8** | Parity demos | Seven demo binaries + `Samples/unification/` stubs — ✅ minimum set |
 | **P3 (Track A)** | Job system tests | Fiber scheduler + single-thread fallback |
 
@@ -316,7 +316,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U2 incremental — expand Engine probe (gfx/platform stubs), SimObject adapter → first curated `.cpp` batch, StringTable route to FUSE core; U6 GPU viewport embed; U7 full T3D field extraction + production asset cooks; Track B post–WP-06f (`vkQueuePresentKHR` desktop GLFW, Editor Qt surface, `cudaImportExternalMemory`).
+**Next:** U2 incremental — expand Engine probe (gfx/platform stubs), SimObject adapter → first curated `.cpp` batch, StringTable route to FUSE core; U6 Qt GPU viewport when display-free CI path exists; U7 real cook encoders + T3D datablock wiring; Track B post–WP-06f (`vkQueuePresentKHR` desktop GLFW, Editor Qt surface, `cudaImportExternalMemory`).
 
 ---
 

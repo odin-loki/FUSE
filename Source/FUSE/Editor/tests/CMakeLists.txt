@@ -12,6 +12,16 @@ add_executable(fuse_editor_host_tests
 target_link_libraries(fuse_editor_host_tests PRIVATE fuse_editor_api fuse_core fuse_scene fuse_project)
 add_test(NAME fuse_editor_host COMMAND fuse_editor_host_tests)
 
+add_executable(fuse_editor_runtime_embed_tests
+    test_runtime_embed_session.cpp
+)
+
+target_link_libraries(fuse_editor_runtime_embed_tests PRIVATE fuse_editor_api fuse_core)
+if(FUSE_BUILD_VULKAN)
+    target_link_libraries(fuse_editor_runtime_embed_tests PRIVATE fuse_hybrid fuse_rhi)
+endif()
+add_test(NAME fuse_editor_runtime_embed COMMAND fuse_editor_runtime_embed_tests)
+
 add_executable(fuse_editor_panels_tests
     test_editor_panels.cpp
 )

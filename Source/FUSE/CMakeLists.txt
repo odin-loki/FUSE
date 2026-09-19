@@ -50,6 +50,7 @@ endif()
 add_subdirectory(Hybrid)
 
 if(FUSE_BUILD_PROJECT)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/Tools/FUSE/Cook ${CMAKE_BINARY_DIR}/Tools/FUSE/Cook)
     add_subdirectory(Project)
     add_subdirectory(Scene)
 endif()

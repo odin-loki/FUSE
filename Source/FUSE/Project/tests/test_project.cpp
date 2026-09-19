@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/project/importer.hpp>
+#include <fuse/project/importer_extract.hpp>
 #include <fuse/project/loader.hpp>
 #include <fuse/project/manifest.hpp>
 
@@ -65,19 +66,42 @@ std::string writeTempFile(const std::string& path, const std::string& contents) 
 
 void testT3DMissionImporter() {
     const std::string path = writeTempFile("/tmp/fuse_test_mission.mis",
-                                           "new Scene(ExampleLevel) {\n  enabled = \"1\";\n};\n");
+                                           R"(new Scene(ExampleLevel) {
+  new GroundPlane() {
+    MaterialAsset = "Prototyping:FloorGray";
+    position = "0 0 0";
+    rotation = "1 0 0 0";
+    scale = "1 1 1";
+  };
+  new SimGroup(CameraSpawnPoints) {
+    new SpawnSphere(DefaultCameraSpawnSphere) {
+      dataBlock = "SpawnSphereMarker";
+      position = "0 0 10";
+    };
+  };
+};)");
     const fuse::project::ImportRecord record = fuse::project::importT3DMission(path, 7u);
     expectTrue(record.ok, "mission import ok");
     expectTrue(record.worldName == "ExampleLevel", "mission name parsed");
     expectTrue(record.worldHandle.index() == 7u, "world handle assigned");
+    expectTrue(record.t3dExtract.simObjects.size() >= 4u, "simobjects extracted");
+    expectTrue(record.t3dExtract.materials.size() == 1u, "material asset extracted");
+    expectTrue(record.t3dExtract.datablocks.size() == 1u, "datablock extracted");
 }
 
 void testT2DModuleImporter() {
-    const std::string path = writeTempFile("/tmp/fuse_test_main.cs", "module \"SpriteToy\";\n");
+    const std::string path = writeTempFile("/tmp/fuse_test_main.cs",
+                                           R"(module "SpriteToy";
+new SceneToy() {
+  new SpritePlayer(Player) {
+    position = "0 0";
+  };
+};)");
     const fuse::project::ImportRecord record = fuse::project::importT2DModule(path, 3u);
     expectTrue(record.ok, "module import ok");
     expectTrue(record.worldName == "SpriteToy", "module name parsed");
     expectTrue(record.worldHandle.index() == 3u, "world handle assigned");
+    expectTrue(record.t2dExtract.sceneNodes.size() >= 2u, "t2d scene nodes extracted");
 }
 
 void testProjectImportDryRun() {

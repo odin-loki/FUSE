@@ -1,5 +1,6 @@
 #include <fuse/project/asset_cooker.hpp>
 
+#include <fuse/cook/cook_stub_writer.hpp>
 #include <fuse/project/cook_content_hash.hpp>
 #include <fuse/log/logger.hpp>
 
@@ -42,6 +43,22 @@ CookRecord makeStubRecord(CookAssetKind kind,
     record.status = CookStatus::Ok;
     record.ok = true;
     record.note = importer_note;
+    return record;
+}
+
+CookRecord finalizeStubCook_(CookRecord record, const fuse::cook::CookStubWriteResult& written) {
+    if (!record.ok) {
+        return record;
+    }
+
+    if (!written.ok) {
+        record.ok = false;
+        record.status = CookStatus::InvalidInput;
+        record.note = written.note;
+        return record;
+    }
+
+    record.note += " (" + written.note + ", bytes=" + std::to_string(written.byteCount) + ")";
     return record;
 }
 
@@ -111,7 +128,16 @@ CookRecord AssetCooker::cook_mesh(const MeshImportDesc& desc) {
     note << "stub mesh cook (lods=" << (desc.generate_lods ? desc.lod_count : 0u)
          << ", compress=" << (desc.compress ? "on" : "off") << ")";
     const u64 content_hash = hash_mesh_import(desc);
-    return cook_with_cache_(CookAssetKind::Mesh, desc.input_path, desc.output_path, content_hash, 0, note.str().c_str());
+    CookRecord record =
+        cook_with_cache_(CookAssetKind::Mesh, desc.input_path, desc.output_path, content_hash, 0,
+                         note.str().c_str());
+    if (record.ok && !record.cache_hit) {
+        const fuse::cook::CookStubWriteResult written =
+            fuse::cook::write_mesh_stub(desc.output_path, desc.generate_lods ? desc.lod_count : 0u,
+                                        desc.compress);
+        record = finalizeStubCook_(std::move(record), written);
+    }
+    return record;
 }
 
 CookRecord AssetCooker::cook_texture(const TextureImportDesc& desc) {
@@ -120,15 +146,31 @@ CookRecord AssetCooker::cook_texture(const TextureImportDesc& desc) {
     note << "stub texture cook (compression=" << compression
          << ", mipmaps=" << (desc.generate_mipmaps ? "on" : "off") << ")";
     const u64 content_hash = hash_texture_import(desc);
-    return cook_with_cache_(CookAssetKind::Texture, desc.input_path, desc.output_path, content_hash, 0, note.str().c_str());
+    CookRecord record =
+        cook_with_cache_(CookAssetKind::Texture, desc.input_path, desc.output_path, content_hash, 0,
+                         note.str().c_str());
+    if (record.ok && !record.cache_hit) {
+        const fuse::cook::CookStubWriteResult written =
+            fuse::cook::write_texture_stub(desc.output_path, compression, desc.generate_mipmaps);
+        record = finalizeStubCook_(std::move(record), written);
+    }
+    return record;
 }
 
 CookRecord AssetCooker::cook_audio(const AudioImportDesc& desc) {
+    const char* format = desc.format == AudioImportDesc::Format::OGG_VORBIS ? "ogg" : "pcm_f32";
     std::ostringstream note;
-    note << "stub audio cook (rate=" << desc.target_sample_rate
-         << ", format=" << (desc.format == AudioImportDesc::Format::OGG_VORBIS ? "ogg" : "pcm_f32") << ")";
+    note << "stub audio cook (rate=" << desc.target_sample_rate << ", format=" << format << ")";
     const u64 content_hash = hash_audio_import(desc);
-    return cook_with_cache_(CookAssetKind::Audio, desc.input_path, desc.output_path, content_hash, 0, note.str().c_str());
+    CookRecord record =
+        cook_with_cache_(CookAssetKind::Audio, desc.input_path, desc.output_path, content_hash, 0,
+                         note.str().c_str());
+    if (record.ok && !record.cache_hit) {
+        const fuse::cook::CookStubWriteResult written =
+            fuse::cook::write_audio_stub(desc.output_path, desc.target_sample_rate, format);
+        record = finalizeStubCook_(std::move(record), written);
+    }
+    return record;
 }
 
 CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry) {

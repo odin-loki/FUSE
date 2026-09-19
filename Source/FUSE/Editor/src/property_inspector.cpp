@@ -1,6 +1,7 @@
 #include <fuse/editor/property_inspector.hpp>
 
 #include <fuse/editor/material_property_inspect.hpp>
+#include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/object.hpp>
 
@@ -36,6 +37,12 @@ u32 componentFieldCount(const char* componentName) {
     if (name == ecs::PointLight::component_name) {
         return 4u;
     }
+    if (name == ecs::DirectionalLight::component_name) {
+        return 4u;
+    }
+    if (name == ecs::SpotLight::component_name) {
+        return 6u;
+    }
     return 1u;
 }
 
@@ -65,6 +72,15 @@ void PropertyInspector::appendSectionIfPresent(const char* componentName, ecs::E
     }
     if (componentName == ecs::PointLight::component_name && scene.registry().has<ecs::PointLight>(id)) {
         m_sections.push_back({componentName, componentFieldCount(componentName)});
+        return;
+    }
+    if (componentName == ecs::DirectionalLight::component_name &&
+        scene.registry().has<ecs::DirectionalLight>(id)) {
+        m_sections.push_back({componentName, componentFieldCount(componentName)});
+        return;
+    }
+    if (componentName == ecs::SpotLight::component_name && scene.registry().has<ecs::SpotLight>(id)) {
+        m_sections.push_back({componentName, componentFieldCount(componentName)});
     }
 }
 
@@ -83,6 +99,8 @@ void PropertyInspector::sync(const EditorState& state, EditorScene& scene) {
     appendSectionIfPresent(ecs::RigidBody::component_name, m_target, scene);
     appendSectionIfPresent(ecs::Camera::component_name, m_target, scene);
     appendSectionIfPresent(ecs::PointLight::component_name, m_target, scene);
+    appendSectionIfPresent(ecs::DirectionalLight::component_name, m_target, scene);
+    appendSectionIfPresent(ecs::SpotLight::component_name, m_target, scene);
 }
 
 bool PropertyInspector::setTransformPosition(const ecs::vec3& position, EditorScene& scene,
@@ -96,6 +114,10 @@ bool PropertyInspector::setTransformPosition(const ecs::vec3& position, EditorSc
         return false;
     }
 
+    const std::string before = std::to_string(transform->position.x) + "," +
+                               std::to_string(transform->position.y) + "," +
+                               std::to_string(transform->position.z);
+
     transform->position = position;
     transform->dirty = true;
 
@@ -104,8 +126,8 @@ bool PropertyInspector::setTransformPosition(const ecs::vec3& position, EditorSc
     command.target = Handle<Object>(m_target.index, m_target.generation);
     command.propertyName = "transform.position";
     command.propertyValue = std::to_string(position.x) + "," + std::to_string(position.y) + "," +
-                          std::to_string(position.z);
-    cmds.execute(std::move(command));
+                            std::to_string(position.z);
+    cmds.push(std::move(command), before);
     return true;
 }
 
@@ -156,6 +178,7 @@ bool PropertyInspector::trySetMeshMaterialId(u32 materialId, u32 catalogCount, E
         return false;
     }
 
+    const std::string before = std::to_string(mesh->material_id);
     mesh->material_id = materialId;
 
     EditorCommand command;
@@ -163,7 +186,7 @@ bool PropertyInspector::trySetMeshMaterialId(u32 materialId, u32 catalogCount, E
     command.target = Handle<Object>(m_target.index, m_target.generation);
     command.propertyName = "mesh.material_id";
     command.propertyValue = std::to_string(materialId);
-    cmds.execute(std::move(command));
+    cmds.push(std::move(command), before);
     return true;
 }
 
@@ -177,6 +200,7 @@ bool PropertyInspector::setSdfBlendAlpha(f32 alpha, EditorScene& scene, CommandS
         return false;
     }
 
+    const std::string before = std::to_string(sdf->blend_alpha);
     sdf->blend_alpha = alpha;
 
     EditorCommand command;
@@ -184,7 +208,51 @@ bool PropertyInspector::setSdfBlendAlpha(f32 alpha, EditorScene& scene, CommandS
     command.target = Handle<Object>(m_target.index, m_target.generation);
     command.propertyName = "sdf.blend_alpha";
     command.propertyValue = std::to_string(alpha);
-    cmds.execute(std::move(command));
+    cmds.push(std::move(command), before);
+    return true;
+}
+
+bool PropertyInspector::setDirectionalIntensity(f32 intensity, EditorScene& scene, CommandStack& cmds) {
+    if (!m_target.valid()) {
+        return false;
+    }
+
+    ecs::DirectionalLight* light = scene.registry().get<ecs::DirectionalLight>(m_target);
+    if (light == nullptr) {
+        return false;
+    }
+
+    const std::string before = std::to_string(light->intensity);
+    light->intensity = intensity;
+
+    EditorCommand command;
+    command.kind = CommandKind::SetProperty;
+    command.target = Handle<Object>(m_target.index, m_target.generation);
+    command.propertyName = "directional.intensity";
+    command.propertyValue = std::to_string(intensity);
+    cmds.push(std::move(command), before);
+    return true;
+}
+
+bool PropertyInspector::setSpotIntensity(f32 intensity, EditorScene& scene, CommandStack& cmds) {
+    if (!m_target.valid()) {
+        return false;
+    }
+
+    ecs::SpotLight* light = scene.registry().get<ecs::SpotLight>(m_target);
+    if (light == nullptr) {
+        return false;
+    }
+
+    const std::string before = std::to_string(light->intensity);
+    light->intensity = intensity;
+
+    EditorCommand command;
+    command.kind = CommandKind::SetProperty;
+    command.target = Handle<Object>(m_target.index, m_target.generation);
+    command.propertyName = "spot.intensity";
+    command.propertyValue = std::to_string(intensity);
+    cmds.push(std::move(command), before);
     return true;
 }
 

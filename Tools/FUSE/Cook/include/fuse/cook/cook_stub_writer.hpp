@@ -1,0 +1,21 @@
+#pragma once
+
+#include <fuse/types.hpp>
+
+#include <string>
+
+namespace fuse::cook {
+
+struct CookStubWriteResult {
+    bool ok = false;
+    u32 byteCount = 0;
+    std::string note;
+};
+
+CookStubWriteResult write_mesh_stub(const std::string& output_path, u32 lod_count, bool compressed);
+CookStubWriteResult write_texture_stub(const std::string& output_path, const char* compression,
+                                       bool mipmaps);
+CookStubWriteResult write_audio_stub(const std::string& output_path, u32 sample_rate,
+                                     const char* format);
+
+} // namespace fuse::cook

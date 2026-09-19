@@ -12,6 +12,7 @@ set(FUSE_PROJECT_PUBLIC_HEADERS
     include/fuse/project/cook_content_hash.hpp
     include/fuse/project/cook_cache.hpp
     include/fuse/project/import_pipeline.hpp
+    include/fuse/project/importer_extract.hpp
 )
 
 set(FUSE_PROJECT_SOURCES
@@ -27,6 +28,7 @@ set(FUSE_PROJECT_SOURCES
     src/cook_content_hash.cpp
     src/cook_cache.cpp
     src/import_pipeline.cpp
+    src/importer_extract.cpp
 )
 
 add_library(fuse_project STATIC
@@ -41,7 +43,7 @@ target_include_directories(fuse_project
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_project PUBLIC fuse_hybrid fuse_core)
+target_link_libraries(fuse_project PUBLIC fuse_hybrid fuse_core fuse_cook_stubs)
 target_compile_features(fuse_project PUBLIC cxx_std_17)
 
 add_library(fuse_world_converter STATIC
