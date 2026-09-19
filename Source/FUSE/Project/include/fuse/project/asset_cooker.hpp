@@ -8,6 +8,14 @@
 
 namespace fuse::project {
 
+/// Read-only stale dependency-hash reconcile breakdown (B7.9 deepen).
+struct CookStaleDependencyReconcileEstimate {
+    u32 stale_upstream_entries = 0;
+    u32 downstream_cascade_entries = 0;
+
+    [[nodiscard]] u32 total() const { return stale_upstream_entries + downstream_cascade_entries; }
+};
+
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
 class AssetCooker {
 public:
@@ -31,6 +39,9 @@ public:
                                                   const std::string& changed_source) const;
     /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
     [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
+    /// Read-only stale dependency-hash reconcile estimator with upstream/downstream breakdown (B7.9 deepen).
+    [[nodiscard]] CookStaleDependencyReconcileEstimate estimate_stale_dependency_reconcile(
+        const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
