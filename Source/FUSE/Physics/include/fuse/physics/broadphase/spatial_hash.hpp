@@ -1488,3 +1488,33 @@ ShapeCellInsertPreflight preflightShapeCellInsert(u32 bodyIndex, u32 bodyCount, 
 
 // --- deepen additive from b4-broadphase-deepen-guards-7a6f ---
 CellShapeInsertPreflight preflightShapeCellInsert(
+
+// --- deepen additive from deepen-b4-broadphase-guards-ce84 ---
+FUSE_PHYSICS_INLINE CellCapacityInsertRejectReason cellCapacityInsertRejectReason(
+    const CellOccupancyRejectReason occupancyReason = cellOccupancyRejectReason(range, maxCells);
+    if (occupancyReason == CellOccupancyRejectReason::EmptyRange) {
+        return CellCapacityInsertRejectReason::EmptyRange;
+    if (occupancyReason == CellOccupancyRejectReason::ExceedsBudget) {
+        return CellCapacityInsertRejectReason::ExceedsBudget;
+    return CellCapacityInsertRejectReason::None;
+    CellCapacityInsertRejectReason expected) {
+    return cellCapacityInsertRejectReason(range, maxCells) == expected;
+FUSE_PHYSICS_INLINE CellCapacityInsertPreflight preflightCellCapacityInsert(const CellRange3& range, u32 maxCells) {
+    CellCapacityInsertPreflight preflight{};
+    preflight.reason = cellCapacityInsertRejectReason(range, maxCells);
+    preflight.emptyRange = preflight.reason == CellCapacityInsertRejectReason::EmptyRange;
+    preflight.exceedsBudget = preflight.reason == CellCapacityInsertRejectReason::ExceedsBudget;
+FUSE_PHYSICS_INLINE CellCapacityInsertPreflight preflightCellCapacityInsert(const CellRange2& range, u32 maxCells) {
+    return !preflightCellCapacityInsert(range, maxCells).canInsert();
+    return preflightCellCapacityInsert(range, maxCells).canInsert();
+FUSE_PHYSICS_INLINE CellPairGenRejectReason cellPairGenRejectReason(usize occupantCount) {
+    return occupantCount < 2u ? CellPairGenRejectReason::SingletonOccupant
+                              : CellPairGenRejectReason::None;
+FUSE_PHYSICS_INLINE bool cellPairGenRejectsForReason(usize occupantCount, CellPairGenRejectReason expected) {
+    return cellPairGenRejectReason(occupantCount) == expected;
+FUSE_PHYSICS_INLINE CellPairGenPreflight preflightCellPairGen(usize occupantCount) {
+    CellPairGenPreflight preflight{};
+    preflight.reason = cellPairGenRejectReason(occupantCount);
+    preflight.singletonOccupant = preflight.reason == CellPairGenRejectReason::SingletonOccupant;
+    return !preflightCellPairGen(occupantCount).canGenerate();
+    return preflightCellPairGen(occupantCount).canGenerate();
