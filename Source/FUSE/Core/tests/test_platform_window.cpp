@@ -1400,3 +1400,7 @@ int main() {
     std::fprintf(stderr, "fuse_core platform window tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b17-eventpump-peek-stats-4ba6 ---
+void testEventPumpPeekEventTypeMatchesEmptyQueueGuard() {
+void testEventPumpCoalesceRejectsZeroDimensionIncoming() {
