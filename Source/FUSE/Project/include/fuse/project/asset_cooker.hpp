@@ -184,6 +184,7 @@ struct CookUpstreamInvalidateEstimate {
     /// True when reconcile invalidation can be skipped — all estimate buckets zero (B7.9 deepen).
     /// True when reconcile invalidation can be skipped — mirrors early-out on fresh cache (B7.9 deepen).
     /// True when no reconcile invalidation work is needed — mirrors `total() == 0` (B7.9 deepen).
+    /// True when no dependency or prune reconcile work is pending (B7.9 deepen).
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -537,6 +538,10 @@ public:
     /// True when `estimate_prune_reconcile` would remove nothing (B7.9 deepen).
     /// True when prune reconcile can be skipped — mirrors `CookCache::should_skip_prune` (B7.9 deepen).
     /// Non-mutating skip predicates — mirror estimate `should_skip` helpers (B7.9 deepen).
+    /// True when `estimate_reconcile_invalidation` reports no pending work (B7.9 deepen).
+    /// True when `estimate_prune_reconcile` reports no pending prune work (B7.9 deepen).
+
+    /// Read-only upstream invalidation skip probes — mirror `invalidate_*` guards (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

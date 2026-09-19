@@ -173,6 +173,7 @@ struct CookCacheInvalidationSurface {
     /// True when prune reconcile would be a no-op — mirrors `total() == 0` (B7.9 deepen).
     /// True when no prune work is needed — mirrors `prune_all` early-out (B7.9 deepen).
     /// True when no prune reconcile work is needed — mirrors `total() == 0` (B7.9 deepen).
+    /// True when no invalid or stale records would be pruned (B7.9 deepen).
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.

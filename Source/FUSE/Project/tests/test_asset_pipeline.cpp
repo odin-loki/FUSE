@@ -3932,6 +3932,51 @@ void testCookerShouldSkipReconcileHelpers() {
     expectTrue(!stale.should_skip(), "stale reconcile estimate should_skip is false");
 }
 
+void testCookerReconcileShouldSkipAndWouldInvalidateProbes() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_skip_reconcile_a.obj", "# skip reconcile a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_skip_reconcile_b.obj", "# skip reconcile b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry_a;
+    entry_a.kind = fuse::project::CookAssetKind::Mesh;
+    entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_skip_reconcile_a.fusemesh";
+    manifest.assets.push_back(entry_a);
+
+    fuse::project::CookManifestEntry entry_b;
+    entry_b.kind = fuse::project::CookAssetKind::Mesh;
+    entry_b.source_path = source_b;
+    entry_b.output_path = "/tmp/fuse_b79_skip_reconcile_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for skip/would probes ok");
+    expectTrue(cooker.should_skip_reconcile_invalidation(manifest),
+               "fresh cache should_skip reconcile invalidation");
+    expectTrue(cooker.should_skip_prune_reconcile(),
+               "fresh cache should_skip prune reconcile");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest).should_skip(),
+               "fresh reconcile estimate should_skip is true");
+    expectTrue(cooker.estimate_prune_reconcile().should_skip(),
+               "fresh prune reconcile estimate should_skip is true");
+
+    expectTrue(cooker.would_invalidate_upstream_dependency(manifest, source_a),
+               "would_invalidate_upstream true for seeded chain");
+    expectTrue(!cooker.would_invalidate_upstream_dependency(manifest, ""),
+               "would_invalidate_upstream guarded on empty source");
+    expectTrue(!cooker.would_invalidate_stale_dependency_hashes(manifest),
+               "would_invalidate_stale_dependencies false on fresh cache");
+
+    writeTempFile(source_a, "# skip reconcile a revised\n");
+    expectTrue(!cooker.should_skip_reconcile_invalidation(manifest),
+               "stale upstream makes should_skip reconcile false");
+    expectTrue(cooker.would_invalidate_stale_dependency_hashes(manifest),
+               "would_invalidate_stale_dependencies true after upstream change");
+    expectTrue(!cooker.estimate_reconcile_invalidation(manifest).should_skip(),
+               "stale reconcile estimate should_skip is false");
+}
+
 void testCookCacheDownstreamSourceProbe() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_downstream_a.obj", "# downstream a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_downstream_b.obj", "# downstream b\n");
@@ -5178,6 +5223,7 @@ int main() {
     testCookerReconcileShouldSkipEstimators();
     testCookerReconcileShouldSkipProbes();
     testCookerReconcileShouldSkipHelpers();
+    testCookerReconcileShouldSkipAndWouldInvalidateProbes();
     testCookCacheDownstreamSourceProbe();
     testCookCachePreflightAndReconcileEstimators();
     testCookCacheReconcileEstimators();
