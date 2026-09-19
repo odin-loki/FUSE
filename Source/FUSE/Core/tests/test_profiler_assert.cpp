@@ -1824,6 +1824,230 @@ void testEmptyNameAttemptsDoNotAffectPhaseLookup() {
                "exportable lookup copies counter phase after empty-name attempts");
 }
 
+void testFindEventIndexByNameGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::findFirstEventIndexByName(nullptr) == fuse::profiler::kInvalidEventIndex,
+               "findFirstEventIndexByName rejects null name");
+    expectTrue(fuse::profiler::findLastEventIndexByName("") == fuse::profiler::kInvalidEventIndex,
+               "findLastEventIndexByName rejects empty name");
+    expectTrue(fuse::profiler::countEventsByName(nullptr) == 0u,
+               "countEventsByName returns zero for null name");
+
+    {
+        FUSE_PROFILE_SCOPE("lookup_outer");
+        {
+            FUSE_PROFILE_SCOPE("lookup_inner");
+        }
+        FUSE_PROFILE_COUNTER("lookup_counter", 5);
+    }
+
+    expectTrue(fuse::profiler::findFirstEventIndexByName("lookup_outer") == 0u,
+               "findFirstEventIndexByName locates outer scope begin");
+    expectTrue(fuse::profiler::findFirstEventIndexByName("lookup_inner") == 1u,
+               "findFirstEventIndexByName locates inner scope begin");
+    expectTrue(fuse::profiler::findLastEventIndexByName("lookup_outer") == 4u,
+               "findLastEventIndexByName locates outer scope end");
+    expectTrue(fuse::profiler::findLastEventIndexByName("lookup_counter") == 3u,
+               "findLastEventIndexByName locates counter sample");
+    expectTrue(fuse::profiler::countEventsByName("lookup_outer") == 2u,
+               "countEventsByName counts scope begin/end");
+    expectTrue(fuse::profiler::countEventsByName("lookup_inner") == 2u,
+               "countEventsByName counts nested scope begin/end");
+    expectTrue(fuse::profiler::countEventsByName("lookup_counter") == 1u,
+               "countEventsByName counts counter sample");
+    expectTrue(fuse::profiler::findFirstEventIndexByName("missing_scope")
+                   == fuse::profiler::kInvalidEventIndex,
+               "findFirstEventIndexByName invalid for missing name");
+}
+
+void testFindEventIndexByFlowIdGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 outerFlowId = fuse::profiler::nextFlowId();
+    const fuse::u32 innerFlowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("flow_lookup_outer", outerFlowId);
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("flow_lookup_inner", innerFlowId);
+    FUSE_PROFILE_ASYNC_FLOW_END("flow_lookup_inner", innerFlowId);
+    FUSE_PROFILE_ASYNC_FLOW_END("flow_lookup_outer", outerFlowId);
+
+    expectTrue(fuse::profiler::findFirstEventIndexByFlowId(outerFlowId) == 0u,
+               "findFirstEventIndexByFlowId locates outer flow start");
+    expectTrue(fuse::profiler::findFirstEventIndexByFlowId(innerFlowId) == 1u,
+               "findFirstEventIndexByFlowId locates inner flow start");
+    expectTrue(fuse::profiler::findLastEventIndexByFlowId(outerFlowId) == 3u,
+               "findLastEventIndexByFlowId locates outer flow finish");
+    expectTrue(fuse::profiler::findLastEventIndexByFlowId(innerFlowId) == 2u,
+               "findLastEventIndexByFlowId locates inner flow finish");
+    expectTrue(fuse::profiler::countEventsByFlowId(outerFlowId) == 2u,
+               "countEventsByFlowId counts paired outer flow events");
+    expectTrue(fuse::profiler::countEventsByFlowId(innerFlowId) == 2u,
+               "countEventsByFlowId counts paired inner flow events");
+    expectTrue(fuse::profiler::findFirstEventIndexByFlowId(9999u) == fuse::profiler::kInvalidEventIndex,
+               "findFirstEventIndexByFlowId invalid for unknown flow id");
+}
+
+void testTryFindFirstEventByNameAndFlowIdGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::ProfileEvent outEvent{};
+    expectTrue(!fuse::profiler::tryFindFirstEventByName(nullptr, outEvent),
+               "tryFindFirstEventByName false for null name");
+    expectTrue(fuse::profiler::isProfileEventSentinel(outEvent),
+               "tryFindFirstEventByName clears output for null name");
+    expectTrue(!fuse::profiler::tryFindFirstEventByFlowId(42u, outEvent),
+               "tryFindFirstEventByFlowId false on empty buffer");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("try_lookup_scope");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("try_lookup_flow", flowId);
+        FUSE_PROFILE_ASYNC_FLOW_END("try_lookup_flow", flowId);
+    }
+
+    expectTrue(fuse::profiler::tryFindFirstEventByName("try_lookup_scope", outEvent),
+               "tryFindFirstEventByName true for scope begin");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Begin,
+               "tryFindFirstEventByName copies scope begin phase");
+
+    expectTrue(fuse::profiler::tryFindFirstEventByFlowId(flowId, outEvent),
+               "tryFindFirstEventByFlowId true for flow start");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::FlowStart,
+               "tryFindFirstEventByFlowId copies flow start phase");
+    expectTrue(outEvent.scopeId == flowId, "tryFindFirstEventByFlowId preserves flow id");
+}
+
+void testIsAsyncFlowIdPairedGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::isAsyncFlowIdPaired(1u),
+               "missing flow id is vacuously paired");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("paired_flow", flowId);
+    expectTrue(!fuse::profiler::isAsyncFlowIdPaired(flowId),
+               "open flow reports unpaired in buffer");
+    FUSE_PROFILE_ASYNC_FLOW_END("paired_flow", flowId);
+    expectTrue(fuse::profiler::isAsyncFlowIdPaired(flowId),
+               "completed flow reports paired in buffer");
+}
+
+void testIsScopeNameBalancedInBufferGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::isScopeNameBalancedInBuffer(nullptr),
+               "null scope name is vacuously balanced");
+    expectTrue(fuse::profiler::isScopeNameBalancedInBuffer(""),
+               "empty scope name is vacuously balanced");
+
+    {
+        FUSE_PROFILE_SCOPE("balanced_scope");
+        expectTrue(!fuse::profiler::isScopeNameBalancedInBuffer("balanced_scope"),
+                   "active scope reports unbalanced in buffer");
+    }
+    expectTrue(fuse::profiler::isScopeNameBalancedInBuffer("balanced_scope"),
+               "ended scope reports balanced in buffer");
+}
+
+void testUnpairedAsyncFlowsInBufferGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::hasUnpairedAsyncFlowsInBuffer(),
+               "reset leaves no unpaired async flows in buffer");
+    expectTrue(fuse::profiler::unpairedAsyncFlowIdCount() == 0u,
+               "reset leaves unpaired async flow id count at zero");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("unpaired_flow", flowId);
+    expectTrue(fuse::profiler::hasUnpairedAsyncFlowsInBuffer(),
+               "open flow leaves unpaired async flow in buffer");
+    expectTrue(fuse::profiler::unpairedAsyncFlowIdCount() == 1u,
+               "open flow increments unpaired async flow id count");
+
+    FUSE_PROFILE_ASYNC_FLOW_END("unpaired_flow", flowId);
+    expectTrue(!fuse::profiler::hasUnpairedAsyncFlowsInBuffer(),
+               "paired flow clears unpaired async flow buffer flag");
+    expectTrue(fuse::profiler::unpairedAsyncFlowIdCount() == 0u,
+               "paired flow clears unpaired async flow id count");
+}
+
+void testChromeTraceExportPreflightUnpairedFlows() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("preflight_unpaired", flowId);
+
+    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(preflight.hasUnpairedAsyncFlowsInBuffer,
+               "preflight marks unpaired async flows in buffer");
+    expectTrue(preflight.unpairedAsyncFlowIdCount == 1u,
+               "preflight counts unpaired async flow ids");
+    expectTrue(preflight.hasExportBlockers(),
+               "preflight export blockers include unpaired async flows");
+    expectTrue(!preflight.canExportSafely(),
+               "preflight blocks safe export with unpaired async flow");
+
+    FUSE_PROFILE_ASYNC_FLOW_END("preflight_unpaired", flowId);
+
+    const fuse::profiler::ChromeTraceExportPreflight closedPreflight =
+        fuse::profiler::preflightChromeTraceExport();
+    expectTrue(!closedPreflight.hasUnpairedAsyncFlowsInBuffer,
+               "preflight clears unpaired async flow flag after end");
+    expectTrue(closedPreflight.canExportSafely(),
+               "preflight allows safe export after flow pairing");
+}
+
+void testHasExportBlockersGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::ChromeTraceExportPreflight emptyPreflight =
+        fuse::profiler::preflightChromeTraceExport();
+    expectTrue(!emptyPreflight.hasExportBlockers(),
+               "balanced empty buffer has no export blockers");
+    expectTrue(emptyPreflight.canExportSafely(),
+               "hasExportBlockers mirrors canExportSafely on balanced buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("blocker_scope");
+        const fuse::profiler::ChromeTraceExportPreflight activePreflight =
+            fuse::profiler::preflightChromeTraceExport();
+        expectTrue(activePreflight.hasExportBlockers(),
+                   "active scope reports export blockers");
+        expectTrue(!activePreflight.canExportSafely(),
+                   "active scope blocks safe export");
+    }
+}
+
+void testEmptyNameLookupDoesNotAffectValidNameSearch() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::beginAsyncFlow("", 1u);
+    fuse::profiler::sampleCounter("", 1);
+    {
+        fuse::profiler::ProfileScope emptyScope("");
+    }
+
+    expectTrue(fuse::profiler::findFirstEventIndexByName("") == fuse::profiler::kInvalidEventIndex,
+               "empty-name lookup stays invalid after empty-name attempts");
+    expectTrue(fuse::profiler::countEventsByName("") == 0u,
+               "empty-name count stays zero after empty-name attempts");
+
+    FUSE_PROFILE_COUNTER("valid_lookup_counter", 8);
+    expectTrue(fuse::profiler::findFirstEventIndexByName("valid_lookup_counter") == 0u,
+               "valid name lookup succeeds after empty-name attempts");
+    expectTrue(fuse::profiler::countEventsByName("valid_lookup_counter") == 1u,
+               "valid name count succeeds after empty-name attempts");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -1924,6 +2148,15 @@ int main() {
     testChromeTraceExportPreflightSafetyFlags();
     testChromeTraceExportPreflightCrossThreadHandoff();
     testEmptyNameAttemptsDoNotAffectPhaseLookup();
+    testFindEventIndexByNameGuard();
+    testFindEventIndexByFlowIdGuard();
+    testTryFindFirstEventByNameAndFlowIdGuard();
+    testIsAsyncFlowIdPairedGuard();
+    testIsScopeNameBalancedInBufferGuard();
+    testUnpairedAsyncFlowsInBufferGuard();
+    testChromeTraceExportPreflightUnpairedFlows();
+    testHasExportBlockersGuard();
+    testEmptyNameLookupDoesNotAffectValidNameSearch();
     testFatalHandlerHook();
     testVerifyMacro();
 

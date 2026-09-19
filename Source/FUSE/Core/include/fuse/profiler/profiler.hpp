@@ -58,12 +58,18 @@ struct ChromeTraceExportPreflight {
     bool ringBufferFull = false;
     bool hasInvalidNameEvents = false;
     bool crossThreadFlowHandoffPending = false;
+    bool hasUnpairedAsyncFlowsInBuffer = false;
+    u32 unpairedAsyncFlowIdCount = 0;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+    bool hasExportBlockers() const {
+        return profilerDisabled || hasUnbalancedNesting() || flowDepthDetached
+            || crossThreadFlowHandoffPending || hasUnpairedAsyncFlowsInBuffer || hasInvalidNameEvents;
+    }
     bool canExportSafely() const {
-        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
+        return canExport() && !hasExportBlockers();
     }
 };
 
@@ -104,6 +110,10 @@ bool isFlowNestingBalanced();
 bool hasUnbalancedNesting();
 bool isFlowDepthDetached();
 bool isCrossThreadFlowHandoffPending();
+bool isAsyncFlowIdPaired(u32 flowId);
+bool hasUnpairedAsyncFlowsInBuffer();
+u32 unpairedAsyncFlowIdCount();
+bool isScopeNameBalancedInBuffer(const char* name);
 
 bool hasEvents();
 bool isBufferEmpty();
@@ -121,10 +131,18 @@ u32 lastEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 countEventsByName(const char* name);
+u32 findFirstEventIndexByFlowId(u32 flowId);
+u32 findLastEventIndexByFlowId(u32 flowId);
+u32 countEventsByFlowId(u32 flowId);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
