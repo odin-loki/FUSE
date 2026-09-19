@@ -878,3 +878,6 @@ CacheIndexRejectReason classifyCacheIndexRejectAtCoord(const DDGIDesc& desc,
 bool wouldClampCacheIndexCoord(const DDGIDesc& desc, u32 x, u32 y, u32 z);
 bool tryPreflightProbeSchedule(u32 probe_count,
                                ProbeScheduleRejectReason& reason);
+
+// --- deepen additive from deepen-ddgi-b56-guards-ae4c ---
+bool tryValidateScheduledCacheIndices(const DDGIDesc& desc,

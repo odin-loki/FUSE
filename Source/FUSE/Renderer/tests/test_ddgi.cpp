@@ -3448,3 +3448,33 @@ void testDdgiShouldSkipTryPreflightGuards() {
                "tryPreflightProbeKernelLaunch fails for zero rays");
                "tryPreflightProbeKernelLaunch reports zero_rays_per_probe reason");
     testDdgiShouldSkipTryPreflightGuards();
+
+// --- deepen additive from deepen-ddgi-b56-guards-ae4c ---
+void testDdgiPreflightDeepenPass2() {
+               "preflightTrilinearProbeSample succeeds for valid coords");
+               "wouldSkipTrilinearProbeSample false for valid sample");
+                   fuse::renderer::ProbeTrilinearSampleRejectReason::None),
+    expectTrue(!fuse::renderer::ddgi_util::preflightTrilinearProbeSample(
+    expectTrue(buildReason == fuse::renderer::ProbeSampleCoordsRejectReason::NotSampleable,
+    expectTrue(std::strcmp(fuse::renderer::probeSampleCoordsRejectReasonLabel(buildReason), "not_sampleable") == 0,
+    expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::NotSampleable,
+    expectTrue(fuse::renderer::ddgi_util::tryValidateScheduledCacheIndices(desc, scheduled, 2u, 8u, cacheReason),
+               "tryValidateScheduledCacheIndices succeeds for in-range indices");
+    expectTrue(fuse::renderer::ddgi_util::tryValidateScheduledCacheIndices(
+               "preflightCacheIndexLookup succeeds without cache pointer");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateScheduledCacheIndices(
+    expectTrue(fuse::renderer::gi::classifyProbeKernelReject(kernelParams, desc) ==
+               "grid-aware classifyProbeKernelReject none for valid params");
+    expectTrue(fuse::renderer::gi::preflightProbeKernelLaunch(kernelParams, desc),
+               "grid-aware preflightProbeKernelLaunch succeeds for valid params");
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeKernelLaunch(kernelParams, desc),
+               "grid-aware wouldSkipProbeKernelLaunch false for valid params");
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeTraceKernel(oobParams, desc, kernelReason),
+    expectTrue(kernelReason == fuse::renderer::gi::ProbeKernelRejectReason::OutOfRangeProbeIndex,
+    expectTrue(fuse::renderer::gi::wouldSkipProbeKernelLaunch(oobParams, desc),
+               "grid-aware wouldSkipProbeKernelLaunch true for OOB index");
+    expectTrue(fuse::renderer::gi::classifyProbeKernelReject(kernelParams, empty) ==
+                   fuse::renderer::gi::ProbeKernelRejectReason::EmptyGrid,
+               "grid-aware classifyProbeKernelReject empty_grid");
+                               fuse::renderer::gi::ProbeKernelRejectReason::EmptyGrid),
+    testDdgiPreflightDeepenPass2();

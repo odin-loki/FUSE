@@ -2732,3 +2732,24 @@ bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRe
     return preflightCacheIndexLookup(desc, cache, probe_index, cache_count);
     return !probeScheduleRejectReasonIsBlocking(reason);
     return !probeKernelRejectReasonIsBlocking(reason);
+
+// --- deepen additive from deepen-ddgi-b56-guards-ae4c ---
+        ProbeTrilinearSampleRejectReason reject = ProbeTrilinearSampleRejectReason::NotSampleable;
+            reject = ProbeTrilinearSampleRejectReason::EmptyGrid;
+            reject = ProbeTrilinearSampleRejectReason::NotSampleable;
+            reject = ProbeTrilinearSampleRejectReason::InvalidSampleCoords;
+    return preflightTrilinearProbeSample(desc, coords, cache, cache_count, reason);
+bool tryValidateScheduledCacheIndices(const DDGIDesc& desc,
+        if (!tryValidateCacheIndex(desc, probe_indices[i], cache_count, outReason)) {
+        if (!tryValidateCacheIndex(desc, cache, probe_indices[i], cache_count, outReason)) {
+    case ProbeKernelRejectReason::EmptyGrid:
+    case ProbeKernelRejectReason::OutOfRangeProbeIndex:
+ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params, const DDGIDesc& desc) {
+    tryCanLaunchProbeTraceKernel(params, desc, reason);
+bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params, const DDGIDesc& desc) {
+    const ProbeKernelRejectReason reject = classifyProbeKernelReject(params, desc);
+        outReason = ProbeKernelRejectReason::EmptyGrid;
+            outReason = ProbeKernelRejectReason::OutOfRangeProbeIndex;
+    return tryCanLaunchProbeTraceKernel(params, desc, reason);
+    return tryCanLaunchProbeTraceKernel(params, desc, outReason);
+    return tryCanLaunchProbeBlendKernel(params, desc, reason);

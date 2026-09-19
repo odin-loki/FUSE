@@ -161,3 +161,7 @@ bool tryPreflightProbeBlendSurfaces(const DDGIKernelParams& params, ProbeKernelR
 
 // --- deepen additive from deepen-ddgi-guards-13d5 ---
 bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& reason);
+
+// --- deepen additive from deepen-ddgi-b56-guards-ae4c ---
+ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params, const DDGIDesc& desc);
+bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params, const DDGIDesc& desc);
