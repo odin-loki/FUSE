@@ -2174,3 +2174,31 @@ void testFroxelGridDensityValidationForDescGuards() {
     expectTrue(std::strcmp(fuse::renderer::gridDensityRejectReasonLabel(densityReason), "undersized_storage") == 0,
     expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensityForDesc(emptyGrid, desc, densityReason),
     testFroxelSampleCoordPreflightAndNormalizeGuards();
+
+// --- deepen additive from deepen-b511-froxel-preflight-guards-73d5 ---
+void testFroxelPreflightGuardsDeepen() {
+    expectTrue(!fuse::renderer::froxel_util::wouldSkipFroxelSample(grid, desc, inBounds),
+               "wouldSkipFroxelSample does not skip accessible in-bounds sample");
+    expectTrue(!fuse::renderer::froxel_util::wouldSkipFroxelSample(grid, desc, invalidWeights),
+               "wouldSkipFroxelSample still proceeds when weights will be clamped");
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelSampleReject(grid, desc, invalidWeights) ==
+               "classifyFroxelSampleReject reports invalid_weights for OOB t");
+    fuse::renderer::SampleCoordRejectReason skipReason = fuse::renderer::SampleCoordRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::wouldSkipFroxelSample(emptyGrid, desc, inBounds, &skipReason),
+               "wouldSkipFroxelSample skips empty storage");
+    expectTrue(skipReason == fuse::renderer::SampleCoordRejectReason::OutOfBounds,
+    expectTrue(std::strcmp(fuse::renderer::densityLookupRejectReasonLabel(lookupReason), "empty_storage") == 0,
+    expectNear(coordSample, 1.f, 1e-5f, "trySampleDensityAtCoord with reason returns density");
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtCoord(grid, desc, 1u, 1u, 2u, 3.25f, lookupReason),
+               "trySampleDensityAtScreen with reason succeeds in range");
+    expectTrue(fuse::renderer::froxel_util::tryCanPopulateFromAnalyticFog(desc, params, populateReason),
+               "tryCanPopulateFromAnalyticFog accepts enabled params");
+    expectTrue(!fuse::renderer::froxel_util::tryCanPopulateFromAnalyticFog(desc, zeroDensity, populateReason),
+               "tryCanPopulateFromAnalyticFog rejects zero density");
+    expectTrue(!fuse::renderer::froxel_util::tryCanPopulateFromAnalyticFog(desc, zeroMarch, populateReason),
+               "tryCanPopulateFromAnalyticFog rejects zero march steps");
+    expectTrue(!fuse::renderer::froxel_util::tryCanPopulateFromAnalyticFog(zeroDesc, params, populateReason),
+               "tryCanPopulateFromAnalyticFog rejects empty froxel desc");
+    expectTrue(populateReason == fuse::renderer::FroxelPopulateRejectReason::EmptyGrid,
+    expectTrue(std::strcmp(fuse::renderer::froxelPopulateRejectReasonLabel(populateReason), "empty_grid") == 0,
+    testFroxelPreflightGuardsDeepen();

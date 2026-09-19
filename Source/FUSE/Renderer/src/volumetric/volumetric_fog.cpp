@@ -1614,3 +1614,19 @@ const char* sampleCoordBoundsRejectReasonLabel(SampleCoordBoundsRejectReason rea
 // --- deepen additive from deepen-froxel-volumetric-guards-8201 ---
 bool tryMapScreenDepthToSampleCoords(f32 screenX,
     if (!tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, outCoordReason)) {
+
+// --- deepen additive from deepen-b511-froxel-preflight-guards-73d5 ---
+    case FroxelPopulateRejectReason::EmptyGrid:
+            outReason = indicesInRange ? SampleCoordRejectReason::InvalidWeights
+                                       : SampleCoordRejectReason::OutOfBounds;
+SampleCoordRejectReason classifyFroxelSampleReject(const FroxelDensityGrid& grid,
+bool wouldSkipFroxelSample(const FroxelDensityGrid& grid,
+                           SampleCoordRejectReason* outReason) {
+    const SampleCoordRejectReason reason = classifyFroxelSampleReject(grid, desc, coords);
+                *outReason = SampleCoordRejectReason::EmptyGrid;
+                *outReason = SampleCoordRejectReason::OutOfBounds;
+                *outReason = SampleCoordRejectReason::None;
+        outReason = lookupReason == DensityLookupRejectReason::EmptyGrid ? ScreenMappingRejectReason::EmptyGrid
+                                                                         : ScreenMappingRejectReason::None;
+    return !tryCanPopulateFromAnalyticFog(desc, params, reason);
+        outReason = FroxelPopulateRejectReason::EmptyGrid;

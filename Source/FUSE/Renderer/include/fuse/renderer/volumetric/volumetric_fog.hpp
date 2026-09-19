@@ -642,3 +642,8 @@ const char* sampleCoordBoundsRejectReasonLabel(SampleCoordBoundsRejectReason rea
 
 // --- deepen additive from deepen-froxel-volumetric-guards-8201 ---
                               DensityLookupRejectReason& outReason,
+
+// --- deepen additive from deepen-b511-froxel-preflight-guards-73d5 ---
+SampleCoordRejectReason classifyFroxelSampleReject(const FroxelDensityGrid& grid,
+bool wouldSkipFroxelSample(const FroxelDensityGrid& grid,
+                         SampleCoordRejectReason* outReason = nullptr);
