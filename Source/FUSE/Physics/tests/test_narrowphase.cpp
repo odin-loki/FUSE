@@ -2095,3 +2095,23 @@ void testContactPairDispatchPreflightGuards() {
     expectTrue(stalePreflight.needs_rebuild(), "rebuild preflight needs rebuild when stale");
     const auto skippedPreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(empty);
     expectTrue(skippedPreflight.skipped, "rebuild preflight skips empty manifold");
+
+// --- deepen additive from deepen-b4-narrowphase-guards-914a ---
+void testContactPairGuardedDispatch() {
+        skipped.reason == fuse::physics::narrowphase::ContactPairRejectReason::SelfPair,
+        emptyPreflight.reason == fuse::physics::narrowphase::ManifoldFinalizeFailureReason::Empty,
+        "should_skip_manifold_finalize true for empty manifold");
+        noNormalPreflight.reason ==
+    const auto prunePreflight = fuse::physics::narrowphase::preflight_manifold_finalize(allSeparated);
+        prunePreflight.reason ==
+    expectTrue(readyPreflight.can_finalize(), "finalize preflight allows penetrating manifold");
+void testManifoldFinalizeGuardedEntryPoints() {
+void testManifoldPrunePreflightShallowFlag() {
+    const auto skipPreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(empty);
+    expectTrue(skipPreflight.skipped, "friction preflight skips empty manifold");
+    expectTrue(skipPreflight.shouldSkip, "friction preflight marks shouldSkip for empty manifold");
+        "should_skip_friction_basis_preflight true for empty manifold");
+    expectTrue(missingPreflight.needs_rebuild(), "friction preflight needs rebuild when basis missing");
+    expectTrue(freshPreflight.can_reuse(), "friction preflight can reuse valid basis");
+    testManifoldFinalizeGuardedEntryPoints();
+    testManifoldPrunePreflightShallowFlag();

@@ -411,3 +411,6 @@ bool should_run_contact_buffer_friction_basis(const ContactBufferSoA& buffer) {
 }
 
 } // namespace fuse::physics::narrowphase
+
+// --- deepen additive from deepen-b4-narrowphase-guards-914a ---
+        const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
