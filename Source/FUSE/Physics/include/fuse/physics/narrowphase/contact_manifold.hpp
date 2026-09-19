@@ -243,6 +243,8 @@ enum class ManifoldPruneRejectReason : u8 {
 
 /// Human-readable label for manifold prune reject reasons (B4.4 deepen pass).
 
+    WouldBeEmpty,
+
 
 /// Diagnose why prune would skip; vacuously succeeds when prune may proceed.
 ManifoldPruneRejectReason manifold_prune_reject_reason(
@@ -630,6 +632,14 @@ enum class ManifoldFinalizeFailureReason : u8 {
     PruneWouldEmpty,
     MissingFrictionBasis,
 /// Non-mutating prune predicate — inverse of `should_skip_manifold_prune` (B4.4 deepen pass).
+/// Non-mutating prune skip predicate — inverse of `should_run_manifold_prune` (B4.4 deepen pass).
+bool can_skip_manifold_prune_dispatch(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Non-mutating prune predicate — mirrors `preflight_manifold_prune` (B4.4 deepen pass).
 bool should_run_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
@@ -639,6 +649,9 @@ bool should_run_manifold_prune(
 /// Why manifold finalize would early-out (B4.4 deepen pass).
 enum class ManifoldFinalizeRejectReason : u8 {
     EmptyManifold,
+    None = 0,
+    InvalidNormal,
+    NoPenetratingPoints,
     WouldBeEmptyAfterPrune,
 };
 
@@ -1221,6 +1234,13 @@ bool should_run_manifold_finalize(
     f32 frictionEpsilon = 1e-4f);
 
 /// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.4 deepen pass).
+bool should_run_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Non-mutating finalize predicate — mirrors `preflight_manifold_finalize` (B4.4 deepen pass).
 bool should_run_manifold_finalize(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,

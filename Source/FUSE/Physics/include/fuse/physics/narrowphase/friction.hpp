@@ -187,7 +187,6 @@ FrictionBasisRejectReason friction_basis_reject_reason(
 
 
 
-/// Why friction-basis rebuild would early-out (B4.4 deepen pass).
     EmptyOrInvalid,
     BasisReusable,
 
@@ -208,6 +207,18 @@ FrictionBasisRejectReason friction_basis_reject_reason(
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
 struct FrictionBasisPreflight {
     FrictionBasisRejectReason reason = FrictionBasisRejectReason::None;
+enum class FrictionBasisRebuildRejectReason : u8 {
+
+/// Human-readable label for friction-basis rebuild reject reasons (logging / tests).
+const char* friction_basis_rebuild_reject_reason_name(FrictionBasisRebuildRejectReason reason);
+
+FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
+
+/// Returns true when `friction_basis_rebuild_reject_reason` matches `expected` (B4.4 deepen pass).
+bool friction_basis_rebuild_rejects_for_reason(
+    FrictionBasisRebuildRejectReason expected,
+
+    FrictionBasisRebuildRejectReason reason = FrictionBasisRebuildRejectReason::None;
     bool skipped = false;
     bool stale = false;
     bool needsNormalNormalize = false;
@@ -545,5 +556,8 @@ bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEps
 bool ensure_friction_basis_after_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 /// Non-mutating friction-basis predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 deepen pass).
+/// Non-mutating friction-basis rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 deepen pass).
+
+/// Returns true when friction-basis rebuild may proceed (B4.4 deepen pass).
 
 } // namespace fuse::physics::narrowphase

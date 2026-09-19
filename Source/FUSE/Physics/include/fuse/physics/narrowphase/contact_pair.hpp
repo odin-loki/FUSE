@@ -236,6 +236,10 @@ bool is_plane_plane_contact_pair(
 /// Inverse of `should_skip_contact_pair_dispatch` (B4.5 deepen pass).
 bool can_dispatch_contact_pair(
     const RigidBodySoA& bodies,
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen pass).
+bool contact_pair_deepen_rejects_for_reason(
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
 
 /// Const preflight with extended sleeping/kinematic reject checks (B4.4 deepen follow-up).
 struct ContactPairDeepenPreflight {
@@ -253,6 +257,11 @@ struct ContactPairRejectPreflight {
     bool unsupportedShapePair = false;
     bool bothStatic = false;
     bool degenerateShape = false;
+    bool isSleeping = false;
+    bool isKinematic = false;
+    bool isAnyTrigger = false;
+    bool isMassless = false;
+    bool isDeepenDegenerate = false;
 
     bool can_dispatch() const { return reason == ContactPairRejectReason::None; }
 };
@@ -987,6 +996,15 @@ struct NarrowphasePairBatchStats {
 NarrowphasePairBatchStats compute_narrowphase_pair_stats(
 /// Non-mutating narrowphase predicate — inverse of `can_skip_narrowphase` (B4.4 deepen pass).
 bool should_run_narrowphase(
+/// Returns true when extended deepen preflight allows dispatch (B4.4 deepen pass).
+bool can_dispatch_contact_pair_deepen(
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating deepen dispatch predicate — mirrors `preflight_contact_pair_deepen` (B4.4 deepen pass).
+bool should_run_contact_pair_deepen_dispatch(
+
+/// Count pairs rejected by extended deepen preflight (B4.4 deepen pass).
+u32 count_rejected_contact_pairs(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1050,5 +1068,18 @@ ContactPairBatchPreflight preflight_contact_pair_batch(
 
 /// Returns true when no pair passes deepen-pass preflight (B4.4 deepen pass).
 bool should_skip_contact_pair_batch(
+/// Const preflight for batch narrowphase dispatch (B4.4 deepen pass).
+struct NarrowphaseBatchPreflight {
+    u32 pairCount = 0u;
+    bool canSkip = false;
+
+    bool has_dispatchable() const { return dispatchableCount > 0u; }
+};
+
+/// Populate batch narrowphase preflight without running shape dispatch (B4.4 deepen pass).
+NarrowphaseBatchPreflight preflight_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 } // namespace fuse::physics::narrowphase
