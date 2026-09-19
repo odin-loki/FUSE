@@ -1887,3 +1887,7 @@ IslandSleepSolveRejectPreflight preflight_island_sleep_solve_reject(const Contac
         return !skipped && reason == IslandDispatchRejectReason::None && !invalidDt && solve.can_dispatch();
         return !skipped && reason == IslandSolveJobRejectReason::None && !invalidDt && constraintCount > 0u;
     bool can_skip_solve() const { return !skipped && reason == IslandSleepRejectReason::None && allSleeping; }
+
+// --- deepen additive from pbd-island-reject-reasons-0149 ---
+IslandDispatchRejectReason island_dispatch_reject_reason(const IslandSolveJob& job, f32 dt);
+IslandSolveRejectReason island_solve_reject_reason(const ContactIslandGraph::Island& island,

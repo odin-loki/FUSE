@@ -515,3 +515,9 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
 // --- deepen additive from deepen-pbd-island-guards-cb8c ---
     const IslandGraphBuildRejectReason reject =
     if (reject != IslandGraphBuildRejectReason::None) {
+
+// --- deepen additive from pbd-island-reject-reasons-0149 ---
+    case IslandGraphBuildRejectReason::OutOfRangeContactRef:
+    case IslandGraphBuildRejectReason::OutOfRangeDistanceRef:
+        return IslandGraphBuildRejectReason::OutOfRangeContactRef;
+        return IslandGraphBuildRejectReason::OutOfRangeDistanceRef;

@@ -3194,3 +3194,17 @@ IslandSleepSolveRejectPreflight preflight_island_sleep_solve_reject(const Contac
         preflight.reason = IslandSolveRejectReason::OutOfRangeRefs;
         preflight.reason = IslandDispatchRejectReason::EmptyGraph;
         preflight.reason = IslandWakeRejectReason::NoWakeTarget;
+
+// --- deepen additive from pbd-island-reject-reasons-0149 ---
+    case IslandDispatchRejectReason::EmptyIsland:
+    case IslandDispatchRejectReason::NullIslandJob:
+    case IslandDispatchRejectReason::ZeroConstraints:
+IslandDispatchRejectReason island_dispatch_reject_reason(const IslandSolveJob& job, f32 dt) {
+        return std::isfinite(dt) ? IslandDispatchRejectReason::InvalidDt
+                                 : IslandDispatchRejectReason::NonFiniteDt;
+        return IslandDispatchRejectReason::NullIslandJob;
+        return IslandDispatchRejectReason::EmptyIsland;
+        return IslandDispatchRejectReason::ZeroConstraints;
+IslandSolveRejectReason island_solve_reject_reason(const ContactIslandGraph::Island& island,
+        preflight.reason = IslandSleepRejectReason::NoSolveableIslands;
+        preflight.reason = IslandWakeRejectReason::NoWakeableIslands;

@@ -5579,3 +5579,26 @@ void testIslandSleepWakeRejectReasons() {
     expectTrue(mixedSleep.reason == IslandSleepRejectReason::AllSleeping,
     expectTrue(outOfRangeSleep.reason == IslandSleepRejectReason::OutOfRangeIsland,
     const IslandWakePreflight noWake = preflight_island_wake(graph.island(mixedIsland), bodies);
+
+// --- deepen additive from pbd-island-reject-reasons-0149 ---
+                                                     IslandGraphBuildRejectReason::OutOfRangeContactRef),
+    expectTrue(std::strcmp(island_graph_build_reject_reason_name(IslandGraphBuildRejectReason::OutOfRangeContactRef),
+    expectTrue(preflight.reason == IslandGraphBuildRejectReason::OutOfRangeContactRef,
+    const IslandDispatchPreflight validPreflight = preflight_island_dispatch(graph, dt);
+    const IslandDispatchPreflight nonFinite =
+    expectTrue(nonFinite.reason == IslandDispatchRejectReason::NonFiniteDt,
+    expectTrue(island_dispatch_rejects_for_reason(invalid, dt, IslandDispatchRejectReason::NullIslandJob),
+    expectTrue(island_dispatch_rejects_for_reason(emptyJob, dt, IslandDispatchRejectReason::EmptyIsland),
+void testIslandSolveSleepWakeRejectReasons() {
+    expectTrue(mixedWake.reason == IslandWakeRejectReason::None, "mixed wake preflight reason is None");
+    expectTrue(wakeGraph.reason == IslandWakeRejectReason::None, "wake graph preflight reason is None when wakeable");
+    const IslandSleepPreflight allSleeping = preflight_island_sleep(graph.island(mixedIsland), bodies);
+    expectTrue(allSleepGraph.reason == IslandSleepRejectReason::NoSolveableIslands,
+    expectTrue(outOfRange.reason == IslandSleepRejectReason::OutOfRangeIsland,
+    expectTrue(outOfRangeWake.reason == IslandWakeRejectReason::OutOfRangeIsland,
+void testDispatchIslandSolvePipelineGuarded() {
+    expectTrue(preflight.reason == IslandDispatchRejectReason::None, "pipeline preflight reason is None");
+               "should_skip pipeline false for valid graph");
+    expectTrue(should_skip_island_solve_pipeline(graph, bodies, 0.f),
+               "should_skip pipeline true for invalid dt");
+    testIslandSolveSleepWakeRejectReasons();
