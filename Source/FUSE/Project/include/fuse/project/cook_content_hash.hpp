@@ -17,6 +17,7 @@ enum class CookHashRejectReason : u8 {
     EmptyOutputPath,
     SourceUnreadable,
     EmptyDependencyList,
+    UnknownDependencyOutput,
     ZeroSourceHash,
 };
 
@@ -26,6 +27,8 @@ struct CookHashPreflight {
     CookHashRejectReason reason = CookHashRejectReason::None;
 
     [[nodiscard]] bool ok() const { return can_hash; }
+    /// True when hashing should be skipped — mirrors `!ok()` (B7.9 deepen).
+    [[nodiscard]] bool should_skip() const { return !can_hash; }
 };
 
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
@@ -62,7 +65,9 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_mesh_import_hash(const MeshImportDesc& desc);
 [[nodiscard]] CookHashPreflight preflight_texture_import_hash(const TextureImportDesc& desc);
 [[nodiscard]] CookHashPreflight preflight_audio_import_hash(const AudioImportDesc& desc);
+/// Walks `entry.dependencies` for readable source paths — mirrors `hash_manifest_entry` (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry);
+/// Rejects unknown manifest output paths — mirrors silent skips in `hash_upstream_dependencies` (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_upstream_dependencies_hash(
     const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
 [[nodiscard]] CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash);
@@ -70,5 +75,17 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 /// Fold source/upstream preflight — upstream zero is allowed on valid source keys (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+
+/// True when file content hashing should be skipped — guarded preflight wrapper (B7.9 deepen).
+[[nodiscard]] bool should_skip_file_content_hash(const std::string& path);
+[[nodiscard]] bool should_skip_mesh_import_hash(const MeshImportDesc& desc);
+[[nodiscard]] bool should_skip_texture_import_hash(const TextureImportDesc& desc);
+[[nodiscard]] bool should_skip_audio_import_hash(const AudioImportDesc& desc);
+[[nodiscard]] bool should_skip_manifest_entry_hash(const CookManifestEntry& entry);
+[[nodiscard]] bool should_skip_upstream_dependencies_hash(
+    const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
+[[nodiscard]] bool should_skip_cook_cache_key(u64 source_hash, u64 upstream_hash);
+[[nodiscard]] bool should_skip_fnv1a64_bytes(const u8* data, usize size);
+[[nodiscard]] bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
 } // namespace fuse::project
