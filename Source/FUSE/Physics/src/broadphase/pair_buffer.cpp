@@ -1660,6 +1660,19 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(
 bool pairBufferInvalidateSlotRejectsForReason(
     PairBufferInvalidateSlotRejectReason expected) {
     return pairBufferInvalidateSlotRejectReason(buffer, slot) == expected;
+    case PairBufferWriteSlotRejectReason::UnpreparedBuffer:
+        return "UnpreparedBuffer";
+
+    if (buffer.pairSlotCount == 0u) {
+        return PairBufferWriteSlotRejectReason::UnpreparedBuffer;
+
+
+    preflight.unpreparedBuffer = preflight.reason == PairBufferWriteSlotRejectReason::UnpreparedBuffer;
+
+
+
+
+
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
     PairBufferInvalidateSlotPreflight preflight{};
@@ -1673,6 +1686,10 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
     return preflightPairBufferInvalidateSlot(buffer, slot).canInvalidate();
 
 
+
+
+    return preflight;
+}
 
 
 

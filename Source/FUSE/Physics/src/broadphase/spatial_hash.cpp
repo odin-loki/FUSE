@@ -1390,6 +1390,7 @@ void populateShapeCells(
         if (!shouldRunCellCapacityInsert(range, maxOccupancy)) {
         if (!preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert()) {
         if (canSkipShapeCellInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
+        if (canSkipShapeCellOccupancyIteration(range, params)) {
             return;
         return ShapeCellInsertRejectReason::None;
 
@@ -1581,6 +1582,7 @@ void populateShapeCells(
     if (!shouldRunCellCapacityInsert(range, maxOccupancy)) {
     if (!preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert()) {
     if (canSkipShapeCellInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
+    if (canSkipShapeCellOccupancyIteration(range, params)) {
         return;
     if (isEmptyCellRange(range)) {
     if (params.maxCellOccupancyPerShape > 0u) {
