@@ -4007,3 +4007,9 @@ void testChromeTraceExportPreflightCleanExportFlags() {
     expectTrue(overflowPreflight.droppedEventCount == 1u, "overflow preflight reports dropped events");
     expectTrue(!overflowPreflight.canExportCleanly(), "overflow preflight blocks clean export");
     testChromeTraceExportPreflightCleanExportFlags();
+
+// --- deepen additive from deepen-b16-profiler-guards-a136 ---
+void testBlankNameGuards() {
+               "tryFirstExportableEvent true for first exportable event");
+               "tryLastExportableEvent true for last exportable event");
+void testNestedAsyncFlowContextGuards() {
