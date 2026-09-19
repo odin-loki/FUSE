@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <unordered_map>
 
 namespace fuse::profiler {
 
@@ -305,7 +306,6 @@ bool isBlankEventName(const char* name) {
 bool isValidEventName(const char* name);
 bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
-}
 
 EventNameRejectReason diagnoseEventNameRejectReason(const char* name) {
     if (name == nullptr) {
@@ -338,7 +338,6 @@ bool isWhitespaceOnlyEventName(const char* name);
 
 bool shouldRecordEventName(const char* name) {
     return isValidEventName(name) && !isWhitespaceOnlyEventName(name);
-}
 
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
@@ -1714,6 +1713,35 @@ const char* eventNameAt(u32 index) {
     return eventAt(index).name;
 
 bool peekEventAt(u32 index, ProfileEvent& outEvent) {
+namespace {
+
+bool isAsyncFlowPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    return isValidEventName(name) && isValidEventName(event.name) && std::strcmp(event.name, name) == 0;
+
+struct FlowPairCounts {
+    u32 startCount = 0u;
+    u32 finishCount = 0u;
+};
+
+void accumulateFlowPairCounts(std::unordered_map<u32, FlowPairCounts>& counts) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (!isValidEventName(event.name) || !isAsyncFlowPhase(event.phase)) {
+            continue;
+
+        FlowPairCounts& pair = counts[event.scopeId];
+        if (event.phase == EventPhase::FlowStart) {
+            ++pair.startCount;
+        } else {
+            ++pair.finishCount;
+
+} // namespace
+
+bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     if (!isEventIndexValid(index)) {
         outEvent = ProfileEvent{};
 
@@ -2150,6 +2178,8 @@ bool tryFirstEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
 bool tryLastExportableEvent(ProfileEvent& outEvent) {
     const u32 index = lastEventIndex();
 bool tryExportableFirstEvent(ProfileEvent& outEvent) {
+bool tryFirstEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByName(name);
         outEvent = ProfileEvent{};
         return false;
     }
@@ -2159,6 +2189,36 @@ bool tryExportableFirstEvent(ProfileEvent& outEvent) {
 bool tryLastExportableEvent(ProfileEvent& outEvent) {
     const u32 index = lastExportableEventIndex();
 
+}
+
+bool tryLastEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByName(name);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+
+    return tryExportableEventAt(index, outEvent);
+
+bool tryFirstFlowStartById(u32 flowId, ProfileEvent& outEvent) {
+    if (flowId == 0u) {
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isValidEventName(event.name) && event.phase == EventPhase::FlowStart && event.scopeId == flowId) {
+            outEvent = event;
+            return true;
+
+
+bool tryLastFlowFinishById(u32 flowId, ProfileEvent& outEvent) {
+
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (isValidEventName(event.name) && event.phase == EventPhase::FlowFinish && event.scopeId == flowId) {
+
+
+u32 firstEventIndex() {
+    return hasEvents() ? 0u : kInvalidEventIndex;
 }
 
     const u32 index = exportableLastEventIndex();
@@ -2580,6 +2640,53 @@ bool isFlowPhaseEvent(const ProfileEvent& event) {
 
 
 u32 countEventsByFlowId(u32 flowId) {
+
+        if (eventNameMatches(event, name)) {
+
+
+
+
+
+
+        if (isValidEventName(event.name) && isAsyncFlowPhase(event.phase) && event.scopeId == flowId) {
+
+
+
+
+
+bool hasFlowStartEvent(u32 flowId) {
+
+        if (isValidEventName(event.name) && event.phase == EventPhase::FlowStart && event.scopeId == flowId) {
+
+bool hasFlowFinishEvent(u32 flowId) {
+
+        if (isValidEventName(event.name) && event.phase == EventPhase::FlowFinish && event.scopeId == flowId) {
+
+bool isFlowPairRecorded(u32 flowId) {
+    return hasFlowStartEvent(flowId) && hasFlowFinishEvent(flowId);
+
+u32 countDanglingFlowBegins() {
+    std::unordered_map<u32, FlowPairCounts> counts;
+    accumulateFlowPairCounts(counts);
+
+    u32 dangling = 0u;
+    for (const auto& entry : counts) {
+        if (entry.second.startCount > entry.second.finishCount) {
+            dangling += entry.second.startCount - entry.second.finishCount;
+    return dangling;
+
+u32 countOrphanFlowEnds() {
+
+    u32 orphan = 0u;
+        if (entry.second.finishCount > entry.second.startCount) {
+            orphan += entry.second.finishCount - entry.second.startCount;
+    return orphan;
+
+bool isFlowPairingConsistent() {
+    return countDanglingFlowBegins() == 0u && countOrphanFlowEnds() == 0u;
+
+bool isNestingStateConsistent() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !isFlowDepthDetached();
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -3122,6 +3229,11 @@ bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReaso
     preflight.hasActiveFlowNesting = hasActiveFlowNesting();
     preflight.hasNestedAsyncFlowContext = hasNestedAsyncFlowContext();
     preflight.hasActiveScopes = hasActiveScopes();
+    preflight.danglingFlowBeginCount = countDanglingFlowBegins();
+    preflight.orphanFlowEndCount = countOrphanFlowEnds();
+    preflight.hasUnpairedFlowEvents =
+        preflight.danglingFlowBeginCount > 0u || preflight.orphanFlowEndCount > 0u;
+    preflight.nestingStateConsistent = isNestingStateConsistent();
     return preflight;
 }
 
