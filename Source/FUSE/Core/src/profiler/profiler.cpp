@@ -287,8 +287,26 @@ EventNameRejectReason diagnoseEventNameRejectReason(const char* name) {
     }
     if (name[0] == '\0') {
         return EventNameRejectReason::Empty;
-    }
     return EventNameRejectReason::None;
+u32 countUnbalancedFlowPairsInBuffer() {
+    std::unordered_map<u32, std::pair<u32, u32>> flowPairCounts;
+    const u32 total = g_eventCount.load(std::memory_order_acquire);
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (!isValidEventName(event.name) || !isFlowEventPhase(event.phase) || !isValidFlowId(event.scopeId)) {
+            continue;
+
+        auto& counts = flowPairCounts[event.scopeId];
+        if (event.phase == EventPhase::FlowStart) {
+            ++counts.first;
+        } else {
+            ++counts.second;
+
+    u32 unbalanced = 0u;
+    for (const auto& entry : flowPairCounts) {
+        if (entry.second.first != entry.second.second) {
+            ++unbalanced;
+    return unbalanced;
 }
 
 } // namespace
@@ -1203,6 +1221,21 @@ bool isLookupNameValid(const char* name) {
 
         const char ch = *cursor;
         if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
+bool isValidFlowId(u32 flowId) {
+    return flowId != 0u;
+
+bool isFlowEventPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+
+bool eventMatchesName(const ProfileEvent& event, const char* name) {
+    if (!isValidEventName(name) || !isValidEventName(event.name)) {
+
+    return std::strcmp(event.name, name) == 0;
+
+bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
+    if (!isValidFlowId(flowId) || !isFlowEventPhase(event.phase) || !isValidEventName(event.name)) {
+
+    return event.scopeId == flowId;
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
@@ -2688,6 +2721,49 @@ bool isFlowPairingConsistent() {
 bool isNestingStateConsistent() {
     return isScopeNestingBalanced() && isFlowNestingBalanced() && !isFlowDepthDetached();
 
+        if (eventMatchesName(eventAt(i), name)) {
+
+
+        if (eventMatchesName(eventAt(i - 1u), name)) {
+
+    if (!isValidFlowId(flowId)) {
+
+        if (eventMatchesFlowId(eventAt(i), flowId)) {
+
+
+        if (eventMatchesFlowId(eventAt(i - 1u), flowId)) {
+
+
+
+
+
+u32 countFlowStartsById(u32 flowId) {
+
+        if (event.phase == EventPhase::FlowStart && eventMatchesFlowId(event, flowId)) {
+
+u32 countFlowFinishesById(u32 flowId) {
+
+        if (event.phase == EventPhase::FlowFinish && eventMatchesFlowId(event, flowId)) {
+
+bool isAsyncFlowPairBalanced(u32 flowId) {
+
+    return countFlowStartsById(flowId) == countFlowFinishesById(flowId);
+
+bool tryFirstEventByName(const char* name, ProfileEvent& outEvent) {
+
+
+bool tryLastEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByName(name);
+
+
+bool tryFirstFlowEventById(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByFlowId(flowId);
+
+
+bool tryLastFlowEventById(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByFlowId(flowId);
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -3234,6 +3310,39 @@ bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReaso
     preflight.hasUnpairedFlowEvents =
         preflight.danglingFlowBeginCount > 0u || preflight.orphanFlowEndCount > 0u;
     preflight.nestingStateConsistent = isNestingStateConsistent();
+    preflight.unbalancedFlowPairCount = countUnbalancedFlowPairsInBuffer();
+    preflight.hasUnbalancedFlowPairsInBuffer = preflight.unbalancedFlowPairCount > 0u;
+
+EventNameLookupPreflight preflightEventLookupByName(const char* name) {
+    EventNameLookupPreflight preflight{};
+    preflight.nameValid = isValidEventName(name);
+    preflight.bufferEmpty = isBufferEmpty();
+    if (!preflight.nameValid || preflight.bufferEmpty) {
+
+    preflight.matchCount = countEventsByName(name);
+    preflight.firstMatchIndex = findFirstEventIndexByName(name);
+    preflight.lastMatchIndex = findLastEventIndexByName(name);
+
+FlowIdLookupPreflight preflightFlowLookupById(u32 flowId) {
+    FlowIdLookupPreflight preflight{};
+    preflight.flowIdValid = isValidFlowId(flowId);
+    if (!preflight.flowIdValid || preflight.bufferEmpty) {
+
+    preflight.flowStartCount = countFlowStartsById(flowId);
+    preflight.flowFinishCount = countFlowFinishesById(flowId);
+    preflight.firstFlowEventIndex = findFirstEventIndexByFlowId(flowId);
+    preflight.lastFlowEventIndex = findLastEventIndexByFlowId(flowId);
+    preflight.pairBalanced = preflight.flowStartCount == preflight.flowFinishCount;
+
+NestingConsistencyPreflight preflightNestingConsistency() {
+    NestingConsistencyPreflight preflight{};
+    preflight.scopeNestingBalanced = isScopeNestingBalanced();
+    preflight.flowNestingBalanced = isFlowNestingBalanced();
+    preflight.flowDepthAttached = !isFlowDepthDetached();
+    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+    preflight.openAsyncFlowCount = openAsyncFlowCount();
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
     return preflight;
 }
 

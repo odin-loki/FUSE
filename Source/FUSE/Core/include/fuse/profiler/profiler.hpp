@@ -243,6 +243,48 @@ struct ChromeTraceExportPreflight {
     bool hasUnpairedFlowEventsInBuffer() const { return hasUnpairedFlowEvents; }
     bool isNestingStateConsistent() const { return nestingStateConsistent; }
             && !hasUnpairedFlowEvents;
+            && !hasUnbalancedFlowPairsInBuffer;
+    }
+    u32 unbalancedFlowPairCount = 0;
+    bool hasUnbalancedFlowPairsInBuffer = false;
+};
+
+/// Read-only name lookup diagnostics — safe to call before indexing the ring buffer by name.
+struct EventNameLookupPreflight {
+    bool nameValid = false;
+    bool bufferEmpty = false;
+    u32 matchCount = 0;
+    u32 firstMatchIndex = kInvalidEventIndex;
+    u32 lastMatchIndex = kInvalidEventIndex;
+
+    bool canLookup() const { return nameValid && !bufferEmpty; }
+    bool hasMatches() const { return matchCount > 0; }
+
+/// Read-only async-flow id lookup diagnostics — safe before correlating chrome `ph:"s"` / `ph:"f"` pairs.
+struct FlowIdLookupPreflight {
+    bool flowIdValid = false;
+    u32 flowStartCount = 0;
+    u32 flowFinishCount = 0;
+    u32 firstFlowEventIndex = kInvalidEventIndex;
+    u32 lastFlowEventIndex = kInvalidEventIndex;
+    bool pairBalanced = true;
+
+    bool canLookup() const { return flowIdValid && !bufferEmpty; }
+    bool hasFlowEvents() const { return flowStartCount + flowFinishCount > 0; }
+    bool isPairBalanced() const { return pairBalanced; }
+
+/// Read-only nesting/async-flow consistency snapshot for export and diagnostics.
+struct NestingConsistencyPreflight {
+    bool scopeNestingBalanced = true;
+    bool flowNestingBalanced = true;
+    bool flowDepthAttached = true;
+    bool crossThreadFlowHandoffPending = false;
+    u32 openAsyncFlowCount = 0;
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+
+    bool isConsistent() const {
+        return scopeNestingBalanced && flowNestingBalanced && flowDepthAttached && !crossThreadFlowHandoffPending;
     }
     bool canExportNonEmpty() const { return canExport() && hasExportableEvents(); }
     bool hasExportWarnings() const {
@@ -811,6 +853,8 @@ bool isWhitespaceOnlyEventName(const char* name);
 bool isBlankEventName(const char* name);
 bool isEmptyEventName(const char* name);
 /// True for null, empty, or whitespace-only names — does not affect recording guards.
+bool isFlowEventPhase(EventPhase phase);
+bool eventMatchesName(const ProfileEvent& event, const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
@@ -883,6 +927,13 @@ u32 countDanglingFlowBegins();
 u32 countOrphanFlowEnds();
 bool isFlowPairingConsistent();
 bool isNestingStateConsistent();
+u32 countFlowStartsById(u32 flowId);
+u32 countFlowFinishesById(u32 flowId);
+bool isAsyncFlowPairBalanced(u32 flowId);
+bool tryFirstEventByName(const char* name, ProfileEvent& outEvent);
+bool tryLastEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFirstFlowEventById(u32 flowId, ProfileEvent& outEvent);
+bool tryLastFlowEventById(u32 flowId, ProfileEvent& outEvent);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
@@ -1126,6 +1177,9 @@ bool isChromeTraceExportEmpty();
 bool preflightChromeTraceNesting(ChromeTraceExportRejectReason* reason = nullptr);
 const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason);
 bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason = nullptr);
+EventNameLookupPreflight preflightEventLookupByName(const char* name);
+FlowIdLookupPreflight preflightFlowLookupById(u32 flowId);
+NestingConsistencyPreflight preflightNestingConsistency();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
