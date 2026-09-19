@@ -1067,3 +1067,22 @@ int main() {
     std::fprintf(stderr, "fuse_editor_panels_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b6-material-inspector-guards-5414 ---
+void testMaterialPropertyBindingRefreshGuards() {
+    expectTrue(!binding.tryRefreshFromEditState(state), "tryRefresh fails when unbound");
+               "tryClearPropertyDirty fails when unbound");
+    expectTrue(bound.tryIsPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
+    expectTrue(bound.tryRefreshFromEditState(external), "tryRefresh succeeds when bound");
+    expectTrue(panel.editState().roughness == 0.9f, "tryRefresh mirrors external state");
+    expectTrue(bound.tryClearPropertyDirty(fuse::editor::MaterialPropertyId::Metallic),
+               "tryClearPropertyDirty succeeds for valid id");
+               "tryClearPropertyDirty clears metallic dirty bit");
+    expectTrue(bound.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed succeeds when bound");
+    expectTrue(!bound.needsPanelRefresh(), "tryMarkPanelRefreshed clears refresh pending");
+void testMaterialPropertyInspectRefreshGuards() {
+    expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel fails without selection");
+    expectTrue(panel.tryRefreshPanel(), "tryRefreshPanel succeeds with selection");
+    expectTrue(!panel.needsPanelRefresh(), "tryRefreshPanel clears binding refresh pending");
+    expectTrue(!panel.previewDirty(), "tryRefreshPanel clears preview dirty");
+    expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel fails after empty-catalog sync");
