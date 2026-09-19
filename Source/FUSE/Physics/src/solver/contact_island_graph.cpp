@@ -3,6 +3,88 @@
 #include <algorithm>
 
 namespace fuse::physics {
+namespace {
+
+bool contact_body_indices_in_range(const narrowphase::ContactManifold& contact, u32 bodyCount) {
+    return contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+}
+
+bool distance_body_indices_in_range(const DistanceConstraint& constraint, u32 bodyCount) {
+    return constraint.bodyA < bodyCount && constraint.bodyB < bodyCount;
+}
+
+} // namespace
+
+bool is_valid_island_build_body_count(u32 bodyCount) {
+    return true;
+}
+
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildPreflight preflight{};
+    preflight.bodyCount = bodyCount;
+    preflight.contactCount = static_cast<u32>(contacts.size());
+    preflight.distanceConstraintCount = static_cast<u32>(distanceConstraints.size());
+
+    if (bodyCount == 0u && contacts.empty() && distanceConstraints.empty()) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (!contact_body_indices_in_range(contact, bodyCount)) {
+            ++preflight.outOfRangeContactCount;
+            continue;
+        }
+        ++preflight.inRangeContactCount;
+        if (!contact.valid) {
+            ++preflight.invalidContactCount;
+            continue;
+        }
+        ++preflight.validInRangeContactCount;
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (!distance_body_indices_in_range(constraint, bodyCount)) {
+            ++preflight.outOfRangeDistanceCount;
+        } else {
+            ++preflight.inRangeDistanceCount;
+        }
+    }
+
+    return preflight;
+}
+
+bool should_skip_island_build(u32 bodyCount,
+                              const std::vector<narrowphase::ContactManifold>& contacts,
+                              const std::vector<DistanceConstraint>& distanceConstraints) {
+    return preflight_island_build(bodyCount, contacts, distanceConstraints).skipped;
+}
+
+bool build_guarded(ContactIslandGraph& graph,
+                   u32 bodyCount,
+                   const std::vector<narrowphase::ContactManifold>& contacts,
+                   const std::vector<DistanceConstraint>& distanceConstraints) {
+    if (should_skip_island_build(bodyCount, contacts, distanceConstraints)) {
+        graph.clear();
+        return false;
+    }
+    graph.build(bodyCount, contacts, distanceConstraints);
+    return true;
+}
+
+IslandBuildStats compute_island_build_stats(const ContactIslandGraph& graph,
+                                            const IslandBuildPreflight& inputPreflight) {
+    IslandBuildStats stats{};
+    stats.totalIslands = graph.islandCount();
+    stats.constrainedCount = graph.constrainedIslandCount();
+    stats.emptyCount = stats.totalIslands - stats.constrainedCount;
+    stats.orphanContactCount = inputPreflight.outOfRangeContactCount + inputPreflight.invalidContactCount;
+    stats.orphanDistanceCount = inputPreflight.outOfRangeDistanceCount;
+    return stats;
+}
 
 void ContactIslandGraph::clear() {
     parent_.clear();
@@ -81,7 +163,7 @@ void ContactIslandGraph::build(u32 bodyCount,
 
     for (u32 contactIndex = 0; contactIndex < contacts.size(); ++contactIndex) {
         const narrowphase::ContactManifold& contact = contacts[contactIndex];
-        if (!contact.valid) {
+        if (!contact.valid || !contact_body_indices_in_range(contact, bodyCount)) {
             continue;
         }
         const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
@@ -92,6 +174,9 @@ void ContactIslandGraph::build(u32 bodyCount,
 
     for (u32 distanceIndex = 0; distanceIndex < distanceConstraints.size(); ++distanceIndex) {
         const DistanceConstraint& constraint = distanceConstraints[distanceIndex];
+        if (!distance_body_indices_in_range(constraint, bodyCount)) {
+            continue;
+        }
         const u32 islandIndex = rootToIsland[findRoot(constraint.bodyA)];
         if (islandIndex != invalidIsland) {
             islands_[islandIndex].distanceIndices.push_back(distanceIndex);

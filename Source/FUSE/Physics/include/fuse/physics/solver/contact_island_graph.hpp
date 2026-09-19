@@ -8,6 +8,48 @@
 
 namespace fuse::physics {
 
+/// Input validation for island graph build (B4.4 deepen).
+struct IslandBuildPreflight {
+    u32 bodyCount = 0;
+    u32 contactCount = 0;
+    u32 distanceConstraintCount = 0;
+    u32 outOfRangeContactCount = 0;
+    u32 outOfRangeDistanceCount = 0;
+    u32 invalidContactCount = 0;
+    u32 inRangeContactCount = 0;
+    u32 inRangeDistanceCount = 0;
+    u32 validInRangeContactCount = 0;
+    bool skipped = false;
+
+    bool can_build() const { return !skipped; }
+    bool has_buildable_constraints() const {
+        return validInRangeContactCount > 0u || inRangeDistanceCount > 0u;
+    }
+};
+
+/// Post-build partition summary for build guards (B4.4 deepen).
+struct IslandBuildStats {
+    u32 totalIslands = 0;
+    u32 constrainedCount = 0;
+    u32 emptyCount = 0;
+    u32 orphanContactCount = 0;
+    u32 orphanDistanceCount = 0;
+};
+
+/// True when `bodyCount` is usable for island graph build (zero is valid).
+bool is_valid_island_build_body_count(u32 bodyCount);
+
+/// Preflight island graph inputs; sets `skipped` when there is nothing to partition.
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Early-out guard when build inputs are empty (zero bodies and no constraints).
+bool should_skip_island_build(u32 bodyCount,
+                             const std::vector<narrowphase::ContactManifold>& contacts,
+                             const std::vector<DistanceConstraint>& distanceConstraints);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
@@ -45,5 +87,15 @@ private:
     std::vector<u32> parent_;
     std::vector<Island> islands_;
 };
+
+/// Guarded build entry; returns false when build inputs are skipped.
+bool build_guarded(ContactIslandGraph& graph,
+                   u32 bodyCount,
+                   const std::vector<narrowphase::ContactManifold>& contacts,
+                   const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Summarize built graph vs input preflight orphan counts.
+IslandBuildStats compute_island_build_stats(const ContactIslandGraph& graph,
+                                            const IslandBuildPreflight& inputPreflight);
 
 } // namespace fuse::physics
