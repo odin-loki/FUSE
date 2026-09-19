@@ -1512,3 +1512,40 @@ MergePairPushPreflight preflightMergePairPush(const PairBufferSoA& buffer, u32 i
     preflight.reason = mergePairPushRejectReason(buffer, idxA, idxB);
     preflight.invalidPair = preflight.reason == MergePairPushRejectReason::InvalidPair;
     preflight.atCapacity = preflight.reason == MergePairPushRejectReason::AtCapacity;
+
+// --- deepen additive from deepen-b4-broadphase-guards-900d ---
+        const RefinePairPreflight pairPreflight = preflightRefinePair(buffer, pairIndex, bodyCount);
+        if (!pairPreflight.canRefine()) {
+            if (pairPreflight.reason == RefinePairRejectReason::InvalidPair) {
+    const PairBufferPushRejectReason pushReason = pairBufferPushRejectReason(buffer, bodyA, bodyB);
+    case PairBufferPushRejectReason::InvalidPair:
+    case PairBufferPushRejectReason::AtCapacity:
+    case PairBufferPushRejectReason::None:
+    return mergePairPushRejectReason(buffer, bodyA, bodyB) == expected;
+MergePairPushPreflight preflightMergePairPush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB) {
+    preflight.reason = mergePairPushRejectReason(buffer, bodyA, bodyB);
+    return !preflightMergePairPush(buffer, bodyA, bodyB).canPush();
+    return preflightMergePairPush(buffer, bodyA, bodyB).canPush();
+            return ShapeCellInsertRejectReason::CellOccupancyRejected;
+    case ShapeCellInsertRejectReason::CellOccupancyRejected:
+    preflight.cellOccupancyRejected = preflight.reason == ShapeCellInsertRejectReason::CellOccupancyRejected;
+const char* refinePairRejectReasonName(RefinePairRejectReason reason) {
+    case RefinePairRejectReason::None:
+    case RefinePairRejectReason::OutOfRangeSlot:
+    case RefinePairRejectReason::InvalidSlot:
+    case RefinePairRejectReason::InvalidPair:
+RefinePairRejectReason refinePairRejectReason(
+        return RefinePairRejectReason::OutOfRangeSlot;
+        return RefinePairRejectReason::InvalidSlot;
+        return RefinePairRejectReason::InvalidPair;
+    return RefinePairRejectReason::None;
+    RefinePairRejectReason expected) {
+    return refinePairRejectReason(buffer, pairIndex, bodyCount) == expected;
+RefinePairPreflight preflightRefinePair(
+    RefinePairPreflight preflight{};
+    preflight.reason = refinePairRejectReason(buffer, pairIndex, bodyCount);
+    preflight.outOfRangeSlot = preflight.reason == RefinePairRejectReason::OutOfRangeSlot;
+    preflight.invalidSlot = preflight.reason == RefinePairRejectReason::InvalidSlot;
+    preflight.invalidPair = preflight.reason == RefinePairRejectReason::InvalidPair;
+    return !preflightRefinePair(buffer, pairIndex, bodyCount).canRefine();
+    return preflightRefinePair(buffer, pairIndex, bodyCount).canRefine();

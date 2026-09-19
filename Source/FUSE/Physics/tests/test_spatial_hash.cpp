@@ -3786,3 +3786,28 @@ void testMergePairPushPreflightGuards() {
 void testBroadphaseMergeBodyCountPreflight() {
     testMergePairPushPreflightGuards();
     testBroadphaseMergeBodyCountPreflight();
+
+// --- deepen additive from deepen-b4-broadphase-guards-900d ---
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteRejectReason::UnpreparedSlots),
+                               fuse::physics::broadphase::PairBufferWriteRejectReason::UnpreparedSlots),
+    const fuse::physics::broadphase::PairBufferInvalidatePreflight validInvalidate =
+        fuse::physics::broadphase::preflightPairBufferInvalidate(buffer, 0u);
+                 fuse::physics::broadphase::ShapeCellInsertRejectReason::CellOccupancyRejected),
+    const fuse::physics::broadphase::ShapeCellInsertPreflight validInsert =
+void testRefinePairRejectReasonGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::refinePairRejectReason(buffer, 0u, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::RefinePairRejectReason::OutOfRangeSlot),
+    const fuse::physics::broadphase::RefinePairPreflight validPair =
+        fuse::physics::broadphase::preflightRefinePair(buffer, 0u, 2u);
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::refinePairRejectReason(buffer, 0u, 2u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::RefinePairRejectReason::InvalidPair),
+    expectTrue(std::strcmp(fuse::physics::broadphase::refinePairRejectReasonName(
+                               fuse::physics::broadphase::RefinePairRejectReason::InvalidPair),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::refinePairRejectReason(buffer, 1u, 4u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::RefinePairRejectReason::InvalidSlot),
+void testMergePairPushRejectReasonGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::mergePairPushRejectReason(buffer, 0u, 1u)),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::mergePairPushRejectReason(buffer, 2u, 2u)),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::mergePairPushRejectReason(buffer, 2u, 3u)),
+    testRefinePairRejectReasonGuards();
+    testMergePairPushRejectReasonGuards();

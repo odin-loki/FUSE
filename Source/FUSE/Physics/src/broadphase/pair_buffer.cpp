@@ -1146,3 +1146,8 @@ PairBufferWritePreflight preflightPairBufferWrite(const PairBufferSoA& buffer, u
     case PairBufferWriteSlotRejectReason::UnpreparedBuffer:
         return PairBufferWriteSlotRejectReason::UnpreparedBuffer;
     preflight.unpreparedBuffer = preflight.reason == PairBufferWriteSlotRejectReason::UnpreparedBuffer;
+
+// --- deepen additive from deepen-b4-broadphase-guards-900d ---
+    case PairBufferWriteRejectReason::UnpreparedSlots:
+        return PairBufferWriteRejectReason::UnpreparedSlots;
+    preflight.unpreparedSlots = preflight.reason == PairBufferWriteRejectReason::UnpreparedSlots;

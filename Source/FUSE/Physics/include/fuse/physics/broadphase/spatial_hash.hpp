@@ -1545,3 +1545,14 @@ struct MergePairPushPreflight {
     MergePairPushRejectReason reason = MergePairPushRejectReason::None;
     bool canPush() const { return reason == MergePairPushRejectReason::None; }
 MergePairPushPreflight preflightMergePairPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+
+// --- deepen additive from deepen-b4-broadphase-guards-900d ---
+MergePairPushPreflight preflightMergePairPush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB);
+enum class RefinePairRejectReason : u8 {
+const char* refinePairRejectReasonName(RefinePairRejectReason reason);
+RefinePairRejectReason refinePairRejectReason(
+    RefinePairRejectReason expected);
+struct RefinePairPreflight {
+    RefinePairRejectReason reason = RefinePairRejectReason::None;
+    bool canRefine() const { return reason == RefinePairRejectReason::None; }
+RefinePairPreflight preflightRefinePair(
