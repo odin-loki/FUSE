@@ -29,6 +29,10 @@ enum class ProbeKernelRejectReason : u8 {
     ZeroUpdateCount,
     NullProbeIndices,
     ZeroRaysPerProbe,
+    NullRadianceSurfaces,
+    NullAtlasSurfaces,
+    ZeroMaxRayDistance,
+    InvalidHysteresis,
 };
 
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
@@ -36,18 +40,30 @@ const char* probeKernelRejectReasonLabel(ProbeKernelRejectReason reason);
 
 /// Preflight guard before probe trace kernel launch.
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
+/// Early-out when probe trace launch would be rejected.
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Diagnose why probe trace launch preflight would reject.
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
 /// Preflight guard before probe blend kernel launch.
 bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
+/// Early-out when probe blend launch would be rejected.
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 /// Diagnose why probe blend launch preflight would reject.
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
+/// Launch probe trace kernel with reject-reason diagnostics; false when preflight rejects.
+bool tryLaunch_probe_trace_kernel(const DDGIKernelParams& params,
+                                  void* cuda_stream,
+                                  ProbeKernelRejectReason& outReason);
 
 /// Launch probe blend kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_blend_kernel(const DDGIKernelParams& params, void* cuda_stream);
+/// Launch probe blend kernel with reject-reason diagnostics; false when preflight rejects.
+bool tryLaunch_probe_blend_kernel(const DDGIKernelParams& params,
+                                  void* cuda_stream,
+                                  ProbeKernelRejectReason& outReason);
 
 } // namespace fuse::renderer::gi
