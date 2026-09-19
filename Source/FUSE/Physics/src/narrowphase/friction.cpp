@@ -237,4 +237,81 @@ bool should_skip_friction_basis_preflight(
     return preflight_friction_basis_rebuild(manifold, epsilon).can_skip_rebuild();
 }
 
+bool has_partial_friction_basis(const ContactManifold& manifold, f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return false;
+    }
+
+    const f32 tangent1Length = manifold.frictionBasis.tangent1.length();
+    const f32 tangent2Length = manifold.frictionBasis.tangent2.length();
+    const bool hasTangent1 = tangent1Length > epsilon;
+    const bool hasTangent2 = tangent2Length > epsilon;
+    if (hasTangent1 != hasTangent2) {
+        return true;
+    }
+    if (!hasTangent1) {
+        return false;
+    }
+
+    return !isOrthonormalTangentBasis(manifold.contactNormal, manifold.frictionBasis, epsilon);
+}
+
+bool friction_basis_needs_completion(const ContactManifold& manifold, f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return false;
+    }
+    return !has_cached_friction_basis(manifold) || has_partial_friction_basis(manifold, epsilon);
+}
+
+FrictionBasisDeepenPreflight preflight_friction_basis_rebuild_deepen(
+    const ContactManifold& manifold,
+    f32 epsilon,
+    f32 normalEpsilon) {
+    FrictionBasisDeepenPreflight preflight{};
+    if (should_skip_friction_tangents(manifold)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    const FrictionBasisPreflight basePreflight = preflight_friction_basis_rebuild(manifold, epsilon);
+    preflight.stale = basePreflight.stale;
+    preflight.canReuse = basePreflight.canReuse;
+    preflight.needsRebuild = basePreflight.needsRebuild;
+    preflight.partial = has_partial_friction_basis(manifold, epsilon);
+    preflight.needsNormalNormalization = manifold.hasUnnormalizedNormal(normalEpsilon);
+    if (preflight.partial) {
+        preflight.needsRebuild = true;
+        preflight.canReuse = false;
+    }
+    return preflight;
+}
+
+bool should_skip_friction_basis_deepen_preflight(
+    const ContactManifold& manifold,
+    f32 epsilon,
+    f32 normalEpsilon) {
+    return preflight_friction_basis_rebuild_deepen(manifold, epsilon, normalEpsilon).can_skip_rebuild();
+}
+
+void compute_friction_tangents_deepen_if_needed(
+    ContactManifold& manifold,
+    f32 epsilon,
+    f32 normalEpsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        invalidate_friction_basis(manifold);
+        return;
+    }
+
+    manifold.normalizeContactNormalIfNeeded(normalEpsilon);
+
+    const FrictionBasisDeepenPreflight preflight =
+        preflight_friction_basis_rebuild_deepen(manifold, epsilon, normalEpsilon);
+    if (preflight.can_skip_rebuild()) {
+        return;
+    }
+
+    invalidate_friction_basis(manifold);
+    manifold.buildFrictionBasis();
+}
+
 } // namespace fuse::physics::narrowphase
