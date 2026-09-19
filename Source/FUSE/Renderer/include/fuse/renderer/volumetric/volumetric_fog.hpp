@@ -674,12 +674,21 @@ bool canPopulateFromAnalyticFog(const FroxelGridDesc& desc,
 bool tryCanPopulateFromAnalyticFog(const FroxelGridDesc& desc,
                                    const VolumetricFogParams& params,
                                    FroxelPopulateRejectReason& outReason);
+/// Preflight guard before tile/slice coord density lookup; false on inaccessible grid.
+bool canLookupAtCoord(const FroxelDensityGrid& grid,
+                      u32 tileX,
+                      u32 tileY,
+                      u32 sliceZ);
+/// Diagnose coord lookup preflight; vacuously succeeds on accessible grids with clamp warnings.
+bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          u32 tileX,
                          u32 tileY,
                          u32 sliceZ,
                          DensityLookupRejectReason& outReason);
 /// True when tile/slice coords would clamp before density lookup.
 /// True when tile/slice coords exceed grid bounds and would clamp before lookup.
+/// True when tile/slice coords exceed grid bounds before clamping.
+bool wouldClampDensityLookupCoord(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
 /// Preflight guard before coord-based density sampling; false on inaccessible grid or invalid coords.
 bool canSampleAtCoords(const FroxelDensityGrid& grid,
                        const FroxelSampleCoords& coords);
@@ -1097,8 +1106,6 @@ bool trySampleDensityAtScreen(const FroxelDensityGrid& grid,
                               f32 viewDepth,
                               f32& outDensity,
                               ScreenMappingRejectReason& outScreenReason,
-                              ScreenMappingRejectReason& outMapReason,
-                              SampleCoordRejectReason& outSampleReason);
 void populateFromAnalyticFog(FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              const FroxelCameraDesc& camera,

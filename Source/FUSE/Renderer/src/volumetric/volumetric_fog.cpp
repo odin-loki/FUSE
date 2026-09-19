@@ -1677,6 +1677,12 @@ bool wouldClampDensityLookupCoord(u32 tileX, u32 tileY, u32 sliceZ, const Froxel
 
     return tileX > desc.tilesX - 1u || tileY > desc.tilesY - 1u || sliceZ > desc.slicesZ - 1u;
     return tileX >= desc.tilesX || tileY >= desc.tilesY || sliceZ >= desc.slicesZ;
+bool canLookupAtCoord(const FroxelDensityGrid& grid,
+                      const FroxelGridDesc& desc,
+                      u32 /*tileX*/,
+                      u32 /*tileY*/,
+                      u32 /*sliceZ*/) {
+    return isDensityGridAccessible(grid, desc);
 }
 
 bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
@@ -1702,6 +1708,14 @@ bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
 
 
 
+    if (!tryCanLookupAtIndex(grid, desc, 0u, outReason)) {
+    }
+
+
+bool wouldClampDensityLookupCoord(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc) {
+    if (FroxelGridLayout::isEmptyGrid(desc)) {
+
+    return tileX >= desc.tilesX || tileY >= desc.tilesY || sliceZ >= desc.slicesZ;
 
 bool canSampleAtCoords(const FroxelDensityGrid& grid,
                        const FroxelGridDesc& desc,
@@ -3183,6 +3197,8 @@ bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
         return false;
     }
 
+    outDensity = sampleDensityTrilinear(grid, desc, coords);
+    outReason = ScreenMappingRejectReason::None;
     return true;
 
 bool canSampleAtCoords(const FroxelDensityGrid& grid,
