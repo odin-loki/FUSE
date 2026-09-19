@@ -692,3 +692,10 @@ bool tryValidateDensityLookupIndex(const FroxelDensityGrid& grid,
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-53be ---
 bool tryCanSampleDensityTrilinear(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-b511-froxel-preflights-8549 ---
+    static bool shouldSkipSampleCoordPreflight(const FroxelGridDesc& desc);
+bool tryPreflightDensityLookup(const FroxelDensityGrid& grid,
+bool canPreflightTrilinearSample(const FroxelDensityGrid& grid,
+bool tryPreflightTrilinearSample(const FroxelDensityGrid& grid,
+bool tryPreflightFroxelPopulate(const FroxelGridDesc& desc,

@@ -1753,3 +1753,24 @@ bool tryCanSampleDensityTrilinear(const FroxelDensityGrid& grid,
         outReason = FroxelTrilinearSampleRejectReason::LookupFailed;
     return trySampleDensityAtScreen(grid, desc, camera, screenX, screenY, viewDepth, outDensity, lookupReason,
         outLookupReason = DensityLookupRejectReason::ScreenMappingFailed;
+
+// --- deepen additive from deepen-b511-froxel-preflights-8549 ---
+    SampleCoordRejectReason localReason = SampleCoordRejectReason::None;
+    const bool ok = tryPreflightSampleCoords(coords, desc, localReason);
+bool FroxelGridLayout::shouldSkipSampleCoordPreflight(const FroxelGridDesc& desc) {
+    case FroxelTrilinearSampleRejectReason::OutOfBoundsCoords:
+    DensityLookupRejectReason localReason = DensityLookupRejectReason::None;
+    const bool ok = tryCanLookupAtIndex(grid, desc, index, localReason);
+bool tryPreflightDensityLookup(const FroxelDensityGrid& grid,
+    return tryCanLookupAtIndex(grid, desc, index, outReason);
+    return tryCanLookupAtIndex(grid, desc, index, reason) && reason == DensityLookupRejectReason::None;
+bool canPreflightTrilinearSample(const FroxelDensityGrid& grid,
+    return tryPreflightTrilinearSample(grid, desc, coords, reason);
+bool tryPreflightTrilinearSample(const FroxelDensityGrid& grid,
+            outReason = FroxelTrilinearSampleRejectReason::OutOfBoundsCoords;
+    outReason = sampleReason == SampleCoordRejectReason::InvalidWeights
+                    ? FroxelTrilinearSampleRejectReason::InvalidSampleCoords
+                    : FroxelTrilinearSampleRejectReason::None;
+    FroxelPopulateRejectReason localReason = FroxelPopulateRejectReason::None;
+    const bool ok = tryCanPopulateFromAnalyticFog(desc, camera, params, localReason);
+bool tryPreflightFroxelPopulate(const FroxelGridDesc& desc,

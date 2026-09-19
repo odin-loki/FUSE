@@ -2515,3 +2515,37 @@ void testFroxelCoordLookupScreenPopulateAndTrilinearGuards() {
     expectTrue(!fuse::renderer::froxel_util::trySampleDensityTrilinear(grid, desc, hardOob, rejectedTrilinear, sampleReason),
                "trySampleDensityTrilinear rejects hard OOB coords");
     expectNear(rejectedTrilinear, 0.f, 1e-6f, "trySampleDensityTrilinear zeroes output on hard OOB rejection");
+
+// --- deepen additive from deepen-b511-froxel-preflights-8549 ---
+void testFroxelDeepenPreflightGuards() {
+    expectTrue(fuse::renderer::froxel_util::tryPreflightDensityLookup(grid, desc, 0u, lookupReason),
+               "tryPreflightDensityLookup succeeds on accessible grid");
+               "preflightDensityLookup succeeds with optional reason");
+    expectTrue(fuse::renderer::froxel_util::tryPreflightDensityLookup(grid, desc, 999u, lookupReason),
+               "tryPreflightDensityLookup warns but succeeds for OOB index");
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightDensityLookup(emptyGrid, desc, 0u, lookupReason),
+               "tryPreflightDensityLookup rejects empty storage");
+    expectTrue(!fuse::renderer::FroxelGridLayout::shouldSkipSampleCoordPreflight(desc),
+               "preflightSampleCoords warns but succeeds for clampable weights");
+    expectTrue(fuse::renderer::FroxelGridLayout::shouldSkipSampleCoordPreflight(zeroDesc),
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightSampleCoords(inBounds, zeroDesc, &sampleReason),
+               "preflightSampleCoords rejects empty desc");
+    expectTrue(fuse::renderer::froxel_util::canPreflightTrilinearSample(grid, desc, inBounds),
+               "canPreflightTrilinearSample succeeds for accessible grid");
+    expectTrue(fuse::renderer::froxel_util::tryPreflightTrilinearSample(grid, desc, inBounds, trilinearReason),
+               "tryPreflightTrilinearSample succeeds for in-bounds coords");
+    expectTrue(fuse::renderer::froxel_util::tryPreflightTrilinearSample(grid, desc, warnWeights, trilinearReason),
+               "tryPreflightTrilinearSample warns but succeeds for clampable weights");
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightTrilinearSample(grid, desc, hardOob, trilinearReason),
+               "tryPreflightTrilinearSample rejects hard OOB coords");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::OutOfBoundsCoords,
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightTrilinearSample(emptyGrid, desc, inBounds, trilinearReason),
+               "tryPreflightTrilinearSample rejects inaccessible grid");
+    expectTrue(fuse::renderer::froxel_util::tryPreflightFroxelPopulate(desc, camera, params, populateReason),
+               "tryPreflightFroxelPopulate succeeds for valid inputs");
+               "preflightFroxelPopulate succeeds with optional reason");
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightFroxelPopulate(desc, camera, zeroDensity, populateReason),
+               "tryPreflightFroxelPopulate rejects zero density");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulate(emptyDesc, camera, params, &populateReason),
+               "preflightFroxelPopulate rejects empty desc");
+    testFroxelDeepenPreflightGuards();
