@@ -128,3 +128,10 @@ bool should_skip_reconcile_input(const InputHistoryBuffer& history, u32 frame) {
 bool should_skip_reconcile_rollback(const RollbackBuffer& buffer, u32 frame) {
     if (should_skip_reconcile_input(history, frame)) {
     if (should_skip_reconcile_rollback(buffer, frame)) {
+
+// --- deepen additive from deepen-b74-net-rollback-input-history-5525 ---
+ReconcileInputPreflight preflight_reconcile_input(const InputHistoryBuffer& history, u32 frame) {
+    ReconcileInputPreflight result{};
+ReconcileRollbackPreflight preflight_reconcile_rollback(const RollbackBuffer& buffer, u32 frame) {
+    ReconcileRollbackPreflight result{};
+    const ReconcileInputPreflight preflight = preflight_reconcile_input(history, frame);

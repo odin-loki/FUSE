@@ -210,3 +210,25 @@ void run_reconcile_tests() {
                "rollback should_skip true for evicted frame");
     const fuse::net::RollbackReconcilePreflight empty_rollback_ring =
     expectTrue(empty_rollback_preflight.should_skip_reconcile(0u),
+
+// --- deepen additive from deepen-b74-net-rollback-input-history-5525 ---
+    const fuse::net::ReconcileInputPreflight retained_preflight =
+    expectTrue(!fuse::net::should_skip_reconcile_input(preflight_history, 4u),
+               "should_skip false for retained input frame");
+    const fuse::net::ReconcileInputPreflight evicted_preflight =
+    expectTrue(fuse::net::should_skip_reconcile_input(preflight_history, 0u),
+               "should_skip true for evicted input frame");
+    const fuse::net::ReconcileInputPreflight empty_preflight =
+               "buffer should_skip false for empty history with capacity");
+    const fuse::net::ReconcileInputPreflight zero_preflight =
+               "buffer should_skip true for zero-capacity history");
+    const fuse::net::ReconcileRollbackPreflight rollback_preflight =
+    expectTrue(!preflight_buffer.should_skip_reconcile(2u), "buffer should_skip false for retained rollback frame");
+    const fuse::net::ReconcileRollbackPreflight rollback_future_preflight =
+    expectTrue(preflight_buffer.should_skip_reconcile(9u), "buffer should_skip true for future rollback frame");
+    const fuse::net::ReconcileRollbackPreflight empty_rollback_preflight =
+    expectTrue(empty_preflight_buffer.should_skip_reconcile(0u),
+               "buffer should_skip true for empty rollback buffer");
+    const fuse::net::ReconcileRollbackPreflight zero_rollback_preflight =
+    expectTrue(fuse::net::should_skip_reconcile_rollback(zero_capacity_buffer, 0u),
+               "should_skip true for zero-capacity rollback buffer");

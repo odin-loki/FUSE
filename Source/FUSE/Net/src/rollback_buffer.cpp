@@ -200,3 +200,6 @@ ReconcileResult RollbackBuffer::reconcile_remote_input(u32 frame, const PlayerIn
 RollbackReconcilePreflight RollbackBuffer::preflight_reconcile(u32 frame) const {
 bool RollbackBuffer::should_skip_reconcile(u32 frame) const {
     return should_skip_reconcile_rollback(*this, frame);
+
+// --- deepen additive from deepen-b74-net-rollback-input-history-5525 ---
+ReconcileRollbackPreflight RollbackBuffer::preflight_remote_reconcile(u32 frame) const {

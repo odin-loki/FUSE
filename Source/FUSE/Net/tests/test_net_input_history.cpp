@@ -201,3 +201,8 @@ void run_input_history_tests() {
 // --- deepen additive from deepen-b74-net-rollback-input-history-5dc1 ---
     const fuse::net::InputReconcilePreflight future_preflight = capacity_history.preflight_reconcile(9u);
     expectTrue(capacity_history.should_skip_reconcile(9u), "should_skip true for future frame");
+
+// --- deepen additive from deepen-b74-net-rollback-input-history-5525 ---
+    const fuse::net::ReconcileInputPreflight wrap_preflight = preflight_wrap.preflight_authoritative(4u);
+    expectTrue(!preflight_wrap.should_skip_reconcile(4u), "should_skip false for wrapped newest frame");
+    expectTrue(preflight_wrap.should_skip_reconcile(0u), "should_skip true for evicted wrapped frame");

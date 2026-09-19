@@ -84,3 +84,9 @@ struct RollbackReconcilePreflight {
 [[nodiscard]] RollbackReconcilePreflight preflight_reconcile_rollback(const RollbackBuffer& buffer, u32 frame);
 [[nodiscard]] bool should_skip_reconcile_input(const InputHistoryBuffer& history, u32 frame);
 [[nodiscard]] bool should_skip_reconcile_rollback(const RollbackBuffer& buffer, u32 frame);
+
+// --- deepen additive from deepen-b74-net-rollback-input-history-5525 ---
+struct ReconcileInputPreflight {
+struct ReconcileRollbackPreflight {
+[[nodiscard]] ReconcileInputPreflight preflight_reconcile_input(const InputHistoryBuffer& history, u32 frame);
+[[nodiscard]] ReconcileRollbackPreflight preflight_reconcile_rollback(const RollbackBuffer& buffer, u32 frame);

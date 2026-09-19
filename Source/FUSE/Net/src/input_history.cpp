@@ -238,3 +238,6 @@ ReconcileResult InputHistoryBuffer::reconcile_authoritative(u32 frame, const Pla
 InputReconcilePreflight InputHistoryBuffer::preflight_reconcile(u32 frame) const {
 bool InputHistoryBuffer::should_skip_reconcile(u32 frame) const {
     return should_skip_reconcile_input(*this, frame);
+
+// --- deepen additive from deepen-b74-net-rollback-input-history-5525 ---
+ReconcileInputPreflight InputHistoryBuffer::preflight_authoritative(u32 frame) const {
