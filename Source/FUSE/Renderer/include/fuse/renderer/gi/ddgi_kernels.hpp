@@ -118,6 +118,8 @@ bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Diagnose why probe trace launch preflight would reject.
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// Early-out when probe trace launch would be rejected.
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 
 /// Preflight guard before probe blend kernel launch.
 bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
@@ -257,9 +259,7 @@ bool canLaunchProbeBlendKernelWithSurfaces(const DDGIKernelParams& params);
 /// Diagnose why blend launch with GPU surfaces would reject.
 bool tryCanLaunchProbeBlendKernelWithSurfaces(const DDGIKernelParams& params,
 
-/// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
-bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
-/// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
+/// Early-out when probe blend launch would be rejected.
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
