@@ -559,6 +559,7 @@ inline bool is_valid_island_body_index(u32 bodyIndex, u32 bodyCount) {
 /// True when both body indices are in range for island union during graph build.
 inline bool are_island_body_refs_in_range(u32 bodyA, u32 bodyB, u32 bodyCount) {
     return is_valid_island_body_index(bodyA, bodyCount) && is_valid_island_body_index(bodyB, bodyCount);
+}
 
 /// True when a contact manifold references in-range bodies for island build.
 inline bool is_in_range_island_contact(const narrowphase::ContactManifold& contact, u32 bodyCount) {
@@ -571,6 +572,13 @@ bool shouldSkipIslandGraphBuild(u32 bodyCount,
 bool contact_bodies_in_range(const narrowphase::ContactManifold& contact, u32 bodyCount);
 
 bool distance_bodies_in_range(const DistanceConstraint& constraint, u32 bodyCount);
+}
+
+/// True when a distance constraint references in-range bodies for island build.
+
+/// True when `bodyA` and `bodyB` refer to the same body index (degenerate pair).
+inline bool constraint_pair_is_degenerate(u32 bodyA, u32 bodyB) {
+    return bodyA == bodyB;
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
