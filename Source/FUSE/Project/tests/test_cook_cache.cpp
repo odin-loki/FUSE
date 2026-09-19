@@ -1971,3 +1971,19 @@ void testCookCachePruneReconcileShouldSkipGuards() {
     expectTrue(!estimate.should_skip(), "stale shader estimate should_skip is false");
     expectTrue(!cache.should_skip_prune(), "stale cache should_skip_prune is false");
                "estimate should_skip mirrors would_prune_all");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-95c8 ---
+               "would_invalidate_stale_content true after source change with recomputed hash");
+    expectTrue(cooker.cache().should_skip_prune_reconcile() == !cooker.cache().would_prune_all(),
+               "should_skip_prune_reconcile mirrors would_prune_all");
+    expectTrue(!estimate.should_skip(), "stale prune estimate should_skip is false");
+    expectTrue(!cache.should_skip_prune_reconcile(), "stale cache should_skip_prune_reconcile is false");
+               "empty path should_skip file hash preflight");
+               "missing file should_skip file hash preflight");
+               "CookHashPreflight should_skip mirrors ok for valid mesh");
+               "empty mesh input should_skip hash preflight");
+               "CookHashPreflight should_skip true for empty mesh input");
+               "zero source hash should_skip cache key preflight");
+               "combine cache key should_skip allows zero upstream");
+               "null bytes should_skip fnv1a64 preflight");
+               "empty dependency list should_skip upstream hash preflight");

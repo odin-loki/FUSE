@@ -2345,3 +2345,7 @@ void testCookerReconcileShouldSkipGuards() {
     expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would_invalidate downstream ok");
                "would_invalidate_downstream true for cached chain");
                "would_invalidate_downstream aligns with count probe");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-95c8 ---
+               "should_skip_upstream_invalidation mirrors empty changed source");
+               "would_invalidate_downstream mirrors count_downstream_of");
