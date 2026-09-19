@@ -35,6 +35,8 @@ public:
     /// True for lookup/meta commands that skip history and repeat-state updates.
     [[nodiscard]] static bool is_meta_command(const char* name);
     /// Lookup/meta commands do not update repeat state or pollute history.
+    /// True when `line` parses to a lookup/meta built-in (pre-dispatch guard).
+    [[nodiscard]] static bool is_meta_line(const char* line);
     /// True when a successful `execute` of `line` would append to history (pre-dispatch guard).
     [[nodiscard]] bool would_record_history(const char* line) const;
 
@@ -108,6 +110,8 @@ public:
     [[nodiscard]] std::string try_resolve_command(const char* partial) const;
     /// True when `partial` matches multiple commands and cannot be resolved uniquely.
     [[nodiscard]] bool is_resolve_ambiguous(const char* partial) const;
+    /// Resolve `partial` to a command name, or empty when missing/ambiguous (whitespace trimmed).
+    [[nodiscard]] std::string resolve_command_name(const char* partial) const;
 
 private:
     ScriptConsoleCommandResult executeLine_(const char* line, bool record_history);
