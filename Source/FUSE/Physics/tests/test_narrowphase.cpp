@@ -3205,3 +3205,31 @@ void testFrictionBasisB46Guards() {
 // --- deepen additive from deepen-b4-narrowphase-guards-5ef6 ---
             buffer, fuse::physics::narrowphase::ContactBufferFrictionBasisRejectReason::EmptyBuffer),
             buffer, 1u, manifold, fuse::physics::narrowphase::ContactBufferWriteRejectReason::OutOfRangeSlot),
+
+// --- deepen additive from deepen-narrowphase-b4-guards-2406 ---
+void testContactPairDeepenSecondRejectGuards() {
+            fuse::physics::narrowphase::ContactPairRejectReason::MeshShapePair,
+            fuse::physics::narrowphase::ContactPairRejectReason::BoxThinPair,
+    const auto secondPreflight =
+    expectTrue(secondPreflight.can_dispatch(), "second preflight allows valid pair");
+        !fuse::physics::narrowphase::should_skip_contact_pair_deepen_second_dispatch({dynamicA, dynamicB}, bodies, shapes),
+                fuse::physics::narrowphase::ContactPairRejectReason::MeshShapePair),
+                fuse::physics::narrowphase::ContactPairRejectReason::BoxThinPair),
+void testNarrowphaseBatchSecondPreflightGuards() {
+    expectTrue(batchPreflight.pairCount == 2u, "second batch preflight reports pair count");
+    expectTrue(batchPreflight.dispatchableCount == 1u, "second batch preflight counts dispatchable pairs");
+    expectTrue(batchPreflight.rejectedCount == 1u, "second batch preflight counts rejected pairs");
+void testManifoldPruneFinalizeSecondGuards() {
+            fuse::physics::narrowphase::ManifoldPruneRejectReason::ExceedsMaxPoints,
+            fuse::physics::narrowphase::ManifoldFinalizeRejectReason::NeedsNormalNormalize,
+void testFrictionBasisSecondRebuildGuards() {
+        !fuse::physics::narrowphase::should_skip_friction_basis_second_preflight(stale),
+void testContactBufferSecondPreflightGuards() {
+        "writeSlotWithPreflight accepts valid manifold");
+    expectTrue(buffer.compactWithPreflight() == 2u, "compactWithPreflight gathers valid slots");
+            full, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::AllValid),
+    expectTrue(buffer.compactAndClampWithPreflight() == 1u, "compactAndClampWithPreflight clamps to max");
+    expectTrue(buffer.droppedCount == 1u, "compactAndClampWithPreflight tracks dropped contacts");
+            empty, fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::EmptyBuffer),
+    testNarrowphaseBatchSecondPreflightGuards();
+    testContactBufferSecondPreflightGuards();

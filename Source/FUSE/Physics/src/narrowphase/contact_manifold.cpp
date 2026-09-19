@@ -813,3 +813,19 @@ bool should_skip_manifold_beyond_prune(
     if (prunePreflight.reason == ManifoldPruneRejectReason::AllSeparated) {
     if (prunePreflight.reason == ManifoldPruneRejectReason::EmptyManifold) {
     if (!prunePreflight.can_skip_prune(shallowMinDepth)) {
+
+// --- deepen additive from deepen-narrowphase-b4-guards-2406 ---
+ManifoldPruneRejectReason manifold_prune_second_reject_reason(
+    const ManifoldPruneRejectReason baseReason =
+    if (baseReason != ManifoldPruneRejectReason::None) {
+    if (reason != ManifoldPruneRejectReason::None) {
+        if (reason == ManifoldPruneRejectReason::AllSeparated) {
+    if (reason == ManifoldPruneRejectReason::ExceedsMaxPoints) {
+ManifoldFinalizeRejectReason manifold_finalize_second_reject_reason(
+    const ManifoldFinalizeRejectReason baseReason =
+    if (baseReason != ManifoldFinalizeRejectReason::None &&
+        baseReason != ManifoldFinalizeRejectReason::NeedsNormalNormalize) {
+        return ManifoldFinalizeRejectReason::NeedsNormalNormalize;
+    const ManifoldFinalizeRejectReason reason = manifold_finalize_second_reject_reason(
+    if (reason != ManifoldFinalizeRejectReason::None &&
+        reason != ManifoldFinalizeRejectReason::NeedsNormalNormalize) {

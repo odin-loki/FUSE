@@ -915,3 +915,17 @@ NarrowphaseBatchDeepenPreflight preflight_narrowphase_batch_deepen(
     NarrowphaseBatchDeepenPreflight preflight{};
         if (deepenReason == ContactPairRejectReason::BothNoGravity) {
         } else if (deepenReason == ContactPairRejectReason::BothCcd) {
+
+// --- deepen additive from deepen-narrowphase-b4-guards-2406 ---
+    case ContactPairRejectReason::MeshShapePair:
+    case ContactPairRejectReason::BoxThinPair:
+ContactPairRejectReason contact_pair_deepen_second_reject_reason(
+        return ContactPairRejectReason::MeshShapePair;
+        return ContactPairRejectReason::BoxThinPair;
+ContactPairDeepenSecondPreflight preflight_contact_pair_deepen_second(
+    ContactPairDeepenSecondPreflight preflight{};
+bool should_skip_contact_pair_deepen_second_dispatch(
+    return contact_pair_deepen_second_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+        if (!should_skip_contact_pair_deepen_second_dispatch(pair, bodies, shapes)) {
+NarrowphaseBatchSecondPreflight preflight_narrowphase_batch_second(
+    NarrowphaseBatchSecondPreflight preflight{};

@@ -247,3 +247,7 @@ FrictionBasisRejectReason friction_basis_beyond_reject_reason(
 struct FrictionBasisBeyondPreflight {
 FrictionBasisBeyondPreflight preflight_friction_basis_beyond_rebuild(
 bool should_skip_friction_basis_beyond_rebuild(
+
+// --- deepen additive from deepen-narrowphase-b4-guards-2406 ---
+FrictionBasisRejectReason friction_basis_second_reject_reason(
+bool should_skip_friction_basis_second_preflight(

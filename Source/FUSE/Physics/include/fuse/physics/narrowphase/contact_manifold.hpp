@@ -379,3 +379,7 @@ ManifoldShallowPrunePreflight preflight_manifold_shallow_prune(
 struct ManifoldBeyondPrunePreflight {
 ManifoldBeyondPrunePreflight preflight_manifold_beyond_prune(
 bool should_skip_manifold_beyond_prune(
+
+// --- deepen additive from deepen-narrowphase-b4-guards-2406 ---
+ManifoldPruneRejectReason manifold_prune_second_reject_reason(
+ManifoldFinalizeRejectReason manifold_finalize_second_reject_reason(
