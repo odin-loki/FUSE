@@ -314,3 +314,7 @@ const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason);
 
 // --- deepen additive from deepen-b79-cooker-hash-b3b9 ---
     [[nodiscard]] bool should_skip_prune_reconcile() const;
+
+// --- deepen additive from b79-cooker-hash-guards-2be9 ---
+[[nodiscard]] inline bool should_skip_prune_reconcile(const CookCachePruneEstimate& estimate) {
+    return estimate.should_skip();

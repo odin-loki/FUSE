@@ -141,3 +141,7 @@ private:
 
 // --- deepen additive from deepen-b79-cooker-hash-0d57 ---
     [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest,
+
+// --- deepen additive from b79-cooker-hash-guards-2be9 ---
+[[nodiscard]] inline bool should_skip_reconcile_invalidation(const CookCacheReconcileEstimate& estimate) {
+    return estimate.should_skip();

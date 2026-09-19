@@ -2320,3 +2320,12 @@ void testCookerReconcileShouldSkipGuards() {
                "would_invalidate_stale_dependency_hashes true after upstream change");
     expectTrue(!after.should_skip(), "prune stale entries keep reconcile estimate non-zero");
                "would_invalidate_downstream_of false for empty output path");
+
+// --- deepen additive from b79-cooker-hash-guards-2be9 ---
+               "cooker should_skip_reconcile_invalidation on fresh cache");
+    expectTrue(fuse::project::should_skip_reconcile_invalidation(fresh),
+               "free should_skip_reconcile_invalidation mirrors struct method");
+    expectTrue(cooker.should_skip_prune_reconcile(), "should_skip_prune_reconcile on fresh cache");
+               "cooker should_skip_reconcile_invalidation false after upstream change");
+               "should_skip_prune_reconcile false when stale entry present");
+               "would_invalidate_source true for stale upstream entry");

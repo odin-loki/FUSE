@@ -268,3 +268,6 @@ struct CookFnvInputPreflight {
     return preflight_fnv1a64_bytes(data, size).should_skip();
 [[nodiscard]] inline bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     return preflight_combine_cook_cache_key(source_hash, upstream_hash).should_skip();
+
+// --- deepen additive from b79-cooker-hash-guards-2be9 ---
+    return preflight.should_skip();

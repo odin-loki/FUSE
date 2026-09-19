@@ -1939,3 +1939,17 @@ void testCookCachePruneReconcileShouldSkipGuards() {
     expectTrue(cache.estimate_prune_removals().should_skip(), "estimate should_skip after prune_all");
     expectTrue(cache.should_skip_prune_reconcile(), "should_skip_prune_reconcile after prune_all");
                "should_skip_combine_cook_cache_key rejects zero source");
+
+// --- deepen additive from b79-cooker-hash-guards-2be9 ---
+    expectTrue(fuse::project::should_skip_cook_hash_preflight(empty_path),
+               "readable mesh preflight does not should_skip");
+               "should_skip_mesh_import_hash for empty input");
+               "should_skip_cook_cache_key for zero source");
+               "would_invalidate_source guarded on empty path");
+               "would_invalidate_stale_content true after source change with revised hash");
+    expectTrue(!estimate.should_skip(), "stale cache prune estimate should not skip");
+    expectTrue(!fuse::project::should_skip_prune_reconcile(estimate),
+               "should_skip_prune_reconcile false when estimate has removals");
+               "prune estimate should_skip after prune_all");
+    expectTrue(fuse::project::should_skip_prune_reconcile(cooker.cache().estimate_prune_removals()),
+               "should_skip_prune_reconcile true after prune_all");
