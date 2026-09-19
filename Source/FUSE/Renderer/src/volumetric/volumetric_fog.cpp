@@ -1716,3 +1716,6 @@ bool FroxelGridLayout::canPreflightTileCoords(u32 tileX, u32 tileY, u32 sliceZ, 
         outReason = lookupReason == DensityLookupRejectReason::EmptyGrid ||
                             lookupReason == DensityLookupRejectReason::EmptyStorage
     const bool canFill = tryCanPopulateFromAnalyticFog(desc, camera, params, reason);
+
+// --- deepen additive from deepen-b511-froxel-guards-c46a ---
+    return trySampleDensityAtScreen(grid, desc, camera, screenX, screenY, viewDepth, outDensity, mapReason,

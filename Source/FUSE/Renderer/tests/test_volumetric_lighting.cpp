@@ -2418,3 +2418,9 @@ void testFroxelCoordLookupScreenSampleAndDescGuards() {
                "wouldSkipFroxelSample false when weights will be clamped");
     expectTrue(fuse::renderer::froxel_util::classifyFroxelSampleReject(grid, desc, warnWeights) ==
                "classifyFroxelSampleReject reports invalid_weights for clampable weights");
+
+// --- deepen additive from deepen-b511-froxel-guards-c46a ---
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtIndex(grid, desc, desc.maxFroxelIndex(), 4.25f,
+               "trySampleDensityAtScreen rejects depth below near plane");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtScreen(emptyGrid, zeroDesc, camera, 0.5f, 0.5f, 10.f,
+               "trySampleDensityAtScreen rejects empty grid desc");
