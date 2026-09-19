@@ -929,3 +929,7 @@ bool should_skip_contact_pair_deepen_second_dispatch(
         if (!should_skip_contact_pair_deepen_second_dispatch(pair, bodies, shapes)) {
 NarrowphaseBatchSecondPreflight preflight_narrowphase_batch_second(
     NarrowphaseBatchSecondPreflight preflight{};
+
+// --- deepen additive from b4-narrowphase-deepen-guards-9857 ---
+NarrowphasePairDispatchPreflight preflight_narrowphase_pair_dispatch(
+    NarrowphasePairDispatchPreflight preflight{};

@@ -421,3 +421,7 @@ ContactPairDeepenSecondPreflight preflight_contact_pair_deepen_second(
 bool should_skip_contact_pair_deepen_second_dispatch(
 struct NarrowphaseBatchSecondPreflight {
 NarrowphaseBatchSecondPreflight preflight_narrowphase_batch_second(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-9857 ---
+struct NarrowphasePairDispatchPreflight {
+NarrowphasePairDispatchPreflight preflight_narrowphase_pair_dispatch(

@@ -773,3 +773,9 @@ bool should_skip_buffer_friction_rebuild(const ContactBufferSoA& buffer, f32 eps
 ContactBufferFrictionBasisRejectReason contact_buffer_friction_basis_reject_reason(const ContactBufferSoA& buffer) {
     return ContactBufferFrictionBasisRejectReason::NoValidSlots;
     preflight.noValidSlots = preflight.reason == ContactBufferFrictionBasisRejectReason::NoValidSlots;
+
+// --- deepen additive from b4-narrowphase-deepen-guards-9857 ---
+    preflight.rejected = preflight.reason != ContactBufferWriteRejectReason::None;
+    case ContactBufferFrictionBuildRejectReason::AllBasesValid:
+    return ContactBufferFrictionBuildRejectReason::AllBasesValid;
+        preflight.reason == ContactBufferFrictionBuildRejectReason::AllBasesValid;

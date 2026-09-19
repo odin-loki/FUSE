@@ -3233,3 +3233,17 @@ void testContactBufferSecondPreflightGuards() {
             empty, fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::EmptyBuffer),
     testNarrowphaseBatchSecondPreflightGuards();
     testContactBufferSecondPreflightGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-9857 ---
+void testNarrowphasePairDispatchPreflightGuards() {
+    expectTrue(validPreflight.can_dispatch(), "pair dispatch preflight allows valid pair");
+    expectTrue(!sleepingPreflight.can_dispatch(), "pair dispatch preflight rejects both-sleeping pair");
+    expectTrue(validPreflight.can_write(), "buffer write preflight allows valid manifold");
+    expectTrue(buffer.writeSlotWithPreflight(0u, valid), "writeSlotWithPreflight accepts valid slot");
+void testContactBufferFrictionBuildPreflightGuards() {
+            empty, fuse::physics::narrowphase::ContactBufferFrictionBuildRejectReason::EmptyBuffer),
+    const auto validPreflight = fuse::physics::narrowphase::preflight_contact_buffer_friction_build(buffer);
+            fuse::physics::narrowphase::ContactBufferFrictionBuildRejectReason::AllBasesValid,
+void testRunNarrowphaseWithDeepenGuards() {
+    testNarrowphasePairDispatchPreflightGuards();
+    testContactBufferFrictionBuildPreflightGuards();
