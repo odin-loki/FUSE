@@ -1477,6 +1477,15 @@ bool isLastEventIndex(u32 index) {
 }
 
 u32 countEventsWithPhase(EventPhase phase) {
+bool isFlowPhaseEvent(const ProfileEvent& event) {
+    return event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish;
+}
+
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    if (!isValidEventName(name) || !isValidEventName(event.name)) {
+        return false;
+    return std::strcmp(event.name, name) == 0;
+
 u32 invalidNameEventCount() {
     return nonExportableEventCount();
 }
@@ -2992,7 +3001,6 @@ bool tryLastExportableEvent(ProfileEvent& outEvent) {
 
 
 u32 findFirstEventIndexByFlowId(u32 flowId) {
-    if (flowId == 0u) {
 
         if (!isValidEventName(event.name)) {
             continue;
@@ -3321,14 +3329,11 @@ u32 orphanFlowEndCount() {
 
 
 
-u32 findFirstEventIndexByFlow(u32 flowId) {
 
         if (isFlowEventForId(event, flowId)) {
 
-u32 findLastEventIndexByFlow(u32 flowId) {
 
 
-u32 countEventsByFlow(u32 flowId) {
 
 
 u32 openFlowEventCountForId(u32 flowId) {
@@ -3355,7 +3360,6 @@ bool isFlowIdBalanced(u32 flowId) {
 
 
 
-        if (isExportableFlowEvent(event, flowId)) {
 
 
 
@@ -3498,12 +3502,8 @@ bool isFlowPairedInBuffer(u32 flowId) {
 
 
 
-    }
 
 
-    if (index == kInvalidEventIndex) {
-        outIndex = kInvalidEventIndex;
-        return false;
 
 
 
@@ -3524,6 +3524,26 @@ bool tryFindFirstEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByFlow(flowId);
 
+
+
+
+
+
+
+
+        if (isFlowPhaseEvent(event) && event.scopeId == flowId && isValidEventName(event.name)) {
+
+
+
+
+
+
+
+
+
+bool tryFirstFlowEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+    return isValidProfileEvent(outEvent) && isFlowPhaseEvent(outEvent);
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -4161,50 +4181,34 @@ NestingConsistencyPreflight preflightNestingConsistency() {
 
 
     preflight.hasUnpairedFlowEvents = preflight.flowStartEventCount != preflight.flowFinishEventCount;
-    return preflight;
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
-    return preflight;
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
+
+    const u32 total = preflight.eventCount;
+    for (u32 i = 0u; i < total; ++i) {
+        if (!isValidEventName(event.name)) {
+            continue;
+
+        switch (event.phase) {
+        case EventPhase::Begin:
+            ++preflight.recordedScopeBeginCount;
+            break;
+        case EventPhase::End:
+            ++preflight.recordedScopeEndCount;
+        case EventPhase::FlowStart:
+            ++preflight.recordedFlowStartCount;
+        case EventPhase::FlowFinish:
+            ++preflight.recordedFlowFinishCount;
+        case EventPhase::Counter:
+    preflight.hasUnpairedRecordedScopes =
+        preflight.recordedScopeBeginCount != preflight.recordedScopeEndCount;
+    preflight.hasUnpairedRecordedFlows =
+        preflight.recordedFlowStartCount != preflight.recordedFlowFinishCount;
+
     return preflight;
 }
 
