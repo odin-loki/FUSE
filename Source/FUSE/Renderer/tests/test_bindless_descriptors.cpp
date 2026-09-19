@@ -764,3 +764,17 @@ int main() {
     std::fprintf(stderr, "fuse_bindless_descriptors: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b2-bindless-preflight-bf1a ---
+void testCanAllocateSlotPreflight() {
+void testCanFreeSlotPreflight() {
+    expectTrue(bindless.preflightSlotHandle(live), "preflightSlotHandle agrees with validate");
+    expectTrue(!bindless.preflightSlotHandle(stale), "preflight rejects stale generation");
+void testCanResizeHeapPreflight() {
+void testTryBindingIndexForHandlePreflight() {
+    expectTrue(bindless.tryBindingIndexForHandle(live, out), "try binding succeeds for live handle");
+    expectTrue(!bindless.tryBindingIndexForHandle(stale, out), "try binding rejects stale handle");
+    testCanAllocateSlotPreflight();
+    testCanFreeSlotPreflight();
+    testCanResizeHeapPreflight();
+    testTryBindingIndexForHandlePreflight();

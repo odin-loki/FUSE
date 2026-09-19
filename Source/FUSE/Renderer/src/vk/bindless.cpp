@@ -535,3 +535,6 @@ void BindlessDescriptors::unregisterSlot(BindlessSlotHandle handle) {
 }
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-b2-bindless-preflight-bf1a ---
+bool BindlessDescriptors::tryBindingIndexForHandle(BindlessSlotHandle handle,

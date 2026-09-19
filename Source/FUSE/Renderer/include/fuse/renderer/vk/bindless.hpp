@@ -205,3 +205,7 @@ private:
 };
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-b2-bindless-preflight-bf1a ---
+    bool preflightSlotHandle(BindlessSlotHandle handle) const { return validateSlot(handle); }
+    bool tryBindingIndexForHandle(BindlessSlotHandle handle, BindlessBindingIndex& out) const;
