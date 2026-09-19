@@ -293,6 +293,15 @@ EventNameRejectReason diagnoseEventNameRejectReason(const char* name) {
 } // namespace
 
 bool isBlankEventName(const char* name);
+bool isBlankEventName(const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        return true;
+    }
+
+    for (const char* cursor = name; *cursor != '\0'; ++cursor) {
+        if (*cursor != ' ' && *cursor != '\t' && *cursor != '\n' && *cursor != '\r') {
+            return false;
+
 bool isValidEventName(const char* name);
 bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
@@ -978,6 +987,18 @@ bool hasActiveProfilingNesting() {
     return hasActiveScopeNesting() || hasActiveFlowNesting();
 }
 
+bool hasActiveScopeNesting() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveFlowNesting() {
+    return flowNestingDepth() > 0u;
+}
+
+bool hasNestedAsyncFlowContext() {
+    return hasActiveScopeNesting() && hasActiveFlowNesting();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -1087,6 +1108,7 @@ bool isValidEventName(const char* name) {
 
 bool wouldRecordWithName(const char* name) {
     return g_enabled.load(std::memory_order_acquire) && isValidEventName(name) && !isBlankEventName(name);
+    return !isBlankEventName(name);
 }
 
 bool isFirstEventIndex(u32 index) {
@@ -2488,6 +2510,23 @@ bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
 
 
 
+bool namesMatch(const char* lhs, const char* rhs) {
+    if (lhs == rhs) {
+    if (lhs == nullptr || rhs == nullptr) {
+    return std::strcmp(lhs, rhs) == 0;
+
+
+        if (isValidEventName(event.name) && namesMatch(event.name, name)) {
+
+
+
+
+
+
+
+
+
+
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -3025,6 +3064,10 @@ bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReaso
 
 
     preflight.hasActiveProfilingNesting = hasActiveProfilingNesting();
+    preflight.firstExportableEventIndex = firstExportableEventIndex();
+    preflight.hasActiveScopeNesting = hasActiveScopeNesting();
+    preflight.hasActiveFlowNesting = hasActiveFlowNesting();
+    preflight.hasNestedAsyncFlowContext = hasNestedAsyncFlowContext();
     return preflight;
 }
 

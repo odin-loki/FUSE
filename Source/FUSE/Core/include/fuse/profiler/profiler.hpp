@@ -223,6 +223,14 @@ struct ChromeTraceExportPreflight {
             && !hasInvalidNameEvents && !ringBufferFull;
     bool hasEventPairingMismatch() const { return scopeBeginEndMismatch || flowStartFinishMismatch; }
             && !hasEventPairingMismatch() && !ringBufferFull;
+    u32 ringCapacity = 0;
+    u32 firstExportableEventIndex = 0;
+    u32 lastExportableEventIndex = 0;
+    bool hasActiveScopeNesting = false;
+    bool hasActiveFlowNesting = false;
+    bool hasNestedAsyncFlowContext = false;
+
+            && !hasInvalidNameEvents;
     }
     bool canExportNonEmpty() const { return canExport() && hasExportableEvents(); }
     bool hasExportWarnings() const {
@@ -591,6 +599,7 @@ void reconcilePendingFlowHandoff();
 bool hasActiveScopeNesting();
 bool hasActiveFlowNesting();
 bool hasActiveProfilingNesting();
+bool hasNestedAsyncFlowContext();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();
