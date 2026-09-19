@@ -3654,3 +3654,14 @@ void testCellCapacityInsertRejectReasonGuards() {
     expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellPairGenRejectReason(singleton)),
     expectTrue(pairPreflight.canGenerate(), "cell-pair-gen preflight accepts multiple occupants");
     expectEq(pairPreflight.estimatedPairCount, 1u, "cell-pair-gen preflight estimates one pair");
+
+// --- deepen additive from deepen-b4-broadphase-guards-7fb9 ---
+        fuse::physics::broadphase::preflightPairBufferInvalidateSlot(buffer, 5u);
+    expectTrue(singlePreflight.singleOccupant, "single unique occupant marks singleOccupant");
+    expectTrue(!singlePreflight.canGenerate(), "cell-pair-gen preflight rejects single occupant");
+    expectEq(singlePreflight.uniqueBodyCount, 1u, "single occupant reports one unique body");
+        fuse::physics::broadphase::preflightCellPairGen(multiOccupant);
+    expectTrue(multiPreflight.canGenerate(), "cell-pair-gen preflight accepts multiple unique bodies");
+    expectEq(multiPreflight.uniqueBodyCount, 3u, "multi occupant reports three unique bodies");
+    expectEq(multiPreflight.estimatedPairCount, 3u, "three unique bodies estimate three pairs");
+void testPairBufferCanSkipCompactAndClampGuard() {
