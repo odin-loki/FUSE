@@ -592,6 +592,18 @@ const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason) {
     return "Unknown";
 }
 
+const char* shapeCellInsertionRejectReasonName(ShapeCellInsertionRejectReason reason) {
+    switch (reason) {
+    case ShapeCellInsertionRejectReason::None:
+        return "None";
+    case ShapeCellInsertionRejectReason::EmptyRange:
+        return "EmptyRange";
+    case ShapeCellInsertionRejectReason::ExceedsOccupancyBudget:
+        return "ExceedsOccupancyBudget";
+    }
+    return "Unknown";
+}
+
 const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     switch (reason) {
     case CellOccupancyRejectReason::None:
@@ -1603,6 +1615,7 @@ void populateShapeCells(
     const u32 tableSize = clampTableSize(params.tableSize);
 
         }
+        if (canSkipShapeCellInsertion(range, maxOccupancy)) {
             return;
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
@@ -1975,6 +1988,8 @@ void refineBroadphasePairsParallelImpl(
             }
             return;
         if (shouldInvalidatePairDuringRefine(bodyA, bodyB, bodies, shapes) &&
+            buffer.invalidateSlotWithPreflight(pairIndex);
+        if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
         }
     });
 

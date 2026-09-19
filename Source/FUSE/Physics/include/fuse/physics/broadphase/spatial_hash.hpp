@@ -974,6 +974,91 @@ FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange2& range, u32 
     return !shouldRunShapeCellInsertion(range, maxCells);
 }
 
+/// Why shape→cell hash insertion would skip for a clamped range (B4.2 deepen follow-up pass).
+enum class ShapeCellInsertionRejectReason : u8 {
+    None = 0,
+    EmptyRange,
+    ExceedsOccupancyBudget,
+};
+
+/// Human-readable label for shape cell-insertion reject reasons (logging / tests).
+const char* shapeCellInsertionRejectReasonName(ShapeCellInsertionRejectReason reason);
+
+/// Diagnose why shape→cell insertion would skip; vacuously succeeds when insertion may proceed.
+FUSE_PHYSICS_INLINE ShapeCellInsertionRejectReason shapeCellInsertionRejectReason(const CellRange3& range, u32 maxCells) {
+    return static_cast<ShapeCellInsertionRejectReason>(
+        static_cast<u8>(cellOccupancyRejectReason(range, maxCells)));
+}
+
+FUSE_PHYSICS_INLINE ShapeCellInsertionRejectReason shapeCellInsertionRejectReason(const CellRange2& range, u32 maxCells) {
+    return static_cast<ShapeCellInsertionRejectReason>(
+        static_cast<u8>(cellOccupancyRejectReason(range, maxCells)));
+}
+
+/// Returns true when `shapeCellInsertionRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shapeCellInsertionRejectsForReason(
+    const CellRange3& range,
+    u32 maxCells,
+    ShapeCellInsertionRejectReason expected) {
+    return shapeCellInsertionRejectReason(range, maxCells) == expected;
+}
+
+FUSE_PHYSICS_INLINE bool shapeCellInsertionRejectsForReason(
+    const CellRange2& range,
+    u32 maxCells,
+    ShapeCellInsertionRejectReason expected) {
+    return shapeCellInsertionRejectReason(range, maxCells) == expected;
+}
+
+/// Shape→cell insertion preflight for hash population (B4.2 deepen follow-up pass).
+struct ShapeCellInsertionPreflight {
+    ShapeCellInsertionRejectReason reason = ShapeCellInsertionRejectReason::None;
+    bool emptyRange = false;
+    bool exceedsBudget = false;
+    u32 occupancyCount = 0;
+    u32 budgetRemaining = 0;
+
+    bool canInsert() const { return reason == ShapeCellInsertionRejectReason::None; }
+};
+
+FUSE_PHYSICS_INLINE ShapeCellInsertionPreflight preflightShapeCellInsertion(const CellRange3& range, u32 maxCells) {
+    ShapeCellInsertionPreflight preflight{};
+    preflight.reason = shapeCellInsertionRejectReason(range, maxCells);
+    preflight.emptyRange = preflight.reason == ShapeCellInsertionRejectReason::EmptyRange;
+    preflight.exceedsBudget = preflight.reason == ShapeCellInsertionRejectReason::ExceedsOccupancyBudget;
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE ShapeCellInsertionPreflight preflightShapeCellInsertion(const CellRange2& range, u32 maxCells) {
+    ShapeCellInsertionPreflight preflight{};
+    preflight.reason = shapeCellInsertionRejectReason(range, maxCells);
+    preflight.emptyRange = preflight.reason == ShapeCellInsertionRejectReason::EmptyRange;
+    preflight.exceedsBudget = preflight.reason == ShapeCellInsertionRejectReason::ExceedsOccupancyBudget;
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
+    return preflight;
+}
+
+/// Non-mutating shape cell-insertion skip predicate — inverse of `canInsert` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange3& range, u32 maxCells) {
+    return !preflightShapeCellInsertion(range, maxCells).canInsert();
+}
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange2& range, u32 maxCells) {
+    return !preflightShapeCellInsertion(range, maxCells).canInsert();
+}
+
+/// Non-mutating shape cell-insertion predicate — mirrors `preflightShapeCellInsertion` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange3& range, u32 maxCells) {
+    return preflightShapeCellInsertion(range, maxCells).canInsert();
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange2& range, u32 maxCells) {
+    return preflightShapeCellInsertion(range, maxCells).canInsert();
+}
+
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     const CellRange3& range,
