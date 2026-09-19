@@ -31,4 +31,19 @@ std::string ActorTrack::mount_point_at(TimelineMs time_ms) const {
     return mount_point;
 }
 
+float ActorTrack::mount_yaw_at(TimelineMs time_ms) const {
+    float yaw_deg = 0.f;
+    for (const ActorEvent& event : actor_events_) {
+        if (event.time_ms > time_ms) {
+            break;
+        }
+        if (event.kind == ActorEventKind::Mount) {
+            yaw_deg = event.mount_yaw_deg;
+        } else {
+            yaw_deg = 0.f;
+        }
+    }
+    return yaw_deg;
+}
+
 } // namespace fuse::cinematics

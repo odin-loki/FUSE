@@ -26,6 +26,37 @@ void BehaviorRuntime::registerTreeProfile(u32 profileId, const BehaviorTree& tre
     m_waitStartTicks.clear();
 }
 
+void BehaviorRuntime::reloadTreeProfile(u32 profileId, const BehaviorTree& tree, TreeReloadPolicy policy) {
+    registerTreeProfile(profileId, tree);
+    if (policy == TreeReloadPolicy::ResetAgents) {
+        m_blackboard.resize(static_cast<u32>(m_bindings.size()));
+        m_waitStartTicks.clear();
+        m_tickCount = 0;
+    }
+}
+
+void BehaviorRuntime::setAgentPositionProvider(AgentPositionProvider provider) {
+    m_positionProvider = std::move(provider);
+}
+
+void BehaviorRuntime::syncAgentBindingsFromEntities() {
+    if (!m_positionProvider) {
+        return;
+    }
+
+    for (AgentBinding& binding : m_bindings) {
+        if (!binding.agent.isValid()) {
+            continue;
+        }
+        float x = binding.x;
+        float y = binding.y;
+        if (m_positionProvider(binding.agent, x, y)) {
+            binding.x = x;
+            binding.y = y;
+        }
+    }
+}
+
 void BehaviorRuntime::clearAgents() {
     m_bindings.clear();
     m_snapshots.clear();
@@ -84,6 +115,8 @@ void BehaviorRuntime::ensureWaitState() {
 }
 
 void BehaviorRuntime::buildSnapshots() {
+    syncAgentBindingsFromEntities();
+
     m_snapshots.clear();
     m_snapshots.reserve(m_bindings.size());
 

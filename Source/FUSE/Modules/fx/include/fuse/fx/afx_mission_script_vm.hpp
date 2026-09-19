@@ -2,6 +2,7 @@
 
 #include <fuse/fx/afx_mission_hooks.hpp>
 #include <fuse/fx/fx_composer.hpp>
+#include <fuse/fx/particle_pool_gpu.hpp>
 #include <fuse/frame/frame_ctx.hpp>
 
 #include <string>
@@ -9,13 +10,6 @@
 #include <vector>
 
 namespace fuse::fx {
-
-enum class ParticlePoolCudaSkipReason {
-    None = 0,
-    Disabled,
-    EmptyPool,
-    NoActiveParticles,
-};
 
 /// AFX-Template mission script VM stub — dispatches `on_spell_cast` / `on_ambient_fx` / `on_impact_fx` hooks.
 class AfxMissionScriptVm {

@@ -21,6 +21,7 @@ InteractResult WeaponPickupInteractable::onPickup(InteractContext& ctx, ItemId i
 
     ctx.inventory->incInventory(m_weapon, 1);
     ctx.inventory->incInventory(m_ammo, m_ammoAmount);
+    ctx.inventory->setActiveWeapon(m_weapon);
     m_consumed = true;
     return InteractResult::PickedUp;
 }

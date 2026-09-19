@@ -27,7 +27,9 @@ public:
     void apply_unmount(const std::string& actor_id);
 
     /// Apply ShapeBase mount offset to bound scene object (VActor ore without Torque).
-    void apply_shapebase_attach(const std::string& actor_id, const std::string& mount_point);
+    void apply_shapebase_attach(const std::string& actor_id,
+                              const std::string& mount_point,
+                              float mount_yaw_deg = 0.f);
     void sync_bound_objects();
     void sync_motion_from_timeline(const Timeline& timeline);
 

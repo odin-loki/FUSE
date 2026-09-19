@@ -20,6 +20,7 @@ struct ActorEvent {
     ActorEventKind kind = ActorEventKind::Mount;
     std::string actor_id;
     std::string mount_point;
+    float mount_yaw_deg = 0.f;
 };
 
 /// Animated actor lane stub (Verve VActor without ShapeBase bridge).
@@ -39,6 +40,8 @@ public:
 
     /// Active mount point at `time_ms`, or empty when unmounted.
     std::string mount_point_at(TimelineMs time_ms) const;
+    /// Active ShapeBase mount yaw (degrees) at `time_ms`.
+    float mount_yaw_at(TimelineMs time_ms) const;
 
 private:
     std::string actor_id_;

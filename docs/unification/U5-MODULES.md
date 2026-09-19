@@ -239,15 +239,18 @@ Headless proof: `fuse_hybrid_module_gates_tests` (shared `hybrid_module_gates.cp
 
 Hybrid proof extended: `fuse_hybrid_module_gates_tests` covers UAISK `.cs` parser import, cue preview + ShapeBase motion sync, CUDA skip-reason path, physics broadphase pipeline, JSON scene placement, and conversation script VM branch dispatch.
 
-#### Landed this slice (post-52de6eb87)
+#### Landed this slice (post-9d77c847e)
 
 | Module | Delivered |
 |--------|-----------|
-| `fuse_ai` | `uaisk_cs_parser` — class/hook parsing beyond profile table; `AiTreeProfilePicker` lists all UAISK hooks + `postSelectModule()` |
-| `fuse_cinematics` | `VActorBridge::sync_motion_from_timeline()`; `preview_cues_at()` actor/event cue stubs |
-| `fuse_fx` | `ParticlePoolCudaSkipReason` + honest CUDA stub; `AfxMissionScriptVm::dispatchTick()` + `on_impact_fx` |
-| `fuse_mechanics` | `PhysicsBroadphaseBridge` pipeline; neighbor-cell broadphase; GMK `SwitchComponent` |
-| `fuse_adventure` | JSON `placements` transforms + `applyOutpostScenePlacements()`; `ConversationScriptVm` branch stubs |
+| `fuse_ai` | `TreeReloadPolicy` + `reloadTreeProfile()`; `AgentPositionProvider` entity bind; `AiTreeProfilePicker::postBindAgentEntity()` |
+| `fuse_cinematics` | `.seq` `motion` keyword + mount yaw; `CinematicsSeqImport::previewAtMs()` editor preview stub |
+| `fuse_fx` | `ParticlePoolCudaSkipReason` moved to `particle_pool_gpu.hpp` (compile fix); honest CUDA skip path unchanged |
+| `fuse_mechanics` | `BroadphaseProxyFilter` btBroadphaseProxy-style groups; filter-aware broadphase trigger sync |
+| `fuse_adventure` | `Inventory::setActiveWeapon()` on weapon pickup grant |
+| **Build hygiene** | Restored `test_profiler_assert.cpp` + `test_platform_window.cpp` from pre-deepen-spam baselines (no new deepen blocks) |
+
+Hybrid proof: `fuse_hybrid_module_gates_tests` — motion track in `.seq` asset drives `VActorBridge::sync_motion_from_timeline()`.
 
 ---
 

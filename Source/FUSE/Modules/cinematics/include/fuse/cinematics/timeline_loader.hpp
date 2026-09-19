@@ -12,8 +12,9 @@ namespace fuse::cinematics {
 ///   duration_ms=N
 ///   sprite <target_id> <t0>,<x>,<y>,<a> <t1>,<x>,<y>,<a> ...
 ///   camera <t0>,<px>,<py>,<pz>,<fov> <t1>,...
-///   actor <actor_id> mount <time_ms> <mount_point>
+///   actor <actor_id> mount <time_ms> <mount_point> [<yaw_deg>]
 ///   actor <actor_id> unmount <time_ms>
+///   motion <path_id> <t0>,<x>,<y>,<z> <t1>,...
 bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, std::string* errorOut = nullptr);
 
 } // namespace fuse::cinematics

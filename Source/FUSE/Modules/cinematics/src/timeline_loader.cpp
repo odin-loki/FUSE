@@ -2,6 +2,7 @@
 
 #include <fuse/cinematics/actor_track.hpp>
 #include <fuse/cinematics/camera_track.hpp>
+#include <fuse/cinematics/motion_track.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
 
 #include <cctype>
@@ -190,6 +191,10 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
                 }
                 event.kind = ActorEventKind::Mount;
                 event.mount_point = mountPoint;
+                std::string yawToken;
+                if (lineStream >> yawToken) {
+                    parseFloat(yawToken, event.mount_yaw_deg);
+                }
             } else if (eventKind == "unmount") {
                 if (!parseTimelineMs(timeOrMount, event.time_ms)) {
                     if (errorOut) {
@@ -207,6 +212,49 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
 
             track.add_actor_event(event);
             track.sort_actor_events();
+            continue;
+        }
+
+        if (keyword == "motion") {
+            std::string pathId;
+            if (!(lineStream >> pathId)) {
+                if (errorOut) {
+                    *errorOut = "motion missing path id";
+                }
+                return false;
+            }
+
+            MotionTrack& track = group->add_motion_track(pathId);
+            track.set_path_id(pathId);
+
+            std::string waypointToken;
+            while (lineStream >> waypointToken) {
+                std::stringstream wpStream(waypointToken);
+                std::string part;
+                std::vector<std::string> parts;
+                while (std::getline(wpStream, part, ',')) {
+                    parts.push_back(part);
+                }
+                if (parts.size() != 4) {
+                    if (errorOut) {
+                        *errorOut = "motion waypoint needs t,x,y,z";
+                    }
+                    return false;
+                }
+
+                MotionWaypoint waypoint{};
+                TimelineMs timeMs = 0;
+                if (!parseTimelineMs(parts[0], timeMs) || !parseFloat(parts[1], waypoint.position.x) ||
+                    !parseFloat(parts[2], waypoint.position.y) || !parseFloat(parts[3], waypoint.position.z)) {
+                    if (errorOut) {
+                        *errorOut = "invalid motion waypoint";
+                    }
+                    return false;
+                }
+                waypoint.time_ms = timeMs;
+                track.path().add_waypoint(waypoint);
+            }
+            track.path().sort_waypoints();
             continue;
         }
 

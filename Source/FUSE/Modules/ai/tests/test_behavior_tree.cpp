@@ -15,7 +15,9 @@
 #include <fuse/ai/uaisk_template_hooks.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/frame/frame_ctx.hpp>
+#include <fuse/handle.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/object.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -1915,6 +1917,54 @@ void testRuntimeParallelMultiAgentAggregation() {
     scheduler.shutdown();
 }
 
+void testRuntimeTreeReloadPreservesBlackboard() {
+    fuse::ai::BehaviorRuntime runtime;
+    runtime.registerTreeProfile(0, fuse::ai::BehaviorTree::makePatrolWhenNearTarget());
+
+    fuse::ai::AgentBinding binding{};
+    binding.x = 0.f;
+    binding.y = 0.f;
+    binding.targetX = 1.f;
+    binding.targetY = 0.f;
+    runtime.addAgent(binding);
+    runtime.blackboard().setFlag(0, 1, true);
+
+    fuse::ai::BehaviorTree replacement = fuse::ai::BehaviorTree::makeMoveTowardDemoTree(0.2f);
+    runtime.reloadTreeProfile(0, replacement, fuse::ai::TreeReloadPolicy::PreserveBlackboard);
+
+    expectTrue(runtime.blackboard().getFlag(0, 1), "reload preserves blackboard flags");
+    expectTrue(runtime.treeProfileCount() == 1u, "reload keeps profile count");
+}
+
+void testAgentEntityBindSyncsBindingPosition() {
+    fuse::ai::BehaviorRuntime runtime;
+    runtime.setTree(fuse::ai::BehaviorTree::makeMoveTowardDemoTree(0.1f));
+
+    fuse::ai::AgentBinding binding{};
+    binding.agent = fuse::Handle<fuse::Object>(3u, 1u);
+    binding.x = 0.f;
+    binding.y = 0.f;
+    binding.targetX = 5.f;
+    binding.targetY = 0.f;
+    runtime.addAgent(binding);
+
+    runtime.setAgentPositionProvider([](fuse::Handle<fuse::Object> entity, float& outX, float& outY) {
+        if (entity.index() == 3u) {
+            outX = 2.f;
+            outY = -1.f;
+            return true;
+        }
+        return false;
+    });
+
+    runtime.syncAgentBindingsFromEntities();
+    runtime.buildSnapshots();
+
+    expectTrue(runtime.bindings()[0].x == 2.f, "entity bind updates binding x");
+    expectTrue(runtime.bindings()[0].y == -1.f, "entity bind updates binding y");
+    expectTrue(runtime.snapshots()[0].x == 2.f, "entity bind flows into snapshot");
+}
+
 } // namespace
 
 int run_spatial_query_tests();
@@ -1994,6 +2044,8 @@ int main() {
     testNearestAllyWritesScalarSlot();
     testNearestAllyActionFailsBeyondRadius();
     testParallelSpatialChildStatusAggregation();
+    testRuntimeTreeReloadPreservesBlackboard();
+    testAgentEntityBindSyncsBindingPosition();
     g_failures += run_spatial_query_tests();
     fuse::core::shutdown();
 

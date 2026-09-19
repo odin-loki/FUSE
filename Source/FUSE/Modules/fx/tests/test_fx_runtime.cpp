@@ -345,7 +345,7 @@ void testAfxMissionScriptVm() {
     fuse::fx::FxComposer composer;
     fuse::fx::AfxMissionScriptVm vm;
     expectTrue(fuse::fx::registerAfxTemplateMissionVm(composer, vm), "mission VM registers hooks");
-    expectTrue(vm.hookCount() == 2u, "mission VM hook table populated");
+    expectTrue(vm.hookCount() == 3u, "mission VM hook table populated");
     expectTrue(vm.dispatch("on_spell_cast", composer), "spell cast hook dispatched");
     expectTrue(vm.dispatchCount() == 1u, "mission VM dispatch counted");
 }

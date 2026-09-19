@@ -65,6 +65,11 @@ u32 Inventory::setInventory(ItemId item, u32 value) {
 
 void Inventory::clear() {
     m_counts.clear();
+    m_activeWeapon = ItemId{};
+}
+
+void Inventory::setActiveWeapon(ItemId weapon) {
+    m_activeWeapon = std::move(weapon);
 }
 
 u32 Inventory::clampToMax(ItemId item, u32 value) const {

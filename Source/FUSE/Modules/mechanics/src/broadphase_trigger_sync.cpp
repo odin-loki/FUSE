@@ -15,7 +15,19 @@ void BroadphaseTriggerSync::insertBodyCell(u32 objectId, s32 key) {
 }
 
 void BroadphaseTriggerSync::trackBody(u32 objectId, float x, float y, float z) {
-    m_bodies[objectId] = {x, y, z};
+    m_bodies[objectId] = {x, y, z, BroadphaseProxyFilter::Character};
+}
+
+void BroadphaseTriggerSync::setBodyFilter(u32 objectId, BroadphaseProxyFilter filter) {
+    m_bodies[objectId].filter = filter;
+}
+
+BroadphaseProxyFilter BroadphaseTriggerSync::bodyFilter(u32 objectId) const {
+    const auto it = m_bodies.find(objectId);
+    if (it == m_bodies.end()) {
+        return BroadphaseProxyFilter::Default;
+    }
+    return it->second.filter;
 }
 
 void BroadphaseTriggerSync::bindTrigger(PolyhedronTriggerZone* trigger) {
@@ -28,6 +40,9 @@ void BroadphaseTriggerSync::setPositionProvider(PhysicsPositionProvider provider
 
 void BroadphaseTriggerSync::testBodyAgainstTrigger(u32 objectId, const BodyState& body) {
     if (m_trigger == nullptr) {
+        return;
+    }
+    if (!broadphaseProxyFiltersCollide(body.filter, BroadphaseProxyFilter::Trigger)) {
         return;
     }
 

@@ -74,7 +74,9 @@ ShapeBaseMountOffset VActorBridge::mount_offset_for(const std::string& mount_poi
     return {};
 }
 
-void VActorBridge::apply_shapebase_attach(const std::string& actor_id, const std::string& mount_point) {
+void VActorBridge::apply_shapebase_attach(const std::string& actor_id,
+                                          const std::string& mount_point,
+                                          float mount_yaw_deg) {
     apply_mount(actor_id, mount_point);
 
     BoundActorState& state = m_actors[actor_id];
@@ -85,6 +87,7 @@ void VActorBridge::apply_shapebase_attach(const std::string& actor_id, const std
     }
 
     state.offset = mount_offset_for(mount_point);
+    state.offset.yaw_deg += mount_yaw_deg;
     state.mounted = true;
     ++m_shapebaseAttachCount;
     sync_bound_objects();
@@ -148,7 +151,7 @@ void drain_actor_cues(const Timeline& timeline, VActorBridge& bridge, TimelineMs
             continue;
         }
         if (event.kind == ActorEventKind::Mount) {
-            bridge.apply_shapebase_attach(event.actor_id, event.mount_point);
+            bridge.apply_shapebase_attach(event.actor_id, event.mount_point, event.mount_yaw_deg);
         } else {
             bridge.apply_unmount(event.actor_id);
         }
@@ -221,7 +224,8 @@ bool load_outpost_intro_30s_from_asset(Timeline& outTimeline, std::string* error
         "duration_ms=30000\n"
         "sprite hud_sprite 0,-20,0,1 15000,0,10,1 30000,40,20,1\n"
         "camera 0,0,0,8,55 15000,0,30,12,70 30000,0,60,15,85\n"
-        "actor agent_3d mount 2000 cockpit\n"
+        "motion outpost_intro 0,0,0,0 15000,10,0,5 30000,20,5,10\n"
+        "actor agent_3d mount 2000 cockpit 15\n"
         "actor agent_3d unmount 28000\n";
 
     return load_timeline_from_asset(kAssetText, outTimeline, errorOut);

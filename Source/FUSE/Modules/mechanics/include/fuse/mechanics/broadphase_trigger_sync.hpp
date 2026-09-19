@@ -2,6 +2,7 @@
 
 // Ore: Bullet broadphase → T3D Trigger polyhedron sync (without SimObject)
 
+#include <fuse/mechanics/broadphase_proxy_filter.hpp>
 #include <fuse/mechanics/polyhedron_trigger.hpp>
 #include <fuse/mechanics/physics_trigger_bridge.hpp>
 #include <fuse/types.hpp>
@@ -19,6 +20,8 @@ public:
     float cellSize() const { return m_cellSize; }
 
     void trackBody(u32 objectId, float x, float y, float z);
+    void setBodyFilter(u32 objectId, BroadphaseProxyFilter filter);
+    BroadphaseProxyFilter bodyFilter(u32 objectId) const;
     void bindTrigger(PolyhedronTriggerZone* trigger);
     void setPositionProvider(PhysicsPositionProvider provider);
 
@@ -32,6 +35,7 @@ private:
         float x = 0.f;
         float y = 0.f;
         float z = 0.f;
+        BroadphaseProxyFilter filter = BroadphaseProxyFilter::Character;
     };
 
     s32 cellKey(float x, float y) const;

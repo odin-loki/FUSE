@@ -99,6 +99,7 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     agentBinding.moveSpeed = 0.12f;
     agentBinding.teamId = 1;
     agentBinding.treeProfileId = 0;
+    agentBinding.agent = fuse::Handle<fuse::Object>(1u, 1u);
     state.aiRuntime.addAgent(agentBinding);
 
     fuse::ai::AgentBinding allyBinding{};
@@ -116,6 +117,15 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     squadLeadBinding.teamId = 1;
     squadLeadBinding.treeProfileId = 1;
     state.aiRuntime.addAgent(squadLeadBinding);
+
+    state.aiRuntime.setAgentPositionProvider([&state](fuse::Handle<fuse::Object> entity, float& outX, float& outY) {
+        if (entity.index() == 1u) {
+            outX = state.agent3D.x();
+            outY = state.agent3D.y();
+            return true;
+        }
+        return false;
+    });
 
     state.vactorBridge.bind("agent_3d", &state.agent3D);
 

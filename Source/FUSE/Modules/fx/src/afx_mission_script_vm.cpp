@@ -1,5 +1,6 @@
 #include <fuse/fx/afx_mission_script_vm.hpp>
 
+#include <fuse/fx/afx_template_pack.hpp>
 #include <fuse/fx/spell_descriptor.hpp>
 
 namespace fuse::fx {
@@ -61,6 +62,9 @@ bool AfxMissionScriptVm::dispatchTick(FxComposer& composer, const frame::FrameCt
 }
 
 bool registerAfxTemplateMissionVm(FxComposer& composer, AfxMissionScriptVm& vm) {
+    registerAfxTemplateSamplePack(composer);
+    composer.registerDemoVerticalSlice();
+
     std::vector<AfxMissionHook> hooks;
     if (!registerAfxTemplateMissionHooks(composer, &hooks)) {
         return false;

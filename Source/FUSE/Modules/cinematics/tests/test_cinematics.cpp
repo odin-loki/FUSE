@@ -1,5 +1,6 @@
 #include <fuse/cinematics/audio_track.hpp>
 #include <fuse/cinematics/actor_track.hpp>
+#include <fuse/cinematics/cue_preview.hpp>
 #include <fuse/cinematics/camera_track.hpp>
 #include <fuse/cinematics/hybrid_timeline_drive.hpp>
 #include <fuse/cinematics/cue_payload.hpp>
@@ -1402,6 +1403,27 @@ void testMotionTrackPathSampling() {
     expectTrue(track.kind() == fuse::cinematics::TrackKind::Motion, "motion track kind");
 }
 
+void testActorMountYawAt() {
+    fuse::cinematics::ActorTrack track("player");
+    fuse::cinematics::ActorEvent mount{};
+    mount.time_ms = 1'000;
+    mount.kind = fuse::cinematics::ActorEventKind::Mount;
+    mount.mount_point = "cockpit";
+    mount.mount_yaw_deg = 22.5f;
+    track.add_actor_event(mount);
+    expectTrue(track.mount_yaw_at(2'000) == 22.5f, "mount yaw sampled after mount event");
+}
+
+void testSeqAssetMotionLoader() {
+    static const char* kText =
+        "duration_ms=1000\n"
+        "motion path_a 0,0,0,0 1000,5,0,0\n";
+    fuse::cinematics::Timeline timeline;
+    std::string error;
+    expectTrue(fuse::cinematics::load_timeline_from_asset(kText, timeline, &error), "motion seq loads");
+    expectTrue(!timeline.groups().empty(), "motion seq creates group");
+}
+
 void testCuePreviewActorMount() {
     fuse::cinematics::Timeline timeline = fuse::cinematics::make_outpost_intro_30s_stub();
     const std::vector<fuse::cinematics::CuePreviewEntry> previews =
@@ -1505,6 +1527,8 @@ int main() {
     testEmptyTimelineProducesNoCues();
     testCuePayloadStubs();
     testCuePreviewActorMount();
+    testActorMountYawAt();
+    testSeqAssetMotionLoader();
     testVActorMotionSync();
     fuse::core::shutdown();
 

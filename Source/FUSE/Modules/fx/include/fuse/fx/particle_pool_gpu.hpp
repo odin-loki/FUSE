@@ -10,6 +10,13 @@
 
 namespace fuse::fx {
 
+enum class ParticlePoolCudaSkipReason {
+    None = 0,
+    Disabled,
+    EmptyPool,
+    NoActiveParticles,
+};
+
 /// Packed GPU-ready mirror of CPU ParticlePool slots (B7.7 layout stub).
 class ParticlePoolGpuBackend {
 public:

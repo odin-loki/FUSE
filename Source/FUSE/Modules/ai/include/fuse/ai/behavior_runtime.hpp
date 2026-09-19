@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/ai/agent_snapshot.hpp>
+#include <fuse/ai/agent_entity_bind.hpp>
 #include <fuse/ai/behavior_tree.hpp>
 #include <fuse/ai/blackboard.hpp>
 #include <fuse/ai/spatial_query.hpp>
@@ -13,6 +14,11 @@
 #include <vector>
 
 namespace fuse::ai {
+
+enum class TreeReloadPolicy {
+    PreserveBlackboard,
+    ResetAgents,
+};
 
 struct AgentBinding {
     Handle<Object> agent = Handle<Object>::invalid();
@@ -35,7 +41,12 @@ public:
 
     /// Register a named tree profile for per-agent selection.
     void registerTreeProfile(u32 profileId, const BehaviorTree& tree);
+    /// Hot-reload a profile tree with optional blackboard reset (runtime tree reload ore).
+    void reloadTreeProfile(u32 profileId, const BehaviorTree& tree, TreeReloadPolicy policy);
     u32 treeProfileCount() const { return static_cast<u32>(m_treeProfiles.size()); }
+
+    void setAgentPositionProvider(AgentPositionProvider provider);
+    void syncAgentBindingsFromEntities();
 
     void clearAgents();
     void addAgent(const AgentBinding& binding);
@@ -69,6 +80,7 @@ private:
 
     std::unordered_map<u32, BehaviorTree> m_treeProfiles;
     u32 m_defaultProfileId = 0;
+    AgentPositionProvider m_positionProvider;
     std::vector<AgentBinding> m_bindings;
     std::vector<AgentSnapshot> m_snapshots;
     std::vector<BehaviorTickResult> m_results;

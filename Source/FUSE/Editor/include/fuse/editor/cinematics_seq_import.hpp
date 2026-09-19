@@ -1,8 +1,11 @@
 #pragma once
 
+#include <fuse/cinematics/cue_preview.hpp>
+#include <fuse/cinematics/types.hpp>
 #include <fuse/editor/editor_host.hpp>
 
 #include <string>
+#include <vector>
 
 namespace fuse::editor {
 
@@ -19,6 +22,8 @@ public:
 
     bool postImportAsset(const std::string& seqText);
     bool postImportEmbeddedOutpostIntro();
+    [[nodiscard]] std::vector<fuse::cinematics::CuePreviewEntry> previewAtMs(
+        fuse::cinematics::TimelineMs timeMs) const;
 
 private:
     EditorHost& m_host;

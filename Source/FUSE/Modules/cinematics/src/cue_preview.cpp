@@ -23,7 +23,7 @@ CuePayload payload_for_event(const Track& track, const TimelineEvent& event) {
         return payload;
     }
     payload.kind = CuePayloadKind::Custom;
-    payload.custom_key = event.label;
+    payload.custom_key = event.label();
     return payload;
 }
 
@@ -62,7 +62,7 @@ std::vector<CuePreviewEntry> preview_cues_at(const Timeline& timeline, TimelineM
             }
 
             for (const TimelineEvent& event : track.events()) {
-                if (event.time_ms > time_ms) {
+                if (event.trigger_ms() > time_ms) {
                     continue;
                 }
                 if (!event.should_trigger_forward(0, time_ms)) {
@@ -70,11 +70,11 @@ std::vector<CuePreviewEntry> preview_cues_at(const Timeline& timeline, TimelineM
                 }
 
                 CuePreviewEntry entry;
-                entry.label = event.label;
+                entry.label = event.label();
                 entry.track_label = track.label();
                 entry.group_label = group.label();
                 entry.track_kind = track.kind();
-                entry.trigger_ms = event.time_ms;
+                entry.trigger_ms = event.trigger_ms();
                 entry.payload = payload_for_event(track, event);
                 previews.push_back(std::move(entry));
             }

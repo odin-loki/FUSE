@@ -33,11 +33,17 @@ public:
 
     void clear();
 
+    /// Active equipped weapon (3DAAK Weapon::onPickup runtime grant ore).
+    const ItemId& activeWeapon() const { return m_activeWeapon; }
+    void setActiveWeapon(ItemId weapon);
+    void clearActiveWeapon() { m_activeWeapon = ItemId{}; }
+
 private:
     u32 clampToMax(ItemId item, u32 value) const;
 
     MaxLimits m_maxLimits;
     std::unordered_map<std::string, u32> m_counts;
+    ItemId m_activeWeapon;
 };
 
 } // namespace fuse::adventure

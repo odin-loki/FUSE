@@ -38,6 +38,7 @@ int main() {
     expectTrue(pickup == fuse::adventure::InteractResult::PickedUp, "weapon pickup succeeds");
     expectTrue(inventory.hasInventory(fuse::adventure::ItemId("plasma_rifle")), "weapon granted");
     expectTrue(inventory.hasInventory(fuse::adventure::ItemId("energy_cell")), "ammo granted");
+    expectTrue(inventory.activeWeapon().name == "plasma_rifle", "weapon equipped on pickup");
     expectTrue(rifle.consumed(), "weapon pickup consumed");
 
     fuse::adventure::ConversationBranch polite;

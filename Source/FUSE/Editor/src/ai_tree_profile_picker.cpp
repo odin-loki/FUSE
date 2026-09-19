@@ -2,6 +2,8 @@
 
 #include <fuse/ai/uaisk_cs_parser.hpp>
 #include <fuse/ai/uaisk_template_hooks.hpp>
+#include <fuse/handle.hpp>
+#include <fuse/object.hpp>
 
 namespace fuse::editor {
 
@@ -49,6 +51,17 @@ void AiTreeProfilePicker::postSelectModule(std::string_view uaiskModule) {
             return;
         }
     }
+}
+
+void AiTreeProfilePicker::postBindAgentEntity(u32 agentIndex, fuse::Handle<fuse::Object> entity) {
+    ++m_postCount;
+
+    EditorCommand command;
+    command.kind = CommandKind::SetProperty;
+    command.propertyName = "ai.agent_entity";
+    command.propertyValue =
+        std::to_string(agentIndex) + ":" + std::to_string(entity.index()) + ":" + std::to_string(entity.generation());
+    m_host.postFromUi(std::move(command));
 }
 
 } // namespace fuse::editor

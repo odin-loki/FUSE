@@ -31,6 +31,7 @@ public:
     void refreshOptions();
     void postSelectProfile(u32 profileId);
     void postSelectModule(std::string_view uaiskModule);
+    void postBindAgentEntity(u32 agentIndex, fuse::Handle<fuse::Object> entity);
 
 private:
     EditorHost& m_host;

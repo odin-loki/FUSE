@@ -8,6 +8,7 @@ add_library(fuse_mechanics STATIC
     src/polyhedron_trigger.cpp
     src/physics_trigger_bridge.cpp
     src/broadphase_trigger_sync.cpp
+    src/broadphase_proxy_filter.cpp
     src/physics_broadphase_bridge.cpp
     src/counter_component.cpp
     src/message_component.cpp
@@ -28,6 +29,7 @@ add_library(fuse_mechanics STATIC
     include/fuse/mechanics/polyhedron_trigger.hpp
     include/fuse/mechanics/physics_trigger_bridge.hpp
     include/fuse/mechanics/broadphase_trigger_sync.hpp
+    include/fuse/mechanics/broadphase_proxy_filter.hpp
     include/fuse/mechanics/physics_broadphase_bridge.hpp
     include/fuse/mechanics/counter_component.hpp
     include/fuse/mechanics/message_component.hpp
