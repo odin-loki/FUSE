@@ -4277,3 +4277,7 @@ void testInteractionPreflightReadyHelpers() {
 void testNonFiniteRejectReasonClassifiers() {
                "gizmo tryPreflightUpdateDrag rejects non-finite screen hit");
     testNonFiniteRejectReasonClassifiers();
+
+// --- deepen additive from deepen-gizmo-preflights-6885 ---
+void testNonFiniteRejectReasonClassification() {
+    testNonFiniteRejectReasonClassification();
