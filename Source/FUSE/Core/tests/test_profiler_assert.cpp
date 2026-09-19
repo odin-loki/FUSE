@@ -3061,3 +3061,14 @@ void testPreflightsRejectInvalidNamesWithoutRecording() {
 // --- deepen additive from deepen-b16-profiler-guards-5521 ---
 void testIsProfilerGuardStateBalanced() {
     expectTrue(fuse::profiler::tryEventAt(0u, recorded), "recorded event passes tryEventAt");
+
+// --- deepen additive from deepen-b16-profiler-preflight-guards-b702 ---
+void testIsValidProfilerNamePreflight() {
+    expectTrue(!fuse::profiler::tryExportChromeTraceJson(json),
+               "tryExportChromeTraceJson false when buffer is empty");
+               "empty tryExport emits zero trace events");
+    expectTrue(fuse::profiler::tryExportChromeTraceJson(json), "tryExportChromeTraceJson true with events");
+               "tryExport includes scope name");
+               "tryExport includes counter track name");
+               "populated tryExport emits trace events");
+    testIsValidProfilerNamePreflight();

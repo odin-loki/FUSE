@@ -1231,3 +1231,7 @@ const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason) {
     if (!tryCanLookupEventAt(index, reason)) {
 bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason) {
     if (!preflightChromeTraceExport(reason)) {
+
+// --- deepen additive from deepen-b16-profiler-preflight-guards-b702 ---
+    tryExportChromeTraceJson(json);
+bool tryExportChromeTraceJson(std::string& outJson) {
