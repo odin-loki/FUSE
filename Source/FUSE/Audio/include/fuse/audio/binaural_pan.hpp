@@ -312,10 +312,12 @@ enum class HrtfIrSkipReason : u8 {
     ZeroLength = 2,
 
 /// Preflight diagnostics for HRTF IR convolution dispatch.
+
     bool skipped = false;
     HrtfIrSkipReason reason = HrtfIrSkipReason::None;
 
     bool can_convolve() const { return !skipped; }
+};
 
 /// Classify why an IR stub cannot run convolution.
 HrtfIrSkipReason classify_hrtf_ir_skip(const HrtfIrStub& ir);
@@ -1403,6 +1405,9 @@ enum class HrtfAttenuationCouplingSkipReason : u8 {
 /// Classify why attenuation coupling would not narrow the binaural image.
 HrtfAttenuationCouplingSkipReason classify_hrtf_attenuation_coupling_skip(
 
+
+
+
 /// True when an attenuation-coupling skip reason blocks spatial narrowing.
 bool hrtf_attenuation_coupling_skip_reason_is_blocking(HrtfAttenuationCouplingSkipReason reason);
 
@@ -1461,6 +1466,13 @@ struct HrtfGuardedPanPreflight {
 HrtfGuardedPanPreflight preflight_hrtf_guarded_pan(bool hrtf_enabled, const HrtfIrStub& ir,
                                                    const Vec3& rel_listener,
                                                    float distance_attenuation, float occlusion_gain,
+bool preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
+                                       float occlusion_gain,
+                                       const HrtfAttenuationCoupling& coupling = {},
+                                       const BinauralPanParams& params = {});
+
+    HrtfPanPath path, float distance_attenuation, float occlusion_gain,
+    const HrtfAttenuationCoupling& coupling = {}, const BinauralPanParams& params = {});
 
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
