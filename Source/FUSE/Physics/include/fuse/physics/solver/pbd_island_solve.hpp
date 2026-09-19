@@ -1408,3 +1408,10 @@ struct IslandSolveParticipationPreflight {
 bool should_skip_island_solve_all_sleeping(const ContactIslandGraph::Island& island,
 bool should_skip_island_solve_no_participation(const ContactIslandGraph::Island& island,
 IslandSolveParticipationPreflight preflight_island_solve_participation(
+
+// --- deepen additive from deepen-pbd-island-guards-a375 ---
+struct IslandSolvePassPreflight {
+    IslandBodyRefsPreflight bodyRefs{};
+bool should_skip_island_dispatch_for_sleep(const ContactIslandGraph& graph,
+IslandSolvePassPreflight preflight_island_solve_pass(
+bool should_skip_island_solve_pass(const ContactIslandGraph::Island& island,

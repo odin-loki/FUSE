@@ -2262,3 +2262,12 @@ bool should_skip_island_solve_all_sleeping(const ContactIslandGraph::Island& isl
 IslandSolveParticipationPreflight preflight_island_solve_participation(
     IslandSolveParticipationPreflight preflight{};
 bool should_skip_island_solve_no_participation(const ContactIslandGraph::Island& island,
+
+// --- deepen additive from deepen-pbd-island-guards-a375 ---
+    const IslandSleepPreflight sleep = preflight_island_sleep_state(island, bodies);
+bool should_skip_island_dispatch_for_sleep(const ContactIslandGraph& graph,
+IslandSolvePassPreflight preflight_island_solve_pass(
+    IslandSolvePassPreflight preflight{};
+bool should_skip_island_solve_pass(const ContactIslandGraph::Island& island,
+    if (should_skip_island_solve_pass(island, bodies, contacts, distanceConstraints)) {
+    if (should_skip_solve_sleeping_island(*job.island, bodies)) {

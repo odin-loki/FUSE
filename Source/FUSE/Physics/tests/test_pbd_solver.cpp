@@ -4114,3 +4114,29 @@ void testIslandSleepWakeGraphGuards() {
     expectTrue(should_skip_island_wake_graph(emptyGraph, bodies),
                "should_skip wake graph true for empty graph");
     testPreflightIslandSolveParticipationGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-a375 ---
+               "should_skip_island_build true for zero bodies");
+void testBuildGuardedMatchesBuildOnValidPath() {
+    expectTrue(!should_skip_island_body_refs(graph.island(0), bodies),
+               "should_skip false when body refs are in range");
+               "should_skip true when island body refs are stale");
+void testPreflightIslandSleepStateGuards() {
+    expectTrue(awakePreflight.awakeDynamicCount == 2u, "sleep preflight counts awake dynamics");
+    expectTrue(awakePreflight.can_solve_awake(), "awake island can solve");
+    expectTrue(!should_skip_solve_sleeping_island(graph.island(awakeIsland), awakeBodies),
+    expectTrue(sleepingPreflight.all_dynamic_sleeping(), "all-dynamic-sleeping island flagged");
+    expectTrue(!sleepingPreflight.can_solve_awake(), "all-sleeping island cannot solve awake");
+    expectTrue(should_skip_solve_sleeping_island(graph.island(sleepingIsland), awakeBodies),
+    expectTrue(wakePreflight.needs_wake(), "mixed island needs wake");
+    expectTrue(!should_skip_island_dispatch_for_sleep(graph, bodies),
+    const IslandSleepGraphPreflight allSleepPreflight = preflight_island_sleep_graph(graph, allSleeping);
+    expectTrue(allSleepPreflight.skipped, "graph sleep preflight skips all-sleeping constrained graph");
+    expectTrue(should_skip_island_dispatch_for_sleep(graph, allSleeping),
+               "should_skip true when every constrained island is all-sleeping");
+void testSolveIslandJobSleepGuarded() {
+    const IslandSolvePassPreflight passPreflight = preflight_island_solve_pass(
+    expectTrue(!passPreflight.can_solve(), "combined solve pass preflight rejects all-sleeping island");
+    expectTrue(should_skip_island_solve_pass(
+               "should_skip combined solve pass for all-sleeping island");
+    testPreflightIslandSleepStateGuards();
