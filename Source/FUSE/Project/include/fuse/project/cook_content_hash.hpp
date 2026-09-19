@@ -33,6 +33,7 @@ enum class CookHashRejectReason : u8 {
     NonCacheableCombinedKey,
     InvalidCacheEntry,
     InvalidCacheKey,
+    UnresolvedDependencyOutput,
 };
 
 /// Read-only hash preflight — mirrors empty-input guards without computing keys (B7.9 deepen).
@@ -311,6 +312,11 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry& entry);
 [[nodiscard]] CookHashPreflight preflight_upstream_dependencies_hash(
     const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
+/// Resolve each non-empty manifest dependency output to a readable source (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_manifest_dependency_outputs(const CookManifestEntry& entry,
+                                                                      const CookManifest& manifest);
+/// Empty-path guard for mtime reads — mirrors `file_mtime_ns` (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_file_mtime(const std::string& path);
 [[nodiscard]] CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash);
 /// Null-pointer guard for non-zero byte spans — mirrors `is_valid_fnv1a64_input` (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);

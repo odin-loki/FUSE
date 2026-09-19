@@ -558,6 +558,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "invalid_cache_entry";
     case CookHashRejectReason::InvalidCacheKey:
         return "invalid_cache_key";
+    case CookHashRejectReason::UnresolvedDependencyOutput:
+        return "unresolved_dependency_output";
     }
     return "unknown";
 
@@ -641,6 +643,28 @@ CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::st
                     return source_preflight;
 
 CookHashPreflight preflight_upstream_dependency_path(const std::string& dependency_output_path,
+CookHashPreflight preflight_manifest_dependency_outputs(const CookManifestEntry& entry,
+    CookHashPreflight preflight;
+    for (const std::string& dependency_output : entry.dependencies) {
+        }
+
+        bool resolved = false;
+            if (asset.output_path != dependency_output) {
+            resolved = true;
+        if (!resolved) {
+            preflight.reason = CookHashRejectReason::UnresolvedDependencyOutput;
+            return preflight;
+
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+
+CookHashPreflight preflight_file_mtime(const std::string& path) {
+    if (path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyPath;
+
+
+CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 /*upstream_hash*/) {
     CookHashPreflight preflight;
     if (dependency_output_path.empty()) {
         preflight.reason = CookHashRejectReason::EmptyPath;

@@ -118,6 +118,20 @@ struct CookCacheEntryPreflight {
     [[nodiscard]] bool ok() const { return can_store; }
 };
 
+/// Read-only invalidation breakdown — mirrors `invalidate_*` guards (B7.9 deepen).
+struct CookCacheInvalidationEstimate {
+    u32 source_entries = 0;
+    u32 output_entries = 0;
+    u32 stale_content_entries = 0;
+    u32 stale_upstream_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const {
+        return source_entries + output_entries + stale_content_entries + stale_upstream_entries +
+               downstream_entries;
+    }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -422,6 +436,20 @@ public:
     [[nodiscard]] CookCacheInvalidationEstimate estimate_invalidate_all_removals() const;
     /// Prune reconcile breakdown without mutating stats (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_removals() const;
+    /// Invalidation reconcile breakdown without mutating stats (B7.9 deepen).
+    [[nodiscard]] CookCacheInvalidationEstimate estimate_invalidation_for_source(
+        const std::string& source_path) const;
+    [[nodiscard]] CookCacheInvalidationEstimate estimate_invalidation_for_output(
+        const std::string& output_path) const;
+    [[nodiscard]] CookCacheInvalidationEstimate estimate_stale_content_invalidation(
+        const std::string& source_path, u64 current_content_hash) const;
+    [[nodiscard]] CookCacheInvalidationEstimate estimate_stale_upstream_invalidation(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] CookCacheInvalidationEstimate estimate_downstream_invalidation(
+        const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
+        const std::vector<CookJob>& jobs) const;
+    /// Structural preflight for cache records — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
+    [[nodiscard]] CookHashPreflight preflight_store_entry(const CookCacheEntry& entry) const;
     /// True when `estimate_prune_removals().total()` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_prune_all() const;
     /// Deduplicated source paths whose stored keys are stale on disk (B7.9 deepen).

@@ -726,6 +726,32 @@ CookUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
     CookUpstreamInvalidationEstimate estimate;
 CookCacheUpstreamInvalidateEstimate AssetCooker::estimate_upstream_invalidation(
     CookCacheUpstreamInvalidateEstimate estimate;
+bool AssetCooker::would_reconcile_invalidate(const CookManifest& manifest) const {
+
+std::vector<std::string> AssetCooker::probe_reconcile_stale_sources(const CookManifest& manifest) const {
+    std::vector<std::string> stale_sources = m_cache.probe_stale_content_sources();
+    if (count_stale_dependency_invalidation(manifest) == 0) {
+        return stale_sources;
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    std::vector<std::pair<std::string, u64>> source_upstream;
+    source_upstream.reserve(graph.jobs().size());
+    for (const CookJob& job : graph.jobs()) {
+        source_upstream.emplace_back(job.source_path, hash_upstream_from_jobs(job, graph.jobs()));
+
+    const std::vector<std::string> upstream_stale = m_cache.probe_stale_upstream_sources(source_upstream);
+    for (const std::string& source_path : upstream_stale) {
+        bool already_recorded = false;
+        for (const std::string& recorded : stale_sources) {
+                already_recorded = true;
+                break;
+        if (!already_recorded) {
+            stale_sources.push_back(source_path);
+
+CookCacheInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
+    CookCacheInvalidationEstimate estimate;
         return estimate;
     }
 
@@ -804,6 +830,7 @@ bool AssetCooker::would_reconcile_invalidation(const CookManifest& manifest) con
 bool AssetCooker::would_upstream_invalidate(const CookManifest& manifest,
                                             const std::string& changed_source) const {
     return estimate_upstream_invalidation(manifest, changed_source).total() != 0;
+    estimate.source_entries = m_cache.count_by_source(changed_source);
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

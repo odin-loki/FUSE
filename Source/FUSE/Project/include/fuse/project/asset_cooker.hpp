@@ -275,6 +275,10 @@ public:
     /// Source paths `invalidate_upstream_dependency` would touch — deduplicated (B7.9 deepen).
     [[nodiscard]] CookCacheUpstreamInvalidateEstimate estimate_upstream_invalidation(
     /// True when `estimate_upstream_invalidation` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_reconcile_invalidate(const CookManifest& manifest) const;
+    /// Deduplicated source paths contributing to a non-zero reconcile estimate (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_reconcile_stale_sources(
+    [[nodiscard]] CookCacheInvalidationEstimate estimate_upstream_invalidation(
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
