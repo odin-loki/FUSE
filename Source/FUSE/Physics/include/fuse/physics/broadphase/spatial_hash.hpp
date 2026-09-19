@@ -1280,3 +1280,27 @@ struct BroadphaseMergeLaunchPreflight {
     BroadphasePreflight broadphase{};
     BroadphaseMergePreflight merge{};
 BroadphaseMergeLaunchPreflight preflightBroadphaseMergeLaunch(
+
+// --- deepen additive from deepen-b4-broadphase-guards-345c ---
+enum class CellSpanClampRejectReason : u8 {
+const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason);
+FUSE_PHYSICS_INLINE CellSpanClampRejectReason cellSpanClampRejectReason(const CellRange3& range, u32 maxSpanPerAxis) {
+        return CellSpanClampRejectReason::UnlimitedSpan;
+        return CellSpanClampRejectReason::EmptyRange;
+        return CellSpanClampRejectReason::WithinSpanLimit;
+    return CellSpanClampRejectReason::None;
+FUSE_PHYSICS_INLINE CellSpanClampRejectReason cellSpanClampRejectReason(const CellRange2& range, u32 maxSpanPerAxis) {
+    CellSpanClampRejectReason expected) {
+    return cellSpanClampRejectReason(range, maxSpanPerAxis) == expected;
+struct CellSpanClampPreflight {
+    CellSpanClampRejectReason reason = CellSpanClampRejectReason::None;
+    bool needsClamp() const { return reason == CellSpanClampRejectReason::None; }
+FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    CellSpanClampPreflight preflight{};
+    preflight.reason = cellSpanClampRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellSpanClampRejectReason::EmptyRange;
+    preflight.withinSpanLimit = preflight.reason == CellSpanClampRejectReason::WithinSpanLimit;
+    preflight.unlimitedSpan = preflight.reason == CellSpanClampRejectReason::UnlimitedSpan;
+FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    return !preflightCellSpanClamp(range, maxSpanPerAxis).needsClamp();
+    return preflightCellSpanClamp(range, maxSpanPerAxis).needsClamp();

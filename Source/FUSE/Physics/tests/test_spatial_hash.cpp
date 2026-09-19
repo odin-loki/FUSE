@@ -3101,3 +3101,24 @@ void testBroadphaseMergeLaunchPreflightGuards() {
     expectTrue(launchPreflight.canMerge(), "plane plus dynamic scene can merge");
     expectTrue(launchPreflight.canLaunchMerge(), "merge launch preflight can launch mergeable scene");
     testBroadphaseMergeLaunchPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-345c ---
+               "shouldRunBroadphase mirrors preflightBroadphase.canRun");
+    const fuse::physics::broadphase::CellSpanClampPreflight unlimitedPreflight =
+        fuse::physics::broadphase::preflightCellSpanClamp(unitRange, 0u);
+    expectTrue(unlimitedPreflight.unlimitedSpan, "preflight marks unlimited span clamp");
+    const fuse::physics::broadphase::CellSpanClampPreflight emptyPreflight =
+        fuse::physics::broadphase::preflightCellSpanClamp(inverted, 4u);
+    expectTrue(emptyPreflight.emptyRange, "preflight marks empty range for span clamp");
+void testCellSpanClampRejectReasonGuards() {
+                 fuse::physics::broadphase::cellSpanClampRejectReason(wideRange, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanClampRejectReason::None),
+    expectTrue(fuse::physics::broadphase::cellSpanClampRejectsForReason(
+                   wideRange, 8u, fuse::physics::broadphase::CellSpanClampRejectReason::None),
+                 fuse::physics::broadphase::cellSpanClampRejectReason(unitRange, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanClampRejectReason::WithinSpanLimit),
+    expectTrue(std::strcmp(fuse::physics::broadphase::cellSpanClampRejectReasonName(
+                               fuse::physics::broadphase::CellSpanClampRejectReason::UnlimitedSpan),
+                 fuse::physics::broadphase::cellSpanClampRejectReason(unitRange, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanClampRejectReason::UnlimitedSpan),
+    testCellSpanClampRejectReasonGuards();

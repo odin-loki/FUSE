@@ -1196,3 +1196,10 @@ BroadphaseMergeLaunchPreflight preflightBroadphaseMergeLaunch(
     preflight.merge = preflightBroadphaseMerge(bodies, shapes);
     return !preflightBroadphaseMergeLaunch(bodies, shapes).canLaunchMerge();
     return preflightBroadphaseMergeLaunch(bodies, shapes).canLaunchMerge();
+
+// --- deepen additive from deepen-b4-broadphase-guards-345c ---
+const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason) {
+    case CellSpanClampRejectReason::None:
+    case CellSpanClampRejectReason::EmptyRange:
+    case CellSpanClampRejectReason::WithinSpanLimit:
+    case CellSpanClampRejectReason::UnlimitedSpan:
