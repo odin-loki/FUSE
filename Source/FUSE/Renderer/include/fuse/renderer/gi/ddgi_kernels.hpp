@@ -237,6 +237,7 @@ ProbeKernelRejectReason classifyProbeKernelRejectForDesc(const DDGIDesc& desc, c
 /// Non-mutating kernel launch preflight including probe-grid source checks.
 bool preflightProbeKernelLaunchForDesc(const DDGIDesc& desc,
                                        const DDGIKernelParams& params,
+                                       ProbeKernelRejectReason* reason = nullptr);
 
 /// Early-out when kernel launch would be rejected for `desc` + params.
 bool wouldSkipProbeKernelLaunchForDesc(const DDGIDesc& desc, const DDGIKernelParams& params);
