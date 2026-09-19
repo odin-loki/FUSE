@@ -10,9 +10,15 @@ struct SharedTimeline {
     void* cudaSemaphore = nullptr;
     u64 value = 0;
     bool valid = false;
+    const char* message = nullptr;
 
     static SharedTimeline create(void* vkDevice);
     void destroy(void* vkDevice);
+
+    /// Vulkan timeline signal stub — returns false until full B2.6 driver wiring.
+    bool signalVulkan(void* vkDevice, u64 newValue) const;
+    /// CUDA timeline wait stub — returns false until full B2.6 driver wiring.
+    bool waitCuda(void* cudaStream, u64 waitValue) const;
 };
 
 struct FrameSyncPair {

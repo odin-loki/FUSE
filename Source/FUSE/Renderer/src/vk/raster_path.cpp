@@ -105,6 +105,17 @@ void* RasterPath::barrierImageHandle() const {
 #endif
 }
 
+void* RasterPath::colorViewHandle() const {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_stats.pipelineReady || m_colorView == nullptr) {
+        return nullptr;
+    }
+    return m_colorView;
+#else
+    return nullptr;
+#endif
+}
+
 bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
     m_device = &device;
     m_desc = desc;
@@ -221,7 +232,8 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
     imageInfo.format = static_cast<VkFormat>(kColorFormat);
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                      VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 

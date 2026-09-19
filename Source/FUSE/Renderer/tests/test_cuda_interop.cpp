@@ -37,6 +37,7 @@ void testInteropUnavailableOnCi() {
         fuse::renderer::cuda::import_vulkan_buffer(bufferDesc);
     expectTrue(!bufferImport.ok, "buffer import stub returns failure");
     expectTrue(bufferImport.devicePtr == nullptr, "buffer import stub leaves pointer null");
+    expectTrue(bufferImport.reason != nullptr, "buffer import stub exposes reason");
 
     fuse::renderer::cuda::VulkanImageImportDesc imageDesc{};
     imageDesc.vkDevice = reinterpret_cast<void*>(0x1);
@@ -47,12 +48,30 @@ void testInteropUnavailableOnCi() {
     const fuse::renderer::cuda::CudaSurfaceImport surfaceImport =
         fuse::renderer::cuda::import_vulkan_image(imageDesc);
     expectTrue(!surfaceImport.ok, "image import stub returns failure");
+    expectTrue(surfaceImport.reason != nullptr, "image import stub exposes reason");
 }
 
 void testSharedTimelineStub() {
     const fuse::renderer::cuda::SharedTimeline timeline =
         fuse::renderer::cuda::SharedTimeline::create(nullptr);
     expectTrue(!timeline.valid, "SharedTimeline stub is invalid until full B2.6");
+    expectTrue(timeline.message != nullptr, "SharedTimeline stub exposes honest message");
+    expectTrue(!timeline.signalVulkan(nullptr, 1u), "signalVulkan stub returns false");
+    expectTrue(!timeline.waitCuda(nullptr, 1u), "waitCuda stub returns false");
+}
+
+void testInteropReasonStrings() {
+#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
+    if (fuse::renderer::cuda::interopAvailable()) {
+        std::printf("SKIP: interop runtime available — import still stubbed\n");
+        return;
+    }
+#endif
+    const auto reason = fuse::renderer::cuda::interopUnavailableReason();
+    expectTrue(reason != fuse::renderer::cuda::InteropUnavailableReason::None,
+               "stub build reports unavailable interop reason");
+    expectTrue(fuse::renderer::cuda::interopUnavailableReasonString(reason) != nullptr,
+               "reason string non-null");
 }
 
 void testStreamManagerStub() {
@@ -80,6 +99,7 @@ int main() {
     fuse::core::initialize();
 
     testInteropUnavailableOnCi();
+    testInteropReasonStrings();
     testSharedTimelineStub();
     testStreamManagerStub();
 

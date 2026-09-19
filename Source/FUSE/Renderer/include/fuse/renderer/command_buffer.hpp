@@ -49,6 +49,20 @@ struct VkFrameEncodeContext {
     u32 presentWidth = 0;
     u32 presentHeight = 0;
     bool presentActive = false;
+
+    /// Composite GPU blit — bindless fullscreen pass into backbuffer (WP-06f).
+    void* compositeRenderPass = nullptr;
+    void* compositeFramebuffer = nullptr;
+    void* compositePipeline = nullptr;
+    void* compositePipelineLayout = nullptr;
+    void* compositeVertexBuffer = nullptr;
+    void* bindlessDescriptorSet = nullptr;
+    u32 rasterTextureBindlessIndex = 0;
+    u32 compositeWidth = 0;
+    u32 compositeHeight = 0;
+    float compositeBlend = 0.5f;
+    bool compositeActive = false;
+    bool compositeTargetsSwapchain = false;
 };
 
 /// Command-buffer recorder — logical commands for tests; optional real `vkCmd*` when backend active.
@@ -77,6 +91,7 @@ public:
     u32 vulkanRenderPassBeginCount() const { return m_vulkanRenderPassBeginCount; }
     u32 vulkanPipelineBarrierCount() const { return m_vulkanPipelineBarrierCount; }
     u32 vulkanPresentRenderPassBeginCount() const { return m_vulkanPresentRenderPassBeginCount; }
+    u32 vulkanCompositeDrawCount() const { return m_vulkanCompositeDrawCount; }
 
 private:
     void push(CommandRecordKind kind);
@@ -85,6 +100,7 @@ private:
     void endVulkanRenderPass();
     void encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLayout);
     void encodePresentSwapchainPass();
+    void encodeCompositePass(float blend);
     void encodeDraw(u32 instanceCount);
 
     const VkFrameEncodeContext* m_encodeContext = nullptr;
@@ -100,6 +116,7 @@ private:
     u32 m_vulkanRenderPassBeginCount = 0;
     u32 m_vulkanPipelineBarrierCount = 0;
     u32 m_vulkanPresentRenderPassBeginCount = 0;
+    u32 m_vulkanCompositeDrawCount = 0;
     std::vector<CommandRecord> m_records;
 };
 

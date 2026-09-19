@@ -43,6 +43,9 @@ public:
     /// Offscreen color image for graph-planned layout barriers.
     void* barrierImageHandle() const;
 
+    /// Sampled color attachment view for composite bindless registration.
+    void* colorViewHandle() const;
+
     /// Updates CPU stats from mirrored commands (GPU work lives in graph execute path).
     void updateStatsFromCommands(const RenderCommandList& commands);
 

@@ -57,12 +57,17 @@ bool PipelineLayout::initialize(VulkanDevice& device, const PipelineLayoutDesc& 
         pushRanges.push_back(vkRange);
     }
 
+    VkDescriptorSetLayout bindlessLayout = VK_NULL_HANDLE;
+    if (desc.bindlessSetLayout != nullptr) {
+        bindlessLayout = static_cast<VkDescriptorSetLayout>(desc.bindlessSetLayout);
+    }
+
     VkPipelineLayoutCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     createInfo.pushConstantRangeCount = static_cast<u32>(pushRanges.size());
     createInfo.pPushConstantRanges = pushRanges.empty() ? nullptr : pushRanges.data();
-    createInfo.setLayoutCount = 0;
-    createInfo.pSetLayouts = nullptr;
+    createInfo.setLayoutCount = bindlessLayout != VK_NULL_HANDLE ? 1u : 0u;
+    createInfo.pSetLayouts = bindlessLayout != VK_NULL_HANDLE ? &bindlessLayout : nullptr;
 
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     const VkResult result =

@@ -1,6 +1,6 @@
 # Track B — Vulkan Bootstrap (B2.1–B2.10) + CUDA Ray March (B2.7)
 
-**Status:** WP-06b ✅ B2.1 bootstrap + B2.2 swapchain/frame ring + **WP-06c ✅ real `vkQueueSubmit` + honest headless present sink** + **WP-06d ✅ `vkCmdBeginRenderPass` graph encode + bindless pool + null/GLFW WSI scaffold** + **WP-06e ✅ graph `vkCmdPipelineBarrier` + bindless `vkUpdateDescriptorSets` + pipeline cache disk I/O + swapchain FB present pass scaffold** + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
+**Status:** WP-06b ✅ B2.1 bootstrap + B2.2 swapchain/frame ring + **WP-06c ✅ real `vkQueueSubmit` + honest headless present sink** + **WP-06d ✅ `vkCmdBeginRenderPass` graph encode + bindless pool + null/GLFW WSI scaffold** + **WP-06e ✅ graph `vkCmdPipelineBarrier` + bindless `vkUpdateDescriptorSets` + pipeline cache disk I/O + swapchain FB present pass scaffold** + **WP-06f ✅ bindless composite GPU blit + CUDA interop/timeline honest stubs** + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.7, §B2.8, §B2.9, §B2.10  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
@@ -462,7 +462,7 @@ All shutdown steps are idempotent. GPU init and submit require the registered re
 | G-buffer attachments (RenderDoc) | **Deferred** | Deferred renderer scaffold separate from B2.8 path |
 | CUDA ray march vs reference | **Done (CPU ref)** | `fuse_ray_march_stub`; full kernel deferred |
 | SDF normals smooth at surface | **Deferred** | — |
-| Composite blend at all GRIA α | **Done (stub)** | `CompositePass` + graph ordering; no real bindless shader |
+| Composite blend at all GRIA α | **Done (WP-06f)** | `CompositeGpuPath` bindless shader + graph ordering; CUDA texture still placeholder colour |
 | 60 fps @ 1080p, 10-object SDF (Week 5 gate) | **Deferred** | No present path / perf gate in CI |
 
 #### Performance baselines (RTX 3090)
@@ -586,7 +586,22 @@ ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|
 | Swapchain FB present pass | **Done (scaffold)** | Per-image framebuffers + present render pass on real `VkSwapchainKHR`; `encodePresentSwapchainPass` when acquire valid |
 | Null WSI + software demo | **Done** | Headless CI unchanged — present FB inactive without WSI acquire; `fuse_vulkan_phase2_integration` + hybrid paths green |
 
-**Deferred (post–WP-06e):** real composite blit into swapchain image; `vkQueuePresentKHR` on desktop with display + GLFW; Editor Qt surface (`U6`); bindless descriptor use in graphics pipeline.
+**Deferred (post–WP-06e):** ~~real composite blit into swapchain image~~ → landed WP-06f (headless offscreen + swapchain when WSI acquire valid); ~~bindless descriptor use in graphics pipeline~~ → WP-06f composite shader path; `vkQueuePresentKHR` on desktop with display + GLFW; Editor Qt surface (`U6`).
+
+---
+
+## WP-06f deliverables (bindless composite GPU blit + CUDA interop stubs)
+
+| Deliverable | Status | Notes |
+|-------------|--------|-------|
+| `CompositeGpuPath` bindless composite shader | **Done** | `composite.vert` / `composite.frag` SPIR-V fixtures; `GL_EXT_nonuniform_qualifier` sampled-image array |
+| Bindless set bound in composite pipeline | **Done** | `PipelineLayout` accepts `bindlessSetLayout`; `vkCmdBindDescriptorSets` + push constants in `encodeCompositePass` |
+| GPU blit into swapchain backbuffer | **Done (when WSI)** | `fillEncodeContext` targets present FB when acquire valid; headless composites into offscreen raster FB |
+| Headless-honest composite (no WSI) | **Done** | No swapchain pretend — offscreen raster target; `fuse_vulkan_phase2_integration` asserts `vulkanCompositeDrawCount` |
+| B2.6 CUDA interop/timeline stubs | **Done (honest)** | `InteropUnavailableReason` + `reason` strings on import; `SharedTimeline::signalVulkan` / `waitCuda` stubs; `fuse_cuda_interop` skips cleanly |
+| Lavapipe + `demo_hybrid_hud` | **Done** | Software path unchanged; headless ICD tests green |
+
+**Deferred (post–WP-06f):** `cudaImportExternalMemory` + real timeline semaphore pair; `vkQueuePresentKHR` on desktop GLFW window; Editor Qt surface (`U6`).
 
 ---
 
@@ -635,8 +650,8 @@ cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_CUDA=ON
 |-----------|----------|-------|
 | `CUDAJobDesc` / `submit_cuda()` | `Source/FUSE/Core/include/fuse/jobs/cuda_jobs.hpp` | Job-scheduler dispatch; signals `JobCounter` on completion |
 | `fuse_compute` / `submit_ray_march_job` | `Source/FUSE/Compute/` | B2.7 SDF ray-march pass wired through `submit_cuda` |
-| `import_vulkan_buffer` / `import_vulkan_image` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/interop.hpp` | External-memory import deferred — returns `ok=false` until full B2.6 |
-| `SharedTimeline` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/vk_sync.hpp` | Timeline semaphore wrapper stub |
+| `import_vulkan_buffer` / `import_vulkan_image` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/interop.hpp` | Honest stubs — `ok=false` + `reason` string; `interopUnavailableReason()` for CI |
+| `SharedTimeline` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/vk_sync.hpp` | Timeline stub — `signalVulkan` / `waitCuda` return false until full B2.6 |
 | `StreamManager` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/stream_manager.hpp` | Named streams (Render, Physics, AI, Particles, Upload) |
 | `TextureDesc::cudaInterop` / `BufferDesc::cudaInterop` | `resources.hpp` | Flag reserved for shared allocations (B2.3+) |
 
@@ -662,8 +677,9 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] B2.5 follow-up: real `vkCmdBeginRenderPass` in graph execute (WP-06d)
 - [x] B2.5 follow-up: graph-planned `vkCmdPipelineBarrier`; present pass targets swapchain FB (WP-06e)
 - [x] B2.4 follow-up: `vkUpdateDescriptorSets` on bindless register; pipeline cache disk serialize/restore (WP-06e)
-- [ ] B2.5 follow-up: real composite GPU blit into swapchain backbuffer
-- [ ] B2.6 follow-up: `cudaImportExternalMemory`, timeline semaphores, real shared textures
+- [x] B2.5 follow-up: real composite GPU blit into swapchain backbuffer (WP-06f — bindless shader; headless offscreen when no WSI)
+- [x] B2.6 follow-up: interop/timeline honest stubs + tests that skip cleanly (WP-06f)
+- [ ] B2.6 follow-up: `cudaImportExternalMemory`, real timeline semaphores, shared textures in composite
 - [ ] Replace `PlaceholderRenderer` present path incrementally — keep software fallback for headless CI
 - [x] Own Hybrid presentable path stubs — `PlatformWindow` (null/GLFW), `VulkanPresentable`, `HybridRendererBootstrap` wiring
 - [x] Null/GLFW desktop WSI scaffold — `window_wsi.hpp`, `FUSE_PLATFORM_WINDOW_GLFW` (OFF in CI; headless Lavapipe stays green)

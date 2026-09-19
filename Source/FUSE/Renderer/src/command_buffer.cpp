@@ -31,6 +31,7 @@ void CommandBufferRecorder::reset() {
     m_vulkanRenderPassBeginCount = 0;
     m_vulkanPipelineBarrierCount = 0;
     m_vulkanPresentRenderPassBeginCount = 0;
+    m_vulkanCompositeDrawCount = 0;
     m_records.clear();
 }
 
@@ -410,6 +411,72 @@ void CommandBufferRecorder::drawIndexed(u32 indexCount) {
     m_records.push_back(record);
 }
 
+void CommandBufferRecorder::encodeCompositePass(float blend) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || m_encodeContext == nullptr || !m_encodeContext->compositeActive ||
+        !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    if (m_insideRenderPass) {
+        endVulkanRenderPass();
+    }
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = static_cast<VkRenderPass>(m_encodeContext->compositeRenderPass);
+    renderPassInfo.framebuffer = static_cast<VkFramebuffer>(m_encodeContext->compositeFramebuffer);
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = {m_encodeContext->compositeWidth, m_encodeContext->compositeHeight};
+
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      static_cast<VkPipeline>(m_encodeContext->compositePipeline));
+
+    const VkPipelineLayout pipelineLayout =
+        static_cast<VkPipelineLayout>(m_encodeContext->compositePipelineLayout);
+
+    VkDescriptorSet bindlessSet = static_cast<VkDescriptorSet>(m_encodeContext->bindlessDescriptorSet);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
+                              &bindlessSet, 0, nullptr);
+
+    struct CompositePushConstants {
+        float blendFactor;
+        u32 rasterTexIndex;
+        u32 cudaTexIndex;
+    } pushConstants{};
+    pushConstants.blendFactor = blend;
+    pushConstants.rasterTexIndex = m_encodeContext->rasterTextureBindlessIndex;
+    pushConstants.cudaTexIndex = 0u;
+    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                       sizeof(pushConstants), &pushConstants);
+
+    VkViewport viewport{};
+    viewport.width = static_cast<float>(m_encodeContext->compositeWidth);
+    viewport.height = static_cast<float>(m_encodeContext->compositeHeight);
+    viewport.minDepth = 0.f;
+    viewport.maxDepth = 1.f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.extent = {m_encodeContext->compositeWidth, m_encodeContext->compositeHeight};
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_encodeContext->compositeVertexBuffer)};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+    vkCmdEndRenderPass(commandBuffer);
+    ++m_vulkanCompositeDrawCount;
+#else
+    (void)blend;
+#endif
+}
+
 void CommandBufferRecorder::composite(float blend) {
     if (!m_recording) {
         return;
@@ -419,6 +486,8 @@ void CommandBufferRecorder::composite(float blend) {
     record.kind = CommandRecordKind::Composite;
     record.compositeBlend = blend;
     m_records.push_back(record);
+
+    encodeCompositePass(blend);
 }
 
 void CommandBufferRecorder::present() {

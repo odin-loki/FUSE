@@ -17,6 +17,8 @@ struct GraphicsPipelineDesc {
     ShaderModule* vertexShader = nullptr;
     ShaderModule* fragmentShader = nullptr;
     RenderPass* renderPass = nullptr;
+    /// When non-null, used instead of `renderPass->nativeHandle()` (swapchain present pass).
+    void* nativeRenderPassOverride = nullptr;
     PipelineCache* pipelineCache = nullptr;
     u32 colorFormat = 37; // VK_FORMAT_R8G8B8A8_UNORM
     const char* debugName = nullptr;

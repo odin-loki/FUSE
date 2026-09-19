@@ -64,6 +64,11 @@ void testPhase2HeadlessIntegration() {
                    "render graph encoded vkCmdBeginRenderPass on headless ICD");
         expectTrue(rhi->commandRecorder().vulkanPipelineBarrierCount() >= 1u,
                    "render graph encoded vkCmdPipelineBarrier on headless ICD");
+        expectTrue(rhi->commandRecorder().vulkanCompositeDrawCount() >= 1u,
+                   "composite pass encoded bindless GPU blit on headless ICD");
+        expectTrue(rhi->compositeGpuPath() != nullptr, "CompositeGpuPath lazy-created on submit");
+        expectTrue(rhi->lastCompositeGpuStats().bindlessBound,
+                   "composite path bound bindless descriptor set");
         expectTrue(rhi->compositePass() != nullptr, "CompositePass lazy-created on submit");
         expectTrue(rhi->lastCompositeStats().framesRecorded == frameIndex + 1u,
                    "CompositePass stats advance per frame");

@@ -45,7 +45,7 @@ bool CompositePass::recordFrame(const RenderCommandList& commands) {
 
     m_stats.lastBlend = blendForFrame(commands);
     ++m_stats.framesRecorded;
-    m_stats.message = "composite frame recorded (stub)";
+    m_stats.message = "composite frame recorded (GPU path via CompositeGpuPath)";
     return true;
 }
 

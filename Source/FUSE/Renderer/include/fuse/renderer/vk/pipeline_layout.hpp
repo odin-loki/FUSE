@@ -20,10 +20,12 @@ struct DescriptorSetLayoutDesc {
     u32 bindingCount = 0;
 };
 
-/// Placeholder pipeline layout for B2.4 — bindless descriptor scaffolding deferred to B2.3 follow-up.
+/// Pipeline layout for B2.4 — optional bindless descriptor set (set 0) from `BindlessDescriptors`.
 struct PipelineLayoutDesc {
     std::vector<PushConstantRangeDesc> pushConstants;
     std::vector<DescriptorSetLayoutDesc> descriptorSets;
+    /// When non-null, bound as set 0 (`VkDescriptorSetLayout` from `BindlessDescriptors::layoutHandle()`).
+    void* bindlessSetLayout = nullptr;
     const char* debugName = nullptr;
 };
 

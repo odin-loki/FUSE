@@ -64,6 +64,27 @@ void RhiContext::ensureCompositePass() {
     m_compositePass = CompositePass::create(m_desc.composite);
 }
 
+void RhiContext::ensureCompositeGpuPath() {
+    if (m_compositeGpuPath || !m_desc.enableCompositePass) {
+        return;
+    }
+
+    VulkanDevice* device = m_bootstrap ? m_bootstrap->device() : nullptr;
+    if (device == nullptr) {
+        return;
+    }
+
+    CompositeGpuPathDesc compositeDesc{};
+    compositeDesc.width = m_desc.raster.width;
+    compositeDesc.height = m_desc.raster.height;
+    static const std::string vertPath = fixturePath("composite.vert.spv");
+    static const std::string fragPath = fixturePath("composite.frag.spv");
+    compositeDesc.vertexSpirvPath = vertPath.c_str();
+    compositeDesc.fragmentSpirvPath = fragPath.c_str();
+
+    m_compositeGpuPath = CompositeGpuPath::create(*device, compositeDesc);
+}
+
 bool RhiContext::beginFrame(u32 frameIndex) {
     if (!platform::requireGpuContextThread()) {
         return false;
@@ -104,6 +125,7 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
         }
 
         ensureCompositePass();
+        ensureCompositeGpuPath();
         const float compositeBlend =
             m_compositePass ? m_compositePass->blendForFrame(commands) : m_desc.composite.defaultBlend;
 
@@ -119,8 +141,10 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
 
 #if defined(FUSE_VULKAN_BACKEND)
         VulkanSwapchain* swapchain = m_bootstrap->swapchain();
-        if (encodeContext != nullptr && swapchain != nullptr && swapchain->hasPresentTargets() &&
-            !isEmptyAcquireResult(m_acquiredSwapchainImage)) {
+        const bool presentTargetsReady =
+            swapchain != nullptr && swapchain->hasPresentTargets() &&
+            !isEmptyAcquireResult(m_acquiredSwapchainImage);
+        if (encodeContext != nullptr && presentTargetsReady) {
             encodeContextStorage.presentRenderPass = swapchain->presentRenderPass();
             encodeContextStorage.presentFramebuffer =
                 swapchain->framebufferForImage(m_acquiredSwapchainImage);
@@ -134,6 +158,18 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
             encodeContext = &encodeContextStorage;
         } else if (encodeContextStorage.active) {
             encodeContext = &encodeContextStorage;
+        }
+
+        if (m_compositeGpuPath && m_compositeGpuPath->isReady() && m_rasterPath != nullptr) {
+            m_compositeGpuPath->registerRasterSource(m_rasterPath->colorViewHandle());
+            if (presentTargetsReady && encodeContextStorage.presentRenderPass != nullptr) {
+                m_compositeGpuPath->ensurePresentPipeline(encodeContextStorage.presentRenderPass);
+            }
+            if (encodeContext != nullptr) {
+                m_compositeGpuPath->fillEncodeContext(encodeContextStorage, compositeBlend,
+                                                      presentTargetsReady);
+                encodeContext = &encodeContextStorage;
+            }
         }
 #endif
 
@@ -164,6 +200,10 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
     if (m_compositePass && m_compositePass->isReady()) {
         m_compositePass->recordFrame(commands);
         m_lastCompositeStats = m_compositePass->lastStats();
+    }
+
+    if (m_compositeGpuPath && m_compositeGpuPath->isReady()) {
+        m_lastCompositeGpuStats = m_compositeGpuPath->lastStats();
     }
 
     if (frameManager != nullptr && frameManager->isReady()) {

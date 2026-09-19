@@ -6,6 +6,7 @@
 #include <fuse/renderer/render_graph.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/queue_submit.hpp>
+#include <fuse/renderer/vk/composite_gpu_path.hpp>
 #include <fuse/renderer/vk/raster_path.hpp>
 
 #include <cstdint>
@@ -35,6 +36,7 @@ public:
 
     const RasterPath* rasterPath() const { return m_rasterPath.get(); }
     const CompositePass* compositePass() const { return m_compositePass.get(); }
+    const CompositeGpuPath* compositeGpuPath() const { return m_compositeGpuPath.get(); }
 
     /// Begin frame slot after tick barrier. Returns false off render thread.
     bool beginFrame(u32 frameIndex);
@@ -60,19 +62,23 @@ public:
     u32 currentFrameSlot() const;
     const RasterPathStats& lastRasterStats() const { return m_lastRasterStats; }
     const CompositePassStats& lastCompositeStats() const { return m_lastCompositeStats; }
+    const CompositeGpuPathStats& lastCompositeGpuStats() const { return m_lastCompositeGpuStats; }
 
 private:
     explicit RhiContext(std::unique_ptr<VulkanBootstrap> bootstrap, const Desc& desc);
 
     void ensureRasterPath();
     void ensureCompositePass();
+    void ensureCompositeGpuPath();
 
     std::unique_ptr<VulkanBootstrap> m_bootstrap;
     Desc m_desc;
     std::unique_ptr<RasterPath> m_rasterPath;
     std::unique_ptr<CompositePass> m_compositePass;
+    std::unique_ptr<CompositeGpuPath> m_compositeGpuPath;
     RasterPathStats m_lastRasterStats{};
     CompositePassStats m_lastCompositeStats{};
+    CompositeGpuPathStats m_lastCompositeGpuStats{};
     RenderGraph m_renderGraph;
     CommandBufferRecorder m_commandRecorder;
     u32 m_submittedFrames = 0;

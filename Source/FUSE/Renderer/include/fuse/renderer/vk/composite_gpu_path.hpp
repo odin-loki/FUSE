@@ -1,0 +1,77 @@
+#pragma once
+
+#include <fuse/renderer/command_buffer.hpp>
+#include <fuse/renderer/vk/bindless.hpp>
+#include <fuse/renderer/vk/device.hpp>
+#include <fuse/types.hpp>
+
+#include <memory>
+#include <string>
+
+namespace fuse::renderer {
+
+struct CompositeGpuPathDesc {
+    u32 width = 320;
+    u32 height = 240;
+    const char* vertexSpirvPath = nullptr;
+    const char* fragmentSpirvPath = nullptr;
+};
+
+struct CompositeGpuPathStats {
+    bool pipelineReady = false;
+    bool bindlessBound = false;
+    u32 framesEncoded = 0;
+    u32 rasterTextureIndex = UINT32_MAX;
+    std::string message;
+};
+
+/// WP-06f — bindless composite shader blit into swapchain backbuffer (headless-honest offscreen when no WSI).
+class CompositeGpuPath {
+public:
+    static std::unique_ptr<CompositeGpuPath> create(VulkanDevice& device, const CompositeGpuPathDesc& desc);
+    ~CompositeGpuPath();
+
+    CompositeGpuPath(const CompositeGpuPath&) = delete;
+    CompositeGpuPath& operator=(const CompositeGpuPath&) = delete;
+
+    bool isReady() const { return m_stats.pipelineReady; }
+    const CompositeGpuPathStats& lastStats() const { return m_stats; }
+    const BindlessDescriptors& bindless() const { return m_bindless; }
+
+    /// Registers the raster color view for bindless sampling; call after RasterPath is ready.
+    bool registerRasterSource(void* imageView);
+
+    /// Ensures a present-target pipeline exists when swapchain present render pass is available.
+    bool ensurePresentPipeline(void* presentRenderPass);
+
+    /// Fills composite fields on `VkFrameEncodeContext` for command-buffer encoding.
+    void fillEncodeContext(VkFrameEncodeContext& context, float blend, bool presentActive);
+
+private:
+    CompositeGpuPath() = default;
+    bool initialize(VulkanDevice& device, const CompositeGpuPathDesc& desc);
+    void shutdown();
+
+    VulkanDevice* m_device = nullptr;
+    CompositeGpuPathDesc m_desc{};
+    CompositeGpuPathStats m_stats{};
+    BindlessDescriptors m_bindless;
+
+    std::unique_ptr<class RenderPass> m_offscreenRenderPass;
+    std::unique_ptr<class PipelineLayout> m_pipelineLayout;
+    std::unique_ptr<class ShaderModule> m_vertexShader;
+    std::unique_ptr<class ShaderModule> m_fragmentShader;
+    std::unique_ptr<class GraphicsPipeline> m_offscreenPipeline;
+    std::unique_ptr<class GraphicsPipeline> m_presentPipeline;
+    std::unique_ptr<class PipelineCache> m_pipelineCache;
+
+#if defined(FUSE_VULKAN_BACKEND)
+    void* m_vertexBuffer = nullptr;
+    void* m_vertexMemory = nullptr;
+    void* m_sampler = nullptr;
+    BindlessSlotHandle m_samplerSlot{};
+    BindlessSlotHandle m_rasterTextureSlot{};
+#endif
+};
+
+} // namespace fuse::renderer

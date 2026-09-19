@@ -48,6 +48,7 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/vk/gpu_alloc_stats.hpp
     include/fuse/renderer/vk/allocator.hpp
     include/fuse/renderer/vk/bindless.hpp
+    include/fuse/renderer/vk/composite_gpu_path.hpp
     include/fuse/renderer/vk/bootstrap.hpp
     include/fuse/renderer/vk/device.hpp
     include/fuse/renderer/vk/frame.hpp
@@ -111,6 +112,7 @@ set(FUSE_RHI_SOURCES
     src/vk/gpu_alloc_stats.cpp
     src/vk/allocator.cpp
     src/vk/bindless.cpp
+    src/vk/composite_gpu_path.cpp
     src/vk/bootstrap.cpp
     src/vk/device.cpp
     src/vk/frame.cpp

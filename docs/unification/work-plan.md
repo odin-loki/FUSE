@@ -123,7 +123,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Mobile** | Hybrid demo runs on iOS **or** Android device/sim; respect surface loss / background |
 | **Exit** | Demo: 3D clear + spinning 2D sprite one window (desktop + one mobile); TSan clean on cull path |
 | **Deps** | WP-05, WP-03 |
-| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B queue submit + headless present sink ✅ (WP-06c) — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
+| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B bindless composite GPU blit ✅ (WP-06f) — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
 
 ---
 
@@ -176,6 +176,19 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Exit** | `fuse_vulkan_phase2_integration` asserts barrier encode; `fuse_bindless_descriptors` descriptor update/clear; `fuse_pipeline_cache` disk round-trip; headless swapchain has no present FB |
 | **Deps** | WP-06d |
 | **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06e |
+
+---
+
+### WP-06f — Track B bindless composite GPU blit + CUDA interop stubs
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M |
+| **Scope** | `CompositeGpuPath` bindless composite shader blit into swapchain backbuffer (headless-honest offscreen when no WSI); bindless descriptor set bound in composite pipeline; B2.6 `InteropUnavailableReason` + timeline/import honest stubs + tests that skip cleanly; keep Lavapipe + `demo_hybrid_hud` green |
+| **MT note** | Composite encode + bindless registration on render thread only |
+| **Exit** | `fuse_vulkan_phase2_integration` asserts `vulkanCompositeDrawCount`; `fuse_cuda_interop` reason strings + timeline stubs; `demo_hybrid_hud` PASS headless |
+| **Deps** | WP-06e |
+| **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06f |
 
 ---
 
@@ -303,7 +316,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U6 GPU viewport embed; U7 full T3D field extraction + production asset cooks; Track B post–WP-06e (`vkQueuePresentKHR` desktop GLFW, Editor Qt surface, composite blit into swapchain).
+**Next:** U6 GPU viewport embed; U7 full T3D field extraction + production asset cooks; Track B post–WP-06f (`vkQueuePresentKHR` desktop GLFW, Editor Qt surface, `cudaImportExternalMemory`).
 
 ---
 

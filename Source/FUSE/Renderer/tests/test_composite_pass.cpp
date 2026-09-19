@@ -83,6 +83,7 @@ void testCommandRecorderComposite() {
 void testRhiContextCompositeStats() {
     fuse::renderer::RhiContext::Desc desc{};
     desc.bootstrap.instance.enableValidation = false;
+    desc.bootstrap.createSwapchain = false;
     desc.composite.defaultBlend = 0.6f;
 
     auto context = fuse::renderer::RhiContext::create(desc);
@@ -93,6 +94,10 @@ void testRhiContextCompositeStats() {
     commands.clear3D(0.1f, 0.2f, 0.3f);
 
 #if defined(FUSE_VULKAN_BACKEND)
+    if (!context->bootstrap().status().deviceReady) {
+        std::printf("SKIP: Vulkan device not ready — headless ICD unavailable\n");
+        return;
+    }
     expectTrue(context->beginFrame(0u), "beginFrame accepted on render thread");
     expectTrue(context->submitFrame(commands, 0u), "submit accepted when Vulkan device ready");
     expectTrue(context->compositePass() != nullptr, "composite pass created on submit");

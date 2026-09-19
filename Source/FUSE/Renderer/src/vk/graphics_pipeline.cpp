@@ -27,13 +27,13 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     m_device = &device;
 
     if (desc.layout == nullptr || desc.vertexShader == nullptr || desc.fragmentShader == nullptr ||
-        desc.renderPass == nullptr) {
+        (desc.renderPass == nullptr && desc.nativeRenderPassOverride == nullptr)) {
         m_info.message = "graphics pipeline requires layout, shaders, and render pass";
         return false;
     }
 
     if (!desc.layout->isValid() || !desc.vertexShader->isValid() || !desc.fragmentShader->isValid() ||
-        !desc.renderPass->isValid()) {
+        (desc.renderPass != nullptr && !desc.renderPass->isValid())) {
         m_info.message = "graphics pipeline inputs are not valid";
         return false;
     }
@@ -123,7 +123,9 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
 
     VkPipelineLayout pipelineLayout =
         static_cast<VkPipelineLayout>(desc.layout->nativeHandle());
-    VkRenderPass renderPass = static_cast<VkRenderPass>(desc.renderPass->nativeHandle());
+    VkRenderPass renderPass = desc.nativeRenderPassOverride != nullptr
+                                  ? static_cast<VkRenderPass>(desc.nativeRenderPassOverride)
+                                  : static_cast<VkRenderPass>(desc.renderPass->nativeHandle());
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
