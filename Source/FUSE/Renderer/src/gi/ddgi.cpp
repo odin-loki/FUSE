@@ -2559,3 +2559,23 @@ bool wouldClampCacheIndexLookup(u32 probe_index, const DDGIDesc& desc) {
     return wouldSkipProbeSchedule(probe_count, max_indices, out_indices, out_count);
 bool tryCanScheduleProbeUpdates(u32 frame_index,
     if (!tryCanScheduleProbeUpdates(frame_index,
+
+// --- deepen additive from deepen-b56-ddgi-guards-9944 ---
+    ProbeGridLayout::tryValidateProbeSampleCoords(desc, coords, reason);
+    ddgi_util::tryValidateCacheIndex(desc, probe_index, cache_count, reason);
+    ddgi_util::tryValidateCacheIndex(desc, cache, probe_index, cache_count, reason);
+    ddgi_util::tryCanScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count, reason);
+bool ProbeGridLayout::preflightBuildProbeSampleCoords(const DDGIDesc& desc,
+    ProbeSampleCoordsRejectReason local = ProbeSampleCoordsRejectReason::None;
+        local = ProbeSampleCoordsRejectReason::EmptyGrid;
+    return local == ProbeSampleCoordsRejectReason::None;
+    const bool ok = tryValidateCacheIndex(desc, probe_index, cache_count, local);
+    const bool ok = tryValidateCacheIndex(desc, cache, probe_index, cache_count, local);
+    const bool ok = tryCanScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count, local);
+    const bool ok = tryCanLaunchDdgiProbeUpdate(desc, probe_indices, probe_count, local);
+ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params) {
+bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason) {
+    const bool ok = tryCanLaunchProbeTraceKernel(params, local);
+ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params) {
+bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason) {
+    const bool ok = tryCanLaunchProbeBlendKernel(params, local);

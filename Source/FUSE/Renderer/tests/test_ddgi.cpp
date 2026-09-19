@@ -3041,3 +3041,49 @@ void testPreflightProbeSampleCoords() {
     expectTrue(fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(0u, 2048u, 64u, 64u, indices, &count, reason),
                "wouldSkip blend true for zero update count");
     testPreflightProbeSampleCoords();
+
+// --- deepen additive from deepen-b56-ddgi-guards-9944 ---
+void testClassifyRejectReasons() {
+    expectTrue(fuse::renderer::classifyCacheIndexReject(desc, cache.data(), 3u, 8u) ==
+    expectTrue(fuse::renderer::classifyProbeUpdateLaunchReject(desc, indices, 2u) ==
+    expectTrue(fuse::renderer::gi::classifyProbeTraceKernelReject(kernelParams) ==
+    expectTrue(fuse::renderer::gi::classifyProbeBlendKernelReject(kernelParams) ==
+void testPreflightHelpers() {
+    expectTrue(fuse::renderer::ddgi_util::preflightCacheIndexLookup(desc, 3u, 8u, &cacheReason),
+               "preflightCacheIndexLookup passes valid index");
+    expectTrue(!fuse::renderer::ddgi_util::preflightCacheIndexLookup(desc, 99u, 8u, &cacheReason),
+               "preflightCacheIndexLookup rejects OOB index");
+    expectTrue(!fuse::renderer::ddgi_util::preflightCacheIndexLookup(desc, nullptr, 3u, 8u, &cacheReason),
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeSchedule(2048u, 64u, indices, &count, &scheduleReason),
+               "preflightProbeSchedule passes valid inputs");
+    expectTrue(scheduleReason == fuse::renderer::ProbeScheduleRejectReason::None,
+    expectTrue(!fuse::renderer::ddgi_util::preflightProbeSchedule(0u, 64u, indices, &count, &scheduleReason),
+               "preflightProbeSchedule rejects zero probe count");
+    expectTrue(scheduleReason == fuse::renderer::ProbeScheduleRejectReason::ZeroProbeCount,
+    expectTrue(fuse::renderer::preflightDdgiProbeUpdate(desc, launchIndices, 2u, &launchReason),
+               "preflightDdgiProbeUpdate passes valid indices");
+    expectTrue(!fuse::renderer::preflightDdgiProbeUpdate(desc, nullptr, 1u, &launchReason),
+               "preflightDdgiProbeUpdate rejects null indices");
+    expectTrue(launchReason == fuse::renderer::ProbeUpdateLaunchRejectReason::NullIndices,
+    expectTrue(fuse::renderer::ProbeGridLayout::preflightBuildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f},
+               "preflightBuildProbeSampleCoords passes non-empty grid");
+    expectTrue(sampleReason == fuse::renderer::ProbeSampleCoordsRejectReason::None,
+    expectTrue(!fuse::renderer::ProbeGridLayout::preflightBuildProbeSampleCoords(empty, {0.f, 0.f, 0.f},
+               "preflightBuildProbeSampleCoords rejects empty grid");
+    expectTrue(sampleReason == fuse::renderer::ProbeSampleCoordsRejectReason::EmptyGrid,
+    expectTrue(fuse::renderer::gi::preflightProbeTraceKernel(kernelParams, &kernelReason),
+               "preflightProbeTraceKernel passes valid params");
+    expectTrue(fuse::renderer::gi::preflightProbeBlendKernel(kernelParams),
+               "preflightProbeBlendKernel passes without reason output");
+    expectTrue(!fuse::renderer::gi::preflightProbeBlendKernel(kernelParams, &kernelReason),
+               "preflightProbeBlendKernel rejects zero update count");
+    expectTrue(kernelReason == fuse::renderer::gi::ProbeKernelRejectReason::ZeroUpdateCount,
+               "wouldSkip trace true for null indices");
+               "wouldSkip blend true for null indices");
+void testTryReadIrradianceAtIndexRejectReason() {
+               "tryRead with reason reports none on success");
+               "tryRead with reason rejects OOB index");
+               "tryRead with reason reports out_of_range_probe_index");
+    testClassifyRejectReasons();
+    testPreflightHelpers();
+    testTryReadIrradianceAtIndexRejectReason();

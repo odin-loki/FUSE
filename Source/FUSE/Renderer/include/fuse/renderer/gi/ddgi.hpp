@@ -836,3 +836,6 @@ bool wouldSkipCanSampleAtProbeCoords(const DDGIDesc& desc,
 bool tryCanLookupAtProbeIndex(const DDGIDesc& desc,
 bool wouldClampCacheIndexLookup(u32 probe_index, const DDGIDesc& desc);
 bool tryCanScheduleProbeUpdates(u32 frame_index,
+
+// --- deepen additive from deepen-b56-ddgi-guards-9944 ---
+    static bool preflightBuildProbeSampleCoords(const DDGIDesc& desc,

@@ -142,3 +142,9 @@ bool tryPreflightProbeBlendKernelResources(const DDGIKernelParams& params,
 // --- deepen additive from deepen-ddgi-b56-guards-c107 ---
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
+
+// --- deepen additive from deepen-b56-ddgi-guards-9944 ---
+ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
+bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
+ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
+bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
