@@ -478,3 +478,6 @@ CookHashPreflight preflight_cacheable_cook_cache_key(u64 source_hash, u64 upstre
 // --- deepen additive from deepen-b79-cooker-hash-reconcile-b4f0 ---
 CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry& entry,
     const CookHashPreflight entry_preflight = preflight_manifest_entry_hash(entry);
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-2061 ---
+CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 /*upstream_hash*/) {

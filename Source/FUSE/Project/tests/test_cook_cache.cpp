@@ -1000,3 +1000,9 @@ void testCookHashPreflightFnv1a64Guard() {
     expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_inc_probe.obj"),
     expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_inc_probe.fusemesh"),
     expectTrue(!cooker.cache().would_invalidate_source(""), "empty source path probe is false");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-2061 ---
+    const fuse::project::CookHashPreflight combine_zero =
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_would_inv.obj"),
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_would_inv.fusemesh"),
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_inv.obj", 42u),
