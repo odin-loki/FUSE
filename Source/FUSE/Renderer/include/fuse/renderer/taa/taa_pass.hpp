@@ -290,7 +290,6 @@ public:
     bool preflightJitterSync(u32 frameIndex, TaaJitterSyncBlockReason* reason = nullptr) const;
     /// True when resolve skip + blend-weight preflights both pass (B5.9 deepen).
     bool preflightResolveWithBlend(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason = nullptr,
-                                   TaaResolveBlendRejectReason* blendReason = nullptr) const;
     /// True when last resolve stats blend weights match computed policy (B5.9 deepen).
     bool lastResolveStatsBlendConsistent(const TaaResolveDesc& desc) const;
     /// True when pass history is warmed for temporal contribution (B5.9 deepen).
@@ -331,7 +330,6 @@ public:
     /// True when pass jitter can align to `frameIndex` without drift (B5.9 deepen).
     /// Frames remaining before pass history may be temporally reused (B5.9 deepen).
     u32 historyWarmupFramesRemaining() const;
-    /// True when pass history has completed warm-up (B5.9 deepen).
     /// History reuse preflight using resolve desc generation (B5.9 deepen).
     bool preflightHistoryReuseForDesc(const TaaResolveDesc& desc,
     /// Combined resolve skip + blend-weight preflight (B5.9 deepen).
@@ -383,7 +381,6 @@ public:
     /// Resolve-desc-aware history reuse preflight (B5.9 deepen).
     /// True when blend preflight passes and reuse preflight passes when history blend would apply (B5.9 deepen).
     bool preflightResolveTemporal(const TaaResolveDesc& desc,
-                                  TaaHistoryReuseBlockReason* reuseReason = nullptr,
     /// Early-out when pass history reuse would be blocked (B5.9 deepen).
     bool wouldSkipHistoryReuse(u32 observedGeneration) const;
     /// Diagnose pass history reuse preflight with a required reject reason (B5.9 deepen).
@@ -444,6 +441,11 @@ public:
     /// Early-out when resolve reuse-and-blend preflight would reject (B5.9 deepen).
     bool shouldSkipResolveReuseAndBlend(const TaaResolveDesc& desc, u32 observedGeneration) const;
     /// Invalidate when `observedGeneration` differs from pass history epoch; returns true when invalidated.
+    bool preflightTemporalResolve(const TaaResolveDesc& desc,
+                                  TaaTemporalGuardRejectReason* reason = nullptr) const;
+    /// Early-out when temporal resolve preflight would reject (B5.9 deepen).
+    bool shouldSkipTemporalResolve(const TaaResolveDesc& desc) const;
+    /// Invalidate history when `observedGeneration` differs from the current epoch (B5.9 deepen).
     bool invalidateHistoryIfStale(u32 observedGeneration);
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.

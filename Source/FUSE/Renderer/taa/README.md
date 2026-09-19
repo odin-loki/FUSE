@@ -35,6 +35,9 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `classifyTaaJitterSyncBlock(frame, w, h, length)` / `preflightTaaJitterSync(...)` — jitter sync preflight guards
 - `TaaJitter::syncToFrameIndexIfViewportReady(frame, w, h)` — sync only when viewport and sequence preflight pass
 - `TaaJitter::preflightSyncToFrameIndex(frame, w, h)` — instance-level jitter sync preflight
+- `shouldSkipTaaJitterSync` / `shouldSkipTaaJitterNdc` — early-out when jitter sync/NDC preflight would reject
+- `tryPreflightTaaJitterNdc` — NDC jitter preflight with mandatory reject-reason output
+- `TaaJitter::shouldSkipSyncToFrameIndex` / `shouldSkipNdcOffset` — instance-level jitter skip helpers
 
 ## History validity (B5.9 deepen)
 
@@ -94,6 +97,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `taaResolveRejectionSurfacesSatisfied(desc)` — true when velocity/depth surfaces present when enforced
 - `canAttemptTaaResolve(desc, history)` — true when all preflight guards pass (inverse of blocking skip)
 - `prepareTaaResolveDesc(desc, history)` — stamp generation and return whether resolve can proceed
+- `TaaTemporalGuardRejectReason` / `classifyTaaTemporalGuardReject` — combined history-reuse + blend-weight guard classification
+- `preflightTaaTemporalResolve` / `tryPreflightTaaTemporalResolve` / `shouldSkipTaaTemporalResolve` — chained temporal resolve preflight
 - `TaaResolve::wouldSkip(desc, history, &reason)` — preflight skip check without mutating history
 - `preflightTaaResolveBlendWeights(desc, history)` — blend-weight preflight guards
 - `preflightTaaResolveWithBlend(desc, history)` — combined resolve skip + blend-weight preflight
@@ -149,6 +154,9 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `tryPreflightTaaJitterNdc` / `shouldSkipTaaJitterNdc` / `taaJitterNdcReady` — NDC jitter preflight deepening
 - `TaaPass::preflightJitterNdc` / `shouldSkipJitterNdc` / `shouldSkipJitterSync` — pass-level jitter preflights
 - `TaaPass::preflightTemporalBlend` / `shouldSkipTemporalBlend` / `isHistoryWarmed` — pass temporal blend guards
+- `TaaPass::preflightTemporalResolve` / `shouldSkipTemporalResolve` — pass-level chained temporal resolve preflight
+- `TaaPass::preflightJitterNdc` / `shouldSkipJitterSync` / `shouldSkipJitterNdc` — pass-level jitter skip/preflight helpers
+- `TaaPass::invalidateHistoryIfStale(observedGeneration)` — invalidate when observed epoch differs; resets resolve bookkeeping
 
 ## Pipeline (stub)
 

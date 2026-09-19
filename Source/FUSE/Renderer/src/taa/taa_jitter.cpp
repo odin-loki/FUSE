@@ -690,6 +690,11 @@ TaaJitterNdcRejectReason TaaJitter::classifyNdcReject(u32 width, u32 height) con
 
 bool TaaJitter::preflightCurrentNdcOffset(u32 width, u32 height, TaaJitterNdcRejectReason* reason) const {
     return preflightTaaJitterNdc(width, height, m_sequenceLength, reason);
+bool TaaJitter::shouldSkipSyncToFrameIndex(u32 frameIndex) const {
+    return shouldSkipTaaJitterSync(frameIndex, m_sequenceLength);
+
+bool TaaJitter::shouldSkipNdcOffset(u32 width, u32 height) const {
+    return shouldSkipTaaJitterNdc(width, height, m_sequenceLength);
 
 bool TaaJitter::isAlignedToFrameIndex(u32 frameIndex) const {
     return m_monotonicFrame == frameIndex &&
