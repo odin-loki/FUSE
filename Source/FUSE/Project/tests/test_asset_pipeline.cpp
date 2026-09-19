@@ -3459,11 +3459,13 @@ void testCookerReconcileWouldAndUpstreamProbes() {
     entry_b.output_path = "/tmp/fuse_b79_up_est_b.fusemesh";
 
 
+
     expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for upstream estimate ok");
 
     const fuse::project::CookUpstreamInvalidationEstimate empty =
         cooker.estimate_upstream_invalidation(manifest, "");
     expectTrue(empty.total() == 0u, "empty changed source upstream estimate is zero");
+    expectTrue(cooker.probe_upstream_invalidation_sources(manifest, "").empty(),
                "empty changed source upstream probe is guarded");
 
     const fuse::project::CookUpstreamInvalidationEstimate estimate =
@@ -3552,6 +3554,9 @@ void testCookerProbeUpstreamInvalidationSources() {
 
 void testCookerWouldReconcileInvalidation() {
     const std::string source = writeTempFile("/tmp/fuse_b79_would_reconcile.obj", "# would reconcile\n");
+
+}
+
 
     fuse::project::CookManifestEntry entry;
     entry.kind = fuse::project::CookAssetKind::Mesh;
@@ -3756,9 +3761,11 @@ void testCookCacheDownstreamWouldInvalidateProbe() {
                "stale upstream reconcile estimate includes dependency count");
     expectTrue(stale_with_source.upstream_invalidation_entries >= 2u,
                "stale upstream reconcile estimate includes upstream count");
-    expectTrue(cooker.would_reconcile_invalidation(manifest), "stale cache would_reconcile is true");
 
-    const fuse::project::CookCacheReconcileEstimate reconcile = cooker.estimate_reconcile_invalidation(manifest);
+    fuse::project::AssetCooker cooker;
+    expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would_reconcile is false");
+
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest).total() != 0u,
 }
 
 void testCookManifestCacheHitsOnSecondRun() {

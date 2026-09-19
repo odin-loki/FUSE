@@ -890,6 +890,7 @@ CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(
 
 
 
+
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
 
@@ -942,6 +943,18 @@ CookCacheInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
 
         if (job.source_path != changed_source) {
             continue;
+
+        }
+    return estimate;
+
+std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
+    const CookManifest& manifest, const std::string& changed_source) const {
+    if (!is_valid_cook_cache_path(changed_source)) {
+        return {};
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
 
 
         const std::vector<std::string> downstream =
@@ -1037,6 +1050,10 @@ bool AssetCooker::would_reconcile_invalidation(const CookManifest& manifest) con
     graph.build_from_manifest(manifest);
 
 
+            bool already_recorded = false;
+                    already_recorded = true;
+                    break;
+            if (!already_recorded) {
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

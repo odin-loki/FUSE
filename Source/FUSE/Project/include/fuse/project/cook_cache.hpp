@@ -381,6 +381,8 @@ struct CookCacheInvalidationEstimate {
 /// Read-only store preflight — structural validity plus kind-specific source guards (B7.9 deepen).
     if (entry.source_path.empty()) {
     if (entry.output_path.empty()) {
+    }
+};
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -761,6 +763,27 @@ public:
     /// Deduplicated count of stale upstream sources — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
     [[nodiscard]] u32 count_stale_upstream_sources(
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+
+    /// Read-only invalidation probes — mirror `invalidate_*` without mutating stats (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] u32 count_stale_upstream_sources(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Deduplicated upstream stale sources — one entry per matching source path (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources_deduplicated(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Invalidation reconcile breakdown without mutating stats (B7.9 deepen).
+    [[nodiscard]] CookCacheInvalidationEstimate estimate_invalidation_removals(
+        const std::string& source_path = {},
+        const std::string& output_path = {},
+        u64 current_content_hash = 0,
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path = {}) const;
+    /// True when `estimate_invalidation_removals(...).total()` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_any(
+        const std::string& source_path = {},
+        const std::string& output_path = {},
+        u64 current_content_hash = 0,
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path = {}) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
