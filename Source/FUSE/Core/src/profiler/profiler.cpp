@@ -2318,6 +2318,20 @@ bool wouldSkipCounterSample(const char* track, ProfileRecordSkipReason* reason) 
 
 
 
+InvalidEventNameReason classifyInvalidEventName(const char* name) {
+        return InvalidEventNameReason::NullPointer;
+        return InvalidEventNameReason::EmptyString;
+    return InvalidEventNameReason::None;
+
+const char* describeInvalidEventNameReason(InvalidEventNameReason reason) {
+    case InvalidEventNameReason::None:
+    case InvalidEventNameReason::NullPointer:
+        return "null_pointer";
+    case InvalidEventNameReason::EmptyString:
+        return "empty_string";
+
+bool wouldSkipInvalidEventName(const char* name) {
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
 
@@ -3417,6 +3431,8 @@ bool tryFirstEventByName(const char* name, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByName(name);
 bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
 bool tryFirstExportableEventByName(const char* name, ProfileEvent& outEvent) {
+    u32 index = kInvalidEventIndex;
+    if (!tryFindFirstEventIndexByName(name, index)) {
         outEvent = ProfileEvent{};
         return false;
     }
@@ -3944,6 +3960,10 @@ bool tryFindAsyncFlowFinishIndex(u32 flowId, u32& outIndex) {
 
 
 
+    u32 index = kInvalidEventIndex;
+    if (!tryFindLastEventIndexByName(name, index)) {
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -4350,6 +4370,18 @@ bool wouldSkipFlowIdLookup(u32 flowId) {
 
 
 
+
+bool tryFindFirstEventIndexByName(const char* name, u32& outIndex) {
+        outIndex = kInvalidEventIndex;
+        return false;
+
+            outIndex = i;
+            return true;
+
+
+bool tryFindLastEventIndexByName(const char* name, u32& outIndex) {
+
+            outIndex = i - 1u;
 
 
 bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex) {
@@ -5722,6 +5754,23 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 
 
 
+
+
+
+bool tryFindFirstFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.scopeId == flowId && event.phase == phase && isValidEventName(event.name)) {
+            outIndex = i;
+
+
+bool tryFindLastFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex) {
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+            outIndex = i - 1u;
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -6423,15 +6472,18 @@ bool wouldSkipCounter(const char* track, ProfilerRecordSkipReason* reason) {
 
     preflight.wouldSkip = wouldSkipAsyncFlowEnd(name, &preflight.skipReason);
     preflight.orphanEnd = preflight.skipReason == ProfilerRecordSkipReason::NoOpenAsyncFlows;
-}
 
 
-    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
-    preflight.flowDepthDetached = isFlowDepthDetached();
 
-    return preflight;
 
-    AsyncFlowPreflight preflight{};
+u32 ringWriteHead() {
+
+u32 ringOverflowEventCount() {
+    const u32 head = ringWriteHead();
+    return head > kRingCapacity ? head - kRingCapacity : 0u;
+
+bool hasRingOverflowEvents() {
+    return ringOverflowEventCount() > 0u;
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
@@ -6548,6 +6600,9 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.nestingStateConsistent = isNestingStateConsistent();
     preflight.hasActiveScope = hasActiveScope();
     preflight.hasActiveAsyncFlowNesting = hasActiveAsyncFlowNesting();
+    preflight.ringWriteHead = ringWriteHead();
+    preflight.ringOverflowEventCount = ringOverflowEventCount();
+    preflight.hasRingOverflowEvents = hasRingOverflowEvents();
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
@@ -7261,6 +7316,52 @@ bool wouldSkipEndAsyncFlow(const char* name, u32 flowId) {
 
 bool wouldSkipCounterSample(const char* track) {
     return !enabled() || !isValidEventName(track);
+}
+
+NestingPreflight preflightNesting() {
+    NestingPreflight preflight{};
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    preflight.maxScopeNestingDepth = maxNestingDepth();
+    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
+    preflight.openAsyncFlowCount = openAsyncFlowCount();
+    preflight.scopeNestingBalanced = isScopeNestingBalanced();
+    preflight.flowNestingBalanced = isFlowNestingBalanced();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+    return preflight;
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || wouldSkipInvalidEventName(name);
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || wouldSkipInvalidEventName(name);
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name) {
+    if (!g_enabled.load(std::memory_order_acquire) || wouldSkipInvalidEventName(name)) {
+        return true;
+    }
+    return g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !g_enabled.load(std::memory_order_acquire) || wouldSkipInvalidEventName(track);
+}
+
+bool wouldSkipChromeTraceExport() {
+    return !preflightChromeTraceExport().canExport();
+}
+
+bool wouldSkipChromeTraceExportSafely() {
+    return !preflightChromeTraceExport().canExportSafely();
+}
+
+bool wouldSkipChromeTraceExportCleanly() {
+    return !preflightChromeTraceExport().canExportCleanly();
 }
 
 void reset() {
