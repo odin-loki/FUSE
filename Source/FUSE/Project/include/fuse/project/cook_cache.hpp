@@ -38,6 +38,16 @@ struct CookCachePruneEstimate {
     [[nodiscard]] u32 total() const { return invalid_entries + stale_entries; }
 };
 
+/// Cache-wide invalidation surface — entry totals plus prune-class breakdown (B7.9 deepen).
+struct CookCacheInvalidationSurface {
+    u32 entry_count = 0;
+    u32 prunable_entries = 0;
+    u32 invalid_entries = 0;
+    u32 stale_entries = 0;
+
+    [[nodiscard]] u32 reconcile_total() const { return prunable_entries; }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -92,6 +102,15 @@ public:
 
     /// Read-only invalidation probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] bool would_invalidate(u64 content_hash) const;
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                      const std::vector<CookJobDependencyEdge>& edges,
+                                                      const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
@@ -109,6 +128,8 @@ public:
     [[nodiscard]] u32 count_stale_entries() const;
     /// Prune reconcile breakdown without mutating stats (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_removals() const;
+    /// Cache-wide invalidation surface — mirrors entry/prune probes for reconcile planning (B7.9 deepen).
+    [[nodiscard]] CookCacheInvalidationSurface estimate_invalidation_surface() const;
     /// True when `estimate_prune_removals().total()` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_prune_all() const;
     /// Deduplicated source paths whose stored keys are stale on disk (B7.9 deepen).

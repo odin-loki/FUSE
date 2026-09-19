@@ -202,20 +202,76 @@ u32 AssetCooker::invalidate_upstream_dependency(const CookManifest& manifest, co
 
 u32 AssetCooker::count_upstream_invalidation(const CookManifest& manifest,
                                              const std::string& changed_source) const {
+    return estimate_upstream_invalidation(manifest, changed_source).total();
+}
+
+CookCacheUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
+    const CookManifest& manifest, const std::string& changed_source) const {
+    CookCacheUpstreamInvalidationEstimate estimate;
     if (!is_valid_cook_cache_path(changed_source)) {
-        return 0;
+        return estimate;
     }
 
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
 
-    u32 count = m_cache.count_by_source(changed_source);
+    estimate.direct_source_entries = m_cache.count_by_source(changed_source);
     for (const CookJob& job : graph.jobs()) {
         if (job.source_path == changed_source) {
-            count += m_cache.count_downstream_of(job.output_path, graph.edges(), graph.jobs());
+            estimate.downstream_entries += m_cache.count_downstream_of(job.output_path, graph.edges(), graph.jobs());
         }
     }
-    return count;
+    return estimate;
+}
+
+std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
+    const CookManifest& manifest, const std::string& changed_source) const {
+    if (!is_valid_cook_cache_path(changed_source)) {
+        return {};
+    }
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    std::vector<std::string> sources;
+    if (m_cache.count_by_source(changed_source) != 0) {
+        sources.push_back(changed_source);
+    }
+
+    for (const CookJob& job : graph.jobs()) {
+        if (job.source_path != changed_source) {
+            continue;
+        }
+
+        const std::vector<std::string> downstream =
+            m_cache.probe_downstream_sources(job.output_path, graph.edges(), graph.jobs());
+        for (const std::string& source_path : downstream) {
+            bool already_recorded = false;
+            for (const std::string& recorded : sources) {
+                if (recorded == source_path) {
+                    already_recorded = true;
+                    break;
+                }
+            }
+            if (!already_recorded) {
+                sources.push_back(source_path);
+            }
+        }
+    }
+    return sources;
+}
+
+bool AssetCooker::would_upstream_invalidate(const CookManifest& manifest,
+                                            const std::string& changed_source) const {
+    return count_upstream_invalidation(manifest, changed_source) != 0;
+}
+
+bool AssetCooker::would_stale_dependency_invalidate(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) != 0;
+}
+
+bool AssetCooker::would_reconcile_invalidate(const CookManifest& manifest) const {
+    return estimate_reconcile_invalidation(manifest).total() != 0;
 }
 
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
