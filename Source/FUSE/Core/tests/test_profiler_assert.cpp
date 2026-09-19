@@ -3072,3 +3072,10 @@ void testIsValidProfilerNamePreflight() {
                "tryExport includes counter track name");
                "populated tryExport emits trace events");
     testIsValidProfilerNamePreflight();
+
+// --- deepen additive from deepen-b16-profiler-guards-ca8d ---
+void testEventNameValidPreflight() {
+void testExportPreflightGuards() {
+void testGuardStateBalancedIntrospection() {
+    testEventNameValidPreflight();
+    testExportPreflightGuards();
