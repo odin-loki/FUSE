@@ -63,6 +63,12 @@ void blend_poses_soa(const PoseSoA& a, const PoseSoA& b, f32 weight, PoseSoA& ou
     blend_pose_soa(a, b, weight, out);
 }
 
+void capture_blend_from_pose_soa(PoseSoA& out, PoseSoA& blend_from, const Skeleton& skel) {
+    ensure_pose_soa_bind_fallback(out, skel);
+    blend_from = out;
+    ensure_pose_soa_bind_fallback(blend_from, skel);
+}
+
 PoseSoA pose_to_soa(const Pose& pose, const Skeleton& skel) {
     PoseSoA soa = PoseSoA::from_bind_pose(skel);
     for (u32 i = 0; i < pose.bone_world_transforms.size() && i < soa.bone_count; ++i) {
@@ -974,6 +980,7 @@ s32 AnimStateMachine::first_outgoing_transition_index(u32 from_state) const {
         if (transitions[i].from == from_state) {
             return static_cast<s32>(i);
     return -1;
+}
 
 void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
     if (!skeleton_has_bones(skel)) {
@@ -1058,7 +1065,13 @@ bool AnimStateMachine::is_valid_pending_state() const {
         if (!is_valid_transition(transition.from, transition.to)) {
             continue;
         }
+        if (transition.from >= states.size()) {
+            continue;
+        }
         if (!transition.condition || !transition.condition()) {
+            continue;
+        }
+        if (transition.to >= states.size()) {
             continue;
         }
 
@@ -1069,6 +1082,7 @@ bool AnimStateMachine::is_valid_pending_state() const {
         ensure_pose_soa_bind_fallback(out, skel);
         blend_from_pose_soa = out;
         ensure_pose_soa_bind_fallback(blend_from_pose_soa, skel);
+        capture_blend_from_pose_soa(out, blend_from_pose_soa, skel);
         pending_state = transition.to;
         blend_duration = transition.blend_duration;
         blend_time = blend_duration <= 0.f ? blend_duration : dt;
@@ -1080,6 +1094,7 @@ bool AnimStateMachine::is_valid_pending_state() const {
             ensure_pose_soa_bind_fallback(targetSoa, skel);
         }
 
+        ensure_pose_soa_bind_fallback(blend_from_pose_soa, skel);
         const f32 alpha = crossfade_alpha();
         if (alpha >= 1.f) {
             active_state = pending_state;

@@ -314,6 +314,8 @@ struct AnimStateMachine : BlendNode {
 
 
     /// True while crossfading and `pending_state` is a registered state index.
+
+    /// True when the `transition_index`-th registered edge condition passes (or has none).
 };
 
 } // namespace fuse::animation
