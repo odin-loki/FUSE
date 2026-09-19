@@ -137,6 +137,9 @@ struct ChromeTraceExportPreflight {
     u32 asyncFlowFinishEventCount = 0;
     u32 nonExportableEventCount = 0;
     bool hasRejectedInvalidNames = false;
+    u32 flowStartEventCount = 0;
+    u32 flowFinishEventCount = 0;
+    u32 counterEventCount = 0;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -370,6 +373,9 @@ struct ExportPreflight {
     bool isExportReady() const { return canExport() && hasExportableEvents(); }
     bool canExportCleanTrace() const { return canExport() && !hasUnbalancedNesting() && !flowDepthDetached; }
     bool wouldExportEmptyTrace() const { return canExport() && exportableEventCount == 0; }
+    bool hasBufferedScopeImbalance() const { return scopeBeginEventCount != scopeEndEventCount; }
+    bool hasBufferedFlowImbalance() const { return flowStartEventCount != flowFinishEventCount; }
+        return canExport() && !flowDepthDetached && !hasBufferedFlowImbalance();
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -422,6 +428,7 @@ u32 maxFlowNestingDepth();
 u32 scopeNestingDepth();
 u32 flowNestingDepth();
 u32 openAsyncFlowCount();
+u32 orphanAsyncFlowEndCount();
 bool hasOpenAsyncFlows();
 u32 orphanAsyncFlowEndCount();
 bool hasOrphanAsyncFlowEnds();
@@ -582,6 +589,9 @@ bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason);
 const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
 bool isFirstEventIndex(u32 index);
 bool isLastEventIndex(u32 index);
+u32 countEventsByPhase(EventPhase phase);
+u32 findFirstEventIndexByPhase(EventPhase phase);
+bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
 u32 firstEventIndex();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();

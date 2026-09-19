@@ -418,6 +418,8 @@ u32 openAsyncFlowCount() {
 
 bool isValidProfileName(const char* name) {
     return isValidEventName(name);
+u32 orphanAsyncFlowEndCount() {
+    return g_orphanAsyncFlowEndCount.load(std::memory_order_acquire);
 }
 
 bool hasOpenAsyncFlows() {
@@ -899,6 +901,22 @@ bool isValidProfileName(const char* name) {
     return isNonEmptyProfileName(name);
     const u32 count = eventCount();
     return count > 0u && index < count;
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    }
+
+    for (const char* cursor = name; *cursor != '\0'; ++cursor) {
+        switch (*cursor) {
+        case ' ':
+        case '\t':
+        case '\n':
+        case '\r':
+        case '\f':
+        case '\v':
+            continue;
+        default:
+            return true;
+
 }
 
 }
@@ -1105,6 +1123,7 @@ bool isLastEventIndex(u32 index) {
     return last != kInvalidEventIndex && index == last;
 
 u32 countEventsWithPhase(EventPhase phase) {
+u32 countEventsByPhase(EventPhase phase) {
     u32 count = 0u;
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
@@ -1163,6 +1182,12 @@ bool tryFindFirstEventWithPhase(EventPhase phase, ProfileEvent& outEvent) {
         return false;
 
     return tryEventAt(index, outEvent);
+
+u32 findFirstEventIndexByPhase(EventPhase phase) {
+
+bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByPhase(phase);
+
 
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
@@ -1605,6 +1630,11 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
             : 0u;
     preflight.hasRejectedInvalidNames = hasRejectedInvalidNames();
     preflight.nonExportableEventCount = nonExportableEventCount();
+    preflight.scopeBeginEventCount = countEventsByPhase(EventPhase::Begin);
+    preflight.scopeEndEventCount = countEventsByPhase(EventPhase::End);
+    preflight.flowStartEventCount = countEventsByPhase(EventPhase::FlowStart);
+    preflight.flowFinishEventCount = countEventsByPhase(EventPhase::FlowFinish);
+    preflight.counterEventCount = countEventsByPhase(EventPhase::Counter);
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
