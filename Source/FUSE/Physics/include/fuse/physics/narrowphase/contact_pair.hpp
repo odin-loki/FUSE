@@ -198,9 +198,7 @@ bool is_plane_plane_contact_pair(
 
 /// Inverse of `should_skip_contact_pair_dispatch` (B4.5 deepen pass).
 bool can_dispatch_contact_pair(
-    const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Const preflight with extended sleeping/kinematic reject checks (B4.4 deepen follow-up).
 struct ContactPairDeepenPreflight {
@@ -214,6 +212,21 @@ struct ContactPairDeepenPreflight {
 ContactPairDeepenPreflight preflight_contact_pair_deepen(
 /// Guarded detect: shape dispatch only when preflight allows (B4.5 deepen pass).
 ContactManifold detect_contacts_pair_if_valid(
+/// Per-reason reject flags for const pair preflight (B4.4 deepen pass 2).
+struct ContactPairRejectBreakdown {
+    bool selfPair = false;
+    bool outOfRangeBody = false;
+    bool missingShape = false;
+    bool bothTriggers = false;
+    bool unsupportedShapePair = false;
+    bool bothStatic = false;
+    bool degenerateShape = false;
+
+    bool rejected() const { return reason != ContactPairRejectReason::None; }
+    bool can_dispatch() const { return !rejected(); }
+
+/// Populate reject breakdown without running shape dispatch (B4.4 deepen pass 2).
+ContactPairRejectBreakdown contact_pair_reject_breakdown(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -302,5 +315,10 @@ bool can_skip_finalize_contact_manifold(const ContactManifold& manifold);
 
 /// Finalize only when preflight passes and the manifold is not yet valid (B4.5 deepen pass).
 bool generate_contact_manifold_if_needed(ContactManifold& manifold);
+
+/// Returns true when breakdown matches the expected reject reason (B4.4 deepen pass 2).
+bool contact_pair_rejects_with_breakdown(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
 
 } // namespace fuse::physics::narrowphase

@@ -612,6 +612,28 @@ bool ContactManifold::pruneFromPreflight(
 bool can_skip_manifold_prune(
     const ContactManifold& manifold,
     return manifold.canSkipPruneContactPoints(separationEpsilon, duplicateEpsilon);
+ManifoldFinalizePreflight preflight_manifold_finalize(
+    ManifoldFinalizePreflight preflight{};
+    if (manifold.empty()) {
+        preflight.empty = true;
+        preflight.skipped = true;
+        return preflight;
+
+    preflight.invalidNormal = !manifold.hasValidNormal();
+    preflight.noPenetratingPoints = !manifold.hasPenetratingPoints();
+
+    const ManifoldPrunePreflight prunePreflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
+    preflight.needsPrune = prunePreflight.needs_pruning();
+    preflight.wouldBeEmptyAfterPrune = prunePreflight.wouldBeEmpty;
+
+bool should_skip_manifold_finalize(
+    return !preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon).can_finalize();
+
+bool generate_contact_manifold_if_needed(ContactManifold& manifold) {
+    if (should_skip_manifold_finalize(manifold)) {
+        manifold.clear();
+    return generate_contact_manifold(manifold);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
