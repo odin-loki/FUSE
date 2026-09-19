@@ -2409,3 +2409,25 @@ bool tryValidateProbeBlendKernelSurfaces(const DDGIKernelParams& params, ProbeKe
 bool tryValidateCacheIndexLookup(const DDGIDesc& desc,
 bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index) {
 bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
+
+// --- deepen additive from deepen-ddgi-guards-09bc ---
+    case ProbeScheduleRejectReason::NullIndices:
+    case ProbeScheduleRejectReason::NullCount:
+bool ProbeGridLayout::tryWorldToProbeGridCoord(const DDGIDesc& desc,
+bool wouldClampCacheLookupIndex(u32 probe_index, const DDGIDesc& desc) {
+bool tryProbeWorldPosition(const DDGIDesc& desc,
+        outReason = ProbeScheduleRejectReason::NullIndices;
+        outReason = ProbeScheduleRejectReason::NullCount;
+    return tryCanScheduleProbeUpdates(probe_count, probes_per_frame, max_indices, out_indices, out_count, reason);
+    if (!tryCanScheduleProbeUpdates(probe_count, probes_per_frame, max_indices, out_indices, out_count, outReason)) {
+    tryScheduleProbeUpdates(frame_index, probe_count, probes_per_frame, out_indices, max_indices, out_count, reason);
+    case ProbeKernelRejectReason::NullRadianceSurface:
+    case ProbeKernelRejectReason::NullIrradianceAtlas:
+    case ProbeKernelRejectReason::NullDepthAtlas:
+bool tryCanLaunchProbeTraceKernelWithSurfaces(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
+        outReason = ProbeKernelRejectReason::NullRadianceSurface;
+    return tryCanLaunchProbeTraceKernelWithSurfaces(params, reason);
+bool tryCanLaunchProbeBlendKernelWithSurfaces(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
+        outReason = ProbeKernelRejectReason::NullIrradianceAtlas;
+        outReason = ProbeKernelRejectReason::NullDepthAtlas;
+    return tryCanLaunchProbeBlendKernelWithSurfaces(params, reason);

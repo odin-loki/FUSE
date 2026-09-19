@@ -2758,3 +2758,53 @@ void testTryCanSampleAtProbeCoordsSoftPreflight() {
                "tryCanSampleAtProbeCoords succeeds for clampable weights via preflight path");
     testProbeSampleCoordPreflightGuards();
     testTryCanSampleAtProbeCoordsSoftPreflight();
+
+// --- deepen additive from deepen-ddgi-guards-09bc ---
+    expectTrue(fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 64u, 8u, indices, &count, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 64u, 8u, nullptr, &count, reason),
+               "tryCanSchedule rejects null indices");
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 64u, 8u, indices, nullptr, reason),
+               "tryCanSchedule rejects null count");
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(0u, 64u, 8u, indices, &count, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 64u, 0u, indices, &count, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 0u, 8u, indices, &count, reason),
+               "tryCanSchedule rejects zero probes per frame");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(0u, 64u, 8u, indices, &count),
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(2048u, 64u, 8u, indices, &count),
+               "wouldSkip false for valid schedule");
+    expectTrue(count == 8u, "trySchedule caps to max_indices");
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 0u, 8u, indices, 8u, &count, reason),
+    expectTrue(count == 0u, "trySchedule zeroes count on rejection");
+void testWorldToProbeGridCoordPreflight() {
+    expectTrue(fuse::renderer::ProbeGridLayout::tryWorldToProbeGridCoord(desc, {4.f, 2.f, 6.f}, gridCoord, reason),
+               "tryWorldToProbeGridCoord succeeds for valid grid");
+    expectNear(gridCoord.x, 2.f, 1e-5f, "tryWorldToProbeGridCoord x");
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryWorldToProbeGridCoord(empty, {0.f, 0.f, 0.f}, gridCoord, reason),
+               "tryWorldToProbeGridCoord rejects empty grid");
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryWorldToProbeGridCoord(badSpacing, {4.f, 2.f, 6.f}, gridCoord, reason),
+               "tryWorldToProbeGridCoord rejects zero spacing");
+void testCacheIndexNullCachePreflight() {
+    expectTrue(fuse::renderer::ddgi_util::tryValidateCacheIndex(desc, cache.data(), 8u, 3u, reason),
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::None, "valid cache reports no reject reason");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateCacheIndex(desc, nullptr, 8u, 3u, reason),
+    expectTrue(fuse::renderer::ddgi_util::tryProbeWorldPosition(desc, 0u, position, reason),
+               "tryProbeWorldPosition succeeds for origin index");
+    expectNear(position.x, 1.f, 1e-5f, "tryProbeWorldPosition origin x");
+    expectTrue(!fuse::renderer::ddgi_util::tryProbeWorldPosition(desc, 99u, position, reason),
+               "tryProbeWorldPosition rejects OOB index");
+    expectTrue(!fuse::renderer::ddgi_util::tryProbeWorldPosition(empty, 0u, position, reason),
+               "tryProbeWorldPosition rejects empty grid");
+void testProbeKernelSurfacePreflights() {
+    expectTrue(fuse::renderer::gi::tryCanLaunchProbeTraceKernelWithSurfaces(validParams, reason),
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeTraceKernelWithSurfaces(nullRadiance, reason),
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::NullRadianceSurface,
+    expectTrue(std::strcmp(fuse::renderer::gi::probeKernelRejectReasonLabel(reason), "null_radiance_surface") == 0,
+    expectTrue(fuse::renderer::gi::tryCanLaunchProbeBlendKernelWithSurfaces(validParams, reason),
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeBlendKernelWithSurfaces(nullAtlas, reason),
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::NullIrradianceAtlas,
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeBlendKernelWithSurfaces(nullDepth, reason),
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::NullDepthAtlas,
+    expectTrue(std::strcmp(fuse::renderer::gi::probeKernelRejectReasonLabel(reason), "null_depth_atlas") == 0,
+    testWorldToProbeGridCoordPreflight();
+    testCacheIndexNullCachePreflight();
+    testProbeKernelSurfacePreflights();
