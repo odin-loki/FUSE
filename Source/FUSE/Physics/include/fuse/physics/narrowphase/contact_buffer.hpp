@@ -40,9 +40,18 @@ struct ContactBufferSoA {
     void writeSlot(u32 slot, const ContactManifold& manifold);
     void applyWarmStartStub(u32 slot, ContactManifold& manifold) const;
     void buildFrictionTangentBases();
+    bool canSkipCompaction() const;
+    bool canSkipMaxCapacityClamp() const;
+    bool canSkipCompactAndClamp() const;
+    u32 countValidPairSlots() const;
     u32 compact();
+    u32 compactIfNeeded();
     u32 applyMaxCapacityClamp();
     u32 compactAndClamp();
+    u32 compactAndClampIfNeeded();
+    bool canSkipFrictionTangentRebuild(f32 epsilon = 1e-4f) const;
+    void buildFrictionTangentBasesIfNeeded(f32 epsilon = 1e-4f);
+    bool rebuildFrictionTangentBasesWithPreflight(f32 epsilon = 1e-4f);
     TangentBasis tangentBasisAt(u32 index) const;
     ContactManifold manifoldAt(u32 index) const;
     std::vector<ContactManifold> toVector() const;
@@ -50,5 +59,45 @@ struct ContactBufferSoA {
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
 };
+
+/// Const preflight for contact-buffer compaction (B4.6 deepen pass).
+struct ContactBufferCompactionPreflight {
+    bool skipped = false;
+    bool needsCompaction = false;
+    bool needsClamp = false;
+    u32 validSlotCount = 0u;
+    u32 activeCount = 0u;
+
+    bool can_skip_compaction() const { return skipped || !needsCompaction; }
+    bool can_skip_compact_and_clamp() const { return skipped || (!needsCompaction && !needsClamp); }
+};
+
+/// Populate compaction preflight without mutating the buffer (B4.6 deepen pass).
+ContactBufferCompactionPreflight preflight_contact_buffer_compaction(const ContactBufferSoA& buffer);
+
+/// Returns true when compaction would be a no-op (B4.6 deepen pass).
+bool can_skip_contact_buffer_compaction(const ContactBufferSoA& buffer);
+
+/// Const preflight for contact-buffer friction tangent rebuild (B4.6 deepen pass).
+struct ContactBufferFrictionPreflight {
+    FrictionBasisRejectReason reason = FrictionBasisRejectReason::None;
+    bool skipped = false;
+    u32 slotsNeedingRebuild = 0u;
+    u32 slotsWithStaleBasis = 0u;
+
+    bool can_skip_rebuild() const {
+        return skipped || reason != FrictionBasisRejectReason::None || slotsNeedingRebuild == 0u;
+    }
+};
+
+/// Populate friction rebuild preflight without mutating the buffer (B4.6 deepen pass).
+ContactBufferFrictionPreflight preflight_contact_buffer_friction_rebuild(
+    const ContactBufferSoA& buffer,
+    f32 epsilon = 1e-4f);
+
+/// Returns true when buffer friction rebuild should be skipped (B4.6 deepen pass).
+bool can_skip_contact_buffer_friction_rebuild(
+    const ContactBufferSoA& buffer,
+    f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

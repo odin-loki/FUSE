@@ -23,6 +23,7 @@ enum class ContactPairRejectReason : u8 {
     BothKinematic,
     AnyTrigger,
     BothMassless,
+    PlanePlane,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -222,6 +223,53 @@ NarrowphaseBatchPreflight preflight_narrowphase_batch(
 
 /// Returns true when batch preflight reports no dispatchable pairs (B4.5 deepen follow-up pass).
 bool narrowphase_batch_rejects_all(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Const preflight for guarded pair detection (B4.6 deepen pass).
+struct ContactPairDetectPreflight {
+    ContactPairDeepenPreflight deepen{};
+    bool can_detect = false;
+
+    bool can_dispatch() const { return deepen.can_dispatch(); }
+};
+
+/// Populate detect preflight without running shape dispatch (B4.6 deepen pass).
+ContactPairDetectPreflight preflight_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_with_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `preflight_contact_pair_deepen` matches `expected` (B4.6 deepen pass).
+bool preflight_contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Const preflight for narrowphase dispatch entry (B4.6 deepen pass).
+struct NarrowphaseDispatchPreflight {
+    NarrowphaseBatchPreflight batch{};
+    bool can_skip_dispatch = false;
+
+    bool can_dispatch() const { return batch.can_dispatch(); }
+};
+
+/// Populate dispatch preflight without running narrowphase (B4.6 deepen pass).
+NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when dispatch preflight reports no dispatchable pairs (B4.6 deepen pass).
+bool should_skip_narrowphase_dispatch(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
