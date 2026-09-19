@@ -382,6 +382,50 @@ FUSE_PHYSICS_INLINE bool shouldRunCellOccupancyIteration(const CellRange2& range
     return preflightCellOccupancy(range, maxCells).canIterate();
 }
 
+/// Cell-capacity preflight using `SpatialHashParams::maxCellOccupancy` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancyForParams(
+    const CellRange3& range,
+    const SpatialHashParams& params) {
+    return preflightCellOccupancy(range, params.maxCellOccupancy);
+}
+
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancyForParams(
+    const CellRange2& range,
+    const SpatialHashParams& params) {
+    return preflightCellOccupancy(range, params.maxCellOccupancy);
+}
+
+/// Diagnose shape cell insertion using params occupancy budget (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReasonForParams(
+    const CellRange3& range,
+    const SpatialHashParams& params) {
+    return cellOccupancyRejectReason(range, params.maxCellOccupancy);
+}
+
+FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReasonForParams(
+    const CellRange2& range,
+    const SpatialHashParams& params) {
+    return cellOccupancyRejectReason(range, params.maxCellOccupancy);
+}
+
+/// Non-mutating shape cell-insertion skip predicate — params-level occupancy guard (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange3& range, const SpatialHashParams& params) {
+    return !preflightCellOccupancyForParams(range, params).canIterate();
+}
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange2& range, const SpatialHashParams& params) {
+    return !preflightCellOccupancyForParams(range, params).canIterate();
+}
+
+/// Non-mutating shape cell-insertion predicate — inverse of `canSkipShapeCellInsertion` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange3& range, const SpatialHashParams& params) {
+    return preflightCellOccupancyForParams(range, params).canIterate();
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange2& range, const SpatialHashParams& params) {
+    return preflightCellOccupancyForParams(range, params).canIterate();
+}
+
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     const CellRange3& range,
