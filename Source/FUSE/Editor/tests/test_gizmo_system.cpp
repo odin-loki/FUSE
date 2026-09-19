@@ -3426,3 +3426,9 @@ void testInteractionPreflightGuards() {
     expectTrue(gizmo.preflightInteraction(xRay, transform).canInteract(),
     expectTrue(!validPreflight.snapDegraded, "valid snap clears gizmo update snapDegraded");
     testInteractionPreflightGuards();
+
+// --- deepen additive from deepen-b6-gizmo-preflights-deb7 ---
+void testBeginDragPreflightAxisAndSnap() {
+    const fuse::editor::BeginDragPreflight degradedPreflight = fuse::editor::preflightBeginDrag(
+    const fuse::editor::BeginDragPreflight validSnapPreflight = fuse::editor::preflightBeginDrag(
+    testBeginDragPreflightAxisAndSnap();

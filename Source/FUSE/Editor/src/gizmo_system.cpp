@@ -2471,3 +2471,7 @@ GizmoEndDragRejectReason GizmoSystem::classifyEndDragReject(
 BeginDragPreflight buildBeginDragFromPick_(const PickPreflight& pick, bool alreadyDragging) {
 BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode, bool alreadyDragging,
     return fuse::editor::preflightInteraction(hit, m_mode, m_snap);
+
+// --- deepen additive from deepen-b6-gizmo-preflights-deb7 ---
+    return preflightBeginDrag(ray, transform, mode, space, axisLength, pickRadius, alreadyDragging)
+    return preflightBeginDrag(hit, mode, alreadyDragging).canBegin;
