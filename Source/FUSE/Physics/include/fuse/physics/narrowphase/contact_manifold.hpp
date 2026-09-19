@@ -132,6 +132,7 @@ enum class ManifoldPruneRejectReason : u8 {
     None = 0,
     EmptyManifold,
     AllSeparated,
+    ExceedsMaxPoints,
 };
 
 /// Human-readable label for manifold prune reject reasons (B4.5 deepen follow-up pass).
@@ -255,6 +256,53 @@ bool finalize_contact_manifold_with_preflight(
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
+
+/// Normalize `contactNormal` when `needsNormalNormalization`; returns false when invalid (B4.6 deepen pass).
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Prune only when beyond preflight reports in-place pruning is possible (B4.6 deepen pass).
+bool prune_contact_manifold_beyond_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Const preflight for beyond manifold prune dispatch (B4.6 deepen pass).
+struct ManifoldBeyondPrunePreflight {
+    ManifoldPruneRejectReason reason = ManifoldPruneRejectReason::None;
+    bool skipped = false;
+    bool needsNormalNormalize = false;
+    bool exceedsMaxPoints = false;
+
+    bool can_skip_prune(f32 shallowMinDepth = 0.f) const {
+        return skipped || reason != ManifoldPruneRejectReason::None ||
+               (!exceedsMaxPoints && !needsNormalNormalize);
+    }
+};
+
+/// Populate beyond prune preflight without mutating slots (B4.6 deepen pass).
+ManifoldBeyondPrunePreflight preflight_manifold_beyond_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Returns true when beyond manifold prune should be skipped (B4.6 deepen pass).
+bool should_skip_manifold_beyond_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Finalize only when beyond preflight passes; no-op otherwise (B4.6 deepen pass).
+bool finalize_contact_manifold_beyond_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Finalize only when `can_finalize_contact_manifold` passes; no-op otherwise (B4.6 deepen pass).
+bool finalize_contact_manifold_if_needed(ContactManifold& manifold);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

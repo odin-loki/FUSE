@@ -1,5 +1,7 @@
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
 
+#include <fuse/physics/narrowphase/contact_pair.hpp>
+
 #include <algorithm>
 
 namespace fuse::physics::narrowphase {
@@ -103,6 +105,37 @@ void ContactBufferSoA::buildFrictionTangentBases() {
         tangent1[slot] = basis.tangent1;
         tangent2[slot] = basis.tangent2;
     }
+}
+
+void ContactBufferSoA::rebuildFrictionTangentBasesIfNeeded(f32 epsilon) {
+    for (u32 slot = 0u; slot < activeCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            continue;
+        }
+
+        ContactManifold manifold = manifoldAt(slot);
+        if (should_skip_friction_basis_beyond_rebuild(manifold, epsilon)) {
+            continue;
+        }
+
+        compute_friction_tangents_beyond_preflight(manifold, epsilon);
+        if (manifold.hasFrictionBasis()) {
+            tangent1[slot] = manifold.frictionBasis.tangent1;
+            tangent2[slot] = manifold.frictionBasis.tangent2;
+            contactNormals[slot] = manifold.contactNormal;
+        }
+    }
+}
+
+bool ContactBufferSoA::writeSlotWithFinalize(
+    u32 slot,
+    ContactManifold& manifold,
+    f32 frictionEpsilon) {
+    if (!finalize_contact_manifold_beyond_preflight(manifold, 1e-6f, 1e-4f, frictionEpsilon)) {
+        return false;
+    }
+    writeSlot(slot, manifold);
+    return true;
 }
 
 TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {

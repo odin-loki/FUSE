@@ -1516,6 +1516,252 @@ void testManifoldPruneFinalizeFollowUpGuards() {
         "finalize reject reason name resolves NoPenetratingPoints");
 }
 
+void testContactPairBeyondDeepenRejectGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 dynamicA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 dynamicB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 capsuleA = bodies.addBody({4.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 capsuleB = bodies.addBody({5.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, capsuleA, {0.5f, 1.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, capsuleB, {0.5f, 1.f, 0.f});
+
+    expectTrue(
+        fuse::physics::narrowphase::is_capsule_capsule_contact_pair({capsuleA, capsuleB}, shapes),
+        "capsule-capsule guard flags both-capsule pair");
+    expectTrue(
+        fuse::physics::narrowphase::is_undispatchable_shape_pair({capsuleA, capsuleB}, shapes),
+        "undispatchable guard flags capsule-capsule pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_beyond_deepen_reject_reason(
+            {capsuleA, capsuleB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::UndispatchableShapePair,
+        "beyond reject reason flags undispatchable capsule-capsule pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_deepen_reject_reason(
+            {capsuleA, capsuleB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::None,
+        "deepen reject reason unchanged for undispatchable capsule-capsule pair");
+
+    const auto beyondPreflight =
+        fuse::physics::narrowphase::preflight_contact_pair_beyond({capsuleA, capsuleB}, bodies, shapes);
+    expectTrue(!beyondPreflight.can_dispatch(), "beyond preflight rejects capsule-capsule pair");
+    expectTrue(
+        beyondPreflight.reason ==
+            fuse::physics::narrowphase::ContactPairRejectReason::UndispatchableShapePair,
+        "beyond preflight reports UndispatchableShapePair");
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_contact_pair_beyond_dispatch(
+            {capsuleA, capsuleB}, bodies, shapes),
+        "beyond skip guard rejects capsule-capsule pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_beyond_rejects_for_reason(
+            {capsuleA, capsuleB},
+            bodies,
+            shapes,
+            fuse::physics::narrowphase::ContactPairRejectReason::UndispatchableShapePair),
+        "beyond rejects_for_reason matches capsule-capsule pair");
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> mixedPairs = {
+        {capsuleA, capsuleB},
+        {dynamicA, dynamicB},
+    };
+    expectTrue(
+        fuse::physics::narrowphase::count_beyond_dispatchable_contact_pairs(mixedPairs, bodies, shapes) == 1u,
+        "count_beyond_dispatchable excludes undispatchable pairs");
+    expectTrue(
+        fuse::physics::narrowphase::has_beyond_dispatchable_contact_pair(mixedPairs, bodies, shapes),
+        "has_beyond_dispatchable true when one pair passes beyond preflight");
+
+    const auto beyondBatch =
+        fuse::physics::narrowphase::preflight_narrowphase_beyond_batch(mixedPairs, bodies, shapes);
+    expectTrue(beyondBatch.dispatchableCount == 1u, "beyond batch preflight counts dispatchable pairs");
+    expectTrue(beyondBatch.rejectedCount == 1u, "beyond batch preflight counts rejected pairs");
+    expectTrue(
+        !fuse::physics::narrowphase::narrowphase_beyond_batch_rejects_all(mixedPairs, bodies, shapes),
+        "beyond batch rejects_all false when one pair dispatchable");
+
+    const auto undispatchable =
+        fuse::physics::narrowphase::detect_contacts_pair_beyond({capsuleA, capsuleB}, bodies, shapes);
+    expectTrue(!undispatchable.valid, "detect_contacts_pair_beyond returns invalid for undispatchable pair");
+
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_pair_reject_reason_name(
+                fuse::physics::narrowphase::ContactPairRejectReason::UndispatchableShapePair),
+            "UndispatchableShapePair") == 0,
+        "reject reason name resolves UndispatchableShapePair");
+}
+
+void testManifoldBeyondPruneFinalizeGuards() {
+    fuse::physics::narrowphase::ContactManifold unnormalized{};
+    unnormalized.contactNormal = {0.f, 2.f, 0.f};
+    unnormalized.addPoint({0.f, 0.f, 0.f}, 0.3f);
+    expectTrue(
+        fuse::physics::narrowphase::normalize_contact_normal_if_needed(unnormalized),
+        "normalize_contact_normal_if_needed normalizes scaled normal");
+    expectNear(unnormalized.contactNormal.y, 1.f, 1e-4f, "normalized normal is unit length");
+    expectTrue(
+        !unnormalized.needsNormalNormalization(),
+        "normalized manifold no longer needs normalization");
+
+    fuse::physics::narrowphase::ContactManifold dirty{};
+    dirty.contactNormal = {0.f, 2.f, 0.f};
+    dirty.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    dirty.addPoint({1.f, 0.f, 0.f}, -0.2f);
+    expectTrue(
+        !fuse::physics::narrowphase::should_skip_manifold_beyond_prune(dirty),
+        "should_skip_manifold_beyond_prune false when prune needed");
+    expectTrue(
+        fuse::physics::narrowphase::prune_contact_manifold_beyond_preflight(dirty),
+        "beyond prune keeps penetrating slots");
+    expectTrue(dirty.pointCount == 1u, "beyond prune removes separated slot");
+    expectNear(dirty.contactNormal.y, 1.f, 1e-4f, "beyond prune normalizes contact normal");
+
+    fuse::physics::narrowphase::ContactManifold clean{};
+    clean.contactNormal = {0.f, 1.f, 0.f};
+    clean.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    expectTrue(
+        fuse::physics::narrowphase::should_skip_manifold_beyond_prune(clean),
+        "should_skip_manifold_beyond_prune true for clean manifold");
+
+    fuse::physics::narrowphase::ContactManifold ready =
+        fuse::physics::narrowphase::collideSphereSphere({0.f, 0.f, 0.f}, 1.f, {1.5f, 0.f, 0.f}, 1.f, 0u, 1u);
+    expectTrue(
+        fuse::physics::narrowphase::finalize_contact_manifold_beyond_preflight(ready),
+        "beyond finalize finalizes valid manifold");
+    expectTrue(ready.valid, "beyond finalize sets validity");
+    expectTrue(ready.hasFrictionBasis(), "beyond finalize builds friction basis");
+    expectNear(ready.contactNormal.length(), 1.f, 1e-4f, "beyond finalize stores unit normal");
+
+    fuse::physics::narrowphase::ContactManifold alreadyFinalized = ready;
+    expectTrue(
+        fuse::physics::narrowphase::finalize_contact_manifold_if_needed(alreadyFinalized),
+        "finalize_if_needed succeeds on finalizable manifold");
+    expectTrue(alreadyFinalized.valid, "finalize_if_needed preserves validity");
+
+    fuse::physics::narrowphase::ContactManifold separated{};
+    separated.contactNormal = {0.f, 1.f, 0.f};
+    separated.addPoint({0.f, 0.f, 0.f}, -0.1f);
+    expectTrue(
+        !fuse::physics::narrowphase::finalize_contact_manifold_if_needed(separated),
+        "finalize_if_needed no-ops on separated manifold");
+
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::manifold_prune_reject_reason_name(
+                fuse::physics::narrowphase::ManifoldPruneRejectReason::ExceedsMaxPoints),
+            "ExceedsMaxPoints") == 0,
+        "prune reject reason name resolves ExceedsMaxPoints");
+}
+
+void testFrictionBasisBeyondRebuildGuards() {
+    fuse::physics::narrowphase::ContactManifold unnormalized{};
+    unnormalized.contactNormal = {0.f, 2.f, 0.f};
+    unnormalized.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    expectTrue(
+        fuse::physics::narrowphase::normalize_contact_normal_before_friction_if_needed(unnormalized),
+        "normalize before friction normalizes scaled normal");
+    expectNear(unnormalized.contactNormal.y, 1.f, 1e-4f, "friction normalize stores unit normal");
+
+    fuse::physics::narrowphase::ContactManifold needsBuild{};
+    needsBuild.contactNormal = {0.f, 1.f, 0.f};
+    needsBuild.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    const auto needsPreflight =
+        fuse::physics::narrowphase::preflight_friction_basis_beyond_rebuild(needsBuild);
+    expectTrue(needsPreflight.needsRebuild, "beyond friction preflight needs rebuild without basis");
+    expectTrue(!needsPreflight.can_skip_rebuild(), "beyond friction preflight cannot skip missing basis");
+    expectTrue(
+        fuse::physics::narrowphase::rebuild_friction_basis_beyond_preflight(needsBuild),
+        "beyond rebuild builds missing basis");
+    expectTrue(needsBuild.hasFrictionBasis(), "beyond rebuild stores orthonormal basis");
+
+    fuse::physics::narrowphase::ContactManifold stale{};
+    stale.contactNormal = {0.f, 1.f, 0.f};
+    stale.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    stale.buildFrictionBasis();
+    stale.contactNormal = {1.f, 0.f, 0.f};
+    const auto stalePreflight =
+        fuse::physics::narrowphase::preflight_friction_basis_beyond_rebuild(stale);
+    expectTrue(stalePreflight.stale, "beyond friction preflight flags stale basis");
+    expectTrue(
+        fuse::physics::narrowphase::friction_basis_beyond_reject_reason(stale) ==
+            fuse::physics::narrowphase::FrictionBasisRejectReason::StaleBasis,
+        "beyond reject reason reports StaleBasis");
+    expectTrue(
+        !fuse::physics::narrowphase::should_skip_friction_basis_beyond_rebuild(stale),
+        "beyond skip rebuild false for stale basis");
+    expectTrue(
+        fuse::physics::narrowphase::rebuild_friction_basis_beyond_preflight(stale),
+        "beyond rebuild refreshes stale basis");
+    expectTrue(
+        fuse::physics::narrowphase::friction_basis_matches_normal(stale),
+        "beyond rebuild produces basis matching current normal");
+
+    fuse::physics::narrowphase::compute_friction_tangents_beyond_preflight(stale);
+    const auto cachedTangent1 = stale.frictionBasis.tangent1;
+    fuse::physics::narrowphase::compute_friction_tangents_beyond_preflight(stale);
+    expectNear(
+        stale.frictionBasis.tangent1.x,
+        cachedTangent1.x,
+        1e-4f,
+        "beyond compute_if_needed preserves valid cached basis");
+
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::friction_basis_reject_reason_name(
+                fuse::physics::narrowphase::FrictionBasisRejectReason::StaleBasis),
+            "StaleBasis") == 0,
+        "friction reject reason name resolves StaleBasis");
+}
+
+void testRunNarrowphaseBeyondAndBufferGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 dynamicA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 dynamicB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 capsuleA = bodies.addBody({4.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 capsuleB = bodies.addBody({5.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, capsuleA, {0.5f, 1.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, capsuleB, {0.5f, 1.f, 0.f});
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> mixedPairs = {
+        {capsuleA, capsuleB},
+        {dynamicA, dynamicB},
+    };
+
+    expectTrue(
+        !fuse::physics::narrowphase::can_skip_narrowphase_beyond(mixedPairs, bodies, shapes),
+        "can_skip_narrowphase_beyond false when one pair dispatchable");
+
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    fuse::physics::narrowphase::runNarrowphaseIntoBufferBeyond(mixedPairs, bodies, shapes, buffer);
+    expectTrue(buffer.activeCount == 1u, "beyond narrowphase produces one finalized contact");
+    const auto restored = buffer.manifoldAt(0u);
+    expectTrue(restored.valid, "beyond narrowphase stores valid manifold");
+    expectTrue(restored.hasFrictionBasis(), "beyond narrowphase stores friction basis");
+
+    fuse::physics::narrowphase::ContactBufferSoA writeBuffer;
+    writeBuffer.preparePairSlots(1u);
+    fuse::physics::narrowphase::ContactManifold manifold =
+        fuse::physics::narrowphase::collideSphereSphere({0.f, 0.f, 0.f}, 1.f, {1.5f, 0.f, 0.f}, 1.f, 0u, 1u);
+    expectTrue(
+        writeBuffer.writeSlotWithFinalize(0u, manifold),
+        "writeSlotWithFinalize finalizes and writes valid manifold");
+    expectTrue(writeBuffer.compact() == 1u, "writeSlotWithFinalize compacts one contact");
+
+    writeBuffer.rebuildFrictionTangentBasesIfNeeded();
+    const auto basis = writeBuffer.tangentBasisAt(0u);
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis(
+            writeBuffer.manifoldAt(0u).contactNormal, basis),
+        "rebuildFrictionTangentBasesIfNeeded preserves orthonormal basis");
+}
+
 void testFrictionBasisFollowUpRejectGuards() {
     fuse::physics::narrowphase::ContactManifold empty{};
     expectTrue(
@@ -1614,6 +1860,10 @@ int main() {
     testContactPairDeepenFollowUpRejectGuards();
     testManifoldPruneFinalizeFollowUpGuards();
     testFrictionBasisFollowUpRejectGuards();
+    testContactPairBeyondDeepenRejectGuards();
+    testManifoldBeyondPruneFinalizeGuards();
+    testFrictionBasisBeyondRebuildGuards();
+    testRunNarrowphaseBeyondAndBufferGuards();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_narrowphase_tests: all checks passed\n");
