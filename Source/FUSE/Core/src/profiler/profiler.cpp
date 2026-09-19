@@ -2313,6 +2313,25 @@ ProfileRecordSkipReason classifyProfileRecordSkip(const char* name) {
 
 const char* profileRecordSkipReasonLabel(ProfileRecordSkipReason reason) {
     case ProfileRecordSkipReason::None:
+
+
+InvalidNameReason classifyInvalidNameReason(const char* name) {
+        return InvalidNameReason::Null;
+        return InvalidNameReason::Empty;
+    return InvalidNameReason::None;
+
+ProfileRecordSkipReason classifyProfileScopeSkip(const char* name) {
+
+ProfileRecordSkipReason classifyAsyncFlowBeginSkip(const char* name) {
+    return classifyProfileScopeSkip(name);
+
+ProfileRecordSkipReason classifyAsyncFlowEndSkip(const char* name) {
+    if (openAsyncFlowCount() == 0u) {
+        return ProfileRecordSkipReason::OrphanAsyncFlowEnd;
+
+ProfileRecordSkipReason classifyCounterSampleSkip(const char* track) {
+    return classifyProfileScopeSkip(track);
+
     case ProfileRecordSkipReason::ProfilerDisabled:
         return "profiler_disabled";
     case ProfileRecordSkipReason::NullName:
@@ -2390,6 +2409,18 @@ bool tryPreflightEventName(const char* name, EventNameRejectReason& reason) {
     const EventNamePreflight preflight = preflightEventName(name);
     reason = preflight.reason;
     return preflight.canRecord();
+    case ProfileRecordSkipReason::OrphanAsyncFlowEnd:
+        return "orphan_async_flow_end";
+    return "unknown";
+
+const char* invalidNameReasonLabel(InvalidNameReason reason) {
+    switch (reason) {
+    case InvalidNameReason::None:
+        return "none";
+    case InvalidNameReason::Null:
+        return "null";
+    case InvalidNameReason::Empty:
+        return "empty";
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
@@ -5883,6 +5914,29 @@ bool tryFindLastFlowFinishById(u32 flowId, ProfileEvent& outEvent) {
     const u32 index = findLastFlowFinishIndexById(flowId);
 
 
+
+
+
+
+        if (isValidEventName(event.name) && event.name == name) {
+
+
+
+
+
+bool tryFindFirstFlowEventIndexById(u32 flowId, u32& outIndex) {
+        if (isValidEventName(event.name)
+
+
+bool tryFindLastFlowEventIndexById(u32 flowId, u32& outIndex) {
+
+
+    if (!tryFindFirstEventIndexByName(name, index)) {
+
+
+    if (!tryFindLastEventIndexByName(name, index)) {
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -6732,6 +6786,8 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.asyncFlow = preflightAsyncFlow();
     preflight.hasResolvableNamedEvents = preflight.exportableEventCount > 0u;
     preflight.wouldSkipInvalidNameExport = preflight.hasInvalidNameEvents;
+    preflight.beginEventCount = countEventsByPhase(EventPhase::Begin);
+    preflight.endEventCount = countEventsByPhase(EventPhase::End);
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
@@ -7571,6 +7627,127 @@ bool wouldSkipAsyncFlowEnd(const char* name) {
 
 bool wouldSkipCounter(const char* name) {
     return !enabled() || !isValidEventName(name);
+}
+
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.nullName = isNullEventName(name);
+    preflight.emptyName = isEmptyEventName(name);
+    preflight.invalidName = preflight.nullName || preflight.emptyName;
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.projectedScopeNestingDepth = preflight.canRecord()
+        ? preflight.activeScopeNestingDepth + 1u
+        : preflight.activeScopeNestingDepth;
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name, u32 /*flowId*/) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.nullName = isNullEventName(name);
+    preflight.emptyName = isEmptyEventName(name);
+    preflight.invalidName = preflight.nullName || preflight.emptyName;
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    preflight.projectedFlowNestingDepth = preflight.canRecord()
+        ? preflight.activeFlowNestingDepth + 1u
+        : preflight.activeFlowNestingDepth;
+    preflight.projectedOpenAsyncFlowCount = preflight.canRecord()
+        ? openAsyncFlowCount() + 1u
+        : openAsyncFlowCount();
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name, u32 /*flowId*/) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.nullName = isNullEventName(name);
+    preflight.emptyName = isEmptyEventName(name);
+    preflight.invalidName = preflight.nullName || preflight.emptyName;
+    preflight.orphanFinish = !preflight.profilerDisabled && !preflight.invalidName
+        && openAsyncFlowCount() == 0u;
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    preflight.openAsyncFlowCount = openAsyncFlowCount();
+    return preflight;
+}
+
+CounterSamplePreflight preflightCounterSample(const char* track) {
+    CounterSamplePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.nullName = isNullEventName(track);
+    preflight.emptyName = isEmptyEventName(track);
+    preflight.invalidName = preflight.nullName || preflight.emptyName;
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    return preflight;
+}
+
+NestingPreflight preflightNesting() {
+    NestingPreflight preflight{};
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    preflight.openAsyncFlowCount = openAsyncFlowCount();
+    preflight.maxScopeNestingDepth = maxNestingDepth();
+    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
+    preflight.scopeNestingBalanced = isScopeNestingBalanced();
+    preflight.flowNestingBalanced = isFlowNestingBalanced();
+    preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+    return preflight;
+}
+
+bool wouldSkipProfileScope(const char* name, ProfileRecordSkipReason* reason) {
+    const ProfileRecordSkipReason skipReason = classifyProfileScopeSkip(name);
+    if (reason != nullptr) {
+        *reason = skipReason;
+    }
+    return skipReason != ProfileRecordSkipReason::None;
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name, ProfileRecordSkipReason* reason) {
+    const ProfileRecordSkipReason skipReason = classifyAsyncFlowBeginSkip(name);
+    if (reason != nullptr) {
+        *reason = skipReason;
+    }
+    return skipReason != ProfileRecordSkipReason::None;
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name, ProfileRecordSkipReason* reason) {
+    const ProfileRecordSkipReason skipReason = classifyAsyncFlowEndSkip(name);
+    if (reason != nullptr) {
+        *reason = skipReason;
+    }
+    return skipReason != ProfileRecordSkipReason::None;
+}
+
+bool wouldSkipCounterSample(const char* track, ProfileRecordSkipReason* reason) {
+    const ProfileRecordSkipReason skipReason = classifyCounterSampleSkip(track);
+    if (reason != nullptr) {
+        *reason = skipReason;
+    }
+    return skipReason != ProfileRecordSkipReason::None;
+}
+
+bool tryPreflightProfileScope(const char* name, ProfileScopePreflight& outPreflight) {
+    outPreflight = preflightProfileScope(name);
+    return outPreflight.canRecord();
+}
+
+bool tryPreflightAsyncFlowBegin(const char* name, u32 flowId, AsyncFlowBeginPreflight& outPreflight) {
+    outPreflight = preflightAsyncFlowBegin(name, flowId);
+    return outPreflight.canRecord();
+}
+
+bool tryPreflightAsyncFlowEnd(const char* name, u32 flowId, AsyncFlowEndPreflight& outPreflight) {
+    outPreflight = preflightAsyncFlowEnd(name, flowId);
+    return outPreflight.canRecord();
+}
+
+bool tryPreflightCounterSample(const char* track, CounterSamplePreflight& outPreflight) {
+    outPreflight = preflightCounterSample(track);
+    return outPreflight.canRecord();
 }
 
 void reset() {
