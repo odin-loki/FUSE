@@ -105,6 +105,73 @@ void ContactBufferSoA::buildFrictionTangentBases() {
     }
 }
 
+bool ContactBufferSoA::canSkipCompaction() const {
+    if (pairSlotCount == 0u) {
+        return true;
+    }
+
+    bool sawInvalid = false;
+    for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            sawInvalid = true;
+            continue;
+        }
+        if (sawInvalid) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ContactBufferSoA::canSkipMaxCapacityClamp() const {
+    return maxCapacity == 0u || activeCount <= maxCapacity;
+}
+
+bool ContactBufferSoA::canSkipCompactAndClamp() const {
+    return canSkipCompaction() && canSkipMaxCapacityClamp();
+}
+
+u32 ContactBufferSoA::countValidPairSlots() const {
+    u32 validCount = 0u;
+    for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
+        if (validFlags[slot] != 0u) {
+            ++validCount;
+        }
+    }
+    return validCount;
+}
+
+u32 ContactBufferSoA::compactIfNeeded() {
+    if (canSkipCompaction()) {
+        activeCount = countValidPairSlots();
+        return activeCount;
+    }
+    return compact();
+}
+
+bool ContactBufferSoA::canSkipFrictionTangentRebuild(f32 epsilon) const {
+    return preflight_contact_buffer_friction_rebuild(*this, epsilon).can_skip_rebuild();
+}
+
+void ContactBufferSoA::buildFrictionTangentBasesIfNeeded(f32 epsilon) {
+    if (canSkipFrictionTangentRebuild(epsilon)) {
+        return;
+    }
+    buildFrictionTangentBases();
+}
+
+bool ContactBufferSoA::rebuildFrictionTangentBasesWithPreflight(f32 epsilon) {
+    const ContactBufferFrictionPreflight preflight = preflight_contact_buffer_friction_rebuild(*this, epsilon);
+    if (preflight.reason != FrictionBasisRejectReason::None) {
+        return false;
+    }
+    if (preflight.can_skip_rebuild()) {
+        return activeCount > 0u;
+    }
+    buildFrictionTangentBases();
+    return true;
+}
+
 TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {
     if (index >= activeCount || validFlags[index] == 0u) {
         return {};
@@ -231,9 +298,75 @@ u32 ContactBufferSoA::applyMaxCapacityClamp() {
     return activeCount;
 }
 
+u32 ContactBufferSoA::compactAndClampIfNeeded() {
+    compactIfNeeded();
+    if (canSkipMaxCapacityClamp()) {
+        return activeCount;
+    }
+    return applyMaxCapacityClamp();
+}
+
 u32 ContactBufferSoA::compactAndClamp() {
     compact();
     return applyMaxCapacityClamp();
+}
+
+ContactBufferCompactionPreflight preflight_contact_buffer_compaction(const ContactBufferSoA& buffer) {
+    ContactBufferCompactionPreflight preflight{};
+    if (buffer.pairSlotCount == 0u) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.validSlotCount = buffer.countValidPairSlots();
+    preflight.activeCount = buffer.activeCount;
+    preflight.needsCompaction = !buffer.canSkipCompaction();
+    preflight.needsClamp = !buffer.canSkipMaxCapacityClamp();
+    return preflight;
+}
+
+bool can_skip_contact_buffer_compaction(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_compaction(buffer).can_skip_compaction();
+}
+
+ContactBufferFrictionPreflight preflight_contact_buffer_friction_rebuild(
+    const ContactBufferSoA& buffer,
+    f32 epsilon) {
+    ContactBufferFrictionPreflight preflight{};
+    if (buffer.activeCount == 0u) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    for (u32 slot = 0u; slot < buffer.activeCount; ++slot) {
+        if (buffer.validFlags[slot] == 0u) {
+            continue;
+        }
+
+        ContactManifold manifold = buffer.manifoldAt(slot);
+        const FrictionBasisRejectReason slotReason = friction_basis_reject_reason(manifold);
+        if (slotReason != FrictionBasisRejectReason::None) {
+            preflight.reason = slotReason;
+            preflight.skipped = true;
+            return preflight;
+        }
+
+        if (friction_basis_is_stale(manifold, epsilon)) {
+            ++preflight.slotsWithStaleBasis;
+            ++preflight.slotsNeedingRebuild;
+            continue;
+        }
+
+        if (!can_skip_friction_basis_rebuild(manifold, epsilon)) {
+            ++preflight.slotsNeedingRebuild;
+        }
+    }
+
+    return preflight;
+}
+
+bool can_skip_contact_buffer_friction_rebuild(const ContactBufferSoA& buffer, f32 epsilon) {
+    return preflight_contact_buffer_friction_rebuild(buffer, epsilon).can_skip_rebuild();
 }
 
 ContactManifold ContactBufferSoA::manifoldAt(u32 index) const {
