@@ -1972,3 +1972,7 @@ void testCookCachePreflightAndReconcileEstimators() {
 
 // --- deepen additive from deepen-b79-cooker-hash-13ca ---
     cooker.cook_mesh({sourceA, entryA.output_path});
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-2531 ---
+void testCookerReconcileEstimatorGuards() {
+    expectTrue(cooker.would_invalidate_upstream_dependency(manifest, sourceA),

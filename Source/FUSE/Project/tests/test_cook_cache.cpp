@@ -1040,3 +1040,12 @@ void testCookHashPreflightDeepenGuards() {
                "would_invalidate_output mirrors count_by_output");
                "matching hash would_invalidate_stale_content is false");
                "mismatched hash would_invalidate_stale_content is true");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-2531 ---
+    const fuse::project::CookHashPreflight empty_fnv = fuse::project::preflight_fnv1a64_input(nullptr, 0);
+    const fuse::project::CookHashPreflight invalid_entry_preflight =
+    expectTrue(invalid_entry_preflight.reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+    const fuse::project::CookHashPreflight valid_entry_preflight =
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_would_upstream.obj", 1u}}),
+    expectTrue(!cooker.cache().would_invalidate_stale_upstream_hashes({{source, 0u}}),
+    expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes({{source, 1u}}),
