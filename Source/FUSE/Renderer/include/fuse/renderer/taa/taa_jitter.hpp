@@ -72,6 +72,8 @@ TaaJitterGuardRejectReason classifyTaaJitterSyncReject(u32 sequenceLength = kTaa
 /// Classify why NDC jitter production would be rejected (B5.9 deepen).
 TaaJitterGuardRejectReason classifyTaaJitterNdcReject(u32 width, u32 height,
                                                       u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Classify why jitter advance would be rejected (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterAdvanceReject(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// True when jitter can sync to `frameIndex` for the given sequence (B5.9 deepen).
                              TaaJitterGuardRejectReason* reason = nullptr);
 /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
@@ -180,6 +182,7 @@ TaaJitterFramePreflight preflightTaaJitterFrame(u32 frameIndex, u32 width, u32 h
 bool taaJitterSyncReady(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// Early-out when jitter sync to a frame counter should be skipped (B5.9 deepen).
 /// Early-out when NDC jitter production should be skipped (B5.9 deepen).
+/// Early-out when jitter advance preflight would reject (B5.9 deepen).
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {

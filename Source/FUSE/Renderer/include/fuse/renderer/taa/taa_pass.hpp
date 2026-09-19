@@ -514,6 +514,9 @@ public:
     bool preflightResolveFrameGuards(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason = nullptr,
     /// Early-out when resolve frame guards would reject (B5.9 deepen).
     bool shouldSkipResolveFrameGuards(const TaaResolveDesc& desc) const;
+    /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
+    /// Early-out when pass history warm-up blocks temporal reuse (B5.9 deepen).
+    bool tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

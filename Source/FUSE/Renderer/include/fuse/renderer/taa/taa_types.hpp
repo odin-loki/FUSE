@@ -505,6 +505,23 @@ TaaHistoryWarmupPreflight preflightTaaHistoryWarmup(const TaaHistoryBuffer& hist
 /// True when history is allocated, warmed, and ready for temporal reuse (B5.9 deepen).
 bool taaHistoryWarmupReady(const TaaHistoryBuffer& history);
 
+/// Why history warm-up preflight rejected temporal reuse (B5.9 deepen).
+enum class TaaHistoryWarmupBlockReason : u8 {
+    None = 0,
+    NotReady,
+    NeedsWarmup,
+};
+/// Human-readable label for history warm-up block reasons (B5.9 deepen).
+const char* taaHistoryWarmupBlockReasonLabel(TaaHistoryWarmupBlockReason reason);
+/// Classify why history warm-up blocks temporal reuse (B5.9 deepen).
+TaaHistoryWarmupBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history);
+/// True when history is warmed and ready for temporal reuse (B5.9 deepen).
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason* reason = nullptr);
+/// History warm-up preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason& reason);
+/// Early-out when history warm-up should block temporal reuse (B5.9 deepen).
+bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history);
+
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
     InvalidWeights,
@@ -855,14 +872,10 @@ TaaFrameGuardPreflight preflightTaaFrameGuards(const TaaResolveDesc& desc, const
                                     TaaResolveBlendRejectReason& blendReason);
 /// Early-out when combined temporal resolve preflight would reject (B5.9 deepen).
 
-/// True when resolve skip and blend-weight preflights both pass (B5.9 deepen).
 bool preflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-                                    TaaResolveSkipReason* skipReason = nullptr,
-                                    TaaResolveBlendRejectReason* blendReason = nullptr);
 /// Resolve frame preflight with mandatory reject-reason outputs (B5.9 deepen).
 bool tryPreflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                        TaaResolveSkipReason& skipReason,
-                                       TaaResolveBlendRejectReason& blendReason);
 /// Early-out when resolve frame guards would reject (B5.9 deepen).
 bool shouldSkipTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
