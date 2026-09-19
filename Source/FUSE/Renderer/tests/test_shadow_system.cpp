@@ -1647,3 +1647,8 @@ int main() {
 
 // --- deepen additive from deepen-csm-sanitize-skip-guards-8bc6 ---
     expectTrue(!cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason::None), "none is not blocking");
+
+// --- deepen additive from deepen-b55-csm-split-guards-b8b6 ---
+    using fuse::renderer::cascadeShadowBypassReasonIsBlocking;
+    expectTrue(!cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason::None),
+    expectTrue(cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason::EmptyLightDirection),

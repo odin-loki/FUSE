@@ -323,3 +323,6 @@ const char* cascadeShadowSkipReasonLabel(CascadeShadowSkipReason reason);
 void accumulateCascadeShadowSkipCount(CascadeShadowSkipCounts& counts, CascadeShadowSkipReason reason);
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-b55-csm-split-guards-b8b6 ---
+bool cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason reason);

@@ -1024,3 +1024,7 @@ u32 CascadeLightSpaceLayout::buildAllCascadeLightSpaceMatrices(
     return cascadeShadowSkipReasonIsBlocking(classifyCascadePopulationEarlyOut(camera, lightDirection));
     return !cascadeShadowSkipReasonIsBlocking(skip);
     if (cascadeShadowSkipReasonIsBlocking(populationEarlyOut)) {
+
+// --- deepen additive from deepen-b55-csm-split-guards-b8b6 ---
+    return cascadeShadowBypassReasonIsBlocking(classifyCascadeShadowBypass(camera, lightDirection));
+bool cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason reason) {
