@@ -72,3 +72,7 @@ bool should_skip_narrowphase_pair_slot(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-754b ---
         if (should_skip_contact_pair_deepen_dispatch(pairs[pairIndex], bodies, shapes)) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-7d67 ---
+void runNarrowphaseIntoBufferWithDeepenPreflight(
+    runNarrowphaseIntoBufferWithDeepenPreflight(pairs, bodies, shapes, buffer);

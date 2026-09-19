@@ -2681,3 +2681,14 @@ void testManifoldFinalizeWithPreflightGuards() {
 void testFrictionBasisRebuildWithPreflightGuards() {
     testManifoldFinalizeWithPreflightGuards();
     testFrictionBasisRebuildWithPreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-7d67 ---
+void testManifoldPruneFinalizeIfNeededGuards() {
+void testFrictionBasisDeepenPassPreflightWrappers() {
+    expectTrue(!invalidPreflight.canWrite(), "write preflight rejects self pair");
+    expectTrue(!buffer.writeSlotWithPreflight(0u, selfPair), "write with preflight skips self pair");
+    expectTrue(buffer.writeSlotWithPreflight(0u, valid), "write with preflight accepts valid manifold");
+void testRunNarrowphaseDeepenPreflightDispatch() {
+    fuse::physics::narrowphase::runNarrowphaseIntoBufferWithDeepenPreflight(mixedPairs, bodies, shapes, buffer);
+    testFrictionBasisDeepenPassPreflightWrappers();
+    testRunNarrowphaseDeepenPreflightDispatch();

@@ -219,3 +219,6 @@ bool should_skip_narrowphase_pair_slot(
 // --- deepen additive from deepen-b4-narrowphase-guards-37c2 ---
     ContactPairPreflight pairPreflight{};
     bool can_dispatch() const { return !skipped && pairPreflight.can_dispatch(); }
+
+// --- deepen additive from deepen-b4-narrowphase-guards-7d67 ---
+void runNarrowphaseIntoBufferWithDeepenPreflight(

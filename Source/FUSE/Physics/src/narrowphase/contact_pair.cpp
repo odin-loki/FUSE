@@ -806,3 +806,7 @@ NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
 // --- deepen additive from deepen-b4-narrowphase-guards-754b ---
 ContactPairBatchDeepenPreflight preflight_contact_pair_batch_deepen(
     ContactPairBatchDeepenPreflight preflight{};
+
+// --- deepen additive from deepen-b4-narrowphase-guards-7d67 ---
+    const ContactPairDeepenPreflight preflight = preflight_contact_pair_deepen(pair, bodies, shapes);
+        if (!should_skip_contact_pair_deepen_dispatch(pairs[i], bodies, shapes)) {

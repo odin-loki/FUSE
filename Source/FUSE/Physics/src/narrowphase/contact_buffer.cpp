@@ -553,3 +553,6 @@ bool should_skip_contact_buffer_friction_rebuild(const ContactBufferSoA& buffer)
 
 // --- deepen additive from deepen-b4-narrowphase-guards-c6ee ---
 bool should_skip_contact_buffer_write(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-7d67 ---
+bool ContactBufferSoA::writeSlotWithPreflight(u32 slot, const ContactManifold& manifold) {
