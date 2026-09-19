@@ -3053,3 +3053,8 @@ void testBroadphaseCellPairPreflightGuards() {
     expectTrue(std::strcmp(fuse::physics::broadphase::broadphaseCellPairRejectReasonName(
                                fuse::physics::broadphase::BroadphaseCellPairRejectReason::ZeroSlots),
     testBroadphaseCellPairPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-3ca3 ---
+                   buffer, 0u, 0u, 1u, fuse::physics::broadphase::PairBufferWriteSlotRejectReason::None),
+                 fuse::physics::broadphase::pairBufferWriteSlotRejectReason(buffer, 4u, 0u, 1u)),
+    const fuse::physics::broadphase::PairBufferWriteSlotPreflight preflight =
