@@ -13,6 +13,8 @@ namespace fuse::mechanics {
 struct BroadphaseWorldBody {
     u32 objectId = 0;
     BroadphaseProxyDesc proxy{};
+    u32 collisionLayer = 1u;
+    u32 collisionMask = 0xFFFFFFFFu;
     float x = 0.f;
     float y = 0.f;
     float z = 0.f;

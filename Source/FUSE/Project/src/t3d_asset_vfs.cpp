@@ -139,4 +139,43 @@ T3DMaterialVfsResolveResult resolveT3DMaterialVfsFromBindings(
     return result;
 }
 
+T3DMaterialVfsAsyncLoadResult submitT3DMaterialLoadsAsync(const T3DMissionExtract& extract) {
+    T3DMaterialVfsAsyncLoadResult result;
+    fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
+
+    for (const T3DMaterialRefStub& material : extract.materials) {
+        const std::string virtualPath = materialAssetToVirtualPath(material.assetPath);
+        if (virtualPath.empty()) {
+            continue;
+        }
+        const fuse::io::LoadId loadId = vfs.submitLoadAsync(virtualPath);
+        if (loadId != 0u) {
+            result.loadIds.push_back(loadId);
+            ++result.submittedCount;
+        }
+    }
+
+    for (const T3DSimObjectStub& object : extract.simObjects) {
+        if (object.materialAsset.empty()) {
+            continue;
+        }
+        const std::string virtualPath = materialAssetToVirtualPath(object.materialAsset);
+        if (virtualPath.empty()) {
+            continue;
+        }
+        const fuse::io::LoadId loadId = vfs.submitLoadAsync(virtualPath);
+        if (loadId != 0u) {
+            result.loadIds.push_back(loadId);
+            ++result.submittedCount;
+        }
+    }
+
+    result.note = "submitted " + std::to_string(result.submittedCount) + " async material vfs load(s)";
+    return result;
+}
+
+u32 drainT3DMaterialLoads(fuse::HandleTable<fuse::io::Asset>& table) {
+    return fuse::io::VirtualFileSystem::instance().drainCompletedLoads(table);
+}
+
 } // namespace fuse::project

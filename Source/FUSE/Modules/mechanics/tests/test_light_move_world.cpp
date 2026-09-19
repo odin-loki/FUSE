@@ -56,6 +56,27 @@ int main() {
                                    fuse::mechanics::BroadphaseProxyFilter::Trigger) >= 1u,
                "broadphase world stub finds character/trigger overlap");
 
+    fuse::mechanics::BroadphaseWorldStub layerWorld;
+    fuse::mechanics::BroadphaseWorldBody layerA{};
+    layerA.objectId = 10;
+    layerA.proxy =
+        fuse::mechanics::makeBroadphaseProxyDesc(fuse::mechanics::BroadphaseProxyFilter::Character);
+    layerA.collisionLayer = 1u;
+    layerA.x = 0.f;
+    layerWorld.addBody(layerA);
+
+    fuse::mechanics::BroadphaseWorldBody layerB{};
+    layerB.objectId = 11;
+    layerB.proxy =
+        fuse::mechanics::makeBroadphaseProxyDesc(fuse::mechanics::BroadphaseProxyFilter::Character);
+    layerB.collisionLayer = 8u;
+    layerB.collisionMask = 8u;
+    layerB.x = 0.f;
+    layerWorld.addBody(layerB);
+    expectTrue(layerWorld.queryOverlaps(fuse::mechanics::BroadphaseProxyFilter::Character,
+                                        fuse::mechanics::BroadphaseProxyFilter::Character) == 0u,
+               "collision layer mask filters broadphase character overlap");
+
     fuse::mechanics::CameraComponent camera("outpost_cam", 75.f);
     camera.activate();
     expectTrue(camera.active(), "camera component active");

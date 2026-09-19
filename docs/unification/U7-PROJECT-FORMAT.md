@@ -211,9 +211,17 @@ CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_wo
 | `materialAssetToVirtualPath` / `resolveT3DMaterialVfsPaths` | Maps `MaterialAsset = "Folder:Name"` → `/t3d/materials/Folder/Name.mat` and resolves via VFS |
 | `resolveT3DMaterialVfsFromBindings` | Resolves material wire stubs from loaded `.fuselevel` scenes |
 
-## 13. Deferred (honest backlog)
+## 13. Wave 11 progress
+
+| API | Role |
+|-----|------|
+| `RigidBodySoA::collisionLayers` / `collisionMasks` + `collisionLayersCollide()` | Torque2D-style bitmask layer filter in spatial-hash broadphase refine |
+| `World2D::attachPhysicsBodyForSprite_` | Passes sprite `collisionLayer` / `collisionMask` into `PhysicsWorld2D` body creation |
+| `BroadphaseWorldBody::collisionLayer` / `collisionMask` | Mechanics broadphase stub filters overlaps by layer mask |
+| `submitT3DMaterialLoadsAsync()` / `drainT3DMaterialLoads()` | Async material VFS read stubs on I/O lane → `HandleTable<Asset>` drain |
+
+## 14. Deferred (honest backlog)
 
 - ispc_texcomp-quality BC7/BC5 compression replacing in-house mode-6 encoder
 - libvorbisenc system package on CI images (runtime libs present; dev headers optional today)
-- Broadphase collision-layer filtering (layers stored on sprites; filter deferred)
-- Async material load via VFS I/O lane into cook cache
+- Async material cook-cache integration (loads drain to handles; cook cache wiring deferred)

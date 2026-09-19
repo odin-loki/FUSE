@@ -25,14 +25,16 @@ void PhysicsPipeline::reset() {
     m_lastDt = 0.f;
 }
 
-u32 PhysicsPipeline::addSphereBody(vec3 position, f32 radius, f32 invMass, u32 flags) {
-    const u32 bodyIndex = m_bodies.addBody(position, invMass, flags);
+u32 PhysicsPipeline::addSphereBody(vec3 position, f32 radius, f32 invMass, u32 flags,
+                                   u32 collisionLayer, u32 collisionMask) {
+    const u32 bodyIndex = m_bodies.addBody(position, invMass, flags, collisionLayer, collisionMask);
     m_shapes.addShape(CollisionShapeType::Sphere, bodyIndex, {radius, 0.f, 0.f});
     return bodyIndex;
 }
 
-u32 PhysicsPipeline::addBoxBody(vec3 position, vec3 halfExtents, f32 invMass, u32 flags) {
-    const u32 bodyIndex = m_bodies.addBody(position, invMass, flags);
+u32 PhysicsPipeline::addBoxBody(vec3 position, vec3 halfExtents, f32 invMass, u32 flags,
+                                u32 collisionLayer, u32 collisionMask) {
+    const u32 bodyIndex = m_bodies.addBody(position, invMass, flags, collisionLayer, collisionMask);
     m_shapes.addShape(CollisionShapeType::Box, bodyIndex, halfExtents);
     return bodyIndex;
 }
@@ -72,6 +74,7 @@ void PhysicsPipeline::step(f32 dt) {
     } else {
         broadphase::runBroadphaseIntoBuffer(m_bodies, m_shapes, m_hashParams, m_pairBuffer);
     }
+    broadphase::refineBroadphasePairsParallelWithPreflight(m_bodies, m_shapes, m_pairBuffer);
     m_candidatePairs = m_pairBuffer.toVector();
 
     narrowphase::runNarrowphaseIntoBuffer(m_candidatePairs, m_bodies, m_shapes, m_contactBuffer);

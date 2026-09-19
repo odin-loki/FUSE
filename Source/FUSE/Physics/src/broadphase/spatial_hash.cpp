@@ -440,12 +440,23 @@ f32 bodyShapeRadius(const CollisionShapeSoA& shapes, u32 bodyIndex) {
     return 0.5f;
 }
 
+bool pairPassesCollisionLayers(u32 bodyA, u32 bodyB, const RigidBodySoA& bodies) {
+    if (bodyA >= bodies.collisionLayers.size() || bodyB >= bodies.collisionLayers.size()) {
+        return true;
+    }
+    return collisionLayersCollide(bodies.collisionLayers[bodyA], bodies.collisionMasks[bodyA],
+                                  bodies.collisionLayers[bodyB], bodies.collisionMasks[bodyB]);
+}
+
 bool pairPassesAabbRefine(
     u32 bodyA,
     u32 bodyB,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
+        return false;
+    }
+    if (!pairPassesCollisionLayers(bodyA, bodyB, bodies)) {
         return false;
     }
 
@@ -525,6 +536,9 @@ void runBroadphaseIntoBufferInternal(
             const u32 dynamicBody = dynamicBodies[dynamicIndex];
             for (u32 planeBody : planeBodies) {
                 if (!isValidCandidatePair(dynamicBody, planeBody, bodies.count())) {
+                    continue;
+                }
+                if (!pairPassesCollisionLayers(dynamicBody, planeBody, bodies)) {
                     continue;
                 }
                 const CandidatePair pair = canonicalPair(dynamicBody, planeBody);

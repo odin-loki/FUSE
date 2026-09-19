@@ -12,12 +12,15 @@ void PhysicsWorld2D::reset() {
     m_pipeline.reset();
 }
 
-u32 PhysicsWorld2D::addCircleBody(float x, float y, f32 radius, f32 invMass) {
-    return m_pipeline.addSphereBody({x, y, 0.f}, radius, invMass);
+u32 PhysicsWorld2D::addCircleBody(float x, float y, f32 radius, f32 invMass, u32 collisionLayer,
+                                  u32 collisionMask) {
+    return m_pipeline.addSphereBody({x, y, 0.f}, radius, invMass, 0u, collisionLayer, collisionMask);
 }
 
-u32 PhysicsWorld2D::addBoxBody(float x, float y, f32 halfWidth, f32 halfHeight, f32 invMass) {
-    return m_pipeline.addBoxBody({x, y, 0.f}, {halfWidth, halfHeight, 0.f}, invMass);
+u32 PhysicsWorld2D::addBoxBody(float x, float y, f32 halfWidth, f32 halfHeight, f32 invMass,
+                               u32 collisionLayer, u32 collisionMask) {
+    return m_pipeline.addBoxBody({x, y, 0.f}, {halfWidth, halfHeight, 0.f}, invMass, 0u,
+                                 collisionLayer, collisionMask);
 }
 
 void PhysicsWorld2D::setBodyPosition(u32 bodyIndex, float x, float y) {

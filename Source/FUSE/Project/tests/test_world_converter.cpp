@@ -1,7 +1,11 @@
-#include <fuse/io/vfs.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/handle_table.hpp>
+#include <fuse/io/asset.hpp>
+#include <fuse/io/vfs.hpp>
+#include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/project/t2d_module_bridge.hpp>
 #include <fuse/project/t3d_asset_vfs.hpp>
+#include <fuse/types.hpp>
 #include <fuse/project/t3d_datablock_resolve.hpp>
 #include <fuse/project/world_converter.hpp>
 #include <fuse/scene/serialiser.hpp>
@@ -13,6 +17,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -365,6 +370,43 @@ void testT3DMaterialVfsMountAndResolve() {
     expectTrue(resolved.resolvedCount >= 1u, "material vfs path resolved on disk");
 }
 
+void testT3DMaterialVfsAsyncLoad() {
+    const std::filesystem::path projectRoot = std::filesystem::path("/tmp/fuse_vfs_async_project");
+    const std::filesystem::path materialPath =
+        projectRoot / "data" / "materials" / "Prototyping" / "FloorGray.mat";
+    std::filesystem::create_directories(materialPath.parent_path());
+    writeTempFile(materialPath.string(), "async stub material");
+
+    fuse::project::ProjectManifest manifest{};
+    manifest.projectRoot = projectRoot.string();
+    fuse::project::mountProjectAssetRoots(manifest);
+
+    const std::string missionText =
+        "new Scene(ExampleLevel) {\n"
+        "   new GroundPlane(Floor) {\n"
+        "      MaterialAsset = \"Prototyping:FloorGray\";\n"
+        "   };\n"
+        "};\n";
+    const fuse::project::T3DMissionExtract extract =
+        fuse::project::extractT3DMissionFields(missionText);
+
+    const fuse::project::T3DMaterialVfsAsyncLoadResult submitted =
+        fuse::project::submitT3DMaterialLoadsAsync(extract);
+    expectTrue(submitted.submittedCount >= 1u, "async material vfs load submitted");
+
+    fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
+    for (fuse::u32 spinGuard = 0u; spinGuard < 1'000'000u && vfs.completedLoadCount() == 0u; ++spinGuard) {
+        std::this_thread::yield();
+    }
+    expectTrue(vfs.completedLoadCount() > 0u, "async material vfs load completes on I/O lane");
+
+    fuse::HandleTable<fuse::io::Asset> table;
+    const fuse::u32 drained = fuse::project::drainT3DMaterialLoads(table);
+    expectTrue(drained >= 1u, "async material vfs load drained to handle table");
+    expectTrue(fuse::io::VirtualFileSystem::instance().completedLoadCount() == 0u,
+               "drain clears completed vfs loads");
+}
+
 void testT2DModuleRuntimeBridge() {
     const std::string module = writeTempFile(
         "/tmp/fuse_t2d_bridge.cs",
@@ -396,6 +438,7 @@ int main() {
     testT2DModuleRuntimeBridgeLayersPhysicsComposite();
     testT2DPhysicsShapesCollisionLayers();
     testT3DMaterialVfsMountAndResolve();
+    testT3DMaterialVfsAsyncLoad();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

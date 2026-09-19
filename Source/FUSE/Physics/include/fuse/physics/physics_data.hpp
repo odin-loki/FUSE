@@ -26,6 +26,11 @@ enum RigidBodyFlags : u32 {
     RB_CCD = 1u << 5
 };
 
+/// Torque2D-style layer/mask collision filter (bitmask layers).
+[[nodiscard]] inline bool collisionLayersCollide(u32 layerA, u32 maskA, u32 layerB, u32 maskB) {
+    return (layerA & maskB) != 0u && (layerB & maskA) != 0u;
+}
+
 /// Host-side SoA rigid body state (B4.1). GPU residency arrives in later B4 milestones.
 struct RigidBodySoA {
     std::vector<vec3> positions;
@@ -38,6 +43,8 @@ struct RigidBodySoA {
     std::vector<f32> frictionStatic;
     std::vector<f32> frictionDynamic;
     std::vector<u32> flags;
+    std::vector<u32> collisionLayers;
+    std::vector<u32> collisionMasks;
 
     std::vector<vec3> predictedPositions;
     std::vector<quat> predictedOrientations;
@@ -52,7 +59,8 @@ struct RigidBodySoA {
 
     void reserve(u32 bodyCapacity);
     void clear();
-    u32 addBody(vec3 position, f32 invMass, u32 bodyFlags = 0);
+    u32 addBody(vec3 position, f32 invMass, u32 bodyFlags = 0, u32 collisionLayer = 1u,
+                u32 collisionMask = 0xFFFFFFFFu);
 };
 
 /// Collision shape descriptors stored in SoA layout (B4.1).

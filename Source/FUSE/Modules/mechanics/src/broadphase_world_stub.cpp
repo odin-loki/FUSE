@@ -86,6 +86,10 @@ u32 BroadphaseWorldStub::queryOverlaps(BroadphaseProxyFilter filterA, Broadphase
                 !broadphaseProxyFiltersCollide(filterA, filterB)) {
                 continue;
             }
+            if (!broadphaseProxyMasksCollide(a.collisionLayer, a.collisionMask, b.collisionLayer,
+                                             b.collisionMask)) {
+                continue;
+            }
 
             const float dx = a.x - b.x;
             const float dy = a.y - b.y;

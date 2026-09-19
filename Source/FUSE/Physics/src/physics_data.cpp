@@ -12,6 +12,8 @@ void RigidBodySoA::reserve(u32 bodyCapacity) {
     frictionStatic.reserve(bodyCapacity);
     frictionDynamic.reserve(bodyCapacity);
     flags.reserve(bodyCapacity);
+    collisionLayers.reserve(bodyCapacity);
+    collisionMasks.reserve(bodyCapacity);
     predictedPositions.reserve(bodyCapacity);
     predictedOrientations.reserve(bodyCapacity);
     forces.reserve(bodyCapacity);
@@ -29,6 +31,8 @@ void RigidBodySoA::clear() {
     frictionStatic.clear();
     frictionDynamic.clear();
     flags.clear();
+    collisionLayers.clear();
+    collisionMasks.clear();
     predictedPositions.clear();
     predictedOrientations.clear();
     forces.clear();
@@ -36,7 +40,8 @@ void RigidBodySoA::clear() {
     sleepTimers.clear();
 }
 
-u32 RigidBodySoA::addBody(vec3 position, f32 invMass, u32 bodyFlags) {
+u32 RigidBodySoA::addBody(vec3 position, f32 invMass, u32 bodyFlags, u32 collisionLayer,
+                            u32 collisionMask) {
     const u32 index = count();
     positions.push_back(position);
     orientations.push_back({});
@@ -47,6 +52,8 @@ u32 RigidBodySoA::addBody(vec3 position, f32 invMass, u32 bodyFlags) {
     frictionStatic.push_back(0.5f);
     frictionDynamic.push_back(0.3f);
     flags.push_back(bodyFlags);
+    collisionLayers.push_back(collisionLayer);
+    collisionMasks.push_back(collisionMask);
     predictedPositions.push_back(position);
     predictedOrientations.push_back({});
     forces.push_back({});

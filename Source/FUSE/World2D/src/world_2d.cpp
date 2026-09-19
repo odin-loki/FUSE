@@ -86,14 +86,18 @@ void World2D::attachPhysicsBodyForSprite_(SceneObject2D* sprite) {
         return;
     }
 
+    const u32 collisionLayer = static_cast<u32>(sprite->collisionLayer());
+    const u32 collisionMask = sprite->collisionMask();
+
     u32 bodyIndex = kNoPhysicsBody;
     if (sprite->physicsShape() == PhysicsShape2D::Box) {
         bodyIndex = m_physics.addBoxBody(sprite->x(), sprite->y(), sprite->boxHalfWidth(),
-                                         sprite->boxHalfHeight(), 1.f);
+                                         sprite->boxHalfHeight(), 1.f, collisionLayer, collisionMask);
     } else {
         const f32 radius =
             sprite->physicsShape() == PhysicsShape2D::Circle ? sprite->physicsRadius() : 0.5f;
-        bodyIndex = m_physics.addCircleBody(sprite->x(), sprite->y(), radius, 1.f);
+        bodyIndex = m_physics.addCircleBody(sprite->x(), sprite->y(), radius, 1.f, collisionLayer,
+                                            collisionMask);
     }
     m_physicsBodyIndices.push_back(bodyIndex);
 }
