@@ -142,6 +142,7 @@ struct PairBufferSoA {
     void writeSlot(u32 slot, u32 idxA, u32 idxB, u32 bodyCount = 0u);
     /// Slot write guarded by `preflightPairBufferWriteSlot` (B4.2 deepen follow-up pass).
     void writeSlot(u32 slot, u32 idxA, u32 idxB);
+    bool writeSlot(u32 slot, u32 idxA, u32 idxB);
     void invalidateSlot(u32 slot);
     bool wouldRejectPush(u32 idxA, u32 idxB, u32 bodyCount = 0u) const;
     bool push(u32 idxA, u32 idxB, u32 bodyCount = 0u);
@@ -569,6 +570,86 @@ bool canSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA,
 
 /// Non-mutating slot-write predicate — mirrors `preflightPairBufferWriteSlot` (B4.2 deepen pass).
 bool shouldRunPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
+
+/// Why pair-buffer slot write would reject (B4.2 deepen pass).
+enum class PairBufferWriteSlotRejectReason : u8 {
+    None = 0,
+    InvalidPair,
+    OutOfRangeSlot,
+};
+
+/// Human-readable label for pair-buffer write-slot reject reasons (logging / tests).
+const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason);
+
+/// Diagnose why writeSlot would reject; vacuously succeeds when write may proceed.
+PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Returns true when `pairBufferWriteSlotRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferWriteSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB,
+    PairBufferWriteSlotRejectReason expected);
+
+/// Read-only write-slot diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferWriteSlotPreflight {
+    PairBufferWriteSlotRejectReason reason = PairBufferWriteSlotRejectReason::None;
+    bool invalidPair = false;
+    bool outOfRangeSlot = false;
+
+    bool canWrite() const { return reason == PairBufferWriteSlotRejectReason::None; }
+};
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Non-mutating write-slot skip predicate — inverse of `canWrite` (B4.2 deepen pass).
+bool canSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
+
+/// Non-mutating write-slot predicate — mirrors `preflightPairBufferWriteSlot` (B4.2 deepen pass).
+bool shouldRunPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
+
+/// Why pair-buffer accept would reject additional pairs (B4.2 deepen pass).
+enum class PairBufferAcceptRejectReason : u8 {
+    None = 0,
+    ExceedsCapacity,
+};
+
+/// Human-readable label for pair-buffer accept reject reasons (logging / tests).
+const char* pairBufferAcceptRejectReasonName(PairBufferAcceptRejectReason reason);
+
+/// Diagnose why accept would reject; vacuously succeeds when pairs may be accepted.
+PairBufferAcceptRejectReason pairBufferAcceptRejectReason(const PairBufferSoA& buffer, u32 additionalCount);
+
+/// Returns true when `pairBufferAcceptRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferAcceptRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 additionalCount,
+    PairBufferAcceptRejectReason expected);
+
+/// Read-only accept diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferAcceptPreflight {
+    PairBufferAcceptRejectReason reason = PairBufferAcceptRejectReason::None;
+    bool exceedsCapacity = false;
+
+    bool canAccept() const { return reason == PairBufferAcceptRejectReason::None; }
+};
+
+PairBufferAcceptPreflight preflightPairBufferAccept(const PairBufferSoA& buffer, u32 additionalCount);
+
+/// Non-mutating accept skip predicate — inverse of `canAccept` (B4.2 deepen pass).
+bool canSkipPairBufferAccept(const PairBufferSoA& buffer, u32 additionalCount);
+
+/// Non-mutating accept predicate — mirrors `preflightPairBufferAccept` (B4.2 deepen pass).
+bool shouldRunPairBufferAccept(const PairBufferSoA& buffer, u32 additionalCount);
 
 /// Why pair-buffer compaction would early-out (B4.2 deepen pass).
 enum class PairBufferCompactionRejectReason : u8 {
