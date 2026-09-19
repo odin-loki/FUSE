@@ -8,6 +8,7 @@
 #include <fuse/fx/fx_defs.hpp>
 #include <fuse/fx/fx_socket.hpp>
 #include <fuse/fx/parameter_bind.hpp>
+#include <fuse/fx/particle_pool.hpp>
 #include <fuse/fx/residual_effects.hpp>
 #include <fuse/fx/spell_descriptor.hpp>
 #include <fuse/frame/frame_ctx.hpp>
@@ -63,6 +64,9 @@ public:
     /// Register spark/muzzle/fireball descriptors used by hybrid + demo_fx vertical slices.
     bool registerDemoVerticalSlice();
 
+    ParticlePool& particlePool() { return m_particlePool; }
+    const ParticlePool& particlePool() const { return m_particlePool; }
+
     u32 tickCount() const { return m_tickCount; }
 
 private:
@@ -75,6 +79,7 @@ private:
     ResidualEffectQueue m_residuals;
     MissilePipeline m_missiles;
     bind::ParameterBinder m_parameters;
+    ParticlePool m_particlePool{64};
     u32 m_attachments = 0;
     u32 m_tickCount = 0;
 };

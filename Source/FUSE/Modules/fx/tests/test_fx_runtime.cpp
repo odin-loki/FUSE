@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/fx/effect_descriptor.hpp>
 #include <fuse/fx/effect_graph.hpp>
+#include <fuse/fx/afx_template_pack.hpp>
 #include <fuse/fx/fx_composer.hpp>
 #include <fuse/fx/missile_descriptor.hpp>
 #include <fuse/fx/particle_pool.hpp>
@@ -292,6 +293,28 @@ void testRegisterDemoVerticalSlice() {
     expectTrue(composer.findSpell("fireball") != nullptr, "fireball spell registered");
 }
 
+void testRegisterAfxTemplateSamplePack() {
+    fuse::fx::FxComposer composer;
+    expectTrue(fuse::fx::registerAfxTemplateSamplePack(composer), "AFX template sample pack registers");
+    expectTrue(composer.findEffect("afx_demo_spark") != nullptr, "afx_demo_spark registered");
+    expectTrue(composer.findEffect("afx_demo_smoke") != nullptr, "afx_demo_smoke registered");
+}
+
+void testComposerParticlePoolTick() {
+    fuse::fx::FxComposer composer;
+    composer.registerDemoVerticalSlice();
+
+    fuse::fx::FxSocket socket;
+    socket.kind = fuse::fx::FxSocketKind::Sprite2D;
+    socket.effectId = "spark_burst";
+    composer.attach(socket);
+
+    fuse::frame::FrameCtx ctx;
+    ctx.dt = 1.f / 60.f;
+    composer.tick(ctx);
+    expectTrue(composer.particlePool().spawnCount() > 0u, "composer spawns particles during active effects");
+}
+
 void testParticlePoolTick() {
     fuse::fx::ParticlePool pool(4);
     expectTrue(pool.spawn({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.5f), "particle spawns");
@@ -318,6 +341,8 @@ int main() {
     testSocketConstraintRemap();
     testMissilePipeline();
     testRegisterDemoVerticalSlice();
+    testRegisterAfxTemplateSamplePack();
+    testComposerParticlePoolTick();
     testParticlePoolTick();
     fuse::core::shutdown();
 

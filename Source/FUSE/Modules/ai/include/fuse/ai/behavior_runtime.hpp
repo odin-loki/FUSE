@@ -32,6 +32,7 @@ public:
 
     void clearAgents();
     void addAgent(const AgentBinding& binding);
+    void setBindingPosition(u32 agentIndex, float x, float y);
     u32 agentCount() const { return static_cast<u32>(m_bindings.size()); }
 
     Blackboard& blackboard() { return m_blackboard; }

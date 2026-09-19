@@ -1,0 +1,11 @@
+# UAISK patrol_squad template — maps to fuse_ai registry via uaisk_template_hooks.hpp
+# Ore: third_party/addons/UAISK/.../UAISK/aiBehaviors.cs + aiTargeting.cs + aiActions.cs
+
+bb.condition.allies_in_radius threshold=8 loops=1
+bb.action.set_flag flag=1
+bb.condition.distance_less threshold=5
+bb.action.set_flag flag=0
+bb.sequence children=0,1
+bb.sequence children=2,3
+bb.selector children=4,5 hook=aiBehaviors.cs
+root=6

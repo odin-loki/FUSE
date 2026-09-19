@@ -11,6 +11,7 @@
 #include <fuse/cinematics/property_track.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
 #include <fuse/cinematics/timeline.hpp>
+#include <fuse/cinematics/vactor_bridge.hpp>
 #include <fuse/core/init.hpp>
 
 #include <cmath>
@@ -1275,6 +1276,43 @@ void testActorTrackMountUnmount() {
     expectTrue(track.kind() == fuse::cinematics::TrackKind::Actor, "actor track kind");
 }
 
+void testVActorBridgeDrainCues() {
+    fuse::cinematics::Timeline timeline;
+    timeline.playhead().set_duration_ms(2'000);
+    fuse::cinematics::TrackGroup& group = timeline.add_group("ActorBridge");
+    fuse::cinematics::ActorTrack& actorTrack = group.add_actor_track("hero");
+    actorTrack.set_actor_id("hero");
+
+    fuse::cinematics::ActorEvent mount;
+    mount.time_ms = 500;
+    mount.kind = fuse::cinematics::ActorEventKind::Mount;
+    mount.actor_id = "hero";
+    mount.mount_point = "seat";
+    actorTrack.add_actor_event(mount);
+    actorTrack.sort_actor_events();
+
+    fuse::cinematics::VActorBridge bridge;
+    timeline.scrub_to(500, false);
+    fuse::cinematics::drain_actor_cues(timeline, bridge, 0);
+
+    expectTrue(bridge.mountCount() == 1u, "VActor bridge records mount cue");
+    expectTrue(bridge.mount_point_for("hero") == "seat", "VActor bridge stores mount point");
+}
+
+void testOutpostIntro30sStub() {
+    fuse::cinematics::Timeline timeline = fuse::cinematics::make_outpost_intro_30s_stub();
+    expectTrue(timeline.playhead().duration_ms() == 30'000, "outpost intro stub is 30s");
+    expectTrue(timeline.groups().size() == 1u, "outpost intro has one director group");
+
+    timeline.play();
+    fuse::cinematics::TimelineMs accumulated = 0;
+    while (timeline.playhead().is_playing() && accumulated < 35'000) {
+        timeline.advance(1'000);
+        accumulated += 1'000;
+    }
+    expectTrue(timeline.playhead().time_ms() == 30'000, "outpost intro stub reaches 30s");
+}
+
 void testHybridTimelineDrive() {
     fuse::cinematics::Timeline timeline;
     timeline.playhead().set_duration_ms(1'000);
@@ -1402,6 +1440,8 @@ int main() {
     testSpriteTrackSampling();
     testPropertyTrackSampling();
     testActorTrackMountUnmount();
+    testVActorBridgeDrainCues();
+    testOutpostIntro30sStub();
     testHybridTimelineDrive();
     testMotionTrackPathSampling();
     testTimelineContentSpan();

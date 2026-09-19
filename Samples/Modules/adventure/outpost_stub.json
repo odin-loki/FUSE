@@ -1,0 +1,28 @@
+{
+  "scene": "Outpost",
+  "items": {
+    "rusty_key": { "kind": "key", "description": "Opens the maintenance door" },
+    "plasma_rifle": { "kind": "weapon", "ammo": "energy_cell", "ammo_count": 20 },
+    "energy_cell": { "kind": "ammo" }
+  },
+  "interactables": {
+    "maintenance_door": {
+      "type": "door",
+      "key_item": "rusty_key",
+      "open_message": "The door hisses open."
+    },
+    "armory_rifle": {
+      "type": "weapon_pickup",
+      "weapon": "plasma_rifle",
+      "ammo": "energy_cell",
+      "ammo_count": 20
+    },
+    "outpost_guard": {
+      "type": "conversation",
+      "lines": [
+        "Halt. State your business.",
+        "The reactor is unstable — keep moving."
+      ]
+    }
+  }
+}

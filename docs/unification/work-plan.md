@@ -149,7 +149,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **MT note** | AI/FX jobify per architecture §7 |
 | **Exit** | Per-module U5 gates in prestarter §10 |
 | **Deps** | WP-06 |
-| **Status** | ✅ Prestarter §10 hybrid demo gates wired — `demo_hybrid_hud` + `fuse_hybrid_module_gates_tests`; ore: `makeMoveTowardDemoTree`, `sample_hybrid_timeline_drive`, `registerDemoVerticalSlice`, `ToggleComponent`, `showHudPrompt` — [U5-MODULES.md](./U5-MODULES.md) |
+| **Status** | ✅ Prestarter §10 gates closed; post-gate ore: patrol+ally spatial, UAISK `patrol_squad.bt`, `VActorBridge`, `make_outpost_intro_30s_stub`, AFX template pack + composer particle pool, `ConsoleMethodComponent`, `PolyhedronTriggerZone`, weapon/conversation interactables — [U5-MODULES.md](./U5-MODULES.md) |
 
 ---
 

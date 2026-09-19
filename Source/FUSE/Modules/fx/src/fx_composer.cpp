@@ -97,6 +97,12 @@ void FxComposer::tick(const frame::FrameCtx& ctx) {
     m_castPipeline.tick(dt);
     m_residuals.tick(dt);
     m_missiles.tick(dt);
+
+    if (m_effectTimeline.activeCount() > 0) {
+        m_particlePool.spawn({0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.25f);
+    }
+    m_particlePool.tick(ctx);
+
     ++m_tickCount;
 }
 

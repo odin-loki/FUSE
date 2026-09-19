@@ -3,6 +3,7 @@ add_library(fuse_fx STATIC
     src/effect_descriptor.cpp
     src/effect_graph.cpp
     src/effect_timeline.cpp
+    src/afx_template_pack.cpp
     src/fx_composer.cpp
     src/particle_pool.cpp
     src/parameter_bind.cpp
@@ -14,6 +15,7 @@ add_library(fuse_fx STATIC
     include/fuse/fx/effect_descriptor.hpp
     include/fuse/fx/effect_graph.hpp
     include/fuse/fx/effect_timeline.hpp
+    include/fuse/fx/afx_template_pack.hpp
     include/fuse/fx/fx_composer.hpp
     include/fuse/fx/fx_defs.hpp
     include/fuse/fx/fx_socket.hpp
