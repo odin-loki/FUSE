@@ -3846,6 +3846,7 @@ void testCookerShouldSkipAndWouldInvalidateProbes() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_skip_probe_a.obj", "# skip probe a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_skip_probe_b.obj", "# skip probe b\n");
 void testCookerShouldSkipReconcileHelpers() {
+void testCookerShouldSkipReconcileGuards() {
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
@@ -4511,6 +4512,18 @@ void testCookerStaleDependencyReconcileEstimate() {
     expectTrue(cooker.should_skip_upstream_invalidation(manifest, source_a),
                "post-invalidation should_skip upstream returns true");
                "post-invalidation should_skip reconcile returns true");
+
+               "fresh cache should_skip_reconcile_invalidation");
+               "fresh reconcile estimate should_skip");
+               "fresh cache should_skip_stale_dependency_invalidation");
+               "empty changed source should_skip_upstream_invalidation");
+               "would_invalidate_upstream_dependency for seeded chain");
+               "seeded chain should not skip upstream invalidation probe");
+
+               "upstream change makes should_skip_stale_dependency_invalidation false");
+               "upstream change makes should_skip_reconcile_invalidation false");
+
+               "should_skip_stale_dependency_invalidation after stale reconcile");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {

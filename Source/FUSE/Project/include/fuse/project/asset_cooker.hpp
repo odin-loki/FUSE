@@ -164,6 +164,7 @@ struct CookUpstreamInvalidateEstimate {
     /// True when reconcile invalidation would touch at least one entry (B7.9 deepen).
     /// True when reconcile can be skipped — mirrors `!would_reconcile()` (B7.9 deepen).
     /// True when no reconcile invalidation work is pending (B7.9 deepen).
+    /// True when reconcile invalidation would be a no-op — mirrors `total() == 0` (B7.9 deepen).
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -474,26 +475,12 @@ public:
     /// True when prune reconcile would be a no-op (B7.9 deepen).
 
     /// Read-only upstream invalidation skip/would probes — guarded on empty `changed_source` (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_upstream(const CookManifest& manifest,
-                                                 const std::string& changed_source) const;
-    [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
-                                                         const std::string& changed_source) const;
     /// Read-only stale dependency invalidation skip/would probes (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_stale_dependencies(const CookManifest& manifest) const;
-    [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
     /// True when `estimate_reconcile_invalidation(manifest).total()` is zero (B7.9 deepen).
-    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
 
     /// Read-only upstream invalidation predicate — mirrors `count_upstream_invalidation` (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_upstream_dependency(const CookManifest& manifest,
-                                                              const std::string& changed_source) const;
     /// Read-only stale dependency-hash invalidation predicate (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_stale_dependency_hashes(const CookManifest& manifest) const;
-    /// True when `estimate_reconcile_invalidation(manifest).total()` is zero (B7.9 deepen).
-    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
-    /// True when `count_upstream_invalidation` is zero — guarded on empty `changed_source` (B7.9 deepen).
-    [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
-                                                         const std::string& changed_source) const;
+    /// Skip guards — mirror count/would_invalidate probes without mutating cache (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
