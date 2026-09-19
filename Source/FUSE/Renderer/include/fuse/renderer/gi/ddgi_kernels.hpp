@@ -293,6 +293,8 @@ bool preflightPopulatedProbeKernelLaunch(DDGIKernelParams& params,
 
 
 
+/// Non-mutating trace-kernel launch preflight — returns true when trace would proceed.
+/// Non-mutating blend-kernel launch preflight — returns true when blend would proceed.
 
 /// Populate kernel params from desc + scheduled indices without changing launch guards.
 void populateDDGIKernelParams(DDGIKernelParams& params,
@@ -322,6 +324,10 @@ bool preflightDDGIKernelParams(DDGIKernelParams& params,
                                u32 probe_count,
                                u64 frame_seed = 0,
                                ProbeKernelRejectReason* reason = nullptr);
+/// Populate kernel params with launch preflight; false when trace launch would be rejected.
+bool tryPopulateDDGIKernelParams(DDGIKernelParams& params,
+                                 ProbeKernelRejectReason& outReason,
+                                 u64 frame_seed = 0);
 
 /// Preflight guard before probe trace kernel launch.
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
