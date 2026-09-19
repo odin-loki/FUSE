@@ -7080,6 +7080,7 @@ void testNonFiniteRejectReasonGuards() {
                "shouldSkipBeginDrag true for non-finite screen hit");
 
 
+
     fuse::editor::GizmoHitTest hit{};
     hit.viewportWidth = 100.f;
     hit.viewportHeight = 100.f;
@@ -7284,6 +7285,8 @@ void testInvalidDimensionsRejectReasonGuards() {
 
     fuse::editor::GizmoSystem gizmo;
 
+
+
     expectTrue(std::strcmp(fuse::editor::gizmoUpdateDragRejectReasonLabel(
                    fuse::editor::GizmoUpdateDragRejectReason::NonFiniteHit),
                "NonFiniteHit") == 0,
@@ -7356,6 +7359,7 @@ void testSnapDragRejectReasonGuards() {
                "tryPreflightSnapDrag rejects invalid step");
 
     expectTrue(fuse::editor::tryPreflightSnapDrag(0.37f, fuse::editor::GizmoMode::Translate, snap,
+
                "tryPreflightSnapDrag accepts valid delta and snap");
     expectTrue(reason == fuse::editor::GizmoSnapDragRejectReason::None,
                "valid snap-drag reject reason is None");
@@ -7417,6 +7421,7 @@ void testSnapDragRejectReasonGuards() {
     gizmo.setSnapSettings(snap);
     expectTrue(gizmo.preflightSnapDragReady(0.37f), "gizmo preflightSnapDragReady accepts valid delta");
     snap.translateSnap = true;
+
 
     expectTrue(gizmo.tryPreflightSnapDrag(0.37f, reason),
                "gizmo tryPreflightSnapDrag accepts valid delta");
@@ -7500,6 +7505,7 @@ void testUpdateDragInteractionDeltaPreflight() {
 
     fuse::editor::GizmoSystem gizmo;
     gizmo.setSnapSettings(snap);
+    fuse::editor::GizmoTransform transform{};
     gizmo.beginDrag(hit, transform);
 
     const fuse::editor::UpdateDragInteractionPreflight zeroDelta =
@@ -7581,7 +7587,6 @@ void testSnapDragRejectReasonGuards() {
 
     expectTrue(!fuse::editor::tryPreflightSnapDrag(std::numeric_limits<fuse::f32>::quiet_NaN(),
                                                    fuse::editor::GizmoMode::Translate, snap,
-                                                   reason),
                "tryPreflightSnapDrag rejects non-finite delta");
     expectTrue(reason == fuse::editor::GizmoSnapDragRejectReason::DeltaNonFinite,
                "non-finite snap-drag reject reason is DeltaNonFinite");
@@ -7593,7 +7598,6 @@ void testSnapDragRejectReasonGuards() {
     expectTrue(reason == fuse::editor::GizmoSnapDragRejectReason::SnapDisabled,
                "disabled snap-drag reject reason is SnapDisabled");
 
-    snap.translateSnap = true;
     snap.gridSize = 0.f;
     const fuse::editor::SnapDragPreflight invalidStepPreflight = fuse::editor::preflightSnapDrag(
         0.37f, fuse::editor::GizmoMode::Translate, snap);
@@ -7606,13 +7610,11 @@ void testSnapDragRejectReasonGuards() {
                "snap-drag reject reason label for DeltaNonFinite");
 
     fuse::editor::GizmoSystem gizmo;
-    snap.gridSize = 0.5f;
     gizmo.setSnapSettings(snap);
     expectTrue(gizmo.preflightSnapDragReady(0.37f), "gizmo preflightSnapDragReady accepts valid delta");
     expectTrue(gizmo.tryPreflightSnapDrag(0.37f, reason),
                "gizmo tryPreflightSnapDrag accepts valid delta");
     expectTrue(!gizmo.shouldSkipSnapDrag(0.37f), "gizmo shouldSkipSnapDrag false when valid");
-}
 
 void testRejectReasonMirrorsExistingPreflights() {
     fuse::editor::GizmoHitTest hit{};
