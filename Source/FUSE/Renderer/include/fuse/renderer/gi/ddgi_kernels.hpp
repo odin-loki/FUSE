@@ -40,7 +40,7 @@ bool probeKernelRejectReasonIsBlocking(ProbeKernelRejectReason reason);
 /// Classify why probe kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
 ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params);
 
-/// Early-out when either probe kernel launch would be rejected.
+/// Early-out when either probe trace or blend kernel launch would be rejected.
 bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
 
 /// Non-mutating kernel launch preflight — returns true when both kernels would proceed.
