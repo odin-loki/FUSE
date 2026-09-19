@@ -266,6 +266,13 @@ bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
 
+/// Resource preflight for probe trace — checks world-position buffer without launch-count guards.
+bool tryPreflightProbeTraceKernelResources(const DDGIKernelParams& params,
+                                           ProbeKernelRejectReason& outReason);
+/// Resource preflight for probe blend — checks atlas surfaces without launch-count guards.
+bool tryPreflightProbeBlendKernelResources(const DDGIKernelParams& params,
+                                           ProbeKernelRejectReason& outReason);
+
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
 /// Launch probe trace kernel with reject-reason diagnostics; false when preflight rejects.

@@ -494,6 +494,16 @@ enum class ProbeScheduleRejectReason : u8 {
 /// Human-readable label for probe-schedule reject reasons (logging / tests).
 const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
 
+/// Why probe scheduling preflight rejected the request (B5.6 deepen).
+enum class ProbeScheduleRejectReason : u8 {
+    None = 0,
+    NullIndices,
+    NullCount,
+};
+
+/// Human-readable label for probe-schedule reject reasons (logging / tests).
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
+
 /// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
 enum class ProbeUpdateLaunchRejectReason : u8 {
     NullIndices,
@@ -646,6 +656,8 @@ struct ProbeGridLayout {
                                               ProbeSampleCoordsRejectReason& outReason);
     /// Grid-only sample-coord preflight without reject-reason diagnostics.
     static bool canPreflightProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Grid-only sample-coord preflight — indices and weights in range, ignores corner ordering.
+    /// True when clamp or normalize would change the sample coords.
     /// Clamp sample coords in place; returns false without modifying `coords` on an empty grid.
     static bool tryClampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
     /// Clamp sample coords with reject-reason diagnostics.
@@ -654,6 +666,8 @@ struct ProbeGridLayout {
                                           ProbeSampleCoordsRejectReason& outReason);
     /// Ensure corner indices are ordered (x0≤x1, …) and weights stay in [0, 1].
     static void normalizeProbeSampleCoords(ProbeSampleCoords& coords);
+    /// Normalize then validate; returns false without modifying `coords` on an empty grid.
+    static bool tryNormalizeAndValidateProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
     /// True when corner indices lie within the grid and weights are in [0, 1].
     static bool areProbeSampleCoordsInBounds(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// True when sample coords exceed grid bounds or interpolation weights are outside [0, 1].
@@ -1047,6 +1061,7 @@ bool shouldSkipCacheLookup(const DDGIDesc& desc, const IrradianceCacheEntry* cac
 /// Diagnose why cache-index preflight would reject; checks `cache` for null (B5.6 deepen).
 bool tryValidateCacheIndex(const DDGIDesc& desc,
 /// Combined probe-index + cache guard for cache lookups (B5.6 deepen).
+/// Cache-index preflight including null-cache guard; vacuously succeeds on valid lookups.
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -1163,6 +1178,7 @@ bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_ind
                                 const u32* out_count,
 /// Preflight guard before probe-update scheduling; false on null output or zero capacity.
 /// Early-out when probe-update scheduling would be rejected — same ordering as `canScheduleProbeUpdates`.
+/// Schedule probe updates with reject-reason diagnostics; vacuously succeeds on valid no-ops.
 bool tryScheduleProbeUpdates(u32 frame_index,
                              u32 probe_count,
                              u32 probes_per_frame,
@@ -1191,6 +1207,9 @@ bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 ma
 bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
 /// Early-out when probe scheduling would be rejected — same ordering as `canScheduleProbeUpdates`.
 bool wouldSkipProbeSchedule(u32 probe_count, u32* out_indices, u32 max_indices, u32* out_count);
+/// Preflight guard before probe scheduling; false on null output buffers.
+bool canScheduleProbeUpdates(u32 probe_count,
+bool wouldSkipProbeSchedule(u32 probe_count,
 fuse::math::Vec3 blendIrradiance(const fuse::math::Vec3& previous,
                                  const fuse::math::Vec3& incoming,
                                  f32 hysteresis);
