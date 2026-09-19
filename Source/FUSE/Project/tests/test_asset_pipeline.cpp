@@ -3435,6 +3435,7 @@ void testCookerReconcileWouldAndUpstreamProbes() {
 void testCookerUpstreamInvalidationEstimate() {
 void testCookerUpstreamEstimateAndWouldProbes() {
 void testCookerWouldAndUpstreamEstimateProbes() {
+void testCookerUpstreamEstimateAndWouldGuards() {
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
@@ -3947,6 +3948,16 @@ void testCookerStaleDependencyReconcileEstimate() {
 
     expectTrue(removed >= upstream_estimate.total(), "upstream invalidation removes at least estimated total");
     expectTrue(!cooker.would_upstream_invalidation(manifest, source_a),
+
+
+    expectTrue(estimate.source_entries == 1u, "upstream estimate counts changed source entry");
+    expectTrue(estimate.downstream_entries >= 1u, "upstream estimate counts downstream entries");
+               "would_upstream_invalidation false for empty source");
+
+               "would_reconcile_invalidation false for fresh cache");
+               "would_reconcile_invalidation true after upstream content change");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest).total() > 0u,
+               "reconcile estimate non-zero after upstream content change");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -4226,6 +4237,7 @@ int main() {
     testCookerProbeUpstreamInvalidationSources();
     testCookerReconcileWouldProbes();
     testCookerWouldAndUpstreamEstimateProbes();
+    testCookerUpstreamEstimateAndWouldGuards();
     testCookCacheDownstreamSourceProbe();
     testCookCachePreflightAndReconcileEstimators();
     testCookCacheReconcileEstimators();

@@ -406,6 +406,7 @@ u32 AssetCooker::count_prune_removals() const {
     estimate.direct_entries = m_cache.count_by_source(changed_source);
             estimate.downstream_entries +=
                 m_cache.count_downstream_of(job.output_path, graph.edges(), graph.jobs());
+    estimate.source_entries = m_cache.count_by_source(changed_source);
 
 bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
                                               const std::string& changed_source) const {

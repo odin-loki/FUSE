@@ -413,4 +413,31 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
                                                                    u64 upstream_hash = 0);
 [[nodiscard]] CookHashPreflight preflight_audio_import_cache_key(const AudioImportDesc& desc, u64 upstream_hash = 0);
 
+/// Structural + source readability preflight for cache records (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+
+/// Bool preflight entry points — mirror `preflight_*` without allocating (B7.9 deepen).
+[[nodiscard]] bool tryPreflightMeshImportHash(const MeshImportDesc& desc, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightTextureImportHash(const TextureImportDesc& desc, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightAudioImportHash(const AudioImportDesc& desc, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightManifestEntryHash(const CookManifestEntry& entry, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightCookCacheEntry(const CookCacheEntry& entry, CookHashRejectReason& reason);
+
+/// Read-only skip predicates — true when matching hash/cache preflight would fail (B7.9 deepen).
+[[nodiscard]] inline bool shouldSkipMeshImportHash(const MeshImportDesc& desc) {
+    return !preflight_mesh_import_hash(desc).ok();
+}
+[[nodiscard]] inline bool shouldSkipTextureImportHash(const TextureImportDesc& desc) {
+    return !preflight_texture_import_hash(desc).ok();
+}
+[[nodiscard]] inline bool shouldSkipAudioImportHash(const AudioImportDesc& desc) {
+    return !preflight_audio_import_hash(desc).ok();
+}
+[[nodiscard]] inline bool shouldSkipManifestEntryHash(const CookManifestEntry& entry) {
+    return !preflight_manifest_entry_hash(entry).ok();
+}
+[[nodiscard]] inline bool shouldSkipCookCacheEntry(const CookCacheEntry& entry) {
+    return !preflight_cook_cache_entry(entry).ok();
+}
+
 } // namespace fuse::project
