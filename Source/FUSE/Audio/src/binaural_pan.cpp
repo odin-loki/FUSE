@@ -935,3 +935,18 @@ bool try_preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_at
     outReason = HrtfAttenuationCouplingRejectReason::None;
                                          HrtfAttenuationCouplingRejectReason* reason) {
     HrtfAttenuationCouplingRejectReason localReason = HrtfAttenuationCouplingRejectReason::None;
+
+// --- deepen additive from deepen-b72-hrtf-preflights-eec6 ---
+bool try_preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrPreflightRejectReason* reason) {
+            *reason = HrtfIrPreflightRejectReason::NullSamples;
+            *reason = HrtfIrPreflightRejectReason::ZeroLength;
+        *reason = HrtfIrPreflightRejectReason::None;
+bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
+                                 HrtfPanPreflightRejectReason* reason) {
+            *reason = HrtfPanPreflightRejectReason::Disabled;
+            *reason = HrtfPanPreflightRejectReason::CoLocated;
+        *reason = HrtfPanPreflightRejectReason::None;
+                                             HrtfAttenuationCouplingPreflightRejectReason* reason) {
+            *reason = HrtfAttenuationCouplingPreflightRejectReason::BypassPath;
+            *reason = HrtfAttenuationCouplingPreflightRejectReason::UnityAttenuation;
+        *reason = HrtfAttenuationCouplingPreflightRejectReason::None;

@@ -628,3 +628,12 @@ const char* hrtf_attenuation_coupling_reject_reason_label(HrtfAttenuationCouplin
 bool try_preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
                                              HrtfAttenuationCouplingRejectReason& outReason);
                                          HrtfAttenuationCouplingRejectReason* reason = nullptr);
+
+// --- deepen additive from deepen-b72-hrtf-preflights-eec6 ---
+enum class HrtfIrPreflightRejectReason : u8 {
+enum class HrtfPanPreflightRejectReason : u8 {
+enum class HrtfAttenuationCouplingPreflightRejectReason : u8 {
+                                       HrtfIrPreflightRejectReason* reason = nullptr);
+bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
+                                 HrtfPanPreflightRejectReason* reason = nullptr);
+                                             HrtfAttenuationCouplingPreflightRejectReason* reason =

@@ -1426,3 +1426,20 @@ void testPreflightHrtfSpatialPan() {
     expectTrue(reason == fuse::audio::HrtfAttenuationCouplingRejectReason::UnityAttenuation,
     testPreflightHrtfIrConvolution();
     testPreflightHrtfSpatialPan();
+
+// --- deepen additive from deepen-b72-hrtf-preflights-eec6 ---
+    fuse::audio::HrtfIrPreflightRejectReason reason =
+        fuse::audio::HrtfIrPreflightRejectReason::None;
+    expectTrue(reason == fuse::audio::HrtfIrPreflightRejectReason::NullSamples,
+    expectTrue(reason == fuse::audio::HrtfIrPreflightRejectReason::ZeroLength,
+    expectTrue(reason == fuse::audio::HrtfIrPreflightRejectReason::None,
+    fuse::audio::HrtfPanPreflightRejectReason reason =
+        fuse::audio::HrtfPanPreflightRejectReason::None;
+    expectTrue(reason == fuse::audio::HrtfPanPreflightRejectReason::None,
+    expectTrue(reason == fuse::audio::HrtfPanPreflightRejectReason::Disabled,
+    expectTrue(reason == fuse::audio::HrtfPanPreflightRejectReason::CoLocated,
+    fuse::audio::HrtfAttenuationCouplingPreflightRejectReason reason =
+        fuse::audio::HrtfAttenuationCouplingPreflightRejectReason::None;
+    expectTrue(reason == fuse::audio::HrtfAttenuationCouplingPreflightRejectReason::None,
+    expectTrue(reason == fuse::audio::HrtfAttenuationCouplingPreflightRejectReason::BypassPath,
+        reason == fuse::audio::HrtfAttenuationCouplingPreflightRejectReason::UnityAttenuation,
