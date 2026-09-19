@@ -3552,4 +3552,18 @@ ContactPairRejectReason narrowphase_batch_first_reject_reason(
     return ContactPairRejectReason::None;
 }
 
+ContactManifold detect_contacts_pair_with_deepen_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
+}
+
+bool generate_contact_manifold_with_preflight(ContactManifold& manifold) {
+    return finalize_contact_manifold_with_preflight(manifold);
+}
+
 } // namespace fuse::physics::narrowphase

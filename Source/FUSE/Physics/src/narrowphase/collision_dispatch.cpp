@@ -105,6 +105,13 @@ bool can_skip_narrowphase_dispatch(
     return preflight_narrowphase_dispatch(pairs, bodies, shapes).canSkipDispatch;
 bool can_skip_narrowphase_dispatch(const std::vector<broadphase::CandidatePair>& pairs) {
     return pairs.empty();
+NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
+    const std::vector<broadphase::CandidatePair>& pairs) {
+    NarrowphaseBufferDispatchPreflight preflight{};
+    preflight.canFinalizeBuffer = !preflight.emptyPairList;
+
+bool can_skip_narrowphase_buffer_finalize(
+    return preflight_narrowphase_buffer_dispatch(pairs).emptyPairList;
 }
 
 void runNarrowphaseIntoBuffer(

@@ -1477,6 +1477,8 @@ bool finalize_contact_manifold_if_not_finalized(
 /// Prune only when preflight reports work; returns true when points remain (B4.6 deepen pass).
 
 
+/// Normalize the contact normal when non-unit; returns true when normalization ran (B4.6 deepen pass).
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

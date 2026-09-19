@@ -466,5 +466,18 @@ NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
 bool should_run_narrowphase_into_buffer(
 /// True when narrowphase pair dispatch can be skipped entirely (empty pair list) (B4.6 deepen pass).
 bool can_skip_narrowphase_dispatch(const std::vector<broadphase::CandidatePair>& pairs);
+/// Const preflight for narrowphase buffer output dispatch (B4.6 deepen pass).
+struct NarrowphaseBufferDispatchPreflight {
+    bool emptyPairList = false;
+    bool canFinalizeBuffer = false;
+
+    bool can_dispatch() const { return pairCount > 0u; }
+
+/// Populate buffer-dispatch preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
+    const std::vector<broadphase::CandidatePair>& pairs);
+
+/// Returns true when narrowphase buffer finalize should be skipped (B4.6 deepen pass).
+bool can_skip_narrowphase_buffer_finalize(
 
 } // namespace fuse::physics::narrowphase
