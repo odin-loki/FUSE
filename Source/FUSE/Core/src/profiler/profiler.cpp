@@ -1552,6 +1552,14 @@ bool profileEventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
     return isValidEventName(event.name) && event.scopeId == flowId;
 
 
+
+bool isAsyncFlowPhase(EventPhase phase) {
+
+
+
+    return isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name);
+
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
 
@@ -2265,6 +2273,18 @@ bool tryFirstExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 bool tryLastExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+bool tryFirstEventByName(const char* name, ProfileEvent& outEvent) {
+
+    outEvent = eventAt(index);
+
+bool tryLastEventByName(const char* name, ProfileEvent& outEvent) {
+
+
+bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+
+bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 bool tryFirstEvent(ProfileEvent& outEvent) {
@@ -3957,6 +3977,25 @@ bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
 
 
         if (profileEventMatchesFlowId(eventAt(i), flowId)) {
+
+
+
+
+
+
+
+
+
+u32 openAsyncFlowCountForId(u32 flowId) {
+    u32 openStarts = 0u;
+        if (!eventMatchesFlowId(event, flowId)) {
+
+            ++openStarts;
+
+    return openStarts > finishes ? openStarts - finishes : 0u;
+
+bool isAsyncFlowOpen(u32 flowId) {
+    return openAsyncFlowCountForId(flowId) > 0u;
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
