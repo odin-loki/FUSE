@@ -4387,3 +4387,13 @@ void testNestingAsyncFlowPreflightGuard() {
     expectTrue(handoffPreflight.crossThreadFlowHandoffPending,
     expectTrue(!handoffPreflight.hasOpenAsyncFlows, "handoff preflight clears global open flow count");
     testNestingAsyncFlowPreflightGuard();
+
+// --- deepen additive from deepen-fuse-b16-profiler-b63b ---
+    expectTrue(fuse::profiler::tryFirstEventByName("lookup_inner", outEvent),
+               "tryFirstEventByName succeeds for inner scope");
+               "tryFirstEventByName copies inner begin phase");
+    expectTrue(fuse::profiler::tryLastEventByName("lookup_inner", outEvent),
+               "tryLastEventByName succeeds for inner scope");
+               "tryLastEventByName copies inner end phase");
+               "tryFirstEventByFlowId succeeds for flow start");
+               "tryLastEventByFlowId succeeds for flow finish");
