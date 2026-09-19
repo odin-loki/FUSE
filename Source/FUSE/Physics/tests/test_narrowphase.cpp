@@ -3379,3 +3379,19 @@ void testManifoldNormalizeAndFrictionPreflightWrappers() {
     testNarrowphaseBufferDispatchPreflight();
     testDetectContactsPairDeepenPreflightWrapper();
     testManifoldNormalizeAndFrictionPreflightWrappers();
+
+// --- deepen additive from deepen-narrowphase-b4-guards-5b57 ---
+    expectTrue(validWritePreflight.can_write(), "write preflight accepts valid manifold");
+            fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::OutOfRangeSlot),
+    expectTrue(clampPreflight.needs_clamp(), "clamp preflight needs clamp when over capacity");
+void testContactBufferToVectorAndFrictionPreflightGuards() {
+            fuse::physics::narrowphase::ContactBufferToVectorRejectReason::EmptyBuffer),
+    expectTrue(frictionPreflight.needs_friction_basis_build(), "friction preflight needs build with valid contacts");
+void testNarrowphaseBufferDispatchDeepenGuards() {
+    const auto deepenPreflight = fuse::physics::narrowphase::preflight_narrowphase_buffer_dispatch(
+    expectTrue(deepenPreflight.skipped, "deepen buffer preflight skipped when all rejected");
+    expectTrue(deepenPreflight.allRejected, "deepen buffer preflight flags allRejected");
+    const auto validPreflight = fuse::physics::narrowphase::preflight_narrowphase_buffer_dispatch(
+    expectTrue(validPreflight.can_dispatch(), "deepen buffer preflight dispatches valid pair");
+    expectTrue(validPreflight.dispatchableCount == 1u, "deepen buffer preflight counts dispatchable pair");
+    testContactBufferToVectorAndFrictionPreflightGuards();

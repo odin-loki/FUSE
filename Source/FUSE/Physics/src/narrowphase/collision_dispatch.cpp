@@ -132,3 +132,6 @@ bool should_skip_narrowphase_slot_dispatch(
 // --- deepen additive from b4-narrowphase-buffer-guards-0bb9 ---
 NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
     NarrowphaseBufferDispatchPreflight preflight{};
+
+// --- deepen additive from deepen-narrowphase-b4-guards-5b57 ---
+    const NarrowphaseBufferDispatchPreflight preflight =

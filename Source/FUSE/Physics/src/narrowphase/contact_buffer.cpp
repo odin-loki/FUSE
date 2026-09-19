@@ -862,3 +862,8 @@ ContactBufferToVectorPreflight preflightContactBufferToVector(const ContactBuffe
     preflight.emptyBuffer = preflight.reason == ContactBufferToVectorRejectReason::EmptyBuffer;
     return !preflightContactBufferToVector(buffer).canExport();
     return preflightContactBufferToVector(buffer).canExport();
+
+// --- deepen additive from deepen-narrowphase-b4-guards-5b57 ---
+const char* contact_buffer_to_vector_reject_reason_name(ContactBufferToVectorRejectReason reason) {
+ContactBufferToVectorRejectReason contact_buffer_to_vector_reject_reason(const ContactBufferSoA& buffer) {
+ContactBufferToVectorPreflight preflight_contact_buffer_to_vector(const ContactBufferSoA& buffer) {

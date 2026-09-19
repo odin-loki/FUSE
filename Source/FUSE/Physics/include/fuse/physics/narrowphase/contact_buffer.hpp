@@ -347,3 +347,10 @@ struct ContactBufferToVectorPreflight {
     ContactBufferToVectorRejectReason reason = ContactBufferToVectorRejectReason::None;
     bool canExport() const { return reason == ContactBufferToVectorRejectReason::None; }
 ContactBufferToVectorPreflight preflightContactBufferToVector(const ContactBufferSoA& buffer);
+
+// --- deepen additive from deepen-narrowphase-b4-guards-5b57 ---
+    bool can_write() const { return reason == ContactBufferWriteSlotRejectReason::None; }
+const char* contact_buffer_to_vector_reject_reason_name(ContactBufferToVectorRejectReason reason);
+ContactBufferToVectorRejectReason contact_buffer_to_vector_reject_reason(const ContactBufferSoA& buffer);
+    bool can_export() const { return reason == ContactBufferToVectorRejectReason::None; }
+ContactBufferToVectorPreflight preflight_contact_buffer_to_vector(const ContactBufferSoA& buffer);
