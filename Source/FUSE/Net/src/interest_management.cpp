@@ -645,3 +645,7 @@ void InterestPriorityQueue::heapify_down_(u32 index) {
 }
 
 } // namespace fuse::net
+
+// --- deepen additive from deepen-b74-net-interest-diff-radius-guards-df4e ---
+RadiusFilterPreflight preflight_radius_filter(const InterestPolicy& policy,
+    RadiusFilterPreflight result;

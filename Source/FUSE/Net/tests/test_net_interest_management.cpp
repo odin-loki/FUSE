@@ -901,3 +901,12 @@ void run_interest_management_tests() {
 }
 
 } // namespace fuse::net::tests
+
+// --- deepen additive from deepen-b74-net-interest-diff-radius-guards-df4e ---
+               "should_skip_interest_diff_apply true for empty diff");
+    const fuse::net::RadiusFilterPreflight empty_radius_preflight =
+    const fuse::net::RadiusFilterPreflight zero_radius_preflight =
+    expectTrue(zero_radius_preflight.should_skip(), "radius preflight should_skip zero radius");
+    expectTrue(fuse::net::should_skip_radius_filter(zero_radius_policy, candidates),
+               "should_skip_radius_filter true for zero relevance radius");
+    const fuse::net::RadiusFilterPreflight valid_radius_preflight =

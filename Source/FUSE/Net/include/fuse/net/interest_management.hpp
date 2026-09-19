@@ -251,3 +251,7 @@ private:
 };
 
 } // namespace fuse::net
+
+// --- deepen additive from deepen-b74-net-interest-diff-radius-guards-df4e ---
+struct RadiusFilterPreflight {
+[[nodiscard]] RadiusFilterPreflight preflight_radius_filter(const InterestPolicy& policy,
