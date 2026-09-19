@@ -2619,6 +2619,19 @@ bool CookCache::would_invalidate_stale_content_for_source(const std::string& sou
     return count_stale_content_for_source(source_path, current_content_hash) != 0;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) != 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
 
@@ -3312,6 +3325,7 @@ void append_unique_source_(std::vector<std::string>& sources, const std::string&
         return;
     for (const std::string& recorded : sources) {
     sources.push_back(source_path);
+
 
 
 
