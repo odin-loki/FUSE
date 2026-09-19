@@ -1299,6 +1299,29 @@ bool preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrRejectReason* rea
 /// IR convolution preflight with mandatory reject-reason output (B7.2 deepen).
 bool try_preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrRejectReason& reason);
 
+/// Why HRTF IR convolution preflight rejected the request (B7.2 deepen).
+enum class HrtfIrRejectReason : u8 {
+    None = 0,
+    NullSamples,
+    ZeroLength,
+    MalformedIr,
+};
+
+/// Human-readable label for empty-IR reject reasons (logging / tests).
+const char* hrtf_ir_reject_reason_label(HrtfIrRejectReason reason);
+
+/// Classify why IR convolution would be rejected from preflight diagnostics.
+HrtfIrRejectReason classify_hrtf_ir_reject(const HrtfIrPreflight& preflight);
+
+/// True when IR convolution reject reason blocks dispatch (\c reason != None).
+bool hrtf_ir_reject_reason_is_blocking(HrtfIrRejectReason reason);
+
+/// IR convolution preflight with optional reject-reason output (B7.2 deepen).
+bool preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrRejectReason* reason = nullptr);
+
+/// IR convolution preflight with mandatory reject-reason output (B7.2 deepen).
+bool try_preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrRejectReason& reason);
+
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
     Bypass,
@@ -2440,6 +2463,8 @@ bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
 
 /// Classify why spatial pan routing would be rejected from pan-path preflight.
 
+
+
 /// True when pan-path reject reason blocks spatial pan (\c reason != None).
 bool hrtf_pan_path_reject_reason_is_blocking(HrtfPanPathRejectReason reason);
 
@@ -2450,6 +2475,12 @@ bool try_preflight_spatial_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir
 
 /// Spatial pan preflight when no IR is wired (B7.2 deepen).
 bool preflight_spatial_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
+/// Spatial pan preflight with optional reject-reason output (B7.2 deepen).
+                                     const Vec3& rel_listener,
+                                     HrtfPanPathRejectReason* reason = nullptr);
+
+                                         const Vec3& rel_listener, HrtfPanPathRejectReason& reason);
+
 
 /// True when a resolved pan path bypasses HRTF (disabled or co-located).
 bool is_hrtf_pan_bypassed(HrtfPanPath path);
@@ -3946,11 +3977,15 @@ bool try_preflight_hrtf_attenuation_coupling(
 
 /// Classify why spatial narrowing would be rejected from coupling preflight.
 
+
+
 /// True when attenuation-coupling reject reason blocks narrowing (\c reason != None).
 bool hrtf_attenuation_coupling_reject_reason_is_blocking(HrtfAttenuationCouplingRejectReason reason);
 
 bool preflight_hrtf_spatial_narrowing(HrtfPanPath path, float distance_attenuation,
                                       float occlusion_gain,
+/// Attenuation-coupling narrowing preflight with optional reject-reason output (B7.2 deepen).
+                                      const HrtfAttenuationCoupling& coupling = {},
                                       const BinauralPanParams& params = {},
                                       HrtfAttenuationCouplingRejectReason* reason = nullptr);
 
@@ -3958,6 +3993,8 @@ bool preflight_hrtf_spatial_narrowing(HrtfPanPath path, float distance_attenuati
 bool try_preflight_hrtf_spatial_narrowing(HrtfPanPath path, float distance_attenuation,
                                           const HrtfAttenuationCoupling& coupling,
                                           const BinauralPanParams& params,
+                                          float occlusion_gain,
+                                          HrtfAttenuationCouplingRejectReason& reason);
 
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
@@ -4832,6 +4869,7 @@ struct HrtfBinauralRejectBundle {
     bool narrowing_blocked() const {
         return hrtf_attenuation_coupling_reject_reason_is_blocking(narrowing);
     }
+};
 
 /// Preflight all binaural/HRTF guards for one source (IR-aware).
 HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir,
@@ -5566,6 +5604,8 @@ bool hrtf_binaural_preflight_rejects_for_reason(const HrtfBinauralPreflight& pre
 HrtfBinauralRejectBundle classify_hrtf_binaural_rejects(const HrtfBinauralPreflight& preflight);
 
 /// Composite binaural preflight with mandatory reject-reason bundle output (B7.2 deepen).
+bool try_preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+                                 float distance_attenuation, float occlusion_gain,
                                  const HrtfAttenuationCoupling& coupling,
                                  const BinauralPanParams& params, HrtfBinauralPreflight& preflight,
                                  HrtfBinauralRejectBundle& rejects);
