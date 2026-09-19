@@ -2168,6 +2168,13 @@ void testPreflightHrtfIrConvolution() {
     expectTrue(valid_preflight.reason == fuse::audio::HrtfIrRejectReason::None,
                "valid IR preflight reason is None");
 
+    const float samples[] = {0.5f};
+    const fuse::audio::HrtfIrStub valid{samples, 1};
+    const fuse::audio::HrtfIrPreflight valid_preflight = fuse::audio::preflight_hrtf_ir(valid);
+    expectTrue(valid_preflight.can_convolve(), "valid IR preflight can convolve");
+
+    const fuse::audio::HrtfIrStub malformed{samples, 0};
+    const fuse::audio::HrtfIrPreflight malformed_preflight = fuse::audio::preflight_hrtf_ir(malformed);
     expectTrue(malformed_preflight.malformed, "zero-length IR preflight marks malformed");
     expectTrue(malformed_preflight.reason == fuse::audio::HrtfIrRejectReason::ZeroLength,
                "zero-length IR preflight reports ZeroLength");
@@ -2186,17 +2193,30 @@ void testPreflightHrtfIrConvolution() {
                "IR reject reason label for ZeroLength");
 
 
+                               fuse::audio::HrtfIrRejectReason::ZeroLength),
+}
+
+void testPreflightHrtfPanPath() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    const float samples[] = {1.f};
+    const fuse::audio::HrtfIrStub valid{samples, 1};
+
+    const fuse::audio::HrtfPanPathPreflight convolution =
+        fuse::audio::preflight_hrtf_pan_path(true, valid, offset);
     expectTrue(convolution.can_spatial_pan(), "convolution path passes spatial preflight");
     expectTrue(convolution.can_convolve(), "convolution path can convolve");
     expectTrue(convolution.uses_convolution, "convolution path uses convolution");
     expectTrue(convolution.reject_reason == fuse::audio::HrtfPanPathRejectReason::None,
                "convolution path has no reject reason");
 
+    const fuse::audio::HrtfPanPathPreflight stub =
         fuse::audio::preflight_hrtf_pan_path(true, fuse::audio::make_empty_hrtf_ir(), offset);
     expectTrue(stub.can_spatial_pan(), "ILD/ITD stub passes spatial preflight");
     expectTrue(stub.uses_ild_itd_stub, "empty IR preflight selects ILD/ITD stub");
     expectTrue(!stub.can_convolve(), "ILD/ITD stub cannot convolve");
 
+    const fuse::audio::HrtfPanPathPreflight disabled =
+        fuse::audio::preflight_hrtf_pan_path(false, valid, offset);
     expectTrue(!disabled.can_spatial_pan(), "disabled HRTF fails spatial preflight");
     expectTrue(disabled.bypassed, "disabled HRTF is bypassed");
     expectTrue(disabled.reject_reason == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
@@ -2208,6 +2228,8 @@ void testPreflightHrtfIrConvolution() {
     expectTrue(co_located.reject_reason == fuse::audio::HrtfPanPathRejectReason::CoLocated,
                "co-located source reports CoLocated");
 
+    const fuse::audio::HrtfPanPathPreflight no_ir =
+        fuse::audio::preflight_hrtf_pan_path(true, offset);
     expectTrue(no_ir.uses_ild_itd_stub, "no-IR overload selects ILD/ITD stub");
 
     fuse::audio::HrtfPanPathRejectReason reason = fuse::audio::HrtfPanPathRejectReason::None;
@@ -2228,6 +2250,12 @@ void testPreflightHrtfIrConvolution() {
     const fuse::audio::HrtfPanPath spatial_path =
         fuse::audio::resolve_hrtf_pan_path(true, offset);
 
+}
+
+void testPreflightHrtfAttenuationCoupling() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+
+    const fuse::audio::HrtfAttenuationCouplingPreflight narrowed =
         fuse::audio::preflight_hrtf_attenuation_coupling(spatial_path, 0.2f, 0.3f);
     expectTrue(narrowed.can_apply_coupling(), "reduced attenuation passes coupling preflight");
     expectTrue(narrowed.can_narrow(), "reduced attenuation can narrow");
@@ -2235,6 +2263,7 @@ void testPreflightHrtfIrConvolution() {
     expectTrue(narrowed.reject_reason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
                "narrowing preflight reason is None");
 
+    const fuse::audio::HrtfAttenuationCouplingPreflight unity =
         fuse::audio::preflight_hrtf_attenuation_coupling(spatial_path, 1.f, 1.f);
     expectTrue(!unity.can_apply_coupling(), "unity attenuation skips coupling preflight");
     expectTrue(unity.unity_attenuation, "unity attenuation flagged in preflight");
@@ -2243,6 +2272,8 @@ void testPreflightHrtfIrConvolution() {
                "unity attenuation reports UnityAttenuation");
 
     const fuse::audio::HrtfAttenuationCouplingPreflight bypassed =
+        fuse::audio::preflight_hrtf_attenuation_coupling(fuse::audio::HrtfPanPath::Bypass, 0.1f,
+                                                         0.1f);
     expectTrue(!bypassed.can_apply_coupling(), "bypass path skips coupling preflight");
     expectTrue(bypassed.bypass_path, "bypass path flagged in preflight");
     expectTrue(bypassed.reject_reason
@@ -2253,6 +2284,7 @@ void testPreflightHrtfIrConvolution() {
         fuse::audio::HrtfAttenuationCouplingRejectReason::None;
     expectTrue(fuse::audio::preflight_hrtf_attenuation_coupling(spatial_path, 0.5f, 0.5f, &reason),
                "bool coupling preflight passes for reduced attenuation");
+    expectTrue(!fuse::audio::preflight_hrtf_attenuation_coupling(
                    fuse::audio::HrtfPanPath::Bypass, 0.5f, 0.5f, &reason),
                "bool coupling preflight rejects bypass path");
     expectTrue(reason == fuse::audio::HrtfAttenuationCouplingRejectReason::PanBypassed,
@@ -2262,6 +2294,8 @@ void testPreflightHrtfIrConvolution() {
                    fuse::audio::HrtfPanPath::Bypass, 0.1f, 0.1f)
                "classify coupling reject for bypass path");
     expectTrue(fuse::audio::classify_hrtf_attenuation_coupling_reject(spatial_path, 1.f, 1.f)
+                   == fuse::audio::HrtfAttenuationCouplingRejectReason::PanBypassed,
+                   == fuse::audio::HrtfAttenuationCouplingRejectReason::UnityAttenuation,
                "classify coupling reject for unity attenuation");
 
     expectTrue(std::strcmp(fuse::audio::hrtf_attenuation_coupling_reject_reason_label(
@@ -2609,7 +2643,6 @@ void testHrtfAttenuationCouplingPreflight() {
     expectTrue(co_located_preflight.path == fuse::audio::HrtfPanPath::Bypass,
                "co-located source resolves to bypass");
 
-    const fuse::audio::HrtfPanPathPreflight empty_ir =
         fuse::audio::preflight_hrtf_pan_path(true, empty, offset);
     expectTrue(empty_ir.empty_ir, "preflight marks empty IR");
     expectTrue(empty_ir.path == fuse::audio::HrtfPanPath::IldItdStub,
@@ -2625,8 +2658,6 @@ void testHrtfAttenuationCouplingPreflight() {
     expectTrue(convolution.path == fuse::audio::HrtfPanPath::Convolution,
                "valid IR resolves to convolution");
     expectTrue(convolution.uses_convolution(), "valid IR uses convolution path");
-    expectTrue(convolution.path
-                   == fuse::audio::resolve_hrtf_pan_path(true, valid, offset),
                "preflight path matches resolve_hrtf_pan_path");
 
     const fuse::audio::HrtfPanPathPreflight no_ir =
@@ -2635,7 +2666,6 @@ void testHrtfAttenuationCouplingPreflight() {
                "no-IR overload selects ILD/ITD stub");
     expectTrue(fuse::audio::can_apply_hrtf_spatial_pan(true, offset),
                "can_apply_hrtf_spatial_pan accepts no-IR spatial path");
-}
 
     const fuse::audio::HrtfAttenuationCouplingPreflight bypass =
         fuse::audio::preflight_hrtf_attenuation_coupling(fuse::audio::HrtfPanPath::Bypass, 0.1f,
@@ -2719,7 +2749,6 @@ void testHrtfAttenuationCouplingPreflight() {
                                                       1.f);
     expectTrue(unity.unityAttenuation, "unity attenuation preflight marks unityAttenuation");
     expectTrue(!unity.canApplyCoupling(), "unity attenuation preflight cannot apply coupling");
-    expectNear(unity.spatialBlend, 1.f, 1e-5f,
                "unity attenuation preflight reports unity spatial blend");
 
         fuse::audio::preflightHrtfAttenuationCoupling(fuse::audio::HrtfPanPath::IldItdStub, 0.2f,
@@ -2789,6 +2818,7 @@ void testHrtfAttenuationCouplingPreflight() {
                    fuse::audio::HrtfPanPath::Convolution, 0.15f, 0.25f),
                    fuse::audio::HrtfPanPath::Bypass, 0.15f, 0.25f),
                "can_apply_hrtf_attenuation_coupling rejects bypass path");
+
 
 void testBinauralPanGainSampleHelpers() {
     const fuse::audio::BinauralPanGains centre = fuse::audio::make_centre_binaural_pan_gains();

@@ -280,6 +280,8 @@ bool try_preflight_hrtf_ir_convolution(const HrtfIrStub& ir,
                                        HrtfIrPreflightRejectReason* reason = nullptr);
 
 
+
+
 /// Classify why an IR stub is empty or malformed (B7.2 deepen).
 HrtfIrRejectReason classify_hrtf_ir_reject(const HrtfIrStub& ir);
 
@@ -394,6 +396,13 @@ bool canUseHrtfIr(const HrtfIrStub& ir);
 
 
 /// Convenience guard — `preflight_hrtf_ir(ir).can_convolve()`.
+struct HrtfIrPreflight {
+    HrtfIrRejectReason reason = HrtfIrRejectReason::None;
+    bool empty_ir = false;
+
+
+HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
+
 
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
@@ -863,6 +872,18 @@ HrtfPanPathRejectReason classify_hrtf_pan_path_reject(bool hrtf_enabled, const V
 /// Populate pan-path preflight without computing gains (B7.2 deepen).
 
 /// Populate pan-path preflight when no IR is wired (B7.2 deepen).
+struct HrtfPanPathPreflight {
+    HrtfPanPath path = HrtfPanPath::Bypass;
+    bool bypassed = false;
+    bool uses_convolution = false;
+    bool uses_ild_itd_stub = false;
+
+};
+
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+                                             const Vec3& rel_listener);
+
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
 
 /// True when pan path passes spatial-pan preflight (B7.2 deepen).
 bool preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
@@ -1325,6 +1346,9 @@ HrtfAttenuationCouplingPreflight preflightHrtfAttenuationCoupling(
     const BinauralPanParams& params = {});
 
     HrtfAttenuationCouplingRejectReason reject_reason = HrtfAttenuationCouplingRejectReason::None;
+/// Read-only attenuation-coupling diagnostics — no mutation (B7.2 deepen).
+struct HrtfAttenuationCouplingPreflight {
+    bool skipped = false;
     bool bypass_path = false;
     bool unity_attenuation = false;
     float spatial_blend = 1.f;
@@ -1470,14 +1494,16 @@ struct HrtfGuardedPanPreflight {
 HrtfGuardedPanPreflight preflight_hrtf_guarded_pan(bool hrtf_enabled, const HrtfIrStub& ir,
                                                    const Vec3& rel_listener,
                                                    float distance_attenuation, float occlusion_gain,
-bool preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
                                        float occlusion_gain,
                                        const HrtfAttenuationCoupling& coupling = {},
                                        const BinauralPanParams& params = {});
 
 
     HrtfPanPath path, float distance_attenuation, float occlusion_gain,
-    const HrtfAttenuationCoupling& coupling = {}, const BinauralPanParams& params = {});
+    bool can_narrow() const { return !skipped; }
+};
+
+
 
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
