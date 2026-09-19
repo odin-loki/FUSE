@@ -2561,3 +2561,22 @@ void testPairBufferCanSkipRefineGuard() {
     expectTrue(!validPreflight.skipped, "refine preflight allows populated buffer");
     expectTrue(validPreflight.can_refine(), "valid buffer can refine");
                "should_skip_refine false when buffer has pairs");
+
+// --- deepen additive from deepen-b4-broadphase-guards-f048 ---
+void testPairBufferCompactAndClampZeroGuard() {
+    expectTrue(!emptyPreflight.can_insert(), "preflight rejects empty range");
+    expectTrue(emptyPreflight.emptyRange, "preflight marks empty range");
+void testShouldSkipShapeCellInsertionGuards() {
+    expectTrue(fuse::physics::broadphase::should_skip_shape_cell_insertion(inverted, 4u),
+               "should_skip rejects empty 3D range");
+    expectTrue(!fuse::physics::broadphase::should_skip_shape_cell_insertion(unitRange, 4u),
+               "should_skip allows clamped in-budget 3D range");
+    expectTrue(fuse::physics::broadphase::should_skip_shape_cell_insertion(planeRange, 2u),
+               "should_skip rejects over-budget 2D range");
+    expectTrue(fuse::physics::broadphase::should_skip_broadphase_refine(bodies, shapes, buffer),
+               "should_skip matches empty scene refine preflight");
+    const auto validPreflight = fuse::physics::broadphase::preflight_broadphase_refine(bodies, shapes, buffer);
+    expectTrue(!validPreflight.skipped, "refine preflight does not skip valid scene and buffer");
+    expectTrue(validPreflight.can_refine(), "refine preflight can refine valid input");
+    expectTrue(!fuse::physics::broadphase::should_skip_broadphase_refine(bodies, shapes, buffer),
+               "should_skip allows valid refine input");
