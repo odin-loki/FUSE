@@ -399,6 +399,20 @@ bool eventFlowIdMatches(const ProfileEvent& event, u32 flowId) {
         && event.scopeId == flowId;
 }
 
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    return isValidEventName(event.name) && isValidEventName(name)
+        && std::strcmp(event.name, name) == 0;
+}
+
+bool isFlowEventPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+}
+
+bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
+    return flowId != 0u && isFlowEventPhase(event.phase) && event.scopeId == flowId
+        && isValidEventName(event.name);
+}
+
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
@@ -3186,6 +3200,27 @@ bool isFlowIdBalanced(u32 flowId) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+
+bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -3406,7 +3441,17 @@ const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason rea
         return "unbalanced_nesting";
     case ChromeTraceExportRejectReason::FlowDepthDetached:
     case ChromeTraceExportRejectReason::CrossThreadFlowHandoffPending:
-}
+
+NestingAsyncFlowPreflight preflightNestingAndAsyncFlow() {
+    NestingAsyncFlowPreflight preflight{};
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    preflight.openAsyncFlowCount = openAsyncFlowCount();
+    preflight.maxScopeNestingDepth = maxNestingDepth();
+    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
+    preflight.scopeNestingBalanced = isScopeNestingBalanced();
+    preflight.flowNestingBalanced = isFlowNestingBalanced();
+    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
