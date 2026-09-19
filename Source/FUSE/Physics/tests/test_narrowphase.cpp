@@ -2916,3 +2916,16 @@ void testFrictionBasisNormalizeBeforeRebuildGuard() {
     testContactBufferClampRejectReasonGuards();
     testDetectContactsPairWithPreflightGuard();
     testNarrowphaseBufferFinalizePreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-preflights-09a2 ---
+    expectTrue(validPreflight.can_write(), "write preflight accepts valid manifold");
+        validPreflight.reason == fuse::physics::narrowphase::ContactBufferWriteRejectReason::None,
+        fuse::physics::narrowphase::should_skip_contact_buffer_write(buffer, 0u, invalid),
+void testContactBufferCompactionClampPreflightGuards() {
+    expectTrue(!compactionPreflight.needs_compaction(), "compaction preflight skips all-valid slots");
+    expectTrue(compactionPreflight.allValid, "compaction preflight marks all-valid buffer");
+    expectTrue(clampPreflight.needs_clamp(), "clamp preflight requests overflow truncation");
+    const auto withinPreflight = fuse::physics::narrowphase::preflight_contact_buffer_clamp(withinBuffer);
+    expectTrue(!withinPreflight.needs_clamp(), "clamp preflight skips when within capacity");
+    expectTrue(withinPreflight.withinCapacity, "clamp preflight marks within-capacity buffer");
+    testContactBufferCompactionClampPreflightGuards();
