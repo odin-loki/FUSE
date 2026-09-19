@@ -3536,3 +3536,31 @@ void testFroxelClassifyIsBlockingAndPreflightGuards() {
     expectTrue(!fuse::renderer::froxelPopulateRejectReasonIsBlocking(fuse::renderer::FroxelPopulateRejectReason::None),
                "classifyFroxelPopulateReject invalid_camera for inverted planes");
     testFroxelClassifyIsBlockingAndPreflightGuards();
+
+// --- deepen additive from deepen-b511-froxel-guards-7b26 ---
+void testFroxelRejectClassificationAndPreflightGuards() {
+               "classifyDensityLookupReject reports none for accessible grid");
+               "preflightDensityLookup succeeds when only clamp warning");
+               "preflightDensityLookup with reason succeeds on accessible grid");
+               "preflightDensityLookup reports no reject reason on success");
+               "classifyDensityLookupReject reports empty_storage for empty grid");
+               "preflightSampleCoords with reason succeeds for in-bounds coords");
+               "preflightSampleCoords reports no reject reason on success");
+    expectTrue(fuse::renderer::froxel_util::classifyDensitySampleReject(grid, desc, inBounds) ==
+               "classifyDensitySampleReject reports none for accessible grid");
+               "preflightDensitySampleAtCoords succeeds on accessible grid");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityTrilinearSample(grid, desc, inBounds, &trilinearReason),
+               "preflightDensityTrilinearSample with reason succeeds on accessible grid");
+               "preflightDensityTrilinearSample reports no reject reason on success");
+               "classifyScreenMappingReject reports none for in-range depth");
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightScreenDepthToSampleCoords(0.5f, 0.5f, 10.f, desc, camera),
+               "preflightScreenDepthToSampleCoords with outputs succeeds in range");
+               "preflightScreenDepthToSampleCoords reports no reject reason on success");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityAtScreen(grid, desc, camera, 0.5f, 0.5f, 10.f),
+               "preflightDensityAtScreen succeeds on accessible grid");
+               "preflightDensityAtScreen maps empty storage to empty_grid screen reject");
+               "preflightGridDensity with reason succeeds on accessible grid");
+               "preflightGridDensity reports no reject reason on success");
+               "preflightFroxelPopulate with reason succeeds for valid inputs");
+               "preflightFroxelPopulate reports no reject reason on success");
+    testFroxelRejectClassificationAndPreflightGuards();
