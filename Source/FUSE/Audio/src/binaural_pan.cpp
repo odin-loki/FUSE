@@ -2329,3 +2329,32 @@ bool can_apply_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight,
 bool can_convolve_hrtf_binaural(const HrtfBinauralPreflight& preflight,
     const HrtfBinauralRejectReason reject_reason =
 bool can_narrow_hrtf_binaural_spatial_image(const HrtfBinauralPreflight& preflight,
+
+// --- deepen additive from deepen-b7-2-hrtf-reject-reasons-1260 ---
+const char* hrtf_pan_spatial_reject_reason_label(HrtfPanSpatialRejectReason reason) {
+    case HrtfPanSpatialRejectReason::None:
+    case HrtfPanSpatialRejectReason::HrtfDisabled:
+    case HrtfPanSpatialRejectReason::CoLocated:
+HrtfPanSpatialRejectReason classify_hrtf_pan_spatial_reject(const HrtfPanPathPreflight& preflight) {
+        return HrtfPanSpatialRejectReason::HrtfDisabled;
+        return HrtfPanSpatialRejectReason::CoLocated;
+    return HrtfPanSpatialRejectReason::None;
+                                         HrtfPanSpatialRejectReason expected) {
+                                             HrtfPanConvolutionRejectReason expected) {
+                                      HrtfPanSpatialRejectReason* reason) {
+    const HrtfPanPathPreflight preflight = preflight_hrtf_pan_path(hrtf_enabled, rel_listener);
+                                    HrtfPanSpatialRejectReason& reason) {
+const char* hrtf_binaural_bypass_reject_reason_label(HrtfBinauralBypassRejectReason reason) {
+    case HrtfBinauralBypassRejectReason::None:
+    case HrtfBinauralBypassRejectReason::HrtfDisabled:
+    case HrtfBinauralBypassRejectReason::CoLocated:
+HrtfBinauralBypassRejectReason classify_hrtf_binaural_bypass_reject(
+    const HrtfPanSpatialRejectReason spatial =
+        return HrtfBinauralBypassRejectReason::HrtfDisabled;
+        return HrtfBinauralBypassRejectReason::CoLocated;
+        return HrtfBinauralBypassRejectReason::None;
+    const HrtfPanConvolutionRejectReason convolution =
+    const HrtfAttenuationCouplingRejectReason coupling =
+                                          HrtfBinauralBypassRejectReason* reason) {
+bool try_preflight_hrtf_binaural_bypass(bool hrtf_enabled, const Vec3& rel_listener,
+                                        HrtfBinauralBypassRejectReason& reason) {

@@ -1422,3 +1422,19 @@ bool hrtf_binaural_rejects_for_attenuation_coupling_reason(const HrtfBinauralPre
 bool can_apply_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight,
 bool can_convolve_hrtf_binaural(const HrtfBinauralPreflight& preflight,
 bool can_narrow_hrtf_binaural_spatial_image(const HrtfBinauralPreflight& preflight,
+
+// --- deepen additive from deepen-b7-2-hrtf-reject-reasons-1260 ---
+enum class HrtfPanSpatialRejectReason : u8 {
+const char* hrtf_pan_spatial_reject_reason_label(HrtfPanSpatialRejectReason reason);
+HrtfPanSpatialRejectReason classify_hrtf_pan_spatial_reject(const HrtfPanPathPreflight& preflight);
+HrtfPanConvolutionRejectReason classify_hrtf_pan_convolution_reject(const HrtfPanPathPreflight& preflight);
+                                         HrtfPanSpatialRejectReason expected);
+                                             HrtfPanConvolutionRejectReason expected);
+                                      HrtfPanSpatialRejectReason* reason = nullptr);
+                                    HrtfPanSpatialRejectReason& reason);
+enum class HrtfBinauralBypassRejectReason : u8 {
+const char* hrtf_binaural_bypass_reject_reason_label(HrtfBinauralBypassRejectReason reason);
+HrtfBinauralBypassRejectReason classify_hrtf_binaural_bypass_reject(
+                                          HrtfBinauralBypassRejectReason* reason = nullptr);
+bool try_preflight_hrtf_binaural_bypass(bool hrtf_enabled, const Vec3& rel_listener,
+                                        HrtfBinauralBypassRejectReason& reason);

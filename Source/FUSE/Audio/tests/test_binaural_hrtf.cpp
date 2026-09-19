@@ -2688,3 +2688,20 @@ void testHrtfAttenuationCouplingRejectReasonWrappers() {
 void testHrtfBinauralRejectReasonMirrorsExistingPreflights() {
                "preflight_hrtf_ir_ready mirrors should_skip_hrtf_convolution inverse");
     testHrtfBinauralRejectReasonMirrorsExistingPreflights();
+
+// --- deepen additive from deepen-b7-2-hrtf-reject-reasons-1260 ---
+    fuse::audio::HrtfIrRejectReason reason = fuse::audio::HrtfIrRejectReason::NullSamples;
+                   false, offset, fuse::audio::HrtfPanSpatialRejectReason::HrtfDisabled),
+                   true, valid, co_located, fuse::audio::HrtfPanConvolutionRejectReason::CoLocated),
+    fuse::audio::HrtfPanSpatialRejectReason spatial_reason =
+        fuse::audio::HrtfPanSpatialRejectReason::CoLocated;
+    expectTrue(spatial_reason == fuse::audio::HrtfPanSpatialRejectReason::None,
+    fuse::audio::HrtfPanConvolutionRejectReason conv_reason =
+        fuse::audio::HrtfPanConvolutionRejectReason::HrtfDisabled;
+    expectTrue(conv_reason == fuse::audio::HrtfPanConvolutionRejectReason::None,
+                               fuse::audio::HrtfBinauralBypassRejectReason::HrtfDisabled),
+    fuse::audio::HrtfBinauralBypassRejectReason bypass_reason =
+        fuse::audio::HrtfBinauralBypassRejectReason::CoLocated;
+    expectTrue(bypass_reason == fuse::audio::HrtfBinauralBypassRejectReason::None,
+        fuse::audio::HrtfBinauralConvolutionRejectReason::HrtfDisabled;
+        fuse::audio::HrtfBinauralNarrowingRejectReason::BypassPath;
