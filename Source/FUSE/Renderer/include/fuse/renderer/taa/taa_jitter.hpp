@@ -30,6 +30,11 @@ enum class TaaJitterAdvanceBlockReason : u8 {
 const char* taaJitterAdvanceBlockReasonLabel(TaaJitterAdvanceBlockReason reason);
 /// Classify why jitter advance is blocked for viewport + sequence (B5.9 deepen).
 TaaJitterAdvanceBlockReason classifyTaaJitterAdvanceBlock(u32 width, u32 height, u32 sequenceLength);
+/// Why jitter sync-to-frame preflight rejected the request (B5.9 deepen).
+/// Classify why jitter cannot sync to a monotonic frame counter (B5.9 deepen).
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 frameIndex, u32 sequenceLength);
+/// True when jitter may align to `frameIndex` for the given sequence (B5.9 deepen).
+bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncRejectReason* reason = nullptr);
 
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
@@ -259,6 +264,9 @@ public:
     u32 frameIndexSlotDrift(u32 frameIndex) const;
     /// True when jitter slot differs from the frame-index mapping (B5.9 deepen).
     bool needsSyncToFrameIndex(u32 frameIndex) const;
+    /// Sync with reject-reason diagnostics; returns false when blocked (B5.9 deepen).
+    bool syncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason* reason);
+    /// True when jitter state differs from the expected slot for `frameIndex` (B5.9 deepen).
 
     u32 index() const { return m_index; }
     /// True when monotonic frame counter matches `frameIndex` (B5.9 deepen).

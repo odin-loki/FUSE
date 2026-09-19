@@ -24,6 +24,7 @@ TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 /*frameIndex*/, u32 se
         return TaaJitterSyncRejectReason::InvalidSequence;
     }
     return TaaJitterSyncRejectReason::None;
+    if (!TaaJitterLayout::canSyncToFrameIndex(0u, sequenceLength)) {
 
 bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncRejectReason* reason) {
     const TaaJitterSyncRejectReason reject = classifyTaaJitterSyncReject(frameIndex, sequenceLength);
@@ -83,6 +84,7 @@ TaaJitterAdvanceBlockReason classifyTaaJitterAdvanceBlock(u32 width, u32 height,
         return TaaJitterAdvanceBlockReason::InvalidSequence;
         return TaaJitterAdvanceBlockReason::InvalidViewport;
     return TaaJitterAdvanceBlockReason::None;
+    }
 
 f32 TaaJitterLayout::halton(u32 index, u32 base) {
     if (base < 2u) {
@@ -598,7 +600,15 @@ bool TaaJitter::needsSyncToFrameIndex(u32 frameIndex) const {
     return TaaJitterLayout::needsSyncToFrameIndex(frameIndex, m_index, m_sequenceLength);
 
 bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
+bool TaaJitter::needsResyncToFrameIndex(u32 frameIndex) const {
     if (!canSyncToFrameIndex(frameIndex)) {
+        return false;
+    }
+    return !isAlignedToFrameIndex(frameIndex);
+}
+
+bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason* reason) {
+    if (!preflightTaaJitterSync(frameIndex, m_sequenceLength, reason)) {
         return false;
     }
     syncToFrameIndex(frameIndex);
@@ -611,25 +621,16 @@ bool TaaJitter::syncToFrameIndexIfViewportReady(u32 frameIndex, u32 width, u32 h
     }
     syncToFrameIndex(frameIndex);
     return true;
-}
 
 bool TaaJitter::trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncBlockReason& outReason) {
     outReason = classifyTaaJitterSyncBlock(m_sequenceLength);
     if (outReason != TaaJitterSyncBlockReason::None) {
-        return false;
-    }
-    syncToFrameIndex(frameIndex);
-    return true;
-}
 
 bool TaaJitter::trySyncToFrameIndexIfViewportReady(u32 frameIndex, u32 width, u32 height,
                                                    TaaJitterSyncBlockReason& outReason) {
     outReason = classifyTaaJitterSyncViewportBlock(width, height, m_sequenceLength);
-    if (outReason != TaaJitterSyncBlockReason::None) {
-        return false;
-    }
-    syncToFrameIndex(frameIndex);
-    return true;
+bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
+    return syncToFrameIndexIfReady(frameIndex, nullptr);
 }
 
 bool TaaJitter::advanceIfReady() {

@@ -323,9 +323,7 @@ bool taaHistoryTemporalBlendReady(const TaaResolveDesc& desc, const TaaHistoryBu
 /// History warm-up phase tracked alongside ping-pong targets (B5.9 deepen).
 enum class TaaHistoryWarmupPhase : u8 {
     NotAllocated = 0,
-    NeedsWarmup,
     Warm,
-};
 /// Human-readable label for history warm-up phases (B5.9 deepen).
 const char* taaHistoryWarmupPhaseLabel(TaaHistoryWarmupPhase phase);
 /// Classify the current history warm-up phase (B5.9 deepen).
@@ -340,13 +338,11 @@ enum class TaaHistoryWarmupState : u8 {
     NotReady = 0,
     AwaitingFirstResolve,
     Complete,
-};
 /// Human-readable label for history warm-up states (B5.9 deepen).
 const char* taaHistoryWarmupStateLabel(TaaHistoryWarmupState state);
 /// Classify history warm-up state (B5.9 deepen).
 TaaHistoryWarmupState classifyTaaHistoryWarmupState(const TaaHistoryBuffer& history);
 /// True when history warm-up is complete and temporal reuse may proceed (B5.9 deepen).
-bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
 /// True when history warm-up is complete; optionally reports the classified state (B5.9 deepen).
 bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupState* state = nullptr);
 
@@ -355,7 +351,6 @@ enum class TaaResolveBlendMode : u8 {
     Warmup = 0,
     Steady,
     StaleForcedCurrent,
-};
 /// Human-readable label for resolve blend modes (B5.9 deepen).
 const char* taaResolveBlendModeLabel(TaaResolveBlendMode mode);
 /// Classify resolve blend mode considering warm-up and reuse guards (B5.9 deepen).
@@ -364,19 +359,11 @@ TaaResolveBlendMode classifyTaaResolveBlendMode(const TaaResolveDesc& desc, cons
 bool taaBlendWeightsNearEqual(const TaaBlendWeights& a, const TaaBlendWeights& b, f32 epsilon = 1e-5f);
 
 /// Why history warm-up is incomplete (B5.9 deepen).
-enum class TaaHistoryWarmupBlockReason : u8 {
-    None = 0,
-    NotReady,
     NeedsResolve,
-};
-/// Human-readable label for history warm-up block reasons (B5.9 deepen).
-const char* taaHistoryWarmupBlockReasonLabel(TaaHistoryWarmupBlockReason reason);
-/// Classify why history warm-up is blocked (B5.9 deepen).
-TaaHistoryWarmupBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history);
 /// True when history warm-up is complete and temporal accumulation may begin (B5.9 deepen).
-bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
-/// True when history has completed warm-up preflight (B5.9 deepen).
-bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason* reason = nullptr);
+/// True when history has completed warm-up and may accumulate temporally (B5.9 deepen).
+/// True when temporal reuse may begin for the observed invalidate epoch (B5.9 deepen).
+bool tryCanBeginTemporalReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
@@ -593,6 +580,14 @@ struct TaaResolveTemporalPreflight {
 /// Preflight resolve skip, history reuse, and blend weights together (B5.9 deepen).
 bool preflightTaaResolveTemporalAccumulation(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                              TaaResolveTemporalPreflight* result = nullptr);
+/// Compute resolve blend weights only when preflight passes (B5.9 deepen).
+                                      TaaBlendWeights& outWeights,
+
+struct TaaResolveFramePreflight {
+    bool canProceed = false;
+    TaaResolveBlendRejectReason blend_reason = TaaResolveBlendRejectReason::None;
+/// True when resolve would proceed past skip and blend-weight guards (B5.9 deepen).
+                              TaaResolveFramePreflight* out = nullptr);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

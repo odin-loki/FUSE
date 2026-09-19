@@ -268,6 +268,15 @@ bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmup
     return block == TaaHistoryWarmupBlockReason::None;
 }
 
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return !taaHistoryNeedsWarmup(history);
+}
+
+bool tryCanBeginTemporalReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                              TaaHistoryReuseBlockReason* reason) {
+    return preflightTaaHistoryReuse(history, observedGeneration, reason);
+}
+
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
                               TaaHistoryReuseBlockReason* reason) {
     const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlock(history, observedGeneration);
