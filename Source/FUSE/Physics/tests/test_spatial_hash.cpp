@@ -3352,6 +3352,8 @@ void testShouldRunBroadphaseGuards() {
                "shouldRunBroadphase false on singleton scene");
                "shouldRunBroadphasePairGeneration false on singleton scene");
 
+    expectTrue(!fuse::physics::broadphase::shouldRunBroadphase(bodies, shapes),
+
     bodies.addBody({1.f, 0.f, 0.f}, 1.f);
     shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
     expectTrue(fuse::physics::broadphase::shouldRunBroadphase(bodies, shapes),
@@ -3361,6 +3363,34 @@ void testShouldRunBroadphaseGuards() {
     expectTrue(!fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
                "canSkipBroadphase false when shouldRunBroadphase true");
 
+}
+
+void testShouldRunPairBufferDedupeGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    expectTrue(!fuse::physics::broadphase::shouldRunPairBufferDedupe(buffer),
+               "shouldRunPairBufferDedupe false on empty buffer");
+    expectTrue(fuse::physics::broadphase::canSkipPairBufferDedupe(buffer),
+               "canSkipPairBufferDedupe true when shouldRunPairBufferDedupe false");
+
+    buffer.push(0u, 1u);
+               "shouldRunPairBufferDedupe false on single pair");
+    expectTrue(fuse::physics::broadphase::pairBufferDedupeRejectsForReason(
+                   buffer, fuse::physics::broadphase::PairBufferDedupeRejectReason::SinglePair),
+               "single pair rejects for SinglePair at SoA layer");
+
+    buffer.push(2u, 3u);
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferDedupe(buffer),
+               "shouldRunPairBufferDedupe true for multiple pairs");
+    expectTrue(!fuse::physics::broadphase::canSkipPairBufferDedupe(buffer),
+               "canSkipPairBufferDedupe false when shouldRunPairBufferDedupe true");
+
+void testPairBufferSortRejectReasonGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferSortRejectReason(buffer)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferSortRejectReason::EmptyBuffer),
+             "empty buffer reports EmptyBuffer sort reject reason");
+    expectTrue(fuse::physics::broadphase::pairBufferSortRejectsForReason(
+                   buffer, fuse::physics::broadphase::PairBufferSortRejectReason::EmptyBuffer),
+               "empty buffer rejects for EmptyBuffer sort reason");
     expectTrue(fuse::physics::broadphase::canSkipPairBufferSort(buffer),
                "canSkipPairBufferSort on empty buffer");
     expectTrue(!fuse::physics::broadphase::shouldRunPairBufferSort(buffer),
@@ -3381,6 +3411,16 @@ void testShouldRunBroadphaseGuards() {
 
     buffer.push(2u, 3u);
                "single pair rejects for SinglePair");
+
+    expectTrue(fuse::physics::broadphase::canSkipPairBufferSort(buffer),
+               "canSkipPairBufferSort on single pair");
+
+    const fuse::physics::broadphase::PairBufferSortPreflight singleSort =
+        fuse::physics::broadphase::preflightPairBufferSort(buffer);
+    expectEq(static_cast<fuse::u32>(singleSort.reason),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferSortRejectReason::SinglePair),
+             "sort preflight carries reject reason for single pair");
+    expectTrue(!singleSort.needsSort(), "single-pair sort preflight does not need sort");
 
     expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferSortRejectReason(buffer)),
              static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferSortRejectReason::None),
@@ -4101,6 +4141,9 @@ void testBroadphaseMergePreflightHasBodiesFields() {
     expectTrue(mergePreflight.hasPlaneBodies, "merge scene marks hasPlaneBodies");
     expectTrue(mergePreflight.hasDynamicBodies, "merge scene marks hasDynamicBodies");
     expectTrue(mergePreflight.canMerge(), "merge scene can merge with positive body flags");
+
+    buffer.sortCanonical();
+    expectTrue(buffer.isSortedCanonical(), "sortCanonical leaves canonical order via shouldRun gate");
 
 void testBroadphaseMergeRejectReasonGuards() {
     fuse::physics::RigidBodySoA bodies;
@@ -6539,6 +6582,7 @@ int main() {
     testMergePairsIntoBufferRejectReasonGuards();
     testPairBufferSortAndDedupeShouldRunGuards();
     testShouldRunBroadphaseGuard();
+    testShouldRunBroadphaseGuards();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");

@@ -590,6 +590,7 @@ bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
 
 /// Non-mutating dedupe predicate — inverse of `canSkipPairBufferDedupe` (B4.2 deepen follow-up pass).
 
+
 enum class PairBufferSortRejectReason : u8 {
     None = 0,
     EmptyBuffer,
@@ -605,6 +606,7 @@ const char* pairBufferSortRejectReasonName(PairBufferSortRejectReason reason);
 /// Diagnose why SoA sort would skip; vacuously succeeds when sort may proceed.
 
 /// Diagnose why canonical sort would skip; vacuously succeeds when sort may proceed.
+
 PairBufferSortRejectReason pairBufferSortRejectReason(const PairBufferSoA& buffer);
 
 /// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen pass).
@@ -627,6 +629,7 @@ enum class PairBufferSortRejectReason : u8 {
     bool singlePair = false;
 
 /// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+
 
 
 
