@@ -199,6 +199,11 @@ FrictionBasisRejectReason friction_basis_reject_reason(
 
 
 
+    CanReuse,
+
+
+/// Diagnose why friction-basis rebuild would skip; vacuously succeeds when rebuild may proceed (B4.4 deepen pass).
+
 
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
 struct FrictionBasisPreflight {
@@ -233,6 +238,11 @@ FrictionBasisPreflight preflight_friction_basis_rebuild(
 bool should_skip_friction_basis_preflight(
 
 /// Non-mutating friction-basis rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 deepen pass).
+bool should_run_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Non-mutating friction-basis predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 deepen pass).
 bool should_run_friction_basis_rebuild(
     const ContactManifold& manifold,
     f32 epsilon = 1e-4f);

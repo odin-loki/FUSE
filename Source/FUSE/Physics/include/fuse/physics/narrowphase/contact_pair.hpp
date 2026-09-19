@@ -48,6 +48,13 @@ bool contact_pair_rejects_for_reason(
     const CollisionShapeSoA& shapes,
     ContactPairRejectReason expected);
 
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen pass).
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
 /// Returns true when both indices reference the same body (B4.3 deepen pass).
 bool is_self_contact_pair(const broadphase::CandidatePair& pair);
 
@@ -978,6 +985,8 @@ struct NarrowphasePairBatchStats {
 
 /// Count dispatchable vs rejected pairs without running shape dispatch (B4.5 deepen follow-up).
 NarrowphasePairBatchStats compute_narrowphase_pair_stats(
+/// Non-mutating narrowphase predicate — inverse of `can_skip_narrowphase` (B4.4 deepen pass).
+bool should_run_narrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
