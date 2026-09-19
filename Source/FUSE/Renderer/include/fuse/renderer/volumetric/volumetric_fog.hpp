@@ -545,6 +545,7 @@ bool shouldSkipFroxelPopulate(const FroxelGridDesc& desc);
 /// Preflight guard before index-based density lookup; false on empty grid or desc mismatch.
 bool canLookupAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
 /// Preflight guard before tile/slice coord density lookup; false on empty grid or desc mismatch.
+/// Preflight guard before tile/slice coord lookup; false on empty grid or desc mismatch.
 bool canLookupAtCoord(const FroxelDensityGrid& grid,
                       const FroxelGridDesc& desc,
                       u32 tileX,
@@ -573,6 +574,11 @@ bool wouldSkipDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc&
 bool wouldSkipDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
 /// Early-out when coord-based density lookup would be rejected; OOB coords that clamp are not skipped.
 bool wouldSkipDensityLookupAtCoord(const FroxelDensityGrid& grid,
+                         const FroxelGridDesc& desc,
+                         u32 tileX,
+                         u32 tileY,
+                         u32 sliceZ,
+                         DensityLookupRejectReason& outReason);
 /// True when a lookup at `index` would clamp into the valid froxel range.
 bool wouldClampDensityLookupIndex(u32 index, const FroxelGridDesc& desc);
 /// True when a lookup at tile/slice coords would clamp into the valid froxel range.
@@ -741,6 +747,10 @@ GridDensityRejectReason classifyGridDensityReject(const FroxelDensityGrid& grid,
 /// Non-mutating grid-density preflight — returns true when validation would succeed.
 bool preflightGridDensity(const FroxelDensityGrid& grid,
                           GridDensityRejectReason* reason = nullptr,
+/// Diagnose density validation against `desc`; vacuously succeeds on empty grids.
+bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
+                                   const FroxelGridDesc& desc,
+                                   GridDensityRejectReason& outReason,
 /// Diagnose the first density invariant that fails; vacuously succeeds when `desc` is empty.
 bool tryValidateGridDensity(const FroxelDensityGrid& grid,
                             GridDensityRejectReason& outReason,
@@ -991,6 +1001,14 @@ bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
 /// True when a populated grid matches desc and holds non-zero density after a successful populate.
 bool validatePopulatedDensity(const FroxelDensityGrid& grid,
                             f32 epsilon = 1e-6f);
+                              ScreenMappingRejectReason& outScreenReason);
+/// Screen-space sample with guard preflight and screen/sample reject-reason diagnostics.
+bool trySampleDensityAtScreen(const FroxelDensityGrid& grid,
+                              f32 screenX,
+                              f32 screenY,
+                              f32 viewDepth,
+                              f32& outDensity,
+                              ScreenMappingRejectReason& outScreenReason,
 void populateFromAnalyticFog(FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              const FroxelCameraDesc& camera,
@@ -1034,6 +1052,8 @@ bool preflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,
                                 const VolumetricFogParams& params);
 bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
                                 const FroxelGridDesc& desc,
+/// Guarded populate with reject-reason diagnostics; always mirrors `populateFromAnalyticFog`.
+                                const FroxelCameraDesc& camera,
                                 const VolumetricFogParams& params,
                                 FroxelPopulateRejectReason& outReason);
 } // namespace froxel_util
