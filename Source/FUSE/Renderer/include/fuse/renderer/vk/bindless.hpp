@@ -172,6 +172,8 @@ public:
 
     void* layoutHandle() const { return m_layout; }
     void* descriptorSetHandle() const { return m_set; }
+    void* poolHandle() const { return m_pool; }
+    bool vulkanDescriptorsReady() const { return m_pool != nullptr && m_layout != nullptr && m_set != nullptr; }
 
     u32 registeredTextureCount() const;
     u32 registeredBufferCount() const;

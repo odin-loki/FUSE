@@ -136,7 +136,8 @@ public:
 
     RenderGraphExecuteInfo execute(VulkanDevice& device,
                                    FrameManager& frames,
-                                   CommandBufferRecorder& recorder);
+                                   CommandBufferRecorder& recorder,
+                                   const VkFrameEncodeContext* encodeContext = nullptr);
 
     const RenderGraphCompileInfo& compileInfo() const { return m_compileInfo; }
     const std::vector<RGBarrier>& plannedBarriers() const { return m_barriers; }

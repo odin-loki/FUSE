@@ -701,6 +701,23 @@ void testCanFreeSlotGuard() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testVulkanDescriptorPoolScaffold() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->status().deviceReady) {
+        expectTrue(bindless.vulkanDescriptorsReady(), "bindless VkDescriptorPool/Set/Layout created");
+        expectTrue(bindless.poolHandle() != nullptr, "descriptor pool handle non-null");
+        expectTrue(bindless.layoutHandle() != nullptr, "descriptor set layout handle non-null");
+        expectTrue(bindless.descriptorSetHandle() != nullptr, "descriptor set handle non-null");
+    }
+#endif
+
+    bindless.destroy(*bootstrap->device());
+}
+
 void testPreflightFreeFunction() {
     const fuse::renderer::BindlessSlotHandle handle{fuse::renderer::BindlessHeapKind::Buffer, 2u, 5u};
     const fuse::renderer::BindlessSlotPreflight match =
@@ -752,6 +769,7 @@ int main() {
     testShouldSkipBindlessSlotLookup();
     testHeapAtCapacityGuard();
     testCanFreeSlotGuard();
+    testVulkanDescriptorPoolScaffold();
     testPreflightFreeFunction();
 
     fuse::core::shutdown();

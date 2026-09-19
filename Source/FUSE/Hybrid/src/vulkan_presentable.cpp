@@ -2,6 +2,8 @@
 
 #include <fuse/hybrid/vulkan_presentable.hpp>
 
+#include <fuse/platform/window_wsi.hpp>
+
 namespace fuse::hybrid {
 
 VulkanPresentable::VulkanPresentable(VulkanPresentableDesc desc) : m_desc(desc) {}
@@ -21,11 +23,14 @@ std::unique_ptr<VulkanPresentable> VulkanPresentable::create(const VulkanPresent
 bool VulkanPresentable::initialize() {
     m_status.backend = m_desc.backend;
     m_status.vsyncMode = m_desc.vsyncMode;
+    m_requiredExtensions.clear();
 
     if (m_desc.backend == PresentableBackend::Headless) {
         m_status.message = "Headless presentable path — no platform window";
         return true;
     }
+
+    platform::requiredVulkanInstanceExtensions(m_requiredExtensions);
 
     m_window = std::make_unique<platform::Window>(m_desc.window);
     m_status.windowReady = m_window != nullptr && m_window->isValid();
@@ -43,7 +48,12 @@ bool VulkanPresentable::initialize() {
         return true;
     }
 
-    m_status.message = "B1.7 window stub — WSI surface pending platform backend";
+    if (wire.presentable) {
+        m_status.message = "Platform window ready — call createVulkanSurface after vkCreateInstance";
+        return true;
+    }
+
+    m_status.message = "Null WSI desktop scaffold — no VkSurfaceKHR until display/GLFW available";
     return true;
 }
 
@@ -68,8 +78,15 @@ bool VulkanPresentable::createVulkanSurface(void* vkInstance) {
         return true;
     }
 
+    if (wire.presentable && platform::createVulkanSurface(vkInstance, *m_window, &m_vkSurface)) {
+        m_status.surfaceReady = true;
+        m_status.presentable = true;
+        m_status.message = "VkSurfaceKHR created via platform WSI backend";
+        return true;
+    }
+
     (void)vkInstance;
-    m_status.message = "B1.7 window stub — no VkSurfaceKHR until platform WSI lands";
+    m_status.message = "Null WSI — createVulkanSurface unavailable (headless CI OK)";
     return false;
 }
 

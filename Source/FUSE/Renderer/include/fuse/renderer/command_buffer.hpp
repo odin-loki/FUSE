@@ -30,10 +30,22 @@ struct CommandRecord {
     u32 drawCount = 0;
 };
 
-/// Stub command-buffer recorder — records logical commands for tests and future vkCmd* wiring.
+/// Offscreen raster targets for real `vkCmdBeginRenderPass` encoding (B2.5 / B2.8).
+struct VkFrameEncodeContext {
+    void* renderPass = nullptr;
+    void* framebuffer = nullptr;
+    void* graphicsPipeline = nullptr;
+    void* vertexBuffer = nullptr;
+    u32 width = 0;
+    u32 height = 0;
+    bool active = false;
+};
+
+/// Command-buffer recorder — logical commands for tests; optional real `vkCmd*` when backend active.
 class CommandBufferRecorder {
 public:
     void reset();
+    void setVulkanEncodeContext(const VkFrameEncodeContext* context);
     bool beginRecording(void* nativeCommandBuffer);
     bool endRecording();
 
@@ -50,12 +62,28 @@ public:
     void* nativeHandle() const { return m_nativeCommandBuffer; }
     const std::vector<CommandRecord>& records() const { return m_records; }
     u32 recordCount() const { return static_cast<u32>(m_records.size()); }
+    bool vulkanEncodeActive() const { return m_vulkanEncodeActive; }
+    bool vulkanRecordingComplete() const { return m_vulkanRecordingComplete; }
+    u32 vulkanRenderPassBeginCount() const { return m_vulkanRenderPassBeginCount; }
 
 private:
     void push(CommandRecordKind kind);
+    bool shouldEncodeRasterPass(const char* passName) const;
+    void beginVulkanRenderPass();
+    void endVulkanRenderPass();
+    void encodeDraw(u32 instanceCount);
 
+    const VkFrameEncodeContext* m_encodeContext = nullptr;
     void* m_nativeCommandBuffer = nullptr;
     bool m_recording = false;
+    bool m_vulkanEncodeActive = false;
+    bool m_vulkanRecordingComplete = false;
+    bool m_insideRenderPass = false;
+    bool m_activeRasterPass = false;
+    float m_pendingClearR = 0.f;
+    float m_pendingClearG = 0.f;
+    float m_pendingClearB = 0.f;
+    u32 m_vulkanRenderPassBeginCount = 0;
     std::vector<CommandRecord> m_records;
 };
 

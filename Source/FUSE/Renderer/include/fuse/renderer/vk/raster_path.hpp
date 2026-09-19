@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/renderer/render_command_list.hpp>
+#include <fuse/renderer/command_buffer.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/types.hpp>
 
@@ -36,15 +37,19 @@ public:
     bool isReady() const { return m_stats.pipelineReady; }
     const RasterPathStats& lastStats() const { return m_stats; }
 
-    /// Mirrors RenderCommandList clears and issues one triangle draw per frame when ready.
+    /// Offscreen targets for frame-slot `vkCmdBeginRenderPass` encoding.
+    VkFrameEncodeContext vulkanEncodeContext() const;
+
+    /// Updates CPU stats from mirrored commands (GPU work lives in graph execute path).
+    void updateStatsFromCommands(const RenderCommandList& commands);
+
+    /// Legacy hook — stats only; real draws are encoded via `CommandBufferRecorder`.
     bool recordFrame(const RenderCommandList& commands);
 
 private:
     RasterPath() = default;
     bool initialize(VulkanDevice& device, const RasterPathDesc& desc);
     void shutdown();
-    bool recordFrameVulkan(const RenderCommandList& commands);
-    bool recordFrameStub(const RenderCommandList& commands);
 
     VulkanDevice* m_device = nullptr;
     RasterPathDesc m_desc{};
@@ -55,9 +60,9 @@ private:
     std::unique_ptr<class ShaderModule> m_vertexShader;
     std::unique_ptr<class ShaderModule> m_fragmentShader;
     std::unique_ptr<class GraphicsPipeline> m_graphicsPipeline;
+    std::unique_ptr<class PipelineCache> m_pipelineCache;
 
 #if defined(FUSE_VULKAN_BACKEND)
-    void* m_commandPool = nullptr;
     void* m_vertexBuffer = nullptr;
     void* m_vertexMemory = nullptr;
     void* m_colorImage = nullptr;

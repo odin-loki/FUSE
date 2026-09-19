@@ -1,7 +1,13 @@
 #include <fuse/platform/event_pump.hpp>
 #include <fuse/platform/window.hpp>
+#include <fuse/platform/window_wsi.hpp>
 
 #include <utility>
+
+#if defined(FUSE_PLATFORM_WINDOW_GLFW)
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+#endif
 
 namespace fuse::platform {
 
@@ -18,6 +24,36 @@ bool isWindowScopedEventType(PlatformEventType type) {
            type == PlatformEventType::WindowFocusLost;
 }
 
+void destroyNativeWindow(void*& nativeWindow) {
+#if defined(FUSE_PLATFORM_WINDOW_GLFW)
+    if (nativeWindow != nullptr) {
+        glfwDestroyWindow(static_cast<GLFWwindow*>(nativeWindow));
+    }
+#endif
+    nativeWindow = nullptr;
+}
+
+void createNativeWindowIfAvailable(u32 width, u32 height, const char* title, void*& nativeWindow) {
+    nativeWindow = nullptr;
+#if defined(FUSE_PLATFORM_WINDOW_GLFW)
+    if (!windowWsiAvailable()) {
+        return;
+    }
+
+    GLFWwindow* window =
+        glfwCreateWindow(static_cast<int>(width), static_cast<int>(height), title, nullptr, nullptr);
+    if (window == nullptr) {
+        return;
+    }
+
+    nativeWindow = window;
+#else
+    (void)width;
+    (void)height;
+    (void)title;
+#endif
+}
+
 } // namespace
 
 Window::Window() {
@@ -25,6 +61,7 @@ Window::Window() {
     m_width = 1920u;
     m_height = 1080u;
     m_title = "FUSE";
+    createNativeWindowIfAvailable(m_width, m_height, m_title.c_str(), m_nativeWindow);
 }
 
 Window::Window(const WindowDesc& desc) {
@@ -35,9 +72,11 @@ Window::Window(const WindowDesc& desc) {
     m_borderless = desc.borderless;
     m_vsync = desc.vsync;
     m_title = sanitizeTitle(desc.title);
+    createNativeWindowIfAvailable(m_width, m_height, m_title.c_str(), m_nativeWindow);
 }
 
 Window::~Window() {
+    destroyNativeWindow(m_nativeWindow);
     m_valid = false;
 }
 
@@ -50,9 +89,11 @@ Window::Window(Window&& other) noexcept
       m_vsync(other.m_vsync),
       m_focused(other.m_focused),
       m_closeRequest(other.m_closeRequest),
-      m_title(std::move(other.m_title)) {
+      m_title(std::move(other.m_title)),
+      m_nativeWindow(other.m_nativeWindow) {
     other.m_valid = false;
     other.m_closeRequest = WindowCloseRequest::None;
+    other.m_nativeWindow = nullptr;
 }
 
 Window& Window::operator=(Window&& other) noexcept {
@@ -66,8 +107,10 @@ Window& Window::operator=(Window&& other) noexcept {
         m_focused = other.m_focused;
         m_closeRequest = other.m_closeRequest;
         m_title = std::move(other.m_title);
+        m_nativeWindow = other.m_nativeWindow;
         other.m_valid = false;
         other.m_closeRequest = WindowCloseRequest::None;
+        other.m_nativeWindow = nullptr;
     }
     return *this;
 }
@@ -84,8 +127,9 @@ WindowDesc Window::description() const {
 }
 
 NativeWindowHandle Window::nativeHandle() const {
-    // Stub — real HWND / X11 Window / ANativeWindow* lands in platform backends.
-    return {};
+    NativeWindowHandle handle;
+    handle.value = m_nativeWindow;
+    return handle;
 }
 
 void* Window::nativeVulkanSurface() const {
@@ -95,7 +139,7 @@ void* Window::nativeVulkanSurface() const {
 VulkanSurfaceWire Window::vulkanSurfaceWire() const {
     VulkanSurfaceWire wire;
     wire.nativeSurface = nativeVulkanSurface();
-    wire.presentable = wire.nativeSurface != nullptr;
+    wire.presentable = m_nativeWindow != nullptr;
     return wire;
 }
 

@@ -142,8 +142,12 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     pipelineInfo.subpass = 0;
 
     VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+    VkPipelineCache pipelineCache =
+        desc.pipelineCache != nullptr && desc.pipelineCache->isValid()
+            ? static_cast<VkPipelineCache>(desc.pipelineCache->nativeHandle())
+            : VK_NULL_HANDLE;
     const VkResult result =
-        vkCreateGraphicsPipelines(static_cast<VkDevice>(device.nativeHandle()), VK_NULL_HANDLE, 1,
+        vkCreateGraphicsPipelines(static_cast<VkDevice>(device.nativeHandle()), pipelineCache, 1,
                                   &pipelineInfo, nullptr, &graphicsPipeline);
     if (result != VK_SUCCESS) {
         m_info.message = "vkCreateGraphicsPipelines failed";

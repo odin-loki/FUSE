@@ -1,5 +1,6 @@
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/renderer/rhi_context.hpp>
+#include <fuse/renderer/vk/queue_submit.hpp>
 
 #include <string>
 
@@ -105,13 +106,28 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
         const float compositeBlend =
             m_compositePass ? m_compositePass->blendForFrame(commands) : m_desc.composite.defaultBlend;
 
+        ensureRasterPath();
+        const VkFrameEncodeContext* encodeContext = nullptr;
+        VkFrameEncodeContext encodeContextStorage{};
+        if (m_rasterPath && m_rasterPath->isReady()) {
+            encodeContextStorage = m_rasterPath->vulkanEncodeContext();
+            if (encodeContextStorage.active) {
+                encodeContext = &encodeContextStorage;
+            }
+        }
+
         populateRenderGraphFromCommandList(m_renderGraph, commands, compositeBlend);
         m_renderGraph.compile();
 
         VulkanDevice* device = m_bootstrap->device();
         if (device != nullptr) {
+#if defined(FUSE_VULKAN_BACKEND)
+            if (device->isValid() && encodeContext != nullptr) {
+                (void)resetFrameSlotCommandPool(*device, *frameManager);
+            }
+#endif
             const RenderGraphExecuteInfo executeInfo =
-                m_renderGraph.execute(*device, *frameManager, m_commandRecorder);
+                m_renderGraph.execute(*device, *frameManager, m_commandRecorder, encodeContext);
             m_lastGraphPassCount = executeInfo.executedPassCount;
             m_lastRecordedCommands = executeInfo.recordedCommands;
         }
@@ -119,9 +135,8 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
         m_lastGraphBarrierCount = m_renderGraph.compileInfo().barrierCount;
     }
 
-    ensureRasterPath();
     if (m_rasterPath && m_rasterPath->isReady()) {
-        m_rasterPath->recordFrame(commands);
+        m_rasterPath->updateStatsFromCommands(commands);
         m_lastRasterStats = m_rasterPath->lastStats();
     }
 
@@ -138,6 +153,7 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
             submitDesc.frameManager = frameManager;
             submitDesc.swapchain = m_bootstrap->swapchain();
             submitDesc.acquiredImageIndex = m_acquiredSwapchainImage;
+            submitDesc.commandsAlreadyRecorded = m_commandRecorder.vulkanRecordingComplete();
             m_lastQueueSubmit = submitGraphicsQueue(submitDesc);
             if (m_lastQueueSubmit.submitted) {
                 ++m_queueSubmitCount;

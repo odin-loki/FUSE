@@ -33,6 +33,20 @@ bool resetSlotCommandPool(VkDevice device, const FrameSyncData& slot) {
 
 #endif
 
+bool resetFrameSlotCommandPool(VulkanDevice& device, FrameManager& frameManager) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!device.isValid() || !frameManager.isReady()) {
+        return false;
+    }
+    auto vkDevice = static_cast<VkDevice>(device.nativeHandle());
+    return resetSlotCommandPool(vkDevice, frameManager.current());
+#else
+    (void)device;
+    (void)frameManager;
+    return false;
+#endif
+}
+
 bool recordFrameSlotCommands(VulkanDevice& device, FrameManager& frameManager) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!device.isValid() || !frameManager.isReady()) {
@@ -75,13 +89,15 @@ GraphicsQueueSubmitResult submitGraphicsQueue(const GraphicsQueueSubmitDesc& des
     }
 
     auto vkDevice = static_cast<VkDevice>(desc.device->nativeHandle());
-    if (!resetSlotCommandPool(vkDevice, slot)) {
-        result.message = "command pool reset failed";
-        return result;
-    }
-    if (!recordMinimalSubmitCommands(commandBuffer)) {
-        result.message = "command buffer record failed";
-        return result;
+    if (!desc.commandsAlreadyRecorded) {
+        if (!resetSlotCommandPool(vkDevice, slot)) {
+            result.message = "command pool reset failed";
+            return result;
+        }
+        if (!recordMinimalSubmitCommands(commandBuffer)) {
+            result.message = "command buffer record failed";
+            return result;
+        }
     }
 
     const bool useSemaphores = shouldUseSwapchainSemaphores(desc.swapchain, desc.acquiredImageIndex);

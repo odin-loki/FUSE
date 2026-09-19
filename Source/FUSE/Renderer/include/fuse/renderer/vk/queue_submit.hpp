@@ -15,6 +15,8 @@ struct GraphicsQueueSubmitDesc {
     const VulkanSwapchain* swapchain = nullptr;
     /// UINT32_MAX when headless or acquire failed — submit omits WSI wait semaphores.
     u32 acquiredImageIndex = UINT32_MAX;
+    /// When true, frame slot CB was already recorded (render graph execute path).
+    bool commandsAlreadyRecorded = false;
 };
 
 struct GraphicsQueueSubmitResult {
@@ -27,6 +29,9 @@ struct GraphicsQueueSubmitResult {
 
 /// True when acquire returned a real swapchain image and WSI semaphores should be wired.
 bool shouldUseSwapchainSemaphores(const VulkanSwapchain* swapchain, u32 acquiredImageIndex);
+
+/// Reset the current frame slot command pool before graph execute recording.
+bool resetFrameSlotCommandPool(VulkanDevice& device, FrameManager& frameManager);
 
 /// Record a minimal one-shot command buffer into the current frame slot (headless-safe).
 bool recordFrameSlotCommands(VulkanDevice& device, FrameManager& frameManager);

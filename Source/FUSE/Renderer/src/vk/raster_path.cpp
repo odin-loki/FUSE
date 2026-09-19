@@ -2,6 +2,7 @@
 
 #include <fuse/renderer/shader/shader_module.hpp>
 #include <fuse/renderer/vk/graphics_pipeline.hpp>
+#include <fuse/renderer/vk/pipeline_cache.hpp>
 #include <fuse/renderer/vk/pipeline_layout.hpp>
 #include <fuse/renderer/vk/render_pass.hpp>
 
@@ -47,17 +48,49 @@ RasterPath::~RasterPath() {
 }
 
 bool RasterPath::recordFrame(const RenderCommandList& commands) {
+    updateStatsFromCommands(commands);
+    return m_stats.pipelineReady;
+}
+
+void RasterPath::updateStatsFromCommands(const RenderCommandList& commands) {
     if (!m_stats.pipelineReady) {
         m_stats.message = "raster path not ready";
-        return false;
+        return;
     }
 
-#if defined(FUSE_VULKAN_BACKEND)
-    if (m_device != nullptr && m_device->isValid()) {
-        return recordFrameVulkan(commands);
+    m_stats.clearCount = 0;
+    for (const RenderCommand& command : commands.commands()) {
+        if (command.kind == RenderCommandKind::Clear3D) {
+            ++m_stats.clearCount;
+        }
     }
+
+    m_stats.triangleDrawCount = m_stats.clearCount > 0 ? 1u : 0u;
+    ++m_stats.framesRecorded;
+    m_stats.message = "raster stats mirrored — GPU encode via render graph";
+}
+
+VkFrameEncodeContext RasterPath::vulkanEncodeContext() const {
+    VkFrameEncodeContext context{};
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_stats.pipelineReady || m_device == nullptr || !m_device->isValid() || m_renderPass == nullptr ||
+        m_graphicsPipeline == nullptr || m_framebuffer == nullptr || m_vertexBuffer == nullptr) {
+        return context;
+    }
+
+    context.renderPass = m_renderPass->nativeHandle();
+    context.framebuffer = m_framebuffer;
+    context.graphicsPipeline = m_graphicsPipeline->nativeHandle();
+    context.vertexBuffer = m_vertexBuffer;
+    context.width = m_desc.width;
+    context.height = m_desc.height;
+    context.active = context.renderPass != nullptr && context.framebuffer != nullptr &&
+                     context.graphicsPipeline != nullptr && context.vertexBuffer != nullptr &&
+                     context.width > 0u && context.height > 0u;
+#else
+    (void)0;
 #endif
-    return recordFrameStub(commands);
+    return context;
 }
 
 bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
@@ -95,11 +128,18 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
         return false;
     }
 
+    m_pipelineCache = PipelineCache::create(device);
+    if (m_pipelineCache == nullptr || !m_pipelineCache->isValid()) {
+        m_stats.message = "pipeline cache creation failed";
+        return false;
+    }
+
     GraphicsPipelineDesc pipelineDesc{};
     pipelineDesc.layout = m_pipelineLayout.get();
     pipelineDesc.vertexShader = m_vertexShader.get();
     pipelineDesc.fragmentShader = m_fragmentShader.get();
     pipelineDesc.renderPass = m_renderPass.get();
+    pipelineDesc.pipelineCache = m_pipelineCache.get();
     pipelineDesc.colorFormat = kColorFormat;
     pipelineDesc.debugName = "raster_path_pipeline";
     m_graphicsPipeline = GraphicsPipeline::create(device, pipelineDesc);
@@ -118,17 +158,6 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
 
     auto vkDevice = static_cast<VkDevice>(device.nativeHandle());
     auto physicalDevice = static_cast<VkPhysicalDevice>(device.nativePhysicalDevice());
-
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    poolInfo.queueFamilyIndex = device.queues().graphicsFamily;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
-    if (vkCreateCommandPool(vkDevice, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
-        m_stats.message = "command pool creation failed";
-        return false;
-    }
-    m_commandPool = commandPool;
 
     const std::array<float, 9> triangleVertices = {
         0.f, -0.5f, 0.f,
@@ -265,9 +294,6 @@ void RasterPath::shutdown() {
         if (m_vertexMemory != nullptr) {
             vkFreeMemory(vkDevice, static_cast<VkDeviceMemory>(m_vertexMemory), nullptr);
         }
-        if (m_commandPool != nullptr) {
-            vkDestroyCommandPool(vkDevice, static_cast<VkCommandPool>(m_commandPool), nullptr);
-        }
     }
     m_framebuffer = nullptr;
     m_colorView = nullptr;
@@ -275,119 +301,15 @@ void RasterPath::shutdown() {
     m_colorMemory = nullptr;
     m_vertexBuffer = nullptr;
     m_vertexMemory = nullptr;
-    m_commandPool = nullptr;
 #endif
 
+    m_pipelineCache.reset();
     m_graphicsPipeline.reset();
     m_pipelineLayout.reset();
     m_fragmentShader.reset();
     m_vertexShader.reset();
     m_renderPass.reset();
     m_device = nullptr;
-}
-
-bool RasterPath::recordFrameStub(const RenderCommandList& commands) {
-    m_stats.clearCount = 0;
-    for (const RenderCommand& command : commands.commands()) {
-        if (command.kind == RenderCommandKind::Clear3D) {
-            ++m_stats.clearCount;
-        }
-    }
-    m_stats.triangleDrawCount = m_stats.clearCount > 0 ? 1u : 0u;
-    ++m_stats.framesRecorded;
-    m_stats.message = "raster path recorded in stub mode";
-    return true;
-}
-
-bool RasterPath::recordFrameVulkan(const RenderCommandList& commands) {
-#if defined(FUSE_VULKAN_BACKEND)
-    if (m_device == nullptr || !m_device->isValid()) {
-        return recordFrameStub(commands);
-    }
-
-    float clearR = 0.f;
-    float clearG = 0.f;
-    float clearB = 0.f;
-    m_stats.clearCount = 0;
-    for (const RenderCommand& command : commands.commands()) {
-        if (command.kind == RenderCommandKind::Clear3D) {
-            clearR = command.clear3D.r;
-            clearG = command.clear3D.g;
-            clearB = command.clear3D.b;
-            ++m_stats.clearCount;
-        }
-    }
-
-    auto vkDevice = static_cast<VkDevice>(m_device->nativeHandle());
-    auto graphicsQueue = static_cast<VkQueue>(m_device->queues().graphics);
-
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = static_cast<VkCommandPool>(m_commandPool);
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
-    if (vkAllocateCommandBuffers(vkDevice, &allocInfo, &commandBuffer) != VK_SUCCESS) {
-        m_stats.message = "command buffer allocation failed";
-        return false;
-    }
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-    VkClearValue clearValue{};
-    clearValue.color = {{clearR, clearG, clearB, 1.f}};
-
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = static_cast<VkRenderPass>(m_renderPass->nativeHandle());
-    renderPassInfo.framebuffer = static_cast<VkFramebuffer>(m_framebuffer);
-    renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = {m_desc.width, m_desc.height};
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearValue;
-
-    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                      static_cast<VkPipeline>(m_graphicsPipeline->nativeHandle()));
-
-    VkViewport viewport{};
-    viewport.width = static_cast<float>(m_desc.width);
-    viewport.height = static_cast<float>(m_desc.height);
-    viewport.minDepth = 0.f;
-    viewport.maxDepth = 1.f;
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.extent = {m_desc.width, m_desc.height};
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
-    VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_vertexBuffer)};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
-    vkCmdEndRenderPass(commandBuffer);
-    vkEndCommandBuffer(commandBuffer);
-
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(graphicsQueue);
-
-    vkFreeCommandBuffers(vkDevice, static_cast<VkCommandPool>(m_commandPool), 1, &commandBuffer);
-
-    m_stats.triangleDrawCount = 1;
-    ++m_stats.framesRecorded;
-    m_stats.message = "headless clear + triangle recorded";
-    return true;
-#else
-    return recordFrameStub(commands);
-#endif
 }
 
 } // namespace fuse::renderer

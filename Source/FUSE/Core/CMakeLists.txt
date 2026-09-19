@@ -55,6 +55,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/platform/fiber.hpp
     include/fuse/platform/gl_context.hpp
     include/fuse/platform/window.hpp
+    include/fuse/platform/window_wsi.hpp
     include/fuse/platform/event_pump.hpp
 )
 
@@ -142,6 +143,23 @@ if(FUSE_CUDA_BACKEND)
 endif()
 
 fuse_core_apply_tsan(fuse_core)
+
+option(FUSE_PLATFORM_WINDOW_GLFW "Enable optional GLFW hidden-window WSI scaffold (desktop present path)" OFF)
+if(FUSE_PLATFORM_WINDOW_GLFW)
+    find_package(glfw3 QUIET)
+    find_package(Vulkan QUIET)
+    if(glfw3_FOUND AND Vulkan_FOUND)
+        target_sources(fuse_core PRIVATE src/platform/window_wsi_glfw.cpp)
+        target_link_libraries(fuse_core PRIVATE glfw Vulkan::Vulkan)
+        target_compile_definitions(fuse_core PUBLIC FUSE_PLATFORM_WINDOW_GLFW=1)
+        message(STATUS "FUSE: fuse_core GLFW null-WSI scaffold enabled")
+    else()
+        target_sources(fuse_core PRIVATE src/platform/window_wsi.cpp)
+        message(STATUS "FUSE: FUSE_PLATFORM_WINDOW_GLFW=ON but glfw3/Vulkan missing — null WSI only")
+    endif()
+else()
+    target_sources(fuse_core PRIVATE src/platform/window_wsi.cpp)
+endif()
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

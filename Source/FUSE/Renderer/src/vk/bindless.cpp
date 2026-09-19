@@ -1,8 +1,128 @@
 #include <fuse/renderer/vk/bindless.hpp>
 
+#if defined(FUSE_VULKAN_BACKEND)
+#include <vulkan/vulkan.h>
+
+#include <array>
+#endif
+
 namespace fuse::renderer {
 
 namespace {
+
+#if defined(FUSE_VULKAN_BACKEND)
+constexpr u32 kBindlessScaffoldCapacity = 1024u;
+
+VkDescriptorSetLayoutBinding makeBinding(u32 binding, VkDescriptorType type, u32 count) {
+    VkDescriptorSetLayoutBinding layoutBinding{};
+    layoutBinding.binding = binding;
+    layoutBinding.descriptorType = type;
+    layoutBinding.descriptorCount = count;
+    layoutBinding.stageFlags = VK_SHADER_STAGE_ALL;
+    return layoutBinding;
+}
+
+bool createVulkanBindlessDescriptors(const VulkanDevice& device, void*& outPool, void*& outLayout,
+                                       void*& outSet) {
+    if (!device.isValid()) {
+        return false;
+    }
+
+    auto vkDevice = static_cast<VkDevice>(device.nativeHandle());
+
+    std::array<VkDescriptorSetLayoutBinding, 5> bindings = {
+        makeBinding(kBindlessBindingStorageImages, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, kBindlessScaffoldCapacity),
+        makeBinding(kBindlessBindingSampledImages, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kBindlessScaffoldCapacity),
+        makeBinding(kBindlessBindingSamplers, VK_DESCRIPTOR_TYPE_SAMPLER, kMaxSamplers),
+        makeBinding(kBindlessBindingStorageBuffers, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kBindlessScaffoldCapacity),
+        makeBinding(kBindlessBindingUniformBuffers, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kBindlessScaffoldCapacity),
+    };
+
+    std::array<VkDescriptorBindingFlags, 5> bindingFlags = {
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+    };
+
+    VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
+    bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+    bindingFlagsInfo.bindingCount = static_cast<u32>(bindingFlags.size());
+    bindingFlagsInfo.pBindingFlags = bindingFlags.data();
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+    layoutInfo.bindingCount = static_cast<u32>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+    layoutInfo.pNext = &bindingFlagsInfo;
+
+    VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+    if (vkCreateDescriptorSetLayout(vkDevice, &layoutInfo, nullptr, &layout) != VK_SUCCESS) {
+        return false;
+    }
+
+    std::array<VkDescriptorPoolSize, 5> poolSizes = {
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, kBindlessScaffoldCapacity},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kBindlessScaffoldCapacity},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, kMaxSamplers},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kBindlessScaffoldCapacity},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kBindlessScaffoldCapacity},
+    };
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+    poolInfo.maxSets = 1;
+    poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+
+    VkDescriptorPool pool = VK_NULL_HANDLE;
+    if (vkCreateDescriptorPool(vkDevice, &poolInfo, nullptr, &pool) != VK_SUCCESS) {
+        vkDestroyDescriptorSetLayout(vkDevice, layout, nullptr);
+        return false;
+    }
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = pool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &layout;
+
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(vkDevice, &allocInfo, &set) != VK_SUCCESS) {
+        vkDestroyDescriptorPool(vkDevice, pool, nullptr);
+        vkDestroyDescriptorSetLayout(vkDevice, layout, nullptr);
+        return false;
+    }
+
+    outPool = pool;
+    outLayout = layout;
+    outSet = set;
+    return true;
+}
+
+void destroyVulkanBindlessDescriptors(const VulkanDevice& device, void*& pool, void*& layout, void*& set) {
+    if (!device.isValid()) {
+        pool = nullptr;
+        layout = nullptr;
+        set = nullptr;
+        return;
+    }
+
+    auto vkDevice = static_cast<VkDevice>(device.nativeHandle());
+    if (pool != nullptr) {
+        vkDestroyDescriptorPool(vkDevice, static_cast<VkDescriptorPool>(pool), nullptr);
+    }
+    if (layout != nullptr) {
+        vkDestroyDescriptorSetLayout(vkDevice, static_cast<VkDescriptorSetLayout>(layout), nullptr);
+    }
+    pool = nullptr;
+    layout = nullptr;
+    set = nullptr;
+}
+#endif
 
 template <typename SlotVec>
 u32 countLiveSlots(const SlotVec& slots) {
@@ -128,24 +248,34 @@ void BindlessDescriptors::init(const VulkanDevice& device) {
     m_freeSamplerIndices.clear();
 
     (void)device;
-    // VkDescriptorPool/Set/Layout deferred to B2.4 — CPU heap only for B2.3 deepen.
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!createVulkanBindlessDescriptors(device, m_pool, m_layout, m_set)) {
+        m_pool = nullptr;
+        m_layout = nullptr;
+        m_set = nullptr;
+    }
+#else
     m_pool = nullptr;
     m_layout = nullptr;
     m_set = nullptr;
+#endif
     m_initialized = true;
 }
 
 void BindlessDescriptors::destroy(const VulkanDevice& device) {
-    (void)device;
+#if defined(FUSE_VULKAN_BACKEND)
+    destroyVulkanBindlessDescriptors(device, m_pool, m_layout, m_set);
+#else
+    m_pool = nullptr;
+    m_layout = nullptr;
+    m_set = nullptr;
+#endif
     m_textureSlots.clear();
     m_bufferSlots.clear();
     m_samplerSlots.clear();
     m_freeTextureIndices.clear();
     m_freeBufferIndices.clear();
     m_freeSamplerIndices.clear();
-    m_pool = nullptr;
-    m_layout = nullptr;
-    m_set = nullptr;
     m_initialized = false;
 }
 

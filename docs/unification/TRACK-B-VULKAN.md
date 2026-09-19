@@ -1,6 +1,6 @@
 # Track B — Vulkan Bootstrap (B2.1–B2.10) + CUDA Ray March (B2.7)
 
-**Status:** WP-06b ✅ B2.1 bootstrap + B2.2 swapchain/frame ring + **WP-06c ✅ real `vkQueueSubmit` + honest headless present sink** + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
+**Status:** WP-06b ✅ B2.1 bootstrap + B2.2 swapchain/frame ring + **WP-06c ✅ real `vkQueueSubmit` + honest headless present sink** + **WP-06d ✅ `vkCmdBeginRenderPass` graph encode + bindless pool + null/GLFW WSI scaffold** + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.7, §B2.8, §B2.9, §B2.10  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
@@ -14,12 +14,12 @@
 | `RenderCommandList` | `Source/FUSE/Renderer/` | Per-frame draws/clears merged on render thread |
 | `VulkanInstance` / `VulkanDevice` | `Source/FUSE/Renderer/include/fuse/renderer/vk/` | Headless bootstrap; optional validation layers |
 | `VulkanSurface` | same | Headless vs external `VkSurfaceKHR` abstraction |
-| `PlatformWindow` | `Source/FUSE/Core/include/fuse/platform/window.hpp` | Null (CI) or optional GLFW desktop window stub |
+| `PlatformWindow` | `Source/FUSE/Core/include/fuse/platform/window.hpp` | Null WSI (CI default) or optional GLFW hidden window (`FUSE_PLATFORM_WINDOW_GLFW=ON`) |
 | `VulkanPresentable` | `Source/FUSE/Hybrid/include/fuse/hybrid/vulkan_presentable.hpp` | Own Hybrid presentable path — wires platform window → External `VulkanSurface` |
 | `VulkanSwapchain` | same | Real `VkSwapchainKHR` when External surface + WSI; headless stub otherwise |
 | `FrameManager` | same | Triple-buffered fence/semaphore ring aligned with `FrameBarrier` |
 | `ResourceManager` / `GpuAllocator` | `Source/FUSE/Renderer/` | Handle-based buffers/images; VMA when vendored, stub otherwise |
-| `BindlessDescriptors` | `Source/FUSE/Renderer/include/fuse/renderer/vk/` | Index table scaffolding (descriptor pool deferred to B2.4 follow-up) |
+| `BindlessDescriptors` | `Source/FUSE/Renderer/include/fuse/renderer/vk/` | CPU heap + **UPDATE_AFTER_BIND `VkDescriptorPool`/set/layout scaffold** (WP-06d) |
 | `HandleMap<T>` | `Source/FUSE/Core/include/fuse/` | Generation-checked slots for GPU resources |
 | `ShaderCompiler` / `ShaderModule` | `Source/FUSE/Renderer/include/fuse/renderer/shader/` | Offline-first — loads checked-in `.spv` fixtures |
 | `PipelineLayout` | `Source/FUSE/Renderer/include/fuse/renderer/vk/pipeline_layout.hpp` | Placeholder layout (push constants only; bindless sets deferred) |
@@ -181,21 +181,21 @@ Lifecycle per frame:
 3. Record `RenderCommandList` + placeholder software path
 4. `endFrame()` advances ring index
 
-Per-slot command pools and primary command buffers are allocated when the Vulkan backend is active (B2.5). Descriptor pools and scratch allocators remain deferred.
+Per-slot command pools and primary command buffers are allocated when the Vulkan backend is active (B2.5). Bindless `VkDescriptorPool` scaffold landed in B2.4 follow-up (WP-06d); scratch allocators remain deferred.
 
 ---
 
 ## B2.5 — Command buffer & render graph scaffolding
 
-**Status:** CPU-side graph compile + stub command recording landed; real `vkCmd*` wiring deferred to B2.8+.
+**Status:** CPU-side graph compile + **real `vkCmdBeginRenderPass` / draw encoding on frame-slot CB** when `RasterPath` targets are ready (WP-06d); barriers/composite GPU nodes still stubbed.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
-| `CommandBufferRecorder` | `include/fuse/renderer/command_buffer.hpp` | Records logical pass/barrier/clear/draw/present commands for tests |
+| `CommandBufferRecorder` | `include/fuse/renderer/command_buffer.hpp` | Logical records for tests + optional `VkFrameEncodeContext` → real `vkCmdBeginRenderPass` / draw |
 | `RenderGraph` | `include/fuse/renderer/render_graph.hpp` | Pass nodes declare texture/buffer accesses; `compile()` plans barriers + culls unused passes |
 | `populateRenderGraphFromCommandList` | `render_graph.cpp` | Maps `RenderCommandList` clears/sprites → graph passes (clear → sprites2d → composite → present) |
 | `FrameCommandData` | `vk/frame.hpp` | Per-slot `VkCommandPool` + primary `VkCommandBuffer` when backend active |
-| `RhiContext` integration | `rhi_context.cpp` | `submitFrame()` populates graph, compiles, executes into recorder, advances frame ring |
+| `RhiContext` integration | `rhi_context.cpp` | `submitFrame()` resets slot pool, executes graph into recorder, `submitGraphicsQueue` with `commandsAlreadyRecorded` |
 
 ### B2.5 follow-up — pass dependency edges & resource lifetimes (stub)
 
@@ -268,13 +268,15 @@ Optional VMA: place [VulkanMemoryAllocator](https://github.com/GPUOpen-Libraries
 
 ## B2.4 — Shader system & pipeline compiler (scaffold)
 
-**Status:** Offline SPIR-V load + `VkShaderModule` stub + pipeline layout placeholders landed.
+**Status:** Offline SPIR-V load + `VkShaderModule` + **`PipelineCache` in-memory scaffold** + bindless descriptor pool (WP-06d).
 
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `ShaderCompiler` | `Source/FUSE/Renderer/include/fuse/renderer/shader/` | Offline-first — loads checked-in `.spv` fixtures |
 | `ShaderModule` | same | Creates `VkShaderModule` when `FUSE_VULKAN_BACKEND=1` and device ready |
 | `PipelineLayout` | `Source/FUSE/Renderer/include/fuse/renderer/vk/pipeline_layout.hpp` | Placeholder layout (push constants only; bindless sets deferred) |
+| `PipelineCache` | `include/fuse/renderer/vk/pipeline_cache.hpp` | `vkCreatePipelineCache` + snapshot API; disk serialize/restore deferred |
+| `BindlessDescriptors` | `include/fuse/renderer/vk/bindless.hpp` | CPU heap + `VkDescriptorPool`/layout/set when device ready |
 | Fixtures | `Source/FUSE/Renderer/shaders/fixtures/` | `minimal.vert` / `minimal.frag` + precompiled `.spv` for CI |
 
 ### Offline SPIR-V path (CI default)
@@ -429,7 +431,7 @@ All shutdown steps are idempotent. GPU init and submit require the registered re
 | Item | Status | Notes |
 |------|--------|-------|
 | VMA buffer/texture create/destroy | **Done (scaffold)** | Real VMA when vendored; stub handles otherwise (`fuse_vulkan_resources`) |
-| Bindless descriptor table | **Done (CPU stub)** | Generation slot handles + binding helpers; no VkDescriptorPool yet |
+| Bindless descriptor table | **Done (pool scaffold)** | UPDATE_AFTER_BIND `VkDescriptorPool` + set/layout; `vkUpdateDescriptorSets` on register deferred |
 | Staging ring wrap / large upload stress | **Deferred** | 64 MiB ring scaffold; no 256 MiB corruption test |
 | Async upload fence timeout | **Deferred** | — |
 | Win32 external memory + `cudaImportExternalMemory` | **Deferred** | `import_vulkan_*` returns `ok=false` (B2.6 stub) |
@@ -439,7 +441,7 @@ All shutdown steps are idempotent. GPU init and submit require the registered re
 | Item | Status | Notes |
 |------|--------|-------|
 | Offline SPIR-V fixtures (`spirv-val` clean) | **Done** | Checked-in `.spv`; `fuse_shader_pipeline` |
-| Pipeline cache serialize/restore | **Deferred** | — |
+| Pipeline cache serialize/restore | **Deferred** | In-memory `PipelineCache` + `snapshotData()` scaffold only |
 | Hot-reload < 200 ms | **Deferred** | — |
 | Push constants per-draw (RenderDoc) | **Deferred** | Placeholder layout only |
 
@@ -555,11 +557,25 @@ ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|
 | `fuse_rhi_queue_submit` tests | **Done** | Direct submit + RHI integration + present-path mirror |
 | Lavapipe CTest `VK_ICD_FILENAMES` | **Done** | Renderer/Hybrid Vulkan tests set `lvp_icd.json` when ICD needed |
 
-**Deferred (post–WP-06c):** `vkQueuePresentKHR` on desktop GLFW window; Editor Qt native surface (`U6`); Android/MoltenVK WSI; real `vkCmdBeginRenderPass` in graph execute (B2.5 follow-up); bindless descriptor pool (B2.4 follow-up).
+**Deferred (post–WP-06c):** ~~real `vkCmdBeginRenderPass` in graph execute~~ → landed WP-06d; ~~bindless descriptor pool~~ → pool scaffold WP-06d.
 
 ---
 
-**Deferred (historical WP-06b):** ~~real `vkQueueSubmit`~~ → landed WP-06c; WSI present on desktop window still deferred.
+## WP-06d deliverables (B2.4–B2.5 follow-up + null WSI)
+
+| Deliverable | Status | Notes |
+|-------------|--------|-------|
+| `vkCmdBeginRenderPass` in graph execute | **Done** | `CommandBufferRecorder` + `VkFrameEncodeContext` from `RasterPath`; unified frame-slot submit |
+| Bindless `VkDescriptorPool`/layout/set | **Done (scaffold)** | UPDATE_AFTER_BIND pool; `vkUpdateDescriptorSets` on register deferred |
+| `PipelineCache` | **Done (scaffold)** | Passed to `vkCreateGraphicsPipelines`; disk serialize deferred |
+| Null/GLFW WSI scaffold | **Done** | `window_wsi.hpp`, `FUSE_PLATFORM_WINDOW_GLFW=OFF` default; CI headless |
+| `HybridRendererBootstrap` + `demo_hybrid_hud` | **Done** | Software path unchanged; Lavapipe tests green |
+
+**Deferred (post–WP-06d):** `vkQueuePresentKHR` on desktop with display + GLFW; swapchain FB present pass; graph barrier → `vkCmdPipelineBarrier`; bindless descriptor updates; pipeline cache disk I/O; Editor Qt surface (`U6`).
+
+---
+
+**Deferred (historical WP-06b):** ~~real `vkQueueSubmit`~~ → landed WP-06c; WSI present on desktop window still deferred until display + GLFW path exercised.
 
 ---
 
@@ -626,12 +642,15 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] B2.9 composite pass scaffold — `CompositePass`, graph node before present, GRIA blend stub
 - [x] B2.10 renderer init & main-loop glue — `RendererBootstrap`, `HybridRendererBootstrap`, lifecycle tests
 - [x] B2.11 Phase 2 deliverables & integration test suite — checklist in this doc; `fuse_vulkan_phase2_integration`
-- [ ] B2.4 follow-up: bindless descriptor pool + graphics pipeline cache
+- [x] B2.4 follow-up: bindless descriptor pool + graphics pipeline cache (**pool + in-memory cache scaffold**)
 - [x] WP-06c: real `vkQueueSubmit` on frame ring + honest headless present sink (`fuse_rhi_queue_submit`)
-- [ ] B2.5 follow-up: real `vkCmdBeginRenderPass` in graph execute (queue submit landed WP-06c)
+- [x] B2.5 follow-up: real `vkCmdBeginRenderPass` in graph execute (WP-06d)
+- [ ] B2.5 follow-up: graph-planned `vkCmdPipelineBarrier`; present pass targets swapchain FB
+- [ ] B2.4 follow-up: `vkUpdateDescriptorSets` on bindless register; pipeline cache disk serialize/restore
 - [ ] B2.6 follow-up: `cudaImportExternalMemory`, timeline semaphores, real shared textures
 - [ ] Replace `PlaceholderRenderer` present path incrementally — keep software fallback for headless CI
 - [x] Own Hybrid presentable path stubs — `PlatformWindow` (null/GLFW), `VulkanPresentable`, `HybridRendererBootstrap` wiring
+- [x] Null/GLFW desktop WSI scaffold — `window_wsi.hpp`, `FUSE_PLATFORM_WINDOW_GLFW` (OFF in CI; headless Lavapipe stays green)
 - [x] B2.2 present path deepen — `PresentPath`, `VsyncMode`, acquire/present/fence-wait/resize recreate stubs + CI state-machine tests
 - [x] B2.3 resource deepen — stub/VMA alloc stats, destroy-order teardown, `fuse_rhi_resource_destroy_order` (see [TRACK-B-RHI.md](./TRACK-B-RHI.md))
 - [x] B2.5 render graph deepen — pass dependency edges, resource lifetime stubs, compile-order tests

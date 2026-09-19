@@ -453,7 +453,8 @@ void RenderGraph::compile() {
 
 RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
                                             FrameManager& frames,
-                                            CommandBufferRecorder& recorder) {
+                                            CommandBufferRecorder& recorder,
+                                            const VkFrameEncodeContext* encodeContext) {
     RenderGraphExecuteInfo result;
     if (!m_compileInfo.compiled) {
         return result;
@@ -464,6 +465,7 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
         nativeCommandBuffer = reinterpret_cast<void*>(0x1);
     }
 
+    recorder.setVulkanEncodeContext(encodeContext);
     recorder.beginRecording(nativeCommandBuffer);
 
     for (const RGBarrier& barrier : m_barriers) {

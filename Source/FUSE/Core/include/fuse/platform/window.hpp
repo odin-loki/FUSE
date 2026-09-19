@@ -93,6 +93,7 @@ private:
     bool m_focused = true;
     WindowCloseRequest m_closeRequest = WindowCloseRequest::None;
     std::string m_title = "FUSE";
+    void* m_nativeWindow = nullptr;
 };
 
 } // namespace fuse::platform

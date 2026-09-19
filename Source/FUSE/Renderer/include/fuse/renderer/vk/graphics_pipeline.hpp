@@ -3,6 +3,7 @@
 #include <fuse/renderer/shader/shader_module.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/pipeline_layout.hpp>
+#include <fuse/renderer/vk/pipeline_cache.hpp>
 #include <fuse/renderer/vk/render_pass.hpp>
 #include <fuse/types.hpp>
 
@@ -16,6 +17,7 @@ struct GraphicsPipelineDesc {
     ShaderModule* vertexShader = nullptr;
     ShaderModule* fragmentShader = nullptr;
     RenderPass* renderPass = nullptr;
+    PipelineCache* pipelineCache = nullptr;
     u32 colorFormat = 37; // VK_FORMAT_R8G8B8A8_UNORM
     const char* debugName = nullptr;
 };

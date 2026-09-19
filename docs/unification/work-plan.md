@@ -153,6 +153,19 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 
 ---
 
+### WP-06d — Track B render encode + bindless pool + null WSI (B2.4–B2.5 follow-up)
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M |
+| **Scope** | Real `vkCmdBeginRenderPass` in render-graph execute; bindless `VkDescriptorPool` + in-memory `PipelineCache`; null/GLFW WSI scaffold (`FUSE_PLATFORM_WINDOW_GLFW`); keep `HybridRendererBootstrap` + `demo_hybrid_hud` green |
+| **MT note** | GPU encode + submit on `renderThread()` only |
+| **Exit** | `fuse_vulkan_phase2_integration` asserts `vulkanRenderPassBeginCount`; bindless pool test; hybrid presentable WSI scaffold test; Lavapipe headless unchanged |
+| **Deps** | WP-06c |
+| **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06d |
+
+---
+
 ### WP-07 — U5 Feature modules (parallel per module)
 
 | Field | Value |
@@ -277,7 +290,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** WP-07 ore extraction per module; U7 `.fuselevel` cookers; Track B B2.4+ follow-up (bindless pool, real queue submit).
+**Next:** WP-07 ore extraction per module; U7 `.fuselevel` cookers; Track B post–WP-06d (swapchain FB present pass, graph barriers, bindless descriptor updates, pipeline cache disk I/O).
 
 ---
 

@@ -3,11 +3,13 @@
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
 #include <fuse/hybrid/vulkan_presentable.hpp>
 #include <fuse/platform/window.hpp>
+#include <fuse/platform/window_wsi.hpp>
 #include <fuse/renderer/vk/present_path.hpp>
 #include <fuse/renderer/vk/surface.hpp>
 
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 namespace {
 
@@ -18,6 +20,25 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testNullWsiBackendScaffold() {
+    expectTrue(fuse::platform::activeWindowWsiKind() == fuse::platform::WindowWsiKind::Null ||
+                   fuse::platform::activeWindowWsiKind() == fuse::platform::WindowWsiKind::Glfw,
+               "window WSI kind is known");
+    expectTrue(fuse::platform::windowWsiBackendName() != nullptr, "WSI backend name available");
+
+    std::vector<const char*> extensions;
+    fuse::platform::requiredVulkanInstanceExtensions(extensions);
+#if defined(FUSE_PLATFORM_WINDOW_GLFW)
+    if (fuse::platform::windowWsiAvailable()) {
+        expectTrue(!extensions.empty(), "GLFW WSI publishes instance extensions");
+    } else {
+        expectTrue(extensions.empty(), "GLFW unavailable without display — null WSI extensions");
+    }
+#else
+    expectTrue(extensions.empty(), "default null WSI requires no instance extensions");
+#endif
 }
 
 void testGameWindowStub() {
@@ -126,6 +147,7 @@ void testHybridBootstrapHeadlessPresentable() {
 } // namespace
 
 int main() {
+    testNullWsiBackendScaffold();
     testGameWindowStub();
     testHeadlessPresentableSurface();
     testExternalSurfaceWiring();
