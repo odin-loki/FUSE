@@ -326,3 +326,24 @@ ContactBufferFrictionBasisRejectReason contactBufferFrictionBasisRejectReason(co
     bool needsFrictionBasisBuild() const { return reason == ContactBufferFrictionBasisRejectReason::None; }
 ContactBufferFrictionBasisPreflight preflightContactBufferFrictionBasis(const ContactBufferSoA& buffer);
 void buildFrictionTangentBasesWithPreflight(ContactBufferSoA& buffer);
+
+// --- deepen additive from b4-narrowphase-buffer-guards-0bb9 ---
+const char* contactBufferWriteSlotRejectReasonName(ContactBufferWriteSlotRejectReason reason);
+ContactBufferWriteSlotRejectReason contactBufferWriteSlotRejectReason(
+ContactBufferWriteSlotPreflight preflightContactBufferWriteSlot(
+enum class ContactBufferWarmStartRejectReason : u8 {
+const char* contactBufferWarmStartRejectReasonName(ContactBufferWarmStartRejectReason reason);
+ContactBufferWarmStartRejectReason contactBufferWarmStartRejectReason(
+    ContactBufferWarmStartRejectReason expected);
+struct ContactBufferWarmStartPreflight {
+    ContactBufferWarmStartRejectReason reason = ContactBufferWarmStartRejectReason::None;
+    bool canWarmStart() const { return reason == ContactBufferWarmStartRejectReason::None; }
+ContactBufferWarmStartPreflight preflightContactBufferWarmStart(
+enum class ContactBufferToVectorRejectReason : u8 {
+const char* contactBufferToVectorRejectReasonName(ContactBufferToVectorRejectReason reason);
+ContactBufferToVectorRejectReason contactBufferToVectorRejectReason(const ContactBufferSoA& buffer);
+    ContactBufferToVectorRejectReason expected);
+struct ContactBufferToVectorPreflight {
+    ContactBufferToVectorRejectReason reason = ContactBufferToVectorRejectReason::None;
+    bool canExport() const { return reason == ContactBufferToVectorRejectReason::None; }
+ContactBufferToVectorPreflight preflightContactBufferToVector(const ContactBufferSoA& buffer);

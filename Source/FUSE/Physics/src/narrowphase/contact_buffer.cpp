@@ -813,3 +813,52 @@ ContactBufferFrictionBasisPreflight preflightContactBufferFrictionBasis(const Co
     return !preflightContactBufferFrictionBasis(buffer).needsFrictionBasisBuild();
     return preflightContactBufferFrictionBasis(buffer).needsFrictionBasisBuild();
 void buildFrictionTangentBasesWithPreflight(ContactBufferSoA& buffer) {
+
+// --- deepen additive from b4-narrowphase-buffer-guards-0bb9 ---
+    if (!preflightContactBufferWriteSlot(*this, slot, manifold).canWrite()) {
+    if (!preflightContactBufferWarmStart(*this, slot).canWarmStart()) {
+    if (!preflightContactBufferFrictionBuild(*this).needsFrictionBuild()) {
+    if (!preflightContactBufferToVector(*this).canExport()) {
+const char* contactBufferWriteSlotRejectReasonName(ContactBufferWriteSlotRejectReason reason) {
+ContactBufferWriteSlotRejectReason contactBufferWriteSlotRejectReason(
+    return contactBufferWriteSlotRejectReason(buffer, slot, manifold) == expected;
+ContactBufferWriteSlotPreflight preflightContactBufferWriteSlot(
+    preflight.reason = contactBufferWriteSlotRejectReason(buffer, slot, manifold);
+    return !preflightContactBufferWriteSlot(buffer, slot, manifold).canWrite();
+    return preflightContactBufferWriteSlot(buffer, slot, manifold).canWrite();
+    case ContactBufferFrictionBuildRejectReason::AllCached:
+        return ContactBufferFrictionBuildRejectReason::AllCached;
+    preflight.allCached = preflight.reason == ContactBufferFrictionBuildRejectReason::AllCached;
+    return !preflightContactBufferFrictionBuild(buffer).needsFrictionBuild();
+    return preflightContactBufferFrictionBuild(buffer).needsFrictionBuild();
+const char* contactBufferWarmStartRejectReasonName(ContactBufferWarmStartRejectReason reason) {
+    case ContactBufferWarmStartRejectReason::None:
+    case ContactBufferWarmStartRejectReason::OutOfRangeSlot:
+    case ContactBufferWarmStartRejectReason::InvalidSlot:
+ContactBufferWarmStartRejectReason contactBufferWarmStartRejectReason(
+        return ContactBufferWarmStartRejectReason::OutOfRangeSlot;
+        return ContactBufferWarmStartRejectReason::InvalidSlot;
+    return ContactBufferWarmStartRejectReason::None;
+    ContactBufferWarmStartRejectReason expected) {
+    return contactBufferWarmStartRejectReason(buffer, slot) == expected;
+ContactBufferWarmStartPreflight preflightContactBufferWarmStart(
+    ContactBufferWarmStartPreflight preflight{};
+    preflight.reason = contactBufferWarmStartRejectReason(buffer, slot);
+    preflight.outOfRangeSlot = preflight.reason == ContactBufferWarmStartRejectReason::OutOfRangeSlot;
+    preflight.invalidSlot = preflight.reason == ContactBufferWarmStartRejectReason::InvalidSlot;
+    return !preflightContactBufferWarmStart(buffer, slot).canWarmStart();
+    return preflightContactBufferWarmStart(buffer, slot).canWarmStart();
+const char* contactBufferToVectorRejectReasonName(ContactBufferToVectorRejectReason reason) {
+    case ContactBufferToVectorRejectReason::None:
+    case ContactBufferToVectorRejectReason::EmptyBuffer:
+ContactBufferToVectorRejectReason contactBufferToVectorRejectReason(const ContactBufferSoA& buffer) {
+        return ContactBufferToVectorRejectReason::EmptyBuffer;
+    return ContactBufferToVectorRejectReason::None;
+    ContactBufferToVectorRejectReason expected) {
+    return contactBufferToVectorRejectReason(buffer) == expected;
+ContactBufferToVectorPreflight preflightContactBufferToVector(const ContactBufferSoA& buffer) {
+    ContactBufferToVectorPreflight preflight{};
+    preflight.reason = contactBufferToVectorRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferToVectorRejectReason::EmptyBuffer;
+    return !preflightContactBufferToVector(buffer).canExport();
+    return preflightContactBufferToVector(buffer).canExport();

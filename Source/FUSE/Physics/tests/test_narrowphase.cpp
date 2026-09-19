@@ -3352,3 +3352,30 @@ void testContactPairDeepenPassSixGuards() {
 void testManifoldFinalizeIfNeededGuards() {
 void testCanSkipNarrowphaseDispatchGuard() {
     testContactBufferFrictionBasisPreflightGuards();
+
+// --- deepen additive from b4-narrowphase-buffer-guards-0bb9 ---
+            fuse::physics::narrowphase::contactBufferWriteSlotRejectReasonName(
+                fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::InvalidManifold),
+    expectTrue(!compactionPreflight.needsCompaction(), "preflight reports all-valid slot flags before activeCount sync");
+    const auto packedPreflight = fuse::physics::narrowphase::preflightContactBufferCompaction(buffer);
+    expectTrue(!packedPreflight.needsCompaction(), "preflight skips already-packed buffer");
+    expectTrue(clampPreflight.needsClamp(), "preflight needs clamp when over max capacity");
+    const auto noClampPreflight = fuse::physics::narrowphase::preflightContactBufferClamp(buffer);
+    expectTrue(!noClampPreflight.needsClamp(), "preflight skips clamp within capacity");
+void testContactBufferCompactAndClampPreflights() {
+        noWorkPreflight.reason == fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::NoWork,
+void testContactBufferFrictionWarmStartExportGuards() {
+            buffer, 0u, fuse::physics::narrowphase::ContactBufferWarmStartRejectReason::OutOfRangeSlot),
+        frictionPreflight.reason == fuse::physics::narrowphase::ContactBufferFrictionBuildRejectReason::AllCached,
+    const auto exportPreflight = fuse::physics::narrowphase::preflightContactBufferToVector(buffer);
+    expectTrue(exportPreflight.canExport(), "toVector preflight allows non-empty buffer");
+void testNarrowphaseBufferDispatchPreflight() {
+    expectTrue(emptyPreflight.emptyPairList, "buffer dispatch preflight marks empty pair list");
+    expectTrue(validPreflight.can_dispatch(), "buffer dispatch preflight allows non-empty pair list");
+    expectTrue(validPreflight.canFinalizeBuffer, "buffer dispatch preflight can finalize buffer");
+void testDetectContactsPairDeepenPreflightWrapper() {
+void testManifoldNormalizeAndFrictionPreflightWrappers() {
+    testContactBufferCompactAndClampPreflights();
+    testNarrowphaseBufferDispatchPreflight();
+    testDetectContactsPairDeepenPreflightWrapper();
+    testManifoldNormalizeAndFrictionPreflightWrappers();
