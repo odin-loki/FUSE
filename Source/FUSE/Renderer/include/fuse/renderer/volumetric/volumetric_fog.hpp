@@ -503,6 +503,8 @@ enum class FroxelPopulateRejectReason : u8 {
     None = 0,
     EmptyGrid,
 /// Why analytic froxel populate preflight rejected or skipped non-zero fill (B5.11 deepen).
+/// Why analytic froxel populate preflight rejected the request (B5.11 deepen).
+enum class PopulateRejectReason : u8 {
     InvalidCamera,
     ZeroDensity,
     ZeroMarchSteps,
@@ -510,6 +512,7 @@ enum class FroxelPopulateRejectReason : u8 {
 
 /// Human-readable label for populate reject reasons (logging / tests).
 const char* froxelPopulateRejectReasonLabel(FroxelPopulateRejectReason reason);
+const char* populateRejectReasonLabel(PopulateRejectReason reason);
 
 /// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
 namespace froxel_util {
@@ -663,6 +666,11 @@ bool wouldSkipFroxelSample(const FroxelDensityGrid& grid,
                          SampleCoordRejectReason* outReason = nullptr);
 /// True when tile/slice corners and interpolation weights are valid for sampling.
 bool areSampleCoordsReady(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+/// True when lookup succeeds and sample coords are valid without clamping.
+bool canSampleAtCoordsStrict(const FroxelDensityGrid& grid,
+/// Diagnose strict sample-coord preflight; false when lookup fails or coords need clamping.
+bool tryCanSampleAtCoordsStrict(const FroxelDensityGrid& grid,
+                                SampleCoordRejectReason& outReason);
 /// True when at least one froxel exceeds `epsilon`; false when storage is empty.
 bool hasNonZeroDensity(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Early-out when the grid is inaccessible or uniformly below `epsilon`.
@@ -956,6 +964,22 @@ bool shouldSkipFroxelPopulate(const FroxelGridDesc& desc, const VolumetricFogPar
 bool tryCanPopulateFromAnalyticFog(const FroxelGridDesc& desc,
                                    const VolumetricFogParams& params,
                                    FroxelPopulateRejectReason& outReason);
+                              ScreenMappingRejectReason& outMapReason,
+                              DensityLookupRejectReason& outLookupReason);
+/// Early-out when analytic froxel populate would skip the density fill loop.
+bool shouldSkipFroxelPopulate(const FroxelGridDesc& desc,
+                              const FroxelCameraDesc& camera,
+                              const VolumetricFogParams& params);
+/// Preflight guard before analytic fog populate; false when populate would early-out after allocate.
+bool canPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+/// Diagnose why populate preflight would reject.
+                                   PopulateRejectReason& outReason);
+/// Populate with guard preflight; always allocates like `populateFromAnalyticFog`.
+bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
+                                const FroxelGridDesc& desc,
+/// True when a populated grid matches desc and holds non-zero density after a successful populate.
+bool validatePopulatedDensity(const FroxelDensityGrid& grid,
+                            f32 epsilon = 1e-6f);
 void populateFromAnalyticFog(FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              const FroxelCameraDesc& camera,
