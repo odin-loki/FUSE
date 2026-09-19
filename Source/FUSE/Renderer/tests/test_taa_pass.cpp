@@ -3841,3 +3841,10 @@ void testTaaPassTemporalAndJitterGuardWrappers() {
 void testTaaPassWarmupAndResolveFrameGuards() {
     expectTrue(pass->preflightJitterNdc(), "pass jitter NDC preflight passes");
     expectTrue(pass->preflightJitterSync(4u), "pass jitter sync preflight passes");
+
+// --- deepen additive from deepen-b59-taa-guards-facc ---
+               "tryPreflightHistoryReuse fails before warmup");
+               "tryPreflightHistoryReuse reason is NotWarm before warmup");
+               "tryPreflightResolveBlendWeights passes before first resolve");
+               "tryPreflightResolveBlendWeights reason is None before first resolve");
+               "tryPreflightHistoryReuse passes after warmup");

@@ -171,3 +171,7 @@ Part of `fuse_rhi`. Built with `FUSE_BUILD_CORE=ON`. Tests run when `FUSE_BUILD_
 - `tryPreflightTaaResolve` / `shouldSkipTaaResolve` — resolve skip preflight deepening
 - `preflightTaaResolveFrame` / `tryPreflightTaaResolveFrame` / `shouldSkipTaaResolveFrame` — combined skip + blend
 - `TaaPass::preflightResolveFrame()` / `shouldSkipResolveFrame()`
+
+// --- deepen additive from deepen-b59-taa-guards-facc ---
+- `TaaPass::shouldSkipJitterSync` / `preflightJitterNdc` / `shouldSkipJitterNdc` — pass-level jitter guard wrappers
+- `TaaPass::tryPreflightHistoryReuse` / `tryPreflightResolveBlendWeights` / `resolveBlendReady` — pass-level preflight deepening
