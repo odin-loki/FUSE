@@ -1349,3 +1349,10 @@ void testCookHashPreflightManifestCookKey() {
 // --- deepen additive from b79-cooker-hash-deepen-6979 ---
 void testCookHashPreflightImportCookKeys() {
     testCookHashPreflightImportCookKeys();
+
+// --- deepen additive from deepen-b79-cooker-hash-b8de ---
+               "would_invalidate_stale_content rejects empty source path");
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_guard.obj", 0u),
+               "would_invalidate_stale_content rejects zero content hash");
+               "would_invalidate_stale_content true after source change with fresh hash");
+    const fuse::project::CookHashPreflight readable = fuse::project::preflight_cook_cache_entry(valid);

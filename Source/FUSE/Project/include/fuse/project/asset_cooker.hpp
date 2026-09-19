@@ -120,3 +120,6 @@ private:
 
 // --- deepen additive from deepen-b79-cooker-hash-guards-93a9 ---
     [[nodiscard]] bool would_prune_reconcile() const;
+
+// --- deepen additive from deepen-b79-cooker-hash-b8de ---
+    [[nodiscard]] bool would_reconcile() const { return total() != 0; }
