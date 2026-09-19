@@ -103,6 +103,8 @@ struct PairBufferSoA {
     bool needsMaxCapacityClamp() const { return canApplyMaxCapacityClamp(); }
     /// True when compact+clamp would leave the buffer unchanged (B4.2 deepen follow-up pass).
     bool canSkipCompactAndClamp() const;
+    /// True when two or more active pairs share the same canonical body indices (B4.2 deepen pass).
+    bool hasDuplicateCanonicalPairs() const;
     /// Count valid flags in prepared slot storage before compaction.
     u32 countValidSlots() const;
     /// True when canonical sort is a no-op (empty or single pair).
@@ -334,6 +336,52 @@ bool canSkipPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
 /// Non-mutating push predicate — mirrors `preflightPairBufferPush` (B4.2 deepen follow-up pass).
 bool shouldRunPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
 
+/// Why pair-buffer writeSlot would reject (B4.2 deepen pass).
+enum class PairBufferWriteSlotRejectReason : u8 {
+    None = 0,
+    OutOfRangeSlot,
+    InvalidPair,
+};
+
+/// Human-readable label for pair-buffer writeSlot reject reasons (logging / tests).
+const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason);
+
+/// Diagnose why writeSlot would reject; vacuously succeeds when writeSlot may proceed.
+PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Returns true when `pairBufferWriteSlotRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferWriteSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB,
+    PairBufferWriteSlotRejectReason expected);
+
+/// Read-only writeSlot diagnostics — no mutation (B4.2 deepen pass).
+struct PairBufferWriteSlotPreflight {
+    PairBufferWriteSlotRejectReason reason = PairBufferWriteSlotRejectReason::None;
+    bool outOfRangeSlot = false;
+    bool invalidPair = false;
+
+    bool canWrite() const { return reason == PairBufferWriteSlotRejectReason::None; }
+};
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Non-mutating writeSlot skip predicate — inverse of `canWrite` (B4.2 deepen pass).
+bool canSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
+
+/// Non-mutating writeSlot predicate — mirrors `preflightPairBufferWriteSlot` (B4.2 deepen pass).
+bool shouldRunPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
+
 /// Why pair-buffer compaction would early-out (B4.2 deepen pass).
 enum class PairBufferCompactionRejectReason : u8 {
     None = 0,
@@ -558,6 +606,7 @@ enum class PairBufferDedupeRejectReason : u8 {
     None = 0,
     EmptyBuffer,
     SinglePair,
+    AlreadyUnique,
 };
 
 /// Human-readable label for pair-buffer dedupe reject reasons (logging / tests).
@@ -570,6 +619,17 @@ PairBufferDedupeRejectReason pairBufferDedupeRejectReason(const PairBufferSoA& b
 bool pairBufferDedupeRejectsForReason(
     const PairBufferSoA& buffer,
     PairBufferDedupeRejectReason expected);
+bool pairBufferDedupeRejectsForReason(const PairBufferSoA& buffer, PairBufferDedupeRejectReason expected);
+
+/// Read-only dedupe diagnostics at the SoA layer — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferDedupePreflight {
+    PairBufferDedupeRejectReason reason = PairBufferDedupeRejectReason::None;
+    bool emptyBuffer = false;
+    bool singlePair = false;
+    bool alreadyUnique = false;
+
+    bool canDedupe() const { return reason == PairBufferDedupeRejectReason::None; }
+};
 
 PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer);
 
@@ -668,6 +728,7 @@ enum class PairBufferSortRejectReason : u8 {
     None = 0,
     EmptyBuffer,
     SinglePair,
+    AlreadySorted,
 };
 
 /// Human-readable label for pair-buffer sort reject reasons (logging / tests).
@@ -769,6 +830,17 @@ PairBufferSortRejectReason pairBufferSortRejectReason(const PairBufferSoA& buffe
 bool pairBufferSortRejectsForReason(
     const PairBufferSoA& buffer,
     PairBufferSortRejectReason expected);
+bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortRejectReason expected);
+
+/// Read-only canonical-sort diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferSortPreflight {
+    PairBufferSortRejectReason reason = PairBufferSortRejectReason::None;
+    bool emptyBuffer = false;
+    bool singlePair = false;
+    bool alreadySorted = false;
+
+    bool needsSort() const { return reason == PairBufferSortRejectReason::None; }
+};
 
 PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer);
 

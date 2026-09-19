@@ -1585,6 +1585,192 @@ FUSE_PHYSICS_INLINE bool shouldRunCellSpanIteration(const CellRange2& range, u32
     return preflightCellSpan(range, maxSpanPerAxis).canIterate();
 }
 
+/// True when `maxSpanPerAxis == 0` (unlimited per-axis span budget stub).
+FUSE_PHYSICS_INLINE bool isUnboundedCellSpanBudget(u32 maxSpanPerAxis) {
+    return maxSpanPerAxis == 0u;
+}
+
+/// Cell-capacity guard: true when any axis span exceeds `maxSpanPerAxis` (0 = unlimited budget).
+FUSE_PHYSICS_INLINE bool exceedsCellSpanPerAxis(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (isUnboundedCellSpanBudget(maxSpanPerAxis) || isEmptyCellRange(range)) {
+        return false;
+    }
+    const ivec3 span = cellSpanPerAxis(range);
+    return span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis) ||
+           span.z > static_cast<s32>(maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE bool exceedsCellSpanPerAxis(const CellRange2& range, u32 maxSpanPerAxis) {
+    if (isUnboundedCellSpanBudget(maxSpanPerAxis) || isEmptyCellRange(range)) {
+        return false;
+    }
+    const ivec2 span = cellSpanPerAxis(range);
+    return span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis);
+}
+
+/// Inverse of `exceedsCellSpanPerAxis` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool cellSpanWithinBudget(const CellRange3& range, u32 maxSpanPerAxis) {
+    return !exceedsCellSpanPerAxis(range, maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE bool cellSpanWithinBudget(const CellRange2& range, u32 maxSpanPerAxis) {
+    return !exceedsCellSpanPerAxis(range, maxSpanPerAxis);
+}
+
+/// Why per-axis cell span preflight rejected the range (B4.2 deepen pass).
+enum class CellSpanRejectReason : u8 {
+    None = 0,
+    EmptyRange,
+    ExceedsSpanBudget,
+};
+
+/// Human-readable label for cell-span reject reasons (logging / tests).
+const char* cellSpanRejectReasonName(CellSpanRejectReason reason);
+
+/// Diagnose why per-axis span iteration would reject; vacuously succeeds on valid ranges.
+FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (isEmptyCellRange(range)) {
+        return CellSpanRejectReason::EmptyRange;
+    }
+    if (exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
+        return CellSpanRejectReason::ExceedsSpanBudget;
+    }
+    return CellSpanRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange2& range, u32 maxSpanPerAxis) {
+    if (isEmptyCellRange(range)) {
+        return CellSpanRejectReason::EmptyRange;
+    }
+    if (exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
+        return CellSpanRejectReason::ExceedsSpanBudget;
+    }
+    return CellSpanRejectReason::None;
+}
+
+/// Per-axis span preflight for shape occupancy iteration (B4.2 deepen pass).
+struct CellSpanPreflight {
+    CellSpanRejectReason reason = CellSpanRejectReason::None;
+    bool emptyRange = false;
+    bool exceedsSpanBudget = false;
+    ivec3 spanPerAxis{};
+
+    bool canIterate() const { return reason == CellSpanRejectReason::None; }
+};
+
+FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan(const CellRange3& range, u32 maxSpanPerAxis) {
+    CellSpanPreflight preflight{};
+    preflight.reason = cellSpanRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellSpanRejectReason::EmptyRange;
+    preflight.exceedsSpanBudget = preflight.reason == CellSpanRejectReason::ExceedsSpanBudget;
+    preflight.spanPerAxis = cellSpanPerAxis(range);
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan2D(const CellRange2& range, u32 maxSpanPerAxis) {
+    CellSpanPreflight preflight{};
+    preflight.reason = cellSpanRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellSpanRejectReason::EmptyRange;
+    preflight.exceedsSpanBudget = preflight.reason == CellSpanRejectReason::ExceedsSpanBudget;
+    const ivec2 span = cellSpanPerAxis(range);
+    preflight.spanPerAxis = {span.x, span.y, 0};
+    return preflight;
+}
+
+/// Non-mutating cell-span skip predicate — inverse of `canIterate` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipCellSpanIteration(const CellRange3& range, u32 maxSpanPerAxis) {
+    return !preflightCellSpan(range, maxSpanPerAxis).canIterate();
+}
+
+FUSE_PHYSICS_INLINE bool canSkipCellSpanIteration(const CellRange2& range, u32 maxSpanPerAxis) {
+    return !preflightCellSpan2D(range, maxSpanPerAxis).canIterate();
+}
+
+/// Non-mutating cell-span predicate — mirrors `preflightCellSpan` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanIteration(const CellRange3& range, u32 maxSpanPerAxis) {
+    return preflightCellSpan(range, maxSpanPerAxis).canIterate();
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanIteration(const CellRange2& range, u32 maxSpanPerAxis) {
+    return preflightCellSpan2D(range, maxSpanPerAxis).canIterate();
+}
+
+/// Returns true when `cellSpanRejectReason` matches `expected` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool cellSpanRejectsForReason(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    CellSpanRejectReason expected) {
+    return cellSpanRejectReason(range, maxSpanPerAxis) == expected;
+}
+
+FUSE_PHYSICS_INLINE bool cellSpanRejectsForReason(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    CellSpanRejectReason expected) {
+    return cellSpanRejectReason(range, maxSpanPerAxis) == expected;
+}
+
+/// Why shape→cell insertion would skip for one shape (B4.2 deepen pass).
+enum class BroadphaseShapeInsertRejectReason : u8 {
+    None = 0,
+    OutOfRangeBody,
+    EmptyCellRange,
+    ExceedsOccupancyBudget,
+};
+
+/// Human-readable label for shape-insert reject reasons (logging / tests).
+const char* broadphaseShapeInsertRejectReasonName(BroadphaseShapeInsertRejectReason reason);
+
+/// Diagnose why shape→cell insertion would skip; vacuously succeeds when insertion may proceed.
+BroadphaseShapeInsertRejectReason broadphaseShapeInsertRejectReason(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D);
+
+/// Returns true when `broadphaseShapeInsertRejectReason` matches `expected` (B4.2 deepen pass).
+bool broadphaseShapeInsertRejectsForReason(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D,
+    BroadphaseShapeInsertRejectReason expected);
+
+/// Read-only shape→cell insertion diagnostics — no mutation (B4.2 deepen pass).
+struct BroadphaseShapeInsertPreflight {
+    BroadphaseShapeInsertRejectReason reason = BroadphaseShapeInsertRejectReason::None;
+    bool outOfRangeBody = false;
+    bool emptyCellRange = false;
+    bool exceedsOccupancyBudget = false;
+
+    bool canInsert() const { return reason == BroadphaseShapeInsertRejectReason::None; }
+};
+
+BroadphaseShapeInsertPreflight preflightBroadphaseShapeInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D);
+
+/// Non-mutating shape-insert skip predicate — inverse of `canInsert` (B4.2 deepen pass).
+bool canSkipBroadphaseShapeInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D);
+
+/// Non-mutating shape-insert predicate — mirrors `preflightBroadphaseShapeInsert` (B4.2 deepen pass).
+bool shouldRunBroadphaseShapeInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D);
+
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
@@ -2594,6 +2780,7 @@ enum class RefineBroadphaseRejectReason : u8 {
     EmptyBuffer,
     EmptyInput,
     NoValidPairs,
+    AllSlotsInvalid,
 };
 
 /// Human-readable label for refine reject reasons (logging / tests).
@@ -2618,6 +2805,7 @@ struct RefineBroadphasePreflight {
     bool noValidPairs = false;
     u32 validPairCount = 0;
     u32 activePairCount = 0;
+    bool allSlotsInvalid = false;
 
     bool canRefine() const { return reason == RefineBroadphaseRejectReason::None; }
 
@@ -2690,6 +2878,8 @@ bool shouldRunRefineBroadphase(
 /// Why broadphase pair dedupe would early-out (B4.2 deepen follow-up pass).
 enum class DedupeBroadphaseRejectReason : u8 {
     SinglePair,
+    AlreadyUnique,
+};
 
 /// Human-readable label for dedupe reject reasons (logging / tests).
 const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason);
@@ -2705,6 +2895,7 @@ struct DedupeBroadphasePreflight {
     DedupeBroadphaseRejectReason reason = DedupeBroadphaseRejectReason::None;
     bool singlePair = false;
     u32 pairCount = 0;
+    bool alreadyUnique = false;
 
     bool canDedupe() const { return reason == DedupeBroadphaseRejectReason::None; }
     bool canRefine() const { return !emptyBuffer && !emptyInput && !noValidPairs; }
@@ -2926,6 +3117,7 @@ enum class MergePairsIntoBufferRejectReason : u8 {
 enum class BroadphaseMergeBufferRejectReason : u8 {
     SceneRejected,
     BufferAtCapacity,
+    AllInvalidPairs,
 };
 
 /// Human-readable label for merge-into-buffer reject reasons (logging / tests).
@@ -2956,6 +3148,7 @@ struct MergePairsIntoBufferPreflight {
     bool partialCapacity = false;
     u32 mergeablePairCount = 0;
     u32 requestedPairCount = 0;
+    bool allInvalidPairs = false;
 
     bool canMerge() const { return reason == MergePairsIntoBufferRejectReason::None; }
 

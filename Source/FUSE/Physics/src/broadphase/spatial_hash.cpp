@@ -604,6 +604,23 @@ const char* refineBroadphaseRejectReasonName(RefineBroadphaseRejectReason reason
         return "NoValidPairs";
 
 const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) {
+    case RefineBroadphaseRejectReason::AllSlotsInvalid:
+        return "AllSlotsInvalid";
+    }
+    return "Unknown";
+
+const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason) {
+    switch (reason) {
+    case DedupeBroadphaseRejectReason::None:
+        return "None";
+    case DedupeBroadphaseRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case DedupeBroadphaseRejectReason::SinglePair:
+        return "SinglePair";
+    case DedupeBroadphaseRejectReason::AlreadyUnique:
+        return "AlreadyUnique";
+
+const char* mergeBroadphaseRejectReasonName(BroadphaseMergeRejectReason reason) {
     switch (reason) {
     case BroadphaseMergeRejectReason::None:
         return "None";
@@ -847,7 +864,13 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReasonImpl(
     const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
     if (bodyIndex >= bodies.count()) {
         return ShapeCellInsertRejectReason::OutOfRangeBody;
+    bool use2D,
+    CellBuckets& cells) {
+    if (!shouldRunBroadphaseShapeInsert(shapeIndex, bodies, shapes, params, use2D)) {
+        return;
     }
+
+    const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
 
     const vec3 position = bodies.positions[bodyIndex];
     const f32 cellSize = clampCellSize(params.cellSize);
@@ -1316,6 +1339,75 @@ const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason) {
         return "EmptyRange";
     case CellSpanClampRejectReason::UnlimitedSpan:
         return "UnlimitedSpan";
+const char* cellSpanRejectReasonName(CellSpanRejectReason reason) {
+    case CellSpanRejectReason::None:
+    case CellSpanRejectReason::EmptyRange:
+    case CellSpanRejectReason::ExceedsSpanBudget:
+        return "ExceedsSpanBudget";
+
+const char* broadphaseShapeInsertRejectReasonName(BroadphaseShapeInsertRejectReason reason) {
+    case BroadphaseShapeInsertRejectReason::None:
+    case BroadphaseShapeInsertRejectReason::OutOfRangeBody:
+        return "OutOfRangeBody";
+    case BroadphaseShapeInsertRejectReason::EmptyCellRange:
+        return "EmptyCellRange";
+    case BroadphaseShapeInsertRejectReason::ExceedsOccupancyBudget:
+        return "ExceedsOccupancyBudget";
+
+BroadphaseShapeInsertRejectReason broadphaseShapeInsertRejectReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D) {
+    if (shapeIndex >= shapes.count()) {
+        return BroadphaseShapeInsertRejectReason::OutOfRangeBody;
+
+    const u32 bodyIndex = shapes.bodyIndices[shapeIndex];
+    if (bodyIndex >= bodies.count()) {
+
+    const vec3 position = bodies.positions[bodyIndex];
+    const f32 cellSize = clampCellSize(params.cellSize);
+    const u32 maxSpan = params.maxCellSpanPerAxis;
+    const u32 maxOccupancy = params.maxCellOccupancy;
+    const CollisionShapeType type = static_cast<CollisionShapeType>(shapes.types[shapeIndex]);
+
+    if (use2D) {
+        CellRange2 range = {};
+        if (type == CollisionShapeType::Box) {
+            const vec3 halfExtents = shapes.params[shapeIndex];
+            const aabb bounds = aabbFromBox(position, halfExtents);
+            range = cellRangeFromAabb2D(bounds, cellSize, maxSpan);
+        } else {
+            const f32 radius = shapes.params[shapeIndex].x;
+            range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
+        if (isEmptyCellRange(range)) {
+            return BroadphaseShapeInsertRejectReason::EmptyCellRange;
+        if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+            return BroadphaseShapeInsertRejectReason::ExceedsOccupancyBudget;
+        return BroadphaseShapeInsertRejectReason::None;
+
+    CellRange3 range = {};
+        range = cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
+        range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
+
+bool broadphaseShapeInsertRejectsForReason(
+    bool use2D,
+    BroadphaseShapeInsertRejectReason expected) {
+    return broadphaseShapeInsertRejectReason(shapeIndex, bodies, shapes, params, use2D) == expected;
+
+BroadphaseShapeInsertPreflight preflightBroadphaseShapeInsert(
+    BroadphaseShapeInsertPreflight preflight{};
+    preflight.reason = broadphaseShapeInsertRejectReason(shapeIndex, bodies, shapes, params, use2D);
+    preflight.outOfRangeBody = preflight.reason == BroadphaseShapeInsertRejectReason::OutOfRangeBody;
+    preflight.emptyCellRange = preflight.reason == BroadphaseShapeInsertRejectReason::EmptyCellRange;
+    preflight.exceedsOccupancyBudget =
+        preflight.reason == BroadphaseShapeInsertRejectReason::ExceedsOccupancyBudget;
+
+bool canSkipBroadphaseShapeInsert(
+    return !preflightBroadphaseShapeInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
+
+bool shouldRunBroadphaseShapeInsert(
+    return preflightBroadphaseShapeInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
 
 RefineBroadphaseRejectReason refineBroadphaseRejectReason(
     const RigidBodySoA& bodies,
@@ -1364,6 +1456,9 @@ RefineBroadphaseRejectReason refineBroadphaseRejectReason(
         return RefineBroadphaseRejectReason::EmptyBuffer;
     if (canSkipBroadphase(bodies, shapes)) {
         return RefineBroadphaseRejectReason::EmptyInput;
+    }
+    if (buffer.pairSlotCount > 0u && buffer.countValidSlots() == 0u) {
+        return RefineBroadphaseRejectReason::AllSlotsInvalid;
     if (!buffer.hasValidPairs()) {
         return RefineBroadphaseRejectReason::NoValidPairs;
     return RefineBroadphaseRejectReason::None;
@@ -1380,6 +1475,7 @@ RefineBroadphasePreflight preflightRefineBroadphase(
     preflight.emptyInput = canSkipBroadphase(bodies, shapes);
     preflight.validPairCount = buffer.countValidSlots();
     preflight.activePairCount = buffer.activeCount;
+    preflight.allSlotsInvalid = buffer.pairSlotCount > 0u && buffer.countValidSlots() == 0u;
     preflight.reason = refineBroadphaseRejectReason(bodies, shapes, buffer);
 
 bool canSkipRefineBroadphase(
@@ -1462,6 +1558,9 @@ DedupeBroadphaseRejectReason dedupeBroadphaseRejectReason(const PairBufferSoA& b
         return DedupeBroadphaseRejectReason::EmptyBuffer;
     if (buffer.activeCount <= 1u) {
         return DedupeBroadphaseRejectReason::SinglePair;
+    }
+    if (!buffer.hasDuplicateCanonicalPairs()) {
+        return DedupeBroadphaseRejectReason::AlreadyUnique;
     return DedupeBroadphaseRejectReason::None;
 
 bool dedupeBroadphaseRejectsForReason(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason expected) {
@@ -1472,6 +1571,9 @@ DedupeBroadphasePreflight preflightDedupeBroadphase(const PairBufferSoA& buffer)
     preflight.singlePair = !preflight.emptyBuffer && buffer.activeCount <= 1u;
     preflight.pairCount = buffer.activeCount;
     preflight.reason = dedupeBroadphaseRejectReason(buffer);
+    preflight.alreadyUnique = preflight.reason == DedupeBroadphaseRejectReason::AlreadyUnique;
+    return preflight;
+}
 
 bool shouldRunDedupeBroadphase(const PairBufferSoA& buffer) {
     return preflightDedupeBroadphase(buffer).canDedupe();
@@ -2183,6 +2285,8 @@ const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReaso
         return "EmptyPairs";
     case MergePairsIntoBufferRejectReason::BufferFull:
         return "BufferFull";
+    case MergePairsIntoBufferRejectReason::AllInvalidPairs:
+        return "AllInvalidPairs";
     }
     return "Unknown";
 }
@@ -2195,6 +2299,17 @@ MergePairsIntoBufferRejectReason mergePairsIntoBufferRejectReason(
     }
     if (buffer.isFull()) {
         return MergePairsIntoBufferRejectReason::BufferFull;
+    }
+
+    bool hasValidPair = false;
+    for (const CandidatePair& pair : pairs) {
+        if (isValidCandidatePair(pair.bodyA, pair.bodyB)) {
+            hasValidPair = true;
+            break;
+        }
+    }
+    if (!hasValidPair) {
+        return MergePairsIntoBufferRejectReason::AllInvalidPairs;
     }
     return MergePairsIntoBufferRejectReason::None;
 }
@@ -2213,6 +2328,7 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     preflight.reason = mergePairsIntoBufferRejectReason(pairs, buffer);
     preflight.emptyPairs = preflight.reason == MergePairsIntoBufferRejectReason::EmptyPairs;
     preflight.bufferFull = preflight.reason == MergePairsIntoBufferRejectReason::BufferFull;
+    preflight.allInvalidPairs = preflight.reason == MergePairsIntoBufferRejectReason::AllInvalidPairs;
     return preflight;
 }
 
