@@ -2501,6 +2501,7 @@ enum class GizmoSnapDragRejectReason : u8 {
 /// Why begin-drag preflight rejected the request (B6.4 deepen pass).
 enum class GizmoBeginDragRejectReason : u8 {
     None = 0,
+    AlreadyDragging,
     NonFiniteRay,
     NonFiniteHit,
     EmptyRay,
@@ -2545,7 +2546,7 @@ enum class GizmoSnapDragRejectReason : u8 {
 
 
 
-    NonFiniteHit,
+
 };
 
 /// Why end-drag preflight rejected the request (B6.4 deepen pass).
