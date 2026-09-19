@@ -107,6 +107,18 @@ bool TaaPass::isJitterSyncedToFrameIndex(u32 frameIndex) const {
     return m_jitter.isSyncedToFrameIndex(frameIndex);
 }
 
+TaaJitterSyncRejectReason TaaPass::classifyJitterSyncReject(u32 frameIndex) const {
+    return m_jitter.classifySyncReject(frameIndex);
+}
+
+bool TaaPass::preflightJitterSync(u32 frameIndex, TaaJitterSyncRejectReason* reason) const {
+    const TaaJitterSyncRejectReason reject = m_jitter.classifySyncReject(frameIndex);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaJitterSyncRejectReason::None;
+}
+
 void TaaPass::invalidateHistory() {
     m_history.invalidateHistory();
     m_resolve.resetBookkeeping();
@@ -152,6 +164,11 @@ bool TaaPass::preflightHistoryReuse(u32 observedGeneration) const {
 bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc,
                                     TaaResolveBlendPreflightRejectReason* reason) const {
     return preflightTaaResolveBlend(desc, m_history, reason);
+TaaHistoryWarmupPhase TaaPass::historyWarmupPhase() const {
+    return classifyTaaHistoryWarmupPhase(m_history);
+
+bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupPhase* phase) const {
+    return preflightTaaHistoryWarmup(m_history, phase);
 }
 
 bool TaaPass::canReuseHistory() const {
@@ -518,6 +535,12 @@ bool TaaPass::historyWarmupComplete() const {
     return taaHistoryWarmupComplete(m_history);
 bool TaaPass::preflightResolveGuards(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason,
     return preflightTaaResolveGuards(desc, m_history, skipReason, blendRejectReason);
+bool TaaPass::resolveTemporalBlendAllowed(const TaaResolveDesc& desc) const {
+    return taaResolveTemporalBlendAllowed(desc, m_history);
+
+                                            TaaResolveBlendRejectReason* blendReason,
+                                            TaaHistoryReuseBlockReason* reuseReason) const {
+    return preflightTaaResolveTemporalBlend(desc, m_history, blendReason, reuseReason);
 }
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {

@@ -166,6 +166,40 @@ bool taaHistoryWarmupSatisfied(const TaaHistoryBuffer& history) {
     return history.isReady() && history.hasValidHistory();
 }
 
+const char* taaHistoryWarmupPhaseLabel(TaaHistoryWarmupPhase phase) {
+    switch (phase) {
+    case TaaHistoryWarmupPhase::NotAllocated:
+        return "not_allocated";
+    case TaaHistoryWarmupPhase::NeedsWarmup:
+        return "needs_warmup";
+    case TaaHistoryWarmupPhase::Warm:
+        return "warm";
+    }
+    return "unknown";
+}
+
+TaaHistoryWarmupPhase classifyTaaHistoryWarmupPhase(const TaaHistoryBuffer& history) {
+    if (!history.isReady()) {
+        return TaaHistoryWarmupPhase::NotAllocated;
+    }
+    if (taaHistoryNeedsWarmup(history)) {
+        return TaaHistoryWarmupPhase::NeedsWarmup;
+    }
+    return TaaHistoryWarmupPhase::Warm;
+}
+
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupPhase* phase) {
+    const TaaHistoryWarmupPhase currentPhase = classifyTaaHistoryWarmupPhase(history);
+    if (phase != nullptr) {
+        *phase = currentPhase;
+    }
+    return currentPhase == TaaHistoryWarmupPhase::Warm;
+}
+
+bool taaHistoryTemporalReuseReady(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return preflightTaaHistoryWarmup(history) && preflightTaaHistoryReuse(history, observedGeneration);
+}
+
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
                               TaaHistoryReuseBlockReason* reason) {
     const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlock(history, observedGeneration);

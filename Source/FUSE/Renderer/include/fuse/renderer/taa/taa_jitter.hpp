@@ -12,6 +12,10 @@ enum class TaaJitterSyncBlockReason : u8 {
     InvalidSequence,
     DriftedFromFrame,
 };
+/// Why jitter sync preflight rejected the request (B5.9 deepen).
+enum class TaaJitterSyncRejectReason : u8 {
+/// Human-readable label for jitter sync reject reasons (B5.9 deepen).
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
 
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
@@ -110,6 +114,11 @@ struct TaaJitterLayout {
     static bool ndcOffsetsMatch(const fuse::math::Vec2& a, const fuse::math::Vec2& b, f32 epsilon = 1e-6f);
     /// Expected Halton slot for a monotonic frame counter (alias of `frameIndexInSequence`).
     static u32 expectedSlotForFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// Classify why jitter sync would be rejected for the given sequence (B5.9 deepen).
+    static TaaJitterSyncRejectReason classifySyncReject(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// True when jitter can sync to `frameIndex` for the given sequence (B5.9 deepen).
+    static bool preflightSyncToFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                                          TaaJitterSyncRejectReason* reason = nullptr);
     /// Returns the jitter cycle length after validation (0 when invalid).
     static u32 sequencePeriod(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Maps a monotonic frame counter into the active Halton slot.
@@ -209,6 +218,10 @@ public:
     bool needsResyncToFrameIndex(u32 frameIndex) const;
     /// Advance only when already aligned to `frameIndex`; returns false when desynced (B5.9 deepen).
     bool advanceIfAlignedToFrameIndex(u32 frameIndex);
+    /// Classify why sync to `frameIndex` would be rejected (B5.9 deepen).
+    TaaJitterSyncRejectReason classifySyncReject(u32 frameIndex) const;
+    /// Sync only when preflight passes; returns false when blocked (B5.9 deepen).
+    bool preflightSyncToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason* reason = nullptr);
 
     u32 index() const { return m_index; }
     /// True when monotonic frame counter matches `frameIndex` (B5.9 deepen).

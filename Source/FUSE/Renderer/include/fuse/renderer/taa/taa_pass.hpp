@@ -72,6 +72,10 @@ public:
     bool preflightJitterSync(u32 frameIndex, TaaJitterSyncBlockReason* reason = nullptr) const;
     /// Advance jitter only when aligned to `frameIndex` (B5.9 deepen).
     bool advanceJitterIfAlignedToFrameIndex(u32 frameIndex);
+    /// Classify why pass jitter sync to `frameIndex` would be rejected (B5.9 deepen).
+    TaaJitterSyncRejectReason classifyJitterSyncReject(u32 frameIndex) const;
+    /// True when pass jitter can sync to `frameIndex` (B5.9 deepen).
+    bool preflightJitterSync(u32 frameIndex, TaaJitterSyncRejectReason* reason = nullptr) const;
     void invalidateHistory();
     /// Invalidate when `observedGeneration` differs from pass history epoch (B5.9 deepen).
     bool invalidateHistoryIfStale(u32 observedGeneration);
@@ -93,6 +97,10 @@ public:
     /// Preflight resolve blend weights; false when history is not ready or weights violate reuse policy (B5.9 deepen).
     bool preflightResolveBlend(const TaaResolveDesc& desc,
                                TaaResolveBlendPreflightRejectReason* reason = nullptr) const;
+    /// Current history warm-up phase (B5.9 deepen).
+    TaaHistoryWarmupPhase historyWarmupPhase() const;
+    /// True when pass history is warmed (B5.9 deepen).
+    bool preflightHistoryWarmup(TaaHistoryWarmupPhase* phase = nullptr) const;
     /// True when pass history is warmed and may be sampled (B5.9 deepen).
     bool canReuseHistory() const;
     /// True when pass history is ready, warmed, and generation matches for reuse (B5.9 deepen).
@@ -254,6 +262,11 @@ public:
     bool preflightHistoryReuseForDesc(const TaaResolveDesc& desc,
     /// Combined resolve skip + blend-weight preflight (B5.9 deepen).
     bool preflightResolveGuards(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason = nullptr,
+    /// True when resolve temporal blend and history reuse preflights both pass (B5.9 deepen).
+    bool resolveTemporalBlendAllowed(const TaaResolveDesc& desc) const;
+    /// Combined resolve temporal-blend preflight with optional reject diagnostics (B5.9 deepen).
+                                       TaaResolveBlendRejectReason* blendReason = nullptr,
+                                       TaaHistoryReuseBlockReason* reuseReason = nullptr) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

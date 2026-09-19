@@ -916,6 +916,29 @@ bool taaResolveBlendConsistentWithHistory(const TaaResolveDesc& desc, const TaaH
     return taaHistoryBlendAllowed(false, history) == preflight.history_reuse;
 }
 
+bool taaResolveBlendWeightsMatchExpected(const TaaBlendWeights& weights, const TaaResolveDesc& desc,
+                                         const TaaHistoryBuffer& history) {
+    const TaaBlendWeights expected = computeTaaResolveBlendWeights(desc, history);
+    return std::fabs(weights.current - expected.current) <= 1e-5f &&
+           std::fabs(weights.history - expected.history) <= 1e-5f;
+}
+
+bool taaResolveTemporalBlendAllowed(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolveBlendWeights(desc, history) && taaResolveCanReuseHistory(desc, history);
+}
+
+bool preflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                      TaaResolveBlendRejectReason* blendReason,
+                                      TaaHistoryReuseBlockReason* reuseReason) {
+    const bool blendPasses = preflightTaaResolveBlendWeights(desc, history, blendReason);
+    u32 observedGeneration = desc.observed_history_generation;
+    if (taaResolveBypassesHistoryGenerationGuard(desc)) {
+        observedGeneration = history.invalidateGeneration();
+    }
+    const bool reusePasses = preflightTaaHistoryReuse(history, observedGeneration, reuseReason);
+    return blendPasses && reusePasses;
+}
+
 bool taaResolveRequiresVelocity(const TAAParams& params) {
     return params.velocity_rejection > 0.f;
 }
