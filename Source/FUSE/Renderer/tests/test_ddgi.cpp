@@ -2605,3 +2605,57 @@ void testClassifyWouldSkipGuards() {
                "classifyProbeKernelReject returns ZeroUpdateCount");
                "wouldSkipProbeBlendKernel true for zero update count");
                "tryLaunch blend reports null_probe_indices reason");
+
+// --- deepen additive from deepen-ddgi-b56-guards-be5b ---
+               "tryPreflightProbeSampleCoords succeeds for valid coords");
+    expectTrue(fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(desc, warnWeights, reason),
+               "tryPreflightProbeSampleCoords warns but succeeds for clampable weights");
+    expectTrue(fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(desc, reversed, reason),
+               "tryPreflightProbeSampleCoords warns but succeeds for unordered corners");
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(desc, hardOob, reason),
+               "tryPreflightProbeSampleCoords rejects hard OOB corner indices");
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(empty, built, reason),
+               "tryPreflightProbeSampleCoords rejects empty grid");
+    expectTrue(fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 16u, 4u, indices, 8u, &count, reason),
+    expectTrue(count == 4u, "tryScheduleProbeUpdates schedules expected count");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(16u, 8u, indices, &count),
+               "wouldSkipProbeSchedule false for valid inputs");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(0u, 8u, indices, &count),
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 16u, 4u, nullptr, 8u, &count, reason),
+               "tryScheduleProbeUpdates rejects null output indices");
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 16u, 4u, indices, 8u, nullptr, reason),
+               "tryScheduleProbeUpdates rejects null output count");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::NullOutputCount,
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 16u, 4u, indices, 0u, &count, reason),
+               "tryScheduleProbeUpdates rejects zero max indices");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(16u, 0u, indices, &count),
+               "wouldSkipProbeSchedule true for zero max indices");
+void testCacheIndexPointerGuards() {
+    expectTrue(!fuse::renderer::tryCanLaunchDdgiProbeUpdate(desc, validIndices, 2u, reason),
+               "tryCanLaunch rejects zero rays per probe");
+    expectTrue(reason == fuse::renderer::ProbeUpdateLaunchRejectReason::ZeroRaysPerProbe,
+    expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(reason), "zero_rays_per_probe") == 0,
+void testProbeKernelResourcePreflight() {
+    fuse::renderer::gi::ProbeKernelResourceRejectReason resourceReason =
+        fuse::renderer::gi::ProbeKernelResourceRejectReason::None;
+    expectTrue(fuse::renderer::gi::tryValidateProbeKernelResources(validParams, resourceReason),
+    expectTrue(resourceReason == fuse::renderer::gi::ProbeKernelResourceRejectReason::None,
+    expectTrue(std::strcmp(fuse::renderer::gi::probeKernelResourceRejectReasonLabel(resourceReason), "none") == 0,
+    fuse::renderer::gi::ProbeKernelRejectReason launchReason =
+    expectTrue(fuse::renderer::gi::tryCanLaunchProbeTraceKernelWithResources(
+               "tryCanLaunchProbeTraceKernelWithResources succeeds for full params");
+    expectTrue(launchReason == fuse::renderer::gi::ProbeKernelRejectReason::None,
+    expectTrue(!fuse::renderer::gi::tryValidateProbeKernelResources(stubParams, resourceReason),
+    expectTrue(resourceReason == fuse::renderer::gi::ProbeKernelResourceRejectReason::NullProbeWorldPositions,
+    expectTrue(std::strcmp(fuse::renderer::gi::probeKernelResourceRejectReasonLabel(resourceReason),
+    expectTrue(!fuse::renderer::gi::tryValidateProbeKernelResources(nullAtlas, resourceReason),
+    expectTrue(resourceReason == fuse::renderer::gi::ProbeKernelResourceRejectReason::NullIrradianceAtlas,
+    expectTrue(!fuse::renderer::gi::tryValidateProbeKernelResources(nullDepth, resourceReason),
+    expectTrue(resourceReason == fuse::renderer::gi::ProbeKernelResourceRejectReason::NullDepthAtlas,
+    expectTrue(!fuse::renderer::gi::tryValidateProbeKernelResources(nullPrev, resourceReason),
+    expectTrue(resourceReason == fuse::renderer::gi::ProbeKernelResourceRejectReason::NullPrevIrradianceSurface,
+    expectTrue(!fuse::renderer::gi::tryValidateProbeKernelResources(nullOut, resourceReason),
+    expectTrue(resourceReason == fuse::renderer::gi::ProbeKernelResourceRejectReason::NullOutRadianceSurface,
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeTraceKernelWithResources(
+               "tryCanLaunchProbeTraceKernelWithResources fails without resources");
+    testProbeKernelResourcePreflight();

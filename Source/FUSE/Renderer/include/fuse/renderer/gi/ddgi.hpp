@@ -792,3 +792,6 @@ bool wouldSkipCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count)
 bool wouldSkipCacheIndex(const DDGIDesc& desc,
 ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(
 ProbeUpdateLaunchRejectReason classifyProbeUpdateLaunchReject(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-b56-guards-be5b ---
+bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count);

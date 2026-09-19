@@ -114,3 +114,13 @@ bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, KernelLaunchRe
 
 // --- deepen additive from deepen-ddgi-probe-preflights-021e ---
 bool preflightProbeKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+
+// --- deepen additive from deepen-ddgi-b56-guards-be5b ---
+enum class ProbeKernelResourceRejectReason : u8 {
+const char* probeKernelResourceRejectReasonLabel(ProbeKernelResourceRejectReason reason);
+bool tryValidateProbeKernelResources(const DDGIKernelParams& params,
+                                     ProbeKernelResourceRejectReason& outReason);
+bool tryCanLaunchProbeTraceKernelWithResources(const DDGIKernelParams& params,
+                                               ProbeKernelRejectReason& outLaunchReason,
+                                               ProbeKernelResourceRejectReason& outResourceReason);
+bool tryCanLaunchProbeBlendKernelWithResources(const DDGIKernelParams& params,

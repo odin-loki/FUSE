@@ -2348,3 +2348,35 @@ bool wouldSkipCacheIndex(const DDGIDesc& desc,
 ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDesc& desc,
         outReason = ProbeScheduleRejectReason::NullCountOutput;
 ProbeUpdateLaunchRejectReason classifyProbeUpdateLaunchReject(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-b56-guards-be5b ---
+                    ? ProbeSampleCoordsRejectReason::UnorderedCorners
+                    : ProbeSampleCoordsRejectReason::OutOfRangeWeights;
+    if (!tryValidateCacheIndex(desc, cache, probe_index, cache_count, reason)) {
+bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count) {
+    if (!tryScheduleProbeUpdates(
+const char* probeKernelResourceRejectReasonLabel(ProbeKernelResourceRejectReason reason) {
+    case ProbeKernelResourceRejectReason::None:
+    case ProbeKernelResourceRejectReason::NullProbeWorldPositions:
+    case ProbeKernelResourceRejectReason::NullIrradianceAtlas:
+    case ProbeKernelResourceRejectReason::NullDepthAtlas:
+    case ProbeKernelResourceRejectReason::NullPrevIrradianceSurface:
+    case ProbeKernelResourceRejectReason::NullOutRadianceSurface:
+    ProbeKernelResourceRejectReason reason = ProbeKernelResourceRejectReason::None;
+    return tryValidateProbeKernelResources(params, reason);
+bool tryValidateProbeKernelResources(const DDGIKernelParams& params,
+                                     ProbeKernelResourceRejectReason& outReason) {
+        outReason = ProbeKernelResourceRejectReason::NullProbeWorldPositions;
+        outReason = ProbeKernelResourceRejectReason::NullIrradianceAtlas;
+        outReason = ProbeKernelResourceRejectReason::NullDepthAtlas;
+        outReason = ProbeKernelResourceRejectReason::NullPrevIrradianceSurface;
+        outReason = ProbeKernelResourceRejectReason::NullOutRadianceSurface;
+    outReason = ProbeKernelResourceRejectReason::None;
+bool tryCanLaunchProbeTraceKernelWithResources(const DDGIKernelParams& params,
+                                               ProbeKernelRejectReason& outLaunchReason,
+                                               ProbeKernelResourceRejectReason& outResourceReason) {
+    if (!tryCanLaunchProbeTraceKernel(params, outLaunchReason)) {
+        outResourceReason = ProbeKernelResourceRejectReason::None;
+    return tryValidateProbeKernelResources(params, outResourceReason);
+bool tryCanLaunchProbeBlendKernelWithResources(const DDGIKernelParams& params,
+    return tryCanLaunchProbeTraceKernelWithResources(params, outLaunchReason, outResourceReason);
