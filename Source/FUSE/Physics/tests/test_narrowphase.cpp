@@ -1959,3 +1959,17 @@ void testManifoldPruneGuardedDispatch() {
         fuse::physics::narrowphase::should_skip_friction_basis_rebuild_preflight(needsBuild),
     expectTrue(stalePreflight.needs_rebuild(), "friction preflight requests stale rebuild");
 void testDetectContactsPairGuarded() {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-c64f ---
+void testContactPairB45DispatchGuards() {
+            selfPreflight, fuse::physics::narrowphase::ContactPairRejectReason::SelfPair),
+void testManifoldFinalizeB45Guards() {
+    expectTrue(finalizePreflight.can_finalize(), "finalize preflight accepts penetrating manifold");
+        !fuse::physics::narrowphase::should_skip_finalize_contact_manifold(clean),
+    expectTrue(emptyPreflight.wouldFail, "finalize preflight marks empty manifold as failure");
+void testFrictionBasisB45PreflightGuards() {
+    expectTrue(needsPreflight.needs_rebuild(), "preflight rebuild true without cached basis");
+    expectTrue(needsPreflight.needsNormalization, "preflight flags non-unit normal");
+        fuse::physics::narrowphase::should_skip_friction_basis_rebuild(cached),
+    expectTrue(!cachedPreflight.needs_rebuild(), "preflight rebuild false with valid cached basis");
+    testFrictionBasisB45PreflightGuards();

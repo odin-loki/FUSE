@@ -659,3 +659,6 @@ bool should_skip_contact_manifold_finalize(
 bool contact_pair_was_rejected(const ContactPairPreflight& preflight) {
 bool should_skip_finalize_contact_manifold(const ContactManifold& manifold) {
     const ContactPairPreflight preflight = preflight_contact_pair(pair, bodies, shapes);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-c64f ---
+    return should_skip_contact_pair_dispatch(pair, bodies, shapes);
