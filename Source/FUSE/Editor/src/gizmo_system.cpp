@@ -371,6 +371,7 @@ bool isRayValid(const GizmoRay& ray) {
 bool isHitTestValid(const GizmoHitTest& hit) {
     return !isHitTestEmpty(hit);
 
+
 bool normalizeRay(GizmoRay& ray) {
     const f32 len = ray.direction.length();
     if (len < kEpsilon) {
@@ -453,12 +454,37 @@ f32 trySnapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& setting
     if (!preflightSnapDrag(delta, mode, settings).canApply()) {
         return delta;
     return snapValue(delta, mode, settings);
+        return false;
+    }
+
+BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, const GizmoTransform& transform,
+                                      GizmoMode mode) {
+    (void)transform;
+    BeginDragPreflight out{};
+    if (isHitTestEmpty(hit)) {
+        out.emptyInput = true;
+        return out;
+
+    GizmoAxis axis = GizmoAxis::None;
+    if (!tryPickAxis(hit, mode, axis)) {
+        out.pickMiss = true;
+
+    out.canBegin = true;
+    out.axis = axis;
+
+BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
+                                      GizmoMode mode, GizmoSpace space, f32 axisLength,
+                                      f32 pickRadius) {
+
+    if (!tryPickAxis(ray, transform, mode, space, axisLength, pickRadius, axis)) {
+
 
 math::Vec3 snapPosition(const math::Vec3& position, const GizmoSnapSettings& settings) {
     if (!settings.translateSnap) {
         return position;
     return {snapToGrid(position.x, settings.gridSize), snapToGrid(position.y, settings.gridSize),
             snapToGrid(position.z, settings.gridSize)};
+    }
 
 math::Vec3 snapEulerRadians(const math::Vec3& eulerRadians, const GizmoSnapSettings& settings) {
     if (!settings.rotateSnap) {
@@ -466,6 +492,7 @@ math::Vec3 snapEulerRadians(const math::Vec3& eulerRadians, const GizmoSnapSetti
     return {snapAngleRadians(eulerRadians.x, settings.angleStepDegrees),
             snapAngleRadians(eulerRadians.y, settings.angleStepDegrees),
             snapAngleRadians(eulerRadians.z, settings.angleStepDegrees)};
+    }
 
 math::Vec3 snapScaleVec(const math::Vec3& scale, const GizmoSnapSettings& settings) {
     if (!settings.scaleSnap) {
@@ -691,6 +718,7 @@ bool canBeginDrag(const GizmoHitTest& hit, GizmoMode mode) {
 
 bool canBeginDrag(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
     return canPickAxis(ray, transform, mode, space, axisLength, pickRadius);
+    }
 }
 
 bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -1721,6 +1749,7 @@ GizmoResult GizmoSystem::beginDrag(const GizmoRay& ray, const GizmoTransform& cu
 bool GizmoSystem::tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out) {
     out = {};
     if (!preflightUpdateDrag(hit).canUpdate()) {
+    if (!m_dragging || isHitTestEmpty(hit)) {
         return false;
     }
 
@@ -1740,6 +1769,27 @@ GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
         return result;
     }
     return result;
+}
+
+void GizmoSystem::cancelDrag() {
+    if (!m_dragging) {
+        return;
+    }
+
+    m_dragging = false;
+    m_activeAxis = GizmoAxis::None;
+    m_currentTransform = m_startTransform;
+}
+
+BeginDragPreflight GizmoSystem::preflightBeginDrag(const GizmoHitTest& hit,
+                                                 const GizmoTransform& current) const {
+    return fuse::editor::preflightBeginDrag(hit, current, m_mode);
+}
+
+BeginDragPreflight GizmoSystem::preflightBeginDrag(const GizmoRay& ray,
+                                                   const GizmoTransform& current) const {
+    return fuse::editor::preflightBeginDrag(ray, current, m_mode, m_space, kAxisLength,
+                                            kPickRadius);
 }
 
 GizmoResult GizmoSystem::endDrag() {
