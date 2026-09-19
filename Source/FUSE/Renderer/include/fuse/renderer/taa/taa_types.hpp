@@ -130,6 +130,26 @@ bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGener
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
 u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history);
+/// True when history is allocated and the warm-up frame has completed (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+/// Warm-up progress in [0, 1] — 0 before first resolve, 1 once warmed (B5.9 deepen).
+f32 taaHistoryWarmupProgress(const TaaHistoryBuffer& history);
+/// True when history is warmed and the observed invalidate epoch is current (B5.9 deepen).
+bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observedGeneration);
+
+/// Why jitter sync to a monotonic frame counter is blocked (B5.9 deepen).
+enum class TaaJitterSyncBlockReason : u8 {
+    None = 0,
+    InvalidSequence,
+    InvalidViewport,
+};
+/// Human-readable label for jitter sync block reasons (B5.9 deepen).
+const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason);
+/// Classify why jitter sync is blocked for viewport + sequence (B5.9 deepen).
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(u32 width, u32 height, u32 sequenceLength = 8u);
+/// True when jitter can sync to `frameIndex` for viewport + sequence (B5.9 deepen).
+bool preflightTaaJitterSync(u32 /*frameIndex*/, u32 width, u32 height, u32 sequenceLength = 8u,
+                            TaaJitterSyncBlockReason* reason = nullptr);
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
@@ -166,6 +186,10 @@ struct TaaResolveStats {
     /// `TaaHistoryBuffer::invalidateGeneration()` at resolve time.
     u32 history_invalidate_generation = 0;
 };
+
+/// True when resolve stats blend weights match computed policy (B5.9 deepen).
+bool taaResolveStatsBlendConsistent(const TaaResolveStats& stats, const TaaResolveDesc& desc,
+                                    const TaaHistoryBuffer& history);
 
 /// True when history allocation dimensions are non-zero (B5.9 deepen).
 bool taaHistoryBufferDescValid(const TaaHistoryBufferDesc& desc);
