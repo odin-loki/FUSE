@@ -71,6 +71,13 @@ fuse::math::Vec2 TaaJitterLayout::haltonNdcOffset(u32 index, u32 width, u32 heig
     return {(pixel.x - 0.5f) * 2.f / safeWidth, (pixel.y - 0.5f) * 2.f / safeHeight};
 }
 
+fuse::math::Vec2 TaaJitterLayout::safeHaltonNdcOffset(u32 index, u32 width, u32 height, u32 sequenceLength) {
+    if (!validateViewportDimensions(width, height)) {
+        return {};
+    }
+    return haltonNdcOffset(index, width, height, sequenceLength);
+}
+
 fuse::math::Vec2 TaaJitterLayout::offsetForFrameIndex(u32 frameIndex, u32 sequenceLength) {
     const u32 slot = frameIndexInSequence(frameIndex, sequenceLength);
     return haltonPixelOffset(slot, sequenceLength);
@@ -80,6 +87,14 @@ fuse::math::Vec2 TaaJitterLayout::ndcOffsetForFrameIndex(u32 frameIndex, u32 wid
                                                          u32 sequenceLength) {
     const u32 slot = frameIndexInSequence(frameIndex, sequenceLength);
     return haltonNdcOffset(slot, width, height, sequenceLength);
+}
+
+fuse::math::Vec2 TaaJitterLayout::safeNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
+                                                             u32 sequenceLength) {
+    if (!validateViewportDimensions(width, height)) {
+        return {};
+    }
+    return ndcOffsetForFrameIndex(frameIndex, width, height, sequenceLength);
 }
 
 bool TaaJitterLayout::fillHaltonSequence(u32 length, fuse::math::Vec2* out) {
@@ -162,6 +177,40 @@ void TaaJitter::reset() {
 void TaaJitter::syncToFrameIndex(u32 frameIndex) {
     m_monotonicFrame = frameIndex;
     m_index = TaaJitterLayout::frameIndexInSequence(frameIndex, m_sequenceLength);
+}
+
+const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason) {
+    switch (reason) {
+    case TaaJitterSyncBlockReason::None:
+        return "none";
+    case TaaJitterSyncBlockReason::InvalidSequence:
+        return "invalid_sequence";
+    case TaaJitterSyncBlockReason::DriftedFromFrame:
+        return "drifted_from_frame";
+    }
+    return "unknown";
+}
+
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(const TaaJitter& jitter, u32 frameIndex) {
+    if (!jitter.canSyncToFrameIndex(frameIndex)) {
+        return TaaJitterSyncBlockReason::InvalidSequence;
+    }
+    if (!jitter.isAlignedToFrameIndex(frameIndex)) {
+        return TaaJitterSyncBlockReason::DriftedFromFrame;
+    }
+    return TaaJitterSyncBlockReason::None;
+}
+
+bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, TaaJitterSyncBlockReason* reason) {
+    const TaaJitterSyncBlockReason block = classifyTaaJitterSyncBlock(jitter, frameIndex);
+    if (reason != nullptr) {
+        *reason = block;
+    }
+    return block == TaaJitterSyncBlockReason::None;
+}
+
+bool taaJitterNeedsResyncToFrameIndex(const TaaJitter& jitter, u32 frameIndex) {
+    return classifyTaaJitterSyncBlock(jitter, frameIndex) == TaaJitterSyncBlockReason::DriftedFromFrame;
 }
 
 } // namespace fuse::renderer

@@ -82,6 +82,16 @@ bool taaResolveRequiresVelocity(const TAAParams& params);
 bool taaResolveRequiresDepth(const TAAParams& params);
 /// Blend weight applied this frame — 1.0 on first warm-up frame, else clamped `blend_factor`.
 f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params);
+/// Blend weight with explicit history-reuse guard — forces 1.0 when history cannot be sampled (B5.9 deepen).
+f32 computeEffectiveBlend(bool firstFrame, bool historyReusable, const TAAParams& params);
+/// True when `blend_factor` is within [0, 1] before clamping (B5.9 deepen).
+bool isTaaBlendFactorInRange(f32 blend_factor);
+/// True when warm-up path forces full current-frame weight (no history reuse) (B5.9 deepen).
+bool taaUsesWarmupBlend(bool first_frame);
+/// True when effective blend samples history (strictly below full-current weight) (B5.9 deepen).
+bool taaBlendUsesHistory(f32 effective_blend);
+/// True when effective blend ignores history (warm-up / stale / full-current weight) (B5.9 deepen).
+bool taaBlendSkipsHistoryReuse(f32 effective_blend);
 /// History contribution weight — complement of `effectiveBlend`, clamped to [0, 1].
 f32 computeHistoryBlend(f32 effectiveBlend);
 
@@ -93,6 +103,9 @@ struct TaaBlendWeights {
 
 /// Compute current/history blend weights for a resolve frame (B5.9 deepen).
 TaaBlendWeights computeTaaBlendWeights(bool firstFrame, const TAAParams& params);
+/// Compute blend weights with an explicit history-reuse guard (B5.9 deepen).
+TaaBlendWeights computeTaaBlendWeightsWithReuseGuard(bool firstFrame, bool historyReusable,
+                                                     const TAAParams& params);
 /// True when blend weights are within [0, 1] and sum to ~1 (B5.9 deepen).
 bool taaBlendWeightsValid(const TaaBlendWeights& weights);
 /// True when history is warm and ready for temporal reuse (B5.9 deepen).
@@ -130,6 +143,11 @@ bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGener
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
 u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history);
+/// True when history targets are warmed and ready for temporal reuse (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+/// True when history has completed warm-up preflight (B5.9 deepen).
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history,
+                               TaaHistoryReuseBlockReason* reason = nullptr);
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {

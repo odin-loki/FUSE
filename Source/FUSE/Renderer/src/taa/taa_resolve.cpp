@@ -70,6 +70,35 @@ void stampObservedHistoryGeneration(TaaResolveDesc& desc, const TaaHistoryBuffer
     }
 }
 
+bool taaResolveSurfacesSatisfied(const TaaResolveDesc& desc) {
+    return desc.surfaces.current_frame != nullptr && desc.surfaces.output != nullptr;
+}
+
+bool canAttemptTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolve(desc, history);
+}
+
+bool prepareTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    sanitizeTaaResolveDesc(desc, history);
+    return canAttemptTaaResolve(desc, history);
+}
+
+bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveSkipReason* skipReason,
+                              TaaResolveBlendRejectReason* blendReason) {
+    if (!preflightTaaResolve(desc, history, skipReason)) {
+        if (blendReason != nullptr) {
+            *blendReason = TaaResolveBlendRejectReason::None;
+        }
+        return false;
+    }
+    return preflightTaaResolveBlendWeights(desc, history, blendReason);
+}
+
+bool taaResolveWillReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return taaResolveCanReuseHistory(desc, history) && taaResolveAppliesHistoryBlend(desc, history);
+}
+
 void sanitizeTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     normalizeTaaParams(desc.params);
     stampObservedHistoryGeneration(desc, history);
@@ -264,11 +293,40 @@ bool taaResolveRequiresDepth(const TAAParams& params) {
     return params.depth_rejection > 0.f;
 }
 
-f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params) {
-    if (firstFrame) {
+f32 computeEffectiveBlend(bool firstFrame, bool historyReusable, const TAAParams& params) {
+    if (taaUsesWarmupBlend(firstFrame) || !historyReusable) {
         return 1.f;
     }
     return clampTaaParams(params).blend_factor;
+}
+
+f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params) {
+    return computeEffectiveBlend(firstFrame, !firstFrame, params);
+}
+
+bool isTaaBlendFactorInRange(f32 blend_factor) {
+    return blend_factor >= 0.f && blend_factor <= 1.f;
+}
+
+bool taaUsesWarmupBlend(bool first_frame) {
+    return first_frame;
+}
+
+bool taaBlendUsesHistory(f32 effective_blend) {
+    return effective_blend < 1.f;
+}
+
+bool taaBlendSkipsHistoryReuse(f32 effective_blend) {
+    return effective_blend >= 1.f;
+}
+
+TaaBlendWeights computeTaaBlendWeightsWithReuseGuard(bool firstFrame, bool historyReusable,
+                                                     const TAAParams& params) {
+    const f32 effectiveBlend = computeEffectiveBlend(firstFrame, historyReusable, params);
+    TaaBlendWeights weights{};
+    weights.current = effectiveBlend;
+    weights.history = computeHistoryBlend(effectiveBlend);
+    return weights;
 }
 
 const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason) {
