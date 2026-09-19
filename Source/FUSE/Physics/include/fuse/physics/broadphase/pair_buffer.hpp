@@ -1771,6 +1771,9 @@ bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idx
 
 /// Diagnose write-slot preflight with mandatory reject reason (B4.2 deepen pass).
 /// Write-slot preflight with mandatory reject-reason output (B4.2 deepen pass).
+/// Early-out when write-slot preflight would be rejected — same ordering as `tryPreflightPairBufferWriteSlot`.
+
+/// Diagnose why write-slot preflight would reject; vacuously succeeds when write may proceed.
 bool tryPreflightPairBufferWriteSlot(
     const PairBufferSoA& buffer,
     u32 slot,
@@ -1941,6 +1944,9 @@ bool shouldRunPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
 enum class PairBufferCompactionRejectReason : u8 {
 
 
+    PairBufferWriteSlotRejectReason& outReason);
+
+
 /// Human-readable label for pair-buffer invalidate-slot reject reasons (logging / tests).
 const char* pairBufferInvalidateSlotRejectReasonName(PairBufferInvalidateSlotRejectReason reason);
 
@@ -2052,6 +2058,10 @@ struct PairBufferInvalidateSlotPreflight {
 
 
 /// Read-only invalidate diagnostics — no mutation (B4.2 deepen pass).
+
+
+
+    bool outOfRangeSlot = false;
 
 };
 
@@ -2172,6 +2182,12 @@ bool tryPreflightPairBufferInvalidateSlot(
 /// Non-mutating invalidate skip predicate — inverse of `canInvalidate` (B4.2 deepen pass).
 
 /// Non-mutating invalidate predicate — mirrors `preflightPairBufferInvalidateSlot` (B4.2 deepen pass).
+
+
+/// Early-out when invalidate-slot preflight would be rejected — same ordering as `tryPreflightPairBufferInvalidateSlot`.
+
+/// Diagnose why invalidate-slot preflight would reject; vacuously succeeds when invalidate may proceed.
+    PairBufferInvalidateSlotRejectReason& outReason);
 
 /// Why pair-buffer toVector would early-out (B4.2 deepen follow-up pass).
 enum class PairBufferToVectorRejectReason : u8 {

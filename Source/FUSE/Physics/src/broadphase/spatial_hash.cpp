@@ -2851,6 +2851,9 @@ bool wouldSkipRefineBroadphase(
     const CollisionShapeSoA& shapes,
     const PairBufferSoA& buffer) {
     return canSkipRefineBroadphase(bodies, shapes, buffer);
+    RefineBroadphaseRejectReason& outReason) {
+    outReason = refineBroadphaseRejectReason(bodies, shapes, buffer);
+    return outReason == RefineBroadphaseRejectReason::None;
 }
 
 DedupeBroadphaseRejectReason dedupeBroadphaseRejectReason(const PairBufferSoA& buffer) {
@@ -3074,6 +3077,10 @@ bool tryPreflightDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseR
     return reason == DedupeBroadphaseRejectReason::None;
 
 
+
+bool tryPreflightDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason& outReason) {
+    outReason = dedupeBroadphaseRejectReason(buffer);
+    return outReason == DedupeBroadphaseRejectReason::None;
 
 BroadphaseMergePreflight preflightBroadphaseMerge(
     const RigidBodySoA& bodies,
@@ -3819,6 +3826,18 @@ bool tryPreflightBroadphaseMerge(
 
 bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
     return canSkipBroadphaseMerge(bodies, shapes);
+}
+
+bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
+    return canSkipBroadphaseMerge(bodies, shapes);
+}
+
+bool tryPreflightBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason& outReason) {
+    outReason = mergeBroadphaseRejectReason(bodies, shapes);
+    return outReason == BroadphaseMergeRejectReason::None;
 }
 
 const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReason reason) {
@@ -4991,6 +5010,9 @@ bool tryPreflightMergePairsIntoBuffer(
 
 bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
     return canSkipMergePairsIntoBuffer(pairs, buffer);
+    MergePairsIntoBufferRejectReason& outReason) {
+    outReason = mergePairsIntoBufferRejectReason(pairs, buffer);
+    return outReason == MergePairsIntoBufferRejectReason::None;
 }
 
 void refineBroadphasePairsParallel(
