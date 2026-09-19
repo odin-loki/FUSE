@@ -743,12 +743,28 @@ u32 remainingEventCapacity() {
 
 bool isEmptyProfilerName(const char* name) {
     return name == nullptr || name[0] == '\0';
+bool isUsableProfileName(const char* name) {
+    return name != nullptr && name[0] != '\0';
 }
 
 ProfileNamePreflight preflightProfileName(const char* name) {
     ProfileNamePreflight preflight{};
     preflight.null_name = name == nullptr;
     preflight.empty_name = name != nullptr && name[0] == '\0';
+    if (name == nullptr) {
+        return preflight;
+    }
+
+    preflight.null_name = false;
+    if (name[0] == '\0') {
+        preflight.empty_name = true;
+
+ScopePreflight preflightScope(const char* name) {
+    ScopePreflight preflight{};
+    preflight.profiler_disabled = !enabled();
+    const ProfileNamePreflight namePreflight = preflightProfileName(name);
+    preflight.null_name = namePreflight.null_name;
+    preflight.empty_name = namePreflight.empty_name;
     return preflight;
 }
 
@@ -762,18 +778,27 @@ ScopeNestingPreflight preflightScopeNesting() {
 
 AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name) {
     AsyncFlowBeginPreflight preflight{};
-    preflight.profiler_disabled = !g_enabled.load(std::memory_order_acquire);
     preflight.null_name = name == nullptr;
     preflight.empty_name = name != nullptr && name[0] == '\0';
-    return preflight;
-}
 
 AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name) {
     AsyncFlowEndPreflight preflight{};
-    preflight.profiler_disabled = !g_enabled.load(std::memory_order_acquire);
-    preflight.null_name = name == nullptr;
-    preflight.empty_name = name != nullptr && name[0] == '\0';
     preflight.orphan_end = g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+    preflight.max_observed_depth = g_maxNestingDepth.load(std::memory_order_acquire);
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name) {
+    preflight.profiler_disabled = !enabled();
+    const ProfileNamePreflight namePreflight = preflightProfileName(name);
+    preflight.null_name = namePreflight.null_name;
+    preflight.empty_name = namePreflight.empty_name;
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name) {
+    preflight.open_flow_count = g_openAsyncFlowCount.load(std::memory_order_acquire);
+    preflight.no_open_flows = preflight.open_flow_count == 0u;
+
+CounterSamplePreflight preflightCounterSample(const char* track) {
+    CounterSamplePreflight preflight{};
+    const ProfileNamePreflight namePreflight = preflightProfileName(track);
     return preflight;
 }
 
@@ -789,34 +814,48 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
 
 bool shouldSkipProfileScope(const char* name) {
     return preflightProfileName(name).shouldSkip() || !g_enabled.load(std::memory_order_acquire);
-}
 
 bool shouldSkipAsyncFlowBegin(const char* name) {
     return preflightAsyncFlowBegin(name).shouldSkip();
-}
 
 bool shouldSkipAsyncFlowEnd(const char* name) {
     return preflightAsyncFlowEnd(name).shouldSkip();
-}
 
 bool shouldSkipCounterSample(const char* track) {
     return preflightProfileName(track).shouldSkip() || !g_enabled.load(std::memory_order_acquire);
-}
 
 bool tryEventAt(u32 index, ProfileEvent& out) {
     if (!isEventIndexValid(index)) {
         return false;
-    }
     out = eventAt(index);
     return isValidProfileEvent(out);
-}
 
 const ProfileEvent* eventAtOrNull(u32 index) {
-    if (!isEventIndexValid(index)) {
         return nullptr;
-    }
     const ProfileEvent& event = eventAt(index);
     return isValidProfileEvent(event) ? &event : nullptr;
+    preflight.profiler_disabled = !enabled();
+    preflight.buffer_empty = preflight.event_count == 0u;
+    preflight.frame_index = frameIndex();
+
+    if (!preflight.buffer_empty) {
+        for (u32 i = 0; i < preflight.event_count; ++i) {
+            const ProfileEvent& event = eventAt(i);
+            if (event.name == nullptr) {
+                ++preflight.null_name_skip_count;
+
+EventLookupPreflight preflightEventLookup(u32 index) {
+    EventLookupPreflight preflight{};
+    preflight.requested_index = index;
+    preflight.out_of_range = preflight.buffer_empty || index >= preflight.event_count;
+
+bool canLookupEventAt(u32 index) {
+    return preflightEventLookup(index).can_lookup();
+
+bool tryEventAt(u32 index, const ProfileEvent*& event_out) {
+    const EventLookupPreflight preflight = preflightEventLookup(index);
+    event_out = &eventAt(index);
+    return preflight.can_lookup() && isValidProfileEvent(*event_out);
 }
 
 u32 nextFlowId() {
