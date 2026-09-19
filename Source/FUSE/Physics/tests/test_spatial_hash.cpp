@@ -3072,3 +3072,12 @@ void testPerShapeCellBudgetGuards() {
 // --- deepen additive from b4-broadphase-deepen-guards-c4fe ---
              static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferCompactAndClampRejectReason::EmptyBuffer),
              static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferCompactAndClampRejectReason::NoWorkNeeded),
+
+// --- deepen additive from deepen-b4-broadphase-guards-c567 ---
+void testBroadphaseCountValidPairsGuards() {
+void testCellOccupancyPreflightCanSkipGuards() {
+void testBroadphaseMergePreflightCounts() {
+    const fuse::physics::broadphase::BroadphaseMergePreflight planeOnly =
+    const fuse::physics::broadphase::BroadphaseMergePreflight mergeable =
+    testCellOccupancyPreflightCanSkipGuards();
+    testBroadphaseMergePreflightCounts();
