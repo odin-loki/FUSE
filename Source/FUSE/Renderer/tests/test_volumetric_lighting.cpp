@@ -3371,3 +3371,16 @@ void testFroxelPreflightClassifyAndIsBlockingGuards() {
     expectTrue(fuse::renderer::froxel_util::classifyFroxelPopulateReject(desc, badCamera, params) ==
                "classifyFroxelPopulateReject invalid_camera for bad near/far");
     testFroxelPreflightClassifyAndIsBlockingGuards();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-4e8e ---
+void testFroxelClassifyAndIsBlockingGuards() {
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightScreenMapping(0.5f, 0.5f, 0.01f, desc, camera),
+               "preflightScreenMapping rejects depth below near plane");
+               "preflightDensityTrilinearSample succeeds on accessible grid");
+               "preflightDensityTrilinearSample rejects hard OOB coords");
+               "preflightSampleCoords writes reject reason on success");
+               "preflightSampleCoords reports none on success");
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightScreenMapping(0.5f, 0.5f, 200.f, desc, camera, &mapReason),
+               "preflightScreenMapping writes reject reason on failure");
+               "preflightScreenMapping reports depth_out_of_range on failure");
+    testFroxelClassifyAndIsBlockingGuards();
