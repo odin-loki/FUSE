@@ -2295,3 +2295,13 @@ FroxelBilinearSampleRejectReason classifyFroxelBilinearSampleReject(const Froxel
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-114a ---
 ScreenMappingRejectReason classifyScreenDepthMappingReject(f32 screenX,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-be15 ---
+    if (!tryCanLookupAtIndex(grid, desc, 0u, reason)) {
+bool preflightDensityLookupCoord(const FroxelDensityGrid& grid,
+    return densityLookupRejectReasonIsBlocking(classifyDensityLookupReject(grid, desc, 0u));
+    return densityLookupRejectReasonIsBlocking(classifyDensityLookupReject(grid, desc, index));
+    return densityLookupRejectReasonIsBlocking(
+        classifyDensityLookupCoordReject(grid, desc, tileX, tileY, sliceZ));
+    return froxelTrilinearSampleRejectReasonIsBlocking(classifyFroxelTrilinearSampleReject(grid, desc, coords));
+    return froxelPopulateRejectReasonIsBlocking(classifyFroxelPopulateReject(desc, camera, params));

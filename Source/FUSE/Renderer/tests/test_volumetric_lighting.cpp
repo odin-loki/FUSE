@@ -3664,3 +3664,7 @@ void testFroxelClassifyPreflightAndBilinearGuards() {
     expectTrue(fuse::renderer::classifyScreenDepthMappingReject(0.5f, 0.5f, 10.f, desc, camera) ==
     expectTrue(fuse::renderer::classifyScreenDepthMappingReject(0.5f, 0.5f, 0.01f, desc, camera) ==
                "classifyScreenDepthMappingReject depth_out_of_range for below-near depth");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-be15 ---
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupCoord(grid, desc, 1u, 1u, 2u),
+               "preflightDensityLookupCoord succeeds for in-range coords");
