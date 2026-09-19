@@ -178,6 +178,15 @@ const char* probeTrilinearSampleRejectReasonLabel(ProbeTrilinearSampleRejectReas
 /// Human-readable label for cache-index reject reasons (logging / tests).
 const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
 
+/// Why probe scheduling preflight rejected the request (B5.6 deepen).
+enum class ProbeScheduleRejectReason : u8 {
+    None = 0,
+    NullOutputIndices,
+    NullOutputCount,
+    ZeroProbeCount,
+    ZeroMaxIndices,
+};
+
 /// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
 enum class ProbeUpdateLaunchRejectReason : u8 {
     None = 0,
@@ -185,7 +194,11 @@ enum class ProbeUpdateLaunchRejectReason : u8 {
     NullIndices,
     ZeroCount,
     OutOfRangeProbeIndex,
+    ZeroRaysPerProbe,
 };
+
+/// Human-readable label for probe schedule reject reasons (logging / tests).
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
 
 /// Human-readable label for probe-update launch reject reasons (logging / tests).
 const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason);
@@ -260,6 +273,14 @@ struct ProbeGridLayout {
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
                                              ProbeSampleCoordsRejectReason& outReason);
+    /// True when corner indices or interpolation weights would be clamped before sampling.
+    static bool wouldClampProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Grid-only sample-coord preflight; false on empty grid or hard OOB corner indices.
+    static bool tryPreflightProbeSampleCoords(const DDGIDesc& desc,
+                                              const ProbeSampleCoords& coords,
+                                              ProbeSampleCoordsRejectReason& outReason);
+    /// Grid-only sample-coord preflight without reject-reason diagnostics.
+    static bool canPreflightProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -339,6 +360,14 @@ bool tryValidateCacheIndex(const DDGIDesc& desc,
                            u32 probe_index,
                            u32 cache_count,
                            CacheIndexRejectReason& outReason);
+/// Cache-index preflight with null-cache detection; vacuously succeeds on valid indices.
+bool tryValidateCacheIndex(const DDGIDesc& desc,
+                           const IrradianceCacheEntry* cache,
+                           u32 probe_index,
+                           u32 cache_count,
+                           CacheIndexRejectReason& outReason);
+/// True when `probe_index` exceeds the grid or `cache_count` is undersized.
+bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
@@ -356,6 +385,16 @@ void scheduleProbeUpdates(u32 frame_index,
                           u32* out_indices,
                           u32 max_indices,
                           u32* out_count);
+/// Schedule probe updates with reject-reason diagnostics; false when preflight rejects.
+bool tryScheduleProbeUpdates(u32 frame_index,
+                             u32 probe_count,
+                             u32 probes_per_frame,
+                             u32* out_indices,
+                             u32 max_indices,
+                             u32* out_count,
+                             ProbeScheduleRejectReason& outReason);
+/// Early-out when probe scheduling would be rejected — same ordering as `tryScheduleProbeUpdates`.
+bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
 fuse::math::Vec3 blendIrradiance(const fuse::math::Vec3& previous,
                                  const fuse::math::Vec3& incoming,
                                  f32 hysteresis);
