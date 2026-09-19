@@ -935,6 +935,8 @@ bool finalize_contact_manifold_if_needed(ContactManifold& manifold);
     WouldBeEmptyAfterPrune,
     NoPruningNeeded,
 
+    AllValid,
+
 /// Human-readable label for manifold prune reject reasons (logging / tests).
 const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason);
 
@@ -1117,6 +1119,7 @@ enum class ManifoldFinalizeRejectReason : u8 {
     EmptyManifold,
     InvalidNormal,
     NoPenetratingPoints,
+    NoPenetration,
     WouldBeEmptyAfterPrune,
 };
 
@@ -1137,6 +1140,7 @@ ManifoldFinalizeRejectReason manifold_finalize_reject_reason(
 /// Returns true when `manifold_finalize_reject_reason` matches `expected` (B4.4 deepen pass).
 
 /// Returns true when `manifold_finalize_reject_reason` matches `expected` (B4.4 deepen guard pass).
+
 bool manifold_finalize_rejects_for_reason(
     const ContactManifold& manifold,
     ManifoldFinalizeRejectReason expected,
@@ -1148,6 +1152,7 @@ bool manifold_finalize_rejects_for_reason(
 /// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.4 deepen pass).
 
 /// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.4 deepen guard pass).
+
 bool should_run_manifold_finalize(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,

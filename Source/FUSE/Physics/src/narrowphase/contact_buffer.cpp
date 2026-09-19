@@ -182,6 +182,47 @@ void ContactBufferSoA::clear() {
     droppedCount = 0;
 }
 
+bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
+    return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
+}
+
+u32 ContactBufferSoA::countValidSlots() const {
+    if (canSkipSoAIteration()) {
+        return 0u;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    u32 validCount = 0u;
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] != 0u) {
+            ++validCount;
+        }
+    }
+    return validCount;
+}
+
+bool ContactBufferSoA::canSkipCompaction() const {
+    if (canSkipSoAIteration()) {
+        return true;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    if (scanCount == 0u) {
+        return true;
+    }
+
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ContactBufferSoA::slotIsValid(u32 slot) const {
+    return slot < validFlags.size() && validFlags[slot] != 0u;
+}
+
 void ContactBufferSoA::preparePairSlots(u32 pairCount) {
     pairSlotCount = pairCount;
     activeCount = 0;
@@ -443,6 +484,7 @@ u32 ContactBufferSoA::compact() {
             validFlags[i] = 0u;
             pointCounts[i] = 0u;
 
+
         return activeCount;
     }
 
@@ -533,6 +575,7 @@ u32 ContactBufferSoA::applyMaxCapacityClamp() {
     const ContactBufferClampPreflight clampPreflight = preflightContactBufferClamp(*this);
     if (!clampPreflight.needsClamp()) {
     if (clampPreflight.reason != ContactBufferClampRejectReason::None) {
+    if (!preflightContactBufferClamp(*this).needsClamp()) {
         return activeCount;
     }
 
@@ -696,6 +739,8 @@ const char* contact_buffer_write_reject_reason_name(ContactBufferWriteRejectReas
 const char* contactBufferWriteRejectReasonName(ContactBufferWriteRejectReason reason) {
     case ContactBufferWriteRejectReason::OutOfRange:
         return "OutOfRange";
+    case ContactBufferWriteRejectReason::InvalidSlot:
+        return "InvalidSlot";
     case ContactBufferWriteRejectReason::InvalidManifold:
         return "InvalidManifold";
     case ContactBufferWriteRejectReason::SelfPair:
@@ -733,6 +778,7 @@ ContactBufferWritePreflight preflight_contact_buffer_write(
 const char* contact_buffer_compaction_reject_reason_name(ContactBufferCompactionRejectReason reason) {
         return ContactBufferWriteRejectReason::OutOfRange;
     }
+        return ContactBufferWriteRejectReason::InvalidSlot;
 
 bool contactBufferWriteRejectsForReason(
     const ContactBufferSoA& buffer,
@@ -743,6 +789,17 @@ ContactBufferWritePreflight preflightContactBufferWrite(
     const ContactManifold& manifold) {
     preflight.reason = contactBufferWriteRejectReason(buffer, slot, manifold);
     preflight.outOfRange = preflight.reason == ContactBufferWriteRejectReason::OutOfRange;
+    const ContactManifold& manifold,
+    ContactBufferWriteRejectReason expected) {
+}
+
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    ContactBufferWritePreflight preflight{};
+    preflight.invalidSlot = preflight.reason == ContactBufferWriteRejectReason::InvalidSlot;
+    preflight.invalidManifold = preflight.reason == ContactBufferWriteRejectReason::InvalidManifold;
+    preflight.selfPair = preflight.reason == ContactBufferWriteRejectReason::SelfPair;
+    return preflight;
 
 const char* contactBufferCompactionRejectReasonName(ContactBufferCompactionRejectReason reason) {
     switch (reason) {
@@ -910,6 +967,18 @@ ContactBufferClampPreflight preflightContactBufferClamp(const ContactBufferSoA& 
     preflight.reason = contactBufferClampRejectReason(buffer);
 
     return !preflightContactBufferClamp(buffer).needsClamp();
+
+
+
+
+
+
+
+
+    if (!buffer.canApplyMaxCapacityClamp()) {
+
+
+
 
     return preflightContactBufferClamp(buffer).needsClamp();
 }
