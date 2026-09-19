@@ -4633,3 +4633,26 @@ void testChromeTraceExportPreflightCanExportCleanly() {
     expectTrue(fuse::profiler::tryFindFirstEventByName("named_flow", outEvent),
     expectTrue(outEvent.scopeId == flowId, "tryFindLastEventByFlowId preserves flow id");
     expectTrue(!filledPreflight.exportWouldTrimEvents,
+
+// --- deepen additive from deepen-b16-profiler-guards-d1ed ---
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Begin, "tryFirstEventByName copies begin phase");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastEventByName copies end phase");
+    expectTrue(!fuse::profiler::tryFirstEventByName("missing_scope", outEvent),
+               "tryFirstEventByFlowId clears output for zero flow id");
+    expectTrue(!fuse::profiler::tryFirstEventByFlowId(flowId + 1u, outEvent),
+void testHasUnpairedFlowEventsGuard() {
+void testChromeTraceExportPreflightFlowPairing() {
+    expectTrue(emptyPreflight.flowStartEventCount == 0u, "empty preflight has zero flow starts");
+    expectTrue(emptyPreflight.flowFinishEventCount == 0u, "empty preflight has zero flow finishes");
+    expectTrue(!emptyPreflight.hasUnpairedFlowEvents, "empty preflight has no unpaired flow events");
+    const fuse::profiler::ChromeTraceExportPreflight pairedPreflight =
+    expectTrue(pairedPreflight.flowStartEventCount == 1u, "paired preflight counts flow start");
+    expectTrue(pairedPreflight.flowFinishEventCount == 1u, "paired preflight counts flow finish");
+    expectTrue(!pairedPreflight.hasUnpairedFlowEvents, "paired preflight has balanced flow events");
+    expectTrue(openPreflight.flowStartEventCount == 2u, "open preflight counts both flow starts");
+    expectTrue(openPreflight.flowFinishEventCount == 1u, "open preflight counts one flow finish");
+    expectTrue(openPreflight.hasUnpairedFlowEvents, "open preflight marks unpaired flow events");
+    expectTrue(openPreflight.hasOpenAsyncFlows, "open preflight still reports open async flows");
+    expectTrue(fuse::profiler::tryFirstEventByName("valid_after_empty_lookup", outEvent),
+               "tryFirstEventByName copies begin after empty-name attempts");
+    testChromeTraceExportPreflightFlowPairing();
