@@ -348,6 +348,34 @@ bool CookCache::would_invalidate(u64 content_hash) const {
     return find_entry_(content_hash) != nullptr;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) != 0;
+}
+
+bool CookCache::would_invalidate_stale_upstream_hashes(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    return count_stale_upstream_hashes(source_upstream_by_path) != 0;
+}
+
+bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
+                                               const std::vector<CookJobDependencyEdge>& edges,
+                                               const std::vector<CookJob>& jobs) const {
+    return count_downstream_of(output_path, edges, jobs) != 0;
+}
+
+bool CookCache::would_invalidate_all() const {
+    return !m_entries.empty();
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
         return 0;
@@ -435,6 +463,33 @@ std::vector<std::string> CookCache::probe_stale_upstream_sources(
         }
     }
     return stale_sources;
+}
+
+std::vector<std::string> CookCache::probe_stale_upstream_sources_unique(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    const std::vector<std::string> probed = probe_stale_upstream_sources(source_upstream_by_path);
+    if (probed.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> unique_sources;
+    unique_sources.reserve(probed.size());
+    for (const std::string& source_path : probed) {
+        if (!is_valid_cook_cache_path(source_path)) {
+            continue;
+        }
+        bool already_recorded = false;
+        for (const std::string& recorded : unique_sources) {
+            if (recorded == source_path) {
+                already_recorded = true;
+                break;
+            }
+        }
+        if (!already_recorded) {
+            unique_sources.push_back(source_path);
+        }
+    }
+    return unique_sources;
 }
 
 namespace {

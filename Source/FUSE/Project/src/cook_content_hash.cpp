@@ -1,5 +1,7 @@
 #include <fuse/project/cook_content_hash.hpp>
 
+#include <fuse/project/cook_cache.hpp>
+
 #include <filesystem>
 #include <fstream>
 
@@ -185,6 +187,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "empty_dependency_list";
     case CookHashRejectReason::ZeroSourceHash:
         return "zero_source_hash";
+    case CookHashRejectReason::ZeroContentHash:
+        return "zero_content_hash";
     }
     return "unknown";
 }
@@ -321,6 +325,73 @@ CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
 CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     (void)upstream_hash;
     return preflight_cook_cache_key(source_hash, upstream_hash);
+}
+
+CookHashPreflight preflight_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    const CookHashPreflight combined = preflight_combine_cook_cache_key(source_hash, upstream_hash);
+    if (!combined.can_hash) {
+        return combined;
+    }
+
+    CookHashPreflight preflight;
+    if (combine_cook_cache_key(source_hash, upstream_hash) == 0) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookHashRejectReason::ZeroContentHash;
+        return preflight;
+    }
+    if (entry.source_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (entry.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_shader_entry_hash(const CookManifestEntry& entry) {
+    CookHashPreflight preflight;
+    if (entry.source_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (entry.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry& entry,
+                                                         const CookManifest& manifest) {
+    const CookHashPreflight entry_preflight = preflight_manifest_entry_hash(entry);
+    if (!entry_preflight.can_hash) {
+        return entry_preflight;
+    }
+
+    if (entry.dependencies.empty()) {
+        return entry_preflight;
+    }
+
+    return preflight_upstream_dependencies_hash(entry.dependencies, manifest);
 }
 
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
