@@ -81,6 +81,18 @@ public:
     u32 prune_all();
     /// True when invalid or stale records are present — `prune_*` would remove at least one (B7.9 deepen).
     [[nodiscard]] bool has_prunable_entries() const;
+    /// Incremental invalidation probe — entries `prune_stale_entries` would drop (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_entries() const;
+    /// Incremental invalidation probe — entries `prune_invalid_entries` would drop (B7.9 deepen).
+    [[nodiscard]] u32 count_invalid_entries() const;
+    /// Incremental invalidation probe — entries whose upstream hash differs (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_upstream_entries(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Incremental invalidation probe — entries `invalidate_stale_content_for_source` would drop (B7.9 deepen).
+    [[nodiscard]] u32 probe_stale_content_for_source(const std::string& source_path,
+                                                     u64 current_content_hash) const;
+    /// Reconcile estimator — total entries `prune_all` would remove without mutating (B7.9 deepen).
+    [[nodiscard]] u32 estimate_prune_all() const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

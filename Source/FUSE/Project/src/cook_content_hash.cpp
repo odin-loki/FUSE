@@ -41,6 +41,68 @@ u64 fnv1a64_combine(u64 left, u64 right) {
     return fnv1a64_bytes(reinterpret_cast<const u8*>(&right), sizeof(right)) ^ (left * kFnvPrime);
 }
 
+CookHashPreflight preflight_hash_file_content(const std::string& path) {
+    CookHashPreflight result;
+    if (path.empty()) {
+        result.reject = CookHashPreflightReject::EmptyPath;
+        return result;
+    }
+
+    std::error_code ec;
+    if (!std::filesystem::exists(std::filesystem::path(path), ec)) {
+        result.reject = CookHashPreflightReject::MissingFile;
+        return result;
+    }
+
+    result.ok = true;
+    result.reject = CookHashPreflightReject::None;
+    return result;
+}
+
+CookHashPreflight preflight_mesh_import(const MeshImportDesc& desc) {
+    if (desc.input_path.empty() || desc.output_path.empty()) {
+        return {false, CookHashPreflightReject::EmptyPath};
+    }
+    return preflight_hash_file_content(desc.input_path);
+}
+
+CookHashPreflight preflight_texture_import(const TextureImportDesc& desc) {
+    if (desc.input_path.empty() || desc.output_path.empty()) {
+        return {false, CookHashPreflightReject::EmptyPath};
+    }
+    return preflight_hash_file_content(desc.input_path);
+}
+
+CookHashPreflight preflight_audio_import(const AudioImportDesc& desc) {
+    if (desc.input_path.empty() || desc.output_path.empty()) {
+        return {false, CookHashPreflightReject::EmptyPath};
+    }
+    return preflight_hash_file_content(desc.input_path);
+}
+
+CookHashPreflight preflight_manifest_entry(const CookManifestEntry& entry) {
+    if (entry.source_path.empty() || entry.output_path.empty()) {
+        return {false, CookHashPreflightReject::EmptyPath};
+    }
+
+    CookHashPreflight result = preflight_hash_file_content(entry.source_path);
+    if (!result.ok) {
+        return result;
+    }
+
+    for (const std::string& dependency : entry.dependencies) {
+        if (dependency.empty()) {
+            continue;
+        }
+        const CookHashPreflight dependency_preflight = preflight_hash_file_content(dependency);
+        if (!dependency_preflight.ok) {
+            return dependency_preflight;
+        }
+    }
+
+    return result;
+}
+
 u64 file_mtime_ns(const std::string& path) {
     std::error_code ec;
     const auto ftime = std::filesystem::last_write_time(std::filesystem::path(path), ec);
