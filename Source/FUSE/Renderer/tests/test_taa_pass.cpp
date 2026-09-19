@@ -4365,3 +4365,15 @@ void testTaaPassTryPreflightDeepen() {
                "zero-width pass tryPreflightJitterNdc reject reason is InvalidViewport");
     testHistoryWarmupPreflightDeepen();
     testTaaPassTryPreflightDeepen();
+
+// --- deepen additive from deepen-taa-b59-guards-9b65 ---
+void testTaaPassTryPreflightGuards() {
+               "pass classifyJitterSyncReject is None for valid sequence");
+               "pass classifyJitterAdvanceReject is None for valid sequence");
+    expectTrue(pass->tryPreflightJitterSync(6u, jitterReject), "pass tryPreflightJitterSync passes");
+    expectTrue(pass->tryPreflightJitterAdvance(jitterReject), "pass tryPreflightJitterAdvance passes");
+               "pass tryPreflightResolveBlendWeights reject reason is None before init");
+    expectNear(weights.current, 0.4f, 1e-5f, "pass tryCompute steady current weight");
+    expectNear(weights.history, 0.6f, 1e-5f, "pass tryCompute steady history weight");
+               "zero-width pass tryPreflightJitterNdc rejects");
+    testTaaPassTryPreflightGuards();
