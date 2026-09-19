@@ -1567,6 +1567,64 @@ void testCookCachePruneInvalidEntries() {
     expectTrue(invalidOnly.prune_invalid_entries() == 0u, "prune on empty cache after rejected load");
 }
 
+void testCookerUpstreamInvalidationEstimateProbes() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_chain_a.obj", "# est chain a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_chain_b.obj", "# est chain b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_est_chain_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_est_chain_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for upstream estimate ok");
+
+    const fuse::project::CookCacheUpstreamInvalidationEstimate empty =
+        cooker.estimate_upstream_invalidation(manifest, "");
+    expectTrue(empty.total() == 0u, "empty changed source upstream estimate is zero");
+    expectTrue(!cooker.would_upstream_invalidate(manifest, ""), "empty changed source would_upstream false");
+
+    const fuse::project::CookCacheUpstreamInvalidationEstimate estimate =
+        cooker.estimate_upstream_invalidation(manifest, sourceA);
+    expectTrue(estimate.direct_entries >= 1u, "upstream estimate includes direct entries");
+    expectTrue(estimate.downstream_entries >= 1u, "upstream estimate includes downstream entries");
+    expectTrue(estimate.total() == cooker.count_upstream_invalidation(manifest, sourceA),
+               "upstream estimate total matches count probe");
+    expectTrue(cooker.would_upstream_invalidate(manifest, sourceA),
+               "would_upstream_invalidate true for seeded chain");
+}
+
+void testCookerWouldReconcileInvalidationProbe() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_would_reconcile.obj", "# would reconcile v1\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_would_reconcile.fusemesh";
+    manifest.assets.push_back(entry);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would_reconcile probe ok");
+    expectTrue(!cooker.would_reconcile_invalidation(manifest),
+               "fresh cache would_reconcile_invalidation is false");
+
+    writeTempFile(source, "# would reconcile v2\n");
+    expectTrue(cooker.would_reconcile_invalidation(manifest),
+               "stale content makes would_reconcile_invalidation true");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest).prune_stale_entries >= 1u,
+               "reconcile estimate prune stale matches would_reconcile");
+}
+
 void testCookerInvalidationCountProbes() {
     const std::string sourceA = writeTempFile("/tmp/fuse_b79_count_chain_a.obj", "# count chain a\n");
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_count_chain_b.obj", "# count chain b\n");
@@ -1787,6 +1845,8 @@ int main() {
     testCookCacheRoundTrip();
     testCookCacheEmptyKeyPaths();
     testCookDirtyInvalidatesCache();
+    testCookerUpstreamInvalidationEstimateProbes();
+    testCookerWouldReconcileInvalidationProbe();
     testCookerInvalidationCountProbes();
     testCookerReconcileEstimateProbes();
     testCookCacheDownstreamSourceProbe();
