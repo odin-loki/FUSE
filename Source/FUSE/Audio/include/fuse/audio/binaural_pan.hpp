@@ -1278,3 +1278,11 @@ bool try_preflight_hrtf_binaural_spatial(bool hrtf_enabled, const HrtfIrStub& ir
 // --- deepen additive from b72-hrtf-reject-reason-guards-29d7 ---
 bool try_preflight_hrtf_binaural_convolution(const HrtfIrStub& ir,
 bool try_preflight_hrtf_binaural_narrowing(HrtfPanPath path, float distance_attenuation,
+
+// --- deepen additive from deepen-b7-2-hrtf-reject-reasons-30ff ---
+bool should_skip_hrtf_ir_convolution_preflight(const HrtfIrStub& ir);
+bool should_skip_hrtf_pan_spatial_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_pan_spatial_preflight(bool hrtf_enabled, const Vec3& rel_listener);
+bool should_skip_hrtf_attenuation_coupling_narrowing_preflight(HrtfPanPath path,
+bool should_skip_hrtf_binaural_narrowing_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_binaural_narrowing_preflight(bool hrtf_enabled, const Vec3& rel_listener,

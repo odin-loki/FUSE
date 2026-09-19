@@ -2523,3 +2523,11 @@ void testHrtfBinauralRejectReasonEnumsAndPreflightWrappers() {
                "should_skip_hrtf_attenuation_coupling_ready false when narrowing applies");
     expectTrue(!fuse::audio::should_skip_hrtf_binaural_ready(true, empty, offset, 0.2f, 0.3f),
                "should_skip_hrtf_binaural_ready false on stub path");
+
+// --- deepen additive from deepen-b7-2-hrtf-reject-reasons-30ff ---
+    expectTrue(fuse::audio::should_skip_hrtf_ir_convolution_preflight(empty),
+               "should_skip_hrtf_ir_convolution_preflight true for empty IR");
+    expectTrue(fuse::audio::should_skip_hrtf_pan_spatial_preflight(false, valid, offset),
+               "should_skip_hrtf_pan_spatial_preflight true when disabled");
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling_narrowing_preflight(
+               "should_skip coupling narrowing true on bypass path");
