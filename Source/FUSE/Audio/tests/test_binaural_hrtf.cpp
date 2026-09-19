@@ -2391,3 +2391,8 @@ void testHrtfPanPathRejectReasonNoIrOverload() {
 // --- deepen additive from b7-2-hrtf-binaural-guards-cd83 ---
     reason = fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath;
                "preflight_hrtf_ir_ready inverts should_skip_hrtf_convolution on empty IR");
+
+// --- deepen additive from b72-hrtf-reject-reason-guards-3841 ---
+    expectTrue(reason == fuse::audio::HrtfBinauralRejectReason::MalformedIr,
+    expectTrue(reason == fuse::audio::HrtfBinauralRejectReason::BypassPath,
+    const fuse::audio::HrtfBinauralPreflight binaural_preflight =
