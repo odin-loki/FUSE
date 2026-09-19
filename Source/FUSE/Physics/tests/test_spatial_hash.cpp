@@ -3478,3 +3478,6 @@ void testBroadphaseCellPairGenPreflightGuards() {
     const fuse::physics::broadphase::BroadphaseCellPairGenPreflight preflight =
              static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseCellPairGenRejectReason::None),
     testBroadphaseCellPairGenPreflightGuards();
+
+// --- deepen additive from b4-broadphase-deepen-guards-6980 ---
+    expectTrue(validPreflight.canWrite(), "write-slot preflight accepts valid pair");
