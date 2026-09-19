@@ -224,6 +224,8 @@ bool tryPreflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGe
 bool shouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// True when history is ready, warmed, and generation matches for reuse (B5.9 deepen).
 bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// Convenience wrapper — true when `preflightTaaHistoryReuse` would pass (B5.9 deepen).
+bool canPreflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// True when history buffers are allocated and ready for resolve (B5.9 deepen).
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
@@ -269,6 +271,24 @@ bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmup
 /// True when history temporal reuse is allowed for a resolve request (B5.9 deepen).
 bool preflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                           TaaHistoryReuseBlockReason* reason = nullptr);
+
+/// Why history warm-up blocks temporal reuse (B5.9 deepen).
+enum class TaaHistoryWarmupBlockReason : u8 {
+    None = 0,
+    NotReady,
+    NeedsWarmup,
+};
+/// Human-readable label for history warm-up block reasons (B5.9 deepen).
+const char* taaHistoryWarmupBlockReasonLabel(TaaHistoryWarmupBlockReason reason);
+/// Classify why history warm-up blocks temporal reuse (B5.9 deepen).
+TaaHistoryWarmupBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history);
+/// True when history is allocated and warmed for temporal reuse (B5.9 deepen).
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history,
+                               TaaHistoryWarmupBlockReason* reason = nullptr);
+/// Convenience wrapper — true when `preflightTaaHistoryWarmup` would pass (B5.9 deepen).
+bool canPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history);
+/// True when resolve may apply a non-zero history blend this frame (B5.9 deepen).
+bool taaHistoryTemporalBlendReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
@@ -434,6 +454,26 @@ TaaResolveBlendPreflightRejectReason diagnoseTaaResolveBlendPreflight(const TaaR
 bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                TaaResolveSkipReason* skipReason = nullptr,
                                TaaResolveBlendRejectReason* blendRejectReason = nullptr);
+/// Convenience wrapper — true when `preflightTaaResolveBlendWeights` would pass (B5.9 deepen).
+bool canPreflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Fill `out` only when blend-weight preflight passes; returns false when rejected (B5.9 deepen).
+                                      TaaBlendWeights& out,
+                                      TaaResolveBlendRejectReason* reason = nullptr);
+
+/// Why resolve temporal-blend preflight rejected the request (B5.9 deepen).
+enum class TaaResolveTemporalRejectReason : u8 {
+    HistoryReuseBlocked,
+    BlendWeightsRejected,
+/// Human-readable label for resolve temporal-blend reject reasons (B5.9 deepen).
+const char* taaResolveTemporalRejectReasonLabel(TaaResolveTemporalRejectReason reason);
+/// Classify why resolve temporal-blend preflight would reject (B5.9 deepen).
+TaaResolveTemporalRejectReason classifyTaaResolveTemporalReject(const TaaResolveDesc& desc,
+                                                                const TaaHistoryBuffer& history);
+/// True when history reuse and blend-weight preflights both pass (B5.9 deepen).
+bool preflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                      TaaResolveTemporalRejectReason* reason = nullptr);
+/// Convenience wrapper — true when `preflightTaaResolveTemporalBlend` would pass (B5.9 deepen).
+bool canPreflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

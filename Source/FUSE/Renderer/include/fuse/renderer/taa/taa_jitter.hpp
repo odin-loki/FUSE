@@ -11,6 +11,23 @@ static constexpr u32 kTaaMaxJitterSequenceLength = 64;
 
 /// Why jitter sync or NDC production preflight rejected the request (B5.9 deepen).
 enum class TaaJitterGuardRejectReason : u8 {
+/// Why jitter sync preflight rejected the request (B5.9 deepen).
+enum class TaaJitterSyncRejectReason : u8 {
+    None = 0,
+    InvalidSequence,
+};
+/// Human-readable label for jitter sync reject reasons (B5.9 deepen).
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
+/// Classify why jitter sync would be rejected for a frame counter (B5.9 deepen).
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 /*frameIndex*/, u32 sequenceLength);
+/// True when jitter can align to a monotonic frame counter (B5.9 deepen).
+bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                              TaaJitterSyncRejectReason* reason = nullptr);
+/// Convenience wrapper — true when `preflightTaaJitterSync` would pass (B5.9 deepen).
+bool canPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+
+/// Why jitter NDC preflight rejected the request (B5.9 deepen).
+enum class TaaJitterNdcRejectReason : u8 {
     None = 0,
     InvalidSequence,
     InvalidViewport,
@@ -32,7 +49,6 @@ bool tryPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterGuar
 bool shouldSkipTaaJitterSync(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// True when NDC jitter can be produced for viewport and sequence (B5.9 deepen).
 bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
-                            TaaJitterGuardRejectReason* reason = nullptr);
 /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
 bool tryPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason& reason);
 /// Early-out when NDC jitter preflight would reject (B5.9 deepen).
@@ -41,11 +57,16 @@ bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefa
 TaaJitterGuardRejectReason classifyTaaJitterAdvanceReject(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// True when jitter can advance for the given sequence (B5.9 deepen).
 bool preflightTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLength,
-                                 TaaJitterGuardRejectReason* reason = nullptr);
 /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
 bool tryPreflightTaaJitterAdvance(u32 sequenceLength, TaaJitterGuardRejectReason& reason);
 /// Early-out when jitter advance preflight would reject (B5.9 deepen).
 bool shouldSkipTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Human-readable label for jitter NDC reject reasons (B5.9 deepen).
+const char* taaJitterNdcRejectReasonLabel(TaaJitterNdcRejectReason reason);
+TaaJitterNdcRejectReason classifyTaaJitterNdcReject(u32 width, u32 height,
+                             TaaJitterNdcRejectReason* reason = nullptr);
+/// Convenience wrapper — true when `preflightTaaJitterNdc` would pass (B5.9 deepen).
+bool canPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -196,6 +217,14 @@ public:
     TaaJitterSyncBlockReason classifySyncBlock(u32 width, u32 height) const;
     /// True when jitter can sync to `frameIndex` for the given viewport (B5.9 deepen).
     bool preflightSync(u32 frameIndex, u32 width, u32 height, TaaJitterSyncBlockReason* reason = nullptr) const;
+    /// Classify why sync would be rejected for `frameIndex` (B5.9 deepen).
+    TaaJitterSyncRejectReason classifySyncReject(u32 frameIndex) const;
+    /// Preflight sync without mutating state (B5.9 deepen).
+    bool preflightSyncToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason* reason = nullptr) const;
+    /// Classify why NDC offset production would be rejected (B5.9 deepen).
+    TaaJitterNdcRejectReason classifyNdcReject(u32 width, u32 height) const;
+    /// Preflight NDC offset production without mutating state (B5.9 deepen).
+    bool preflightCurrentNdcOffset(u32 width, u32 height, TaaJitterNdcRejectReason* reason = nullptr) const;
     /// Monotonic frame counter — incremented by `advance`, set by `syncToFrameIndex`, cleared by `reset`.
     u32 monotonicFrameIndex() const { return m_monotonicFrame; }
     /// True when jitter state matches the expected monotonic frame counter (B5.9 deepen).
