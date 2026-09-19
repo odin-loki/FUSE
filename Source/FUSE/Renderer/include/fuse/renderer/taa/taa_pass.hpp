@@ -43,6 +43,8 @@ public:
     const TaaResolve& resolve() const { return m_resolve; }
 
     fuse::math::Vec2 currentJitterNdc() const;
+    /// NDC jitter only when viewport is valid; returns false when blocked (B5.9 deepen).
+    bool currentJitterNdcIfReady(fuse::math::Vec2& out) const;
     void advanceJitter();
     /// Align jitter to a monotonic frame counter (wraps with sequence period).
     void syncJitterToFrameIndex(u32 frameIndex);
@@ -54,8 +56,14 @@ public:
     void resize(u32 width, u32 height);
     bool matchesDimensions(u32 width, u32 height) const;
     bool needsHistoryWarmup() const { return m_history.needsWarmup(); }
+    /// Frames remaining before pass history may be temporally reused (B5.9 deepen).
+    u32 warmupFramesRemaining() const;
     /// True when pass history is warmed and may be sampled (B5.9 deepen).
     bool canReuseHistory() const;
+    /// True when pass history is ready, warmed, and generation matches for reuse (B5.9 deepen).
+    bool historyReuseReady(u32 observedGeneration) const;
+    /// Early-out when pass history temporal reuse should be skipped (B5.9 deepen).
+    bool shouldSkipHistoryReuse(u32 observedGeneration) const;
     /// True when history blend is allowed on the next resolve (B5.9 deepen).
     bool historyBlendAllowed() const;
     /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).
@@ -73,6 +81,10 @@ public:
     /// True when expected resolve blend weights pass validation and reuse policy (B5.9 deepen).
     bool preflightResolveBlendWeights(const TaaResolveDesc& desc,
                                       TaaResolveBlendRejectReason* reason = nullptr) const;
+    /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
+    bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
+    /// True when pass jitter can sync to `frameIndex` (B5.9 deepen).
+    bool preflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

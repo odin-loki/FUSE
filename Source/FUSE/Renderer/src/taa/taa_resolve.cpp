@@ -246,6 +246,23 @@ bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistor
     return reject == TaaResolveBlendRejectReason::None;
 }
 
+bool tryPreflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                        TaaResolveBlendRejectReason& reason) {
+    reason = classifyTaaResolveBlendReject(desc, history);
+    return reason == TaaResolveBlendRejectReason::None;
+}
+
+bool shouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !preflightTaaResolveBlendWeights(desc, history);
+}
+
+bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                      TaaBlendWeights& outWeights, TaaResolveBlendRejectReason& reason) {
+    outWeights = computeTaaResolveBlendWeights(desc, history);
+    reason = classifyTaaResolveBlendReject(desc, history);
+    return reason == TaaResolveBlendRejectReason::None;
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
         return false;
