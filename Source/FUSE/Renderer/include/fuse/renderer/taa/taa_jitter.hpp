@@ -6,6 +6,18 @@
 
 namespace fuse::renderer {
 
+/// Why jitter sync-to-frame preflight rejected the request (B5.9 deepen).
+enum class TaaJitterSyncRejectReason : u8 {
+    None = 0,
+    InvalidSequence,
+};
+/// Human-readable label for jitter sync reject reasons (B5.9 deepen).
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
+/// Classify why jitter cannot sync to a monotonic frame counter (B5.9 deepen).
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 frameIndex, u32 sequenceLength);
+/// True when jitter may align to `frameIndex` for the given sequence (B5.9 deepen).
+bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncRejectReason* reason = nullptr);
+
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
 
@@ -55,8 +67,12 @@ public:
     void syncToFrameIndex(u32 frameIndex);
     /// Sync only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool syncToFrameIndexIfReady(u32 frameIndex);
+    /// Sync with reject-reason diagnostics; returns false when blocked (B5.9 deepen).
+    bool syncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason* reason);
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
+    /// True when jitter state differs from the expected slot for `frameIndex` (B5.9 deepen).
+    bool needsResyncToFrameIndex(u32 frameIndex) const;
 
     u32 index() const { return m_index; }
     /// True when the jitter sequence can advance (B5.9 deepen).

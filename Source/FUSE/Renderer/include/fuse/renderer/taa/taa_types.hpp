@@ -130,6 +130,11 @@ bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGener
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
 u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history);
+/// True when history has completed warm-up and may accumulate temporally (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+/// True when temporal reuse may begin for the observed invalidate epoch (B5.9 deepen).
+bool tryCanBeginTemporalReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                              TaaHistoryReuseBlockReason* reason = nullptr);
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
@@ -145,6 +150,20 @@ TaaResolveBlendRejectReason classifyTaaResolveBlendReject(const TaaResolveDesc& 
 /// True when computed resolve blend weights pass validation and reuse policy (B5.9 deepen).
 bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                      TaaResolveBlendRejectReason* reason = nullptr);
+/// Compute resolve blend weights only when preflight passes (B5.9 deepen).
+bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                      TaaBlendWeights& outWeights,
+                                      TaaResolveBlendRejectReason* reason = nullptr);
+
+/// Combined resolve skip + blend-weight preflight (B5.9 deepen).
+struct TaaResolveFramePreflight {
+    bool canProceed = false;
+    TaaResolveSkipReason skip_reason = TaaResolveSkipReason::None;
+    TaaResolveBlendRejectReason blend_reason = TaaResolveBlendRejectReason::None;
+};
+/// True when resolve would proceed past skip and blend-weight guards (B5.9 deepen).
+bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveFramePreflight* out = nullptr);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

@@ -2,6 +2,31 @@
 
 namespace fuse::renderer {
 
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason) {
+    switch (reason) {
+    case TaaJitterSyncRejectReason::None:
+        return "none";
+    case TaaJitterSyncRejectReason::InvalidSequence:
+        return "invalid_sequence";
+    }
+    return "unknown";
+}
+
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 /*frameIndex*/, u32 sequenceLength) {
+    if (!TaaJitterLayout::canSyncToFrameIndex(0u, sequenceLength)) {
+        return TaaJitterSyncRejectReason::InvalidSequence;
+    }
+    return TaaJitterSyncRejectReason::None;
+}
+
+bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncRejectReason* reason) {
+    const TaaJitterSyncRejectReason reject = classifyTaaJitterSyncReject(frameIndex, sequenceLength);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaJitterSyncRejectReason::None;
+}
+
 f32 TaaJitterLayout::halton(u32 index, u32 base) {
     if (base < 2u) {
         return 0.f;
@@ -133,12 +158,23 @@ bool TaaJitter::isAlignedToFrameIndex(u32 frameIndex) const {
            TaaJitterLayout::jitterSlotMatchesFrameIndex(frameIndex, m_index, m_sequenceLength);
 }
 
-bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
+bool TaaJitter::needsResyncToFrameIndex(u32 frameIndex) const {
     if (!canSyncToFrameIndex(frameIndex)) {
+        return false;
+    }
+    return !isAlignedToFrameIndex(frameIndex);
+}
+
+bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason* reason) {
+    if (!preflightTaaJitterSync(frameIndex, m_sequenceLength, reason)) {
         return false;
     }
     syncToFrameIndex(frameIndex);
     return true;
+}
+
+bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
+    return syncToFrameIndexIfReady(frameIndex, nullptr);
 }
 
 bool TaaJitter::advanceIfReady() {
