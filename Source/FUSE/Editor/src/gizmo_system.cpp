@@ -660,6 +660,35 @@ bool isRayNonFinite(const GizmoRay& ray) {
 GizmoInteractionPhase interactionPhase(bool dragging) {
     return dragging ? GizmoInteractionPhase::Dragging : GizmoInteractionPhase::Idle;
 
+bool isFiniteValue(f32 value) {
+    return std::isfinite(value);
+}
+
+bool isRayFinite(const GizmoRay& ray) {
+    return isFiniteValue(ray.origin.x) && isFiniteValue(ray.origin.y) &&
+           isFiniteValue(ray.origin.z) && isFiniteValue(ray.direction.x) &&
+           isFiniteValue(ray.direction.y) && isFiniteValue(ray.direction.z);
+}
+
+bool isHitTestFinite(const GizmoHitTest& hit) {
+    return isFiniteValue(hit.screenX) && isFiniteValue(hit.screenY) &&
+           isFiniteValue(hit.viewportWidth) && isFiniteValue(hit.viewportHeight);
+}
+
+bool isAxisValidForMode(GizmoAxis axis, GizmoMode mode) {
+    if (axis == GizmoAxis::None) {
+        return false;
+    }
+    if (axis == GizmoAxis::Uniform) {
+        return mode == GizmoMode::Scale;
+    }
+    return true;
+}
+
+bool isDragDeltaFinite(f32 delta) {
+    return isFiniteValue(delta);
+}
+
 bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings) {
     return isSnapEnabled(mode, settings) && !isSnapStepValid(mode, settings);
 
@@ -1282,6 +1311,7 @@ PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform
         preflight.nonFiniteInput = true;
         preflight.nonFiniteRay = true;
     if (isRayDirectionNonFinite(ray)) {
+    if (!isRayFinite(ray)) {
         return preflight;
     }
 
@@ -1328,6 +1358,7 @@ PickPreflight preflightPick(const GizmoHitTest& hit, GizmoMode mode) {
     PickPreflight preflight{};
     if (isHitTestNonFinite(hit)) {
         preflight.nonFiniteInput = true;
+    if (!isHitTestFinite(hit)) {
         preflight.nonFiniteHit = true;
         return preflight;
     }
@@ -2267,6 +2298,11 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
         return preflight;
     }
 
+    if (!isHitTestFinite(hit)) {
+        preflight.nonFiniteHit = true;
+        return preflight;
+    }
+
     if (isHitTestDimensionsInvalid(hit)) {
         preflight.invalidDimensions = true;
     } else if (isHitTestNonFinite(hit)) {
@@ -2320,6 +2356,11 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, 
     if (isSnapEnabled(mode, settings) && !isSnapStepValid(mode, settings)) {
     if (!isAxisValidForMode(activeAxis, mode)) {
         preflight.modeAxisMismatch = true;
+        return preflight;
+    }
+
+    if (!isAxisValidForMode(activeAxis, mode)) {
+        preflight.invalidAxisForMode = true;
         return preflight;
     }
 
@@ -2452,6 +2493,7 @@ EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode
         return preflight;
     } else if (!isAxisValidForMode(activeAxis, mode)) {
         preflight.modeAxisMismatch = true;
+        preflight.invalidAxisForMode = true;
     }
 
     if (canApplySnap(mode, settings)) {

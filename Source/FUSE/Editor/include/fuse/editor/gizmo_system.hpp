@@ -274,6 +274,10 @@ bool isScreenHitInViewport(const GizmoHitTest& hit);
 bool isTransformFinite(const GizmoTransform& transform);
 
 /// True when ray origin and direction are finite (B6.4 deepen pass).
+/// True when a scalar input is finite (B6.4 deepen pass).
+bool isFiniteValue(f32 value);
+
+/// True when ray origin and direction contain only finite values (B6.4 deepen pass).
 bool isRayFinite(const GizmoRay& ray);
 
 /// True when screen coordinates and viewport dimensions are finite (B6.4 deepen pass).
@@ -330,6 +334,11 @@ bool isSnapStepNegative(GizmoMode mode, const GizmoSnapSettings& settings);
 
 /// True when screen coordinates or viewport dimensions contain NaN/Inf (B6.4 deepen pass).
 
+/// True when the active axis is valid for the current gizmo mode (B6.4 deepen pass).
+
+/// True when a drag delta is finite (B6.4 deepen pass).
+bool isDragDeltaFinite(f32 delta);
+
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
 struct PickPreflight {
     PickRejectReason reason = PickRejectReason::None;
@@ -378,6 +387,7 @@ struct PickPreflight {
         return !emptyRay && !emptyHit && !invalidPickConfig && !invalidDimensions && !nonFiniteRay &&
                !nonFiniteScreen && !outOfBounds && !screenMiss && !pickMiss;
                !screenMiss && !pickMiss && !nonFiniteInput;
+               !screenMiss && !pickMiss && !nonFiniteRay && !nonFiniteHit;
     }
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up).
     bool canPick = false;
@@ -862,9 +872,10 @@ struct BeginDragPreflight {
     /// Hit is in the screen dead zone — update still applies (B6.4 deepen pass).
     /// Viewport is valid but the cursor is in the mode dead zone — update still applies (B6.4 deepen pass).
     bool screenMiss = false;
-    bool nonFiniteInput = false;
     bool invalidDimensions = false;
     bool modeAxisMismatch = false;
+    bool nonFiniteHit = false;
+    bool invalidAxisForMode = false;
     /// Snap is enabled but the mode step is unusable — update still applies (B6.4 deepen pass).
     bool snapDegraded = false;
     bool emptyHit = false;
@@ -935,6 +946,8 @@ struct UpdateDragPreflight {
         return !notDragging && !emptyHit && !invalidDimensions && !nonFiniteScreen && !outOfBounds &&
         return !notDragging && !emptyHit && !invalidDimensions && !outOfBounds && !invalidActiveAxis &&
                !nonFiniteInput && !modeAxisMismatch;
+        return !notDragging && !emptyHit && !invalidDimensions && !outOfBounds && !nonFiniteHit &&
+               !invalidActiveAxis && !invalidAxisForMode;
     }
     bool canUpdate() const { return reason == UpdateDragRejectReason::None; }
         return !notDragging && !emptyHit && !nonFiniteInput && !invalidDimensions && !outOfBounds &&
@@ -992,6 +1005,7 @@ struct EndDragPreflight {
     bool notDragging = false;
     bool invalidActiveAxis = false;
     bool modeAxisMismatch = false;
+    bool invalidAxisForMode = false;
     /// Snap is enabled but the mode step is unusable — end still applies (B6.4 deepen pass).
     bool snapDegraded = false;
     /// Transform matches drag start — end still applies (B6.4 deepen pass).
