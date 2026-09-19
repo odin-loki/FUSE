@@ -861,6 +861,7 @@ bool hasScopeBeginEndMismatch();
 bool hasFlowStartFinishMismatch();
 bool hasEventsByPhase(EventPhase phase);
 bool hasDroppedEvents();
+u32 orphanAsyncFlowEndCount();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);

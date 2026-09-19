@@ -12680,6 +12680,190 @@ void testChromeTraceExportPreflightExportableIndices() {
     expectTrue(preflight.canExportSafely(), "balanced trace with exportable indices can export safely");
 }
 
+void testBlankWhitespaceNameGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::isBlankEventName(nullptr), "null name is blank");
+    expectTrue(fuse::profiler::isBlankEventName(""), "empty string is blank");
+    expectTrue(fuse::profiler::isBlankEventName("   "), "whitespace-only name is blank");
+    expectTrue(fuse::profiler::isBlankEventName("\t\n"), "tab/newline name is blank");
+    expectTrue(!fuse::profiler::isBlankEventName("scope"), "non-blank name is not blank");
+    expectTrue(!fuse::profiler::isValidEventName("   "), "whitespace-only name is invalid");
+    expectTrue(!fuse::profiler::isValidEventName("\t"), "tab-only name is invalid");
+
+    {
+        fuse::profiler::ProfileScope blankScope("  ");
+    }
+    fuse::profiler::beginAsyncFlow("\t", 1u);
+    fuse::profiler::sampleCounter(" \n", 1);
+    fuse::profiler::endAsyncFlow("  ", 1u);
+
+    expectTrue(fuse::profiler::eventCount() == 0u, "whitespace-only names record nothing");
+    expectTrue(fuse::profiler::isScopeNestingBalanced(), "blank scope name does not unbalance nesting");
+    expectTrue(fuse::profiler::isFlowNestingBalanced(), "blank flow names do not unbalance flow depth");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "blank flow names do not leave open async flows");
+    expectTrue(fuse::profiler::exportChromeTraceJson().find("\"traceEvents\":[]") != std::string::npos,
+               "blank-name guard leaves export empty");
+}
+
+void testFindEventIndexByNameGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::findFirstEventIndexByName("missing") == fuse::profiler::kInvalidEventIndex,
+               "findFirstEventIndexByName invalid on empty buffer");
+    expectTrue(fuse::profiler::findLastEventIndexByName("missing") == fuse::profiler::kInvalidEventIndex,
+               "findLastEventIndexByName invalid on empty buffer");
+    expectTrue(fuse::profiler::countEventsByName("missing") == 0u, "countEventsByName zero on empty buffer");
+    expectTrue(fuse::profiler::findFirstEventIndexByName(nullptr) == fuse::profiler::kInvalidEventIndex,
+               "findFirstEventIndexByName rejects null lookup name");
+    expectTrue(fuse::profiler::findFirstEventIndexByName("   ") == fuse::profiler::kInvalidEventIndex,
+               "findFirstEventIndexByName rejects blank lookup name");
+
+    fuse::u32 outIndex = fuse::profiler::kInvalidEventIndex;
+    expectTrue(!fuse::profiler::tryFindFirstEventIndexByName("missing", outIndex),
+               "tryFindFirstEventIndexByName false on empty buffer");
+    expectTrue(outIndex == fuse::profiler::kInvalidEventIndex,
+               "tryFindFirstEventIndexByName clears output on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("name_outer");
+        FUSE_PROFILE_COUNTER("name_outer", 1);
+        {
+            FUSE_PROFILE_SCOPE("name_inner");
+        }
+    }
+
+    expectTrue(fuse::profiler::findFirstEventIndexByName("name_outer") == 0u,
+               "findFirstEventIndexByName locates first outer begin");
+    expectTrue(fuse::profiler::findLastEventIndexByName("name_outer") == 4u,
+               "findLastEventIndexByName locates outer end");
+    expectTrue(fuse::profiler::findFirstEventIndexByName("name_inner") == 2u,
+               "findFirstEventIndexByName locates inner begin");
+    expectTrue(fuse::profiler::countEventsByName("name_outer") == 3u,
+               "countEventsByName counts outer begin/counter/end");
+    expectTrue(fuse::profiler::countEventsByName("name_inner") == 2u,
+               "countEventsByName counts inner begin/end");
+
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByName("name_inner", outIndex),
+               "tryFindFirstEventIndexByName true for inner scope");
+    expectTrue(outIndex == 2u, "tryFindFirstEventIndexByName copies inner begin index");
+}
+
+void testTryFindEventIndexByPhaseGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::u32 outIndex = fuse::profiler::kInvalidEventIndex;
+    expectTrue(!fuse::profiler::tryFindFirstEventIndexByPhase(fuse::profiler::EventPhase::Begin, outIndex),
+               "tryFindFirstEventIndexByPhase false on empty buffer");
+    expectTrue(outIndex == fuse::profiler::kInvalidEventIndex,
+               "tryFindFirstEventIndexByPhase clears output on empty buffer");
+    expectTrue(!fuse::profiler::tryFindLastEventIndexByPhase(fuse::profiler::EventPhase::End, outIndex),
+               "tryFindLastEventIndexByPhase false on empty buffer");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("phase_scope");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("phase_flow", flowId);
+        FUSE_PROFILE_COUNTER("phase_counter", 8);
+        FUSE_PROFILE_ASYNC_FLOW_END("phase_flow", flowId);
+    }
+
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByPhase(fuse::profiler::EventPhase::FlowStart, outIndex),
+               "tryFindFirstEventIndexByPhase locates flow start");
+    expectTrue(outIndex == 1u, "tryFindFirstEventIndexByPhase copies flow start index");
+    expectTrue(fuse::profiler::tryFindLastEventIndexByPhase(fuse::profiler::EventPhase::Counter, outIndex),
+               "tryFindLastEventIndexByPhase locates counter sample");
+    expectTrue(outIndex == 2u, "tryFindLastEventIndexByPhase copies counter index");
+}
+
+void testOrphanAsyncFlowEndCountGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::orphanAsyncFlowEndCount() == 0u, "reset leaves orphan flow end count at zero");
+    expectTrue(!fuse::profiler::hasOrphanAsyncFlowEnds(), "reset leaves hasOrphanAsyncFlowEnds false");
+
+    FUSE_PROFILE_ASYNC_FLOW_END("orphan_a", 1u);
+    FUSE_PROFILE_ASYNC_FLOW_END("orphan_b", 2u);
+    expectTrue(fuse::profiler::orphanAsyncFlowEndCount() == 2u, "orphan flow ends increment counter");
+    expectTrue(fuse::profiler::hasOrphanAsyncFlowEnds(), "hasOrphanAsyncFlowEnds true after orphan ends");
+    expectTrue(fuse::profiler::eventCount() == 0u, "orphan flow ends still record no events");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("paired_flow", flowId);
+    FUSE_PROFILE_ASYNC_FLOW_END("paired_flow", flowId);
+    expectTrue(fuse::profiler::orphanAsyncFlowEndCount() == 2u,
+               "paired flow end does not clear orphan counter");
+    expectTrue(fuse::profiler::eventCount() == 2u, "paired flow still records after orphan ends");
+
+    fuse::profiler::reset();
+    expectTrue(fuse::profiler::orphanAsyncFlowEndCount() == 0u, "reset clears orphan flow end count");
+    expectTrue(!fuse::profiler::hasOrphanAsyncFlowEnds(), "reset clears hasOrphanAsyncFlowEnds");
+}
+
+void testChromeTraceExportPreflightTrimAndOrphanFlags() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::ChromeTraceExportPreflight emptyPreflight =
+        fuse::profiler::preflightChromeTraceExport();
+    expectTrue(!emptyPreflight.exportWouldTrimEvents, "empty preflight does not trim events");
+    expectTrue(!emptyPreflight.hasOnlyExportableEvents, "empty preflight hasOnlyExportableEvents false");
+    expectTrue(emptyPreflight.orphanAsyncFlowEndCount == 0u, "empty preflight orphan count is zero");
+    expectTrue(!emptyPreflight.hasOrphanAsyncFlowEnds, "empty preflight hasOrphanAsyncFlowEnds false");
+
+    {
+        FUSE_PROFILE_SCOPE("preflight_trim_scope");
+        FUSE_PROFILE_COUNTER("preflight_trim_counter", 6);
+    }
+
+    const fuse::profiler::ChromeTraceExportPreflight closedPreflight =
+        fuse::profiler::preflightChromeTraceExport();
+    expectTrue(!closedPreflight.exportWouldTrimEvents, "valid trace does not trim events");
+    expectTrue(closedPreflight.hasOnlyExportableEvents, "valid trace hasOnlyExportableEvents true");
+    expectTrue(closedPreflight.exportableEventCount == closedPreflight.eventCount,
+               "valid trace exportable count matches event count");
+    expectTrue(closedPreflight.canExportSafely(), "valid balanced trace can export safely");
+
+    FUSE_PROFILE_ASYNC_FLOW_END("preflight_orphan", 9u);
+    const fuse::profiler::ChromeTraceExportPreflight orphanPreflight =
+        fuse::profiler::preflightChromeTraceExport();
+    expectTrue(orphanPreflight.orphanAsyncFlowEndCount == 1u, "preflight reports orphan flow end count");
+    expectTrue(orphanPreflight.hasOrphanAsyncFlowEnds, "preflight marks orphan async flow ends");
+    expectTrue(orphanPreflight.canExportSafely(), "orphan ends alone do not block safe export");
+}
+
+void testBlankNameAttemptsDoNotAffectNameLookup() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::beginAsyncFlow("  ", 1u);
+    fuse::profiler::sampleCounter("\t", 1);
+    {
+        fuse::profiler::ProfileScope blankScope(" \n");
+    }
+
+    expectTrue(fuse::profiler::eventCount() == 0u, "blank-name attempts record nothing");
+    expectTrue(fuse::profiler::findFirstEventIndexByName("lookup_scope") == fuse::profiler::kInvalidEventIndex,
+               "name lookup stays invalid after blank-name attempts");
+
+    FUSE_PROFILE_SCOPE("lookup_scope");
+    expectTrue(fuse::profiler::findFirstEventIndexByName("lookup_scope") == 0u,
+               "name lookup finds valid scope after blank-name attempts");
+
+    fuse::profiler::ProfileEvent scopeEvent{};
+    fuse::u32 scopeIndex = fuse::profiler::kInvalidEventIndex;
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByName("lookup_scope", scopeIndex),
+               "tryFindFirstEventIndexByName succeeds after blank-name attempts");
+    expectTrue(fuse::profiler::tryExportableEventAt(scopeIndex, scopeEvent),
+               "exportable lookup succeeds for valid scope after blank-name attempts");
+    expectTrue(scopeEvent.phase == fuse::profiler::EventPhase::Begin,
+               "exportable lookup copies begin phase after blank-name attempts");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -13364,6 +13548,8 @@ int main() {
     testChromeTraceExportPreflightCleanExportFlags();
     testBlankNameGuards();
     testNestedAsyncFlowContextGuards();
+    testTryFindEventIndexByPhaseGuard();
+    testChromeTraceExportPreflightTrimAndOrphanFlags();
     testFatalHandlerHook();
     testVerifyMacro();
     testIsValidEventNamePreflight();

@@ -1097,7 +1097,6 @@ bool isValidEventName(const char* name) {
 
         if (*cursor != ' ' && *cursor != '\t' && *cursor != '\n' && *cursor != '\r') {
     if (name == nullptr || name[0] == '\0') {
-        return false;
     }
 
     for (const char* cursor = name; *cursor != '\0'; ++cursor) {
@@ -1108,6 +1107,7 @@ bool isValidEventName(const char* name) {
 
 bool wouldRecordWithName(const char* name) {
     return g_enabled.load(std::memory_order_acquire) && isValidEventName(name) && !isBlankEventName(name);
+
     return !isBlankEventName(name);
 }
 
@@ -2445,6 +2445,26 @@ u32 droppedEventCount() {
     return g_droppedEventCount.load(std::memory_order_acquire);
 
 bool tryFindEventIndexByName(const char* name, u32& outIndex) {
+
+
+
+
+
+
+bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex) {
+    const u32 index = findFirstEventIndexByPhase(phase);
+    if (index == kInvalidEventIndex) {
+        outIndex = kInvalidEventIndex;
+        return false;
+
+    outIndex = index;
+    return true;
+
+bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex) {
+    const u32 index = findLastEventIndexByPhase(phase);
+
+
+bool tryFindFirstEventIndexByName(const char* name, u32& outIndex) {
     const u32 index = findFirstEventIndexByName(name);
     if (index == kInvalidEventIndex) {
         outIndex = kInvalidEventIndex;
@@ -2527,6 +2547,14 @@ bool namesMatch(const char* lhs, const char* rhs) {
 
 
 
+    }
+
+
+u32 orphanAsyncFlowEndCount() {
+    return g_orphanAsyncFlowEndCount.load(std::memory_order_acquire);
+
+bool hasOrphanAsyncFlowEnds() {
+    return orphanAsyncFlowEndCount() > 0u;
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
