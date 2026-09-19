@@ -6132,3 +6132,7 @@ void testChromeTraceExportPreflightOrphanFlags() {
         expectTrue(!flowPreflight.canNestSafely(), "open flow blocks safe nesting");
     expectTrue(closedPreflight.isBalanced(), "ended scope restores balanced nesting preflight");
     expectTrue(closedPreflight.canNestSafely(), "ended scope restores safe nesting preflight");
+
+// --- deepen additive from deepen-b16-profiler-guards-6c3b ---
+    expectTrue(filledPreflight.scopeBeginEventCount == 1u,
+    expectTrue(filledPreflight.hasActiveScopes == false,
