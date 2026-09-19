@@ -363,5 +363,6 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 /// Path-only preflight for deferred shader cooks — no source readability required (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_shader_entry_hash(const CookManifestEntry& entry);
 /// Manifest entry plus optional upstream dependency preflight — read-only planning guard (B7.9 deepen).
+/// Cacheability preflight — mirrors `is_cacheable_cook_cache_key` without folding keys (B7.9 deepen).
 
 } // namespace fuse::project

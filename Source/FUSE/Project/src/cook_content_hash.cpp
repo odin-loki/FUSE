@@ -982,8 +982,11 @@ CookHashPreflight preflight_manifest_dependency_coverage(
 
 CookHashPreflight preflight_shader_entry_hash(const CookManifestEntry& entry) {
         preflight.reason = CookHashRejectReason::ZeroContentHash;
-        return preflight;
-    }
+
+    const CookHashPreflight source_preflight = preflight_cook_cache_key(source_hash, upstream_hash);
+    if (!source_preflight.can_hash) {
+        return source_preflight;
+
 
     preflight.can_hash = true;
     preflight.reason = CookHashRejectReason::None;
