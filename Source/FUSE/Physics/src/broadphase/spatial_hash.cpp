@@ -1013,9 +1013,13 @@ u32 countPairsForCell(const std::vector<u32>& occupants) {
 
     if (!shouldRunCellPairGen(occupants.size())) {
 
+    const u32 occupantCount = static_cast<u32>(occupants.size());
+    const u32 uniqueCount = static_cast<u32>(uniqueBodies.size());
+    if (!shouldRunCellPairGeneration(occupantCount, uniqueCount)) {
+    return estimateCellPairCount(uniqueCount);
+
         return;
     }
-    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
     for (usize i = 0; i < uniqueBodies.size(); ++i) {
         for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
             appendPair(out, uniqueBodies[i], uniqueBodies[j]);
@@ -1038,9 +1042,12 @@ void writePairsForCellSlots(
     if (canSkipCellPairGeneration(occupants)) {
     if (!shouldRunCellPairGeneration(static_cast<u32>(occupants.size()))) {
     if (!shouldRunCellPairGen(occupants.size())) {
+    const u32 occupantCount = static_cast<u32>(occupants.size());
+    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
+    const u32 uniqueCount = static_cast<u32>(uniqueBodies.size());
+    if (!shouldRunCellPairGeneration(occupantCount, uniqueCount)) {
         return;
     }
-    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
     u32 slot = slotStart;
     for (usize i = 0; i < uniqueBodies.size(); ++i) {
         for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
@@ -1142,6 +1149,7 @@ void populateShapeCells(
         if (!shouldRunCellCapacityInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
         if (!shouldRunCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy)) {
         if (canSkipCellCapacityInsert(range, maxOccupancy)) {
+        if (!shouldRunCellCapacityInsert(range, maxOccupancy)) {
             return;
         return ShapeCellInsertRejectReason::None;
 
@@ -1265,6 +1273,7 @@ void populateShapeCells(
     if (!shouldRunCellCapacityInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
     if (!shouldRunCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy)) {
     if (canSkipCellCapacityInsert(range, maxOccupancy)) {
+    if (!shouldRunCellCapacityInsert(range, maxOccupancy)) {
         return;
     if (isEmptyCellRange(range)) {
     if (params.maxCellOccupancyPerShape > 0u) {
@@ -3312,6 +3321,28 @@ CellRange2 shapeCellRange2(
     return !preflightCellCapacityInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
 
     return preflightCellCapacityInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
+    case CellPairGenRejectReason::SingletonOccupants:
+        return "SingletonOccupants";
+
+CellPairGenRejectReason cellPairGenRejectReason(u32 occupantCount, u32 uniqueOccupantCount) {
+    if (occupantCount < 2u) {
+    if (uniqueOccupantCount < 2u) {
+        return CellPairGenRejectReason::SingletonOccupants;
+
+bool cellPairGenRejectsForReason(u32 occupantCount, u32 uniqueOccupantCount, CellPairGenRejectReason expected) {
+    return cellPairGenRejectReason(occupantCount, uniqueOccupantCount) == expected;
+
+CellPairGenPreflight preflightCellPairGeneration(u32 occupantCount, u32 uniqueOccupantCount) {
+    preflight.reason = cellPairGenRejectReason(occupantCount, uniqueOccupantCount);
+    preflight.singletonOccupants = preflight.reason == CellPairGenRejectReason::SingletonOccupants;
+    preflight.pairCount = estimateCellPairCount(uniqueOccupantCount);
+
+bool canSkipCellPairGeneration(u32 occupantCount, u32 uniqueOccupantCount) {
+    return !preflightCellPairGeneration(occupantCount, uniqueOccupantCount).canGenerate();
+
+bool shouldRunCellPairGeneration(u32 occupantCount, u32 uniqueOccupantCount) {
+    return preflightCellPairGeneration(occupantCount, uniqueOccupantCount).canGenerate();
+
 }
 
 void refineBroadphasePairsParallel(
