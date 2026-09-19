@@ -1790,3 +1790,7 @@ bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, cons
 // --- deepen additive from deepen-b4-broadphase-wouldskip-9e44 ---
                             CellSpanRejectReason* reason = nullptr);
 bool wouldSkipRefineBroadphase(const RigidBodySoA& bodies,
+
+// --- deepen additive from b4-broadphase-deepen-guards-47ef ---
+    const BroadphaseRejectReason reject = broadphaseRejectReason(bodies, shapes);
+    return reject != BroadphaseRejectReason::None;

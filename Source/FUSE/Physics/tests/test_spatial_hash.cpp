@@ -4418,3 +4418,11 @@ void testPairBufferWriteSlotWouldSkipGuards() {
     expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(emptyPairs, mergeBuffer, &mergeIntoReason),
                "wouldSkipMergePairsIntoBuffer true for empty pair list");
              "wouldSkipMergePairsIntoBuffer reports EmptyPairs reason");
+
+// --- deepen additive from b4-broadphase-deepen-guards-47ef ---
+               "wouldSkipPairBufferInvalidateSlot on empty buffer");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 1u),
+             "wouldSkipCellSpanClamp reports ExceedsSpan when span exceeds budget");
+               "wouldSkipCellSpanClamp inverts shouldRunCellSpanClamp");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(overSpanRange, 4u),
+               "wouldSkipCellSpanClamp true when span is within limit");
