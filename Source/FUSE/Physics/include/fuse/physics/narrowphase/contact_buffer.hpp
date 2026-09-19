@@ -360,3 +360,10 @@ bool contactBufferClampRejectsForReason(const ContactBufferSoA& buffer, ContactB
 ContactBufferCompactAndClampRejectReason contactBufferCompactAndClampRejectReason(const ContactBufferSoA& buffer);
     bool canBuild() const { return reason == ContactBufferFrictionBasisRejectReason::None; }
 void buildContactBufferFrictionBasesWithPreflight(ContactBufferSoA& buffer);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-bee6 ---
+const char* contact_buffer_warm_start_reject_reason_name(ContactBufferWarmStartRejectReason reason);
+ContactBufferWarmStartRejectReason contact_buffer_warm_start_reject_reason(
+    bool can_apply() const { return reason == ContactBufferWarmStartRejectReason::None; }
+ContactBufferWarmStartPreflight preflight_contact_buffer_warm_start(
+    bool needs_rebuild() const { return reason == ContactBufferFrictionBasesRejectReason::None; }

@@ -527,3 +527,6 @@ FrictionBasisRejectReason friction_basis_stale_reject_reason(
 
 // --- deepen additive from b4-narrowphase-guards-91b3 ---
     case FrictionBasisRejectReason::StaleNormal:
+
+// --- deepen additive from b4-narrowphase-deepen-guards-bee6 ---
+    return preflight.reason == FrictionBasisRejectReason::None && preflight.needsRebuild;

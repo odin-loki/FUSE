@@ -3437,3 +3437,8 @@ void testContactBufferDeepenGuardHelpers() {
             buffer, 0u, invalid, fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::InvalidManifold),
     expectTrue(writePreflight.canWrite(), "write-slot preflight accepts valid manifold");
 void testContactPairManifoldFrictionDeepenRunGuards() {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-bee6 ---
+            buffer, 99u, valid, fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::OutOfRangeSlot),
+            buffer, 99u, fuse::physics::narrowphase::ContactBufferWarmStartRejectReason::OutOfRangeSlot),
+void testContactPairManifoldFrictionDeepenPassGuards() {

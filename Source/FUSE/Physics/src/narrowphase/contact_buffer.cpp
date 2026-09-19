@@ -877,3 +877,8 @@ ContactBufferCompactAndClampRejectReason contactBufferCompactAndClampRejectReaso
     if (!preflightContactBufferWriteSlot(buffer, slot, manifold).canWrite()) {
 void buildContactBufferFrictionBasesWithPreflight(ContactBufferSoA& buffer) {
     if (!preflightContactBufferFrictionBasis(buffer).canBuild()) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-bee6 ---
+const char* contact_buffer_warm_start_reject_reason_name(ContactBufferWarmStartRejectReason reason) {
+ContactBufferWarmStartRejectReason contact_buffer_warm_start_reject_reason(
+ContactBufferWarmStartPreflight preflight_contact_buffer_warm_start(
