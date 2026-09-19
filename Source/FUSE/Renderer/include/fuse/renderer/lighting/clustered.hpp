@@ -155,6 +155,7 @@ enum class GridPopulationRejectReason : u8 {
 const char* gridPopulationRejectReasonLabel(GridPopulationRejectReason reason);
 
 /// Why a cluster lookup preflight rejected the request (B5.4 deepen).
+/// Why cluster light lookup was rejected at a flat or tile/slice index (B5.4 deepen follow-up).
 enum class ClusterLookupRejectReason : u8 {
     None = 0,
     EmptyGrid,
@@ -188,6 +189,8 @@ bool canLookupAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 i
 /// Preflight guard before tile/slice coord lookup; false on empty grid or desc mismatch.
 bool canLookupAtCoord(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 tileX, u32 tileY, u32 sliceZ);
 /// Diagnose why lookup preflight would reject; vacuously succeeds on accessible grids.
+/// Early-out when the grid is inaccessible (empty desc, empty storage, or desc mismatch).
+/// Diagnose why lookup preflight would reject; vacuously succeeds when lookup is allowed.
 bool tryCanLookupAtIndex(const ClusterGridSoA& grid,
                          const ClusterDesc& desc,
                          u32 index,
@@ -310,6 +313,7 @@ bool validatePopulationCountsForDesc(const ClusterGridSoA& grid, const ClusterDe
 bool validateGridPopulationWithDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
 /// Diagnose population validation against the clamped cluster count derived from `desc`.
                                         GridPopulationRejectReason& outReason);
+/// Diagnose population validation against `desc`; vacuously succeeds when `desc` is empty.
 } // namespace cluster_util
 
 /// Renderer-side point light input (decoupled from ECS).

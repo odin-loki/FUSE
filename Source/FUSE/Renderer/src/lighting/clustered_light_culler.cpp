@@ -136,19 +136,13 @@ bool cluster_util::shouldSkipClusterLookup(const ClusterGridSoA& grid, const Clu
 bool cluster_util::shouldSkipClusterCull(const ClusterDesc& desc) {
     return ClusterGridLayout::isEmptyGrid(desc);
 
-bool cluster_util::canLookupAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 /*index*/) {
     return isGridAccessible(grid, desc);
 bool cluster_util::isClusterGridAccessible(const ClusterGridSoA& grid, const ClusterDesc& desc) {
 
     return isClusterGridAccessible(grid, desc);
-}
 
-bool cluster_util::canLookupAtCoord(const ClusterGridSoA& grid,
-                                     const ClusterDesc& desc,
-                                     u32 /*tileX*/,
-                                     u32 /*tileY*/,
-                                     u32 /*sliceZ*/) {
-    return isGridAccessible(grid, desc);
+    return !isLightGridAccessible(grid, desc);
+
 }
 
 bool cluster_util::tryCanLookupAtIndex(const ClusterGridSoA& grid,
@@ -173,6 +167,10 @@ bool cluster_util::tryCanLookupAtCoord(const ClusterGridSoA& grid,
     return tryCanLookupAtIndex(grid, desc, ClusterGridLayout::clusterIndexClamped(tileX, tileY, sliceZ, desc),
                                outReason);
     return isClusterGridAccessible(grid, desc);
+    }
+    if (grid.isEmpty()) {
+        return false;
+
 }
 
 u32 cluster_util::clusterLightCountAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 index) {
@@ -272,6 +270,7 @@ u32 cluster_util::lookupClusterLightsAtCoord(const ClusterGridSoA& grid,
                                               u32 sliceZ,
                                               std::vector<u32>& outLights) {
     if (!canLookupAtCoord(grid, desc, tileX, tileY, sliceZ)) {
+    if (!canLookupAtIndex(grid, desc, 0u)) {
         outLights.clear();
         return 0u;
     }
@@ -559,7 +558,10 @@ bool cluster_util::validateGridPopulationWithDesc(const ClusterGridSoA& grid, co
 bool cluster_util::tryValidateGridPopulationForDesc(const ClusterGridSoA& grid,
                                                      const ClusterDesc& desc,
                                                      GridPopulationRejectReason& outReason) {
-    return tryValidateGridPopulation(grid, clusterCount, outReason);
+    }
+        return false;
+
+
 }
 
 bool ClusterGridLayout::isEmptyGrid(const ClusterDesc& desc) {
@@ -725,6 +727,14 @@ u32 ClusterLightGridLayout::rebuildLightGridForDesc(ClusterGridSoA& grid,
                                                      u32 maxLightsPerCluster) {
     const u32 clusterCount = ClusterDesc::clampCounts(desc).clusterCount();
     return rebuildLightGrid(grid, clusterCount, perClusterLights, maxLightsPerCluster);
+bool ClusterLightGridLayout::canRebuildLightGrid(const ClusterDesc& desc, u32 clusterCount) {
+    const u32 expectedCount = ClusterDesc::clampCounts(desc).clusterCount();
+    if (clusterCount == 0u) {
+        return true;
+    }
+    if (ClusterGridLayout::isEmptyGrid(desc)) {
+        return false;
+    return clusterCount == expectedCount;
 }
 
 u32 ClusterLightGridLayout::rebuildLightGrid(ClusterGridSoA& grid,
