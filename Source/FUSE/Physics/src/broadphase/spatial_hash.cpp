@@ -979,3 +979,6 @@ CandidateRejectReason candidatePairRejectReasonImpl(
         if (rejectReason != CandidateRejectReason::None) {
             buffer.lastRejectReason = rejectReason;
 CandidateRejectReason candidatePairRejectReason(
+
+// --- deepen additive from deepen-b4-broadphase-guards-cd2f ---
+const char* candidate_pair_reject_reason_name(CandidatePairRejectReason reason) {

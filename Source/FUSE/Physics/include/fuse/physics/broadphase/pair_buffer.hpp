@@ -426,3 +426,6 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
 
 // --- deepen additive from deepen-b4-broadphase-guards-fcb2 ---
     CandidateRejectReason lastRejectReason = CandidateRejectReason::None;
+
+// --- deepen additive from deepen-b4-broadphase-guards-cd2f ---
+    bool wouldRejectPush(u32 idxA, u32 idxB, u32 bodyCount = 0u) const;

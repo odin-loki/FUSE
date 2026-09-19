@@ -2274,3 +2274,8 @@ void testPairBufferRejectReasonTracking() {
             fuse::physics::broadphase::CandidatePairRejectReason::None,
             fuse::physics::broadphase::CandidatePairRejectReason::OutOfRangeBody,
         fuse::physics::broadphase::candidatePairRejectReason(selfPair, 4u) ==
+
+// --- deepen additive from deepen-b4-broadphase-guards-cd2f ---
+    expectTrue(!buffer.wouldRejectPush(0u, 1u), "wouldRejectPush accepts valid pair under capacity");
+    expectTrue(buffer.wouldRejectPush(4u, 5u), "wouldRejectPush rejects when full");
+void testPairBufferWriteSlotBodyCountGuard() {

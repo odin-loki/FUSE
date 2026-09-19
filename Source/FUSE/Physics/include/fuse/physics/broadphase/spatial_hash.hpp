@@ -1117,3 +1117,7 @@ CandidateRejectReason candidatePairRejectReason(
 // --- deepen additive from deepen-b4-broadphase-guards-90dc ---
 FUSE_PHYSICS_INLINE CandidatePairRejectReason candidatePairRejectReason(u32 bodyA, u32 bodyB, u32 bodyCount = 0u) {
 FUSE_PHYSICS_INLINE CandidatePairRejectReason candidatePairRejectReason(const CandidatePair& pair, u32 bodyCount = 0u) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-cd2f ---
+const char* candidate_pair_reject_reason_name(CandidatePairRejectReason reason);
+           candidatePairRejectReason(bodyA, bodyB, bodyCount) == CandidatePairRejectReason::OutOfRangeBody;
