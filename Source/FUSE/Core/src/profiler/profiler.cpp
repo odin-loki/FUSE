@@ -1986,6 +1986,8 @@ bool isAsyncFlowPhase(EventPhase phase) {
 
 bool eventNameMatches(const ProfileEvent& event, const char* name) {
     return isValidEventName(name) && isValidEventName(event.name) && std::strcmp(event.name, name) == 0;
+}
+
 
 struct FlowPairCounts {
     u32 startCount = 0u;
@@ -1998,12 +2000,14 @@ void accumulateFlowPairCounts(std::unordered_map<u32, FlowPairCounts>& counts) {
         const ProfileEvent& event = eventAt(i);
         if (!isValidEventName(event.name) || !isAsyncFlowPhase(event.phase)) {
             continue;
+        }
 
         FlowPairCounts& pair = counts[event.scopeId];
         if (event.phase == EventPhase::FlowStart) {
             ++pair.startCount;
         } else {
             ++pair.finishCount;
+        }
 
 } // namespace
 
@@ -2530,6 +2534,17 @@ bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
 bool tryFirstFlowStartById(u32 flowId, ProfileEvent& outEvent) {
     if (flowId == 0u) {
 
+
+
+
+
+
+
+
+
+
+
+
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
         const ProfileEvent& event = eventAt(i);
@@ -2591,6 +2606,17 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+            return true;
+        }
+
+    outEvent = ProfileEvent{};
+    return false;
+
+    if (flowId == 0u) {
+
+    const u32 total = eventCount();
+            outEvent = event;
 
 
 u32 firstEventIndex() {
@@ -3041,6 +3067,22 @@ bool hasFlowFinishEvent(u32 flowId) {
 bool isFlowPairRecorded(u32 flowId) {
     return hasFlowStartEvent(flowId) && hasFlowFinishEvent(flowId);
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 u32 countDanglingFlowBegins() {
     std::unordered_map<u32, FlowPairCounts> counts;
     accumulateFlowPairCounts(counts);
@@ -3407,6 +3449,14 @@ bool isFlowPairedInBuffer(u32 flowId) {
         } else if (event.phase == EventPhase::FlowFinish) {
             ++finishCount;
     return startCount == 1u && finishCount == 1u;
+        }
+
+    std::unordered_map<u32, FlowPairCounts> counts;
+    accumulateFlowPairCounts(counts);
+
+    for (const auto& entry : counts) {
+
+
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -4044,6 +4094,24 @@ NestingConsistencyPreflight preflightNestingConsistency() {
 
 
     preflight.hasUnpairedFlowEvents = preflight.flowStartEventCount != preflight.flowFinishEventCount;
+    return preflight;
+}
+
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
+    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
+        && !preflight.wouldUnderflowOpenCount;
     return preflight;
 }
 
