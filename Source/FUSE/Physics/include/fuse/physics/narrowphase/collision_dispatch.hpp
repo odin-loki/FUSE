@@ -3,7 +3,9 @@
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
+#include <fuse/physics/narrowphase/contact_buffer.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
@@ -185,10 +187,67 @@ ContactManifold collideBoxBox(
     u32 idxA,
     u32 idxB);
 
-struct ContactBufferSoA;
+/// Why narrowphase-into-buffer would early-out (B4.6 deepen pass).
+enum class NarrowphaseIntoBufferRejectReason : u8 {
+    None = 0,
+    EmptyPairs,
+    NoDispatchablePairs,
+};
+
+/// Human-readable label for narrowphase-into-buffer reject reasons (B4.6 deepen pass).
+const char* narrowphaseIntoBufferRejectReasonName(NarrowphaseIntoBufferRejectReason reason);
+
+/// Diagnose why narrowphase-into-buffer would skip; vacuously succeeds when dispatch may proceed (B4.6 deepen pass).
+NarrowphaseIntoBufferRejectReason narrowphaseIntoBufferRejectReason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `narrowphaseIntoBufferRejectReason` matches `expected` (B4.6 deepen pass).
+bool narrowphaseIntoBufferRejectsForReason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    NarrowphaseIntoBufferRejectReason expected);
+
+/// Const preflight for narrowphase-into-buffer dispatch (B4.6 deepen pass).
+struct NarrowphaseIntoBufferPreflight {
+    NarrowphaseIntoBufferRejectReason reason = NarrowphaseIntoBufferRejectReason::None;
+    bool emptyPairs = false;
+    bool noDispatchablePairs = false;
+    u32 pairCount = 0u;
+    u32 dispatchableCount = 0u;
+
+    bool can_dispatch() const { return reason == NarrowphaseIntoBufferRejectReason::None; }
+};
+
+/// Populate narrowphase-into-buffer preflight without mutating the contact buffer (B4.6 deepen pass).
+NarrowphaseIntoBufferPreflight preflightNarrowphaseIntoBuffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating narrowphase-into-buffer skip predicate (B4.6 deepen pass).
+bool canSkipNarrowphaseIntoBuffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating narrowphase-into-buffer predicate — inverse of `canSkipNarrowphaseIntoBuffer` (B4.6 deepen pass).
+bool shouldRunNarrowphaseIntoBuffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.
 void runNarrowphaseIntoBuffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer);
+
+/// Run narrowphase into buffer only when preflight allows; returns false when skipped (B4.6 deepen pass).
+bool runNarrowphaseIntoBufferWithPreflight(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
@@ -199,5 +258,79 @@ std::vector<ContactManifold> runNarrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+
+FUSE_PHYSICS_INLINE const char* narrowphaseIntoBufferRejectReasonName(
+    NarrowphaseIntoBufferRejectReason reason) {
+    switch (reason) {
+    case NarrowphaseIntoBufferRejectReason::None:
+        return "None";
+    case NarrowphaseIntoBufferRejectReason::EmptyPairs:
+        return "EmptyPairs";
+    case NarrowphaseIntoBufferRejectReason::NoDispatchablePairs:
+        return "NoDispatchablePairs";
+    }
+    return "Unknown";
+}
+
+FUSE_PHYSICS_INLINE NarrowphaseIntoBufferRejectReason narrowphaseIntoBufferRejectReason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (pairs.empty()) {
+        return NarrowphaseIntoBufferRejectReason::EmptyPairs;
+    }
+    if (can_skip_narrowphase(pairs, bodies, shapes)) {
+        return NarrowphaseIntoBufferRejectReason::NoDispatchablePairs;
+    }
+    return NarrowphaseIntoBufferRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE bool narrowphaseIntoBufferRejectsForReason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    NarrowphaseIntoBufferRejectReason expected) {
+    return narrowphaseIntoBufferRejectReason(pairs, bodies, shapes) == expected;
+}
+
+FUSE_PHYSICS_INLINE NarrowphaseIntoBufferPreflight preflightNarrowphaseIntoBuffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphaseIntoBufferPreflight preflight{};
+    preflight.pairCount = static_cast<u32>(pairs.size());
+    preflight.dispatchableCount = count_dispatchable_contact_pairs(pairs, bodies, shapes);
+    preflight.reason = narrowphaseIntoBufferRejectReason(pairs, bodies, shapes);
+    preflight.emptyPairs = preflight.reason == NarrowphaseIntoBufferRejectReason::EmptyPairs;
+    preflight.noDispatchablePairs =
+        preflight.reason == NarrowphaseIntoBufferRejectReason::NoDispatchablePairs;
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE bool canSkipNarrowphaseIntoBuffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).can_dispatch();
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunNarrowphaseIntoBuffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).can_dispatch();
+}
+
+FUSE_PHYSICS_INLINE bool runNarrowphaseIntoBufferWithPreflight(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer) {
+    if (!shouldRunNarrowphaseIntoBuffer(pairs, bodies, shapes)) {
+        return false;
+    }
+    runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
+    return true;
+}
 
 } // namespace fuse::physics::narrowphase
