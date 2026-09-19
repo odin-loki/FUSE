@@ -1342,3 +1342,15 @@ HrtfBinauralRejectReason map_ir_reject(HrtfIrRejectReason reason) {
 HrtfBinauralRejectReason map_coupling_reject(HrtfAttenuationCouplingRejectReason reason) {
     preflight.panRejectReason = classify_hrtf_binaural_pan_reject(hrtf_enabled, rel_listener);
     reason = out.panRejectReason;
+
+// --- deepen additive from deepen-b72-hrtf-reject-preflights-e16c ---
+    return reason == HrtfIrRejectReason::None;
+    return reason == HrtfPanPathRejectReason::None;
+    return reason == HrtfAttenuationCouplingRejectReason::None;
+HrtfBinauralRejectReason map_coupling_reject_to_binaural(
+    if (preflight.spatialPanReject != HrtfBinauralRejectReason::None) {
+HrtfBinauralRejectReason classify_hrtf_binaural_spatial_pan_reject(
+bool try_preflight_hrtf_binaural_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir,
+    return reason == HrtfBinauralRejectReason::None;
+bool try_preflight_hrtf_binaural_convolution(bool hrtf_enabled, const HrtfIrStub& ir,
+bool try_preflight_hrtf_binaural_narrowing(bool hrtf_enabled, const HrtfIrStub& ir,

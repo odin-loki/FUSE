@@ -1901,3 +1901,17 @@ void testHrtfBinauralRejectReasonPreflights() {
     expectTrue(unity.convolutionRejectReason == fuse::audio::HrtfBinauralRejectReason::None,
     expectTrue(unity.couplingRejectReason
     expectTrue(out.panRejectReason == reason,
+
+// --- deepen additive from deepen-b72-hrtf-reject-preflights-e16c ---
+void testHrtfBinauralCompositeRejectReasonPreflight() {
+    expectTrue(stub_preflight.spatialPanReject == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(stub_preflight.convolutionReject == fuse::audio::HrtfBinauralRejectReason::EmptyIr,
+    expectTrue(stub_preflight.narrowingReject == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(conv_preflight.convolutionReject == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(conv_preflight.narrowingReject
+    expectTrue(bypass_preflight.spatialPanReject
+    expectTrue(bypass_preflight.narrowingReject
+    expectTrue(co_located_preflight.spatialPanReject
+    expectTrue(malformed_preflight.convolutionReject
+    expectTrue(reason == fuse::audio::HrtfBinauralRejectReason::UnityAttenuation,
+    testHrtfBinauralCompositeRejectReasonPreflight();

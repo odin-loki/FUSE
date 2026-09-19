@@ -896,3 +896,12 @@ bool hrtf_binaural_reject_reason_is_pan_blocking(HrtfBinauralRejectReason reason
 bool hrtf_binaural_reject_reason_is_convolution_blocking(HrtfBinauralRejectReason reason);
     HrtfBinauralRejectReason panRejectReason = HrtfBinauralRejectReason::None;
     HrtfBinauralRejectReason attenuationRejectReason = HrtfBinauralRejectReason::None;
+
+// --- deepen additive from deepen-b72-hrtf-reject-preflights-e16c ---
+    HrtfBinauralRejectReason spatialPanReject = HrtfBinauralRejectReason::None;
+    HrtfBinauralRejectReason convolutionReject = HrtfBinauralRejectReason::None;
+    HrtfBinauralRejectReason narrowingReject = HrtfBinauralRejectReason::None;
+HrtfBinauralRejectReason classify_hrtf_binaural_spatial_pan_reject(
+bool try_preflight_hrtf_binaural_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir,
+bool try_preflight_hrtf_binaural_convolution(bool hrtf_enabled, const HrtfIrStub& ir,
+bool try_preflight_hrtf_binaural_narrowing(bool hrtf_enabled, const HrtfIrStub& ir,
