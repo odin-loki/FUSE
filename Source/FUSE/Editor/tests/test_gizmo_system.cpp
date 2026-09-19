@@ -3170,3 +3170,31 @@ void testSnapPreflightNoChange() {
     expectTrue(!noSnapPreflight.snapWillApply, "end preflight clears snapWillApply when disabled");
     const fuse::editor::EndDragPreflight draggingPreflight = gizmo.preflightEndDrag();
     expectTrue(draggingPreflight.canEnd(), "gizmo end preflight accepts active drag");
+
+// --- deepen additive from deepen-gizmo-preflights-907f ---
+void testPickOutOfBoundsPreflight() {
+void testBeginDragSnapDegradedPreflight() {
+    const fuse::editor::BeginDragPreflight degradedPreflight =
+    expectTrue(degradedPreflight.canBegin, "begin preflight still allows drag when snap degraded");
+    expectTrue(degradedPreflight.snapDegraded, "begin preflight marks snap degraded");
+    const fuse::editor::BeginDragPreflight validPreflight =
+    expectTrue(validPreflight.canBegin, "begin preflight accepts valid snap settings");
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears snapDegraded on begin");
+    expectTrue(!gizmoPreflight.snapDegraded, "gizmo begin preflight clears snapDegraded");
+void testBeginDragOutOfBoundsPreflight() {
+    const fuse::editor::BeginDragPreflight preflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate);
+               "tryBeginDrag rejects out-of-bounds screen hit");
+    expectTrue(outOfBoundsPreflight.outOfBounds, "update preflight marks out-of-bounds screen hit");
+    expectTrue(!gizmo.tryUpdateDrag(hit, result), "tryUpdateDrag rejects out-of-bounds screen hit");
+void testEndDragUnchangedTransformPreflight() {
+    const fuse::editor::EndDragPreflight unchangedPreflight = fuse::editor::preflightEndDrag(
+    expectTrue(unchangedPreflight.canEnd(), "end preflight accepts active drag");
+    expectTrue(unchangedPreflight.unchangedTransform,
+    const fuse::editor::EndDragPreflight changedPreflight = fuse::editor::preflightEndDrag(
+    expectTrue(!changedPreflight.unchangedTransform, "moved transform clears unchangedTransform");
+    expectTrue(gizmo.preflightEndDrag().unchangedTransform,
+    testPickOutOfBoundsPreflight();
+    testBeginDragSnapDegradedPreflight();
+    testBeginDragOutOfBoundsPreflight();
+    testEndDragUnchangedTransformPreflight();
