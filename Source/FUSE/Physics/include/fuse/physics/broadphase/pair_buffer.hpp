@@ -338,4 +338,54 @@ bool canSkipPairBufferToVector(const PairBufferSoA& buffer);
 /// Non-mutating toVector predicate — mirrors `preflightPairBufferToVector` (B4.2 deepen follow-up pass).
 bool shouldRunPairBufferToVector(const PairBufferSoA& buffer);
 
+/// Why pair-buffer slot invalidate would early-out (B4.2 deepen follow-up pass).
+enum class PairBufferInvalidateSlotRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    OutOfRangeSlot,
+};
+
+/// Human-readable label for pair-buffer invalidate-slot reject reasons (logging / tests).
+const char* pairBufferInvalidateSlotRejectReasonName(PairBufferInvalidateSlotRejectReason reason);
+
+/// Diagnose why invalidateSlot would skip; vacuously succeeds when invalidate may proceed.
+PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const PairBufferSoA& buffer, u32 slot);
+
+/// Returns true when `pairBufferInvalidateSlotRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool pairBufferInvalidateSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    PairBufferInvalidateSlotRejectReason expected);
+
+/// Read-only invalidate-slot diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferInvalidateSlotPreflight {
+    PairBufferInvalidateSlotRejectReason reason = PairBufferInvalidateSlotRejectReason::None;
+    bool emptyBuffer = false;
+    bool outOfRangeSlot = false;
+
+    bool canInvalidate() const { return reason == PairBufferInvalidateSlotRejectReason::None; }
+};
+
+PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
+
+/// Non-mutating invalidate-slot skip predicate — inverse of `canInvalidate` (B4.2 deepen follow-up pass).
+bool canSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
+
+/// Non-mutating invalidate-slot predicate — mirrors `preflightPairBufferInvalidateSlot` (B4.2 deepen follow-up pass).
+bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
+
+/// Preflight invalidate-slot without mutating storage — optional `reason` out-param (B4.2 deepen follow-up pass).
+bool wouldSkipPairBufferInvalidateSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    PairBufferInvalidateSlotRejectReason* reason = nullptr);
+
+/// Preflight write-slot without mutating storage — optional `reason` out-param (B4.2 deepen follow-up pass).
+bool wouldSkipPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB,
+    PairBufferWriteSlotRejectReason* reason = nullptr);
+
 } // namespace fuse::physics::broadphase
