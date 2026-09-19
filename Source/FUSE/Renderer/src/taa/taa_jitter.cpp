@@ -189,6 +189,7 @@ fuse::math::Vec2 TaaJitterLayout::safeNdcOffsetForFrameIndex(u32 frameIndex, u32
     if (!validateViewportDimensions(width, height)) {
         return {};
     if (!canComputeNdcOffset(width, height)) {
+    }
     return ndcOffsetForFrameIndex(frameIndex, width, height, sequenceLength);
 }
 

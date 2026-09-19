@@ -173,6 +173,10 @@ public:
     bool canResolveFrame(const TaaResolveDesc& desc) const;
     /// Stamp generation and return whether resolve can proceed (B5.9 deepen).
     bool prepareAndCanResolve(TaaResolveDesc& desc) const;
+    /// True when history is warm and generation guard passes for this resolve request.
+    bool canReuseHistory(const TaaResolveDesc& desc) const;
+    /// Effective current-frame blend for the next resolve (1.0 while history is cold or non-reusable).
+    f32 effectiveBlendForNextResolve(const TaaResolveDesc& desc) const;
 
     bool resolveFrame(const TaaResolveDesc& desc, void* cudaStream = nullptr);
 

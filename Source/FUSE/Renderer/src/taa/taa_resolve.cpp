@@ -112,6 +112,13 @@ void stampObservedHistoryGeneration(TaaResolveDesc& desc, const TaaHistoryBuffer
     }
 }
 
+bool taaHistoryIsReusable(const TaaHistoryBuffer& history, const TaaResolveDesc& desc) {
+    if (!history.isReady() || !history.hasValidHistory()) {
+        return false;
+    }
+    return !taaResolveHistoryGenerationIsStale(desc, history);
+}
+
 void sanitizeTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     normalizeTaaParams(desc.params);
     stampObservedHistoryGeneration(desc, history);
@@ -378,7 +385,6 @@ f32 computeHistoryBlendWeight(bool firstFrame, const TAAParams& params) {
     return computeHistoryBlendWeight(computeEffectiveBlend(firstFrame, params));
 bool isTaaBlendFactorInRange(f32 blend_factor) {
     return blend_factor >= 0.f && blend_factor <= 1.f;
-}
 
 bool taaBlendWeightReusesHistory(f32 effective_blend) {
     return clampEffectiveBlend(effective_blend) < 1.f;
@@ -391,7 +397,6 @@ bool taaUsesWarmupBlend(bool first_frame) {
 void accumulateTaaResolveSkipReason(TaaResolveSkipCounts& counts, TaaResolveSkipReason reason) {
     if (!taaResolveSkipReasonIsBlocking(reason)) {
         return;
-    }
 
     ++counts.total;
     switch (reason) {
@@ -411,29 +416,23 @@ void accumulateTaaResolveSkipReason(TaaResolveSkipCounts& counts, TaaResolveSkip
     case TaaResolveSkipReason::StaleHistoryGeneration:
         ++counts.staleHistoryGeneration;
     default:
-        break;
-    }
 
 TaaResolveSkipCounts taaResolveSkipCountsFromReason(TaaResolveSkipReason reason) {
     TaaResolveSkipCounts counts{};
     accumulateTaaResolveSkipReason(counts, reason);
     return counts;
-bool isTaaBlendFactorInRange(f32 blend_factor) {
-    return blend_factor >= 0.f && blend_factor <= 1.f;
 
-bool taaBlendWeightReusesHistory(f32 effective_blend) {
     return effective_blend < 1.f;
 
 f32 computeHistoryContributionWeight(f32 effective_blend) {
     return 1.f - effective_blend;
 
-bool taaUsesWarmupBlend(bool first_frame) {
-    return first_frame;
 f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params) {
     return computeEffectiveBlend(firstFrame, !firstFrame, params);
 
 bool taaBlendUsesHistory(f32 effectiveBlend) {
     return effectiveBlend < 1.f;
+
 
 bool taaBlendSkipsHistoryReuse(f32 effectiveBlend) {
     return effectiveBlend >= 1.f;
