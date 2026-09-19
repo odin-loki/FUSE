@@ -52,6 +52,7 @@ struct ToiBufferSoA {
     /// True when compact, sort, and clamp are all no-ops.
     /// True when `slot` references prepared pair or push storage.
     bool slotInRange(u32 slot) const;
+    /// True when compact, sort, and clamp pipeline is a no-op.
     bool slotIsValid(u32 slot) const;
 
     void reserve(u32 capacity);
