@@ -1568,3 +1568,18 @@ void testHrtfBinauralCompositePreflight() {
     const fuse::audio::HrtfBinauralPreflight for_path_preflight =
     const fuse::audio::HrtfBinauralPreflight bypass_for_path =
     testHrtfBinauralCompositePreflight();
+
+// --- deepen additive from deepen-b72-hrtf-preflights-9877 ---
+               "should_skip_hrtf_ir_convolution mirrors preflight");
+    expectTrue(fuse::audio::should_skip_hrtf_ir_convolution(valid_preflight)
+void testPanPathPreflightApplyHelper() {
+void testHrtfBinauralPreflightCompositeAliases() {
+               "composite should_skip_convolution on empty IR");
+               "should_skip_hrtf_binaural_convolution on empty IR");
+    expectTrue(!fuse::audio::should_skip_hrtf_attenuation_coupling(stub_preflight),
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling(conv_preflight),
+void testCoupledForPathUsesCompositePreflight() {
+    const fuse::audio::HrtfBinauralPreflight preflight =
+    testPanPathPreflightApplyHelper();
+    testHrtfBinauralPreflightCompositeAliases();
+    testCoupledForPathUsesCompositePreflight();

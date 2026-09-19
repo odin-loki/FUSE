@@ -1038,3 +1038,10 @@ HrtfBinauralPreflight preflight_hrtf_binaural_for_path(HrtfPanPath path, float d
 bool can_apply_binaural_hrtf_pan(const HrtfBinauralPreflight& preflight) {
 bool can_convolve_binaural_hrtf(const HrtfBinauralPreflight& preflight) {
 bool can_narrow_binaural_hrtf_spatial_image(const HrtfBinauralPreflight& preflight) {
+
+// --- deepen additive from deepen-b72-hrtf-preflights-9877 ---
+    const HrtfPanPathPreflight& preflight, const Vec3& rel_listener,
+bool is_consistent_hrtf_binaural_preflight(const HrtfBinauralPreflight& preflight) {
+bool has_empty_hrtf_ir(const HrtfBinauralPreflight& preflight) {
+bool should_apply_hrtf_attenuation_coupling(const HrtfBinauralPreflight& preflight) {
+bool should_skip_hrtf_attenuation_coupling(const HrtfBinauralPreflight& preflight) {
