@@ -2929,3 +2929,18 @@ void testContactBufferCompactionClampPreflightGuards() {
     expectTrue(!withinPreflight.needs_clamp(), "clamp preflight skips when within capacity");
     expectTrue(withinPreflight.withinCapacity, "clamp preflight marks within-capacity buffer");
     testContactBufferCompactionClampPreflightGuards();
+
+// --- deepen additive from b4-narrowphase-buffer-preflights-025e ---
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ContactBufferWriteRejectReason::OutOfRangeSlot),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ContactBufferWriteRejectReason::InvalidManifold),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ContactBufferWriteRejectReason::SelfPair),
+    const fuse::physics::narrowphase::ContactBufferWritePreflight preflight =
+        "should_skip false for valid manifold");
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ContactBufferCompactionRejectReason::EmptyBuffer),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ContactBufferCompactionRejectReason::AllValid),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ContactBufferCompactionRejectReason::None),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ContactBufferClampRejectReason::EmptyBuffer),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ContactBufferClampRejectReason::WithinCapacity),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ContactBufferClampRejectReason::None),
+            buffer, fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::NoWork),
+            fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::None),
