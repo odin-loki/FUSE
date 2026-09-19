@@ -320,5 +320,7 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
                                                                        const CookManifest& manifest);
 /// Validates source hash plus combined fold cacheability — additive guard beyond `preflight_cook_cache_key` (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_cacheable_cook_key(u64 source_hash, u64 upstream_hash);
+/// Read-only cache-key fold preflight — mirrors `combine_cook_cache_key` zero guards (B7.9 deepen).
+/// Read-only FNV input preflight — mirrors `is_valid_fnv1a64_input` without hashing (B7.9 deepen).
 
 } // namespace fuse::project

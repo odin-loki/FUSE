@@ -1710,6 +1710,15 @@ bool CookCache::would_invalidate_output(const std::string& output_path) const {
     return count_by_output(output_path) > 0;
 
 
+        }
+
+CookCachePruneEstimate CookCache::estimate_prune_reconcile() const {
+    CookCachePruneEstimate estimate;
+    estimate.invalid_count = count_invalid_entries();
+    estimate.stale_count = count_stale_entries();
+    return estimate;
+
+
 
 bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
                                                           u64 current_content_hash) const {
@@ -2024,6 +2033,21 @@ CookCachePruneEstimate CookCache::estimate_prune_removals() const {
 
 
 
+}
+
+std::vector<std::string> CookCache::probe_unique_stale_upstream_sources(
+    const std::vector<std::string> stale_sources = probe_stale_upstream_sources(source_upstream_by_path);
+    if (stale_sources.empty()) {
+
+    std::vector<std::string> unique_sources;
+    for (const std::string& source_path : stale_sources) {
+        bool already_seen = false;
+        for (const std::string& seen : unique_sources) {
+            if (seen == source_path) {
+                already_seen = true;
+        if (!already_seen) {
+            unique_sources.push_back(source_path);
+    return unique_sources;
 }
 
 bool CookCache::contains(u64 content_hash) const {

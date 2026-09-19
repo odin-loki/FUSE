@@ -712,6 +712,17 @@ CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 /*upstream_hash*
 }
 
 CookHashPreflight preflight_fnv1a64_input(const u8* data, usize size) {
+CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    CookHashPreflight preflight;
+    if (source_hash == 0) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+
+    if (combine_cook_cache_key(source_hash, upstream_hash) == 0) {
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+
     CookHashPreflight preflight;
     if (!is_valid_fnv1a64_input(data, size)) {
         preflight.reason = CookHashRejectReason::NullData;
@@ -773,6 +784,7 @@ CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
         preflight.reason = CookHashRejectReason::EmptyInputPath;
     if (!is_valid_cook_cache_path(entry.output_path)) {
         preflight.reason = CookHashRejectReason::EmptyOutputPath;
+
 
 
 u64 hash_manifest_entry(const CookManifestEntry& entry) {

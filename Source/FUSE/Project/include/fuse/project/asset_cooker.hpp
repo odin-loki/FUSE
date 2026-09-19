@@ -171,6 +171,26 @@ public:
     /// Read-only prune reconcile probe — entries `prune_all` would remove (B7.9 deepen).
     [[nodiscard]] u32 count_prunable_cache_entries() const;
 
+    /// Read-only upstream invalidation breakdown — mirrors `count_upstream_invalidation` (B7.9 deepen).
+    struct CookUpstreamInvalidationEstimate {
+        u32 source_direct = 0;
+        u32 downstream_cascade = 0;
+
+        [[nodiscard]] u32 total() const { return source_direct + downstream_cascade; }
+    };
+    [[nodiscard]] CookUpstreamInvalidationEstimate estimate_upstream_invalidation(
+        const CookManifest& manifest, const std::string& changed_source) const;
+
+    /// Read-only stale dependency reconcile breakdown — mirrors `count_stale_dependency_invalidation` (B7.9 deepen).
+    struct CookStaleDependencyEstimate {
+        u32 direct_upstream_stale = 0;
+        u32 downstream_cascade = 0;
+
+        [[nodiscard]] u32 total() const { return direct_upstream_stale + downstream_cascade; }
+    };
+    [[nodiscard]] CookStaleDependencyEstimate estimate_stale_dependency_reconcile(
+        const CookManifest& manifest) const;
+
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
 

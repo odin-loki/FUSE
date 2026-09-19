@@ -40,6 +40,7 @@ struct CookCachePruneEstimate {
     /// True when no prune removals are estimated — mirrors `total() == 0` (B7.9 deepen).
     [[nodiscard]] bool should_skip() const { return total() == 0; }
 /// Non-mutating prune estimate — mirrors `prune_*` without touching stats (B7.9 deepen).
+/// Read-only prune reconcile breakdown — mirrors `prune_invalid_entries` + `prune_stale_entries` (B7.9 deepen).
     u32 invalid_count = 0;
     u32 stale_count = 0;
 
@@ -512,6 +513,14 @@ public:
     /// Source paths with stale content keys — one entry per matching cache record (B7.9 deepen).
     /// Read-only prune estimator — mirrors `prune_all` guards without mutating stats (B7.9 deepen).
     /// Entries `prune_all` would remove — invalid plus stale (B7.9 deepen).
+    /// Structurally valid entries whose recomputed key differs — subset of prunable (B7.9 deepen).
+    /// Read-only prune reconcile estimator — mirrors `prune_all` without mutating stats (B7.9 deepen).
+    [[nodiscard]] CookCachePruneEstimate estimate_prune_reconcile() const;
+
+    /// Read-only invalidation probes — bool shortcuts mirroring `count_by_*` guards (B7.9 deepen).
+
+    /// Deduplicated stale upstream sources — one entry per distinct source path (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_unique_stale_upstream_sources(
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

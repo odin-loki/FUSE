@@ -1839,6 +1839,13 @@ void testCookStaleDependencyHashReconcileEstimate() {
     expectTrue(upstream_estimate.direct >= 1u, "upstream estimate reports direct removals");
     expectTrue(upstream_estimate.downstream >= 1u, "upstream estimate reports downstream cascade");
 
+    const fuse::project::AssetCooker::CookUpstreamInvalidationEstimate upstream_estimate =
+        cooker.estimate_upstream_invalidation(manifest, sourceA);
+    expectTrue(upstream_estimate.total() == upstream_count,
+               "upstream estimate total matches count probe");
+    expectTrue(upstream_estimate.source_direct >= 1u, "upstream estimate includes direct source entry");
+    expectTrue(upstream_estimate.downstream_cascade >= 1u, "upstream estimate includes downstream cascade");
+
     const fuse::u32 empty_upstream_count = cooker.count_upstream_invalidation(manifest, "");
     expectTrue(empty_upstream_count == 0u, "empty changed source upstream count is zero");
     expectTrue(cooker.estimate_upstream_invalidation(manifest, "").total() == 0u,
@@ -1857,6 +1864,15 @@ void testCookStaleDependencyHashReconcileEstimate() {
     expectTrue(!cooker.would_upstream_invalidation(manifest, ""),
                "would_upstream_invalidation rejects empty changed source");
     expectTrue(cooker.count_prunable_cache_entries() == 0u, "fresh cache prunable count is zero");
+
+    const fuse::project::AssetCooker::CookStaleDependencyEstimate stale_estimate =
+        cooker.estimate_stale_dependency_reconcile(manifest);
+    expectTrue(stale_estimate.total() == stale_count_before,
+               "stale dependency estimate matches count probe on fresh cache");
+    expectTrue(stale_estimate.direct_upstream_stale == 0u,
+               "fresh cache has no direct upstream stale entries");
+    expectTrue(stale_estimate.downstream_cascade == 0u,
+               "fresh cache has no downstream cascade stale entries");
 
     const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
     expectTrue(removed >= upstream_count, "upstream invalidation removes at least probed count");
@@ -2171,11 +2187,11 @@ void testCookerReconcileEstimatorGuards() {
 
 void testCookerStaleDependencyReconcileProbes() {
 
-    fuse::project::CookManifest manifest;
-    fuse::project::CookManifestEntry entryA;
-    entryA.kind = fuse::project::CookAssetKind::Mesh;
-    entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_reconcile_a.fusemesh";
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_stale_a.obj", "# est stale a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_stale_b.obj", "# est stale b\n");
+
+
+    entryA.output_path = "/tmp/fuse_b79_est_stale_a.fusemesh";
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
@@ -2184,6 +2200,7 @@ void testCookerStaleDependencyReconcileProbes() {
     entryB.output_path = "/tmp/fuse_b79_est_up_b.fusemesh";
     entryB.output_path = "/tmp/fuse_b79_reconcile_b.fusemesh";
     entryB.output_path = "/tmp/fuse_b79_est_chain_b.fusemesh";
+    entryB.output_path = "/tmp/fuse_b79_est_stale_b.fusemesh";
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
@@ -2392,6 +2409,20 @@ void testCookerPruneReconcileEstimator() {
                "cache stale upstream probe detects downstream mismatch");
 
     expectTrue(removed >= stale_count, "stale invalidation removes at least probed count");
+    expectTrue(batch.ok, "stale reconcile estimate seeds cache");
+
+    writeTempFile(sourceA, "# est stale a revised\n");
+
+    const fuse::project::AssetCooker::CookStaleDependencyEstimate estimate =
+    expectTrue(estimate.direct_upstream_stale >= 1u,
+               "stale reconcile estimate reports direct upstream stale entries");
+    expectTrue(estimate.total() == cooker.count_stale_dependency_invalidation(manifest),
+               "stale reconcile estimate total matches count probe");
+    expectTrue(estimate.direct_upstream_stale + estimate.downstream_cascade == estimate.total(),
+               "stale reconcile estimate components sum to total");
+
+    expectTrue(removed >= estimate.total(),
+               "stale dependency invalidation removes at least estimated total");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
