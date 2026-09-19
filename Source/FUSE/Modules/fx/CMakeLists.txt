@@ -6,6 +6,7 @@ add_library(fuse_fx STATIC
     src/fx_composer.cpp
     src/particle_pool.cpp
     src/parameter_bind.cpp
+    src/missile_descriptor.cpp
     src/socket_constraint.cpp
     src/residual_effects.cpp
     src/spell_descriptor.cpp
@@ -18,6 +19,7 @@ add_library(fuse_fx STATIC
     include/fuse/fx/fx_socket.hpp
     include/fuse/fx/particle_pool.hpp
     include/fuse/fx/parameter_bind.hpp
+    include/fuse/fx/missile_descriptor.hpp
     include/fuse/fx/socket_constraint.hpp
     include/fuse/fx/residual_effects.hpp
     include/fuse/fx/spell_descriptor.hpp

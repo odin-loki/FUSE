@@ -24,6 +24,14 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+void expectNear(float value, float expected, float epsilon, const char* message) {
+    const float delta = value - expected;
+    if (delta < -epsilon || delta > epsilon) {
+        std::fprintf(stderr, "FAIL: %s (got %f expected %f)\n", message, value, expected);
+        ++g_failures;
+    }
+}
+
 void testPatrolTreeNearTarget() {
     fuse::ai::BehaviorTree tree = fuse::ai::BehaviorTree::makePatrolWhenNearTarget();
     fuse::ai::Blackboard board;
@@ -185,6 +193,35 @@ void testSucceedAlwaysDecorator() {
         tree.tick(0, far, fuse::ai::BlackboardView(board));
     expectTrue(result.status == fuse::ai::BehaviorStatus::Success,
                "succeed_always forces success on failing child");
+}
+
+void testMoveTowardRuntimeCommit() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"gb.action.move_toward", 0.5f, 0, 0, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, tree), "move toward tree loads for runtime");
+
+    fuse::ai::BehaviorRuntime runtime;
+    runtime.setTree(tree);
+
+    fuse::ai::AgentBinding agent{};
+    agent.x = 0.f;
+    agent.y = 0.f;
+    agent.targetX = 5.f;
+    agent.targetY = 0.f;
+    agent.moveSpeed = 1.f;
+    runtime.addAgent(agent);
+
+    fuse::frame::FrameCtx ctx{};
+    runtime.buildSnapshots();
+    runtime.evaluate(ctx);
+    runtime.commit();
+
+    expectTrue(runtime.bindings()[0].x > 0.f, "move toward commits position delta");
+    expectNear(runtime.bindings()[0].x, 1.f, 1e-4f, "move toward step equals moveSpeed");
+    expectNear(runtime.bindings()[0].y, 0.f, 1e-4f, "move toward y unchanged on axis-aligned path");
 }
 
 void testGuideBotMoveTowardLeaf() {
@@ -1746,6 +1783,7 @@ int main() {
     testInverterDecorator();
     testLoopDecorator();
     testSucceedAlwaysDecorator();
+    testMoveTowardRuntimeCommit();
     testGuideBotMoveTowardLeaf();
     testMonitorDecorator();
     testWaitLeaf();

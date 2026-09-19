@@ -19,6 +19,7 @@ struct AgentBinding {
     float y = 0.f;
     float targetX = 0.f;
     float targetY = 0.f;
+    float moveSpeed = 1.f;
     u32 teamId = 0;
 };
 
@@ -49,6 +50,8 @@ public:
     const std::vector<BehaviorTickResult>& lastResults() const { return m_results; }
 
     u32 tickCount() const { return m_tickCount; }
+
+    const std::vector<AgentBinding>& bindings() const { return m_bindings; }
 
 private:
     void ensureWaitState();

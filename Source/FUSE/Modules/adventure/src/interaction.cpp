@@ -1,6 +1,7 @@
 #include <fuse/adventure/interaction.hpp>
 
 #include <fuse/adventure/examine_interactable.hpp>
+#include <fuse/adventure/hud_prompt_interactable.hpp>
 
 namespace fuse::adventure {
 
@@ -25,6 +26,13 @@ InteractResult InteractionSystem::examine(InteractContext& ctx, IInteractable& t
         return examinable->onExamine(ctx);
     }
     return target.onUse(ctx, ItemId(""));
+}
+
+std::string InteractionSystem::promptFor(const IInteractable& target) const {
+    if (const auto* hud = dynamic_cast<const HudPromptInteractable*>(&target)) {
+        return hud->prompt();
+    }
+    return {};
 }
 
 } // namespace fuse::adventure

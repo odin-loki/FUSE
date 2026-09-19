@@ -24,6 +24,10 @@ struct BehaviorTickResult {
     bool wroteScalar = false;
     u32 scalarIndex = 0;
     float scalarValue = 0.f;
+    /// GuideBot move_toward position delta — committed on game thread by BehaviorRuntime.
+    bool movedPosition = false;
+    float deltaX = 0.f;
+    float deltaY = 0.f;
 };
 
 enum class NodeKind {

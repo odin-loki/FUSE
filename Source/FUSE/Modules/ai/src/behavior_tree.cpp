@@ -2,6 +2,8 @@
 #include <fuse/ai/node_registry.hpp>
 #include <fuse/ai/spatial_query.hpp>
 
+#include <algorithm>
+
 namespace fuse::ai {
 
 namespace {
@@ -300,6 +302,12 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         float dirX = 0.f;
         float dirY = 0.f;
         if (agent.directionTowardTarget(dirX, dirY)) {
+            const float speed = agent.moveSpeed > 0.f ? agent.moveSpeed : 1.f;
+            const float step = std::min(speed, distance - stopDistance);
+            result.movedPosition = true;
+            result.deltaX = dirX * step;
+            result.deltaY = dirY * step;
+
             if (node.flagIndex != 0) {
                 result.wroteFlag = true;
                 result.flagIndex = node.flagIndex;

@@ -15,6 +15,9 @@ public:
     InteractResult pickup(InteractContext& ctx, ItemId item, u32 amount, IInteractable& target);
 
     InteractResult examine(InteractContext& ctx, IInteractable& target);
+
+    /// Return HUD prompt text when target is a HudPromptInteractable, else empty.
+    std::string promptFor(const IInteractable& target) const;
 };
 
 } // namespace fuse::adventure

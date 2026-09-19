@@ -88,6 +88,7 @@ void FxComposer::tick(const frame::FrameCtx& ctx) {
     m_effectGraph.tick(dt, m_effects);
     m_castPipeline.tick(dt);
     m_residuals.tick(dt);
+    m_missiles.tick(dt);
     ++m_tickCount;
 }
 

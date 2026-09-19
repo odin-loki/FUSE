@@ -42,6 +42,7 @@ void BehaviorRuntime::buildSnapshots() {
         snap.y = binding.y;
         snap.targetX = binding.targetX;
         snap.targetY = binding.targetY;
+        snap.moveSpeed = binding.moveSpeed;
         snap.teamId = binding.teamId;
         m_snapshots.push_back(snap);
     }
@@ -96,6 +97,10 @@ void BehaviorRuntime::commit() {
         }
         if (result.wroteScalar) {
             m_blackboard.setScalar(agentIndex, result.scalarIndex, result.scalarValue);
+        }
+        if (result.movedPosition && agentIndex < m_bindings.size()) {
+            m_bindings[agentIndex].x += result.deltaX;
+            m_bindings[agentIndex].y += result.deltaY;
         }
     }
     ++m_tickCount;

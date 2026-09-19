@@ -4,6 +4,7 @@
 #include <fuse/fx/effect_descriptor.hpp>
 #include <fuse/fx/effect_graph.hpp>
 #include <fuse/fx/effect_timeline.hpp>
+#include <fuse/fx/missile_descriptor.hpp>
 #include <fuse/fx/fx_defs.hpp>
 #include <fuse/fx/fx_socket.hpp>
 #include <fuse/fx/parameter_bind.hpp>
@@ -53,7 +54,10 @@ public:
     ResidualEffectQueue& residuals() { return m_residuals; }
     const ResidualEffectQueue& residuals() const { return m_residuals; }
 
-    /// Queue effect playback, advance casts, and cull residuals (no GPU work yet).
+    MissilePipeline& missiles() { return m_missiles; }
+    const MissilePipeline& missiles() const { return m_missiles; }
+
+    /// Queue effect playback, advance casts, cull residuals, and tick missiles (no GPU work yet).
     void tick(const frame::FrameCtx& ctx = {});
 
     u32 tickCount() const { return m_tickCount; }
@@ -66,6 +70,7 @@ private:
     EffectGraph m_effectGraph;
     CastPipeline m_castPipeline;
     ResidualEffectQueue m_residuals;
+    MissilePipeline m_missiles;
     bind::ParameterBinder m_parameters;
     u32 m_attachments = 0;
     u32 m_tickCount = 0;

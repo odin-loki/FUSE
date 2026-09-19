@@ -36,6 +36,16 @@ EventTrack& TrackGroup::add_event_track(const std::string& label) {
     return static_cast<EventTrack&>(*tracks_.back());
 }
 
+MotionTrack& TrackGroup::add_motion_track(const std::string& label) {
+    tracks_.push_back(std::make_unique<MotionTrack>(label));
+    return static_cast<MotionTrack&>(*tracks_.back());
+}
+
+ActorTrack& TrackGroup::add_actor_track(const std::string& label) {
+    tracks_.push_back(std::make_unique<ActorTrack>(label));
+    return static_cast<ActorTrack&>(*tracks_.back());
+}
+
 TrackSpan TrackGroup::span() const {
     TrackSpan span;
     bool found = false;

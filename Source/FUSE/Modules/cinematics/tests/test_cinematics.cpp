@@ -1248,6 +1248,31 @@ void testCuePayloadStubs() {
     expectTrue(!pending[0].cue_key.empty(), "cue key assigned for consume-once ledger");
 }
 
+void testActorTrackMountUnmount() {
+    fuse::cinematics::ActorTrack track("HeroMount");
+    track.set_actor_id("hero");
+
+    fuse::cinematics::ActorEvent mount;
+    mount.time_ms = 500;
+    mount.kind = fuse::cinematics::ActorEventKind::Mount;
+    mount.actor_id = "hero";
+    mount.mount_point = "vehicle_seat";
+
+    fuse::cinematics::ActorEvent unmount;
+    unmount.time_ms = 2'000;
+    unmount.kind = fuse::cinematics::ActorEventKind::Unmount;
+    unmount.actor_id = "hero";
+
+    track.add_actor_event(mount);
+    track.add_actor_event(unmount);
+    track.sort_actor_events();
+
+    expectTrue(track.mount_point_at(0).empty(), "actor unmounted before first event");
+    expectTrue(track.mount_point_at(600) == "vehicle_seat", "actor mounted after mount event");
+    expectTrue(track.mount_point_at(2'500).empty(), "actor unmounted after unmount event");
+    expectTrue(track.kind() == fuse::cinematics::TrackKind::Actor, "actor track kind");
+}
+
 void testMotionTrackPathSampling() {
     fuse::cinematics::MotionTrack track("ActorPath");
     track.set_target_object_id("hero");
@@ -1345,6 +1370,7 @@ int main() {
     testResolveLookAtWorldWithFallback();
     testSpriteTrackSampling();
     testPropertyTrackSampling();
+    testActorTrackMountUnmount();
     testMotionTrackPathSampling();
     testTimelineContentSpan();
     testPlayheadScrub();

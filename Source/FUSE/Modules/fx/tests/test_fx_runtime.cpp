@@ -2,6 +2,7 @@
 #include <fuse/fx/effect_descriptor.hpp>
 #include <fuse/fx/effect_graph.hpp>
 #include <fuse/fx/fx_composer.hpp>
+#include <fuse/fx/missile_descriptor.hpp>
 #include <fuse/fx/particle_pool.hpp>
 #include <fuse/fx/socket_constraint.hpp>
 #include <fuse/fx/fx_defs.hpp>
@@ -270,6 +271,20 @@ void testSocketConstraintRemap() {
                "impact pose position");
 }
 
+void testMissilePipeline() {
+    const fuse::fx::MissileDescriptor missile = fuse::fx::MissileDescriptor::makeFireballMissile();
+    fuse::fx::MissilePipeline pipeline;
+    pipeline.fire(missile, {0.f, 0.f, 0.f}, {0.f, 0.f, 1.f});
+    expectTrue(pipeline.activeCount() == 1u, "missile fires one instance");
+
+    pipeline.tick(0.1f);
+    expectTrue(pipeline.instances()[0].position.z > 0.f, "missile advances along direction");
+
+    pipeline.tick(missile.lifetime);
+    expectTrue(pipeline.activeCount() == 0u, "missile expires after lifetime");
+    expectTrue(pipeline.completedCount() == 1u, "missile completion counted");
+}
+
 void testParticlePoolTick() {
     fuse::fx::ParticlePool pool(4);
     expectTrue(pool.spawn({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.5f), "particle spawns");
@@ -294,6 +309,7 @@ int main() {
     testCastPipelineAndResiduals();
     testFireballPhaseProgression();
     testSocketConstraintRemap();
+    testMissilePipeline();
     testParticlePoolTick();
     fuse::core::shutdown();
 

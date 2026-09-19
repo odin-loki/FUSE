@@ -49,7 +49,8 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - Demo tree `makePatrolWhenNearTarget()` + registry/text load equivalents
 - UAISK script-only template hooks (`uaisk_template_hooks.hpp`, `Samples/Modules/ai/uaisk-templates/`)
 - Blackboard spatial query stubs: `spatial_query.hpp` — ally radius count/filter, nearest-ally lookup (max-radius, tie-break); `teamId` on `AgentSnapshot` / `AgentBinding`; optional ally-index scalar write on `bb.action.nearest_ally`
-- Unit tests: `fuse_ai_tests` — registry parity, composite child-status aggregation (sequence/selector/parallel with success/fail thresholds + abort-on-fail + parallel/spatial), empty blackboard/ally context, blackboard try-get/set + typed scalars, leaf nodes (wait, blackboard set/get, distance, allies_in_radius, nearest_ally), spatial query radius filter, text loader, UAISK hooks, multi-agent parallel runtime
+- `BehaviorRuntime::commit()` applies `gb.action.move_toward` position deltas via `AgentBinding::moveSpeed`
+- Unit tests: `fuse_ai_tests` — registry parity, composite child-status aggregation (sequence/selector/parallel with success/fail thresholds + abort-on-fail + parallel/spatial), empty blackboard/ally context, blackboard try-get/set + typed scalars, leaf nodes (wait, blackboard set/get, distance, allies_in_radius, nearest_ally), spatial query radius filter, text loader, UAISK hooks, multi-agent parallel runtime, move-toward runtime commit
 - Hybrid demo: `demo_hybrid_hud` ticks `BehaviorRuntime` each frame after `HybridComposer::tick`
 
 ### Ore extraction (BadBehaviour / GuideBot / UAISK)
@@ -61,7 +62,7 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 | ✅ P1 | `.../BadBehavior/decorator/` | `bb.inverter`, `bb.loop`, `bb.succeed_always`, `bb.root` |
 | ✅ P1 | `.../BadBehavior/leaf/` | Scripted/compiled leaves — `bb.action.set_flag`, `bb.action.wait`, `bb.action.blackboard_set`, `bb.condition.blackboard_get`, `bb.action.distance` |
 | ✅ P1 | `.../BadBehavior/decorator/Monitor.h` | `bb.monitor` decorator (guarded + observer children) |
-| 🚧 P2 | `third_party/addons/GuideBot/.../guideBot/actionMove.h` | `gb.action.move_toward` — Running/Success arrival + direction scalar (custom license) |
+| ✅ P2 | `third_party/addons/GuideBot/.../guideBot/actionMove.h` | `gb.action.move_toward` — Running/Success arrival, direction scalar, runtime position commit (custom license) |
 | ✅ P3 | `third_party/addons/UAISK/.../UAISK/*.cs` | Template hooks + `Samples/Modules/ai/uaisk-templates/` |
 
 **Do not compile** from `third_party/addons/*/Engine/` — extract kernels into `Source/FUSE/Modules/ai/`. See [Modules/ai/README.md](../../Source/FUSE/Modules/ai/README.md).
@@ -78,8 +79,9 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - `CueQueue` — pending cue buffer with `drain()` for game-thread commit
 - Tests: `fuse_cinematics_tests` (30s advance, track span, interpolation, scrub, cue queue)
 - **MotionTrack** / **MotionPath** — `VMotionTrack` + `VPath` linear waypoint sampling (no Torque `PathObject` bridge)
-- Tests: `fuse_cinematics_tests` includes motion path length + midpoint sampling
-- TODO: hybrid demo camera/sprite drive; Torque bridge tracks (`VActor` attach)
+- **ActorTrack** — VActor mount/unmount event lane (`mount_point_at` sampling)
+- Tests: `fuse_cinematics_tests` includes motion path length + midpoint sampling, actor mount/unmount
+- TODO: hybrid demo camera/sprite drive; Torque bridge (`VActor` ShapeBase attach)
 
 ### `fuse_fx`
 
@@ -92,7 +94,8 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
   - `EffectGraph` — parent/child group tick stub (`afxEffectGroup` ore)
   - `bind::ParameterBinder` — runtime `caster` / `target` cast slot resolution
   - `FxComposer::tick()` advances effect timeline, effect graph, casts, and residuals
-  - Tests: `fuse_fx_tests` — registry, socket reject, timeline completion, graph tick, parameter bind, phase progression, cast→residual
+  - `MissileDescriptor` / `MissilePipeline` — `afxMagicMissileData` velocity/ballistic/lifetime stub wired into `FxComposer::tick`
+  - Tests: `fuse_fx_tests` — registry, socket reject, timeline completion, graph tick, parameter bind, phase progression, cast→residual, missile pipeline
   - Demo: `demo_fx` registers descriptors, attaches 2D/3D sockets, begins fireball cast
 - TODO: refactor remaining `Engine/source/afx/` (218 files) into module; GPU particle pools; sample content from `third_party/addons/AFX-Template/game/`
 
@@ -108,6 +111,7 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 | ✅ P2 | `Engine/source/afx/afxEffectGroup.h` | `EffectGraph` group tick stub |
 | ✅ P2 | `Engine/source/afx/afxConstraint.h` | `SocketConstraintManager`, `parse_constraint_spec`, socket remap |
 | ✅ P2 | `Engine/source/afx/util/afxParticlePool.h` | `ParticlePool` CPU stub (spawn/tick/cull) |
+| ✅ P2 | `Engine/source/afx/afxMagicMissile.h` | `MissileDescriptor`, `MissilePipeline` projectile sim stub |
 | 🚧 P3 | `third_party/addons/AFX-Template/game/` | Sample spell/FX content pack |
 
 **Do not compile** from `third_party/addons/*/Engine/` — extract kernels into `Source/FUSE/Modules/fx/`. See [Modules/fx/README.md](../../Source/FUSE/Modules/fx/README.md).
@@ -120,7 +124,8 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - **Inventory provider** (`IInventoryProvider`, `InventoryProviderInterface`) — string-keyed instigator bag for adventure bridge
 - **Registry** (`MechanicsRegistry`) — explicit registration + component-tree `resolveInteractable`
 - **HealthComponent** (`IHealthProvider`, `HealthProviderInterface`) — GMK damageable `SimpleComponent` leaf
-- Tests: `fuse_mechanics_tests`, `fuse_mechanics_inventory_provider`, `fuse_mechanics_action_stubs`, `fuse_mechanics_health`
+- **TriggerZoneComponent** — T3D `Trigger` enter/leave/tickPeriodMS AABB volume stub
+- Tests: `fuse_mechanics_tests`, `fuse_mechanics_inventory_provider`, `fuse_mechanics_action_stubs`, `fuse_mechanics_health`, `fuse_mechanics_trigger_zone`
 - TODO: extract remaining GMK `SimComponent` leaves from `third_party/addons/GMK/Engine/source/component/`
 
 ### `fuse_adventure`
@@ -131,7 +136,9 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - **Mechanics bridge** (`AdventureInteractableComponent`, `MechanicsBridge`) — dispatches mechanics `InteractionContext` through adventure use/pickup
 - Links `fuse_mechanics`; vertical slice: pickup key → use on puzzle gate (Outpost flow)
 - **ExamineInteractable** — 3DAAK examine / lore interaction (`InteractionSystem::examine`, `InteractResult::Examined`)
-- Tests: `fuse_adventure_inventory`, `fuse_adventure_interact`, `fuse_adventure_vertical_slice`, `fuse_adventure_interaction_queue`, `fuse_adventure_examine`
+- **DoorInteractable** — locked door opened by key consumption (Outpost door pattern)
+- **HudPromptInteractable** — 2D HUD prompt string (`InteractionSystem::promptFor`)
+- Tests: `fuse_adventure_inventory`, `fuse_adventure_interact`, `fuse_adventure_vertical_slice`, `fuse_adventure_interaction_queue`, `fuse_adventure_examine`, `fuse_adventure_door_hud`
 - Demo: `demo_adventure_stub` exercises inventory + door unlock
 - TODO: extract remaining 3DAAK interaction scripts (weapons, conversations) + `Samples/Modules/adventure/`
 
@@ -176,11 +183,11 @@ ctest --test-dir build-fuse --output-on-failure
 
 | Module | Gate | This PR |
 |--------|------|---------|
-| `fuse_ai` | BT drives 2D + 3D agents in hybrid demo | 🚧 `bb.monitor` + move_toward slice; hybrid 3D agent drive next |
-| `fuse_cinematics` | 30s timeline moves camera + sprite | 🚧 kernel + MotionPath ore + tests; hybrid drive next |
-| `fuse_fx` | AFX on 3D model + 2D sprite | 🚧 constraint remap + particle pool ore; hybrid drive next |
-| `fuse_mechanics` | One 3D interactable | 🚧 HealthComponent ore + interactable kernel; hybrid demo next |
-| `fuse_adventure` | Pick-up / use in 3D + 2D interface | 🚧 examine ore + vertical slice; 2D interface stub next |
+| `fuse_ai` | BT drives 2D + 3D agents in hybrid demo | 🚧 move_toward runtime commit landed; hybrid 3D agent drive next |
+| `fuse_cinematics` | 30s timeline moves camera + sprite | 🚧 ActorTrack ore + tests; hybrid drive next |
+| `fuse_fx` | AFX on 3D model + 2D sprite | 🚧 missile pipeline ore; hybrid drive next |
+| `fuse_mechanics` | One 3D interactable | 🚧 TriggerZone ore + interactable kernel; hybrid demo next |
+| `fuse_adventure` | Pick-up / use in 3D + 2D interface | 🚧 door + HUD prompt ore; hybrid 2D interface drive next |
 
 ---
 
