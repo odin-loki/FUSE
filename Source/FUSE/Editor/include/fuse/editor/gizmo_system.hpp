@@ -1096,3 +1096,33 @@ SnapDragPreflight preflightSnapDragDelta(GizmoMode mode, const GizmoSnapSettings
 // --- deepen additive from gizmo-preflight-reject-reasons-f595 ---
 enum class GizmoInteractionRejectReason {
     GizmoInteractionRejectReason rejectReason() const;
+
+// --- deepen additive from b6-gizmo-reject-reason-preflights-509d ---
+enum class GizmoPickGuardRejectReason : u8 {
+enum class GizmoSnapGuardRejectReason : u8 {
+enum class GizmoBeginDragGuardRejectReason : u8 {
+enum class GizmoUpdateDragGuardRejectReason : u8 {
+enum class GizmoEndDragGuardRejectReason : u8 {
+const char* gizmoPickGuardRejectReasonLabel(GizmoPickGuardRejectReason reason);
+const char* gizmoSnapGuardRejectReasonLabel(GizmoSnapGuardRejectReason reason);
+const char* gizmoBeginDragGuardRejectReasonLabel(GizmoBeginDragGuardRejectReason reason);
+const char* gizmoUpdateDragGuardRejectReasonLabel(GizmoUpdateDragGuardRejectReason reason);
+const char* gizmoEndDragGuardRejectReasonLabel(GizmoEndDragGuardRejectReason reason);
+GizmoPickGuardRejectReason classifyPickReject(const PickPreflight& preflight);
+GizmoSnapGuardRejectReason classifySnapReject(const SnapPreflight& preflight);
+                      GizmoPickGuardRejectReason& reason);
+bool tryPreflightPick(const GizmoHitTest& hit, GizmoMode mode, GizmoPickGuardRejectReason& reason);
+                      GizmoSnapGuardRejectReason& reason);
+                           GizmoBeginDragGuardRejectReason& reason, bool alreadyDragging = false);
+                           const GizmoSnapSettings& settings, GizmoBeginDragGuardRejectReason& reason,
+                            GizmoUpdateDragGuardRejectReason& reason);
+bool tryPreflightEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                         const GizmoSnapSettings& settings, GizmoEndDragGuardRejectReason& reason);
+GizmoBeginDragGuardRejectReason classifyBeginDragReject(const BeginDragPreflight& preflight);
+GizmoUpdateDragGuardRejectReason classifyUpdateDragReject(const UpdateDragPreflight& preflight);
+GizmoEndDragGuardRejectReason classifyEndDragReject(const EndDragPreflight& preflight);
+                                        GizmoPickGuardRejectReason& reason) const;
+    [[nodiscard]] bool tryPreflightSnap(GizmoSnapGuardRejectReason& reason) const;
+                                             GizmoBeginDragGuardRejectReason& reason) const;
+                                              GizmoUpdateDragGuardRejectReason& reason) const;
+    [[nodiscard]] bool tryPreflightEndDrag(GizmoEndDragGuardRejectReason& reason) const;
