@@ -559,7 +559,6 @@ inline bool is_valid_island_body_index(u32 bodyIndex, u32 bodyCount) {
 /// True when both body indices are in range for island union during graph build.
 inline bool are_island_body_refs_in_range(u32 bodyA, u32 bodyB, u32 bodyCount) {
     return is_valid_island_body_index(bodyA, bodyCount) && is_valid_island_body_index(bodyB, bodyCount);
-}
 
 /// True when a contact manifold references in-range bodies for island build.
 inline bool is_in_range_island_contact(const narrowphase::ContactManifold& contact, u32 bodyCount) {
@@ -572,13 +571,20 @@ bool shouldSkipIslandGraphBuild(u32 bodyCount,
 bool contact_bodies_in_range(const narrowphase::ContactManifold& contact, u32 bodyCount);
 
 bool distance_bodies_in_range(const DistanceConstraint& constraint, u32 bodyCount);
-}
 
-/// True when a distance constraint references in-range bodies for island build.
 
 /// True when `bodyA` and `bodyB` refer to the same body index (degenerate pair).
 inline bool constraint_pair_is_degenerate(u32 bodyA, u32 bodyB) {
     return bodyA == bodyB;
+
+/// Build-time counts for in-range-only partition (B4.4 deepen follow-up).
+    u32 processedValidContactCount = 0;
+    u32 skippedOutOfRangeContactCount = 0;
+    u32 processedDistanceCount = 0;
+    u32 skippedOutOfRangeDistanceCount = 0;
+
+    bool any_skipped() const {
+        return skippedOutOfRangeContactCount > 0u || skippedOutOfRangeDistanceCount > 0u;
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -615,6 +621,10 @@ struct ContactIslandGraph {
     /// Guarded build; clears graph and returns false when preflight rejects inputs.
     /// Guarded build; returns false and clears when inputs are unsafe or empty.
     /// Guarded build; returns false when preflight skips build or rejects unsafe refs.
+    /// Build partition using only in-range body refs; skips out-of-range constraints (B4.4 deepen).
+    void buildInRange(u32 bodyCount,
+                      const std::vector<DistanceConstraint>& distanceConstraints,
+                      ContactIslandGraphBuildStats* outStats = nullptr);
 
     void clear();
 
