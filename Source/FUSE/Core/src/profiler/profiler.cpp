@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace fuse::profiler {
@@ -220,6 +221,19 @@ const char* chromeCategory(EventPhase phase) {
 
 } // namespace
 
+bool isBlankEventName(const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        return true;
+    }
+
+    for (const char* cursor = name; *cursor != '\0'; ++cursor) {
+        if (*cursor != ' ' && *cursor != '\t' && *cursor != '\n' && *cursor != '\r') {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool isValidEventName(const char* name);
 
 ProfileScope::ProfileScope(const char* name)
@@ -315,6 +329,18 @@ bool isCrossThreadFlowHandoffPending() {
     return isFlowDepthDetached() && flowNestingDepth() > 0u;
 }
 
+bool hasActiveScopeNesting() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveFlowNesting() {
+    return flowNestingDepth() > 0u;
+}
+
+bool hasNestedAsyncFlowContext() {
+    return hasActiveScopeNesting() && hasActiveFlowNesting();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -332,7 +358,7 @@ bool isEventIndexValid(u32 index) {
 }
 
 bool isValidEventName(const char* name) {
-    return name != nullptr && name[0] != '\0';
+    return !isBlankEventName(name);
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
@@ -464,6 +490,152 @@ u32 countEventsByPhase(EventPhase phase) {
     return count;
 }
 
+bool namesMatch(const char* lhs, const char* rhs) {
+    if (lhs == rhs) {
+        return true;
+    }
+    if (lhs == nullptr || rhs == nullptr) {
+        return false;
+    }
+    return std::strcmp(lhs, rhs) == 0;
+}
+
+bool isAsyncFlowPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+}
+
+u32 findFirstEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isValidEventName(event.name) && namesMatch(event.name, name)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (isValidEventName(event.name) && namesMatch(event.name, name)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isValidEventName(event.name) && namesMatch(event.name, name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 findFirstEventIndexByFlowId(u32 flowId) {
+    if (flowId == 0u) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isAsyncFlowPhase(event.phase) && isValidEventName(event.name) && event.scopeId == flowId) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByFlowId(u32 flowId) {
+    if (flowId == 0u) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (isAsyncFlowPhase(event.phase) && isValidEventName(event.name) && event.scopeId == flowId) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByFlowId(u32 flowId) {
+    if (flowId == 0u) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isAsyncFlowPhase(event.phase) && isValidEventName(event.name) && event.scopeId == flowId) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 firstExportableEventIndex() {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (isEventExportable(i)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 lastExportableEventIndex() {
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        if (isEventExportable(i - 1u)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+bool tryFirstExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = firstExportableEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryLastExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = lastExportableEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -497,6 +669,12 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.ringBufferFull = isBufferFull();
     preflight.hasInvalidNameEvents = hasInvalidNameEvents();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+    preflight.ringCapacity = ringCapacity();
+    preflight.firstExportableEventIndex = firstExportableEventIndex();
+    preflight.lastExportableEventIndex = lastExportableEventIndex();
+    preflight.hasActiveScopeNesting = hasActiveScopeNesting();
+    preflight.hasActiveFlowNesting = hasActiveFlowNesting();
+    preflight.hasNestedAsyncFlowContext = hasNestedAsyncFlowContext();
     return preflight;
 }
 
