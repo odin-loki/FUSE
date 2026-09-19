@@ -3060,6 +3060,8 @@ void testCookerWouldReconcileInvalidate() {
     expectTrue(unique.size() == 1u, "unique stale upstream probe deduplicates source paths");
     expectTrue(unique[0] == source, "unique stale upstream probe returns changed source");
                "would_invalidate_stale_upstream true when hashes mismatch");
+
+
     expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would_reconcile ok");
     expectTrue(!cooker.would_reconcile_invalidate(manifest), "fresh cache would_reconcile is false");
     expectTrue(cooker.probe_reconcile_stale_sources(manifest).empty(),
@@ -3071,6 +3073,7 @@ void testCookerWouldReconcileInvalidate() {
     const std::vector<std::string> stale_sources = cooker.probe_reconcile_stale_sources(manifest);
     expectTrue(stale_sources.size() == 1u, "one stale source probed for reconcile");
     expectTrue(stale_sources[0] == source, "stale reconcile probe reports changed source");
+}
 
 void testCookerEstimateUpstreamInvalidation() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_est_up_a.obj", "# est up a\n");
@@ -3121,6 +3124,12 @@ void testCookCacheWouldInvalidateDownstreamProbe() {
     expectTrue(cooker.cook_manifest(manifest).ok, "chain manifest cook for upstream estimate ok");
 
     const fuse::project::CookCacheInvalidationEstimate estimate =
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::AssetCooker cooker;
+
+        cooker.estimate_upstream_invalidation(manifest, source_a);
     expectTrue(estimate.source_entries == 1u, "upstream estimate counts changed source entry");
     expectTrue(estimate.downstream_entries == 1u, "upstream estimate counts one downstream entry");
     expectTrue(estimate.total() == 2u, "upstream estimate total matches chain footprint");
@@ -3163,6 +3172,8 @@ void testCookCacheWouldInvalidateDownstreamProbe() {
     const fuse::project::CookCacheReconcileEstimate reconcile = cooker.estimate_reconcile_invalidation(manifest);
     expectTrue(reconcile.stale_dependency_entries >= 1u, "reconcile estimate includes stale dependency count");
     expectTrue(reconcile.total() >= 1u, "reconcile estimate total is non-zero after upstream change");
+        cooker.estimate_upstream_invalidation(manifest, "");
+    expectTrue(empty.total() == 0u, "empty changed source upstream estimate is zero");
 }
 
 void testCookCacheDownstreamSourceProbe() {

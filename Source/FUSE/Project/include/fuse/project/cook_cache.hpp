@@ -132,6 +132,20 @@ struct CookCacheInvalidationEstimate {
     }
 };
 
+/// Read-only invalidation breakdown — mirrors `invalidate_*` guards (B7.9 deepen).
+struct CookCacheInvalidationEstimate {
+    u32 source_entries = 0;
+    u32 output_entries = 0;
+    u32 stale_content_entries = 0;
+    u32 stale_upstream_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const {
+        return source_entries + output_entries + stale_content_entries + stale_upstream_entries +
+               downstream_entries;
+    }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;

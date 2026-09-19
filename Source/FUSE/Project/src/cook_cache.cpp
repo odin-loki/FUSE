@@ -1035,6 +1035,30 @@ bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
     return count_downstream_of(output_path, edges, jobs) != 0;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) != 0;
+}
+
+bool CookCache::would_invalidate_stale_upstream_hashes(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    return count_stale_upstream_hashes(source_upstream_by_path) != 0;
+}
+
+bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
+                                               const std::vector<CookJobDependencyEdge>& edges,
+                                               const std::vector<CookJob>& jobs) const {
+    return count_downstream_of(output_path, edges, jobs) != 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
 
@@ -2535,11 +2559,23 @@ CookCacheInvalidationEstimate CookCache::estimate_stale_content_invalidation(
 CookCacheInvalidationEstimate CookCache::estimate_stale_upstream_invalidation(
     const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
     estimate.stale_upstream_entries = count_stale_upstream_hashes(source_upstream_by_path);
+CookCacheInvalidationEstimate CookCache::estimate_invalidation_for_source(
+    const std::string& source_path) const {
+    CookCacheInvalidationEstimate estimate;
+    estimate.source_entries = count_by_source(source_path);
+    return estimate;
+}
+
+
+
 
 CookCacheInvalidationEstimate CookCache::estimate_downstream_invalidation(
     const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
     const std::vector<CookJob>& jobs) const {
     estimate.downstream_entries = count_downstream_of(output_path, edges, jobs);
+    CookCacheInvalidationEstimate estimate;
+    return estimate;
+}
 
 CookHashPreflight CookCache::preflight_store_entry(const CookCacheEntry& entry) const {
     CookHashPreflight preflight;
@@ -2553,6 +2589,9 @@ CookHashPreflight CookCache::preflight_store_entry(const CookCacheEntry& entry) 
 
     preflight.can_hash = true;
     preflight.reason = CookHashRejectReason::None;
+    }
+        return preflight;
+
 
 std::vector<std::string> CookCache::probe_stale_content_sources() const {
     if (m_entries.empty()) {

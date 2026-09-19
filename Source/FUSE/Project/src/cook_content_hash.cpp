@@ -664,6 +664,11 @@ CookHashPreflight preflight_file_mtime(const std::string& path) {
         preflight.reason = CookHashRejectReason::EmptyPath;
 
 
+
+
+
+
+
 CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 /*upstream_hash*/) {
     CookHashPreflight preflight;
     if (dependency_output_path.empty()) {
