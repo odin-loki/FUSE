@@ -1118,6 +1118,184 @@ void testDirtyFlagOnEndDrag() {
     expectTrue(commandStack.undoDepth() == 1u, "gizmo posts one transform command");
 }
 
+void testScreenHitBoundsGuards() {
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+
+    hit.screenX = -1.f;
+    hit.screenY = 50.f;
+    expectTrue(fuse::editor::isScreenHitOutOfBounds(hit),
+               "negative screen X is out of bounds");
+    expectTrue(!fuse::editor::isScreenHitInViewport(hit),
+               "negative screen X is not in viewport");
+
+    hit.screenX = 101.f;
+    hit.screenY = 50.f;
+    expectTrue(fuse::editor::isScreenHitOutOfBounds(hit),
+               "screen X beyond viewport width is out of bounds");
+
+    hit.screenX = 50.f;
+    hit.screenY = -1.f;
+    expectTrue(fuse::editor::isScreenHitOutOfBounds(hit),
+               "negative screen Y is out of bounds");
+
+    hit.screenX = 50.f;
+    hit.screenY = 101.f;
+    expectTrue(fuse::editor::isScreenHitOutOfBounds(hit),
+               "screen Y beyond viewport height is out of bounds");
+
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    expectTrue(!fuse::editor::isScreenHitOutOfBounds(hit),
+               "in-bounds screen hit clears outOfBounds");
+    expectTrue(fuse::editor::isScreenHitInViewport(hit),
+               "in-bounds screen hit is in viewport");
+
+    hit.viewportWidth = 0.f;
+    expectTrue(!fuse::editor::isScreenHitOutOfBounds(hit),
+               "empty viewport is not classified as out of bounds");
+}
+
+void testPickPreflightOutOfBounds() {
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 150.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::PickPreflight outOfBoundsPick =
+        fuse::editor::preflightPick(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(outOfBoundsPick.outOfBounds, "pick preflight marks out-of-bounds screen hit");
+    expectTrue(!outOfBoundsPick.canPick(), "pick preflight rejects out-of-bounds screen hit");
+
+    fuse::editor::GizmoAxis axis = fuse::editor::GizmoAxis::X;
+    expectTrue(!fuse::editor::tryPickAxis(hit, fuse::editor::GizmoMode::Translate, axis),
+               "tryPickAxis rejects out-of-bounds screen hit");
+    expectTrue(axis == fuse::editor::GizmoAxis::None,
+               "out-of-bounds screen hit leaves axis unset");
+
+    hit.screenX = 10.f;
+    const fuse::editor::PickPreflight validPick =
+        fuse::editor::preflightPick(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(validPick.canPick(), "pick preflight accepts in-bounds screen hit");
+    expectTrue(!validPick.outOfBounds, "valid screen pick clears outOfBounds");
+}
+
+void testBeginDragPreflightPickedAxis() {
+    fuse::editor::GizmoTransform transform{};
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::BeginDragPreflight validPreflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(validPreflight.canBegin, "begin preflight accepts valid screen hit");
+    expectTrue(validPreflight.pickedAxis == fuse::editor::GizmoAxis::X,
+               "begin preflight resolves picked axis from screen hit");
+
+    hit.screenX = 150.f;
+    const fuse::editor::BeginDragPreflight outOfBoundsPreflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(outOfBoundsPreflight.outOfBounds, "begin preflight marks out-of-bounds screen hit");
+    expectTrue(!outOfBoundsPreflight.canBegin,
+               "begin preflight rejects out-of-bounds screen hit");
+    expectTrue(outOfBoundsPreflight.pickedAxis == fuse::editor::GizmoAxis::None,
+               "out-of-bounds begin preflight leaves pickedAxis unset");
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    const fuse::editor::BeginDragPreflight rayPreflight = fuse::editor::preflightBeginDrag(
+        xRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(rayPreflight.canBegin, "begin preflight accepts valid ray pick");
+    expectTrue(rayPreflight.pickedAxis == fuse::editor::GizmoAxis::X,
+               "begin preflight resolves picked axis from ray pick");
+}
+
+void testUpdateDragOutOfBoundsPreflight() {
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 150.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::UpdateDragPreflight outOfBoundsPreflight = fuse::editor::preflightUpdateDrag(
+        hit, true, fuse::editor::GizmoAxis::X);
+    expectTrue(outOfBoundsPreflight.outOfBounds, "update preflight marks out-of-bounds screen hit");
+    expectTrue(!outOfBoundsPreflight.canUpdate(),
+               "update preflight rejects out-of-bounds screen hit");
+
+    hit.screenX = 10.f;
+    const fuse::editor::UpdateDragPreflight validPreflight = fuse::editor::preflightUpdateDrag(
+        hit, true, fuse::editor::GizmoAxis::X);
+    expectTrue(validPreflight.canUpdate(), "update preflight accepts in-bounds screen hit");
+    expectTrue(!validPreflight.outOfBounds, "valid update preflight clears outOfBounds");
+
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+
+    hit.screenX = 150.f;
+    fuse::editor::GizmoResult updateResult{};
+    expectTrue(!gizmo.tryUpdateDrag(hit, updateResult),
+               "tryUpdateDrag rejects out-of-bounds screen hit");
+    expectTrue(gizmo.isDragging(), "out-of-bounds update keeps drag active");
+    gizmo.endDrag();
+}
+
+void testGizmoSnapAwareUpdatePreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+
+    const fuse::editor::UpdateDragPreflight degradedPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(degradedPreflight.canUpdate(),
+               "gizmo update preflight still allows drag when snap step invalid");
+    expectTrue(degradedPreflight.snapDegraded,
+               "gizmo update preflight marks snap degraded via snap-aware overload");
+
+    snap.gridSize = 1.f;
+    gizmo.setSnapSettings(snap);
+    const fuse::editor::UpdateDragPreflight validPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(validPreflight.canUpdate(), "gizmo update preflight accepts valid snap settings");
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears snapDegraded on gizmo preflight");
+    gizmo.endDrag();
+}
+
+void testGizmoSnapDragDeltaWrappers() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.5f;
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+
+    expectTrue(gizmo.canSnapDragDelta(), "gizmo canSnapDragDelta accepts valid translate snap");
+    expectNear(gizmo.trySnapDragDelta(0.37f), 0.5f, 0.001f,
+               "gizmo trySnapDragDelta snaps translate delta");
+
+    snap.gridSize = 0.f;
+    gizmo.setSnapSettings(snap);
+    expectTrue(!gizmo.canSnapDragDelta(),
+               "gizmo canSnapDragDelta rejects invalid translate step");
+    expectNear(gizmo.trySnapDragDelta(0.37f), 0.37f, 0.001f,
+               "gizmo trySnapDragDelta passthrough when step invalid");
+}
+
 } // namespace
 
 int main() {
@@ -1160,6 +1338,12 @@ int main() {
     testCanEndDragGuards();
     testTryEndDragGuards();
     testDirtyFlagOnEndDrag();
+    testScreenHitBoundsGuards();
+    testPickPreflightOutOfBounds();
+    testBeginDragPreflightPickedAxis();
+    testUpdateDragOutOfBoundsPreflight();
+    testGizmoSnapAwareUpdatePreflight();
+    testGizmoSnapDragDeltaWrappers();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test failure(s)\n", g_failures);
