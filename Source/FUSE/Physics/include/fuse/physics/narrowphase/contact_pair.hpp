@@ -37,6 +37,7 @@ enum class ContactPairRejectReason : u8 {
     InvalidPlaneNormal,
     ShapeBodyMismatch,
     BothPlane,
+    BothPlanes,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -1269,6 +1270,8 @@ struct ContactPairDispatchPreflight {
 /// Populate per-pair dispatch preflight without running shape dispatch (B4.6 deepen pass).
 ContactPairDispatchPreflight preflight_contact_pair_dispatch(
 /// Run shape dispatch only when extended deepen preflight passes (B4.3 deepen follow-up pass).
+/// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_with_preflight(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1382,5 +1385,7 @@ u32 count_rejected_contact_pairs(
 
 /// Returns true when narrowphase batch should be skipped before dispatch (B4.6 deepen pass).
 bool should_skip_narrowphase_batch(
+/// Finalize only when `preflight_manifold_finalize` passes; no-op otherwise (B4.6 deepen pass).
+bool finalize_contact_manifold_if_needed(ContactManifold& manifold);
 
 } // namespace fuse::physics::narrowphase

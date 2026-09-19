@@ -2305,6 +2305,9 @@ ManifoldShallowPrunePreflight preflight_manifold_shallow_prune(
     preflight.hasShallow = manifold.hasShallowPenetrations(minDepth);
 
     if (!preflight_manifold_shallow_prune(manifold, minDepth).can_prune()) {
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (normalLength <= 1e-8f) {
+
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

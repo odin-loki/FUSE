@@ -1276,6 +1276,11 @@ bool generate_contact_manifold_with_preflight(ContactManifold& manifold);
 
 
 
+/// Normalize the contact normal when `needsNormalNormalization` is true (B4.6 deepen pass).
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Prune only when `preflight_manifold_prune` reports work; returns true when points remain (B4.6 deepen pass).
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

@@ -733,5 +733,6 @@ bool normalize_contact_normal_with_preflight(ContactManifold& manifold, f32 leng
 /// Normalize contact normal in-place when needed; returns false when normal is invalid (B4.6 deepen pass).
 bool normalize_contact_normal_before_friction_if_needed(
 
+/// Normalize the contact normal then rebuild friction tangents when preflight allows (B4.6 deepen pass).
 
 } // namespace fuse::physics::narrowphase

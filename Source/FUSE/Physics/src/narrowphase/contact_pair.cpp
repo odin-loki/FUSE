@@ -282,6 +282,8 @@ const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
         return "ShapeBodyMismatch";
     case ContactPairRejectReason::BothPlane:
         return "BothPlane";
+    case ContactPairRejectReason::BothPlanes:
+        return "BothPlanes";
     }
     return "Unknown";
 }
@@ -760,6 +762,7 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
         return ContactPairRejectReason::MissingShape;
     if (is_plane_plane_contact_pair(pair, shapes)) {
         return ContactPairRejectReason::BothPlane;
+        return ContactPairRejectReason::BothPlanes;
     }
 
     const ContactPairRejectReason baseReason = contact_pair_reject_reason(pair, bodies, shapes);
@@ -2387,6 +2390,20 @@ bool should_skip_narrowphase_batch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return narrowphase_batch_rejects_all(pairs, bodies, shapes);
+}
+
+ContactManifold detect_contacts_pair_with_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
+}
+
+bool finalize_contact_manifold_if_needed(ContactManifold& manifold) {
+    return finalize_contact_manifold_with_preflight(manifold);
 }
 
 } // namespace fuse::physics::narrowphase
