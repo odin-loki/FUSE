@@ -152,6 +152,11 @@ enum class ProbeSampleCoordsRejectReason : u8 {
 
 /// Human-readable label for sample-coord reject reasons (logging / tests).
 const char* probeSampleCoordsRejectReasonLabel(ProbeSampleCoordsRejectReason reason);
+/// Classify why sample-coord validation would reject — same ordering as `tryValidateProbeSampleCoords`.
+ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& desc,
+                                                              const ProbeSampleCoords& coords);
+/// Early-out when sample-coord validation would reject.
+bool shouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
 
 /// Why a cache-index lookup preflight rejected the request (B5.6 deepen).
 enum class CacheIndexRejectReason : u8 {
@@ -189,6 +194,10 @@ enum class ProbeUpdateLaunchRejectReason : u8 {
 
 /// Human-readable label for probe-update launch reject reasons (logging / tests).
 const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason);
+/// Classify why probe-update launch preflight would reject — same ordering as `tryCanLaunchDdgiProbeUpdate`.
+ProbeUpdateLaunchRejectReason classifyProbeUpdateLaunchReject(const DDGIDesc& desc,
+                                                              const u32* probe_indices,
+                                                              u32 probe_count);
 
 /// Why probe-update scheduling preflight rejected the request (B5.6 deepen).
 enum class ProbeScheduleRejectReason : u8 {
@@ -330,6 +339,16 @@ bool canSampleAtProbeCoords(const DDGIDesc& desc,
                             const ProbeSampleCoords& coords,
                             const IrradianceCacheEntry* cache,
                             u32 cache_count);
+/// Classify why coord-based probe trilinear sampling would reject.
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDesc& desc,
+                                                                    const ProbeSampleCoords& coords,
+                                                                    const IrradianceCacheEntry* cache,
+                                                                    u32 cache_count);
+/// Early-out when coord-based probe trilinear sampling would reject.
+bool shouldSkipTrilinearProbeSample(const DDGIDesc& desc,
+                                    const ProbeSampleCoords& coords,
+                                    const IrradianceCacheEntry* cache,
+                                    u32 cache_count);
 /// Diagnose why coord-based probe sample preflight would reject.
 bool tryCanSampleAtProbeCoords(const DDGIDesc& desc,
                                const ProbeSampleCoords& coords,
@@ -350,6 +369,13 @@ bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count);
 u32 cacheEntriesMissing(const DDGIDesc& desc, u32 cache_count);
 /// Combined probe-index + cache-length guard for cache lookups.
 bool isCacheIndexValid(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+/// Classify why cache-index preflight would reject — same ordering as `tryValidateCacheIndex`.
+CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+/// Classify cache-index preflight including null-cache rejection.
+CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
+                                               const IrradianceCacheEntry* cache,
+                                               u32 probe_index,
+                                               u32 cache_count);
 /// Diagnose why cache-index preflight would reject; vacuously succeeds on valid indices.
 bool tryValidateCacheIndex(const DDGIDesc& desc,
                            u32 probe_index,
@@ -385,6 +411,11 @@ void scheduleProbeUpdates(u32 frame_index,
                           u32* out_indices,
                           u32 max_indices,
                           u32* out_count);
+/// Classify why probe scheduling preflight would reject — same ordering as `tryCanScheduleProbeUpdates`.
+ProbeScheduleRejectReason classifyProbeScheduleReject(u32 probe_count,
+                                                      u32 max_indices,
+                                                      const u32* out_indices,
+                                                      u32* out_count);
 /// Preflight guard before probe-update scheduling; false on null outputs or zero capacity.
 bool canScheduleProbeUpdates(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
 /// Early-out when probe scheduling would be rejected — same ordering as `canScheduleProbeUpdates`.
