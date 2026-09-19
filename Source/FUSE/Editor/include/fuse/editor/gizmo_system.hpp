@@ -375,7 +375,6 @@ struct HitTestPreflight {
     bool outOfBounds = false;
 
     bool canUse() const { return !emptyHit && !invalidDimensions && !outOfBounds; }
-};
 
 HitTestPreflight preflightHitTest(const GizmoHitTest& hit);
 
@@ -384,16 +383,12 @@ bool canUseHitTest(const GizmoHitTest& hit);
 bool isHitTestRejected(const GizmoHitTest& hit);
 
 /// Read-only ray diagnostics — shared by pick/begin guards (B6.4 deepen pass).
-struct RayPreflight {
-    bool emptyRay = false;
     bool invalidPickConfig = false;
 
     bool canUse() const { return !emptyRay && !invalidPickConfig; }
-};
 
 RayPreflight preflightRay(const GizmoRay& ray, f32 axisLength, f32 pickRadius);
 
-/// Non-mutating ray predicate — same guards as `preflightRay` (B6.4 deepen pass).
 bool canUseRay(const GizmoRay& ray, f32 axisLength, f32 pickRadius);
 bool isRayRejected(const GizmoRay& ray, f32 axisLength, f32 pickRadius);
 
@@ -1786,10 +1781,28 @@ EndInteractionPreflight preflightEndInteraction(bool dragging, GizmoAxis activeA
             return update.snap.canApply();
     /// Snap is enabled but the mode step is unusable for the active lifecycle (B6.4 deepen pass).
         return begin.begin.snapDegraded || update.snapDegraded() || end.snapDegraded();
-    }
 };
 
 /// Non-mutating phase-routing predicate — same guards as `InteractionPreflight::canActOnPhase`.
+            return begin.begin.snapDegraded;
+            return update.snapDegraded();
+
+
+/// Read-only mode-change diagnostics — no mutation (B6.4 deepen pass — mode guard).
+struct ModeChangePreflight {
+    bool unchanged = false;
+    bool wouldCancelDrag = false;
+
+    bool canChange() const { return !unchanged; }
+
+ModeChangePreflight preflightModeChange(GizmoMode current, GizmoMode next, bool dragging);
+ModeChangePreflight preflightCycleMode(GizmoMode current, bool dragging);
+
+/// Non-mutating mode-change predicates — same guards as mode preflights (B6.4 deepen pass).
+bool canChangeMode(GizmoMode current, GizmoMode next, bool dragging);
+bool canCycleMode(GizmoMode current, bool dragging);
+
+/// Non-mutating phase-routing predicate — same guards as `InteractionPreflight::canActOnPhase` (B6.4 deepen pass).
 bool canActOnPhase(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
                    const GizmoSnapSettings& settings);
 bool canActOnPhase(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
@@ -2579,6 +2592,12 @@ public:
     [[nodiscard]] GizmoInteractionPhase interactionPhase() const;
     [[nodiscard]] bool canActOnPhase(const GizmoRay& ray,
     /// Phase-routing predicates — same guards as `preflightInteraction` (B6.4 deepen pass).
+    /// Phase-aware primary action predicate — same guards as `preflightInteraction` (B6.4 deepen pass).
+    /// Read-only mode-change diagnostics — same guards as `setMode` / `cycleMode` (B6.4 deepen pass).
+    [[nodiscard]] ModeChangePreflight preflightModeChange(GizmoMode mode) const;
+    [[nodiscard]] ModeChangePreflight preflightCycleMode() const;
+    [[nodiscard]] bool canChangeMode(GizmoMode mode) const;
+    [[nodiscard]] bool canCycleMode() const;
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
