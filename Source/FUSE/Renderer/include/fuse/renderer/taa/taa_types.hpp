@@ -161,6 +161,26 @@ bool shouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffe
 bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                       TaaBlendWeights& outWeights, TaaResolveBlendRejectReason& reason);
 
+/// Why combined temporal resolve preflight rejected the request (B5.9 deepen).
+enum class TaaTemporalGuardRejectReason : u8 {
+    None = 0,
+    HistoryReuseBlocked,
+    BlendWeightsRejected,
+};
+/// Human-readable label for temporal guard reject reasons (B5.9 deepen).
+const char* taaTemporalGuardRejectReasonLabel(TaaTemporalGuardRejectReason reason);
+/// Classify which temporal guard would block resolve (history reuse first, then blend) (B5.9 deepen).
+TaaTemporalGuardRejectReason classifyTaaTemporalGuardReject(const TaaResolveDesc& desc,
+                                                            const TaaHistoryBuffer& history);
+/// True when history reuse and blend-weight preflights both pass (B5.9 deepen).
+bool preflightTaaTemporalResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                 TaaTemporalGuardRejectReason* reason = nullptr);
+/// Temporal resolve preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaTemporalResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                    TaaTemporalGuardRejectReason& reason);
+/// Early-out when temporal resolve preflight would reject (B5.9 deepen).
+bool shouldSkipTaaTemporalResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
     bool resolved = false;

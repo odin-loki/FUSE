@@ -167,8 +167,37 @@ bool TaaPass::shouldSkipResolveBlend(const TaaResolveDesc& desc) const {
     return shouldSkipTaaResolveBlend(desc, m_history);
 }
 
+bool TaaPass::preflightTemporalResolve(const TaaResolveDesc& desc,
+                                       TaaTemporalGuardRejectReason* reason) const {
+    return preflightTaaTemporalResolve(desc, m_history, reason);
+}
+
+bool TaaPass::shouldSkipTemporalResolve(const TaaResolveDesc& desc) const {
+    return shouldSkipTaaTemporalResolve(desc, m_history);
+}
+
 bool TaaPass::preflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason* reason) const {
     return preflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), reason);
+}
+
+bool TaaPass::preflightJitterNdc(TaaJitterGuardRejectReason* reason) const {
+    return preflightTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength(), reason);
+}
+
+bool TaaPass::shouldSkipJitterSync(u32 frameIndex) const {
+    return m_jitter.shouldSkipSyncToFrameIndex(frameIndex);
+}
+
+bool TaaPass::shouldSkipJitterNdc() const {
+    return m_jitter.shouldSkipNdcOffset(m_desc.width, m_desc.height);
+}
+
+bool TaaPass::invalidateHistoryIfStale(u32 observedGeneration) {
+    const bool invalidated = m_history.invalidateHistoryIfStale(observedGeneration);
+    if (invalidated) {
+        m_resolve.resetBookkeeping();
+    }
+    return invalidated;
 }
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
