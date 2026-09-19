@@ -782,12 +782,14 @@ const char* pairBufferCompactionRejectReasonName(PairBufferCompactionRejectReaso
 }
 
     switch (reason) {
+
         return "None";
     case PairBufferCompactionRejectReason::EmptyBuffer:
         return "EmptyBuffer";
     case PairBufferCompactionRejectReason::AllValid:
         return "AllValid";
     return "Unknown";
+    }
 
 PairBufferCompactionRejectReason pairBufferCompactionRejectReason(const PairBufferSoA& buffer) {
     if (buffer.canSkipSoAIteration()) {
@@ -850,6 +852,22 @@ PairBufferSortRejectReason pairBufferSortRejectReason(const PairBufferSoA& buffe
 
 bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortRejectReason expected) {
     return pairBufferSortRejectReason(buffer) == expected;
+
+
+    }
+
+
+    switch (reason) {
+        return "None";
+        return "EmptyBuffer";
+    return "Unknown";
+
+    if (buffer.canSkipSoAIteration()) {
+
+
+
+
+
 
 
 
@@ -1038,6 +1056,10 @@ bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortR
     if (buffer.canSkipSoAIteration()) {
     if (buffer.activeCount <= 1u) {
 
+}
+
+bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer) {
+    return preflightPairBufferDedupe(buffer).canDedupe();
 }
 
 PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer) {

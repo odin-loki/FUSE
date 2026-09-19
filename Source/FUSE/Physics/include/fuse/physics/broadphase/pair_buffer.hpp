@@ -279,6 +279,8 @@ enum class PairBufferClampRejectReason : u8 {
 /// Non-mutating compaction skip predicate — inverse of `preflightPairBufferCompaction` (B4.2 deepen pass).
 
 
+
+
 /// Human-readable label for pair-buffer clamp reject reasons (logging / tests).
 const char* pairBufferClampRejectReasonName(PairBufferClampRejectReason reason);
 
@@ -349,6 +351,8 @@ enum class PairBufferDedupeRejectReason : u8 {
 /// Non-mutating clamp skip predicate — mirrors `PairBufferSoA::canSkipMaxCapacityClamp` (B4.2 deepen pass).
 
 
+
+
 /// Human-readable label for pair-buffer dedupe reject reasons (logging / tests).
 const char* pairBufferDedupeRejectReasonName(PairBufferDedupeRejectReason reason);
 
@@ -371,6 +375,7 @@ struct PairBufferDedupePreflight {
 
     bool canDedupe() const { return reason == PairBufferDedupeRejectReason::None; }
     bool emptyBuffer = false;
+
 
 
 
@@ -648,6 +653,10 @@ bool should_skip_pair_buffer_compaction(const PairBufferSoA& buffer);
     bool clampNeeded = false;
 
     bool canSkipAll() const { return emptyBuffer || (!compactionNeeded && !clampNeeded); }
+
+
+
+
 
 
 } // namespace fuse::physics::broadphase
