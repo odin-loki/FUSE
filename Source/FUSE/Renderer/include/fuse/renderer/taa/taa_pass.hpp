@@ -96,6 +96,8 @@ public:
     /// True when the resolve request matches this pass viewport dimensions.
     bool viewportMatchesResolve(const TaaResolveDesc& desc) const;
     bool needsHistoryWarmup() const { return m_history.needsWarmup(); }
+    /// True when pass history is warmed and may be temporally reused (B5.9 deepen).
+    bool historyWarmupComplete() const;
     /// Frames remaining before pass history may be temporally reused (B5.9 deepen).
     u32 warmupFramesRemaining() const;
     /// True when pass history is allocated but still awaiting first resolve (B5.9 deepen).
@@ -352,6 +354,11 @@ public:
     bool wouldSkipJitterSync(u32 frameIndex) const;
     /// Sync pass jitter with required reject-reason diagnostics (B5.9 deepen).
     bool trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason& outReason);
+    /// True when pass jitter can sync to `frameIndex` (B5.9 deepen).
+    bool jitterSyncReady(u32 frameIndex) const;
+    bool jitterNdcReady() const;
+    /// True when expected resolve blend weights pass validation and reuse policy (B5.9 deepen).
+    bool resolveBlendReady(const TaaResolveDesc& desc) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

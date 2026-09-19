@@ -982,6 +982,10 @@ bool preflightTaaResolveTemporalAccumulation(const TaaResolveDesc& desc, const T
     return local.passes;
 }
 
+bool taaResolveBlendReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolveBlendWeights(desc, history);
+}
+
 bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                       TaaBlendWeights& outWeights, TaaResolveBlendRejectReason* reason) {
     const TaaResolveBlendRejectReason reject = classifyTaaResolveBlendReject(desc, history);
