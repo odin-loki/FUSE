@@ -599,6 +599,13 @@ inline bool constraint_pair_is_degenerate(u32 bodyA, u32 bodyB) {
 bool should_skip_contact_island_build(u32 bodyCount,
 /// True when both body indices are valid for a `bodyCount`-body partition.
 bool body_pair_in_range(u32 bodyCount, u32 bodyA, u32 bodyB);
+/// Read-only scan of island graph build inputs (B4.4 deepen follow-up pass).
+struct IslandBuildInputCoverage {
+
+    bool hasUnsafeRefs() const {
+
+    bool isEmptyInput() const {
+        return bodyCount == 0u && inRangeContactCount == 0u && inRangeDistanceCount == 0u;
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -640,6 +647,20 @@ struct ContactIslandGraph {
                       const std::vector<DistanceConstraint>& distanceConstraints,
                       ContactIslandGraphBuildStats* outStats = nullptr);
     /// Guarded build; returns false and clears when preflight skips build.
+    /// Scan build inputs without mutating the graph (B4.4 deepen follow-up pass).
+    static IslandBuildInputCoverage scanBuildInputs(
+        u32 bodyCount,
+
+    /// True when both contact body indices fit within `bodyCount` (B4.4 deepen follow-up pass).
+    static bool contactInRange(const narrowphase::ContactManifold& contact, u32 bodyCount);
+
+    /// True when both distance constraint body indices fit within `bodyCount` (B4.4 deepen follow-up pass).
+    static bool distanceInRange(const DistanceConstraint& constraint, u32 bodyCount);
+
+    /// True when scanned inputs have no out-of-range constraint refs (B4.4 deepen follow-up pass).
+    static bool canAcceptBuildInputs(const IslandBuildInputCoverage& coverage);
+
+    /// Guarded build; clears and returns false when inputs are empty or unsafe (B4.4 deepen follow-up pass).
 
     void clear();
 

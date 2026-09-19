@@ -898,6 +898,48 @@ void ContactIslandGraph::clear() {
 
 bool ContactIslandGraph::bodiesInRange(u32 bodyCount, u32 bodyA, u32 bodyB) {
     return bodyA < bodyCount && bodyB < bodyCount;
+bool ContactIslandGraph::contactInRange(const narrowphase::ContactManifold& contact, u32 bodyCount) {
+    return contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+}
+
+bool ContactIslandGraph::distanceInRange(const DistanceConstraint& constraint, u32 bodyCount) {
+    return constraint.bodyA < bodyCount && constraint.bodyB < bodyCount;
+
+IslandBuildInputCoverage ContactIslandGraph::scanBuildInputs(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildInputCoverage coverage{};
+    coverage.bodyCount = bodyCount;
+    coverage.contactSlotCount = static_cast<u32>(contacts.size());
+    coverage.distanceSlotCount = static_cast<u32>(distanceConstraints.size());
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (contact.valid) {
+            ++coverage.validContactCount;
+        if (contactInRange(contact, bodyCount)) {
+            ++coverage.inRangeContactCount;
+        } else if (contact.valid) {
+            ++coverage.outOfRangeContactCount;
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (distanceInRange(constraint, bodyCount)) {
+            ++coverage.inRangeDistanceCount;
+        } else {
+            ++coverage.outOfRangeDistanceCount;
+
+    return coverage;
+
+bool ContactIslandGraph::canAcceptBuildInputs(const IslandBuildInputCoverage& coverage) {
+    return !coverage.isEmptyInput() && !coverage.hasUnsafeRefs();
+
+bool ContactIslandGraph::buildGuarded(u32 bodyCount,
+    const IslandBuildInputCoverage coverage = scanBuildInputs(bodyCount, contacts, distanceConstraints);
+    if (!canAcceptBuildInputs(coverage)) {
+        clear();
+        return false;
+    build(bodyCount, contacts, distanceConstraints);
+    return true;
 }
 
 u32 ContactIslandGraph::findRoot(u32 index) const {
