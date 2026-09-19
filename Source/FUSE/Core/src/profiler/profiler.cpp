@@ -1518,3 +1518,6 @@ bool wouldSkipCounterSample(const char* track, CounterSampleSkipReason* reason) 
     const CounterSamplePreflight preflight = preflightCounterSample(track);
 bool wouldSkipChromeTraceExport(ChromeTraceExportSkipReason* reason) {
 bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason) {
+
+// --- deepen additive from deepen-b16-profiler-guards-7260 ---
+bool wouldSkipScope(const char* name) {

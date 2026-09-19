@@ -573,3 +573,8 @@ bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId, AsyncFlowEndSkipReason*
 bool wouldSkipCounterSample(const char* track, CounterSampleSkipReason* reason = nullptr);
 bool wouldSkipChromeTraceExport(ChromeTraceExportSkipReason* reason = nullptr);
 bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason = nullptr);
+
+// --- deepen additive from deepen-b16-profiler-guards-7260 ---
+    bool wouldSkipExport() const { return profilerDisabled; }
+    bool wouldSkipSafeExport() const { return !canExportSafely(); }
+bool wouldSkipScope(const char* name);
