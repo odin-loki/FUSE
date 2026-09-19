@@ -1730,3 +1730,7 @@ FUSE_PHYSICS_INLINE CellCapacityRejectReason cellCapacityRejectReason(
     return !preflightCellCapacity(range, maxCells, maxSpanPerAxis).canIterate();
     return preflightCellCapacity(range, maxCells, maxSpanPerAxis).canIterate();
 bool mergeBroadphasePlaneDynamicWithPreflight(
+
+// --- deepen additive from deepen-b4-broadphase-guards-c32b ---
+    ShapeCellInsertionRejectReason expected);
+u32 mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer);

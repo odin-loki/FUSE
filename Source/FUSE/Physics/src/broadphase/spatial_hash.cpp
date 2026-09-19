@@ -1727,3 +1727,27 @@ const char* cellCapacityRejectReasonName(CellCapacityRejectReason reason) {
     case CellCapacityRejectReason::ExceedsSpan:
     case CellCapacityRejectReason::ExceedsBudget:
 bool mergeBroadphasePlaneDynamicWithPreflight(
+
+// --- deepen additive from deepen-b4-broadphase-guards-c32b ---
+        preflight.reason == MergePairsIntoBufferRejectReason::None &&
+u32 mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
+    case ShapeCellInsertionRejectReason::ExceedsSpan:
+    case ShapeCellInsertionRejectReason::ExceedsBudget:
+ShapeCellInsertionRejectReason shapeCellInsertionRejectReason(
+        return ShapeCellInsertionRejectReason::EmptyRange;
+        return ShapeCellInsertionRejectReason::ExceedsSpan;
+        return ShapeCellInsertionRejectReason::ExceedsBudget;
+    return ShapeCellInsertionRejectReason::None;
+    ShapeCellInsertionRejectReason expected) {
+    return shapeCellInsertionRejectReason(range, maxSpanPerAxis, maxOccupancy) == expected;
+ShapeCellInsertionPreflight preflightShapeCellInsertion(
+    ShapeCellInsertionPreflight preflight{};
+    preflight.reason = shapeCellInsertionRejectReason(range, maxSpanPerAxis, maxOccupancy);
+    preflight.emptyRange = preflight.reason == ShapeCellInsertionRejectReason::EmptyRange;
+    preflight.exceedsSpan = preflight.reason == ShapeCellInsertionRejectReason::ExceedsSpan;
+    preflight.exceedsBudget = preflight.reason == ShapeCellInsertionRejectReason::ExceedsBudget;
+    return !preflightShapeCellInsertion(range, maxSpanPerAxis, maxOccupancy).canInsert();
+    return preflightShapeCellInsertion(range, maxSpanPerAxis, maxOccupancy).canInsert();
+    preflight.insufficientCapacity = bufferPreflight.insufficientCapacity;
+    return !preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer).canMerge();
+    return preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer).canMerge();

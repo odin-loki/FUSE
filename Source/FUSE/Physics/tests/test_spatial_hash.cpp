@@ -4147,3 +4147,34 @@ void testBroadphaseMergePlaneDynamicWithPreflightGuards() {
     expectTrue(fuse::physics::broadphase::mergeBroadphasePlaneDynamicWithPreflight(bodies, shapes, buffer),
     testCellCapacityRejectReasonAndPreflight();
     testBroadphaseMergePlaneDynamicWithPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-c32b ---
+void testShapeCellInsertionRejectReasonAndPreflight() {
+                 fuse::physics::broadphase::shapeCellInsertionRejectReason(validRange, 4u, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertionRejectReason::None),
+                 fuse::physics::broadphase::shapeCellInsertionRejectReason(validRange, 1u, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertionRejectReason::ExceedsSpan),
+                   fuse::physics::broadphase::ShapeCellInsertionRejectReason::ExceedsSpan),
+                 fuse::physics::broadphase::shapeCellInsertionRejectReason(validRange, 4u, 7u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertionRejectReason::ExceedsBudget),
+                               fuse::physics::broadphase::ShapeCellInsertionRejectReason::ExceedsBudget),
+    const fuse::physics::broadphase::ShapeCellInsertionPreflight preflight =
+        fuse::physics::broadphase::preflightShapeCellInsertion(validRange, 4u, 8u);
+        fuse::physics::broadphase::preflightShapeCellInsertion(planeRange, 4u, 4u);
+    expectTrue(planePreflight.exceedsBudget, "2D shape cell-insertion preflight marks exceedsBudget");
+void testRefineDedupeMergeWithPreflightReturnGuards() {
+    expectEq(fuse::physics::broadphase::mergePairsIntoBufferWithPreflight(mergePairs, mergeBuffer),
+        fuse::physics::broadphase::preflightMergePairsIntoBuffer(mergePairs, partialBuffer);
+    expectTrue(partialPreflight.insufficientCapacity, "merge preflight marks insufficientCapacity for partial fit");
+    expectEq(partialPreflight.pairsThatFit, 1u, "merge preflight reports pairsThatFit");
+    expectEq(fuse::physics::broadphase::mergePairsIntoBufferWithPreflight(mergePairs, partialBuffer),
+    expectTrue(emptyScenePreflight.emptyPlaneBodies, "combined merge preflight marks empty plane bodies");
+    expectTrue(!emptyScenePreflight.canMerge(), "combined merge preflight cannot merge empty scene");
+    const fuse::physics::broadphase::BroadphaseMergeIntoBufferPreflight planeOnlyPreflight =
+    expectTrue(planeOnlyPreflight.emptyDynamicBodies, "combined merge preflight marks empty dynamic bodies");
+    expectTrue(validPreflight.canMerge(), "combined merge preflight accepts mergeable scene and buffer");
+    const fuse::physics::broadphase::BroadphaseMergeIntoBufferPreflight fullBufferPreflight =
+    expectTrue(fullBufferPreflight.bufferFull, "combined merge preflight marks full buffer");
+    expectTrue(!fullBufferPreflight.canMerge(), "combined merge preflight cannot merge into full buffer");
+    testShapeCellInsertionRejectReasonAndPreflight();
+    testRefineDedupeMergeWithPreflightReturnGuards();
