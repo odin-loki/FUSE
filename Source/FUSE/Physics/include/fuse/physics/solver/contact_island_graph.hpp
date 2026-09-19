@@ -425,11 +425,19 @@ bool is_contact_valid_for_island_build(const narrowphase::ContactManifold& conta
 bool is_distance_constraint_valid_for_island_build(const DistanceConstraint& constraint, u32 bodyCount);
 
 /// Preflight island build inputs; sets `skipped` for empty no-op builds.
+/// Input validation summary for island graph construction (B4.4 deepen).
+
+    bool has_valid_constraints() const { return validContactCount > 0u || validDistanceCount > 0u; }
+
+/// True when `bodyCount` is usable for island graph construction (B4.4 deepen).
+
+/// Preflight island graph inputs; marks `skipped` when there is nothing to partition.
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Early-out guard when build inputs are an empty no-op.
+/// Early-out guard when island build would produce an empty graph with no constraints.
 bool should_skip_island_build(u32 bodyCount,
                               const std::vector<narrowphase::ContactManifold>& contacts,
                               const std::vector<DistanceConstraint>& distanceConstraints);
@@ -464,6 +472,7 @@ struct ContactIslandGraph {
     /// Guarded build entry: returns false when preflight rejects zero-body input.
     /// Guarded build: returns false when preflight skips; otherwise identical to `build`.
     /// Guarded build — returns false when preflight skips the empty no-op path.
+    /// Guarded build wrapper; returns false when preflight skips (B4.4 deepen).
 
     void clear();
 
