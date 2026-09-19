@@ -557,7 +557,6 @@ enum class ContactIslandGraphBuildRejectReason {
 struct ContactIslandGraphBuildStats {
     u32 selfContactCount = 0;
 
-/// Preflight diagnostics for island graph build inputs (B4.4 deepen follow-up).
     ContactIslandGraphBuildStats stats{};
 
 
@@ -707,6 +706,19 @@ bool should_skip_contact_island_build(
 
 
 /// Populate island graph build preflight without mutating the graph (B4.4 deepen follow-up).
+    UnsafeContactRef,
+    UnsafeDistanceRef,
+
+/// Human-readable label for diagnostics and test assertions (B4.4 deepen follow-up).
+
+/// Returns true when `island_graph_build_reject_reason` matches `expected` (B4.4 deepen follow-up).
+bool island_graph_build_rejects_for_reason(u32 bodyCount,
+
+    IslandGraphBuildRejectReason reason = IslandGraphBuildRejectReason::None;
+
+    bool can_build() const { return !skipped && reason == IslandGraphBuildRejectReason::None; }
+
+/// Populate graph build preflight without mutating the graph (B4.4 deepen follow-up).
 ContactIslandGraphBuildPreflight preflight_contact_island_graph_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -718,6 +730,11 @@ bool should_run_island_graph_build(
 bool can_build_contact_island_graph(
 bool should_skip_island_graph_build(u32 bodyCount,
 /// Early-out guard when build inputs cannot form a safe constrained partition.
+/// Returns true when graph build should be skipped before partition (B4.4 deepen follow-up).
+bool should_skip_contact_island_graph_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
