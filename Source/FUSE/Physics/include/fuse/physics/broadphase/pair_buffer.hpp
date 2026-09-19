@@ -61,12 +61,33 @@ struct PairBufferSoA {
     std::vector<CandidatePair> toVector() const;
 };
 
+/// Why a pair-buffer push would be rejected (B4.2 deepen follow-up pass).
+enum class PairBufferPushRejectReason : u8 {
+    None = 0,
+    InvalidPair,
+    AtCapacity,
+};
+
+/// Human-readable label for pair-buffer push reject reasons (logging / tests).
+const char* pairBufferPushRejectReasonName(PairBufferPushRejectReason reason);
+
+/// Diagnose why push would reject; vacuously succeeds on valid pairs under capacity.
+PairBufferPushRejectReason pairBufferPushRejectReason(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+
+/// Returns true when `pairBufferPushRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool pairBufferPushRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 idxA,
+    u32 idxB,
+    PairBufferPushRejectReason expected);
+
 /// Read-only push diagnostics — no mutation (B4.2 deepen follow-up).
 struct PairBufferPushPreflight {
+    PairBufferPushRejectReason reason = PairBufferPushRejectReason::None;
     bool invalidPair = false;
     bool atCapacity = false;
 
-    bool canPush() const { return !invalidPair && !atCapacity; }
+    bool canPush() const { return reason == PairBufferPushRejectReason::None; }
 };
 
 PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
@@ -113,5 +134,22 @@ struct PairBufferSortPreflight {
 };
 
 PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer);
+
+/// Non-mutating sort skip predicate — inverse of `preflightPairBufferSort::needsSort` (B4.2 deepen follow-up pass).
+bool canSkipPairBufferSort(const PairBufferSoA& buffer);
+
+/// Non-mutating compaction skip predicate — inverse of `preflightPairBufferCompaction::needsCompaction` (B4.2 deepen follow-up pass).
+bool canSkipPairBufferCompaction(const PairBufferSoA& buffer);
+
+/// Read-only compact-and-clamp diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferCompactAndClampPreflight {
+    bool emptyBuffer = false;
+    bool needsCompaction = false;
+    bool needsClamp = false;
+
+    bool canSkip() const { return emptyBuffer || (!needsCompaction && !needsClamp); }
+};
+
+PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer);
 
 } // namespace fuse::physics::broadphase

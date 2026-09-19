@@ -87,12 +87,11 @@ bool PairBufferSoA::canApplyMaxCapacityClamp() const {
 }
 
 bool PairBufferSoA::push(u32 idxA, u32 idxB) {
-    if (!isValidCandidatePair(idxA, idxB)) {
-        return false;
-    }
-
-    if (isFull()) {
-        ++droppedCount;
+    const PairBufferPushPreflight pushPreflight = preflightPairBufferPush(*this, idxA, idxB);
+    if (!pushPreflight.canPush()) {
+        if (pushPreflight.atCapacity) {
+            ++droppedCount;
+        }
         return false;
     }
 
@@ -106,13 +105,14 @@ bool PairBufferSoA::push(u32 idxA, u32 idxB) {
 }
 
 u32 PairBufferSoA::compact() {
-    if (canSkipSoAIteration()) {
+    const PairBufferCompactionPreflight compactionPreflight = preflightPairBufferCompaction(*this);
+    if (compactionPreflight.emptyBuffer) {
         activeCount = 0u;
         pairSlotCount = 0u;
         return activeCount;
     }
 
-    if (canSkipCompaction()) {
+    if (!compactionPreflight.needsCompaction()) {
         activeCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
         pairSlotCount = activeCount;
         bodyA.resize(activeCount);
@@ -145,7 +145,7 @@ u32 PairBufferSoA::compact() {
 }
 
 void PairBufferSoA::sortCanonical() {
-    if (!preflightPairBufferSort(*this).needsSort()) {
+    if (canSkipPairBufferSort(*this)) {
         return;
     }
 
@@ -177,7 +177,8 @@ void PairBufferSoA::sortCanonical() {
 }
 
 u32 PairBufferSoA::applyMaxCapacityClamp() {
-    if (!canApplyMaxCapacityClamp()) {
+    const PairBufferClampPreflight clampPreflight = preflightPairBufferClamp(*this);
+    if (!clampPreflight.needsClamp()) {
         return activeCount;
     }
 
@@ -195,6 +196,11 @@ u32 PairBufferSoA::applyMaxCapacityClamp() {
 }
 
 u32 PairBufferSoA::compactAndClamp() {
+    const PairBufferCompactionPreflight compactionPreflight = preflightPairBufferCompaction(*this);
+    if (compactionPreflight.emptyBuffer) {
+        return activeCount;
+    }
+
     compact();
     return applyMaxCapacityClamp();
 }
@@ -305,10 +311,41 @@ std::vector<CandidatePair> PairBufferSoA::toVector() const {
     return pairs;
 }
 
+const char* pairBufferPushRejectReasonName(PairBufferPushRejectReason reason) {
+    switch (reason) {
+    case PairBufferPushRejectReason::None:
+        return "None";
+    case PairBufferPushRejectReason::InvalidPair:
+        return "InvalidPair";
+    case PairBufferPushRejectReason::AtCapacity:
+        return "AtCapacity";
+    }
+    return "Unknown";
+}
+
+PairBufferPushRejectReason pairBufferPushRejectReason(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
+    if (!isValidCandidatePair(idxA, idxB)) {
+        return PairBufferPushRejectReason::InvalidPair;
+    }
+    if (buffer.isFull()) {
+        return PairBufferPushRejectReason::AtCapacity;
+    }
+    return PairBufferPushRejectReason::None;
+}
+
+bool pairBufferPushRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 idxA,
+    u32 idxB,
+    PairBufferPushRejectReason expected) {
+    return pairBufferPushRejectReason(buffer, idxA, idxB) == expected;
+}
+
 PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
     PairBufferPushPreflight preflight{};
-    preflight.invalidPair = !isValidCandidatePair(idxA, idxB);
-    preflight.atCapacity = buffer.isFull();
+    preflight.reason = pairBufferPushRejectReason(buffer, idxA, idxB);
+    preflight.invalidPair = preflight.reason == PairBufferPushRejectReason::InvalidPair;
+    preflight.atCapacity = preflight.reason == PairBufferPushRejectReason::AtCapacity;
     return preflight;
 }
 
@@ -341,6 +378,24 @@ PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer) {
     PairBufferSortPreflight preflight{};
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.singlePair = !preflight.emptyBuffer && buffer.activeCount <= 1u;
+    return preflight;
+}
+
+bool canSkipPairBufferSort(const PairBufferSoA& buffer) {
+    return !preflightPairBufferSort(buffer).needsSort();
+}
+
+bool canSkipPairBufferCompaction(const PairBufferSoA& buffer) {
+    return !preflightPairBufferCompaction(buffer).needsCompaction();
+}
+
+PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
+    PairBufferCompactAndClampPreflight preflight{};
+    const PairBufferCompactionPreflight compactionPreflight = preflightPairBufferCompaction(buffer);
+    const PairBufferClampPreflight clampPreflight = preflightPairBufferClamp(buffer);
+    preflight.emptyBuffer = compactionPreflight.emptyBuffer;
+    preflight.needsCompaction = compactionPreflight.needsCompaction();
+    preflight.needsClamp = clampPreflight.needsClamp();
     return preflight;
 }
 
