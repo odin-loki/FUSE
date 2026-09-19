@@ -414,6 +414,7 @@ bool isRayUnitLength(const GizmoRay& ray);
 /// True when snap is enabled but the mode step is unusable — drag still applies without rounding (B6.4 deepen pass).
 /// Snap enabled but mode step unusable — begin/update/end still apply (B6.4 deepen pass).
 /// True when snap is enabled but the mode step is unusable — drag still applies (B6.4 deepen pass).
+/// True when snap is enabled but the mode step is unusable — begin/update/end still apply (B6.4 deepen pass).
 
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
 struct PickPreflight {
@@ -2487,6 +2488,14 @@ enum class GizmoSnapDragRejectReason : u8 {
     InvalidStep,
 };
 
+/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
+enum class GizmoSnapDragRejectReason : u8 {
+    None = 0,
+    DeltaNonFinite,
+    SnapDisabled,
+    InvalidStep,
+};
+
 /// Why begin-drag preflight rejected the request (B6.4 deepen pass).
 enum class GizmoBeginDragRejectReason : u8 {
     None = 0,
@@ -2509,7 +2518,6 @@ enum class GizmoUpdateDragRejectReason : u8 {
     NotDragging,
     NonFiniteHit,
     EmptyHit,
-    NonFiniteHit,
     InvalidDimensions,
     OutOfBounds,
     InvalidActiveAxis,
@@ -2526,38 +2534,10 @@ enum class GizmoSnapDragRejectReason : u8 {
 
 
 
-};
 
-/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
-enum class GizmoSnapDragRejectReason : u8 {
-    None = 0,
-    DeltaNonFinite,
-    SnapDisabled,
-    InvalidStep,
-};
 
-/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
-enum class GizmoSnapDragRejectReason : u8 {
-    None = 0,
-    DeltaNonFinite,
-    SnapDisabled,
-    InvalidStep,
-};
 
-/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
-enum class GizmoSnapDragRejectReason : u8 {
-    None = 0,
-    DeltaNonFinite,
-    SnapDisabled,
-    InvalidStep,
-};
 
-/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
-enum class GizmoSnapDragRejectReason : u8 {
-    None = 0,
-    DeltaNonFinite,
-    SnapDisabled,
-    InvalidStep,
 };
 
 /// Why end-drag preflight rejected the request (B6.4 deepen pass).
