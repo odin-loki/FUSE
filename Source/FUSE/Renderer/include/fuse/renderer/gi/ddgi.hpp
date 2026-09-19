@@ -385,10 +385,24 @@ enum class ProbeSpatialSampleRejectReason : u8 {
 
 /// Human-readable label for spatial sample reject reasons (logging / tests).
 const char* probeSpatialSampleRejectReasonLabel(ProbeSpatialSampleRejectReason reason);
+/// Human-readable label for trilinear sample reject reasons (logging / tests).
+const char* probeTrilinearSampleRejectReasonLabel(ProbeTrilinearSampleRejectReason reason);
+/// Classify why coord-based probe sample preflight would reject — same ordering as `tryCanSampleAtProbeCoords`.
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDesc& desc,
+                                                                    const ProbeSampleCoords& coords,
+                                                                    const IrradianceCacheEntry* cache,
+                                                                    u32 cache_count);
 
 /// Why probe scheduling preflight rejected the request (B5.6 deepen).
 /// Human-readable label for cache-index reject reasons (logging / tests).
 const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
+/// Classify why cache-index preflight would reject — same ordering as `tryValidateCacheIndex`.
+CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+/// Classify cache-index preflight including null-cache rejection.
+CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
+                                                const IrradianceCacheEntry* cache,
+                                                u32 probe_index,
+                                                u32 cache_count);
 
 /// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
 enum class ProbeUpdateLaunchRejectReason : u8 {
@@ -435,6 +449,11 @@ enum class ProbeScheduleRejectReason : u8 {
 
 /// Human-readable label for probe-schedule reject reasons (logging / tests).
 const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
+/// Classify why probe scheduling preflight would reject — same ordering as `tryCanScheduleProbeUpdates`.
+ProbeScheduleRejectReason classifyProbeScheduleReject(u32 probe_count,
+                                                      u32 max_indices,
+                                                      const u32* out_indices,
+                                                      u32* out_count);
 
 /// Why a sample-request preflight rejected the request (B5.6 deepen).
 enum class SampleRequestRejectReason : u8 {
@@ -934,6 +953,8 @@ bool wouldSkipProbeTrilinearSample(const DDGIDesc& desc,
 /// Early-out when coord-based probe trilinear sampling would be rejected — includes diagnostics.
                                    u32 cache_count,
                                    ProbeTrilinearSampleRejectReason& outReason);
+/// Early-out when coord-based probe sample preflight would reject.
+bool wouldSkipCanSampleAtProbeCoords(const DDGIDesc& desc,
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,

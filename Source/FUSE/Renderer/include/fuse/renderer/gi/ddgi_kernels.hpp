@@ -94,7 +94,6 @@ ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params
 bool probeKernelRejectReasonIsBlocking(ProbeKernelRejectReason reason);
 
 /// Classify why probe kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
-ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params);
 
 /// Early-out when either probe kernel launch would be rejected.
 bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
@@ -112,6 +111,7 @@ void populateDDGIKernelParams(DDGIKernelParams& params,
                               u64 frame_seed = 0);
 /// Human-readable label for probe-kernel resource reject reasons (logging / tests).
 const char* probeKernelResourceRejectReasonLabel(ProbeKernelResourceRejectReason reason);
+/// Classify why probe kernel launch preflight would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
 
 /// Preflight guard before probe trace kernel launch.
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
