@@ -3012,3 +3012,10 @@ void testMergePairsIntoBufferRejectReasonGuards() {
                    fuse::physics::broadphase::BroadphaseMergeBufferRejectReason::BufferAtCapacity),
     expectTrue(std::strcmp(fuse::physics::broadphase::mergeBroadphaseBufferRejectReasonName(
                                fuse::physics::broadphase::BroadphaseMergeBufferRejectReason::SceneNotMergeable),
+
+// --- deepen additive from b4-broadphase-deepen-a14d ---
+void testPairBufferSortAndDedupeShouldRunGuards() {
+                 fuse::physics::broadphase::MergePairsIntoBufferRejectReason::BufferAtCapacity),
+    const fuse::physics::broadphase::MergePairsIntoBufferPreflight preflight =
+        fuse::physics::broadphase::preflightMergePairsIntoBuffer(pairs, mergeBuffer);
+void testShouldRunBroadphaseGuard() {

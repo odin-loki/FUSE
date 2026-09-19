@@ -1165,3 +1165,8 @@ BroadphaseMergeBufferRejectReason mergeBroadphaseBufferRejectReason(
     preflight.reason = mergeBroadphaseBufferRejectReason(bodies, shapes, buffer);
     preflight.sceneNotMergeable = preflight.reason == BroadphaseMergeBufferRejectReason::SceneNotMergeable;
     preflight.bufferAtCapacity = preflight.reason == BroadphaseMergeBufferRejectReason::BufferAtCapacity;
+
+// --- deepen additive from b4-broadphase-deepen-a14d ---
+    case MergePairsIntoBufferRejectReason::BufferAtCapacity:
+        return MergePairsIntoBufferRejectReason::BufferAtCapacity;
+    preflight.bufferAtCapacity = preflight.reason == MergePairsIntoBufferRejectReason::BufferAtCapacity;

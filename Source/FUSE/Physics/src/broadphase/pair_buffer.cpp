@@ -919,3 +919,6 @@ PairBufferSlotReservationPreflight preflightPairBufferSlotReservation(
 
 // --- deepen additive from deepen-b4-broadphase-guards-1d11 ---
     return !preflightPairBufferCompactAndClamp(*this).needsCompactAndClamp();
+
+// --- deepen additive from b4-broadphase-deepen-a14d ---
+    if (preflightPairBufferCompaction(*this).needsCompaction()) {
