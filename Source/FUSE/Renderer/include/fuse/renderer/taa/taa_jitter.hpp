@@ -91,15 +91,22 @@ public:
     fuse::math::Vec2 currentNdcOffset(u32 width, u32 height) const;
     /// NDC offset only when viewport and sequence are valid; returns false when blocked (B5.9 deepen).
     bool currentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out) const;
+    /// NDC offset with mandatory reject-reason output (B5.9 deepen).
+    bool tryCurrentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out,
+                                    TaaJitterGuardRejectReason& reason) const;
 
     void advance();
     /// Advance only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool advanceIfReady();
+    /// Advance with mandatory reject-reason output (B5.9 deepen).
+    bool tryAdvanceIfReady(TaaJitterGuardRejectReason& reason);
     void reset();
     /// Align jitter state to a monotonic frame counter (wraps with sequence period).
     void syncToFrameIndex(u32 frameIndex);
     /// Sync only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool syncToFrameIndexIfReady(u32 frameIndex);
+    /// Sync with mandatory reject-reason output (B5.9 deepen).
+    bool trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason);
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
 
