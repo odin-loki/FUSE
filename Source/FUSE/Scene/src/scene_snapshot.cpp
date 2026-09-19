@@ -17,7 +17,7 @@ void SceneSnapshot::apply(Scene& scene) const {
     scene.camera() = camera;
     scene.clearEntities();
     for (const SceneEntity& entity : entities) {
-        scene.addEntity(entity.name, entity.transform);
+        scene.addEntity(entity.name, entity.transform, entity.parentIndex);
     }
 }
 

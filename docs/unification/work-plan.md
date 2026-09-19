@@ -186,7 +186,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | In-process PIE; UI thread vs game thread command queue; one feature pane |
 | **Deps** | WP-06, WP-05 |
-| **Status** | 🚧 Core slice — mutex queue + `EditorHost` PIE drain + `FeaturePaneBridge` + headless cross-thread proof; Qt property pane when Qt6 present — [U6-EDITOR.md](./U6-EDITOR.md) |
+| **Status** | 🚧 Advancing — inspector props + undo/redo through queue; `RuntimeViewportHook` embed stub; Qt property pane when Qt6 present — [U6-EDITOR.md](./U6-EDITOR.md) |
 
 ---
 
@@ -197,7 +197,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | `project.json`, importers, cookers under `Tools/FUSE/` |
 | **Deps** | WP-06 |
-| **Status** | ✅ Minimal — `fuse_project` loader, T3D/T2D importer stubs, `fuse_import` CLI, [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
+| **Status** | 🚧 Advancing — loader + importers + `.fuselevel` v2 hierarchy + `fuse_convert` / `fuse_cook --fuselevel` stubs — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
 
 ---
 
@@ -254,8 +254,8 @@ WP-00 → WP-01 → WP-02 ──────────────────
 | **U3** | Shared services | I/O job publishes handle; TSan plan live |
 | **U4** | Hybrid demo | `parallel_for` cull + SoA; frame barrier; software demo ✅ — real GLES/Vulkan present ❌ Track B |
 | **U5** | Feature modules | Five `fuse_*` targets; `fuse_ai` BT slice + tests — 🚧 scaffolds + ore backlog ([U5-MODULES.md](./U5-MODULES.md)) |
-| **U6** | Editor PIE | UI/game thread queue + in-process PIE proven — 🚧 viewport + full inspectors remain |
-| **U7** | Project format | `fuse_project` + `fuse_import` dry-run — ✅ minimal schema v1 |
+| **U6** | Editor PIE | UI/game thread queue + inspector/undo through queue + runtime viewport embed stub — 🚧 GPU viewport remains |
+| **U7** | Project format | `fuse_project` + `.fuselevel` v2 hierarchy + converters/cook stubs — 🚧 full asset pipeline deferred |
 | **U8** | Parity demos | Seven demo binaries + `Samples/unification/` stubs — ✅ minimum set |
 | **P3 (Track A)** | Job system tests | Fiber scheduler + single-thread fallback |
 
@@ -290,7 +290,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** WP-07 ore extraction per module; U7 `.fuselevel` cookers; Track B post–WP-06d (swapchain FB present pass, graph barriers, bindless descriptor updates, pipeline cache disk I/O).
+**Next:** U6 GPU viewport embed; U7 full T3D field extraction + production asset cooks; Track B post–WP-06d (swapchain FB present pass, graph barriers, bindless descriptor updates, pipeline cache disk I/O).
 
 ---
 

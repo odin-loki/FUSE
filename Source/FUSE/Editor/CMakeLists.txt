@@ -9,6 +9,7 @@ set(FUSE_EDITOR_API_SOURCES
     src/editor_command_apply.cpp
     src/feature_pane_bridge.cpp
     src/runtime_viewport.cpp
+    src/runtime_embed_session.cpp
     src/gizmo_system.cpp
     src/hierarchy_model.cpp
     src/material_editor_panel.cpp
@@ -32,6 +33,7 @@ set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/editor_host.hpp
     include/fuse/editor/editor_scene.hpp
     include/fuse/editor/runtime_viewport.hpp
+    include/fuse/editor/runtime_embed_session.hpp
     include/fuse/editor/editor_state.hpp
     include/fuse/editor/feature_pane_bridge.hpp
     include/fuse/editor/gizmo_system.hpp
@@ -61,7 +63,7 @@ target_include_directories(fuse_editor_api
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_editor_api PUBLIC fuse_core fuse_ecs fuse_scene)
+target_link_libraries(fuse_editor_api PUBLIC fuse_core fuse_ecs fuse_scene fuse_project)
 target_compile_features(fuse_editor_api PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_VULKAN)

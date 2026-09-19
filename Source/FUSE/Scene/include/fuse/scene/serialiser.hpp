@@ -24,6 +24,7 @@ class SceneSerialiser {
 public:
     static constexpr u32 MAGIC = 0x454E4743u; // 'ENGC'
     static constexpr u32 VERSION = 1u;
+    static constexpr u32 VERSION_HIERARCHY = 2u; // parent index table after transforms
 
     static SerialiseResult save(const Scene& scene, const std::string& path);
     static SerialiseResult load(const std::string& path, Scene& scene);

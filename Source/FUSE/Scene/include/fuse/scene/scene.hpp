@@ -23,7 +23,7 @@ public:
     u32 entityCount() const { return static_cast<u32>(m_entities.size()); }
     u32 objectCount() const { return entityCount(); }
 
-    void addEntity(std::string entityName, SceneEntityTransform transform = {});
+    void addEntity(std::string entityName, SceneEntityTransform transform = {}, s32 parentIndex = -1);
     void addObjectName(std::string objectName);
 
     const std::vector<SceneEntity>& entities() const { return m_entities; }

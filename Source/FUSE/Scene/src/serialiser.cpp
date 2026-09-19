@@ -15,6 +15,7 @@ constexpr u32 kCameraBlockSize = 40u; // f32×9 + u32 active flag
 constexpr u32 kTransformBlockSize = 40u; // f32×10 (position, rotation, scale)
 constexpr u8 kCameraMarker = 'C';
 constexpr u8 kTransformTableMarker = 'T';
+constexpr u8 kHierarchyTableMarker = 'H';
 
 struct SceneHeader {
     u32 magic = SceneSerialiser::MAGIC;
@@ -76,6 +77,28 @@ bool readString(const u8*& cursor, const u8* end, std::string& out) {
     out.assign(reinterpret_cast<const char*>(cursor), length);
     cursor += length;
     return true;
+}
+
+void writeS32(std::vector<u8>& buffer, s32 value) {
+    writeU32(buffer, static_cast<u32>(value));
+}
+
+bool readS32(const u8*& cursor, const u8* end, s32& out) {
+    u32 bits = 0;
+    if (!readU32(cursor, end, bits)) {
+        return false;
+    }
+    out = static_cast<s32>(bits);
+    return true;
+}
+
+bool sceneHasHierarchy(const Scene& scene) {
+    for (const SceneEntity& entity : scene.entities()) {
+        if (entity.parentIndex >= 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void writeTransformBlock(std::vector<u8>& buffer, const SceneEntityTransform& transform) {
@@ -164,10 +187,16 @@ bool readFile(const std::string& path, std::vector<u8>& bytes) {
 SerialiseResult SceneSerialiser::save(const Scene& scene, const std::string& path) {
     SerialiseResult result;
 
+    const bool writeHierarchy = sceneHasHierarchy(scene);
+
     SceneHeader header;
     header.entityCount = scene.entityCount();
+    header.version = writeHierarchy ? VERSION_HIERARCHY : VERSION;
     header.reserved[0] = kCameraMarker;
     header.reserved[1] = kTransformTableMarker;
+    if (writeHierarchy) {
+        header.reserved[2] = kHierarchyTableMarker;
+    }
 
     std::vector<u8> buffer;
     buffer.resize(kHeaderSize, 0);
@@ -185,6 +214,13 @@ SerialiseResult SceneSerialiser::save(const Scene& scene, const std::string& pat
     writeU32(buffer, entityCount);
     for (const SceneEntity& entity : scene.entities()) {
         writeTransformBlock(buffer, entity.transform);
+    }
+
+    if (writeHierarchy) {
+        writeU32(buffer, entityCount);
+        for (const SceneEntity& entity : scene.entities()) {
+            writeS32(buffer, entity.parentIndex);
+        }
     }
 
     if (!writeFile(path, buffer)) {
@@ -222,11 +258,14 @@ SerialiseResult SceneSerialiser::load(const std::string& path, Scene& scene) {
         return result;
     }
 
-    if (header.version != VERSION) {
+    if (header.version != VERSION && header.version != VERSION_HIERARCHY) {
         result.status = SerialiseStatus::UnsupportedVersion;
         result.error = "unsupported scene version";
         return result;
     }
+
+    const bool hasHierarchyTable =
+        header.version == VERSION_HIERARCHY && header.reserved[2] == kHierarchyTableMarker;
 
     if (buffer.size() < kHeaderSize + kCameraBlockSize) {
         result.status = SerialiseStatus::TruncatedFile;
@@ -311,11 +350,34 @@ SerialiseResult SceneSerialiser::load(const std::string& path, Scene& scene) {
         }
     }
 
+    if (hasHierarchyTable) {
+        u32 parentCount = 0;
+        if (!readU32(cursor, end, parentCount)) {
+            result.status = SerialiseStatus::TruncatedFile;
+            result.error = "truncated hierarchy table";
+            return result;
+        }
+
+        if (parentCount != objectCount) {
+            result.status = SerialiseStatus::TruncatedFile;
+            result.error = "hierarchy count mismatch";
+            return result;
+        }
+
+        for (u32 i = 0; i < parentCount; ++i) {
+            if (!readS32(cursor, end, entities[i].parentIndex)) {
+                result.status = SerialiseStatus::TruncatedFile;
+                result.error = "truncated entity parent index";
+                return result;
+            }
+        }
+    }
+
     Scene loaded(std::move(sceneName));
     loaded.camera() = camera;
     loaded.clearEntities();
     for (SceneEntity& entity : entities) {
-        loaded.addEntity(std::move(entity.name), entity.transform);
+        loaded.addEntity(std::move(entity.name), entity.transform, entity.parentIndex);
     }
 
     scene = std::move(loaded);

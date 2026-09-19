@@ -1,0 +1,11 @@
+new Scene(ExampleLevel) {
+   new SimGroup(CameraSpawnPoints) {
+      new SpawnSphere(DefaultCameraSpawnSphere) {
+         position = "0 0 10";
+      };
+   };
+   new GroundPlane() {
+      position = "0 0 0";
+      scale = "1 1 1";
+   };
+};

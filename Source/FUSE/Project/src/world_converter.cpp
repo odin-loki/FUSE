@@ -133,114 +133,166 @@ std::string extractQuotedValue(const std::string& block, const std::string& key)
 struct MisObject {
     std::string type;
     std::string name;
+    s32 parentIndex = -1;
     bool hasPosition = false;
     bool hasRotation = false;
     bool hasScale = false;
     fuse::scene::SceneEntityTransform transform{};
 };
 
-std::vector<MisObject> extractMisObjects(const std::string& text) {
-    std::vector<MisObject> objects;
-    std::size_t cursor = 0;
+std::size_t skipMisWhitespace(const std::string& text, std::size_t cursor) {
+    while (cursor < text.size() && std::isspace(static_cast<unsigned char>(text[cursor]))) {
+        ++cursor;
+    }
+    return cursor;
+}
 
-    while (cursor < text.size()) {
+std::size_t findMatchingBrace(const std::string& text, std::size_t openBrace) {
+    if (openBrace >= text.size() || text[openBrace] != '{') {
+        return std::string::npos;
+    }
+
+    int depth = 1;
+    std::size_t cursor = openBrace + 1;
+    while (cursor < text.size() && depth > 0) {
+        if (text[cursor] == '{') {
+            ++depth;
+        } else if (text[cursor] == '}') {
+            --depth;
+        }
+        ++cursor;
+    }
+
+    return depth == 0 ? cursor : std::string::npos;
+}
+
+bool parseMisObjectHeader(const std::string& text, std::size_t newPos, MisObject& object, std::size_t& blockStartOut) {
+    std::size_t typeStart = newPos + 4;
+    typeStart = skipMisWhitespace(text, typeStart);
+
+    std::size_t typeEnd = typeStart;
+    while (typeEnd < text.size() &&
+           (std::isalnum(static_cast<unsigned char>(text[typeEnd])) || text[typeEnd] == '_')) {
+        ++typeEnd;
+    }
+
+    if (typeEnd <= typeStart || typeEnd >= text.size() || text[typeEnd] != '(') {
+        return false;
+    }
+
+    std::size_t nameStart = skipMisWhitespace(text, typeEnd + 1);
+    std::size_t nameEnd = nameStart;
+    while (nameEnd < text.size()) {
+        const char ch = text[nameEnd];
+        if (ch == ')' || ch == ' ' || ch == '\t' || ch == '\n' || ch == '{') {
+            break;
+        }
+        ++nameEnd;
+    }
+
+    object.type = text.substr(typeStart, typeEnd - typeStart);
+    if (nameEnd > nameStart) {
+        object.name = text.substr(nameStart, nameEnd - nameStart);
+    }
+    if (object.name.empty()) {
+        object.name = object.type;
+    }
+
+    const std::size_t blockStart = text.find('{', nameEnd);
+    if (blockStart == std::string::npos) {
+        return false;
+    }
+
+    blockStartOut = blockStart;
+    return true;
+}
+
+void fillMisObjectTransform(MisObject& object, const std::string& block) {
+    const std::string position = extractQuotedValue(block, "position");
+    if (!position.empty()) {
+        object.hasPosition = parseFloatTriplet(position,
+                                               object.transform.positionX,
+                                               object.transform.positionY,
+                                               object.transform.positionZ);
+    }
+
+    const std::string rotation = extractQuotedValue(block, "rotation");
+    if (!rotation.empty()) {
+        object.hasRotation = parseFloatQuat(rotation,
+                                             object.transform.rotationX,
+                                             object.transform.rotationY,
+                                             object.transform.rotationZ,
+                                             object.transform.rotationW);
+    }
+
+    const std::string scale = extractQuotedValue(block, "scale");
+    if (!scale.empty()) {
+        object.hasScale = parseFloatTriplet(scale,
+                                            object.transform.scaleX,
+                                            object.transform.scaleY,
+                                            object.transform.scaleZ);
+    }
+}
+
+void extractMisObjectsRecursive(const std::string& text, std::size_t blockStart, std::size_t blockEnd,
+                              s32 parentIndex, std::vector<MisObject>& objects) {
+    std::size_t cursor = blockStart + 1;
+    while (cursor < blockEnd) {
         const std::size_t newPos = text.find("new ", cursor);
-        if (newPos == std::string::npos) {
+        if (newPos == std::string::npos || newPos >= blockEnd) {
             break;
         }
 
-        std::size_t typeStart = newPos + 4;
-        while (typeStart < text.size() && std::isspace(static_cast<unsigned char>(text[typeStart]))) {
-            ++typeStart;
-        }
-
-        std::size_t typeEnd = typeStart;
-        while (typeEnd < text.size() &&
-               (std::isalnum(static_cast<unsigned char>(text[typeEnd])) || text[typeEnd] == '_')) {
-            ++typeEnd;
-        }
-
-        if (typeEnd <= typeStart) {
+        MisObject object;
+        std::size_t childBlockStart = 0;
+        if (!parseMisObjectHeader(text, newPos, object, childBlockStart) || childBlockStart >= blockEnd) {
             cursor = newPos + 4;
             continue;
         }
 
-        if (text[typeEnd] != '(') {
-            cursor = typeEnd;
+        const std::size_t childBlockEnd = findMatchingBrace(text, childBlockStart);
+        if (childBlockEnd == std::string::npos || childBlockEnd > blockEnd) {
+            cursor = newPos + 4;
             continue;
         }
 
-        std::size_t nameStart = typeEnd + 1;
-        while (nameStart < text.size() && std::isspace(static_cast<unsigned char>(text[nameStart]))) {
-            ++nameStart;
-        }
+        object.parentIndex = parentIndex;
+        const std::string block = text.substr(childBlockStart, childBlockEnd - childBlockStart);
+        fillMisObjectTransform(object, block);
 
-        std::size_t nameEnd = nameStart;
-        while (nameEnd < text.size()) {
-            const char ch = text[nameEnd];
-            if (ch == ')' || ch == ' ' || ch == '\t' || ch == '\n' || ch == '{') {
-                break;
-            }
-            ++nameEnd;
-        }
+        const s32 selfIndex = static_cast<s32>(objects.size());
+        objects.push_back(object);
 
-        MisObject object;
-        object.type = text.substr(typeStart, typeEnd - typeStart);
-        if (nameEnd > nameStart) {
-            object.name = text.substr(nameStart, nameEnd - nameStart);
-        }
-        if (object.name.empty()) {
-            object.name = object.type;
-        }
+        extractMisObjectsRecursive(text, childBlockStart, childBlockEnd, selfIndex, objects);
+        cursor = childBlockEnd;
+    }
+}
 
-        const std::size_t blockStart = text.find('{', nameEnd);
-        if (blockStart == std::string::npos) {
-            cursor = nameEnd;
-            continue;
-        }
+std::vector<MisObject> extractMisHierarchy(const std::string& text) {
+    std::vector<MisObject> objects;
 
-        int depth = 1;
-        std::size_t blockEnd = blockStart + 1;
-        while (blockEnd < text.size() && depth > 0) {
-            if (text[blockEnd] == '{') {
-                ++depth;
-            } else if (text[blockEnd] == '}') {
-                --depth;
-            }
-            ++blockEnd;
-        }
-
-        const std::string block = text.substr(blockStart, blockEnd - blockStart);
-
-        const std::string position = extractQuotedValue(block, "position");
-        if (!position.empty()) {
-            object.hasPosition = parseFloatTriplet(position,
-                                                   object.transform.positionX,
-                                                   object.transform.positionY,
-                                                   object.transform.positionZ);
-        }
-
-        const std::string rotation = extractQuotedValue(block, "rotation");
-        if (!rotation.empty()) {
-            object.hasRotation = parseFloatQuat(rotation,
-                                                 object.transform.rotationX,
-                                                 object.transform.rotationY,
-                                                 object.transform.rotationZ,
-                                                 object.transform.rotationW);
-        }
-
-        const std::string scale = extractQuotedValue(block, "scale");
-        if (!scale.empty()) {
-            object.hasScale = parseFloatTriplet(scale,
-                                                object.transform.scaleX,
-                                                object.transform.scaleY,
-                                                object.transform.scaleZ);
-        }
-
-        objects.push_back(std::move(object));
-        cursor = newPos + 4;
+    const std::size_t rootPos = text.find("new ");
+    if (rootPos == std::string::npos) {
+        return objects;
     }
 
+    MisObject root;
+    std::size_t rootBlockStart = 0;
+    if (!parseMisObjectHeader(text, rootPos, root, rootBlockStart)) {
+        return objects;
+    }
+
+    const std::size_t rootBlockEnd = findMatchingBrace(text, rootBlockStart);
+    if (rootBlockEnd == std::string::npos) {
+        return objects;
+    }
+
+    const std::string rootBlock = text.substr(rootBlockStart, rootBlockEnd - rootBlockStart);
+    fillMisObjectTransform(root, rootBlock);
+
+    const s32 rootIndex = static_cast<s32>(objects.size());
+    objects.push_back(root);
+    extractMisObjectsRecursive(text, rootBlockStart, rootBlockEnd, rootIndex, objects);
     return objects;
 }
 
@@ -269,8 +321,19 @@ ConvertResult convertT3DMissionToFuselevel(const std::string& missionPath,
     }
 
     fuse::scene::Scene scene(extractMissionSceneName(text));
-    const std::vector<MisObject> objects = extractMisObjects(text);
-    for (const MisObject& object : objects) {
+    const std::vector<MisObject> objects = extractMisHierarchy(text);
+
+    std::vector<s32> objectToSceneIndex(objects.size(), -1);
+    s32 nextSceneIndex = 0;
+    for (std::size_t i = 0; i < objects.size(); ++i) {
+        if (objects[i].type == "Scene") {
+            continue;
+        }
+        objectToSceneIndex[i] = nextSceneIndex++;
+    }
+
+    for (std::size_t i = 0; i < objects.size(); ++i) {
+        const MisObject& object = objects[i];
         if (object.type == "Scene") {
             continue;
         }
@@ -285,7 +348,13 @@ ConvertResult convertT3DMissionToFuselevel(const std::string& missionPath,
             transform.scaleZ = 1.f;
         }
 
-        scene.addEntity(object.name, transform);
+        s32 parentIndex = -1;
+        if (object.parentIndex >= 0 &&
+            static_cast<std::size_t>(object.parentIndex) < objectToSceneIndex.size()) {
+            parentIndex = objectToSceneIndex[static_cast<std::size_t>(object.parentIndex)];
+        }
+
+        scene.addEntity(object.name, transform, parentIndex);
     }
 
     const fuse::scene::SerialiseResult serialised = fuse::scene::SceneSerialiser::save(scene, outputPath);

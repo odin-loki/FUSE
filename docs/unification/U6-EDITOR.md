@@ -2,7 +2,7 @@
 
 **Phase:** U6 / WP-08 vertical slice  
 **Date:** 2026-09-19  
-**Status:** Runtime viewport hook + live property edits + Delete/Reparent queue apply landed (headless tests + optional Qt shell)
+**Status:** Inspector + undo through command queue; runtime viewport embed hook (headless-safe)
 
 ---
 
@@ -75,7 +75,7 @@ Linux umbrella CI configures with `FUSE_BUILD_EDITOR=OFF` (default). Tests:
 | CTest name | Binary | Purpose |
 |------------|--------|---------|
 | `fuse_editor_command_queue` | `fuse_editor_api_tests` | Mutex-backed queue post/drain + payload FIFO |
-| `fuse_editor_host` | `fuse_editor_host_tests` | `EditorHost` game-tick drain, PIE start/stop, cross-thread UI↔game proof, `FeaturePaneBridge`, Delete/Reparent/SetProperty apply, `RuntimeViewportHook` |
+| `fuse_editor_host` | `fuse_editor_host_tests` | `EditorHost` game-tick drain, PIE, inspector props, undo/redo, `RuntimeViewportHook` |
 
 ```bash
 cmake -B build-fuse -G Ninja \
@@ -102,16 +102,16 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 │  │ Qt UI thread     │   │ Game thread (QThread + QTimer) │ │
 │  │  ProjectHub      │   │  EditorHost::gameTick()        │ │
 │  │  PropertyPane    │──▶│  CommandQueue::drain()         │ │
-│  │  Viewport hook   │   │  PlaySession tick while PIE    │ │
-│  │  postFromUi()    │   │                                │ │
+│  │  Viewport stub   │   │  PlaySession tick while PIE    │ │
+│  │  postFromUi()    │   │  RuntimeViewportHook embed     │ │
 │  └──────────────────┘   └───────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 - **Project hub** — lists `Samples/unification/*/project.json` directories.
 - **Property pane (WP-08 hook)** — `PropertyPaneWidget` + `FeaturePaneBridge`; Play/Stop posts `StartPlay`/`StopPlay` commands (no direct scene mutation from UI thread).
-- **Runtime viewport hook** — `RuntimeViewportHook` ticks with `EditorHost::gameTick()`, syncs project label + dimensions from the Qt surface; GPU backend embed still deferred.
-- **Open project** — posts `SetProperty { project = <name> }` to the queue (handle-only command envelope).
+- **Runtime viewport hook** — `RuntimeViewportHook` + `RuntimeEmbedSession`: loads project default `.fuselevel` when `project.root` is posted, mirrors editor ECS entities into `runtimeScene`, ticks a headless present stub (`FUSE_VULKAN_BACKEND` submits empty frame when device ready).
+- **Open project** — posts `SetProperty { project = <name> }` and optional `project.root = <dir>` to the queue (handle-only command envelope).
 
 ---
 
@@ -119,10 +119,11 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 
 | Header | Notes |
 |--------|-------|
-| `fuse/editor/command_queue.hpp` | `EditorCommand`, `CommandQueue` (mutex + deque) |
+| `fuse/editor/command_queue.hpp` | `EditorCommand`, `CommandQueue` (mutex + deque); kinds include `Undo`/`Redo` |
 | `fuse/editor/editor_host.hpp` | `EditorHost` — `postFromUi()` / `gameTick()` + in-process PIE |
 | `fuse/editor/feature_pane_bridge.hpp` | Feature-pane hook — posts commands for play/stop/selection/property edits |
-| `fuse/editor/runtime_viewport.hpp` | Embedded runtime viewport hook — dimensions + tick sync on game thread |
+| `fuse/editor/runtime_viewport.hpp` | Viewport ↔ runtime scene embed hook (headless-safe) |
+| `fuse/editor/runtime_embed_session.hpp` | Embed session counters (world load, present stub ticks) |
 
 ---
 
@@ -130,13 +131,12 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 
 | Done (this slice) | Remaining |
 |-------------------|-----------|
-| Mutex-backed command queue with payload retention | Full GPU `fuse_runtime` viewport embed (Vulkan/Metal/GLES) |
-| `EditorHost` applies project + PIE + selection on game thread | Timelines, addon feature panes |
-| Delete/Reparent/SetProperty (`transform.position`, material, SDF) via queue + undo | Undo/redo surfaced through Qt chrome |
-| `RuntimeViewportHook` + Qt resize → queue → game-thread tick | Thread-safe payload coalescing beyond counters |
-| Headless cross-thread queue proof (32 UI posts → game drain) | Full inspector field coverage through queue |
-| `FeaturePaneBridge` + Qt `PropertyPaneWidget` live position edits | Asset/material cook integration in editor shell |
-| `PlaySession` tick wired into `gameTick()` while PIE active | |
+| Mutex-backed command queue with payload retention | Full GPU swapchain viewport in Qt widget |
+| `EditorHost` applies project + PIE + selection + delete/reparent on game thread | Timelines, addon feature panes |
+| Headless cross-thread queue proof (32 UI posts → game drain) | Thread-safe payload coalescing beyond counters |
+| `FeaturePaneBridge` + property edits (`transform`, `mesh.material_id`, `sdf.blend_alpha`) through queue | Live Qt widgets for mesh/SDF beyond position spinboxes |
+| Undo/redo through queue (`Undo`/`Redo` command kinds) | Undo for all property edits (not just delete/reparent) |
+| `RuntimeViewportHook` loads manifest world + mirrors editor entities + headless present stub | Real in-process `fuse_runtime` GPU viewport (Vulkan/Metal/GLES) |
 
 ---
 

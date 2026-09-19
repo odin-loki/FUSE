@@ -1,8 +1,8 @@
 # FUSE U7 — Project Format + Converters (WP-09)
 
 **Phase:** U7 content / converters  
-**Date:** 2026-09-15  
-**Status:** `project.json` loader + importer stubs + `.fuselevel` world converter (`fuse_convert`) landed
+**Date:** 2026-09-19  
+**Status:** `project.json` v1 + `.fuselevel` v2 hierarchy + converter/cooker stubs
 
 ---
 
@@ -15,8 +15,10 @@ FUSE projects are directories containing a versioned `project.json` manifest. Th
 | Manifest loader | `fuse/project/loader.hpp` | Parse `project.json` from directory or file |
 | T3D mission importer | `fuse/project/importer.hpp` | `.mis` → World3D placeholder |
 | T2D module importer | `fuse/project/importer.hpp` | `main.cs` / `.cs` → World2D placeholder |
+| World converter | `fuse/project/world_converter.hpp` | `.mis` / `.cs` → `.fuselevel` (hierarchy-aware) |
 | CLI dry-run | `Tools/FUSE/fuse_import` | Headless import validation |
-| World converter | `Tools/FUSE/fuse_convert` + `fuse_world_converter` | `.mis`/`.cs` → `.fuselevel` via `SceneSerialiser` |
+| CLI convert | `Tools/FUSE/fuse_convert` | Legacy source → `.fuselevel` |
+| Cook stub | `Tools/FUSE/Cook/fuselevel_cook_stub.*` | `fuse_cook --fuselevel` wrapper |
 
 ---
 
@@ -49,14 +51,27 @@ FUSE projects are directories containing a versioned `project.json` manifest. Th
 | `name` | string | Project identifier |
 | `dimensions.*` | bool | Maps to `fuse::hybrid::DimensionFlags` |
 | `modules.*` | bool | Enables U5 feature modules for this project |
-| `defaultWorld3D` | string | Relative path to converted 3D world (stub ok) |
-| `defaultWorld2D` | string | Relative path to converted 2D world (stub ok) |
+| `defaultWorld3D` | string | Relative path to converted 3D world |
+| `defaultWorld2D` | string | Relative path to converted 2D world |
 
-Samples: `Samples/unification/*/project.json`
+Samples: `Samples/unification/*/project.json` — `demo_3d_empty` ships `worlds/example.mis` + cooked `worlds/example.fuselevel`.
 
 ---
 
-## 3. Loader API
+## 3. `.fuselevel` schema (version 2 — hierarchy)
+
+Binary format in `fuse::scene::SceneSerialiser`:
+
+| Version | Layout |
+|---------|--------|
+| **v1** | Header + camera + name table + transform table (flat entities) |
+| **v2** | v1 + **parent index table** (`s32` per entity, `-1` = root) written when any entity has a parent |
+
+Loader accepts v1 and v2. Converter writes v2 when `.mis` nesting produces parent links (e.g. `SimGroup` → `SpawnSphere`).
+
+---
+
+## 4. Loader API
 
 ```cpp
 #include <fuse/project/loader.hpp>
@@ -72,14 +87,15 @@ if (result.status == fuse::project::LoadStatus::Ok) {
 
 ---
 
-## 4. Importer stubs
+## 5. Importer + converter stubs
 
 ### T3D mission (`.mis`)
 
-Parses the first `new Scene(NAME)` or `new SimGroup(NAME)` token. Registers a World3D placeholder with the parsed mission name.
+Recursively extracts nested `new Type(Name) { ... }` blocks with transforms. Skips root `Scene` in output entities but preserves parent indices for `SimGroup` children.
 
 ```cpp
-fuse::project::ImportRecord record = fuse::project::importT3DMission(path, worldIndex);
+fuse::project::ConvertResult result =
+    fuse::project::convertT3DMissionToFuselevel("levels/ExampleLevel.mis", "worlds/main.fuselevel");
 ```
 
 Golden source: `Templates/BaseGame/game/data/ExampleModule/levels/ExampleLevel.mis`
@@ -89,10 +105,9 @@ Golden source: `Templates/BaseGame/game/data/ExampleModule/levels/ExampleLevel.m
 Parses `module "Name"` or `module @Name` declarations. Falls back to filename stem.
 
 ```cpp
-fuse::project::ImportRecord record = fuse::project::importT2DModule(path, worldIndex);
+fuse::project::ConvertResult result =
+    fuse::project::convertT2DModuleToFuselevel("main.cs", "worlds/ui.fuselevel");
 ```
-
-Golden source: `third_party/Torque2D/toybox/SpriteToy/1/main.cs`
 
 ### Dry-run
 
@@ -105,46 +120,48 @@ When `sourcePath` is empty, importers run against `defaultWorld3D` / `defaultWor
 
 ---
 
-## 5. CLI
+## 6. CLI
 
 ```bash
-cmake --build build-fuse --target fuse_import fuse_convert
+cmake --build build-fuse --target fuse_import fuse_convert fuse_cook
 
 # Load project + dry-run default worlds
 ./build-fuse/Tools/FUSE/fuse_import --project Samples/unification/demo_3d_empty
 
-# Dry-run a single legacy file
-./build-fuse/Tools/FUSE/fuse_import --source Templates/BaseGame/game/data/ExampleModule/levels/ExampleLevel.mis
+# Convert legacy mission → .fuselevel
+./build-fuse/Tools/FUSE/fuse_convert \
+  --mis Samples/unification/demo_3d_empty/worlds/example.mis \
+  --output Samples/unification/demo_3d_empty/worlds/example.fuselevel
 
-# Convert a T3D mission to .fuselevel (writes binary scene v1)
-./build-fuse/Tools/FUSE/fuse_convert --mis Templates/BaseGame/game/data/ExampleModule/levels/ExampleLevel.mis \
-  --output /tmp/ExampleLevel.fuselevel
+# Cook stub (delegates to world converter)
+./build-fuse/Tools/FUSE/fuse_cook \
+  --fuselevel --mis path/to/level.mis --output worlds/out.fuselevel
 ```
 
-`fuse_import` exit `0` on success; prints one line per registered world.  
-`fuse_convert` writes `.fuselevel` files for supported legacy sources (`.mis`, `.cs`).
+Exit `0` on success; prints one line per registered world / convert note.
 
 ---
 
-## 6. Tests
+## 7. Tests
 
 | Test | Target |
 |------|--------|
 | `fuse_project_tests` | Manifest parse, schema rejection, T3D/T2D importer stubs |
-| `fuse_world_converter_tests` | `.mis`/`.cs` → `.fuselevel` round-trip via `SceneSerialiser` |
+| `fuse_world_converter_tests` | `.mis` hierarchy → `.fuselevel` v2 round-trip |
+| `fuse_scene_b37_b39` | Serialiser v1/v2 + hierarchy round-trip |
 
 ---
 
-## 7. U8 parity demos
+## 8. U8 parity demos
 
 Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed by its matching binary in `Source/FUSE/Apps/`. See [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md).
 
 ---
 
-## 8. Deferred (honest backlog)
+## 9. Deferred (honest backlog)
 
-- Full `.fuselevel` v2 format (asset table, archetypes, SVO) + mesh/texture cookers under `Tools/FUSE/Cook/`
-- Full T3D SimObject tree + parent hierarchy extraction from `.mis` (converter emits flat named objects with transforms when present)
-- T2D scene graph import from toybox modules (converter emits module root placeholder only)
+- Full T3D SimObject field extraction (materials, datablocks, spawn classes)
+- T2D scene graph import from toybox modules
 - Asset path remapping via VFS mounts ([vfs-mount-plan.md](./vfs-mount-plan.md))
 - `project.json` `workerCap` override for `computeWorkerCount()`
+- Real mesh/texture/audio cooks (stubs exist under `fuse_cook`; not production pipelines)

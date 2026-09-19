@@ -2,12 +2,17 @@
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/feature_pane_bridge.hpp>
+#include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <thread>
 
 namespace {
@@ -207,6 +212,124 @@ void testHostSetPropertyTransformViaQueue() {
     expectTrue(host.editorState().sceneModified, "scene marked modified after property edit");
 }
 
+void testHostSetPropertyMeshMaterialViaQueue() {
+    fuse::editor::EditorHost host;
+    fuse::editor::FeaturePaneBridge bridge(host);
+
+    const fuse::ecs::EntityID entity = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
+    host.editorScene().registry().add<fuse::ecs::Mesh>(entity);
+    bridge.postSelectEntity(entity);
+    host.gameTick();
+
+    bridge.postSetProperty(entity, "mesh.material_id", "7");
+    host.gameTick();
+
+    const fuse::ecs::Mesh* mesh = host.editorScene().registry().get<fuse::ecs::Mesh>(entity);
+    expectTrue(mesh != nullptr, "mesh component present");
+    expectTrue(mesh->material_id == 7u, "mesh.material_id applied through command queue");
+}
+
+void testHostSetPropertySdfBlendViaQueue() {
+    fuse::editor::EditorHost host;
+    fuse::editor::FeaturePaneBridge bridge(host);
+
+    const fuse::ecs::EntityID entity = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
+    host.editorScene().registry().add<fuse::ecs::SDFObject>(entity);
+    bridge.postSelectEntity(entity);
+    host.gameTick();
+
+    bridge.postSetProperty(entity, "sdf.blend_alpha", "0.75");
+    host.gameTick();
+
+    const fuse::ecs::SDFObject* sdf = host.editorScene().registry().get<fuse::ecs::SDFObject>(entity);
+    expectTrue(sdf != nullptr, "sdf component present");
+    expectTrue(sdf->blend_alpha == 0.75f, "sdf.blend_alpha applied through command queue");
+}
+
+void testInspectorSectionsThroughBridge() {
+    fuse::editor::EditorHost host;
+    fuse::editor::FeaturePaneBridge bridge(host);
+
+    const fuse::ecs::EntityID entity = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
+    host.editorScene().registry().add<fuse::ecs::Mesh>(entity);
+    host.editorScene().registry().add<fuse::ecs::SDFObject>(entity);
+
+    bridge.postSelectEntity(entity);
+    host.gameTick();
+    bridge.syncPropertyPane();
+
+    expectTrue(bridge.propertyInspector().sections().size() >= 3u,
+               "inspector exposes transform/mesh/sdf sections for selection");
+}
+
+void testHostUndoDeleteViaQueue() {
+    fuse::editor::EditorHost host;
+    fuse::editor::FeaturePaneBridge bridge(host);
+
+    const fuse::ecs::EntityID entity = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
+
+    auto countTransforms = [&]() {
+        fuse::u32 count = 0;
+        host.editorScene().registry().each_query<fuse::ecs::Transform>(
+            [&](fuse::ecs::EntityID /*id*/, fuse::ecs::Transform& /*transform*/) { ++count; });
+        return count;
+    };
+
+    const fuse::u32 beforeDelete = countTransforms();
+
+    bridge.postDeleteEntity(entity);
+    host.gameTick();
+    expectTrue(countTransforms() + 1u == beforeDelete, "delete removed one entity");
+
+    bridge.postUndoRequested();
+    host.gameTick();
+    expectTrue(countTransforms() == beforeDelete, "undo restores deleted entity through queue");
+    expectTrue(host.undoStack().canRedo(), "redo available after undo");
+}
+
+void testRuntimeViewportLoadsProjectRoot() {
+    const std::string projectRoot = "/tmp/fuse_editor_viewport_project";
+    std::filesystem::create_directories(projectRoot + "/worlds");
+    {
+        std::ofstream manifest(projectRoot + "/project.json");
+        manifest << R"({
+  "schemaVersion": 1,
+  "name": "viewport_test",
+  "dimensions": { "enable3D": true, "enable2D": false, "enableUI": false },
+  "modules": { "ai": false, "cinematics": false, "fx": false, "mechanics": false, "adventure": false },
+  "defaultWorld3D": "worlds/test.fuselevel",
+  "defaultWorld2D": ""
+})";
+        std::ofstream world(projectRoot + "/worlds/test.fuselevel", std::ios::binary);
+        world << "invalid";
+    }
+
+    fuse::editor::EditorHost host;
+
+    fuse::editor::EditorCommand rootCmd;
+    rootCmd.kind = fuse::editor::CommandKind::SetProperty;
+    rootCmd.propertyName = "project.root";
+    rootCmd.propertyValue = projectRoot;
+    host.postFromUi(std::move(rootCmd));
+
+    fuse::editor::EditorCommand projectCmd;
+    projectCmd.kind = fuse::editor::CommandKind::SetProperty;
+    projectCmd.propertyName = "project";
+    projectCmd.propertyValue = "viewport_test";
+    host.postFromUi(std::move(projectCmd));
+
+    host.gameTick();
+    host.gameTick();
+
+    expectTrue(host.runtimeViewport().projectRoot() == projectRoot, "project root stored on viewport hook");
+    expectTrue(host.runtimeViewport().embedSession().headlessPresentTicks >= 1u,
+               "headless present stub ticks while embedded");
+}
+
 void testRuntimeViewportHookTicksWithProject() {
     fuse::editor::EditorHost host;
 
@@ -251,6 +374,11 @@ int main() {
     testHostDeleteObjectViaQueue();
     testHostReparentObjectViaQueue();
     testHostSetPropertyTransformViaQueue();
+    testHostSetPropertyMeshMaterialViaQueue();
+    testHostSetPropertySdfBlendViaQueue();
+    testInspectorSectionsThroughBridge();
+    testHostUndoDeleteViaQueue();
+    testRuntimeViewportLoadsProjectRoot();
     testRuntimeViewportHookTicksWithProject();
     fuse::core::shutdown();
 

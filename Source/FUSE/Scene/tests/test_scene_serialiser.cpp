@@ -111,6 +111,25 @@ void testEntityTransformRoundTrip() {
     expectTrue(loaded.entities()[1].transform.scaleZ == 0.5f, "entity b scale z");
 }
 
+void testEntityHierarchyRoundTrip() {
+    const std::string path = tempDir() + "/entity_hierarchy.fuselevel";
+
+    fuse::scene::Scene scene("HierarchyScene");
+    scene.addEntity("root_group");
+    scene.addEntity("child_a", {}, 0);
+    scene.addEntity("child_b", {}, 0);
+
+    expectTrue(fuse::scene::SceneSerialiser::save(scene, path).status == fuse::scene::SerialiseStatus::Ok,
+               "hierarchy scene save ok");
+
+    fuse::scene::Scene loaded;
+    expectTrue(fuse::scene::SceneSerialiser::load(path, loaded).status == fuse::scene::SerialiseStatus::Ok,
+               "hierarchy scene load ok");
+    expectTrue(loaded.entityCount() == 3u, "hierarchy entity count round-trip");
+    expectTrue(loaded.entities()[1].parentIndex == 0, "child_a parent index preserved");
+    expectTrue(loaded.entities()[2].parentIndex == 0, "child_b parent index preserved");
+}
+
 void testSceneSnapshotRoundTrip() {
     fuse::scene::Scene scene("SnapshotScene");
     scene.camera().setPosition(0.f, 1.f, 5.f);
@@ -211,6 +230,7 @@ int test_scene_serialiser_main() {
     fuse::core::initialize();
     testSceneRoundTrip();
     testEntityTransformRoundTrip();
+    testEntityHierarchyRoundTrip();
     testSceneSnapshotRoundTrip();
     testInvalidMagicRejected();
     testProjectSceneIo();

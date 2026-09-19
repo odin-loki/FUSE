@@ -29,6 +29,8 @@ public:
                          const std::string& propertyValue);
     void postDeleteEntity(ecs::EntityID entity);
     void postReparentEntity(ecs::EntityID entity, ecs::EntityID newParent);
+    void postUndoRequested();
+    void postRedoRequested();
 
 private:
     EditorHost& m_host;

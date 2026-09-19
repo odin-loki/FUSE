@@ -1,10 +1,11 @@
 add_executable(fuse_import fuse_import.cpp)
-add_executable(fuse_cook fuse_cook.cpp)
+add_executable(fuse_cook fuse_cook.cpp Cook/fuselevel_cook_stub.cpp)
 add_executable(fuse_convert fuse_convert.cpp)
 
 target_link_libraries(fuse_import PRIVATE fuse_project fuse_core)
-target_link_libraries(fuse_cook PRIVATE fuse_project fuse_core)
+target_link_libraries(fuse_cook PRIVATE fuse_project fuse_world_converter fuse_core)
 target_link_libraries(fuse_convert PRIVATE fuse_world_converter fuse_core)
+target_include_directories(fuse_cook PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(fuse_import PRIVATE cxx_std_17)
 target_compile_features(fuse_cook PRIVATE cxx_std_17)
 target_compile_features(fuse_convert PRIVATE cxx_std_17)

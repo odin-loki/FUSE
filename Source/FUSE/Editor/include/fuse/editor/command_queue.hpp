@@ -20,6 +20,8 @@ enum class CommandKind {
     StopPlay,
     PausePlay,
     ResumePlay,
+    Undo,
+    Redo,
 };
 
 /// UI-thread command envelope — applied on the game thread via CommandQueue::drain().

@@ -25,6 +25,8 @@ struct SceneEntityTransform {
 struct SceneEntity {
     std::string name;
     SceneEntityTransform transform{};
+    /// Index into the owning scene's entity vector; `-1` for root-level (`.fuselevel` v2 / `.mis` hierarchy).
+    s32 parentIndex = -1;
 };
 
 /// In-memory scene snapshot for play-mode restore and serialiser round-trip stubs.

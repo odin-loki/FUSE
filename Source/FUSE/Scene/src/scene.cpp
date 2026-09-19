@@ -8,10 +8,11 @@ void Scene::setName(std::string name) {
     m_name = std::move(name);
 }
 
-void Scene::addEntity(std::string entityName, SceneEntityTransform transform) {
+void Scene::addEntity(std::string entityName, SceneEntityTransform transform, s32 parentIndex) {
     SceneEntity entity;
     entity.name = std::move(entityName);
     entity.transform = transform;
+    entity.parentIndex = parentIndex;
     m_entities.push_back(std::move(entity));
 }
 

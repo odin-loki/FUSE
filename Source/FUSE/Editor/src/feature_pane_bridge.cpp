@@ -55,4 +55,16 @@ void FeaturePaneBridge::postReparentEntity(ecs::EntityID entity, ecs::EntityID n
     m_host.postFromUi(std::move(cmd));
 }
 
+void FeaturePaneBridge::postUndoRequested() {
+    EditorCommand cmd;
+    cmd.kind = CommandKind::Undo;
+    m_host.postFromUi(std::move(cmd));
+}
+
+void FeaturePaneBridge::postRedoRequested() {
+    EditorCommand cmd;
+    cmd.kind = CommandKind::Redo;
+    m_host.postFromUi(std::move(cmd));
+}
+
 } // namespace fuse::editor

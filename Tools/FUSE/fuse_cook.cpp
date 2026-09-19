@@ -5,6 +5,8 @@
 #include <fuse/project/import_pipeline.hpp>
 #include <fuse/project/loader.hpp>
 
+#include "Cook/fuselevel_cook_stub.hpp"
+
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -19,7 +21,9 @@ void printUsage() {
                  "  fuse_cook --manifest <cook.json> [--dry-run]  Load cook_manifest.json and plan/cook\n"
                  "  fuse_cook --mesh --input <path> --output <path>   Stub mesh cook\n"
                  "  fuse_cook --texture --input <path> --output <path> Stub texture cook\n"
-                 "  fuse_cook --audio --input <path> --output <path>  Stub audio cook\n");
+                 "  fuse_cook --audio --input <path> --output <path>  Stub audio cook\n"
+                 "  fuse_cook --fuselevel --mis <file.mis> --output <world.fuselevel>\n"
+                 "  fuse_cook --fuselevel --module <file.cs> --output <world.fuselevel>\n");
 }
 
 int printCookResult(const fuse::project::CookBatchResult& result) {
@@ -49,6 +53,9 @@ int main(int argc, char** argv) {
     bool meshCook = false;
     bool textureCook = false;
     bool audioCook = false;
+    bool fuselevelCook = false;
+    std::string missionPath;
+    std::string modulePath;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -68,6 +75,12 @@ int main(int argc, char** argv) {
             textureCook = true;
         } else if (arg == "--audio") {
             audioCook = true;
+        } else if (arg == "--fuselevel") {
+            fuselevelCook = true;
+        } else if (arg == "--mis" && i + 1 < argc) {
+            missionPath = argv[++i];
+        } else if (arg == "--module" && i + 1 < argc) {
+            modulePath = argv[++i];
         } else if (arg == "--help" || arg == "-h") {
             printUsage();
             fuse::core::shutdown();
@@ -78,6 +91,21 @@ int main(int argc, char** argv) {
             fuse::core::shutdown();
             return EXIT_FAILURE;
         }
+    }
+
+    if (fuselevelCook) {
+        if (outputPath.empty() || (missionPath.empty() && modulePath.empty())) {
+            printUsage();
+            fuse::core::shutdown();
+            return EXIT_FAILURE;
+        }
+
+        const fuse::cook::FuselevelCookResult cooked =
+            !missionPath.empty() ? fuse::cook::cookFuselevelFromMis(missionPath, outputPath)
+                                 : fuse::cook::cookFuselevelFromModule(modulePath, outputPath);
+        std::printf("fuse_cook: %s (%u entities)\n", cooked.note.c_str(), cooked.entityCount);
+        fuse::core::shutdown();
+        return cooked.status == fuse::cook::FuselevelCookStatus::Ok ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
     if (meshCook || textureCook || audioCook) {

@@ -71,6 +71,11 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         return true;
     }
 
+    if (command.propertyName == "project.root") {
+        host.runtimeViewport().setProjectRoot(command.propertyValue);
+        return true;
+    }
+
     if (command.propertyName == "viewport.width") {
         const u32 width = static_cast<u32>(std::strtoul(command.propertyValue.c_str(), nullptr, 10));
         host.runtimeViewport().requestResize(width, 0);
@@ -102,6 +107,48 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         }
 
         transform->position = position;
+        transform->dirty = true;
+        host.editorState().sceneModified = true;
+        return true;
+    }
+
+    if (command.propertyName == "transform.scale") {
+        ecs::Transform* transform = registry.get<ecs::Transform>(entity);
+        if (transform == nullptr) {
+            return false;
+        }
+
+        ecs::vec3 scale{};
+        if (!parseVec3(command.propertyValue, scale)) {
+            return false;
+        }
+
+        transform->scale = scale;
+        transform->dirty = true;
+        host.editorState().sceneModified = true;
+        return true;
+    }
+
+    if (command.propertyName == "transform.rotation") {
+        ecs::Transform* transform = registry.get<ecs::Transform>(entity);
+        if (transform == nullptr) {
+            return false;
+        }
+
+        std::string normalized = command.propertyValue;
+        for (char& ch : normalized) {
+            if (ch == ',') {
+                ch = ' ';
+            }
+        }
+
+        std::istringstream stream(normalized);
+        ecs::quat rotation{};
+        if (!(stream >> rotation.x >> rotation.y >> rotation.z >> rotation.w)) {
+            return false;
+        }
+
+        transform->rotation = rotation;
         transform->dirty = true;
         host.editorState().sceneModified = true;
         return true;
@@ -212,6 +259,18 @@ void EditorHost::applyCommand_(const EditorCommand& command) {
         m_state.sceneModified = true;
         break;
     }
+    case CommandKind::Undo:
+        if (m_undoStack.canUndo()) {
+            m_undoStack.undo();
+            m_state.sceneModified = true;
+        }
+        break;
+    case CommandKind::Redo:
+        if (m_undoStack.canRedo()) {
+            m_undoStack.redo();
+            m_state.sceneModified = true;
+        }
+        break;
     }
 }
 

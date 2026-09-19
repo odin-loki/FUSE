@@ -24,6 +24,43 @@ std::string writeTempFile(const std::string& path, const std::string& contents) 
     return path;
 }
 
+void testConvertT3DMissionHierarchy() {
+    const std::string mission = writeTempFile(
+        "/tmp/fuse_convert_hierarchy.mis",
+        "new Scene(ExampleLevel) {\n"
+        "   new SimGroup(CameraSpawnPoints) {\n"
+        "      new SpawnSphere(DefaultCameraSpawnSphere) {\n"
+        "         position = \"0 0 10\";\n"
+        "      };\n"
+        "   };\n"
+        "   new GroundPlane() {\n"
+        "      position = \"0 0 0\";\n"
+        "   };\n"
+        "};\n");
+
+    const std::string output = "/tmp/fuse_convert_hierarchy.fuselevel";
+    const fuse::project::ConvertResult result =
+        fuse::project::convertT3DMissionToFuselevel(mission, output);
+
+    expectTrue(result.status == fuse::project::ConvertStatus::Ok, "hierarchy mission convert ok");
+    expectTrue(result.entityCount >= 2u, "hierarchy mission produced nested entities");
+
+    fuse::scene::Scene loaded;
+    const fuse::scene::SerialiseResult loadResult = fuse::scene::SceneSerialiser::load(output, loaded);
+    expectTrue(loadResult.status == fuse::scene::SerialiseStatus::Ok, "hierarchy fuselevel loads");
+
+    bool foundChildWithParent = false;
+    for (const fuse::scene::SceneEntity& entity : loaded.entities()) {
+        if (entity.name == "DefaultCameraSpawnSphere" && entity.parentIndex >= 0) {
+            foundChildWithParent = true;
+            expectTrue(loaded.entities()[static_cast<std::size_t>(entity.parentIndex)].name ==
+                           "CameraSpawnPoints",
+                       "spawn sphere parent is SimGroup");
+        }
+    }
+    expectTrue(foundChildWithParent, "hierarchy parent indices preserved in fuselevel v2");
+}
+
 void testConvertT3DMissionToFuselevel() {
     const std::string mission = writeTempFile(
         "/tmp/fuse_convert_mission.mis",
@@ -69,6 +106,7 @@ void testConvertT2DModuleToFuselevel() {
 
 int main() {
     fuse::core::initialize();
+    testConvertT3DMissionHierarchy();
     testConvertT3DMissionToFuselevel();
     testConvertT2DModuleToFuselevel();
     fuse::core::shutdown();
