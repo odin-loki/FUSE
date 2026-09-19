@@ -91,6 +91,42 @@ struct RadiusFilterPreflight {
 
     /// True when filter/count can proceed or is a no-op early-out (B7.4 deepen follow-up).
     [[nodiscard]] bool can_filter_or_skip() const { return can_filter() || early_out; }
+/// Preflight checks before applying an interest scope diff (B7.4 deepen follow-up).
+struct InterestSetDiffPreflight {
+    /// True when at least one `entered` entity is absent from `scope`.
+    bool enter_applicable = false;
+    /// True when at least one `left` entity is present in `scope`.
+    bool leave_applicable = false;
+    /// True when the diff is non-empty but would not modify `scope`.
+    bool redundant = false;
+    /// True when no duplicate entity ids appear in `entered`.
+    bool duplicate_enter_ok = true;
+    /// True when no duplicate entity ids appear in `left`.
+    bool duplicate_leave_ok = true;
+    /// True when no entity appears in both `entered` and `left`.
+    bool conflicting_entity_ok = true;
+
+    [[nodiscard]] bool can_apply() const {
+        return !empty_diff && !redundant && duplicate_enter_ok && duplicate_leave_ok &&
+               conflicting_entity_ok && (enter_applicable || leave_applicable);
+
+    /// True when apply can proceed normally or the diff is an empty no-op payload.
+    [[nodiscard]] bool can_apply_or_skip() const { return can_apply() || empty_diff; }
+
+    [[nodiscard]] bool should_skip() const { return !can_apply() && !empty_diff; }
+
+/// Preflight checks before radius count/filter work (B7.4 deepen follow-up).
+    bool candidates_empty = true;
+    bool uses_hysteresis = false;
+
+    [[nodiscard]] bool can_filter() const {
+        if (candidates_empty) {
+            return false;
+        if (radii_disabled) {
+            return uses_hysteresis && !prior_scope_empty;
+        return true;
+
+    [[nodiscard]] bool should_skip() const { return !can_filter(); }
 };
 
 /// Entities that entered or left scope between two snapshots.
@@ -216,15 +252,21 @@ struct RadiusFilterPreflight {
 /// True when apply can be skipped because the diff carries no scope changes (B7.4 deepen follow-up).
 
 
-/// Preflight diff-apply without mutating `scope` (B7.4 deepen follow-up).
-[[nodiscard]] InterestDiffPreflight preflight_interest_diff_apply(const InterestSetDiff& diff,
-[[nodiscard]] bool should_skip_interest_diff_apply(const InterestSetDiff& diff, const InterestScopeSet& scope);
 /// Preflight diff apply without mutating scope (B7.4 deepen follow-up).
 /// True when diff apply should be skipped (empty or redundant non-empty diff).
 /// Preflight radius filter/count without building entry rows (B7.4 deepen follow-up).
 /// Preflight radius filter/count with prior scope hysteresis (B7.4 deepen follow-up).
 /// True when radius filter/count would early-out without scanning candidates.
 /// True when hysteresis radius filter/count would early-out without scanning candidates.
+/// Preflight diff apply without mutating `scope` (B7.4 deepen follow-up).
+[[nodiscard]] InterestSetDiffPreflight preflight_interest_diff(const InterestSetDiff& diff,
+/// True when diff apply should be skipped (empty no-op or structurally invalid).
+[[nodiscard]] bool should_skip_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope);
+/// Apply `diff` when preflight succeeds; returns false when skipped or invalid.
+[[nodiscard]] bool apply_interest_diff_if_ready(InterestSetDiff& diff, InterestScopeSet& scope);
+/// Preflight radius count/filter without building entry rows (B7.4 deepen follow-up).
+/// Preflight hysteresis-aware radius count/filter (B7.4 deepen follow-up).
+/// True when radius count/filter would early-out for the given inputs.
 
 /// Returns true when `out` is non-empty.
 [[nodiscard]] bool diff_interest_scope_sets(const InterestScopeSet& previous, const InterestScopeSet& current,
