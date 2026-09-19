@@ -1637,3 +1637,15 @@ struct IslandDispatchAfterWakePreflight {
 bool should_skip_island_constraint_solve_graph(const ContactIslandGraph& graph,
 IslandDispatchAfterWakePreflight preflight_island_dispatch_after_wake(const ContactIslandGraph& graph,
 bool should_skip_island_dispatch_after_wake(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-843c ---
+struct IslandConstraintSolveDispatchPreflight {
+struct IslandPreSolvePreflight {
+struct IslandPreSolveGraphPreflight {
+IslandConstraintSolveDispatchPreflight preflight_island_constraint_solve_dispatch(
+IslandConstraintSolveDispatchPreflight preflight_island_constraint_solve_dispatch_by_index(
+bool should_skip_island_constraint_solve_dispatch(
+IslandPreSolvePreflight preflight_island_pre_solve(
+IslandPreSolvePreflight preflight_island_pre_solve_by_index(
+bool should_skip_island_pre_solve(const ContactIslandGraph::Island& island,
+IslandPreSolveGraphPreflight preflight_island_pre_solve_graph(

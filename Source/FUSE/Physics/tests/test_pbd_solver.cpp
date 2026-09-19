@@ -4799,3 +4799,32 @@ void testPreflightContactIslandBuildGuards() {
 void testDispatchAfterWakeGuards() {
     const IslandDispatchAfterWakePreflight preflight = preflight_island_dispatch_after_wake(graph, bodies, dt);
     testPreflightContactIslandBuildGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-843c ---
+void testBuildIslandGraphGuardedResult() {
+    expectTrue(bodiesPreflight.movableCount == 1u, "index bodies preflight counts movable body");
+void testPreflightIslandConstraintSolveDispatch() {
+    const IslandConstraintSolveDispatchPreflight validPreflight =
+    expectTrue(!validPreflight.invalidDt, "dispatch preflight accepts valid dt");
+    expectTrue(validPreflight.can_solve(), "dispatch preflight can solve constrained island");
+    const IslandConstraintSolveDispatchPreflight invalidDt =
+    expectTrue(should_skip_island_constraint_solve_dispatch(
+               "should_skip dispatch on invalid dt");
+    const IslandConstraintSolveDispatchPreflight indexPreflight =
+    expectTrue(indexPreflight.can_solve(), "index dispatch preflight can solve constrained island");
+    const IslandConstraintSolveDispatchPreflight outOfRange =
+void testPreflightIslandPreSolvePipeline() {
+    const IslandPreSolvePreflight mixedPreflight =
+    expectTrue(!mixedPreflight.skipped, "pre-solve preflight does not skip mixed island");
+    expectTrue(mixedPreflight.can_pre_solve(), "mixed island can pre-solve");
+    const IslandPreSolvePreflight sleepingPreflight =
+    expectTrue(!sleepingPreflight.can_pre_solve(), "all-sleeping island cannot pre-solve");
+    expectTrue(should_skip_island_pre_solve(
+               "should_skip pre-solve on all-sleeping island");
+    const IslandPreSolveGraphPreflight graphPreflight =
+    expectTrue(graphPreflight.can_pre_solve(), "graph pre-solve preflight has solveable island");
+    expectTrue(graphPreflight.stats.preSolveableCount == 1u, "graph pre-solve counts solveable island");
+    expectTrue(graphPreflight.stats.wakeableCount == 1u, "graph pre-solve counts wakeable island");
+    expectTrue(graphPreflight.stats.allSleepingCount == 1u, "graph pre-solve counts all-sleeping island");
+    testPreflightIslandConstraintSolveDispatch();
+    testPreflightIslandPreSolvePipeline();
