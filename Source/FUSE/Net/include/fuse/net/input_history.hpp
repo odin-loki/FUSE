@@ -8,6 +8,7 @@
 
 namespace fuse::net {
 
+struct ReconcileInputPreflight;
 struct ReconcileResult;
 struct InputReconcilePreflight;
 enum class ReconcileAction : u8;
@@ -61,6 +62,12 @@ public:
 
     /// Record authoritative input and compare against the predicted local history entry.
     [[nodiscard]] ReconcileResult reconcile_authoritative(u32 frame, const PlayerInput& authoritative);
+
+    /// Preflight authoritative reconcile without mutating the ring (B7.4 deepen follow-up).
+    [[nodiscard]] ReconcileInputPreflight preflight_authoritative(u32 frame) const;
+
+    /// True when reconcile would return early without recording input (B7.4 deepen follow-up).
+    [[nodiscard]] bool should_skip_reconcile(u32 frame) const;
 
 private:
     struct InputSlot {

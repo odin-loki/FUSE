@@ -86,6 +86,9 @@ void run_rollback_buffer_tests() {
                "empty rollback buffer reports full remaining capacity");
 
     for (fuse::u32 frame = 0; frame < 2; ++frame) {
+    // --- remaining capacity and preflight helpers (B7.4 deepen follow-up) ---
+    expectTrue(capacity_buffer.remaining_capacity() == 4u, "fresh rollback buffer has full remaining capacity");
+    for (fuse::u32 frame = 0; frame < 3; ++frame) {
         fuse::net::GameSnapshot snap{};
         snap.frame = frame;
         capacity_buffer.store_snapshot(frame, snap);
@@ -97,12 +100,28 @@ void run_rollback_buffer_tests() {
     expectTrue(future_preflight.frame_future, "rollback preflight marks future frame");
     expectTrue(!future_preflight.can_reconcile(), "rollback preflight rejects future frame");
     expectTrue(capacity_buffer.should_skip_reconcile(8u), "rollback should_skip true for future frame");
+    expectTrue(capacity_buffer.remaining_capacity() == 1u,
+               "rollback remaining capacity shrinks as snapshots are stored");
 
     fuse::net::RollbackBuffer cleared_capacity;
     cleared_capacity.init(4);
     cleared_capacity.clear();
     expectTrue(cleared_capacity.remaining_capacity() == 0u,
                "cleared rollback buffer reports zero remaining capacity");
+               "cleared rollback buffer has zero remaining capacity");
+
+    fuse::net::RollbackBuffer preflight_wrap;
+    preflight_wrap.init(4);
+    for (fuse::u32 frame = 0; frame < 5; ++frame) {
+        fuse::net::GameSnapshot snap{};
+        snap.frame = frame;
+        preflight_wrap.store_snapshot(frame, snap);
+    }
+    const fuse::net::ReconcileRollbackPreflight wrap_preflight = preflight_wrap.preflight_remote_reconcile(4u);
+    expectTrue(wrap_preflight.can_reconcile(), "preflight_remote_reconcile accepts newest wrapped frame");
+    expectTrue(wrap_preflight.has_snapshot, "preflight_remote_reconcile sees wrapped snapshot");
+    expectTrue(!preflight_wrap.should_skip_reconcile(4u), "should_skip false for wrapped newest frame");
+    expectTrue(preflight_wrap.should_skip_reconcile(0u), "should_skip true for evicted wrapped frame");
 }
 
 } // namespace fuse::net::tests

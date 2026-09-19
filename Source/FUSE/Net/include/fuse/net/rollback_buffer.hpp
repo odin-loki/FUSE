@@ -8,6 +8,7 @@
 
 namespace fuse::net {
 
+struct ReconcileRollbackPreflight;
 struct ReconcileResult;
 struct RollbackReconcilePreflight;
 
@@ -50,6 +51,12 @@ public:
 
     /// Record confirmed remote input and compare against the stored local prediction.
     [[nodiscard]] ReconcileResult reconcile_remote_input(u32 frame, const PlayerInput& remote);
+
+    /// Preflight remote reconcile without mutating the buffer (B7.4 deepen follow-up).
+    [[nodiscard]] ReconcileRollbackPreflight preflight_remote_reconcile(u32 frame) const;
+
+    /// True when reconcile would return early without recording remote input (B7.4 deepen follow-up).
+    [[nodiscard]] bool should_skip_reconcile(u32 frame) const;
 
 private:
     struct FrameSlot {

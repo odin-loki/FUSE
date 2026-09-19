@@ -66,7 +66,6 @@ InputReconcilePreflight InputHistoryBuffer::preflight_reconcile(u32 frame) const
 
 bool InputHistoryBuffer::should_skip_reconcile(u32 frame) const {
     return should_skip_reconcile_input(*this, frame);
-}
 
 void InputHistoryBuffer::push_frame(u32 frame, const PlayerInput& predicted) {
     store_predicted(frame, predicted);
@@ -231,6 +230,14 @@ bool InputHistoryBuffer::prediction_matches(u32 frame) const {
 
 ReconcileResult InputHistoryBuffer::reconcile_authoritative(u32 frame, const PlayerInput& authoritative) {
     return reconcile_predicted_input(*this, frame, authoritative);
+}
+
+ReconcileInputPreflight InputHistoryBuffer::preflight_authoritative(u32 frame) const {
+    return preflight_reconcile_input(*this, frame);
+}
+
+bool InputHistoryBuffer::should_skip_reconcile(u32 frame) const {
+    return should_skip_reconcile_input(*this, frame);
 }
 
 } // namespace fuse::net

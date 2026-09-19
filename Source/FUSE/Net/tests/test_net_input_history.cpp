@@ -208,12 +208,31 @@ void run_input_history_tests() {
     expectTrue(future_preflight.frame_future, "preflight marks future frame beyond newest");
     expectTrue(!future_preflight.can_reconcile(), "preflight rejects future frame");
     expectTrue(capacity_history.should_skip_reconcile(9u), "should_skip true for future frame");
+    // --- remaining capacity and preflight helpers (B7.4 deepen follow-up) ---
+    expectTrue(capacity_history.remaining_capacity() == 4u, "fresh history has full remaining capacity");
+    expectTrue(capacity_history.remaining_capacity() == 1u, "remaining capacity shrinks as frames are stored");
+    capacity_history.push_frame(3, fuse::net::PlayerInput{});
+    expectTrue(capacity_history.remaining_capacity() == 0u, "remaining capacity zero at ring capacity");
 
     fuse::net::InputHistoryBuffer cleared_capacity;
     cleared_capacity.init(4);
     cleared_capacity.clear();
     expectTrue(cleared_capacity.remaining_capacity() == 0u,
                "cleared history reports zero remaining capacity");
+    expectTrue(cleared_capacity.remaining_capacity() == 0u, "cleared history has zero remaining capacity");
+
+    fuse::net::InputHistoryBuffer preflight_wrap;
+    preflight_wrap.init(4);
+    for (fuse::u32 frame = 0; frame < 5; ++frame) {
+        fuse::net::PlayerInput input{};
+        input.frame = frame;
+        preflight_wrap.push_frame(frame, input);
+    }
+    const fuse::net::ReconcileInputPreflight wrap_preflight = preflight_wrap.preflight_authoritative(4u);
+    expectTrue(wrap_preflight.can_reconcile(), "preflight_authoritative accepts newest wrapped frame");
+    expectTrue(wrap_preflight.has_prediction, "preflight_authoritative sees wrapped prediction");
+    expectTrue(!preflight_wrap.should_skip_reconcile(4u), "should_skip false for wrapped newest frame");
+    expectTrue(preflight_wrap.should_skip_reconcile(0u), "should_skip true for evicted wrapped frame");
 }
 
 } // namespace fuse::net::tests

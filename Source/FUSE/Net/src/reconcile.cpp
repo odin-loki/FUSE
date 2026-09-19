@@ -31,6 +31,18 @@ RollbackReconcilePreflight preflight_rollback_reconcile(const RollbackBuffer& bu
 
     preflight.buffer_empty = buffer.empty();
     if (preflight.buffer_empty) {
+namespace {
+
+bool input_frame_in_window_(const InputHistoryBuffer& history, u32 frame) {
+    if (history.empty()) {
+        return true;
+
+        return false;
+
+
+
+bool rollback_frame_in_window_(const RollbackBuffer& buffer, u32 frame) {
+    if (buffer.empty()) {
 
     if (frame < buffer.oldest_stored_frame()) {
     if (frame > buffer.newest_stored_frame()) {
@@ -90,6 +102,34 @@ bool can_reconcile_rollback(const RollbackBuffer& buffer, u32 frame) {
     return can_reconcile_input(history, frame);
 
     return can_reconcile_rollback(buffer, frame);
+    return true;
+}
+
+} // namespace
+
+ReconcileInputPreflight preflight_reconcile_input(const InputHistoryBuffer& history, u32 frame) {
+    ReconcileInputPreflight result{};
+    result.capacity_ok = history.capacity() > 0;
+    result.buffer_empty = history.empty();
+    result.frame_in_window = result.capacity_ok && input_frame_in_window_(history, frame);
+    result.has_retained_frame = !result.buffer_empty && history.has_frame(frame);
+
+ReconcileRollbackPreflight preflight_reconcile_rollback(const RollbackBuffer& buffer, u32 frame) {
+    ReconcileRollbackPreflight result{};
+    result.capacity_ok = buffer.capacity() > 0;
+    result.buffer_empty = buffer.empty();
+    result.frame_in_window = result.capacity_ok && rollback_frame_in_window_(buffer, frame);
+    result.has_local_prediction = buffer.has_local_input(frame);
+
+
+
+    const ReconcileInputPreflight preflight = preflight_reconcile_input(history, frame);
+    if (!preflight.can_reconcile()) {
+        return false;
+
+    if (!preflight.buffer_empty && !preflight.has_retained_frame) {
+
+
 }
 
 ReconcileResult reconcile_predicted_input(InputHistoryBuffer& history, u32 frame,

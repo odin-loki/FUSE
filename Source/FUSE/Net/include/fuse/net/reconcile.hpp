@@ -71,6 +71,18 @@ struct RollbackReconcilePreflight {
     bool has_local_input = false;
 
         return !zero_capacity && !ring_empty && frame_in_window && has_snapshot;
+/// Preflight for reconciling authoritative input against predicted local history (B7.4 deepen follow-up).
+struct ReconcileInputPreflight {
+    bool capacity_ok = false;
+    bool has_retained_frame = false;
+
+    [[nodiscard]] bool can_reconcile() const { return capacity_ok && frame_in_window; }
+
+/// Preflight for reconciling confirmed remote input against rollback-buffer local prediction (B7.4 deepen follow-up).
+struct ReconcileRollbackPreflight {
+    bool has_local_prediction = false;
+
+        return capacity_ok && !buffer_empty && frame_in_window && has_snapshot;
 
 /// True when `frame` is within the input history ring (or history is empty with non-zero capacity).
 [[nodiscard]] bool can_reconcile_input_frame(const InputHistoryBuffer& history, u32 frame);
@@ -95,6 +107,16 @@ struct RollbackReconcilePreflight {
 
 /// Convenience guard — `preflight_reconcile_rollback(buffer, frame).can_reconcile()` (B7.4 deepen follow-up).
 [[nodiscard]] bool can_reconcile_rollback(const RollbackBuffer& buffer, u32 frame);
+
+/// Inspect reconcile guards without mutating the input history ring (B7.4 deepen follow-up).
+[[nodiscard]] ReconcileInputPreflight preflight_reconcile_input(const InputHistoryBuffer& history, u32 frame);
+
+/// Inspect reconcile guards without mutating the rollback buffer (B7.4 deepen follow-up).
+[[nodiscard]] ReconcileRollbackPreflight preflight_reconcile_rollback(const RollbackBuffer& buffer, u32 frame);
+
+/// True when reconcile would return early without recording input (B7.4 deepen follow-up).
+
+/// True when rollback reconcile would return early without recording remote input (B7.4 deepen follow-up).
 
 /// Records authoritative input and compares it against the predicted local history (B7.4 stub).
 [[nodiscard]] ReconcileResult reconcile_predicted_input(InputHistoryBuffer& history, u32 frame,
