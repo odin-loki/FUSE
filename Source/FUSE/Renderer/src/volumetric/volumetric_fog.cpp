@@ -1470,3 +1470,17 @@ bool tryWriteDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc,
     return tryCanSampleAtCoords(grid, desc, coords, reason);
         outReason = SampleCoordRejectReason::OutOfRange;
     if (!trySampleDensityTrilinear(grid, desc, coords, outDensity, outReason)) {
+
+// --- deepen additive from deepen-b511-froxel-density-guards-ca9c ---
+bool FroxelGridLayout::tryAreSampleCoordsInBounds(const FroxelSampleCoords& coords,
+        outReason = SampleCoordRejectReason::InvalidDepth;
+    case SampleCoordRejectReason::InvalidDepth:
+    return tryCanLookupAtIndex(grid, desc, FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc),
+    if (FroxelGridLayout::tryAreSampleCoordsInBounds(coords, desc, reason)) {
+    return FroxelGridLayout::tryClampSampleCoords(clampProbe, desc);
+bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
+        outReason = GridDensityRejectReason::EmptyDesc;
+    return tryValidateGridDensity(grid, desc, outReason, epsilon);
+    SampleCoordRejectReason coordReason = SampleCoordRejectReason::None;
+    if (!FroxelGridLayout::tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords,
+        if (coordReason == SampleCoordRejectReason::EmptyGrid) {

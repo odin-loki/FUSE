@@ -1879,3 +1879,43 @@ void testFroxelSampleCoordRejectAndEmptyGridGuards() {
                "trySampleDensityAtIndex with reason rejects empty storage");
     expectTrue(densityReason == fuse::renderer::GridDensityRejectReason::DensityCountMismatch,
     expectTrue(std::strcmp(fuse::renderer::gridDensityRejectReasonLabel(densityReason), "density_count_mismatch") == 0,
+
+// --- deepen additive from deepen-b511-froxel-density-guards-ca9c ---
+void testFroxelSampleCoordRejectAndPopulateGuards() {
+               "tryMap sample coords succeeds on valid request");
+               "tryMap sample coords rejects empty grid");
+               "tryMap sample coords rejects invalid depth");
+    expectTrue(coordReason == fuse::renderer::SampleCoordRejectReason::InvalidDepth,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(coordReason), "invalid_depth") == 0,
+               "tryMap froxel index succeeds on valid request");
+    expectTrue(froxelIndex < desc.froxelCount(), "tryMap froxel index in bounds");
+    expectTrue(fuse::renderer::FroxelGridLayout::tryAreSampleCoordsInBounds(inBounds, desc, coordReason),
+               "tryAreSampleCoordsInBounds accepts in-bounds coords");
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryAreSampleCoordsInBounds(outOfBounds, desc, coordReason),
+               "tryAreSampleCoordsInBounds rejects OOB tile coord");
+    expectTrue(coordReason == fuse::renderer::SampleCoordRejectReason::OutOfBounds,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(coordReason), "out_of_bounds") == 0,
+    fuse::renderer::DensityLookupRejectReason coordLookupReason = fuse::renderer::DensityLookupRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryCanLookupAtCoord(grid, desc, 1u, 1u, 2u, coordLookupReason),
+               "tryCanLookupAtCoord accepts accessible grid at coord");
+    expectTrue(coordLookupReason == fuse::renderer::DensityLookupRejectReason::None,
+void testFroxelDensityLookupRejectAndValidationGuards() {
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 0u, sampled, lookupReason),
+               "trySample at index with reason succeeds");
+    expectNear(sampled, 1.f, 1e-5f, "trySample at index with reason returns density");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityBilinear(grid, desc, coords, bilinear, lookupReason),
+               "trySample bilinear with reason succeeds");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityTrilinear(grid, desc, coords, trilinear, lookupReason),
+               "trySample trilinear with reason succeeds");
+               "trySample at screen with reason succeeds");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtIndex(emptyGrid, desc, 0u, sampled, lookupReason),
+               "trySample at index with reason rejects empty storage");
+    expectTrue(fuse::renderer::froxel_util::tryValidateGridDensityForDesc(grid, desc, densityReason),
+               "tryValidateGridDensityForDesc accepts accessible grid");
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensityForDesc(grid, mismatched, densityReason),
+               "tryValidateGridDensityForDesc rejects desc mismatch");
+    expectTrue(fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(populated, desc, camera, params),
+               "tryPopulate succeeds on non-empty desc");
+    expectTrue(populated.matchesDesc(desc), "tryPopulate allocates matching grid");
+    expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(populated, zeroDesc, camera, params),
+               "tryPopulate rejects empty froxel desc");
