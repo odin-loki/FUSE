@@ -2577,3 +2577,19 @@ void testDisabledRecordPreflight() {
 void testHasOpenAsyncFlowsGuard() {
     testPreflightChromeTraceExport();
     testDisabledRecordPreflight();
+
+// --- deepen additive from deepen-b16-profiler-preflights-ea42 ---
+void testIsValidProfileNamePreflight() {
+void testNestingBalancePreflights() {
+void testChromeTraceExportPreflight() {
+    const fuse::profiler::ChromeTraceExportPreflight empty = fuse::profiler::preflightChromeTraceExport();
+    const fuse::profiler::ChromeTraceExportPreflight recorded = fuse::profiler::preflightChromeTraceExport();
+    const fuse::profiler::ChromeTraceExportPreflight openFlow = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(!fuse::profiler::tryEventAt(0, out), "tryEventAt fails on empty buffer");
+    expectTrue(fuse::profiler::tryEventAt(0, out), "tryEventAt succeeds for valid index");
+    expectTrue(out.phase == fuse::profiler::EventPhase::Begin, "tryEventAt copies begin event");
+    expectTrue(std::string(out.name) == "lookup_scope", "tryEventAt preserves event name");
+    expectTrue(!fuse::profiler::tryEventAt(99, out), "tryEventAt fails for out-of-range index");
+    testIsValidProfileNamePreflight();
+    testNestingBalancePreflights();
+    testChromeTraceExportPreflight();

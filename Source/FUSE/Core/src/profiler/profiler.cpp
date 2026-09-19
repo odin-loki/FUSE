@@ -1111,3 +1111,6 @@ ProfilerRecordPreflight preflightRecord(const char* name) {
     ProfilerRecordPreflight preflight{};
 ProfilerExportPreflight preflightChromeTraceExport() {
     ProfilerExportPreflight preflight{};
+
+// --- deepen additive from deepen-b16-profiler-preflights-ea42 ---
+bool tryEventAt(u32 index, ProfileEvent& out) {
