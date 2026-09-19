@@ -382,6 +382,32 @@ FUSE_PHYSICS_INLINE bool shouldRunCellOccupancyIteration(const CellRange2& range
     return preflightCellOccupancy(range, maxCells).canIterate();
 }
 
+/// Early-out when cell-occupancy preflight would be rejected — same ordering as `tryPreflightCellOccupancy`.
+FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
+    return canSkipCellOccupancyIteration(range, maxCells);
+}
+
+FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
+    return canSkipCellOccupancyIteration(range, maxCells);
+}
+
+/// Diagnose why cell-occupancy preflight would reject; vacuously succeeds when iteration may proceed.
+FUSE_PHYSICS_INLINE bool tryPreflightCellOccupancy(
+    const CellRange3& range,
+    u32 maxCells,
+    CellOccupancyRejectReason& outReason) {
+    outReason = cellOccupancyRejectReason(range, maxCells);
+    return outReason == CellOccupancyRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE bool tryPreflightCellOccupancy(
+    const CellRange2& range,
+    u32 maxCells,
+    CellOccupancyRejectReason& outReason) {
+    outReason = cellOccupancyRejectReason(range, maxCells);
+    return outReason == CellOccupancyRejectReason::None;
+}
+
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     const CellRange3& range,
@@ -731,6 +757,19 @@ bool shouldRunRefineBroadphase(
     const CollisionShapeSoA& shapes,
     const PairBufferSoA& buffer);
 
+/// Early-out when refine preflight would be rejected — same ordering as `tryPreflightRefineBroadphase`.
+bool wouldSkipRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Diagnose why refine preflight would reject; vacuously succeeds when refine may proceed.
+bool tryPreflightRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer,
+    RefineBroadphaseRejectReason& outReason);
+
 /// Why broadphase pair dedupe would early-out (B4.2 deepen follow-up pass).
 enum class DedupeBroadphaseRejectReason : u8 {
     None = 0,
@@ -763,6 +802,12 @@ bool shouldRunDedupeBroadphase(const PairBufferSoA& buffer);
 
 /// Non-mutating dedupe skip predicate — inverse of `shouldRunDedupeBroadphase` (B4.2 deepen follow-up pass).
 bool canSkipDedupeBroadphase(const PairBufferSoA& buffer);
+
+/// Early-out when dedupe preflight would be rejected — same ordering as `tryPreflightDedupeBroadphase`.
+bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer);
+
+/// Diagnose why dedupe preflight would reject; vacuously succeeds when dedupe may proceed.
+bool tryPreflightDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason& outReason);
 
 /// Why plane/dynamic merge would early-out (B4.2 deepen pass).
 enum class BroadphaseMergeRejectReason : u8 {
@@ -804,6 +849,15 @@ bool canSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA&
 /// Non-mutating merge predicate — mirrors `preflightBroadphaseMerge` (B4.2 deepen pass).
 bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 
+/// Early-out when plane/dynamic merge preflight would be rejected — same ordering as `tryPreflightBroadphaseMerge`.
+bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
+
+/// Diagnose why plane/dynamic merge preflight would reject; vacuously succeeds when merge may proceed.
+bool tryPreflightBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason& outReason);
+
 /// Why merge-into-buffer would early-out before pushing pairs (B4.2 deepen pass).
 enum class MergePairsIntoBufferRejectReason : u8 {
     None = 0,
@@ -843,6 +897,15 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 
 /// Non-mutating merge-into-buffer predicate — mirrors `preflightMergePairsIntoBuffer` (B4.2 deepen pass).
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
+
+/// Early-out when merge-into-buffer preflight would be rejected — same ordering as `tryPreflightMergePairsIntoBuffer`.
+bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
+
+/// Diagnose why merge-into-buffer preflight would reject; vacuously succeeds when merge may proceed.
+bool tryPreflightMergePairsIntoBuffer(
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer,
+    MergePairsIntoBufferRejectReason& outReason);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
