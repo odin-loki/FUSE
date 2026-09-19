@@ -4615,3 +4615,15 @@ void testChromeTraceExportPreflightExportableBounds() {
 void testChromeTraceExportPreflightOpenScopeBlocksSafeExport() {
     expectTrue(closedPreflight.canExportSafely(), "paired flow restores safe export preflight");
     testChromeTraceExportPreflightOpenScopeBlocksSafeExport();
+
+// --- deepen additive from deepen-profiler-b16-guards-78e7 ---
+               "tryFirstEventByName true for recorded scope");
+               "tryLastEventByName true for recorded scope");
+               "tryFirstEventByFlowId true for recorded flow");
+               "tryLastEventByFlowId true for recorded flow");
+void testIsAsyncFlowOpenGuard() {
+void testAsyncFlowOpenPreflightIntegration() {
+    expectTrue(fuse::profiler::preflightChromeTraceExport().hasOpenAsyncFlows,
+void testChromeTraceExportPreflightCanExportCleanly() {
+    testAsyncFlowOpenPreflightIntegration();
+    testChromeTraceExportPreflightCanExportCleanly();
