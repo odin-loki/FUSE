@@ -3901,3 +3901,18 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "preflightFroxelTrilinearSample succeeds when weights will clamp");
                    fuse::renderer::GridDensityRejectReason::DescMismatch),
                "preflightScreenDepthMapping rejects empty grid");
+
+// --- deepen additive from deepen-b511-froxel-guards-713a ---
+               "classifySampleCoordReject reports out_of_bounds for hard OOB tile coord");
+    expectTrue(mapped.sliceZ0 < desc.slicesZ, "preflightScreenDepthMapping returns mapped coords");
+               "classifyDensityLookupRejectAtCoord reports index_out_of_range for OOB coords");
+               "classifyFroxelSampleReject reports none for in-bounds coords");
+    expectTrue(fuse::renderer::froxel_util::preflightFroxelSampleAtCoords(grid, desc, inBounds),
+               "preflightFroxelSampleAtCoords succeeds for in-bounds coords");
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelSampleReject(grid, desc, hardOob) ==
+               "classifyFroxelSampleReject reports out_of_bounds for hard OOB coords");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelSampleAtCoords(grid, desc, hardOob),
+               "preflightFroxelSampleAtCoords rejects hard OOB coords");
+               "classifyFroxelTrilinearSampleReject reports invalid_sample_coords for hard OOB coords");
+               "classifyFroxelPopulateReject reports none for valid populate inputs");
+               "classifySampleCoordReject reports empty_grid for empty desc");
