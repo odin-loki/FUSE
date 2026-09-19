@@ -219,6 +219,7 @@ struct SnapPreflight {
     /// Transform already satisfies snap for the active mode (B6.4 deepen pass).
     bool noChange = false;
     /// Resolved step for the active gizmo mode (B6.4 deepen follow-up).
+    /// Resolved step for the active gizmo mode (B6.4 deepen pass).
     f32 step = 0.f;
 
     bool canApply() const { return !snapDisabled && !invalidStep; }
