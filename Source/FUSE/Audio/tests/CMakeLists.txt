@@ -14,6 +14,7 @@ add_test(NAME fuse_audio_bus COMMAND fuse_audio_bus_tests)
 
 add_executable(fuse_audio_occlusion_reverb_tests
     test_audio_occlusion_reverb.cpp
+    test_occlusion_reverb.cpp
 )
 
 target_link_libraries(fuse_audio_occlusion_reverb_tests PRIVATE fuse_audio fuse_core)
