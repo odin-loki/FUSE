@@ -301,6 +301,3 @@ void Registry::each_query_parallel_impl_(const QueryFilter& filter, Fn&& fn, u32
 }
 
 } // namespace fuse::ecs
-
-// --- deepen additive from deepen-b3-ecs-filters-preflight-6c37 ---
-    if (should_skip_query_filter(m_archetypes, filter)) {

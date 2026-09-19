@@ -282,7 +282,16 @@ inline bool tryClipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32
     return true;
 }
 
-} // namespace fuse::math
-
-// --- deepen additive from deepen-b14-math-guards-e324 ---
+/// Ray-plane intersection clamped to `[tMin, tMax]`; returns false on miss or degenerate early-out.
 inline bool tryRayIntersectPlaneClamped(const Vec4& plane, const Vec3& origin, const Vec3& direction, f32 tMin,
+                                        f32 tMax, f32& t, f32 epsilon = 1e-8f) {
+    if (isDegeneratePlane(plane, epsilon)) {
+        return false;
+    }
+    if (!rayIntersectPlane(plane, origin, direction, t, epsilon)) {
+        return false;
+    }
+    return t >= tMin && t <= tMax;
+}
+
+} // namespace fuse::math

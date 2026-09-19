@@ -104,14 +104,6 @@ bool can_iterate_query_filter(const std::vector<Archetype>& archetypes, const Qu
     return preflight_query_filter(archetypes, filter).can_iterate();
 }
 
-bool can_match_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
-    return preflight_query_filter(archetypes, filter).can_match();
-}
-
-bool should_skip_query_match(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
-    return preflight_query_filter(archetypes, filter).should_skip_match();
-}
-
 bool archetype_matches(const Archetype& archetype, const QueryFilter& filter) {
     if (!query_filter_is_runnable(filter)) {
         return false;
@@ -133,10 +125,3 @@ bool archetype_matches(const Archetype& archetype, const QueryFilter& filter) {
 }
 
 } // namespace fuse::ecs
-
-// --- deepen additive from deepen-b3-ecs-filters-preflight-6c37 ---
-bool should_skip_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
-
-// --- deepen additive from deepen-b3-ecs-filter-conflict-guards-4814 ---
-bool should_skip_query_match(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
-    return preflight_query_filter(archetypes, filter).should_skip_match();

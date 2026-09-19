@@ -1078,23 +1078,3 @@ int main() {
     std::fprintf(stderr, "fuse_physics_ccd_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
-
-// --- deepen additive from deepen-b4-ccd-toibuffer-guards-c2b6 ---
-void testToiBufferPushRejectsPairSlotMode() {
-
-// --- deepen additive from deepen-b4-ccd-toibuffer-guards-21cd ---
-void testToiBufferWriteSlotGuards() {
-
-// --- deepen additive from deepen-b4-ccd-toibuffer-guards-0635 ---
-void testToiBufferSlotGuards() {
-
-// --- deepen additive from deepen-b4-ccd-toibuffer-guards-37f3 ---
-void testToiBufferWriteSlotRejectsOutOfWindow() {
-void testToiBufferPushRejectsOutOfWindow() {
-
-// --- deepen additive from deepen-b4-ccd-toibuffer-guards-b650 ---
-void testToiBufferCompactAndSortSkipGuards() {
-void testToiBufferSlotInRangeGuard() {
-
-// --- deepen additive from deepen-b4-ccd-toibuffer-guards-5b84 ---
-void testToiBufferPairModeGuards() {

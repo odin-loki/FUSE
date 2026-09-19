@@ -153,6 +153,41 @@ struct AABB {
         f32 tExit = 0.f;
         return rayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
     }
+
+    bool tryRayInterval(const Vec3& origin, const Vec3& direction, f32& tEnter, f32& tExit) const {
+        if (isEmpty()) {
+            return false;
+        }
+        return rayInterval(origin, direction, tEnter, tExit);
+    }
+
+    bool tryRayIntervalClamped(const Vec3& origin, const Vec3& direction, f32 tMin, f32 tMax, f32& tEnter,
+                               f32& tExit) const {
+        if (isEmpty()) {
+            return false;
+        }
+        return rayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
+    }
+
+    bool tryRayHits(const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
+                    f32 tMax = std::numeric_limits<f32>::max()) const {
+        if (isEmpty()) {
+            return false;
+        }
+        return rayHits(origin, direction, tMin, tMax);
+    }
+
+    bool tryRayIntersect(const Vec3& origin, const Vec3& direction, f32& t) const {
+        if (isEmpty()) {
+            return false;
+        }
+        const f32 hit = rayIntersect(origin, direction);
+        if (hit < 0.f) {
+            return false;
+        }
+        t = hit;
+        return true;
+    }
 };
 
 /// Transforms an AABB through an affine matrix using the absolute linear-part envelope.
@@ -252,9 +287,25 @@ inline bool tryRayIntersect(const AABB& box, const Vec3& origin, const Vec3& dir
     return true;
 }
 
-/// Writes transformed bounds when `box` is non-empty; returns false on empty early-out.
-inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
+/// Writes transformed bounds for rigid affine matrices; empty boxes succeed with empty output.
+inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out, f32 epsilon = 1e-4f) {
     if (box.isEmpty()) {
+        out = box;
+        return true;
+    }
+    if (!isRigid(matrix, epsilon)) {
+        return false;
+    }
+    out = transformAabb(matrix, box);
+    return true;
+}
+
+/// Writes transformed bounds when the matrix is rigid and the box is non-empty.
+inline bool tryTransformRigidAabb(const Mat4& matrix, const AABB& box, AABB& out, f32 epsilon = 1e-4f) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    if (!isRigid(matrix, epsilon)) {
         return false;
     }
     out = transformAabb(matrix, box);
@@ -298,13 +349,3 @@ inline bool tryOverlaps(const AABB& a, const AABB& b, bool& overlapping) {
 }
 
 } // namespace fuse::math
-
-// --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-27ba ---
-inline bool tryTransformRigidAabb(const Mat4& matrix, const AABB& box, AABB& out, f32 epsilon = 1e-4f) {
-
-// --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-a428 ---
-    bool tryRayInterval(const Vec3& origin, const Vec3& direction, f32& tEnter, f32& tExit) const {
-    bool tryRayIntervalClamped(const Vec3& origin, const Vec3& direction, f32 tMin, f32 tMax, f32& tEnter,
-    bool tryRayHits(const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
-    bool tryRayIntersect(const Vec3& origin, const Vec3& direction, f32& t) const {
-inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out, f32 epsilon = 1e-4f) {

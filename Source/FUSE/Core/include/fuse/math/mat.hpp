@@ -475,16 +475,25 @@ inline bool tryExtractRigid(const Mat4& matrix, Vec3& translation, Quat& rotatio
     return tryToRotationQuat(normalized, rotation, epsilon);
 }
 
+/// Writes translation column when the matrix is affine; returns false for perspective early-out.
+inline bool tryExtractTranslation(const Mat4& matrix, Vec3& translation, f32 epsilon = 1e-5f) {
+    if (!isAffine(matrix, epsilon)) {
+        return false;
+    }
+    translation = extractTranslation(matrix, epsilon);
+    return true;
+}
+
+/// Writes transposed upper 3×3 when the block is orthogonal; returns false for scaled upper block.
+inline bool tryTransposeUpper3x3(const Mat4& matrix, Mat3& out, f32 epsilon = 1e-4f) {
+    if (!isOrthogonalUpper3x3(matrix, epsilon)) {
+        return false;
+    }
+    out = transposeUpper3x3(matrix);
+    return true;
+}
+
 inline Mat4 operator*(const Mat4& a, const Mat4& b) { return multiply(a, b); }
 inline Mat3 operator*(const Mat3& a, const Mat3& b) { return multiply(a, b); }
 
 } // namespace fuse::math
-
-// --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-27ba ---
-inline bool tryExtractTranslation(const Mat4& matrix, Vec3& translation, f32 epsilon = 1e-5f) {
-
-// --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-a428 ---
-inline bool tryExtractTranslation(const Mat4& matrix, Vec3& out, f32 epsilon = 1e-5f) {
-
-// --- deepen additive from deepen-b14-math-guards-e324 ---
-inline bool tryTransposeUpper3x3(const Mat4& matrix, Mat3& out, f32 epsilon = 1e-4f) {

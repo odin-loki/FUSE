@@ -26,7 +26,6 @@ std::atomic<u32> g_eventCount{0};
 std::atomic<u32> g_maxNestingDepth{0};
 std::atomic<u32> g_maxFlowNestingDepth{0};
 std::atomic<u32> g_openAsyncFlowCount{0};
-std::atomic<u32> g_orphanAsyncFlowEndCount{0};
 
 std::mutex g_exportMutex;
 
@@ -348,20 +347,6 @@ bool isEventIndexValid(u32 index) {
     return index < eventCount();
 }
 
-bool isBlankEventName(const char* name) {
-    if (name == nullptr || name[0] == '\0') {
-        return true;
-    }
-
-    for (const char* cursor = name; *cursor != '\0'; ++cursor) {
-        const char ch = *cursor;
-        if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
-            return false;
-        }
-    }
-    return true;
-}
-
 bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
@@ -372,20 +357,16 @@ bool isValidFlowId(u32 flowId) {
 
 bool isFlowPhaseEvent(const ProfileEvent& event) {
     return event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish;
+}
 
 bool eventNameMatches(const ProfileEvent& event, const char* name) {
     return isValidEventName(name) && isValidEventName(event.name)
         && std::strcmp(event.name, name) == 0;
+}
 
 bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
     return isValidFlowId(flowId) && isFlowPhaseEvent(event) && event.scopeId == flowId
         && isValidEventName(event.name);
-bool eventNameMatches(const char* eventName, const char* queryName) {
-    return isValidEventName(eventName) && isValidEventName(queryName)
-        && std::strcmp(eventName, queryName) == 0;
-
-bool isAsyncFlowPhase(EventPhase phase) {
-    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
@@ -480,20 +461,6 @@ bool tryLastEvent(ProfileEvent& outEvent) {
 }
 
 bool tryFirstEventByName(const char* name, ProfileEvent& outEvent) {
-bool tryExportableFirstEvent(ProfileEvent& outEvent) {
-    const u32 index = firstEventIndex();
-    if (index == kInvalidEventIndex) {
-        outEvent = ProfileEvent{};
-        return false;
-    }
-
-    return tryExportableEventAt(index, outEvent);
-
-bool tryExportableLastEvent(ProfileEvent& outEvent) {
-    const u32 index = lastEventIndex();
-
-
-bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByName(name);
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
@@ -504,10 +471,6 @@ bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
 }
 
 bool tryLastEventByName(const char* name, ProfileEvent& outEvent) {
-    outEvent = eventAt(index);
-    return isValidProfileEvent(outEvent);
-
-bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByName(name);
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
@@ -518,10 +481,6 @@ bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
 }
 
 bool tryFirstFlowEvent(u32 flowId, ProfileEvent& outEvent) {
-    outEvent = eventAt(index);
-    return isValidProfileEvent(outEvent);
-
-bool tryFindFirstFlowEvent(u32 flowId, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByFlowId(flowId);
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
@@ -532,10 +491,6 @@ bool tryFindFirstFlowEvent(u32 flowId, ProfileEvent& outEvent) {
 }
 
 bool tryLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
-    outEvent = eventAt(index);
-    return isValidProfileEvent(outEvent);
-
-bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByFlowId(flowId);
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
@@ -543,8 +498,6 @@ bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
     }
 
     return tryExportableEventAt(index, outEvent);
-    outEvent = eventAt(index);
-    return isValidProfileEvent(outEvent);
 }
 
 u32 firstEventIndex() {
@@ -594,7 +547,6 @@ u32 findFirstEventIndexByName(const char* name) {
     for (u32 i = 0u; i < total; ++i) {
         const ProfileEvent& event = eventAt(i);
         if (eventNameMatches(event, name)) {
-        if (eventNameMatches(event.name, name)) {
             return i;
         }
     }
@@ -610,7 +562,6 @@ u32 findLastEventIndexByName(const char* name) {
     for (u32 i = total; i > 0u; --i) {
         const ProfileEvent& event = eventAt(i - 1u);
         if (eventNameMatches(event, name)) {
-        if (eventNameMatches(event.name, name)) {
             return i - 1u;
         }
     }
@@ -626,8 +577,6 @@ u32 countEventsByName(const char* name) {
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
         if (eventNameMatches(eventAt(i), name)) {
-        const ProfileEvent& event = eventAt(i);
-        if (eventNameMatches(event.name, name)) {
             ++count;
         }
     }
@@ -640,7 +589,6 @@ bool hasEventsWithName(const char* name) {
 
 u32 findFirstEventIndexByFlowId(u32 flowId) {
     if (!isValidFlowId(flowId)) {
-    if (flowId == 0u) {
         return kInvalidEventIndex;
     }
 
@@ -648,7 +596,6 @@ u32 findFirstEventIndexByFlowId(u32 flowId) {
     for (u32 i = 0u; i < total; ++i) {
         const ProfileEvent& event = eventAt(i);
         if (eventMatchesFlowId(event, flowId)) {
-        if (isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
             return i;
         }
     }
@@ -657,7 +604,6 @@ u32 findFirstEventIndexByFlowId(u32 flowId) {
 
 u32 findLastEventIndexByFlowId(u32 flowId) {
     if (!isValidFlowId(flowId)) {
-    if (flowId == 0u) {
         return kInvalidEventIndex;
     }
 
@@ -665,7 +611,6 @@ u32 findLastEventIndexByFlowId(u32 flowId) {
     for (u32 i = total; i > 0u; --i) {
         const ProfileEvent& event = eventAt(i - 1u);
         if (eventMatchesFlowId(event, flowId)) {
-        if (isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
             return i - 1u;
         }
     }
@@ -674,7 +619,6 @@ u32 findLastEventIndexByFlowId(u32 flowId) {
 
 u32 countEventsByFlowId(u32 flowId) {
     if (!isValidFlowId(flowId)) {
-    if (flowId == 0u) {
         return 0u;
     }
 
@@ -682,8 +626,6 @@ u32 countEventsByFlowId(u32 flowId) {
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
         if (eventMatchesFlowId(eventAt(i), flowId)) {
-        const ProfileEvent& event = eventAt(i);
-        if (isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
             ++count;
         }
     }
@@ -692,37 +634,6 @@ u32 countEventsByFlowId(u32 flowId) {
 
 bool hasEventsWithFlowId(u32 flowId) {
     return findFirstEventIndexByFlowId(flowId) != kInvalidEventIndex;
-bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex) {
-    const u32 index = findFirstEventIndexByPhase(phase);
-    if (index == kInvalidEventIndex) {
-        outIndex = kInvalidEventIndex;
-        return false;
-    }
-
-    outIndex = index;
-    return true;
-
-bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex) {
-    const u32 index = findLastEventIndexByPhase(phase);
-
-
-bool tryFindFirstEventIndexByName(const char* name, u32& outIndex) {
-    const u32 index = findFirstEventIndexByName(name);
-
-
-bool tryFindFirstEventIndexByFlowId(u32 flowId, u32& outIndex) {
-    const u32 index = findFirstEventIndexByFlowId(flowId);
-
-
-bool tryFindLastEventIndexByFlowId(u32 flowId, u32& outIndex) {
-    const u32 index = findLastEventIndexByFlowId(flowId);
-
-
-u32 orphanAsyncFlowEndCount() {
-    return g_orphanAsyncFlowEndCount.load(std::memory_order_acquire);
-
-bool hasOrphanAsyncFlowEnds() {
-    return orphanAsyncFlowEndCount() > 0u;
 }
 
 u32 lastEventIndex() {
@@ -758,52 +669,6 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.ringBufferFull = isBufferFull();
     preflight.hasInvalidNameEvents = hasInvalidNameEvents();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
-    preflight.exportWouldTrimEvents = preflight.eventCount > preflight.exportableEventCount;
-    preflight.hasOnlyExportableEvents =
-        preflight.eventCount > 0u && preflight.eventCount == preflight.exportableEventCount;
-    preflight.orphanAsyncFlowEndCount = orphanAsyncFlowEndCount();
-    preflight.hasOrphanAsyncFlowEnds = hasOrphanAsyncFlowEnds();
-    return preflight;
-}
-
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
-
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
-
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
-    return preflight;
-}
-
-NestingAsyncFlowPreflight preflightNestingAsyncFlow() {
-    NestingAsyncFlowPreflight preflight{};
-    preflight.activeScopeNestingDepth = scopeNestingDepth();
-    preflight.activeFlowNestingDepth = flowNestingDepth();
-    preflight.maxScopeNestingDepth = maxNestingDepth();
-    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
-    preflight.openAsyncFlowCount = openAsyncFlowCount();
-    preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
-    preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
-    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
-    preflight.flowDepthDetached = isFlowDepthDetached();
-    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
     return preflight;
 }
 
@@ -817,7 +682,6 @@ void reset() {
     g_maxNestingDepth.store(0u, std::memory_order_release);
     g_maxFlowNestingDepth.store(0u, std::memory_order_release);
     g_openAsyncFlowCount.store(0u, std::memory_order_release);
-    g_orphanAsyncFlowEndCount.store(0u, std::memory_order_release);
     threadLocalNestingDepth() = 0u;
     threadLocalFlowNestingDepth() = 0u;
 }
@@ -846,7 +710,6 @@ void endAsyncFlow(const char* name, u32 flowId) {
     }
 
     if (g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u) {
-        g_orphanAsyncFlowEndCount.fetch_add(1u, std::memory_order_acq_rel);
         return;
     }
 
@@ -1105,546 +968,3 @@ std::string exportChromeTraceJson() {
 }
 
 } // namespace fuse::profiler
-
-// --- deepen additive from deepen-b16-profiler-c977 ---
-ProfilerRecordPreflight preflightRecord(const char* name) {
-    ProfilerRecordPreflight preflight{};
-ProfilerExportPreflight preflightChromeTraceExport() {
-    ProfilerExportPreflight preflight{};
-
-// --- deepen additive from deepen-b16-profiler-preflights-ea42 ---
-bool tryEventAt(u32 index, ProfileEvent& out) {
-
-// --- deepen additive from deepen-b16-profiler-guards-0c1a ---
-ChromeExportPreflight preflightChromeExport() {
-    ChromeExportPreflight preflight{};
-
-// --- deepen additive from profiler-b16-preflight-deepen-6ec7 ---
-ProfileNamePreflight preflightProfileName(const char* name) {
-    ProfileNamePreflight preflight{};
-ScopeNestingPreflight preflightScopeNesting() {
-    ScopeNestingPreflight preflight{};
-AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name) {
-AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name) {
-    return preflightProfileName(name).shouldSkip() || !g_enabled.load(std::memory_order_acquire);
-    return preflightAsyncFlowBegin(name).shouldSkip();
-    return preflightAsyncFlowEnd(name).shouldSkip();
-    return preflightProfileName(track).shouldSkip() || !g_enabled.load(std::memory_order_acquire);
-
-// --- deepen additive from deepen-b16-profiler-preflights-4b82 ---
-ScopePreflight preflightScope(const char* name) {
-    const ProfileNamePreflight namePreflight = preflightProfileName(name);
-    preflight.null_name = namePreflight.null_name;
-    preflight.empty_name = namePreflight.empty_name;
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name) {
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name) {
-CounterSamplePreflight preflightCounterSample(const char* track) {
-    CounterSamplePreflight preflight{};
-    const ProfileNamePreflight namePreflight = preflightProfileName(track);
-EventLookupPreflight preflightEventLookup(u32 index) {
-    EventLookupPreflight preflight{};
-    return preflightEventLookup(index).can_lookup();
-bool tryEventAt(u32 index, const ProfileEvent*& event_out) {
-    const EventLookupPreflight preflight = preflightEventLookup(index);
-
-// --- deepen additive from deepen-b16-profiler-preflights-8f4e ---
-bool tryEventAt(u32 index, const ProfileEvent*& outEvent) {
-ProfilerGuardPreflight preflightGuardState() {
-    ProfilerGuardPreflight preflight{};
-
-// --- deepen additive from deepen-b16-profiler-preflights-479f ---
-NestingStatePreflight preflightNestingState() {
-    NestingStatePreflight preflight{};
-    return preflightChromeExport().canExport();
-
-// --- deepen additive from deepen-b16-profiler-guards-5d2c ---
-    ChromeExportPreflight preflight;
-
-// --- deepen additive from deepen-b16-profiler-export-preflight-9968 ---
-ChromeExportPreflight preflightChromeTraceExport() {
-
-// --- deepen additive from deepen-b16-profiler-export-preflights-d73d ---
-    return preflightChromeTraceExport().canExport();
-    return tryEventAt(0u, outEvent);
-
-// --- deepen additive from deepen-b16-profiler-export-preflight-bcfd ---
-ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
-    const ChromeTraceExportPreflight preflight = preflightChromeTraceExport();
-        return ChromeTraceExportRejectReason::EmptyBuffer;
-        return ChromeTraceExportRejectReason::UnbalancedScopeNesting;
-        return ChromeTraceExportRejectReason::OpenAsyncFlows;
-        return ChromeTraceExportRejectReason::UnbalancedFlowNesting;
-        return ChromeTraceExportRejectReason::BufferFull;
-    return ChromeTraceExportRejectReason::None;
-
-// --- deepen additive from deepen-b16-profiler-preflights-3a15 ---
-    ChromeTraceExportPreflight result{};
-
-// --- deepen additive from deepen-fuse-b16-profiler-11c2 ---
-EventNameRejectReason diagnoseEventNameRejectReason(const char* name) {
-        return EventNameRejectReason::Null;
-        return EventNameRejectReason::Empty;
-    return EventNameRejectReason::None;
-NestingStateRejectReason diagnoseNestingStateRejectReason() {
-        return NestingStateRejectReason::UnbalancedScopeNesting;
-        return NestingStateRejectReason::UnbalancedFlowNesting;
-        return NestingStateRejectReason::OpenAsyncFlows;
-    return NestingStateRejectReason::None;
-ChromeTraceExportRejectReason diagnoseChromeTraceExportRejectReason() {
-bool tryValidateEventName(const char* name, EventNameRejectReason& outReason) {
-    outReason = diagnoseEventNameRejectReason(name);
-    return outReason == EventNameRejectReason::None;
-const char* eventNameRejectReasonLabel(EventNameRejectReason reason) {
-    case EventNameRejectReason::None:
-    case EventNameRejectReason::Null:
-    case EventNameRejectReason::Empty:
-    return diagnoseNestingStateRejectReason() == NestingStateRejectReason::None;
-bool preflightProfilerState(NestingStateRejectReason* reason) {
-    const NestingStateRejectReason rejectReason = diagnoseNestingStateRejectReason();
-    return rejectReason == NestingStateRejectReason::None;
-const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason) {
-    case NestingStateRejectReason::None:
-    case NestingStateRejectReason::UnbalancedScopeNesting:
-    case NestingStateRejectReason::UnbalancedFlowNesting:
-    case NestingStateRejectReason::OpenAsyncFlows:
-    return diagnoseChromeTraceExportRejectReason() == ChromeTraceExportRejectReason::None;
-bool preflightChromeTraceExport(ChromeTraceExportRejectReason* reason) {
-    const ChromeTraceExportRejectReason rejectReason = diagnoseChromeTraceExportRejectReason();
-    return rejectReason == ChromeTraceExportRejectReason::None;
-const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason) {
-    case ChromeTraceExportRejectReason::None:
-    case ChromeTraceExportRejectReason::UnbalancedScopeNesting:
-    case ChromeTraceExportRejectReason::UnbalancedFlowNesting:
-    case ChromeTraceExportRejectReason::OpenAsyncFlows:
-    EventLookupRejectReason reason = EventLookupRejectReason::None;
-    return tryCanLookupEventAt(index, reason);
-bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason) {
-        outReason = EventLookupRejectReason::EmptyBuffer;
-        outReason = EventLookupRejectReason::OutOfRange;
-        outReason = EventLookupRejectReason::InvalidEvent;
-    outReason = EventLookupRejectReason::None;
-const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason) {
-    case EventLookupRejectReason::None:
-    case EventLookupRejectReason::EmptyBuffer:
-    case EventLookupRejectReason::OutOfRange:
-    case EventLookupRejectReason::InvalidEvent:
-    if (!tryCanLookupEventAt(index, reason)) {
-bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason) {
-    if (!preflightChromeTraceExport(reason)) {
-
-// --- deepen additive from deepen-b16-profiler-preflight-guards-b702 ---
-    tryExportChromeTraceJson(json);
-bool tryExportChromeTraceJson(std::string& outJson) {
-
-// --- deepen additive from deepen-b16-profiler-preflights-acf4 ---
-bool isProfilerNestingPreflightOk() {
-bool isEventLookupPreflightOk(u32 index) {
-    if (!isEventLookupPreflightOk(index)) {
-bool isChromeExportPreflightOk() {
-    return isProfilerNestingPreflightOk();
-
-// --- deepen additive from deepen-b16-profiler-preflights-3f2f ---
-NestingPreflight preflightNesting() {
-AsyncFlowPreflight preflightBeginAsyncFlow(const char* name) {
-AsyncFlowPreflight preflightEndAsyncFlow(const char* name) {
-ExportPreflight preflightExport() {
-EventLookupPreflight preflightEventAt(u32 index) {
-EventLookupPreflight preflightLastEvent() {
-    return preflightEventAt(index);
-    return preflightProfileScope(name).canEnter();
-    return preflightBeginAsyncFlow(name).canBegin();
-    return preflightEndAsyncFlow(name).canEnd();
-    return preflightExport().canExport();
-    return preflightEventAt(index).canLookup();
-
-// --- deepen additive from deepen-profiler-b16-guards-10ba ---
-bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
-    if (!tryEventAt(index, event)) {
-
-// --- deepen additive from deepen-b16-profiler-guards-fb79 ---
-bool tryFirstExportableEvent(ProfileEvent& outEvent) {
-bool tryLastExportableEvent(ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-guards-5e82 ---
-bool tryFindEventByName(const char* name, u32 startIndex, u32& outIndex, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-guards-1296 ---
-    return diagnoseEventNameRejectReason(name) == EventNameRejectReason::None;
-        return NestingStateRejectReason::FlowDepthDetached;
-        return ChromeTraceExportRejectReason::ProfilerDisabled;
-        return ChromeTraceExportRejectReason::NoExportableEvents;
-        return ChromeTraceExportRejectReason::FlowDepthDetached;
-    case NestingStateRejectReason::FlowDepthDetached:
-bool preflightChromeTraceNesting(ChromeTraceExportRejectReason* reason) {
-    case ChromeTraceExportRejectReason::ProfilerDisabled:
-    case ChromeTraceExportRejectReason::NoExportableEvents:
-    case ChromeTraceExportRejectReason::FlowDepthDetached:
-    if (!preflightChromeTraceNesting(reason)) {
-
-// --- deepen additive from deepen-b16-profiler-guards-3935 ---
-bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent) {
-    return tryEventAt(count - 1u - reverseIndex, outEvent);
-bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-guards-2ba8 ---
-bool tryFindFirstEventWithPhase(EventPhase phase, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-guards-c0f6 ---
-bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-guards-dcff ---
-    return preflightChromeTraceExport().canExportTrace();
-
-// --- deepen additive from deepen-b16-profiler-guards-7793 ---
-bool wouldIgnoreOrphanAsyncFlowEnd() {
-bool wouldRecordEventName(const char* name) {
-
-// --- deepen additive from deepen-b16-profiler-guards-93c0 ---
-EventNamePreflight preflightEventName(const char* name) {
-    EventNamePreflight preflight{};
-AsyncFlowPreflight preflightAsyncFlowBegin(const char* name) {
-AsyncFlowPreflight preflightAsyncFlowEnd(const char* name) {
-    AsyncFlowPreflight preflight = preflightAsyncFlowBegin(name);
-
-// --- deepen additive from deepen-b16-profiler-guards-cad0 ---
-bool tryEventAtPhase(u32 index, EventPhase expectedPhase, ProfileEvent& outEvent) {
-    if (!tryEventAt(index, outEvent)) {
-
-// --- deepen additive from deepen-profiler-b16-guards-33c5 ---
-bool wouldRecordEvent(const char* name) {
-
-// --- deepen additive from deepen-b16-profiler-guards-9145 ---
-bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-guards-7722 ---
-bool wouldRecordWithName(const char* name) {
-bool tryEventAtPhase(u32 index, EventPhase phase, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-guards-6796 ---
-bool tryRecordedEventAt(u32 index, ProfileEvent& outEvent) {
-    if (!tryRecordedEventAt(index, outEvent)) {
-
-// --- deepen additive from deepen-b16-profiler-guards-61a8 ---
-bool tryFirstEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
-bool tryLastEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
-bool tryFindEventByName(const char* name, u32& outIndex) {
-
-// --- deepen additive from deepen-b16-profiler-guards-ce9d ---
-bool tryFindEventByName(const char* name, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-guards-8f82 ---
-        outReason = EventNameRejectReason::Null;
-        outReason = EventNameRejectReason::Empty;
-        outReason = EventNameRejectReason::Blank;
-    outReason = EventNameRejectReason::None;
-EventNameRejectReason eventNameRejectReason(const char* name) {
-    EventNameRejectReason reason = EventNameRejectReason::None;
-    tryValidateEventName(name, reason);
-    return enabled() && tryValidateEventName(name, reason);
-    return tryValidateEventName(event.name, reason);
-    return tryValidateEventName(eventAt(index).name, reason);
-EventLookupRejectReason eventLookupRejectReason(u32 index) {
-        return EventLookupRejectReason::EmptyBuffer;
-        return EventLookupRejectReason::OutOfRange;
-    EventNameRejectReason nameReason = EventNameRejectReason::None;
-    if (!tryValidateEventName(eventAt(index).name, nameReason)) {
-        return EventLookupRejectReason::InvalidEvent;
-    return EventLookupRejectReason::None;
-    outReason = eventLookupRejectReason(index);
-    return outReason == EventLookupRejectReason::None;
-    EventLookupRejectReason lookupReason = EventLookupRejectReason::None;
-    if (!tryCanLookupEventAt(index, lookupReason)) {
-NestingStateRejectReason nestingStateRejectReason() {
-    const NestingStateRejectReason stateReason = nestingStateRejectReason();
-    return stateReason == NestingStateRejectReason::None;
-    preflight.rejectReason = chromeTraceExportRejectReason();
-        return ChromeTraceExportRejectReason::BufferOverflow;
-    return chromeTraceExportRejectReason() == ChromeTraceExportRejectReason::None;
-    const ChromeTraceExportRejectReason rejectReason = chromeTraceExportRejectReason();
-    if (rejectReason != ChromeTraceExportRejectReason::None) {
-    case EventNameRejectReason::Blank:
-    case ChromeTraceExportRejectReason::BufferOverflow:
-
-// --- deepen additive from deepen-fuse-b16-profiler-e55b ---
-bool tryFindLastEventIndexByName(const char* name, u32& outIndex) {
-        if (tryExportableEventAt(i - 1u, outEvent)) {
-
-// --- deepen additive from deepen-b16-profiler-guards-5b61 ---
-        return EventLookupRejectReason::NotExportable;
-EventLookupRejectReason exportableEventLookupRejectReason(u32 index) {
-    case EventLookupRejectReason::NotExportable:
-        return NestingStateRejectReason::ActiveScope;
-        return NestingStateRejectReason::CrossThreadFlowHandoffPending;
-        return NestingStateRejectReason::ActiveFlowNesting;
-    case NestingStateRejectReason::ActiveScope:
-    case NestingStateRejectReason::ActiveFlowNesting:
-    case NestingStateRejectReason::CrossThreadFlowHandoffPending:
-        return ChromeTraceExportRejectReason::CrossThreadFlowHandoffPending;
-        return ChromeTraceExportRejectReason::UnbalancedNesting;
-    case ChromeTraceExportRejectReason::UnbalancedNesting:
-    case ChromeTraceExportRejectReason::CrossThreadFlowHandoffPending:
-
-// --- deepen additive from deepen-profiler-b16-guards-183a ---
-bool tryFindEventIndexByName(const char* name, u32& outIndex) {
-
-// --- deepen additive from deepen-b16-profiler-guards-512e ---
-        if (tryExportableEventAt(i, outEvent)) {
-
-// --- deepen additive from deepen-profiler-b16-guards-eb78 ---
-bool tryFirstFlowStartById(u32 flowId, ProfileEvent& outEvent) {
-bool tryLastFlowFinishById(u32 flowId, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-name-flow-guards-4e15 ---
-bool tryFirstFlowEventById(u32 flowId, ProfileEvent& outEvent) {
-bool tryLastFlowEventById(u32 flowId, ProfileEvent& outEvent) {
-EventNameLookupPreflight preflightEventLookupByName(const char* name) {
-    EventNameLookupPreflight preflight{};
-FlowIdLookupPreflight preflightFlowLookupById(u32 flowId) {
-    FlowIdLookupPreflight preflight{};
-NestingConsistencyPreflight preflightNestingConsistency() {
-    NestingConsistencyPreflight preflight{};
-
-// --- deepen additive from deepen-b16-profiler-name-flow-e105 ---
-bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
-bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-name-flow-lookup-cb6d ---
-bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
-bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-guards-590c ---
-    if (wouldSkipNameLookup(name)) {
-    if (wouldSkipFlowIdLookup(flowId)) {
-bool wouldSkipNameLookup(const char* name) {
-bool wouldSkipFlowIdLookup(u32 flowId) {
-
-// --- deepen additive from b16-profiler-deepen-guards-891a ---
-bool tryFindFirstEventByFlow(u32 flowId, ProfileEvent& outEvent) {
-bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-name-flow-guards-2034 ---
-bool tryFindFirstExportableEventByName(const char* name, ProfileEvent& outEvent) {
-bool tryFindFirstExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-guards-b5ca ---
-bool tryFirstExportableEventByName(const char* name, ProfileEvent& outEvent) {
-bool tryLastExportableEventByName(const char* name, ProfileEvent& outEvent) {
-bool tryFirstExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
-bool tryLastExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 flowId) {
-
-// --- deepen additive from deepen-b16-profiler-guards-52e0 ---
-AsyncFlowPreflight preflightAsyncFlow() {
-
-// --- deepen additive from deepen-b16-profiler-name-flow-lookup-7ab9 ---
-bool tryFindExportableEventByName(const char* name, ProfileEvent& outEvent) {
-bool tryFindExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-guards-2244 ---
-bool wouldSkipProfileScope(const char* name) {
-bool wouldSkipAsyncFlowBegin(const char* name) {
-bool wouldSkipAsyncFlowEnd(const char* name) {
-bool wouldSkipCounterSample(const char* track) {
-bool wouldSkipChromeTraceExport() {
-bool wouldSkipChromeTraceExportSafely() {
-    return !preflightChromeTraceExport().canExportSafely();
-
-// --- deepen additive from deepen-b16-profiler-guards-f01b ---
-bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/) {
-
-// --- deepen additive from deepen-b16-profiler-guards-355d ---
-bool wouldSkipProfileScope(const char* name, ProfileSkipReason* reason) {
-bool wouldSkipAsyncFlowBegin(const char* name, ProfileSkipReason* reason) {
-bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/, ProfileSkipReason* reason) {
-bool wouldSkipCounter(const char* track, ProfileSkipReason* reason) {
-bool wouldSkipChromeTraceExport(ProfileSkipReason* reason) {
-bool wouldSkipChromeTraceExportSafely(ProfileSkipReason* reason) {
-
-// --- deepen additive from b16-profiler-deepen-guards-6464 ---
-    return !preflightProfileScope(name).canEnter;
-bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId) {
-    return !preflightBeginAsyncFlow(name, flowId).canBegin;
-bool wouldSkipEndAsyncFlow(const char* name, u32 flowId) {
-    return !preflightEndAsyncFlow(name, flowId).canEnd;
-
-// --- deepen additive from deepen-b16-profiler-guards-5803 ---
-    return wouldSkipProfileScope(name);
-    return wouldSkipProfileScope(name)
-    return wouldSkipProfileScope(track);
-bool wouldSkipCounterFloatSample(const char* track) {
-    return wouldSkipCounterSample(track);
-bool wouldSkipCounterSnapshotAtFrame(const char* track) {
-bool wouldSkipCounterFloatSnapshotAtFrame(const char* track) {
-
-// --- deepen additive from b16-profiler-deepen-guards-6d64 ---
-AsyncFlowNestingPreflight preflightAsyncFlowNesting() {
-    AsyncFlowNestingPreflight preflight{};
-bool wouldSkipBeginAsyncFlow(const char* name) {
-    return !preflightBeginAsyncFlow(name, 0u).canBegin;
-bool wouldSkipEndAsyncFlow(const char* name) {
-    return !preflightEndAsyncFlow(name, 0u).canEnd;
-bool wouldSkipCounter(const char* track) {
-    return wouldSkipCounter(track);
-
-// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-c0fe ---
-bool wouldSkipProfileRecord(const char* name,
-bool tryFindFirstFlowEventById(u32 flowId, ProfileEvent& outEvent) {
-bool tryFindLastFlowEventById(u32 flowId, ProfileEvent& outEvent) {
-bool wouldSkipProfileScope(const char* name, ProfileRecordSkipReason* reason) {
-    return wouldSkipProfileRecord(name, false, reason);
-bool wouldSkipAsyncFlowBegin(const char* name, ProfileRecordSkipReason* reason) {
-bool wouldSkipAsyncFlowEnd(const char* name, ProfileRecordSkipReason* reason) {
-    return wouldSkipProfileRecord(name, true, reason);
-bool wouldSkipCounterSample(const char* track, ProfileRecordSkipReason* reason) {
-    return wouldSkipProfileRecord(track, false, reason);
-
-// --- deepen additive from deepen-b16-profiler-guards-e7e3 ---
-bool wouldSkipScopeRecording(const char* name) {
-bool wouldSkipCounterRecording(const char* track) {
-ScopeRecordingPreflight preflightScopeRecording(const char* name) {
-    ScopeRecordingPreflight preflight{};
-CounterRecordingPreflight preflightCounterRecording(const char* track) {
-    CounterRecordingPreflight preflight{};
-
-// --- deepen additive from deepen-b16-profiler-wouldskip-0f61 ---
-AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name, u32 /*flowId*/) {
-bool wouldSkipProfileScope(const char* name, ProfileScopeSkipReason* reason) {
-    const ProfileScopePreflight preflight = preflightProfileScope(name);
-bool wouldSkipAsyncFlowBegin(const char* name, AsyncFlowBeginSkipReason* reason) {
-    const AsyncFlowBeginPreflight preflight = preflightAsyncFlowBegin(name);
-bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId, AsyncFlowEndSkipReason* reason) {
-    const AsyncFlowEndPreflight preflight = preflightAsyncFlowEnd(name, flowId);
-bool wouldSkipCounterSample(const char* track, CounterSampleSkipReason* reason) {
-    const CounterSamplePreflight preflight = preflightCounterSample(track);
-bool wouldSkipChromeTraceExport(ChromeTraceExportSkipReason* reason) {
-bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason) {
-
-// --- deepen additive from deepen-b16-profiler-guards-7260 ---
-bool wouldSkipScope(const char* name) {
-
-// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-b790 ---
-bool wouldSkipRecording(const char* name) {
-ProfilerNestingPreflight preflightNesting() {
-    ProfilerNestingPreflight preflight{};
-bool preflightBeginAsyncFlow(const char* name) {
-    return !wouldSkipRecording(name);
-bool preflightEndAsyncFlow(const char* name) {
-    return !wouldSkipRecording(name) && openAsyncFlowCount() > 0u;
-    return wouldSkipRecording(name);
-bool wouldSkipAsyncFlow(const char* name) {
-    return wouldSkipRecording(track);
-
-// --- deepen additive from deepen-b16-profiler-guards-0dc1 ---
-bool wouldSkipAsyncFlowBegin(const char* name, u32 /*flowId*/) {
-bool wouldSkipSafeChromeTraceExport() {
-
-// --- deepen additive from b16-profiler-deepen-guards-70eb ---
-    return wouldSkipScope(name);
-    return wouldSkipScope(name) || openAsyncFlowCount() == 0u;
-    return wouldSkipScope(track);
-        return ChromeTraceExportRejectReason::UnpairedFlowEvents;
-    case ChromeTraceExportRejectReason::UnpairedFlowEvents:
-
-// --- deepen additive from deepen-b16-profiler-wouldskip-68ea ---
-bool tryFirstExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
-bool tryLastExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
-
-// --- deepen additive from deepen-b16-profiler-guards-d08f ---
-bool wouldSkipProfileScope(const char* name, ProfilerSkipReason* reason) {
-bool wouldSkipAsyncFlowBegin(const char* name, ProfilerSkipReason* reason) {
-    return wouldSkipProfileScope(name, reason);
-bool wouldSkipAsyncFlowEnd(const char* name, ProfilerSkipReason* reason) {
-bool wouldSkipCounter(const char* track, ProfilerSkipReason* reason) {
-    return wouldSkipProfileScope(track, reason);
-bool wouldSkipChromeTraceExport(ProfilerSkipReason* reason) {
-bool wouldSkipSafeChromeTraceExport(ProfilerSkipReason* reason) {
-
-// --- deepen additive from deepen-b16-profiler-guards-d3b7 ---
-bool wouldSkipRecording() {
-    return wouldSkipRecording() || !isValidEventName(name);
-    return wouldSkipRecording() || !isValidEventName(name)
-    return wouldSkipRecording() || !isValidEventName(track);
-    return wouldSkipRecording();
-ScopeNestingPreflight preflightScopeNesting(const char* name) {
-    preflight.profilerDisabled = wouldSkipRecording();
-    preflight.wouldSkip = preflight.profilerDisabled
-    preflight.wouldSkip = wouldSkipAsyncFlowBegin(name);
-    preflight.wouldSkip = wouldSkipAsyncFlowEnd(name);
-
-// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-ee46 ---
-bool wouldSkipScope(const char* name, ProfilerRecordSkipReason* reason) {
-bool wouldSkipAsyncFlowBegin(const char* name, ProfilerRecordSkipReason* reason) {
-    return wouldSkipScope(name, reason);
-bool wouldSkipAsyncFlowEnd(const char* name, ProfilerRecordSkipReason* reason) {
-bool wouldSkipCounter(const char* track, ProfilerRecordSkipReason* reason) {
-    return wouldSkipScope(track, reason);
-    preflight.wouldSkip = wouldSkipAsyncFlowBegin(name, &preflight.skipReason);
-    preflight.wouldSkip = wouldSkipAsyncFlowEnd(name, &preflight.skipReason);
-bool wouldSkipChromeTraceExport(bool requireBalancedNesting) {
-
-// --- deepen additive from b16-profiler-deepen-guards-aba4 ---
-    return !preflightChromeTraceExport().canExport();
-
-// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-6516 ---
-    const EventNameRejectReason nameReason = diagnoseEventNameRejectReason(name);
-    if (nameReason == EventNameRejectReason::Null) {
-    if (nameReason == EventNameRejectReason::Empty) {
-bool wouldSkipSafeChromeTraceExport(ProfileRecordSkipReason* reason) {
-
-// --- deepen additive from deepen-b16-profiler-guards-ceb7 ---
-bool wouldSkipCounter(const char* track, ProfileRecordSkipReason* reason) {
-bool wouldSkipSafeChromeTraceExport(ChromeTraceExportSkipReason* reason) {
-bool tryFindAsyncFlowStartIndex(u32 flowId, u32& outIndex) {
-bool tryFindAsyncFlowFinishIndex(u32 flowId, u32& outIndex) {
-ProfileNestingPreflight preflightNesting() {
-    ProfileNestingPreflight preflight{};
-
-// --- deepen additive from deepen-b16-profiler-guards-0062 ---
-bool wouldSkipInvalidEventName(const char* name) {
-    if (!tryFindFirstEventIndexByName(name, index)) {
-    if (!tryFindLastEventIndexByName(name, index)) {
-bool tryFindFirstFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex) {
-bool tryFindLastFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex) {
-    return !g_enabled.load(std::memory_order_acquire) || wouldSkipInvalidEventName(name);
-    if (!g_enabled.load(std::memory_order_acquire) || wouldSkipInvalidEventName(name)) {
-    return !g_enabled.load(std::memory_order_acquire) || wouldSkipInvalidEventName(track);
-bool wouldSkipChromeTraceExportCleanly() {
-    return !preflightChromeTraceExport().canExportCleanly();
-
-// --- deepen additive from deepen-b16-profiler-guards-aa19 ---
-bool tryFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
-    if (!tryFindFirstEventIndexByPhase(phase, index)) {
-bool tryLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
-    if (!tryFindLastEventIndexByPhase(phase, index)) {
-    return preflightChromeTraceExport().wouldSkipExport();
-    return preflightChromeTraceExport().wouldSkipSafeExport();
-
-// --- deepen additive from deepen-b16-profiler-guards-7c9c ---
-EventNameRejectReason classifyEventNameReject(const char* name) {
-    case EventNameRejectReason::ProfilerDisabled:
-    preflight.reason = classifyEventNameReject(name);
-    preflight.valid = preflight.reason == EventNameRejectReason::None;
-        preflight.reason = EventNameRejectReason::ProfilerDisabled;
-bool tryPreflightEventName(const char* name, EventNameRejectReason& reason) {
-    const EventNamePreflight preflight = preflightEventName(name);
-bool tryFindFirstFlowStartById(u32 flowId, ProfileEvent& outEvent) {
-bool tryFindLastFlowFinishById(u32 flowId, ProfileEvent& outEvent) {
-    AsyncFlowPreflight preflight = preflightAsyncFlow();
-    preflight.scopeNesting = preflightScopeNesting();
-    preflight.asyncFlow = preflightAsyncFlow();
-    preflight.wouldSkipInvalidNameExport = preflight.hasInvalidNameEvents;
-bool wouldSkipCounter(const char* name) {
-
-// --- deepen additive from deepen-b16-profiler-guards-1f04 ---
-bool tryFindFirstFlowEventIndexById(u32 flowId, u32& outIndex) {
-bool tryFindLastFlowEventIndexById(u32 flowId, u32& outIndex) {
-AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name, u32 /*flowId*/) {
-bool tryPreflightProfileScope(const char* name, ProfileScopePreflight& outPreflight) {
-    outPreflight = preflightProfileScope(name);
-    return outPreflight.canRecord();
-bool tryPreflightAsyncFlowBegin(const char* name, u32 flowId, AsyncFlowBeginPreflight& outPreflight) {
-    outPreflight = preflightAsyncFlowBegin(name, flowId);
-bool tryPreflightAsyncFlowEnd(const char* name, u32 flowId, AsyncFlowEndPreflight& outPreflight) {
-    outPreflight = preflightAsyncFlowEnd(name, flowId);
-bool tryPreflightCounterSample(const char* track, CounterSamplePreflight& outPreflight) {
-    outPreflight = preflightCounterSample(track);
