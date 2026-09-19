@@ -709,6 +709,10 @@ ChromeTraceExportRejectReason diagnoseChromeTraceExportRejectReason() {
     return ChromeTraceExportRejectReason::None;
 }
 
+bool isFlowOpenCountAttached() {
+    return !isFlowDepthDetached();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -882,54 +886,14 @@ bool isEventLookupPreflightOk(u32 index) {
 bool isEventNameValid(const char* name) {
     return isValidEventName(name);
 
-bool tryValidateEventName(const char* name, EventNameRejectReason& outReason) {
-    outReason = diagnoseEventNameRejectReason(name);
-    return outReason == EventNameRejectReason::None;
 
-const char* eventNameRejectReasonLabel(EventNameRejectReason reason) {
-    switch (reason) {
-    case EventNameRejectReason::None:
-        return "none";
-    case EventNameRejectReason::Null:
-        return "null";
-    case EventNameRejectReason::Empty:
-        return "empty";
-    return "unknown";
 
-bool isProfilerStateBalanced() {
-    return diagnoseNestingStateRejectReason() == NestingStateRejectReason::None;
 
-bool preflightProfilerState(NestingStateRejectReason* reason) {
-    const NestingStateRejectReason rejectReason = diagnoseNestingStateRejectReason();
-    if (reason != nullptr) {
-        *reason = rejectReason;
-    return rejectReason == NestingStateRejectReason::None;
 
-const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason) {
-    case NestingStateRejectReason::None:
-    case NestingStateRejectReason::UnbalancedScopeNesting:
-        return "unbalanced_scope_nesting";
-    case NestingStateRejectReason::UnbalancedFlowNesting:
-        return "unbalanced_flow_nesting";
-    case NestingStateRejectReason::OpenAsyncFlows:
-        return "open_async_flows";
 
-bool canExportChromeTrace() {
-    return diagnoseChromeTraceExportRejectReason() == ChromeTraceExportRejectReason::None;
 
-bool preflightChromeTraceExport(ChromeTraceExportRejectReason* reason) {
-    const ChromeTraceExportRejectReason rejectReason = diagnoseChromeTraceExportRejectReason();
-    return rejectReason == ChromeTraceExportRejectReason::None;
 
-const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason) {
-    case ChromeTraceExportRejectReason::None:
-    case ChromeTraceExportRejectReason::UnbalancedScopeNesting:
-    case ChromeTraceExportRejectReason::UnbalancedFlowNesting:
-    case ChromeTraceExportRejectReason::OpenAsyncFlows:
 
-bool canLookupEventAt(u32 index) {
-    EventLookupRejectReason reason = EventLookupRejectReason::None;
-    return tryCanLookupEventAt(index, reason);
 
 bool isValidProfileName(const char* name) {
     return isRecordableName(name);
@@ -958,6 +922,17 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.can_export = preflight.scope_nesting_balanced && preflight.flow_nesting_balanced;
     return preflight;
 
+u32 countEventsWithPhase(EventPhase phase) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            ++count;
+    return count;
+
+u32 findFirstEventIndexWithPhase(EventPhase phase) {
+            return i;
+    return kInvalidEventIndex;
 
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
@@ -1005,18 +980,13 @@ bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason) {
     }
     if (index >= eventCount()) {
         outReason = EventLookupRejectReason::OutOfRange;
-        return false;
-    }
 
     const ProfileEvent& candidate = eventAt(index);
     if (!isValidProfileEvent(candidate)) {
         outReason = EventLookupRejectReason::InvalidEvent;
-        return false;
-    }
 
     outReason = EventLookupRejectReason::None;
     return true;
-}
 
 const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason) {
     switch (reason) {
@@ -1028,8 +998,13 @@ const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason) {
         return "out_of_range";
     case EventLookupRejectReason::InvalidEvent:
         return "invalid_event";
-    }
     return "unknown";
+const char* eventNameAt(u32 index) {
+    if (!isEventIndexValid(index)) {
+        return nullptr;
+
+    const ProfileEvent& event = eventAt(index);
+    return isValidEventName(event.name) ? event.name : nullptr;
 }
 
 bool tryEventAt(u32 index, ProfileEvent& outEvent) {
@@ -1047,6 +1022,17 @@ bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
     if (!isEventExportable(index)) {
 
     return true;
+
+bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
+    ProfileEvent event{};
+    if (!tryEventAt(index, event)) {
+        outPhase = EventPhase::Begin;
+        return false;
+    }
+
+    outPhase = event.phase;
+    return true;
+}
 
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
@@ -1270,6 +1256,11 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
         preflight.eventCount > 0u && preflight.eventCount == preflight.exportableEventCount;
     preflight.orphanAsyncFlowEndCount = orphanAsyncFlowEndCount();
     preflight.hasOrphanAsyncFlowEnds = hasOrphanAsyncFlowEnds();
+    preflight.bufferFull = isBufferFull();
+    preflight.scopeBeginEventCount = countEventsWithPhase(EventPhase::Begin);
+    preflight.scopeEndEventCount = countEventsWithPhase(EventPhase::End);
+    preflight.asyncFlowStartEventCount = countEventsWithPhase(EventPhase::FlowStart);
+    preflight.asyncFlowFinishEventCount = countEventsWithPhase(EventPhase::FlowFinish);
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
