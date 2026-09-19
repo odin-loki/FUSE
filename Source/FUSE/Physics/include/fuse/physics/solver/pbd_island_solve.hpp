@@ -1585,3 +1585,9 @@ IslandBuiltGraphPreflight preflight_built_island_graph(const ContactIslandGraph&
 bool should_skip_built_island_graph(const ContactIslandGraph& graph,
 IslandSolveableGraphPreflight preflight_island_solveable_graph(
 bool should_skip_island_solveable_graph(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-b232 ---
+struct IslandWakeThenSolvePreflight {
+IslandWakeThenSolvePreflight preflight_wake_then_solve_island(
+IslandWakeThenSolvePreflight preflight_wake_then_solve_island_by_index(
+bool should_skip_wake_then_solve_island(const ContactIslandGraph::Island& island,

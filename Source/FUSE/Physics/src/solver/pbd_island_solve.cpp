@@ -2581,3 +2581,15 @@ IslandSolveableGraphPreflight preflight_island_solveable_graph(
     IslandSolveableGraphPreflight preflight{};
 bool should_skip_island_solveable_graph(const ContactIslandGraph& graph,
     const IslandDispatchSleepPreflight preflight = preflight_island_dispatch_sleep(graph, bodies, dt);
+
+// --- deepen additive from deepen-pbd-island-guards-b232 ---
+    case IslandConstraintSolveRejectReason::StaleRefs:
+    const IslandConstraintRefsPreflight refs = preflight_island_constraint_refs(island, contacts, distanceConstraints);
+        return IslandConstraintSolveRejectReason::StaleRefs;
+    const IslandSleepPreflight sleep = preflight_island_sleep(island, bodies);
+        return IslandConstraintSolveRejectReason::AllSleeping;
+IslandWakeThenSolvePreflight preflight_wake_then_solve_island(
+    IslandWakeThenSolvePreflight preflight{};
+IslandWakeThenSolvePreflight preflight_wake_then_solve_island_by_index(
+bool should_skip_wake_then_solve_island(const ContactIslandGraph::Island& island,
+    if (should_skip_wake_then_solve_island(island, bodies, contacts, distanceConstraints)) {

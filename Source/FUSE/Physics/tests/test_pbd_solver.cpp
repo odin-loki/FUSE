@@ -4662,3 +4662,13 @@ void testPreflightIslandDispatchSleepGuards() {
     testPreflightBuiltIslandGraphGuards();
     testPreflightIslandConstraintSolveByIndex();
     testPreflightIslandDispatchSleepGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-b232 ---
+                   mixed, bodies, contacts, constraints, IslandConstraintSolveRejectReason::None),
+                   allSleeping, bodies, contacts, constraints, IslandConstraintSolveRejectReason::AllSleeping),
+                   staleIsland, bodies, contacts, constraints, IslandConstraintSolveRejectReason::StaleRefs),
+                   emptyIsland, bodies, contacts, constraints, IslandConstraintSolveRejectReason::EmptyIsland),
+    expectTrue(std::strcmp(island_constraint_solve_reject_reason_name(IslandConstraintSolveRejectReason::AllSleeping),
+    const IslandWakeThenSolvePreflight preflight =
+    expectTrue(!should_skip_wake_then_solve_island(graph.island(mixedIsland), bodies, contacts, constraints),
+               "should_skip wake-then-solve false for mixed island");
