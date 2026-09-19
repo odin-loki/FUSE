@@ -12,6 +12,10 @@ void runNarrowphaseIntoBuffer(
     const u32 pairCount = static_cast<u32>(pairs.size());
     buffer.preparePairSlots(pairCount);
 
+    if (can_skip_narrowphase(pairs, bodies, shapes)) {
+        return;
+    }
+
     // Per-pair slots are job-safe (disjoint writes). Serial dispatch on the CPU stub avoids
     // scheduler reference-capture flakes seen when stacking parallel broadphase + narrowphase
     // under core::initialize(); the slot layout matches the future parallel_for kernel path.

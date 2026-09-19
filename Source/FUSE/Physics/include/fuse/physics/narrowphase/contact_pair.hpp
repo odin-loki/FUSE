@@ -226,4 +226,13 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Finalize manifold with prune+finalize preflight gates (B4.6 deepen pass).
+bool generate_contact_manifold_deepen(ContactManifold& manifold);
+
 } // namespace fuse::physics::narrowphase
