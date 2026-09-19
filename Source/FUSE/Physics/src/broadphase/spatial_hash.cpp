@@ -36,6 +36,30 @@ const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     return "Unknown";
 }
 
+const char* cellSpanRejectReasonName(CellSpanRejectReason reason) {
+    switch (reason) {
+    case CellSpanRejectReason::None:
+        return "None";
+    case CellSpanRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellSpanRejectReason::ExceedsMaxSpan:
+        return "ExceedsMaxSpan";
+    }
+    return "Unknown";
+}
+
+const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason) {
+    switch (reason) {
+    case CellPairGenRejectReason::None:
+        return "None";
+    case CellPairGenRejectReason::EmptyOccupants:
+        return "EmptyOccupants";
+    case CellPairGenRejectReason::SingleOccupant:
+        return "SingleOccupant";
+    }
+    return "Unknown";
+}
+
 const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
     switch (reason) {
     case BroadphaseRejectReason::None:
@@ -167,7 +191,7 @@ u32 countPairsForCell(const std::vector<u32>& occupants) {
 }
 
 void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
-    if (occupants.size() < 2u) {
+    if (!shouldRunCellPairGen(occupants)) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -182,7 +206,7 @@ void writePairsForCellSlots(
     const std::vector<u32>& occupants,
     u32 slotStart,
     PairBufferSoA& buffer) {
-    if (occupants.size() < 2u) {
+    if (!shouldRunCellPairGen(occupants)) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -460,6 +484,7 @@ RefineBroadphasePreflight preflightRefineBroadphase(
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.noValidPairs = !buffer.hasValidPairs();
     preflight.emptyInput = canSkipBroadphase(bodies, shapes);
+    preflight.validPairCount = buffer.countValidSlots();
     preflight.reason = refineBroadphaseRejectReason(bodies, shapes, buffer);
     return preflight;
 }
@@ -496,6 +521,7 @@ DedupeBroadphasePreflight preflightDedupeBroadphase(const PairBufferSoA& buffer)
     DedupeBroadphasePreflight preflight{};
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.singlePair = !preflight.emptyBuffer && buffer.activeCount <= 1u;
+    preflight.pairCount = buffer.activeCount;
     preflight.reason = dedupeBroadphaseRejectReason(buffer);
     return preflight;
 }
@@ -512,8 +538,8 @@ BroadphaseMergePreflight preflightBroadphaseMerge(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     BroadphaseMergePreflight preflight{};
-    bool hasPlaneBodies = false;
-    bool hasDynamicBodies = false;
+    u32 planeBodyCount = 0u;
+    u32 dynamicBodyCount = 0u;
 
     for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
         const u32 bodyIndex = shapes.bodyIndices[shapeIndex];
@@ -522,17 +548,17 @@ BroadphaseMergePreflight preflightBroadphaseMerge(
         }
         const CollisionShapeType type = static_cast<CollisionShapeType>(shapes.types[shapeIndex]);
         if (type == CollisionShapeType::Plane) {
-            hasPlaneBodies = true;
+            ++planeBodyCount;
         } else if ((bodies.flags[bodyIndex] & RB_STATIC) == 0) {
-            hasDynamicBodies = true;
-        }
-        if (hasPlaneBodies && hasDynamicBodies) {
-            break;
+            ++dynamicBodyCount;
         }
     }
 
-    preflight.emptyPlaneBodies = !hasPlaneBodies;
-    preflight.emptyDynamicBodies = !hasDynamicBodies;
+    preflight.planeBodyCount = planeBodyCount;
+    preflight.dynamicBodyCount = dynamicBodyCount;
+    preflight.estimatedMergePairs = planeBodyCount * dynamicBodyCount;
+    preflight.emptyPlaneBodies = planeBodyCount == 0u;
+    preflight.emptyDynamicBodies = dynamicBodyCount == 0u;
     if (preflight.emptyPlaneBodies) {
         preflight.reason = BroadphaseMergeRejectReason::EmptyPlaneBodies;
     } else if (preflight.emptyDynamicBodies) {
@@ -654,6 +680,54 @@ std::vector<CandidatePair> runBroadphase2D(
     buffer.reserveForUniqueBodies(params.bodyCount > 0u ? params.bodyCount : 32u);
     runBroadphase2DIntoBuffer(bodies, shapes, params, buffer);
     return buffer.toVector();
+}
+
+u32 countUniqueCellOccupants(const std::vector<u32>& occupants) {
+    if (occupants.empty()) {
+        return 0u;
+    }
+    std::vector<u32> uniqueBodies = occupants;
+    std::sort(uniqueBodies.begin(), uniqueBodies.end());
+    uniqueBodies.erase(std::unique(uniqueBodies.begin(), uniqueBodies.end()), uniqueBodies.end());
+    return static_cast<u32>(uniqueBodies.size());
+}
+
+u32 estimateCellPairCount(const std::vector<u32>& occupants) {
+    const u32 uniqueBodyCount = countUniqueCellOccupants(occupants);
+    return estimatePairCountForUniqueBodies(uniqueBodyCount);
+}
+
+CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants) {
+    if (occupants.empty()) {
+        return CellPairGenRejectReason::EmptyOccupants;
+    }
+    const u32 uniqueBodyCount = countUniqueCellOccupants(occupants);
+    if (uniqueBodyCount < 2u) {
+        return CellPairGenRejectReason::SingleOccupant;
+    }
+    return CellPairGenRejectReason::None;
+}
+
+bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenRejectReason expected) {
+    return cellPairGenRejectReason(occupants) == expected;
+}
+
+CellPairGenPreflight preflightCellPairGen(const std::vector<u32>& occupants) {
+    CellPairGenPreflight preflight{};
+    preflight.reason = cellPairGenRejectReason(occupants);
+    preflight.emptyOccupants = preflight.reason == CellPairGenRejectReason::EmptyOccupants;
+    preflight.singleOccupant = preflight.reason == CellPairGenRejectReason::SingleOccupant;
+    preflight.uniqueBodyCount = countUniqueCellOccupants(occupants);
+    preflight.estimatedPairCount = estimateCellPairCount(occupants);
+    return preflight;
+}
+
+bool canSkipCellPairGen(const std::vector<u32>& occupants) {
+    return !preflightCellPairGen(occupants).canGenerate();
+}
+
+bool shouldRunCellPairGen(const std::vector<u32>& occupants) {
+    return preflightCellPairGen(occupants).canGenerate();
 }
 
 } // namespace fuse::physics::broadphase
