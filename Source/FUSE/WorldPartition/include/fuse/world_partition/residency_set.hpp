@@ -251,6 +251,7 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
 /// Guard: removes a resident cell; returns false when coord is invalid or not resident.
 [[nodiscard]] inline bool remove_resident_guarded(ResidencySet& set, GridCoord coord) {
     return try_remove_resident(set, coord);
+}
 
 /// Guard: returns stored focus distance, or -1 when coord is invalid or not resident.
 [[nodiscard]] inline f32 focus_distance_for_guarded(const ResidencySet& set, GridCoord coord) {
@@ -320,6 +321,10 @@ template <typename ScoreFn>
 [[nodiscard]] inline GridCoord pick_budget_eviction_candidate_guarded(
     const std::vector<GridCoord>& candidates, ScoreFn&& score_fn, f32 incoming_priority,
     EvictionPolicy policy, f32& out_score) {
+/// Empty-candidate guard: pick budget eviction candidate from a coord list.
+/// Returns `kInvalidGridCoord` and leaves `out_score` at -1 when `candidates` is empty.
+[[nodiscard]] inline GridCoord pick_budget_eviction_candidate_guarded(const std::vector<GridCoord>& candidates,
+                                                                    ScoreFn&& score_fn, f32 incoming_priority,
     if (candidates.empty()) {
         out_score = -1.f;
         return kInvalidGridCoord;
@@ -344,6 +349,17 @@ template <typename ScoreFn>
         }
     }
     return eligible;
+}
+
+/// Empty-candidate guard: collect eligible budget eviction coords from a coord list.
+template <typename ScoreFn>
+[[nodiscard]] inline std::vector<GridCoord> collect_budget_eviction_candidates_guarded(
+    const std::vector<GridCoord>& candidates, ScoreFn&& score_fn, f32 incoming_priority,
+    EvictionPolicy policy) {
+    if (candidates.empty()) {
+        return {};
+    }
+    return collect_budget_eviction_candidates(candidates, score_fn, incoming_priority, policy);
 }
 
 /// Empty-set guard: return eligible budget eviction coords from a residency set (farthest-first).

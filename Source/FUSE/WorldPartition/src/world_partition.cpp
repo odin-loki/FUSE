@@ -145,6 +145,7 @@ f32 WorldPartition::budget_eviction_score_for_(const WorldCell& cell) const {
         m_streaming.unload_priority_for(cell.coord, m_desc.cell_size);
     return budget_eviction_score_for_guarded(focus_distance, distance_priority, cell.last_touch_tick, m_tick,
                                              m_desc.eviction_policy);
+    return budget_eviction_score_guarded(focus_distance, distance_priority, cell.last_touch_tick, m_tick,
 }
 
 WorldCell* WorldPartition::find_budget_eviction_candidate_(f32 incoming_priority, f32& out_score) {

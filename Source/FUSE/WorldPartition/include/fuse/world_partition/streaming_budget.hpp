@@ -164,6 +164,7 @@ enum class EvictionPolicy : u8 {
 }
 
 /// Guard: eviction score with negative unload priority clamped to zero.
+/// Guard: eviction score with negative unload distance priority clamped to zero.
 [[nodiscard]] inline f32 eviction_score_for_guarded(f32 unload_distance_priority, u32 last_touch_tick,
                                                     u32 current_tick, EvictionPolicy policy) {
     return eviction_score_for(std::max(0.f, unload_distance_priority), last_touch_tick, current_tick, policy);
@@ -272,6 +273,11 @@ enum class EvictionPolicy : u8 {
 [[nodiscard]] inline bool incoming_outranks_eviction_guarded(f32 incoming_priority, f32 eviction_score) {
     return is_positive_eviction_score(eviction_score) &&
            incoming_outranks_eviction(incoming_priority, eviction_score);
+/// Guard: rejects non-positive eviction scores before outrank comparison.
+    if (!is_positive_eviction_score(eviction_score)) {
+        return false;
+    }
+    return incoming_outranks_eviction(incoming_priority, eviction_score);
 }
 
 /// True when a budget eviction candidate is eligible under distance policy pressure checks.
