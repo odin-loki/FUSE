@@ -151,6 +151,21 @@ struct SnapPreflight {
 
 SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings);
 
+/// Read-only snap-drag diagnostics — distinguishes disabled vs degraded snap (B6.4 deepen pass).
+struct SnapDragPreflight {
+    bool snapDisabled = false;
+    /// Snap is enabled but the mode step is unusable — drag delta passthrough (B6.4 deepen pass).
+    bool snapDegraded = false;
+
+    bool canApply() const { return !snapDisabled && !snapDegraded; }
+};
+
+/// Drag-context snap diagnostics — disabled vs degraded (B6.4 deepen pass).
+SnapDragPreflight preflightSnapDrag(GizmoMode mode, const GizmoSnapSettings& settings);
+
+/// Non-mutating snap-drag predicate — same guards as `preflightSnapDrag` (B6.4 deepen pass).
+bool canSnapDrag(GizmoMode mode, const GizmoSnapSettings& settings);
+
 /// Guarded transform snap — returns false when snap cannot apply (B6.4 deepen follow-up).
 bool trySnapTransform(const GizmoTransform& transform, GizmoMode mode,
                       const GizmoSnapSettings& settings, GizmoTransform& out);
@@ -175,6 +190,7 @@ struct BeginDragPreflight {
     bool screenMiss = false;
     bool pickMiss = false;
     bool alreadyDragging = false;
+    GizmoAxis axis = GizmoAxis::None;
 };
 
 /// Read-only update-drag diagnostics — no mutation (B6.4 deepen follow-up).
@@ -182,6 +198,8 @@ struct UpdateDragPreflight {
     bool notDragging = false;
     bool emptyHit = false;
     bool invalidActiveAxis = false;
+    /// Hit is in the screen dead zone — update still applies (B6.4 deepen pass).
+    bool screenMiss = false;
     /// Snap is enabled but the mode step is unusable — update still applies (B6.4 deepen pass).
     bool snapDegraded = false;
 
@@ -217,6 +235,25 @@ EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode
 bool canEndDrag(bool dragging, GizmoAxis activeAxis = GizmoAxis::None);
 bool canEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
                 const GizmoSnapSettings& settings);
+
+/// Combined pick/snap/drag frame diagnostics — no mutation (B6.4 deepen pass).
+struct DragInteractionPreflight {
+    BeginDragPreflight begin{};
+    UpdateDragPreflight update{};
+    EndDragPreflight end{};
+    SnapDragPreflight snap{};
+
+    bool canBegin() const { return begin.canBegin; }
+    bool canUpdate() const { return update.canUpdate(); }
+    bool canEnd() const { return end.canEnd(); }
+    bool snapWillApply() const { return snap.canApply(); }
+};
+
+DragInteractionPreflight preflightDragInteraction(const GizmoHitTest& hit, GizmoMode mode,
+                                                  const GizmoSnapSettings& settings,
+                                                  bool dragging,
+                                                  GizmoAxis activeAxis = GizmoAxis::None,
+                                                  bool alreadyDragging = false);
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       GizmoMode mode, GizmoSpace space, f32 axisLength,
@@ -306,11 +343,15 @@ public:
                                               const GizmoTransform& transform) const;
     [[nodiscard]] PickPreflight preflightPick(const GizmoHitTest& hit) const;
     [[nodiscard]] SnapPreflight preflightSnap() const;
+    [[nodiscard]] SnapDragPreflight preflightSnapDrag() const;
+    [[nodiscard]] bool canSnapDragNow() const;
     [[nodiscard]] bool canApplySnapNow() const;
     [[nodiscard]] bool trySnapTransform(const GizmoTransform& transform,
                                         GizmoTransform& out) const;
     [[nodiscard]] UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit) const;
     [[nodiscard]] bool canUpdateDrag(const GizmoHitTest& hit) const;
+    /// Combined pick/snap/drag frame diagnostics for the current drag state (B6.4 deepen pass).
+    [[nodiscard]] DragInteractionPreflight preflightDragInteraction(const GizmoHitTest& hit) const;
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
