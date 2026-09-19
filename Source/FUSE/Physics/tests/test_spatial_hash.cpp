@@ -4673,3 +4673,16 @@ void testRefineDedupeMergeTryPreflightGuards() {
     testPairBufferWriteSlotTryPreflightGuards();
     testCellOccupancyTryPreflightGuards();
     testRefineDedupeMergeTryPreflightGuards();
+
+// --- deepen additive from b4-broadphase-preflight-deepen-46ea ---
+        fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::OutOfRangeSlot;
+             "tryPreflightPairBufferInvalidateSlot carries reject reason");
+        fuse::physics::broadphase::PairBufferWriteSlotRejectReason::OutOfRangeSlot;
+             "tryPreflightPairBufferWriteSlot carries None reject reason");
+             "tryPreflightPairBufferWriteSlot carries InvalidPair reject reason");
+        fuse::physics::broadphase::CellOccupancyRejectReason::ExceedsBudget;
+             "tryPreflightCellOccupancy carries None reject reason");
+             "tryPreflightCellOccupancy carries ExceedsBudget reject reason");
+             "tryPreflightRefineBroadphase carries None reject reason");
+               "tryPreflightBroadphaseMerge rejects scene without plane bodies");
+               "tryPreflightMergePairsIntoBuffer accepts valid merge");
