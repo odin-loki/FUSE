@@ -507,6 +507,23 @@ bool probeIndexRejectReasonIsBlocking(ProbeIndexRejectReason reason);
 /// True when a probe-coord reject reason would block lookup (B5.6 deepen pass).
 bool probeCoordRejectReasonIsBlocking(ProbeCoordRejectReason reason);
 
+/// CPU reference irradiance source for probe-grid sampling (B5.6 deepen pass).
+struct ProbeGridSource {
+    const DDGIDesc* desc = nullptr;
+    const IrradianceCacheEntry* cache = nullptr;
+    u32 cache_count = 0;
+
+/// Why probe-grid source preflight rejected the request (B5.6 deepen pass).
+enum class ProbeGridSourceRejectReason : u8 {
+    NullDesc,
+    NullCache,
+
+/// Human-readable label for probe-grid source reject reasons (logging / tests).
+const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason);
+
+/// True when a probe-grid source reject reason would block sampling (B5.6 deepen pass).
+bool probeGridSourceRejectReasonIsBlocking(ProbeGridSourceRejectReason reason);
+
 /// Human-readable label for cache-index reject reasons (logging / tests).
 const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
 
@@ -1209,6 +1226,17 @@ const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason rea
 
 /// CPU-side probe grid helpers — mirrors CUDA scheduling without GPU.
 namespace ddgi_util {
+/// Classify why probe-grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const ProbeGridSource& source);
+/// Diagnose why probe-grid source preflight would reject; vacuously succeeds on accessible sources.
+bool tryValidateProbeGridSource(const ProbeGridSource& source, ProbeGridSourceRejectReason& outReason);
+/// True when `source` has a sampleable grid and sized CPU cache.
+bool isProbeGridSourceAccessible(const ProbeGridSource& source);
+/// Early-out when probe-grid source lookup would be rejected.
+bool wouldSkipProbeGridSource(const ProbeGridSource& source);
+/// Non-mutating probe-grid source preflight — returns true when sampling would proceed.
+bool preflightProbeGridSource(const ProbeGridSource& source, ProbeGridSourceRejectReason* reason = nullptr);
+
 u32 probeCount(const DDGIDesc& desc);
 /// Returns 0 when the grid is empty.
 u32 countBorderProbes(const DDGIDesc& desc);
@@ -1993,7 +2021,6 @@ bool tryPreflightProbeSchedule(u32 probe_count,
 /// Early-out when probe scheduling would be rejected (B5.6 deepen pass).
 bool shouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
 bool shouldSkipProbeSchedule(u32 probe_count,
-/// Classify why rate-aware probe scheduling would reject.
 /// Schedule probe updates with rate-aware reject-reason diagnostics; false when preflight rejects.
 /// Schedule probe updates at rate with reject-reason diagnostics; false when preflight rejects.
 bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
@@ -2006,9 +2033,6 @@ bool tryPreflightProbeScheduleAtRate(u32 probe_count,
 u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Schedule preflight with mandatory reject-reason output.
 /// Rate-aware schedule preflight with mandatory reject-reason output.
-                                  u32 probes_per_frame,
-                                  u32 max_indices,
-                                  const u32* out_indices,
 /// True when output capacity would cap scheduled probes below `probes_per_frame`.
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Early-out when probe scheduling would be rejected — same ordering as `tryScheduleProbeUpdates`.
@@ -2097,6 +2121,7 @@ ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleRejectAtCoords(cons
 bool tryTrilinearProbeIrradianceAtCoords(const DDGIDesc& desc,
                                          fuse::math::Vec3& out_irradiance,
                                          ProbeTrilinearSampleRejectReason& outReason);
+/// Non-mutating trilinear sample preflight — returns true when lookup would proceed.
 /// Directional octahedral bilinear sample within one probe cache entry (CPU stub).
 fuse::math::Vec3 sampleDirectionalIrradianceAtProbe(const IrradianceCacheEntry& entry,
                                                   const fuse::math::Vec3& direction,

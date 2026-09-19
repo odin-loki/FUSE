@@ -126,6 +126,50 @@ bool probeGridSourceRejectReasonIsBlocking(ProbeGridSourceRejectReason reason) {
     return reason != ProbeGridSourceRejectReason::None;
 }
 
+const char* probeTrilinearSampleRejectReasonLabel(ProbeTrilinearSampleRejectReason reason) {
+    switch (reason) {
+    case ProbeTrilinearSampleRejectReason::None:
+        return "none";
+    case ProbeTrilinearSampleRejectReason::EmptyGrid:
+        return "empty_grid";
+    case ProbeTrilinearSampleRejectReason::NotSampleable:
+        return "not_sampleable";
+    case ProbeTrilinearSampleRejectReason::InvalidSampleCoords:
+        return "invalid_sample_coords";
+    case ProbeTrilinearSampleRejectReason::UndersizedCache:
+        return "undersized_cache";
+    case ProbeTrilinearSampleRejectReason::NullCache:
+        return "null_cache";
+    }
+    return "unknown";
+}
+
+bool probeTrilinearSampleRejectReasonIsBlocking(ProbeTrilinearSampleRejectReason reason) {
+    return reason != ProbeTrilinearSampleRejectReason::None;
+}
+
+const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason) {
+    switch (reason) {
+    case ProbeGridSourceRejectReason::None:
+        return "none";
+    case ProbeGridSourceRejectReason::NullDesc:
+        return "null_desc";
+    case ProbeGridSourceRejectReason::EmptyGrid:
+        return "empty_grid";
+    case ProbeGridSourceRejectReason::NotSampleable:
+        return "not_sampleable";
+    case ProbeGridSourceRejectReason::NullCache:
+        return "null_cache";
+    case ProbeGridSourceRejectReason::UndersizedCache:
+        return "undersized_cache";
+    }
+    return "unknown";
+}
+
+bool probeGridSourceRejectReasonIsBlocking(ProbeGridSourceRejectReason reason) {
+    return reason != ProbeGridSourceRejectReason::None;
+}
+
 const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason) {
     switch (reason) {
     case CacheIndexRejectReason::None:
@@ -391,48 +435,29 @@ const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason) {
         return "zero_max_indices";
 
 const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason) {
-    switch (reason) {
     case ProbeTrilinearSampleRejectReason::None:
-        return "none";
     case ProbeTrilinearSampleRejectReason::EmptyGrid:
         return "empty_grid";
     case ProbeTrilinearSampleRejectReason::NotSampleable:
-        return "not_sampleable";
     case ProbeTrilinearSampleRejectReason::InvalidSampleCoords:
         return "invalid_sample_coords";
     case ProbeTrilinearSampleRejectReason::ClampableSampleCoords:
         return "clampable_sample_coords";
     case ProbeTrilinearSampleRejectReason::UndersizedCache:
-        return "undersized_cache";
     case ProbeTrilinearSampleRejectReason::NullCache:
         return "null_cache";
-    return "unknown";
 
 bool probeTrilinearSampleRejectReasonIsBlocking(ProbeTrilinearSampleRejectReason reason) {
     return reason != ProbeTrilinearSampleRejectReason::None;
 
-const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason) {
-    switch (reason) {
-    case ProbeScheduleRejectReason::None:
-        return "none";
     case ProbeScheduleRejectReason::NullOutputIndices:
         return "null_output_indices";
     case ProbeScheduleRejectReason::NullOutputCount:
         return "null_output_count";
-    case ProbeScheduleRejectReason::ZeroProbeCount:
-        return "zero_probe_count";
-    case ProbeScheduleRejectReason::ZeroMaxIndices:
-        return "zero_max_indices";
     case ProbeTrilinearSampleRejectReason::ClampableWeights:
         return "clampable_weights";
     }
-    return "unknown";
-}
 
-const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason) {
-bool probeTrilinearSampleRejectReasonIsBlocking(ProbeTrilinearSampleRejectReason reason) {
-    return reason != ProbeTrilinearSampleRejectReason::None;
-}
 
 ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDesc& desc,
                                                                     const ProbeSampleCoords& coords,
@@ -471,30 +496,16 @@ bool tryPreflightTrilinearProbeSample(const DDGIDesc& desc,
 bool shouldSkipTrilinearProbeSample(const DDGIDesc& desc,
     return !preflightTrilinearProbeSample(desc, coords, cache, cache_count);
 
-    switch (reason) {
-    case ProbeTrilinearSampleRejectReason::None:
-    case ProbeTrilinearSampleRejectReason::ClampableSampleCoords:
-    case ProbeTrilinearSampleRejectReason::ClampableWeights:
         return false;
-    case ProbeTrilinearSampleRejectReason::EmptyGrid:
-    case ProbeTrilinearSampleRejectReason::NotSampleable:
-    case ProbeTrilinearSampleRejectReason::InvalidSampleCoords:
-    case ProbeTrilinearSampleRejectReason::UndersizedCache:
-    case ProbeTrilinearSampleRejectReason::NullCache:
         return true;
 const char* probeGridRejectReasonLabel(ProbeGridRejectReason reason) {
     case ProbeGridRejectReason::None:
-        return "none";
     case ProbeGridRejectReason::EmptyGrid:
-        return "empty_grid";
     case ProbeGridRejectReason::NotSampleable:
-        return "not_sampleable";
     case ProbeGridRejectReason::OutOfRangeProbeIndex:
         return "out_of_range_probe_index";
     case ProbeGridRejectReason::OutOfRangeProbeCoord:
         return "out_of_range_probe_coord";
-    }
-    return "unknown";
 
 bool probeGridRejectReasonIsBlocking(ProbeGridRejectReason reason) {
     return reason != ProbeGridRejectReason::None;
@@ -1313,6 +1324,8 @@ bool ProbeGridLayout::isAtMaxProbeIndex(u32 probe_index, const DDGIDesc& desc) {
     return count > 0u && probe_index == count - 1u;
 
     return !isEmptyGrid(desc) && probe_index == maxProbeIndex(desc);
+}
+
 
 u32 ProbeGridLayout::clampProbeIndex(u32 probe_index, const DDGIDesc& desc) {
     const u32 count = ddgi_util::probeCount(desc);
@@ -1839,6 +1852,11 @@ bool ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(const DDGIDesc& desc, c
 
 bool ProbeGridLayout::wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
     return !canPreflightProbeSampleCoords(desc, coords);
+}
+
+bool ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    ProbeSampleCoordsRejectReason reason = ProbeSampleCoordsRejectReason::None;
+    return !tryPreflightProbeSampleCoords(desc, coords, reason);
 }
 
 bool ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
@@ -2529,6 +2547,55 @@ const char* ddgiLaunchRejectReasonLabel(DdgiLaunchRejectReason reason) {
 }
 
 namespace ddgi_util {
+
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const ProbeGridSource& source) {
+    ProbeGridSourceRejectReason reason = ProbeGridSourceRejectReason::None;
+    tryValidateProbeGridSource(source, reason);
+    return reason;
+}
+
+bool tryValidateProbeGridSource(const ProbeGridSource& source, ProbeGridSourceRejectReason& outReason) {
+    if (source.desc == nullptr) {
+        outReason = ProbeGridSourceRejectReason::NullDesc;
+        return false;
+    }
+    if (ProbeGridLayout::isEmptyGrid(*source.desc)) {
+        outReason = ProbeGridSourceRejectReason::EmptyGrid;
+        return false;
+    }
+    if (!canSampleProbeGrid(*source.desc)) {
+        outReason = ProbeGridSourceRejectReason::NotSampleable;
+        return false;
+    }
+    if (source.cache == nullptr) {
+        outReason = ProbeGridSourceRejectReason::NullCache;
+        return false;
+    }
+    if (!isCacheSizedForGrid(*source.desc, source.cache_count)) {
+        outReason = ProbeGridSourceRejectReason::UndersizedCache;
+        return false;
+    }
+
+    outReason = ProbeGridSourceRejectReason::None;
+    return true;
+}
+
+bool isProbeGridSourceAccessible(const ProbeGridSource& source) {
+    ProbeGridSourceRejectReason reason = ProbeGridSourceRejectReason::None;
+    return tryValidateProbeGridSource(source, reason);
+}
+
+bool wouldSkipProbeGridSource(const ProbeGridSource& source) {
+    return !isProbeGridSourceAccessible(source);
+}
+
+bool preflightProbeGridSource(const ProbeGridSource& source, ProbeGridSourceRejectReason* reason) {
+    const ProbeGridSourceRejectReason reject = classifyProbeGridSourceReject(source);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return !probeGridSourceRejectReasonIsBlocking(reject);
+}
 
 u32 probeCount(const DDGIDesc& desc) {
     return desc.grid_dims.x * desc.grid_dims.y * desc.grid_dims.z;
@@ -5988,6 +6055,30 @@ bool trilinearProbeIrradianceIfReady(const DDGIDesc& desc,
     return tryTrilinearProbeIrradiance(desc, world_position, cache, cache_count, out_irradiance);
 }
 
+bool preflightTrilinearProbeSample(const DDGIDesc& desc,
+                                   const fuse::math::Vec3& world_position,
+                                   const IrradianceCacheEntry* cache,
+                                   u32 cache_count,
+                                   ProbeTrilinearSampleRejectReason* reason) {
+    ProbeSampleCoords coords{};
+    if (!ProbeGridLayout::buildProbeSampleCoords(desc, world_position, coords)) {
+        const ProbeTrilinearSampleRejectReason reject =
+            ProbeGridLayout::isEmptyGrid(desc) ? ProbeTrilinearSampleRejectReason::EmptyGrid
+                                               : ProbeTrilinearSampleRejectReason::NotSampleable;
+        if (reason != nullptr) {
+            *reason = reject;
+        }
+        return false;
+    }
+
+    ProbeTrilinearSampleRejectReason reject = ProbeTrilinearSampleRejectReason::None;
+    const bool ok = tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, reject);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return ok;
+}
+
 fuse::math::Vec3 trilinearProbeIrradiance(const DDGIDesc& desc,
                                           u32 cache_count) {
     fuse::math::Vec3 result{};
@@ -6535,11 +6626,7 @@ bool launch_ddgi_probe_update(const DDGIDesc& desc,
     }
 
     gi::DDGIKernelParams params{};
-    params.probe_indices_to_update = probe_indices;
-    params.probe_update_count = probe_count;
-    params.rays_per_probe = desc.rays_per_probe;
-    params.hysteresis = desc.hysteresis;
-    params.max_ray_distance = desc.max_ray_distance;
+    gi::populateDDGIKernelParams(params, desc, probe_indices, probe_count);
 
     if (!gi::canLaunchProbeUpdate(params)) {
     if (!gi::canLaunchDdgiKernels(desc, params)) {
@@ -6787,6 +6874,7 @@ void populateDDGIKernelParams(DDGIKernelParams& params,
                               u64 frame_seed) {
     params.probe_indices_to_update = probe_indices;
     params.probe_update_count = probe_count;
+    params.probe_grid_count = ddgi_util::probeCount(desc);
     params.rays_per_probe = desc.rays_per_probe;
     params.hysteresis = desc.hysteresis;
     params.max_ray_distance = desc.max_ray_distance;
@@ -6863,6 +6951,14 @@ ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
     outReason = classifyProbeKernelReject(params);
     return outReason == ProbeKernelRejectReason::None;
+    }
+    if (params.probe_grid_count > 0u) {
+        for (u32 i = 0u; i < params.probe_update_count; ++i) {
+            if (params.probe_indices_to_update[i] >= params.probe_grid_count) {
+                outReason = ProbeKernelRejectReason::OutOfRangeProbeIndex;
+                return false;
+    outReason = ProbeKernelRejectReason::None;
+    return true;
 }
 
 ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params) {
