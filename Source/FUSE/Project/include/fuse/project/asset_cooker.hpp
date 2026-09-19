@@ -47,6 +47,14 @@ public:
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
     [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile_invalidation(
         const CookManifest& manifest) const;
+    /// True when `estimate_reconcile_invalidation(manifest).total()` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool would_reconcile_invalidate(const CookManifest& manifest) const;
+    /// Deduplicated source paths contributing to a non-zero reconcile estimate (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_reconcile_stale_sources(
+        const CookManifest& manifest) const;
+    /// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
+    [[nodiscard]] CookCacheInvalidationEstimate estimate_upstream_invalidation(
+        const CookManifest& manifest, const std::string& changed_source) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
