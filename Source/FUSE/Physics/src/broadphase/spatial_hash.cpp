@@ -863,6 +863,7 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReasonImpl(
         }
         if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
             return ShapeCellInsertRejectReason::OccupancySkipped;
+        if (!shouldRunCellOccupancyIteration(range, maxOccupancy)) {
             return;
         }
         return ShapeCellInsertRejectReason::None;
@@ -964,6 +965,7 @@ void populateShapeCells(
     if (should_skip_shape_cell_insertion(range, maxOccupancy)) {
     if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
     if (canSkipCellOccupancyIteration(preflightCellOccupancy(range, maxOccupancy))) {
+    if (!shouldRunCellOccupancyIteration(range, maxOccupancy)) {
         return;
     }
     if (isEmptyCellRange(range)) {
@@ -1571,6 +1573,8 @@ BroadphaseMergeScan scanBroadphaseMergeBodies(
             break;
 
     preflight.reason = broadphaseMergeRejectReason(bodies, shapes);
+    preflight.hasPlaneBodies = hasPlaneBodies;
+    preflight.hasDynamicBodies = hasDynamicBodies;
     preflight.emptyPlaneBodies = !hasPlaneBodies;
     preflight.emptyDynamicBodies = !hasDynamicBodies;
             ++planeBodyCount;
