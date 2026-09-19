@@ -3248,3 +3248,39 @@ void testClassifyCacheIndexReject() {
 void testClassifyAndWouldClampGuards() {
     expectTrue(fuse::renderer::classifyProbeSampleCoordsReject(desc, oobIndices) ==
     expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, built, cache.data(), 8u) ==
+
+// --- deepen additive from deepen-ddgi-guards-33be ---
+void testWouldSkipGuardOverloads() {
+               "build coords for wouldSkip overload tests");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, reversed, sampleReason),
+    expectTrue(sampleReason == fuse::renderer::ProbeSampleCoordsRejectReason::UnorderedCorners,
+               "wouldSkipProbeSampleCoords reports unordered_corners reason");
+               "wouldSkipProbeTrilinearSample false for accessible cache");
+    expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::NullCache,
+               "wouldSkipProbeTrilinearSample reports null_cache reason");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, 3u, 8u, cacheReason),
+               "wouldSkipCacheIndexLookup false for valid index");
+               "valid cache-index wouldSkip reports no reject reason");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, nullptr, 3u, 8u, cacheReason),
+               "null cache wouldSkip reports null_cache reason");
+               "tryReadIrradianceAtIndex reason overload succeeds");
+               "successful tryRead reports no cache reject reason");
+               "tryRead reason overload rejects grid-undersized cache");
+    expectTrue(cacheReason == fuse::renderer::CacheIndexRejectReason::UndersizedCache,
+               "grid-undersized tryRead reports undersized_cache reason");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(2048u, 64u, indices, &count, scheduleReason),
+               "valid schedule wouldSkip reports no reject reason");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(0u, 64u, indices, &count, scheduleReason),
+               "zero probe count wouldSkip reports zero_probe_count reason");
+    expectTrue(!fuse::renderer::wouldSkipDdgiProbeUpdate(desc, validLaunch, 2u, launchReason),
+               "wouldSkipDdgiProbeUpdate reason overload false for valid launch");
+               "valid launch wouldSkip reports no reject reason");
+    expectTrue(fuse::renderer::wouldSkipDdgiProbeUpdate(desc, oobLaunch, 2u, launchReason),
+               "wouldSkipDdgiProbeUpdate reason overload true for OOB indices");
+               "OOB launch wouldSkip reports out_of_range_probe_index reason");
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeTraceKernel(kernelParams, kernelReason),
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeBlendKernel(kernelParams, kernelReason),
+    expectTrue(fuse::renderer::gi::wouldSkipProbeTraceKernel(kernelParams, kernelReason),
+               "zero update count wouldSkip reports zero_update_count reason");
+    expectTrue(fuse::renderer::gi::wouldSkipProbeBlendKernel(kernelParams),
+               "wouldSkipProbeBlendKernel true without reason param");

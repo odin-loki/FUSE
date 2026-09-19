@@ -2631,3 +2631,14 @@ bool wouldClampCacheIndexLookup(const DDGIDesc& desc, u32 probe_index) {
     return classifyCacheIndexReject(desc, probe_index, cache_count) != CacheIndexRejectReason::None;
     return classifyProbeScheduleReject(probe_count, max_indices, out_indices, out_count) !=
     return classifyProbeUpdateLaunchReject(desc, probe_indices, probe_count) !=
+
+// --- deepen additive from deepen-ddgi-guards-33be ---
+    return tryValidateCacheIndex(desc, cache, probe_index, cache_count, reason) &&
+    return !tryValidateCacheIndex(desc, probe_index, cache_count, outReason);
+    return !tryValidateCacheIndex(desc, cache, probe_index, cache_count, outReason);
+    return !tryCanScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count, outReason);
+    return !tryCanLaunchDdgiProbeUpdate(desc, probe_indices, probe_count, outReason);
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
+    return !tryCanLaunchProbeTraceKernel(params, outReason);
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
+    return !tryCanLaunchProbeBlendKernel(params, outReason);
