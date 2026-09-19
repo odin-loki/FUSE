@@ -265,32 +265,25 @@ struct SleepPassPreflight {
     bool skipped = false;
 
     bool can_sleep_pass() const { return !skipped && stats.activeCount > 0u; }
-};
 
 /// Wake-candidate diagnostics for sleeping bodies above velocity thresholds (B4.4 deepen).
 struct WakeCandidateStats {
-    u32 sleepingCount = 0;
     u32 wakeCandidateCount = 0;
     u32 restingSleepingCount = 0;
-};
 
 /// Preflight for bodies that would wake on the next sleep pass evaluation.
 struct WakePreflight {
     WakeCandidateStats stats{};
-    bool skipped = false;
 
     bool has_wake_candidates() const { return !skipped && stats.wakeCandidateCount > 0u; }
-};
 
 /// Work-buffer capacity preflight before island constraint solve (B4.4 deepen).
 struct IslandSolveWorkPreflight {
     u32 bodyCount = 0;
     u32 bufferCapacity = 0;
     bool insufficientBufferCapacity = false;
-    bool skipped = false;
 
     bool can_solve() const { return !skipped && !insufficientBufferCapacity; }
-};
 
 /// Per-island constraint index and body-reference preflight (B4.4 deepen).
 struct IslandConstraintIndexPreflight {
@@ -299,12 +292,10 @@ struct IslandConstraintIndexPreflight {
     u32 oobContactIndexCount = 0;
     u32 oobDistanceIndexCount = 0;
     u32 oobBodyRefCount = 0;
-    bool skipped = false;
 
     bool indices_valid() const {
         return oobContactIndexCount == 0u && oobDistanceIndexCount == 0u && oobBodyRefCount == 0u;
     }
-};
 
 /// Aggregate contact-impulse warm-start counts for graph-level batch guards.
 struct IslandContactImpulseWarmStartStats {
@@ -312,15 +303,44 @@ struct IslandContactImpulseWarmStartStats {
     u32 warmStartableCount = 0;
     u32 emptyCount = 0;
     u32 noImpulseCount = 0;
-};
 
 /// Graph-level contact-impulse warm-start preflight for selective per-island seeding.
 struct IslandContactImpulseWarmStartGraphPreflight {
     IslandContactImpulseWarmStartStats stats{};
     bool invalidDt = false;
-    bool skipped = false;
 
     bool can_warm_start() const { return !skipped && !invalidDt && stats.warmStartableCount > 0u; }
+/// Per-island constraint solve preflight (OOB indices, immovable pairs) (B4.4 deepen).
+struct IslandSolveJobPreflight {
+    u32 contactCount = 0;
+    u32 distanceCount = 0;
+    u32 outOfRangeContacts = 0;
+    u32 outOfRangeDistances = 0;
+    u32 immovableConstraintPairs = 0;
+    u32 solvableConstraintPairs = 0;
+
+    bool can_solve() const { return !skipped && solvableConstraintPairs > 0u; }
+
+/// Per-island body sleep state summary (B4.4 deepen).
+struct IslandSleepPreflight {
+    u32 dynamicBodyCount = 0;
+    u32 sleepingBodyCount = 0;
+    u32 staticBodyCount = 0;
+    u32 bodiesWithForces = 0;
+    u32 bodiesWithCcd = 0;
+
+    bool all_dynamic_sleeping() const {
+        return dynamicBodyCount > 0u && sleepingBodyCount == dynamicBodyCount;
+
+    bool all_static() const {
+        return dynamicBodyCount == 0u && staticBodyCount > 0u;
+
+/// Combined sleep/wake preflight for one island (B4.4 deepen).
+struct IslandSleepWakePreflight {
+    IslandSleepPreflight sleep{};
+    u32 activeContactCount = 0;
+    u32 contactsTouchingSleepingBody = 0;
+    bool should_wake = false;
 };
 
 /// Combined lambda + contact-impulse warm-start preflight for one island.
@@ -714,22 +734,16 @@ struct IslandWarmStartResult {
 
 /// Aggregate combined warm-start counts for graph-level batch guards.
 struct IslandCombinedWarmStartStats {
-    u32 totalIslands = 0;
-    u32 warmStartableCount = 0;
-    u32 emptyCount = 0;
     u32 noPriorDataCount = 0;
-};
 
 /// Graph-level warm-start preflight for selective per-island seeding (B4.4 deepen pass).
 struct IslandWarmStartGraphPreflight {
     IslandWarmStartStats stats{};
-    bool skipped = false;
 
     bool can_warm_start() const { return !skipped && stats.warmStartableCount > 0u; }
 
 /// Graph-level warm-start preflight for selective per-island seeding (B4.4 deepen).
 struct GraphWarmStartPreflight {
-    u32 dispatchableCount = 0;
     u32 skippedEmptyCount = 0;
     u32 priorDistanceCoverage = 0;
     u32 priorContactCoverage = 0;
@@ -741,19 +755,14 @@ struct GraphWarmStartPreflight {
 
 /// Batch warm-start summary for parallel island seeding stubs.
 struct IslandWarmStartBatchResult {
-    u32 warmedCount = 0;
     u32 skippedNoPriorCount = 0;
 
-    bool any_warmed() const { return warmedCount > 0u; }
 
 /// Batch warm-start summary for parallel selective seeding stubs.
-    u32 skippedCount = 0;
-    u32 warmStartableCount = 0;
 
 
 /// Lightweight view for parallel warm-start dispatch (B4.4 deepen).
 struct IslandWarmStartJob {
-    u32 islandIndex = ContactIslandGraph::invalidIsland;
     u32 ownedDistanceCount = 0;
     u32 ownedContactCount = 0;
     bool empty = true;
@@ -763,8 +772,6 @@ struct IslandWarmStartJob {
 
 
 /// Per-island contact impulse warm-start preflight (dt + empty-island guard).
-struct IslandContactImpulseWarmStartPreflight {
-    bool invalidDt = false;
 
     bool can_warm_start() const { return !skipped && !invalidDt && ownedContactCount > 0u; }
 
@@ -777,7 +784,6 @@ struct IslandConstraintIndexValidation {
     bool has_invalid_indices() const { return !valid; }
 
 /// Per-island solve preflight including constraint index checks (B4.4 deepen).
-struct IslandSolveJobPreflight {
     IslandSolveJob job{};
     IslandConstraintIndexValidation indices{};
 
@@ -790,14 +796,9 @@ struct IslandSolveJobPreflight {
         return !skipped && !invalidDt && priorImpulseCoverage > 0u;
 
 /// Aggregate contact-impulse warm-start counts for graph-level batch guards (B4.4 deepen).
-struct IslandContactImpulseWarmStartStats {
-    u32 totalIslands = 0;
-    u32 emptyCount = 0;
     u32 noImpulseDataCount = 0;
 
 /// Graph-level contact-impulse warm-start preflight (B4.4 deepen).
-struct IslandContactImpulseWarmStartGraphPreflight {
-    IslandContactImpulseWarmStartStats stats{};
 
 /// Graph-level combined warm-start preflight for batch guards.
 struct IslandCombinedWarmStartGraphPreflight {
@@ -807,10 +808,8 @@ struct IslandCombinedWarmStartGraphPreflight {
 
 /// Per-island contact-impulse warm-start outcome (B4.4 deepen).
 struct IslandContactImpulseWarmStartResult {
-    bool warmed = false;
 
 /// Combined lambda + contact-impulse warm-start preflight (B4.4 deepen).
-struct IslandCombinedWarmStartPreflight {
     IslandWarmStartPreflight lambda{};
     IslandContactImpulseWarmStartPreflight impulse{};
 
@@ -818,8 +817,6 @@ struct IslandCombinedWarmStartPreflight {
 
 /// Per-island solve input bounds preflight (B4.4 deepen pass).
 struct IslandSolveInputsPreflight {
-    u32 inRangeContactCount = 0;
-    u32 inRangeDistanceCount = 0;
     bool contactsInRange = true;
     bool distancesInRange = true;
 
@@ -827,7 +824,6 @@ struct IslandSolveInputsPreflight {
 
 /// Contact-impulse warm-start preflight for per-island seeding (B4.4 deepen pass).
 struct IslandContactImpulsePreflight {
-    u32 nonZeroImpulseCount = 0;
 
     bool can_warm_start() const { return !skipped && !invalidDt && nonZeroImpulseCount > 0u; }
 
@@ -859,12 +855,9 @@ struct IslandJobDispatchPreflight {
 
         return !skipped && !invalidDt && seedableContactCount > 0u;
 
-/// Aggregate contact-impulse warm-start counts for graph-level batch guards.
 struct IslandContactImpulseStats {
     u32 seedableCount = 0;
-    u32 noImpulseCount = 0;
 
-/// Graph-level contact-impulse warm-start preflight for selective per-island seeding.
 struct IslandContactImpulseGraphPreflight {
     IslandContactImpulseStats stats{};
 
@@ -874,7 +867,6 @@ struct IslandContactImpulseGraphPreflight {
 struct IslandContactImpulseBatchResult {
 
 
-/// Combined lambda + contact-impulse warm-start preflight for one island.
 
         if (skipped) {
             return false;
@@ -892,7 +884,6 @@ struct IslandContactImpulseBatchResult {
 
 
 
-    bool can_warm_start() const { return !skipped && !invalidDt && stats.warmStartableCount > 0u; }
 
 /// Contact-impulse warm-start preflight for per-island selective seeding.
     u32 impulseCoverage = 0;
@@ -913,20 +904,60 @@ struct IslandDispatchJobPreflight {
 
 
 /// Preflight for island solve job index validity against contact/distance buffers.
-    u32 validContactCount = 0;
     u32 staleContactCount = 0;
     u32 validDistanceCount = 0;
     u32 staleDistanceCount = 0;
     bool hasStaleIndices = false;
 
-    bool can_solve() const {
         return !skipped && !hasStaleIndices && (validContactCount > 0u || validDistanceCount > 0u);
 
 /// Dispatch preflight for one island index (job extraction + timestep guard).
 struct IslandDispatchIndexPreflight {
 
 
-};
+/// True when the body carries `RB_SLEEPING`.
+bool is_body_sleeping(const RigidBodySoA& bodies, u32 bodyIndex);
+
+/// True when the body carries `RB_STATIC` or `RB_KINEMATIC`.
+bool is_body_static_or_kinematic(const RigidBodySoA& bodies, u32 bodyIndex);
+
+/// True when the body is dynamic (not static or kinematic).
+bool is_body_dynamic(const RigidBodySoA& bodies, u32 bodyIndex);
+
+/// Preflight constraint solve for one island; sets `skipped` for empty islands.
+IslandSolveJobPreflight preflight_solve_island_job(
+
+/// Preflight constraint solve by island index; out-of-range indices are marked skipped.
+IslandSolveJobPreflight preflight_solve_island_job_by_index(
+    u32 islandIndex,
+
+/// Early-out guard when every dynamic body in the island is sleeping.
+bool should_skip_solve_island_all_sleeping(const ContactIslandGraph::Island& island,
+
+/// Early-out guard when the island has no dynamic bodies.
+bool should_skip_solve_island_all_static(const ContactIslandGraph::Island& island,
+
+/// Early-out guard when preflight reports no solvable constraint pairs.
+bool should_skip_solve_island_job_preflight(const IslandSolveJobPreflight& preflight);
+
+/// Preflight per-island sleep state; sets `skipped` for empty body lists.
+IslandSleepPreflight preflight_island_sleep_state(const ContactIslandGraph::Island& island,
+
+/// Preflight per-island sleep state by island index; out-of-range indices are marked skipped.
+IslandSleepPreflight preflight_island_sleep_state_by_index(const ContactIslandGraph& graph,
+
+/// Early-out guard for sleep detection on bodies with pending forces or `RB_CCD`.
+bool should_skip_sleep_detection_for_body(const RigidBodySoA& bodies, u32 bodyIndex);
+
+/// True when a sleeping body in the island should wake due to active contacts.
+bool should_wake_island_on_contact(const ContactIslandGraph::Island& island,
+                                   const std::vector<narrowphase::ContactManifold>& contacts);
+
+/// Combined sleep/wake preflight for one island.
+IslandSleepWakePreflight preflight_island_sleep_wake(
+
+/// Combined sleep/wake preflight by island index; out-of-range indices are marked skipped.
+IslandSleepWakePreflight preflight_island_sleep_wake_by_index(
 
 /// True when `islandIndex` is in range for `extract_island`.
 bool island_index_valid(const ContactIslandGraph& graph, u32 islandIndex);
