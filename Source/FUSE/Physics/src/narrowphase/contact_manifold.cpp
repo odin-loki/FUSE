@@ -42,6 +42,13 @@ bool ContactManifold::hasValidNormal(f32 epsilon) const {
     return contactNormal.length() > epsilon;
 }
 
+bool ContactManifold::hasUnitNormal(f32 epsilon) const {
+    if (!hasValidNormal()) {
+        return false;
+    }
+    return std::fabs(contactNormal.length() - 1.f) <= epsilon;
+}
+
 bool ContactManifold::hasFrictionBasis() const {
     if (!hasValidNormal()) {
         return false;
@@ -377,6 +384,7 @@ ManifoldFinalizePreflight preflight_manifold_finalize(
     }
 
     preflight.canFinalize = true;
+    preflight.needsNormalNormalization = !manifold.hasUnitNormal(frictionEpsilon);
     preflight.canReuseFrictionBasis = can_skip_friction_basis_rebuild(manifold, frictionEpsilon);
     preflight.needsFrictionBasis = needs_friction_basis_refresh(manifold, frictionEpsilon);
     return preflight;
@@ -389,6 +397,68 @@ bool can_skip_manifold_finalize(
     f32 frictionEpsilon) {
     return !preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)
                 .can_finalize();
+}
+
+bool finalize_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    const ManifoldFinalizePreflight preflight =
+        preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    if (!preflight.can_finalize()) {
+        return false;
+    }
+
+    if (preflight.needsPruning) {
+        if (!manifold.pruneContactPointsIfNeeded(separationEpsilon, duplicateEpsilon)) {
+            manifold.clear();
+            return false;
+        }
+    }
+
+    if (!manifold.hasValidNormal()) {
+        manifold.clear();
+        return false;
+    }
+
+    if (preflight.needsNormalNormalization) {
+        const f32 normalLength = manifold.contactNormal.length();
+        manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    }
+
+    manifold.syncLegacyFields();
+    compute_friction_tangents_if_needed(manifold, frictionEpsilon);
+    if (!manifold.hasFrictionBasis()) {
+        manifold.clear();
+        return false;
+    }
+
+    manifold.valid = true;
+    return true;
+}
+
+bool generate_contact_manifold_deepen(
+    ContactManifold& manifold,
+    f32 shallowMinDepth,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    if (manifold.empty()) {
+        manifold.clear();
+        return false;
+    }
+
+    if (shallowMinDepth > 0.f) {
+        manifold.pruneShallowPenetrationsIfNeeded(shallowMinDepth);
+        if (manifold.empty()) {
+            manifold.clear();
+            return false;
+        }
+    }
+
+    return finalize_contact_manifold_if_needed(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

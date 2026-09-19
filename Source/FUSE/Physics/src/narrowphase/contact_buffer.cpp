@@ -105,6 +105,44 @@ void ContactBufferSoA::buildFrictionTangentBases() {
     }
 }
 
+bool ContactBufferSoA::canSkipCompaction() const {
+    if (pairSlotCount == 0u) {
+        return true;
+    }
+
+    for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
+    return activeCount > 0u && maxCapacity > 0u && activeCount > maxCapacity;
+}
+
+void ContactBufferSoA::buildFrictionTangentBasesIfNeeded(f32 epsilon) {
+    if (can_skip_build_friction_tangent_bases(*this, epsilon)) {
+        return;
+    }
+
+    for (u32 slot = 0u; slot < activeCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            continue;
+        }
+
+        ContactManifold manifold = manifoldAt(slot);
+        if (can_skip_friction_basis_rebuild(manifold, epsilon)) {
+            continue;
+        }
+
+        const TangentBasis basis = buildTangentBasis(contactNormals[slot]);
+        tangent1[slot] = basis.tangent1;
+        tangent2[slot] = basis.tangent2;
+    }
+}
+
 TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {
     if (index >= activeCount || validFlags[index] == 0u) {
         return {};
@@ -113,6 +151,16 @@ TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {
 }
 
 u32 ContactBufferSoA::compact() {
+    if (pairSlotCount == 0u) {
+        activeCount = 0u;
+        return activeCount;
+    }
+
+    if (canSkipCompaction()) {
+        activeCount = pairSlotCount;
+        return activeCount;
+    }
+
     u32 writeIndex = 0;
     for (u32 readIndex = 0; readIndex < pairSlotCount; ++readIndex) {
         if (validFlags[readIndex] == 0u) {
@@ -143,7 +191,8 @@ u32 ContactBufferSoA::compact() {
     }
 
     activeCount = writeIndex;
-    for (u32 i = activeCount; i < pairSlotCount; ++i) {
+    pairSlotCount = activeCount;
+    for (u32 i = activeCount; i < validFlags.size(); ++i) {
         validFlags[i] = 0u;
         pointCounts[i] = 0u;
     }
@@ -273,6 +322,58 @@ std::vector<ContactManifold> ContactBufferSoA::toVector() const {
         }
     }
     return manifolds;
+}
+
+ContactBufferWritePreflight preflight_contact_buffer_write(const ContactManifold& manifold) {
+    ContactBufferWritePreflight preflight{};
+    preflight.invalidManifold = !manifold.valid;
+    preflight.selfPair = manifold.bodyA == manifold.bodyB;
+    return preflight;
+}
+
+ContactBufferCompactionPreflight preflight_contact_buffer_compaction(const ContactBufferSoA& buffer) {
+    ContactBufferCompactionPreflight preflight{};
+    preflight.emptyBuffer = buffer.pairSlotCount == 0u;
+    preflight.allValid = !preflight.emptyBuffer && buffer.canSkipCompaction();
+    return preflight;
+}
+
+ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer) {
+    ContactBufferClampPreflight preflight{};
+    preflight.emptyBuffer = buffer.activeCount == 0u;
+    preflight.withinCapacity = preflight.emptyBuffer || buffer.canSkipMaxCapacityClamp();
+    return preflight;
+}
+
+ContactBufferFrictionPreflight preflight_contact_buffer_friction_rebuild(
+    const ContactBufferSoA& buffer,
+    f32 epsilon) {
+    ContactBufferFrictionPreflight preflight{};
+    preflight.emptyBuffer = buffer.activeCount == 0u;
+    if (preflight.emptyBuffer) {
+        return preflight;
+    }
+
+    for (u32 slot = 0u; slot < buffer.activeCount; ++slot) {
+        if (buffer.validFlags[slot] == 0u) {
+            continue;
+        }
+
+        const ContactManifold manifold = buffer.manifoldAt(slot);
+        if (friction_basis_is_stale(manifold, epsilon)) {
+            ++preflight.staleSlotCount;
+        }
+        if (needs_friction_basis_refresh(manifold, epsilon)) {
+            ++preflight.rebuildSlotCount;
+        }
+    }
+    return preflight;
+}
+
+bool can_skip_build_friction_tangent_bases(
+    const ContactBufferSoA& buffer,
+    f32 epsilon) {
+    return preflight_contact_buffer_friction_rebuild(buffer, epsilon).can_skip_rebuild();
 }
 
 } // namespace fuse::physics::narrowphase
