@@ -256,6 +256,17 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Normalize contact normal to unit length when needed; returns false when normal is invalid (B4.6 deepen follow-up pass).
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Chain prune then finalize only when both preflights allow (B4.6 deepen follow-up pass).
+bool prune_and_finalize_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

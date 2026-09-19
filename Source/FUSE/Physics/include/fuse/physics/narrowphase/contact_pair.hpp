@@ -226,4 +226,49 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Returns true when `bodyA` is greater than `bodyB` (non-canonical broadphase ordering) (B4.6 deepen follow-up pass).
+bool is_swapped_contact_pair(const broadphase::CandidatePair& pair);
+
+/// Returns true when `bodyA` is less than or equal to `bodyB` (B4.6 deepen follow-up pass).
+bool is_canonical_contact_pair(const broadphase::CandidatePair& pair);
+
+/// Returns a pair with the lower body index first (B4.6 deepen follow-up pass).
+broadphase::CandidatePair canonicalize_contact_pair(const broadphase::CandidatePair& pair);
+
+/// Count pairs rejected by extended deepen preflight (B4.6 deepen follow-up pass).
+u32 count_rejected_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Const preflight for `detect_contacts_pair` guarded dispatch (B4.6 deepen follow-up pass).
+struct ContactPairDispatchPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+    bool usesDeepenReject = false;
+
+    bool can_dispatch() const { return !rejected; }
+};
+
+/// Populate detect dispatch preflight without running shape dispatch (B4.6 deepen follow-up pass).
+ContactPairDispatchPreflight preflight_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    bool useDeepenReject = false);
+
+/// Returns true when `detect_contacts_pair` should early-out (B4.6 deepen follow-up pass).
+bool should_skip_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    bool useDeepenReject = false);
+
+/// Run shape dispatch only when preflight allows; returns invalid manifold otherwise (B4.6 deepen follow-up pass).
+ContactManifold detect_contacts_pair_with_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    bool useDeepenReject = false);
+
 } // namespace fuse::physics::narrowphase
