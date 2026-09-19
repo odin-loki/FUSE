@@ -457,6 +457,14 @@ bool eventMatchesFlow(const ProfileEvent& event, u32 flowId) {
     return isValidEventName(event.name) && event.scopeId == flowId;
 
 
+bool isFlowPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+}
+
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    return isValidEventName(event.name) && isValidEventName(name) && std::strcmp(event.name, name) == 0;
+}
+
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
@@ -2869,6 +2877,12 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -4048,6 +4062,23 @@ bool isAsyncFlowOpen(u32 flowId) {
 
 bool hasUnpairedFlowEvents() {
 
+
+
+
+
+
+
+
+
+bool isFlowIdOpen(u32 flowId) {
+    u32 openCount = 0u;
+        if (!isFlowPhase(event.phase) || event.scopeId != flowId || !isValidEventName(event.name)) {
+
+            ++openCount;
+        } else if (openCount > 0u) {
+            --openCount;
+    return openCount > 0u;
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -4756,6 +4787,25 @@ NestingConsistencyPreflight preflightNestingConsistency() {
 
 
 
+    return preflight;
+}
+
+ScopeNestingPreflight preflightScopeNesting() {
+    ScopeNestingPreflight preflight{};
+    preflight.activeDepth = scopeNestingDepth();
+    preflight.maxDepth = maxNestingDepth();
+    preflight.balanced = isScopeNestingBalanced();
+    return preflight;
+}
+
+AsyncFlowPreflight preflightAsyncFlow() {
+    AsyncFlowPreflight preflight{};
+    preflight.activeDepth = flowNestingDepth();
+    preflight.maxDepth = maxFlowNestingDepth();
+    preflight.openCount = openAsyncFlowCount();
+    preflight.balanced = isFlowNestingBalanced();
+    preflight.depthDetached = isFlowDepthDetached();
+    preflight.crossThreadHandoffPending = isCrossThreadFlowHandoffPending();
     return preflight;
 }
 

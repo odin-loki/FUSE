@@ -711,6 +711,28 @@ struct AsyncFlowEndPreflight {
     bool canEnd = false;
 };
 
+/// Read-only scope nesting diagnostics — safe to call before entering nested scopes.
+struct ScopeNestingPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    bool balanced = true;
+
+    bool isBalanced() const { return balanced; }
+};
+
+/// Read-only async-flow diagnostics — safe to call before flow begin/end handoffs.
+struct AsyncFlowPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    u32 openCount = 0;
+    bool balanced = true;
+    bool depthDetached = false;
+    bool crossThreadHandoffPending = false;
+
+    bool isBalanced() const { return balanced; }
+    bool hasOpenFlows() const { return openCount > 0u; }
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -1119,6 +1141,7 @@ bool tryFindLastEventIndexByName(const char* name, u32& outIndex);
 bool isAsyncFlowOpen(u32 flowId);
 u32 openAsyncFlowCountForId(u32 flowId);
 bool hasUnpairedFlowEvents();
+bool isFlowIdOpen(u32 flowId);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
@@ -1386,6 +1409,7 @@ bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReaso
 EventNameLookupPreflight preflightEventLookupByName(const char* name);
 FlowIdLookupPreflight preflightFlowLookupById(u32 flowId);
 NestingConsistencyPreflight preflightNestingConsistency();
+AsyncFlowPreflight preflightAsyncFlow();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
