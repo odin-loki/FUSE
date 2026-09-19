@@ -580,6 +580,110 @@ bool isProfilerNestingPreflightOk() {
     return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
 }
 
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
+NestingPreflight preflightNesting() {
+    NestingPreflight preflight{};
+    preflight.scopeDepth = nestingDepth();
+    preflight.flowDepth = flowNestingDepth();
+    preflight.openFlowCount = openAsyncFlowCount();
+    preflight.scopeBalanced = preflight.scopeDepth == 0u;
+    preflight.flowBalanced = preflight.flowDepth == 0u;
+    preflight.hasOpenFlows = preflight.openFlowCount > 0u;
+    return preflight;
+}
+
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.emptyName = !isValidEventName(name);
+    preflight.disabled = !enabled();
+    return preflight;
+}
+
+AsyncFlowPreflight preflightBeginAsyncFlow(const char* name) {
+    AsyncFlowPreflight preflight{};
+    preflight.emptyName = !isValidEventName(name);
+    preflight.disabled = !enabled();
+    return preflight;
+}
+
+AsyncFlowPreflight preflightEndAsyncFlow(const char* name) {
+    AsyncFlowPreflight preflight{};
+    preflight.emptyName = !isValidEventName(name);
+    preflight.disabled = !enabled();
+    preflight.orphanEnd = openAsyncFlowCount() == 0u;
+    return preflight;
+}
+
+ExportPreflight preflightExport() {
+    ExportPreflight preflight{};
+    preflight.disabled = !enabled();
+    preflight.bufferedEventCount = eventCount();
+    preflight.emptyBuffer = preflight.bufferedEventCount == 0u;
+    preflight.frameIndex = frameIndex();
+
+    for (u32 i = 0; i < preflight.bufferedEventCount; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isValidEventName(event.name)) {
+            ++preflight.exportableEventCount;
+        } else {
+            ++preflight.skippedInvalidNames;
+        }
+    }
+
+    return preflight;
+}
+
+EventLookupPreflight preflightEventAt(u32 index) {
+    EventLookupPreflight preflight{};
+    preflight.index = index;
+    preflight.eventCount = eventCount();
+    preflight.emptyBuffer = preflight.eventCount == 0u;
+    preflight.indexOutOfRange = index >= preflight.eventCount;
+
+    if (!preflight.canLookup()) {
+        return preflight;
+    }
+
+    const ProfileEvent& event = eventAt(index);
+    preflight.invalidEvent = !isValidProfileEvent(event);
+    return preflight;
+}
+
+EventLookupPreflight preflightLastEvent() {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        EventLookupPreflight preflight{};
+        preflight.emptyBuffer = true;
+        preflight.indexOutOfRange = true;
+        return preflight;
+    }
+
+    return preflightEventAt(index);
+}
+
+bool canEnterProfileScope(const char* name) {
+    return preflightProfileScope(name).canEnter();
+}
+
+bool canBeginAsyncFlow(const char* name) {
+    return preflightBeginAsyncFlow(name).canBegin();
+}
+
+bool canEndAsyncFlow(const char* name) {
+    return preflightEndAsyncFlow(name).canEnd();
+}
+
+bool canExportChromeTrace() {
+    return preflightExport().canExport();
+}
+
+bool canLookupEventAt(u32 index) {
+    return preflightEventAt(index).canLookup();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }

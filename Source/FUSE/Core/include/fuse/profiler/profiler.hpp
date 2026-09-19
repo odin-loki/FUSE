@@ -287,6 +287,44 @@ enum class ChromeTraceExportRejectReason : u8 {
         return !unbalancedScopeNesting && !unbalancedFlowNesting && !hasOpenAsyncFlows;
 
 
+/// Read-only scope nesting diagnostics (B1.6 deepen — nesting guard).
+struct NestingPreflight {
+    u32 scopeDepth = 0;
+    u32 flowDepth = 0;
+    bool scopeBalanced = true;
+    bool flowBalanced = true;
+    bool hasOpenFlows = false;
+
+    bool isBalanced() const { return scopeBalanced && flowBalanced; }
+
+/// Read-only async-flow begin/end diagnostics (B1.6 deepen — async-flow guard).
+struct AsyncFlowPreflight {
+    bool emptyName = false;
+    bool disabled = false;
+    bool orphanEnd = false;
+
+    bool canBegin() const { return !emptyName && !disabled; }
+    bool canEnd() const { return !emptyName && !disabled && !orphanEnd; }
+
+/// Read-only profile-scope entry diagnostics (B1.6 deepen — empty-name guard).
+
+    bool canEnter() const { return !emptyName && !disabled; }
+
+/// Read-only chrome export diagnostics (B1.6 deepen — export guard).
+struct ExportPreflight {
+    u32 bufferedEventCount = 0;
+    u32 skippedInvalidNames = 0;
+
+    bool canExport() const { return !disabled; }
+    bool hasExportableEvents() const { return exportableEventCount > 0u; }
+
+/// Read-only event lookup diagnostics (B1.6 deepen — event-lookup preflight).
+    bool indexOutOfRange = false;
+    bool invalidEvent = false;
+    u32 index = 0;
+
+    bool canLookup() const { return !emptyBuffer && !indexOutOfRange; }
+    bool canReadValidEvent() const { return canLookup() && !invalidEvent; }
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
@@ -419,6 +457,24 @@ bool isGuardStateBalanced();
 /// Preflight for scope/flow/counter names before recording (rejects null and empty strings).
 bool isEventNameValid(const char* name);
 bool isProfilerNestingPreflightOk();
+
+/// True when `name` is non-null and non-empty (B1.6 deepen — empty-name guard).
+bool isValidEventName(const char* name);
+
+NestingPreflight preflightNesting();
+ProfileScopePreflight preflightProfileScope(const char* name);
+AsyncFlowPreflight preflightBeginAsyncFlow(const char* name);
+AsyncFlowPreflight preflightEndAsyncFlow(const char* name);
+ExportPreflight preflightExport();
+EventLookupPreflight preflightEventAt(u32 index);
+EventLookupPreflight preflightLastEvent();
+
+/// Convenience guards mirroring preflight predicates (B1.6 deepen).
+bool canEnterProfileScope(const char* name);
+bool canBeginAsyncFlow(const char* name);
+bool canEndAsyncFlow(const char* name);
+bool canExportChromeTrace();
+bool canLookupEventAt(u32 index);
 
 bool hasEvents();
 bool hasExportableEvents();
