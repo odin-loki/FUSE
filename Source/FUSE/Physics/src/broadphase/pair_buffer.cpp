@@ -816,3 +816,6 @@ bool should_skip_pair_buffer_compaction(const PairBufferSoA& buffer) {
     if (preflight.reason == PairBufferCompactionRejectReason::EmptyBuffer) {
     if (preflight.reason == PairBufferCompactionRejectReason::AllValid) {
     if (!preflightPairBufferSort(*this).needsSort()) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-bd20 ---
+bool pairBufferCompactionRejectsForReason(const PairBufferSoA& buffer, PairBufferCompactionRejectReason expected) {

@@ -457,3 +457,6 @@ bool should_skip_pair_buffer_dedupe(const PairBufferSoA& buffer);
 struct PairBufferPreflight {
 PairBufferPreflight preflight_pair_buffer(const PairBufferSoA& buffer);
 bool should_skip_pair_buffer_compaction(const PairBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-broadphase-guards-bd20 ---
+bool pairBufferCompactionRejectsForReason(const PairBufferSoA& buffer, PairBufferCompactionRejectReason expected);

@@ -2702,3 +2702,7 @@ void testPairBufferRejectReasonGuards() {
     expectTrue(fuse::physics::broadphase::pairBufferDedupeRejectsForReason(
                    dedupeBuffer, fuse::physics::broadphase::PairBufferDedupeRejectReason::EmptyBuffer),
     testPairBufferRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-bd20 ---
+void testPairBufferSoADedupePassGuards() {
+                   overflowBuffer, fuse::physics::broadphase::PairBufferClampRejectReason::None),

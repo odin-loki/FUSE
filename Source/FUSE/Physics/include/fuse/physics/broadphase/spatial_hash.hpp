@@ -1201,3 +1201,6 @@ BroadphaseMergeRejectReason broadphaseMergeRejectReason(
 
 // --- deepen additive from deepen-b4-broadphase-guards-8d3f ---
     return cellOccupancyRejectReason(range, maxCells) != CellOccupancyRejectReason::None;
+
+// --- deepen additive from deepen-b4-broadphase-guards-bd20 ---
+        cellOccupancyRejectReason(range, maxCells) == CellOccupancyRejectReason::ExceedsBudget;
