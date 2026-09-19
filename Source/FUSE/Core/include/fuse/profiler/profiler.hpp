@@ -140,6 +140,8 @@ struct ChromeTraceExportPreflight {
     u32 rejectedInvalidNameCount = 0;
     u32 orphanAsyncFlowEndCount = 0;
     bool hasRingWrapped = false;
+    u32 remainingCapacity = 0;
+    bool allEventsExportable = false;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
@@ -437,6 +439,7 @@ struct NestingStatePreflight {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached;
         return hasUnbalancedNesting() || hasOpenAsyncFlows || flowDepthDetached || invalidNameEventCount > 0u;
     bool canExportWithContent() const { return canExport() && hasExportableEvents(); }
+    bool readyForExport() const { return canExport() && (bufferEmpty || hasExportableEvents()); }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -513,8 +516,12 @@ bool wouldRecordEvent(const char* name);
 bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
+u32 remainingEventCapacity();
 bool isEventIndexValid(u32 index);
 bool isBlankEventName(const char* name);
+bool isFirstEventIndex(u32 index);
+bool isLastEventIndex(u32 index);
+u32 countEventsWithPhase(EventPhase phase);
 bool isValidEventName(const char* name);
 
 /// Read-only chrome export diagnostics — no mutation (B1.6 deepen).

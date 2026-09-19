@@ -879,6 +879,11 @@ u32 nonExportableEventCount() {
     return nonExportable;
 }
 
+u32 remainingEventCapacity() {
+    const u32 count = eventCount();
+    return count >= kRingCapacity ? 0u : kRingCapacity - count;
+}
+
 bool isEventIndexValid(u32 index) {
     return index < eventCount();
 
@@ -912,6 +917,26 @@ bool isBlankEventName(const char* name) {
         }
     }
     return true;
+}
+
+bool isFirstEventIndex(u32 index) {
+    return hasEvents() && index == 0u;
+}
+
+bool isLastEventIndex(u32 index) {
+    const u32 count = eventCount();
+    return count > 0u && index == count - 1u;
+}
+
+u32 countEventsWithPhase(EventPhase phase) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 bool isValidEventName(const char* name) {
@@ -1810,6 +1835,9 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.rejectedInvalidNameCount = rejectedInvalidNameCount();
     preflight.orphanAsyncFlowEndCount = orphanAsyncFlowEndCount();
     preflight.hasRingWrapped = hasRingWrapped();
+    preflight.remainingCapacity = remainingEventCapacity();
+    preflight.allEventsExportable =
+        preflight.eventCount == 0u || preflight.exportableEventCount == preflight.eventCount;
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
