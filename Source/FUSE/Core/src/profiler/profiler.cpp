@@ -1544,3 +1544,7 @@ bool wouldSkipSafeChromeTraceExport() {
     return wouldSkipScope(track);
         return ChromeTraceExportRejectReason::UnpairedFlowEvents;
     case ChromeTraceExportRejectReason::UnpairedFlowEvents:
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-68ea ---
+bool tryFirstExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
+bool tryLastExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {

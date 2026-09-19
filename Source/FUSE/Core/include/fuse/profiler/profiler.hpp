@@ -589,3 +589,7 @@ bool wouldSkipAsyncFlow(const char* name);
 // --- deepen additive from deepen-b16-profiler-guards-0dc1 ---
 bool wouldSkipAsyncFlowBegin(const char* name, u32 flowId);
 bool wouldSkipSafeChromeTraceExport();
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-68ea ---
+bool tryFirstExportableEventByFlow(u32 flowId, ProfileEvent& outEvent);
+bool tryLastExportableEventByFlow(u32 flowId, ProfileEvent& outEvent);

@@ -5511,3 +5511,61 @@ void testNestingAndExportRejectReasonGuards() {
                "wouldSkipEndAsyncFlow true when profiler disabled");
     expectTrue(fuse::profiler::wouldSkipCounter("ignored_counter"),
                "wouldSkipChromeTraceExport false after re-enable");
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-68ea ---
+void testTryExportableEventByNameAndFlowGuard() {
+    expectTrue(!fuse::profiler::tryFirstExportableEventByName("missing", outEvent),
+               "tryFirstExportableEventByName false on empty buffer");
+    expectTrue(!fuse::profiler::tryLastExportableEventByName(nullptr, outEvent),
+               "tryLastExportableEventByName false for null name");
+    expectTrue(!fuse::profiler::tryFirstExportableEventByFlow(42u, outEvent),
+               "tryFirstExportableEventByFlow false on empty buffer");
+    expectTrue(fuse::profiler::tryFirstExportableEventByName("try_name_scope", outEvent),
+               "tryFirstExportableEventByName copies begin phase");
+    expectTrue(fuse::profiler::tryLastExportableEventByName("try_name_scope", outEvent),
+               "tryLastExportableEventByName copies end phase");
+    expectTrue(fuse::profiler::tryFirstExportableEventByFlow(flowId, outEvent),
+               "tryFirstExportableEventByFlow true for flow start");
+               "tryFirstExportableEventByFlow copies flow start phase");
+    expectTrue(outEvent.scopeId == flowId, "tryFirstExportableEventByFlow preserves flow id");
+    expectTrue(fuse::profiler::tryLastExportableEventByFlow(flowId, outEvent),
+               "tryLastExportableEventByFlow true for flow finish");
+               "tryLastExportableEventByFlow copies flow finish phase");
+void testScopeAndAsyncFlowPreflight() {
+    expectTrue(resetScopePreflight.balanced, "scope preflight balanced on reset");
+    expectTrue(resetScopePreflight.activeDepth == 0u, "scope preflight active depth zero on reset");
+    expectTrue(resetScopePreflight.canNestSafely(), "scope preflight can nest when enabled");
+    expectTrue(resetFlowPreflight.balanced, "async flow preflight balanced on reset");
+    expectTrue(resetFlowPreflight.openCount == 0u, "async flow preflight open count zero on reset");
+    expectTrue(!resetFlowPreflight.hasOpenFlows, "async flow preflight hasOpenFlows false on reset");
+    expectTrue(resetFlowPreflight.canBeginFlow(), "async flow preflight can begin when enabled");
+    expectTrue(!resetFlowPreflight.canEndFlow(), "async flow preflight cannot end with no open flows");
+        expectTrue(activeFlowPreflight.hasOpenFlows, "async flow preflight marks open flow");
+        expectTrue(activeFlowPreflight.openCount == 1u, "async flow preflight open count tracks begin");
+        expectTrue(!activeFlowPreflight.balanced, "async flow preflight unbalanced with open flow");
+        expectTrue(activeFlowPreflight.canEndFlow(), "async flow preflight can end with open flow");
+    const fuse::profiler::ScopeNestingPreflight disabledScopePreflight = fuse::profiler::preflightScopeNesting();
+    expectTrue(!disabledScopePreflight.canNestSafely(), "scope preflight cannot nest when disabled");
+    const fuse::profiler::AsyncFlowPreflight disabledFlowPreflight = fuse::profiler::preflightAsyncFlow();
+    expectTrue(disabledFlowPreflight.profilerDisabled, "async flow preflight marks profiler disabled");
+    expectTrue(!disabledFlowPreflight.canBeginFlow(), "async flow preflight cannot begin when disabled");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("valid_flow", 1u),
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("valid_flow", 1u),
+               "wouldSkipChromeTraceExportSafely false on balanced reset state");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("ignored", 1u),
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("would_skip_flow", flowId);
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowEnd("would_skip_flow", flowId),
+        FUSE_PROFILE_SCOPE("would_skip_active_scope");
+                   "wouldSkipChromeTraceExportSafely true with active scope");
+    FUSE_PROFILE_ASYNC_FLOW_END("would_skip_flow", flowId);
+               "wouldSkipProfileScope false records scope events");
+               "wouldSkipProfileScope true skips empty scope");
+    if (!fuse::profiler::wouldSkipAsyncFlowBegin("recorded_flow", flowId)) {
+               "wouldSkipAsyncFlowBegin false opens flow");
+    if (fuse::profiler::wouldSkipAsyncFlowEnd("orphan_flow", flowId + 99u)) {
+               "wouldSkipAsyncFlowEnd true for orphan end preserves open count");
+    if (!fuse::profiler::wouldSkipAsyncFlowEnd("recorded_flow", flowId)) {
+               "wouldSkipAsyncFlowEnd false closes open flow");
+    expectTrue(fuse::profiler::tryFirstExportableEventByName("lookup_counter", counterEvent),
+               "tryFirstExportableEventByName finds valid counter");
+    testScopeAndAsyncFlowPreflight();
