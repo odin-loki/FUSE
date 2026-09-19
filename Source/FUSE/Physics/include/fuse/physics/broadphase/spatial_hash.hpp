@@ -803,10 +803,8 @@ struct BroadphasePreflight {
 
     bool can_run() const { return !skipped && !emptyInput; }
 
-    bool skipped = false;
 
     bool can_dispatch() const { return !skipped; }
-};
 
 /// Populate broadphase preflight without running hash build (B4.2 deepen pass).
 BroadphasePreflight preflight_broadphase(
@@ -844,7 +842,6 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRang
 /// Per-shape cell budget derived from `maxCellSpanPerAxis` (0 = unlimited).
 FUSE_PHYSICS_INLINE u32 perShapeCellBudget(u32 maxCellSpanPerAxis, bool use2D) {
     if (maxCellSpanPerAxis == 0u) {
-        return 0u;
     const u32 span = maxCellSpanPerAxis;
     return use2D ? span * span : span * span * span;
 
@@ -892,13 +889,8 @@ FUSE_PHYSICS_INLINE BroadphaseDispatchPreflight preflight_broadphase_dispatch(
 bool should_skip_broadphase(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 
 /// Const preflight for shape cell-occupancy iteration (B4.2 deepen pass).
-    u32 estimatedCells = 0;
-    u32 maxCells = 0;
-    bool exceedsBudget = false;
-    bool skipped = false;
 
     bool can_iterate() const { return !skipped && !emptyRange && !exceedsBudget; }
-};
 
 /// Populate cell-occupancy preflight without iterating cells (B4.2 deepen pass).
 CellOccupancyPreflight preflight_cell_occupancy(const CellRange3& range, u32 maxCells);
@@ -906,17 +898,50 @@ CellOccupancyPreflight preflight_cell_occupancy(const CellRange2& range, u32 max
 
 /// Const preflight for parallel pair refine (B4.2 deepen pass).
 struct RefineBroadphasePreflight {
-    u32 bodyCount = 0;
-    u32 shapeCount = 0;
 
     bool can_refine() const { return !skipped && pairCount > 0u; }
 
 /// Populate refine preflight without invalidating pair slots (B4.2 deepen pass).
 RefineBroadphasePreflight preflight_refine_broadphase_pairs(
-    const RigidBodySoA& bodies,
 
 /// Early-out guard for parallel pair refine (B4.2 deepen pass).
 bool should_skip_refine_broadphase_pairs(
+/// Const preflight for shape cell occupancy budgeting (B4.2 deepen pass).
+    bool isEmptyRange = false;
+
+    bool can_populate_cells() const { return !isEmptyRange && !exceedsBudget; }
+
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflight_cell_occupancy(const CellRange3& range, u32 maxCells) {
+    preflight.isEmptyRange = isEmptyCellRange(range);
+    if (preflight.isEmptyRange) {
+
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflight_cell_occupancy(const CellRange2& range, u32 maxCells) {
+
+/// Returns true when shape cell insertion may be skipped before hash build (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool should_skip_shape_cell_population(const CellRange3& range, u32 maxCells) {
+    const CellOccupancyPreflight preflight = preflight_cell_occupancy(range, maxCells);
+    return preflight.isEmptyRange;
+
+FUSE_PHYSICS_INLINE bool should_skip_shape_cell_population(const CellRange2& range, u32 maxCells) {
+
+struct PairBufferSoA;
+
+/// Const preflight for broadphase pair-buffer dedupe (B4.2 deepen pass).
+struct BroadphaseDedupePreflight {
+    u32 validPairCount = 0u;
+
+    bool can_dedupe() const { return !skipped; }
+
+/// Populate dedupe preflight without mutating pair storage (B4.2 deepen pass).
+BroadphaseDedupePreflight preflight_dedupe_pairs(const PairBufferSoA& buffer);
+
+/// Const preflight for parallel broadphase pair refine (B4.2 deepen pass).
+
+    bool can_refine() const { return !skipped; }
+
+BroadphaseRefinePreflight preflight_refine_broadphase_pairs(
+
+/// Returns true when refine may early-out before parallel invalidation (B4.2 deepen pass).
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {

@@ -56,6 +56,19 @@ BroadphaseDedupePreflight preflight_broadphase_dedupe(const PairBufferSoA& buffe
     BroadphaseDedupePreflight preflight{};
     preflight.skipped = buffer.canSkipSoAIteration();
     preflight.noOp = buffer.canSkipDedupe();
+BroadphaseDedupePreflight preflight_dedupe_pairs(const PairBufferSoA& buffer) {
+    preflight.validPairCount = buffer.countValidSlots();
+    preflight.skipped = buffer.canSkipDedupe();
+
+BroadphaseRefinePreflight preflight_refine_broadphase_pairs(
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    preflight.emptyInput = canSkipBroadphase(bodies, shapes);
+    preflight.emptyBuffer = buffer.canSkipSoAIteration() || !buffer.hasValidPairs();
+    preflight.skipped = preflight.emptyInput || preflight.emptyBuffer;
+
+bool should_skip_refine_broadphase_pairs(
+    return preflight_refine_broadphase_pairs(bodies, shapes, buffer).skipped;
 }
 
 const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
@@ -634,6 +647,7 @@ void populateShapeCells(
         if (occupancyPreflight.skipped || occupancyPreflight.exceedsBudget) {
         if (!preflight_cell_occupancy(range).can_insert_cells()) {
         if (!preflight_cell_occupancy(range, occupancyBudget).can_iterate()) {
+        if (should_skip_shape_cell_population(range, 0u)) {
             return;
         }
         if (params.maxCellOccupancyPerShape > 0u) {
@@ -669,6 +683,7 @@ void populateShapeCells(
     if (canSkipCellOccupancyInsert(range, params.maxCellOccupancy)) {
     if (!preflight_cell_occupancy(range).can_insert_cells()) {
     if (!preflight_cell_occupancy(range, occupancyBudget).can_iterate()) {
+    if (should_skip_shape_cell_population(range, 0u)) {
         return;
     }
     if (isEmptyCellRange(range)) {
@@ -712,6 +727,8 @@ void dedupeBuffer(PairBufferSoA& buffer) {
     if (canSkipDedupeBuffer(buffer)) {
     const BroadphaseDedupePreflight preflight = preflight_broadphase_dedupe(buffer);
     if (should_skip_pair_buffer_dedupe(buffer)) {
+    const BroadphaseDedupePreflight preflight = preflight_dedupe_pairs(buffer);
+    if (!preflight.can_dedupe()) {
         return;
     }
 

@@ -135,6 +135,9 @@ void PairBufferSoA::invalidateSlot(u32 slot) {
     if (pairSlotCount > 0u && slot >= pairSlotCount) {
         return;
     }
+    if (pairSlotCount > 0u && slot >= pairSlotCount) {
+        return;
+    }
     validFlags[slot] = 0u;
 }
 
@@ -156,6 +159,19 @@ bool PairBufferSoA::canAcceptPairs(u32 additionalCount) const {
 
 bool PairBufferSoA::wouldRejectAdditionalPairs(u32 additionalCount) const {
     return !canAcceptPairs(additionalCount);
+}
+
+bool PairBufferSoA::canSkipDedupe() const {
+    if (canSkipSoAIteration()) {
+        return true;
+    }
+
+    const u32 validCount = countValidSlots();
+    return validCount <= 1u;
+}
+
+bool PairBufferSoA::canSkipCompactAndClamp() const {
+    return canSkipSoAIteration() || countValidSlots() == 0u;
 }
 
 bool PairBufferSoA::canApplyMaxCapacityClamp() const {
@@ -444,7 +460,6 @@ u32 PairBufferSoA::compactAndClamp() {
     }
     if (preflight.reason == PairBufferCompactAndClampRejectReason::NoWork) {
     if (canSkipSoAIteration()) {
-    if (canSkipCompactAndClamp()) {
         return 0u;
     }
 
