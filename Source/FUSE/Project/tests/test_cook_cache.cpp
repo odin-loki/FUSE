@@ -1929,3 +1929,13 @@ void testCookCachePruneReconcileShouldSkipGuards() {
     expectTrue(!fuse::project::should_skip_cook_cache_key(99u, 42u), "should_skip allows valid cache key");
                "would_invalidate_stale_upstream with matching hash is false");
                "would_invalidate_stale_content true when stored hash differs from current");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-3312 ---
+               "should_skip_file_content_hash for empty path");
+    expectTrue(!fuse::project::should_skip_mesh_import_hash(valid_desc),
+               "should_skip_mesh_import_hash true for empty input path");
+    expectTrue(!estimate.should_skip(), "shader stale entry prune estimate should not skip");
+    expectTrue(!cache.should_skip_prune_reconcile(), "shader stale entry should not skip prune reconcile");
+    expectTrue(cache.estimate_prune_removals().should_skip(), "estimate should_skip after prune_all");
+    expectTrue(cache.should_skip_prune_reconcile(), "should_skip_prune_reconcile after prune_all");
+               "should_skip_combine_cook_cache_key rejects zero source");

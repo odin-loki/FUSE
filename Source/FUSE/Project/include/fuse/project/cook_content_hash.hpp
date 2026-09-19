@@ -258,3 +258,13 @@ struct CookFnvInputPreflight {
 
 // --- deepen additive from deepen-b79-hash-should-skip-4ba0 ---
 [[nodiscard]] bool should_skip_hash_preflight(const CookHashPreflight& preflight);
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-3312 ---
+[[nodiscard]] inline bool should_skip_manifest_entry_hash(const CookManifestEntry& entry) {
+    return preflight_manifest_entry_hash(entry).should_skip();
+[[nodiscard]] inline bool should_skip_upstream_dependencies_hash(
+    return preflight_upstream_dependencies_hash(dependency_output_paths, manifest).should_skip();
+[[nodiscard]] inline bool should_skip_fnv1a64_bytes(const u8* data, usize size) {
+    return preflight_fnv1a64_bytes(data, size).should_skip();
+[[nodiscard]] inline bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    return preflight_combine_cook_cache_key(source_hash, upstream_hash).should_skip();
