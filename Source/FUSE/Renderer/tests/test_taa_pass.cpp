@@ -3972,3 +3972,8 @@ void testTaaPassDeepenFrameGuards() {
     expectTrue(pass->preflightResolveFrameGuards(resolveDesc, &skipReason, &blendReason),
     testHistoryReuseForResolvePreflight();
     testResolveFrameGuardsPreflight();
+
+// --- deepen additive from deepen-b59-taa-guards-1a6e ---
+void testHistoryWarmupBlockGuards() {
+               "tryPreflightTaaJitterAdvance reject reason is InvalidSequence");
+    expectNear(weights.history, 0.85f, 1e-5f, "pass tryCompute steady history weight");
