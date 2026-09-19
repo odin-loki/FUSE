@@ -248,6 +248,20 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
     return shouldRunBroadphasePairGeneration(bodies, shapes);
 }
 
+/// Non-mutating broadphase predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
+}
+
+/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphase(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,

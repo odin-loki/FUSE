@@ -533,6 +533,13 @@ u32 PairBufferSoA::compactAndClamp() {
         compact();
     if (shouldRunPairBufferClamp(*this)) {
         return applyMaxCapacityClamp();
+bool PairBufferSoA::canSkipCompactAndClamp() const {
+    return canSkipPairBufferCompactAndClamp(*this);
+
+    if (preflightPairBufferCompactAndClamp(*this).reason == PairBufferCompactAndClampRejectReason::EmptyBuffer) {
+        activeCount = 0u;
+        pairSlotCount = 0u;
+
 
 bool PairBufferSoA::isSortedCanonical() const {
     if (canSkipSoAIteration() || activeCount <= 1u) {
@@ -2135,6 +2142,17 @@ PairSlotPreflight preflightPairSlots(u32 slotCount, const PairBufferSoA& buffer)
 
 
 
+bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer) {
+    return preflightPairBufferDedupe(buffer).canDedupe();
+
+
+
+
+
+
+
+bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortRejectReason expected) {
+
 
 bool canSkipPairBufferSort(const PairBufferSoA& buffer) {
     return !preflightPairBufferSort(buffer).needsSort();
@@ -2223,12 +2241,7 @@ bool pairBufferWriteSlotRejectsForReason(
     return pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB) == expected;
 
 PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
-        return "OutOfRangeSlot";
-    }
 
-    u32 slot,
-    u32 idxB) {
-    if (slot >= buffer.pairSlotCount) {
 
 
     PairBufferWriteSlotPreflight preflight{};
@@ -2242,6 +2255,7 @@ const char* pairBufferCompactAndClampRejectReasonName(PairBufferCompactAndClampR
 
 bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer) {
     return preflightPairBufferDedupe(buffer).canDedupe();
+
 
     case PairBufferCompactAndClampRejectReason::EmptyBuffer:
         return "EmptyBuffer";
@@ -2276,6 +2290,8 @@ bool pairBufferCompactAndClampRejectsForReason(
         return PairBufferCompactAndClampRejectReason::NoWork;
 
     const PairBufferSoA& buffer,
+    if (buffer.activeCount > 0u && canSkipPairBufferCompaction(buffer) && canSkipPairBufferClamp(buffer)) {
+
 
 PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
     PairBufferCompactAndClampPreflight preflight{};
@@ -2303,6 +2319,8 @@ bool shouldRunPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
     preflight.needsClamp = shouldRunPairBufferClamp(buffer);
     return preflight;
 }
+
+
 
 
 
