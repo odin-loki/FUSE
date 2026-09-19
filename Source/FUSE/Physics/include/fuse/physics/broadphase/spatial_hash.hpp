@@ -1828,3 +1828,6 @@ FUSE_PHYSICS_INLINE bool wouldSkipShapeCellOccupancy(const CellRange3& range, co
 FUSE_PHYSICS_INLINE bool wouldSkipShapeCellOccupancy(const CellRange2& range, const SpatialHashParams& params) {
 FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(const CellRange3& range, const SpatialHashParams& params) {
 FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(const CellRange2& range, const SpatialHashParams& params) {
+
+// --- deepen additive from b4-broadphase-wouldskip-invalidate-77b6 ---
+    return reject != CellSpanRejectReason::ExceedsSpan;

@@ -4599,3 +4599,12 @@ void testWouldSkipBroadphaseGuardParity() {
     expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(inverted, 4u),
                "wouldSkipCellSpanClamp true for empty range");
              "wouldSkipRefineBroadphase reports EmptyBuffer");
+
+// --- deepen additive from b4-broadphase-wouldskip-invalidate-77b6 ---
+    expectTrue(!fuse::physics::broadphase::invalidatePairBufferSlotWithPreflight(buffer, 2u),
+               "invalidatePairBufferSlotWithPreflight returns false for ignored out-of-range slot");
+    expectTrue(fuse::physics::broadphase::invalidatePairBufferSlotWithPreflight(buffer, 0u),
+               "invalidatePairBufferSlotWithPreflight clears valid slot");
+               "wouldSkipPairBufferInvalidateSlot fills reject reason");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(validRange, 3u, &spanReason),
+             "wouldSkipCellSpanClamp reports None when span is within limit");
