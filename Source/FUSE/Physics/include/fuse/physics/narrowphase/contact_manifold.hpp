@@ -256,6 +256,14 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Prune and finalize in one guarded pass; returns false when either step rejects (B4.6 deepen pass).
+bool prune_and_finalize_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
