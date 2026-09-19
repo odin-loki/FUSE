@@ -1191,6 +1191,7 @@ bool canUpdateDrag(const GizmoHitTest& hit, bool dragging) {
 bool canEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings) {
     return preflightEndDrag(dragging, mode, settings).canEnd();
 EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings) {
+EndDragPreflight preflightEndDrag(bool dragging) {
     EndDragPreflight preflight{};
     if (!dragging) {
         preflight.notDragging = true;
@@ -1203,6 +1204,11 @@ EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnap
 
 bool canEndDrag(bool dragging) {
     return preflightEndDrag(dragging, GizmoMode::Translate, GizmoSnapSettings{}).canEnd();
+    preflight.canEnd = true;
+    return preflight;
+}
+
+    return preflightEndDrag(dragging).canEnd;
 }
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
@@ -2115,6 +2121,18 @@ bool GizmoSystem::canEndDrag() const {
     return fuse::editor::canEndDrag(m_dragging);
 }
 
+bool GizmoSystem::canUpdateDrag(const GizmoHitTest& hit) const {
+    return fuse::editor::canUpdateDrag(hit, m_dragging);
+}
+
+EndDragPreflight GizmoSystem::preflightEndDrag() const {
+    return fuse::editor::preflightEndDrag(m_dragging);
+}
+
+bool GizmoSystem::canEndDrag() const {
+    return fuse::editor::canEndDrag(m_dragging);
+}
+
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
     GizmoResult result;
     if (!tryBeginDrag(hit, current, result)) {
@@ -2231,7 +2249,6 @@ bool GizmoSystem::tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out) {
     if (shouldSkipUpdateDrag(hit)) {
 
     if (!preflightUpdateDrag(hit).canUpdate()) {
-        return false;
 
     m_lastHit = hit;
     m_currentTransform = applySnapping_(applyAxisDelta_(hit, m_startTransform));
@@ -2241,6 +2258,7 @@ bool GizmoSystem::tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out) {
     out.axis = m_activeAxis;
     out.transform = m_currentTransform;
     return true;
+}
 
 GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
     GizmoResult result;
@@ -2283,6 +2301,10 @@ GizmoResult GizmoSystem::endDrag() {
     if (!preflightEndDrag().canEnd()) {
     if (!canEndDrag()) {
         return result;
+
+bool GizmoSystem::tryEndDrag(GizmoResult& out) {
+    out = {};
+    if (!preflightEndDrag().canEnd) {
     }
     return result;
 }
@@ -2330,10 +2352,14 @@ bool GizmoSystem::tryEndDrag(GizmoResult& out) {
     out = {};
     if (!canEndDrag()) {
         return false;
-    }
 
     out = endDrag();
     return true;
+
+GizmoResult GizmoSystem::endDrag() {
+    GizmoResult result;
+    if (!tryEndDrag(result)) {
+        return result;
 }
 
 GizmoAxis GizmoSystem::pickAxisScreen_(const GizmoHitTest& hit) const {
