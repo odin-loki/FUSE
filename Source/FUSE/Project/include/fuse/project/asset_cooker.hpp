@@ -161,12 +161,15 @@ public:
     /// Read-only stale dependency reconcile breakdown via cook job graph (B7.9 deepen).
     [[nodiscard]] CookCacheStaleUpstreamEstimate estimate_stale_dependency_reconciliation(
     /// True when `invalidate_upstream_dependency` would remove at least one entry (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_upstream_dependency(const CookManifest& manifest,
     /// True when `invalidate_stale_dependency_hashes` would reconcile at least one entry (B7.9 deepen).
     /// Alias for `count_stale_dependency_invalidation` — reconcile removal estimate (B7.9 deepen).
     [[nodiscard]] u32 estimate_stale_dependency_reconcile(const CookManifest& manifest) const {
         return count_stale_dependency_invalidation(manifest);
     /// True when stale dependency reconcile would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_upstream_invalidation(const CookManifest& manifest,
+    [[nodiscard]] bool would_stale_dependency_invalidation(const CookManifest& manifest) const;
+    /// Read-only prune reconcile probe — entries `prune_all` would remove (B7.9 deepen).
+    [[nodiscard]] u32 count_prunable_cache_entries() const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

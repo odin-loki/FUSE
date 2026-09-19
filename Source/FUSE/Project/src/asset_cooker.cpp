@@ -283,6 +283,15 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
 
     return sources;
 
+bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
+                                              const std::string& changed_source) const {
+    return count_upstream_invalidation(manifest, changed_source) > 0;
+}
+
+u32 AssetCooker::count_prunable_cache_entries() const {
+    return m_cache.count_prunable_entries();
+}
+
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
     return estimate_stale_dependency_hashes(manifest).total_entries();
 
@@ -508,6 +517,10 @@ bool AssetCooker::would_reconcile_stale_dependencies(const CookManifest& manifes
 }
 
 bool AssetCooker::would_reconcile_stale_dependencies(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) > 0;
+}
+
+bool AssetCooker::would_stale_dependency_invalidation(const CookManifest& manifest) const {
     return count_stale_dependency_invalidation(manifest) > 0;
 }
 

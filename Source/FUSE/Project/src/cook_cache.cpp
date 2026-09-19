@@ -565,6 +565,30 @@ bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
     return count_downstream_of(output_path, edges, jobs) > 0;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) > 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) > 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) > 0;
+}
+
+bool CookCache::would_invalidate_stale_upstream_hashes(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    return count_stale_upstream_hashes(source_upstream_by_path) > 0;
+}
+
+bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
+                                             const std::vector<CookJobDependencyEdge>& edges,
+                                             const std::vector<CookJob>& jobs) const {
+    return count_downstream_of(output_path, edges, jobs) > 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
 
@@ -1559,6 +1583,16 @@ u32 CookCache::estimate_invalidation_by_hash(u64 content_hash) const {
 
 u32 CookCache::estimate_invalidation_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
+std::vector<std::string> CookCache::probe_prunable_source_paths() const {
+    if (m_entries.empty()) {
+        return {};
+
+    std::vector<std::string> stale_sources;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_stale_cache_entry_(entry)) {
+            stale_sources.push_back(entry.source_path);
+    return stale_sources;
+
 u32 CookCache::count_stale_entries() const {
     if (m_entries.empty()) {
         return 0;
@@ -1568,6 +1602,7 @@ u32 CookCache::count_stale_entries() const {
     for (const CookCacheEntry& entry : m_entries) {
         if (entry.source_path == source_path) {
         if (is_valid_cook_cache_entry(entry) && is_stale_cache_entry_(entry)) {
+        if (is_stale_cache_entry_(entry)) {
             ++count;
         }
     }

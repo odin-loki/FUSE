@@ -19,6 +19,7 @@ enum class CookHashRejectReason : u8 {
     EmptyOutputPath,
     SourceUnreadable,
     EmptyDependencyList,
+    UnknownDependencyOutput,
     ZeroSourceHash,
     ZeroContentHash,
     NonCacheableKey,
@@ -112,6 +113,9 @@ struct CookCacheKeyPreflight {
 [[nodiscard]] u64 fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] u64 fnv1a64_combine(u64 left, u64 right);
+
+/// Read-only FNV input guard — rejects null pointer with non-zero length (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 
 /// True when `size == 0` or `data` is non-null — guards null pointer with non-zero length (B7.9 deepen).
 [[nodiscard]] inline bool is_valid_fnv1a64_input(const u8* data, usize size) {
@@ -292,6 +296,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_texture_import_hash(const TextureImportDesc& desc);
 [[nodiscard]] CookHashPreflight preflight_audio_import_hash(const AudioImportDesc& desc);
 [[nodiscard]] CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry);
+[[nodiscard]] CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry,
+                                                              const CookManifest& manifest);
 [[nodiscard]] CookHashPreflight preflight_upstream_dependencies_hash(
     const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
 [[nodiscard]] CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash);
