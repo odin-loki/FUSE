@@ -398,6 +398,17 @@ FrictionBasisRejectReason friction_basis_beyond_reject_reason(
     return FrictionBasisRejectReason::None;
 }
 
+FrictionBasisRejectReason friction_basis_deepen_reject_reason(const ContactManifold& manifold, f32 epsilon) {
+    const FrictionBasisRejectReason baseReason = friction_basis_reject_reason(manifold);
+    if (baseReason != FrictionBasisRejectReason::None) {
+        return baseReason;
+    }
+    if (friction_basis_is_stale(manifold, epsilon)) {
+        return FrictionBasisRejectReason::StaleBasis;
+    }
+    return FrictionBasisRejectReason::None;
+}
+
 bool friction_basis_rejects_for_reason(
     const ContactManifold& manifold,
     FrictionBasisRejectReason expected) {
@@ -417,9 +428,15 @@ const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason) 
         return "ValidCachedBasis";
     }
     return "Unknown";
-}
 
 FrictionBasisRejectReason friction_basis_reject_reason(
+bool friction_basis_deepen_rejects_for_reason(
+    const ContactManifold& manifold,
+    FrictionBasisRejectReason expected,
+    f32 epsilon) {
+    return friction_basis_deepen_reject_reason(manifold, epsilon) == expected;
+
+FrictionBasisPreflight preflight_friction_basis_rebuild(
     const ContactManifold& manifold,
     f32 epsilon) {
     if (should_skip_friction_tangents(manifold)) {
@@ -1531,5 +1548,12 @@ bool can_skip_compute_friction_tangents(const ContactManifold& manifold, f32 eps
 
     if (can_skip_compute_friction_tangents(manifold, epsilon)) {
 
+void normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
+
+    const FrictionBasisRejectReason deepenReason = friction_basis_deepen_reject_reason(manifold, epsilon);
+    if (deepenReason == FrictionBasisRejectReason::EmptyManifold ||
+        deepenReason == FrictionBasisRejectReason::InvalidNormal) {
+    if (deepenReason == FrictionBasisRejectReason::None &&
+        can_skip_friction_basis_rebuild(manifold, epsilon)) {
 
 } // namespace fuse::physics::narrowphase

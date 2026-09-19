@@ -379,6 +379,11 @@ struct ContactBufferSoA {
     /// True when max-capacity clamp may reduce active contacts (B4.6 deepen pass).
     bool canSkipBuildFrictionTangentBases() const;
     bool shouldRunBuildFrictionTangentBases() const;
+    /// True when slot storage has no invalid flags (compact is a no-op, B4.6 deepen follow-up pass).
+    /// True when post-pass truncation would not drop contacts (B4.6 deepen follow-up pass).
+    /// True when compact+clamp would leave the buffer unchanged (B4.6 deepen follow-up pass).
+    bool canSkipCompactAndClamp() const;
+    /// Count valid flags in prepared slot storage before compaction (B4.6 deepen follow-up pass).
 
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
@@ -449,6 +454,7 @@ ContactBufferWriteSlotRejectReason contact_buffer_write_slot_reject_reason(
 
 
 
+
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold);
@@ -486,6 +492,9 @@ struct ContactBufferWriteSlotPreflight {
     bool outOfRangeSlot = false;
 /// Read-only write diagnostics — no mutation (B4.5 deepen pass).
 /// Read-only write diagnostics — no mutation (B4.3 deepen pass).
+    const ContactBufferSoA& buffer,
+    u32 slot,
+
     bool invalidManifold = false;
     bool selfPair = false;
 
@@ -2088,5 +2097,46 @@ ContactBufferFrictionBuildRejectReason contact_buffer_friction_build_reject_reas
 /// Populate friction tangent rebuild preflight without mutating slots (B4.6 deepen pass).
 
 /// Returns true when all active slots already store orthonormal tangent frames (B4.6 deepen pass).
+};
+
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold);
+
+/// Write only when preflight allows; no-op otherwise (B4.6 deepen follow-up pass).
+bool writeSlotWithPreflight(u32 slot, const ContactManifold& manifold, ContactBufferSoA& buffer);
+
+    None = 0,
+
+
+
+
+
+
+
+
+/// Compaction only when preflight allows; returns active count (B4.6 deepen follow-up pass).
+u32 compactWithPreflight(ContactBufferSoA& buffer);
+
+
+
+
+
+
+
+
+
+/// Clamp only when preflight allows; returns active count (B4.6 deepen follow-up pass).
+u32 applyMaxCapacityClampWithPreflight(ContactBufferSoA& buffer);
+
+
+
+
+
+
+
+
+
+u32 compactAndClampWithPreflight(ContactBufferSoA& buffer);
 
 } // namespace fuse::physics::narrowphase

@@ -153,6 +153,14 @@ FrictionBasisRejectReason friction_basis_beyond_reject_reason(
     const ContactManifold& manifold,
     f32 epsilon = 1e-4f);
 
+/// Extended reject reason including stale cached basis (B4.6 deepen follow-up pass).
+/// Does not alter `friction_basis_reject_reason`; use for additive preflight only.
+FrictionBasisRejectReason friction_basis_deepen_reject_reason(
+
+/// Returns true when `friction_basis_deepen_reject_reason` matches `expected` (B4.6 deepen follow-up pass).
+bool friction_basis_deepen_rejects_for_reason(
+    FrictionBasisRejectReason expected,
+
 /// Returns true when `friction_basis_reject_reason` matches `expected` (B4.5 deepen follow-up pass).
 bool friction_basis_rejects_for_reason(
     const ContactManifold& manifold,
@@ -834,5 +842,9 @@ bool rebuild_friction_basis_second_with_preflight(ContactManifold& manifold, f32
 /// True when friction tangents can be skipped for this manifold (B4.6 deepen pass).
 bool can_skip_compute_friction_tangents(
 
+/// Normalize contact normal when non-unit before friction rebuild (B4.6 deepen follow-up pass).
+void normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Compute friction tangents only when preflight allows; returns false when skipped (B4.6 deepen follow-up pass).
 
 } // namespace fuse::physics::narrowphase

@@ -428,4 +428,9 @@ bool can_skip_narrowphase_second(
 /// Job-safe narrowphase with deepen pair-reject guards and finalize preflight (B4.6 deepen pass).
 void runNarrowphaseIntoBufferWithDeepenGuards(
 
+/// Job-safe narrowphase with extended deepen pair preflight guards (B4.6 deepen follow-up pass).
+
+/// Returns true when all pairs would be deepen-rejected before narrowphase dispatch (B4.6 deepen follow-up pass).
+bool can_skip_narrowphase_into_buffer(
+
 } // namespace fuse::physics::narrowphase

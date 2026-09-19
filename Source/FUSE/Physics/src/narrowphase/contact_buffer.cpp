@@ -2272,6 +2272,22 @@ const char* contactBufferWriteRejectReasonName(ContactBufferWriteRejectReason re
         return "OutOfRangeSlot";
     case ContactBufferWriteRejectReason::OutOfRange:
         return "OutOfRange";
+    return can_skip_contact_buffer_compaction(*this);
+
+    return !can_skip_contact_buffer_clamp(*this);
+
+bool ContactBufferSoA::canSkipCompactAndClamp() const {
+    return can_skip_contact_buffer_compact_and_clamp(*this);
+
+u32 ContactBufferSoA::countValidSlots() const {
+    u32 validCount = 0u;
+        if (validFlags[slot] != 0u) {
+            ++validCount;
+    return validCount;
+
+bool ContactBufferSoA::slotIsValid(u32 slot) const {
+    return slot < pairSlotCount && validFlags[slot] != 0u;
+
     case ContactBufferWriteRejectReason::InvalidSlot:
         return "InvalidSlot";
     case ContactBufferWriteRejectReason::InvalidManifold:
@@ -2310,6 +2326,8 @@ ContactBufferWriteRejectReason contactBufferWriteRejectReason(
 
 
 
+
+    }
 
     const ContactBufferSoA& buffer,
     u32 slot,
@@ -2501,6 +2519,31 @@ bool canSkipContactBufferWrite(
 
 
 
+    }
+
+    const ContactBufferSoA& buffer,
+    u32 slot,
+
+    const ContactManifold& manifold) {
+
+bool writeSlotWithPreflight(u32 slot, const ContactManifold& manifold, ContactBufferSoA& buffer) {
+        return false;
+    return true;
+
+    switch (reason) {
+        return "None";
+    return "Unknown";
+
+    if (buffer.pairSlotCount == 0u) {
+
+    u32 validCount = 0u;
+    for (u32 slot = 0u; slot < buffer.pairSlotCount; ++slot) {
+        if (buffer.validFlags[slot] != 0u) {
+            ++validCount;
+
+    if (validCount == 0u) {
+    if (validCount == buffer.pairSlotCount) {
+
 
 ContactBufferCompactionPreflight preflight_contact_buffer_compaction(const ContactBufferSoA& buffer) {
     ContactBufferCompactionPreflight preflight{};
@@ -2545,6 +2588,28 @@ ContactBufferClampRejectReason contact_buffer_clamp_reject_reason(const ContactB
 bool contact_buffer_clamp_rejects_for_reason(
     ContactBufferClampRejectReason expected) {
     return contact_buffer_clamp_reject_reason(buffer) == expected;
+    return preflight;
+}
+
+
+u32 compactWithPreflight(ContactBufferSoA& buffer) {
+    const ContactBufferCompactionPreflight preflight = preflight_contact_buffer_compaction(buffer);
+    if (preflight.reason == ContactBufferCompactionRejectReason::EmptyBuffer) {
+        buffer.activeCount = 0u;
+        buffer.pairSlotCount = 0u;
+        return buffer.activeCount;
+    if (preflight.reason == ContactBufferCompactionRejectReason::AllValid) {
+        buffer.activeCount = buffer.countValidSlots();
+    return buffer.compact();
+
+    switch (reason) {
+        return "None";
+        return "EmptyBuffer";
+    return "Unknown";
+
+    if (buffer.maxCapacity == 0u || buffer.activeCount <= buffer.maxCapacity) {
+
+    const ContactBufferSoA& buffer,
 
 ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer) {
     ContactBufferClampPreflight preflight{};
@@ -2576,6 +2641,30 @@ bool contact_buffer_compact_and_clamp_rejects_for_reason(
     return contact_buffer_compact_and_clamp_reject_reason(buffer) == expected;
 
 ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer) {
+    return preflight;
+}
+
+
+u32 applyMaxCapacityClampWithPreflight(ContactBufferSoA& buffer) {
+    if (!preflight_contact_buffer_clamp(buffer).needsClamp()) {
+        return buffer.activeCount;
+    return buffer.applyMaxCapacityClamp();
+
+const char* contact_buffer_compact_and_clamp_reject_reason_name(
+    ContactBufferCompactAndClampRejectReason reason) {
+    switch (reason) {
+        return "None";
+        return "EmptyBuffer";
+        return "NoWork";
+    return "Unknown";
+
+    const ContactBufferSoA& buffer) {
+    if (buffer.pairSlotCount == 0u) {
+    if (buffer.canSkipCompaction() && can_skip_contact_buffer_clamp(buffer)) {
+
+    const ContactBufferSoA& buffer,
+
+ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp(
     ContactBufferCompactAndClampPreflight preflight{};
     preflight.reason = contact_buffer_compact_and_clamp_reject_reason(buffer);
     preflight.emptyBuffer = preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer;
@@ -3438,6 +3527,14 @@ u32 compactAndClampContactBufferWithPreflight(ContactBufferSoA& buffer) {
             ++preflight.staleCount;
 
 bool can_skip_build_friction_tangent_bases(const ContactBufferSoA& buffer, f32 epsilon) {
+    return preflight;
+}
+
+
+u32 compactAndClampWithPreflight(ContactBufferSoA& buffer) {
+    const ContactBufferCompactAndClampPreflight preflight =
+        preflight_contact_buffer_compact_and_clamp(buffer);
+        buffer.activeCount = buffer.countValidSlots();
 }
 
 } // namespace fuse::physics::narrowphase

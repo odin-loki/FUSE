@@ -1453,6 +1453,8 @@ bool can_skip_normalize_contact_normal(
 
 /// Finalize only when preflight allows; no-op when finalize should be skipped (B4.6 deepen pass).
 
+/// Generate manifold only when preflight allows; no-op otherwise (B4.6 deepen follow-up pass).
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

@@ -1757,4 +1757,17 @@ ContactManifold detect_contacts_pair_with_deepen_preflight(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Run shape dispatch for one pair after extended deepen preflight (B4.6 deepen follow-up pass).
+ContactManifold detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `preflight_narrowphase_batch` reports the expected dispatchable count (B4.6 deepen follow-up pass).
+bool narrowphase_batch_has_dispatchable_count(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    u32 expectedCount);
+
 } // namespace fuse::physics::narrowphase

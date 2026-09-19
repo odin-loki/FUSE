@@ -369,6 +369,14 @@ NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
     return !preflight_narrowphase_pair_slot(pair, bodies, shapes, pairs, pairIndex).can_dispatch();
 bool can_skip_narrowphase_second(
     return !has_dispatchable_contact_pair_second(pairs, bodies, shapes);
+        }
+
+
+bool can_skip_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return narrowphase_batch_rejects_all(pairs, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase

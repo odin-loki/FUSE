@@ -3375,4 +3375,22 @@ ContactManifold detect_contacts_pair_with_deepen_preflight(
     return dispatchShapePair(pair, bodies, shapes);
 }
 
+ContactManifold detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return dispatchShapePair(pair, bodies, shapes);
+}
+
+bool narrowphase_batch_has_dispatchable_count(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    u32 expectedCount) {
+    return preflight_narrowphase_batch(pairs, bodies, shapes).dispatchableCount == expectedCount;
+}
+
 } // namespace fuse::physics::narrowphase
