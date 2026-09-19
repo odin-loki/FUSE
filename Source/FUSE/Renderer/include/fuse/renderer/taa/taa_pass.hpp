@@ -500,14 +500,7 @@ public:
     bool tryAdvanceJitter(TaaJitterGuardRejectReason& reason);
     /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterNdcReject() const;
-    /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
     bool canAdvanceJitter() const;
-    /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
-    bool shouldSkipJitterAdvance() const;
-    /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
-    bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
-    /// Classify why pass jitter advance would be rejected (B5.9 deepen).
-    TaaJitterGuardRejectReason classifyJitterAdvanceReject() const;
     /// True when pass jitter can sync to `frameIndex` (B5.9 deepen).
     bool canSyncJitterToFrameIndex(u32 frameIndex) const;
     /// Early-out when pass history still needs warm-up (B5.9 deepen).

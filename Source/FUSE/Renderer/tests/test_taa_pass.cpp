@@ -9276,6 +9276,7 @@ void testHistoryWarmupPreflightDeepen() {
 void testTaaPassTryPreflightWrappers() {
 void testTaaPassTryAndClassifyGuards() {
 void testTaaPassTryPreflightAndClassifyWrappers() {
+void testTaaPassTryPreflightGuardWrappers() {
     fuse::renderer::TaaPassDesc passDesc{};
     passDesc.width = 128;
     passDesc.height = 128;
@@ -9373,6 +9374,12 @@ void testTaaPassTryAndClassifyGuardWrappers() {
                "pass jitter NDC classify is None before init");
                "pass jitter advance classify is None before init");
 
+
+
+        fuse::renderer::TaaJitterGuardRejectReason::None;
+    expectTrue(pass->tryPreflightJitterSync(3u, jitterReject), "pass tryPreflightJitterSync passes");
+    expectTrue(pass->tryPreflightJitterNdc(jitterReject), "pass tryPreflightJitterNdc passes");
+    expectTrue(pass->tryPreflightJitterAdvance(jitterReject), "pass tryPreflightJitterAdvance passes");
 
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
                "pass tryPreflightHistoryReuse fails before init");
@@ -10493,6 +10500,16 @@ void testTaaPassTryPreflightAndClassifyGuards() {
     expectTrue(pass->tryPreflightJitterSync(6u, jitterReject),
     expectTrue(pass->canSyncJitterToFrameIndex(6u), "pass canSyncJitterToFrameIndex after sync");
 
+
+
+               "pass tryPreflightResolve skip reason is None before warmup");
+
+    resolveDesc.observed_history_generation = pass->historyInvalidateGeneration();
+    expectTrue(pass->tryPreflightHistoryReuse(resolveDesc.observed_history_generation, reuseReason),
+
+
+    expectTrue(!pass->tryPreflightHistoryReuse(resolveDesc.observed_history_generation, reuseReason),
+
     fuse::renderer::TaaPassDesc zeroWidthDesc{};
     zeroWidthDesc.width = 0;
     zeroWidthDesc.height = 128;
@@ -10609,6 +10626,7 @@ void testTaaPassTryPreflightAndClassifyGuards() {
                "zero-width pass jitter sync still valid for sequence");
 
     expectTrue(zeroPass->preflightJitterSync(0u), "zero-width pass jitter sync still valid for sequence");
+
 
     resources.destroy();
     bindless.destroy(*bootstrap->device());
