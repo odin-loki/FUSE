@@ -387,8 +387,8 @@ bool FroxelGridLayout::tryPreflightSampleCoords(const FroxelSampleCoords& coords
         return false;
     }
 
-    outReason = SampleCoordRejectReason::OutOfBounds;
-    return false;
+    outReason = SampleCoordRejectReason::UnorderedCorners;
+    return true;
 }
 
 bool FroxelGridLayout::canPreflightSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
@@ -425,6 +425,8 @@ const char* sampleCoordRejectReasonLabel(SampleCoordRejectReason reason) {
         return "out_of_bounds";
     case SampleCoordRejectReason::InvalidWeights:
         return "invalid_weights";
+    case SampleCoordRejectReason::UnorderedCorners:
+        return "unordered_corners";
     }
     return "unknown";
 }
@@ -440,6 +442,22 @@ const char* froxelTrilinearSampleRejectReasonLabel(FroxelTrilinearSampleRejectRe
     case FroxelTrilinearSampleRejectReason::InvalidSampleCoords:
         return "invalid_sample_coords";
     case FroxelTrilinearSampleRejectReason::ClampableWeights:
+        return "clampable_weights";
+    }
+    return "unknown";
+}
+
+const char* froxelBilinearSampleRejectReasonLabel(FroxelBilinearSampleRejectReason reason) {
+    switch (reason) {
+    case FroxelBilinearSampleRejectReason::None:
+        return "none";
+    case FroxelBilinearSampleRejectReason::EmptyGrid:
+        return "empty_grid";
+    case FroxelBilinearSampleRejectReason::InaccessibleGrid:
+        return "inaccessible_grid";
+    case FroxelBilinearSampleRejectReason::InvalidSampleCoords:
+        return "invalid_sample_coords";
+    case FroxelBilinearSampleRejectReason::ClampableWeights:
         return "clampable_weights";
     }
     return "unknown";
@@ -512,6 +530,10 @@ bool isDensityGridAccessible(const FroxelDensityGrid& grid, const FroxelGridDesc
 
 bool shouldSkipFroxelLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
     return !isDensityGridAccessible(grid, desc);
+}
+
+bool wouldSkipFroxelLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
+    return wouldSkipDensityLookup(grid, desc);
 }
 
 bool shouldSkipFroxelGrid(const FroxelGridDesc& desc) {
@@ -629,6 +651,56 @@ bool tryCanSampleAtCoords(const FroxelDensityGrid& grid,
     return FroxelGridLayout::tryPreflightSampleCoords(coords, desc, outReason);
 }
 
+bool canBilinearSampleAtCoords(const FroxelDensityGrid& grid,
+                               const FroxelGridDesc& desc,
+                               const FroxelSampleCoords& coords) {
+    FroxelBilinearSampleRejectReason reason = FroxelBilinearSampleRejectReason::None;
+    return tryCanBilinearSampleAtCoords(grid, desc, coords, reason);
+}
+
+bool tryCanBilinearSampleAtCoords(const FroxelDensityGrid& grid,
+                                  const FroxelGridDesc& desc,
+                                  const FroxelSampleCoords& coords,
+                                  FroxelBilinearSampleRejectReason& outReason) {
+    DensityLookupRejectReason lookupReason = DensityLookupRejectReason::None;
+    if (!tryCanLookupAtIndex(grid, desc, 0u, lookupReason)) {
+        switch (lookupReason) {
+        case DensityLookupRejectReason::EmptyGrid:
+            outReason = FroxelBilinearSampleRejectReason::EmptyGrid;
+            break;
+        case DensityLookupRejectReason::EmptyStorage:
+        case DensityLookupRejectReason::DescMismatch:
+        case DensityLookupRejectReason::IndexOutOfRange:
+        case DensityLookupRejectReason::None:
+            outReason = FroxelBilinearSampleRejectReason::InaccessibleGrid;
+            break;
+        }
+        return false;
+    }
+
+    SampleCoordRejectReason sampleReason = SampleCoordRejectReason::None;
+    if (!FroxelGridLayout::tryPreflightSampleCoords(coords, desc, sampleReason)) {
+        outReason = FroxelBilinearSampleRejectReason::InvalidSampleCoords;
+        return false;
+    }
+
+    if (sampleReason == SampleCoordRejectReason::InvalidWeights ||
+        sampleReason == SampleCoordRejectReason::UnorderedCorners) {
+        outReason = FroxelBilinearSampleRejectReason::ClampableWeights;
+        return true;
+    }
+
+    outReason = FroxelBilinearSampleRejectReason::None;
+    return true;
+}
+
+bool wouldSkipDensityBilinearSample(const FroxelDensityGrid& grid,
+                                    const FroxelGridDesc& desc,
+                                    const FroxelSampleCoords& coords) {
+    FroxelBilinearSampleRejectReason reason = FroxelBilinearSampleRejectReason::None;
+    return !tryCanBilinearSampleAtCoords(grid, desc, coords, reason);
+}
+
 bool canTrilinearSampleAtCoords(const FroxelDensityGrid& grid,
                                 const FroxelGridDesc& desc,
                                 const FroxelSampleCoords& coords) {
@@ -662,7 +734,8 @@ bool tryCanTrilinearSampleAtCoords(const FroxelDensityGrid& grid,
         return false;
     }
 
-    if (sampleReason == SampleCoordRejectReason::InvalidWeights) {
+    if (sampleReason == SampleCoordRejectReason::InvalidWeights ||
+        sampleReason == SampleCoordRejectReason::UnorderedCorners) {
         outReason = FroxelTrilinearSampleRejectReason::ClampableWeights;
         return true;
     }
@@ -778,7 +851,25 @@ bool validateGridDensity(const FroxelDensityGrid& grid, const FroxelGridDesc& de
 }
 
 bool validateGridDensityForDesc(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon) {
-    return validateGridDensity(grid, desc, epsilon);
+    GridDensityRejectReason reason = GridDensityRejectReason::None;
+    return tryValidateGridDensityForDesc(grid, desc, reason, epsilon);
+}
+
+bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
+                                   const FroxelGridDesc& desc,
+                                   GridDensityRejectReason& outReason,
+                                   f32 epsilon) {
+    const FroxelGridDesc clampedDesc = FroxelGridDesc::clampCounts(desc);
+    if (clampedDesc.froxelCount() == 0u) {
+        outReason = GridDensityRejectReason::None;
+        return true;
+    }
+    if (FroxelGridLayout::isEmptyGrid(desc)) {
+        outReason = GridDensityRejectReason::EmptyDesc;
+        return false;
+    }
+
+    return tryValidateGridDensity(grid, desc, outReason, epsilon);
 }
 
 bool tryValidateGridDensity(const FroxelDensityGrid& grid,
@@ -937,6 +1028,20 @@ bool trySampleDensityBilinear(const FroxelDensityGrid& grid,
                               f32& outDensity,
                               SampleCoordRejectReason& outReason) {
     if (!tryCanSampleAtCoords(grid, desc, coords, outReason)) {
+        outDensity = 0.f;
+        return false;
+    }
+
+    outDensity = sampleDensityBilinear(grid, desc, coords);
+    return true;
+}
+
+bool trySampleDensityBilinear(const FroxelDensityGrid& grid,
+                              const FroxelGridDesc& desc,
+                              const FroxelSampleCoords& coords,
+                              f32& outDensity,
+                              FroxelBilinearSampleRejectReason& outReason) {
+    if (!tryCanBilinearSampleAtCoords(grid, desc, coords, outReason)) {
         outDensity = 0.f;
         return false;
     }
