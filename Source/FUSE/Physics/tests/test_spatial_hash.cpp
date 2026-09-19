@@ -3767,3 +3767,22 @@ void testShapeCellOccupancyPreflightGuards() {
     expectTrue(!overPreflight.canIterate(), "shape cell occupancy preflight rejects over budget");
     expectTrue(overPreflight.exceedsBudget, "shape cell occupancy preflight marks exceedsBudget");
     testShapeCellOccupancyPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-1d40 ---
+    const fuse::physics::broadphase::ShapeCellInsertPreflight unlimited =
+void testMergePairPushPreflightGuards() {
+                 fuse::physics::broadphase::mergePairPushRejectReason(buffer, 0u, 1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::MergePairPushRejectReason::None),
+                 fuse::physics::broadphase::mergePairPushRejectReason(buffer, 2u, 2u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::MergePairPushRejectReason::InvalidPair),
+    expectTrue(fuse::physics::broadphase::mergePairPushRejectsForReason(
+                   buffer, 2u, 2u, fuse::physics::broadphase::MergePairPushRejectReason::InvalidPair),
+                 fuse::physics::broadphase::mergePairPushRejectReason(buffer, 2u, 3u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::MergePairPushRejectReason::AtCapacity),
+    expectTrue(std::strcmp(fuse::physics::broadphase::mergePairPushRejectReasonName(
+                               fuse::physics::broadphase::MergePairPushRejectReason::AtCapacity),
+    const fuse::physics::broadphase::MergePairPushPreflight preflight =
+        fuse::physics::broadphase::preflightMergePairPush(buffer, 2u, 3u);
+void testBroadphaseMergeBodyCountPreflight() {
+    testMergePairPushPreflightGuards();
+    testBroadphaseMergeBodyCountPreflight();

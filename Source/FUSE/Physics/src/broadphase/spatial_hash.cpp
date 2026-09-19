@@ -1488,3 +1488,27 @@ CellShapeInsertPreflight preflightShapeCellInsert(
 
 // --- deepen additive from b4-broadphase-deepen-guards-388f ---
     return preflightCellPairGen(bodyCount).pairCount;
+
+// --- deepen additive from deepen-b4-broadphase-guards-1d40 ---
+        preflight.reason = ShapeCellInsertRejectReason::OutOfRangeBody;
+        const CellOccupancyPreflight occupancyPreflight = preflightCellOccupancy(range, maxOccupancy);
+            preflight.reason = ShapeCellInsertRejectReason::EmptyRange;
+        } else if (occupancyPreflight.exceedsBudget) {
+            preflight.reason = ShapeCellInsertRejectReason::ExceedsBudget;
+        if (!preflightMergePairPush(buffer, pair.bodyA, pair.bodyB).canPush()) {
+    return preflightShapeCellInsertImpl(shapeIndex, bodies, shapes, params, use2D).reason;
+const char* mergePairPushRejectReasonName(MergePairPushRejectReason reason) {
+    case MergePairPushRejectReason::None:
+    case MergePairPushRejectReason::InvalidPair:
+    case MergePairPushRejectReason::AtCapacity:
+MergePairPushRejectReason mergePairPushRejectReason(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
+        return MergePairPushRejectReason::InvalidPair;
+        return MergePairPushRejectReason::AtCapacity;
+    return MergePairPushRejectReason::None;
+    MergePairPushRejectReason expected) {
+    return mergePairPushRejectReason(buffer, idxA, idxB) == expected;
+MergePairPushPreflight preflightMergePairPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
+    MergePairPushPreflight preflight{};
+    preflight.reason = mergePairPushRejectReason(buffer, idxA, idxB);
+    preflight.invalidPair = preflight.reason == MergePairPushRejectReason::InvalidPair;
+    preflight.atCapacity = preflight.reason == MergePairPushRejectReason::AtCapacity;

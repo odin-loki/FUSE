@@ -1535,3 +1535,13 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightShapeCellOccupancy(
     return preflightCellOccupancy(range, params.maxCellOccupancy);
     return !preflightShapeCellOccupancy(range, params).canIterate();
     return preflightShapeCellOccupancy(range, params).canIterate();
+
+// --- deepen additive from deepen-b4-broadphase-guards-1d40 ---
+enum class MergePairPushRejectReason : u8 {
+const char* mergePairPushRejectReasonName(MergePairPushRejectReason reason);
+MergePairPushRejectReason mergePairPushRejectReason(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+    MergePairPushRejectReason expected);
+struct MergePairPushPreflight {
+    MergePairPushRejectReason reason = MergePairPushRejectReason::None;
+    bool canPush() const { return reason == MergePairPushRejectReason::None; }
+MergePairPushPreflight preflightMergePairPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
