@@ -1180,3 +1180,8 @@ void testCookCachePreflightEntryAndManifestCoverage() {
                "would_invalidate_stale_upstream true when hashes mismatch");
     expectTrue(!cache.would_invalidate_stale_upstream_hashes({}), "empty upstream list would_invalidate is false");
     testCookCachePreflightEntryAndManifestCoverage();
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-60fd ---
+               "would_invalidate still true for stale hash key");
+void testCookHashManifestDependencyPreflight() {
+    testCookHashManifestDependencyPreflight();

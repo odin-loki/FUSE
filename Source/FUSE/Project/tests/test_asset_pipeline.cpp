@@ -2034,3 +2034,6 @@ void testCookerReconcileEstimatorGuards() {
 
 // --- deepen additive from deepen-b79-cooker-hash-88c3 ---
                "would_invalidate_downstream true for chain producer");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-60fd ---
+               "would_invalidate_stale_upstream true when hashes mismatch");
