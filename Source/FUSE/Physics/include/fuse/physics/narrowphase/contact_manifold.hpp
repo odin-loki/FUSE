@@ -474,3 +474,15 @@ FUSE_PHYSICS_INLINE bool try_prune_contact_manifold_with_preflight(
     if (would_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
 FUSE_PHYSICS_INLINE bool try_finalize_contact_manifold_with_preflight(
     if (would_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-2edd ---
+    return preflight.reason == ManifoldPruneRejectReason::None &&
+    return !should_skip_friction_basis_preflight(manifold, epsilon);
+    if (should_skip_friction_tangents(manifold)) {
+    const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
+    return preflight.reason == FrictionBasisRejectReason::None && preflight.needsRebuild;
+FUSE_PHYSICS_INLINE bool would_skip_friction_basis_rebuild(
+    return should_skip_friction_basis_preflight(manifold, epsilon);
+FUSE_PHYSICS_INLINE bool try_rebuild_friction_basis(ContactManifold& manifold, f32 epsilon) {
+    if (would_skip_friction_basis_rebuild(manifold, epsilon)) {
+FUSE_PHYSICS_INLINE bool try_compute_friction_tangents(ContactManifold& manifold, f32 epsilon) {

@@ -765,3 +765,35 @@ FUSE_PHYSICS_INLINE bool ContactBufferSoA::buildFrictionTangentBasesWithPrefligh
     preflight.allCached = preflight.reason == ContactBufferFrictionTangentRejectReason::AllCached;
     return !preflightContactBufferFrictionTangentBases(buffer).needsRebuild();
     return preflightContactBufferFrictionTangentBases(buffer).needsRebuild();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-2edd ---
+bool would_skip_contact_buffer_write_slot(
+    ContactBufferWriteSlotRejectReason* reason = nullptr);
+bool try_write_contact_buffer_slot(
+bool would_skip_contact_buffer_compaction(const ContactBufferSoA& buffer);
+bool would_skip_contact_buffer_clamp(const ContactBufferSoA& buffer);
+bool would_skip_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer);
+bool would_skip_contact_buffer_to_vector(const ContactBufferSoA& buffer);
+bool would_skip_contact_buffer_warm_start(const ContactBufferSoA& buffer, u32 slot);
+bool try_apply_contact_buffer_warm_start_stub(
+bool would_skip_contact_buffer_friction_bases(const ContactBufferSoA& buffer);
+bool try_build_contact_buffer_friction_tangent_bases(ContactBufferSoA& buffer);
+FUSE_PHYSICS_INLINE bool would_skip_contact_buffer_write_slot(
+    ContactBufferWriteSlotRejectReason* reason) {
+    const ContactBufferWriteSlotRejectReason rejectReason =
+    return rejectReason != ContactBufferWriteSlotRejectReason::None;
+FUSE_PHYSICS_INLINE bool try_write_contact_buffer_slot(
+    if (would_skip_contact_buffer_write_slot(buffer, slot, manifold)) {
+FUSE_PHYSICS_INLINE bool would_skip_contact_buffer_compaction(const ContactBufferSoA& buffer) {
+FUSE_PHYSICS_INLINE bool would_skip_contact_buffer_clamp(const ContactBufferSoA& buffer) {
+FUSE_PHYSICS_INLINE bool would_skip_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer) {
+    if (would_skip_contact_buffer_compact_and_clamp(buffer)) {
+FUSE_PHYSICS_INLINE bool would_skip_contact_buffer_to_vector(const ContactBufferSoA& buffer) {
+FUSE_PHYSICS_INLINE bool would_skip_contact_buffer_warm_start(const ContactBufferSoA& buffer, u32 slot) {
+FUSE_PHYSICS_INLINE bool try_apply_contact_buffer_warm_start_stub(
+    if (would_skip_contact_buffer_warm_start(buffer, slot)) {
+FUSE_PHYSICS_INLINE ContactBufferFrictionBasesRejectReason contact_buffer_friction_bases_reject_reason(
+FUSE_PHYSICS_INLINE ContactBufferFrictionBasesPreflight preflight_contact_buffer_friction_bases(
+FUSE_PHYSICS_INLINE bool would_skip_contact_buffer_friction_bases(const ContactBufferSoA& buffer) {
+FUSE_PHYSICS_INLINE bool try_build_contact_buffer_friction_tangent_bases(ContactBufferSoA& buffer) {
+    if (would_skip_contact_buffer_friction_bases(buffer)) {

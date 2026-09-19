@@ -3899,3 +3899,14 @@ void testContactPairManifoldFrictionTryGuards() {
     fuse::physics::narrowphase::runNarrowphaseIntoBufferWithPreflight(validPairs, bodies, shapes, buffer);
         "would_skip_manifold_prune false for separated slot");
         "would_skip_manifold_finalize false for finalizable manifold");
+
+// --- deepen additive from b4-narrowphase-deepen-guards-2edd ---
+        fuse::physics::narrowphase::would_skip_contact_buffer_compaction(buffer),
+        "would_skip compaction on empty buffer");
+        fuse::physics::narrowphase::would_skip_contact_buffer_write_slot(buffer, 0u, selfPair),
+        "would_skip write-slot flags self pair");
+        "would_skip base dispatch for self pair");
+        "would_skip prune for clean manifold");
+        "would_skip into-buffer on empty pair list");
+        fuse::physics::narrowphase::would_skip_narrowphase_into_buffer({{sleepingA, sleepingB}}, bodies, shapes),
+        "would_skip into-buffer when all pairs deepen-rejected");

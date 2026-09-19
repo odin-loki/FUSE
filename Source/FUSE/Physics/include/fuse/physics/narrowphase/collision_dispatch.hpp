@@ -406,3 +406,6 @@ FUSE_PHYSICS_INLINE bool try_preflight_narrowphase_into_buffer(
 // --- deepen additive from deepen-b4-narrowphase-guards-a927 ---
     return !preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).canRun();
     return preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).canRun();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-2edd ---
+    preflight.rejectedCount = batchPreflight.rejectedCount;
