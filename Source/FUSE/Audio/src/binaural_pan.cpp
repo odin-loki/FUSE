@@ -2399,3 +2399,13 @@ HrtfPanPathRejectReason classify_hrtf_pan_path_convolve_reject(const HrtfPanPath
 
 // --- deepen additive from binaural-hrtf-reject-reasons-963e ---
     if (pan_reason == HrtfPanPathRejectReason::EmptyIr) {
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-d69b ---
+bool preflight_hrtf_ir_ready(const HrtfIrPreflight& preflight, HrtfIrRejectReason* reason) {
+bool try_preflight_hrtf_ir(const HrtfIrPreflight& preflight, HrtfIrRejectReason& reason) {
+bool preflight_hrtf_pan_path_ready(const HrtfPanPathPreflight& preflight,
+bool try_preflight_hrtf_pan_path(const HrtfPanPathPreflight& preflight,
+bool preflight_hrtf_attenuation_coupling_ready(const HrtfAttenuationCouplingPreflight& preflight,
+bool try_preflight_hrtf_attenuation_coupling(const HrtfAttenuationCouplingPreflight& preflight,
+bool preflight_hrtf_binaural_ready(const HrtfBinauralPreflight& preflight,
+bool try_preflight_hrtf_binaural(const HrtfBinauralPreflight& preflight,
