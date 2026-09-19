@@ -1253,3 +1253,15 @@ void testCookHashPreflightImportPathsAndCacheEntry() {
     expectTrue(empty_input.reason == fuse::project::CookHashRejectReason::EmptyInputPath,
     expectTrue(!cooker.cache().would_invalidate_source(""), "empty source path would_invalidate is guarded");
     testCookHashPreflightImportPathsAndCacheEntry();
+
+// --- deepen additive from deepen-b79-cooker-hash-5ce0 ---
+    expectTrue(seeded.ok, "seed cook for would_invalidate shortcuts ok");
+               "would_invalidate_source still true while stale entry remains cached");
+    expectTrue(!cooker.cache().would_invalidate_source(source),
+               "would_invalidate_source false after stale entry pruned");
+    const fuse::project::CookHashPreflight empty_source = fuse::project::preflight_cook_cache_entry(invalid_source);
+    const fuse::project::CookHashPreflight empty_output = fuse::project::preflight_cook_cache_entry(invalid_output);
+    expectTrue(cache.would_invalidate_stale_upstream_hashes(upstream_pairs),
+               "would_invalidate_stale_upstream true when stale upstream entries exist");
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_unique_up_c.obj", 20u}}),
+               "would_invalidate_stale_upstream false when upstream hashes match");
