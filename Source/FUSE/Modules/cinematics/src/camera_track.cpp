@@ -208,6 +208,10 @@ bool camera_sample_is_default(const CameraSample& sample) {
            && sample.position.z == defaults.position.z && sample.look_at.x == defaults.look_at.x
            && sample.look_at.y == defaults.look_at.y && sample.look_at.z == defaults.look_at.z
            && camera_fov_uses_default(sample.field_of_view) && sample.roll_deg == defaults.roll_deg;
+bool camera_fov_in_valid_range(float fov_deg) {
+    return fov_deg >= kMinFovDeg && fov_deg <= kMaxFovDeg;
+}
+
 
 float effective_camera_fov(float field_of_view) {
     if (!std::isfinite(field_of_view) || camera_keyframe_fov_unset(field_of_view)) {
@@ -265,6 +269,12 @@ void reset_camera_keyframe_to_defaults(CameraKeyframe& keyframe) {
     keyframe.field_of_view = kDefaultCameraFovDeg;
 void sanitize_camera_sample(CameraSample& sample) {
     sample.field_of_view = clamp_fov(sample.field_of_view);
+}
+
+void normalize_camera_keyframes(std::vector<CameraKeyframe>& keyframes) {
+    for (CameraKeyframe& keyframe : keyframes) {
+        normalize_camera_keyframe(keyframe);
+    }
 }
 
 CameraSample sample_camera_keyframe(const CameraKeyframe& keyframe,
