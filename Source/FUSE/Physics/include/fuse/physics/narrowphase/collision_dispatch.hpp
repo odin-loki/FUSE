@@ -345,8 +345,6 @@ bool can_skip_narrowphase_dispatch(
 /// Returns true when narrowphase dispatch should be skipped entirely (B4.6 deepen pass).
 /// Returns true when `narrowphase_into_buffer_reject_reason` matches `expected` (B4.5 deepen follow-up pass).
 bool narrowphase_into_buffer_rejects_for_reason(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
     NarrowphaseIntoBufferRejectReason expected);
 
 /// Read-only narrowphase-into-buffer diagnostics — no mutation (B4.5 deepen follow-up pass).
@@ -354,10 +352,8 @@ bool narrowphase_into_buffer_rejects_for_reason(
     bool noDispatchablePairs = false;
 
     bool canRun() const { return reason == NarrowphaseIntoBufferRejectReason::None; }
-};
 
 /// Populate narrowphase-into-buffer preflight without running shape dispatch (B4.5 deepen follow-up pass).
-    const CollisionShapeSoA& shapes);
 
 /// Non-mutating narrowphase-into-buffer skip predicate — inverse of `canRun` (B4.5 deepen follow-up pass).
 bool wouldSkipNarrowphaseIntoBuffer(
@@ -773,6 +769,41 @@ inline NarrowphaseIntoBufferPreflight preflight_run_narrowphase_into_buffer(
 /// Returns true when narrowphase-into-buffer may proceed (B4.5 deepen pass).
 inline const char* narrowphase_into_buffer_reject_reason_name(NarrowphaseIntoBufferRejectReason reason) {
     case NarrowphaseIntoBufferRejectReason::None:
+/// Why narrowphase-into-buffer dispatch would early-out (B4.5 deepen follow-up pass).
+enum class NarrowphaseIntoBufferRejectReason : u8 {
+    None = 0,
+    EmptyPairs,
+    NoDispatchablePairs,
+
+/// Human-readable label for narrowphase-into-buffer reject reasons (logging / tests).
+const char* narrowphase_into_buffer_reject_reason_name(NarrowphaseIntoBufferRejectReason reason);
+
+/// Diagnose why narrowphase-into-buffer would skip; vacuously succeeds when dispatch may proceed.
+NarrowphaseIntoBufferRejectReason narrowphase_into_buffer_reject_reason(
+
+/// Returns true when `narrowphase_into_buffer_reject_reason` matches `expected`.
+bool narrowphase_into_buffer_rejects_for_reason(
+    NarrowphaseIntoBufferRejectReason expected);
+
+/// Read-only narrowphase-into-buffer diagnostics — no mutation (B4.5 deepen follow-up pass).
+    NarrowphaseIntoBufferRejectReason reason = NarrowphaseIntoBufferRejectReason::None;
+    bool noDispatchablePairs = false;
+    u32 dispatchableCount = 0u;
+
+    bool can_dispatch() const { return reason == NarrowphaseIntoBufferRejectReason::None; }
+
+NarrowphaseIntoBufferPreflight preflight_run_narrowphase_into_buffer(
+
+/// Non-mutating narrowphase-into-buffer skip predicate — inverse of `can_dispatch`.
+bool would_skip_narrowphase_into_buffer(
+
+
+
+/// Narrowphase into buffer only when preflight allows; returns false when skipped (B4.5 deepen follow-up pass).
+bool try_run_narrowphase_into_buffer(
+
+FUSE_PHYSICS_INLINE const char* narrowphase_into_buffer_reject_reason_name(
+    NarrowphaseIntoBufferRejectReason reason) {
     case NarrowphaseIntoBufferRejectReason::EmptyPairs:
         return "EmptyPairs";
     case NarrowphaseIntoBufferRejectReason::NoDispatchablePairs:
@@ -810,5 +841,39 @@ inline void runNarrowphaseIntoBufferWithPreflight(
 
 inline bool tryRunNarrowphaseIntoBuffer(
     if (wouldSkipNarrowphaseIntoBuffer(pairs, bodies, shapes)) {
+    }
+    return "Unknown";
+
+FUSE_PHYSICS_INLINE NarrowphaseIntoBufferRejectReason narrowphase_into_buffer_reject_reason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (pairs.empty()) {
+
+FUSE_PHYSICS_INLINE bool narrowphase_into_buffer_rejects_for_reason(
+    const CollisionShapeSoA& shapes,
+
+FUSE_PHYSICS_INLINE NarrowphaseIntoBufferPreflight preflight_run_narrowphase_into_buffer(
+    NarrowphaseIntoBufferPreflight preflight{};
+    preflight.reason = narrowphase_into_buffer_reject_reason(pairs, bodies, shapes);
+    preflight.emptyPairs = preflight.reason == NarrowphaseIntoBufferRejectReason::EmptyPairs;
+    preflight.noDispatchablePairs = preflight.reason == NarrowphaseIntoBufferRejectReason::NoDispatchablePairs;
+    return preflight;
+
+FUSE_PHYSICS_INLINE bool would_skip_narrowphase_into_buffer(
+    return !preflight_run_narrowphase_into_buffer(pairs, bodies, shapes).can_dispatch();
+
+FUSE_PHYSICS_INLINE bool can_skip_run_narrowphase_into_buffer(
+    return would_skip_narrowphase_into_buffer(pairs, bodies, shapes);
+
+FUSE_PHYSICS_INLINE bool should_run_narrowphase_into_buffer(
+    return !can_skip_run_narrowphase_into_buffer(pairs, bodies, shapes);
+
+FUSE_PHYSICS_INLINE bool try_run_narrowphase_into_buffer(
+    ContactBufferSoA& buffer) {
+    if (!should_run_narrowphase_into_buffer(pairs, bodies, shapes)) {
+        return false;
+    runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
+    return true;
 
 } // namespace fuse::physics::narrowphase

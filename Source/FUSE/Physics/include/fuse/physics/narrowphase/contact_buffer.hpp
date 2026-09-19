@@ -340,10 +340,8 @@ struct ContactBufferSoA {
         if (slot >= validFlags.size()) {
         if (pairSlotCount > 0u && slot >= pairSlotCount) {
         return validFlags[slot] != 0u;
-    bool canApplyMaxCapacityClamp() const {
         return maxCapacity > 0u && activeCount > maxCapacity;
     /// True when every prepared slot is valid (compact is a no-op).
-    bool canSkipCompaction() const {
         if (pairSlotCount == 0u) {
         for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
     u32 countValidSlots() const {
@@ -366,7 +364,6 @@ struct ContactBufferSoA {
 
 
 
-    u32 remainingCapacity() const {
             return ~0u;
         return activeCount >= maxCapacity ? 0u : maxCapacity - activeCount;
 
@@ -384,14 +381,37 @@ struct ContactBufferSoA {
     /// True when no valid contacts need tangent rebuild (B4.5 deepen pass).
     /// True when all active tangent frames are orthonormal with their normals (B4.5 deepen pass).
     /// True when compact+clamp would leave the buffer unchanged (B4.5 deepen pass).
-            }
-        return true;
 
-        if (canSkipSoAIteration()) {
 
-        const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
-        for (u32 slot = 0u; slot < scanCount; ++slot) {
 
+
+    FUSE_PHYSICS_INLINE bool canAcceptContacts(u32 additionalCount = 1u) const {
+
+
+
+
+
+
+
+
+
+        u32 lastValidSlot = UINT32_MAX;
+                lastValidSlot = slot;
+        if (lastValidSlot == UINT32_MAX) {
+
+        for (u32 slot = 0u; slot < lastValidSlot; ++slot) {
+
+
+    FUSE_PHYSICS_INLINE bool canSkipFrictionTangentBases(f32 epsilon = 1e-4f) const {
+
+        const u32 scanCount = activeCount > 0u ? activeCount : pairSlotCount;
+        bool sawValidSlot = false;
+            if (!slotIsValid(slot)) {
+                continue;
+            sawValidSlot = true;
+            const TangentBasis basis{tangent1[slot], tangent2[slot]};
+            if (!isOrthonormalTangentBasis(contactNormals[slot], basis, epsilon)) {
+        return sawValidSlot;
 
     void reserve(u32 capacity);
     void setMaxCapacity(u32 capacity);
@@ -530,6 +550,23 @@ struct ContactBufferSoA {
     void buildFrictionTangentBasesIfNeeded(f32 epsilon = 1e-4f);
     /// Apply warm-start stub only when preflight allows; returns false when skipped (B4.6 deepen pass).
     bool applyWarmStartStubWithPreflight(u32 slot, ContactManifold& manifold) const;
+    /// Guarded slot write — returns false when preflight rejects (B4.5 deepen follow-up pass).
+    bool tryWriteSlot(u32 slot, const ContactManifold& manifold);
+
+    /// Guarded compaction — returns prior active count when skipped (B4.5 deepen follow-up pass).
+    u32 tryCompact();
+
+    /// Guarded max-capacity clamp — returns prior active count when skipped (B4.5 deepen follow-up pass).
+    u32 tryApplyMaxCapacityClamp();
+
+    /// Guarded compact-and-clamp — returns prior active count when skipped (B4.5 deepen follow-up pass).
+    u32 tryCompactAndClamp();
+
+    /// Guarded export — returns empty when preflight rejects (B4.5 deepen follow-up pass).
+    std::vector<ContactManifold> tryToVector() const;
+
+    /// Guarded friction-basis rebuild — returns false when preflight rejects (B4.5 deepen follow-up pass).
+    bool tryBuildFrictionTangentBases(f32 epsilon = 1e-4f);
 
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
@@ -700,6 +737,9 @@ FUSE_PHYSICS_INLINE ContactBufferWriteSlotRejectReason contact_buffer_write_slot
 /// Diagnose why writeSlot would reject; vacuously succeeds when write may proceed (B4.5 deepen pass).
 
 
+    SelfContact,
+
+
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold);
@@ -859,6 +899,11 @@ FUSE_PHYSICS_INLINE bool should_run_contact_buffer_write_slot(
 /// Returns true when `contactBufferWriteSlotRejectReason` matches `expected` (B4.5 deepen follow-up pass).
 
 /// Read-only write-slot diagnostics — no mutation (B4.5 deepen follow-up pass).
+
+
+/// Returns true when `contactBufferWriteSlotRejectReason` matches `expected`.
+
+    bool selfContact = false;
 
 
 ContactBufferWriteSlotPreflight preflightContactBufferWriteSlot(
@@ -1312,6 +1357,26 @@ bool canSkipContactBufferClamp(const ContactBufferSoA& buffer);
 bool shouldRunContactBufferClamp(const ContactBufferSoA& buffer);
 
 /// Why contact-buffer compact-and-clamp would early-out (B4.5 deepen follow-up pass).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     None = 0,
     EmptyBuffer,
     NoWork,
@@ -1472,6 +1537,9 @@ ContactBufferCompactAndClampRejectReason contactBufferCompactAndClampRejectReaso
 bool contactBufferCompactAndClampRejectsForReason(
 
 /// Read-only compact-and-clamp diagnostics — no mutation (B4.5 deepen follow-up pass).
+
+
+
     bool emptyBuffer = false;
     bool noWork = false;
 
@@ -3110,6 +3178,19 @@ bool contactBufferToVectorRejectsForReason(
 
 
 
+
+
+/// Why contact-buffer toVector would early-out (B4.5 deepen follow-up pass).
+enum class ContactBufferToVectorRejectReason : u8 {
+};
+
+
+
+    const ContactBufferSoA& buffer,
+
+    bool emptyBuffer = false;
+
+
 ContactBufferToVectorPreflight preflightContactBufferToVector(const ContactBufferSoA& buffer);
 
 bool canSkipContactBufferToVector(const ContactBufferSoA& buffer);
@@ -3632,6 +3713,33 @@ enum class ContactBufferToVectorRejectReason : u8 {
 
 /// Non-mutating toVector predicate — mirrors `preflightContactBufferToVector` (B4.5 deepen follow-up pass).
 
+
+/// Why contact-buffer friction-tangent rebuild would early-out (B4.5 deepen follow-up pass).
+enum class ContactBufferFrictionTangentRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    AllValid,
+
+const char* contactBufferFrictionTangentRejectReasonName(ContactBufferFrictionTangentRejectReason reason);
+
+ContactBufferFrictionTangentRejectReason contactBufferFrictionTangentRejectReason(
+    f32 epsilon = 1e-4f);
+
+bool contactBufferFrictionTangentRejectsForReason(
+    ContactBufferFrictionTangentRejectReason expected,
+
+struct ContactBufferFrictionTangentPreflight {
+    ContactBufferFrictionTangentRejectReason reason = ContactBufferFrictionTangentRejectReason::None;
+    bool allValid = false;
+
+    bool needsRebuild() const { return reason == ContactBufferFrictionTangentRejectReason::None; }
+
+ContactBufferFrictionTangentPreflight preflightContactBufferFrictionTangentBases(
+
+bool canSkipContactBufferFrictionTangentBases(const ContactBufferSoA& buffer, f32 epsilon = 1e-4f);
+
+bool shouldRunContactBufferFrictionTangentBases(const ContactBufferSoA& buffer, f32 epsilon = 1e-4f);
+
     switch (reason) {
     case ContactBufferWriteSlotRejectReason::None:
         return "None";
@@ -3748,6 +3856,9 @@ inline bool shouldRunContactBufferWriteSlot(
 
 inline const char* contactBufferCompactionRejectReasonName(ContactBufferCompactionRejectReason reason) {
 
+    case ContactBufferWriteSlotRejectReason::SelfContact:
+        return "SelfContact";
+
     const ContactManifold& manifold) {
     if (slot >= buffer.pairSlotCount) {
         return ContactBufferWriteSlotRejectReason::OutOfRangeSlot;
@@ -3764,6 +3875,9 @@ inline const char* contactBufferCompactionRejectReasonName(ContactBufferCompacti
 inline bool contact_buffer_write_slot_rejects_for_reason(
 
 inline bool contactBufferWriteSlotRejectsForReason(
+        return ContactBufferWriteSlotRejectReason::SelfContact;
+
+FUSE_PHYSICS_INLINE bool contactBufferWriteSlotRejectsForReason(
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold,
@@ -3776,6 +3890,8 @@ inline ContactBufferWriteSlotPreflight preflight_contact_buffer_write_slot(
     return contactBufferWriteSlotRejectReason(buffer, slot, manifold) == expected;
 
 inline ContactBufferWriteSlotPreflight preflightContactBufferWriteSlot(
+
+FUSE_PHYSICS_INLINE ContactBufferWriteSlotPreflight preflightContactBufferWriteSlot(
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold) {
@@ -3815,6 +3931,13 @@ inline bool tryWriteContactBufferSlot(ContactBufferSoA& buffer, u32 slot, const 
     return true;
 
 inline const char* contactBufferCompactionRejectReasonName(ContactBufferCompactionRejectReason reason) {
+    preflight.selfContact = preflight.reason == ContactBufferWriteSlotRejectReason::SelfContact;
+
+FUSE_PHYSICS_INLINE bool canSkipContactBufferWriteSlot(
+
+FUSE_PHYSICS_INLINE bool shouldRunContactBufferWriteSlot(
+
+FUSE_PHYSICS_INLINE const char* contactBufferCompactionRejectReasonName(ContactBufferCompactionRejectReason reason) {
     switch (reason) {
     case ContactBufferCompactionRejectReason::None:
         return "None";
@@ -4888,5 +5011,79 @@ inline ContactBufferCompactionRejectReason contactBufferCompactionRejectReason(
 
 
 
+
+
+    if (validCount == 0u) {
+
+    if (buffer.canSkipCompaction() && buffer.activeCount == validCount) {
+
+
+
+FUSE_PHYSICS_INLINE ContactBufferCompactionPreflight preflightContactBufferCompaction(
+
+
+
+
+FUSE_PHYSICS_INLINE ContactBufferClampRejectReason contactBufferClampRejectReason(
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+FUSE_PHYSICS_INLINE const char* contactBufferFrictionTangentRejectReasonName(
+        return "AllValid";
+
+FUSE_PHYSICS_INLINE ContactBufferFrictionTangentRejectReason contactBufferFrictionTangentRejectReason(
+    if (buffer.canSkipFrictionTangentBases(epsilon)) {
+
+FUSE_PHYSICS_INLINE bool contactBufferFrictionTangentRejectsForReason(
+    return contactBufferFrictionTangentRejectReason(buffer, epsilon) == expected;
+
+FUSE_PHYSICS_INLINE ContactBufferFrictionTangentPreflight preflightContactBufferFrictionTangentBases(
+    preflight.reason = contactBufferFrictionTangentRejectReason(buffer, epsilon);
+
+FUSE_PHYSICS_INLINE bool canSkipContactBufferFrictionTangentBases(const ContactBufferSoA& buffer, f32 epsilon) {
+    return !preflightContactBufferFrictionTangentBases(buffer, epsilon).needsRebuild();
+
+FUSE_PHYSICS_INLINE bool shouldRunContactBufferFrictionTangentBases(const ContactBufferSoA& buffer, f32 epsilon) {
+    return preflightContactBufferFrictionTangentBases(buffer, epsilon).needsRebuild();
+
+FUSE_PHYSICS_INLINE bool ContactBufferSoA::tryWriteSlot(u32 slot, const ContactManifold& manifold) {
+    if (!preflightContactBufferWriteSlot(*this, slot, manifold).canWrite()) {
+        return false;
+    writeSlot(slot, manifold);
+    return true;
+
+FUSE_PHYSICS_INLINE u32 ContactBufferSoA::tryCompact() {
+    if (!shouldRunContactBufferCompaction(*this)) {
+        return activeCount;
+    return compact();
+
+FUSE_PHYSICS_INLINE u32 ContactBufferSoA::tryApplyMaxCapacityClamp() {
+    if (!shouldRunContactBufferClamp(*this)) {
+    return applyMaxCapacityClamp();
+
+FUSE_PHYSICS_INLINE u32 ContactBufferSoA::tryCompactAndClamp() {
+    if (!shouldRunContactBufferCompactAndClamp(*this)) {
+    return compactAndClamp();
+
+FUSE_PHYSICS_INLINE std::vector<ContactManifold> ContactBufferSoA::tryToVector() const {
+    if (!shouldRunContactBufferToVector(*this)) {
+    return toVector();
+
+FUSE_PHYSICS_INLINE bool ContactBufferSoA::tryBuildFrictionTangentBases(f32 epsilon) {
+    if (!shouldRunContactBufferFrictionTangentBases(*this, epsilon)) {
 
 } // namespace fuse::physics::narrowphase

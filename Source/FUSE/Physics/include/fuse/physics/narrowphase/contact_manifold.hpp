@@ -1705,6 +1705,20 @@ inline bool can_skip_invalidate_if_empty(const ContactManifold& manifold) {
     return manifold.empty() && !manifold.valid;
 
 /// Finalize via preflight; no-op when skipped (B4.5 deepen pass).
+/// Non-mutating prune skip predicate — mirrors `should_skip_manifold_prune` (B4.5 deepen follow-up pass).
+inline bool would_skip_manifold_prune(
+
+/// Non-mutating finalize skip predicate — mirrors `can_skip_manifold_finalize` (B4.5 deepen follow-up pass).
+inline bool would_skip_manifold_finalize(
+    return can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+
+/// Prune only when preflight allows; returns false when skipped (B4.5 deepen follow-up pass).
+inline bool try_prune_contact_manifold(
+    return prune_contact_manifold_with_preflight(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+
+/// Finalize only when preflight allows; returns false when skipped (B4.5 deepen follow-up pass).
+inline bool try_finalize_contact_manifold(
+    return finalize_contact_manifold_with_preflight(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
