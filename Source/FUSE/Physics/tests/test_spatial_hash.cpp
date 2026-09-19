@@ -1469,6 +1469,136 @@ void testRefineBroadphaseShouldRunGuards() {
                "canSkipRefineBroadphase false when shouldRunRefineBroadphase true");
 }
 
+void testPairBufferCompactAndClampPreflightGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    expectTrue(buffer.canSkipCompactAndClamp(), "empty buffer skips compactAndClamp");
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::pairBufferCompactAndClampRejectReason(buffer)),
+             static_cast<fuse::u32>(
+                 fuse::physics::broadphase::PairBufferCompactAndClampRejectReason::EmptyBuffer),
+             "empty buffer reports EmptyBuffer compact+clamp reject reason");
+    expectTrue(fuse::physics::broadphase::canSkipPairBufferCompactAndClamp(buffer),
+               "canSkipPairBufferCompactAndClamp on empty buffer");
+    expectTrue(!fuse::physics::broadphase::shouldRunPairBufferCompactAndClamp(buffer),
+               "shouldRunPairBufferCompactAndClamp false on empty buffer");
+
+    buffer.push(0u, 1u);
+    buffer.push(2u, 3u);
+    expectTrue(buffer.canSkipCompactAndClamp(), "dense valid buffer within capacity skips compactAndClamp");
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::pairBufferCompactAndClampRejectReason(buffer)),
+             static_cast<fuse::u32>(
+                 fuse::physics::broadphase::PairBufferCompactAndClampRejectReason::NoWorkNeeded),
+             "dense valid buffer reports NoWorkNeeded compact+clamp reject reason");
+    expectEq(buffer.compactAndClamp(), 2u, "compactAndClamp early-outs without changing dense valid buffer");
+
+    buffer.preparePairSlots(3u);
+    buffer.writeSlot(0u, 0u, 1u);
+    buffer.writeSlot(2u, 2u, 3u);
+    expectTrue(!buffer.canSkipCompactAndClamp(), "sparse slots need compactAndClamp work");
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferCompactAndClamp(buffer),
+               "shouldRunPairBufferCompactAndClamp true when invalid slots exist");
+    expectEq(buffer.compactAndClamp(), 2u, "compactAndClamp gathers sparse valid slots");
+}
+
+void testPairBufferSortAndDedupeShouldRunGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    expectTrue(fuse::physics::broadphase::canSkipPairBufferSort(buffer),
+               "canSkipPairBufferSort on empty buffer");
+    expectTrue(!fuse::physics::broadphase::shouldRunPairBufferSort(buffer),
+               "shouldRunPairBufferSort false on empty buffer");
+    expectTrue(!fuse::physics::broadphase::shouldRunPairBufferDedupe(buffer),
+               "shouldRunPairBufferDedupe false on empty buffer");
+
+    buffer.push(0u, 1u);
+    expectTrue(fuse::physics::broadphase::canSkipPairBufferSort(buffer),
+               "canSkipPairBufferSort on single pair");
+    expectTrue(!fuse::physics::broadphase::shouldRunPairBufferDedupe(buffer),
+               "shouldRunPairBufferDedupe false on single pair");
+
+    buffer.push(2u, 3u);
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferSort(buffer),
+               "shouldRunPairBufferSort true for multiple pairs");
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferDedupe(buffer),
+               "shouldRunPairBufferDedupe true for multiple pairs");
+    expectTrue(!fuse::physics::broadphase::canSkipPairBufferSort(buffer),
+               "canSkipPairBufferSort false for multiple pairs");
+}
+
+void testMergePairsIntoBufferPreflightGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    const std::vector<fuse::physics::broadphase::CandidatePair> emptyPairs;
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::mergePairsIntoBufferRejectReason(emptyPairs, buffer)),
+             static_cast<fuse::u32>(
+                 fuse::physics::broadphase::MergePairsIntoBufferRejectReason::EmptyPairs),
+             "empty pair list reports EmptyPairs merge reject reason");
+    expectTrue(fuse::physics::broadphase::canSkipMergePairsIntoBuffer(emptyPairs, buffer),
+               "canSkipMergePairsIntoBuffer on empty pair list");
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> pairs = {{0u, 1u}};
+    buffer.setMaxCapacity(1u);
+    buffer.push(2u, 3u);
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::mergePairsIntoBufferRejectReason(pairs, buffer)),
+             static_cast<fuse::u32>(
+                 fuse::physics::broadphase::MergePairsIntoBufferRejectReason::BufferAtCapacity),
+             "full buffer reports BufferAtCapacity merge reject reason");
+    expectTrue(std::strcmp(fuse::physics::broadphase::mergePairsIntoBufferRejectReasonName(
+                               fuse::physics::broadphase::MergePairsIntoBufferRejectReason::BufferAtCapacity),
+                           "BufferAtCapacity") == 0,
+               "BufferAtCapacity merge reject reason has stable label");
+
+    fuse::physics::broadphase::PairBufferSoA mergeBuffer;
+    const fuse::physics::broadphase::MergePairsIntoBufferPreflight preflight =
+        fuse::physics::broadphase::preflightMergePairsIntoBuffer(pairs, mergeBuffer);
+    expectTrue(preflight.canMerge(), "merge preflight accepts non-empty pair list into empty buffer");
+    expectTrue(fuse::physics::broadphase::shouldRunMergePairsIntoBuffer(pairs, mergeBuffer),
+               "shouldRunMergePairsIntoBuffer true for mergeable input");
+}
+
+void testRefinableBroadphasePairCountGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    fuse::physics::broadphase::PairBufferSoA buffer;
+
+    expectEq(fuse::physics::broadphase::countRefinableBroadphasePairs(bodies, shapes, buffer), 0u,
+             "empty scene has zero refinable pairs");
+    expectTrue(!fuse::physics::broadphase::hasRefinableBroadphasePair(bodies, shapes, buffer),
+               "hasRefinableBroadphasePair false on empty scene");
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({0.5f, 0.f, 0.f}, 1.f);
+    bodies.addBody({20.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 2, {1.f, 0.f, 0.f});
+    buffer.push(0u, 1u);
+    buffer.push(0u, 2u);
+
+    expectEq(fuse::physics::broadphase::countRefinableBroadphasePairs(bodies, shapes, buffer), 1u,
+             "countRefinableBroadphasePairs excludes separated pair");
+    expectTrue(fuse::physics::broadphase::hasRefinableBroadphasePair(bodies, shapes, buffer),
+               "hasRefinableBroadphasePair true when overlapping pair exists");
+}
+
+void testShouldRunBroadphaseGuard() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    expectTrue(!fuse::physics::broadphase::shouldRunBroadphase(bodies, shapes),
+               "shouldRunBroadphase false on empty scene");
+    expectTrue(fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
+               "canSkipBroadphase mirrors shouldRunBroadphase inverse");
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({1.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+    expectTrue(fuse::physics::broadphase::shouldRunBroadphase(bodies, shapes),
+               "shouldRunBroadphase true on populated scene");
+}
+
 void testBroadphaseMergeRejectReasonGuards() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
@@ -1573,6 +1703,11 @@ int main() {
     testCellOccupancyIterationSkipGuards();
     testRefineBroadphaseShouldRunGuards();
     testBroadphaseMergeRejectReasonGuards();
+    testPairBufferCompactAndClampPreflightGuards();
+    testPairBufferSortAndDedupeShouldRunGuards();
+    testMergePairsIntoBufferPreflightGuards();
+    testRefinableBroadphasePairCountGuards();
+    testShouldRunBroadphaseGuard();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");
