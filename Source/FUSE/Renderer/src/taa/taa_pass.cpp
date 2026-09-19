@@ -490,3 +490,8 @@ bool TaaPass::trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncReje
     if (!fuse::renderer::trySyncJitterToFrameIndexIfReady(m_jitter, frameIndex, outReason)) {
 bool TaaPass::tryPreflightHistoryReuseForResolve(const TaaResolveDesc& desc,
     return tryPreflightTaaHistoryReuseForResolve(desc, m_history, outReason);
+
+// --- deepen additive from deepen-taa-b59-guards-fd0d ---
+    return m_jitter.preflightSyncToFrameIndex(frameIndex, m_desc.width, m_desc.height, reason);
+bool TaaPass::preflightResolveHistoryReuse(const TaaResolveDesc& desc,
+    return preflightTaaResolveHistoryReuse(desc, m_history, reason);

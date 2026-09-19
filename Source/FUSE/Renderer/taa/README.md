@@ -103,3 +103,15 @@ Part of `fuse_rhi`. Built with `FUSE_BUILD_CORE=ON`. Tests run when `FUSE_BUILD_
 - `TaaPass::advanceJitterIfAligned(frame)` / `preflightJitterAlignment` — pass-level jitter alignment guards
 - `TaaResolveDescPreflight` / `preflightTaaResolveDesc` — combined resolve skip + blend-weight preflight
 - `TaaResolve::preflightDesc` / `TaaPass::preflightResolveDesc` / `TaaPass::preflightHistoryWarmup` — pass/resolve wrappers
+
+// --- deepen additive from deepen-taa-b59-guards-fd0d ---
+- `classifyTaaJitterSyncBlock(frame, w, h, length)` / `preflightTaaJitterSync(...)` — jitter sync preflight guards
+- `TaaJitter::preflightSyncToFrameIndex(frame, w, h)` — instance-level jitter sync preflight
+- `taaHistoryWarmupComplete(history)` / `preflightTaaHistoryWarmup(history)` — warm-up preflight guards
+- `preflightTaaHistoryReuse(history, observedGeneration)` — history temporal reuse preflight
+- `preflightTaaResolveHistoryReuse(desc, history)` — reuse preflight using resolve desc observed generation
+- `preflightTaaResolveBlendWeights(desc, history)` — blend-weight preflight guards
+- `preflightTaaResolveWithBlend(desc, history)` — combined resolve skip + blend-weight preflight
+- `TaaPass::historyWarmupComplete()` / `preflightHistoryWarmup()` — pass-level warm-up preflight guards
+- `TaaPass::preflightJitterSync(frame)` / `syncJitterToFrameIndexIfViewportReady(frame)` — pass-level jitter sync guards
+- `TaaPass::preflightResolveHistoryReuse(desc)` / `preflightResolveWithBlend(desc)` — pass-level resolve preflights

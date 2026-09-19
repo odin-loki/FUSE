@@ -3399,3 +3399,21 @@ void testResolveBlendApplyGuards() {
     expectTrue(!pass->tryPreflightHistoryReuseForResolve(resolveDesc, reuseReason),
     expectTrue(pass->tryPreflightHistoryReuseForResolve(resolveDesc, reuseReason),
     testJitterSyncRejectReasonGuards();
+
+// --- deepen additive from deepen-taa-b59-guards-fd0d ---
+    expectTrue(!fuse::renderer::preflightTaaHistoryWarmup(emptyHistory, &warmupReason),
+void testPreflightTaaResolveHistoryReuse() {
+    expectTrue(!fuse::renderer::preflightTaaResolveHistoryReuse(desc, emptyHistory, &reason),
+    expectTrue(!fuse::renderer::preflightTaaResolveHistoryReuse(desc, history, &reason),
+    expectTrue(fuse::renderer::preflightTaaResolveHistoryReuse(desc, history, &reason),
+    expectTrue(fuse::renderer::preflightTaaJitterSync(5u, 1920u, 1080u, 8u, &syncReason),
+    expectTrue(!fuse::renderer::preflightTaaJitterSync(0u, 0u, 1080u, 8u, &syncReason),
+    expectTrue(!fuse::renderer::preflightTaaJitterSync(0u, 1920u, 1080u, 0u, &syncReason),
+    expectTrue(jitter.preflightSyncToFrameIndex(4u, 128u, 128u, &syncReason),
+void testTaaPassWarmupAndSyncPreflightHelpers() {
+    expectTrue(!pass->preflightHistoryWarmup(&warmupReason), "pass warmup preflight fails before resolve");
+    expectTrue(pass->preflightJitterSync(2u, &syncReason), "pass jitter sync preflight passes");
+    expectTrue(!pass->preflightResolveHistoryReuse(resolveDesc, &reuseReason),
+    expectTrue(pass->preflightResolveHistoryReuse(resolveDesc, &reuseReason),
+    testPreflightTaaResolveHistoryReuse();
+    testTaaPassWarmupAndSyncPreflightHelpers();
