@@ -513,6 +513,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport();
 [[nodiscard]] inline bool isValidProfileName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
+bool isValidEventName(const char* name);
 bool tryValidateEventName(const char* name, EventNameRejectReason& outReason);
 const char* eventNameRejectReasonLabel(EventNameRejectReason reason);
 bool isProfilerStateBalanced();

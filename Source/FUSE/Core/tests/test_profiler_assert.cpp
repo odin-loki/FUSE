@@ -5078,6 +5078,7 @@ void testEventNameValidationPreflight() {
 
     expectTrue(fuse::profiler::isValidEventName("valid_name"), "non-empty name is valid");
 
+
     fuse::profiler::EventNameRejectReason reason = fuse::profiler::EventNameRejectReason::None;
     expectTrue(fuse::profiler::tryValidateEventName("scope", reason),
                "tryValidateEventName succeeds for valid name");
@@ -5098,6 +5099,10 @@ void testEventNameValidationPreflight() {
                "empty name reject reason label is empty");
 
 void testProfilerStatePreflight() {
+}
+
+    resetState();
+    fuse::platform::registerMainThread();
 
     fuse::profiler::NestingStateRejectReason reason = fuse::profiler::NestingStateRejectReason::None;
     expectTrue(fuse::profiler::isProfilerStateBalanced(), "reset leaves profiler state balanced");
@@ -5105,6 +5110,8 @@ void testProfilerStatePreflight() {
                "preflightProfilerState succeeds after reset");
     expectTrue(reason == fuse::profiler::NestingStateRejectReason::None, "balanced state reject reason is None");
 
+    {
+        FUSE_PROFILE_SCOPE("preflight_scope");
         expectTrue(!fuse::profiler::isProfilerStateBalanced(),
                    "active scope reports unbalanced profiler state");
         expectTrue(!fuse::profiler::preflightProfilerState(&reason),
@@ -5120,6 +5127,17 @@ void testProfilerStatePreflight() {
                "preflightProfilerState succeeds after flow pair");
 
 void testChromeTraceExportPreflight() {
+                   "active scope reject reason is UnbalancedScopeNesting");
+    }
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("preflight_flow", flowId);
+    expectTrue(!fuse::profiler::preflightProfilerState(&reason),
+    FUSE_PROFILE_ASYNC_FLOW_END("preflight_flow", flowId);
+    expectTrue(fuse::profiler::preflightProfilerState(&reason),
+
+    resetState();
+    fuse::platform::registerMainThread();
 
     fuse::profiler::ChromeTraceExportRejectReason reason =
         fuse::profiler::ChromeTraceExportRejectReason::None;
@@ -5129,6 +5147,7 @@ void testChromeTraceExportPreflight() {
     expectTrue(reason == fuse::profiler::ChromeTraceExportRejectReason::None,
                "empty export preflight reject reason is None");
 
+    {
         FUSE_PROFILE_SCOPE("export_scope");
         expectTrue(!fuse::profiler::canExportChromeTrace(),
                    "active scope blocks chrome export preflight");
@@ -5139,6 +5158,13 @@ void testChromeTraceExportPreflight() {
 
         FUSE_PROFILE_SCOPE("export_flow_scope");
                "unmatched flow blocks chrome export preflight");
+    }
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("export_flow", flowId);
+    expectTrue(!fuse::profiler::canExportChromeTrace(),
+    expectTrue(!fuse::profiler::preflightChromeTraceExport(&reason),
                "preflightChromeTraceExport rejects open async flow");
     expectTrue(reason == fuse::profiler::ChromeTraceExportRejectReason::UnbalancedFlowNesting,
                "export preflight reports unbalanced flow nesting");
@@ -5153,6 +5179,11 @@ void testChromeTraceExportPreflight() {
                "tryExportChromeTraceJson reports unbalanced flow nesting");
 
         FUSE_PROFILE_SCOPE("export_ok");
+    expectTrue(reason == fuse::profiler::ChromeTraceExportRejectReason::UnbalancedFlowNesting,
+
+    fuse::profiler::reset();
+    {
+    }
     expectTrue(fuse::profiler::tryExportChromeTraceJson(guardedJson, &reason),
                "tryExportChromeTraceJson succeeds on balanced state");
     expectTrue(!guardedJson.empty(), "tryExportChromeTraceJson returns non-empty json");
@@ -5161,6 +5192,15 @@ void testChromeTraceExportPreflight() {
                "successful guarded export reject reason is None");
 
 void testEventLookupPreflightStubs() {
+    expectTrue(reason == fuse::profiler::ChromeTraceExportRejectReason::None,
+
+    const std::string directJson = fuse::profiler::exportChromeTraceJson();
+    expectTrue(directJson.find("\"name\":\"export_ok\"") != std::string::npos,
+               "direct exportChromeTraceJson unchanged on valid path");
+}
+
+    resetState();
+    fuse::platform::registerMainThread();
 
     fuse::profiler::EventLookupRejectReason reason = fuse::profiler::EventLookupRejectReason::None;
     expectTrue(!fuse::profiler::canLookupEventAt(0u), "canLookupEventAt false on empty buffer");
@@ -5171,6 +5211,9 @@ void testEventLookupPreflightStubs() {
     expectTrue(std::string(fuse::profiler::eventLookupRejectReasonLabel(reason)) == "empty_buffer",
                "empty buffer lookup reject reason label matches");
 
+    {
+        FUSE_PROFILE_SCOPE("lookup_scope");
+    }
 
     expectTrue(fuse::profiler::canLookupEventAt(0u), "canLookupEventAt true for first event");
     expectTrue(fuse::profiler::canLookupEventAt(1u), "canLookupEventAt true for last event");
@@ -5197,10 +5240,7 @@ void testRingBufferCapacityGuard() {
     }
     expectTrue(fuse::profiler::isValidProfileEvent(fuse::profiler::eventAt(0)),
 
-               "isValidProfileEvent accepts recorded scope event");
-}
 
-void testRingBufferCapacityGuard() {
     resetState();
 
     expectTrue(fuse::profiler::ringBufferCapacity() == 4096u,
@@ -5239,12 +5279,26 @@ void testEventNameValidPreflight() {
 
 void testOpenAsyncFlowCrossThreadPreflight() {
 
+void testTryLastEventGuard() {
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::ProfileEvent outEvent{};
+    expectTrue(!fuse::profiler::tryLastEvent(outEvent), "tryLastEvent false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryLastEvent clears output on empty buffer");
+
+
+    expectTrue(fuse::profiler::tryLastEvent(outEvent), "tryLastEvent true after recording");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastEvent copies end phase");
+               "tryLastEvent copies scope name");
+
+
     const fuse::u32 flowId = 88u;
     FUSE_PROFILE_ASYNC_FLOW_BEGIN("cross_thread_preflight", flowId);
 
     std::atomic<bool> workerDone{false};
     fuse::profiler::NestingStateRejectReason nestingReason = fuse::profiler::NestingStateRejectReason::None;
     fuse::profiler::ChromeTraceExportRejectReason exportReason =
+        fuse::profiler::ChromeTraceExportRejectReason::None;
     std::thread worker([&]() {
         expectTrue(fuse::profiler::flowNestingDepth() == 0u,
                    "worker thread starts with zero local flow depth");
@@ -5267,6 +5321,11 @@ void testOpenAsyncFlowCrossThreadPreflight() {
                "main thread flow depth remains until same-thread cleanup or reset");
 
 void testUnbalancedFlowNestingExportPreflight() {
+    fuse::profiler::reset();
+}
+
+    resetState();
+    fuse::platform::registerMainThread();
 
     const fuse::u32 outerFlowId = fuse::profiler::nextFlowId();
     const fuse::u32 innerFlowId = fuse::profiler::nextFlowId();
@@ -5277,6 +5336,11 @@ void testUnbalancedFlowNestingExportPreflight() {
                "preflightProfilerState rejects unmatched outer flow");
     expectTrue(nestingReason == fuse::profiler::NestingStateRejectReason::UnbalancedFlowNesting,
                "unmatched outer flow nesting reject reason is UnbalancedFlowNesting");
+    fuse::profiler::NestingStateRejectReason nestingReason = fuse::profiler::NestingStateRejectReason::None;
+    fuse::profiler::ChromeTraceExportRejectReason exportReason =
+        fuse::profiler::ChromeTraceExportRejectReason::None;
+    expectTrue(!fuse::profiler::preflightProfilerState(&nestingReason),
+    expectTrue(!fuse::profiler::preflightChromeTraceExport(&exportReason),
                "preflightChromeTraceExport rejects unmatched outer flow");
     expectTrue(exportReason == fuse::profiler::ChromeTraceExportRejectReason::UnbalancedFlowNesting,
                "unmatched outer flow export reject reason is UnbalancedFlowNesting");
@@ -5307,13 +5371,8 @@ void testTryLastEventGuard() {
     expectTrue(fuse::profiler::isValidProfileEvent(outEvent), "tryLastEvent output is valid");
 
 void testChromeTraceExportPreflightEmpty() {
-    }
 
-    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastEvent returns last end event");
-               "tryLastEvent copies last event name");
 
-    resetState();
-    fuse::platform::registerMainThread();
 
     const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
     expectTrue(preflight.emptyBuffer, "preflight reports empty buffer after reset");
@@ -5334,16 +5393,9 @@ void testChromeTraceExportPreflightUnbalancedScopeNesting() {
     const std::string json = fuse::profiler::exportChromeTraceJson();
     expectTrue(json.find("\"traceEvents\":[]") != std::string::npos,
                "preflight empty buffer still exports valid chrome JSON");
-}
 
-    resetState();
-    fuse::platform::registerMainThread();
 
-void testChromeTraceExportPreflightUnbalancedScopeNesting() {
 
-    fuse::profiler::ProfileScope* leakedScope =
-        new fuse::profiler::ProfileScope("leaked_scope");
-    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
 
     expectTrue(!preflight.emptyBuffer, "active scope leaves events in buffer");
     expectTrue(!preflight.isTraceComplete(), "active scope makes trace incomplete");
@@ -5359,16 +5411,12 @@ void testChromeTraceExportPreflightUnbalancedScopeNesting() {
 void testChromeTraceExportPreflightOpenAsyncFlows() {
 
 
-}
 
 
-    resetState();
-    fuse::platform::registerMainThread();
 
     const fuse::u32 flowId = fuse::profiler::nextFlowId();
     FUSE_PROFILE_ASYNC_FLOW_BEGIN("open_flow", flowId);
 
-    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
     expectTrue(preflight.hasOpenAsyncFlows, "preflight reports open async flow");
     expectTrue(!preflight.isTraceComplete(), "open async flow makes trace incomplete");
     expectTrue(preflight.canExport(), "open async flow can still export");
@@ -5383,20 +5431,10 @@ void testChromeTraceExportPreflightUnbalancedFlowNesting() {
         FUSE_PROFILE_SCOPE("flow_scope");
         FUSE_PROFILE_ASYNC_FLOW_BEGIN("nested_flow", flowId);
 
-    const fuse::profiler::ChromeTraceExportPreflight afterEnd = fuse::profiler::preflightChromeTraceExport();
-}
 
 
-    resetState();
-    fuse::platform::registerMainThread();
 
-    const fuse::u32 flowId = fuse::profiler::nextFlowId();
-    {
-        FUSE_PROFILE_SCOPE("flow_scope");
-        FUSE_PROFILE_ASYNC_FLOW_BEGIN("nested_flow", flowId);
-    }
 
-    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
     expectTrue(!preflight.isTraceComplete(), "unmatched flow begin makes trace incomplete");
     expectTrue(preflight.hasOpenAsyncFlows, "unmatched flow begin leaves open async flows");
     expectTrue(preflight.unbalancedFlowNesting, "unmatched flow begin leaves unbalanced flow nesting");
@@ -5415,46 +5453,27 @@ void testChromeTraceExportPreflightUnbalancedFlowNesting() {
 void testChromeTraceExportPreflightAfterValidCapture() {
 
     fuse::profiler::reset();
-}
 
 void testChromeTraceExportPreflightDisabledProfiler() {
-    resetState();
-    fuse::platform::registerMainThread();
 
-    {
-        FUSE_PROFILE_SCOPE("enabled_scope");
-    }
     fuse::profiler::setEnabled(false);
 
-    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
     expectTrue(preflight.profilerDisabled, "preflight reports disabled profiler");
 
 
-    const fuse::u32 flowId = fuse::profiler::nextFlowId();
-    expectTrue(preflight.canExport(), "disabled profiler can still export buffered events");
-    expectTrue(fuse::profiler::exportChromeTraceJson().find("\"name\":\"enabled_scope\"") != std::string::npos,
-               "disabled profiler export keeps prior events");
-}
 
-void testChromeTraceExportPreflightAfterValidCapture() {
-    resetState();
-    fuse::platform::registerMainThread();
 
-    {
         FUSE_PROFILE_SCOPE("capture_outer");
         FUSE_PROFILE_ASYNC_FLOW_BEGIN("capture_flow", flowId);
         FUSE_PROFILE_COUNTER("capture_counter", 9);
         FUSE_PROFILE_ASYNC_FLOW_END("capture_flow", flowId);
 
-    }
 
-    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
     expectTrue(preflight.isTraceComplete(), "balanced capture is trace-complete");
     expectTrue(!preflight.emptyBuffer, "balanced capture is not empty");
     expectTrue(!preflight.bufferTruncated, "small capture does not truncate ring buffer");
     expectTrue(fuse::profiler::canExportChromeTrace(), "balanced capture passes canExportChromeTrace");
 
-    const std::string json = fuse::profiler::exportChromeTraceJson();
     expectTrue(json.find("\"name\":\"capture_outer\"") != std::string::npos,
                "trace-complete export keeps scope events");
     expectTrue(json.find("\"name\":\"capture_flow\"") != std::string::npos,
