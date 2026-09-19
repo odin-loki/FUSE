@@ -49,6 +49,24 @@ bool shouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGene
     return !preflightTaaHistoryReuse(history, observedGeneration);
 }
 
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason& reason) {
+    if (!history.isReady()) {
+        reason = TaaHistoryReuseBlockReason::NotReady;
+        return false;
+    }
+    if (!history.hasValidHistory()) {
+        reason = TaaHistoryReuseBlockReason::NotWarm;
+        return false;
+    }
+    reason = TaaHistoryReuseBlockReason::None;
+    return true;
+}
+
+bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history) {
+    TaaHistoryReuseBlockReason reason = TaaHistoryReuseBlockReason::None;
+    return !tryPreflightTaaHistoryWarmup(history, reason);
+}
+
 bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observedGeneration) {
     return preflightTaaHistoryReuse(history, observedGeneration);
 }
