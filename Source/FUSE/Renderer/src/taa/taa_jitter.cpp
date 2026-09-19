@@ -46,6 +46,40 @@ bool TaaJitterLayout::jitterSlotMatchesFrameIndex(u32 frameIndex, u32 slot, u32 
     return frameIndexInSequence(frameIndex, sequenceLength) == slot;
 }
 
+u32 TaaJitterLayout::expectedSlotForFrameIndex(u32 frameIndex, u32 sequenceLength) {
+    return frameIndexInSequence(frameIndex, sequenceLength);
+}
+
+const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason) {
+    switch (reason) {
+    case TaaJitterSyncBlockReason::None:
+        return "none";
+    case TaaJitterSyncBlockReason::InvalidSequence:
+        return "invalid_sequence";
+    case TaaJitterSyncBlockReason::Misaligned:
+        return "misaligned";
+    }
+    return "unknown";
+}
+
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(const TaaJitter& jitter, u32 frameIndex) {
+    if (!jitter.canSyncToFrameIndex(frameIndex)) {
+        return TaaJitterSyncBlockReason::InvalidSequence;
+    }
+    if (!jitter.isAlignedToFrameIndex(frameIndex)) {
+        return TaaJitterSyncBlockReason::Misaligned;
+    }
+    return TaaJitterSyncBlockReason::None;
+}
+
+bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, TaaJitterSyncBlockReason* reason) {
+    const TaaJitterSyncBlockReason block = classifyTaaJitterSyncBlock(jitter, frameIndex);
+    if (reason != nullptr) {
+        *reason = block;
+    }
+    return block == TaaJitterSyncBlockReason::None;
+}
+
 u32 TaaJitterLayout::sequencePeriod(u32 sequenceLength) {
     return validateSequenceLength(sequenceLength) ? sequenceLength : 0u;
 }
@@ -131,6 +165,10 @@ bool TaaJitter::canSyncToFrameIndex(u32 frameIndex) const {
 bool TaaJitter::isAlignedToFrameIndex(u32 frameIndex) const {
     return m_monotonicFrame == frameIndex &&
            TaaJitterLayout::jitterSlotMatchesFrameIndex(frameIndex, m_index, m_sequenceLength);
+}
+
+bool TaaJitter::needsResyncToFrameIndex(u32 frameIndex) const {
+    return !isAlignedToFrameIndex(frameIndex);
 }
 
 bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
