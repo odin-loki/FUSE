@@ -193,6 +193,10 @@ bool taaResolveAppliesHistoryBlend(const TaaResolveDesc& desc, const TaaHistoryB
     return weights.history > 1e-5f;
 }
 
+bool taaResolveBlendRejectReasonIsBlocking(TaaResolveBlendRejectReason reason) {
+    return reason != TaaResolveBlendRejectReason::None;
+}
+
 const char* taaHistoryReuseBlockReasonLabel(TaaHistoryReuseBlockReason reason) {
     switch (reason) {
     case TaaHistoryReuseBlockReason::None:
