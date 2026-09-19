@@ -210,6 +210,14 @@ bool can_use_hrtf_ir_for_convolution(const HrtfIrStub& ir);
 
 /// Diagnose empty/malformed IR before convolution path selection.
 
+/// Read-only empty-IR diagnostics (B7.2 deepen).
+    bool hasValidIr = false;
+
+    bool canUseConvolution() const { return hasValidIr; }
+    bool shouldSkipConvolution() const { return !hasValidIr; }
+
+/// Populate empty-IR preflight without mutating the stub.
+
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
     Bypass,
@@ -494,6 +502,22 @@ struct HrtfPanPathPreflight {
 
 /// Build pan-path preflight when no IR is wired (ILD/ITD stub or bypass).
 [[nodiscard]] HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+/// Read-only pan-path diagnostics (B7.2 deepen).
+    bool hrtfDisabled = false;
+    bool coLocated = false;
+    bool bypassed = false;
+    bool spatial = false;
+    bool usesConvolution = false;
+    bool usesIldItdStub = false;
+
+    bool canApplySpatialPan() const { return spatial; }
+    bool shouldSkipSpatialPan() const { return bypassed; }
+
+/// Populate pan-path preflight without computing binaural gains.
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+
+/// Populate pan-path preflight when no IR is wired (ILD/ITD stub or bypass).
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
 
 /// True when listener and source share the same listener-local position.
 bool is_co_located_hrtf_source(const Vec3& rel_listener);
@@ -852,6 +876,15 @@ struct HrtfAttenuationCouplingPreflight {
     bool should_skip() const { return skipped; }
 
 /// Preflight distance + occlusion coupling before spatial image narrowing.
+/// Read-only attenuation-coupling diagnostics (B7.2 deepen).
+    HrtfPanPath path = HrtfPanPath::Bypass;
+    float distanceAttenuation = 1.f;
+    float occlusionGain = 1.f;
+
+    bool canApplyCoupling() const { return !skipped; }
+    bool shouldSkipCoupling() const { return skipped; }
+
+/// Populate attenuation-coupling preflight without mutating pan gains.
 HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
     HrtfPanPath path, float distance_attenuation, float occlusion_gain,
     const HrtfAttenuationCoupling& coupling = {},
