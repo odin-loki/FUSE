@@ -92,6 +92,12 @@ bool should_skip_narrowphase_slot_dispatch(
 
 bool should_run_narrowphase_into_buffer(
     return !can_skip_narrowphase_into_buffer(pairs, bodies, shapes);
+NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
+    NarrowphaseDispatchPreflight preflight{};
+    preflight.batch = preflight_narrowphase_batch(pairs, bodies, shapes);
+
+bool should_skip_narrowphase_dispatch(
+    return preflight_narrowphase_dispatch(pairs, bodies, shapes).can_skip();
 }
 
 void runNarrowphaseIntoBuffer(
@@ -122,6 +128,9 @@ void runNarrowphaseIntoBuffer(
     if (!should_run_narrowphase_batch(pairs, bodies, shapes)) {
 
 
+    if (pairCount == 0u) {
+        return;
+    }
 
     // Per-pair slots are job-safe (disjoint writes). Serial dispatch on the CPU stub avoids
     // scheduler reference-capture flakes seen when stacking parallel broadphase + narrowphase

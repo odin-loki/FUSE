@@ -266,16 +266,24 @@ NarrowphaseBufferFinalizePreflight preflight_narrowphase_buffer_finalize(const C
 bool can_skip_narrowphase_buffer_finalize(const ContactBufferSoA& buffer);
 
     bool can_run() const { return !emptyPairs && dispatchableCount > 0u; }
-};
 
 
 
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Returns true when extended deepen preflight rejects this slot (B4.6 deepen pass).
 bool should_skip_narrowphase_slot_dispatch(
-    const broadphase::CandidatePair& pair,
+/// Read-only narrowphase dispatch diagnostics — no mutation (B4.5 deepen follow-up pass).
+struct NarrowphaseDispatchPreflight {
+    NarrowphaseBatchPreflight batch{};
+
+    bool can_dispatch() const { return !emptyPairs && batch.can_dispatch(); }
+    bool can_skip() const { return emptyPairs || batch.can_skip(); }
+
+/// Populate dispatch preflight without running shape dispatch (B4.5 deepen follow-up pass).
+NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
+
+/// Returns true when narrowphase dispatch should early-out before pair iteration (B4.5 deepen follow-up pass).
+bool should_skip_narrowphase_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
