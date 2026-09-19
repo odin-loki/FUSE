@@ -229,10 +229,42 @@ void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon)
     manifold.buildFrictionBasis();
 }
 
+const char* friction_basis_rebuild_reject_reason_name(FrictionBasisRebuildRejectReason reason) {
+    switch (reason) {
+    case FrictionBasisRebuildRejectReason::None:
+        return "None";
+    case FrictionBasisRebuildRejectReason::Skipped:
+        return "Skipped";
+    case FrictionBasisRebuildRejectReason::CanReuse:
+        return "CanReuse";
+    }
+    return "Unknown";
+}
+
+FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return FrictionBasisRebuildRejectReason::Skipped;
+    }
+    if (can_skip_friction_basis_rebuild(manifold, epsilon)) {
+        return FrictionBasisRebuildRejectReason::CanReuse;
+    }
+    return FrictionBasisRebuildRejectReason::None;
+}
+
+bool friction_basis_rebuild_rejects_for_reason(
+    const ContactManifold& manifold,
+    FrictionBasisRebuildRejectReason expected,
+    f32 epsilon) {
+    return friction_basis_rebuild_reject_reason(manifold, epsilon) == expected;
+}
+
 FrictionBasisPreflight preflight_friction_basis_rebuild(
     const ContactManifold& manifold,
     f32 epsilon) {
     FrictionBasisPreflight preflight{};
+    preflight.reason = friction_basis_rebuild_reject_reason(manifold, epsilon);
     if (should_skip_friction_tangents(manifold)) {
         preflight.skipped = true;
         return preflight;
@@ -249,6 +281,18 @@ bool should_skip_friction_basis_preflight(
     const ContactManifold& manifold,
     f32 epsilon) {
     return preflight_friction_basis_rebuild(manifold, epsilon).can_skip_rebuild();
+}
+
+bool should_run_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    return friction_basis_rebuild_reject_reason(manifold, epsilon) == FrictionBasisRebuildRejectReason::None;
+}
+
+bool can_dispatch_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    return should_run_friction_basis_rebuild(manifold, epsilon);
 }
 
 } // namespace fuse::physics::narrowphase
