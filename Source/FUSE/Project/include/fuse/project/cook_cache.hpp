@@ -36,6 +36,8 @@ struct CookCachePruneEstimate {
     u32 stale_entries = 0;
 
     [[nodiscard]] u32 total() const { return invalid_entries + stale_entries; }
+    /// True when prune reconcile can be skipped — no invalid or stale records (B7.9 deepen).
+    [[nodiscard]] bool should_skip() const { return total() == 0; }
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
@@ -92,6 +94,16 @@ public:
 
     /// Read-only invalidation probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] bool would_invalidate(u64 content_hash) const;
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                               u64 current_content_hash) const;
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                      const std::vector<CookJobDependencyEdge>& edges,
+                                                      const std::vector<CookJob>& jobs) const;
+    [[nodiscard]] bool would_invalidate_all() const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
