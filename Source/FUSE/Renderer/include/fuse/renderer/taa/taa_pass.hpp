@@ -324,6 +324,8 @@ public:
     /// Pass history resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
     /// Pass resolve blend preflight with mandatory reject-reason output (B5.9 deepen).
     /// Compute pass resolve blend weights with reject-reason diagnostics (B5.9 deepen).
+    /// Classify why resolve would skip for the pass history state (B5.9 deepen).
+    /// Classify why pass NDC jitter would be rejected (B5.9 deepen).
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// Early-out when resolve preflight would bail (B5.9 deepen).
@@ -388,6 +390,8 @@ public:
     /// Sync jitter only when preflight passes; returns false when blocked (B5.9 deepen).
     bool trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason);
     /// Pass jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSync(u32 frameIndex) const;
     /// Sync jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
@@ -468,6 +472,9 @@ public:
     /// Advance jitter only when preflight passes; returns false when blocked (B5.9 deepen).
     /// Pass NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
     /// Pass jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
+    bool preflightJitterAdvance(TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
