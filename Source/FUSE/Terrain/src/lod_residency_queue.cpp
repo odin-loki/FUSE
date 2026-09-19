@@ -308,10 +308,7 @@ void LodResidencyQueue::clear() {
 }
 
 bool LodResidencyQueue::would_exceed_budget_() const {
-    if (m_max_pending_submits == 0u) {
-        return false;
-    }
-    return m_inFlight + static_cast<u32>(m_completed.size()) >= m_max_pending_submits;
+    return would_exceed_pending_submits(m_inFlight, static_cast<u32>(m_completed.size()), m_max_pending_submits);
 }
 
 void LodResidencyQueue::push_completed_(CompletedLodResidencyRequest completed) {

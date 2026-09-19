@@ -354,4 +354,13 @@ template <typename ScoreFn>
     return rank_budget_unload_priority(streaming_priority, stored_priority, focus_distance, budget_score);
 }
 
+/// Combined unload rank for budget-driven eviction (B7.5 deepen).
+[[nodiscard]] inline f32 eviction_unload_priority(f32 load_priority, f32 stored_priority, f32 focus_distance,
+                                                   f32 unload_priority, u32 last_touch_tick, u32 current_tick,
+                                                   LodEvictionPolicy policy) {
+    const f32 budget_score = budget_eviction_score(focus_distance, unload_priority, last_touch_tick, current_tick,
+                                                    policy);
+    return rank_budget_unload_priority(load_priority, stored_priority, focus_distance, budget_score);
+}
+
 } // namespace fuse::terrain

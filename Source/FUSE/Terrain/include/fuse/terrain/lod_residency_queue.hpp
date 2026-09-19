@@ -140,6 +140,8 @@ private:
 [[nodiscard]] inline bool can_submit_residency_request(const LodResidencyQueue& queue) {
     return can_submit_async_load_guarded(queue.in_flight_count(), queue.pending_submit_count(),
                                          queue.max_pending_submits());
+/// Async-submit guard: true when pending/in-flight counts are below `max_pending_submits`.
+    return can_submit_residency_request(queue.in_flight_count(), queue.completed_count(),
 }
 
 /// Dequeue helper: removes highest-priority pending request when non-empty.
