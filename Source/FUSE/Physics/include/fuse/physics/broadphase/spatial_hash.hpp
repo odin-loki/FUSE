@@ -221,6 +221,13 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
     return !canSkipBroadphase(bodies, shapes);
 }
 
+/// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,
@@ -1986,6 +1993,24 @@ enum class CellRangeSpanClampRejectReason : u8 {
     None = 0,
     EmptyRange,
     UnlimitedSpan,
+/// True when any axis span exceeds `maxSpanPerAxis` (0 = unlimited stub).
+    return static_cast<u32>(span.x) > maxSpanPerAxis || static_cast<u32>(span.y) > maxSpanPerAxis ||
+           static_cast<u32>(span.z) > maxSpanPerAxis;
+
+    return static_cast<u32>(span.x) > maxSpanPerAxis || static_cast<u32>(span.y) > maxSpanPerAxis;
+
+/// True when `maxSpanPerAxis == 0` (unlimited span budget stub).
+FUSE_PHYSICS_INLINE bool isUnboundedCellSpanPerAxis(u32 maxSpanPerAxis) {
+    return maxSpanPerAxis == 0u;
+
+/// True when per-axis span fits within `maxSpanPerAxis` (0 = unlimited budget).
+FUSE_PHYSICS_INLINE bool cellSpanWithinBudget(const CellRange3& range, u32 maxSpanPerAxis) {
+    return !exceedsCellSpanPerAxis(range, maxSpanPerAxis);
+
+FUSE_PHYSICS_INLINE bool cellSpanWithinBudget(const CellRange2& range, u32 maxSpanPerAxis) {
+
+/// Why cell-span clamp preflight rejected or flagged the range (B4.2 deepen pass).
+    ExceedsSpanPerAxis,
 };
 
 /// Human-readable label for cell-span clamp reject reasons (logging / tests).
@@ -2016,6 +2041,23 @@ struct CellSpanClampPreflight {
     bool unlimitedSpan = false;
 
     bool needsClamp() const { return reason == CellSpanClampRejectReason::None; }
+/// Diagnose why cell-span clamp would skip or flag; vacuously succeeds on valid ranges.
+FUSE_PHYSICS_INLINE CellSpanClampRejectReason cellSpanClampRejectReason(const CellRange3& range, u32 maxSpanPerAxis) {
+    }
+    if (exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
+        return CellSpanClampRejectReason::ExceedsSpanPerAxis;
+
+FUSE_PHYSICS_INLINE CellSpanClampRejectReason cellSpanClampRejectReason(const CellRange2& range, u32 maxSpanPerAxis) {
+
+
+
+/// Cell-span clamp preflight for shape occupancy iteration (B4.2 deepen pass).
+    bool exceedsSpanPerAxis = false;
+    ivec3 spanPerAxis{};
+
+    bool canClamp() const { return reason != CellSpanClampRejectReason::EmptyRange; }
+    bool needsClamp() const { return reason == CellSpanClampRejectReason::ExceedsSpanPerAxis; }
+};
 
 FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
     CellSpanClampPreflight preflight{};
@@ -2082,6 +2124,24 @@ FUSE_PHYSICS_INLINE bool shouldRunCellRangeSpanClamp(const CellRange3& range, u3
     return preflightCellRangeSpanClamp(range, maxSpanPerAxis).needsClamp();
 
 FUSE_PHYSICS_INLINE bool shouldRunCellRangeSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    preflight.exceedsSpanPerAxis = preflight.reason == CellSpanClampRejectReason::ExceedsSpanPerAxis;
+    preflight.spanPerAxis = cellSpanPerAxis(range);
+
+FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp2D(const CellRange2& range, u32 maxSpanPerAxis) {
+    CellSpanClampPreflight preflight{};
+    preflight.reason = cellSpanClampRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellSpanClampRejectReason::EmptyRange;
+    const ivec2 span = cellSpanPerAxis(range);
+    preflight.spanPerAxis = {span.x, span.y, 0};
+
+/// Non-mutating cell-span clamp skip predicate — true when clamp is a no-op (B4.2 deepen pass).
+    return isUnboundedCellSpanPerAxis(maxSpanPerAxis) || isEmptyCellRange(range) ||
+           cellSpanWithinBudget(range, maxSpanPerAxis);
+
+
+/// Non-mutating cell-span clamp predicate — inverse of `canSkipCellSpanClamp` (B4.2 deepen pass).
+    return !canSkipCellSpanClamp(range, maxSpanPerAxis);
+
 
 /// Limit per-axis cell span from the range center (CUDA occupancy iteration guard stub).
 FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerAxis) {

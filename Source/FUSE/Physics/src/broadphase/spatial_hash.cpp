@@ -560,6 +560,18 @@ const char* cellSpanRejectReasonName(CellSpanRejectReason reason) {
     return "Unknown";
 }
 
+const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason) {
+    switch (reason) {
+    case CellSpanClampRejectReason::None:
+        return "None";
+    case CellSpanClampRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellSpanClampRejectReason::ExceedsSpanPerAxis:
+        return "ExceedsSpanPerAxis";
+    }
+    return "Unknown";
+}
+
 const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     switch (reason) {
     case CellOccupancyRejectReason::None:
