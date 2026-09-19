@@ -1340,3 +1340,11 @@ void testHrtfAttenuationCouplingPreflightGuards() {
     const fuse::audio::HrtfSpatialPanPreflight bypassed =
     const fuse::audio::HrtfSpatialPanPreflight stub_narrow =
     const fuse::audio::HrtfSpatialPanPreflight convolution_unity =
+
+// --- deepen additive from hrtf-preflight-guards-3b23 ---
+    const fuse::audio::HrtfIrPreflight null_length_preflight =
+    const fuse::audio::HrtfIrPreflight zero_length_preflight =
+    expectTrue(bypass_preflight.should_skip_coupling(), "bypass should_skip_coupling");
+    expectTrue(unity_preflight.should_skip_coupling(), "unity skips coupling application");
+    expectTrue(!narrow_preflight.should_skip_coupling(), "non-unity spatial path applies coupling");
+    const fuse::audio::HrtfAttenuationCouplingPreflight unity_clamped_preflight =

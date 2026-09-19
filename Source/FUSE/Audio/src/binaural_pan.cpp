@@ -875,3 +875,6 @@ HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(HrtfPanPath
 
 // --- deepen additive from hrtf-preflight-guards-3b8d ---
     HrtfSpatialPanPreflight result;
+
+// --- deepen additive from hrtf-preflight-guards-3b23 ---
+HrtfIrPreflight preflight_hrtf_ir(const float* samples, u32 length) {
