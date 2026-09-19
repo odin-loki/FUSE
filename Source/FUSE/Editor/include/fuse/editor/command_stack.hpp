@@ -68,8 +68,10 @@ public:
     u32 baselineRedoDepth() const { return m_baselineRedoDepth; }
     [[nodiscard]] bool isBaselineConfigured() const { return m_baselineConfigured; }
     [[nodiscard]] bool isAtBaseline() const;
-    /// True when undo/redo depth differs from the last `set_baseline_state` call.
-    [[nodiscard]] bool hasUnsavedChanges() const { return !isAtBaseline(); }
+    /// True when undo/redo depth or post-baseline coalesce differs from the last save point.
+    [[nodiscard]] bool hasUnsavedChanges() const {
+        return !isAtBaseline() || coalescedCountSinceBaseline() > 0u;
+    }
 
     /// True when undo/redo depth or post-baseline coalesce differs from the last save point.
     [[nodiscard]] bool hasUnsavedChanges() const {
