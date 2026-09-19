@@ -528,6 +528,34 @@ bool finalize_contact_manifold_with_preflight(
     return generate_contact_manifold(manifold);
 }
 
+bool is_finalized_contact_manifold(const ContactManifold& manifold, f32 frictionEpsilon) {
+    if (!manifold.valid || manifold.empty()) {
+        return false;
+    }
+    if (!manifold.hasValidNormal(frictionEpsilon)) {
+        return false;
+    }
+    if (manifold.needsNormalNormalization(frictionEpsilon)) {
+        return false;
+    }
+    if (!manifold.hasPenetratingPoints()) {
+        return false;
+    }
+    return manifold.hasFrictionBasis();
+}
+
+bool finalize_contact_manifold_if_not_finalized(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    if (is_finalized_contact_manifold(manifold, frictionEpsilon)) {
+        return true;
+    }
+    return finalize_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {
