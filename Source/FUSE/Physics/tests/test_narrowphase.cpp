@@ -3321,3 +3321,8 @@ void testFinalizeContactManifoldIfNeededDeepenGuard() {
     expectTrue(validPreflight.can_dispatch(), "dispatch preflight can dispatch valid pair");
         !fuse::physics::narrowphase::should_skip_narrowphase_dispatch(validPairs, bodies, shapes),
         "should_skip_narrowphase_dispatch false for dispatchable pair");
+
+// --- deepen additive from deepen-b4-narrowphase-guards-aa41 ---
+            buffer, 5u, valid, fuse::physics::narrowphase::ContactBufferWriteRejectReason::OutOfRangeSlot),
+    expectTrue(compactionPreflight.needsCompaction(), "compaction preflight needs work for sparse slots");
+void testContactPairUndispatchedShapeGuards() {
