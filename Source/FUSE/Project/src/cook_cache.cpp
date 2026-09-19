@@ -910,3 +910,14 @@ const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason) {
 
 // --- deepen additive from deepen-b79-cooker-hash-guards-6ecd ---
 bool CookCache::should_skip_prune_all() const {
+
+// --- deepen additive from deepen-b79-cooker-hash-209c ---
+const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason) {
+    case CookCacheRejectReason::None:
+    case CookCacheRejectReason::ZeroContentHash:
+    case CookCacheRejectReason::EmptySourcePath:
+    case CookCacheRejectReason::EmptyOutputPath:
+        preflight.reason = CookCacheRejectReason::ZeroContentHash;
+        preflight.reason = CookCacheRejectReason::EmptySourcePath;
+        preflight.reason = CookCacheRejectReason::EmptyOutputPath;
+    preflight.reason = CookCacheRejectReason::None;

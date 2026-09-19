@@ -1474,3 +1474,17 @@ void testCookHashPreflightDependencyGuards() {
     expectTrue(!cooker.cache().would_invalidate_source(""), "empty source guarded in would_invalidate_source");
     expectTrue(!cooker.cache().would_invalidate_output(""), "empty output guarded in would_invalidate_output");
     testCookHashPreflightDependencyGuards();
+
+// --- deepen additive from deepen-b79-cooker-hash-209c ---
+    const fuse::project::CookCacheEntryPreflight zero_hash =
+    expectTrue(zero_hash.reason == fuse::project::CookCacheRejectReason::ZeroContentHash,
+                   fuse::project::CookCacheRejectReason::EmptySourcePath,
+                   fuse::project::CookCacheRejectReason::EmptyOutputPath,
+    expectTrue(std::string(fuse::project::cookCacheRejectReasonLabel(
+                   fuse::project::CookCacheRejectReason::EmptySourcePath)) == "empty_source_path",
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_would.obj"), "would_invalidate_source guarded");
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_would.fusemesh"), "would_invalidate_output guarded");
+               "would_invalidate_stale_content guarded");
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_would.obj", 1u}}),
+               "would_invalidate_stale_upstream guarded");
+               "would_invalidate_downstream guarded");

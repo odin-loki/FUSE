@@ -259,3 +259,8 @@ const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason);
 
 // --- deepen additive from deepen-b79-cooker-hash-guards-6ecd ---
     [[nodiscard]] bool should_skip_prune_all() const;
+
+// --- deepen additive from deepen-b79-cooker-hash-209c ---
+enum class CookCacheRejectReason : u8 {
+    CookCacheRejectReason reason = CookCacheRejectReason::None;
+const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason);
