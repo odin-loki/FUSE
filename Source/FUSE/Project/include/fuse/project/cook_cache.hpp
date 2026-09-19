@@ -433,6 +433,16 @@ struct CookCacheInvalidationEstimate {
 
 /// Structural store preflight — mirrors `is_valid_cook_cache_entry` with reject reasons (B7.9 deepen).
 /// Read-only cache-entry hash preflight — paths, key, and on-disk source readability (B7.9 deepen).
+enum class CookCacheEntryRejectReason : u8 {
+    None,
+    ZeroContentHash,
+    EmptySourcePath,
+    EmptyOutputPath,
+
+    CookCacheEntryRejectReason reason = CookCacheEntryRejectReason::None;
+
+
+const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason);
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -565,6 +575,12 @@ public:
     [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
     /// True when `invalidate_downstream_of` would remove entries — guarded on empty output path (B7.9 deepen).
     /// Deduplicated source paths from `probe_stale_upstream_sources` (B7.9 deepen).
+    /// Deduplicated stale upstream source paths — mirrors invalidate without duplicate pushes (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_upstream_sources_unique(
+    /// Entries counted in both upstream-hash drift and on-disk stale prune buckets (B7.9 deepen).
+    [[nodiscard]] u32 count_reconcile_overlap_entries(
+    /// True when any entry for `source_path` has a stale on-disk content key (B7.9 deepen).
+    [[nodiscard]] bool probe_stale_content_for_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;

@@ -35,6 +35,8 @@ enum class CookHashRejectReason : u8 {
     InvalidCacheKey,
     UnresolvedDependencyOutput,
     UnsupportedAssetKind,
+    UnknownDependency,
+    UnsupportedKind,
 };
 
 struct CookCacheEntry;
@@ -432,5 +434,7 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] inline bool shouldSkipCookCacheEntry(const CookCacheEntry& entry) {
     return !preflight_cook_cache_entry(entry).ok();
 /// Structural + source readability preflight for cache records — mirrors `store` guards (B7.9 deepen).
+/// Shader manifest entries are not hashable in the stub cook path (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_shader_manifest_hash(const CookManifestEntry& entry);
 
 } // namespace fuse::project

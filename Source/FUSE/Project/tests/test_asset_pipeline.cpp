@@ -3501,6 +3501,7 @@ void testCookerUpstreamEstimateAndWouldProbes() {
 void testCookerWouldAndUpstreamEstimateProbes() {
 void testCookerUpstreamEstimateAndWouldGuards() {
 void testCookerWouldReconcileAndUpstreamEstimateProbes() {
+void testCookerReconcileWouldAndProbeGuards() {
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
@@ -3786,10 +3787,8 @@ void testCookCacheDownstreamWouldInvalidateProbe() {
                "downstream count matches dependent entry");
 
 
-    const fuse::project::CookUpstreamInvalidationEstimate upstream =
     expectTrue(upstream.direct_entries == 1u, "upstream estimate direct entries for changed source");
     expectTrue(upstream.downstream_entries >= 1u, "upstream estimate includes downstream entries");
-    expectTrue(upstream.total() == cooker.count_upstream_invalidation(manifest, source_a),
 
 
 
@@ -4036,15 +4035,23 @@ void testCookerStaleDependencyReconcileEstimate() {
                "would_reconcile_invalidation true after upstream content change");
     expectTrue(cooker.estimate_reconcile_invalidation(manifest).total() > 0u,
                "reconcile estimate non-zero after upstream content change");
-    const std::vector<std::string> probed = cooker.probe_upstream_invalidation_sources(manifest, source_a);
-    expectTrue(probed[0] == source_a, "upstream probe starts at changed source");
 
-    writeTempFile(source_a, "# would chain a revised\n");
-    expectTrue(cooker.would_stale_dependency_invalidation(manifest),
-    expectTrue(cooker.would_reconcile_invalidation(manifest), "would_reconcile true after upstream change");
 
-    const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, source_a);
                "would_reconcile mirrors reconcile estimate total");
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would reconcile guards ok");
+               "would_upstream true when cache holds upstream entries");
+    expectTrue(cooker.count_upstream_invalidation(manifest, source_a) >= 2u,
+               "upstream count includes downstream chain on fresh cache");
+    expectTrue(cooker.probe_reconcile_sources(manifest).empty(), "fresh reconcile source probe empty");
+
+               "would_stale_dependency true after upstream source change");
+
+    expectTrue(estimate.stale_dependency_entries >= 1u, "stale dependency entries in reconcile estimate");
+    expectTrue(estimate.unique_total() <= estimate.total(), "unique total never exceeds raw total");
+
+    const std::vector<std::string> reconcile_sources = cooker.probe_reconcile_sources(manifest);
+    expectTrue(!reconcile_sources.empty(), "reconcile source probe non-empty after upstream change");
+               "would_upstream true for changed upstream source");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -4327,6 +4334,7 @@ int main() {
     testCookerReconcileWouldProbes();
     testCookerWouldAndUpstreamEstimateProbes();
     testCookerUpstreamEstimateAndWouldGuards();
+    testCookerReconcileWouldAndProbeGuards();
     testCookCacheDownstreamSourceProbe();
     testCookCachePreflightAndReconcileEstimators();
     testCookCacheReconcileEstimators();

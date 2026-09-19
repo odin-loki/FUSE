@@ -26,6 +26,8 @@ struct CookCacheReconcileEstimate {
     u32 prune_invalid_entries = 0;
     u32 prune_stale_entries = 0;
     u32 upstream_invalidation_entries = 0;
+    /// Entries counted in more than one bucket above (B7.9 deepen).
+    u32 overlapping_entries = 0;
 
     [[nodiscard]] u32 total() const {
         return stale_dependency_entries + prune_invalid_entries + prune_stale_entries +
@@ -135,22 +137,15 @@ struct CookStaleDependencyEstimate {
 
 
     [[nodiscard]] bool would_reconcile() const { return total() != 0; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookCacheUpstreamInvalidationEstimate {
-    u32 direct_source_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookUpstreamInvalidationEstimate {
-    u32 source_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return source_entries + downstream_entries; }
+
+    [[nodiscard]] u32 unique_total() const {
+        const u32 sum = total();
+        return sum > overlapping_entries ? sum - overlapping_entries : 0;
+    }
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -406,6 +401,11 @@ public:
     /// Upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` guards (B7.9 deepen).
     /// Stale dependency-hash reconcile breakdown — mirrors `invalidate_stale_dependency_hashes` (B7.9 deepen).
     /// Read-only upstream invalidation probe — guarded on empty `changed_source` (B7.9 deepen).
+    /// True when `estimate_reconcile_invalidation(manifest).unique_total()` is non-zero (B7.9 deepen).
+    /// Deduplicated source paths needing reconcile action — dependency stale + prune stale (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_reconcile_sources(const CookManifest& manifest) const;
+    /// Read-only upstream invalidation predicate — guarded on empty `changed_source` (B7.9 deepen).
+    /// Read-only stale dependency-hash reconcile predicate (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
