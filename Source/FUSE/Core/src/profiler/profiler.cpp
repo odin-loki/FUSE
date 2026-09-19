@@ -31,6 +31,7 @@ std::atomic<u32> g_maxFlowNestingDepth{0};
 std::atomic<u32> g_openAsyncFlowCount{0};
 std::atomic<u32> g_orphanAsyncFlowEndCount{0};
 std::atomic<u32> g_rejectedInvalidNameCount{0};
+std::atomic<u32> g_droppedEventCount{0};
 
 std::mutex g_exportMutex;
 
@@ -213,6 +214,13 @@ void recordEvent(const char* name,
         return;
     }
 
+    const u32 count = g_eventCount.load(std::memory_order_acquire);
+    if (count >= kRingCapacity) {
+        g_droppedEventCount.fetch_add(1u, std::memory_order_acq_rel);
+    } else {
+        g_eventCount.fetch_add(1u, std::memory_order_acq_rel);
+    }
+
     const u32 index = g_writeHead.fetch_add(1u, std::memory_order_acq_rel) % kRingCapacity;
     g_events[index] = ProfileEvent{
         name,
@@ -238,7 +246,6 @@ void recordEvent(const char* name,
         g_droppedEventCount.fetch_add(1u, std::memory_order_acq_rel);
     }
 
-    g_totalEventsWritten.fetch_add(1u, std::memory_order_acq_rel);
 }
 
 const char* chromePhaseToken(EventPhase phase) {
@@ -992,6 +999,9 @@ bool isBlankEventName(const char* name) {
             break;
         default:
             return false;
+bool isInvalidEventIndex(u32 index) {
+    return index == kInvalidEventIndex;
+
 bool isValidEventName(const char* name) {
 
         if (*cursor != ' ' && *cursor != '\t' && *cursor != '\n' && *cursor != '\r') {
@@ -1539,6 +1549,10 @@ const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason) {
     return "unknown";
 const char* eventNameAt(u32 index) {
 
+    if (!isEventExportable(index)) {
+        return nullptr;
+    return eventAt(index).name;
+
 bool tryEventAt(u32 index, ProfileEvent& outEvent) {
 bool tryRecordedEventAt(u32 index, ProfileEvent& outEvent) {
     if (!isEventIndexValid(index)) {
@@ -1899,6 +1913,32 @@ bool tryFirstEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
         outEvent = ProfileEvent{};
         return false;
     }
+bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex) {
+        outIndex = kInvalidEventIndex;
+
+    outIndex = index;
+    return true;
+
+bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex) {
+    const u32 index = findLastEventIndexByPhase(phase);
+
+
+bool tryFindFirstEventIndexByName(const char* name, u32& outIndex) {
+    const u32 index = findFirstEventIndexByName(name);
+
+
+bool tryFindLastEventIndexByName(const char* name, u32& outIndex) {
+    const u32 index = findLastEventIndexByName(name);
+
+
+bool tryLastExportableEvent(ProfileEvent& outEvent) {
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        if (tryExportableEventAt(i - 1u, outEvent)) {
+
+
+u32 firstEventIndex() {
+    return hasEvents() ? 0u : kInvalidEventIndex;
 
     return tryExportableEventAt(index, outEvent);
 
@@ -2003,28 +2043,31 @@ u32 findFirstEventIndexOfPhase(EventPhase phase) {
         if (eventAt(i).phase == phase) {
             return i;
         }
-    }
     return kInvalidEventIndex;
-}
 
 u32 firstExportableEventIndex() {
-    const u32 total = eventCount();
-    for (u32 i = 0u; i < total; ++i) {
         if (isEventExportable(i)) {
-            return i;
-        }
-    }
-    return kInvalidEventIndex;
-}
 
 u32 lastExportableEventIndex() {
-    const u32 total = eventCount();
     if (total == 0u) {
-        return kInvalidEventIndex;
-    }
 
     for (u32 i = total; i > 0u; --i) {
         if (isEventExportable(i - 1u)) {
+bool isScopePairBalancedInBuffer() {
+    return countEventsByPhase(EventPhase::Begin) == countEventsByPhase(EventPhase::End);
+
+bool isFlowPairBalancedInBuffer() {
+    return countEventsByPhase(EventPhase::FlowStart) == countEventsByPhase(EventPhase::FlowFinish);
+
+u32 findFirstEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+
+        const ProfileEvent& event = eventAt(i);
+        if (isValidEventName(event.name) && std::strcmp(event.name, name) == 0) {
+
+u32 findLastEventIndexByName(const char* name) {
+
+        const ProfileEvent& event = eventAt(i - 1u);
             return i - 1u;
         }
     }
@@ -2032,6 +2075,23 @@ u32 lastExportableEventIndex() {
 }
 
 u32 lastEventIndexByPhase(EventPhase phase) {
+u32 countEventsByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isValidEventName(event.name) && std::strcmp(event.name, name) == 0) {
+            ++count;
+    return count;
+
+u32 droppedEventCount() {
+    return g_droppedEventCount.load(std::memory_order_acquire);
+
+u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
         const u32 index = i - 1u;
@@ -2295,6 +2355,13 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.hasDroppedEvents = hasDroppedEvents();
     preflight.hasRingWrapped = hasRingWrapped();
     preflight.rejectReason = chromeTraceExportRejectReason();
+    preflight.scopeBeginCount = countEventsByPhase(EventPhase::Begin);
+    preflight.scopeEndCount = countEventsByPhase(EventPhase::End);
+    preflight.flowStartCount = countEventsByPhase(EventPhase::FlowStart);
+    preflight.flowFinishCount = countEventsByPhase(EventPhase::FlowFinish);
+    preflight.scopePairImbalancedInBuffer = !isScopePairBalancedInBuffer();
+    preflight.flowPairImbalancedInBuffer = !isFlowPairBalancedInBuffer();
+    preflight.hasDroppedEvents = preflight.droppedEventCount > 0u;
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
