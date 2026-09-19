@@ -12,12 +12,44 @@ bool desktopGlfwPresentEnabled() {
 #endif
 }
 
+bool desktopQtPresentEnabled() {
+#if defined(FUSE_ENABLE_QT_PRESENT)
+    return true;
+#else
+    return false;
+#endif
+}
+
 bool desktopGlfwPresentRuntimeReady() {
 #if defined(FUSE_ENABLE_GLFW_PRESENT) && defined(FUSE_PLATFORM_WINDOW_GLFW)
     return fuse::platform::windowWsiAvailable();
 #else
     return false;
 #endif
+}
+
+bool desktopQtPresentRuntimeReady() {
+#if defined(FUSE_ENABLE_QT_PRESENT)
+    return fuse::platform::displayServerAvailable();
+#else
+    return false;
+#endif
+}
+
+bool desktopPresentRuntimeReady() {
+    return desktopGlfwPresentRuntimeReady() || desktopQtPresentRuntimeReady();
+}
+
+bool realPresentEligible(const VulkanSwapchain* swapchain, u32 imageIndex,
+                         const FrameManager* frameManager) {
+    if (swapchain == nullptr || isSwapchainEmpty(*swapchain) || isEmptyAcquireResult(imageIndex) ||
+        frameManager == nullptr || !frameManager->isReady()) {
+        return false;
+    }
+    if (!desktopPresentRuntimeReady() || !isSwapchainPresentable(*swapchain)) {
+        return false;
+    }
+    return true;
 }
 
 bool isSwapchainPresentable(const VulkanSwapchain& swapchain) {

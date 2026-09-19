@@ -31,21 +31,26 @@ inline bool shouldSkipAcquireForEmptySwapchain(const VulkanSwapchain* swapchain)
 /// Compile-time gate: desktop GLFW `vkQueuePresentKHR` path (OFF in headless CI by default).
 bool desktopGlfwPresentEnabled();
 
+/// Compile-time gate: desktop Qt `vkQueuePresentKHR` path (OFF in headless CI by default).
+bool desktopQtPresentEnabled();
+
 /// Runtime: display + GLFW WSI available and desktop present gate is ON.
 bool desktopGlfwPresentRuntimeReady();
+
+/// Runtime: display available and Qt present gate is ON (editor QVulkan surface path).
+bool desktopQtPresentRuntimeReady();
+
+/// Runtime: either GLFW or Qt desktop present path is eligible.
+bool desktopPresentRuntimeReady();
+
+/// True when a real `vkQueuePresentKHR` call may proceed for the current swapchain acquire.
+bool realPresentEligible(const VulkanSwapchain* swapchain, u32 imageIndex, const FrameManager* frameManager);
 
 /// True when present should succeed without calling vkQueuePresentKHR.
 inline bool shouldEarlyOutEmptyPresent(const VulkanSwapchain* swapchain,
                                        u32 imageIndex,
                                        const FrameManager* frameManager) {
-    if (swapchain == nullptr || isSwapchainEmpty(*swapchain) || isEmptyAcquireResult(imageIndex) ||
-        frameManager == nullptr || !frameManager->isReady()) {
-        return true;
-    }
-    if (desktopGlfwPresentRuntimeReady() && isSwapchainPresentable(*swapchain)) {
-        return false;
-    }
-    return true;
+    return !realPresentEligible(swapchain, imageIndex, frameManager);
 }
 
 /// Returns true when a resize request matches already-queued pending dimensions.

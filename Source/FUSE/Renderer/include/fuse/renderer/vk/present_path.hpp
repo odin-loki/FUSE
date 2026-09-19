@@ -51,6 +51,8 @@ struct PresentPathStatus {
     u32 presentSkippedNoWsiCount = 0;
     u32 realPresentCallCount = 0;
     bool desktopPresentEnabled = false;
+    bool qtPresentEnabled = false;
+    bool desktopPresentRuntimeReady = false;
     u32 fenceWaitSkippedCount = 0;
     u32 lastPendingFenceCount = 0;
     bool lastQueueSubmitOk = false;

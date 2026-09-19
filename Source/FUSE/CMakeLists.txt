@@ -1,5 +1,7 @@
 # FUSE product source umbrella — L0 fuse_core and future layers.
 
+include(${CMAKE_SOURCE_DIR}/cmake/FuseVulkanMobile.cmake)
+
 set(FUSE_CUDA_BACKEND FALSE)
 if(FUSE_BUILD_CUDA)
     find_package(CUDAToolkit QUIET)

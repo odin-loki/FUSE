@@ -2,6 +2,7 @@
 
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/editor_scene.hpp>
+#include <fuse/editor/viewport_present_gate.hpp>
 #include <fuse/editor/viewport_swapchain_recreate.hpp>
 #include <fuse/editor/viewport_swapchain_wiring.hpp>
 #include <fuse/editor/viewport_vulkan_surface.hpp>
@@ -179,6 +180,12 @@ void RuntimeViewportHook::applyPendingResize_() {
                         if (present.presented) {
                             ++m_embedSession.swapchainPresentAfterRecreateCount;
                         }
+                        if (present.qtPresentGateEnabled && viewportQtPresentEligible(m_surfaceHandoff)) {
+                            ++m_embedSession.qtPresentEligibleTicks;
+                        }
+                        if (present.realPresentCallCount > m_embedSession.realPresentCallCount) {
+                            m_embedSession.realPresentCallCount = present.realPresentCallCount;
+                        }
                         if (present.presentSkippedNoWsiCount > m_embedSession.presentSkippedNoWsiCount) {
                             m_embedSession.presentSkippedNoWsiCount = present.presentSkippedNoWsiCount;
                         }
@@ -342,7 +349,7 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
             m_embedSession.wsiPresentPathReady = true;
             m_embedSession.headlessGpuReady = true;
 #if defined(FUSE_HAS_VULKAN_RHI)
-            if (m_surfaceHandoff.consumed && !m_surfaceHandoff.qtStubSurface) {
+            if (shouldDisableSoftwarePlaceholderForEmbed(m_surfaceHandoff, gpu->externalSwapchainWired)) {
                 syncHybridBootstrapFromConsumedHandoff(*gpu->hybrid, m_surfaceHandoff);
                 gpu->hybrid->composer().setSoftwarePlaceholderEnabled(false);
             }
@@ -372,8 +379,15 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
                     ++gpu->submittedFrames;
                     m_embedSession.submittedFrames = gpu->submittedFrames;
 #if defined(FUSE_HAS_VULKAN_RHI)
-                    if (m_surfaceHandoff.consumed && !m_surfaceHandoff.qtStubSurface) {
+                    if (shouldDisableSoftwarePlaceholderForEmbed(m_surfaceHandoff,
+                                                                 gpu->externalSwapchainWired)) {
                         gpu->hybrid->composer().setSoftwarePlaceholderEnabled(false);
+                    }
+                    if (viewportQtPresentEligible(m_surfaceHandoff)) {
+                        ++m_embedSession.qtPresentEligibleTicks;
+                    }
+                    if (presentPath->status().realPresentCallCount > m_embedSession.realPresentCallCount) {
+                        m_embedSession.realPresentCallCount = presentPath->status().realPresentCallCount;
                     }
 #endif
                 }
@@ -457,6 +471,9 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
 #if defined(FUSE_HAS_VULKAN_RHI)
             if (gpu->hybrid != nullptr && m_surfaceHandoff.consumed) {
                 syncHybridBootstrapFromConsumedHandoff(*gpu->hybrid, m_surfaceHandoff);
+                if (shouldDisableSoftwarePlaceholderForEmbed(m_surfaceHandoff, wiring.swapchainReady)) {
+                    gpu->hybrid->composer().setSoftwarePlaceholderEnabled(false);
+                }
             }
 #endif
         } else {

@@ -26,6 +26,8 @@ void expectTrue(bool condition, const char* message) {
 void testDesktopPresentGateDefaultOff() {
     expectTrue(!fuse::renderer::desktopGlfwPresentEnabled(),
                "desktop GLFW present gate OFF by default for headless CI");
+    expectTrue(!fuse::renderer::desktopQtPresentEnabled(),
+               "desktop Qt present gate OFF by default for headless CI");
 #if defined(FUSE_ENABLE_GLFW_PRESENT) && defined(FUSE_PLATFORM_WINDOW_GLFW)
     if (fuse::platform::windowWsiAvailable()) {
         expectTrue(fuse::renderer::desktopGlfwPresentRuntimeReady(),
@@ -36,7 +38,21 @@ void testDesktopPresentGateDefaultOff() {
     }
 #else
     expectTrue(!fuse::renderer::desktopGlfwPresentRuntimeReady(),
-               "desktop present runtime unavailable without gate");
+               "desktop GLFW present runtime unavailable without gate");
+#endif
+#if defined(FUSE_ENABLE_QT_PRESENT)
+    if (fuse::platform::displayServerAvailable()) {
+        expectTrue(fuse::renderer::desktopQtPresentRuntimeReady(),
+                   "display+Qt present runtime ready when gate enabled");
+        expectTrue(fuse::renderer::desktopPresentRuntimeReady(),
+                   "unified desktop present runtime ready when Qt gate enabled");
+    } else {
+        expectTrue(!fuse::renderer::desktopQtPresentRuntimeReady(),
+                   "no display keeps Qt present runtime unavailable");
+    }
+#else
+    expectTrue(!fuse::renderer::desktopQtPresentRuntimeReady(),
+               "desktop Qt present runtime unavailable without gate");
 #endif
 }
 
@@ -137,6 +153,7 @@ void testPresentPathThroughHybridBootstrap() {
                "headless CI uses honest no-WSI present sink");
     expectTrue(!presentPath->status().desktopPresentEnabled,
                "desktop GLFW present gate OFF by default");
+    expectTrue(!presentPath->status().qtPresentEnabled, "desktop Qt present gate OFF by default");
 
     runtime->shutdown();
 }

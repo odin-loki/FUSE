@@ -23,6 +23,9 @@ const char* windowWsiBackendName();
 /// True when a real desktop WSI backend is compiled in and initialized successfully.
 bool windowWsiAvailable();
 
+/// True when a display server is available (DISPLAY/WAYLAND on Linux; always true elsewhere).
+bool displayServerAvailable();
+
 /// Instance extensions required before `vkCreateInstance` (empty for Null WSI).
 void requiredVulkanInstanceExtensions(std::vector<const char*>& out);
 

@@ -189,6 +189,11 @@ if(FUSE_ENABLE_GLFW_PRESENT)
     endif()
 endif()
 
+if(FUSE_ENABLE_QT_PRESENT)
+    target_compile_definitions(fuse_rhi PUBLIC FUSE_ENABLE_QT_PRESENT=1)
+    message(STATUS "FUSE: fuse_rhi desktop Qt present path enabled")
+endif()
+
 option(FUSE_SHADER_GLSLANG "Enable runtime glslang shader compilation in fuse_rhi (optional; CI uses offline .spv fixtures)" OFF)
 if(FUSE_SHADER_GLSLANG)
     find_package(glslang QUIET)

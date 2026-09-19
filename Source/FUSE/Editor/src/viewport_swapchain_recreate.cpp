@@ -106,10 +106,14 @@ ViewportSwapchainPresentResult presentViewportSwapchainFrame(
 
     presentPath.acquireImage();
     presentPath.markReadyToPresent();
+    const u32 realPresentCallsBefore = presentPath.status().realPresentCallCount;
     result.presented = presentPath.presentImage();
     const fuse::renderer::PresentPathStatus& status = presentPath.status();
     result.headlessHonest = status.headless;
+    result.qtPresentGateEnabled = status.qtPresentEnabled;
+    result.realPresentEligible = status.realPresentCallCount > realPresentCallsBefore;
     result.presentSkippedNoWsiCount = status.presentSkippedNoWsiCount;
+    result.realPresentCallCount = status.realPresentCallCount;
     result.note = result.presented
                       ? (status.headless ? "headless viewport present sink consumed"
                                          : "viewport swapchain present consumed")

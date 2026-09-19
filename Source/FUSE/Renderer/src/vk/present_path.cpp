@@ -10,6 +10,8 @@ PresentPath::PresentPath(VulkanBootstrap& bootstrap, PresentPathDesc desc)
     : m_bootstrap(bootstrap), m_desc(desc) {
     m_status.vsyncMode = desc.vsyncMode;
     m_status.desktopPresentEnabled = desktopGlfwPresentEnabled();
+    m_status.qtPresentEnabled = desktopQtPresentEnabled();
+    m_status.desktopPresentRuntimeReady = desktopPresentRuntimeReady();
     refreshDimensions();
 }
 
@@ -190,10 +192,8 @@ bool PresentPath::presentImage() {
     FrameManager* frameManager = m_bootstrap.frameManager();
     VulkanSwapchain* swapchain = m_bootstrap.swapchain();
 
-    const bool realPresentEligible =
-        desktopGlfwPresentRuntimeReady() && swapchain != nullptr && isSwapchainPresentable(*swapchain) &&
-        !isEmptyAcquireResult(m_status.acquiredImageIndex) && frameManager != nullptr &&
-        frameManager->isReady();
+    const bool realPresentEligibleNow =
+        realPresentEligible(swapchain, m_status.acquiredImageIndex, frameManager);
 
     bool presented = false;
     if (shouldEarlyOutEmptyPresent(swapchain, m_status.acquiredImageIndex, frameManager)) {
@@ -202,7 +202,7 @@ bool PresentPath::presentImage() {
     } else {
         const FrameSyncData& slot = frameManager->current();
         presented = swapchain->present(slot.renderFinished, m_status.acquiredImageIndex);
-        if (presented && realPresentEligible) {
+        if (presented && realPresentEligibleNow) {
             ++m_status.realPresentCallCount;
         }
     }
@@ -214,7 +214,7 @@ bool PresentPath::presentImage() {
     }
 
     ++m_status.presentedFrames;
-    const bool headlessSink = !realPresentEligible;
+    const bool headlessSink = !realPresentEligibleNow;
     m_status.acquiredImageIndex = UINT32_MAX;
     m_status.fenceWaited = false;
     m_status.acquireAttempted = false;

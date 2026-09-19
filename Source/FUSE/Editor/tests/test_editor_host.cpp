@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/viewport_present_gate.hpp>
 #include <fuse/editor/viewport_vulkan_surface.hpp>
 #include <fuse/editor/ai_tree_profile_picker.hpp>
 #include <fuse/editor/cinematics_seq_import.hpp>
@@ -8,6 +9,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <fuse/renderer/vk/swapchain.hpp>
+#include <fuse/renderer/vk/swapchain_util.hpp>
 #endif
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
@@ -580,6 +582,27 @@ void testRuntimeViewportSwapchainRecreateAfterHandoff() {
 #endif
 }
 
+void testViewportQtPresentGateHeadlessSafe() {
+    expectTrue(!fuse::renderer::desktopQtPresentEnabled(),
+               "Qt present gate OFF by default for headless CI");
+
+    fuse::editor::EditorHost host;
+    host.runtimeViewport().setExternalSurfaceHandle(reinterpret_cast<void*>(0x4000u), 800, 600,
+                                                    "qt_vulkan_instance", false, true);
+    host.gameTick();
+
+    const fuse::editor::ViewportSwapchainHandoff& handoff = host.runtimeViewport().swapchainHandoff();
+    expectTrue(handoff.qtRealSurface, "real Qt surface flagged on handoff");
+    expectTrue(!fuse::editor::viewportQtPresentEligible(handoff),
+               "Qt present ineligible without FUSE_ENABLE_QT_PRESENT on headless CI");
+#if defined(FUSE_VULKAN_BACKEND)
+    if (host.runtimeViewport().embedSession().headlessGpuReady) {
+        expectTrue(host.runtimeViewport().embedSession().consumedSwapchainPresentTicks >= 1u,
+                   "consumed handoff present cycle on real Qt surface handoff");
+    }
+#endif
+}
+
 void testRuntimeViewportHookTicksWithProject() {
     fuse::editor::EditorHost host;
 
@@ -751,6 +774,7 @@ int main() {
     testViewportVulkanSurfaceBootstrapStub();
     testViewportVulkanBootstrapTeardownStress();
     testRuntimeViewportSwapchainRecreateAfterHandoff();
+    testViewportQtPresentGateHeadlessSafe();
     testRuntimeViewportHookTicksWithProject();
     testAiTreeProfilePickerPostsCommand();
     testAiAgentEntityBindingPostsCommand();

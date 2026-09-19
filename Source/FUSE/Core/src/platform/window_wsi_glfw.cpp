@@ -66,6 +66,14 @@ bool windowWsiAvailable() {
 #endif
 }
 
+bool displayServerAvailable() {
+#if defined(FUSE_PLATFORM_WINDOW_GLFW)
+    return std::getenv("DISPLAY") != nullptr || std::getenv("WAYLAND_DISPLAY") != nullptr;
+#else
+    return true;
+#endif
+}
+
 void requiredVulkanInstanceExtensions(std::vector<const char*>& out) {
     out.clear();
 #if defined(FUSE_PLATFORM_WINDOW_GLFW)

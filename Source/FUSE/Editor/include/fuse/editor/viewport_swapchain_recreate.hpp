@@ -28,7 +28,10 @@ struct ViewportSwapchainPresentResult {
     bool attempted = false;
     bool presented = false;
     bool headlessHonest = false;
+    bool qtPresentGateEnabled = false;
+    bool realPresentEligible = false;
     u32 presentSkippedNoWsiCount = 0;
+    u32 realPresentCallCount = 0;
     const char* note = nullptr;
 };
 
