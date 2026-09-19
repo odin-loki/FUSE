@@ -1053,6 +1053,8 @@ void testPreflightExposesConflictGuard() {
     expectTrue(conflictPreflight.should_skip(), "conflicting filter skips iteration");
 
     fuse::ecs::Archetype typed = makeArchetypeWithComponents({
+        std::type_index(typeid(fuse::ecs::Transform)),
+    });
     typed.append_entity(fuse::ecs::EntityID{0, 1});
     const std::vector<fuse::ecs::Archetype> table = {typed};
 
@@ -1063,6 +1065,7 @@ void testPreflightExposesConflictGuard() {
     expectTrue(tableConflict.should_skip_match(), "table conflict skips signature match");
     expectTrue(fuse::ecs::query_filter_has_conflict(conflicting) == tableConflict.has_conflict,
                "preflight has_conflict matches query_filter_has_conflict");
+}
 
 void testShouldSkipQueryMatch() {
     fuse::ecs::Archetype dynamicBody = makeArchetypeWithComponents({
@@ -1105,6 +1108,8 @@ void testPreflightConflictGuardShortCircuitsCounts() {
     expectTrue(fuse::ecs::should_skip_query_match({}, filter),
                "should_skip_query_match true for empty archetype table");
 
+    fuse::ecs::QueryFilter conflicting = fuse::ecs::make_query_filter(
+        fuse::ecs::With<fuse::ecs::Transform>{}, fuse::ecs::Without<fuse::ecs::Transform>{});
     expectTrue(fuse::ecs::should_skip_query_match(table, conflicting),
                "should_skip_query_match true for conflicting filter");
 
@@ -1122,6 +1127,7 @@ void testPreflightConflictGuardShortCircuitsCounts() {
                "should_skip_query_match false for zero-row matching signature");
     expectTrue(fuse::ecs::should_skip_query_iteration(zeroRowTable, filter),
                "should_skip_query_iteration true for zero-row matching signature");
+}
 
 void testConflictGuardAlignsAcrossCountHelpers() {
     fuse::ecs::Archetype typed = makeArchetypeWithComponents({
@@ -1146,6 +1152,8 @@ void testConflictGuardAlignsAcrossCountHelpers() {
 
 
              "count_matching_archetypes returns zero under conflict guard");
+
+
              "count_matching_entities returns zero under conflict guard");
     expectTrue(!fuse::ecs::has_matching_archetypes(table, conflicting),
                "has_matching_archetypes false under conflict guard");

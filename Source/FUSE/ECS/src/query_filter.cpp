@@ -117,6 +117,10 @@ bool should_skip_query_match(const std::vector<Archetype>& archetypes, const Que
     return preflight_query_filter(archetypes, filter).should_skip_match();
 }
 
+bool should_skip_query_match(const std::vector<Archetype>& archetypes, const QueryFilter& filter) {
+    return preflight_query_filter(archetypes, filter).should_skip_match();
+}
+
 bool archetype_matches(const Archetype& archetype, const QueryFilter& filter) {
     if (!query_filter_is_runnable(filter)) {
         return false;
