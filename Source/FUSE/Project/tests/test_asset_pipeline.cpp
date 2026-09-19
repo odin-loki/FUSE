@@ -2181,3 +2181,9 @@ void testCookerShouldSkipReconcileGuards() {
                "should_skip_invalidate_downstream_of true after removal");
     expectTrue(!cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()),
                "would_invalidate_downstream_of false after removal");
+
+// --- deepen additive from deepen-b79-cooker-hash-skip-guards-fdef ---
+               "should_skip_upstream_invalidation false for seeded chain");
+    expectTrue(cooker.would_invalidate_upstream(manifest, source_a), "would_invalidate_upstream after content change");
+    expectTrue(cooker.should_skip_upstream_invalidation(manifest, source_a),
+               "should_skip upstream invalidation after cache cleared");

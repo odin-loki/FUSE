@@ -1720,3 +1720,24 @@ void testCookCacheWouldInvalidateAndShouldSkipGuards() {
     expectTrue(!cooker.cache().should_skip_prune_all(), "should_skip_prune_all false after content change");
                "should_skip_invalidate true after removal");
                "would_invalidate false after removal");
+
+// --- deepen additive from deepen-b79-cooker-hash-skip-guards-fdef ---
+    expectTrue(!empty_bytes.should_skip(), "zero-size null bytes preflight should not skip");
+    expectTrue(!fuse::project::should_skip_texture_import_hash(tex), "texture import should not skip");
+    expectTrue(!fuse::project::should_skip_audio_import_hash(audio), "audio import should not skip");
+    expectTrue(!fuse::project::should_skip_manifest_entry_hash(entry), "manifest entry should not skip");
+               "combine cache key should_skip rejects zero source");
+               "empty path should_skip file content hash");
+               "should_skip_fnv1a64_bytes rejects null non-zero span");
+               "should_skip_fnv1a64_bytes accepts zero-size null span");
+    expectTrue(cache.should_skip_invalidate_source("/tmp/fuse_b79_skip.obj"), "should_skip source on empty cache");
+    expectTrue(cache.should_skip_invalidate_output("/tmp/fuse_b79_skip.fusemesh"),
+               "should_skip output on empty cache");
+    expectTrue(cache.should_skip_lookup(42u), "should_skip_lookup on empty cache");
+    expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_skip.fusemesh", {}, {}),
+               "would_invalidate_downstream guarded on empty cache");
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source finds entry");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path), "would_invalidate_output finds entry");
+    expectTrue(!cooker.cache().should_skip_store(valid_entry), "should_skip_store accepts valid entry");
+    expectTrue(cooker.cache().should_skip_prune_all(), "clean cache should_skip_prune_all");
+    expectTrue(cooker.cache().estimate_prune_removals().should_skip(), "clean prune estimate should skip");
