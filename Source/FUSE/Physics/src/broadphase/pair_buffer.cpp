@@ -150,6 +150,9 @@ void PairBufferSoA::preparePairSlots(u32 slotCount) {
         bodyB.clear();
         validFlags.clear();
     if (!preflightPairSlots(slotCount, *this).canPrepare()) {
+        pairSlotCount = 0;
+        activeCount = 0;
+        droppedCount = 0;
         bodyA.resize(0);
         bodyB.resize(0);
         validFlags.resize(0);
@@ -2304,6 +2307,9 @@ PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
 
 
 
+
+
+
     PairBufferWriteSlotPreflight preflight{};
     preflight.reason = pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB);
     preflight.outOfRangeSlot = preflight.reason == PairBufferWriteSlotRejectReason::OutOfRangeSlot;
@@ -2929,5 +2935,27 @@ bool shouldAcceptPairBufferPairs(const PairBufferSoA& buffer, u32 additionalCoun
 
 
 
+
+
+
+const char* pairBufferPrepareSlotsRejectReasonName(PairBufferPrepareSlotsRejectReason reason) {
+    case PairBufferPrepareSlotsRejectReason::None:
+    case PairBufferPrepareSlotsRejectReason::ZeroSlots:
+
+PairBufferPrepareSlotsRejectReason pairBufferPrepareSlotsRejectReason(u32 slotCount) {
+        return PairBufferPrepareSlotsRejectReason::ZeroSlots;
+    return PairBufferPrepareSlotsRejectReason::None;
+
+bool pairBufferPrepareSlotsRejectsForReason(u32 slotCount, PairBufferPrepareSlotsRejectReason expected) {
+    return pairBufferPrepareSlotsRejectReason(slotCount) == expected;
+
+    preflight.reason = pairBufferPrepareSlotsRejectReason(slotCount);
+    preflight.zeroSlots = preflight.reason == PairBufferPrepareSlotsRejectReason::ZeroSlots;
+
+bool canSkipPairBufferPrepareSlots(u32 slotCount) {
+    return !preflightPairBufferPrepareSlots(slotCount).canPrepare();
+
+bool shouldRunPairBufferPrepareSlots(u32 slotCount) {
+    return preflightPairBufferPrepareSlots(slotCount).canPrepare();
 
 } // namespace fuse::physics::broadphase
