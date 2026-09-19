@@ -4603,3 +4603,7 @@ void testTaaPassHistoryWarmupPreflight() {
     expectNear(weights.current, 1.f, 1e-5f, "pass tryCompute warmup current weight is full before init");
     expectNear(weights.history, 0.f, 1e-5f, "pass tryCompute warmup history weight is zero before init");
     expectTrue(pass->tryPreflightJitterAdvance(jitterReason), "pass tryPreflightJitterAdvance passes after init");
+
+// --- deepen additive from deepen-fuse-b59-taa-beec ---
+    expectTrue(zeroPass->tryPreflightJitterSync(0u, jitterReject),
+               "pass tryPreflightJitterAdvance passes after fallback sequence length");
