@@ -117,6 +117,20 @@ FUSE_PHYSICS_INLINE bool canSkipBroadphase(
     return canSkipBroadphasePairGeneration(bodies, shapes);
 }
 
+/// Non-mutating broadphase launch predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphase(bodies, shapes);
+}
+
+/// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,
@@ -393,6 +407,36 @@ FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
+}
+
+/// Per-shape cell budget derived from `maxCellSpanPerAxis` (0 = unlimited stub).
+FUSE_PHYSICS_INLINE u32 perShapeCellBudget(u32 maxCellSpanPerAxis, bool use2D) {
+    if (maxCellSpanPerAxis == 0u) {
+        return 0u;
+    }
+    const u32 span = maxCellSpanPerAxis;
+    return use2D ? span * span : span * span * span;
+}
+
+/// True when estimated occupancy exceeds the per-shape span budget (0 = unlimited).
+FUSE_PHYSICS_INLINE bool exceedsPerShapeCellBudget(
+    const CellRange3& range,
+    u32 maxCellSpanPerAxis) {
+    const u32 budget = perShapeCellBudget(maxCellSpanPerAxis, false);
+    if (budget == 0u) {
+        return false;
+    }
+    return estimateCellOccupancyCount(range) > budget;
+}
+
+FUSE_PHYSICS_INLINE bool exceedsPerShapeCellBudget(
+    const CellRange2& range,
+    u32 maxCellSpanPerAxis) {
+    const u32 budget = perShapeCellBudget(maxCellSpanPerAxis, true);
+    if (budget == 0u) {
+        return false;
+    }
+    return estimateCellOccupancyCount(range) > budget;
 }
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
