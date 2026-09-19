@@ -1461,3 +1461,12 @@ bool tryWriteDensityAtIndex(FroxelDensityGrid& grid, const FroxelGridDesc& desc,
         outReason = FroxelDensityRejectReason::EmptyStorage;
         outReason = FroxelDensityRejectReason::DescMismatch;
     FroxelDensityRejectReason reason = FroxelDensityRejectReason::None;
+
+// --- deepen additive from deepen-b511-froxel-guards-8f53 ---
+    return tryClampSampleCoords(coords, desc, reason);
+        outReason = SampleCoordRejectReason::DepthOutOfRange;
+    case SampleCoordRejectReason::OutOfRange:
+    case SampleCoordRejectReason::DepthOutOfRange:
+    return tryCanSampleAtCoords(grid, desc, coords, reason);
+        outReason = SampleCoordRejectReason::OutOfRange;
+    if (!trySampleDensityTrilinear(grid, desc, coords, outDensity, outReason)) {
