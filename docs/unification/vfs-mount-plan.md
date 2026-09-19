@@ -19,7 +19,7 @@ One logical namespace for hybrid 2D/3D content without merging legacy trees:
 
 - Blocking read on the **I/O lane** via `JobScheduler::submit()` (`VirtualFileSystem::submitLoadAsync`).
 - Workers enqueue `fuse::io::Asset` payloads with `HandleTable::enqueuePublish`.
-- **Game-thread commit rule (locked):** only the game thread may call `HandleTable::commit()` and `HandleTable::insert()` / `remove()` / `get()`. Pending publishes are invisible to `get()` until `commit()` runs — workers must never install live handles directly (see [architecture-parallel.md](./architecture-parallel.md) §3.1).
+- **Game-thread commit rule (locked):** only the game thread may call `HandleTable::commit()` and `HandleTable::insert()` / `remove()` / `get()`. Pending publishes are invisible to `get()` until `commit()` runs — workers must never install live handles directly (see [handle-rules.md](./handle-rules.md), [architecture-parallel.md](./architecture-parallel.md) §3.1).
 - Game thread calls `VirtualFileSystem::drainCompletedLoads()` then `HandleTable::commit()` to install live handles.
 
 ```

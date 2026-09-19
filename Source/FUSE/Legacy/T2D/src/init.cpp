@@ -1,4 +1,5 @@
 #include <fuse/legacy/t2d/api.hpp>
+#include <fuse/log/logger.hpp>
 
 #include <cstdint>
 
@@ -17,6 +18,7 @@ bool initialize() {
 
     fuse_t2d_StringTable_intern("FUSE_T2D_BOOT");
     Con::execute("legacyBoot();");
+    fuse::log::info("[t2d] dimension initialized");
     g_initialized = true;
     return true;
 }

@@ -33,6 +33,7 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 | [architecture-parallel.md](./architecture-parallel.md) | **MT spine:** process model, job system, frame pipeline, editor threading, safety |
 | [work-plan.md](./work-plan.md) | Ordered WPs U1–U8 + parallel workstreams; immediate next 5 actions |
 | [vfs-mount-plan.md](./vfs-mount-plan.md) | WP-04 VFS mount prefixes (`/game`, `/t3d`, `/t2d`) |
+| [handle-rules.md](./handle-rules.md) | WP-04 `Handle<T>` publish/commit rules and I/O lane handoff |
 | [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md) | U4 hybrid composer, worlds, software demo |
 | [U5-MODULES.md](./U5-MODULES.md) | U5 feature module scaffolds, `fuse_ai` vertical slice, ore backlog |
 | [TRACK-B-AI.md](./TRACK-B-AI.md) | Track B / U5 `fuse_ai` BT registry, parallel composite, runtime threading |
@@ -47,7 +48,7 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 **U1 deliverable:** [BUILD.md](./BUILD.md) (umbrella CMake + `fuse_core` stub) — ✅ landed in U1 PR.  
 **U2 deliverable:** [U2-SMOKE.md](./U2-SMOKE.md) (quarantine libs + `fuse_runtime_smoke`) — ✅ U2 PR.
 
-**WP-03–05 (in progress):** Cooperative POSIX fiber wait, shared services stubs (logger/handle/allocator/VFS), greenfield scene hierarchy — see [wp03-fiber-remaining.md](./wp03-fiber-remaining.md). U2 full Engine init blockers unchanged ([U2-SMOKE.md §3](./U2-SMOKE.md#3-honest-blockers--full-dual-legacy-engine-init)).
+**WP-04 / U3 (done):** Shared services — logger (both dims), `HandleTable` publish/commit, VFS async I/O lane — [handle-rules.md](./handle-rules.md), [vfs-mount-plan.md](./vfs-mount-plan.md). **WP-05 (in progress):** greenfield scene hierarchy — see [WP-05-SCENE-HIERARCHY.md](./WP-05-SCENE-HIERARCHY.md). U2 full Engine init blockers unchanged ([U2-SMOKE.md §3](./U2-SMOKE.md#3-honest-blockers--full-dual-legacy-engine-init)).
 
 **WP-06 / U4 (scaffolding):** Dimension APIs + hybrid frame — [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md). `demo_hybrid_hud` runs 3D clear + spinning 2D sprite via software placeholder renderer (no real GL yet).
 

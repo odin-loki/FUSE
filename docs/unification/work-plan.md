@@ -96,7 +96,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **MT note** | Publish asset handles from I/O jobs; game thread commit; TSan nightly begins |
 | **Exit** | Both dims log via FUSE logger; one asset loaded via VFS from job; handle rules documented |
 | **Deps** | WP-02, WP-03 (partial — I/O can use thread pool before fibers complete) |
-| **Status** | ✅ Logger, Handle, frame allocator, VFS mount + async I/O lane; HandleTable game-thread commit; see [vfs-mount-plan.md](./vfs-mount-plan.md) |
+| **Status** | ✅ Done — logger (both dims via `fuse::log`), HandleTable publish/commit, VFS async I/O lane, U3 gate tests; see [handle-rules.md](./handle-rules.md), [vfs-mount-plan.md](./vfs-mount-plan.md) |
 
 ---
 

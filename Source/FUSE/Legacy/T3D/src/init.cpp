@@ -1,4 +1,5 @@
 #include <fuse/legacy/t3d/api.hpp>
+#include <fuse/log/logger.hpp>
 
 #include <cstdint>
 
@@ -18,6 +19,7 @@ bool initialize() {
     // Explicit init order: string table before console (mirrors T3D startup constraints).
     fuse_t3d_StringTable_intern("FUSE_T3D_BOOT");
     Con::execute("legacyBoot();");
+    fuse::log::info("[t3d] dimension initialized");
     g_initialized = true;
     return true;
 }

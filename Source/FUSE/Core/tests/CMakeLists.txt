@@ -64,6 +64,20 @@ target_link_libraries(fuse_core_io_handle_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_io_handle_tests)
 add_test(NAME fuse_core_io_handle COMMAND fuse_core_io_handle_tests)
 
+add_executable(fuse_core_u3_gate_tests
+    test_u3_gate.cpp
+    ${CMAKE_SOURCE_DIR}/Source/FUSE/Legacy/T3D/src/console_shim.cpp
+    ${CMAKE_SOURCE_DIR}/Source/FUSE/Legacy/T2D/src/console_shim.cpp
+)
+
+target_include_directories(fuse_core_u3_gate_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/Source/FUSE/Legacy/T3D/include
+    ${CMAKE_SOURCE_DIR}/Source/FUSE/Legacy/T2D/include
+)
+target_link_libraries(fuse_core_u3_gate_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_u3_gate_tests)
+add_test(NAME fuse_core_u3_gate COMMAND fuse_core_u3_gate_tests)
+
 add_executable(fuse_core_profiler_assert_tests
     test_profiler_assert.cpp
 )
