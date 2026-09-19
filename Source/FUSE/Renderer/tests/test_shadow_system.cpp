@@ -1652,3 +1652,9 @@ int main() {
     using fuse::renderer::cascadeShadowBypassReasonIsBlocking;
     expectTrue(!cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason::None),
     expectTrue(cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason::EmptyLightDirection),
+
+// --- deepen additive from deepen-b55-csm-split-guards-482f ---
+    expectTrue(cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason::EmptyCascadeFrustum),
+    expectTrue(cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason::DegenerateCascadeRange),
+void testSplitBypassGuards() {
+void testSplitSkipGuardHelpers() {
