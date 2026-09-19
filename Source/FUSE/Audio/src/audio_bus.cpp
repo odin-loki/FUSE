@@ -43,6 +43,14 @@ bool is_audible_bus_gain(float gain) {
     return !is_near_zero_bus_gain(gain);
 }
 
+bool is_near_zero_listener_master_volume(float volume) {
+    return is_near_zero_bus_gain(clamp_listener_master_volume(volume));
+}
+
+bool should_skip_listener_master_mix(float listener_master_volume) {
+    return is_near_zero_listener_master_volume(listener_master_volume);
+}
+
 bool is_valid_audio_bus(AudioBus bus) {
     u32 index = 0;
     return try_bus_index(bus, index);
@@ -254,6 +262,9 @@ void AudioBusMixer::clear_all_bus_mutes() {
         m_muted[i] = false;
 
 bool AudioBusMixer::is_parent_chain_muted(AudioBus bus) const {
+void AudioBusMixer::clear_bus_mute() {
+
+bool AudioBusMixer::is_any_ancestor_bus_muted(AudioBus bus) const {
     if (!is_valid_audio_bus(bus) || bus == AudioBus::Master) {
         return false;
     }
@@ -279,6 +290,24 @@ bool AudioBusMixer::is_bus_solo_audible(AudioBus bus) const {
         return false;
     }
     return bus_soloed(bus) || is_any_ancestor_bus_soloed(bus);
+bool AudioBusMixer::is_bus_parent_chain_muted(AudioBus bus) const {
+    return bus_muted(bus) || is_any_ancestor_bus_muted(bus);
+
+bool AudioBusMixer::is_any_ancestor_bus_soloed(AudioBus bus) const {
+
+    AudioBus current = bus_parent(bus);
+    u32 hops = 0;
+    while (current != AudioBus::Master) {
+        if (bus_soloed(current)) {
+            return true;
+        current = bus_parent(current);
+        ++hops;
+        if (hops >= static_cast<u32>(AudioBus::Count)) {
+            break;
+
+    if (!any_bus_soloed()) {
+    if (bus == AudioBus::Master) {
+    if (!is_valid_audio_bus(bus)) {
 
 bool AudioBusMixer::is_bus_solo_silenced(AudioBus bus) const {
     if (!any_bus_soloed()) {
@@ -296,28 +325,23 @@ bool AudioBusMixer::is_bus_solo_silenced(AudioBus bus) const {
 bool AudioBusMixer::is_parent_chain_muted(AudioBus bus) const {
     if (!is_valid_audio_bus(bus) || bus == AudioBus::Master) {
         return false;
-    }
 
     AudioBus current = bus_parent(bus);
     u32 hops = 0;
     while (current != AudioBus::Master) {
         if (bus_muted(current)) {
             return true;
-        }
         current = bus_parent(current);
         ++hops;
         if (hops >= static_cast<u32>(AudioBus::Count)) {
             break;
-        }
-    }
-    return false;
 }
 
 bool AudioBusMixer::should_apply_bus_gain(AudioBus bus) const {
     if (!is_valid_audio_bus(bus)) {
         return false;
     }
-    if (bus != AudioBus::Master && bus_muted(bus)) {
+    if (bus != AudioBus::Master && is_bus_parent_chain_muted(bus)) {
         return false;
     }
     if (bus != AudioBus::Master && is_parent_chain_muted(bus)) {
@@ -439,6 +463,7 @@ bool is_parent_chain_audible(const AudioBusMixer& mixer, AudioBus bus) {
 bool should_skip_parent_chain_mix(const AudioBusMixer& mixer, AudioBus bus) {
     if (mixer.is_parent_chain_muted(bus)) {
     return !is_parent_chain_audible(mixer, bus);
+    return mixer.is_bus_parent_chain_muted(bus);
 }
 
 bool is_bus_muted(const AudioBusMixer& mixer, AudioBus bus) {
