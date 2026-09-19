@@ -26,6 +26,20 @@ void sanitizeTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& histor
 /// Preflight resolve without mutating history — returns true when resolve would proceed.
 bool preflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                          TaaResolveSkipReason* reason = nullptr);
+/// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
+bool tryPreflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                            TaaResolveSkipReason& reason);
+/// Early-out when resolve preflight would skip (B5.9 deepen).
+bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when resolve skip and blend-weight preflights both pass (B5.9 deepen).
+bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveSkipReason* skipReason = nullptr,
+                              TaaResolveBlendRejectReason* blendReason = nullptr);
+/// Combined resolve-frame preflight with mandatory reject outputs (B5.9 deepen).
+bool tryPreflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                 TaaResolveSkipReason& skipReason, TaaResolveBlendRejectReason& blendReason);
+/// Early-out when combined resolve-frame preflight would reject (B5.9 deepen).
+bool shouldSkipTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
 /// CPU/CUDA resolve facade — records resolve intent; kernel deferred (B5.9 stub).
 class TaaResolve {
