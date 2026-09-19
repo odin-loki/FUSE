@@ -50,6 +50,8 @@ enum class TaaJitterGuardRejectReason : u8 {
 enum class TaaJitterSyncRejectReason : u8 {
     None = 0,
     InvalidSequence,
+    InvalidViewport,
+    Misaligned,
 };
 /// Human-readable label for jitter sync reject reasons (B5.9 deepen).
 const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
@@ -492,5 +494,15 @@ bool wouldResyncJitterToFrameIndex(const TaaJitter& jitter, u32 frameIndex);
 bool jitterNeedsResyncToFrameIndex(const TaaJitter& jitter, u32 frameIndex);
 /// Diagnose jitter sync preflight; false when sync would be blocked (B5.9 deepen).
 bool trySyncJitterToFrameIndexIfReady(TaaJitter& jitter, u32 frameIndex, TaaJitterSyncRejectReason& outReason);
+/// Classify why jitter alignment to a frame counter would be rejected (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(const TaaJitter& jitter, u32 frameIndex);
+/// True when jitter state matches `frameIndex` for the active sequence (B5.9 deepen).
+bool preflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex,
+                                 TaaJitterGuardRejectReason* reason = nullptr);
+/// Jitter alignment preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex,
+                                    TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter alignment preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex);
 
 } // namespace fuse::renderer
