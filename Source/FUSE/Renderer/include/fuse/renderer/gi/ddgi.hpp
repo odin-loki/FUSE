@@ -355,6 +355,24 @@ enum class ProbeGridSourceKind : u8 {
 };
 
 /// Why probe-grid source validation rejected the descriptor (B5.6 deepen pass).
+enum class ProbeGridSourceRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    ZeroIrradianceRes,
+    ZeroDepthRes,
+    InvalidSpacing,
+    ZeroRaysPerProbe,
+    ZeroProbesPerFrame,
+};
+
+/// Human-readable label for probe-grid source reject reasons (logging / tests).
+const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason);
+
+/// True when a probe-grid source reject reason would block use of the descriptor (B5.6 deepen pass).
+bool probeGridSourceRejectReasonIsBlocking(ProbeGridSourceRejectReason reason);
+
+/// Why a cache-index lookup preflight rejected the request (B5.6 deepen).
+enum class CacheIndexRejectReason : u8 {
     None = 0,
     EmptyGrid,
     ZeroIrradianceRes,
@@ -1762,11 +1780,20 @@ bool tryCanScheduleProbeUpdatesAtRate(u32 probe_count,
 ProbeScheduleRejectReason classifyProbeScheduleRejectAtRate(u32 probe_count,
 /// Non-mutating rate-aware schedule preflight — returns true when scheduling would proceed.
 bool preflightProbeScheduleAtRate(u32 probe_count,
+                                                            u32 probes_per_frame,
+                                                            u32 max_indices,
+                                                            const u32* out_indices,
+                                                            u32* out_count);
+                                  u32* out_count,
                                   ProbeScheduleRejectReason* reason = nullptr);
 /// Schedule probe updates with rate-aware reject-reason diagnostics; false when preflight rejects.
 bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
                                    u32 probe_count,
                                    u32* out_indices,
+                                   u32 probes_per_frame,
+                                   u32 max_indices,
+                                   u32* out_count,
+                                   ProbeScheduleRejectReason& outReason);
 /// Schedule probe updates with reject-reason diagnostics; false when preflight rejects.
 bool canScheduleProbeUpdates(u32 probe_count,
 bool wouldSkipProbeSchedule(u32 probe_count,
