@@ -456,6 +456,31 @@ void testCookHashPreflightGuards() {
     expectTrue(std::string(fuse::project::cookHashRejectReasonLabel(
                    fuse::project::CookHashRejectReason::EmptyPath)) == "empty_path",
                "reject reason label for empty path");
+
+    const fuse::project::CookHashPreflight null_fnv = fuse::project::preflight_fnv1a64_bytes(nullptr, 4u);
+    expectTrue(!null_fnv.ok(), "null FNV input fails preflight");
+    expectTrue(null_fnv.reason == fuse::project::CookHashRejectReason::NullData,
+               "null FNV input preflight reason is NullData");
+    expectTrue(fuse::project::preflight_fnv1a64_bytes(nullptr, 0).ok(),
+               "zero-length null FNV input passes preflight");
+
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = desc.output_path;
+    expectTrue(fuse::project::preflight_manifest_entry_hash(entry).ok(),
+               "manifest entry preflight passes for readable source");
+    expectTrue(fuse::project::preflight_manifest_entry_with_upstream_hash(entry, manifest).ok(),
+               "manifest entry with empty deps passes upstream preflight");
+
+    entry.dependencies.push_back("/tmp/fuse_b79_missing_upstream.fusemesh");
+    fuse::project::CookManifestEntry upstream;
+    upstream.kind = fuse::project::CookAssetKind::Mesh;
+    upstream.source_path = "/tmp/fuse_b79_missing_upstream.obj";
+    upstream.output_path = entry.dependencies.front();
+    manifest.assets.push_back(upstream);
+    expectTrue(!fuse::project::preflight_manifest_entry_with_upstream_hash(entry, manifest).ok(),
+               "manifest entry with unreadable upstream fails preflight");
 }
 
 void testCookCacheInvalidationProbes() {
@@ -489,7 +514,23 @@ void testCookCacheInvalidationProbes() {
     expectTrue(cooker.cache().count_stale_content_for_source(source, seeded.content_hash + 1u) == 1u,
                "count_stale_content with mismatched hash returns one");
 
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source reports seeded source");
+    expectTrue(!cooker.cache().would_invalidate_source(""), "would_invalidate_source rejects empty path");
+    expectTrue(!cooker.cache().would_invalidate_source("/tmp/fuse_b79_unknown_source.obj"),
+               "would_invalidate_source rejects unknown source");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path),
+               "would_invalidate_output reports seeded output");
+    expectTrue(!cooker.cache().would_invalidate_output(""), "would_invalidate_output rejects empty path");
+
+    const std::vector<std::string> stale_content_probe =
+        cooker.cache().probe_stale_content_sources({{source, seeded.content_hash + 1u}});
+    expectTrue(stale_content_probe.size() == 1u, "probe_stale_content finds mismatched hash");
+    expectTrue(stale_content_probe.front() == source, "probe_stale_content returns stale source path");
+    expectTrue(cooker.cache().probe_stale_content_sources({{source, seeded.content_hash}}).empty(),
+               "probe_stale_content empty when hash matches");
+
     writeTempFile(source, "# probe mesh updated\n");
+    expectTrue(cooker.cache().count_stale_entries() == 1u, "count_stale_entries reports content drift");
     expectTrue(cooker.cache().count_prunable_entries() == 1u, "count_prunable reports stale entry");
     expectTrue(cooker.cache().count_invalid_entries() == 0u,
                "count_invalid on structurally valid stale entry returns zero");
