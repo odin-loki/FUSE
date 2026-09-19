@@ -4693,3 +4693,10 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 // --- deepen additive from deepen-taa-pass-guards-55b4 ---
     expectTrue(pass->tryPreflightResolve(resolveDesc, skipReason), "pass tryPreflightResolve passes after init");
+
+// --- deepen additive from deepen-b59-taa-pass-try-classify-e2ca ---
+               "pass classifyResolveBlendReject passes before warmup resolve");
+               "pass tryPreflightResolve passes for valid desc after init");
+               "pass preflightResolve passes for valid desc after init");
+               "pass tryPreflightResolveBlendWeights reject reason is None");
+               "zero-width pass classifyJitterSyncReject still valid for sequence");
