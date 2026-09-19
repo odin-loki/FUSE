@@ -110,17 +110,14 @@ public:
     /// True when pass jitter must resync before sampling NDC offsets for `frameIndex` (B5.9 deepen).
     bool needsJitterResync(u32 frameIndex) const;
     /// True when pass jitter may align to `frameIndex` (B5.9 deepen).
-    /// Sync jitter with mandatory reject-reason output; returns false when blocked (B5.9 deepen).
     /// Sync jitter and produce NDC offset only when viewport and sequence are valid (B5.9 deepen).
     bool syncJitterToFrameIndexAndProduceNdcIfReady(u32 frameIndex, fuse::math::Vec2& out);
     /// True when pass jitter state is aligned to `frameIndex` (B5.9 deepen).
     bool preflightJitterAlignment(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
     /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
     bool canAdvanceJitter() const;
-    /// True when pass jitter can align to `frameIndex` (B5.9 deepen).
-    bool canSyncJitterToFrameIndex(u32 frameIndex) const;
-    /// Classify why pass jitter sync would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterSyncReject() const;
+    TaaJitterGuardRejectReason classifyJitterSyncReject(u32 frameIndex) const;
     /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterNdcReject() const;
     /// Classify why pass jitter advance would be rejected (B5.9 deepen).
@@ -134,6 +131,8 @@ public:
     bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
     bool shouldSkipJitterAdvance() const;
+    /// NDC jitter for a monotonic frame counter only when viewport and sequence are valid (B5.9 deepen).
+    bool ndcOffsetForFrameIndexIfReady(u32 frameIndex, fuse::math::Vec2& out) const;
     void invalidateHistory();
     /// Invalidate when `observedGeneration` differs from pass history epoch (B5.9 deepen).
     /// Invalidate when `observedGeneration` differs from pass history epoch; returns true when invalidated.
@@ -486,6 +485,8 @@ public:
     /// Jitter frame preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterFrame(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass jitter frame preflight would reject (B5.9 deepen).
+    /// Advance jitter with mandatory reject-reason output; returns false when blocked (B5.9 deepen).
+    bool tryAdvanceJitter(TaaJitterGuardRejectReason& reason);
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).
