@@ -47,6 +47,12 @@ struct ContactBufferSoA {
     ContactManifold manifoldAt(u32 index) const;
     std::vector<ContactManifold> toVector() const;
 
+    /// Returns true when the pair slot holds a valid contact (B4.6 deepen pass).
+    bool hasValidPairSlot(u32 slot) const;
+
+    /// Returns true when compact would be a no-op (B4.6 deepen pass).
+    bool canSkipBufferCompact() const;
+
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
 };

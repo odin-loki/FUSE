@@ -264,6 +264,23 @@ ContactManifold ContactBufferSoA::manifoldAt(u32 index) const {
     return manifold;
 }
 
+bool ContactBufferSoA::hasValidPairSlot(u32 slot) const {
+    return slot < pairSlotCount && validFlags[slot] != 0u;
+}
+
+bool ContactBufferSoA::canSkipBufferCompact() const {
+    if (pairSlotCount == 0u) {
+        return true;
+    }
+    u32 validCount = 0u;
+    for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
+        if (validFlags[slot] != 0u) {
+            ++validCount;
+        }
+    }
+    return validCount == 0u || validCount == activeCount;
+}
+
 std::vector<ContactManifold> ContactBufferSoA::toVector() const {
     std::vector<ContactManifold> manifolds;
     manifolds.reserve(activeCount);
