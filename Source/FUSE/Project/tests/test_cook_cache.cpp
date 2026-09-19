@@ -1436,3 +1436,30 @@ void testCookHashPreflightUnknownDependencyAndShaderGuards() {
     const fuse::project::CookHashPreflight shader_preflight = cache.preflight_store_entry(shader_entry);
     expectTrue(shader_preflight.should_skip(), "shader entry fails store preflight");
                "would_invalidate_stale_upstream true when stale upstream present");
+
+// --- deepen additive from deepen-b79-cooker-hash-34c2 ---
+void testCookHashWouldAndTryPreflightGuards() {
+    expectTrue(!fuse::project::tryPreflightFileContentHash("", reason),
+               "tryPreflightFileContentHash rejects empty path");
+               "empty path tryPreflight reason is EmptyPath");
+    expectTrue(fuse::project::classifyCookHashReject(
+               "classifyCookHashReject maps empty path");
+    expectTrue(fuse::project::tryPreflightMeshImportHash(desc, reason),
+               "tryPreflightMeshImportHash accepts readable source");
+    expectTrue(reason == fuse::project::CookHashRejectReason::None, "readable mesh tryPreflight reason is None");
+    expectTrue(!fuse::project::tryPreflightMeshImportHash(desc, reason),
+               "empty mesh input tryPreflight reason");
+    expectTrue(fuse::project::tryPreflightTextureImportHash(tex, reason), "tryPreflightTextureImportHash ok");
+    expectTrue(fuse::project::tryPreflightAudioImportHash(audio, reason), "tryPreflightAudioImportHash ok");
+               "tryPreflightManifestEntryHash ok");
+    expectTrue(fuse::project::tryPreflightUpstreamDependenciesHash({entry.output_path}, manifest, reason),
+               "tryPreflightUpstreamDependenciesHash ok");
+    expectTrue(!fuse::project::tryPreflightCookCacheKey(0, 42u, reason),
+               "tryPreflightCookCacheKey rejects zero source");
+               "zero source cache key tryPreflight reason");
+    expectTrue(fuse::project::tryPreflightCookCacheKey(99u, 42u, reason),
+               "tryPreflightCookCacheKey ok for valid fold");
+    expectTrue(cooker.cache().would_invalidate(seeded.content_hash), "would_invalidate hash probe");
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source probe");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path), "would_invalidate_output probe");
+    testCookHashWouldAndTryPreflightGuards();

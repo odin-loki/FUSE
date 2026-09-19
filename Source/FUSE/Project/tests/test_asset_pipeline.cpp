@@ -2087,3 +2087,11 @@ void testCookerReconcileWouldAndProbeGuards() {
     expectTrue(!cooker.should_skip_stale_dependency_invalidation(manifest),
     expectTrue(!cooker.should_skip_reconcile_invalidation(manifest),
     expectTrue(!stale.should_skip(), "stale reconcile estimate should_skip is false");
+
+// --- deepen additive from deepen-b79-cooker-hash-34c2 ---
+void testCookerUpstreamInvalidationEstimateAndWouldGuards() {
+               "empty changed source would_invalidate_upstream is false");
+               "would_invalidate_upstream true for seeded chain head");
+    expectTrue(!cooker.would_invalidate_upstream_dependency(manifest, source_a),
+               "would_invalidate_upstream false after invalidation");
+void testCookerWouldReconcileInvalidationGuard() {

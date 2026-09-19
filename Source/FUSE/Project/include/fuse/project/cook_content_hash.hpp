@@ -212,3 +212,16 @@ struct CookFnvInputPreflight {
 
 // --- deepen additive from b79-cooker-hash-deepen-3135 ---
 [[nodiscard]] CookHashPreflight preflight_shader_manifest_hash(const CookManifestEntry& entry);
+
+// --- deepen additive from deepen-b79-cooker-hash-34c2 ---
+[[nodiscard]] CookHashRejectReason classifyCookHashReject(const CookHashPreflight& preflight);
+[[nodiscard]] bool wouldHashFileContent(const std::string& path);
+[[nodiscard]] bool wouldHashMeshImport(const MeshImportDesc& desc);
+[[nodiscard]] bool wouldHashTextureImport(const TextureImportDesc& desc);
+[[nodiscard]] bool wouldHashAudioImport(const AudioImportDesc& desc);
+[[nodiscard]] bool wouldHashManifestEntry(const CookManifestEntry& entry);
+[[nodiscard]] bool wouldHashUpstreamDependencies(const std::vector<std::string>& dependency_output_paths,
+[[nodiscard]] bool wouldHashCookCacheKey(u64 source_hash, u64 upstream_hash);
+[[nodiscard]] bool tryPreflightFileContentHash(const std::string& path, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightUpstreamDependenciesHash(
+[[nodiscard]] bool tryPreflightCookCacheKey(u64 source_hash, u64 upstream_hash, CookHashRejectReason& reason);

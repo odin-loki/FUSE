@@ -599,3 +599,20 @@ bool tryPreflightCookCacheEntry(const CookCacheEntry& entry, CookHashRejectReaso
 CookHashPreflight preflight_shader_manifest_hash(const CookManifestEntry& entry) {
     preflight.reason = CookHashRejectReason::UnsupportedKind;
             preflight.reason = CookHashRejectReason::UnknownDependency;
+
+// --- deepen additive from deepen-b79-cooker-hash-34c2 ---
+CookHashRejectReason classifyCookHashReject(const CookHashPreflight& preflight) {
+bool wouldHashFileContent(const std::string& path) {
+bool wouldHashMeshImport(const MeshImportDesc& desc) {
+bool wouldHashTextureImport(const TextureImportDesc& desc) {
+bool wouldHashAudioImport(const AudioImportDesc& desc) {
+bool wouldHashManifestEntry(const CookManifestEntry& entry) {
+bool wouldHashUpstreamDependencies(const std::vector<std::string>& dependency_output_paths,
+bool wouldHashCookCacheKey(u64 source_hash, u64 upstream_hash) {
+bool tryPreflightFileContentHash(const std::string& path, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_file_content_hash(path);
+    reason = classifyCookHashReject(preflight);
+bool tryPreflightUpstreamDependenciesHash(const std::vector<std::string>& dependency_output_paths,
+                                          const CookManifest& manifest, CookHashRejectReason& reason) {
+bool tryPreflightCookCacheKey(u64 source_hash, u64 upstream_hash, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_cook_cache_key(source_hash, upstream_hash);
