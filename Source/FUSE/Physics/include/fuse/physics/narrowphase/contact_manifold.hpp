@@ -440,3 +440,9 @@ inline bool wouldSkipManifoldPrune(
 inline bool wouldSkipManifoldFinalize(
 inline bool tryPruneContactManifold(
 inline bool tryFinalizeContactManifold(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-3dcc ---
+inline bool would_skip_manifold_prune(
+inline bool would_skip_manifold_finalize(
+inline bool try_prune_contact_manifold(
+inline bool try_finalize_contact_manifold(

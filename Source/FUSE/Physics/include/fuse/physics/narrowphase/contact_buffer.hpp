@@ -657,3 +657,32 @@ inline const char* contact_buffer_warm_start_reject_reason_name(ContactBufferWar
 // --- deepen additive from deepen-b4-narrowphase-guards-5907 ---
 bool tryWriteContactBufferSlot(ContactBufferSoA& buffer, u32 slot, const ContactManifold& manifold);
 inline bool tryWriteContactBufferSlot(ContactBufferSoA& buffer, u32 slot, const ContactManifold& manifold) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-3dcc ---
+    bool tryWriteSlot(u32 slot, const ContactManifold& manifold);
+    u32 tryCompact();
+    u32 tryApplyMaxCapacityClamp();
+    u32 tryCompactAndClamp();
+    std::vector<ContactManifold> tryToVector() const;
+    bool tryBuildFrictionTangentBases(f32 epsilon = 1e-4f);
+const char* contactBufferFrictionTangentRejectReasonName(ContactBufferFrictionTangentRejectReason reason);
+ContactBufferFrictionTangentRejectReason contactBufferFrictionTangentRejectReason(
+    bool needsRebuild() const { return reason == ContactBufferFrictionTangentRejectReason::None; }
+ContactBufferFrictionTangentPreflight preflightContactBufferFrictionTangentBases(
+    case ContactBufferWriteSlotRejectReason::SelfContact:
+        return ContactBufferWriteSlotRejectReason::SelfContact;
+    preflight.selfContact = preflight.reason == ContactBufferWriteSlotRejectReason::SelfContact;
+FUSE_PHYSICS_INLINE const char* contactBufferFrictionTangentRejectReasonName(
+FUSE_PHYSICS_INLINE ContactBufferFrictionTangentRejectReason contactBufferFrictionTangentRejectReason(
+    return contactBufferFrictionTangentRejectReason(buffer, epsilon) == expected;
+FUSE_PHYSICS_INLINE ContactBufferFrictionTangentPreflight preflightContactBufferFrictionTangentBases(
+    preflight.reason = contactBufferFrictionTangentRejectReason(buffer, epsilon);
+    return !preflightContactBufferFrictionTangentBases(buffer, epsilon).needsRebuild();
+    return preflightContactBufferFrictionTangentBases(buffer, epsilon).needsRebuild();
+FUSE_PHYSICS_INLINE bool ContactBufferSoA::tryWriteSlot(u32 slot, const ContactManifold& manifold) {
+    if (!preflightContactBufferWriteSlot(*this, slot, manifold).canWrite()) {
+FUSE_PHYSICS_INLINE u32 ContactBufferSoA::tryCompact() {
+FUSE_PHYSICS_INLINE u32 ContactBufferSoA::tryApplyMaxCapacityClamp() {
+FUSE_PHYSICS_INLINE u32 ContactBufferSoA::tryCompactAndClamp() {
+FUSE_PHYSICS_INLINE std::vector<ContactManifold> ContactBufferSoA::tryToVector() const {
+FUSE_PHYSICS_INLINE bool ContactBufferSoA::tryBuildFrictionTangentBases(f32 epsilon) {

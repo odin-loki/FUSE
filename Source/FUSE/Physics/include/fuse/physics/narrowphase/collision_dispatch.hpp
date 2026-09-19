@@ -338,3 +338,15 @@ inline NarrowphaseIntoBufferRejectReason narrowphase_into_buffer_reject_reason(
 inline bool wouldSkipNarrowphaseIntoBuffer(
 inline bool tryRunNarrowphaseIntoBuffer(
     if (wouldSkipNarrowphaseIntoBuffer(pairs, bodies, shapes)) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-3dcc ---
+    bool can_dispatch() const { return reason == NarrowphaseIntoBufferRejectReason::None; }
+bool would_skip_narrowphase_into_buffer(
+bool try_run_narrowphase_into_buffer(
+FUSE_PHYSICS_INLINE NarrowphaseIntoBufferRejectReason narrowphase_into_buffer_reject_reason(
+FUSE_PHYSICS_INLINE NarrowphaseIntoBufferPreflight preflight_run_narrowphase_into_buffer(
+    preflight.emptyPairs = preflight.reason == NarrowphaseIntoBufferRejectReason::EmptyPairs;
+    preflight.noDispatchablePairs = preflight.reason == NarrowphaseIntoBufferRejectReason::NoDispatchablePairs;
+FUSE_PHYSICS_INLINE bool would_skip_narrowphase_into_buffer(
+    return would_skip_narrowphase_into_buffer(pairs, bodies, shapes);
+FUSE_PHYSICS_INLINE bool try_run_narrowphase_into_buffer(

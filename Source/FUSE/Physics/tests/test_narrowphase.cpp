@@ -3640,3 +3640,24 @@ void testFrictionComputeWithPreflightGuards() {
     expectTrue(needsBasis.hasFrictionBasis(), "tryRebuildFrictionBasis stores orthonormal basis");
         fuse::physics::narrowphase::wouldSkipFrictionBasisRebuild(needsBasis),
         "wouldSkipFrictionBasisRebuild true with valid cached basis");
+
+// --- deepen additive from b4-narrowphase-deepen-guards-3dcc ---
+            fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::SelfContact),
+    expectTrue(buffer.tryWriteSlot(0u, valid), "tryWriteSlot accepts valid manifold");
+    expectTrue(!buffer.tryWriteSlot(1u, selfPair), "tryWriteSlot rejects self contact");
+    expectTrue(buffer.tryCompact() == 1u, "tryCompact compacts to one valid contact");
+    expectTrue(buffer.tryApplyMaxCapacityClamp() == 1u, "tryApplyMaxCapacityClamp truncates to max capacity");
+    expectTrue(buffer.tryToVector().empty(), "tryToVector returns empty for cleared buffer");
+        fuse::physics::narrowphase::would_skip_narrowphase_into_buffer(emptyPairs, bodies, shapes),
+        "would_skip narrowphase-into-buffer for empty pairs");
+            fuse::physics::narrowphase::NarrowphaseIntoBufferRejectReason::NoDispatchablePairs),
+        fuse::physics::narrowphase::would_skip_contact_pair_dispatch({bodyA, bodyA}, bodies, shapes),
+        "would_skip base pair dispatch for self pair");
+        fuse::physics::narrowphase::would_skip_contact_pair_deepen_dispatch({sleepingA, sleepingB}, bodies, shapes),
+        "would_skip deepen pair dispatch for both-sleeping pair");
+        !fuse::physics::narrowphase::would_skip_narrowphase_batch(mixedPairs, bodies, shapes),
+        "would_skip batch false when one pair dispatchable");
+        fuse::physics::narrowphase::would_skip_manifold_prune(pruneTarget),
+        "would_skip manifold prune after prune");
+        fuse::physics::narrowphase::would_skip_friction_basis_rebuild(frictionTarget),
+        "would_skip friction rebuild after valid basis");
