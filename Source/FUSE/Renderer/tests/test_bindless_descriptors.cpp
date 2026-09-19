@@ -604,6 +604,38 @@ void testClampHeapCapacityBounds() {
 }
 
 void testBindlessSlotPreflight() {
+void testCanAllocateSlotPreflight() {
+    fuse::renderer::BindlessDescriptors bindless;
+    expectTrue(!bindless.canAllocateSlot(fuse::renderer::BindlessHeapKind::Texture),
+               "alloc preflight fails before init");
+    expectTrue(!bindless.heapAtCapacity(fuse::renderer::BindlessHeapKind::Texture),
+               "heapAtCapacity false before init");
+
+    auto bootstrap = makeBootstrap();
+    bindless.init(*bootstrap->device());
+    expectTrue(bindless.canAllocateSlot(fuse::renderer::BindlessHeapKind::Texture),
+               "fresh heap can allocate");
+               "fresh heap not at capacity");
+
+    std::vector<fuse::renderer::BindlessSlotHandle> handles;
+    handles.reserve(fuse::renderer::kMaxSamplers);
+    for (u32 i = 0; i < fuse::renderer::kMaxSamplers; ++i) {
+        handles.push_back(bindless.allocateSamplerSlot());
+    }
+    expectTrue(!bindless.canAllocateSlot(fuse::renderer::BindlessHeapKind::Sampler),
+               "sampler alloc preflight fails at cap");
+    expectTrue(bindless.heapAtCapacity(fuse::renderer::BindlessHeapKind::Sampler),
+               "sampler heapAtCapacity when full");
+
+    bindless.freeSamplerSlot(handles.back());
+    expectTrue(bindless.canAllocateSlot(fuse::renderer::BindlessHeapKind::Sampler),
+               "free slot restores alloc preflight");
+    expectTrue(!bindless.heapAtCapacity(fuse::renderer::BindlessHeapKind::Sampler),
+               "heapAtCapacity clears after free");
+
+    bindless.destroy(*bootstrap->device());
+
+void testCanFreeSlotPreflight() {
     auto bootstrap = makeBootstrap();
     fuse::renderer::BindlessDescriptors bindless;
     bindless.init(*bootstrap->device());
@@ -628,6 +660,16 @@ void testBindlessSlotPreflight() {
     const fuse::renderer::BindlessSlotPreflight freedPreflight = bindless.preflightSlot(live);
     expectTrue(freedPreflight.is_generation_mismatch(), "freed handle is generation mismatch in preflight");
     expectTrue(!freedPreflight.can_validate(), "freed handle fails preflight validate");
+    expectTrue(bindless.canFreeSlot(live), "live handle passes free preflight");
+    expectTrue(bindless.preflightSlotHandle(live), "preflightSlotHandle agrees with validate");
+
+    expectTrue(!bindless.canFreeSlot(stale), "wrong generation fails free preflight");
+    expectTrue(!bindless.preflightSlotHandle(stale), "preflight rejects stale generation");
+
+    expectTrue(!bindless.canFreeSlot(live), "already-freed handle fails free preflight");
+    expectTrue(bindless.canFreeSlot(bindless.slotHandleAt(fuse::renderer::BindlessHeapKind::Texture,
+                                                          live.index)) == false,
+               "unoccupied slot fails free preflight");
 
     bindless.destroy(*bootstrap->device());
 }
@@ -648,6 +690,17 @@ void testShouldSkipBindlessSlotLookup() {
                "instance skip guard rejects invalid handle");
     const fuse::renderer::BindlessSlotHandle live = bindless.allocateTextureSlot(false);
     expectTrue(!bindless.shouldSkipSlotLookup(live), "live handle not skipped");
+void testCanResizeHeapPreflight() {
+    expectTrue(!bindless.canResizeHeap(fuse::renderer::BindlessHeapKind::Texture, 64u),
+               "resize preflight fails before init");
+
+    expectTrue(bindless.canResizeHeap(fuse::renderer::BindlessHeapKind::Texture, 64u),
+               "resize preflight passes after init");
+    expectTrue(fuse::renderer::bindlessHeapCapacityWouldClamp(fuse::renderer::BindlessHeapKind::Texture,
+                                                              fuse::renderer::kMaxTextures + 1u),
+               "would-clamp helper detects overflow request");
+    expectTrue(!fuse::renderer::bindlessHeapCapacityWouldClamp(fuse::renderer::BindlessHeapKind::Texture, 64u),
+               "in-range request would not clamp");
 
     bindless.destroy(*bootstrap->device());
 }
@@ -675,9 +728,9 @@ void testHeapAtCapacityGuard() {
     expectTrue(!bindless.allocateSamplerSlot().isValid(), "alloc rejected once at capacity");
 
     bindless.destroy(*bootstrap->device());
-}
 
 void testCanFreeSlotGuard() {
+void testTryBindingIndexForHandlePreflight() {
     auto bootstrap = makeBootstrap();
     fuse::renderer::BindlessDescriptors bindless;
     bindless.init(*bootstrap->device());
@@ -697,6 +750,13 @@ void testCanFreeSlotGuard() {
 
     bindless.freeBufferSlot(live);
     expectTrue(!bindless.canFreeSlot(live), "already-freed handle cannot be freed again");
+    const fuse::renderer::BindlessSlotHandle live = bindless.allocateBufferSlot(true);
+    fuse::renderer::BindlessBindingIndex out{};
+    expectTrue(bindless.tryBindingIndexForHandle(live, out), "try binding succeeds for live handle");
+    expectTrue(out.binding == fuse::renderer::kBindlessBindingUniformBuffers, "try binding returns ubo binding");
+
+    expectTrue(!bindless.tryBindingIndexForHandle(stale, out), "try binding rejects stale handle");
+    expectTrue(out.binding == 0u && out.arrayIndex == 0u, "stale try binding clears output");
 
     bindless.destroy(*bootstrap->device());
 }
@@ -753,6 +813,10 @@ int main() {
     testHeapAtCapacityGuard();
     testCanFreeSlotGuard();
     testPreflightFreeFunction();
+    testCanAllocateSlotPreflight();
+    testCanFreeSlotPreflight();
+    testCanResizeHeapPreflight();
+    testTryBindingIndexForHandlePreflight();
 
     fuse::core::shutdown();
 

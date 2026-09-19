@@ -58,6 +58,11 @@ u32 bindlessHeapMaxCapacity(BindlessHeapKind kind);
 /// Clamps a requested heap size to [0, per-kind maximum].
 u32 clampHeapCapacity(BindlessHeapKind kind, u32 requested);
 
+/// True when `requested` exceeds the per-kind maximum and would be clamped.
+inline bool bindlessHeapCapacityWouldClamp(BindlessHeapKind kind, u32 requested) {
+    return requested != clampHeapCapacity(kind, requested);
+}
+
 /// True when the heap table has no reserved slots (capacity == 0).
 bool bindlessHeapIsEmpty(BindlessHeapKind kind, u32 heapCapacity);
 
@@ -124,6 +129,8 @@ public:
     bool validateSlot(BindlessSlotHandle handle) const;
     /// Non-mutating preflight for slot lookup / free guards (B2.3 deepen follow-up).
     BindlessSlotPreflight preflightSlot(BindlessSlotHandle handle) const;
+    /// Preflight entry point — false when bindless is not ready or handle fails validateSlot.
+    bool preflightSlotHandle(BindlessSlotHandle handle) const { return validateSlot(handle); }
     /// True when index is in range but generation does not match or slot is unoccupied.
     bool slotGenerationMismatch(BindlessSlotHandle handle) const;
     /// Preferred guard for stale handles — true when handle fails validateSlot.
@@ -131,6 +138,7 @@ public:
     /// Fast early-out before heap table lookup — uninitialized, invalid handle, or empty heap.
     bool shouldSkipSlotLookup(BindlessSlotHandle handle) const;
     /// True when freeSlot would release a live, generation-matched handle.
+    /// Preflight before free/unregister — in-range occupied slot with matching generation.
     bool canFreeSlot(BindlessSlotHandle handle) const;
     bool slotIndexOutOfRange(BindlessHeapKind kind, u32 index) const;
     bool isSlotOccupied(BindlessHeapKind kind, u32 index) const;
@@ -143,8 +151,17 @@ public:
 
     /// Shader binding for a validated slot handle; returns empty binding when invalid.
     BindlessBindingIndex bindingIndexForHandle(BindlessSlotHandle handle) const;
+    /// Binding lookup with preflight; returns false when handle fails rejectStaleSlotHandle.
+    bool tryBindingIndexForHandle(BindlessSlotHandle handle, BindlessBindingIndex& out) const;
     /// Binding lookup by heap index without a generation handle; empty when unoccupied.
     BindlessBindingIndex bindingIndexForSlot(BindlessHeapKind kind, u32 index) const;
+
+    /// Preflight before allocate — false when uninitialized or heap cannot grow/reuse.
+    bool canAllocateSlot(BindlessHeapKind kind) const;
+    /// True when `canAllocateSlot` would reject a new allocation.
+    bool heapAtCapacity(BindlessHeapKind kind) const;
+    /// Preflight before resize — false when uninitialized (matches resizeHeap guard).
+    bool canResizeHeap(BindlessHeapKind kind, u32 requestedCapacity) const;
 
     /// Sparse table growth stub — never shrinks; rejects above per-kind caps.
     bool resizeHeap(BindlessHeapKind kind, u32 newCapacity);

@@ -306,6 +306,15 @@ bool BindlessDescriptors::shouldSkipSlotLookup(BindlessSlotHandle handle) const 
 
 bool BindlessDescriptors::canFreeSlot(BindlessSlotHandle handle) const {
     return validateSlot(handle);
+    if (!m_initialized || !handle.isValid()) {
+        return false;
+
+    const std::vector<Slot>& slots = slotsFor(handle.kind);
+    if (bindlessHeapIsEmpty(handle.kind, static_cast<u32>(slots.size()))) {
+    if (bindlessSlotIndexOutOfRange(handle.kind, handle.index, static_cast<u32>(slots.size()))) {
+
+    const Slot& slot = slots[handle.index];
+    return slot.occupied && slot.generation == handle.generation;
 }
 
 bool BindlessDescriptors::slotIndexOutOfRange(BindlessHeapKind kind, u32 index) const {
@@ -393,6 +402,17 @@ BindlessBindingIndex BindlessDescriptors::bindingIndexForHandle(BindlessSlotHand
     return {};
 }
 
+bool BindlessDescriptors::tryBindingIndexForHandle(BindlessSlotHandle handle,
+                                                   BindlessBindingIndex& out) const {
+    if (rejectStaleSlotHandle(handle)) {
+        out = {};
+        return false;
+    }
+
+    out = bindingIndexForHandle(handle);
+    return true;
+}
+
 BindlessBindingIndex BindlessDescriptors::bindingIndexForSlot(BindlessHeapKind kind, u32 index) const {
     if (heapIsEmpty(kind)) {
         return {};
@@ -429,6 +449,26 @@ bool BindlessDescriptors::heapIsEmpty(BindlessHeapKind kind) const {
 
 bool BindlessDescriptors::heapAtCapacity(BindlessHeapKind kind) const {
     return bindlessHeapAtCapacity(heapCapacity(kind), heapFreeCount(kind), maxCountFor(kind));
+bool BindlessDescriptors::canAllocateSlot(BindlessHeapKind kind) const {
+    if (!m_initialized) {
+        return false;
+    }
+
+    const u32 maxCount = maxCountFor(kind);
+    switch (kind) {
+    case BindlessHeapKind::Texture:
+        return !m_freeTextureIndices.empty() || m_textureSlots.size() < maxCount;
+    case BindlessHeapKind::Buffer:
+        return !m_freeBufferIndices.empty() || m_bufferSlots.size() < maxCount;
+    case BindlessHeapKind::Sampler:
+        return !m_freeSamplerIndices.empty() || m_samplerSlots.size() < maxCount;
+
+    return !canAllocateSlot(kind);
+
+bool BindlessDescriptors::canResizeHeap(BindlessHeapKind kind, u32 requestedCapacity) const {
+    (void)kind;
+    (void)requestedCapacity;
+    return m_initialized;
 }
 
 bool BindlessDescriptors::resizeHeap(BindlessHeapKind kind, u32 newCapacity) {
