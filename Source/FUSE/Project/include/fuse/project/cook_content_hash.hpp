@@ -158,6 +158,8 @@ struct CookFnvInputPreflight {
 
 /// Last-write-time in nanoseconds; returns 0 when the path is missing or unreadable.
 [[nodiscard]] u64 file_mtime_ns(const std::string& path);
+/// Read-only mtime preflight — rejects empty paths without touching the filesystem (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_file_mtime_ns(const std::string& path);
 
 /// Hash source path + mtime + file bytes (stub content key); returns 0 when unreadable.
 [[nodiscard]] u64 hash_file_content(const std::string& path);

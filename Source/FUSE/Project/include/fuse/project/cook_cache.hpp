@@ -146,6 +146,16 @@ struct CookCacheInvalidationEstimate {
     }
 };
 
+/// Cache-wide invalidation surface — entry totals plus prune-class breakdown (B7.9 deepen).
+struct CookCacheInvalidationSurface {
+    u32 entry_count = 0;
+    u32 prunable_entries = 0;
+    u32 invalid_entries = 0;
+    u32 stale_entries = 0;
+
+    [[nodiscard]] u32 reconcile_total() const { return prunable_entries; }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -494,6 +504,8 @@ public:
         const std::vector<CookJob>& jobs) const;
     /// Structural preflight for cache records — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
     [[nodiscard]] CookHashPreflight preflight_store_entry(const CookCacheEntry& entry) const;
+    /// Cache-wide invalidation surface — mirrors entry/prune probes for reconcile planning (B7.9 deepen).
+    [[nodiscard]] CookCacheInvalidationSurface estimate_invalidation_surface() const;
     /// True when `estimate_prune_removals().total()` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_prune_all() const;
     /// Deduplicated source paths whose stored keys are stale on disk (B7.9 deepen).
