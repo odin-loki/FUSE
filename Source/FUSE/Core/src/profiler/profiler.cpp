@@ -355,6 +355,10 @@ const ProfileEvent& emptyProfileEvent() {
     return kEmpty;
 }
 
+bool isEmptyProfileEvent(const ProfileEvent& event) {
+    return &event == &emptyProfileEvent() || event.name == nullptr;
+}
+
 const ProfileEvent& eventAt(u32 index) {
     if (!isEventIndexValid(index)) {
         return emptyProfileEvent();
@@ -367,13 +371,21 @@ const ProfileEvent& eventAt(u32 index) {
     return g_events[ringIndex];
 }
 
-bool tryEventAt(u32 index, ProfileEvent& outEvent) {
+bool tryRecordedEventAt(u32 index, ProfileEvent& outEvent) {
     if (!isEventIndexValid(index)) {
         outEvent = ProfileEvent{};
         return false;
     }
 
     outEvent = eventAt(index);
+    return true;
+}
+
+bool tryEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!tryRecordedEventAt(index, outEvent)) {
+        return false;
+    }
+
     return isValidProfileEvent(outEvent);
 }
 
@@ -430,6 +442,9 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.bufferFull = isBufferFull();
+    preflight.firstEventIndex = firstEventIndex();
+    preflight.lastEventIndex = lastEventIndex();
     return preflight;
 }
 
@@ -565,7 +580,7 @@ std::string exportChromeTraceJson() {
 
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.name == nullptr) {
+        if (!isValidEventName(event.name)) {
             continue;
         }
 
