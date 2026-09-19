@@ -2066,3 +2066,35 @@ void testFroxelSampleCoordAndDensityPreflightGuards() {
     expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensityForDesc(undersized, desc, densityReason),
                "tryValidateGridDensityForDesc rejects undersized storage");
     testFroxelSampleCoordAndDensityPreflightGuards();
+
+// --- deepen additive from deepen-froxel-volumetric-guards-1251 ---
+void testFroxelSampleCoordPreflightAndEmptyGridValidation() {
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryAreSampleCoordsInBounds(badTile, desc, coordReason),
+               "tryAreSampleCoordsInBounds rejects OOB tile");
+    expectTrue(coordReason == fuse::renderer::SampleCoordRejectReason::OutOfRangeTile,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(coordReason), "out_of_range_tile") == 0,
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryAreSampleCoordsInBounds(badWeight, desc, coordReason),
+               "tryAreSampleCoordsInBounds rejects OOB interpolation weight");
+    expectTrue(coordReason == fuse::renderer::SampleCoordRejectReason::OutOfRangeWeight,
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryAreSampleCoordsInBounds(inBounds, zeroDesc, coordReason),
+               "tryAreSampleCoordsInBounds rejects empty froxel grid");
+               "tryMapScreenDepthToSampleCoords succeeds on valid input");
+               "tryMapScreenDepthToFroxelIndex succeeds on valid input");
+    expectTrue(froxelIndex < desc.froxelCount(), "tryMapScreenDepthToFroxelIndex yields in-bounds index");
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryMapScreenDepthToFroxelIndex(
+               "tryMapScreenDepthToFroxelIndex rejects invalid camera");
+    expectTrue(coordReason == fuse::renderer::SampleCoordRejectReason::InvalidCamera,
+    expectTrue(fuse::renderer::froxel_util::tryValidateGridDensityForDesc(emptyGridForValidation, zeroDesc, densityReason),
+               "tryValidateGridDensityForDesc vacuously succeeds when both grid and desc are empty");
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensityForDesc(grid, zeroDesc, densityReason),
+               "tryValidateGridDensityForDesc rejects non-empty storage on empty desc");
+    expectNear(sampled, 1.f, 1e-5f, "trySampleDensityAtIndex with reason returns density");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityBilinear(grid, desc, oobCoords, rejectedBilinear,
+               "trySampleDensityBilinear with reason rejects OOB sample coords");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::SampleCoordRejected,
+    expectTrue(std::strcmp(fuse::renderer::densityLookupRejectReasonLabel(lookupReason), "sample_coord_rejected") == 0,
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::ScreenMappingFailed,
+    expectTrue(std::strcmp(fuse::renderer::densityLookupRejectReasonLabel(lookupReason), "screen_mapping_failed") == 0,
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityTrilinear(emptyGrid, desc, inBounds, rejectedBilinear,
+               "trySampleDensityTrilinear with reason rejects empty storage");
+    testFroxelSampleCoordPreflightAndEmptyGridValidation();
