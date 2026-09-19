@@ -7043,6 +7043,58 @@ u32 wake_all_island_sleepers_guarded(RigidBodySoA& bodies, const ContactIslandGr
     return wake_all_island_sleepers_result(bodies, graph).wokeCount;
 }
 
+std::vector<u32> collect_solveable_island_indices(const ContactIslandGraph& graph,
+                                                  const RigidBodySoA& bodies) {
+    std::vector<u32> indices;
+    const u32 count = graph.islandCount();
+    indices.reserve(count);
+    for (u32 islandIndex = 0; islandIndex < count; ++islandIndex) {
+        const IslandSolveJob job = extract_island(graph, islandIndex);
+        if (!should_solve_island(job)) {
+            continue;
+        }
+        if (should_skip_island_sleep_solve(*job.island, bodies)) {
+        indices.push_back(islandIndex);
+    return indices;
+
+u32 count_solveable_islands(const ContactIslandGraph& graph, const RigidBodySoA& bodies) {
+    return static_cast<u32>(collect_solveable_island_indices(graph, bodies).size());
+
+bool has_solveable_islands(const ContactIslandGraph& graph, const RigidBodySoA& bodies) {
+    return count_solveable_islands(graph, bodies) > 0u;
+
+IslandSleepWakeDispatchPreflight preflight_island_sleep_wake_dispatch(const ContactIslandGraph& graph,
+                                                                      const RigidBodySoA& bodies,
+                                                                      f32 dt) {
+    IslandSleepWakeDispatchPreflight preflight{};
+    preflight.dispatch = preflight_island_dispatch(graph, dt);
+    preflight.sleep = preflight_island_sleep_graph(graph, bodies);
+    preflight.wake = preflight_island_wake_graph(graph, bodies);
+    preflight.skipped = !preflight.can_dispatch();
+    return preflight;
+
+bool should_skip_island_sleep_wake_dispatch(const ContactIslandGraph& graph,
+    return !preflight_island_sleep_wake_dispatch(graph, bodies, dt).can_dispatch();
+
+bool solve_island_job_guarded(RigidBodySoA& bodies,
+                              const ContactIslandGraph::Island& island,
+                              SolverWorkBuffers& workBuffers,
+                              const std::vector<DistanceConstraint>& distanceConstraints,
+                              f32 dt,
+                              f32 contactCompliance,
+                              const std::function<f32(const RigidBodySoA&, u32)>& invMassFn) {
+    if (!is_finite_island_solve_dt(dt)) {
+        return false;
+    const std::vector<narrowphase::ContactManifold>& contacts = workBuffers.contactManifolds();
+    if (should_skip_island_constraint_solve(island, bodies, contacts, distanceConstraints)) {
+    return solve_island_job(bodies,
+                            island,
+                            workBuffers,
+                            distanceConstraints,
+                            dt,
+                            contactCompliance,
+                            invMassFn);
+
 IslandWakeResult wake_island_sleepers_result(RigidBodySoA& bodies,
                                              const ContactIslandGraph& graph,
                                              u32 islandIndex) {
@@ -7066,6 +7118,10 @@ IslandBatchWakeResult wake_all_island_sleepers_result(RigidBodySoA& bodies,
 
     const IslandWakePreflight preflight = preflight_island_wake(island, bodies);
     if (!preflight.should_wake_sleepers()) {
+    }
+
+        result.skipped = true;
+        return result;
 
     for (u32 bodyIndex : island.bodyIndices) {
         if (bodyIndex >= bodies.count()) {
@@ -7101,6 +7157,11 @@ IslandWakeResult wake_island_sleepers_by_index_result(RigidBodySoA& bodies,
 
 
 
+            continue;
+
+
+IslandBatchWakeResult wake_all_island_sleepers_result(RigidBodySoA& bodies,
+                                                      const ContactIslandGraph& graph) {
     IslandBatchWakeResult result{};
     const IslandWakeGraphPreflight preflight = preflight_island_wake_graph(graph, bodies);
     result.wakeableCount = preflight.stats.wakeableCount;
@@ -9398,17 +9459,11 @@ IslandBatchSleepAwareDispatchResult dispatch_nonsleeping_islands_result(
     IslandDispatchSolveablePreflight preflight{};
         preflight_island_constraint_solve_graph(graph, bodies, contacts, distanceConstraints);
     preflight.skipped = preflight.dispatch.skipped || preflight.constraintSolve.skipped;
-}
 
 bool should_skip_island_dispatch_solveable(const ContactIslandGraph& graph,
-                                           const RigidBodySoA& bodies,
-                                           const std::vector<narrowphase::ContactManifold>& contacts,
-                                           const std::vector<DistanceConstraint>& distanceConstraints,
-                                           f32 dt) {
     return !preflight_island_dispatch_solveable(graph, bodies, contacts, distanceConstraints, dt)
 
 u32 dispatch_solveable_islands_guarded(RigidBodySoA& bodies,
-                                       const ContactIslandGraph& graph,
     return dispatch_solveable_islands_result(bodies,
 
 IslandBatchDispatchSolveableResult dispatch_solveable_islands_result(
@@ -9416,20 +9471,17 @@ IslandBatchDispatchSolveableResult dispatch_solveable_islands_result(
     const IslandDispatchSolveablePreflight preflight =
         preflight_island_dispatch_solveable(graph, bodies, contacts, distanceConstraints, dt);
     result.solveableCount = preflight.constraintSolve.stats.solveableCount;
-        result.skipped = true;
-        result.skippedCount = result.solveableCount;
-        return result;
-                .can_dispatch();
-}
 
 
-                                       SolverWorkBuffers& workBuffers,
-                                       const std::vector<DistanceConstraint>& distanceConstraints,
-                                       f32 dt,
-                                       f32 contactCompliance,
-                                       const std::function<f32(const RigidBodySoA&, u32)>& invMassFn) {
-    return dispatch_solveable_islands_result(bodies,
-                                             graph,
+IslandSleepWakeDispatchResult dispatch_solve_island_with_sleep_wake_result(
+    IslandSleepWakeDispatchResult result{};
+
+
+
+    if (should_skip_island_sleep_solve(*job.island, bodies)) {
+
+    result.wokeSleepers = wakeResult.woke;
+
                                              workBuffers,
                                              distanceConstraints,
                                              dt,
@@ -9443,6 +9495,28 @@ IslandBatchDispatchSolveableResult dispatch_solveable_islands_result(
 }
 
 IslandBatchDispatchSolveableResult dispatch_solveable_islands_result(
+                                             invMassFn);
+    result.skipped = !result.solved;
+    return result;
+
+bool dispatch_solve_island_with_sleep_wake_guards(RigidBodySoA& bodies,
+                                                  const ContactIslandGraph& graph,
+                                                  u32 islandIndex,
+                                                  SolverWorkBuffers& workBuffers,
+                                                  const std::vector<DistanceConstraint>& distanceConstraints,
+                                                  f32 dt,
+                                                  f32 contactCompliance,
+                                                  const std::function<f32(const RigidBodySoA&, u32)>& invMassFn) {
+    return dispatch_solve_island_with_sleep_wake_result(bodies,
+                                                        graph,
+                                                        islandIndex,
+                                                        workBuffers,
+                                                        distanceConstraints,
+                                                        dt,
+                                                        contactCompliance,
+        .solved;
+
+IslandBatchSleepWakeDispatchResult dispatch_all_islands_with_sleep_wake_result(
     const ContactIslandGraph& graph,
     SolverWorkBuffers& workBuffers,
     const std::vector<DistanceConstraint>& distanceConstraints,
@@ -9456,6 +9530,11 @@ IslandBatchDispatchSolveableResult dispatch_solveable_islands_result(
         result.skipped = true;
         result.skippedCount = result.solveableCount;
         return result;
+    IslandBatchSleepWakeDispatchResult result{};
+    const IslandSleepWakeDispatchPreflight preflight = preflight_island_sleep_wake_dispatch(graph, bodies, dt);
+    result.solveableCount = count_solveable_islands(graph, bodies);
+    if (!preflight.can_dispatch()) {
+    }
 
     const IslandBatchWakeResult wakeBatch = wake_all_island_sleepers_result(bodies, graph);
     result.wokeCount = wakeBatch.wokeCount;
@@ -9469,13 +9548,34 @@ IslandBatchDispatchSolveableResult dispatch_solveable_islands_result(
                                                      distanceConstraints,
                                                      dt,
                                                      contactCompliance,
-                                                     invMassFn)) {
+    for (u32 islandIndex : collect_solveable_island_indices(graph, bodies)) {
+        const IslandSleepWakeDispatchResult dispatchResult = dispatch_solve_island_with_sleep_wake_result(
+            bodies,
+            invMassFn);
+        if (dispatchResult.solved) {
             ++result.solvedCount;
         } else {
             ++result.skippedCount;
         }
     }
     return result;
+}
+
+u32 dispatch_all_islands_with_sleep_wake_guards(RigidBodySoA& bodies,
+                                                const ContactIslandGraph& graph,
+                                                SolverWorkBuffers& workBuffers,
+                                                const std::vector<DistanceConstraint>& distanceConstraints,
+                                                f32 dt,
+                                                f32 contactCompliance,
+                                                const std::function<f32(const RigidBodySoA&, u32)>& invMassFn) {
+    return dispatch_all_islands_with_sleep_wake_result(bodies,
+                                                       graph,
+                                                       workBuffers,
+                                                       distanceConstraints,
+                                                       dt,
+                                                       contactCompliance,
+                                                       invMassFn)
+        .solvedCount;
 }
 
 } // namespace fuse::physics

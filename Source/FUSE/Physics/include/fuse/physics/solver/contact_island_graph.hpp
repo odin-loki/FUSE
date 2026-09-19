@@ -658,6 +658,14 @@ struct ContactIslandGraph {
     /// Count distance constraints whose body indices are in range for partitioning.
     static u32 countUnionableDistanceConstraints(u32 bodyCount,
                                                  const std::vector<DistanceConstraint>& constraints);
+    /// True when both body indices are in `[0, bodyCount)`.
+    static bool isBodyPairInRange(u32 bodyA, u32 bodyB, u32 bodyCount);
+
+    /// True when a contact references in-range bodies.
+    static bool isContactInRange(const narrowphase::ContactManifold& contact, u32 bodyCount);
+
+    /// True when a distance constraint references in-range bodies.
+    static bool isDistanceConstraintInRange(const DistanceConstraint& constraint, u32 bodyCount);
 
 private:
     void unionBodies(u32 a, u32 b);

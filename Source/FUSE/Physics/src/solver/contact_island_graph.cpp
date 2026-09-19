@@ -1022,6 +1022,18 @@ bool bodiesInRange(u32 bodyA, u32 bodyB, u32 bodyCount) {
 
 } // namespace
 
+bool ContactIslandGraph::isBodyPairInRange(u32 bodyA, u32 bodyB, u32 bodyCount) {
+    return bodyA < bodyCount && bodyB < bodyCount;
+}
+
+bool ContactIslandGraph::isContactInRange(const narrowphase::ContactManifold& contact, u32 bodyCount) {
+    return isBodyPairInRange(contact.bodyA, contact.bodyB, bodyCount);
+}
+
+bool ContactIslandGraph::isDistanceConstraintInRange(const DistanceConstraint& constraint, u32 bodyCount) {
+    return isBodyPairInRange(constraint.bodyA, constraint.bodyB, bodyCount);
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
@@ -1097,9 +1109,8 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!contact_pair_in_range(contact, bodyCount)) {
         if (contact.bodyA >= bodyCount || contact.bodyB >= bodyCount) {
         if (!contact.valid || !bodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
-            continue;
-        }
         if (!bodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
+        if (!contact.valid || !isContactInRange(contact, bodyCount)) {
             continue;
         }
         unionBodies(contact.bodyA, contact.bodyB);
@@ -1111,6 +1122,7 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (constraint.bodyA >= bodyCount || constraint.bodyB >= bodyCount) {
         if (!distance_bodies_in_range(constraint, bodyCount)) {
         if (!bodiesInRange(constraint.bodyA, constraint.bodyB, bodyCount)) {
+        if (!isDistanceConstraintInRange(constraint, bodyCount)) {
             continue;
         }
         unionBodies(constraint.bodyA, constraint.bodyB);
@@ -1142,9 +1154,8 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (contact.bodyA >= bodyCount || contact.bodyB >= bodyCount) {
         if (!contact.valid || !contact_bodies_in_range(contact, bodyCount)) {
         if (!contact.valid || !bodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
-            continue;
-        }
         if (!bodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
+        if (!contact.valid || !isContactInRange(contact, bodyCount)) {
             continue;
         }
         const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
@@ -1161,6 +1172,7 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!distance_body_indices_in_range(constraint, bodyCount)) {
         if (!distance_bodies_in_range(constraint, bodyCount)) {
         if (!bodiesInRange(constraint.bodyA, constraint.bodyB, bodyCount)) {
+        if (!isDistanceConstraintInRange(constraint, bodyCount)) {
             continue;
         }
         const u32 islandIndex = rootToIsland[findRoot(constraint.bodyA)];
