@@ -90,10 +90,6 @@ u32 currentFlowNestingDepth() {
     return threadLocalFlowNestingDepth();
 }
 
-bool isValidEventName(const char* name) {
-    return name != nullptr && name[0] != '\0';
-}
-
 std::string formatCounterArgsJson(const ProfileEvent& event) {
     std::string args = "\"args\":{\"value\":";
     if (event.counterKind == CounterValueKind::Float) {
@@ -249,6 +245,27 @@ void setEnabled(bool enabled) {
     g_enabled.store(enabled, std::memory_order_release);
 }
 
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
+bool canRecordScope(const char* name) {
+    return enabled() && isValidEventName(name);
+}
+
+bool canBeginAsyncFlow(const char* name) {
+    return enabled() && isValidEventName(name);
+}
+
+bool canEndAsyncFlow(const char* name) {
+    return enabled() && isValidEventName(name)
+           && g_openAsyncFlowCount.load(std::memory_order_acquire) > 0u;
+}
+
+bool canSampleCounter(const char* track) {
+    return enabled() && isValidEventName(track);
+}
+
 void beginFrame() {
     g_frameIndex.fetch_add(1u, std::memory_order_acq_rel);
 }
@@ -301,6 +318,10 @@ bool isFlowNestingBalanced() {
     return flowNestingDepth() == 0u;
 }
 
+bool isProfilerGuardStateBalanced() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -318,7 +339,7 @@ bool isEventIndexValid(u32 index) {
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return event.name != nullptr;
+    return isValidEventName(event.name);
 }
 
 const ProfileEvent& eventAt(u32 index) {
@@ -347,6 +368,30 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
+}
+
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
+bool hasExportableEvents() {
+    const u32 count = eventCount();
+    for (u32 i = 0; i < count; ++i) {
+        if (isValidProfileEvent(eventAt(i))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool canExportChromeTrace() {
+    return true;
 }
 
 const ProfileEvent& lastEvent() {

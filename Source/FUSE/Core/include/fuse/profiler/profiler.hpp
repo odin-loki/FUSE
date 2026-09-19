@@ -57,6 +57,15 @@ private:
 bool enabled();
 void setEnabled(bool enabled);
 
+/// True when a profiler label/track name is non-null and non-empty.
+bool isValidEventName(const char* name);
+
+/// Preflight guards for record entry points — false when disabled or name is invalid.
+bool canRecordScope(const char* name);
+bool canBeginAsyncFlow(const char* name);
+bool canEndAsyncFlow(const char* name);
+bool canSampleCounter(const char* track);
+
 void beginFrame();
 void endFrame();
 
@@ -71,6 +80,8 @@ u32 openAsyncFlowCount();
 bool hasOpenAsyncFlows();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
+/// True when scope/flow nesting is balanced and no async flows remain open.
+bool isProfilerGuardStateBalanced();
 
 bool hasEvents();
 bool isBufferEmpty();
@@ -80,8 +91,13 @@ bool isValidProfileEvent(const ProfileEvent& event);
 u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
+bool tryLastEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
+
+/// Export preflights — export is always safe to invoke; these diagnose content/readiness.
+bool hasExportableEvents();
+bool canExportChromeTrace();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
