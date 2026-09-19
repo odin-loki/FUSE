@@ -1,8 +1,26 @@
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace fuse::physics::narrowphase {
+
+namespace {
+
+bool tangentBasisMatchesNormal(vec3 normal, const TangentBasis& basis, f32 epsilon = 1e-4f) {
+    const f32 tangent1Length = basis.tangent1.length();
+    const f32 tangent2Length = basis.tangent2.length();
+    if (std::fabs(tangent1Length - 1.f) > epsilon || std::fabs(tangent2Length - 1.f) > epsilon) {
+        return false;
+    }
+
+    const vec3 unitNormal = normal.normalized();
+    return std::fabs(basis.tangent1.dot(unitNormal)) <= epsilon &&
+           std::fabs(basis.tangent2.dot(unitNormal)) <= epsilon &&
+           std::fabs(basis.tangent1.dot(basis.tangent2)) <= epsilon;
+}
+
+} // namespace
 
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
@@ -99,6 +117,75 @@ void ContactBufferSoA::buildFrictionTangentBases() {
         if (validFlags[slot] == 0u) {
             continue;
         }
+        const TangentBasis basis = buildTangentBasis(contactNormals[slot]);
+        tangent1[slot] = basis.tangent1;
+        tangent2[slot] = basis.tangent2;
+    }
+}
+
+u32 ContactBufferSoA::countValidSlots() const {
+    if (canSkipSoAIteration()) {
+        return 0u;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    u32 validCount = 0u;
+    for (u32 slot = 0u; slot < scanCount; ++slot) {
+        if (validFlags[slot] != 0u) {
+            ++validCount;
+        }
+    }
+    return validCount;
+}
+
+bool ContactBufferSoA::canSkipCompaction() const {
+    if (canSkipSoAIteration()) {
+        return true;
+    }
+
+    if (activeCount > 0u) {
+        for (u32 slot = 0u; slot < activeCount; ++slot) {
+            if (validFlags[slot] == 0u) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    if (pairSlotCount == 0u) {
+        return true;
+    }
+
+    for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ContactBufferSoA::canSkipMaxCapacityClamp() const {
+    if (activeCount == 0u) {
+        return true;
+    }
+    return maxCapacity == 0u || activeCount <= maxCapacity;
+}
+
+bool ContactBufferSoA::canSkipCompactAndClamp() const {
+    return canSkipCompaction() && canSkipMaxCapacityClamp();
+}
+
+void ContactBufferSoA::buildFrictionTangentBasesIfNeeded() {
+    for (u32 slot = 0u; slot < activeCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            continue;
+        }
+
+        const TangentBasis existing{tangent1[slot], tangent2[slot]};
+        if (tangentBasisMatchesNormal(contactNormals[slot], existing)) {
+            continue;
+        }
+
         const TangentBasis basis = buildTangentBasis(contactNormals[slot]);
         tangent1[slot] = basis.tangent1;
         tangent2[slot] = basis.tangent2;
@@ -273,6 +360,72 @@ std::vector<ContactManifold> ContactBufferSoA::toVector() const {
         }
     }
     return manifolds;
+}
+
+ContactBufferCompactionPreflight preflight_contact_buffer_compact(const ContactBufferSoA& buffer) {
+    ContactBufferCompactionPreflight preflight{};
+    if (buffer.canSkipSoAIteration()) {
+        preflight.skipped = true;
+        preflight.emptySlots = true;
+        return preflight;
+    }
+
+    const u32 scanCount = buffer.pairSlotCount > 0u ? buffer.pairSlotCount : buffer.activeCount;
+    if (scanCount == 0u) {
+        preflight.skipped = true;
+        preflight.emptySlots = true;
+        return preflight;
+    }
+
+    preflight.allValid = buffer.canSkipCompaction();
+    preflight.needsCompaction = !preflight.allValid;
+    return preflight;
+}
+
+bool should_skip_contact_buffer_compact(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_compact(buffer).can_skip_compaction();
+}
+
+ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer) {
+    ContactBufferClampPreflight preflight{};
+    if (buffer.activeCount == 0u) {
+        preflight.skipped = true;
+        preflight.emptyBuffer = true;
+        return preflight;
+    }
+
+    preflight.withinCapacity = buffer.canSkipMaxCapacityClamp();
+    preflight.needsClamp = !preflight.withinCapacity;
+    return preflight;
+}
+
+bool should_skip_contact_buffer_clamp(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_clamp(buffer).can_skip_clamp();
+}
+
+ContactBufferFrictionPreflight preflight_contact_buffer_friction_tangents(const ContactBufferSoA& buffer) {
+    ContactBufferFrictionPreflight preflight{};
+    if (buffer.activeCount == 0u) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.slotCount = buffer.activeCount;
+    for (u32 slot = 0u; slot < buffer.activeCount; ++slot) {
+        if (buffer.validFlags[slot] == 0u) {
+            continue;
+        }
+
+        const TangentBasis existing{buffer.tangent1[slot], buffer.tangent2[slot]};
+        if (!tangentBasisMatchesNormal(buffer.contactNormals[slot], existing)) {
+            ++preflight.needsRebuildCount;
+        }
+    }
+    return preflight;
+}
+
+bool should_skip_contact_buffer_friction_rebuild(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_friction_tangents(buffer).can_skip_rebuild();
 }
 
 } // namespace fuse::physics::narrowphase

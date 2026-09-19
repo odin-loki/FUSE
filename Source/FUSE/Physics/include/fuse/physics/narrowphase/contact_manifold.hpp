@@ -148,6 +148,9 @@ struct ManifoldPrunePreflight {
     bool can_skip_prune(f32 shallowMinDepth = 0.f) const {
         return skipped || (!needs_pruning() && !needs_shallow_pruning(shallowMinDepth));
     }
+
+    /// Inverse of `can_skip_prune` (B4.4 deepen follow-up pass).
+    bool should_run_prune(f32 shallowMinDepth = 0.f) const { return !can_skip_prune(shallowMinDepth); }
 };
 
 /// Populate prune preflight from a manifold without mutating slots (B4.4 deepen pass).
@@ -175,6 +178,9 @@ struct ManifoldFinalizePreflight {
     bool canReuseFrictionBasis = false;
 
     bool can_finalize() const { return !skipped && canFinalize; }
+
+    /// Inverse of skipped / not-finalizable (B4.4 deepen follow-up pass).
+    bool should_run_finalize() const { return can_finalize(); }
 };
 
 /// Populate finalize preflight without mutating the manifold (B4.4 deepen follow-up).
@@ -190,6 +196,27 @@ bool can_skip_manifold_finalize(
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
+
+/// Inverse of `should_skip_manifold_prune` (B4.4 deepen follow-up pass).
+bool should_run_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Inverse of `can_skip_manifold_finalize` (B4.4 deepen follow-up pass).
+bool should_run_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Prune only when preflight reports work; returns true when points remain (B4.4 deepen follow-up pass).
+bool prune_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
