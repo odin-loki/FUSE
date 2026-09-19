@@ -38,6 +38,14 @@ struct CookCachePruneEstimate {
     [[nodiscard]] u32 total() const { return invalid_entries + stale_entries; }
 };
 
+/// Read-only upstream invalidation breakdown — mirrors `invalidate_downstream_of` (B7.9 deepen).
+struct CookCacheUpstreamInvalidationEstimate {
+    u32 direct_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -58,6 +66,9 @@ struct CookCachePruneEstimate {
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     return is_valid_cook_cache_key(combine_cook_cache_key(source_hash, upstream_hash));
 }
+
+/// Read-only cache-entry hash preflight — paths, key, and on-disk source readability (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -92,14 +103,28 @@ public:
 
     /// Read-only invalidation probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] bool would_invalidate(u64 content_hash) const;
+    /// Read-only mirror of `invalidate_source` — true when at least one entry matches (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    /// Read-only mirror of `invalidate_output` — true when at least one entry matches (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                      const std::vector<CookJobDependencyEdge>& edges,
+                                                      const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
                                                      u64 current_content_hash) const;
     [[nodiscard]] u32 count_stale_upstream_hashes(
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    /// Source paths that `invalidate_stale_upstream_hashes` would touch — one push per matching entry (B7.9 deepen).
+    /// Deduplicated source paths that `invalidate_stale_upstream_hashes` would touch (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Deduplicated count of `probe_stale_upstream_sources` (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_upstream_sources(
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
                                           const std::vector<CookJobDependencyEdge>& edges,
@@ -107,6 +132,10 @@ public:
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;
+    /// Upstream invalidation breakdown without mutating stats (B7.9 deepen).
+    [[nodiscard]] CookCacheUpstreamInvalidationEstimate estimate_upstream_invalidation(
+        const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
+        const std::vector<CookJob>& jobs) const;
     /// Prune reconcile breakdown without mutating stats (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_removals() const;
     /// True when `estimate_prune_removals().total()` is non-zero (B7.9 deepen).
