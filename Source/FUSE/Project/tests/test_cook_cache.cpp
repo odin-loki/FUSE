@@ -1401,3 +1401,9 @@ void testCookHashTryPreflightAndShouldSkipGuards() {
     expectTrue(!cooker.cache().would_invalidate_output("/tmp/fuse_b79_unknown.fusemesh"),
                "would_invalidate_output rejects unknown output");
     expectTrue(cache.preflight_store_entry(zero_key).reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-552b ---
+void testCookHashPreflightCookCacheEntry() {
+    const fuse::project::CookHashPreflight invalid_preflight =
+    expectTrue(invalid_preflight.reason == fuse::project::CookHashRejectReason::InvalidCacheEntry,
+    testCookHashPreflightCookCacheEntry();
