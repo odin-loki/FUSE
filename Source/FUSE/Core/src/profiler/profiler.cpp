@@ -785,6 +785,7 @@ bool isEmptyProfilerName(const char* name) {
     return name == nullptr || name[0] == '\0';
 bool isUsableProfileName(const char* name) {
     return name != nullptr && name[0] != '\0';
+    return isValidEventName(name);
 }
 
 ProfileNamePreflight preflightProfileName(const char* name) {
@@ -798,6 +799,8 @@ ProfileNamePreflight preflightProfileName(const char* name) {
     preflight.null_name = false;
     if (name[0] == '\0') {
         preflight.empty_name = true;
+    }
+    return preflight;
 
 ScopePreflight preflightScope(const char* name) {
     ScopePreflight preflight{};
@@ -827,6 +830,7 @@ AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name) {
     preflight.max_observed_depth = g_maxNestingDepth.load(std::memory_order_acquire);
 
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name) {
+
     preflight.profiler_disabled = !enabled();
     const ProfileNamePreflight namePreflight = preflightProfileName(name);
     preflight.null_name = namePreflight.null_name;
@@ -839,6 +843,15 @@ AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name) {
 CounterSamplePreflight preflightCounterSample(const char* track) {
     CounterSamplePreflight preflight{};
     const ProfileNamePreflight namePreflight = preflightProfileName(track);
+    return preflight;
+}
+
+    AsyncFlowEndPreflight preflight{};
+    preflight.profiler_disabled = !enabled();
+    const ProfileNamePreflight namePreflight = preflightProfileName(name);
+    preflight.null_name = namePreflight.null_name;
+    preflight.empty_name = namePreflight.empty_name;
+
     return preflight;
 }
 
@@ -883,6 +896,8 @@ const ProfileEvent* eventAtOrNull(u32 index) {
             const ProfileEvent& event = eventAt(i);
             if (event.name == nullptr) {
                 ++preflight.null_name_skip_count;
+            }
+    return preflight;
 
 EventLookupPreflight preflightEventLookup(u32 index) {
     EventLookupPreflight preflight{};
@@ -891,6 +906,11 @@ EventLookupPreflight preflightEventLookup(u32 index) {
 
 bool canLookupEventAt(u32 index) {
     return preflightEventLookup(index).can_lookup();
+    preflight.event_count = eventCount();
+    preflight.buffer_empty = preflight.event_count == 0u;
+    return preflight;
+}
+
 
 bool tryEventAt(u32 index, const ProfileEvent*& event_out) {
     const EventLookupPreflight preflight = preflightEventLookup(index);

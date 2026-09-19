@@ -154,6 +154,7 @@ struct ProfileNamePreflight {
 
     [[nodiscard]] bool can_record() const { return !null_name && !empty_name; }
     [[nodiscard]] bool should_skip() const { return !can_record(); }
+};
 
 /// Preflight for entering a CPU profile scope (B1.6 deepen).
 struct ScopePreflight {
@@ -161,6 +162,10 @@ struct ScopePreflight {
 
     [[nodiscard]] bool can_enter() const { return !profiler_disabled && !null_name && !empty_name; }
     [[nodiscard]] bool should_skip() const { return !can_enter(); }
+    bool null_name = true;
+    bool empty_name = false;
+
+};
 
 /// Preflight for active scope nesting depth introspection (B1.6 deepen).
 struct ScopeNestingPreflight {
@@ -175,6 +180,15 @@ struct ScopeNestingPreflight {
     [[nodiscard]] bool should_skip() const { return !can_begin(); }
 
 /// Preflight for async flow end guards — surfaces orphan finish risk (B1.6 deepen).
+};
+
+struct AsyncFlowBeginPreflight {
+    bool profiler_disabled = false;
+    bool null_name = true;
+    bool empty_name = false;
+
+
+struct AsyncFlowEndPreflight {
     bool no_open_flows = true;
     u32 open_flow_count = 0;
 
@@ -190,6 +204,15 @@ struct CounterSamplePreflight {
 
 /// Preflight for chrome://tracing export — buffer state and skipped null-name events (B1.6 deepen).
     bool buffer_empty = true;
+};
+
+    bool profiler_disabled = false;
+    bool null_name = true;
+    bool empty_name = false;
+
+
+struct ChromeTraceExportPreflight {
+    u32 event_count = 0;
     u32 null_name_skip_count = 0;
     u32 frame_index = 0;
 
@@ -206,6 +229,13 @@ struct EventLookupPreflight {
 
     [[nodiscard]] bool can_lookup() const { return !buffer_empty && !out_of_range; }
     [[nodiscard]] bool should_use_sentinel() const { return !can_lookup(); }
+    }
+
+};
+
+    bool buffer_empty = true;
+    u32 event_count = 0;
+
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
@@ -455,14 +485,11 @@ struct ChromeTraceExportPreflight {
     bool bufferEmpty = true;
     u32 eventCount = 0;
     u32 frameIndex = 0;
-    bool hasOpenScopes = false;
-    bool hasOpenAsyncFlows = false;
     /// True when async flow begins were not paired before export (diagnostic only).
     bool hasUnmatchedAsyncFlows = false;
 
     [[nodiscard]] bool hasEventsToExport() const { return eventCount > 0u; }
 
-};
 
 [[nodiscard]] ChromeTraceExportPreflight preflightChromeTraceExport();
 
