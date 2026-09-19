@@ -880,6 +880,7 @@ public:
     /// Early-out when resolve frame guard preflight would reject (B5.9 deepen).
     bool shouldSkipResolveFrameGuards(const TaaResolveDesc& desc, u32 frameIndex,
                                       u32 observedGeneration) const;
+    /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
