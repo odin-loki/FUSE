@@ -83,6 +83,47 @@ bool ScriptConsole::is_meta_command(const char* name) {
            std::strcmp(name, "repeat") == 0 || std::strcmp(name, "history") == 0;
 }
 
+bool ScriptConsole::is_meta_line(const char* line) {
+    if (line == nullptr) {
+        return false;
+    }
+
+    std::string command;
+    std::string args;
+    if (!splitCommandLine(line, command, args)) {
+        return false;
+    }
+
+    return is_meta_command(command.c_str());
+}
+
+bool ScriptConsole::would_record_history(const char* line) const {
+    if (line == nullptr) {
+        return false;
+    }
+
+    std::string command;
+    std::string args;
+    if (!splitCommandLine(line, command, args)) {
+        return false;
+    }
+
+    return !is_meta_command(command.c_str());
+}
+
+std::string ScriptConsole::resolve_command_name(const char* partial) const {
+    if (partial == nullptr) {
+        return {};
+    }
+
+    const std::string trimmed = trim(partial);
+    if (trimmed.empty()) {
+        return {};
+    }
+
+    return m_commands.unique_prefix_match(trimmed.c_str());
+}
+
 void ScriptConsole::attach(ScriptHost* host) {
     m_host = host;
 }
@@ -164,7 +205,7 @@ void ScriptConsole::registerBuiltIns_() {
                                               "no command to repeat"};
         }
 
-        return console.executeLine_(console.m_lastExecutedLine.c_str(), true);
+        return console.executeLine_(console.m_lastExecutedLine.c_str(), false);
     });
 
     m_commands.register_built_in("help", [](ScriptConsole& console, const char* /*args*/) {
@@ -176,14 +217,15 @@ void ScriptConsole::registerBuiltIns_() {
     });
 
     m_commands.register_built_in("describe", [](ScriptConsole& console, const char* args) {
-        if (args == nullptr || args[0] == '\0') {
+        const std::string name = trim(args != nullptr ? std::string(args) : std::string());
+        if (name.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
                                               "describe requires a command name"};
         }
 
-        const ScriptConsoleCommandKind kind = console.m_commands.lookup_kind(args);
+        const ScriptConsoleCommandKind kind = console.m_commands.lookup_kind(name.c_str());
         std::ostringstream out;
-        out << args << ": " << commandKindLabel(kind);
+        out << name << ": " << commandKindLabel(kind);
         return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, out.str()};
     });
 
@@ -269,7 +311,13 @@ void ScriptConsole::registerBuiltIns_() {
     });
 
     m_commands.register_built_in("history", [](ScriptConsole& console, const char* args) {
-        if (args != nullptr && std::strcmp(args, "clear") == 0) {
+        const std::string subcommand = trim(args != nullptr ? std::string(args) : std::string());
+        if (!subcommand.empty()) {
+            if (subcommand != "clear") {
+                return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
+                                                  "history subcommand must be clear"};
+            }
+
             if (console.is_history_empty()) {
                 return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok,
                                                   "history already empty"};
