@@ -472,6 +472,75 @@ void testCookCacheHasInvalidAndStaleEntryGuards() {
 
     expectTrue(cooker.cache().prune_invalid_entries() == 0u, "prune_invalid skips stale-only cache");
     expectTrue(cooker.cache().prune_stale_entries() == 1u, "prune_stale removes stale-only entry");
+void testContentHashValidityAndFnvGuards() {
+    expectTrue(!fuse::project::is_valid_content_hash(0), "zero content hash is invalid");
+    expectTrue(fuse::project::is_valid_content_hash(42u), "non-zero content hash is valid");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_valid_hash.obj", "# valid hash\n");
+    const fuse::u64 file_hash = fuse::project::hash_file_content(source);
+    expectTrue(fuse::project::is_valid_content_hash(file_hash), "readable file yields valid content hash");
+    expectTrue(!fuse::project::is_valid_content_hash(fuse::project::hash_file_content("")),
+               "empty path yields invalid content hash");
+
+    expectTrue(fuse::project::fnv1a64_bytes(nullptr, 0) != 0, "null zero-length FNV is defined");
+    expectTrue(fuse::project::fnv1a64_bytes(nullptr, 4) == 0, "null non-zero-length FNV is guarded to zero");
+
+void testCookCacheStaleVsInvalidClassification() {
+    invalid.source_path = "/tmp/fuse_b79_classify_invalid.obj";
+    invalid.output_path = "/tmp/fuse_b79_classify_invalid.fusemesh";
+    expectTrue(fuse::project::is_invalid_cook_cache_entry(invalid), "zero-key entry is invalid");
+    expectTrue(!fuse::project::is_stale_cook_cache_entry(invalid),
+               "invalid entry is not classified as stale");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_classify_stale.obj", "# classify v1\n");
+    desc.output_path = "/tmp/fuse_b79_classify_stale.fusemesh";
+
+    expectTrue(cooked.ok, "seed cook for classification ok");
+
+    fuse::project::CookCacheEntry fresh;
+    fresh.content_hash = cooked.content_hash;
+    fresh.source_path = source;
+    fresh.output_path = desc.output_path;
+    fresh.kind = fuse::project::CookAssetKind::Mesh;
+    expectTrue(fuse::project::is_valid_cook_cache_entry(fresh), "fresh entry is valid");
+    expectTrue(!fuse::project::is_stale_cook_cache_entry(fresh), "fresh entry is not stale");
+
+    writeTempFile(source, "# classify v2\n");
+    expectTrue(fuse::project::is_stale_cook_cache_entry(fresh), "unchanged record is stale after source edit");
+    expectTrue(!fuse::project::is_invalid_cook_cache_entry(fresh), "stale entry remains structurally valid");
+
+void testCookCacheHasStaleInvalidAndCountGuards() {
+    expectTrue(cache.count_prunable_entries() == 0u, "empty cache prunable count is zero");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_count_stale.obj", "# count v1\n");
+    desc.output_path = "/tmp/fuse_b79_count_stale.fusemesh";
+
+    expectTrue(cooked.ok, "seed cook for count guards ok");
+    expectTrue(cooker.cache().count_prunable_entries() == 0u, "fresh cache prunable count is zero");
+    expectTrue(!cooker.cache().has_stale_entries(), "fresh cache has no stale entries");
+    expectTrue(!cooker.cache().has_invalid_entries(), "fresh cache has no invalid entries");
+
+    writeTempFile(source, "# count v2\n");
+    expectTrue(cooker.cache().has_stale_entries(), "source edit marks cache stale");
+    expectTrue(!cooker.cache().has_invalid_entries(), "stale-only cache has no invalid entries");
+    expectTrue(cooker.cache().count_prunable_entries() == 1u, "one stale entry counted");
+
+    expectTrue(cooker.cache().prune_stale_entries() == 1u, "stale prune removes counted entry");
+    expectTrue(cooker.cache().count_prunable_entries() == 0u, "clean cache prunable count returns to zero");
+    expectTrue(cooker.cache().prune_stale_entries() == 0u, "second stale prune on clean cache is a no-op");
+
+void testAssetCookerPruneStaleCache() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_cooker_prune.obj", "# cooker prune v1\n");
+    desc.output_path = "/tmp/fuse_b79_cooker_prune.fusemesh";
+
+    expectTrue(first.ok, "seed cook for cooker prune ok");
+    expectTrue(cooker.prune_stale_cache() == 0u, "prune_stale_cache on fresh cache is a no-op");
+
+    writeTempFile(source, "# cooker prune v2\n");
+    expectTrue(cooker.cache().has_stale_entries(), "cooker cache stale before prune_stale_cache");
+    expectTrue(cooker.prune_stale_cache() == 1u, "prune_stale_cache removes stale entry");
+    expectTrue(cooker.cache().empty(), "cooker cache empty after prune_stale_cache");
+    expectTrue(cooker.prune_stale_cache() == 0u, "second prune_stale_cache on empty cache is a no-op");
 
 void testCookCachePruneInvalidEntriesOnLoad() {
     const std::string cachePath = "/tmp/fuse_b79_prune_invalid_load.json";
@@ -899,6 +968,10 @@ int main() {
     testCookCacheProbeStaleContentSources();
     testCookCacheWouldInvalidationProbes();
     testCookCacheEntryPreflightGuards();
+    testContentHashValidityAndFnvGuards();
+    testCookCacheStaleVsInvalidClassification();
+    testCookCacheHasStaleInvalidAndCountGuards();
+    testAssetCookerPruneStaleCache();
     testCookCachePruneInvalidEntriesOnLoad();
 
     fuse::core::shutdown();

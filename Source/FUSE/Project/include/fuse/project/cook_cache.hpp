@@ -56,6 +56,14 @@ struct CookCachePruneEstimate {
            is_valid_cook_cache_path(entry.output_path);
 }
 
+/// Inverse of `is_valid_cook_cache_entry` — zero keys or empty paths (B7.9 deepen).
+[[nodiscard]] inline bool is_invalid_cook_cache_entry(const CookCacheEntry& entry) {
+    return !is_valid_cook_cache_entry(entry);
+}
+
+/// True when a structurally valid entry's stored key no longer matches its source (B7.9 deepen).
+[[nodiscard]] bool is_stale_cook_cache_entry(const CookCacheEntry& entry);
+
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     return is_valid_cook_cache_key(combine_cook_cache_key(source_hash, upstream_hash));
@@ -140,6 +148,9 @@ public:
         const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
     /// Run invalid-entry then stale-content pruning — no-op on empty cache (B7.9 deepen).
     /// Run stale then invalid pruning — no-op when the cache is empty (B7.9 deepen).
+    /// True when structurally invalid records are present — `prune_invalid_entries` would remove at least one.
+    /// True when valid records have drifted from their recomputed content hash.
+    /// Count of invalid or stale records that `prune_all` would remove — zero on empty cache.
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

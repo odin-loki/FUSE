@@ -56,6 +56,7 @@ bool is_stale_cache_entry_(const CookCacheEntry& entry) {
         return true;
 
     if (!source_exists_for_entry_(entry)) {
+bool is_stale_cook_cache_entry_(const CookCacheEntry& entry) {
 
     const u64 current_key = recompute_cache_key_for_entry_(entry);
     return !is_valid_cook_cache_key(current_key) || entry.content_hash != current_key;
@@ -66,6 +67,10 @@ bool is_prunable_cache_entry_(const CookCacheEntry& entry) {
 bool is_prunable_cache_entry_(const CookCacheEntry& entry) {
     return !is_valid_cook_cache_entry(entry) || is_stale_cache_entry_(entry);
     return is_invalid_cache_entry_(entry) || is_stale_cache_entry_(entry);
+}
+
+bool is_prunable_cache_entry_(const CookCacheEntry& entry) {
+    return is_invalid_cook_cache_entry(entry) || is_stale_cook_cache_entry_(entry);
 }
 
 std::string escapeJson(const std::string& text) {
@@ -89,6 +94,7 @@ bool is_stale_cook_cache_entry(const CookCacheEntry& entry) {
 
     const u64 current_key = recompute_cache_key_for_entry_(entry);
     return !is_valid_cook_cache_key(current_key) || entry.content_hash != current_key;
+    return is_stale_cook_cache_entry_(entry);
 }
 
 CookCacheEntry* CookCache::find_entry_(u64 content_hash) {
@@ -524,6 +530,10 @@ std::vector<std::string> CookCache::probe_downstream_sources(
 }
 
 bool CookCache::has_stale_entries() const {
+bool CookCache::has_prunable_entries() const {
+    return count_prunable_entries() > 0;
+}
+
 bool CookCache::has_invalid_entries() const {
     if (m_entries.empty()) {
         return false;
@@ -549,6 +559,19 @@ bool CookCache::has_stale_entries() const {
 
 bool CookCache::has_prunable_entries() const {
     return has_invalid_entries() || has_stale_entries();
+        if (is_stale_cook_cache_entry_(entry)) {
+        }
+    return false;
+
+u32 CookCache::count_prunable_entries() const {
+    if (m_entries.empty()) {
+        return 0;
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_prunable_cache_entry_(entry)) {
+            ++count;
+    return count;
 }
 
 bool CookCache::contains(u64 content_hash) const {
