@@ -2305,3 +2305,7 @@ EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnap
 EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis) {
     return preflightEndDrag(dragging, activeAxis).canEnd();
     return fuse::editor::preflightEndDrag(m_dragging, m_activeAxis);
+
+// --- deepen additive from deepen-gizmo-preflights-9a97 ---
+    return preflightEndDrag(dragging, activeAxis, GizmoMode::Translate, GizmoSnapSettings{}).canEnd();
+    return fuse::editor::preflightEndDrag(m_dragging, m_activeAxis, m_mode, m_snap).canEnd();

@@ -3158,3 +3158,15 @@ void testSnapPreflightNoChange() {
     expectTrue(gizmo.transformDirty(), "tryEndDrag marks transform dirty");
     expectTrue(!gizmo.tryEndDrag(result), "tryEndDrag rejects after drag ended");
     expectTrue(ended.changed, "endDrag commits via tryEndDrag on active drag");
+
+// --- deepen additive from deepen-gizmo-preflights-9a97 ---
+        fuse::editor::preflightEndDrag(false, fuse::editor::GizmoAxis::X,
+    expectTrue(!inactivePreflight.snapWillApply, "inactive end preflight skips snap diagnostics");
+        fuse::editor::preflightEndDrag(true, fuse::editor::GizmoAxis::None,
+        fuse::editor::preflightEndDrag(true, fuse::editor::GizmoAxis::X,
+    expectTrue(activePreflight.snapWillApply, "end preflight marks snap on commit when enabled");
+    const fuse::editor::EndDragPreflight noSnapPreflight =
+    expectTrue(noSnapPreflight.canEnd(), "end preflight accepts drag when snap disabled");
+    expectTrue(!noSnapPreflight.snapWillApply, "end preflight clears snapWillApply when disabled");
+    const fuse::editor::EndDragPreflight draggingPreflight = gizmo.preflightEndDrag();
+    expectTrue(draggingPreflight.canEnd(), "gizmo end preflight accepts active drag");
