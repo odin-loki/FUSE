@@ -55,6 +55,8 @@ public:
     void invalidateHistory();
     void resize(u32 width, u32 height);
     bool matchesDimensions(u32 width, u32 height) const;
+    /// True when the resolve request matches this pass viewport dimensions.
+    bool viewportMatchesResolve(const TaaResolveDesc& desc) const;
     bool needsHistoryWarmup() const { return m_history.needsWarmup(); }
     /// Frames remaining before pass history may be temporally reused (B5.9 deepen).
     u32 warmupFramesRemaining() const;

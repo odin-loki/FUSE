@@ -76,10 +76,14 @@ TAAParams clampTaaParams(const TAAParams& raw);
 bool taaParamsInRange(const TAAParams& raw);
 /// Clamp `params` in place — mirrors `clampTaaParams` without returning a copy.
 void normalizeTaaParams(TAAParams& params);
+/// True when `clampTaaParams` would change any field in `raw`.
+bool taaParamsRequireClamping(const TAAParams& raw);
 /// True when `velocity_rejection` is active and resolve must receive a velocity surface.
 bool taaResolveRequiresVelocity(const TAAParams& params);
 /// True when `depth_rejection` is active and resolve must receive a depth surface.
 bool taaResolveRequiresDepth(const TAAParams& params);
+/// True when either velocity or depth rejection is active.
+bool taaResolveRequiresRejectionSurfaces(const TAAParams& params);
 /// Blend weight applied this frame — 1.0 on first warm-up frame, else clamped `blend_factor`.
 f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params);
 /// History contribution weight — complement of `effectiveBlend`, clamped to [0, 1].

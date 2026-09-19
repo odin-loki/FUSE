@@ -166,6 +166,10 @@ bool TaaHistoryBuffer::generationMatches(u32 observedGeneration) const {
     return !isHistoryStale(observedGeneration);
 }
 
+bool TaaHistoryBuffer::canAcceptResolveAt(u32 width, u32 height) const {
+    return isReady() && matchesDimensions(width, height);
+}
+
 bool TaaHistoryBuffer::matchesDimensions(u32 width, u32 height) const {
     return m_desc.width == width && m_desc.height == height;
 }
