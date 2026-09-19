@@ -3124,3 +3124,15 @@ void testSnapPreflightNoChange() {
     expectTrue(!gizmo.isDragging(), "tryEndDrag ends drag session");
     expectTrue(!gizmo.tryEndDrag(result), "tryEndDrag rejects second end without drag");
     expectTrue(!result.changed, "second tryEndDrag leaves result unchanged");
+
+// --- deepen additive from gizmo-end-drag-preflight-67f9 ---
+    const fuse::editor::UpdateDragPreflight deadZonePreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(deadZonePreflight.screenMiss,
+    expectTrue(deadZonePreflight.canUpdate(),
+    const fuse::editor::EndDragPreflight snapPreflight =
+    expectTrue(snapPreflight.canEnd(), "end preflight accepts active drag");
+    expectTrue(snapPreflight.invalidSnapStep,
+    expectTrue(!validSnapPreflight.snapDisabled, "valid snap end preflight clears snapDisabled");
+    expectTrue(!validSnapPreflight.invalidSnapStep,
+    expectTrue(gizmo.tryEndDrag(result), "tryEndDrag succeeds on active drag");
+    expectTrue(!gizmo.tryEndDrag(result), "tryEndDrag rejects when not dragging");

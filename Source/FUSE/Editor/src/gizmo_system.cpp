@@ -2297,3 +2297,6 @@ EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnap
 // --- deepen additive from deepen-b6-gizmo-end-drag-preflight-9b89 ---
     return preflightEndDrag(dragging).canEnd;
     if (!preflightEndDrag().canEnd) {
+
+// --- deepen additive from gizmo-end-drag-preflight-67f9 ---
+    EndDragPreflight preflight = preflightEndDrag(dragging);
