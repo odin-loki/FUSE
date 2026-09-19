@@ -1764,3 +1764,15 @@ void testLightGridRebuildPreflightGuards() {
     expectTrue(tryCoordCount == 2u, "coord lookup with reason reports cluster light count");
                "tryLookupClusterLightsAtCoord with reason rejects empty storage");
     testLightGridRebuildPreflightGuards();
+
+// --- deepen additive from deepen-b5-clustered-lights-18c4 ---
+    expectTrue(std::strcmp(fuse::renderer::lightGridRebuildRejectReasonLabel(rebuildReason), "empty_grid") == 0,
+    expectTrue(rejectedDropped == 0u, "tryRebuild returns zero dropped on preflight rejection");
+               "tryRebuild preserves count_mismatch reason");
+               "tryRebuild leaves grid unchanged on preflight rejection");
+    const fuse::u32 acceptedDropped = fuse::renderer::ClusterLightGridLayout::tryRebuildLightGridForDesc(
+    expectTrue(acceptedDropped == 0u, "tryRebuildForDesc succeeds on matching desc");
+    expectTrue(acceptedGrid.lightList.size() == 5u, "tryRebuildForDesc packs flat light list");
+    expectTrue(fuse::renderer::cluster_util::tryCanLookupAtCoord(grid, desc, lookupReason),
+    expectTrue(!fuse::renderer::cluster_util::tryCanLookupAtCoord(emptyGrid, desc, lookupReason),
+    expectTrue(!fuse::renderer::cluster_util::tryCanLookupAtCoord(grid, mismatched, lookupReason),

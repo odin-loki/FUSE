@@ -1097,3 +1097,6 @@ const char* lightGridRebuildRejectReasonLabel(LightGridRebuildRejectReason reaso
         outReason = LightGridRebuildRejectReason::EmptyGrid;
         outReason = LightGridRebuildRejectReason::CountMismatch;
     return tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights, maxLightsPerCluster, outDropped, reason);
+
+// --- deepen additive from deepen-b5-clustered-lights-18c4 ---
+    return tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights, maxLightsPerCluster, outReason);
