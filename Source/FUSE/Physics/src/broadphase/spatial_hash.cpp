@@ -320,6 +320,25 @@ bool should_skip_refine_broadphase(
     return preflight_refine_broadphase(bodies, shapes, buffer).skipped;
 }
 
+BroadphaseRefinePreflight preflight_broadphase_refine(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    BroadphaseRefinePreflight preflight{};
+    preflight.emptyInput = canSkipBroadphase(bodies, shapes);
+    preflight.emptyBuffer = buffer.canSkipSoAIteration() || !buffer.hasValidPairs();
+    preflight.validPairCount = buffer.countValidSlots();
+    preflight.skipped = preflight.emptyInput || preflight.emptyBuffer || preflight.validPairCount == 0u;
+    return preflight;
+}
+
+bool canSkipRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    return !preflight_broadphase_refine(bodies, shapes, buffer).can_refine();
+}
+
 namespace {
 
 constexpr u32 kBuildGrainSize = 8u;
@@ -548,6 +567,7 @@ void populateShapeCells(
         const CellOccupancyPreflight occupancyPreflight =
             preflightCellOccupancy(range, perShapeCellBudget(maxSpan, true));
         if (occupancyPreflight.skipped || occupancyPreflight.exceedsBudget) {
+        if (!preflight_cell_occupancy(range).can_insert_cells()) {
             return;
         }
         if (params.maxCellOccupancyPerShape > 0u) {
@@ -581,6 +601,7 @@ void populateShapeCells(
         preflightCellOccupancy(range, perShapeCellBudget(maxSpan, false));
     if (occupancyPreflight.skipped || occupancyPreflight.exceedsBudget) {
     if (canSkipCellOccupancyInsert(range, params.maxCellOccupancy)) {
+    if (!preflight_cell_occupancy(range).can_insert_cells()) {
         return;
     }
     if (isEmptyCellRange(range)) {
@@ -698,6 +719,7 @@ void runBroadphaseIntoBufferInternal(
     if (should_skip_broadphase(bodies, shapes)) {
     const BroadphaseInputPreflight inputPreflight = preflight_broadphase_input(bodies, shapes);
     if (!inputPreflight.can_run()) {
+    if (!preflight_broadphase_dispatch(bodies, shapes).can_dispatch()) {
         return;
     }
 
@@ -805,6 +827,7 @@ void refineBroadphasePairsParallelImpl(
     if (canSkipRefineBroadphasePairs(buffer, bodies, shapes)) {
     const BroadphaseRefinePreflight refinePreflight = preflight_broadphase_refine(buffer, bodies, shapes);
     if (!refinePreflight.can_refine()) {
+    if (canSkipRefineBroadphase(bodies, shapes, buffer)) {
         return;
     }
 
