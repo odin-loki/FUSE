@@ -963,3 +963,7 @@ bool CookCache::should_skip_store(const CookCacheEntry& entry) {
 // --- deepen additive from deepen-b79-cooker-hash-b3b9 ---
 bool CookCache::should_skip_prune_reconcile() const {
     return estimate_prune_removals().should_skip();
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-ee5c ---
+bool CookCache::should_skip_prune_invalid() const {
+bool CookCache::should_skip_prune_stale() const {

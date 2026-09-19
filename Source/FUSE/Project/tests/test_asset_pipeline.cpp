@@ -2374,3 +2374,9 @@ void testCookerReconcileShouldSkipGuards() {
                "should_skip_reconcile_invalidation true for fresh estimate");
     expectTrue(cooker.should_skip_prune_reconcile(), "cooker should_skip_prune_reconcile on fresh cache");
     expectTrue(!after.should_skip(), "prune-only reconcile estimate should not skip");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-ee5c ---
+               "seeded upstream would_invalidate");
+    expectTrue(!fresh.would_invalidate(), "fresh reconcile estimate would not invalidate");
+               "upstream change would_invalidate stale dependencies");
+    expectTrue(stale.would_invalidate(), "stale reconcile estimate would_invalidate");

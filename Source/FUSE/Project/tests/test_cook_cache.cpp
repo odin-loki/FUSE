@@ -2044,3 +2044,12 @@ void testCookCachePruneReconcileShouldSkipGuards() {
                "prune estimate should_skip mirrors would_prune_all negation");
     expectTrue(!fuse::project::should_skip_prune_reconcile(stale),
                "should_skip_prune_reconcile false when stale entries present");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-ee5c ---
+               "readable mesh preflight should_skip is false");
+    expectTrue(cache.should_skip_prune_invalid(), "should_skip_prune_invalid on empty cache");
+    expectTrue(cache.should_skip_prune_stale(), "should_skip_prune_stale on empty cache");
+               "matching hash should_skip stale-content invalidation");
+    expectTrue(!cooker.cache().should_skip_prune_stale(), "stale entry should not skip prune_stale");
+    expectTrue(cooker.cache().should_skip_prune_invalid(), "structurally valid stale entry skips prune_invalid");
+    expectTrue(!estimate.should_skip(), "prune estimate should not skip on stale entry");
