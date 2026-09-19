@@ -2784,6 +2784,17 @@ bool canGizmoRouter(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis
 bool canGizmoRouter(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
     return preflightGizmoRouter(ray, transform, dragging, activeAxis, mode, space, axisLength,
         .canRouteAny();
+SnapPhasePreflight preflightSnapPhase(GizmoMode mode, const GizmoSnapSettings& settings,
+                                      GizmoInteractionPhase phase) {
+    SnapPhasePreflight preflight{};
+    preflight.phase = phase;
+    preflight.snap = preflightSnap(mode, settings);
+
+bool canInteract(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+    return preflightInteraction(hit, dragging, activeAxis, mode, settings).canInteract();
+
+bool canInteract(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
+        .canInteract();
 }
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
@@ -4576,6 +4587,16 @@ bool GizmoSystem::canRouter(const GizmoRay& ray, const GizmoTransform& transform
 
 bool GizmoSystem::canActOrEndOnPhase(const GizmoHitTest& hit) const {
     return preflightRouter(hit).canRouteActOrEnd();
+bool GizmoSystem::canInteract(const GizmoHitTest& hit) const {
+    return fuse::editor::canInteract(hit, m_dragging, m_activeAxis, m_mode, m_snap);
+
+bool GizmoSystem::canInteract(const GizmoRay& ray, const GizmoTransform& transform) const {
+    return fuse::editor::canInteract(ray, transform, m_dragging, m_activeAxis, m_mode, m_space,
+                                     kAxisLength, kPickRadius, m_snap);
+
+SnapPhasePreflight GizmoSystem::preflightSnapPhase() const {
+    return fuse::editor::preflightSnapPhase(m_mode, m_snap,
+                                            interactionPhase(m_dragging));
 }
 
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
