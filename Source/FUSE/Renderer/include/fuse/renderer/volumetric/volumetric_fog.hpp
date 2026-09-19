@@ -658,3 +658,10 @@ bool tryValidateFroxelIndex(u32 index, const FroxelGridDesc& desc, DensityLookup
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-ecd6 ---
 bool preflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-froxel-volumetric-guards-a3b2 ---
+enum class PopulateRejectReason : u8 {
+const char* populateRejectReasonLabel(PopulateRejectReason reason);
+bool tryCanSampleAtCoordsStrict(const FroxelDensityGrid& grid,
+                              ScreenMappingRejectReason& outMapReason,
+                              DensityLookupRejectReason& outLookupReason);

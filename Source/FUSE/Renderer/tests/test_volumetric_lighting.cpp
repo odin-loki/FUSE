@@ -2276,3 +2276,26 @@ void testFroxelPopulatePreflightAndIndexValidationGuards() {
     expectTrue(!fuse::renderer::froxel_util::preflightPopulateFromAnalyticFog(desc, badCamera, params, populateReason),
     expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(guardedGrid, desc, badCamera, params),
                "tryPopulate rejects invalid camera without filling density");
+
+// --- deepen additive from deepen-froxel-volumetric-guards-a3b2 ---
+void testFroxelPopulateLookupAndStrictSampleGuards() {
+    fuse::renderer::PopulateRejectReason populateReason = fuse::renderer::PopulateRejectReason::None;
+    expectTrue(populateReason == fuse::renderer::PopulateRejectReason::None,
+    expectTrue(std::strcmp(fuse::renderer::populateRejectReasonLabel(populateReason), "none") == 0,
+    expectTrue(populateReason == fuse::renderer::PopulateRejectReason::EmptyGrid,
+    expectTrue(std::strcmp(fuse::renderer::populateRejectReasonLabel(populateReason), "empty_grid") == 0,
+    expectTrue(populateReason == fuse::renderer::PopulateRejectReason::InvalidCamera,
+    expectTrue(populateReason == fuse::renderer::PopulateRejectReason::ZeroDensity,
+    expectTrue(populateReason == fuse::renderer::PopulateRejectReason::ZeroMarchSteps,
+    expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(skipped, desc, camera, zeroDensity),
+               "tryPopulate reports false when density fill is skipped");
+    expectTrue(skipped.density.size() == desc.froxelCount(), "tryPopulate still allocates on skip path");
+    expectNear(indexSample, 1.f, 1e-5f, "trySampleDensityAtIndex with reason returns density");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtIndex(emptyGrid, desc, 0u, rejectedIndexSample, lookupReason),
+               "trySampleDensityAtScreen with reasons matches unguarded sample");
+               "trySampleDensityAtScreen with reasons rejects empty storage");
+               "trySampleDensityAtScreen with reasons rejects depth below near plane");
+    expectTrue(fuse::renderer::froxel_util::tryCanSampleAtCoordsStrict(grid, desc, inBounds, sampleReason),
+               "tryCanSampleAtCoordsStrict succeeds on valid coords");
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleAtCoordsStrict(grid, desc, warnCoords, sampleReason),
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleAtCoordsStrict(grid, desc, oobCoords, sampleReason),

@@ -1649,3 +1649,24 @@ bool tryValidateFroxelIndex(u32 index, const FroxelGridDesc& desc, DensityLookup
 bool preflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,
     return tryCanPopulateFromAnalyticFog(desc, camera, params, outReason);
     if (!tryCanPopulateFromAnalyticFog(desc, camera, params, reason)) {
+
+// --- deepen additive from deepen-froxel-volumetric-guards-a3b2 ---
+const char* populateRejectReasonLabel(PopulateRejectReason reason) {
+    case PopulateRejectReason::None:
+    case PopulateRejectReason::EmptyGrid:
+    case PopulateRejectReason::InvalidCamera:
+    case PopulateRejectReason::ZeroDensity:
+    case PopulateRejectReason::ZeroMarchSteps:
+    return tryCanSampleAtCoordsStrict(grid, desc, coords, reason);
+bool tryCanSampleAtCoordsStrict(const FroxelDensityGrid& grid,
+    if (outReason != SampleCoordRejectReason::None) {
+    ScreenMappingRejectReason mapReason = ScreenMappingRejectReason::None;
+                              ScreenMappingRejectReason& outMapReason,
+                              DensityLookupRejectReason& outLookupReason) {
+        outMapReason = ScreenMappingRejectReason::None;
+    PopulateRejectReason reason = PopulateRejectReason::None;
+        outReason = PopulateRejectReason::EmptyGrid;
+        outReason = PopulateRejectReason::InvalidCamera;
+        outReason = PopulateRejectReason::ZeroDensity;
+        outReason = PopulateRejectReason::ZeroMarchSteps;
+    outReason = PopulateRejectReason::None;
