@@ -131,6 +131,21 @@ bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
 u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history);
 
+/// History warm-up phase tracked alongside ping-pong targets (B5.9 deepen).
+enum class TaaHistoryWarmupPhase : u8 {
+    NotAllocated = 0,
+    NeedsWarmup,
+    Warm,
+};
+/// Human-readable label for history warm-up phases (B5.9 deepen).
+const char* taaHistoryWarmupPhaseLabel(TaaHistoryWarmupPhase phase);
+/// Classify the current history warm-up phase (B5.9 deepen).
+TaaHistoryWarmupPhase classifyTaaHistoryWarmupPhase(const TaaHistoryBuffer& history);
+/// True when history is warmed and ready for temporal reuse (B5.9 deepen).
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupPhase* phase = nullptr);
+/// True when history is warmed and reuse preflight passes for the observed epoch (B5.9 deepen).
+bool taaHistoryTemporalReuseReady(const TaaHistoryBuffer& history, u32 observedGeneration);
+
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
     None = 0,
@@ -145,6 +160,15 @@ TaaResolveBlendRejectReason classifyTaaResolveBlendReject(const TaaResolveDesc& 
 /// True when computed resolve blend weights pass validation and reuse policy (B5.9 deepen).
 bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                      TaaResolveBlendRejectReason* reason = nullptr);
+/// True when `weights` match `computeTaaResolveBlendWeights` for the resolve frame (B5.9 deepen).
+bool taaResolveBlendWeightsMatchExpected(const TaaBlendWeights& weights, const TaaResolveDesc& desc,
+                                         const TaaHistoryBuffer& history);
+/// True when resolve blend and history reuse preflights both pass (B5.9 deepen).
+bool taaResolveTemporalBlendAllowed(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Combined resolve temporal-blend preflight with optional reject diagnostics (B5.9 deepen).
+bool preflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                      TaaResolveBlendRejectReason* blendReason = nullptr,
+                                      TaaHistoryReuseBlockReason* reuseReason = nullptr);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

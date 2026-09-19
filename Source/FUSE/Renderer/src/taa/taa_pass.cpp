@@ -81,6 +81,18 @@ bool TaaPass::jitterAlignedToFrameIndex(u32 frameIndex) const {
     return m_jitter.isAlignedToFrameIndex(frameIndex);
 }
 
+TaaJitterSyncRejectReason TaaPass::classifyJitterSyncReject(u32 frameIndex) const {
+    return m_jitter.classifySyncReject(frameIndex);
+}
+
+bool TaaPass::preflightJitterSync(u32 frameIndex, TaaJitterSyncRejectReason* reason) const {
+    const TaaJitterSyncRejectReason reject = m_jitter.classifySyncReject(frameIndex);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaJitterSyncRejectReason::None;
+}
+
 void TaaPass::invalidateHistory() {
     m_history.invalidateHistory();
     m_resolve.resetBookkeeping();
@@ -104,6 +116,14 @@ void TaaPass::resize(u32 width, u32 height) {
 
 bool TaaPass::matchesDimensions(u32 width, u32 height) const {
     return m_desc.width == width && m_desc.height == height && m_history.matchesDimensions(width, height);
+}
+
+TaaHistoryWarmupPhase TaaPass::historyWarmupPhase() const {
+    return classifyTaaHistoryWarmupPhase(m_history);
+}
+
+bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupPhase* phase) const {
+    return preflightTaaHistoryWarmup(m_history, phase);
 }
 
 bool TaaPass::canReuseHistory() const {
@@ -145,6 +165,16 @@ bool TaaPass::preflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlock
 bool TaaPass::preflightResolveBlendWeights(const TaaResolveDesc& desc,
                                            TaaResolveBlendRejectReason* reason) const {
     return preflightTaaResolveBlendWeights(desc, m_history, reason);
+}
+
+bool TaaPass::resolveTemporalBlendAllowed(const TaaResolveDesc& desc) const {
+    return taaResolveTemporalBlendAllowed(desc, m_history);
+}
+
+bool TaaPass::preflightResolveTemporalBlend(const TaaResolveDesc& desc,
+                                            TaaResolveBlendRejectReason* blendReason,
+                                            TaaHistoryReuseBlockReason* reuseReason) const {
+    return preflightTaaResolveTemporalBlend(desc, m_history, blendReason, reuseReason);
 }
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {

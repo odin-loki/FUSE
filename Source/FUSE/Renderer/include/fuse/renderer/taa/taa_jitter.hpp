@@ -6,6 +6,14 @@
 
 namespace fuse::renderer {
 
+/// Why jitter sync preflight rejected the request (B5.9 deepen).
+enum class TaaJitterSyncRejectReason : u8 {
+    None = 0,
+    InvalidSequence,
+};
+/// Human-readable label for jitter sync reject reasons (B5.9 deepen).
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
+
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
 
@@ -23,6 +31,11 @@ struct TaaJitterLayout {
     static bool canSyncToFrameIndex(u32 /*frameIndex*/, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// True when `slot` is the active Halton index for `frameIndex` (B5.9 deepen).
     static bool jitterSlotMatchesFrameIndex(u32 frameIndex, u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// Classify why jitter sync would be rejected for the given sequence (B5.9 deepen).
+    static TaaJitterSyncRejectReason classifySyncReject(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// True when jitter can sync to `frameIndex` for the given sequence (B5.9 deepen).
+    static bool preflightSyncToFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                                          TaaJitterSyncRejectReason* reason = nullptr);
     /// Returns the jitter cycle length after validation (0 when invalid).
     static u32 sequencePeriod(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Maps a monotonic frame counter into the active Halton slot.
@@ -57,6 +70,10 @@ public:
     bool syncToFrameIndexIfReady(u32 frameIndex);
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
+    /// Classify why sync to `frameIndex` would be rejected (B5.9 deepen).
+    TaaJitterSyncRejectReason classifySyncReject(u32 frameIndex) const;
+    /// Sync only when preflight passes; returns false when blocked (B5.9 deepen).
+    bool preflightSyncToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason* reason = nullptr);
 
     u32 index() const { return m_index; }
     /// True when the jitter sequence can advance (B5.9 deepen).
