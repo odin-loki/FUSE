@@ -430,6 +430,11 @@ bool probeCoordRejectReasonIsBlocking(ProbeCoordRejectReason reason);
 /// True when a probe-index reject reason would block lookup (B5.6 deepen pass).
 bool probeIndexRejectReasonIsBlocking(ProbeIndexRejectReason reason);
 /// True when a probe-grid source reject reason would block use (B5.6 deepen pass).
+/// Why probe-grid source (DDGIDesc) validation rejected the request (B5.6 deepen pass).
+    ZeroProbeSpacing,
+
+
+/// True when a probe-grid source reject reason would block sampling (B5.6 deepen pass).
 
 /// Classify why probe-grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
 ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc);
@@ -457,6 +462,8 @@ bool wouldSkipProbeGridSource(const DDGIDesc& desc);
 /// Human-readable label for probe-grid-source reject reasons (logging / tests).
 
 /// True when a probe-grid-source reject reason would block use of the volume (B5.6 deepen pass).
+
+/// Non-mutating probe-grid source preflight — returns true when the grid can participate in sampling.
 
 /// Why probe sample coord validation rejected the request (B5.6 deepen).
 enum class ProbeSampleCoordsRejectReason : u8 {
@@ -1685,6 +1692,9 @@ bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason*
 bool wouldSkipProbeGridSource(const DDGIDesc& desc);
 /// Early-out alias — same ordering as `shouldSkipProbeGrid` (B5.6 deepen pass).
 /// Early-out alias — same ordering as `shouldSkipProbeLookup` (B5.6 deepen pass).
+/// Diagnose why probe-grid source preflight would reject; vacuously succeeds on sampleable grids.
+bool tryValidateProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason& outReason);
+/// Early-out when probe-grid source preflight would be rejected — same ordering as `tryValidateProbeGridSource`.
 /// True when `cache` is allocated and sized for every probe in `desc`.
 bool isProbeCacheAccessible(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 cache_count);
 /// Diagnose why probe-grid source preflight would reject; vacuously succeeds on accessible grids.
@@ -1909,6 +1919,7 @@ bool wouldSkipProbeSample(const DDGIDesc& desc,
 bool preflightProbeTrilinearSampleAtCoords(const DDGIDesc& desc,
 bool wouldSkipProbeTrilinearSampleAtCoords(const DDGIDesc& desc,
 /// Build sample coords + cache preflight for a world position without performing lookup.
+/// Early-out when coord-based probe trilinear sample would be rejected.
                                    u32 cache_count);
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
@@ -2459,6 +2470,7 @@ bool tryCanScheduleProbeUpdatesAtRate(u32 probe_count,
 ProbeScheduleRejectReason classifyProbeScheduleRejectAtRate(u32 probe_count,
 /// Non-mutating rate-aware schedule preflight — returns true when scheduling would proceed.
 bool preflightProbeScheduleAtRate(u32 probe_count,
+/// Classify why rate-aware probe scheduling would be rejected.
                                                             u32 probes_per_frame,
                                                             u32 max_indices,
                                                             const u32* out_indices,
@@ -2474,6 +2486,11 @@ bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
 u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Classify why rate-aware probe scheduling would be rejected — same ordering as `tryCanScheduleProbeUpdatesAtRate`.
 /// Schedule probe updates with rate preflight; false when rate-aware preflight rejects.
+/// Non-mutating rate-aware schedule preflight — returns true when scheduling would proceed.
+bool preflightProbeScheduleAtRate(u32 probe_count,
+                                  u32 probes_per_frame,
+                                  u32 max_indices,
+                                  const u32* out_indices,
 /// Schedule probe updates with reject-reason diagnostics; false when preflight rejects.
 bool canScheduleProbeUpdates(u32 probe_count,
 bool wouldSkipProbeSchedule(u32 probe_count,
