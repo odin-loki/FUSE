@@ -3030,3 +3030,26 @@ void testBroadphaseMergePreflightHasBodiesFields() {
     expectTrue(mergePreflight.hasDynamicBodies, "merge scene marks hasDynamicBodies");
     expectTrue(mergePreflight.canMerge(), "merge scene can merge with positive body flags");
     testBroadphaseMergePreflightHasBodiesFields();
+
+// --- deepen additive from deepen-b4-broadphase-guards-b86e ---
+                   buffer, 4u, 0u, 1u, fuse::physics::broadphase::PairBufferWriteSlotRejectReason::OutOfRangeSlot),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferCompactAndClampRejectReason(buffer)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferCompactAndClampRejectReason::NoWork),
+    const fuse::physics::broadphase::PairBufferCompactAndClampPreflight preflight =
+        fuse::physics::broadphase::preflightPairBufferCompactAndClamp(workBuffer);
+void testBroadphaseCellPairPreflightGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::broadphaseCellPairRejectReason(0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseCellPairRejectReason::ZeroSlots),
+    expectTrue(fuse::physics::broadphase::broadphaseCellPairRejectsForReason(
+                   0u, fuse::physics::broadphase::BroadphaseCellPairRejectReason::ZeroSlots),
+    const fuse::physics::broadphase::BroadphaseCellPairPreflight zeroPreflight =
+        fuse::physics::broadphase::preflightBroadphaseCellPairs(0u);
+    expectTrue(zeroPreflight.zeroSlots, "cell-pair preflight marks zero slots");
+    expectTrue(!zeroPreflight.canGenerate(), "cell-pair preflight cannot generate zero slots");
+    const fuse::physics::broadphase::BroadphaseCellPairPreflight validPreflight =
+        fuse::physics::broadphase::preflightBroadphaseCellPairs(4u);
+    expectTrue(validPreflight.canGenerate(), "cell-pair preflight accepts non-zero slots");
+    expectEq(validPreflight.totalCellSlots, 4u, "cell-pair preflight reports slot count");
+    expectTrue(std::strcmp(fuse::physics::broadphase::broadphaseCellPairRejectReasonName(
+                               fuse::physics::broadphase::BroadphaseCellPairRejectReason::ZeroSlots),
+    testBroadphaseCellPairPreflightGuards();

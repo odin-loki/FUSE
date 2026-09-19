@@ -1261,3 +1261,13 @@ BroadphaseMergeBufferRejectReason mergeBroadphaseBufferRejectReason(
     BroadphaseMergeBufferRejectReason expected);
     BroadphaseMergeBufferRejectReason reason = BroadphaseMergeBufferRejectReason::None;
     bool canMergeIntoBuffer() const { return reason == BroadphaseMergeBufferRejectReason::None; }
+
+// --- deepen additive from deepen-b4-broadphase-guards-b86e ---
+enum class BroadphaseCellPairRejectReason : u8 {
+const char* broadphaseCellPairRejectReasonName(BroadphaseCellPairRejectReason reason);
+BroadphaseCellPairRejectReason broadphaseCellPairRejectReason(u32 totalCellSlots);
+bool broadphaseCellPairRejectsForReason(u32 totalCellSlots, BroadphaseCellPairRejectReason expected);
+struct BroadphaseCellPairPreflight {
+    BroadphaseCellPairRejectReason reason = BroadphaseCellPairRejectReason::None;
+    bool canGenerate() const { return reason == BroadphaseCellPairRejectReason::None; }
+BroadphaseCellPairPreflight preflightBroadphaseCellPairs(u32 totalCellSlots);

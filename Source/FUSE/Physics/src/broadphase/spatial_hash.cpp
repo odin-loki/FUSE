@@ -1170,3 +1170,19 @@ BroadphaseMergeBufferRejectReason mergeBroadphaseBufferRejectReason(
     case MergePairsIntoBufferRejectReason::BufferAtCapacity:
         return MergePairsIntoBufferRejectReason::BufferAtCapacity;
     preflight.bufferAtCapacity = preflight.reason == MergePairsIntoBufferRejectReason::BufferAtCapacity;
+
+// --- deepen additive from deepen-b4-broadphase-guards-b86e ---
+const char* broadphaseCellPairRejectReasonName(BroadphaseCellPairRejectReason reason) {
+    case BroadphaseCellPairRejectReason::None:
+    case BroadphaseCellPairRejectReason::ZeroSlots:
+BroadphaseCellPairRejectReason broadphaseCellPairRejectReason(u32 totalCellSlots) {
+        return BroadphaseCellPairRejectReason::ZeroSlots;
+    return BroadphaseCellPairRejectReason::None;
+bool broadphaseCellPairRejectsForReason(u32 totalCellSlots, BroadphaseCellPairRejectReason expected) {
+    return broadphaseCellPairRejectReason(totalCellSlots) == expected;
+BroadphaseCellPairPreflight preflightBroadphaseCellPairs(u32 totalCellSlots) {
+    BroadphaseCellPairPreflight preflight{};
+    preflight.reason = broadphaseCellPairRejectReason(totalCellSlots);
+    preflight.zeroSlots = preflight.reason == BroadphaseCellPairRejectReason::ZeroSlots;
+    return !preflightBroadphaseCellPairs(totalCellSlots).canGenerate();
+    return preflightBroadphaseCellPairs(totalCellSlots).canGenerate();
