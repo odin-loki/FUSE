@@ -2720,3 +2720,15 @@ bool tryPreflightProbeSchedule(u32 probe_count,
 bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& reason) {
     return preflightProbeKernelLaunch(params, &reason);
     return wouldSkipProbeKernelLaunch(params);
+
+// --- deepen additive from deepen-ddgi-guards-0cb7 ---
+    reason = classifyDdgiProbeUpdateReject(desc, probe_indices, probe_count);
+    return !probeUpdateLaunchRejectReasonIsBlocking(reason);
+    return !preflightDdgiProbeUpdate(desc, probe_indices, probe_count);
+    if (!tryBuildProbeSampleCoords(desc, world_position, out_coords, reason)) {
+    return !probeTrilinearSampleRejectReasonIsBlocking(reason);
+    return preflightTrilinearProbeSample(desc, coords, cache, cache_count);
+    return !cacheIndexRejectReasonIsBlocking(reason);
+    return preflightCacheIndexLookup(desc, cache, probe_index, cache_count);
+    return !probeScheduleRejectReasonIsBlocking(reason);
+    return !probeKernelRejectReasonIsBlocking(reason);

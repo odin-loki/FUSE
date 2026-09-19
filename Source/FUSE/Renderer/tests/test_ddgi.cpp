@@ -3422,3 +3422,29 @@ void testDdgiThirdPassDeepenGuards() {
                "tryCanSampleAtProbeCoord reports none");
                "tryPreflightDdgiProbeUpdate reports none");
                "tryPreflightProbeKernelLaunch reports none");
+
+// --- deepen additive from deepen-ddgi-guards-0cb7 ---
+void testDdgiShouldSkipTryPreflightGuards() {
+               "tryPreflightProbeSchedule passes for valid inputs");
+               "tryPreflightProbeSchedule reports no reject reason on success");
+    expectTrue(!fuse::renderer::ddgi_util::tryPreflightProbeSchedule(0u, 64u, indices, &count, scheduleReason),
+               "tryPreflightProbeSchedule fails for zero probe count");
+               "tryPreflightProbeSchedule reports zero_probe_count reason");
+               "tryPreflightCacheIndexLookup passes for valid index");
+               "tryPreflightCacheIndexLookup reports no reject reason on success");
+    expectTrue(!fuse::renderer::ddgi_util::tryPreflightCacheIndexLookup(desc, nullptr, 3u, 8u, cacheReason),
+               "tryPreflightCacheIndexLookup fails for null cache");
+               "tryPreflightCacheIndexLookup reports null_cache reason");
+               "tryPreflightTrilinearProbeSample passes for valid sample");
+               "tryPreflightTrilinearProbeSample reports no reject reason on success");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, built, nullptr, 8u) ==
+               "classifyProbeTrilinearSampleReject null_cache");
+    expectTrue(fuse::renderer::tryPreflightDdgiProbeUpdate(desc, validLaunchIndices, 2u, launchReason),
+               "tryPreflightDdgiProbeUpdate passes for valid launch");
+               "tryPreflightDdgiProbeUpdate reports no reject reason on success");
+               "tryPreflightProbeKernelLaunch passes for valid params");
+               "tryPreflightProbeKernelLaunch reports no reject reason on success");
+    expectTrue(!fuse::renderer::gi::tryPreflightProbeKernelLaunch(zeroRays, kernelReason),
+               "tryPreflightProbeKernelLaunch fails for zero rays");
+               "tryPreflightProbeKernelLaunch reports zero_rays_per_probe reason");
+    testDdgiShouldSkipTryPreflightGuards();
