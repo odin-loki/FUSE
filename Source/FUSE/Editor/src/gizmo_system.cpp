@@ -5583,47 +5583,27 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
     }
     if (preflight.snapDisabled) {
         return GizmoSnapDragRejectReason::SnapDisabled;
-    }
     if (preflight.invalidStep) {
         return GizmoSnapDragRejectReason::InvalidStep;
-    }
     return GizmoSnapDragRejectReason::None;
-}
 
 GizmoBeginDragRejectReason classifyBeginDragInteractionReject(
     const BeginDragInteractionPreflight& preflight) {
     return classifyBeginDragReject(preflight.begin);
-}
 
 GizmoUpdateDragRejectReason classifyUpdateDragInteractionReject(
     const UpdateDragInteractionPreflight& preflight) {
     return classifyUpdateDragReject(preflight.drag);
-}
 
 GizmoEndDragRejectReason classifyEndDragInteractionReject(
     const EndDragInteractionPreflight& preflight) {
     return classifyEndDragReject(preflight.end);
-}
 
-GizmoBeginDragRejectReason classifyBeginDragInteractionReject(
-    const BeginDragInteractionPreflight& preflight) {
-    return classifyBeginDragReject(preflight.begin);
-}
 
-GizmoUpdateDragRejectReason classifyUpdateDragInteractionReject(
-    const UpdateDragInteractionPreflight& preflight) {
-    return classifyUpdateDragReject(preflight.drag);
-}
 
 GizmoSnapDragRejectReason classifyUpdateDragInteractionSnapDragReject(
-    const UpdateDragInteractionPreflight& preflight) {
     return classifySnapDragReject(preflight.snapDrag);
-}
 
-GizmoEndDragRejectReason classifyEndDragInteractionReject(
-    const EndDragInteractionPreflight& preflight) {
-    return classifyEndDragReject(preflight.end);
-}
 
 bool preflightBeginDragInteractionReady(const GizmoRay& ray, const GizmoTransform& transform,
                                           GizmoMode mode, GizmoSpace space, f32 axisLength,
@@ -5634,6 +5614,9 @@ bool preflightBeginDragInteractionReady(const GizmoRay& ray, const GizmoTransfor
         ray, transform, mode, space, axisLength, pickRadius, settings, alreadyDragging);
     if (reason != nullptr) {
         *reason = classifyBeginDragInteractionReject(preflight);
+GizmoEndDragRejectReason classifyEndDragReject(const EndDragPreflight& preflight) {
+    if (preflight.notDragging) {
+        return GizmoEndDragRejectReason::NotDragging;
     }
     return preflight.canBegin();
 }
