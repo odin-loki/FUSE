@@ -646,6 +646,20 @@ u32 AssetCooker::estimate_manifest_cache_reconcile(const CookManifest& manifest)
     return count_stale_dependency_invalidation(manifest) + count_prune_reconcile();
 }
 
+CookCachePruneEstimate AssetCooker::estimate_prune_reconcile() const {
+    return m_cache.estimate_prune_removals();
+}
+
+CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(const CookManifest& manifest) const {
+    CookCacheReconcileEstimate estimate;
+    estimate.stale_dependency_entries = count_stale_dependency_invalidation(manifest);
+
+    const CookCachePruneEstimate prune = m_cache.estimate_prune_removals();
+    estimate.prune_invalid_entries = prune.invalid_entries;
+    estimate.prune_stale_entries = prune.stale_entries;
+    return estimate;
+}
+
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
     if (manifest.assets.empty() || m_cache.empty()) {
     if (m_cache.empty() || manifest.assets.empty()) {

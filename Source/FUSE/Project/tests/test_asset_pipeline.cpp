@@ -2780,6 +2780,108 @@ void testCookerStaleDependencyReconcileEstimate() {
                "reconcile estimate is zero after stale dependency invalidation");
 }
 
+void testCookerReconcileEstimateProbes() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_reconcile_a.obj", "# reconcile a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_reconcile_b.obj", "# reconcile b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry_a;
+    entry_a.kind = fuse::project::CookAssetKind::Mesh;
+    entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_reconcile_a.fusemesh";
+    manifest.assets.push_back(entry_a);
+
+    fuse::project::CookManifestEntry entry_b;
+    entry_b.kind = fuse::project::CookAssetKind::Mesh;
+    entry_b.source_path = source_b;
+    entry_b.output_path = "/tmp/fuse_b79_reconcile_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
+    expectTrue(cooked.ok, "manifest cook for reconcile estimate ok");
+
+    const fuse::project::CookCacheReconcileEstimate fresh = cooker.estimate_reconcile_invalidation(manifest);
+    expectTrue(fresh.total() == 0u, "fresh cache reconcile estimate is zero");
+    expectTrue(cooker.estimate_prune_reconcile().total() == 0u, "fresh prune reconcile estimate is zero");
+
+    writeTempFile(source_a, "# reconcile a revised\n");
+    const fuse::u32 stale_count = cooker.count_stale_dependency_invalidation(manifest);
+    expectTrue(stale_count >= 1u, "stale dependency reconcile count is non-zero after upstream change");
+
+    const fuse::project::CookCacheReconcileEstimate stale = cooker.estimate_reconcile_invalidation(manifest);
+    expectTrue(stale.stale_dependency_entries == stale_count,
+               "reconcile estimate stale count matches dependency probe");
+    expectTrue(stale.total() >= stale_count, "reconcile estimate total includes stale dependency count");
+
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= stale_count, "stale dependency invalidation removes at least estimated count");
+
+    const fuse::project::CookCacheReconcileEstimate after = cooker.estimate_reconcile_invalidation(manifest);
+    expectTrue(after.stale_dependency_entries == 0u,
+               "stale dependency reconcile estimate zero after stale invalidation");
+    expectTrue(after.prune_stale_entries >= 1u,
+               "changed upstream entry remains stale for prune reconcile");
+}
+
+void testCookCacheDownstreamSourceProbe() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_downstream_a.obj", "# downstream a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_downstream_b.obj", "# downstream b\n");
+    const std::string source_c = writeTempFile("/tmp/fuse_b79_downstream_c.obj", "# downstream c\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry_a;
+    entry_a.kind = fuse::project::CookAssetKind::Mesh;
+    entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_downstream_a.fusemesh";
+    manifest.assets.push_back(entry_a);
+
+    fuse::project::CookManifestEntry entry_b;
+    entry_b.kind = fuse::project::CookAssetKind::Mesh;
+    entry_b.source_path = source_b;
+    entry_b.output_path = "/tmp/fuse_b79_downstream_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::CookManifestEntry entry_c;
+    entry_c.kind = fuse::project::CookAssetKind::Mesh;
+    entry_c.source_path = source_c;
+    entry_c.output_path = "/tmp/fuse_b79_downstream_c.fusemesh";
+    entry_c.dependencies.push_back(entry_b.output_path);
+    manifest.assets.push_back(entry_c);
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "chain manifest cook for downstream probe ok");
+    expectTrue(cooker.cache().entry_count() == 3u, "three entries seeded for downstream probe");
+
+    const std::vector<std::string> probed = cooker.cache().probe_downstream_sources(
+        entry_a.output_path, graph.edges(), graph.jobs());
+    expectTrue(probed.size() >= 3u, "downstream probe lists producer and dependent sources");
+
+    bool has_middle = false;
+    bool has_tail = false;
+    for (const std::string& path : probed) {
+        if (path == source_b) {
+            has_middle = true;
+        }
+        if (path == source_c) {
+            has_tail = true;
+        }
+    }
+    expectTrue(has_middle, "downstream probe includes middle source");
+    expectTrue(has_tail, "downstream probe includes tail source");
+    expectTrue(probed[0] == entry_a.output_path, "downstream probe starts at producer output path");
+
+    const fuse::u32 counted = cooker.cache().count_downstream_of(entry_a.output_path, graph.edges(), graph.jobs());
+    expectTrue(counted == 2u, "downstream count matches dependent entries only");
+    expectTrue(cooker.cache().probe_downstream_sources("", graph.edges(), graph.jobs()).empty(),
+               "empty output path downstream probe is guarded");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 

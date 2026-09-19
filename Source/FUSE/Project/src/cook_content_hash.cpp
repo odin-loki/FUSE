@@ -924,6 +924,10 @@ CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry&
             return dependency_preflight;
 
 
+
+    (void)upstream_hash;
+    return preflight_cook_cache_key(source_hash, upstream_hash);
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;
