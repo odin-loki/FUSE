@@ -302,6 +302,14 @@ ProbeKernelRejectReason classifyProbeKernelTraceReject(const DDGIKernelParams& p
 /// Classify why probe blend launch preflight would reject (B5.6 deepen).
 ProbeKernelRejectReason classifyProbeKernelBlendReject(const DDGIKernelParams& params);
 
+/// Populate kernel params and run non-mutating launch preflight (B5.6 deepen pass).
+bool preflightDDGIKernelParams(DDGIKernelParams& params,
+                               const DDGIDesc& desc,
+                               const u32* probe_indices,
+                               u32 probe_count,
+                               u64 frame_seed = 0,
+                               ProbeKernelRejectReason* reason = nullptr);
+
 /// Preflight guard before probe trace kernel launch.
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
 /// Early-out when probe trace launch would be rejected.
