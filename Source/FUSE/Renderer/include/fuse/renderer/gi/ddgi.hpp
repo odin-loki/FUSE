@@ -567,6 +567,8 @@ struct ProbeGridLayout {
     static bool tryPreflightProbeSampleCoords(const DDGIDesc& desc,
                                               const ProbeSampleCoords& coords,
                                               ProbeSampleCoordsRejectReason& outReason);
+    /// Early-out when sample-coord validation would reject — same ordering as `isValidProbeSampleCoords`.
+    static bool wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Diagnose why sample-coord validation would reject; vacuously succeeds on valid coords.
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
@@ -898,6 +900,9 @@ bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
 /// Cache-index preflight with null-cache detection; vacuously succeeds on valid indices.
 /// True when `probe_index` exceeds the grid or `cache_count` is undersized.
 bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+/// Diagnose why cache-index preflight would reject, including null-cache detection.
+/// Early-out when cache-index lookup would be rejected — same ordering as `isCacheIndexValid`.
+/// Early-out when cache-index lookup would be rejected, including null-cache detection.
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -951,6 +956,7 @@ void scheduleProbeUpdates(u32 frame_index,
                           u32 max_indices,
                           u32* out_count);
 /// Preflight guard before probe-update scheduling; false on null outputs or zero capacity.
+/// Preflight guard before probe round-robin scheduling.
 bool canScheduleProbeUpdates(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
 /// Early-out when probe scheduling would be rejected — same ordering as `canScheduleProbeUpdates`.
 bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
