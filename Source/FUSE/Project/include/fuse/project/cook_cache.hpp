@@ -176,3 +176,9 @@ struct CookCacheStorePreflight {
         return !cache_empty && !invalid_args && would_invalidate_count > 0;
     [[nodiscard]] CookCacheStorePreflight preflight_store(const CookCacheEntry& entry) const;
     [[nodiscard]] CookCacheLookupPreflight preflight_lookup(u64 content_hash) const;
+
+// --- deepen additive from deepen-b79-cooker-hash-7359 ---
+    enum class LookupRejectReason : u8 {
+                                                   LookupRejectReason* reason = nullptr) const;
+    enum class StoreRejectReason : u8 {
+                                       StoreRejectReason* reason = nullptr) const;

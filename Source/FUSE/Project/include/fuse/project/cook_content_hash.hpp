@@ -107,3 +107,9 @@ const char* cookHashPreflightRejectReasonLabel(CookHashPreflightRejectReason rea
 struct CookContentHashPreflight {
 [[nodiscard]] CookContentHashPreflight preflight_file_content_hash(const std::string& path);
 [[nodiscard]] CookImportHashPreflight preflight_manifest_entry(const CookManifestEntry& entry);
+
+// --- deepen additive from deepen-b79-cooker-hash-7359 ---
+[[nodiscard]] const char* cookCacheKeyRejectReasonLabel(CookCacheKeyRejectReason reason);
+                                              CookCacheKeyRejectReason* reason = nullptr);
+[[nodiscard]] const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
+                                               CookHashRejectReason* reason = nullptr);

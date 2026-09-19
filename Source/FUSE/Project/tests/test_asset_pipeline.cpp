@@ -1940,3 +1940,7 @@ void testCookCachePreflightAndReconcileEstimators() {
     expectTrue(dirty_probe.would_invalidate(), "upstream change estimator reports pending invalidation");
     expectTrue(dirty_probe.would_invalidate_count >= 1u, "stale dependency estimator counts at least one entry");
     expectTrue(removed >= dirty_probe.would_invalidate_count,
+
+// --- deepen additive from deepen-b79-cooker-hash-7359 ---
+    entryA.output_path = "/tmp/fuse_b79_est_up_a.fusemesh";
+    entryB.output_path = "/tmp/fuse_b79_est_up_b.fusemesh";

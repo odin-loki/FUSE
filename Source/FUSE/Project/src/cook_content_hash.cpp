@@ -418,3 +418,19 @@ bool preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash, CookHa
 CookContentHashPreflight preflight_file_content_hash(const std::string& path) {
     CookContentHashPreflight preflight;
 CookImportHashPreflight preflight_manifest_entry(const CookManifestEntry& entry) {
+
+// --- deepen additive from deepen-b79-cooker-hash-7359 ---
+const char* cookCacheKeyRejectReasonLabel(CookCacheKeyRejectReason reason) {
+    case CookCacheKeyRejectReason::None:
+    case CookCacheKeyRejectReason::ZeroSource:
+    case CookCacheKeyRejectReason::ZeroFold:
+bool preflight_cook_cache_key(u64 source_hash, u64 upstream_hash, CookCacheKeyRejectReason* reason) {
+            *reason = CookCacheKeyRejectReason::ZeroSource;
+            *reason = CookCacheKeyRejectReason::ZeroFold;
+        *reason = CookCacheKeyRejectReason::None;
+    case CookHashRejectReason::Unreadable:
+bool preflight_hash_file_content(const std::string& path, u64* out_hash, CookHashRejectReason* reason) {
+            *reason = CookHashRejectReason::EmptyPath;
+            *reason = CookHashRejectReason::Unreadable;
+        *reason = CookHashRejectReason::None;
+bool preflight_mesh_import_hash(const MeshImportDesc& desc, u64* out_hash, CookHashRejectReason* reason) {

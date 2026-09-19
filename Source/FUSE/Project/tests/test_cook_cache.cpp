@@ -880,3 +880,30 @@ void testCookCacheReconcileEstimatorGuards() {
 void testCookCacheStaleClassificationGuards() {
     testContentHashPreflightGuards();
     testCookCachePreflightAndLookupGuards();
+
+// --- deepen additive from deepen-b79-cooker-hash-7359 ---
+void testCookCacheKeyPreflight() {
+    fuse::project::CookCacheKeyRejectReason reason = fuse::project::CookCacheKeyRejectReason::None;
+    expectTrue(reason == fuse::project::CookCacheKeyRejectReason::ZeroSource,
+    expectTrue(reason == fuse::project::CookCacheKeyRejectReason::None,
+    expectTrue(std::string(fuse::project::cookCacheKeyRejectReasonLabel(
+                   fuse::project::CookCacheKeyRejectReason::ZeroSource)) == "zero_source",
+void testCookHashPreflight() {
+    fuse::project::CookHashRejectReason reason = fuse::project::CookHashRejectReason::None;
+    expectTrue(reason == fuse::project::CookHashRejectReason::EmptyPath,
+    expectTrue(reason == fuse::project::CookHashRejectReason::Unreadable,
+    expectTrue(reason == fuse::project::CookHashRejectReason::None,
+void testCookCachePreflightLookupAndStore() {
+    fuse::project::CookCache::LookupRejectReason lookup_reason =
+        fuse::project::CookCache::LookupRejectReason::None;
+    expectTrue(lookup_reason == fuse::project::CookCache::LookupRejectReason::ZeroKey,
+    expectTrue(lookup_reason == fuse::project::CookCache::LookupRejectReason::EmptyCache,
+    fuse::project::CookCache::StoreRejectReason store_reason =
+        fuse::project::CookCache::StoreRejectReason::None;
+    expectTrue(store_reason == fuse::project::CookCache::StoreRejectReason::None,
+    expectTrue(store_reason == fuse::project::CookCache::StoreRejectReason::InvalidEntry,
+    expectTrue(lookup_reason == fuse::project::CookCache::LookupRejectReason::None,
+    expectTrue(lookup_reason == fuse::project::CookCache::LookupRejectReason::NotFound,
+    testCookCacheKeyPreflight();
+    testCookHashPreflight();
+    testCookCachePreflightLookupAndStore();

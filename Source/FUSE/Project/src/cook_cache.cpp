@@ -831,3 +831,13 @@ CookCacheLookupPreflight CookCache::preflight_lookup(u64 content_hash) const {
         probe.would_invalidate_count += probe_invalidate_source(to_job->source_path).would_invalidate_count;
         probe.would_invalidate_count +=
             probe_invalidate_downstream_of(to_job->output_path, edges, jobs).would_invalidate_count;
+
+// --- deepen additive from deepen-b79-cooker-hash-7359 ---
+CookCacheLookup CookCache::preflight_lookup(u64 content_hash, LookupRejectReason* reason) const {
+            *reason = LookupRejectReason::ZeroKey;
+            *reason = LookupRejectReason::EmptyCache;
+            *reason = LookupRejectReason::NotFound;
+        *reason = LookupRejectReason::None;
+bool CookCache::preflight_store(const CookCacheEntry& entry, StoreRejectReason* reason) const {
+            *reason = StoreRejectReason::InvalidEntry;
+        *reason = StoreRejectReason::None;
