@@ -978,3 +978,12 @@ void testCookHashPreflightFnvAndCacheEntryGuards() {
 // --- deepen additive from deepen-b79-cooker-hash-guards-709d ---
     const fuse::project::CookHashPreflight null_fnv =
     expectTrue(null_fnv.reason == fuse::project::CookHashRejectReason::NullData,
+
+// --- deepen additive from deepen-b79-cooker-hash-21b9 ---
+void testCookHashPreflightFnv1a64Guard() {
+    const fuse::project::CookHashPreflight valid_data =
+               "would_invalidate_source reports seeded source");
+               "would_invalidate_output reports seeded output");
+               "would_invalidate_stale_content reports mismatched hash");
+               "would_invalidate_stale_content rejects matching hash");
+    testCookHashPreflightFnv1a64Guard();
