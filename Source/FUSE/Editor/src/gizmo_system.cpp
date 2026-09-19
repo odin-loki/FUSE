@@ -4754,6 +4754,19 @@ const char* gizmoSnapDragRejectReasonLabel(GizmoSnapDragRejectReason reason) {
     return "Unknown";
 }
 
+GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& preflight) {
+    if (preflight.deltaNonFinite) {
+        return GizmoSnapDragRejectReason::DeltaNonFinite;
+    }
+    if (preflight.snapDisabled) {
+        return GizmoSnapDragRejectReason::SnapDisabled;
+    }
+    if (preflight.invalidStep) {
+        return GizmoSnapDragRejectReason::InvalidStep;
+    }
+    return GizmoSnapDragRejectReason::None;
+}
+
 GizmoPickRejectReason classifyPickReject(const PickPreflight& preflight) {
     if (preflight.nonFiniteRay) {
         return GizmoPickRejectReason::NonFiniteRay;
@@ -5490,6 +5503,9 @@ GizmoUpdateDragRejectReason classifyUpdateDragReject(const UpdateDragPreflight& 
     if (preflight.nonFiniteHit) {
         return GizmoUpdateDragRejectReason::NonFiniteHit;
     }
+    if (preflight.nonFiniteHit) {
+        return GizmoUpdateDragRejectReason::NonFiniteHit;
+    }
     if (preflight.invalidDimensions) {
         return GizmoUpdateDragRejectReason::InvalidDimensions;
     }
@@ -5925,6 +5941,24 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
         return GizmoSnapDragRejectReason::InvalidStep;
     }
     return GizmoSnapDragRejectReason::None;
+}
+
+bool preflightSnapDragReady(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings,
+                            GizmoSnapDragRejectReason* reason) {
+    const SnapDragPreflight preflight = preflightSnapDrag(delta, mode, settings);
+    if (reason != nullptr) {
+        *reason = classifySnapDragReject(preflight);
+    }
+    return preflight.canApply();
+}
+
+bool tryPreflightSnapDrag(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings,
+                          GizmoSnapDragRejectReason& reason) {
+    return preflightSnapDragReady(delta, mode, settings, &reason);
+}
+
+bool shouldSkipSnapDrag(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings) {
+    return !preflightSnapDragReady(delta, mode, settings);
 }
 
 bool preflightSnapDragReady(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings,
