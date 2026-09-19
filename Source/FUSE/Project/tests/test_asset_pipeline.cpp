@@ -1905,6 +1905,67 @@ void testCookManifestCacheHitsOnSecondRun() {
     expectTrue(cooker.cache().entry_count() == 1u, "single cache entry retained");
 }
 
+void testCookCacheReconcileEstimators() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_a.obj", "# est a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_b.obj", "# est b\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_est_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_est_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "reconcile estimate test seeds cache");
+    expectTrue(cooker.cache().entry_count() == 2u, "upstream and downstream cached");
+
+    const fuse::project::CookCacheReconcileEstimate upstream_estimate =
+        cooker.estimate_invalidate_upstream_dependency(manifest, sourceA);
+    expectTrue(upstream_estimate.direct_count == 1u, "upstream estimate counts direct source entry");
+    expectTrue(upstream_estimate.downstream_count >= 1u, "upstream estimate counts downstream entries");
+    expectTrue(upstream_estimate.total() >= 2u, "upstream reconcile estimate covers chain entries");
+
+    const fuse::u32 upstream_removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
+    expectTrue(upstream_removed == upstream_estimate.total(),
+               "upstream reconcile estimate matches invalidation count");
+    expectTrue(cooker.cache().empty(), "upstream invalidation clears seeded chain cache");
+
+    const fuse::project::CookBatchResult reseeded = cooker.cook_manifest(manifest);
+    expectTrue(reseeded.ok, "cache reseeded for stale reconcile estimate");
+    expectTrue(cooker.cache().entry_count() == 2u, "upstream and downstream cached after reseed");
+
+    writeTempFile(sourceA, "# est a revised\n");
+    const fuse::project::CookCacheReconcileEstimate stale_estimate =
+        cooker.estimate_invalidate_stale_dependency_hashes(manifest);
+    expectTrue(stale_estimate.would_reconcile(), "stale dependency reconcile estimate is non-zero");
+    expectTrue(stale_estimate.direct_count >= 1u, "stale reconcile estimate counts direct entries");
+
+    const fuse::u32 stale_removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(stale_removed == stale_estimate.total(),
+               "stale dependency reconcile estimate matches invalidation count");
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+    const fuse::project::CookCacheInvalidationProbe downstream_probe =
+        cooker.cache().probe_downstream_of(entryA.output_path, graph.edges(), graph.jobs());
+    expectTrue(downstream_probe.affected_count == 0u,
+               "downstream probe is zero after stale reconcile invalidation");
+
+    const std::vector<std::pair<std::string, fuse::u64>> empty_upstream;
+    expectTrue(!cooker.cache().probe_stale_upstream_hashes(empty_upstream).would_invalidate(),
+               "empty upstream probe list is guarded");
+}
+
 } // namespace
 
 void testCookCachePreflightAndReconcileEstimators() {
@@ -2018,6 +2079,7 @@ int main() {
     testCookerUpstreamReconcileProbes();
     testCookCacheDownstreamSourceProbe();
     testCookCachePreflightAndReconcileEstimators();
+    testCookCacheReconcileEstimators();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

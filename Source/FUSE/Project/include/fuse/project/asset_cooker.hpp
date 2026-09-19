@@ -90,6 +90,13 @@ public:
     [[nodiscard]] CookDependencyReconcileEstimate estimate_stale_dependency_hashes(
         const CookManifest& manifest) const;
 
+    /// Non-mutating reconcile estimate for upstream dependency invalidation (B7.9 deepen).
+    [[nodiscard]] CookCacheReconcileEstimate estimate_invalidate_upstream_dependency(
+        const CookManifest& manifest, const std::string& changed_source) const;
+    /// Non-mutating reconcile estimate for stale dependency-hash invalidation (B7.9 deepen).
+    [[nodiscard]] CookCacheReconcileEstimate estimate_invalidate_stale_dependency_hashes(
+        const CookManifest& manifest) const;
+
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
 
