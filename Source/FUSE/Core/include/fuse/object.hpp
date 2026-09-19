@@ -35,6 +35,10 @@ public:
 
     Handle<Object> handle() const { return m_handle; }
 
+    /// Stable id from quarantined legacy SimObject/SceneObject (0 = none).
+    u32 legacyId() const { return m_legacyId; }
+    void setLegacyId(u32 id) { m_legacyId = id; }
+
     virtual const char* typeName() const { return "Object"; }
 
 protected:
@@ -45,6 +49,7 @@ private:
     Object* m_parent = nullptr;
     std::vector<Object*> m_children;
     Handle<Object> m_handle = Handle<Object>::invalid();
+    u32 m_legacyId = 0;
 };
 
 } // namespace fuse

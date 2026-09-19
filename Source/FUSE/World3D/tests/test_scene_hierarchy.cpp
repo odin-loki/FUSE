@@ -1,14 +1,19 @@
 #include <fuse/legacy/t2d/scene_adapter.hpp>
 #include <fuse/legacy/t3d/scene_adapter.hpp>
 #include <fuse/object.hpp>
+#include <fuse/platform/thread.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/scene_snapshot.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
 #include <fuse/world3d/scene_snapshot.hpp>
 
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <thread>
+#include <type_traits>
+#include <vector>
 
 namespace {
 
@@ -139,7 +144,69 @@ void testSnapshotSoAFill3D() {
     expectNear(soa.worldZ[1], 14.f, 1e-4f, "3D SoA child world z accumulates parent");
 }
 
+void testSnapshotUsesHandlesNotRawPointers() {
+    static_assert(std::is_same_v<decltype(std::declval<fuse::world2d::SpriteDrawCmd>().object),
+                                fuse::Handle<fuse::Object>>,
+                  "2D draw cmd carries Handle<Object>, not SceneObject*");
+    static_assert(std::is_same_v<decltype(std::declval<fuse::world3d::ObjectDrawCmd3D>().object),
+                                fuse::Handle<fuse::Object>>,
+                  "3D draw cmd carries Handle<Object>, not SceneObject*");
+    static_assert(
+        std::is_same_v<decltype(std::declval<fuse::world2d::SceneTransformSoA2D>().object)::value_type,
+                       fuse::Handle<fuse::Object>>,
+        "2D SoA stores Handle<Object> rows");
+}
+
+void testSnapshotWorkerThreadReadsHandlesOnly() {
+    fuse::platform::registerMainThread();
+    const fuse::platform::ThreadId mainId = fuse::platform::currentThreadId();
+
+    fuse::SceneObject2D root("root");
+    fuse::SceneObject2D child("child");
+    root.setPosition(4.f, 5.f);
+    child.setPosition(1.f, 2.f);
+    root.addChild(&child);
+
+    fuse::world2d::SceneSnapshot2D snapshot;
+    fuse::world2d::SceneTransformSoA2D soa;
+    fuse::world2d::fillSnapshotSoA(root, snapshot, soa);
+
+    const std::vector<fuse::Handle<fuse::Object>> handles = soa.object;
+    const std::vector<fuse::world2d::SpriteDrawCmd> drawCmds = snapshot.sprites();
+    const std::vector<float> worldX = soa.worldX;
+    const std::vector<float> worldY = soa.worldY;
+
+    std::atomic<bool> workerOk{true};
+    std::atomic<fuse::platform::ThreadId> workerId{0};
+
+    std::thread worker([&]() {
+        workerId.store(fuse::platform::currentThreadId(), std::memory_order_relaxed);
+        if (handles.size() != drawCmds.size() || handles.size() != worldX.size()) {
+            workerOk.store(false, std::memory_order_relaxed);
+            return;
+        }
+        for (fuse::usize i = 0; i < handles.size(); ++i) {
+            if (drawCmds[i].object != handles[i]) {
+                workerOk.store(false, std::memory_order_relaxed);
+                return;
+            }
+            if (std::fabs(drawCmds[i].x - worldX[i]) > 1e-4f ||
+                std::fabs(drawCmds[i].y - worldY[i]) > 1e-4f) {
+                workerOk.store(false, std::memory_order_relaxed);
+                return;
+            }
+        }
+    });
+    worker.join();
+
+    expectTrue(workerOk.load(), "worker reads handle-index snapshot data without SceneObject*");
+    expectTrue(handles.size() == 2u, "handle batch matches hierarchy size");
+    expectTrue(workerId.load() != mainId, "snapshot consumer runs on a worker thread");
+}
+
 void testLegacyAdapterRoundTrip() {
+    fuse::platform::registerMainThread();
+
     fuse::legacy::t2d::LegacySceneObjectStub t2dLegacy{};
     t2dLegacy.legacyId = 42;
     t2dLegacy.name = "legacy_sprite";
@@ -148,10 +215,11 @@ void testLegacyAdapterRoundTrip() {
     t2dLegacy.layer = 2;
 
     fuse::SceneObject2D imported2d("placeholder");
-    expectTrue(fuse::legacy::t2d::importSceneObject(t2dLegacy, imported2d), "T2D adapter import stub");
+    expectTrue(fuse::legacy::t2d::importSceneObject(t2dLegacy, imported2d), "T2D adapter import");
     fuse::legacy::t2d::LegacySceneObjectStub exported2d{};
-    exported2d.legacyId = t2dLegacy.legacyId;
-    expectTrue(fuse::legacy::t2d::exportSceneObject(imported2d, exported2d), "T2D adapter export stub");
+    expectTrue(fuse::legacy::t2d::exportSceneObject(imported2d, exported2d), "T2D adapter export");
+    expectTrue(exported2d.legacyId == 42u, "T2D round-trip legacyId");
+    expectTrue(exported2d.name == "legacy_sprite", "T2D round-trip name");
     expectNear(exported2d.x, 8.f, 1e-4f, "T2D round-trip x");
     expectNear(exported2d.y, 9.f, 1e-4f, "T2D round-trip y");
     expectTrue(exported2d.layer == 2, "T2D round-trip layer");
@@ -164,11 +232,38 @@ void testLegacyAdapterRoundTrip() {
     t3dLegacy.z = 3.f;
 
     fuse::SceneObject3D imported3d("placeholder");
-    expectTrue(fuse::legacy::t3d::importSceneObject(t3dLegacy, imported3d), "T3D adapter import stub");
+    expectTrue(fuse::legacy::t3d::importSceneObject(t3dLegacy, imported3d), "T3D adapter import");
     fuse::legacy::t3d::LegacySceneObjectStub exported3d{};
-    exported3d.legacyId = t3dLegacy.legacyId;
-    expectTrue(fuse::legacy::t3d::exportSceneObject(imported3d, exported3d), "T3D adapter export stub");
+    expectTrue(fuse::legacy::t3d::exportSceneObject(imported3d, exported3d), "T3D adapter export");
+    expectTrue(exported3d.legacyId == 7u, "T3D round-trip legacyId");
+    expectTrue(exported3d.name == "legacy_mesh", "T3D round-trip name");
+    expectNear(exported3d.x, 1.f, 1e-4f, "T3D round-trip x");
+    expectNear(exported3d.y, 2.f, 1e-4f, "T3D round-trip y");
     expectNear(exported3d.z, 3.f, 1e-4f, "T3D round-trip z");
+}
+
+void testLegacyAdapterRejectsOffMainThread() {
+    fuse::platform::registerMainThread();
+
+    fuse::legacy::t2d::LegacySceneObjectStub t2dLegacy{};
+    t2dLegacy.name = "off_thread";
+    t2dLegacy.x = 1.f;
+    t2dLegacy.y = 2.f;
+
+    std::atomic<bool> importOk{true};
+    std::atomic<bool> exportOk{true};
+
+    std::thread worker([&]() {
+        fuse::SceneObject2D node("worker");
+        importOk.store(fuse::legacy::t2d::importSceneObject(t2dLegacy, node), std::memory_order_relaxed);
+
+        fuse::legacy::t2d::LegacySceneObjectStub exported{};
+        exportOk.store(fuse::legacy::t2d::exportSceneObject(node, exported), std::memory_order_relaxed);
+    });
+    worker.join();
+
+    expectTrue(!importOk.load(), "T2D adapter import rejects off-main-thread");
+    expectTrue(!exportOk.load(), "T2D adapter export rejects off-main-thread");
 }
 
 } // namespace
@@ -180,7 +275,10 @@ int main() {
     testLocalWorldTransformStubs();
     testSnapshotSoAFill2D();
     testSnapshotSoAFill3D();
+    testSnapshotUsesHandlesNotRawPointers();
+    testSnapshotWorkerThreadReadsHandlesOnly();
     testLegacyAdapterRoundTrip();
+    testLegacyAdapterRejectsOffMainThread();
 
     if (g_failures == 0) {
         std::printf("fuse scene hierarchy tests: all checks passed\n");
