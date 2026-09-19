@@ -702,6 +702,9 @@ bool PairBufferSoA::hasDuplicateCanonicalPairs() const {
         for (u32 inner = outer + 1u; inner < scanCount; ++inner) {
             if (!slotIsValid(inner)) {
             if (bodyA[outer] == bodyA[inner] && bodyB[outer] == bodyB[inner]) {
+                continue;
+            }
+                return true;
         }
     }
     return false;
@@ -1596,16 +1599,28 @@ bool pairBufferDedupeRejectsForReason(const PairBufferSoA& buffer, PairBufferDed
     preflight.needsCompaction = compactionPreflight.needsCompaction();
     preflight.needsClamp = clampPreflight.needsClamp();
     preflight.outOfRangeSlot = slot >= buffer.pairSlotCount;
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    u32 slot,
+    u32 idxB) {
+    PairBufferWriteSlotPreflight preflight{};
+    preflight.invalidPair = !isValidCandidatePair(idxA, idxB);
+    return preflight;
+}
 
 PairBufferPrepareSlotsPreflight preflightPairBufferPrepareSlots(u32 slotCount) {
     PairBufferPrepareSlotsPreflight preflight{};
     preflight.zeroSlots = slotCount == 0u;
+    return preflight;
+}
 
 PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingCount) {
     PairBufferMergePreflight preflight{};
     preflight.emptyIncoming = incomingCount == 0u;
     if (preflight.emptyIncoming || preflight.atCapacity) {
         preflight.rejectedCount = incomingCount;
+    preflight.atCapacity = buffer.isFull();
+        return preflight;
+    }
 
     const u32 remaining = buffer.remainingCapacity();
     if (remaining == UINT32_MAX) {
@@ -1613,16 +1628,21 @@ PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u
 
     preflight.acceptedCount = incomingCount <= remaining ? incomingCount : remaining;
     preflight.rejectedCount = incomingCount - preflight.acceptedCount;
+        return preflight;
+    }
+
 
 BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer,
     u32 incomingPairCount) {
     BroadphaseMergeIntoBufferPreflight preflight{};
     preflight.merge = preflightBroadphaseMerge(bodies, shapes);
     preflight.incomingPairCount = incomingPairCount;
     preflight.buffer = preflightPairBufferMerge(buffer, incomingPairCount);
 
+    return preflight;
 }
 
 } // namespace fuse::physics::broadphase

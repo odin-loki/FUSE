@@ -767,11 +767,14 @@ bool canSkipPairBufferCompaction(const PairBufferSoA& buffer);
     const PairBufferSoA& buffer,
     u32 idxA,
 
+
+
 /// Read-only slot-prepare diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct PairBufferPrepareSlotsPreflight {
     bool zeroSlots = false;
 
     bool canPrepare() const { return !zeroSlots; }
+};
 
 PairBufferPrepareSlotsPreflight preflightPairBufferPrepareSlots(u32 slotCount);
 
@@ -783,6 +786,7 @@ struct PairBufferMergePreflight {
     u32 rejectedCount = 0;
 
     bool canMergeAny() const { return !emptyIncoming && !atCapacity; }
+};
 
 PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingCount);
 
@@ -805,5 +809,11 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
 
 
 /// Non-mutating sort skip predicate — inverse of `needsSort` (B4.2 deepen follow-up pass).
+
+};
+
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer,
 
 } // namespace fuse::physics::broadphase
