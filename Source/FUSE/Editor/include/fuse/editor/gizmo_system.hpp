@@ -448,6 +448,8 @@ bool canEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
 /// Read-only drag-update diagnostics — no mutation (B6.4 deepen pass).
     bool canUpdate = false;
     bool emptyHit = false;
+    /// Snap is enabled but the mode step is unusable — update still applies (B6.4 deepen pass).
+    bool snapDegraded = false;
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       f32 pickRadius, bool alreadyDragging = false);
@@ -486,6 +488,13 @@ GizmoBeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mo
                                            bool alreadyDragging, const GizmoSnapSettings& snap);
 
 UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging);
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode,
+                                        const GizmoSnapSettings& settings);
+
+/// Non-mutating update-drag predicate — same guards as `preflightUpdateDrag` (B6.4 deepen pass).
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging);
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode,
+                   const GizmoSnapSettings& settings);
 
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up).
 struct PickPreflight {
@@ -855,8 +864,9 @@ public:
     GizmoBeginDragPreflight preflightBeginDrag(const GizmoRay& ray,
     /// Read-only drag-update diagnostics — same guards as `canUpdateDrag` (B6.4 deepen pass).
     [[nodiscard]] UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit) const;
-    [[nodiscard]] bool canUpdateDrag(const GizmoHitTest& hit) const;
     /// Guarded drag update — returns false on empty viewport or inactive drag (B6.4 deepen pass).
+    /// Non-mutating update-drag predicate — rejects inactive drags and empty hits (B6.4 deepen pass).
+    /// Guarded drag update — returns false when preflight rejects (B6.4 deepen pass).
     GizmoResult updateDrag(const GizmoHitTest& hit);
     /// Read-only end-drag diagnostics — same guards as `canEndDrag` (B6.4 deepen pass).
     [[nodiscard]] EndDragPreflight preflightEndDrag() const;
