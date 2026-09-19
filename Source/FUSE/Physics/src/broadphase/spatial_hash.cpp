@@ -1134,3 +1134,6 @@ RefineDedupeBroadphasePreflight preflightRefineDedupeBroadphase(
 
 // --- deepen additive from deepen-b4-broadphase-guards-14d5 ---
     if (preflightPairBufferClamp(buffer).needsClamp()) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-b64e ---
+    case CellSpanRejectReason::ExceedsMaxSpan:

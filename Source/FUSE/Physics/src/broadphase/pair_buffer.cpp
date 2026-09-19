@@ -876,3 +876,37 @@ PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u
     case PairBufferCompactAndClampRejectReason::AlreadyCompactAndWithinCapacity:
         return PairBufferCompactAndClampRejectReason::AlreadyCompactAndWithinCapacity;
         preflight.reason == PairBufferCompactAndClampRejectReason::AlreadyCompactAndWithinCapacity;
+
+// --- deepen additive from deepen-b4-broadphase-guards-b64e ---
+const char* pairBufferSlotWriteRejectReasonName(PairBufferSlotWriteRejectReason reason) {
+    case PairBufferSlotWriteRejectReason::None:
+    case PairBufferSlotWriteRejectReason::OutOfRangeSlot:
+    case PairBufferSlotWriteRejectReason::InvalidPair:
+PairBufferSlotWriteRejectReason pairBufferSlotWriteRejectReason(
+        return PairBufferSlotWriteRejectReason::OutOfRangeSlot;
+        return PairBufferSlotWriteRejectReason::InvalidPair;
+    return PairBufferSlotWriteRejectReason::None;
+    PairBufferSlotWriteRejectReason expected) {
+    return pairBufferSlotWriteRejectReason(buffer, slot, idxA, idxB) == expected;
+PairBufferSlotWritePreflight preflightPairBufferSlotWrite(
+    PairBufferSlotWritePreflight preflight{};
+    preflight.reason = pairBufferSlotWriteRejectReason(buffer, slot, idxA, idxB);
+    preflight.outOfRangeSlot = preflight.reason == PairBufferSlotWriteRejectReason::OutOfRangeSlot;
+    preflight.invalidPair = preflight.reason == PairBufferSlotWriteRejectReason::InvalidPair;
+const char* pairBufferSlotReservationRejectReasonName(PairBufferSlotReservationRejectReason reason) {
+    case PairBufferSlotReservationRejectReason::None:
+    case PairBufferSlotReservationRejectReason::ZeroSlots:
+    case PairBufferSlotReservationRejectReason::ExceedsCapacity:
+PairBufferSlotReservationRejectReason pairBufferSlotReservationRejectReason(
+        return PairBufferSlotReservationRejectReason::ZeroSlots;
+        return PairBufferSlotReservationRejectReason::ExceedsCapacity;
+    return PairBufferSlotReservationRejectReason::None;
+    PairBufferSlotReservationRejectReason expected) {
+    return pairBufferSlotReservationRejectReason(buffer, slotCount) == expected;
+PairBufferSlotReservationPreflight preflightPairBufferSlotReservation(
+    PairBufferSlotReservationPreflight preflight{};
+    preflight.reason = pairBufferSlotReservationRejectReason(buffer, slotCount);
+    preflight.zeroSlots = preflight.reason == PairBufferSlotReservationRejectReason::ZeroSlots;
+    preflight.exceedsCapacity = preflight.reason == PairBufferSlotReservationRejectReason::ExceedsCapacity;
+    return !preflightPairBufferSlotReservation(buffer, slotCount).canReserve();
+    return preflightPairBufferSlotReservation(buffer, slotCount).canReserve();

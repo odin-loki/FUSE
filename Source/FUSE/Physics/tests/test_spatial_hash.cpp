@@ -2892,3 +2892,51 @@ void testShouldRunPairBufferDedupeAndSortGuards() {
              static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferCompactAndClampRejectReason::None),
 void testPairBufferDedupeShouldRunGuards() {
 void testBroadphaseShouldRunGuards() {
+
+// --- deepen additive from deepen-b4-broadphase-guards-b64e ---
+void testPairBufferSlotWritePreflightGuards() {
+    const fuse::physics::broadphase::PairBufferSlotWritePreflight validWrite =
+        fuse::physics::broadphase::preflightPairBufferSlotWrite(buffer, 0u, 0u, 1u);
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferSlotWriteRejectReason::None),
+    const fuse::physics::broadphase::PairBufferSlotWritePreflight outOfRange =
+        fuse::physics::broadphase::preflightPairBufferSlotWrite(buffer, 3u, 0u, 1u);
+    expectTrue(fuse::physics::broadphase::pairBufferSlotWriteRejectsForReason(
+                   fuse::physics::broadphase::PairBufferSlotWriteRejectReason::OutOfRangeSlot),
+    const fuse::physics::broadphase::PairBufferSlotWritePreflight invalidPair =
+        fuse::physics::broadphase::preflightPairBufferSlotWrite(buffer, 1u, 2u, 2u);
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferSlotWriteRejectReasonName(
+                               fuse::physics::broadphase::PairBufferSlotWriteRejectReason::InvalidPair),
+void testPairBufferSlotReservationPreflightGuards() {
+    const fuse::physics::broadphase::PairBufferSlotReservationPreflight zeroSlots =
+        fuse::physics::broadphase::preflightPairBufferSlotReservation(buffer, 0u);
+    const fuse::physics::broadphase::PairBufferSlotReservationPreflight validReservation =
+        fuse::physics::broadphase::preflightPairBufferSlotReservation(buffer, 4u);
+    const fuse::physics::broadphase::PairBufferSlotReservationPreflight exceedsCapacity =
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferSlotReservationRejectReasonName(
+                               fuse::physics::broadphase::PairBufferSlotReservationRejectReason::ExceedsCapacity),
+void testPairBufferSortSkipGuards() {
+void testCellSpanPreflightGuards() {
+    const fuse::physics::broadphase::CellSpanPreflight validPreflight =
+        fuse::physics::broadphase::preflightCellSpan(validRange, 4u);
+    expectTrue(validPreflight.canClamp(), "cell-span preflight accepts clampable range");
+    const fuse::physics::broadphase::CellSpanPreflight widePreflight =
+        fuse::physics::broadphase::preflightCellSpan(wideRange, 4u);
+    expectTrue(widePreflight.exceedsMaxSpan, "cell-span preflight marks exceeds max span");
+    expectTrue(!widePreflight.canClamp(), "cell-span preflight rejects over-span range");
+                   wideRange, 4u, fuse::physics::broadphase::CellSpanRejectReason::ExceedsMaxSpan),
+                               fuse::physics::broadphase::CellSpanRejectReason::ExceedsMaxSpan),
+    const fuse::physics::broadphase::CellSpanPreflight2D planePreflight =
+        fuse::physics::broadphase::preflightCellSpan(planeRange, 4u);
+    expectTrue(planePreflight.exceedsMaxSpan, "2D cell-span preflight marks exceeds max span");
+void testRefineDedupeMergePreflightCounts() {
+    const fuse::physics::broadphase::RefineBroadphasePreflight emptyRefine =
+    const fuse::physics::broadphase::RefineBroadphasePreflight slotRefine =
+    const fuse::physics::broadphase::DedupeBroadphasePreflight dedupePreflight =
+    expectEq(dedupePreflight.pairCount, 2u, "dedupe preflight reports pair count");
+    expectEq(mergePreflight.planeBodyCount, 1u, "merge preflight reports plane body count");
+    expectTrue(mergePreflight.dynamicBodyCount >= 2u, "merge preflight reports dynamic body count");
+             mergePreflight.planeBodyCount * mergePreflight.dynamicBodyCount,
+    testPairBufferSlotWritePreflightGuards();
+    testPairBufferSlotReservationPreflightGuards();
+    testCellSpanPreflightGuards();
+    testRefineDedupeMergePreflightCounts();

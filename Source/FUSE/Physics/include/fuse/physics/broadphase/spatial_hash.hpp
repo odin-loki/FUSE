@@ -1229,3 +1229,13 @@ struct RefineDedupeBroadphasePreflight {
     RefineBroadphasePreflight refine{};
     DedupeBroadphasePreflight dedupe{};
 RefineDedupeBroadphasePreflight preflightRefineDedupeBroadphase(
+
+// --- deepen additive from deepen-b4-broadphase-guards-b64e ---
+            return CellSpanRejectReason::ExceedsMaxSpan;
+    bool canClamp() const { return reason == CellSpanRejectReason::None; }
+    preflight.exceedsMaxSpan = preflight.reason == CellSpanRejectReason::ExceedsMaxSpan;
+struct CellSpanPreflight2D {
+FUSE_PHYSICS_INLINE CellSpanPreflight2D preflightCellSpan(const CellRange2& range, u32 maxSpanPerAxis) {
+    CellSpanPreflight2D preflight{};
+    return cellSpanRejectReason(range, maxSpanPerAxis) != CellSpanRejectReason::ExceedsMaxSpan;
+    return maxSpanPerAxis > 0u && cellSpanRejectReason(range, maxSpanPerAxis) == CellSpanRejectReason::ExceedsMaxSpan;

@@ -478,3 +478,21 @@ PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u
 // --- deepen additive from deepen-b4-broadphase-guards-cbb3 ---
     PairBufferCompactionPreflight compaction{};
     PairBufferClampPreflight clamp{};
+
+// --- deepen additive from deepen-b4-broadphase-guards-b64e ---
+enum class PairBufferSlotWriteRejectReason : u8 {
+const char* pairBufferSlotWriteRejectReasonName(PairBufferSlotWriteRejectReason reason);
+PairBufferSlotWriteRejectReason pairBufferSlotWriteRejectReason(
+    PairBufferSlotWriteRejectReason expected);
+struct PairBufferSlotWritePreflight {
+    PairBufferSlotWriteRejectReason reason = PairBufferSlotWriteRejectReason::None;
+    bool canWrite() const { return reason == PairBufferSlotWriteRejectReason::None; }
+PairBufferSlotWritePreflight preflightPairBufferSlotWrite(
+enum class PairBufferSlotReservationRejectReason : u8 {
+const char* pairBufferSlotReservationRejectReasonName(PairBufferSlotReservationRejectReason reason);
+PairBufferSlotReservationRejectReason pairBufferSlotReservationRejectReason(
+    PairBufferSlotReservationRejectReason expected);
+struct PairBufferSlotReservationPreflight {
+    PairBufferSlotReservationRejectReason reason = PairBufferSlotReservationRejectReason::None;
+    bool canReserve() const { return reason == PairBufferSlotReservationRejectReason::None; }
+PairBufferSlotReservationPreflight preflightPairBufferSlotReservation(
