@@ -490,3 +490,9 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent);
 // --- deepen additive from deepen-b16-profiler-name-flow-guards-2034 ---
 bool tryFindFirstExportableEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFindFirstExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+
+// --- deepen additive from deepen-b16-profiler-guards-b5ca ---
+bool tryFirstExportableEventByName(const char* name, ProfileEvent& outEvent);
+bool tryLastExportableEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFirstExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+bool tryLastExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent);

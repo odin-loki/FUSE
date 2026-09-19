@@ -4537,3 +4537,63 @@ void testChromeTraceExportPreflightPairedEventCounts() {
     expectTrue(!closedPreflight.hasUnpairedScopeEvents,
     expectTrue(closedPreflight.exportableEventCount == 5u,
     testChromeTraceExportPreflightPairedEventCounts();
+
+// --- deepen additive from deepen-b16-profiler-guards-b5ca ---
+void testTryExportableEventByNameAndFlowIdGuard() {
+    expectTrue(!fuse::profiler::tryFirstExportableEventByName(nullptr, outEvent),
+               "tryFirstExportableEventByName false for null name");
+               "tryFirstExportableEventByName clears output for null name");
+    expectTrue(!fuse::profiler::tryLastExportableEventByName("", outEvent),
+               "tryLastExportableEventByName false for empty name");
+    expectTrue(!fuse::profiler::tryFirstExportableEventByFlowId(42u, outEvent),
+               "tryFirstExportableEventByFlowId false on empty buffer");
+    expectTrue(fuse::profiler::tryFirstExportableEventByName("lookup_scope", outEvent),
+               "tryFirstExportableEventByName true for scope begin");
+               "tryFirstExportableEventByName copies scope begin phase");
+               "tryFirstExportableEventByName copies scope name");
+    expectTrue(fuse::profiler::tryLastExportableEventByName("lookup_scope", outEvent),
+               "tryLastExportableEventByName true for scope end");
+               "tryLastExportableEventByName copies scope end phase");
+    expectTrue(fuse::profiler::tryFirstExportableEventByFlowId(flowId, outEvent),
+               "tryFirstExportableEventByFlowId true for flow start");
+               "tryFirstExportableEventByFlowId copies flow start phase");
+    expectTrue(outEvent.scopeId == flowId, "tryFirstExportableEventByFlowId copies flow id");
+    expectTrue(fuse::profiler::tryLastExportableEventByFlowId(flowId, outEvent),
+               "tryLastExportableEventByFlowId true for flow finish");
+               "tryLastExportableEventByFlowId copies flow finish phase");
+    const fuse::profiler::ProfileScopePreflight emptyNamePreflight =
+    expectTrue(emptyNamePreflight.invalidName, "scope preflight marks empty name invalid");
+    expectTrue(!emptyNamePreflight.canRecord(), "scope preflight blocks empty name");
+    const fuse::profiler::ProfileScopePreflight nullNamePreflight =
+    expectTrue(nullNamePreflight.invalidName, "scope preflight marks null name invalid");
+    expectTrue(!nullNamePreflight.canRecord(), "scope preflight blocks null name");
+    expectTrue(validPreflight.canRecord(), "scope preflight allows valid name");
+    expectTrue(!validPreflight.profilerDisabled, "scope preflight profiler enabled on reset");
+    expectTrue(!validPreflight.invalidName, "scope preflight clears invalidName for valid name");
+    expectTrue(disabledPreflight.profilerDisabled, "scope preflight marks profiler disabled");
+    expectTrue(!disabledPreflight.canRecord(), "scope preflight blocks when profiler disabled");
+    const fuse::profiler::AsyncFlowBeginPreflight emptyBeginPreflight =
+    expectTrue(emptyBeginPreflight.invalidName, "flow begin preflight marks empty name invalid");
+    expectTrue(!emptyBeginPreflight.canBegin(), "flow begin preflight blocks empty name");
+        fuse::profiler::preflightEndAsyncFlow("orphan_flow", 1u);
+    expectTrue(orphanEndPreflight.orphanFinish, "flow end preflight marks orphan finish");
+    expectTrue(!orphanEndPreflight.canEnd(), "flow end preflight blocks orphan finish");
+    const fuse::profiler::AsyncFlowBeginPreflight validBeginPreflight =
+    expectTrue(validBeginPreflight.canBegin(), "flow begin preflight allows valid name");
+        fuse::profiler::preflightEndAsyncFlow("valid_flow", flowId);
+    expectTrue(!matchedEndPreflight.orphanFinish, "flow end preflight clears orphan with open flow");
+    expectTrue(matchedEndPreflight.canEnd(), "flow end preflight allows matched end");
+    const fuse::profiler::AsyncFlowBeginPreflight disabledBeginPreflight =
+        fuse::profiler::preflightBeginAsyncFlow("disabled_flow");
+    expectTrue(disabledBeginPreflight.profilerDisabled, "flow begin preflight marks profiler disabled");
+    expectTrue(!disabledBeginPreflight.canBegin(), "flow begin preflight blocks when profiler disabled");
+    const fuse::profiler::AsyncFlowEndPreflight disabledEndPreflight =
+        fuse::profiler::preflightEndAsyncFlow("disabled_flow", flowId);
+    expectTrue(disabledEndPreflight.profilerDisabled, "flow end preflight marks profiler disabled");
+    expectTrue(!disabledEndPreflight.canEnd(), "flow end preflight blocks when profiler disabled");
+void testChromeTraceExportPreflightBlocksInvalidNamesInSafeExport() {
+    expectTrue(balancedPreflight.canExportSafely(),
+    const fuse::profiler::ChromeTraceExportPreflight tracePreflight =
+    expectTrue(tracePreflight.canExportSafely(),
+    expectTrue(!tracePreflight.hasInvalidNameEvents,
+    testChromeTraceExportPreflightBlocksInvalidNamesInSafeExport();
