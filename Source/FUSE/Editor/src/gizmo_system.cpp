@@ -324,6 +324,55 @@ bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings) {
     return isSnapEnabled(mode, settings) && !isSnapStepValid(mode, settings);
 }
 
+HitTestPreflight preflightHitTest(const GizmoHitTest& hit) {
+    HitTestPreflight preflight{};
+    if (isHitTestDimensionsInvalid(hit)) {
+        preflight.invalidDimensions = true;
+        return preflight;
+    }
+
+    if (isHitTestEmpty(hit)) {
+        preflight.emptyHit = true;
+        return preflight;
+    }
+
+    if (isHitTestOutOfBounds(hit)) {
+        preflight.outOfBounds = true;
+    }
+
+    return preflight;
+}
+
+bool canUseHitTest(const GizmoHitTest& hit) {
+    return preflightHitTest(hit).canUse();
+}
+
+bool isHitTestRejected(const GizmoHitTest& hit) {
+    return !canUseHitTest(hit);
+}
+
+RayPreflight preflightRay(const GizmoRay& ray, f32 axisLength, f32 pickRadius) {
+    RayPreflight preflight{};
+    if (isRayEmpty(ray)) {
+        preflight.emptyRay = true;
+        return preflight;
+    }
+
+    if (!isPickConfigValid(axisLength, pickRadius)) {
+        preflight.invalidPickConfig = true;
+    }
+
+    return preflight;
+}
+
+bool canUseRay(const GizmoRay& ray, f32 axisLength, f32 pickRadius) {
+    return preflightRay(ray, axisLength, pickRadius).canUse();
+}
+
+bool isRayRejected(const GizmoRay& ray, f32 axisLength, f32 pickRadius) {
+    return !canUseRay(ray, axisLength, pickRadius);
+}
+
 bool isRayValid(const GizmoRay& ray) {
     return !isRayEmpty(ray);
 }
@@ -356,20 +405,13 @@ bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings) {
     return isSnapEnabled(mode, settings) && isSnapStepValid(mode, settings);
 }
 
-bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings) {
-    return isSnapEnabled(mode, settings) && !isSnapStepValid(mode, settings);
-}
-
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
                             GizmoSpace space, f32 axisLength, f32 pickRadius) {
     PickPreflight preflight{};
-    if (isRayEmpty(ray)) {
-        preflight.emptyRay = true;
-        return preflight;
-    }
-
-    if (!isPickConfigValid(axisLength, pickRadius)) {
-        preflight.invalidPickConfig = true;
+    const RayPreflight rayPreflight = preflightRay(ray, axisLength, pickRadius);
+    preflight.emptyRay = rayPreflight.emptyRay;
+    preflight.invalidPickConfig = rayPreflight.invalidPickConfig;
+    if (!rayPreflight.canUse()) {
         return preflight;
     }
 
@@ -386,18 +428,11 @@ PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform
 
 PickPreflight preflightPick(const GizmoHitTest& hit, GizmoMode mode) {
     PickPreflight preflight{};
-    if (isHitTestDimensionsInvalid(hit)) {
-        preflight.invalidDimensions = true;
-        return preflight;
-    }
-
-    if (isHitTestEmpty(hit)) {
-        preflight.emptyHit = true;
-        return preflight;
-    }
-
-    if (isHitTestOutOfBounds(hit)) {
-        preflight.outOfBounds = true;
+    const HitTestPreflight hitPreflight = preflightHitTest(hit);
+    preflight.emptyHit = hitPreflight.emptyHit;
+    preflight.invalidDimensions = hitPreflight.invalidDimensions;
+    preflight.outOfBounds = hitPreflight.outOfBounds;
+    if (!hitPreflight.canUse()) {
         return preflight;
     }
 
@@ -484,13 +519,10 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
         return preflight;
     }
 
-    if (isHitTestDimensionsInvalid(hit)) {
-        preflight.invalidDimensions = true;
-    } else if (isHitTestEmpty(hit)) {
-        preflight.emptyHit = true;
-    } else if (isHitTestOutOfBounds(hit)) {
-        preflight.outOfBounds = true;
-    }
+    const HitTestPreflight hitPreflight = preflightHitTest(hit);
+    preflight.emptyHit = hitPreflight.emptyHit;
+    preflight.invalidDimensions = hitPreflight.invalidDimensions;
+    preflight.outOfBounds = hitPreflight.outOfBounds;
 
     return preflight;
 }
@@ -816,16 +848,20 @@ BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
         return preflight;
     }
 
-    const PickPreflight pick = preflightPick(hit, mode);
-    preflight.emptyHit = pick.emptyHit;
-    preflight.invalidDimensions = pick.invalidDimensions;
-    preflight.outOfBounds = pick.outOfBounds;
-    preflight.screenMiss = pick.screenMiss;
-    if (!pick.canPick()) {
+    const HitTestPreflight hitPreflight = preflightHitTest(hit);
+    preflight.emptyHit = hitPreflight.emptyHit;
+    preflight.invalidDimensions = hitPreflight.invalidDimensions;
+    preflight.outOfBounds = hitPreflight.outOfBounds;
+    if (!hitPreflight.canUse()) {
         return preflight;
     }
 
-    preflight.axis = pick.axis;
+    if (isScreenHitMiss(hit, mode)) {
+        preflight.screenMiss = true;
+        return preflight;
+    }
+
+    preflight.axis = resolveScreenAxis(hit, mode);
     if (isSnapDegraded(mode, settings)) {
         preflight.snapDegraded = true;
     }
@@ -1275,6 +1311,26 @@ InteractionPreflight GizmoSystem::preflightInteraction(const GizmoRay& ray,
                                                        const GizmoTransform& transform) const {
     return fuse::editor::preflightInteraction(ray, transform, m_dragging, m_activeAxis, m_mode,
                                               m_space, kAxisLength, kPickRadius, m_snap);
+}
+
+HitTestPreflight GizmoSystem::preflightHitTest(const GizmoHitTest& hit) const {
+    return fuse::editor::preflightHitTest(hit);
+}
+
+RayPreflight GizmoSystem::preflightRay(const GizmoRay& ray) const {
+    return fuse::editor::preflightRay(ray, kAxisLength, kPickRadius);
+}
+
+bool GizmoSystem::canUseHitTest(const GizmoHitTest& hit) const {
+    return fuse::editor::canUseHitTest(hit);
+}
+
+bool GizmoSystem::canUseRay(const GizmoRay& ray) const {
+    return fuse::editor::canUseRay(ray, kAxisLength, kPickRadius);
+}
+
+bool GizmoSystem::canActOnPhase(const GizmoHitTest& hit) const {
+    return preflightInteraction(hit).canActOnPhase();
 }
 
 bool GizmoSystem::canPickSnap(const GizmoHitTest& hit) const {
