@@ -214,7 +214,6 @@ public:
         const CookManifest& manifest) const;
     /// True when `count_stale_dependency_invalidation` would remove at least one entry (B7.9 deepen).
     /// Deduplicated source paths `invalidate_stale_dependency_hashes` would touch (B7.9 deepen).
-    /// Upstream invalidation breakdown without mutating cache stats (B7.9 deepen).
     /// True when stale dependency hashes would invalidate cache entries (B7.9 deepen).
     /// Read-only prune reconcile probe — mirrors `CookCache::estimate_prune_removals` (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_reconcile() const;

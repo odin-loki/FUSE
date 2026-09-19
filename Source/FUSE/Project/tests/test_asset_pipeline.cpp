@@ -3938,6 +3938,8 @@ void testCookerStaleDependencyReconcileEstimate() {
                "reconcile estimate reports stale prune entry");
 
 
+
+
     expectTrue(upstream_estimate.direct_entries >= 1u, "upstream estimate includes direct entries");
     expectTrue(upstream_estimate.total() >= upstream_estimate.direct_entries,
                "upstream estimate total covers direct entries");
@@ -3958,6 +3960,17 @@ void testCookerStaleDependencyReconcileEstimate() {
                "would_reconcile_invalidation true after upstream content change");
     expectTrue(cooker.estimate_reconcile_invalidation(manifest).total() > 0u,
                "reconcile estimate non-zero after upstream content change");
+    const std::vector<std::string> probed = cooker.probe_upstream_invalidation_sources(manifest, source_a);
+    expectTrue(probed[0] == source_a, "upstream probe starts at changed source");
+
+    writeTempFile(source_a, "# would chain a revised\n");
+    expectTrue(cooker.would_stale_dependency_invalidation(manifest),
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "would_reconcile true after upstream change");
+
+    const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, source_a);
+               "would_upstream false after upstream invalidation");
+    expectTrue(cooker.probe_upstream_invalidation_sources(manifest, source_a).empty(),
+               "upstream probe empty after invalidation");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {

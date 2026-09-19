@@ -596,6 +596,7 @@ u32 AssetCooker::estimate_reconcile_invalidation(const CookManifest& manifest) c
 
 bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
 
+
 std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
     const CookManifest& manifest, const std::string& changed_source) const {
     if (!is_valid_cook_cache_path(changed_source) || m_cache.empty()) {
@@ -606,6 +607,27 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
     graph.build_from_manifest(manifest);
 
             if (!m_cache.would_invalidate_source(path) && !m_cache.would_invalidate_output(path)) {
+    }
+
+    std::vector<std::string> sources;
+    if (m_cache.would_invalidate_source(changed_source)) {
+        sources.push_back(changed_source);
+
+    for (const CookJob& job : graph.jobs()) {
+        if (job.source_path != changed_source) {
+            continue;
+
+        const std::vector<std::string> downstream =
+            m_cache.probe_downstream_sources(job.output_path, graph.edges(), graph.jobs());
+        for (const std::string& path : downstream) {
+            bool already_recorded = false;
+            for (const std::string& recorded : sources) {
+                if (recorded == path) {
+                    already_recorded = true;
+                    break;
+            if (!already_recorded) {
+                sources.push_back(path);
+    return sources;
 
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
     return estimate_stale_dependency_invalidation(manifest);
@@ -1170,6 +1192,7 @@ CookStaleDependencyEstimate AssetCooker::estimate_stale_dependency_reconcile(con
         for (const std::string& downstream : m_cache.probe_downstream_sources(
                  job.output_path, graph.edges(), graph.jobs())) {
             append_if_cached(downstream);
+
 
 
 }
