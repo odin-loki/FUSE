@@ -92,6 +92,19 @@ public:
 
     /// Read-only invalidation probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] bool would_invalidate(u64 content_hash) const;
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                      const std::vector<CookJobDependencyEdge>& edges,
+                                                      const std::vector<CookJob>& jobs) const;
+    /// True when lookup would miss without touching hit/miss stats — invalid keys only (B7.9 deepen).
+    [[nodiscard]] bool should_skip_lookup(u64 content_hash) const;
+    /// True when `store` would reject the entry — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
+    [[nodiscard]] bool should_skip_store(const CookCacheEntry& entry) const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
