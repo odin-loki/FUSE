@@ -1606,3 +1606,25 @@ void testCookCacheShouldSkipAndWouldInvalidateGuards() {
                "should_skip_cache_lookup false implies lookup hits");
     expectTrue(seeded.ok, "seed cook for would_invalidate helpers ok");
                "would_invalidate hash mirrors contains for seeded entry");
+
+// --- deepen additive from deepen-b79-cooker-hash-f27c ---
+void testCookHashPreflightShouldSkipHelpers() {
+               "should_skip allows valid source-only cache key");
+               "preflight should_skip matches standalone helper");
+               "should_skip rejects empty dependency list");
+    expectTrue(fuse::project::CookCache::should_skip_invalidate(42u, cache),
+    expectTrue(fuse::project::CookCache::should_skip_invalidate_source("/tmp/fuse_b79_skip.obj", cache),
+               "should_skip_invalidate_source on empty cache is true");
+    expectTrue(fuse::project::CookCache::should_skip_prune_all(cache),
+               "should_skip_prune_all on empty cache is true");
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_skip.obj"),
+    expectTrue(!fuse::project::CookCache::should_skip_invalidate(seeded.content_hash, cooker.cache()),
+    expectTrue(!fuse::project::CookCache::should_skip_invalidate_source(source, cooker.cache()),
+               "should_skip_invalidate_source false for seeded source");
+    expectTrue(fuse::project::CookCache::should_skip_invalidate_stale_content_for_source(
+               "should_skip stale-content when hash matches");
+               "would_invalidate_stale_content true when current hash mismatches stored key");
+               "would_invalidate_stale_content when current hash differs from stored key");
+    expectTrue(!fuse::project::CookCache::should_skip_prune_all(cooker.cache()),
+               "should_skip_prune_all false when stale entry present");
+    testCookHashPreflightShouldSkipHelpers();

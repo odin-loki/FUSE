@@ -934,3 +934,18 @@ bool CookCache::should_skip_store(const CookCacheEntry& entry) const {
 // --- deepen additive from deepen-b79-cooker-hash-7269 ---
 bool CookCache::should_skip_cache_lookup(u64 content_hash) const {
     if (should_skip_cache_lookup_key(content_hash) || m_entries.empty()) {
+
+// --- deepen additive from deepen-b79-cooker-hash-f27c ---
+bool CookCache::should_skip_invalidate(u64 content_hash, const CookCache& cache) {
+    return !cache.would_invalidate(content_hash);
+bool CookCache::should_skip_invalidate_source(const std::string& source_path, const CookCache& cache) {
+    return !cache.would_invalidate_source(source_path);
+bool CookCache::should_skip_invalidate_output(const std::string& output_path, const CookCache& cache) {
+    return !cache.would_invalidate_output(output_path);
+bool CookCache::should_skip_invalidate_stale_content_for_source(const std::string& source_path,
+    return !cache.would_invalidate_stale_content_for_source(source_path, current_content_hash);
+bool CookCache::should_skip_invalidate_stale_upstream_hashes(
+    return !cache.would_invalidate_stale_upstream_hashes(source_upstream_by_path);
+bool CookCache::should_skip_invalidate_downstream_of(const std::string& output_path,
+    return !cache.would_invalidate_downstream_of(output_path, edges, jobs);
+bool CookCache::should_skip_prune_all(const CookCache& cache) {

@@ -291,3 +291,12 @@ const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason);
 [[nodiscard]] inline bool should_skip_cache_store(const CookCacheEntry& entry) {
 [[nodiscard]] inline bool should_skip_cache_lookup_key(u64 content_hash) {
     [[nodiscard]] bool should_skip_cache_lookup(u64 content_hash) const;
+
+// --- deepen additive from deepen-b79-cooker-hash-f27c ---
+    [[nodiscard]] static bool should_skip_invalidate(u64 content_hash, const CookCache& cache);
+    [[nodiscard]] static bool should_skip_invalidate_source(const std::string& source_path,
+    [[nodiscard]] static bool should_skip_invalidate_output(const std::string& output_path,
+    [[nodiscard]] static bool should_skip_invalidate_stale_content_for_source(
+    [[nodiscard]] static bool should_skip_invalidate_stale_upstream_hashes(
+    [[nodiscard]] static bool should_skip_invalidate_downstream_of(
+    [[nodiscard]] static bool should_skip_prune_all(const CookCache& cache);
