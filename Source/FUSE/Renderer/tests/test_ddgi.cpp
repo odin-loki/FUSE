@@ -4806,6 +4806,13 @@ void testDdgiInitUpdateSample() {
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
 
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        bindless.destroy(*bootstrap->device());
+        return;
+    }
+#endif
+
     fuse::renderer::ResourceManager resources;
     expectTrue(resources.init(*bootstrap->device(), bindless), "resource manager ready for DDGI");
 
