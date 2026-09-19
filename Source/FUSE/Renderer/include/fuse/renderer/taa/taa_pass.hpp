@@ -331,6 +331,7 @@ public:
     bool shouldSkipResolveTemporalBlend(const TaaResolveDesc& desc) const;
     bool resolveBlendReady(const TaaResolveDesc& desc) const;
     /// Classify why pass jitter sync would be rejected (B5.9 deepen).
+    /// Classify why pass jitter sync to `frameIndex` would be rejected (B5.9 deepen).
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSync(u32 frameIndex) const;
     /// Sync jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
