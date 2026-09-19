@@ -232,3 +232,17 @@ void run_reconcile_tests() {
     const fuse::net::ReconcileRollbackPreflight zero_rollback_preflight =
     expectTrue(fuse::net::should_skip_reconcile_rollback(zero_capacity_buffer, 0u),
                "should_skip true for zero-capacity rollback buffer");
+
+// --- deepen additive from deepen-b74-net-rollback-guards-0483 ---
+    const fuse::net::InputReconcilePreflight ready_preflight =
+    const fuse::net::InputReconcilePreflight mismatch_preflight =
+    expectTrue(fuse::net::should_skip_input_reconcile(preflight_history, 4, mismatched),
+               "should_skip_input_reconcile true on frame mismatch");
+    const fuse::net::InputReconcilePreflight empty_preflight =
+    const fuse::net::RollbackReconcilePreflight rollback_ready =
+    const fuse::net::RollbackReconcilePreflight rollback_bad_frame =
+    expectTrue(fuse::net::should_skip_rollback_reconcile(rollback_preflight, 3, rollback_mismatch),
+               "should_skip_rollback_reconcile true on frame mismatch");
+    const fuse::net::RollbackReconcilePreflight zero_preflight =
+    expectTrue(fuse::net::should_skip_rollback_reconcile(zero_capacity_buffer, 0, zero_remote),
+               "should_skip_rollback_reconcile true on zero capacity buffer");
