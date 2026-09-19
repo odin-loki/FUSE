@@ -2,6 +2,10 @@
 
 #include <fuse/types.hpp>
 
+namespace fuse::renderer {
+struct DDGIDesc;
+} // namespace fuse::renderer
+
 namespace fuse::renderer::gi {
 
 /// CUDA kernel parameter bundle for DDGI probe update (B5.6 — P5 §5.6).
@@ -29,6 +33,8 @@ enum class ProbeKernelRejectReason : u8 {
     ZeroUpdateCount,
     NullProbeIndices,
     ZeroRaysPerProbe,
+    EmptyGrid,
+    OutOfRangeProbeIndex,
 };
 
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
@@ -40,11 +46,22 @@ bool probeKernelRejectReasonIsBlocking(ProbeKernelRejectReason reason);
 /// Classify why probe kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
 ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params);
 
+/// Classify why grid-aware probe kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernelWithGrid`.
+ProbeKernelRejectReason classifyProbeKernelRejectWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
+
 /// Early-out when either probe kernel launch would be rejected.
 bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
 
+/// Early-out when grid-aware probe kernel launch would be rejected.
+bool wouldSkipProbeKernelLaunchWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
+
 /// Non-mutating kernel launch preflight — returns true when both kernels would proceed.
 bool preflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
+
+/// Non-mutating grid-aware kernel launch preflight — returns true when both kernels would proceed.
+bool preflightProbeKernelLaunchWithGrid(const DDGIDesc& desc,
+                                        const DDGIKernelParams& params,
+                                        ProbeKernelRejectReason* reason = nullptr);
 
 /// Populate kernel params from desc + scheduled indices without changing launch guards.
 void populateDDGIKernelParams(DDGIKernelParams& params,
@@ -55,17 +72,33 @@ void populateDDGIKernelParams(DDGIKernelParams& params,
 
 /// Preflight guard before probe trace kernel launch.
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
+/// Preflight guard before grid-aware probe trace kernel launch.
+bool canLaunchProbeTraceKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
 /// Diagnose why probe trace launch preflight would reject.
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// Diagnose why grid-aware probe trace launch preflight would reject.
+bool tryCanLaunchProbeTraceKernelWithGrid(const DDGIDesc& desc,
+                                          const DDGIKernelParams& params,
+                                          ProbeKernelRejectReason& outReason);
 
 /// Preflight guard before probe blend kernel launch.
 bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
+/// Preflight guard before grid-aware probe blend kernel launch.
+bool canLaunchProbeBlendKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
 /// Diagnose why probe blend launch preflight would reject.
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// Diagnose why grid-aware probe blend launch preflight would reject.
+bool tryCanLaunchProbeBlendKernelWithGrid(const DDGIDesc& desc,
+                                          const DDGIKernelParams& params,
+                                          ProbeKernelRejectReason& outReason);
 /// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
+/// Early-out when grid-aware probe trace launch would be rejected.
+bool wouldSkipProbeTraceKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
 /// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
+/// Early-out when grid-aware probe blend launch would be rejected.
+bool wouldSkipProbeBlendKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
