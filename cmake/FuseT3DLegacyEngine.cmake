@@ -32,11 +32,15 @@ configure_file(
 
 set(_fuse_t3d_legacy_engine_sources
     src/engine_probe/platform_stub.cpp
+    src/engine_probe/string_stub.cpp
+    src/engine_probe/frame_allocator_stub.cpp
     src/engine_probe/bitmap_probe_smoke.cpp
     src/engine_probe/engine_probe_batch_smoke.cpp
     "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/bitmapUtils.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/ies/ies_loader.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/core/util/md5.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/util/hashFunction.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/util/commonSwizzles.cpp"
 )
 
 target_sources(fuse_t3d_legacy PRIVATE ${_fuse_t3d_legacy_engine_sources})
@@ -68,4 +72,4 @@ target_compile_definitions(fuse_t3d_legacy PRIVATE
     FUSE_T3D_LEGACY_ENGINE_PROBE=1
 )
 
-message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (bitmapUtils + ies_loader + md5 + platform_stub)")
+message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (bitmapUtils + ies/md5/hash + commonSwizzles + stubs)")

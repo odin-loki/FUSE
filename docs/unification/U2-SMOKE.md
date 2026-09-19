@@ -107,7 +107,7 @@ No parallel tick; no cross-thread legacy calls (per [architecture-parallel.md](.
 | SimObject bridge (U3 slice) | ✅ `LegacySimObjectStub` ↔ `fuse::Object` + scene nodes | `className` / `internalName` / `parentName` / `layer` round-trip; first real `SimObject` `.cpp` batch still blocked |
 | StringTable quarantine | ✅ owned-copy `StringInternTable` per dimension | Route to FUSE core intern (U3 / R14) |
 | Image mip compress | ✅ `compressMipsParallel` (squish + `parallel_for`) | `imageUtils.cpp` call-site swap deferred — Engine batch blocked (below) |
-| Engine `.cpp` probe | ✅ **opt-in** `-DFUSE_T3D_LEGACY_ENGINE_PROBE=ON` | Batch 1: `bitmapUtils.cpp`; batch 2: `ies_loader.cpp`, `md5.cpp`; `platform_stub` (`dMem*`, `dMalloc`) |
+| Engine `.cpp` probe | ✅ **opt-in** `-DFUSE_T3D_LEGACY_ENGINE_PROBE=ON` | Batch 1: `bitmapUtils.cpp`; batch 2: `ies_loader.cpp`, `md5.cpp`; batch 3: `hashFunction.cpp`, `commonSwizzles.cpp` + `string_stub`, `frame_allocator_stub` |
 | Full `SimObject` | ⏳ **blocked** | 122-header closure, `IMPLEMENT_CONOBJECT`, Gui/Con/sim pulls, T2D `SimObject` ODR — **not** force-linking `simObject.cpp` |
 | Gui / script VM | ⏳ blocked | See §3 table |
 
@@ -119,8 +119,9 @@ No parallel tick; no cross-thread legacy calls (per [architecture-parallel.md](.
 |-------|----------------|-------|
 | 1 | `gfx/bitmap/bitmapUtils.cpp` | extrude5551, RGB→5551, half-float |
 | 2 | `gfx/bitmap/loaders/ies/ies_loader.cpp`, `core/util/md5.cpp` | empty IES reject, MD5 digest |
+| 3 | `core/util/hashFunction.cpp`, `core/util/commonSwizzles.cpp` | hash32/hash64, `getStringHash64`, `Swizzles::bgra` |
 
-Under `-std=c++17` GCC drops the legacy `linux` macro; probe compile adds `-DLINUX=1` so `types.gcc.h` pulls `types.posix.h` (`dsize_t`, `FileTime`). Quarantine `platform_stub.cpp` supplies `Float_Inf`, `dMem*`, and `dMalloc`/`dFree`/`dRealloc`. Next batch candidates: `hashFunction.cpp` (needs `String` stub), `commonSwizzles.cpp` (needs `FrameAllocator` stub), `ddsFile.cpp` (blocked on `Con::` / `gBitmap` closure).
+Under `-std=c++17` GCC drops the legacy `linux` macro; probe compile adds `-DLINUX=1` so `types.gcc.h` pulls `types.posix.h` (`dsize_t`, `FileTime`). Quarantine stubs in `engine_probe/`: `platform_stub.cpp` (`dMem*`, `dMalloc`), `string_stub.cpp` (minimal `String` for `getStringHash64`), `frame_allocator_stub.cpp` (TLS + explicit `ManagedAlignedBufferAllocator<U32>` dtor). **Not attempted:** `ddsFile.cpp` / `gBitmap.cpp` — both pull `console/console.h`, `console/engineAPI.h`, `gfx/gfxDevice.h`, `core/resourceManager.h`, `platform/profiler.h` (high-risk Con/gfx closure); defer to U3 after resource/console adapter slices.
 
 **SimObject bridge detail (U3 slice, no `simObject.cpp`):** `fuse/legacy/sim_object_bridge.hpp` defines `LegacySimObjectStub` (identity + transform distilled from Torque `SimObject`). `bridgeToObject` / `bridgeFromObject` propagate `legacyClassName`, `legacyInternalName`, `legacyParentName` on `fuse::Object` plus `layer` on `SceneObject2D`. Per-dimension `importSimObject` / `exportSimObject` compose with scene adapters — reduces ODR pressure vs linking dual Engine `SimObject` trees. Smoke exercises T2D/T3D round-trip on main thread.
 

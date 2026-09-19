@@ -309,6 +309,14 @@ int main() {
               "engine probe ies_loader rejects empty input");
         const fuse::u32 md5Sum = fuse::legacy::t3d::engineProbe::md5DigestSmoke("fuse_u2_probe");
         check(md5Sum != 0u, "engine probe md5 digest non-zero");
+
+        const fuse::u32 hash32 = fuse::legacy::t3d::engineProbe::hash32Smoke("fuse_u2_probe");
+        check(hash32 != 0u, "engine probe hash32 non-zero");
+        const fuse::u64 hash64 = fuse::legacy::t3d::engineProbe::hash64Smoke("fuse_u2_probe");
+        check(hash64 != 0u, "engine probe hash64 non-zero");
+        const char* stringHash64 = fuse::legacy::t3d::engineProbe::stringHash64Smoke("line\nbreak");
+        check(stringHash64 != nullptr && stringHash64[0] != '\0', "engine probe getStringHash64 non-empty");
+        check(fuse::legacy::t3d::engineProbe::swizzleBgraSmoke(), "engine probe Swizzles::bgra ToBuffer");
     }
 #endif
 
