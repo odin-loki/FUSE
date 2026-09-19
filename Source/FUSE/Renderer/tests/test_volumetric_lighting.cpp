@@ -3702,3 +3702,10 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "classifyFroxelTrilinearSampleReject invalid_sample_coords for hard OOB tile coord");
                "preflightFroxelTrilinearSample reports no reject reason on success");
                "preflightFroxelPopulate reports zero_density on rejection");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-821a ---
+               "preflightDensityLookup succeeds when OOB index clamps");
+               "classifyDensityLookupRejectAtCoord none for valid coords");
+               "preflightDensityLookupAtCoord succeeds when OOB coords clamp");
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightScreenDepthMapping(0.5f, 0.5f, 10.f, zeroDesc, camera),
+               "preflightScreenDepthMapping rejects empty froxel desc");
