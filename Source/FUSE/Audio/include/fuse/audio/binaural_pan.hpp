@@ -578,3 +578,8 @@ struct HrtfSpatialPanPreflight {
     HrtfPanPathPreflight pan{};
     HrtfAttenuationCouplingPreflight coupling{};
 [[nodiscard]] HrtfSpatialPanPreflight preflight_hrtf_spatial_pan(
+
+// --- deepen additive from hrtf-preflight-guards-4c1e ---
+    [[nodiscard]] bool should_skip_spatial_pan() const { return bypass; }
+    bool would_narrow = false;
+    [[nodiscard]] bool should_skip() const { return skipped; }

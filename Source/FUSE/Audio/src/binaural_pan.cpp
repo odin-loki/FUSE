@@ -859,3 +859,8 @@ bool HrtfSpatialPanPreflight::can_apply_attenuation_coupling() const {
 bool HrtfSpatialPanPreflight::ready_for_stub() const {
 HrtfSpatialPanPreflight preflight_hrtf_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir,
     HrtfSpatialPanPreflight preflight{};
+
+// --- deepen additive from hrtf-preflight-guards-4c1e ---
+    HrtfIrPreflight result;
+    HrtfPanPathPreflight result;
+    HrtfAttenuationCouplingPreflight result;

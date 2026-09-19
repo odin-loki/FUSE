@@ -1290,3 +1290,17 @@ void testHrtfSpatialPanPreflight() {
     const fuse::audio::HrtfSpatialPanPreflight bypass =
     const fuse::audio::HrtfSpatialPanPreflight unity =
     testHrtfSpatialPanPreflight();
+
+// --- deepen additive from hrtf-preflight-guards-4c1e ---
+void testHrtfIrPreflightGuards() {
+    const fuse::audio::HrtfIrPreflight null_preflight = fuse::audio::preflight_hrtf_ir(null_samples);
+void testHrtfPanPathPreflightGuards() {
+    expectTrue(!stub_preflight.should_skip_spatial_pan(), "stub path does not skip spatial pan");
+    const fuse::audio::HrtfPanPathPreflight convolution_preflight =
+    expectTrue(bypass_preflight.should_skip_spatial_pan(), "disabled preflight skips spatial pan");
+void testHrtfAttenuationCouplingPreflightGuards() {
+    expectTrue(bypass_preflight.should_skip(), "bypass preflight should skip");
+    const fuse::audio::HrtfAttenuationCouplingPreflight clamped_preflight =
+    testHrtfIrPreflightGuards();
+    testHrtfPanPathPreflightGuards();
+    testHrtfAttenuationCouplingPreflightGuards();
