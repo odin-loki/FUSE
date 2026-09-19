@@ -39,6 +39,12 @@ public:
     [[nodiscard]] bool canSelectMaterial(u32 materialId) const {
         return canBindMaterialSlot(materialId, m_catalogCount);
     }
+    /// Early-out — skip property edits when catalog is empty or nothing is selected (B6.7 deepen follow-up).
+    [[nodiscard]] bool shouldSkipMaterialEdit() const {
+        return isCatalogEmpty() || !hasSelectedMaterial();
+    }
+    /// Refresh guard — panel can clear binding dirty flags when a material is selected (B6.7 deepen follow-up).
+    [[nodiscard]] bool canRefreshPanel() const { return hasSelectedMaterial() && m_binding.canPostProperty(); }
     [[nodiscard]] const MaterialEditState& editState() const { return m_editState; }
     [[nodiscard]] const MaterialPropertyBinding& propertyBinding() const { return m_binding; }
     [[nodiscard]] MaterialPropertyBinding& propertyBinding() { return m_binding; }
@@ -70,6 +76,7 @@ public:
 
     void refreshPanel();
     /// Guarded panel refresh — no-op when refresh not needed (B6.7 deepen).
+    /// Guarded refresh — no-op when panel cannot refresh (B6.7 deepen follow-up).
     bool tryRefreshPanel();
     void clearPreviewDirty() { m_previewDirty = false; }
     void clearEditDirty() { m_editDirty = false; }

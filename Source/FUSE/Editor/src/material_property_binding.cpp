@@ -290,11 +290,29 @@ void MaterialPropertyBinding::markPanelRefreshed() {
 
 bool MaterialPropertyBinding::tryMarkPanelRefreshed() {
     if (!canPostProperty()) {
+bool MaterialPropertyBinding::tryRefreshFromEditState(const MaterialEditState& state) {
+    if (!canRefreshFromEditState()) {
+        return false;
+    }
+    refreshFromEditState(state);
+    return true;
+
+    if (!isBound()) {
         return false;
     }
     markPanelRefreshed();
     return true;
 }
+
+bool MaterialPropertyBinding::tryClearPropertyDirty(MaterialPropertyId id) {
+    if (!isBound() || !isMaterialPropertyIdValid(id)) {
+        return false;
+    }
+    clearPropertyDirty(id);
+    return true;
+
+bool MaterialPropertyBinding::tryIsPropertyDirty(MaterialPropertyId id) const {
+    return isPropertyDirty(id);
 
 void MaterialPropertyBinding::refreshFromEditState(const MaterialEditState& state) {
     if (!canRefreshFromEditState()) {

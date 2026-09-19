@@ -54,6 +54,12 @@ public:
 
     /// Snapshot of refresh/dirty state for inspector wiring (B6.7 deepen follow-up).
     [[nodiscard]] MaterialInspectorRefreshInfo refreshInfo() const;
+    /// Refresh guard — bound binding can mirror external edit state (B6.7 deepen follow-up).
+
+    /// Early-out for panel refresh loops when nothing is dirty or binding is idle (B6.7 deepen follow-up).
+    [[nodiscard]] bool shouldSkipPanelRefresh() const {
+        return !isBound() || !m_panelRefreshPending;
+    }
 
     bool getRoughness(f32& out) const;
     bool getMetallic(f32& out) const;
@@ -100,6 +106,12 @@ public:
     void markPanelRefreshed();
     /// Guarded panel refresh — no-op when unbound (B6.7 deepen).
     bool tryMarkPanelRefreshed();
+
+    /// Guarded refresh/dirty helpers — no-op when unbound or property id invalid (B6.7 deepen follow-up).
+    bool tryRefreshFromEditState(const MaterialEditState& state);
+    bool tryMarkPanelRefreshed();
+    bool tryClearPropertyDirty(MaterialPropertyId id);
+    [[nodiscard]] bool tryIsPropertyDirty(MaterialPropertyId id) const;
 
     void refreshFromEditState(const MaterialEditState& state);
     /// Guarded edit-state refresh — early-out when unbound (B6.7 deepen).

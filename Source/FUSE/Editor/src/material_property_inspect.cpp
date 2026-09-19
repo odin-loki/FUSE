@@ -31,6 +31,10 @@ bool isMaterialCatalogEmpty(u32 catalogCount) {
     return catalogCount == 0u;
 }
 
+bool shouldSkipMaterialInspectorBind(u32 catalogCount) {
+    return isMaterialCatalogEmpty(catalogCount);
+}
+
 bool isMaterialSlotValid(u32 materialId, u32 catalogCount) {
     if (isMaterialCatalogEmpty(catalogCount)) {
         return false;
@@ -63,6 +67,10 @@ bool isInvalidMaterialPropertyId(MaterialPropertyId id) {
 
 bool canBindMaterialSlot(u32 materialId, u32 catalogCount) {
     return isMaterialSlotValid(materialId, catalogCount);
+}
+
+bool canRefreshMaterialSlot(u32 materialId, u32 catalogCount) {
+    return canBindMaterialSlot(materialId, catalogCount);
 }
 
 bool isMaterialPropertyIndexValid(u32 index) {
