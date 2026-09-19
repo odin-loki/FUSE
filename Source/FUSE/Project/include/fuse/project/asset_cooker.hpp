@@ -17,6 +17,7 @@ struct CookCacheReconcileEstimate {
     [[nodiscard]] u32 total() const {
         return stale_dependency_entries + prune_invalid_entries + prune_stale_entries;
     }
+    [[nodiscard]] bool should_skip_reconcile() const { return total() == 0; }
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -47,6 +48,17 @@ public:
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
     [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile_invalidation(
         const CookManifest& manifest) const;
+
+    /// Non-mutating skip predicates — mirror count/estimate probes (B7.9 deepen).
+    [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
+                                                           const std::string& changed_source) const;
+    [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
+    [[nodiscard]] bool should_skip_prune_reconcile() const;
+    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
+    /// Read-only invalidation probes — true when corresponding `invalidate_*` would remove entries (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_upstream_dependency(const CookManifest& manifest,
+                                                            const std::string& changed_source) const;
+    [[nodiscard]] bool would_invalidate_stale_dependency_hashes(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
