@@ -1670,3 +1670,7 @@ bool tryCanSampleAtCoordsStrict(const FroxelDensityGrid& grid,
         outReason = PopulateRejectReason::ZeroDensity;
         outReason = PopulateRejectReason::ZeroMarchSteps;
     outReason = PopulateRejectReason::None;
+
+// --- deepen additive from deepen-froxel-b511-guards-9658 ---
+        outReason = SampleCoordRejectReason::InvalidCorners;
+    case SampleCoordRejectReason::InvalidCorners:

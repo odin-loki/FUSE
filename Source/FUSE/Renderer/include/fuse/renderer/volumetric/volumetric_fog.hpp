@@ -665,3 +665,6 @@ const char* populateRejectReasonLabel(PopulateRejectReason reason);
 bool tryCanSampleAtCoordsStrict(const FroxelDensityGrid& grid,
                               ScreenMappingRejectReason& outMapReason,
                               DensityLookupRejectReason& outLookupReason);
+
+// --- deepen additive from deepen-froxel-b511-guards-9658 ---
+    static bool wouldClampCounts(const FroxelGridDesc& raw);

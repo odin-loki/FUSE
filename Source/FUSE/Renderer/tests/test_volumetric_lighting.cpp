@@ -2299,3 +2299,23 @@ void testFroxelPopulateLookupAndStrictSampleGuards() {
                "tryCanSampleAtCoordsStrict succeeds on valid coords");
     expectTrue(!fuse::renderer::froxel_util::tryCanSampleAtCoordsStrict(grid, desc, warnCoords, sampleReason),
     expectTrue(!fuse::renderer::froxel_util::tryCanSampleAtCoordsStrict(grid, desc, oobCoords, sampleReason),
+
+// --- deepen additive from deepen-froxel-b511-guards-9658 ---
+void testFroxelCoordLookupPopulateAndCornerPreflightGuards() {
+               "tryCanLookupAtCoord succeeds for in-range coords");
+               "tryCanLookupAtCoord warns but succeeds for OOB coords");
+               "trySampleDensityAtIndex with reason succeeds for origin");
+    expectNear(indexSample, 1.f, 1e-5f, "trySampleDensityAtIndex with reason returns origin density");
+               "trySampleDensityAtCoord with reason succeeds for origin");
+    expectTrue(screenReason == fuse::renderer::ScreenMappingRejectReason::EmptyGrid,
+               "trySampleDensityAtScreen with reason rejects invalid camera");
+    expectTrue(screenReason == fuse::renderer::ScreenMappingRejectReason::InvalidCamera,
+    expectTrue(fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(populated, desc, populateCamera, params,
+    expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(skipped, desc, populateCamera, zeroDensity,
+    expectTrue(fuse::renderer::FroxelGridLayout::tryPreflightSampleCoords(reversed, desc, sampleReason),
+               "tryPreflightSampleCoords warns but succeeds for reversed corners");
+    expectTrue(sampleReason == fuse::renderer::SampleCoordRejectReason::InvalidCorners,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(sampleReason), "invalid_corners") == 0,
+    expectTrue(fuse::renderer::FroxelGridLayout::tryPreflightSampleCoords(extremeWeights, desc, sampleReason),
+               "tryPreflightSampleCoords warns but succeeds for OOB weights");
+    testFroxelCoordLookupPopulateAndCornerPreflightGuards();
