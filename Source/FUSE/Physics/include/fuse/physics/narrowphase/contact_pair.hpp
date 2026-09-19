@@ -1261,6 +1261,7 @@ struct NarrowphasePairSlotPreflight {
     u32 slot = 0u;
 /// Combined base+deepen reject reason for additive preflight (B4.5 deepen pass).
 ContactPairRejectReason contact_pair_union_reject_reason(
+/// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1269,6 +1270,12 @@ ContactPairRejectReason contact_pair_union_reject_reason(
 struct ContactPairUnionPreflight {
     ContactPairRejectReason baseReason = ContactPairRejectReason::None;
     ContactPairRejectReason deepenReason = ContactPairRejectReason::None;
+/// Finalize manifold with prune+finalize preflight gates (B4.6 deepen pass).
+bool generate_contact_manifold_deepen(ContactManifold& manifold);
+
+/// Const preflight for per-slot narrowphase dispatch (B4.6 deepen pass).
+struct NarrowphasePairSlotPreflight {
+    u32 slot = 0u;
     ContactPairRejectReason reason = ContactPairRejectReason::None;
     bool rejected = false;
 
@@ -1413,6 +1420,8 @@ ContactManifold detect_contacts_pair_if_dispatchable(
 /// Run shape dispatch only when extended deepen preflight allows (B4.6 deepen pass).
 /// Populate union preflight without running shape dispatch (B4.5 deepen pass).
 ContactPairUnionPreflight preflight_contact_pair_union(
+
+    u32 slot,
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);

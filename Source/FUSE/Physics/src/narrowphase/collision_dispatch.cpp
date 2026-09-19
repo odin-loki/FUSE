@@ -77,6 +77,12 @@ NarrowphaseBufferFinalizePreflight preflight_narrowphase_buffer_finalize(const C
 bool can_skip_narrowphase_buffer_finalize(const ContactBufferSoA& buffer) {
     const NarrowphaseBufferFinalizePreflight preflight = preflight_narrowphase_buffer_finalize(buffer);
     return preflight.skipped || (!preflight.needsCompaction && !preflight.needsClamp);
+    }
+    return preflight;
+
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
 }
 
 void runNarrowphaseIntoBuffer(
@@ -113,6 +119,11 @@ void runNarrowphaseIntoBuffer(
             continue;
         if (should_skip_narrowphase_pair_slot(pairs[pairIndex], bodies, shapes)) {
         if (should_skip_contact_pair_dispatch(pairs[pairIndex], bodies, shapes)) {
+        if (should_skip_narrowphase_pair_slot(pairIndex, pairs[pairIndex], bodies, shapes)) {
+        }
+        ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
+        if (generate_contact_manifold(manifold)) {
+            buffer.writeSlot(pairIndex, manifold);
 
         if (should_skip_narrowphase_pair_slot(pairIndex, pairs[pairIndex], bodies, shapes)) {
         }

@@ -1296,6 +1296,9 @@ bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEps
 
 /// Finalize only when not already valid with friction basis; no-op otherwise (B4.5 deepen pass).
 
+
+
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

@@ -256,6 +256,14 @@ NarrowphaseBufferFinalizePreflight preflight_narrowphase_buffer_finalize(const C
 /// Returns true when buffer finalize should be skipped (B4.6 deepen follow-up pass).
 bool can_skip_narrowphase_buffer_finalize(const ContactBufferSoA& buffer);
 
+    bool can_run() const { return !emptyPairs && dispatchableCount > 0u; }
+};
+
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,

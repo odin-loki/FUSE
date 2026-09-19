@@ -2330,6 +2330,8 @@ bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEps
 
     if (manifold.valid && manifold.hasFrictionBasis()) {
 
+
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {
