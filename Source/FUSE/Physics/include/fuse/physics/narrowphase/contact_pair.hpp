@@ -23,6 +23,9 @@ enum class ContactPairRejectReason : u8 {
     BothKinematic,
     AnyTrigger,
     BothMassless,
+    PlanePlane,
+    MeshShapePair,
+    BoxThinPair,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -222,6 +225,85 @@ NarrowphaseBatchPreflight preflight_narrowphase_batch(
 
 /// Returns true when batch preflight reports no dispatchable pairs (B4.5 deepen follow-up pass).
 bool narrowphase_batch_rejects_all(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when either shape resolves to mesh/voxel types (B4.6 narrowphase deepen pass).
+bool is_mesh_shape_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when either box shape has a positive but near-zero extent (B4.6 narrowphase deepen pass).
+bool is_box_thin_shape_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes,
+    f32 thinExtentEpsilon = 1e-4f);
+
+/// Extended reject reason including plane-plane and mesh/thin-box pairs (B4.6 narrowphase deepen pass).
+/// Does not alter `contact_pair_deepen_reject_reason`; use for additive preflight only.
+ContactPairRejectReason contact_pair_deepen_second_reject_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Const preflight with second-layer plane/mesh/thin-box reject checks (B4.6 narrowphase deepen pass).
+struct ContactPairDeepenSecondPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+
+    bool can_dispatch() const { return !rejected; }
+};
+
+/// Populate second-layer pair preflight without running shape dispatch (B4.6 narrowphase deepen pass).
+ContactPairDeepenSecondPreflight preflight_contact_pair_deepen_second(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when second-layer preflight rejects this pair (B4.6 narrowphase deepen pass).
+bool should_skip_contact_pair_deepen_second_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `contact_pair_deepen_second_reject_reason` matches `expected` (B4.6 narrowphase deepen pass).
+bool contact_pair_deepen_second_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Count pairs that pass second-layer deepen preflight (B4.6 narrowphase deepen pass).
+u32 count_dispatchable_contact_pairs_second(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// True when at least one pair passes second-layer deepen preflight (B4.6 narrowphase deepen pass).
+bool has_dispatchable_contact_pair_second(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Const preflight for second-layer narrowphase batch dispatch (B4.6 narrowphase deepen pass).
+struct NarrowphaseBatchSecondPreflight {
+    u32 pairCount = 0u;
+    u32 dispatchableCount = 0u;
+    u32 rejectedCount = 0u;
+
+    bool can_dispatch() const { return dispatchableCount > 0u; }
+    bool can_skip() const { return pairCount == 0u || dispatchableCount == 0u; }
+};
+
+/// Populate second-layer batch preflight without running shape dispatch (B4.6 narrowphase deepen pass).
+NarrowphaseBatchSecondPreflight preflight_narrowphase_batch_second(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when second-layer batch preflight reports no dispatchable pairs (B4.6 narrowphase deepen pass).
+bool narrowphase_batch_second_rejects_all(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);

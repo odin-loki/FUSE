@@ -200,4 +200,10 @@ std::vector<ContactManifold> runNarrowphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// True when all pairs are rejected by second-layer deepen preflight or the pair list is empty (B4.6 narrowphase deepen pass).
+bool can_skip_narrowphase_second(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase

@@ -348,6 +348,8 @@ const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason) 
         return "EmptyManifold";
     case ManifoldPruneRejectReason::AllSeparated:
         return "AllSeparated";
+    case ManifoldPruneRejectReason::ExceedsMaxPoints:
+        return "ExceedsMaxPoints";
     }
     return "Unknown";
 }
@@ -419,6 +421,8 @@ const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason re
         return "NoPenetratingPoints";
     case ManifoldFinalizeRejectReason::AllSeparatedAfterPrune:
         return "AllSeparatedAfterPrune";
+    case ManifoldFinalizeRejectReason::NeedsNormalNormalize:
+        return "NeedsNormalNormalize";
     }
     return "Unknown";
 }
@@ -526,6 +530,131 @@ bool finalize_contact_manifold_with_preflight(
         }
     }
     return generate_contact_manifold(manifold);
+}
+
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (!manifold.hasValidNormal()) {
+        return false;
+    }
+    if (!manifold.needsNormalNormalization(lengthEpsilon)) {
+        return false;
+    }
+
+    const f32 normalLength = manifold.contactNormal.length();
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    return true;
+}
+
+ManifoldPruneRejectReason manifold_prune_second_reject_reason(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    const ManifoldPruneRejectReason baseReason =
+        manifold_prune_reject_reason(manifold, separationEpsilon, duplicateEpsilon);
+    if (baseReason != ManifoldPruneRejectReason::None) {
+        return baseReason;
+    }
+    if (manifold.pointCount >= kMaxContactPointsPerManifold &&
+        manifold.needsPruning(separationEpsilon, duplicateEpsilon)) {
+        return ManifoldPruneRejectReason::ExceedsMaxPoints;
+    }
+    return ManifoldPruneRejectReason::None;
+}
+
+bool manifold_prune_second_rejects_for_reason(
+    const ContactManifold& manifold,
+    ManifoldPruneRejectReason expected,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    return manifold_prune_second_reject_reason(manifold, separationEpsilon, duplicateEpsilon) == expected;
+}
+
+bool can_skip_manifold_prune_second(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    const ManifoldPruneRejectReason reason =
+        manifold_prune_second_reject_reason(manifold, separationEpsilon, duplicateEpsilon);
+    if (reason != ManifoldPruneRejectReason::None) {
+        return true;
+    }
+    return should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+bool prune_contact_manifold_second_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    const ManifoldPruneRejectReason reason =
+        manifold_prune_second_reject_reason(manifold, separationEpsilon, duplicateEpsilon);
+    if (reason == ManifoldPruneRejectReason::EmptyManifold ||
+        reason == ManifoldPruneRejectReason::AllSeparated) {
+        if (reason == ManifoldPruneRejectReason::AllSeparated) {
+            manifold.clear();
+        }
+        return false;
+    }
+    if (reason == ManifoldPruneRejectReason::ExceedsMaxPoints) {
+        manifold.pruneToMaxPoints(kMaxContactPointsPerManifold);
+    }
+    return prune_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+ManifoldFinalizeRejectReason manifold_finalize_second_reject_reason(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    const ManifoldFinalizeRejectReason baseReason =
+        manifold_finalize_reject_reason(manifold, separationEpsilon, duplicateEpsilon);
+    if (baseReason != ManifoldFinalizeRejectReason::None &&
+        baseReason != ManifoldFinalizeRejectReason::NeedsNormalNormalize) {
+        return baseReason;
+    }
+    if (manifold.needsNormalNormalization(frictionEpsilon)) {
+        return ManifoldFinalizeRejectReason::NeedsNormalNormalize;
+    }
+    return ManifoldFinalizeRejectReason::None;
+}
+
+bool manifold_finalize_second_rejects_for_reason(
+    const ContactManifold& manifold,
+    ManifoldFinalizeRejectReason expected,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    return manifold_finalize_second_reject_reason(
+               manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon) == expected;
+}
+
+bool can_skip_manifold_finalize_second(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    return manifold_finalize_second_reject_reason(
+               manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon) !=
+           ManifoldFinalizeRejectReason::None;
+}
+
+bool finalize_contact_manifold_second_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    const ManifoldFinalizeRejectReason reason = manifold_finalize_second_reject_reason(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    if (reason != ManifoldFinalizeRejectReason::None &&
+        reason != ManifoldFinalizeRejectReason::NeedsNormalNormalize) {
+        return false;
+    }
+
+    normalize_contact_normal_if_needed(manifold, frictionEpsilon);
+    return finalize_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

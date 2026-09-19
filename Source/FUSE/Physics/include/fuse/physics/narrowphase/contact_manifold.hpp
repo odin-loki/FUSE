@@ -132,6 +132,7 @@ enum class ManifoldPruneRejectReason : u8 {
     None = 0,
     EmptyManifold,
     AllSeparated,
+    ExceedsMaxPoints,
 };
 
 /// Human-readable label for manifold prune reject reasons (B4.5 deepen follow-up pass).
@@ -196,6 +197,7 @@ enum class ManifoldFinalizeRejectReason : u8 {
     InvalidNormal,
     NoPenetratingPoints,
     AllSeparatedAfterPrune,
+    NeedsNormalNormalize,
 };
 
 /// Human-readable label for manifold finalize reject reasons (B4.5 deepen follow-up pass).
@@ -251,6 +253,65 @@ bool prune_contact_manifold_with_preflight(
 
 /// Finalize only when preflight passes; no-op otherwise (B4.5 deepen follow-up pass).
 bool finalize_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Normalize `contactNormal` when non-unit; returns true when normalization applied (B4.6 narrowphase deepen pass).
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Diagnose why second-layer manifold prune would skip (B4.6 narrowphase deepen pass).
+ManifoldPruneRejectReason manifold_prune_second_reject_reason(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Returns true when `manifold_prune_second_reject_reason` matches `expected` (B4.6 narrowphase deepen pass).
+bool manifold_prune_second_rejects_for_reason(
+    const ContactManifold& manifold,
+    ManifoldPruneRejectReason expected,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Returns true when second-layer manifold prune should be skipped (B4.6 narrowphase deepen pass).
+bool can_skip_manifold_prune_second(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Prune using second-layer preflight; returns true when points remain (B4.6 narrowphase deepen pass).
+bool prune_contact_manifold_second_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Diagnose why second-layer manifold finalize would skip (B4.6 narrowphase deepen pass).
+ManifoldFinalizeRejectReason manifold_finalize_second_reject_reason(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Returns true when `manifold_finalize_second_reject_reason` matches `expected` (B4.6 narrowphase deepen pass).
+bool manifold_finalize_second_rejects_for_reason(
+    const ContactManifold& manifold,
+    ManifoldFinalizeRejectReason expected,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Returns true when second-layer finalize should be skipped (B4.6 narrowphase deepen pass).
+bool can_skip_manifold_finalize_second(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Finalize using second-layer preflight; no-op otherwise (B4.6 narrowphase deepen pass).
+bool finalize_contact_manifold_second_with_preflight(
     ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,

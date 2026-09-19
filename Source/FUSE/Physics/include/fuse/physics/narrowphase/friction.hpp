@@ -103,6 +103,7 @@ enum class FrictionBasisRejectReason : u8 {
     None = 0,
     EmptyManifold,
     InvalidNormal,
+    StaleBasis,
 };
 
 /// Human-readable label for friction-basis reject reasons (B4.5 deepen follow-up pass).
@@ -147,5 +148,29 @@ bool should_normalize_contact_normal_before_friction(
 
 /// Rebuild friction tangents only when preflight allows; returns false when skipped (B4.5 deepen follow-up pass).
 bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Normalize the contact normal before friction rebuild when non-unit (B4.6 narrowphase deepen pass).
+bool normalize_contact_normal_before_friction_if_needed(
+    ContactManifold& manifold,
+    f32 lengthEpsilon = 1e-4f);
+
+/// Diagnose why second-layer friction-basis rebuild would skip (B4.6 narrowphase deepen pass).
+FrictionBasisRejectReason friction_basis_second_reject_reason(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Returns true when `friction_basis_second_reject_reason` matches `expected` (B4.6 narrowphase deepen pass).
+bool friction_basis_second_rejects_for_reason(
+    const ContactManifold& manifold,
+    FrictionBasisRejectReason expected,
+    f32 epsilon = 1e-4f);
+
+/// Returns true when second-layer friction-basis rebuild should be skipped (B4.6 narrowphase deepen pass).
+bool should_skip_friction_basis_second_preflight(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Rebuild friction tangents using second-layer preflight; returns false when skipped (B4.6 narrowphase deepen pass).
+bool rebuild_friction_basis_second_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
