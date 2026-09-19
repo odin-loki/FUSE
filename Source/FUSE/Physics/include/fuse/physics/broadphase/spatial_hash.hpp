@@ -117,6 +117,20 @@ FUSE_PHYSICS_INLINE bool canSkipBroadphase(
     return canSkipBroadphasePairGeneration(bodies, shapes);
 }
 
+/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphase(bodies, shapes);
+}
+
+/// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,
@@ -335,6 +349,7 @@ struct CellOccupancyPreflight {
     bool emptyRange = false;
     bool exceedsBudget = false;
     u32 occupancyCount = 0;
+    u32 budgetRemaining = 0;
 
     bool canIterate() const { return reason == CellOccupancyRejectReason::None; }
 };
@@ -345,6 +360,7 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRang
     preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
     preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
     return preflight;
 }
 
@@ -354,6 +370,7 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRang
     preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
     preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
     return preflight;
 }
 
@@ -577,6 +594,7 @@ struct RefineBroadphasePreflight {
     bool emptyBuffer = false;
     bool emptyInput = false;
     bool noValidPairs = false;
+    u32 activePairCount = 0;
 
     bool canRefine() const { return reason == RefineBroadphaseRejectReason::None; }
 };
@@ -652,9 +670,16 @@ bool mergeBroadphaseRejectsForReason(
     const CollisionShapeSoA& shapes,
     BroadphaseMergeRejectReason expected);
 
+/// Plane/dynamic body counts for merge preflight (B4.2 deepen pass).
+struct BroadphaseMergeStats {
+    u32 planeBodyCount = 0;
+    u32 dynamicBodyCount = 0;
+};
+
 /// Read-only plane/dynamic merge diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct BroadphaseMergePreflight {
     BroadphaseMergeRejectReason reason = BroadphaseMergeRejectReason::None;
+    BroadphaseMergeStats stats{};
     bool emptyPlaneBodies = false;
     bool emptyDynamicBodies = false;
 
