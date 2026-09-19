@@ -3518,3 +3518,14 @@ void testTaaPassWarmupAndJitterSkipGuards() {
     expectTrue(pass->preflightJitterSync(4u), "pass jitter sync preflight passes before init");
     expectTrue(pass->preflightJitterNdc(), "pass NDC jitter preflight passes before init");
     expectTrue(!zeroPass->preflightJitterNdc(), "zero-width pass NDC preflight fails");
+
+// --- deepen additive from deepen-b59-taa-guards-2510 ---
+void testJitterSkipAndReadyGuards() {
+    expectTrue(fuse::renderer::tryPreflightTaaJitterNdc(1920u, 1080u, 8u, rejectReason),
+    expectTrue(!fuse::renderer::tryPreflightTaaJitterNdc(0u, 1080u, 8u, rejectReason),
+void testTaaPassSkipReadyAndTryPreflights() {
+    expectTrue(pass->tryPreflightJitterSync(4u, jitterReject), "pass tryPreflightJitterSync passes");
+    expectTrue(pass->tryPreflightJitterNdc(jitterReject), "pass tryPreflightJitterNdc passes");
+    expectTrue(pass->preflightJitterNdc(&jitterReject), "pass preflightJitterNdc passes");
+    expectNear(weights.current, 0.15f, 1e-5f, "pass tryCompute steady current weight");
+    testTaaPassSkipReadyAndTryPreflights();

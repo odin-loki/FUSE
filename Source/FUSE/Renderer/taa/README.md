@@ -115,3 +115,9 @@ Part of `fuse_rhi`. Built with `FUSE_BUILD_CORE=ON`. Tests run when `FUSE_BUILD_
 - `TaaPass::historyWarmupComplete()` / `preflightHistoryWarmup()` — pass-level warm-up preflight guards
 - `TaaPass::preflightJitterSync(frame)` / `syncJitterToFrameIndexIfViewportReady(frame)` — pass-level jitter sync guards
 - `TaaPass::preflightResolveHistoryReuse(desc)` / `preflightResolveWithBlend(desc)` — pass-level resolve preflights
+
+// --- deepen additive from deepen-b59-taa-guards-2510 ---
+- `tryPreflightTaaJitterNdc(w, h, length, reason)` — NDC preflight with mandatory reject-reason output
+- `TaaPass::preflightJitterNdc` / `tryPreflightJitterNdc` / `shouldSkipJitterNdc` / `jitterNdcReady` — pass-level jitter NDC guards
+- `TaaPass::tryPreflightJitterSync` / `shouldSkipJitterSync` / `jitterSyncReady` — pass-level jitter sync guards
+- `TaaPass::tryPreflightHistoryReuse` / `tryPreflightResolveBlendWeights` / `tryComputeResolveBlendWeights` — pass-level try-preflight helpers
