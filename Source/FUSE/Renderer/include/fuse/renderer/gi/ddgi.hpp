@@ -423,6 +423,7 @@ enum class ProbeUpdateLaunchRejectReason : u8 {
     ZeroCount,
     OutOfRangeProbeIndex,
     DuplicateProbeIndex,
+    ZeroRaysPerProbe,
 };
 
 /// Human-readable label for probe-update launch reject reasons (logging / tests).
@@ -687,6 +688,10 @@ struct ProbeGridLayout {
                                            ProbeSampleCoordsRejectReason* reason = nullptr);
     /// Early-out when building sample coords would reject (empty grid).
     static bool wouldSkipBuildProbeSampleCoords(const DDGIDesc& desc);
+    /// Classify why sample-coord validation would reject; returns `None` on valid coords.
+    static ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& desc,
+                                                                         const ProbeSampleCoords& coords);
+    /// Early-out when sample-coord validation would reject — same ordering as `tryValidateProbeSampleCoords`.
     /// Diagnose why sample-coord validation would reject; vacuously succeeds on valid coords.
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
@@ -1000,6 +1005,8 @@ bool preflightCacheIndex(const DDGIDesc& desc,
 /// Early-out when irradiance cache read would be rejected — same ordering as `tryReadIrradianceAtIndex`.
 bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
                                     u32 probe_index);
+/// Classify why cache-index preflight would reject; returns `None` on valid indices.
+CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
 /// Early-out when cache-index lookup would be rejected — same ordering as `tryValidateCacheIndex`.
 bool wouldSkipCacheIndexLookup(const DDGIDesc& desc,
                                u32 probe_index,
@@ -1162,6 +1169,8 @@ bool shouldSkipCacheIndexLookup(const DDGIDesc& desc,
 /// Early-out when cache-index lookup would be rejected — includes null-cache check (B5.6 deepen).
 /// Cache-index preflight; false when validation would reject (B5.6 deepen).
 /// Cache-index preflight including null-cache check (B5.6 deepen).
+/// Early-out when guarded cache read would be rejected — same ordering as `tryReadIrradianceAtIndex`.
+bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -1340,6 +1349,11 @@ u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_
 /// Full schedule preflight including probes-per-frame; false when preflight rejects.
 bool tryCanScheduleProbeUpdates(u32 frame_index,
 /// Probe scheduling preflight with optional reject-reason output (B5.6 deepen).
+/// Validate scheduled probe indices against `desc`; false when any index is out of range.
+bool tryValidateScheduledProbeIndices(const DDGIDesc& desc,
+                                      const u32* scheduled_indices,
+                                      u32 scheduled_count,
+                                      ProbeUpdateLaunchRejectReason& outReason);
 fuse::math::Vec3 blendIrradiance(const fuse::math::Vec3& previous,
                                  const fuse::math::Vec3& incoming,
                                  f32 hysteresis);
