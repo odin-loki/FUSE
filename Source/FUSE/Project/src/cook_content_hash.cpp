@@ -183,6 +183,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "source_unreadable";
     case CookHashRejectReason::EmptyDependencyList:
         return "empty_dependency_list";
+    case CookHashRejectReason::UnknownDependencyOutput:
+        return "unknown_dependency_output";
     case CookHashRejectReason::ZeroSourceHash:
         return "zero_source_hash";
     }
@@ -256,7 +258,24 @@ CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry) 
         preflight.reason = CookHashRejectReason::EmptyOutputPath;
         return preflight;
     }
-    return preflight_file_content_hash(entry.source_path);
+    const CookHashPreflight source_preflight = preflight_file_content_hash(entry.source_path);
+    if (!source_preflight.can_hash) {
+        return source_preflight;
+    }
+
+    for (const std::string& dependency : entry.dependencies) {
+        if (dependency.empty()) {
+            continue;
+        }
+        const CookHashPreflight dependency_preflight = preflight_file_content_hash(dependency);
+        if (!dependency_preflight.can_hash) {
+            return dependency_preflight;
+        }
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
 }
 
 CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
@@ -278,14 +297,23 @@ CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::st
         if (dependency_output.empty()) {
             continue;
         }
+        bool found = false;
         for (const CookManifestEntry& asset : manifest.assets) {
-            if (asset.output_path == dependency_output) {
-                const CookHashPreflight source_preflight = preflight_file_content_hash(asset.source_path);
-                if (!source_preflight.can_hash) {
-                    return source_preflight;
-                }
-                break;
+            if (asset.output_path != dependency_output) {
+                continue;
             }
+
+            found = true;
+            const CookHashPreflight source_preflight = preflight_file_content_hash(asset.source_path);
+            if (!source_preflight.can_hash) {
+                return source_preflight;
+            }
+            break;
+        }
+
+        if (!found) {
+            preflight.reason = CookHashRejectReason::UnknownDependencyOutput;
+            return preflight;
         }
     }
 
@@ -321,6 +349,43 @@ CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
 CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     (void)upstream_hash;
     return preflight_cook_cache_key(source_hash, upstream_hash);
+}
+
+bool should_skip_file_content_hash(const std::string& path) {
+    return preflight_file_content_hash(path).should_skip();
+}
+
+bool should_skip_mesh_import_hash(const MeshImportDesc& desc) {
+    return preflight_mesh_import_hash(desc).should_skip();
+}
+
+bool should_skip_texture_import_hash(const TextureImportDesc& desc) {
+    return preflight_texture_import_hash(desc).should_skip();
+}
+
+bool should_skip_audio_import_hash(const AudioImportDesc& desc) {
+    return preflight_audio_import_hash(desc).should_skip();
+}
+
+bool should_skip_manifest_entry_hash(const CookManifestEntry& entry) {
+    return preflight_manifest_entry_hash(entry).should_skip();
+}
+
+bool should_skip_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
+                                            const CookManifest& manifest) {
+    return preflight_upstream_dependencies_hash(dependency_output_paths, manifest).should_skip();
+}
+
+bool should_skip_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    return preflight_cook_cache_key(source_hash, upstream_hash).should_skip();
+}
+
+bool should_skip_fnv1a64_bytes(const u8* data, usize size) {
+    return preflight_fnv1a64_bytes(data, size).should_skip();
+}
+
+bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    return preflight_combine_cook_cache_key(source_hash, upstream_hash).should_skip();
 }
 
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
