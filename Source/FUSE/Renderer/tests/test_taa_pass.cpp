@@ -3918,3 +3918,31 @@ void testTaaFrameGuardPreflight() {
     testJitterFramePreflightAndShouldSkip();
     testResolveBlendFramePreflightGuards();
     testTaaFrameGuardPreflight();
+
+// --- deepen additive from deepen-b59-taa-guards-804f ---
+void testJitterShouldSkipAndTryNdcPreflights() {
+               "tryPreflight NDC reject reason is None for valid viewport");
+               "tryPreflight NDC reject reason is InvalidViewport for zero width");
+    expectTrue(TaaJitterLayout::tryNdcOffsetForFrameIndex(3u, 1920u, 1080u, ndcOut, 8u),
+               "tryNdcOffsetForFrameIndex succeeds for valid inputs");
+    expectTrue(!TaaJitterLayout::tryNdcOffsetForFrameIndex(0u, 0u, 1080u, ndcOut, 8u),
+               "tryNdcOffsetForFrameIndex rejects zero width");
+               "tryPreflightTaaHistoryWarmup rejects uninitialized history");
+    expectTrue(!fuse::renderer::preflightTaaHistoryWarmup(history),
+               "preflightTaaHistoryWarmup rejects unwarmed history");
+               "tryPreflightTaaHistoryWarmup rejects unwarmed history");
+               "preflightTaaHistoryWarmup passes after warmup");
+void testResolveShouldSkipAndTryPreflights() {
+               "tryPreflight resolve skip reason is None for valid resolve");
+               "tryPreflight resolve skip reason is InvalidDimensions");
+void testTaaPassTryAndShouldSkipPreflights() {
+    expectTrue(pass->preflightJitterNdc(), "pass NDC preflight passes with valid viewport before init");
+    expectTrue(pass->preflightJitterNdc(), "pass preflightJitterNdc passes after init");
+    expectTrue(pass->tryPreflightJitterNdc(jitterReject), "pass tryPreflightJitterNdc passes after init");
+               "pass tryPreflightHistoryWarmup rejects before resolve");
+               "pass tryPreflightResolve passes for valid resolve");
+               "pass tryPreflightHistoryReuse rejects before warmup");
+    expectTrue(pass->tryPreflightHistoryWarmup(warmupReason), "pass warmup preflight passes after resolve");
+    testJitterShouldSkipAndTryNdcPreflights();
+    testResolveShouldSkipAndTryPreflights();
+    testTaaPassTryAndShouldSkipPreflights();

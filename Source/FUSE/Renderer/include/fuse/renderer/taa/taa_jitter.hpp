@@ -218,3 +218,6 @@ struct TaaJitterFramePreflight {
     bool canSync() const { return syncReject == TaaJitterGuardRejectReason::None; }
     bool canProduceNdc() const { return ndcReject == TaaJitterGuardRejectReason::None; }
 TaaJitterFramePreflight preflightTaaJitterFrame(u32 frameIndex, u32 width, u32 height,
+
+// --- deepen additive from deepen-b59-taa-guards-804f ---
+    static bool tryNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height, fuse::math::Vec2& out,
