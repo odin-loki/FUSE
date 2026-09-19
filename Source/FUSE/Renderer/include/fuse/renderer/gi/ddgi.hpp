@@ -1008,3 +1008,7 @@ bool preflightProbeGridSource(const DDGIDesc& desc, ProbeSampleCoordsRejectReaso
 // --- deepen additive from deepen-ddgi-b56-guards-22da ---
 bool wouldSkipProbeLookupAtIndex(const DDGIDesc& desc,
 bool wouldSkipProbeLookupAtCoord(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-b56-guards-2627 ---
+bool preflightScheduledCacheIndices(const DDGIDesc& desc,
+bool wouldSkipScheduledCacheIndices(const DDGIDesc& desc,

@@ -4182,3 +4182,19 @@ void testDdgiWouldSkipPreflightGuards() {
                                fuse::renderer::ProbeGridSourceRejectReason::EmptyGrid),
     expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(zeroRes, cache.data(), 8u) ==
                "classifyProbeGridSourceReject not sampleable grid");
+
+// --- deepen additive from deepen-ddgi-b56-guards-2627 ---
+void testScheduledCacheIndexGuards() {
+               "tryValidateScheduledCacheIndices succeeds for valid indices");
+    expectTrue(fuse::renderer::ddgi_util::preflightScheduledCacheIndices(
+               "preflightScheduledCacheIndices succeeds for valid indices");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipScheduledCacheIndices(
+               "wouldSkipScheduledCacheIndices false for valid indices");
+               "tryValidateScheduledCacheIndices rejects OOB index");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipScheduledCacheIndices(
+               "wouldSkipScheduledCacheIndices true for OOB index");
+    expectTrue(fuse::renderer::ddgi_util::tryValidateScheduledCacheIndices(desc, validIndices, 0u, 8u, reason),
+    expectTrue(fuse::renderer::gi::classifyProbeKernelRejectForDesc(desc, oobParams) ==
+               "classifyProbeKernelRejectForDesc out_of_range_probe_index for OOB indices");
+    expectTrue(fuse::renderer::gi::wouldSkipProbeKernelLaunchForDesc(desc, oobParams),
+               "wouldSkipProbeKernelLaunchForDesc true for OOB indices");

@@ -3087,3 +3087,13 @@ bool preflightProbeGridSource(const DDGIDesc& desc, ProbeSampleCoordsRejectReaso
 bool wouldSkipProbeLookupAtIndex(const DDGIDesc& desc,
 bool wouldSkipProbeLookupAtCoord(const DDGIDesc& desc,
     return wouldSkipProbeLookupAtIndex(desc, cache, probe_index, cache_count);
+
+// --- deepen additive from deepen-ddgi-b56-guards-2627 ---
+    return tryValidateScheduledCacheIndices(desc, probe_indices, probe_count, cache_count, outReason);
+bool preflightScheduledCacheIndices(const DDGIDesc& desc,
+    CacheIndexRejectReason reject = CacheIndexRejectReason::None;
+    const bool ok = tryValidateScheduledCacheIndices(desc, cache, probe_indices, probe_count, cache_count, reject);
+bool wouldSkipScheduledCacheIndices(const DDGIDesc& desc,
+    return !preflightScheduledCacheIndices(desc, cache, probe_indices, probe_count, cache_count);
+    if (!tryCanLaunchProbeTraceKernel(params, reason)) {
+                return ProbeKernelRejectReason::OutOfRangeProbeIndex;
