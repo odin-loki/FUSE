@@ -489,6 +489,10 @@ public:
     [[nodiscard]] bool should_skip_invalidate(u64 content_hash) const;
     /// True when `prune_all` would be a no-op (B7.9 deepen).
     [[nodiscard]] bool should_skip_prune() const;
+    /// True when lookup would miss without touching hit/miss stats — invalid keys only (B7.9 deepen).
+    [[nodiscard]] bool should_skip_lookup(u64 content_hash) const;
+    /// True when `store` would reject the entry — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
+    [[nodiscard]] bool should_skip_store(const CookCacheEntry& entry) const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
