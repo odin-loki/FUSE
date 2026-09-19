@@ -679,3 +679,29 @@ ContactBufferFrictionTangentPreflight preflight_contact_buffer_friction_tangents
     ContactBufferFrictionTangentPreflight preflight{};
     preflight.emptyBuffer = preflight.reason == ContactBufferFrictionTangentRejectReason::EmptyBuffer;
     preflight.allValid = preflight.reason == ContactBufferFrictionTangentRejectReason::AllValid;
+
+// --- deepen additive from b4-narrowphase-deepen-d3be ---
+const char* contact_buffer_write_slot_reject_reason_name(ContactBufferWriteSlotRejectReason reason) {
+    case ContactBufferWriteSlotRejectReason::None:
+    case ContactBufferWriteSlotRejectReason::OutOfRangeSlot:
+    case ContactBufferWriteSlotRejectReason::InvalidManifold:
+    case ContactBufferWriteSlotRejectReason::SelfPair:
+ContactBufferWriteSlotRejectReason contact_buffer_write_slot_reject_reason(
+        return ContactBufferWriteSlotRejectReason::OutOfRangeSlot;
+        return ContactBufferWriteSlotRejectReason::InvalidManifold;
+        return ContactBufferWriteSlotRejectReason::SelfPair;
+    return ContactBufferWriteSlotRejectReason::None;
+    ContactBufferWriteSlotRejectReason expected) {
+ContactBufferWriteSlotPreflight preflight_contact_buffer_write_slot(
+    ContactBufferWriteSlotPreflight preflight{};
+    preflight.outOfRangeSlot = preflight.reason == ContactBufferWriteSlotRejectReason::OutOfRangeSlot;
+    preflight.invalidManifold = preflight.reason == ContactBufferWriteSlotRejectReason::InvalidManifold;
+    preflight.selfPair = preflight.reason == ContactBufferWriteSlotRejectReason::SelfPair;
+bool should_skip_contact_buffer_write_slot(
+const char* contact_buffer_friction_bases_reject_reason_name(ContactBufferFrictionBasesRejectReason reason) {
+    case ContactBufferFrictionBasesRejectReason::AllBuilt:
+ContactBufferFrictionBasesRejectReason contact_buffer_friction_bases_reject_reason(
+    return ContactBufferFrictionBasesRejectReason::AllBuilt;
+ContactBufferFrictionBasesPreflight preflight_contact_buffer_friction_bases(const ContactBufferSoA& buffer) {
+    preflight.allBuilt = preflight.reason == ContactBufferFrictionBasesRejectReason::AllBuilt;
+    if (should_skip_contact_buffer_write_slot(*this, slot, manifold)) {

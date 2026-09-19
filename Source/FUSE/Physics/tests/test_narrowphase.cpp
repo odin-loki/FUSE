@@ -2892,3 +2892,9 @@ void testContactNormalNormalizePreflightGuards() {
         fuse::physics::narrowphase::should_skip_narrowphase_dispatch(
         "should_skip dispatch true when all pairs rejected");
     testContactNormalNormalizePreflightGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-d3be ---
+            fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::SelfPair),
+        fuse::physics::narrowphase::should_skip_contact_buffer_write_slot(buffer, 1u, selfPair),
+        "should_skip write-slot on self pair");
+void testNarrowphaseDeepenPassGuards() {

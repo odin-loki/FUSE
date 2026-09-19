@@ -250,3 +250,18 @@ struct ContactBufferFrictionTangentPreflight {
     ContactBufferFrictionTangentRejectReason reason = ContactBufferFrictionTangentRejectReason::None;
         return reason == ContactBufferFrictionTangentRejectReason::None;
 ContactBufferFrictionTangentPreflight preflight_contact_buffer_friction_tangents(
+
+// --- deepen additive from b4-narrowphase-deepen-d3be ---
+enum class ContactBufferWriteSlotRejectReason : u8 {
+const char* contact_buffer_write_slot_reject_reason_name(ContactBufferWriteSlotRejectReason reason);
+ContactBufferWriteSlotRejectReason contact_buffer_write_slot_reject_reason(
+    ContactBufferWriteSlotRejectReason expected);
+struct ContactBufferWriteSlotPreflight {
+    ContactBufferWriteSlotRejectReason reason = ContactBufferWriteSlotRejectReason::None;
+    bool canWrite() const { return reason == ContactBufferWriteSlotRejectReason::None; }
+ContactBufferWriteSlotPreflight preflight_contact_buffer_write_slot(
+bool should_skip_contact_buffer_write_slot(
+const char* contact_buffer_friction_bases_reject_reason_name(ContactBufferFrictionBasesRejectReason reason);
+ContactBufferFrictionBasesRejectReason contact_buffer_friction_bases_reject_reason(
+    bool needsBuild() const { return reason == ContactBufferFrictionBasesRejectReason::None; }
+ContactBufferFrictionBasesPreflight preflight_contact_buffer_friction_bases(const ContactBufferSoA& buffer);
