@@ -1554,6 +1554,47 @@ bool can_skip_prune_contact_manifold_with_preflight(
 bool can_skip_finalize_contact_manifold_with_preflight(
 
 /// Non-mutating finalize-with-preflight predicate — inverse of skip predicate (B4.6 deepen follow-up pass).
+/// Combined prune+finalize preflight without mutating the manifold (B4.6 deepen pass).
+struct ManifoldPruneAndFinalizePreflight {
+
+    bool can_prune_and_finalize() const {
+        return !skipped && finalize.can_finalize() && prune.reason == ManifoldPruneRejectReason::None;
+
+    bool can_skip() const { return !can_prune_and_finalize(); }
+
+ManifoldPruneAndFinalizePreflight preflight_manifold_prune_and_finalize(
+
+bool can_skip_manifold_prune_and_finalize(
+
+
+inline ManifoldPruneAndFinalizePreflight preflight_manifold_prune_and_finalize(
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth,
+    f32 frictionEpsilon) {
+    ManifoldPruneAndFinalizePreflight preflight{};
+    preflight.prune = preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    preflight.finalize = preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    preflight.skipped = preflight.prune.skipped || preflight.finalize.skipped;
+    return preflight;
+
+inline bool can_skip_manifold_prune_and_finalize(
+    return preflight_manifold_prune_and_finalize(
+               manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth, frictionEpsilon)
+        .can_skip();
+
+inline bool prune_and_finalize_contact_manifold_with_preflight(
+    const ManifoldPruneAndFinalizePreflight preflight = preflight_manifold_prune_and_finalize(
+        manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth, frictionEpsilon);
+    if (!preflight.can_prune_and_finalize()) {
+        if (preflight.finalize.reason == ManifoldFinalizeRejectReason::AllSeparatedAfterPrune ||
+            preflight.prune.reason == ManifoldPruneRejectReason::AllSeparated) {
+            manifold.clear();
+    if (preflight.prune.needs_pruning() || preflight.prune.needs_shallow_pruning(shallowMinDepth)) {
+        if (!prune_contact_manifold_with_preflight(
+                manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+    return finalize_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

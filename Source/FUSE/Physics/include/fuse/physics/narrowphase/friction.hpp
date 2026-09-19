@@ -921,5 +921,17 @@ FUSE_PHYSICS_INLINE bool can_skip_project_tangential_velocity(
 bool can_skip_rebuild_friction_basis_with_preflight(
 
 /// Non-mutating rebuild-with-preflight predicate — inverse of skip predicate (B4.6 deepen follow-up pass).
+/// Returns true when compute_friction_tangents would be a no-op (B4.6 deepen pass).
+bool can_skip_compute_friction_tangents(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+
+inline bool can_skip_compute_friction_tangents(const ContactManifold& manifold, f32 epsilon) {
+
+inline bool compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon) {
+    const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
+    if (preflight.reason != FrictionBasisRejectReason::None) {
+        return false;
+    if (preflight.can_skip_rebuild()) {
+    return rebuild_friction_basis_with_preflight(manifold, epsilon);
 
 } // namespace fuse::physics::narrowphase

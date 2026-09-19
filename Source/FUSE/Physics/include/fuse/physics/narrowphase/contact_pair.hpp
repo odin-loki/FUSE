@@ -1970,6 +1970,24 @@ ContactManifold detect_contacts_pair_with_preflight(
 bool is_valid_contact_pair_deepen(
 /// Non-mutating pair-dispatch skip predicate for base preflight (B4.6 deepen follow-up pass).
 bool can_skip_contact_pair_dispatch(
+/// Const preflight for single-pair detect dispatch (B4.6 deepen pass).
+struct ContactPairDetectPreflight {
+    ContactPairDeepenPreflight pair{};
+    bool rejected = false;
+
+    bool can_detect() const { return !rejected && pair.can_dispatch(); }
+};
+
+/// Populate detect preflight without running shape dispatch (B4.6 deepen pass).
+ContactPairDetectPreflight preflight_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when detect should skip this pair (B4.6 deepen pass).
+bool can_skip_detect_contacts_pair(
+
+/// Run shape dispatch only when deepen preflight passes; invalid manifold otherwise (B4.6 deepen pass).
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1994,9 +2012,6 @@ bool should_run_contact_pair_dispatch(
 bool should_skip_contact_pair_deepen_followup_dispatch(
 /// Non-mutating deepen-dispatch skip predicate (B4.6 deepen follow-up pass).
 bool can_skip_contact_pair_deepen_dispatch(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Build friction tangents only when preflight allows; no-op when skipped (B4.6 deepen follow-up pass).
 void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
@@ -2040,9 +2055,6 @@ bool generate_contact_manifold_with_preflight(
     f32 frictionEpsilon = 1e-4f);
 /// Non-mutating deepen-dispatch predicate — mirrors `preflight_contact_pair_deepen` (B4.6 deepen follow-up pass).
 bool should_run_contact_pair_deepen_dispatch(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Non-mutating narrowphase predicate — inverse of `can_skip_narrowphase` (B4.6 deepen follow-up pass).
 bool should_run_narrowphase(
@@ -2050,5 +2062,15 @@ bool should_run_narrowphase(
 
 /// Non-mutating batch predicate — inverse of `narrowphase_batch_rejects_all` (B4.6 deepen follow-up pass).
 bool should_run_narrowphase_batch(
+inline ContactPairDetectPreflight preflight_detect_contacts_pair(
+    ContactPairDetectPreflight preflight{};
+    preflight.pair = preflight_contact_pair_deepen(pair, bodies, shapes);
+    preflight.rejected = preflight.pair.rejected;
+    return preflight;
+
+inline bool can_skip_detect_contacts_pair(
+    return !preflight_detect_contacts_pair(pair, bodies, shapes).can_detect();
+
+inline ContactManifold detect_contacts_pair_with_preflight(
 
 } // namespace fuse::physics::narrowphase
