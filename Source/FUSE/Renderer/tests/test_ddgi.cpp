@@ -4470,3 +4470,17 @@ void testProbeTrilinearSamplePreflightGuards() {
 void testCacheIndexAtCoordGuards() {
                "tryValidateCacheIndexAtCoord rejects OOB coord");
     testProbeTrilinearSamplePreflightGuards();
+
+// --- deepen additive from deepen-b56-ddgi-guards-f5fe ---
+    expectTrue(!fuse::renderer::ddgi_util::tryCanSampleProbeGrid(zeroRes, gridReason),
+               "tryCanSampleProbeGrid rejects zero irradiance_res");
+    expectTrue(gridReason == fuse::renderer::ProbeGridRejectReason::ZeroIrradianceRes,
+               "tryCanSampleProbeGrid reports zero_irradiance_res reason");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeLookupAtIndex(desc, cache.data(), 99u, 8u),
+               "wouldSkipProbeLookupAtIndex false for OOB index that would clamp");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeLookupAtIndex(desc, cache.data(), 7u, 4u),
+               "wouldSkipProbeLookupAtIndex true when in-range probe index exceeds cache length");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeLookupAtIndex(desc, nullptr, 3u, 8u),
+               "wouldSkipProbeLookupAtIndex true for null cache");
+               "tryCanTrilinearSampleAtProbeCoords succeeds for valid coords");
+               "wouldSkipProbeTrilinearSample true for hard OOB coords");

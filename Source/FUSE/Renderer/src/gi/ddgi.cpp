@@ -3206,3 +3206,10 @@ bool wouldSkipProbeGrid(const DDGIDesc& desc) {
 bool wouldClampCacheIndexLookupAtCoord(const ProbeGridCoord& coord, const DDGIDesc& desc) {
     tryValidateCacheIndexAtCoord(desc, cache, coord, cache_count, reason);
     return wouldSkipProbeTraceKernel(params) || wouldSkipProbeBlendKernel(params);
+
+// --- deepen additive from deepen-b56-ddgi-guards-f5fe ---
+    return tryCanSampleProbeGrid(desc, reason);
+bool tryCanSampleProbeGrid(const DDGIDesc& desc, ProbeGridRejectReason& outReason) {
+        outReason = ProbeGridRejectReason::ZeroIrradianceRes;
+        outReason = ProbeGridRejectReason::InvalidSpacing;
+    tryCanSampleProbeGrid(desc, reason);
