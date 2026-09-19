@@ -2674,3 +2674,16 @@ void testPairBufferDedupeSortRejectReasonGuards() {
 void testShouldRunBroadphaseAndRefineGuards() {
     testCellOccupancyPreflightReasonGuards();
     testPairBufferDedupeSortRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-f2c7 ---
+void testCellOccupancyPreflightReasonField() {
+                   buffer, 2u, 2u, fuse::physics::broadphase::PairBufferPushRejectReason::InvalidPair),
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferCompactionRejectReasonName(
+    const fuse::physics::broadphase::PairBufferCompactionPreflight preflight =
+        fuse::physics::broadphase::preflightPairBufferCompaction(buffer);
+    expectTrue(fuse::physics::broadphase::pairBufferClampRejectsForReason(
+                   buffer, fuse::physics::broadphase::PairBufferClampRejectReason::EmptyBuffer),
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferClampRejectReasonName(
+    const fuse::physics::broadphase::PairBufferClampPreflight preflight =
+        fuse::physics::broadphase::preflightPairBufferClamp(overflowBuffer);
+    testCellOccupancyPreflightReasonField();

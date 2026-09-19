@@ -1083,3 +1083,7 @@ BroadphaseMergeRejectReason broadphaseMergeRejectReason(
         return BroadphaseMergeRejectReason::EmptyPlaneBodies;
     return BroadphaseMergeRejectReason::EmptyDynamicBodies;
     return broadphaseMergeRejectReason(bodies, shapes) == expected;
+
+// --- deepen additive from deepen-b4-broadphase-guards-f2c7 ---
+        if (!preflightCellOccupancy(range, maxOccupancy).canIterate()) {
+    const BroadphaseMergePreflight preflight = preflightBroadphaseMerge(bodies, shapes);
