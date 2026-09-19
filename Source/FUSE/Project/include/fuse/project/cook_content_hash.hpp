@@ -255,3 +255,6 @@ struct CookFnvInputPreflight {
     [[nodiscard]] bool should_skip_hash() const { return !can_hash; }
 [[nodiscard]] inline bool should_skip_cook_hash_preflight(const CookHashPreflight& preflight) {
     return preflight.should_skip_hash();
+
+// --- deepen additive from deepen-b79-hash-should-skip-4ba0 ---
+[[nodiscard]] bool should_skip_hash_preflight(const CookHashPreflight& preflight);

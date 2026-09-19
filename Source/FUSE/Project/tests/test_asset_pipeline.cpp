@@ -2294,3 +2294,6 @@ void testCookerReconcileShouldSkipGuards() {
                "stale dependency should_skip is false after upstream change");
                "combined reconcile should_skip is false after upstream change");
                "would_invalidate_downstream_of guards empty output path");
+
+// --- deepen additive from deepen-b79-hash-should-skip-4ba0 ---
+               "should_skip upstream invalidation false for seeded source");

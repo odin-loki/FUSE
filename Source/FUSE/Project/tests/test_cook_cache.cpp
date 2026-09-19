@@ -1877,3 +1877,15 @@ void testCookCachePruneReconcileShouldSkipGuards() {
 // --- deepen additive from b79-cooker-hash-should-skip-probes-2961 ---
                "should_skip_combine_cook_cache_key false for valid fold");
                "preflight should_skip matches should_skip_mesh_import_hash");
+
+// --- deepen additive from deepen-b79-hash-should-skip-4ba0 ---
+               "preflight should_skip matches mesh helper");
+    expectTrue(fuse::project::preflight_mesh_import_hash(desc).should_skip(),
+               "preflight should_skip rejects empty mesh input");
+    expectTrue(!fuse::project::should_skip_hash_preflight(valid_preflight),
+               "should_skip_hash_preflight false for valid preflight");
+    expectTrue(fuse::project::should_skip_hash_preflight(valid_preflight) == valid_preflight.should_skip(),
+               "should_skip_hash_preflight mirrors preflight should_skip");
+    expectTrue(cache.should_skip_prune_reconcile(), "empty cache should_skip_prune_reconcile is true");
+    expectTrue(!estimate.should_skip(), "shader stale prune estimate should_skip is false");
+    expectTrue(!cache.should_skip_prune_reconcile(), "shader stale entry skips prune reconcile false");
