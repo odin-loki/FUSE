@@ -575,3 +575,12 @@ bool preflightTaaResolveTemporalAccumulation(const TaaResolveDesc& desc, const T
     local.blend_reject = classifyTaaResolveBlendReject(desc, history);
     local.passes = !taaResolveSkipReasonIsBlocking(local.skip_reason) &&
                    local.blend_reject == TaaResolveBlendRejectReason::None;
+
+// --- deepen additive from deepen-b59-taa-guards-8394 ---
+                                      TaaBlendWeights& outWeights, TaaResolveBlendRejectReason* reason) {
+    if (reject != TaaResolveBlendRejectReason::None) {
+                              TaaResolveFramePreflight* out) {
+    TaaResolveFramePreflight result{};
+    if (taaResolveSkipReasonIsBlocking(result.skip_reason)) {
+    result.blend_reason = classifyTaaResolveBlendReject(desc, history);
+    if (result.blend_reason != TaaResolveBlendRejectReason::None) {

@@ -360,3 +360,7 @@ bool TaaJitter::trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncBlockRea
 bool TaaJitter::trySyncToFrameIndexIfViewportReady(u32 frameIndex, u32 width, u32 height,
 bool TaaJitter::tryAdvanceIfReady(TaaJitterAdvanceBlockReason& outReason) {
 bool TaaJitter::tryAdvanceIfViewportReady(u32 width, u32 height, TaaJitterAdvanceBlockReason& outReason) {
+
+// --- deepen additive from deepen-b59-taa-guards-8394 ---
+bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason* reason) {
+    if (!preflightTaaJitterSync(frameIndex, m_sequenceLength, reason)) {

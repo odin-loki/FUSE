@@ -176,3 +176,8 @@ bool preflightTaaJitterAlignment(u32 expectedFrameIndex, const TaaJitter& jitter
     bool tryAdvanceIfViewportReady(u32 width, u32 height, TaaJitterAdvanceBlockReason& outReason);
     bool trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncBlockReason& outReason);
     bool trySyncToFrameIndexIfViewportReady(u32 frameIndex, u32 width, u32 height,
+
+// --- deepen additive from deepen-b59-taa-guards-8394 ---
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 frameIndex, u32 sequenceLength);
+bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncRejectReason* reason = nullptr);
+    bool syncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason* reason);

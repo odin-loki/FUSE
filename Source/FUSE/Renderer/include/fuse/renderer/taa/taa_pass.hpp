@@ -248,3 +248,9 @@ void addTaaPassToGraph(RenderGraph& graph);
     bool trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncBlockReason& outReason);
     bool preflightResolveTemporalAccumulation(const TaaResolveDesc& desc,
                                               TaaResolveTemporalPreflight* result = nullptr) const;
+
+// --- deepen additive from deepen-b59-taa-guards-8394 ---
+    bool trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason* reason = nullptr);
+    bool tryCanBeginTemporalReuse(u32 observedGeneration, TaaHistoryReuseBlockReason* reason = nullptr) const;
+    bool preflightResolveFrame(const TaaResolveDesc& desc, TaaResolveFramePreflight* out = nullptr) const;
+    bool tryExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,

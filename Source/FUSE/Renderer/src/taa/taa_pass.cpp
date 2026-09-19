@@ -477,3 +477,10 @@ bool TaaPass::trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncBloc
 bool TaaPass::preflightResolveTemporalAccumulation(const TaaResolveDesc& desc,
                                                    TaaResolveTemporalPreflight* result) const {
     return preflightTaaResolveTemporalAccumulation(desc, m_history, result);
+
+// --- deepen additive from deepen-b59-taa-guards-8394 ---
+bool TaaPass::trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason* reason) {
+bool TaaPass::tryCanBeginTemporalReuse(u32 observedGeneration, TaaHistoryReuseBlockReason* reason) const {
+bool TaaPass::preflightResolveFrame(const TaaResolveDesc& desc, TaaResolveFramePreflight* out) const {
+    return preflightTaaResolveFrame(desc, m_history, out);
+bool TaaPass::tryExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,

@@ -3335,3 +3335,44 @@ void testResolveTemporalAccumulationPreflight() {
     expectTrue(pass->preflightHistoryWarmup(), "pass warmup preflight passes after first resolve");
     expectTrue(pass->preflightResolveTemporalAccumulation(desc, &preflight),
     testResolveTemporalAccumulationPreflight();
+
+// --- deepen additive from deepen-b59-taa-guards-8394 ---
+void testTaaJitterSyncRejectReasonGuards() {
+    expectTrue(fuse::renderer::classifyTaaJitterSyncReject(0u, 0u) ==
+    expectTrue(fuse::renderer::preflightTaaJitterSync(12u, 8u, &reason),
+               "preflightTaaJitterSync fails for invalid sequence");
+    expectTrue(!fuse::renderer::tryCanBeginTemporalReuse(history, 0u, &reason),
+               "tryCanBeginTemporalReuse fails before warmup");
+               "tryCanBeginTemporalReuse reason is NotWarm before warmup");
+    expectTrue(fuse::renderer::tryCanBeginTemporalReuse(history, 0u, &reason),
+               "tryCanBeginTemporalReuse passes after warmup");
+               "tryCanBeginTemporalReuse reason is None after warmup");
+               "tryCanBeginTemporalReuse fails after invalidate");
+               "tryCanBeginTemporalReuse reason is StaleGeneration after invalidate");
+    fuse::renderer::TaaResolveFramePreflight preflight{};
+    expectTrue(fuse::renderer::preflightTaaResolveFrame(desc, history, &preflight),
+    expectTrue(preflight.blend_reason == fuse::renderer::TaaResolveBlendRejectReason::None,
+               "tryComputeTaaResolveBlendWeights succeeds for warmup frame");
+    expectNear(weights.current, 1.f, 1e-5f, "tryCompute blend uses full current on warmup");
+    expectNear(weights.history, 0.f, 1e-5f, "tryCompute blend uses zero history on warmup");
+    expectTrue(!fuse::renderer::preflightTaaResolveFrame(desc, history, &preflight),
+    expectNear(weights.current, 0.2f, 1e-5f, "tryCompute blend uses configured current after warmup");
+    expectNear(weights.history, 0.8f, 1e-5f, "tryCompute blend uses history complement after warmup");
+    expectTrue(!pass->tryCanBeginTemporalReuse(0u, &reuseReason),
+               "pass tryCanBeginTemporalReuse fails before warmup");
+    fuse::renderer::TaaResolveFramePreflight framePreflight{};
+    expectTrue(pass->preflightResolveFrame(resolveDesc, &framePreflight),
+               "pass preflightResolveFrame passes before first resolve");
+    expectTrue(framePreflight.canProceed, "pass resolve frame preflight canProceed before first resolve");
+    expectTrue(pass->preflightJitterSync(4u, &syncReason), "pass preflightJitterSync passes");
+    expectTrue(pass->trySyncJitterToFrameIndexIfReady(4u, &syncReason),
+               "pass trySyncJitterToFrameIndexIfReady succeeds");
+    expectTrue(!pass->needsJitterResync(4u), "pass jitter aligned after trySync");
+    expectTrue(pass->jitterAlignedToFrameIndex(4u), "pass jitterAlignedToFrameIndex after trySync");
+    expectTrue(pass->tryCanBeginTemporalReuse(0u, &reuseReason),
+               "pass tryCanBeginTemporalReuse passes after warmup");
+    expectTrue(pass->tryExpectedResolveBlendWeights(resolveDesc, weights, &blendReason),
+               "pass tryExpectedResolveBlendWeights succeeds after warmup");
+    expectNear(weights.current, 0.35f, 1e-5f, "pass tryExpectedResolveBlendWeights current weight");
+    expectNear(weights.history, 0.65f, 1e-5f, "pass tryExpectedResolveBlendWeights history weight");
+    testTaaJitterSyncRejectReasonGuards();
