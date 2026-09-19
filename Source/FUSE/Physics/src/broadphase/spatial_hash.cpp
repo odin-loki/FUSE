@@ -1641,6 +1641,7 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
         if (canSkipCellCapacityCheck(range, maxOccupancy, maxSpan)) {
         if (canSkipShapeCellInsertion(range, maxSpan, maxOccupancy)) {
         if (wouldSkipCellCapacityInsertion(range, maxOccupancy, maxSpan)) {
+        if (wouldSkipShapeCellInsertion2D(range, maxOccupancy)) {
             return;
         if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
             return ShapeCellInsertRejectReason::OccupancySkipped;
@@ -1797,6 +1798,7 @@ void populateShapeCells(
     if (canSkipShapeCellHashInsert(range, maxOccupancy)) {
     if (canSkipCellCapacityCheck(range, maxOccupancy, maxSpan)) {
     if (wouldSkipCellCapacityInsertion(range, maxOccupancy, maxSpan)) {
+    if (wouldSkipShapeCellInsertion(range, maxOccupancy)) {
         return;
     if (isEmptyCellRange(range)) {
     if (params.maxCellOccupancyPerShape > 0u) {
@@ -2818,8 +2820,9 @@ bool wouldSkipRefineBroadphase(
     const RefineBroadphasePreflight preflight = preflightRefineBroadphase(bodies, shapes, buffer);
         *reason = preflight.reason;
     return !preflight.canRefine();
-    }
     return rejectReason != RefineBroadphaseRejectReason::None;
+
+    return canSkipRefineBroadphase(bodies, shapes, buffer);
 
 DedupeBroadphaseRejectReason dedupeBroadphaseRejectReason(const PairBufferSoA& buffer) {
     if (buffer.canSkipSoAIteration()) {
@@ -3017,7 +3020,9 @@ bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseReje
     const DedupeBroadphasePreflight preflight = preflightDedupeBroadphase(buffer);
         *reason = preflight.reason;
     return !preflight.canDedupe();
-    }
+
+bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer) {
+    return canSkipDedupeBroadphase(buffer);
 
 BroadphaseMergePreflight preflightBroadphaseMerge(
     const RigidBodySoA& bodies,
@@ -3483,6 +3488,10 @@ bool wouldSkipBroadphaseMerge(
         *reason = rejectReason;
     }
     return rejectReason != BroadphaseMergeRejectReason::None;
+}
+
+bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
+    return canSkipBroadphaseMerge(bodies, shapes);
 }
 
 const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReason reason) {
@@ -4634,7 +4643,8 @@ bool wouldSkipCellOccupancyIteration(
     CellOccupancyRejectReason* reason) {
     const CellOccupancyPreflight preflight = preflightCellOccupancy(range, maxCells);
     return !preflight.canIterate();
-    }
+bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
+    return canSkipMergePairsIntoBuffer(pairs, buffer);
 
 void refineBroadphasePairsParallel(
     const RigidBodySoA& bodies,
