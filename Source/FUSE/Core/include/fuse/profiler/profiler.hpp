@@ -142,6 +142,11 @@ struct ProfilerExportPreflight {
 /// True when `name` is non-null and not the empty string.
 inline bool isNonEmptyProfileName(const char* name) {
     return name != nullptr && name[0] != '\0';
+/// Read-only snapshot of profiler state before chrome JSON export (introspection only).
+struct ChromeExportPreflight {
+    bool bufferEmpty = true;
+    bool hasEvents = false;
+    bool canExport = true;
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
@@ -248,7 +253,6 @@ bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFindFirstFlowEvent(u32 flowId, ProfileEvent& outEvent);
 bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent);
-const ProfileEvent& emptyProfileEvent();
 bool tryEventAt(u32 index, ProfileEvent& out);
 const ProfileEvent& lastEvent();
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
@@ -262,6 +266,8 @@ ProfileScopePreflight preflightProfileScope(const char* name);
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);
 AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 flowId);
 NestingAsyncFlowPreflight preflightNestingAsyncFlow();
+/// Non-mutating export preflight — always reports `canExport=true` for the stub exporter.
+ChromeExportPreflight preflightChromeExport();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();

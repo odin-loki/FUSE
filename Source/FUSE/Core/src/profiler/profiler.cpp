@@ -97,6 +97,10 @@ u32 currentFlowNestingDepth() {
     return threadLocalFlowNestingDepth();
 }
 
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 std::string formatCounterArgsJson(const ProfileEvent& event) {
     std::string args = "\"args\":{\"value\":";
     if (event.counterKind == CounterValueKind::Float) {
@@ -345,6 +349,8 @@ u32 ringBufferCapacity() {
     return kRingCapacity;
 }
 
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -460,6 +466,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
     return kEmpty;
+}
 
 const ProfileEvent& eventAt(u32 index) {
     if (!isEventIndexValid(index)) {
@@ -469,7 +476,6 @@ const ProfileEvent& eventAt(u32 index) {
     const u32 count = eventCount();
     if (count == 0u || index >= count) {
 
-    const u32 count = eventCount();
     return count > 0u && index < count;
 
 
@@ -477,10 +483,9 @@ const ProfileEvent& eventAt(u32 index) {
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
     return kEmpty;
-}
 
 
-    const u32 count = eventCount();
+
     const u32 head = g_writeHead.load(std::memory_order_acquire);
     const u32 start = head >= count ? head - count : 0u;
     const u32 ringIndex = (start + index) % kRingCapacity;
@@ -622,6 +627,7 @@ bool hasOrphanAsyncFlowEnds() {
 
 bool tryEventAt(u32 index, ProfileEvent& out) {
     out = eventAt(index);
+}
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -849,6 +855,19 @@ void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
                 0,
                 value,
                 frameIndex());
+}
+
+ChromeExportPreflight preflightChromeExport() {
+    ChromeExportPreflight preflight{};
+    preflight.eventCount = eventCount();
+    preflight.frameIndex = frameIndex();
+    preflight.bufferEmpty = isBufferEmpty();
+    preflight.hasEvents = hasEvents();
+    preflight.scopeNestingBalanced = isScopeNestingBalanced();
+    preflight.flowNestingBalanced = isFlowNestingBalanced();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.canExport = true;
+    return preflight;
 }
 
 std::string exportChromeTraceJson() {
