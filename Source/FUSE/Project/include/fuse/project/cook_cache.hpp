@@ -504,6 +504,8 @@ public:
     /// Deduplicated stale-upstream source paths — mirrors `invalidate_stale_upstream_hashes` (B7.9 deepen).
     /// Deduplicated stale-upstream source count — mirrors `probe_unique_stale_upstream_sources` (B7.9 deepen).
     /// Deduplicated stale-upstream sources — one push per matching source path (B7.9 deepen).
+    /// Deduplicated source paths with stale upstream hashes — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_upstream_source_paths(
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
@@ -789,6 +791,8 @@ public:
 
     /// Read-only store preflight — mirrors `store` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] CookHashPreflight preflight_cache_entry(const CookCacheEntry& entry) const;
+    /// Read-only store preflight — mirrors `store` structural and source-readability guards (B7.9 deepen).
+    [[nodiscard]] CookHashPreflight preflight_store_entry(const CookCacheEntry& entry) const;
 
     void clear();
     [[nodiscard]] bool empty() const { return m_entries.empty(); }
