@@ -98,9 +98,13 @@ struct ChromeTraceExportPreflight {
     u32 activeFlowNestingDepth = 0;
     u32 maxScopeNestingDepth = 0;
     u32 maxFlowNestingDepth = 0;
+    u32 nonExportableEventCount = 0;
+    u32 droppedEventCount = 0;
     bool profilerDisabled = false;
     bool bufferEmpty = false;
     bool ringSaturated = false;
+    bool bufferFull = false;
+    bool ringBufferWrapped = false;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
@@ -342,6 +346,10 @@ struct ExportPreflight {
     bool isBufferStructurallyBalanced() const {
         return hasBalancedScopeEventsInBuffer() && hasBalancedAsyncFlowEventsInBuffer();
     bool hasNestingWarnings() const { return hasUnbalancedNesting() || flowDepthDetached; }
+    bool hasDroppedEvents() const { return droppedEventCount > 0u; }
+    bool hasExportWarnings() const {
+        return hasUnbalancedNesting() || hasOpenAsyncFlows || flowDepthDetached || hasDroppedEvents()
+               || nonExportableEventCount > 0u;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -494,6 +502,9 @@ bool canBeginAsyncFlow(const char* name);
 bool canEndAsyncFlow(const char* name);
 bool canLookupEventAt(u32 index);
 bool isFlowOpenCountAttached();
+bool canEndAsyncFlow();
+bool hasActiveScopes();
+bool hasActiveFlows();
 
 bool hasEvents();
 bool hasExportableEvents();
@@ -503,9 +514,15 @@ bool isFlowNestingBalanced();
 bool isBufferEmpty();
 
 bool isBufferFull();
+bool hasRingBufferWrapped();
+u32 totalWriteCount();
+u32 droppedEventCount();
+u32 nonExportableEventCount();
 bool isEventIndexValid(u32 index);
 /// True for null, empty, or whitespace-only names — diagnostic only; does not affect recording guards.
 bool isBlankEventName(const char* name);
+bool isFirstEventIndex(u32 index);
+bool isLastEventIndex(u32 index);
 bool isValidEventName(const char* name);
 bool isValidFlowId(u32 flowId);
 bool isFlowPhaseEvent(const ProfileEvent& event);
@@ -590,6 +607,7 @@ bool tryEventAt(u32 index, ProfileEvent& out);
 bool isLastEventIndexValid();
 bool tryFirstExportableEvent(ProfileEvent& outEvent);
 bool tryLastExportableEvent(ProfileEvent& outEvent);
+u32 countEventsByPhase(EventPhase phase);
 const ProfileEvent& lastEvent();
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
