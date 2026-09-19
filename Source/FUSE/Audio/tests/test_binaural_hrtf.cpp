@@ -1708,3 +1708,11 @@ void testHrtfRejectReasonPreflights() {
     expectTrue(composite_preflight.reason == fuse::audio::HrtfBinauralRejectReason::None,
                "should_skip_hrtf_binaural true when composite reject reason is set");
     testHrtfRejectReasonPreflights();
+
+// --- deepen additive from deepen-hrtf-reject-reason-preflights-83b7 ---
+    expectTrue(fuse::audio::classify_hrtf_ir_reject(valid) == fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(preflight.convolveRejectReason == fuse::audio::HrtfIrRejectReason::NullSamples,
+    expectTrue(preflight.rejectReason == fuse::audio::HrtfPanPathRejectReason::None,
+    expectTrue(preflight.rejectReason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(preflight.ir.rejectReason == fuse::audio::HrtfIrRejectReason::NullSamples,
+    expectTrue(preflight.panPath.rejectReason == fuse::audio::HrtfPanPathRejectReason::None,

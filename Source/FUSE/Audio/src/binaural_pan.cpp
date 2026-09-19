@@ -1101,3 +1101,12 @@ HrtfBinauralRejectReason hrtf_binaural_reject_reason(HrtfPanPathRejectReason pan
 
 // --- deepen additive from deepen-hrtf-reject-reason-preflights-1e2a ---
     return preflight.reason != HrtfBinauralRejectReason::None;
+
+// --- deepen additive from deepen-hrtf-reject-reason-preflights-83b7 ---
+bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrPreflight& preflight, HrtfIrRejectReason& reason) {
+    preflight.convolveRejectReason = preflight_hrtf_ir(ir).rejectReason;
+                                 HrtfPanPathPreflight& preflight, HrtfPanPathRejectReason& reason) {
+    HrtfAttenuationCouplingPreflight& preflight, HrtfAttenuationCouplingRejectReason& reason,
+                                                  HrtfAttenuationCouplingRejectReason expected,
+HrtfBinauralRejectReason classify_hrtf_binaural_reject(bool hrtf_enabled, const Vec3& rel_listener) {
+                                 HrtfBinauralPreflight& preflight, HrtfBinauralRejectReason& reason,

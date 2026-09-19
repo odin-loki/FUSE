@@ -759,3 +759,16 @@ HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const Ve
 HrtfBinauralRejectReason hrtf_binaural_reject_reason(HrtfPanPathRejectReason pan_reason);
     HrtfBinauralRejectReason rejectReason() const {
     bool is_bypass() const { return panPath.reason != HrtfPanPathRejectReason::None; }
+
+// --- deepen additive from deepen-hrtf-reject-reason-preflights-83b7 ---
+    HrtfIrRejectReason rejectReason = HrtfIrRejectReason::None;
+bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrPreflight& preflight,
+    HrtfPanPathRejectReason rejectReason = HrtfPanPathRejectReason::None;
+    HrtfIrRejectReason convolveRejectReason = HrtfIrRejectReason::None;
+                                 HrtfPanPathPreflight& preflight, HrtfPanPathRejectReason& reason);
+    HrtfAttenuationCouplingRejectReason rejectReason = HrtfAttenuationCouplingRejectReason::None;
+    HrtfAttenuationCouplingPreflight& preflight, HrtfAttenuationCouplingRejectReason& reason,
+                                                  HrtfAttenuationCouplingRejectReason expected,
+HrtfBinauralRejectReason classify_hrtf_binaural_reject(bool hrtf_enabled, const Vec3& rel_listener);
+    HrtfBinauralRejectReason rejectReason = HrtfBinauralRejectReason::None;
+                                 HrtfBinauralPreflight& preflight, HrtfBinauralRejectReason& reason,
