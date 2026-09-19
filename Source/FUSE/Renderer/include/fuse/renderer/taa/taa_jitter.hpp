@@ -84,6 +84,7 @@ bool taaJitterSyncReady(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSe
 /// Early-out when jitter sync to a frame counter would be blocked (B5.9 deepen).
 bool taaJitterSyncReady(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// Early-out when jitter sync to `frameIndex` would be rejected (B5.9 deepen).
+bool shouldSkipTaaJitterSync(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// True when NDC jitter can be produced for viewport and sequence (B5.9 deepen).
 bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
 /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
@@ -247,6 +248,8 @@ struct TaaJitterLayout {
     /// NDC jitter for a monotonic frame counter with reject-reason diagnostics (B5.9 deepen).
     static bool tryNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
                                           fuse::math::Vec2& out, TaaJitterGuardRejectReason& reason);
+    /// NDC jitter for a frame counter with guard preflight and reject-reason diagnostics (B5.9 deepen).
+    static bool tryComputeNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
     static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
     /// True when `slot` is the expected Halton slot for a monotonic frame counter (B5.9 deepen).

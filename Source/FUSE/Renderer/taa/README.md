@@ -40,6 +40,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaJitter::shouldSkipSyncToFrameIndex` / `shouldSkipNdcOffset` — instance-level jitter skip helpers
 - `tryPreflightTaaJitterNdc` / `shouldSkipTaaJitterSync` / `shouldSkipTaaJitterNdc` — jitter guard early-outs
 - `TaaJitter::needsResyncToFrameIndex` — detect jitter drift from expected frame counter
+- `TaaJitterLayout::tryComputeNdcOffsetForFrameIndex` — NDC jitter for a frame counter with reject-reason diagnostics
+- `TaaJitter::tryCurrentNdcOffsetIfReady` — NDC offset with mandatory reject-reason diagnostics
 
 ## History validity (B5.9 deepen)
 
@@ -48,6 +50,7 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `taaHistoryNeedsWarmup(history)` / `taaHistoryWarmupComplete(history)` — free-function warmup guards
 - `taaHistoryWarmupComplete(history)` / `TaaHistoryBuffer::warmupComplete()` — true when warm-up finished
 - `TaaHistoryBuffer::isWarmed()` / `taaHistoryIsWarmed()` — true after the first successful resolve
+- `shouldSkipTaaHistoryWarmup` / `tryPreflightTaaHistoryWarmup` — warm-up completion preflight with reject-reason diagnostics
 - `TaaHistoryBuffer::accumulatedFrames()` — monotonic frame counter reset on invalidate/resize
 - `TaaHistoryBuffer::invalidateGeneration()` — bumped on invalidate/resize for stale-history detection
 - `TaaHistoryBuffer::isHistoryStale(observedGeneration)` — true when a consumer's epoch differs from current history
@@ -88,6 +91,7 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `preflightTaaResolve(desc, history)` — stamp observed generation then classify
 - `taaResolveCanProceed(desc, history, &reason)` — inverse of `wouldSkip`
 - `preflightTaaTemporalBlend` / `shouldSkipTaaTemporalBlend` — combined history-reuse + blend-weight preflight
+- `tryPreflightTaaResolve` / `shouldSkipTaaResolve` — resolve preflight with mandatory skip-reason output
 - `taaResolveDimensionsValid(w, h)` / `taaResolveDimensionsMatch(desc, history)` — dimension preflight helpers
 - `taaViewportDimensionsMatchPass(passW, passH, desc)` — pass viewport vs resolve request
 - `taaResolveBypassesHistoryGenerationGuard(desc)` — true when `observed_history_generation` uses the no-guard sentinel
@@ -184,6 +188,9 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::preflightResolveBlend(desc)` — pass-level resolve blend preflight wrapper
 - `preflightTaaResolveFrame` / `tryPreflightTaaResolveFrame` / `shouldSkipTaaResolveFrame` — combined resolve + blend preflight
 - `TaaPass::preflightResolveFrame` / `shouldSkipResolveFrame` — pass-level composite preflight
+- `TaaPass::tryPreflightJitterNdc` / `shouldSkipJitterNdc` / `shouldSkipJitterSync` — pass-level jitter guard wrappers
+- `TaaPass::tryPreflightHistoryWarmup` / `shouldSkipHistoryWarmup` — pass-level warm-up guard wrappers
+- `TaaPass::tryPreflightResolve` / `shouldSkipResolve` — pass-level resolve skip guard wrappers
 
 ## Pipeline (stub)
 

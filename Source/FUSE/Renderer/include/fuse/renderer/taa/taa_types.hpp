@@ -235,6 +235,10 @@ bool tryPreflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGe
 bool shouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// Alias for `shouldSkipTaaHistoryReuse` — same ordering as reuse preflight (B5.9 deepen).
 bool wouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// History warm-up preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason& reason);
+/// Early-out when history still needs warm-up before temporal reuse (B5.9 deepen).
+bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history);
 /// True when history is ready, warmed, and generation matches for reuse (B5.9 deepen).
 bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// Convenience wrapper — true when `preflightTaaHistoryReuse` would pass (B5.9 deepen).
