@@ -439,3 +439,8 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
 // --- deepen additive from deepen-b4-broadphase-preflights-82c3 ---
     struct DedupePreflight {
     DedupePreflight preflight_dedupe() const;
+
+// --- deepen additive from deepen-b4-broadphase-preflights-ec03 ---
+PairBufferDedupePreflight preflight_dedupe_pair_buffer(const PairBufferSoA& buffer);
+bool should_skip_dedupe_pair_buffer(const PairBufferSoA& buffer);
+PairBufferClampPreflight preflight_pair_buffer_clamp(const PairBufferSoA& buffer);

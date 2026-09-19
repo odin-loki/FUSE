@@ -1132,3 +1132,12 @@ FUSE_PHYSICS_INLINE ShapeCellOccupancyPreflight preflight_shape_cell_occupancy(
 BroadphasePreflight preflight_broadphase(
 struct BroadphaseRefinePreflight {
 BroadphaseRefinePreflight preflight_broadphase_refine(
+
+// --- deepen additive from deepen-b4-broadphase-preflights-ec03 ---
+struct BroadphaseInputPreflight {
+BroadphaseInputPreflight preflight_broadphase_input(
+bool should_skip_broadphase(
+CellOccupancyPreflight preflight_cell_occupancy(const CellRange3& range, u32 maxCells);
+CellOccupancyPreflight preflight_cell_occupancy(const CellRange2& range, u32 maxCells);
+RefineBroadphasePreflight preflight_refine_broadphase(
+bool should_skip_refine_broadphase(

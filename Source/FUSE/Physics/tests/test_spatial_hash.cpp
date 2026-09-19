@@ -2345,3 +2345,60 @@ void testPairBufferDedupePreflights() {
     testShapeCellOccupancyPreflight();
     testBroadphaseRefinePreflightGuards();
     testPairBufferDedupePreflights();
+
+// --- deepen additive from deepen-b4-broadphase-preflights-ec03 ---
+void testBroadphaseInputPreflight() {
+    const fuse::physics::broadphase::BroadphaseInputPreflight emptyPreflight =
+    expectTrue(emptyPreflight.skipped, "empty input preflight is skipped");
+    expectTrue(emptyPreflight.emptyBodies, "empty input preflight marks empty bodies");
+    expectTrue(emptyPreflight.emptyShapes, "empty input preflight marks empty shapes");
+    expectTrue(!emptyPreflight.can_run(), "empty input preflight cannot run");
+    expectTrue(fuse::physics::broadphase::should_skip_broadphase(bodies, shapes),
+               "should_skip_broadphase on empty scene");
+    const fuse::physics::broadphase::BroadphaseInputPreflight missingShapes =
+    const fuse::physics::broadphase::BroadphaseInputPreflight validPreflight =
+    expectTrue(!validPreflight.skipped, "populated input preflight is not skipped");
+    expectTrue(validPreflight.can_run(), "populated input preflight can run");
+    expectTrue(!fuse::physics::broadphase::should_skip_broadphase(bodies, shapes),
+               "should_skip_broadphase on populated scene");
+void testCellOccupancyPreflight() {
+    const fuse::physics::broadphase::CellOccupancyPreflight emptyRange =
+    expectTrue(planePreflight.exceedsBudget, "2D occupancy preflight flags exceed");
+void testRefineBroadphasePreflight() {
+    expectTrue(emptyPreflight.skipped, "refine preflight skips empty buffer and input");
+    expectTrue(fuse::physics::broadphase::should_skip_refine_broadphase(bodies, shapes, buffer),
+               "should_skip_refine_broadphase on empty scene");
+    expectTrue(!validPreflight.skipped, "refine preflight does not skip valid pair buffer");
+    expectTrue(validPreflight.can_refine(), "valid refine preflight can refine");
+    expectTrue(!fuse::physics::broadphase::should_skip_refine_broadphase(bodies, shapes, buffer),
+               "should_skip_refine_broadphase on valid pair buffer");
+void testPairBufferDedupePreflight() {
+    const fuse::physics::broadphase::PairBufferDedupePreflight emptyPreflight =
+    expectTrue(emptyPreflight.skipped, "dedupe preflight skips empty buffer");
+    expectTrue(fuse::physics::broadphase::should_skip_dedupe_pair_buffer(buffer),
+               "should_skip_dedupe_pair_buffer on empty buffer");
+    const fuse::physics::broadphase::PairBufferDedupePreflight singlePreflight =
+    expectTrue(singlePreflight.skipped, "dedupe preflight skips single pair");
+    expectTrue(!singlePreflight.needs_dedupe(), "single pair does not need dedupe");
+    const fuse::physics::broadphase::PairBufferDedupePreflight multiPreflight =
+    expectTrue(!multiPreflight.skipped, "multi-pair dedupe preflight is not skipped");
+    expectTrue(multiPreflight.needs_dedupe(), "multi-pair buffer needs dedupe");
+    expectTrue(multiPreflight.can_dedupe(), "multi-pair buffer can dedupe");
+    expectTrue(!fuse::physics::broadphase::should_skip_dedupe_pair_buffer(buffer),
+               "should_skip_dedupe_pair_buffer on multi-pair buffer");
+void testPairBufferClampPreflight() {
+    const fuse::physics::broadphase::PairBufferClampPreflight emptyPreflight =
+    expectTrue(emptyPreflight.skipped, "clamp preflight skips empty buffer");
+    expectTrue(!emptyPreflight.needs_clamp(), "empty buffer does not need clamp");
+    const fuse::physics::broadphase::PairBufferClampPreflight overflowPreflight =
+    expectTrue(!overflowPreflight.skipped, "overflow clamp preflight is not skipped");
+    expectTrue(overflowPreflight.needs_clamp(), "overflow buffer needs clamp");
+    expectTrue(overflowPreflight.can_clamp(), "overflow buffer can clamp");
+    expectEq(overflowPreflight.excessCount, 1u, "clamp preflight counts excess pairs");
+void testPairBufferDedupeAndClampGuards() {
+void testEmptyBroadphaseOutputGuard() {
+    testBroadphaseInputPreflight();
+    testCellOccupancyPreflight();
+    testRefineBroadphasePreflight();
+    testPairBufferDedupePreflight();
+    testPairBufferClampPreflight();

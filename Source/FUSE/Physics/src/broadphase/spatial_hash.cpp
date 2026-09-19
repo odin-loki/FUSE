@@ -1002,3 +1002,16 @@ BroadphaseRefinePreflight preflight_broadphase_refine(
     const PairBufferSoA::DedupePreflight preflight = buffer.preflight_dedupe();
     const BroadphasePreflight preflight = preflight_broadphase(bodies, shapes);
     const BroadphaseRefinePreflight preflight = preflight_broadphase_refine(bodies, shapes, buffer);
+
+// --- deepen additive from deepen-b4-broadphase-preflights-ec03 ---
+BroadphaseInputPreflight preflight_broadphase_input(
+    BroadphaseInputPreflight preflight{};
+bool should_skip_broadphase(
+CellOccupancyPreflight preflight_cell_occupancy(const CellRange3& range, u32 maxCells) {
+    CellOccupancyPreflight preflight{};
+CellOccupancyPreflight preflight_cell_occupancy(const CellRange2& range, u32 maxCells) {
+RefineBroadphasePreflight preflight_refine_broadphase(
+bool should_skip_refine_broadphase(
+    if (should_skip_dedupe_pair_buffer(buffer)) {
+    if (should_skip_broadphase(bodies, shapes)) {
+    if (should_skip_refine_broadphase(bodies, shapes, buffer)) {
