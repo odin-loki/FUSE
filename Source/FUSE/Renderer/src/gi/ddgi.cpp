@@ -2254,3 +2254,23 @@ bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, KernelLaunchRe
         outReason = KernelLaunchRejectReason::ZeroRaysPerProbe;
     outReason = KernelLaunchRejectReason::None;
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, KernelLaunchRejectReason& outReason) {
+
+// --- deepen additive from deepen-ddgi-probe-preflights-021e ---
+    case ProbeSampleCoordsRejectReason::NotSampleable:
+    case ProbeSampleCoordsRejectReason::UndersizedCache:
+    case CacheIndexRejectReason::ZeroCache:
+const char* sampleRequestRejectReasonLabel(SampleRequestRejectReason reason) {
+    case SampleRequestRejectReason::None:
+    case SampleRequestRejectReason::NotSampleable:
+    case SampleRequestRejectReason::UndersizedCache:
+        outReason = CacheIndexRejectReason::ZeroCache;
+    if (!tryValidateCacheIndex(desc, probe_index, cache_count, outReason)) {
+        outReason = ProbeSampleCoordsRejectReason::NotSampleable;
+    if (!ProbeGridLayout::tryValidateProbeSampleCoords(desc, coords, outReason)) {
+        outReason = ProbeSampleCoordsRejectReason::UndersizedCache;
+bool tryValidateSampleRequest(const DDGIDesc& desc,
+                              SampleRequestRejectReason& outReason) {
+        outReason = SampleRequestRejectReason::NotSampleable;
+        outReason = SampleRequestRejectReason::UndersizedCache;
+    outReason = SampleRequestRejectReason::None;
+bool preflightProbeKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {

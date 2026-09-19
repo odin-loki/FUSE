@@ -765,3 +765,9 @@ const char* launchRejectReasonLabel(LaunchRejectReason reason);
 bool tryCanLookupCacheAtIndex(const DDGIDesc& desc,
                               CacheLookupRejectReason& outReason);
 bool tryIsValidSampleRequest(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-probe-preflights-021e ---
+enum class SampleRequestRejectReason : u8 {
+const char* sampleRequestRejectReasonLabel(SampleRequestRejectReason reason);
+bool tryValidateSampleRequest(const DDGIDesc& desc,
+                              SampleRequestRejectReason& outReason);

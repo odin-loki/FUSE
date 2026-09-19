@@ -2358,3 +2358,42 @@ void testLaunchAndKernelPreflightGuards() {
                "tryCanLaunchProbeBlendKernel rejects zero count");
     expectTrue(kernelReason == fuse::renderer::gi::KernelLaunchRejectReason::ZeroCount,
     testLaunchAndKernelPreflightGuards();
+
+// --- deepen additive from deepen-ddgi-probe-preflights-021e ---
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeIndex(17u, desc, clamped),
+    expectTrue(clamped == 17u, "tryClampProbeIndex preserves in-range index");
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryClampProbeIndex(5u, empty, clamped),
+               "tryClampProbeIndex rejects empty grid");
+    expectTrue(clamped == 0u, "tryClampProbeIndex zeroes output on empty grid");
+    expectTrue(std::strcmp(fuse::renderer::probeSampleCoordsRejectReasonLabel(reason), "invalid_spacing") == 0,
+    expectTrue(fuse::renderer::ddgi_util::tryCanSampleAtProbeCoords(desc, coords, 8u, reason),
+               "canSampleAtProbeCoords mirrors tryCanSample success");
+    expectTrue(!fuse::renderer::ddgi_util::tryCanSampleAtProbeCoords(desc, coords, 4u, reason),
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::UndersizedCache,
+    expectTrue(std::strcmp(fuse::renderer::probeSampleCoordsRejectReasonLabel(reason), "undersized_cache") == 0,
+    expectTrue(!fuse::renderer::ddgi_util::tryCanSampleAtProbeCoords(desc, invalid, 8u, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryCanSampleAtProbeCoords(notSampleable, coords, 8u, reason),
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::NotSampleable,
+void testExtendedCacheLookupPreflight() {
+    expectTrue(!fuse::renderer::ddgi_util::tryCanLookupCacheAtProbeIndex(desc, 3u, 0u, reason),
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::ZeroCache,
+    expectTrue(std::strcmp(fuse::renderer::cacheIndexRejectReasonLabel(reason), "zero_cache") == 0,
+    expectTrue(!fuse::renderer::ddgi_util::tryCanLookupCacheAtProbeIndex(notSampleable, 0u, 8u, reason),
+    expectTrue(std::strcmp(fuse::renderer::cacheIndexRejectReasonLabel(reason), "not_sampleable") == 0,
+void testSampleRequestRejectReasons() {
+    fuse::renderer::SampleRequestRejectReason reason = fuse::renderer::SampleRequestRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryValidateSampleRequest(desc, request, 8u, reason),
+               "valid sample request passes tryValidate");
+    expectTrue(reason == fuse::renderer::SampleRequestRejectReason::None,
+    expectTrue(std::strcmp(fuse::renderer::sampleRequestRejectReasonLabel(reason), "none") == 0,
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateSampleRequest(desc, request, 4u, reason),
+    expectTrue(reason == fuse::renderer::SampleRequestRejectReason::UndersizedCache,
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateSampleRequest(notSampleable, request, 8u, reason),
+    expectTrue(reason == fuse::renderer::SampleRequestRejectReason::NotSampleable,
+    expectTrue(std::strcmp(fuse::renderer::sampleRequestRejectReasonLabel(reason), "not_sampleable") == 0,
+void testProbeKernelExtendedPreflight() {
+    expectTrue(fuse::renderer::gi::preflightProbeKernelParams(validParams, reason),
+    expectTrue(!fuse::renderer::gi::preflightProbeKernelParams(zeroRays, reason),
+    testExtendedCacheLookupPreflight();
+    testSampleRequestRejectReasons();
+    testProbeKernelExtendedPreflight();

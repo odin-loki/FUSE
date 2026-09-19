@@ -111,3 +111,6 @@ enum class KernelLaunchRejectReason : u8 {
 const char* kernelLaunchRejectReasonLabel(KernelLaunchRejectReason reason);
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, KernelLaunchRejectReason& outReason);
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, KernelLaunchRejectReason& outReason);
+
+// --- deepen additive from deepen-ddgi-probe-preflights-021e ---
+bool preflightProbeKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
