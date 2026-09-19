@@ -52,6 +52,9 @@ bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history) {
 bool taaHistoryIsWarmed(const TaaHistoryBuffer& history) {
     return history.hasValidHistory();
 
+bool taaHistoryIsWarm(const TaaHistoryBuffer& history) {
+    return history.isReady() && history.hasValidHistory();
+
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history) {
     return history.isReady();
 
@@ -1028,6 +1031,10 @@ bool tryPreflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGe
 
 bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
     return history.isReady() && history.hasValidHistory();
+}
+
+bool TaaHistoryBuffer::isWarm() const {
+    return taaHistoryIsWarm(*this);
 }
 
 bool TaaHistoryBuffer::canReuseHistory() const {

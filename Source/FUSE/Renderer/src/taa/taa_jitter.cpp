@@ -185,7 +185,6 @@ bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength) {
 
 bool taaJitterNdcReady(u32 width, u32 height, u32 sequenceLength) {
     return preflightTaaJitterNdc(width, height, sequenceLength);
-}
 
 
 bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason* reason) {

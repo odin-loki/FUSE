@@ -1464,6 +1464,19 @@ bool shouldSkipTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHist
     return !preflightTaaResolveTemporalBlend(desc, history);
 }
 
+bool preflightTaaTemporalResolveGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                       u32 observedGeneration, TaaHistoryReuseBlockReason* reuseReason,
+                                       TaaResolveBlendRejectReason* blendReason) {
+    const bool reuseOk = preflightTaaHistoryReuse(history, observedGeneration, reuseReason);
+    const bool blendOk = preflightTaaResolveBlendWeights(desc, history, blendReason);
+    return reuseOk && blendOk;
+}
+
+bool shouldSkipTaaTemporalResolveGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                        u32 observedGeneration) {
+    return !preflightTaaTemporalResolveGuards(desc, history, observedGeneration);
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
     if (taaResolveBypassesHistoryGenerationGuard(desc)) {
