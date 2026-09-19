@@ -3430,3 +3430,10 @@ void testComputeFrictionTangentsWithPreflight() {
     testContactPairDeepenDispatchWithPreflight();
     testGenerateContactManifoldWithPreflight();
     testComputeFrictionTangentsWithPreflight();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-8627 ---
+void testContactBufferDeepenGuardHelpers() {
+            buffer, 4u, valid, fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::OutOfRangeSlot),
+            buffer, 0u, invalid, fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::InvalidManifold),
+    expectTrue(writePreflight.canWrite(), "write-slot preflight accepts valid manifold");
+void testContactPairManifoldFrictionDeepenRunGuards() {
