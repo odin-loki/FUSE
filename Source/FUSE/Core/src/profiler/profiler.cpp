@@ -104,6 +104,7 @@ u32 currentFlowNestingDepth() {
 }
 
 bool isValidEventName(const char* name) {
+bool eventNameIsRecordable(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
 
@@ -251,6 +252,7 @@ ProfileScope::ProfileScope(const char* name)
       m_active(g_enabled.load(std::memory_order_acquire) && isNonEmptyProfileName(name)) {
       m_active(g_enabled.load(std::memory_order_acquire) && isRecordableName(name)) {
       m_active(g_enabled.load(std::memory_order_acquire) && isValidProfileName(name)) {
+      m_active(g_enabled.load(std::memory_order_acquire) && eventNameIsRecordable(name)) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -363,6 +365,16 @@ u32 ringBufferCapacity() {
 }
 
 
+
+
+bool isValidEventName(const char* name) {
+    return eventNameIsRecordable(name);
+
+ChromeExportPreflight preflightChromeExport() {
+    ChromeExportPreflight preflight;
+    preflight.bufferEmpty = isBufferEmpty();
+    preflight.unbalancedScopeNesting = !isScopeNestingBalanced();
+    preflight.unbalancedFlowNesting = !isFlowNestingBalanced();
 }
 
 bool hasEvents() {
@@ -976,6 +988,7 @@ void beginAsyncFlow(const char* name, u32 flowId) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(name)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(name)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !eventNameIsRecordable(name)) {
         return;
     }
 
@@ -999,6 +1012,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(name)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(name)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !eventNameIsRecordable(name)) {
         return;
     }
 
@@ -1031,6 +1045,7 @@ void sampleCounter(const char* track, s64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !eventNameIsRecordable(track)) {
         return;
     }
 
@@ -1050,6 +1065,7 @@ void sampleCounterFloat(const char* track, f64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !eventNameIsRecordable(track)) {
         return;
     }
 
@@ -1069,6 +1085,7 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !eventNameIsRecordable(track)) {
         return;
     }
 
@@ -1088,6 +1105,7 @@ void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !eventNameIsRecordable(track)) {
         return;
     }
 

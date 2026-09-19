@@ -278,6 +278,26 @@ bool isCrossThreadFlowHandoffPending();
 NestingAsyncFlowPreflight preflightNestingAndAsyncFlow();
 u32 nestingDepth();
 
+/// True when `name` is non-null and contains at least one character (B1.6 deepen).
+bool isValidEventName(const char* name);
+
+/// Read-only chrome export diagnostics — no mutation (B1.6 deepen).
+struct ChromeExportPreflight {
+    bool bufferEmpty = false;
+    bool unbalancedScopeNesting = false;
+    bool unbalancedFlowNesting = false;
+    bool hasOpenAsyncFlows = false;
+
+    /// Export always produces valid JSON; preflight surfaces state warnings only.
+    bool canExport() const { return true; }
+
+    bool hasStateWarnings() const {
+        return unbalancedScopeNesting || unbalancedFlowNesting || hasOpenAsyncFlows;
+    }
+};
+
+ChromeExportPreflight preflightChromeExport();
+
 u32 ringBufferCapacity();
 
 bool isValidProfileName(const char* name);
@@ -351,6 +371,7 @@ bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFindFirstFlowEvent(u32 flowId, ProfileEvent& outEvent);
 bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent);
 bool tryEventAt(u32 index, ProfileEvent& out);
+/// Safe ring-buffer lookup — returns false and clears `outEvent` when the index is invalid.
 const ProfileEvent& lastEvent();
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
