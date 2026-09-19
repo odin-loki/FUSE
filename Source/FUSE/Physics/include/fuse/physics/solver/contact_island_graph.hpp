@@ -8,6 +8,36 @@
 
 namespace fuse::physics {
 
+/// Preflight diagnostics for island graph build inputs (B4.4 deepen).
+struct IslandBuildPreflight {
+    u32 bodyCount = 0;
+    u32 validContactCount = 0;
+    u32 skippedContactCount = 0;
+    u32 inRangeContactCount = 0;
+    u32 outOfRangeContactCount = 0;
+    u32 inRangeDistanceCount = 0;
+    u32 outOfRangeDistanceCount = 0;
+    u32 unionCandidateCount = 0;
+    bool skipped = false;
+
+    bool can_build() const { return !skipped; }
+};
+
+/// True when `bodyCount` is valid for island graph construction.
+bool is_valid_island_build_body_count(u32 bodyCount);
+
+/// Preflight island graph build inputs; sets `skipped` when `bodyCount` is zero but constraints reference bodies.
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Early-out guard when island graph build inputs are degenerate.
+bool should_skip_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
@@ -45,5 +75,11 @@ private:
     std::vector<u32> parent_;
     std::vector<Island> islands_;
 };
+
+/// Guarded build: runs `build` only when preflight passes; returns false when skipped.
+bool build_contact_island_graph_guarded(ContactIslandGraph& graph,
+                                        u32 bodyCount,
+                                        const std::vector<narrowphase::ContactManifold>& contacts,
+                                        const std::vector<DistanceConstraint>& distanceConstraints);
 
 } // namespace fuse::physics
