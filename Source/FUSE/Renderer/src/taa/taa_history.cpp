@@ -22,6 +22,10 @@ bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history) {
     return !history.hasValidHistory();
 }
 
+bool taaHistoryIsWarmed(const TaaHistoryBuffer& history) {
+    return history.hasValidHistory();
+}
+
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history) {
     return history.isReady();
 }
