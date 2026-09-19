@@ -1092,6 +1092,51 @@ ContactPairDispatchResult detect_contacts_pair_result(
 
 ContactPairDispatchResult detect_contacts_pair_guarded(
     return detect_contacts_pair_result(pair, bodies, shapes);
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes,
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
+}
+
+const char* narrowphase_reject_reason_name(NarrowphaseRejectReason reason) {
+    switch (reason) {
+    case NarrowphaseRejectReason::None:
+        return "None";
+    case NarrowphaseRejectReason::EmptyPairList:
+        return "EmptyPairList";
+    case NarrowphaseRejectReason::AllPairsRejected:
+        return "AllPairsRejected";
+    return "Unknown";
+
+NarrowphaseRejectReason narrowphase_reject_reason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const CollisionShapeSoA& shapes) {
+    if (pairs.empty()) {
+        return NarrowphaseRejectReason::EmptyPairList;
+
+    for (const broadphase::CandidatePair& pair : pairs) {
+        if (!should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+            return NarrowphaseRejectReason::None;
+    return NarrowphaseRejectReason::AllPairsRejected;
+
+bool narrowphase_rejects_for_reason(
+    NarrowphaseRejectReason expected) {
+    return narrowphase_reject_reason(pairs, bodies, shapes) == expected;
+
+NarrowphasePairListPreflight preflight_narrowphase_pair_list(
+    NarrowphasePairListPreflight preflight{};
+    preflight.reason = narrowphase_reject_reason(pairs, bodies, shapes);
+    preflight.emptyPairList = preflight.reason == NarrowphaseRejectReason::EmptyPairList;
+    preflight.allPairsRejected = preflight.reason == NarrowphaseRejectReason::AllPairsRejected;
+
+    if (preflight.reason == NarrowphaseRejectReason::None) {
+        preflight.dispatchablePairCount = static_cast<u32>(pairs.size());
+            if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+                --preflight.dispatchablePairCount;
+    return preflight;
+
+bool can_skip_narrowphase(
+    return narrowphase_reject_reason(pairs, bodies, shapes) != NarrowphaseRejectReason::None;
 }
 
 } // namespace fuse::physics::narrowphase

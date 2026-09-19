@@ -149,6 +149,18 @@ FrictionBasisRejectReason friction_basis_reject_reason(const ContactManifold& ma
 bool friction_basis_rejects_for_reason(
     const ContactManifold& manifold,
     FrictionBasisRejectReason expected);
+/// Why friction-basis rebuild would early-out (B4.4 deepen follow-up pass).
+    SkippedManifold,
+    ValidCachedBasis,
+
+/// Human-readable label for friction-basis reject reasons (logging / tests).
+
+/// Diagnose why friction-basis rebuild would skip; vacuously succeeds when rebuild may proceed.
+FrictionBasisRejectReason friction_basis_reject_reason(
+    f32 epsilon = 1e-4f);
+
+/// Returns true when `friction_basis_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+    FrictionBasisRejectReason expected,
 
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
 struct FrictionBasisPreflight {
@@ -162,6 +174,8 @@ struct FrictionBasisPreflight {
     bool can_skip_rebuild() const {
         return skipped || reason != FrictionBasisRejectReason::None || canReuse;
     }
+        return reason != FrictionBasisRejectReason::None;
+};
 
 /// Populate friction-basis preflight without mutating the manifold (B4.4 deepen follow-up).
 FrictionBasisPreflight preflight_friction_basis_rebuild(
