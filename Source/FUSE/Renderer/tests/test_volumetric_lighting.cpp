@@ -3957,3 +3957,7 @@ void testFroxelRejectClassifyAndPreflightGuards() {
     expectTrue(fuse::renderer::FroxelGridLayout::preflightScreenMapping(0.25f, 0.25f, 3.16f, desc, camera, &mapped),
                "preflightScreenMapping returns built sample coords");
                "preflightScreenMapping mapped coords in range");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-8e12 ---
+    expectTrue(mapped.tileX0 <= desc.tilesX - 1u, "preflightScreenDepthMapping returns in-bounds tile X");
+               "classifyGridDensityReject undersized_storage for short storage");
