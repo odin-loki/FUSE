@@ -295,6 +295,22 @@ CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::st
 }
 
 CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 /*upstream_hash*/) {
+    return preflight_combine_cook_cache_key(source_hash, 0);
+}
+
+CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
+    CookHashPreflight preflight;
+    if (!is_valid_fnv1a64_input(data, size)) {
+        preflight.reason = CookHashRejectReason::NullData;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 /*upstream_hash*/) {
     CookHashPreflight preflight;
     if (source_hash == 0) {
         preflight.reason = CookHashRejectReason::ZeroSourceHash;

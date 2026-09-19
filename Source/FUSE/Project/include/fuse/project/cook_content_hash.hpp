@@ -66,5 +66,7 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_upstream_dependencies_hash(
     const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
 [[nodiscard]] CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash);
+[[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
+[[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
 } // namespace fuse::project
