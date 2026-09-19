@@ -1081,6 +1081,13 @@ bool preflightTrilinearProbeSampleAtWorldPosition(const DDGIDesc& desc,
 /// Classify why coord-based probe trilinear sampling would reject — same ordering as `tryCanSampleAtProbeCoords`.
 /// Non-mutating coord-based trilinear sample preflight — returns true when sampling would proceed.
 /// Build sample coords + trilinear preflight without mutating cache (B5.6 deepen pass).
+/// Classify why world-position trilinear sampling would reject — same ordering as `tryTrilinearProbeIrradiance`.
+/// Non-mutating world-position trilinear sample preflight — returns true when sampling would proceed.
+/// Non-mutating directional trilinear sample preflight — returns true when sampling would proceed.
+bool preflightTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
+                                                  const fuse::math::Vec3& direction,
+/// Early-out when directional trilinear sampling would be rejected.
+bool wouldSkipTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1585,23 +1592,16 @@ bool preflightProbeScheduleAtRate(u32 probe_count,
                                   ProbeScheduleRejectReason* reason = nullptr);
 /// Schedule preflight with mandatory reject-reason output (B5.6 deepen pass).
 bool tryPreflightProbeSchedule(u32 probe_count,
-                               u32 max_indices,
-                               const u32* out_indices,
-                               u32* out_count,
                                ProbeScheduleRejectReason& reason);
 /// Early-out when probe scheduling would be rejected (B5.6 deepen pass).
 bool shouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
 bool shouldSkipProbeSchedule(u32 probe_count,
-                             u32* out_count);
-/// Non-mutating rate-aware schedule preflight — returns true when scheduling would proceed.
-bool preflightProbeScheduleAtRate(u32 probe_count,
-                                  u32 probes_per_frame,
 /// Classify why rate-aware probe scheduling would reject.
-ProbeScheduleRejectReason classifyProbeScheduleRejectAtRate(u32 probe_count,
                                   ProbeScheduleRejectReason* reason = nullptr);
 /// Schedule probe updates with rate-aware reject-reason diagnostics; false when preflight rejects.
 bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
                                    u32 probe_count,
+                                   u32 probes_per_frame,
                                    u32* out_indices,
                                    u32 max_indices,
                                    u32* out_count,
