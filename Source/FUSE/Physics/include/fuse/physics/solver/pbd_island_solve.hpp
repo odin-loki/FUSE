@@ -512,9 +512,31 @@ std::vector<u32> collect_dispatchable_island_indices(const ContactIslandGraph& g
 
 /// Collect only dispatchable island jobs (filters `extract_island_jobs`).
 std::vector<IslandSolveJob> collect_dispatchable_island_jobs(const ContactIslandGraph& graph);
+/// Lightweight preflight before per-island solve dispatch (index + non-empty guards).
+bool preflight_island_solve(const ContactIslandGraph& graph, u32 islandIndex);
 
 /// Keep only jobs that pass `should_solve_island` (parallel dispatch prep stub).
 std::vector<IslandSolveJob> filter_dispatchable_jobs(const std::vector<IslandSolveJob>& jobs);
+
+/// Guarded serial dispatch over all islands; returns count of islands actually solved.
+u32 dispatch_solve_all_islands(RigidBodySoA& bodies,
+                               const ContactIslandGraph& graph,
+                               SolverWorkBuffers& workBuffers,
+                               const std::vector<DistanceConstraint>& distanceConstraints,
+                               f32 dt,
+                               f32 contactCompliance,
+                               const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
+/// True when an island owns constraints worth warm-start seeding.
+bool should_warm_start_island(const ContactIslandGraph::Island& island);
+
+/// True when prior lambda buffers carry reusable warm-start slots.
+bool has_prior_lambda_warm_start(const std::vector<f32>& priorDistanceLambdas,
+                                 const std::vector<f32>& priorContactLambdas);
+
+/// Preflight before frame-wide lambda warm-start; false when nothing can be seeded.
+bool preflight_frame_lambda_warm_start(const std::vector<DistanceConstraint>& distanceConstraints,
+                                       const std::vector<f32>& priorDistanceLambdas,
 
 /// Guarded dispatch entry: skips out-of-range, empty, and null-island jobs.
 bool dispatch_solve_island(RigidBodySoA& bodies,
