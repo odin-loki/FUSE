@@ -607,3 +607,7 @@ bool invalidateSlotWithPreflight(PairBufferSoA& buffer, u32 slot);
 // --- deepen additive from deepen-b4-broadphase-wouldskip-4c27 ---
 bool wouldSkipPairBufferPush(
     PairBufferPushRejectReason* reason = nullptr);
+
+// --- deepen additive from deepen-b4-broadphase-guards-aa5e ---
+bool wouldSkipPairBufferSlotReservation(
+    PairBufferSlotReservationRejectReason* reason = nullptr);

@@ -1764,3 +1764,8 @@ bool wouldSkipCellPairGeneration(
     CellPairGenRejectReason* reason = nullptr);
 bool wouldSkipShapeCellInsert(
     ShapeCellInsertRejectReason* reason = nullptr);
+
+// --- deepen additive from deepen-b4-broadphase-guards-aa5e ---
+        *reason = cellSpanRejectReason(range, maxSpanPerAxis);
+    CellOccupancyRejectReason* reason = nullptr);
+    const CellOccupancyPreflight preflight = preflightCellOccupancy(range, maxCells);

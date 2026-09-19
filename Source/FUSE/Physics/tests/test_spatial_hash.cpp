@@ -4300,3 +4300,21 @@ void testCellCapacityPreflightAndWouldSkipGuards() {
     expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(overBudget, 8u, &occupancyReason),
                "wouldSkipCellOccupancyIteration true when range exceeds budget");
              "wouldSkipCellOccupancyIteration reports ExceedsBudget");
+
+// --- deepen additive from deepen-b4-broadphase-guards-aa5e ---
+                 fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(buffer, 3u)),
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 0u, &skipReason),
+             "wouldSkipPairBufferInvalidateSlot reports reject reason");
+    fuse::physics::broadphase::PairBufferSlotReservationRejectReason skipReason =
+        fuse::physics::broadphase::PairBufferSlotReservationRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferSlotReservation(buffer, 4u, &skipReason),
+               "wouldSkipPairBufferSlotReservation true for over-capacity count");
+             "wouldSkipPairBufferSlotReservation reports reject reason");
+void testWouldSkipBroadphaseGuards() {
+             "wouldSkipBroadphase reports EmptyInput on empty scene");
+             "wouldSkipRefineBroadphase reports None for valid refine scene");
+               "wouldSkipDedupeBroadphase true for single pair");
+    expectTrue(!fuse::physics::broadphase::wouldSkipCellSpanClamp(wideRange, 4u, &spanReason),
+               "wouldSkipCellSpanClamp false for over-span range");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(buffer, 0u, 1u, 1u, &writeReason),
+             "wouldSkipPairBufferWriteSlot reports InvalidPair");

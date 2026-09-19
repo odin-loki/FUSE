@@ -1772,3 +1772,13 @@ bool wouldSkipShapeCellInsert(
     ShapeCellInsertRejectReason* reason) {
     const ShapeCellInsertPreflight preflight =
         preflightShapeCellInsert(shapeIndex, bodies, shapes, params, use2D);
+
+// --- deepen additive from deepen-b4-broadphase-guards-aa5e ---
+    const RefineBroadphasePreflight preflight = preflightRefineBroadphase(bodies, shapes, buffer);
+    const DedupeBroadphasePreflight preflight = preflightDedupeBroadphase(buffer);
+    const MergePairsIntoBufferPreflight preflight = preflightMergePairsIntoBuffer(pairs, buffer);
+bool wouldSkipBroadphase(
+    const BroadphasePreflight preflight = preflightBroadphase(bodies, shapes);
+bool wouldSkipCellOccupancyIteration(
+    CellOccupancyRejectReason* reason) {
+    const CellOccupancyPreflight preflight = preflightCellOccupancy(range, maxCells);

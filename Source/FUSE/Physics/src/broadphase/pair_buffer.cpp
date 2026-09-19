@@ -1194,3 +1194,10 @@ bool wouldSkipPairBufferPush(
     PairBufferPushRejectReason* reason) {
     const PairBufferPushRejectReason rejectReason = pairBufferPushRejectReason(buffer, idxA, idxB);
     return rejectReason != PairBufferPushRejectReason::None;
+
+// --- deepen additive from deepen-b4-broadphase-guards-aa5e ---
+    const PairBufferInvalidateSlotPreflight preflight = preflightPairBufferInvalidateSlot(buffer, slot);
+bool wouldSkipPairBufferSlotReservation(
+    PairBufferSlotReservationRejectReason* reason) {
+    const PairBufferSlotReservationPreflight preflight = preflightPairBufferSlotReservation(buffer, slotCount);
+    const PairBufferWriteSlotPreflight preflight = preflightPairBufferWriteSlot(buffer, slot, idxA, idxB);
