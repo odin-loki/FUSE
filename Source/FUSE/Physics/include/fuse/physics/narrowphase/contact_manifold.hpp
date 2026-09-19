@@ -127,6 +127,35 @@ struct ContactManifold {
     bool pruneShallowPenetrationsIfNeeded(f32 minDepth);
 };
 
+/// Why manifold prune would early-out (B4.4 deepen guard pass).
+enum class ManifoldPruneRejectReason : u8 {
+    None = 0,
+    EmptyManifold,
+    CleanManifold,
+    WouldBeEmptyAfterPrune,
+};
+
+const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason);
+
+ManifoldPruneRejectReason manifold_prune_reject_reason(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+bool manifold_prune_rejects_for_reason(
+    const ContactManifold& manifold,
+    ManifoldPruneRejectReason expected,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+bool should_run_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
 /// Const preflight for manifold prune dispatch (B4.4 deepen pass).
 struct ManifoldPrunePreflight {
     bool hasSeparated = false;
@@ -163,6 +192,34 @@ bool should_skip_manifold_prune(
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 shallowMinDepth = 0.f);
+
+/// Why manifold finalize would early-out (B4.4 deepen guard pass).
+enum class ManifoldFinalizeRejectReason : u8 {
+    None = 0,
+    EmptyManifold,
+    InvalidNormal,
+    NoPenetratingPoints,
+    WouldBeEmptyAfterPrune,
+};
+
+const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason);
+
+ManifoldFinalizeRejectReason manifold_finalize_reject_reason(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+bool manifold_finalize_rejects_for_reason(
+    const ContactManifold& manifold,
+    ManifoldFinalizeRejectReason expected,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+bool should_run_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
 
 /// Const preflight for manifold finalize dispatch (B4.4 deepen follow-up).
 struct ManifoldFinalizePreflight {
