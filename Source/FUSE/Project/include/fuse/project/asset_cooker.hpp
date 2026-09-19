@@ -148,23 +148,15 @@ struct CookStaleDependencyEstimate {
         return sum > overlapping_entries ? sum - overlapping_entries : 0;
     }
 
-    [[nodiscard]] u32 unique_total() const {
-        const u32 sum = total();
-        return sum > overlapping_entries ? sum - overlapping_entries : 0;
-    }
 
     /// True when reconcile invalidation would be a no-op (B7.9 deepen).
-    [[nodiscard]] bool should_skip() const { return total() == 0; }
     /// True when at least one reconcile path would remove entries (B7.9 deepen).
-    [[nodiscard]] bool would_reconcile() const { return total() != 0; }
-};
 
 /// Upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
 struct CookUpstreamInvalidateEstimate {
-    u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
+
+    [[nodiscard]] bool should_skip() const { return !would_reconcile(); }
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -433,6 +425,19 @@ public:
         const CookManifest& manifest, const std::string& changed_source = "") const;
     /// Upstream invalidation breakdown — direct source entries plus downstream cascade (B7.9 deepen).
     [[nodiscard]] CookUpstreamInvalidateEstimate estimate_upstream_invalidation(
+
+    /// Read-only upstream invalidation probe — true when `count_upstream_invalidation` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_upstream(const CookManifest& manifest,
+                                                 const std::string& changed_source) const;
+    /// Read-only stale dependency reconcile probe (B7.9 deepen).
+    [[nodiscard]] bool would_stale_dependency_invalidation(const CookManifest& manifest) const;
+    /// True when upstream invalidation would be a no-op (B7.9 deepen).
+    [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
+                                                         const std::string& changed_source) const;
+    /// True when stale dependency reconcile would be a no-op (B7.9 deepen).
+    [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
+    /// True when `estimate_reconcile_invalidation` reports nothing to reconcile (B7.9 deepen).
+    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

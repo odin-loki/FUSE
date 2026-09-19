@@ -93,14 +93,12 @@ struct CookCacheStaleUpstreamEstimate {
     [[nodiscard]] u32 total_entries() const {
         return invalid_entries + stale_content_entries + stale_upstream_entries;
     }
-};
 
 /// Read-only invalidation planning breakdown — mirrors `invalidate_*` probes (B7.9 deepen).
 struct CookCacheInvalidationEstimate {
     u32 all_entries = 0;
 
     [[nodiscard]] bool would_invalidate_all() const { return all_entries != 0; }
-};
 
 /// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
 struct CookCacheUpstreamInvalidationEstimate {
@@ -108,7 +106,6 @@ struct CookCacheUpstreamInvalidationEstimate {
     u32 downstream_entries = 0;
 
     [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
-};
 
 /// Structural store preflight — mirrors `store` / `is_valid_cook_cache_entry` guards (B7.9 deepen).
 struct CookCacheEntryPreflight {
@@ -116,103 +113,48 @@ struct CookCacheEntryPreflight {
     CookHashRejectReason reason = CookHashRejectReason::None;
 
     [[nodiscard]] bool ok() const { return can_store; }
-};
 
 /// Read-only invalidation breakdown — mirrors `invalidate_*` guards (B7.9 deepen).
-struct CookCacheInvalidationEstimate {
     u32 source_entries = 0;
     u32 output_entries = 0;
-    u32 stale_content_entries = 0;
-    u32 stale_upstream_entries = 0;
-    u32 downstream_entries = 0;
 
     [[nodiscard]] u32 total() const {
         return source_entries + output_entries + stale_content_entries + stale_upstream_entries +
                downstream_entries;
-    }
-};
 
-/// Read-only invalidation breakdown — mirrors `invalidate_*` guards (B7.9 deepen).
-struct CookCacheInvalidationEstimate {
-    u32 source_entries = 0;
-    u32 output_entries = 0;
-    u32 stale_content_entries = 0;
-    u32 stale_upstream_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const {
-        return source_entries + output_entries + stale_content_entries + stale_upstream_entries +
-               downstream_entries;
-    }
-};
 
 /// Cache-wide invalidation surface — entry totals plus prune-class breakdown (B7.9 deepen).
 struct CookCacheInvalidationSurface {
     u32 entry_count = 0;
-    u32 prunable_entries = 0;
     u32 invalid_entries = 0;
     u32 stale_entries = 0;
 
     [[nodiscard]] u32 reconcile_total() const { return prunable_entries; }
-};
 
 /// Read-only cache-entry store preflight — mirrors `store` structural guards (B7.9 deepen).
-struct CookCacheEntryPreflight {
-    bool can_store = false;
-    CookHashRejectReason reason = CookHashRejectReason::None;
 
-    [[nodiscard]] bool ok() const { return can_store; }
-};
 
 /// Read-only store preflight — mirrors `store` guards without mutating the cache (B7.9 deepen).
-struct CookCacheEntryPreflight {
-    bool can_store = false;
-    CookHashRejectReason reason = CookHashRejectReason::None;
 
-    [[nodiscard]] bool ok() const { return can_store; }
-};
 
 /// Read-only upstream invalidation breakdown — mirrors `invalidate_downstream_of` (B7.9 deepen).
-struct CookCacheUpstreamInvalidationEstimate {
     u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
     [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_downstream_of` (B7.9 deepen).
-struct CookCacheUpstreamInvalidationEstimate {
-    u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
-};
 
 /// Read-only invalidation reconcile breakdown — stale upstream plus prune buckets (B7.9 deepen).
-struct CookCacheInvalidationEstimate {
-    u32 stale_upstream_entries = 0;
     u32 prune_invalid_entries = 0;
     u32 prune_stale_entries = 0;
 
-    [[nodiscard]] u32 total() const {
         return stale_upstream_entries + prune_invalid_entries + prune_stale_entries;
-    }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookCacheUpstreamInvalidationEstimate {
-    u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_downstream_of` (B7.9 deepen).
-struct CookCacheUpstreamInvalidationEstimate {
-    u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
+    [[nodiscard]] bool would_prune() const { return total() != 0; }
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
@@ -659,6 +601,7 @@ public:
     [[nodiscard]] bool should_skip_prune_all() const;
     /// Read-only entry preflight — mirrors `store` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] CookHashPreflight preflight_store_entry(const CookCacheEntry& entry) const;
+    /// True when `prune_all` would be a no-op — inverse of `would_prune_all` (B7.9 deepen).
     /// Deduplicated source paths whose stored keys are stale on disk (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_content_sources() const;
     /// Source paths `invalidate_downstream_of` would touch — deduplicated (B7.9 deepen).
