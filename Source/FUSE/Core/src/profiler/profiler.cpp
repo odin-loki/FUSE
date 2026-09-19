@@ -260,6 +260,7 @@ EventNameRejectReason diagnoseEventNameRejectReason(const char* name) {
 
 } // namespace
 
+bool isBlankEventName(const char* name);
 bool isValidEventName(const char* name);
 bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
@@ -888,6 +889,25 @@ bool isEmptyEventName(const char* name) {
     return name == nullptr || name[0] == '\0';
 }
 
+bool isBlankEventName(const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        return true;
+    }
+
+    for (const char* cursor = name; *cursor != '\0'; ++cursor) {
+        switch (*cursor) {
+        case ' ':
+        case '\t':
+        case '\n':
+        case '\r':
+            break;
+        default:
+            return false;
+        }
+    }
+    return true;
+}
+
 bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
 
@@ -932,6 +952,7 @@ bool isValidProfileName(const char* name) {
             return true;
 
     return !isEmptyEventName(name);
+    return !isBlankEventName(name);
 }
 
 }
@@ -1227,6 +1248,14 @@ u32 totalEventsWritten() {
 
 bool hasRingWrapped() {
     return totalEventsWritten() > kRingCapacity;
+}
+
+    const u32 total = eventCount();
+
+u32 lastExportableEventIndex() {
+
+u32 findLastEventIndexByPhase(EventPhase phase) {
+        if (eventAt(index).phase == phase) {
 
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
@@ -1408,6 +1437,19 @@ bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
     }
 
     outEvent = eventAt(index);
+    return true;
+}
+
+bool tryEventAtPhase(u32 index, EventPhase expectedPhase, ProfileEvent& outEvent) {
+    if (!tryEventAt(index, outEvent)) {
+        return false;
+    }
+
+    if (outEvent.phase != expectedPhase) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
     return true;
 }
 
@@ -1778,6 +1820,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.needsFlowNestingCleanup = needsFlowNestingCleanup();
     preflight.hasExportWarnings = preflight.hasUnbalancedNesting() || preflight.flowDepthDetached
                                   || preflight.hasOpenAsyncFlows;
+    preflight.lastExportableEventIndex = lastExportableEventIndex();
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
