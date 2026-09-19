@@ -411,3 +411,6 @@ bool TaaJitter::tryCurrentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Ve
     if (!tryPreflightTaaJitterNdc(width, height, m_sequenceLength, reason)) {
 bool TaaJitter::trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason) {
     if (!tryPreflightTaaJitterSync(frameIndex, m_sequenceLength, reason)) {
+
+// --- deepen additive from deepen-b59-taa-guards-2077 ---
+    return preflightTaaJitterSync(0u, sequenceLength, reason);

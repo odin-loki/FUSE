@@ -372,3 +372,7 @@ bool preflightTaaTemporalResolve(const TaaResolveDesc& desc, const TaaHistoryBuf
                                  TaaTemporalGuardRejectReason* reason = nullptr);
 bool tryPreflightTaaTemporalResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                     TaaTemporalGuardRejectReason& reason);
+
+// --- deepen additive from deepen-b59-taa-guards-2077 ---
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupPreflight& out);
+    TaaResolveBlendRejectReason reject_reason = TaaResolveBlendRejectReason::None;
