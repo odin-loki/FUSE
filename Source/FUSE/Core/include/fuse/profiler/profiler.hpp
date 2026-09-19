@@ -382,3 +382,6 @@ AsyncFlowPreflight preflightEndAsyncFlow(const char* name);
 ExportPreflight preflightExport();
 EventLookupPreflight preflightEventAt(u32 index);
 EventLookupPreflight preflightLastEvent();
+
+// --- deepen additive from deepen-profiler-b16-guards-10ba ---
+bool tryEventPhaseAt(u32 index, EventPhase& outPhase);

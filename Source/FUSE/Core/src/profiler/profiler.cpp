@@ -1256,3 +1256,7 @@ EventLookupPreflight preflightLastEvent() {
     return preflightEndAsyncFlow(name).canEnd();
     return preflightExport().canExport();
     return preflightEventAt(index).canLookup();
+
+// --- deepen additive from deepen-profiler-b16-guards-10ba ---
+bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
+    if (!tryEventAt(index, event)) {

@@ -3177,3 +3177,27 @@ void testEventLookupPreflightGuard() {
     testNestingPreflightGuard();
     testExportPreflightGuard();
     testEventLookupPreflightGuard();
+
+// --- deepen additive from deepen-profiler-b16-guards-10ba ---
+void testEventNameAtAndTryEventPhaseGuard() {
+    expectTrue(!fuse::profiler::tryEventPhaseAt(0u, outPhase), "tryEventPhaseAt false on empty buffer");
+               "tryEventPhaseAt resets phase on empty buffer");
+    expectTrue(fuse::profiler::tryEventPhaseAt(0u, outPhase), "tryEventPhaseAt true for begin");
+    expectTrue(outPhase == fuse::profiler::EventPhase::Begin, "tryEventPhaseAt copies begin phase");
+    expectTrue(fuse::profiler::tryEventPhaseAt(1u, outPhase), "tryEventPhaseAt true for end");
+    expectTrue(outPhase == fuse::profiler::EventPhase::End, "tryEventPhaseAt copies end phase");
+    expectTrue(!fuse::profiler::tryEventPhaseAt(2u, outPhase), "tryEventPhaseAt false past count");
+void testCountEventsWithPhaseAndFindFirstGuard() {
+void testIsFlowOpenCountAttachedGuard() {
+void testChromeTraceExportPreflightStructuralBalance() {
+    expectTrue(emptyPreflight.isBufferStructurallyBalanced(),
+    expectTrue(emptyPreflight.hasBalancedScopeEventsInBuffer(),
+    expectTrue(emptyPreflight.hasBalancedAsyncFlowEventsInBuffer(),
+    expectTrue(!emptyPreflight.canExportNonEmptyTrace(),
+    expectTrue(!emptyPreflight.bufferFull, "empty buffer is not full");
+    const fuse::profiler::ChromeTraceExportPreflight openPreflight =
+    expectTrue(!openPreflight.hasBalancedAsyncFlowEventsInBuffer(),
+    expectTrue(!openPreflight.isBufferStructurallyBalanced(),
+    expectTrue(openPreflight.asyncFlowStartEventCount == 2u,
+    expectTrue(openPreflight.asyncFlowFinishEventCount == 1u,
+    testChromeTraceExportPreflightStructuralBalance();
