@@ -214,6 +214,7 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
 /// Why island graph build would be rejected before partitioning (B4.4 deepen follow-up).
 
 
+
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -235,11 +236,19 @@ bool island_graph_build_rejects_for_reason(
 /// Read-only island graph build diagnostics — no mutation (B4.4 deepen follow-up pass).
 struct IslandGraphBuildPreflight {
     u32 bodyCount = 0;
+
+    u32 contactSlotCount = 0;
+    u32 distanceSlotCount = 0;
     u32 validContactCount = 0;
     u32 inRangeContactCount = 0;
     u32 inRangeDistanceCount = 0;
     u32 outOfRangeContactBodyCount = 0;
     u32 outOfRangeDistanceBodyCount = 0;
+    bool skipped = false;
+
+    bool has_unsafe_refs() const {
+        return outOfRangeContactBodyCount > 0u || outOfRangeDistanceBodyCount > 0u;
+    }
 
     bool can_build() const { return reason == IslandGraphBuildRejectReason::None; }
 };
@@ -788,6 +797,11 @@ bool can_build_island_graph(
 bool islandGraphBuildRejectsForReason(
 bool islandGraphBuildRejectsForReason(u32 bodyCount,
 
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+
+
+/// Non-mutating build predicate — mirrors `preflight_island_graph_build` (B4.4 deepen follow-up pass).
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -859,6 +873,7 @@ struct ContactIslandGraph {
                        IslandGraphBuildRejectReason* reason = nullptr);
     /// Build only when `island_graph_build_reject_reason` allows; clears and returns false when skipped.
     /// Guarded build; returns false and clears on reject without partitioning unsafe refs.
+    /// Build only when `preflight_island_graph_build` allows; returns false when skipped (B4.4 deepen follow-up pass).
 
     void clear();
 
