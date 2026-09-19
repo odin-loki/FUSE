@@ -237,6 +237,8 @@ const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason) 
         return "EmptyManifold";
     case FrictionBasisRejectReason::InvalidNormal:
         return "InvalidNormal";
+    case FrictionBasisRejectReason::StaleNormal:
+        return "StaleNormal";
     }
     return "Unknown";
 }
@@ -255,6 +257,10 @@ bool friction_basis_rejects_for_reason(
     const ContactManifold& manifold,
     FrictionBasisRejectReason expected) {
     return friction_basis_reject_reason(manifold) == expected;
+}
+
+bool friction_basis_stale_reject_reason_matches(const ContactManifold& manifold, f32 epsilon) {
+    return friction_basis_is_stale(manifold, epsilon);
 }
 
 FrictionBasisPreflight preflight_friction_basis_rebuild(
