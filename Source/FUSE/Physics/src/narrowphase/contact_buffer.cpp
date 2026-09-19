@@ -50,6 +50,9 @@ u32 ContactBufferSoA::remainingCapacity() const {
 bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
     return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
 
+
+
+
 u32 ContactBufferSoA::countValidSlots() const {
     if (canSkipSoAIteration()) {
         return 0u;
@@ -63,6 +66,9 @@ u32 ContactBufferSoA::countValidSlots() const {
 
 
 
+    }
+
+    for (u32 slot = 0; slot < scanCount; ++slot) {
 
 bool ContactBufferSoA::canSkipCompaction() const {
     if (canSkipSoAIteration()) {
@@ -609,6 +615,15 @@ u32 compact_and_clamp_contact_buffer_with_preflight(ContactBufferSoA& buffer) {
 
 
 
+
+
+    return canSkipContactBufferCompactAndClamp(*this);
+
+
+void ContactBufferSoA::invalidateSlot(u32 slot) {
+    validFlags[slot] = 0u;
+    pointCounts[slot] = 0u;
+
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
 }
@@ -936,6 +951,14 @@ void ContactBufferSoA::invalidateSlot(u32 slot) {
     pointCounts[slot] = 0u;
 }
 
+bool ContactBufferSoA::writeSlotWithPreflight(u32 slot, const ContactManifold& manifold) {
+    if (!preflightContactBufferWrite(*this, slot, manifold).canWrite()) {
+        return false;
+    }
+    writeSlot(slot, manifold);
+    return true;
+}
+
 void ContactBufferSoA::applyWarmStartStub(u32 slot, ContactManifold& manifold) const {
     if (slot >= pairSlotCount || validFlags[slot] == 0u) {
         return;
@@ -1074,6 +1097,9 @@ bool ContactBufferSoA::buildFrictionTangentBasesWithPreflight() {
     }
     buildFrictionTangentBases();
     return true;
+void ContactBufferSoA::buildFrictionTangentBasesIfNeeded() {
+    if (!shouldRunContactBufferFrictionRebuild(*this)) {
+        return;
 }
 
 TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {
@@ -1172,6 +1198,8 @@ bool ContactBufferSoA::canSkipClamp() const {
         activeCount = countValidSlots();
 
 
+
+        activeCount = pairSlotCount > 0u ? countValidSlots() : activeCount;
         return activeCount;
     }
 
@@ -1208,6 +1236,7 @@ bool ContactBufferSoA::canSkipClamp() const {
     pairSlotCount = activeCount;
     for (u32 i = activeCount; i < validFlags.size(); ++i) {
     for (u32 i = activeCount; i < scanCount; ++i) {
+    for (u32 i = activeCount; i < pairSlotCount; ++i) {
         validFlags[i] = 0u;
         pointCounts[i] = 0u;
     }
@@ -1506,6 +1535,7 @@ ContactBufferWriteRejectReason contactBufferWriteRejectReason(
 
 
 
+
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold) {
@@ -1538,6 +1568,8 @@ ContactBufferWritePreflight preflightContactBufferWrite(
     u32 slot,
 
     const ContactManifold& manifold) {
+
+
 
 
 
@@ -2334,6 +2366,57 @@ bool shouldSkipContactBufferWrite(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const char* contactBufferFrictionRebuildRejectReasonName(ContactBufferFrictionRebuildRejectReason reason) {
+    case ContactBufferFrictionRebuildRejectReason::None:
+    case ContactBufferFrictionRebuildRejectReason::EmptyBuffer:
+    case ContactBufferFrictionRebuildRejectReason::AllOrthonormal:
+        return "AllOrthonormal";
+
+ContactBufferFrictionRebuildRejectReason contactBufferFrictionRebuildRejectReason(
+    if (buffer.canSkipSoAIteration() || buffer.activeCount == 0u) {
+        return ContactBufferFrictionRebuildRejectReason::EmptyBuffer;
+
+        const TangentBasis basis{buffer.tangent1[slot], buffer.tangent2[slot]};
+        if (!isOrthonormalTangentBasis(buffer.contactNormals[slot], basis, epsilon)) {
+            return ContactBufferFrictionRebuildRejectReason::None;
+
+    return ContactBufferFrictionRebuildRejectReason::AllOrthonormal;
+
+bool contactBufferFrictionRebuildRejectsForReason(
+    ContactBufferFrictionRebuildRejectReason expected,
+    return contactBufferFrictionRebuildRejectReason(buffer, epsilon) == expected;
+
+ContactBufferFrictionRebuildPreflight preflightContactBufferFrictionRebuild(
+    ContactBufferFrictionRebuildPreflight preflight{};
+    preflight.reason = contactBufferFrictionRebuildRejectReason(buffer, epsilon);
+    preflight.emptyBuffer = preflight.reason == ContactBufferFrictionRebuildRejectReason::EmptyBuffer;
+    preflight.allOrthonormal = preflight.reason == ContactBufferFrictionRebuildRejectReason::AllOrthonormal;
+
+bool canSkipContactBufferFrictionRebuild(const ContactBufferSoA& buffer, f32 epsilon) {
+    return !preflightContactBufferFrictionRebuild(buffer, epsilon).needsRebuild();
+
+bool shouldRunContactBufferFrictionRebuild(const ContactBufferSoA& buffer, f32 epsilon) {
+    return preflightContactBufferFrictionRebuild(buffer, epsilon).needsRebuild();
 }
 
 } // namespace fuse::physics::narrowphase

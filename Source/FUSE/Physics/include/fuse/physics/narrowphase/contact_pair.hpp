@@ -36,6 +36,7 @@ enum class ContactPairRejectReason : u8 {
     PlanePlane,
     InvalidPlaneNormal,
     ShapeBodyMismatch,
+    BothPlane,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).

@@ -190,6 +190,10 @@ struct ContactManifold {
 
         f32 duplicateEpsilon = 1e-4f);
 
+    /// Normalize contact normal when non-unit; returns true when normal is valid after call (B4.6 deepen pass).
+    bool normalizeContactNormalIfNeeded(f32 lengthEpsilon = 1e-4f);
+};
+
 /// Why manifold prune would early-out (B4.5 deepen follow-up pass).
 enum class ManifoldPruneRejectReason : u8 {
     None = 0,

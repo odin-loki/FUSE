@@ -1390,4 +1390,8 @@ bool normalize_contact_normal_with_preflight(ContactManifold& manifold, f32 leng
 
     if (!rebuild_friction_basis_with_preflight(manifold, epsilon)) {
 
+bool normalize_contact_normal_before_friction_if_needed(
+    ContactManifold& manifold,
+    return manifold.normalizeContactNormalIfNeeded(lengthEpsilon);
+
 } // namespace fuse::physics::narrowphase

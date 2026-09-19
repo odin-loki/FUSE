@@ -280,6 +280,8 @@ const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
         return "InvalidPlaneNormal";
     case ContactPairRejectReason::ShapeBodyMismatch:
         return "ShapeBodyMismatch";
+    case ContactPairRejectReason::BothPlane:
+        return "BothPlane";
     }
     return "Unknown";
 }
@@ -749,6 +751,15 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
         !is_missing_shape_contact_pair(pair, shapes) &&
         is_plane_plane_contact_pair(pair, shapes)) {
         return ContactPairRejectReason::PlanePlane;
+    if (pair.bodyA == pair.bodyB) {
+        return ContactPairRejectReason::SelfPair;
+    }
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return ContactPairRejectReason::OutOfRangeBody;
+    if (!hasShapeForBody(shapes, pair.bodyA) || !hasShapeForBody(shapes, pair.bodyB)) {
+        return ContactPairRejectReason::MissingShape;
+    if (is_plane_plane_contact_pair(pair, shapes)) {
+        return ContactPairRejectReason::BothPlane;
     }
 
     const ContactPairRejectReason baseReason = contact_pair_reject_reason(pair, bodies, shapes);
