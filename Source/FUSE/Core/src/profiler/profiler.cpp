@@ -1862,6 +1862,8 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 
 
 
+
+
 ProfileRecordSkipReason classifyProfileRecordSkip(const char* name, bool requireOpenAsyncFlow) {
     if (!g_enabled.load(std::memory_order_acquire)) {
         return ProfileRecordSkipReason::ProfilerDisabled;
@@ -1870,6 +1872,7 @@ ProfileRecordSkipReason classifyProfileRecordSkip(const char* name, bool require
     if (requireOpenAsyncFlow && g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u) {
         return ProfileRecordSkipReason::NoOpenAsyncFlow;
     return ProfileRecordSkipReason::None;
+    }
 
 bool wouldSkipProfileRecord(const char* name,
                             bool requireOpenAsyncFlow,
@@ -1879,6 +1882,9 @@ bool wouldSkipProfileRecord(const char* name,
         *reason = skipReason;
     return skipReason != ProfileRecordSkipReason::None;
 
+    }
+
+} // namespace
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
@@ -3269,6 +3275,12 @@ bool tryFindFirstFlowEventById(u32 flowId, ProfileEvent& outEvent) {
 bool tryFindLastFlowEventById(u32 flowId, ProfileEvent& outEvent) {
 
 
+
+
+
+
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -4623,6 +4635,14 @@ bool eventNameMatches(const char* eventName, const char* searchName) {
 
 
 
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -4939,6 +4959,7 @@ bool wouldSkipCounterFloatSnapshotAtFrame(const char* track) {
 
     preflight.noOpenAsyncFlows = openAsyncFlowCount() == 0u;
 
+
 NestingStatePreflight preflightNestingState() {
     NestingStatePreflight preflight{};
     preflight.activeScopeNestingDepth = scopeNestingDepth();
@@ -4960,6 +4981,12 @@ bool wouldSkipAsyncFlowEnd(const char* name, ProfileRecordSkipReason* reason) {
 
 bool wouldSkipCounterSample(const char* track, ProfileRecordSkipReason* reason) {
     return wouldSkipProfileRecord(track, false, reason);
+    return preflight;
+}
+
+
+
+
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};

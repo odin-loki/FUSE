@@ -115,6 +115,13 @@ struct AsyncFlowEndPreflight {
     bool noOpenAsyncFlows = false;
 
     bool canEnd() const { return !profilerDisabled && !invalidName && !noOpenAsyncFlows; }
+};
+
+    bool profilerDisabled = false;
+    bool invalidName = false;
+
+
+
 
 /// Read-only nesting/async-flow state preflight — safe before export or frame teardown.
 struct NestingStatePreflight {
@@ -131,6 +138,7 @@ struct NestingStatePreflight {
         return !scopeNestingUnbalanced && !flowNestingUnbalanced && !flowDepthDetached
             && !crossThreadFlowHandoffPending;
     }
+};
 
 struct ProfileEvent {
     const char* name = nullptr;
@@ -1580,6 +1588,11 @@ bool wouldSkipBeginAsyncFlow(const char* name);
 bool wouldSkipEndAsyncFlow(const char* name);
 bool wouldSkipCounter(const char* track);
 
+
+bool wouldSkipProfileScope(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowBegin(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowEnd(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipCounterSample(const char* track, ProfileRecordSkipReason* reason = nullptr);
 
 bool wouldSkipProfileScope(const char* name, ProfileRecordSkipReason* reason = nullptr);
 bool wouldSkipAsyncFlowBegin(const char* name, ProfileRecordSkipReason* reason = nullptr);
