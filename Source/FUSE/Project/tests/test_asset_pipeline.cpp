@@ -2705,6 +2705,34 @@ void testCookerStaleDependencyReconcileEstimator() {
                "stale reconcile estimate is zero after invalidation");
 }
 
+void testCookerReconcileEstimators() {
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.count_prune_reconcile() == 0u, "empty cache prune reconcile is zero");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_reconcile_mesh.obj", "# reconcile mesh\n");
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_reconcile_mesh.fusemesh";
+    manifest.assets.push_back(entry);
+
+    const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
+    expectTrue(cooked.ok, "manifest cook for reconcile estimators ok");
+    expectTrue(cooker.count_prune_reconcile() == 0u, "fresh cache prune reconcile is zero");
+    expectTrue(cooker.estimate_manifest_cache_reconcile(manifest) == 0u,
+               "fresh cache manifest reconcile estimate is zero");
+
+    writeTempFile(source, "# reconcile mesh updated\n");
+    expectTrue(cooker.count_prune_reconcile() == 1u, "stale content prune reconcile is one");
+    expectTrue(cooker.estimate_manifest_cache_reconcile(manifest) == 1u,
+               "stale content manifest reconcile estimate matches prune reconcile");
+
+    const fuse::u32 removed = cooker.cache().prune_all();
+    expectTrue(removed == 1u, "prune_all removes estimated stale entry");
+    expectTrue(cooker.count_prune_reconcile() == 0u, "prune reconcile zero after prune_all");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 

@@ -215,6 +215,8 @@ public:
     /// Read-only stale content-hash reconcile probe — guarded on empty manifest (B7.9 deepen).
     /// Combined reconcile estimator — stale content plus stale dependency removals (B7.9 deepen).
     [[nodiscard]] u32 estimate_reconcile_removals(const CookManifest& manifest) const;
+    /// Combined stale-dependency and prune reconcile estimate for manifest cache planning (B7.9 deepen).
+    [[nodiscard]] u32 estimate_manifest_cache_reconcile(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

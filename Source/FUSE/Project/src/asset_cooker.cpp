@@ -632,11 +632,14 @@ u32 AssetCooker::estimate_reconcile_removals(const CookManifest& manifest) const
     const u32 stale_dependencies = count_stale_dependency_invalidation(manifest);
     if (stale_content == 0) {
         return stale_dependencies;
-    }
     if (stale_dependencies == 0) {
         return stale_content;
-    }
     return stale_content + stale_dependencies;
+u32 AssetCooker::count_prune_reconcile() const {
+    return m_cache.estimate_prune_reconcile();
+
+u32 AssetCooker::estimate_manifest_cache_reconcile(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) + count_prune_reconcile();
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

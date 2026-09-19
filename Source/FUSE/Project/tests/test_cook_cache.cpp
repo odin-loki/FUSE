@@ -793,6 +793,14 @@ void testCookHashPreflightGuards() {
 
     const fuse::project::CookHashPreflight valid_bytes = fuse::project::preflight_fnv1a64_bytes(&byte, 1u);
     expectTrue(valid_bytes.ok(), "non-null byte buffer passes hash preflight");
+    const fuse::project::CookHashPreflight null_bytes =
+        fuse::project::preflight_fnv1a64_bytes(nullptr, 4u);
+    expectTrue(!null_bytes.ok(), "null data with non-zero size fails FNV preflight");
+               "null data preflight reason is NullData");
+
+    const fuse::u8 byte = 0x2a;
+               "valid FNV preflight accepts non-null buffer");
+               "valid FNV preflight accepts zero-size null buffer");
 
     const fuse::project::CookHashPreflight empty_path =
         fuse::project::preflight_file_content_hash("");
@@ -1029,6 +1037,10 @@ void testCookCacheReconcileEstimators() {
                "readable texture import passes hash preflight");
 
     const std::string audio_source = writeTempFile("/tmp/fuse_b79_preflight_audio.wav", "# audio\n");
+    fuse::project::TextureImportDesc tex_desc;
+    tex_desc.output_path = "/tmp/fuse_b79_preflight_tex.fusetex";
+    expectTrue(fuse::project::preflight_texture_import_hash(tex_desc).ok(),
+
     fuse::project::AudioImportDesc audio_desc;
     audio_desc.input_path = audio_source;
     audio_desc.output_path = "/tmp/fuse_b79_preflight_audio.fuseaudio";
@@ -1251,6 +1263,8 @@ void testCookCachePruneReconcileEstimate() {
 
     cache_entry.content_hash = 88u;
     expectTrue(fuse::project::preflight_cook_cache_entry(cache_entry).ok(),
+    manifest_entry.source_path = source;
+    manifest_entry.output_path = "/tmp/fuse_b79_preflight_manifest.fusemesh";
 }
 
 void testCookCacheInvalidationProbes() {
@@ -1267,7 +1281,9 @@ void testCookCacheInvalidationProbes() {
     expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_probe.fusemesh", {}, {}),
                "would_invalidate_downstream on empty cache is false");
     expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_probe_out.fusemesh"),
-    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_probe.obj", 42u),
+    expectTrue(cache.probe_stale_content_sources().empty(),
+               "probe_stale_content on empty cache returns empty list");
+    expectTrue(cache.estimate_prune_reconcile() == 0u, "estimate_prune_reconcile on empty cache is zero");
     expectTrue(cache.count_by_source("/tmp/fuse_b79_probe.obj") == 0u,
                "count_by_source on empty cache returns zero");
     expectTrue(cache.count_prunable_entries() == 0u, "count_prunable on empty cache returns zero");
@@ -1303,6 +1319,8 @@ void testCookCacheInvalidationProbes() {
                "would_invalidate_source rejects empty path");
     expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source reports seeded entry");
                "would_invalidate_output reports seeded entry");
+    expectTrue(!cooker.cache().would_invalidate_output(""),
+               "would_invalidate_output rejects empty path");
     expectTrue(cooker.cache().count_by_source(source) == 1u, "count_by_source finds seeded entry");
     expectTrue(cooker.cache().count_by_output(desc.output_path) == 1u, "count_by_output finds seeded entry");
     expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source finds seeded entry");
@@ -1350,6 +1368,10 @@ void testCookCacheInvalidationProbes() {
     expectTrue(cooker.cache().count_stale_entries() == 1u, "count_stale_entries reports content drift");
     expectTrue(cooker.cache().count_prunable_entries() == 1u, "count_prunable reports stale entry");
     expectTrue(cooker.cache().count_stale_entries() == 1u, "count_stale reports stale entry");
+    expectTrue(cooker.cache().estimate_prune_reconcile() == 1u, "estimate_prune_reconcile reports stale entry");
+    const std::vector<std::string> stale_sources = cooker.cache().probe_stale_content_sources();
+    expectTrue(stale_sources.size() == 1u, "probe_stale_content lists one stale source");
+    expectTrue(stale_sources[0] == source, "probe_stale_content reports updated source path");
     expectTrue(cooker.cache().count_invalid_entries() == 0u,
                "count_invalid on structurally valid stale entry returns zero");
 

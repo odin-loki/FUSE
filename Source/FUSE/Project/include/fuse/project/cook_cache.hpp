@@ -359,6 +359,7 @@ public:
     /// Source paths that `prune_stale_entries` would touch — one push per matching entry (B7.9 deepen).
     /// Estimated removals from `prune_all` — mirrors invalid then stale prune guards (B7.9 deepen).
     [[nodiscard]] u32 count_prune_all() const;
+    /// Source paths whose stored content keys differ from a fresh recompute — mirrors `prune_stale_entries` (B7.9 deepen).
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;
@@ -549,6 +550,8 @@ public:
     /// Source paths with stale content keys — one push per matching entry (B7.9 deepen).
 
     /// Read-only invalidation would-* probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
+    /// Entries `prune_all` would remove — reconcile estimator without mutating stats (B7.9 deepen).
+    [[nodiscard]] u32 estimate_prune_reconcile() const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
