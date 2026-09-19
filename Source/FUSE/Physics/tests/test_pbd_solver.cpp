@@ -5602,3 +5602,14 @@ void testDispatchIslandSolvePipelineGuarded() {
     expectTrue(should_skip_island_solve_pipeline(graph, bodies, 0.f),
                "should_skip pipeline true for invalid dt");
     testIslandSolveSleepWakeRejectReasons();
+
+// --- deepen additive from deepen-pbd-island-guards-fc6d ---
+void testIslandDispatchSolveRejectReasonGuards() {
+    expectTrue(jobPreflight.reason == IslandDispatchRejectReason::None,
+    const IslandSolveJobPreflight invalidJobPreflight = preflight_solve_island_job(invalid, 1.f / 60.f);
+    expectTrue(invalidJobPreflight.reason == IslandDispatchRejectReason::OutOfRangeIsland,
+void testPipelineDispatchGuardedHelpers() {
+    expectTrue(pipelinePreflight.can_build(), "pipeline preflight can build in-range graph");
+    expectTrue(pipelinePreflight.can_wake(), "pipeline preflight can wake mixed island");
+    expectTrue(pipelinePreflight.can_dispatch(), "pipeline preflight can dispatch constrained graph");
+    testIslandDispatchSolveRejectReasonGuards();

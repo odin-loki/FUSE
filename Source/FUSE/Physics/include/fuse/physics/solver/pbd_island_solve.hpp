@@ -1891,3 +1891,16 @@ IslandSleepSolveRejectPreflight preflight_island_sleep_solve_reject(const Contac
 // --- deepen additive from pbd-island-reject-reasons-0149 ---
 IslandDispatchRejectReason island_dispatch_reject_reason(const IslandSolveJob& job, f32 dt);
 IslandSolveRejectReason island_solve_reject_reason(const ContactIslandGraph::Island& island,
+
+// --- deepen additive from deepen-pbd-island-guards-fc6d ---
+    IslandGraphBuildRejectReason buildReason = IslandGraphBuildRejectReason::None;
+    bool can_build() const { return buildReason == IslandGraphBuildRejectReason::None; }
+    bool can_wake() const { return wakeReason == IslandWakeRejectReason::None; }
+    bool can_dispatch() const { return dispatchReason == IslandDispatchRejectReason::None; }
+IslandDispatchRejectReason island_dispatch_job_reject_reason(const IslandSolveJob& job, f32 dt);
+IslandSolveRejectReason island_solve_reject_reason(const ContactIslandGraph& graph);
+IslandSolveRejectReason island_constraint_refs_reject_reason(
+IslandSolveRejectReason island_solve_bodies_reject_reason(const ContactIslandGraph::Island& island,
+IslandSleepRejectReason island_sleep_graph_reject_reason(const ContactIslandGraph& graph,
+IslandWakeRejectReason island_wake_graph_reject_reason(const ContactIslandGraph& graph,
+IslandPipelineDispatchPreflight preflight_pipeline_island_dispatch(

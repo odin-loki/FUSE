@@ -3208,3 +3208,18 @@ IslandDispatchRejectReason island_dispatch_reject_reason(const IslandSolveJob& j
 IslandSolveRejectReason island_solve_reject_reason(const ContactIslandGraph::Island& island,
         preflight.reason = IslandSleepRejectReason::NoSolveableIslands;
         preflight.reason = IslandWakeRejectReason::NoWakeableIslands;
+
+// --- deepen additive from deepen-pbd-island-guards-fc6d ---
+IslandDispatchRejectReason island_dispatch_job_reject_reason(const IslandSolveJob& job, f32 dt) {
+        return IslandDispatchRejectReason::OutOfRangeIsland;
+IslandSolveRejectReason island_solve_reject_reason(const ContactIslandGraph& graph) {
+IslandSolveRejectReason island_constraint_refs_reject_reason(
+        return IslandSolveRejectReason::NoInRangeConstraints;
+IslandSolveRejectReason island_solve_bodies_reject_reason(const ContactIslandGraph::Island& island,
+    preflight.reason = preflight.skipped ? IslandSleepRejectReason::NoSolveableIslands
+                                         : IslandSleepRejectReason::None;
+    preflight.reason = preflight.skipped ? IslandWakeRejectReason::NoWakeableIslands
+                                         : IslandWakeRejectReason::None;
+IslandSleepRejectReason island_sleep_graph_reject_reason(const ContactIslandGraph& graph,
+IslandWakeRejectReason island_wake_graph_reject_reason(const ContactIslandGraph& graph,
+IslandPipelineDispatchPreflight preflight_pipeline_island_dispatch(
