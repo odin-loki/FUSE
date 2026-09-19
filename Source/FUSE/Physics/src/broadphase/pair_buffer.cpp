@@ -929,3 +929,6 @@ PairBufferSlotReservationPreflight preflightPairBufferSlotReservation(
 
 // --- deepen additive from deepen-b4-broadphase-guards-3ca3 ---
     if (preflightPairBufferCompactAndClamp(*this).reason == PairBufferCompactAndClampRejectReason::EmptyBuffer) {
+
+// --- deepen additive from b4-broadphase-deepen-guards-5209 ---
+    if (!preflightPairSlots(slotCount, *this).canPrepare()) {

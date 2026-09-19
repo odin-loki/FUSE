@@ -3058,3 +3058,6 @@ void testBroadphaseCellPairPreflightGuards() {
                    buffer, 0u, 0u, 1u, fuse::physics::broadphase::PairBufferWriteSlotRejectReason::None),
                  fuse::physics::broadphase::pairBufferWriteSlotRejectReason(buffer, 4u, 0u, 1u)),
     const fuse::physics::broadphase::PairBufferWriteSlotPreflight preflight =
+
+// --- deepen additive from b4-broadphase-deepen-guards-5209 ---
+void testPerShapeCellBudgetGuards() {
