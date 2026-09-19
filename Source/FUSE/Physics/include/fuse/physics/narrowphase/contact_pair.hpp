@@ -328,5 +328,28 @@ ContactManifoldFinalizePreflight preflight_contact_manifold_finalize(
 
 /// Returns true when `generate_contact_manifold` would clear and return false (B4.4 deepen pass).
 bool should_skip_contact_manifold_finalize(
+/// Empty-set guard: true when narrowphase has no bodies or no collision shapes (B4.4 deepen pass).
+bool is_empty_narrowphase_input(
+
+/// True when narrowphase may early-out before pair dispatch (B4.4 deepen pass).
+bool can_skip_narrowphase_for_empty_input(
+
+/// Returns true when `preflight.rejected` is set (B4.4 deepen pass).
+bool contact_pair_was_rejected(const ContactPairPreflight& preflight);
+
+    bool allSeparated = false;
+
+        return !skipped && !empty && !invalidNormal && !allSeparated;
+
+/// Populate finalize preflight without mutating the manifold (B4.4 deepen pass).
+
+/// Returns true when finalize should be skipped before mutation (B4.4 deepen pass).
+bool should_skip_finalize_contact_manifold(const ContactManifold& manifold);
+
+/// Guarded finalize: preflight then `generate_contact_manifold` (B4.4 deepen pass).
+bool generate_contact_manifold_guarded(ContactManifold& manifold);
+
+/// Guarded pair detect: preflight then `detect_contacts_pair` (B4.4 deepen pass).
+ContactManifold detect_contacts_pair_guarded(
 
 } // namespace fuse::physics::narrowphase

@@ -251,5 +251,22 @@ bool should_skip_friction_basis_rebuild(
 
 /// Rebuild friction basis only when preflight requires it (B4.4 deepen pass 2).
 bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+/// Const preflight for friction-basis rebuild dispatch (B4.4 deepen pass).
+    bool shouldSkipTangents = false;
+
+    bool needs_rebuild() const {
+        return !skipped && !shouldSkipTangents && (missingBasis || staleBasis);
+
+        if (skipped || shouldSkipTangents) {
+            return true;
+        return !missingBasis && !staleBasis;
+
+/// Populate friction-basis preflight without mutating the manifold (B4.4 deepen pass).
+
+/// Returns true when friction-basis rebuild should be skipped (B4.4 deepen pass).
+bool should_skip_friction_basis_rebuild_preflight(
+
+/// Guarded rebuild: preflight then `compute_friction_tangents_if_needed` (B4.4 deepen pass).
+void rebuild_friction_basis_guarded(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

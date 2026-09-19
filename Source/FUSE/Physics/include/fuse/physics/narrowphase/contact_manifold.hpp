@@ -356,11 +356,12 @@ struct ManifoldFinalizePreflight {
 
     bool needs_prune_before_finalize() const {
         return needsPrune && !wouldBeEmptyAfterPrune;
-    }
 };
 
 /// Populate finalize preflight without mutating slots (B4.4 deepen pass 2).
 ManifoldFinalizePreflight preflight_manifold_finalize(
+/// Returns true when `preflight_manifold_prune` reports no prune work (B4.4 deepen pass).
+bool should_skip_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f);
@@ -373,6 +374,10 @@ bool should_skip_manifold_finalize(
 
 /// Finalize only when preflight allows; clears on skip (B4.4 deepen pass 2).
 bool generate_contact_manifold_if_needed(ContactManifold& manifold);
+
+/// Guarded prune: preflight then `pruneContactPointsIfNeeded` (B4.4 deepen pass).
+bool prune_contact_points_guarded(
+    ContactManifold& manifold,
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

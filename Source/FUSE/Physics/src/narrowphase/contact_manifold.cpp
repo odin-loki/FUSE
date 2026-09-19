@@ -634,6 +634,13 @@ bool generate_contact_manifold_if_needed(ContactManifold& manifold) {
     if (should_skip_manifold_finalize(manifold)) {
         manifold.clear();
     return generate_contact_manifold(manifold);
+bool should_skip_manifold_prune(
+    const ManifoldPrunePreflight preflight =
+    return preflight.skipped || !preflight.needs_pruning();
+
+bool prune_contact_points_guarded(
+    ContactManifold& manifold,
+    return manifold.pruneContactPointsIfNeeded(separationEpsilon, duplicateEpsilon);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
