@@ -23,6 +23,7 @@ enum class CookHashRejectReason : u8 {
     ZeroSourceHash,
     ZeroContentHash,
     NonCacheableKey,
+    UnresolvedDependency,
     NonCacheableCombinedKey,
 };
 
@@ -325,5 +326,6 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 /// Entry source plus upstream dependency readability — does not alter `preflight_manifest_entry_hash` (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_manifest_entry_with_upstream_hash(const CookManifestEntry& entry,
 /// Read-only FNV input guard — mirrors `is_valid_fnv1a64_input` with reject reason (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry& entry);
 
 } // namespace fuse::project

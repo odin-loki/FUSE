@@ -85,6 +85,14 @@ struct CookCacheStaleUpstreamEstimate {
     u32 downstream_cascade = 0;
 
     [[nodiscard]] u32 total() const { return stale_upstream + downstream_cascade; }
+/// Read-only reconcile breakdown — mirrors prune/invalidate paths without mutating stats (B7.9 deepen).
+    u32 stale_content_entries = 0;
+    u32 stale_upstream_entries = 0;
+
+    [[nodiscard]] u32 prunable_entries() const { return invalid_entries + stale_content_entries; }
+    [[nodiscard]] u32 total_entries() const {
+        return invalid_entries + stale_content_entries + stale_upstream_entries;
+    }
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
@@ -529,6 +537,8 @@ public:
     /// Deduplicated stale upstream sources — one entry per distinct source path (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_unique_stale_upstream_sources(
     /// Entries `prune_all` would remove — mirrors early-exit guards without mutating stats (B7.9 deepen).
+    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path = {}) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

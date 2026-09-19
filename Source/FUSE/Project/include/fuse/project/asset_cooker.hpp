@@ -211,6 +211,7 @@ public:
     /// Stale dependency-hash reconcile breakdown — stale upstream entries plus downstream (B7.9 deepen).
     [[nodiscard]] CookReconcileEstimate estimate_stale_dependency_reconcile(
     [[nodiscard]] bool would_invalidate_upstream_dependency(const CookManifest& manifest,
+    /// Aggregate reconcile estimator — cache prune + stale upstream/direct cascade (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

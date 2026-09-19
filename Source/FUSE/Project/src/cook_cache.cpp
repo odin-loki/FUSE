@@ -1799,13 +1799,13 @@ bool CookCache::would_invalidate_output(const std::string& output_path) const {
     return count_by_output(output_path) > 0;
 
 
-        }
 
 CookCachePruneEstimate CookCache::estimate_prune_reconcile() const {
     CookCachePruneEstimate estimate;
     estimate.invalid_count = count_invalid_entries();
     estimate.stale_count = count_stale_entries();
     return estimate;
+
 
 
 
@@ -1876,6 +1876,13 @@ u32 CookCache::estimate_invalidation_downstream_of(const std::string& output_pat
                                                  const std::vector<CookJob>& jobs) const {
 
     u32 estimate = estimate_invalidation_by_source(output_path);
+}
+
+std::vector<std::string> CookCache::probe_downstream_sources(
+    const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
+
+    std::vector<std::string> downstream_sources;
+    downstream_sources.push_back(output_path);
 
     for (const CookJobDependencyEdge& edge : edges) {
         const CookJob* from_job = find_job_by_id(jobs, edge.from_job_id);
@@ -2136,6 +2143,29 @@ std::vector<std::string> CookCache::probe_unique_stale_upstream_sources(
     return unique_sources;
 
         return 0;
+            continue;
+        }
+
+
+        downstream_sources.push_back(to_job->source_path);
+        const std::vector<std::string> nested =
+            probe_downstream_sources(to_job->output_path, edges, jobs);
+        downstream_sources.insert(downstream_sources.end(), nested.begin(), nested.end());
+
+    return downstream_sources;
+
+CookCacheReconcileEstimate CookCache::estimate_reconcile(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    CookCacheReconcileEstimate estimate;
+    if (m_entries.empty()) {
+        return estimate;
+
+    estimate.invalid_entries = count_invalid_entries();
+    estimate.stale_content_entries =
+        count_prunable_entries() > estimate.invalid_entries
+            ? count_prunable_entries() - estimate.invalid_entries
+            : 0;
+    estimate.stale_upstream_entries = count_stale_upstream_hashes(source_upstream_by_path);
 }
 
 bool CookCache::contains(u64 content_hash) const {

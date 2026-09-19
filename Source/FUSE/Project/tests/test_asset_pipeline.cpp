@@ -2572,6 +2572,51 @@ void testCookerReconcileEstimators() {
     expectTrue(removed >= stale_estimate.total, "reconcile removes at least estimated entries");
 }
 
+void testCookerReconcileEstimateProbes() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_reconcile_chain_a.obj", "# reconcile chain a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_reconcile_chain_b.obj", "# reconcile chain b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_reconcile_chain_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_reconcile_chain_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
+    expectTrue(cooked.ok, "manifest cook for reconcile estimate ok");
+
+    const fuse::project::CookCacheReconcileEstimate fresh = cooker.estimate_cache_reconcile(manifest);
+    expectTrue(fresh.prunable_entries() == 0u, "fresh manifest cache prunable reconcile is zero");
+    expectTrue(fresh.stale_upstream_entries == 0u, "fresh manifest cache stale upstream reconcile is zero");
+
+    writeTempFile(sourceA, "# reconcile chain a updated\n");
+
+    const fuse::project::CookCacheReconcileEstimate stale = cooker.estimate_cache_reconcile(manifest);
+    expectTrue(stale.stale_upstream_entries >= 1u,
+               "upstream content change increases stale upstream reconcile estimate");
+
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= stale.stale_upstream_entries,
+               "stale dependency invalidation removes at least reconcile-estimated entries");
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+    const std::vector<std::string> downstream =
+        cooker.cache().probe_downstream_sources(entryA.output_path, graph.edges(), graph.jobs());
+    expectTrue(!downstream.empty(), "downstream probe returns affected sources");
+    expectTrue(downstream[0] == entryA.output_path,
+               "downstream probe includes invalidated output path");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 

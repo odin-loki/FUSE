@@ -546,6 +546,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "zero_content_hash";
     case CookHashRejectReason::NonCacheableKey:
         return "non_cacheable_key";
+    case CookHashRejectReason::UnresolvedDependency:
+        return "unresolved_dependency";
     case CookHashRejectReason::NonCacheableCombinedKey:
         return "non_cacheable_combined_key";
     }
@@ -849,6 +851,23 @@ CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
 
 
 
+
+
+
+CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+
+
+
+CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry& entry) {
+
+        if (dependency.empty()) {
+            continue;
+
+        const CookHashPreflight dependency_preflight = preflight_file_content_hash(dependency);
+        if (!dependency_preflight.can_hash) {
+            preflight.reason = dependency_preflight.reason == CookHashRejectReason::EmptyPath
+                                   ? CookHashRejectReason::UnresolvedDependency
+                                   : dependency_preflight.reason;
 
 
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
