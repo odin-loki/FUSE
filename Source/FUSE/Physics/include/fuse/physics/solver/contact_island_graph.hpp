@@ -51,6 +51,12 @@ IslandBuildStats compute_island_build_stats(
     bool zeroBodies = false;
 
     bool can_build() const { return !skipped && !zeroBodies; }
+};
+
+struct IslandBuildPreflight {
+    IslandBuildStats stats{};
+    bool skipped = false;
+
 
 /// True when `bodyCount` is positive for island graph construction.
 bool is_valid_island_build_body_count(u32 bodyCount);
@@ -158,6 +164,8 @@ IslandBuildStats compute_island_build_input_stats(
 
 
 
+
+    u32 bodyCount);
 
 IslandBuildPreflight preflight_island_build(
     u32 bodyCount,
