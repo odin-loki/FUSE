@@ -2617,3 +2617,23 @@ void testManifoldRejectReasonGuards() {
     expectTrue(mixedPreflight.dispatchablePairCount == 1u, "dispatch preflight counts dispatchable pair");
         !fuse::physics::narrowphase::should_skip_narrowphase_pair_slot(mixedPairs[1], bodies, shapes),
     testManifoldRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-26f2 ---
+    expectTrue(!batchPreflight.can_skip_dispatch(), "batch preflight does not skip mixed list");
+        finalizePreflight.should_run_finalize(),
+void testFrictionBasisFollowUpPreflights() {
+        fuse::physics::narrowphase::should_skip_contact_buffer_compact(buffer),
+        "should_skip_contact_buffer_compact on empty buffer");
+    const auto compactionPreflight = fuse::physics::narrowphase::preflight_contact_buffer_compact(buffer);
+    expectTrue(compactionPreflight.needsCompaction, "compaction preflight flags sparse slots");
+    expectTrue(compactionPreflight.should_run_compaction(), "compaction preflight should_run_compaction");
+        "should_skip_contact_buffer_compact after compact");
+    expectTrue(clampPreflight.needsClamp, "clamp preflight flags over-capacity buffer");
+    expectTrue(clampPreflight.should_run_clamp(), "clamp preflight should_run_clamp");
+        fuse::physics::narrowphase::should_skip_contact_buffer_friction_rebuild(buffer),
+        "should_skip_contact_buffer_friction_rebuild with valid tangents");
+    const auto staleFrictionPreflight =
+    expectTrue(staleFrictionPreflight.needsRebuildCount == 1u, "friction preflight flags stale tangent slot");
+        staleFrictionPreflight.should_run_rebuild(),
+void testRunNarrowphaseIntoBufferDeepenGuards() {
+    testFrictionBasisFollowUpPreflights();

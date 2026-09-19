@@ -168,3 +168,10 @@ struct ContactBufferCompactPreflight {
     ContactBufferCompactRejectReason reason = ContactBufferCompactRejectReason::None;
     bool needsCompaction() const { return reason == ContactBufferCompactRejectReason::None; }
 ContactBufferCompactPreflight preflightContactBufferCompact(const ContactBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-26f2 ---
+ContactBufferCompactionPreflight preflight_contact_buffer_compact(const ContactBufferSoA& buffer);
+bool should_skip_contact_buffer_compact(const ContactBufferSoA& buffer);
+bool should_skip_contact_buffer_clamp(const ContactBufferSoA& buffer);
+ContactBufferFrictionPreflight preflight_contact_buffer_friction_tangents(const ContactBufferSoA& buffer);
+bool should_skip_contact_buffer_friction_rebuild(const ContactBufferSoA& buffer);
