@@ -1045,3 +1045,9 @@ RefineBroadphasePreflight preflight_refine_broadphase_pairs(
 bool should_skip_refine_broadphase_pairs(
     if (should_skip_pair_buffer_dedupe(buffer)) {
     if (should_skip_refine_broadphase_pairs(bodies, shapes, buffer)) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-e914 ---
+BroadphaseDedupePreflight preflight_dedupe_pairs(const PairBufferSoA& buffer) {
+BroadphaseRefinePreflight preflight_refine_broadphase_pairs(
+        if (should_skip_shape_cell_population(range, 0u)) {
+    const BroadphaseDedupePreflight preflight = preflight_dedupe_pairs(buffer);

@@ -1165,3 +1165,12 @@ FUSE_PHYSICS_INLINE BroadphaseDispatchPreflight preflight_broadphase_dispatch(
 bool should_skip_broadphase(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 RefineBroadphasePreflight preflight_refine_broadphase_pairs(
 bool should_skip_refine_broadphase_pairs(
+
+// --- deepen additive from deepen-b4-broadphase-guards-e914 ---
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflight_cell_occupancy(const CellRange3& range, u32 maxCells) {
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflight_cell_occupancy(const CellRange2& range, u32 maxCells) {
+FUSE_PHYSICS_INLINE bool should_skip_shape_cell_population(const CellRange3& range, u32 maxCells) {
+    const CellOccupancyPreflight preflight = preflight_cell_occupancy(range, maxCells);
+FUSE_PHYSICS_INLINE bool should_skip_shape_cell_population(const CellRange2& range, u32 maxCells) {
+BroadphaseDedupePreflight preflight_dedupe_pairs(const PairBufferSoA& buffer);
+BroadphaseRefinePreflight preflight_refine_broadphase_pairs(

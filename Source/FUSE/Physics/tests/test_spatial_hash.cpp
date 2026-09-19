@@ -2527,3 +2527,37 @@ void testPairBufferDedupePreflightGuards() {
                "should_skip_pair_buffer_dedupe on multi-pair buffer");
 void testPairBufferCanSkipRefineGuard() {
     testPairBufferDedupePreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-e914 ---
+    const auto smallPreflight = fuse::physics::broadphase::preflight_cell_occupancy(smallRange, 8u);
+    expectEq(smallPreflight.cellCount, 8u, "preflight counts cells in small 3D range");
+    expectTrue(!smallPreflight.isEmptyRange, "preflight marks non-empty range");
+    expectTrue(!smallPreflight.exceedsBudget, "preflight within budget does not exceed");
+    expectTrue(smallPreflight.can_populate_cells(), "preflight allows cell population within budget");
+    const auto overBudgetPreflight = fuse::physics::broadphase::preflight_cell_occupancy(smallRange, 4u);
+    expectTrue(overBudgetPreflight.exceedsBudget, "preflight flags budget overflow");
+    expectTrue(!overBudgetPreflight.can_populate_cells(), "preflight blocks population when over budget");
+    const auto emptyPreflight = fuse::physics::broadphase::preflight_cell_occupancy(inverted, 4u);
+    expectTrue(emptyPreflight.isEmptyRange, "preflight marks inverted range empty");
+    expectEq(emptyPreflight.cellCount, 0u, "preflight empty range has zero cells");
+    expectTrue(fuse::physics::broadphase::should_skip_shape_cell_population(inverted, 4u),
+               "should_skip_shape_cell_population on empty range");
+    const auto planePreflight = fuse::physics::broadphase::preflight_cell_occupancy(planeRange, 8u);
+    expectEq(planePreflight.cellCount, 8u, "preflight counts cells in 2D range");
+    const auto emptyPreflight = fuse::physics::broadphase::preflight_dedupe_pairs(buffer);
+    expectEq(emptyPreflight.validPairCount, 0u, "empty buffer has zero valid pairs");
+    const auto singlePreflight = fuse::physics::broadphase::preflight_dedupe_pairs(buffer);
+    expectEq(singlePreflight.validPairCount, 1u, "single-pair buffer counts one valid pair");
+    const auto duplicatePreflight = fuse::physics::broadphase::preflight_dedupe_pairs(buffer);
+    expectTrue(!duplicatePreflight.skipped, "dedupe preflight runs on duplicate pairs");
+    expectTrue(duplicatePreflight.can_dedupe(), "duplicate buffer can dedupe");
+    expectEq(duplicatePreflight.validPairCount, 2u, "duplicate buffer counts both slots before dedupe");
+    const auto emptyScenePreflight =
+    expectTrue(emptyScenePreflight.skipped, "refine preflight skips empty scene");
+    expectTrue(emptyScenePreflight.emptyInput, "refine preflight marks empty input");
+               "should_skip_refine on empty scene");
+    expectTrue(emptyBufferPreflight.skipped, "refine preflight skips empty buffer with valid input");
+    expectTrue(emptyBufferPreflight.emptyBuffer, "refine preflight marks empty buffer");
+    expectTrue(!validPreflight.skipped, "refine preflight allows populated buffer");
+    expectTrue(validPreflight.can_refine(), "valid buffer can refine");
+               "should_skip_refine false when buffer has pairs");
