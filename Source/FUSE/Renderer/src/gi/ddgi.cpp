@@ -2801,3 +2801,11 @@ bool wouldSkipTrilinearDirectionalProbeSample(const DDGIDesc& desc,
 bool preflightTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
     return preflightTrilinearProbeIrradiance(desc, world_position, cache, cache_count, reason);
     return !preflightTrilinearDirectionalProbeIrradiance(
+
+// --- deepen additive from deepen-ddgi-guards-51fd ---
+    return tryValidateCacheIndex(desc, cache, probe_index, cache_count, outReason);
+ProbeScheduleRejectReason classifyProbeScheduleAtRateReject(u32 probe_count,
+        classifyProbeScheduleAtRateReject(probe_count, probes_per_frame, max_indices, out_indices, out_count);
+bool tryPreflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
+bool tryPreflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
+    return tryCanLaunchProbeBlendKernel(params, outReason);

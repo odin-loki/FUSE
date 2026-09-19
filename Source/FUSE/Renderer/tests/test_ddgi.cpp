@@ -3645,3 +3645,25 @@ void testDdgiKernelPreflightDeepenGuards() {
     testDdgiTrilinearPreflightDeepenGuards();
     testDdgiScheduleAtRatePreflightDeepenGuards();
     testDdgiKernelPreflightDeepenGuards();
+
+// --- deepen additive from deepen-ddgi-guards-51fd ---
+void testDdgiTryPreflightDeepenGuards() {
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeScheduleAtRateReject(2048u, 64u, 64u, indices, &count) ==
+               "classifyProbeScheduleAtRateReject none for valid rate-aware inputs");
+               "tryScheduleProbeUpdatesAtRate succeeds for valid rate-aware inputs");
+               "tryScheduleProbeUpdatesAtRate zero rate reports zero_probes_per_frame reason");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeScheduleAtRateReject(2048u, 0u, 64u, indices, &count) ==
+               "classifyProbeScheduleAtRateReject zero_probes_per_frame");
+               "tryPreflightCacheIndexLookup null cache reports null_cache reason");
+               "tryPreflightTrilinearProbeSample succeeds on accessible grid");
+    expectTrue(fuse::renderer::ddgi_util::classifyTrilinearProbeSampleReject(desc, coords, nullptr, 8u) ==
+               "classifyTrilinearProbeSampleReject null cache");
+    expectTrue(fuse::renderer::gi::tryPreflightProbeTraceKernel(kernelParams, kernelReason),
+               "tryPreflightProbeTraceKernel succeeds for valid params");
+               "tryPreflightProbeTraceKernel reports no reject reason on success");
+    expectTrue(fuse::renderer::gi::tryPreflightProbeBlendKernel(kernelParams, kernelReason),
+               "tryPreflightProbeBlendKernel succeeds for valid params");
+    expectTrue(!fuse::renderer::gi::tryPreflightProbeTraceKernel(zeroRays, kernelReason),
+               "tryPreflightProbeTraceKernel rejects zero rays per probe");
+               "tryPreflightProbeTraceKernel zero rays reports zero_rays_per_probe reason");
+    testDdgiTryPreflightDeepenGuards();

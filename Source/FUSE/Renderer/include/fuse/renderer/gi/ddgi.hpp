@@ -899,3 +899,6 @@ bool wouldSkipTrilinearDirectionalProbeSample(const DDGIDesc& desc,
 
 // --- deepen additive from deepen-ddgi-guards-4d1d ---
 bool preflightTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-51fd ---
+ProbeScheduleRejectReason classifyProbeScheduleAtRateReject(u32 probe_count,
