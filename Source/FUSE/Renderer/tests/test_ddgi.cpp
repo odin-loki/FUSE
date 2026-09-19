@@ -3309,3 +3309,48 @@ void testClassifyGuardHelpers() {
     expectNear(irradiance.x, 0.1f, 1e-5f, "tryRead with reason returns stored irradiance");
     expectTrue(!fuse::renderer::ddgi_util::tryReadIrradianceAtIndex(desc, nullptr, 8u, 3u, irradiance, readReason),
     expectTrue(readReason == fuse::renderer::CacheIndexRejectReason::NullCache,
+
+// --- deepen additive from deepen-ddgi-guards-1a6d ---
+void testDdgiClassifyPreflightGuards() {
+               "classifyProbeSampleCoordsReject none on valid coords");
+    expectTrue(fuse::renderer::ProbeGridLayout::preflightProbeSampleCoords(desc, coords),
+               "preflightProbeSampleCoords passes on valid coords");
+               "classifyProbeSampleCoordsReject unordered corners");
+    expectTrue(!fuse::renderer::ProbeGridLayout::preflightProbeSampleCoords(desc, reversed, &sampleReason),
+               "preflightProbeSampleCoords reports unordered_corners");
+               "classifyCacheIndexReject none on valid index");
+    expectTrue(fuse::renderer::ddgi_util::preflightCacheIndex(desc, 3u, 8u),
+               "preflightCacheIndex passes on valid index");
+               "wouldSkipCacheIndexLookup false on valid index");
+    expectTrue(!fuse::renderer::ddgi_util::preflightCacheIndex(desc, nullptr, 3u, 8u, &cacheReason),
+               "preflightCacheIndex rejects null cache");
+               "preflightCacheIndex reports null_cache");
+    expectTrue(fuse::renderer::classifyProbeTrilinearSampleReject(desc, coords, cache.data(), 8u) ==
+               "classifyProbeTrilinearSampleReject none on accessible grid");
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearProbeSample(desc, coords, cache.data(), 8u),
+               "preflightTrilinearProbeSample passes on accessible grid");
+               "classifyProbeScheduleReject none on valid schedule inputs");
+               "preflightProbeSchedule passes on valid schedule inputs");
+               "wouldSkipProbeSchedule false on valid schedule inputs");
+               "classifyProbeScheduleReject zero probe count");
+               "preflightProbeSchedule reports zero_probe_count");
+               "classifyProbeUpdateLaunchReject none on valid launch");
+    expectTrue(fuse::renderer::preflightDdgiProbeUpdate(desc, validLaunch, 2u),
+               "preflightDdgiProbeUpdate passes on valid launch");
+    expectTrue(!fuse::renderer::wouldSkipDdgiProbeUpdate(desc, validLaunch, 2u),
+               "wouldSkipDdgiProbeUpdate false on valid launch");
+               "classifyProbeUpdateLaunchReject OOB probe index");
+    expectTrue(!fuse::renderer::preflightDdgiProbeUpdate(desc, oobLaunch, 2u, &launchReason),
+               "preflightDdgiProbeUpdate reports out_of_range_probe_index");
+               "classifyProbeKernelReject none on valid kernel params");
+    expectTrue(fuse::renderer::gi::preflightProbeTraceKernel(kernelParams),
+               "preflightProbeTraceKernel passes on valid params");
+               "preflightProbeBlendKernel passes on valid params");
+               "wouldSkipProbeTraceKernel false on valid params");
+               "wouldSkipProbeBlendKernel false on valid params");
+               "classifyProbeKernelReject null probe indices");
+    expectTrue(!fuse::renderer::gi::preflightProbeTraceKernel(nullIndices, &kernelReason),
+               "preflightProbeTraceKernel rejects null probe indices");
+    expectTrue(kernelReason == fuse::renderer::gi::ProbeKernelRejectReason::NullProbeIndices,
+               "preflightProbeTraceKernel reports null_probe_indices");
+    testDdgiClassifyPreflightGuards();

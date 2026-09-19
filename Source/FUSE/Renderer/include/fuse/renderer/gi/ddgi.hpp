@@ -857,3 +857,6 @@ bool wouldSkipTrilinearSampleAtCoords(const DDGIDesc& desc,
 
 // --- deepen additive from deepen-ddgi-guards-b07e ---
 bool wouldClampCacheIndexLookup(const DDGIDesc& desc, u32 probe_index);
+
+// --- deepen additive from deepen-ddgi-guards-1a6d ---
+ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& desc, const ProbeSampleCoords& coords);

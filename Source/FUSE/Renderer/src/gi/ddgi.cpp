@@ -2657,3 +2657,20 @@ bool wouldClampProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& 
     return wouldSkipProbeSchedule(probe_count, max_indices, out_indices, out_count, reason);
     return outReason != ProbeUpdateLaunchRejectReason::None;
     return wouldSkipDdgiProbeUpdate(desc, probe_indices, probe_count, reason);
+
+// --- deepen additive from deepen-ddgi-guards-1a6d ---
+    const ProbeSampleCoordsRejectReason reject = classifyProbeSampleCoordsReject(desc, coords);
+    return reject == ProbeSampleCoordsRejectReason::None;
+    return !preflightProbeSampleCoords(desc, coords);
+    return reject == ProbeTrilinearSampleRejectReason::None;
+    return !preflightTrilinearProbeSample(desc, coords, cache, cache_count);
+    return tryReadIrradianceAtIndex(desc, cache, cache_count, probe_index, out_irradiance);
+    return !wouldSkipCacheIndexLookup(desc, probe_index, cache_count);
+    return !wouldSkipCacheIndexLookup(desc, cache, probe_index, cache_count);
+    const CacheIndexRejectReason reject = classifyCacheIndexReject(desc, probe_index, cache_count);
+    return reject == CacheIndexRejectReason::None;
+    return reject == ProbeScheduleRejectReason::None;
+    return tryTrilinearProbeIrradiance(desc, world_position, cache, cache_count, out_irradiance);
+    return reject == ProbeUpdateLaunchRejectReason::None;
+    return reject == ProbeKernelRejectReason::None;
+    return preflightProbeTraceKernel(params, reason);
