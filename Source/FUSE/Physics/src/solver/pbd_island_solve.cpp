@@ -2562,3 +2562,8 @@ bool should_skip_island_dispatch_solveable(const ContactIslandGraph& graph,
 
 // --- deepen additive from deepen-pbd-island-guards-0bfe ---
     const IslandSleepDispatchPreflight preflight = preflight_island_sleep_dispatch(graph, bodies, dt);
+
+// --- deepen additive from deepen-pbd-island-guards-a022 ---
+IslandSolvePassPreflight preflight_island_solve_pass_by_index(
+    const IslandSolvePassPreflight preflight = preflight_island_solve_pass(
+        if (sleepPreflight.skipped || sleepPreflight.can_skip_solve()) {

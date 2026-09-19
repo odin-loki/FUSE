@@ -1572,3 +1572,6 @@ bool should_skip_island_dispatch_solveable(const ContactIslandGraph& graph,
 
 // --- deepen additive from deepen-pbd-island-guards-0bfe ---
     IslandBuildPreflight preflight{};
+
+// --- deepen additive from deepen-pbd-island-guards-a022 ---
+IslandSolvePassPreflight preflight_island_solve_pass_by_index(

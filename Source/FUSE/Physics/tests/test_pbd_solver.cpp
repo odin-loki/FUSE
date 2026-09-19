@@ -4618,3 +4618,20 @@ void testIslandBuildResultGuards() {
     const IslandSleepDispatchPreflight allSleepingDispatch =
     expectTrue(should_skip_island_sleep_dispatch(graph, bodies, 1.f / 60.f),
                "should_skip sleep dispatch true for all-sleeping graph");
+
+// --- deepen additive from deepen-pbd-island-guards-a022 ---
+void testContactIslandGraphBuildGuarded() {
+    const IslandGraphBuildPreflight preflight = preflightIslandGraphBuild(4, contacts, constraints);
+void testPreflightIslandSolvePassGuards() {
+    const IslandSolvePassPreflight mixedPreflight =
+    expectTrue(!mixedPreflight.skipped, "solve-pass preflight does not skip mixed island");
+    expectTrue(mixedPreflight.can_solve(), "mixed island passes solve-pass preflight");
+    expectTrue(!mixedPreflight.sleep.allSleeping, "mixed island is not all-sleeping in solve-pass preflight");
+    const IslandSolvePassPreflight sleepingPreflight =
+    expectTrue(!sleepingPreflight.can_solve(), "all-sleeping island fails solve-pass preflight");
+    expectTrue(should_skip_island_solve_pass(graph.island(sleepingIsland), bodies, work.contactManifolds(), constraints),
+               "should_skip_island_solve_pass on all-sleeping island");
+    const IslandSolvePassPreflight outOfRange =
+void testDispatchSolveIslandWithWakeGuarded() {
+void testDispatchAllIslandsWithWakeGuarded() {
+    testPreflightIslandSolvePassGuards();
