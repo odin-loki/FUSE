@@ -4678,6 +4678,8 @@ const char* gizmoUpdateDragRejectReasonLabel(GizmoUpdateDragRejectReason reason)
         return "EmptyHit";
     case GizmoUpdateDragRejectReason::InvalidDimensions:
         return "InvalidDimensions";
+    case GizmoUpdateDragRejectReason::EmptyHit:
+        return "EmptyHit";
     case GizmoUpdateDragRejectReason::OutOfBounds:
         return "OutOfBounds";
     case GizmoUpdateDragRejectReason::InvalidActiveAxis:

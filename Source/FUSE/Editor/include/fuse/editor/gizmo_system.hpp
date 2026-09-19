@@ -2697,14 +2697,6 @@ enum class GizmoSnapDragRejectReason : u8 {
     InvalidStep,
 };
 
-/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
-enum class GizmoSnapDragRejectReason : u8 {
-    None = 0,
-    DeltaNonFinite,
-    SnapDisabled,
-    InvalidStep,
-};
-
 const char* gizmoPickRejectReasonLabel(GizmoPickRejectReason reason);
 const char* gizmoSnapRejectReasonLabel(GizmoSnapRejectReason reason);
 const char* gizmoSnapDragRejectReasonLabel(GizmoSnapDragRejectReason reason);

@@ -7550,6 +7550,11 @@ void testSnapDragRejectReasonGuards() {
     const fuse::editor::SnapDragPreflight invalidStepPreflight = fuse::editor::preflightSnapDrag(
         0.37f, fuse::editor::GizmoMode::Translate, snap);
     expectTrue(fuse::editor::classifySnapDragReject(invalidStepPreflight) ==
+    expectTrue(fuse::editor::shouldSkipSnapDrag(std::numeric_limits<fuse::f32>::infinity(),
+                                                fuse::editor::GizmoMode::Translate, snap),
+               "shouldSkipSnapDrag true for infinite delta");
+
+    snap.translateSnap = true;
     expectTrue(!fuse::editor::tryPreflightSnapDrag(0.37f, fuse::editor::GizmoMode::Translate, snap,
                                                    reason),
                "tryPreflightSnapDrag rejects invalid step");
@@ -7571,6 +7576,8 @@ void testSnapDragRejectReasonGuards() {
                "tryPreflightSnapDrag accepts valid delta and snap");
     expectTrue(reason == fuse::editor::GizmoSnapDragRejectReason::None,
                "valid snap-drag reject reason is None after invalid-step recovery");
+
+               "valid snap-drag reject reason is None after invalid step recovery");
 
     const fuse::editor::SnapDragPreflight nanPreflight = fuse::editor::preflightSnapDrag(
         std::numeric_limits<fuse::f32>::quiet_NaN(), fuse::editor::GizmoMode::Translate, snap);
