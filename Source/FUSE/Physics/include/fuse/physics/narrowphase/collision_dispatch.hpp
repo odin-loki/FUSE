@@ -3,6 +3,8 @@
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
+#include <fuse/physics/narrowphase/contact_buffer.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
@@ -199,5 +201,46 @@ std::vector<ContactManifold> runNarrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+
+/// Const preflight for narrowphase-into-buffer dispatch (B4.6 deepen pass).
+struct NarrowphaseIntoBufferPreflight {
+    NarrowphaseBatchPreflight batch{};
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && batch.can_dispatch(); }
+    bool can_skip() const { return skipped || batch.can_skip(); }
+};
+
+/// Populate into-buffer preflight without mutating the contact buffer (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphaseIntoBufferPreflight preflight{};
+    preflight.batch = preflight_narrowphase_batch(pairs, bodies, shapes);
+    preflight.skipped = preflight.batch.can_skip();
+    return preflight;
+}
+
+/// Returns true when narrowphase-into-buffer should early-out (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE bool can_skip_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflight_narrowphase_into_buffer(pairs, bodies, shapes).can_skip();
+}
+
+/// Narrowphase into buffer only when batch preflight reports dispatchable pairs (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE void runNarrowphaseIntoBufferIfNeeded(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer) {
+    if (can_skip_narrowphase_into_buffer(pairs, bodies, shapes)) {
+        buffer.clear();
+        return;
+    }
+    runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
+}
 
 } // namespace fuse::physics::narrowphase

@@ -226,4 +226,78 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Why detect_contacts_pair would early-out before shape dispatch (B4.6 deepen pass).
+enum class ContactPairDetectRejectReason : u8 {
+    None = 0,
+    RejectedPair,
+};
+
+/// Const preflight for detect_contacts_pair dispatch (B4.6 deepen pass).
+struct ContactPairDetectPreflight {
+    ContactPairRejectReason rejectReason = ContactPairRejectReason::None;
+    ContactPairDetectRejectReason reason = ContactPairDetectRejectReason::None;
+    bool rejected = false;
+
+    bool can_detect() const { return !rejected; }
+};
+
+/// Human-readable label for detect_contacts_pair reject reasons (B4.6 deepen pass).
+inline const char* contact_pair_detect_reject_reason_name(ContactPairDetectRejectReason reason) {
+    switch (reason) {
+    case ContactPairDetectRejectReason::None:
+        return "None";
+    case ContactPairDetectRejectReason::RejectedPair:
+        return "RejectedPair";
+    }
+    return "Unknown";
+}
+
+/// Diagnose why detect_contacts_pair would skip; vacuously succeeds when detect may proceed (B4.6 deepen pass).
+inline ContactPairDetectRejectReason contact_pair_detect_reject_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (is_invalid_contact_pair(pair, bodies, shapes)) {
+        return ContactPairDetectRejectReason::RejectedPair;
+    }
+    return ContactPairDetectRejectReason::None;
+}
+
+/// Returns true when `contact_pair_detect_reject_reason` matches `expected` (B4.6 deepen pass).
+inline bool contact_pair_detect_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairDetectRejectReason expected) {
+    return contact_pair_detect_reject_reason(pair, bodies, shapes) == expected;
+}
+
+/// Populate detect preflight without running shape dispatch (B4.6 deepen pass).
+inline ContactPairDetectPreflight preflight_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairDetectPreflight preflight{};
+    preflight.rejectReason = contact_pair_reject_reason(pair, bodies, shapes);
+    preflight.reason = contact_pair_detect_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairDetectRejectReason::None;
+    return preflight;
+}
+
+/// Returns true when detect_contacts_pair should skip before shape dispatch (B4.6 deepen pass).
+inline bool can_skip_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return contact_pair_detect_reject_reason(pair, bodies, shapes) !=
+           ContactPairDetectRejectReason::None;
+}
+
+/// Returns true when both-plane pair would be rejected by deepen preflight (B4.6 deepen pass).
+inline bool contact_pair_deepen_rejects_plane_plane(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    return is_plane_plane_contact_pair(pair, shapes) && is_unsupported_shape_pair(pair, shapes);
+}
+
 } // namespace fuse::physics::narrowphase
