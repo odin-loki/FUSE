@@ -256,6 +256,18 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Returns true when the manifold is valid with a unit normal and friction basis (B4.6 deepen pass).
+bool is_finalized_contact_manifold(
+    const ContactManifold& manifold,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Finalize only when not already finalized; no-op when `is_finalized_contact_manifold` passes (B4.6 deepen pass).
+bool finalize_contact_manifold_if_not_finalized(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

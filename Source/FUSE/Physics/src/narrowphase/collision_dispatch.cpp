@@ -4,6 +4,24 @@
 
 namespace fuse::physics::narrowphase {
 
+NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphaseDispatchPreflight preflight{};
+    preflight.batch = preflight_narrowphase_batch(pairs, bodies, shapes);
+    preflight.emptyPairList = pairs.empty();
+    preflight.canSkipDispatch = preflight.emptyPairList || preflight.batch.can_skip();
+    return preflight;
+}
+
+bool can_skip_narrowphase_dispatch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflight_narrowphase_dispatch(pairs, bodies, shapes).canSkipDispatch;
+}
+
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
@@ -11,6 +29,11 @@ void runNarrowphaseIntoBuffer(
     ContactBufferSoA& buffer) {
     const u32 pairCount = static_cast<u32>(pairs.size());
     buffer.preparePairSlots(pairCount);
+
+    if (pairCount == 0u) {
+        buffer.compactAndClampIfNeeded();
+        return;
+    }
 
     // Per-pair slots are job-safe (disjoint writes). Serial dispatch on the CPU stub avoids
     // scheduler reference-capture flakes seen when stacking parallel broadphase + narrowphase
@@ -22,7 +45,7 @@ void runNarrowphaseIntoBuffer(
         }
     }
 
-    buffer.compactAndClamp();
+    buffer.compactAndClampIfNeeded();
 }
 
 std::vector<ContactManifold> runNarrowphase(
