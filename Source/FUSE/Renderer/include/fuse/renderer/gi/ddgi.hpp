@@ -864,3 +864,7 @@ ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& de
 // --- deepen additive from deepen-b56-ddgi-guards-3e47 ---
 bool tryReadIrradianceAtCoord(const DDGIDesc& desc,
 bool tryCanLookupAtCoord(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-4d4e ---
+bool wouldSkipDdgiSample(const DDGIDesc& desc, const DDGISampleRequest& request, u32 cache_count);
+bool preflightScheduleProbeUpdates(u32 probe_count,

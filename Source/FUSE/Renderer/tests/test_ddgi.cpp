@@ -3381,3 +3381,23 @@ void testDdgiClassifyPreflightGuards() {
                "wouldSkip true for null probe indices trace launch");
                "wouldSkip true for null probe indices blend launch");
                "wouldSkip true for zero rays per probe trace launch");
+
+// --- deepen additive from deepen-ddgi-guards-4d4e ---
+               "tryValidateSampleRequest succeeds for valid request");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipDdgiSample(desc, request, 8u),
+               "wouldSkipDdgiSample false when cache sized");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipDdgiSample(desc, request, 4u),
+               "wouldSkipDdgiSample true when cache undersized");
+    expectTrue(!fuse::renderer::ddgi_util::tryReadIrradianceAtIndex(desc, nullptr, 8u, 3u, irradiance, reason),
+void testProbeSampleCoordClassifyAndPreflight() {
+               "preflightProbeSampleCoords succeeds for valid coords");
+    expectTrue(fuse::renderer::ddgi_util::preflightScheduleProbeUpdates(2048u, 64u, indices, &count),
+               "preflightScheduleProbeUpdates succeeds for valid inputs");
+void testKernelWouldSkipAndSurfacePreflight() {
+    expectTrue(fuse::renderer::gi::classifyProbeKernelTraceReject(validParams) ==
+               "classifyProbeKernelTraceReject none for valid params");
+    expectTrue(!fuse::renderer::gi::tryPreflightProbeTraceWorldPositions(validParams, reason),
+    expectTrue(fuse::renderer::gi::tryPreflightProbeTraceWorldPositions(surfacedParams, reason),
+    expectTrue(fuse::renderer::gi::tryPreflightProbeBlendSurfaces(surfacedParams, reason),
+    testProbeSampleCoordClassifyAndPreflight();
+    testKernelWouldSkipAndSurfacePreflight();

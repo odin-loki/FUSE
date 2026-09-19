@@ -2684,3 +2684,17 @@ bool tryReadIrradianceAtCoord(const DDGIDesc& desc,
     return tryReadIrradianceAtIndex(desc, cache, cache_count, index, out_irradiance, outReason);
     return tryCanLookupAtCoord(desc, coord, cache_count, reason);
 bool tryCanLookupAtCoord(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-4d4e ---
+bool wouldSkipDdgiSample(const DDGIDesc& desc, const DDGISampleRequest& request, u32 cache_count) {
+    case ProbeKernelRejectReason::NullPrevIrradiance:
+    case ProbeKernelRejectReason::NullOutRadiance:
+ProbeKernelRejectReason classifyProbeKernelTraceReject(const DDGIKernelParams& params) {
+ProbeKernelRejectReason classifyProbeKernelBlendReject(const DDGIKernelParams& params) {
+bool tryPreflightProbeTraceWorldPositions(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
+    ProbeKernelRejectReason baseReason = ProbeKernelRejectReason::None;
+    if (!tryCanLaunchProbeTraceKernel(params, baseReason)) {
+bool tryPreflightProbeBlendSurfaces(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
+    if (!tryCanLaunchProbeBlendKernel(params, baseReason)) {
+        outReason = ProbeKernelRejectReason::NullPrevIrradiance;
+        outReason = ProbeKernelRejectReason::NullOutRadiance;
