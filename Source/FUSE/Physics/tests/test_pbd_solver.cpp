@@ -3084,3 +3084,35 @@ void testPreflightContactImpulseDispatchGuardsDt() {
     const IslandCombinedWarmStartPreflight outOfRange =
     testPreflightContactImpulseGraphGuards();
     testPreflightContactImpulseDispatchGuardsDt();
+
+// --- deepen additive from deepen-pbd-island-guards-6957 ---
+void testPreflightIslandSolveJobGuards() {
+    const IslandSolveJobPreflight constrainedPreflight =
+    expectTrue(!constrainedPreflight.skipped, "constrained island job preflight not skipped");
+    expectTrue(constrainedPreflight.can_dispatch(), "constrained island job can dispatch");
+    expectTrue(constrainedPreflight.indices.valid, "constrained island indices are valid");
+    const IslandSolveJobPreflight outOfRange =
+        const IslandSolveJobPreflight emptyPreflight =
+        expectTrue(emptyPreflight.skipped, "empty island job preflight is skipped");
+        expectTrue(should_skip_island_solve_index(graph, islandIndex, contacts.size(), constraints.size()),
+                   "should_skip_island_solve_index on empty island");
+    expectTrue(!should_skip_island_solve_invalid_indices(job, contacts.size(), constraints.size()),
+    expectTrue(should_skip_island_solve_invalid_indices(badJob, contacts.size(), constraints.size()),
+void testPreflightWarmStartIslandContactImpulses() {
+    expectTrue(constrainedPreflight.priorImpulseCoverage == 1u,
+    const IslandContactImpulseWarmStartPreflight invalidDt =
+    expectTrue(should_skip_warm_start_contact_impulses(graph.island(islandA), contacts, 0.f),
+               "should_skip on invalid dt");
+        expectTrue(should_skip_warm_start_contact_impulses_index(graph, islandIndex, contacts, dt),
+                   "should_skip_contact_impulses_index on empty island");
+void testPreflightWarmStartContactImpulsesGraph() {
+               "should_skip false when impulses exist");
+               "should_skip graph impulse warm-start on empty graph");
+void testPreflightWarmStartIslandCombined() {
+    const IslandCombinedWarmStartPreflight combined =
+    const IslandCombinedWarmStartPreflight lambdaOnly =
+    const IslandCombinedWarmStartPreflight emptyCombined =
+    testPreflightIslandSolveJobGuards();
+    testPreflightWarmStartIslandContactImpulses();
+    testPreflightWarmStartContactImpulsesGraph();
+    testPreflightWarmStartIslandCombined();
