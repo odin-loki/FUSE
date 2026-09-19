@@ -1537,3 +1537,10 @@ bool wouldSkipAsyncFlow(const char* name) {
 // --- deepen additive from deepen-b16-profiler-guards-0dc1 ---
 bool wouldSkipAsyncFlowBegin(const char* name, u32 /*flowId*/) {
 bool wouldSkipSafeChromeTraceExport() {
+
+// --- deepen additive from b16-profiler-deepen-guards-70eb ---
+    return wouldSkipScope(name);
+    return wouldSkipScope(name) || openAsyncFlowCount() == 0u;
+    return wouldSkipScope(track);
+        return ChromeTraceExportRejectReason::UnpairedFlowEvents;
+    case ChromeTraceExportRejectReason::UnpairedFlowEvents:

@@ -5477,3 +5477,26 @@ void testTryEventByNameAndFlowIdGuards() {
     expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("mirror_flow", flowId),
                "wouldSkipAsyncFlowEnd true after flow already closed");
                "orphan wouldSkip path does not record extra flow finish");
+
+// --- deepen additive from b16-profiler-deepen-guards-70eb ---
+void testWouldSkipEntryPointGuards() {
+    expectTrue(fuse::profiler::wouldSkipScope(nullptr), "wouldSkipScope true for null");
+    expectTrue(fuse::profiler::wouldSkipScope(""), "wouldSkipScope true for empty");
+    expectTrue(!fuse::profiler::wouldSkipScope("scope"), "wouldSkipScope false when enabled");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin(nullptr), "wouldSkipAsyncFlowBegin true for null");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd(""), "wouldSkipAsyncFlowEnd true for empty");
+    expectTrue(fuse::profiler::wouldSkipCounter(nullptr), "wouldSkipCounter true for null");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowEnd("record_flow"),
+               "wouldSkipAsyncFlowEnd false with open flow");
+    expectTrue(fuse::profiler::wouldSkipScope("disabled"), "wouldSkipScope true when disabled");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("disabled"),
+void testNestingAndExportRejectReasonGuards() {
+               "wouldSkipChromeTraceExport false on balanced empty buffer");
+                   "wouldSkipChromeTraceExport true with active scope");
+               "wouldSkipChromeTraceExport true with unmatched flow");
+                   fuse::profiler::NestingStateRejectReason::CrossThreadFlowHandoffPending))
+                   fuse::profiler::ChromeTraceExportRejectReason::CrossThreadFlowHandoffPending))
+               "wouldSkipChromeTraceExport false after pairing");
+    expectTrue(fuse::profiler::wouldSkipCounter(nullptr), "wouldSkipCounter true for null name");
+    testWouldSkipEntryPointGuards();
+    testNestingAndExportRejectReasonGuards();
