@@ -551,6 +551,9 @@ bool ContactManifold::canFinalize(f32 separationEpsilon, f32 /*duplicateEpsilon*
 
 
 
+
+
+
 bool ContactManifold::pruneForFinalization(f32 separationEpsilon, f32 duplicateEpsilon) {
     pruneContactPoints(separationEpsilon, duplicateEpsilon);
     return hasPenetratingPoints(separationEpsilon);

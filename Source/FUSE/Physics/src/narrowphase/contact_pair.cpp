@@ -279,10 +279,12 @@ bool is_both_sleeping_pair(
 bool is_kinematic_contact_pair(
 }
 
+
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies) {
     if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
         return false;
+    }
     const bool kinematicA = (bodies.flags[pair.bodyA] & RB_KINEMATIC) != 0u;
     const bool kinematicB = (bodies.flags[pair.bodyB] & RB_KINEMATIC) != 0u;
     return kinematicA && kinematicB;

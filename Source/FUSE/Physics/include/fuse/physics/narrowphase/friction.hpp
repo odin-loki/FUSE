@@ -51,7 +51,7 @@ bool friction_basis_matches_normal(
     f32 epsilon = 1e-4f);
 
 /// Returns true when a valid normal exists but the cached basis is missing or stale (B4.3 deepen pass).
-bool needs_friction_basis_rebuild(const ContactManifold& manifold);
+bool needs_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 /// Epsilon-aware rebuild check: missing basis or no longer aligned with `contactNormal` (B4.3 deepen pass).
 bool needs_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon);
@@ -72,6 +72,7 @@ void ensureFrictionBasis(ContactManifold& manifold);
 
 /// Epsilon-aware ensure: rebuilds when the cached basis is missing or stale (B4.3 deepen pass).
 bool ensure_friction_basis(ContactManifold& manifold, f32 epsilon);
+bool ensure_friction_basis(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 /// Returns true when `basis` is orthonormal and aligned with `normal` (B4.3 deepen pass).
 bool isValidFrictionBasisForNormal(vec3 normal, const TangentBasis& basis, f32 epsilon = 1e-4f);
@@ -84,6 +85,7 @@ bool friction_basis_is_stale(const ContactManifold& manifold, f32 epsilon = 1e-4
 
 /// Rebuild the tangent frame when missing or stale; returns false when tangents should be skipped (B4.3 deepen pass 2).
 bool rebuild_friction_basis_if_needed(ContactManifold& manifold);
+/// Alias for `needs_friction_basis_rebuild` (B4.3 deepen pass).
 
 /// Returns true when both friction coefficients are zero or normal impulse is negligible (B4.3 deepen).
 bool should_skip_friction_solve(
