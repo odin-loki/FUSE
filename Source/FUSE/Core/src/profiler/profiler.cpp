@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace fuse::profiler {
@@ -218,6 +219,36 @@ const char* chromeCategory(EventPhase phase) {
     }
 }
 
+void assignSkipReason(ProfileScopeSkipReason* reason, ProfileScopeSkipReason value) {
+    if (reason != nullptr) {
+        *reason = value;
+    }
+}
+
+void assignSkipReason(AsyncFlowBeginSkipReason* reason, AsyncFlowBeginSkipReason value) {
+    if (reason != nullptr) {
+        *reason = value;
+    }
+}
+
+void assignSkipReason(AsyncFlowEndSkipReason* reason, AsyncFlowEndSkipReason value) {
+    if (reason != nullptr) {
+        *reason = value;
+    }
+}
+
+void assignSkipReason(CounterSampleSkipReason* reason, CounterSampleSkipReason value) {
+    if (reason != nullptr) {
+        *reason = value;
+    }
+}
+
+void assignSkipReason(ChromeTraceExportSkipReason* reason, ChromeTraceExportSkipReason value) {
+    if (reason != nullptr) {
+        *reason = value;
+    }
+}
+
 } // namespace
 
 bool isValidEventName(const char* name);
@@ -334,6 +365,21 @@ bool isEventIndexValid(u32 index) {
 bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
+
+namespace {
+
+bool eventNameMatches(const char* eventName, const char* queryName) {
+    if (!isValidEventName(queryName) || !isValidEventName(eventName)) {
+        return false;
+    }
+    return std::strcmp(eventName, queryName) == 0;
+}
+
+bool isFlowPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+}
+
+} // namespace
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return isValidEventName(event.name);
@@ -464,6 +510,126 @@ u32 countEventsByPhase(EventPhase phase) {
     return count;
 }
 
+u32 findFirstEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (eventNameMatches(event.name, name)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (eventNameMatches(event.name, name)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (eventNameMatches(event.name, name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 findFirstEventIndexByFlowId(u32 flowId) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByFlowId(u32 flowId) {
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByFlowId(u32 flowId) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByName(name);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByName(name);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByFlowId(flowId);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByFlowId(flowId);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -475,6 +641,200 @@ const ProfileEvent& lastEvent() {
         return emptyProfileEvent();
     }
     return eventAt(index);
+}
+
+const char* profileScopeSkipReasonName(ProfileScopeSkipReason reason) {
+    switch (reason) {
+    case ProfileScopeSkipReason::None:
+        return "none";
+    case ProfileScopeSkipReason::ProfilerDisabled:
+        return "profiler_disabled";
+    case ProfileScopeSkipReason::InvalidName:
+        return "invalid_name";
+    }
+    return "unknown";
+}
+
+const char* asyncFlowBeginSkipReasonName(AsyncFlowBeginSkipReason reason) {
+    switch (reason) {
+    case AsyncFlowBeginSkipReason::None:
+        return "none";
+    case AsyncFlowBeginSkipReason::ProfilerDisabled:
+        return "profiler_disabled";
+    case AsyncFlowBeginSkipReason::InvalidName:
+        return "invalid_name";
+    }
+    return "unknown";
+}
+
+const char* asyncFlowEndSkipReasonName(AsyncFlowEndSkipReason reason) {
+    switch (reason) {
+    case AsyncFlowEndSkipReason::None:
+        return "none";
+    case AsyncFlowEndSkipReason::ProfilerDisabled:
+        return "profiler_disabled";
+    case AsyncFlowEndSkipReason::InvalidName:
+        return "invalid_name";
+    case AsyncFlowEndSkipReason::OrphanEnd:
+        return "orphan_end";
+    }
+    return "unknown";
+}
+
+const char* counterSampleSkipReasonName(CounterSampleSkipReason reason) {
+    switch (reason) {
+    case CounterSampleSkipReason::None:
+        return "none";
+    case CounterSampleSkipReason::ProfilerDisabled:
+        return "profiler_disabled";
+    case CounterSampleSkipReason::InvalidName:
+        return "invalid_name";
+    }
+    return "unknown";
+}
+
+const char* chromeTraceExportSkipReasonName(ChromeTraceExportSkipReason reason) {
+    switch (reason) {
+    case ChromeTraceExportSkipReason::None:
+        return "none";
+    case ChromeTraceExportSkipReason::ProfilerDisabled:
+        return "profiler_disabled";
+    case ChromeTraceExportSkipReason::UnbalancedNesting:
+        return "unbalanced_nesting";
+    case ChromeTraceExportSkipReason::FlowDepthDetached:
+        return "flow_depth_detached";
+    case ChromeTraceExportSkipReason::CrossThreadFlowHandoffPending:
+        return "cross_thread_flow_handoff_pending";
+    }
+    return "unknown";
+}
+
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+
+    if (preflight.profilerDisabled) {
+        preflight.reason = ProfileScopeSkipReason::ProfilerDisabled;
+    } else if (preflight.invalidName) {
+        preflight.reason = ProfileScopeSkipReason::InvalidName;
+    }
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+
+    if (preflight.profilerDisabled) {
+        preflight.reason = AsyncFlowBeginSkipReason::ProfilerDisabled;
+    } else if (preflight.invalidName) {
+        preflight.reason = AsyncFlowBeginSkipReason::InvalidName;
+    }
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name, u32 /*flowId*/) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.orphanEnd = openAsyncFlowCount() == 0u;
+
+    if (preflight.profilerDisabled) {
+        preflight.reason = AsyncFlowEndSkipReason::ProfilerDisabled;
+    } else if (preflight.invalidName) {
+        preflight.reason = AsyncFlowEndSkipReason::InvalidName;
+    } else if (preflight.orphanEnd) {
+        preflight.reason = AsyncFlowEndSkipReason::OrphanEnd;
+    }
+    return preflight;
+}
+
+CounterSamplePreflight preflightCounterSample(const char* track) {
+    CounterSamplePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(track);
+
+    if (preflight.profilerDisabled) {
+        preflight.reason = CounterSampleSkipReason::ProfilerDisabled;
+    } else if (preflight.invalidName) {
+        preflight.reason = CounterSampleSkipReason::InvalidName;
+    }
+    return preflight;
+}
+
+NestingStatePreflight preflightNestingState() {
+    NestingStatePreflight preflight{};
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    preflight.openAsyncFlowCount = openAsyncFlowCount();
+    preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
+    preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+    return preflight;
+}
+
+ChromeTraceExportSkipReason chromeTraceExportSkipReason() {
+    if (!enabled()) {
+        return ChromeTraceExportSkipReason::ProfilerDisabled;
+    }
+    return ChromeTraceExportSkipReason::None;
+}
+
+ChromeTraceExportSkipReason chromeTraceExportSafeSkipReason() {
+    const ChromeTraceExportSkipReason disabledReason = chromeTraceExportSkipReason();
+    if (disabledReason != ChromeTraceExportSkipReason::None) {
+        return disabledReason;
+    }
+    if (hasUnbalancedNesting()) {
+        return ChromeTraceExportSkipReason::UnbalancedNesting;
+    }
+    if (isFlowDepthDetached()) {
+        return ChromeTraceExportSkipReason::FlowDepthDetached;
+    }
+    if (isCrossThreadFlowHandoffPending()) {
+        return ChromeTraceExportSkipReason::CrossThreadFlowHandoffPending;
+    }
+    return ChromeTraceExportSkipReason::None;
+}
+
+bool wouldSkipProfileScope(const char* name, ProfileScopeSkipReason* reason) {
+    const ProfileScopePreflight preflight = preflightProfileScope(name);
+    assignSkipReason(reason, preflight.reason);
+    return !preflight.canRecord();
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name, AsyncFlowBeginSkipReason* reason) {
+    const AsyncFlowBeginPreflight preflight = preflightAsyncFlowBegin(name);
+    assignSkipReason(reason, preflight.reason);
+    return !preflight.canBegin();
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId, AsyncFlowEndSkipReason* reason) {
+    const AsyncFlowEndPreflight preflight = preflightAsyncFlowEnd(name, flowId);
+    assignSkipReason(reason, preflight.reason);
+    return !preflight.canEnd();
+}
+
+bool wouldSkipCounterSample(const char* track, CounterSampleSkipReason* reason) {
+    const CounterSamplePreflight preflight = preflightCounterSample(track);
+    assignSkipReason(reason, preflight.reason);
+    return !preflight.canSample();
+}
+
+bool wouldSkipChromeTraceExport(ChromeTraceExportSkipReason* reason) {
+    const ChromeTraceExportSkipReason skipReason = chromeTraceExportSkipReason();
+    assignSkipReason(reason, skipReason);
+    return skipReason != ChromeTraceExportSkipReason::None;
+}
+
+bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason) {
+    const ChromeTraceExportSkipReason skipReason = chromeTraceExportSafeSkipReason();
+    assignSkipReason(reason, skipReason);
+    return skipReason != ChromeTraceExportSkipReason::None;
 }
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
