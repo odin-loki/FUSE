@@ -2111,3 +2111,8 @@ bool try_preflight_hrtf_binaural_convolution(const HrtfIrStub& ir,
             *reason = HrtfBinauralRejectReason::BypassPath;
             *reason = HrtfBinauralRejectReason::UnityAttenuation;
 bool try_preflight_hrtf_binaural_narrowing(HrtfPanPath path, float distance_attenuation,
+
+// --- deepen additive from deepen-b7-2-hrtf-binaural-b048 ---
+    case HrtfConvolutionRejectReason::ZeroLength:
+        return HrtfConvolutionRejectReason::ZeroLength;
+                                      const Vec3& rel_listener, HrtfConvolutionRejectReason* reason) {
