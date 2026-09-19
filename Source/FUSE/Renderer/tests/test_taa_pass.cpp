@@ -9377,7 +9377,6 @@ void testTaaPassTryAndClassifyGuardWrappers() {
 
 
 
-        fuse::renderer::TaaJitterGuardRejectReason::None;
     expectTrue(pass->tryPreflightJitterSync(3u, jitterReject), "pass tryPreflightJitterSync passes");
     expectTrue(pass->tryPreflightJitterNdc(jitterReject), "pass tryPreflightJitterNdc passes");
     expectTrue(pass->tryPreflightJitterAdvance(jitterReject), "pass tryPreflightJitterAdvance passes");
@@ -9387,6 +9386,10 @@ void testTaaPassTryAndClassifyGuardWrappers() {
                "pass classifyJitterAdvanceReject passes for default sequence");
 
     expectTrue(pass->tryPreflightJitterSync(3u, jitterReason), "pass tryPreflightJitterSync passes");
+
+void testTaaPassTryClassifyGuardWrappers() {
+
+
 
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
                "pass tryPreflightHistoryReuse fails before init");
@@ -10530,6 +10533,15 @@ void testTaaPassTryPreflightAndClassifyGuards() {
     expectTrue(pass->classifyHistoryReuseBlock(0u) ==
                    fuse::renderer::TaaHistoryReuseBlockReason::StaleGeneration,
                "pass classifyHistoryReuseBlock is StaleGeneration after invalidate");
+               "pass classifyResolveSkip is None before first resolve");
+               "pass tryPreflightResolve passes before first resolve");
+               "pass tryPreflightResolve skip reason is None before first resolve");
+
+               "pass classifyResolveBlendReject is None before warmup resolve");
+
+
+
+
 
     fuse::renderer::TaaPassDesc zeroWidthDesc{};
     zeroWidthDesc.width = 0;
@@ -10648,6 +10660,9 @@ void testTaaPassTryPreflightAndClassifyGuards() {
     expectTrue(zeroPass->preflightJitterSync(0u), "zero-width pass jitter sync still valid for sequence");
 
 
+
+    expectTrue(!zeroPass->shouldSkipJitterAdvance(),
+               "zero-width pass still allows jitter advance when sequence is valid");
 
     resources.destroy();
     bindless.destroy(*bootstrap->device());
@@ -15167,6 +15182,7 @@ int main() {
     testTaaPassTryPreflightWrappers();
     testTaaPassTryPreflightAndClassifyWrappers();
     testTaaPassHistoryWarmupPreflight();
+    testTaaPassTryClassifyGuardWrappers();
     testTaaPassShouldSkipGuardWrappers();
     testHistoryWarmupPreflight();
     testHistoryReusePreflight();
