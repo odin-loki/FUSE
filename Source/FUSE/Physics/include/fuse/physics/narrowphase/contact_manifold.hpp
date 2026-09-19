@@ -132,6 +132,7 @@ enum class ManifoldPruneRejectReason : u8 {
     None = 0,
     EmptyManifold,
     AllSeparated,
+    InvalidNormal,
 };
 
 /// Human-readable label for manifold prune reject reasons (B4.5 deepen follow-up pass).
@@ -254,6 +255,36 @@ bool finalize_contact_manifold_with_preflight(
     ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Normalize `contactNormal` when valid but non-unit; returns false when normal is invalid (B4.6 deepen pass).
+bool normalize_contact_manifold_normal(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Normalize only when `needsNormalNormalization` reports true (B4.6 deepen pass).
+bool normalize_contact_manifold_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// True when prune preflight can skip normal normalization (B4.6 deepen pass).
+bool can_skip_normalize_contact_manifold_normal(
+    const ContactManifold& manifold,
+    f32 lengthEpsilon = 1e-4f);
+
+/// True when manifold is valid, finalized, and has an orthonormal friction basis (B4.6 deepen pass).
+bool is_finalized_contact_manifold(
+    const ContactManifold& manifold,
+    f32 lengthEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Finalize only when not already finalized; no-op on valid finalized manifolds (B4.6 deepen pass).
+bool finalize_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// True when `finalize_contact_manifold_if_needed` would be a no-op (B4.6 deepen pass).
+bool can_skip_finalize_contact_manifold_if_finalized(
+    const ContactManifold& manifold,
+    f32 lengthEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
 inline ContactManifold invalidContactManifold() {

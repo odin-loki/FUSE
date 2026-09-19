@@ -237,6 +237,8 @@ const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason) 
         return "EmptyManifold";
     case FrictionBasisRejectReason::InvalidNormal:
         return "InvalidNormal";
+    case FrictionBasisRejectReason::StaleBasis:
+        return "StaleBasis";
     }
     return "Unknown";
 }
@@ -290,6 +292,51 @@ bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilo
         return manifold.hasFrictionBasis();
     }
     return rebuild_friction_basis_if_needed(manifold, epsilon);
+}
+
+bool normalize_contact_normal_for_friction(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return false;
+    }
+    const f32 normalLength = manifold.contactNormal.length();
+    if (normalLength <= 1e-8f) {
+        return false;
+    }
+    if (std::fabs(normalLength - 1.f) <= lengthEpsilon) {
+        return true;
+    }
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    return true;
+}
+
+bool can_skip_normalize_contact_normal_for_friction(
+    const ContactManifold& manifold,
+    f32 lengthEpsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return true;
+    }
+    return !contact_normal_needs_normalize(manifold, lengthEpsilon);
+}
+
+bool rebuild_friction_basis_with_normalize_if_needed(ContactManifold& manifold, f32 epsilon) {
+    if (can_skip_friction_basis_rebuild_with_normalize(manifold, epsilon)) {
+        return manifold.hasFrictionBasis();
+    }
+    if (!normalize_contact_normal_for_friction(manifold, epsilon)) {
+        invalidate_friction_basis(manifold);
+        return false;
+    }
+    return rebuild_friction_basis_with_preflight(manifold, epsilon);
+}
+
+bool can_skip_friction_basis_rebuild_with_normalize(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return true;
+    }
+    return can_skip_friction_basis_rebuild(manifold, epsilon) &&
+           can_skip_normalize_contact_normal_for_friction(manifold, epsilon);
 }
 
 } // namespace fuse::physics::narrowphase

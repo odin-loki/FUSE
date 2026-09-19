@@ -348,6 +348,8 @@ const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason) 
         return "EmptyManifold";
     case ManifoldPruneRejectReason::AllSeparated:
         return "AllSeparated";
+    case ManifoldPruneRejectReason::InvalidNormal:
+        return "InvalidNormal";
     }
     return "Unknown";
 }
@@ -358,6 +360,9 @@ ManifoldPruneRejectReason manifold_prune_reject_reason(
     f32 duplicateEpsilon) {
     if (manifold.empty()) {
         return ManifoldPruneRejectReason::EmptyManifold;
+    }
+    if (!manifold.hasValidNormal()) {
+        return ManifoldPruneRejectReason::InvalidNormal;
     }
     if (manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon)) {
         return ManifoldPruneRejectReason::AllSeparated;
@@ -526,6 +531,66 @@ bool finalize_contact_manifold_with_preflight(
         }
     }
     return generate_contact_manifold(manifold);
+}
+
+bool normalize_contact_manifold_normal(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (!manifold.hasValidNormal()) {
+        return false;
+    }
+    const f32 normalLength = manifold.contactNormal.length();
+    if (std::fabs(normalLength - 1.f) <= lengthEpsilon) {
+        return true;
+    }
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    return true;
+}
+
+bool normalize_contact_manifold_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (!manifold.needsNormalNormalization(lengthEpsilon)) {
+        return manifold.hasValidNormal();
+    }
+    return normalize_contact_manifold_normal(manifold, lengthEpsilon);
+}
+
+bool can_skip_normalize_contact_manifold_normal(
+    const ContactManifold& manifold,
+    f32 lengthEpsilon) {
+    return !manifold.needsNormalNormalization(lengthEpsilon);
+}
+
+bool is_finalized_contact_manifold(
+    const ContactManifold& manifold,
+    f32 lengthEpsilon,
+    f32 frictionEpsilon) {
+    if (!manifold.valid || manifold.empty() || !manifold.hasValidNormal()) {
+        return false;
+    }
+    if (manifold.needsNormalNormalization(lengthEpsilon)) {
+        return false;
+    }
+    if (!manifold.hasPenetratingPoints()) {
+        return false;
+    }
+    return can_skip_friction_basis_rebuild(manifold, frictionEpsilon);
+}
+
+bool finalize_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    if (can_skip_finalize_contact_manifold_if_finalized(manifold, 1e-4f, frictionEpsilon)) {
+        return manifold.valid;
+    }
+    return finalize_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
+bool can_skip_finalize_contact_manifold_if_finalized(
+    const ContactManifold& manifold,
+    f32 lengthEpsilon,
+    f32 frictionEpsilon) {
+    return is_finalized_contact_manifold(manifold, lengthEpsilon, frictionEpsilon);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

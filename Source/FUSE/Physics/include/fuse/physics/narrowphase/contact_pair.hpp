@@ -23,6 +23,8 @@ enum class ContactPairRejectReason : u8 {
     BothKinematic,
     AnyTrigger,
     BothMassless,
+    PlanePlane,
+    RestingPair,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -222,6 +224,41 @@ NarrowphaseBatchPreflight preflight_narrowphase_batch(
 
 /// Returns true when batch preflight reports no dispatchable pairs (B4.5 deepen follow-up pass).
 bool narrowphase_batch_rejects_all(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when the pair is non-responsive (sleeping, static, kinematic, or massless on both sides, B4.6 deepen pass).
+bool is_resting_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    f32 invMassEpsilon = 1e-8f);
+
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.6 deepen pass).
+bool contact_pair_deepen_rejects_for_reason_v2(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Collect pairs that pass extended deepen preflight (B4.6 deepen pass).
+std::vector<broadphase::CandidatePair> filter_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Per-reason counts from extended deepen preflight over a batch (B4.6 deepen pass).
+struct ContactPairBatchRejectSummary {
+    u32 pairCount = 0u;
+    u32 dispatchableCount = 0u;
+    u32 restingCount = 0u;
+    u32 planePlaneCount = 0u;
+
+    bool all_rejected() const { return pairCount > 0u && dispatchableCount == 0u; }
+};
+
+/// Populate batch reject summary without running shape dispatch (B4.6 deepen pass).
+ContactPairBatchRejectSummary summarize_contact_pair_batch_rejects(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
