@@ -1509,6 +1509,41 @@ HrtfGuardedPanPreflight preflight_hrtf_guarded_pan(bool hrtf_enabled, const Hrtf
 
 
 
+/// Composite binaural preflight — aggregates IR, pan-path, and attenuation-coupling guard bundles (B7.2 deepen).
+struct HrtfBinauralPreflight {
+    HrtfPanPathPreflight panPath{};
+    HrtfAttenuationCouplingPreflight attenuation{};
+    bool skipped = false;
+
+    bool can_spatial_pan() const { return !skipped && panPath.can_spatial_pan(); }
+    bool can_convolve() const { return !skipped && ir.can_convolve() && panPath.can_convolve(); }
+    bool can_narrow() const { return !skipped && panPath.can_spatial_pan() && attenuation.can_narrow(); }
+};
+
+/// Preflight full binaural HRTF dispatch from enable flag, IR stub, offset, and attenuation scalars.
+HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir,
+                                              const Vec3& rel_listener, float distance_attenuation,
+                                              float occlusion_gain,
+                                              const HrtfAttenuationCoupling& coupling = {},
+                                              const BinauralPanParams& params = {});
+
+/// Preflight binaural HRTF when no IR is wired (ILD/ITD stub or bypass).
+HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
+
+/// Preflight binaural HRTF from a resolved pan path and IR stub.
+HrtfBinauralPreflight preflight_hrtf_binaural_for_path(HrtfPanPath path, const HrtfIrStub& ir,
+
+/// Preflight binaural HRTF from a resolved pan path when no IR is wired.
+HrtfBinauralPreflight preflight_hrtf_binaural_for_path(HrtfPanPath path, float distance_attenuation,
+
+/// Non-mutating spatial-pan predicate — mirrors \c HrtfBinauralPreflight::can_spatial_pan.
+bool can_apply_binaural_hrtf_pan(const HrtfBinauralPreflight& preflight);
+
+/// Non-mutating convolution predicate — mirrors \c HrtfBinauralPreflight::can_convolve.
+bool can_convolve_binaural_hrtf(const HrtfBinauralPreflight& preflight);
+
+/// Non-mutating narrowing predicate — mirrors \c HrtfBinauralPreflight::can_narrow.
+bool can_narrow_binaural_hrtf_spatial_image(const HrtfBinauralPreflight& preflight);
 
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
