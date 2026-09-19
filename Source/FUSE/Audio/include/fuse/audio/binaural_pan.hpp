@@ -29,6 +29,12 @@ struct HrtfIrPreflight {
 
 /// Convenience guard — `preflight_hrtf_ir(ir).has_valid_ir()`.
 [[nodiscard]] bool can_use_hrtf_ir_preflight(const HrtfIrStub& ir);
+    bool empty_ir = true;
+
+    bool can_use_convolution() const { return !empty_ir; }
+
+/// Preflight empty-IR stub — surfaces null samples and zero-length guards.
+HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
 
 /// Listener-local distance below which a source is treated as co-located.
 float hrtf_co_located_epsilon();
@@ -409,6 +415,15 @@ bool should_use_hrtf_convolution_path(bool hrtf_enabled, const HrtfIrStub& ir, c
 
 /// Inverse of \c should_skip_hrtf_spatial_pan — path produces a lateral spatial image.
 bool should_apply_hrtf_spatial_pan(HrtfPanPath path);
+/// Read-only pan-path diagnostics — no mutation (B7.2 deepen).
+
+    bool can_apply_spatial_pan() const { return path != HrtfPanPath::Bypass; }
+    bool uses_convolution() const { return path == HrtfPanPath::Convolution; }
+    bool is_bypass() const { return path == HrtfPanPath::Bypass; }
+
+/// Preflight pan-path routing — empty IR, co-located, and disabled guards.
+
+/// Preflight pan-path routing when no IR is wired.
 
 /// True when the resolved path produces a lateral spatial image (not centre bypass).
 bool is_spatial_hrtf_pan_path(HrtfPanPath path);
@@ -914,6 +929,14 @@ struct HrtfSpatialPanPreflight {
 
 /// Non-mutating coupling predicate — same guards as \c preflight_hrtf_attenuation_coupling.
 bool can_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuation,
+
+    bool can_narrow_spatial_image() const { return !skipped; }
+    bool can_apply_coupling() const { return !skipped; }
+
+/// Preflight attenuation coupling — bypass path and unity-attenuation early-outs.
+
+    bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+    float distance_attenuation, float occlusion_gain);
 
 /// Combined spatial blend from distance attenuation and occlusion LF gain.
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
