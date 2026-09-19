@@ -30,6 +30,18 @@ struct CookCacheStats {
     u64 invalidations = 0;
 };
 
+/// Read-only reconcile breakdown — mirrors prune/invalidate paths without mutating stats (B7.9 deepen).
+struct CookCacheReconcileEstimate {
+    u32 invalid_entries = 0;
+    u32 stale_content_entries = 0;
+    u32 stale_upstream_entries = 0;
+
+    [[nodiscard]] u32 prunable_entries() const { return invalid_entries + stale_content_entries; }
+    [[nodiscard]] u32 total_entries() const {
+        return invalid_entries + stale_content_entries + stale_upstream_entries;
+    }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -98,6 +110,15 @@ public:
                                           const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+    [[nodiscard]] std::vector<std::string> probe_downstream_sources(
+        const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
+        const std::vector<CookJob>& jobs) const;
+    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path = {}) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

@@ -503,6 +503,65 @@ u32 CookCache::count_invalid_entries() const {
     return count;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) > 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) > 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) > 0;
+}
+
+std::vector<std::string> CookCache::probe_downstream_sources(
+    const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
+    const std::vector<CookJob>& jobs) const {
+    if (!is_valid_cook_cache_path(output_path) || m_entries.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> downstream_sources;
+    downstream_sources.push_back(output_path);
+
+    for (const CookJobDependencyEdge& edge : edges) {
+        const CookJob* from_job = find_job_by_id(jobs, edge.from_job_id);
+        if (!from_job || from_job->output_path != output_path) {
+            continue;
+        }
+
+        const CookJob* to_job = find_job_by_id(jobs, edge.to_job_id);
+        if (!to_job) {
+            continue;
+        }
+
+        downstream_sources.push_back(to_job->source_path);
+        const std::vector<std::string> nested =
+            probe_downstream_sources(to_job->output_path, edges, jobs);
+        downstream_sources.insert(downstream_sources.end(), nested.begin(), nested.end());
+    }
+
+    return downstream_sources;
+}
+
+CookCacheReconcileEstimate CookCache::estimate_reconcile(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    CookCacheReconcileEstimate estimate;
+    if (m_entries.empty()) {
+        return estimate;
+    }
+
+    estimate.invalid_entries = count_invalid_entries();
+    estimate.stale_content_entries =
+        count_prunable_entries() > estimate.invalid_entries
+            ? count_prunable_entries() - estimate.invalid_entries
+            : 0;
+    estimate.stale_upstream_entries = count_stale_upstream_hashes(source_upstream_by_path);
+    return estimate;
+}
+
 bool CookCache::contains(u64 content_hash) const {
     if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {
         return false;

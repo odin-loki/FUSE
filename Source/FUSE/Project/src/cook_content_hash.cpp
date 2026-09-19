@@ -183,8 +183,12 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "source_unreadable";
     case CookHashRejectReason::EmptyDependencyList:
         return "empty_dependency_list";
+    case CookHashRejectReason::UnresolvedDependency:
+        return "unresolved_dependency";
     case CookHashRejectReason::ZeroSourceHash:
         return "zero_source_hash";
+    case CookHashRejectReason::NonCacheableCombinedKey:
+        return "non_cacheable_combined_key";
     }
     return "unknown";
 }
@@ -301,6 +305,62 @@ CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 /*upstream_hash*
         return preflight;
     }
 
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
+    CookHashPreflight preflight;
+    if (!is_valid_fnv1a64_input(data, size)) {
+        preflight.reason = CookHashRejectReason::NullData;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    const CookHashPreflight source_preflight = preflight_cook_cache_key(source_hash, upstream_hash);
+    if (!source_preflight.can_hash) {
+        return source_preflight;
+    }
+
+    CookHashPreflight preflight;
+    if (combine_cook_cache_key(source_hash, upstream_hash) == 0) {
+        preflight.reason = CookHashRejectReason::NonCacheableCombinedKey;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry& entry) {
+    const CookHashPreflight entry_preflight = preflight_manifest_entry_hash(entry);
+    if (!entry_preflight.can_hash) {
+        return entry_preflight;
+    }
+
+    for (const std::string& dependency : entry.dependencies) {
+        if (dependency.empty()) {
+            continue;
+        }
+
+        const CookHashPreflight dependency_preflight = preflight_file_content_hash(dependency);
+        if (!dependency_preflight.can_hash) {
+            CookHashPreflight preflight;
+            preflight.reason = dependency_preflight.reason == CookHashRejectReason::EmptyPath
+                                   ? CookHashRejectReason::UnresolvedDependency
+                                   : dependency_preflight.reason;
+            return preflight;
+        }
+    }
+
+    CookHashPreflight preflight;
     preflight.can_hash = true;
     preflight.reason = CookHashRejectReason::None;
     return preflight;
