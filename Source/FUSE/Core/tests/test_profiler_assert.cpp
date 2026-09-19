@@ -1824,6 +1824,193 @@ void testEmptyNameAttemptsDoNotAffectPhaseLookup() {
                "exportable lookup copies counter phase after empty-name attempts");
 }
 
+void testWhitespaceOnlyNameGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::isValidEventName("   "), "whitespace-only name is invalid");
+    expectTrue(!fuse::profiler::isValidEventName("\t\n"), "tab/newline-only name is invalid");
+    expectTrue(fuse::profiler::isValidEventName(" valid "), "name with non-whitespace content is valid");
+
+    {
+        fuse::profiler::ProfileScope whitespaceScope("   ");
+    }
+    fuse::profiler::beginAsyncFlow(" \t ", 1u);
+    fuse::profiler::sampleCounter("  ", 1);
+    fuse::profiler::endAsyncFlow("  ", 1u);
+
+    expectTrue(fuse::profiler::eventCount() == 0u, "whitespace-only names record nothing");
+    expectTrue(fuse::profiler::isScopeNestingBalanced(), "whitespace scope does not unbalance nesting");
+    expectTrue(fuse::profiler::isFlowNestingBalanced(), "whitespace flow does not unbalance flow depth");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "whitespace flow does not leave open async flows");
+}
+
+void testPeekEventAtGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::ProfileEvent outEvent{};
+    expectTrue(!fuse::profiler::peekEventAt(0u, outEvent), "peekEventAt false on empty buffer");
+    expectTrue(fuse::profiler::isProfileEventSentinel(outEvent),
+               "peekEventAt clears output on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("peek_scope");
+    }
+
+    expectTrue(fuse::profiler::peekEventAt(0u, outEvent), "peekEventAt true for valid index");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Begin, "peekEventAt copies begin phase");
+    expectTrue(outEvent.name != nullptr && std::string(outEvent.name) == "peek_scope",
+               "peekEventAt copies event name without exportability filter");
+
+    expectTrue(fuse::profiler::peekEventAt(1u, outEvent), "peekEventAt true for end event");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "peekEventAt copies end phase");
+
+    expectTrue(!fuse::profiler::peekEventAt(2u, outEvent), "peekEventAt false past event count");
+    expectTrue(fuse::profiler::isProfileEventSentinel(outEvent),
+               "peekEventAt clears output when out of range");
+}
+
+void testFindEventIndexByNameGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::findFirstEventIndexByName("missing")
+                   == fuse::profiler::kInvalidEventIndex,
+               "findFirstEventIndexByName invalid on empty buffer");
+    expectTrue(fuse::profiler::findLastEventIndexByName("missing")
+                   == fuse::profiler::kInvalidEventIndex,
+               "findLastEventIndexByName invalid on empty buffer");
+    expectTrue(fuse::profiler::countEventsByName("missing") == 0u,
+               "countEventsByName is zero on empty buffer");
+    expectTrue(fuse::profiler::findFirstEventIndexByName(nullptr) == fuse::profiler::kInvalidEventIndex,
+               "findFirstEventIndexByName rejects null lookup name");
+    expectTrue(fuse::profiler::findFirstEventIndexByName("   ") == fuse::profiler::kInvalidEventIndex,
+               "findFirstEventIndexByName rejects whitespace lookup name");
+
+    {
+        FUSE_PROFILE_SCOPE("name_outer");
+        FUSE_PROFILE_COUNTER("name_counter", 1);
+        {
+            FUSE_PROFILE_SCOPE("name_inner");
+        }
+        FUSE_PROFILE_COUNTER("name_counter", 2);
+    }
+
+    expectTrue(fuse::profiler::findFirstEventIndexByName("name_outer") == 0u,
+               "findFirstEventIndexByName locates first outer scope begin");
+    expectTrue(fuse::profiler::findLastEventIndexByName("name_outer") == 5u,
+               "findLastEventIndexByName locates outer scope end");
+    expectTrue(fuse::profiler::findFirstEventIndexByName("name_inner") == 2u,
+               "findFirstEventIndexByName locates inner scope begin");
+    expectTrue(fuse::profiler::findFirstEventIndexByName("name_counter") == 1u,
+               "findFirstEventIndexByName locates first counter sample");
+    expectTrue(fuse::profiler::findLastEventIndexByName("name_counter") == 4u,
+               "findLastEventIndexByName locates second counter sample");
+    expectTrue(fuse::profiler::countEventsByName("name_counter") == 2u,
+               "countEventsByName counts duplicate track names");
+    expectTrue(fuse::profiler::countEventsByName("name_outer") == 2u,
+               "countEventsByName counts paired scope events");
+}
+
+void testFindEventIndexByFlowIdGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::findFirstEventIndexByFlowId(42u) == fuse::profiler::kInvalidEventIndex,
+               "findFirstEventIndexByFlowId invalid on empty buffer");
+    expectTrue(fuse::profiler::findLastEventIndexByFlowId(42u) == fuse::profiler::kInvalidEventIndex,
+               "findLastEventIndexByFlowId invalid on empty buffer");
+    expectTrue(fuse::profiler::findFirstEventIndexByFlowId(0u) == fuse::profiler::kInvalidEventIndex,
+               "findFirstEventIndexByFlowId rejects zero flow id");
+
+    const fuse::u32 outerFlowId = fuse::profiler::nextFlowId();
+    const fuse::u32 innerFlowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("flow_lookup_outer", outerFlowId);
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("flow_lookup_inner", innerFlowId);
+    FUSE_PROFILE_ASYNC_FLOW_END("flow_lookup_inner", innerFlowId);
+    FUSE_PROFILE_ASYNC_FLOW_END("flow_lookup_outer", outerFlowId);
+
+    expectTrue(fuse::profiler::findFirstEventIndexByFlowId(outerFlowId) == 0u,
+               "findFirstEventIndexByFlowId locates outer flow start");
+    expectTrue(fuse::profiler::findFirstEventIndexByFlowId(innerFlowId) == 1u,
+               "findFirstEventIndexByFlowId locates inner flow start");
+    expectTrue(fuse::profiler::findLastEventIndexByFlowId(outerFlowId) == 3u,
+               "findLastEventIndexByFlowId locates outer flow finish");
+    expectTrue(fuse::profiler::findLastEventIndexByFlowId(innerFlowId) == 2u,
+               "findLastEventIndexByFlowId locates inner flow finish");
+}
+
+void testOrphanAsyncFlowEndCountGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::orphanAsyncFlowEndCount() == 0u,
+               "reset leaves orphan async flow end count at zero");
+
+    FUSE_PROFILE_ASYNC_FLOW_END("orphan_count_a", 1u);
+    FUSE_PROFILE_ASYNC_FLOW_END("orphan_count_b", 2u);
+    expectTrue(fuse::profiler::orphanAsyncFlowEndCount() == 2u,
+               "orphan flow finishes increment orphan counter");
+    expectTrue(fuse::profiler::eventCount() == 0u, "orphan finishes still record no events");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("paired_after_orphan_count", flowId);
+    FUSE_PROFILE_ASYNC_FLOW_END("paired_after_orphan_count", flowId);
+    expectTrue(fuse::profiler::orphanAsyncFlowEndCount() == 2u,
+               "paired flow does not reset orphan counter");
+    expectTrue(fuse::profiler::eventCount() == 2u, "paired flow still records after orphan counter");
+
+    fuse::profiler::reset();
+    expectTrue(fuse::profiler::orphanAsyncFlowEndCount() == 0u, "reset clears orphan async flow end count");
+}
+
+void testChromeTraceExportPreflightRingBufferFull() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    for (fuse::u32 i = 0u; i < fuse::profiler::ringCapacity(); ++i) {
+        FUSE_PROFILE_COUNTER("ring_fill", static_cast<fuse::s64>(i));
+    }
+
+    expectTrue(fuse::profiler::isBufferFull(), "ring buffer reports full after capacity events");
+    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(preflight.ringBufferFull, "preflight marks ring buffer full");
+    expectTrue(preflight.eventCount == fuse::profiler::ringCapacity(),
+               "preflight event count matches ring capacity when full");
+    expectTrue(preflight.exportableEventCount == fuse::profiler::ringCapacity(),
+               "preflight exportable count matches ring capacity when full");
+    expectTrue(preflight.canExport(), "preflight still allows raw export when ring is full");
+    expectTrue(!preflight.canExportSafely(),
+               "preflight blocks safe export when ring buffer is full");
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"ph\":\"C\"") != std::string::npos,
+               "full ring buffer still exports counter events");
+}
+
+void testWhitespaceNameAttemptsDoNotAffectNameLookup() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::beginAsyncFlow("  ", 1u);
+    fuse::profiler::sampleCounter("\t", 1);
+    {
+        fuse::profiler::ProfileScope whitespaceScope(" ");
+    }
+
+    expectTrue(fuse::profiler::eventCount() == 0u, "whitespace-name attempts record nothing");
+    expectTrue(fuse::profiler::findFirstEventIndexByName("valid_lookup")
+                   == fuse::profiler::kInvalidEventIndex,
+               "name lookup stays invalid after whitespace-name attempts");
+
+    FUSE_PROFILE_COUNTER("valid_lookup", 4);
+    expectTrue(fuse::profiler::findFirstEventIndexByName("valid_lookup") == 0u,
+               "name lookup finds valid counter after whitespace-name attempts");
+    expectTrue(fuse::profiler::countEventsByName("valid_lookup") == 1u,
+               "name count finds valid counter after whitespace-name attempts");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -1924,6 +2111,13 @@ int main() {
     testChromeTraceExportPreflightSafetyFlags();
     testChromeTraceExportPreflightCrossThreadHandoff();
     testEmptyNameAttemptsDoNotAffectPhaseLookup();
+    testWhitespaceOnlyNameGuards();
+    testPeekEventAtGuard();
+    testFindEventIndexByNameGuard();
+    testFindEventIndexByFlowIdGuard();
+    testOrphanAsyncFlowEndCountGuard();
+    testChromeTraceExportPreflightRingBufferFull();
+    testWhitespaceNameAttemptsDoNotAffectNameLookup();
     testFatalHandlerHook();
     testVerifyMacro();
 
