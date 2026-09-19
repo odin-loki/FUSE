@@ -253,30 +253,26 @@ inline u32 ResidencySet::find_index_(GridCoord coord) const {
 [[nodiscard]] inline bool try_update_focus_distance(ResidencySet& set, GridCoord coord, f32 focus_distance) {
     if (!is_valid_grid_coord(coord)) {
         return false;
-    }
     return set.update_focus_distance(coord, focus_distance);
-}
 
 /// Guard: collect eviction candidates; returns empty when the set has no candidates.
 /// Guard: returns focus distance for a resident coord, or -1 when coord is invalid or absent.
-[[nodiscard]] inline f32 focus_distance_for_guarded(const ResidencySet& set, GridCoord coord) {
-    if (!is_valid_grid_coord(coord)) {
-        return -1.f;
-    }
-    return set.focus_distance_for(coord);
 
 /// Empty-set guard: collect eviction candidates or return an empty list when none exist.
 [[nodiscard]] inline std::vector<GridCoord> collect_eviction_candidates_guarded(const ResidencySet& set,
                                                                                  u32 max_count = 0) {
     if (!set.has_eviction_candidate()) {
         return {};
-    }
     return set.collect_eviction_candidates(max_count);
-}
 
 /// Empty-set guard: count eviction candidates tracked by the residency set.
 [[nodiscard]] inline u32 count_eviction_candidates_guarded(const ResidencySet& set) {
     return set.has_eviction_candidate() ? set.size() : 0u;
+/// Empty-set guard: returns false when the residency set has no eviction candidate.
+[[nodiscard]] inline bool has_residency_eviction_candidate_guarded(const ResidencySet& set) {
+    return set.has_eviction_candidate();
+
+/// Guard: returns -1 when coord is invalid or not resident.
 }
 
 /// Pick the farthest coord from `candidates` eligible for budget eviction under `policy`.
@@ -412,6 +408,12 @@ template <typename ScoreFn>
                                                 resident_bytes, incoming_bytes) &&
            has_budget_eviction_candidate_guarded(set, score_fn, incoming_priority, policy);
     return is_valid_grid_coord(picked) && is_valid_eviction_score(score);
+    return is_valid_grid_coord(picked) && is_budget_eviction_score_eligible(score);
+
+/// True when budget pressure exists and the residency set can supply an eviction candidate.
+[[nodiscard]] inline bool can_attempt_budget_eviction_from_set(u32 max_loaded_cells, u32 resident_count,
+                                                                u64 max_resident_bytes, u64 resident_bytes,
+                                                                u64 incoming_bytes, const ResidencySet& set) {
 }
 
 /// Combined unload rank for budget-driven eviction (B7.6 deepen).

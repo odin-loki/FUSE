@@ -161,6 +161,7 @@ WorldCell* WorldPartition::find_budget_eviction_candidate_(f32 incoming_priority
 
         if (!is_valid_grid_coord(picked) || !is_positive_eviction_score(out_score)) {
         if (!is_valid_grid_coord(picked) || !is_valid_eviction_score(out_score)) {
+        if (!is_valid_grid_coord(picked) || !is_budget_eviction_score_eligible(out_score)) {
             return nullptr;
         }
         return const_cast<WorldCell*>(find_cell_(picked));
@@ -190,9 +191,15 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority, u64 incoming_bytes
                                               m_desc.budget.max_resident_bytes, resident_byte_count(),
                                               incoming_bytes)) {
         if (needs_budget_eviction_for_incoming(m_desc.max_loaded_cells, resident_cell_count(),
-                                               m_desc.budget.max_resident_bytes, resident_byte_count(),
                                                incoming_bytes) &&
             !m_residency_set.has_eviction_candidate()) {
+    if (!needs_budget_eviction_for_incoming(m_desc.max_loaded_cells, resident_cell_count(),
+        return;
+    }
+
+    if (!can_attempt_budget_eviction(m_desc.max_loaded_cells, resident_cell_count(),
+                                     incoming_bytes, m_residency_set.has_eviction_candidate())) {
+        if (should_record_eviction_skipped_on_empty_residency(true, m_residency_set.has_eviction_candidate())) {
             ++m_budget_counters.eviction_skipped;
         }
         return;
@@ -206,6 +213,7 @@ void WorldPartition::evict_for_budget_(f32 incoming_priority, u64 incoming_bytes
 
         if (best_candidate == nullptr || !is_positive_eviction_score(best_score)) {
         if (best_candidate == nullptr || !is_valid_eviction_score(best_score)) {
+        if (best_candidate == nullptr || !is_budget_eviction_score_eligible(best_score)) {
             ++m_budget_counters.eviction_skipped;
             break;
         }
