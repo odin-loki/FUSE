@@ -975,6 +975,7 @@ CookHashPreflight preflight_manifest_dependency_coverage(
     if (!combined.can_hash) {
         return combined;
 
+CookHashPreflight preflight_shader_entry_hash(const CookManifestEntry& entry) {
         return preflight;
     }
 
@@ -1028,6 +1029,11 @@ CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry
     const CookHashPreflight entry_preflight = preflight_manifest_entry_hash(entry);
     if (!entry_preflight.can_hash) {
         return entry_preflight;
+    if (entry.kind == CookAssetKind::Shader) {
+        preflight = preflight_shader_entry_hash(entry);
+    } else {
+        preflight = preflight_manifest_entry_hash(entry);
+    if (!preflight.can_hash) {
 
     bool has_non_empty_dependency = false;
     for (const std::string& dependency : entry.dependencies) {
@@ -1084,6 +1090,14 @@ CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry&
 CookHashPreflight preflight_manifest_entry_with_dependencies_hash(const CookManifestEntry& entry,
 
     if (entry.dependencies.empty()) {
+
+        }
+        return preflight;
+
+    const CookHashPreflight upstream_preflight =
+        preflight_upstream_dependencies_hash(entry.dependencies, manifest);
+    if (!upstream_preflight.can_hash) {
+        return upstream_preflight;
 
 
 u64 hash_manifest_entry(const CookManifestEntry& entry) {

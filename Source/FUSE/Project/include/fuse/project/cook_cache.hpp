@@ -427,6 +427,8 @@ public:
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources_unique(
     /// Deduplicated stale-upstream source paths — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// True when `invalidate_downstream_of` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;
