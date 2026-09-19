@@ -6,6 +6,17 @@
 
 namespace fuse::renderer {
 
+/// Why jitter sync/advance would be blocked (B5.9 deepen).
+enum class TaaJitterSyncRejectReason : u8 {
+    None = 0,
+    InvalidSequence,
+};
+
+/// Human-readable label for jitter sync reject reasons (B5.9 deepen).
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
+/// Classify why jitter sync to a monotonic frame counter would be blocked (B5.9 deepen).
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 sequenceLength);
+
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
 
@@ -77,5 +88,12 @@ private:
     u32 m_index = 0;
     u32 m_monotonicFrame = 0;
 };
+
+/// True when jitter is not aligned to `frameIndex` and sync would change state (B5.9 deepen).
+bool wouldResyncJitterToFrameIndex(const TaaJitter& jitter, u32 frameIndex);
+/// True when jitter monotonic counter or slot differs from `frameIndex` (B5.9 deepen).
+bool jitterNeedsResyncToFrameIndex(const TaaJitter& jitter, u32 frameIndex);
+/// Diagnose jitter sync preflight; false when sync would be blocked (B5.9 deepen).
+bool trySyncJitterToFrameIndexIfReady(TaaJitter& jitter, u32 frameIndex, TaaJitterSyncRejectReason& outReason);
 
 } // namespace fuse::renderer

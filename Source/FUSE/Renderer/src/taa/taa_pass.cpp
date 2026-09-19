@@ -147,6 +147,39 @@ bool TaaPass::preflightResolveBlendWeights(const TaaResolveDesc& desc,
     return preflightTaaResolveBlendWeights(desc, m_history, reason);
 }
 
+bool TaaPass::jitterNeedsResyncToFrameIndex(u32 frameIndex) const {
+    return fuse::renderer::jitterNeedsResyncToFrameIndex(m_jitter, frameIndex);
+}
+
+bool TaaPass::trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason& outReason) {
+    if (!fuse::renderer::trySyncJitterToFrameIndexIfReady(m_jitter, frameIndex, outReason)) {
+        return false;
+    }
+    m_stats.lastJitterNdc = currentJitterNdc();
+    return true;
+}
+
+bool TaaPass::shouldSkipHistoryReuse(u32 observedGeneration) const {
+    return shouldSkipTaaHistoryReuse(m_history, observedGeneration);
+}
+
+bool TaaPass::canSampleHistoryForResolve(const TaaResolveDesc& desc) const {
+    return fuse::renderer::canSampleHistoryForResolve(desc, m_history);
+}
+
+bool TaaPass::tryPreflightHistoryReuseForResolve(const TaaResolveDesc& desc,
+                                                 TaaHistoryReuseBlockReason& outReason) const {
+    return tryPreflightTaaHistoryReuseForResolve(desc, m_history, outReason);
+}
+
+bool TaaPass::shouldSkipHistoryBlendAtResolve(const TaaResolveDesc& desc) const {
+    return fuse::renderer::shouldSkipHistoryBlendAtResolve(desc, m_history);
+}
+
+bool TaaPass::canApplyHistoryBlendAtResolve(const TaaResolveDesc& desc) const {
+    return fuse::renderer::canApplyHistoryBlendAtResolve(desc, m_history);
+}
+
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
 }

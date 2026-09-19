@@ -2,6 +2,37 @@
 
 namespace fuse::renderer {
 
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason) {
+    switch (reason) {
+    case TaaJitterSyncRejectReason::None:
+        return "none";
+    case TaaJitterSyncRejectReason::InvalidSequence:
+        return "invalid_sequence";
+    }
+    return "unknown";
+}
+
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 sequenceLength) {
+    return TaaJitterLayout::validateSequenceLength(sequenceLength) ? TaaJitterSyncRejectReason::None
+                                                                   : TaaJitterSyncRejectReason::InvalidSequence;
+}
+
+bool wouldResyncJitterToFrameIndex(const TaaJitter& jitter, u32 frameIndex) {
+    return jitterNeedsResyncToFrameIndex(jitter, frameIndex);
+}
+
+bool jitterNeedsResyncToFrameIndex(const TaaJitter& jitter, u32 frameIndex) {
+    return !jitter.isAlignedToFrameIndex(frameIndex);
+}
+
+bool trySyncJitterToFrameIndexIfReady(TaaJitter& jitter, u32 frameIndex, TaaJitterSyncRejectReason& outReason) {
+    outReason = classifyTaaJitterSyncReject(jitter.sequenceLength());
+    if (outReason != TaaJitterSyncRejectReason::None) {
+        return false;
+    }
+    return jitter.syncToFrameIndexIfReady(frameIndex);
+}
+
 f32 TaaJitterLayout::halton(u32 index, u32 base) {
     if (base < 2u) {
         return 0.f;
