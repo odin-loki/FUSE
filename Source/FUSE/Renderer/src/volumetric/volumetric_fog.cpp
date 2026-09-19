@@ -1571,3 +1571,14 @@ bool FroxelGridLayout::tryCanSampleAtCoords(const FroxelSampleCoords& coords,
         outCoordReason = SampleCoordRejectReason::None;
     if (!FroxelGridLayout::tryCanSampleAtCoords(coords, desc, outCoordReason)) {
         outLookupReason = DensityLookupRejectReason::None;
+
+// --- deepen additive from deepen-b511-froxel-guards-7caf ---
+        outReason = SampleCoordRejectReason::DepthBelowNear;
+        outReason = SampleCoordRejectReason::DepthAboveFar;
+    case SampleCoordRejectReason::DepthBelowNear:
+    case SampleCoordRejectReason::DepthAboveFar:
+    return tryCanSampleAtCoords(grid, desc, coords, lookupReason, coordReason);
+        outLookupReason = DensityLookupRejectReason::EmptyGrid;
+        outCoordReason = SampleCoordRejectReason::EmptyGrid;
+        outCoordReason = SampleCoordRejectReason::OutOfBounds;
+    if (!tryCanSampleAtCoords(grid, desc, coords, outLookupReason, outCoordReason)) {

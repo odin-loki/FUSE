@@ -2046,3 +2046,23 @@ void testFroxelSampleCoordNormalizeAndPreflightGuards() {
     expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtIndex(emptyGrid, desc, 0u, rejectedIndexed, lookupReason),
     expectNear(rejectedIndexed, 0.f, 1e-6f, "trySampleDensityAtIndex with reason zeroes output on rejection");
     testFroxelSampleCoordNormalizeAndPreflightGuards();
+
+// --- deepen additive from deepen-b511-froxel-guards-7caf ---
+void testFroxelSampleCoordAndDensityPreflightGuards() {
+               "tryMapScreenDepthToSampleCoords rejects depth below near");
+    expectTrue(coordReason == fuse::renderer::SampleCoordRejectReason::DepthBelowNear,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(coordReason), "depth_below_near") == 0,
+               "tryMapScreenDepthToSampleCoords rejects depth above far");
+    expectTrue(coordReason == fuse::renderer::SampleCoordRejectReason::DepthAboveFar,
+    expectTrue(fuse::renderer::froxel_util::tryCanSampleAtCoords(grid, desc, inBounds, lookupReason, coordReason),
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleAtCoords(grid, desc, oobCoords, lookupReason, coordReason),
+    expectNear(sampled, 1.f, 1e-5f, "trySampleDensityAtIndex with reason returns stored density");
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtIndex(grid, desc, 5u, 2.5f, lookupReason),
+    expectNear(coordSample, 1.f, 1e-5f, "trySampleDensityAtCoord with reason returns stored density");
+               "trySampleDensityBilinear with reason succeeds on valid coords");
+               "trySampleDensityTrilinear with reason succeeds on valid coords");
+               "trySampleDensityAtScreen with reason rejects below-near depth");
+               "tryValidateGridDensityForDesc succeeds on accessible grid");
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensityForDesc(undersized, desc, densityReason),
+               "tryValidateGridDensityForDesc rejects undersized storage");
+    testFroxelSampleCoordAndDensityPreflightGuards();
