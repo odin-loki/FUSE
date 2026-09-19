@@ -4,6 +4,192 @@
 
 namespace fuse::physics::narrowphase {
 
+namespace {
+
+bool bufferHasNoPairSlots(const ContactBufferSoA& buffer) {
+    return buffer.pairSlotCount == 0u;
+}
+
+} // namespace
+
+u32 ContactBufferSoA::countValidSlots() const {
+    if (pairSlotCount == 0u) {
+        return 0u;
+    }
+
+    u32 validCount = 0u;
+    for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
+        if (validFlags[slot] != 0u) {
+            ++validCount;
+        }
+    }
+    return validCount;
+}
+
+bool ContactBufferSoA::canSkipCompaction() const {
+    if (bufferHasNoPairSlots(*this)) {
+        return true;
+    }
+
+    for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ContactBufferSoA::canSkipMaxCapacityClamp() const {
+    if (bufferHasNoPairSlots(*this)) {
+        return true;
+    }
+    if (maxCapacity == 0u) {
+        return true;
+    }
+    const u32 validCount = countValidSlots();
+    return validCount <= maxCapacity;
+}
+
+const char* contact_buffer_compact_reject_reason_name(ContactBufferCompactRejectReason reason) {
+    switch (reason) {
+    case ContactBufferCompactRejectReason::None:
+        return "None";
+    case ContactBufferCompactRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferCompactRejectReason::AllValid:
+        return "AllValid";
+    }
+    return "Unknown";
+}
+
+ContactBufferCompactRejectReason contact_buffer_compact_reject_reason(const ContactBufferSoA& buffer) {
+    if (bufferHasNoPairSlots(buffer)) {
+        return ContactBufferCompactRejectReason::EmptyBuffer;
+    }
+    if (buffer.canSkipCompaction()) {
+        return ContactBufferCompactRejectReason::AllValid;
+    }
+    return ContactBufferCompactRejectReason::None;
+}
+
+bool contact_buffer_compact_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferCompactRejectReason expected) {
+    return contact_buffer_compact_reject_reason(buffer) == expected;
+}
+
+ContactBufferCompactPreflight preflight_contact_buffer_compact(const ContactBufferSoA& buffer) {
+    ContactBufferCompactPreflight preflight{};
+    preflight.reason = contact_buffer_compact_reject_reason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferCompactRejectReason::EmptyBuffer;
+    preflight.allValid = preflight.reason == ContactBufferCompactRejectReason::AllValid;
+    return preflight;
+}
+
+bool can_skip_contact_buffer_compact(const ContactBufferSoA& buffer) {
+    return !preflight_contact_buffer_compact(buffer).needsCompaction();
+}
+
+bool should_run_contact_buffer_compact(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_compact(buffer).needsCompaction();
+}
+
+const char* contact_buffer_clamp_reject_reason_name(ContactBufferClampRejectReason reason) {
+    switch (reason) {
+    case ContactBufferClampRejectReason::None:
+        return "None";
+    case ContactBufferClampRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferClampRejectReason::WithinCapacity:
+        return "WithinCapacity";
+    }
+    return "Unknown";
+}
+
+ContactBufferClampRejectReason contact_buffer_clamp_reject_reason(const ContactBufferSoA& buffer) {
+    if (bufferHasNoPairSlots(buffer)) {
+        return ContactBufferClampRejectReason::EmptyBuffer;
+    }
+    if (buffer.canSkipMaxCapacityClamp()) {
+        return ContactBufferClampRejectReason::WithinCapacity;
+    }
+    return ContactBufferClampRejectReason::None;
+}
+
+bool contact_buffer_clamp_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferClampRejectReason expected) {
+    return contact_buffer_clamp_reject_reason(buffer) == expected;
+}
+
+ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer) {
+    ContactBufferClampPreflight preflight{};
+    preflight.reason = contact_buffer_clamp_reject_reason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferClampRejectReason::EmptyBuffer;
+    preflight.withinCapacity = preflight.reason == ContactBufferClampRejectReason::WithinCapacity;
+    return preflight;
+}
+
+bool can_skip_contact_buffer_clamp(const ContactBufferSoA& buffer) {
+    return !preflight_contact_buffer_clamp(buffer).needsClamp();
+}
+
+bool should_run_contact_buffer_clamp(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_clamp(buffer).needsClamp();
+}
+
+const char* contact_buffer_compact_and_clamp_reject_reason_name(ContactBufferCompactAndClampRejectReason reason) {
+    switch (reason) {
+    case ContactBufferCompactAndClampRejectReason::None:
+        return "None";
+    case ContactBufferCompactAndClampRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferCompactAndClampRejectReason::NoWork:
+        return "NoWork";
+    }
+    return "Unknown";
+}
+
+ContactBufferCompactAndClampRejectReason contact_buffer_compact_and_clamp_reject_reason(
+    const ContactBufferSoA& buffer) {
+    if (bufferHasNoPairSlots(buffer)) {
+        return ContactBufferCompactAndClampRejectReason::EmptyBuffer;
+    }
+    if (!should_run_contact_buffer_compact(buffer) && !should_run_contact_buffer_clamp(buffer)) {
+        const u32 validCount = buffer.countValidSlots();
+        if (buffer.pairSlotCount > 0u && buffer.activeCount != validCount) {
+            return ContactBufferCompactAndClampRejectReason::None;
+        }
+        if (buffer.activeCount != validCount) {
+            return ContactBufferCompactAndClampRejectReason::None;
+        }
+        return ContactBufferCompactAndClampRejectReason::NoWork;
+    }
+    return ContactBufferCompactAndClampRejectReason::None;
+}
+
+bool contact_buffer_compact_and_clamp_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferCompactAndClampRejectReason expected) {
+    return contact_buffer_compact_and_clamp_reject_reason(buffer) == expected;
+}
+
+ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer) {
+    ContactBufferCompactAndClampPreflight preflight{};
+    preflight.reason = contact_buffer_compact_and_clamp_reject_reason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer;
+    preflight.noWork = preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork;
+    return preflight;
+}
+
+bool can_skip_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer) {
+    return !preflight_contact_buffer_compact_and_clamp(buffer).needsCompactAndClamp();
+}
+
+bool should_run_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_compact_and_clamp(buffer).needsCompactAndClamp();
+}
+
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
 }
@@ -113,6 +299,16 @@ TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {
 }
 
 u32 ContactBufferSoA::compact() {
+    const ContactBufferCompactPreflight preflight = preflight_contact_buffer_compact(*this);
+    if (preflight.reason == ContactBufferCompactRejectReason::EmptyBuffer) {
+        activeCount = 0u;
+        return activeCount;
+    }
+    if (preflight.reason == ContactBufferCompactRejectReason::AllValid) {
+        activeCount = countValidSlots();
+        return activeCount;
+    }
+
     u32 writeIndex = 0;
     for (u32 readIndex = 0; readIndex < pairSlotCount; ++readIndex) {
         if (validFlags[readIndex] == 0u) {
@@ -232,6 +428,17 @@ u32 ContactBufferSoA::applyMaxCapacityClamp() {
 }
 
 u32 ContactBufferSoA::compactAndClamp() {
+    const ContactBufferCompactAndClampPreflight preflight = preflight_contact_buffer_compact_and_clamp(*this);
+    if (preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer) {
+        activeCount = 0u;
+        pairSlotCount = 0u;
+        return activeCount;
+    }
+    if (preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork) {
+        activeCount = countValidSlots();
+        return activeCount;
+    }
+
     compact();
     return applyMaxCapacityClamp();
 }

@@ -280,6 +280,12 @@ bool should_skip_friction_basis_preflight(
     return preflight_friction_basis_rebuild(manifold, epsilon).can_skip_rebuild();
 }
 
+bool should_run_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    return !should_skip_friction_basis_preflight(manifold, epsilon);
+}
+
 bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon) {
     const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
     if (preflight.reason != FrictionBasisRejectReason::None) {
