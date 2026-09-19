@@ -1061,3 +1061,10 @@ void testCookHashPreflightDeepenGuards() {
     expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_incr_probe.fusemesh"),
     expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_incr_probe.obj", 42u),
     expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_incr_probe.obj", 1u}}),
+
+// --- deepen additive from deepen-b79-cooker-hash-1e9d ---
+    const fuse::project::CookHashPreflight empty_bytes = fuse::project::preflight_fnv1a64_bytes(nullptr, 0);
+    const fuse::project::CookHashPreflight zero_combine =
+    expectTrue(zero_combine.reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_probe_out.fusemesh"),
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_probe.obj", 42u),

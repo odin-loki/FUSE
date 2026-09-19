@@ -1979,3 +1979,7 @@ void testCookerReconcileEstimatorGuards() {
 
 // --- deepen additive from deepen-fuse-b79-cooker-hash-fdd2 ---
     expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes({{sourceB, 0u}}) ||
+
+// --- deepen additive from deepen-b79-cooker-hash-1e9d ---
+    entryA.output_path = "/tmp/fuse_b79_est_stale_a.fusemesh";
+    entryB.output_path = "/tmp/fuse_b79_est_stale_b.fusemesh";
