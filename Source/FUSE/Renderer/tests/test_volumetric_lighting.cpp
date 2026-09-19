@@ -2887,3 +2887,29 @@ void testFroxelTrilinearAndPopulatePreflightGuards() {
     expectTrue(fuse::renderer::FroxelGridLayout::tryClampSampleCoords(clampable, desc, sampleReason),
                "tryClampSampleCoords with reason succeeds for clampable weights");
     expectTrue(!fuse::renderer::froxel_util::preflightPopulateFromAnalyticFog(desc, camera, zeroDensity, populateReason),
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-a361 ---
+void testFroxelClassifyAndPreflightGuards() {
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupAtIndex(grid, desc, 5u, &lookupReason),
+    expectTrue(fuse::renderer::froxel_util::tryPreflightDensityLookupAtIndex(grid, desc, 999u, lookupReason),
+               "tryPreflight density lookup at index succeeds with clamp warning");
+               "tryPreflight density lookup at index reports index_out_of_range");
+    expectTrue(fuse::renderer::classifyDensityLookupCoordReject(grid, desc, 1u, 1u, 2u) ==
+    expectTrue(fuse::renderer::classifyDensityLookupCoordReject(grid, desc, 99u, 99u, 99u) ==
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupAtCoord(grid, desc, 1u, 1u, 2u, &lookupReason),
+    expectTrue(fuse::renderer::froxel_util::classifyTrilinearSampleReject(grid, desc, inBounds) ==
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSample(grid, desc, inBounds, &sampleReason),
+    expectTrue(fuse::renderer::froxel_util::tryPreflightTrilinearSample(grid, desc, warnWeights, sampleReason),
+               "tryPreflight trilinear sample succeeds with clampable weights");
+               "tryPreflight trilinear sample reports invalid_weights");
+               "trySampleDensityTrilinear with reason succeeds on accessible grid");
+    expectTrue(fuse::renderer::preflightFroxelPopulate(desc, camera, params, &populateReason),
+    expectTrue(fuse::renderer::tryPreflightFroxelPopulate(desc, camera, params, populateReason),
+               "tryPreflight populate succeeds for valid inputs");
+    expectTrue(!fuse::renderer::preflightFroxelPopulate(desc, camera, zeroDensity, &populateReason),
+    expectTrue(fuse::renderer::classifyScreenMappingReject(0.5f, 0.5f, 10.f, desc, camera) ==
+    expectTrue(fuse::renderer::preflightScreenDepthMapping(0.5f, 0.5f, 10.f, desc, camera, &mapReason),
+    expectTrue(fuse::renderer::classifyScreenMappingReject(0.5f, 0.5f, 0.01f, desc, camera) ==
+    expectTrue(!fuse::renderer::preflightScreenDepthMapping(0.5f, 0.5f, 0.01f, desc, camera, &mapReason),
+    expectTrue(fuse::renderer::classifyScreenMappingReject(0.5f, 0.5f, 10.f, zeroDesc, camera) ==
+    testFroxelClassifyAndPreflightGuards();

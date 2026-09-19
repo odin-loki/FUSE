@@ -766,3 +766,11 @@ bool tryPreflightPopulateAllocation(const FroxelGridDesc& desc, FroxelPopulateRe
 
 // --- deepen additive from deepen-froxel-b511-guards-2eab ---
 bool wouldClampTrilinearSample(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-a361 ---
+bool preflightScreenDepthMapping(f32 screenX,
+                                FroxelPopulateRejectReason& reason);
+DensityLookupRejectReason classifyDensityLookupCoordReject(const FroxelDensityGrid& grid,
+                                      DensityLookupRejectReason& reason);
+SampleCoordRejectReason classifyTrilinearSampleReject(const FroxelDensityGrid& grid,
+                                 SampleCoordRejectReason& reason);

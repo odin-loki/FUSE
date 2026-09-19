@@ -1929,3 +1929,65 @@ bool wouldClampTrilinearSample(const FroxelSampleCoords& coords, const FroxelGri
         outReason = FroxelTrilinearSampleRejectReason::GridInaccessible;
         outReason = coordReason == SampleCoordRejectReason::EmptyGrid
                         : FroxelTrilinearSampleRejectReason::InvalidSampleCoords;
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-a361 ---
+    outReason = classifyScreenMappingReject(screenX, screenY, viewDepth, desc, camera);
+    if (outReason != ScreenMappingRejectReason::None) {
+        return SampleCoordRejectReason::EmptyGrid;
+        return SampleCoordRejectReason::None;
+            return SampleCoordRejectReason::InvalidWeights;
+        return SampleCoordRejectReason::OutOfBounds;
+    outReason = classifySampleCoordReject(coords, desc);
+    if (outReason == SampleCoordRejectReason::EmptyGrid ||
+        outReason == SampleCoordRejectReason::OutOfBounds) {
+    return preflightSampleCoords(coords, desc);
+    SampleCoordRejectReason reject = SampleCoordRejectReason::None;
+    const bool ok = tryPreflightSampleCoords(coords, desc, reject);
+ScreenMappingRejectReason classifyScreenMappingReject(f32 /*screenX*/,
+        return ScreenMappingRejectReason::EmptyGrid;
+        return ScreenMappingRejectReason::InvalidCamera;
+        return ScreenMappingRejectReason::DepthOutOfRange;
+    return ScreenMappingRejectReason::None;
+bool preflightScreenDepthMapping(f32 screenX,
+    const ScreenMappingRejectReason reject =
+        classifyScreenMappingReject(screenX, screenY, viewDepth, desc, camera);
+    return reject == ScreenMappingRejectReason::None;
+        return FroxelPopulateRejectReason::EmptyDesc;
+        return FroxelPopulateRejectReason::ZeroDensity;
+        return FroxelPopulateRejectReason::ZeroMarchSteps;
+        return FroxelPopulateRejectReason::InvalidCamera;
+    return FroxelPopulateRejectReason::None;
+    return reject == FroxelPopulateRejectReason::None;
+                                FroxelPopulateRejectReason& reason) {
+    return preflightFroxelPopulate(desc, camera, params, &reason);
+        return DensityLookupRejectReason::EmptyGrid;
+        return DensityLookupRejectReason::EmptyStorage;
+        return DensityLookupRejectReason::DescMismatch;
+        return DensityLookupRejectReason::IndexOutOfRange;
+    return DensityLookupRejectReason::None;
+DensityLookupRejectReason classifyDensityLookupCoordReject(const FroxelDensityGrid& grid,
+    const DensityLookupRejectReason baseReject = classifyDensityLookupReject(grid, desc, 0u);
+    if (baseReject != DensityLookupRejectReason::None &&
+        baseReject != DensityLookupRejectReason::IndexOutOfRange) {
+    outReason = classifyDensityLookupReject(grid, desc, index);
+    return outReason != DensityLookupRejectReason::EmptyGrid &&
+           outReason != DensityLookupRejectReason::EmptyStorage &&
+           outReason != DensityLookupRejectReason::DescMismatch;
+    outReason = classifyDensityLookupCoordReject(grid, desc, tileX, tileY, sliceZ);
+    return reject != DensityLookupRejectReason::EmptyGrid &&
+           reject != DensityLookupRejectReason::EmptyStorage &&
+           reject != DensityLookupRejectReason::DescMismatch;
+                                      DensityLookupRejectReason& reason) {
+    return preflightDensityLookupAtIndex(grid, desc, index, &reason);
+    const DensityLookupRejectReason reject = classifyDensityLookupCoordReject(grid, desc, tileX, tileY, sliceZ);
+    return preflightDensityLookupAtCoord(grid, desc, tileX, tileY, sliceZ, &reason);
+SampleCoordRejectReason classifyTrilinearSampleReject(const FroxelDensityGrid& grid,
+    const DensityLookupRejectReason lookupReject = classifyDensityLookupReject(grid, desc, 0u);
+    return FroxelGridLayout::classifySampleCoordReject(coords, desc);
+    outReason = classifyTrilinearSampleReject(grid, desc, coords);
+    const bool ok = tryCanSampleAtCoords(grid, desc, coords, reject);
+                                 SampleCoordRejectReason& reason) {
+    return preflightTrilinearSample(grid, desc, coords, &reason);
+    return !preflightTrilinearSample(grid, desc, coords);
+    return tryPreflightFroxelPopulate(desc, camera, params, outReason);
+    return preflightFroxelPopulate(desc, camera, params);
