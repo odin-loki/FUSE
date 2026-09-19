@@ -1369,3 +1369,8 @@ struct IslandBodyRefsPreflight {
 IslandBodyRefsPreflight preflight_island_body_refs(const ContactIslandGraph::Island& island,
 bool should_skip_island_body_refs(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies);
 IslandWakePreflight preflight_island_wake(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies);
+
+// --- deepen additive from pbd-island-sleep-wake-guards-28a6 ---
+bool should_skip_island_solve_all_sleeping(const ContactIslandGraph& graph,
+bool should_skip_sleeping_island(const ContactIslandGraph::Island& island,
+bool should_skip_sleeping_island_index(const ContactIslandGraph& graph,

@@ -3910,3 +3910,31 @@ void testPreflightIslandBodyRefsGuards() {
                "should_skip false for solvable island");
     expectTrue(should_skip_island_constraint_solve(island, bodies, contacts, {}, dt),
     testPreflightIslandBodyRefsGuards();
+
+// --- deepen additive from pbd-island-sleep-wake-guards-28a6 ---
+    const IslandBuildPreflight validPreflight = preflight_island_build(4u, contacts, constraints);
+    expectTrue(!validPreflight.skipped, "valid body count passes island build preflight");
+    expectTrue(validPreflight.can_build(), "island build preflight can build with valid inputs");
+    expectTrue(validPreflight.validContactCount == 1u, "island build preflight counts valid contacts");
+    expectTrue(validPreflight.invalidContactCount == 1u, "island build preflight counts invalid contacts");
+    expectTrue(validPreflight.validDistanceCount == 1u, "island build preflight counts valid distance constraints");
+    expectTrue(!should_skip_island_build(4u, contacts, constraints),
+               "should_skip false for valid island build inputs");
+    const IslandBuildPreflight zeroBodies = preflight_island_build(0u, contacts, constraints);
+               "should_skip true for zero body count");
+    expectTrue(sleepingPreflight.allSleeping, "all-dynamic-sleeping island flagged");
+    expectTrue(should_skip_sleeping_island(graph.island(sleepingIsland), bodies),
+    expectTrue(!should_skip_sleeping_island(graph.island(awakeIsland), bodies),
+    expectTrue(graphPreflight.has_awake_islands(), "mixed graph has awake islands");
+    expectTrue(graphPreflight.stats.allSleepingCount == 1u, "graph sleep stats count all-sleeping island");
+    expectTrue(graphPreflight.stats.partiallyAwakeCount == 1u, "graph sleep stats count awake island");
+    expectTrue(!should_skip_island_solve_all_sleeping(graph, bodies),
+               "should_skip false when awake islands exist");
+    expectTrue(!wakePreflight.skipped, "wake preflight does not skip contact island");
+    expectTrue(wakePreflight.needsWake, "sleeping body adjacent to awake neighbor needs wake");
+    expectTrue(wakePreflight.wakeCandidateCount == 1u, "wake preflight counts one wake candidate");
+    const IslandWakeGraphPreflight graphWake = preflight_island_wake_graph(graph, bodies, contacts);
+    expectTrue(!should_skip_island_wake_graph(graph, bodies, contacts),
+               "should_skip false when wake candidates exist");
+    expectTrue(should_skip_island_wake_graph(allAwakeGraph, awakeBodies, contacts),
+               "should_skip true when no sleeping bodies need wake");
