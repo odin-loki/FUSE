@@ -1575,3 +1575,23 @@ FUSE_PHYSICS_INLINE ShapeCellCapacityPreflight preflightShapeCellCapacity(
     ShapeCellCapacityPreflight preflight{};
     return !preflightShapeCellCapacity(range, maxSpanPerAxis, maxOccupancy).canInsert();
     return preflightShapeCellCapacity(range, maxSpanPerAxis, maxOccupancy).canInsert();
+
+// --- deepen additive from deepen-b4-broadphase-guards-5bcc ---
+enum class CellSpanCapacityRejectReason : u8 {
+const char* cellSpanCapacityRejectReasonName(CellSpanCapacityRejectReason reason);
+FUSE_PHYSICS_INLINE CellSpanCapacityRejectReason cellSpanCapacityRejectReason(
+        return CellSpanCapacityRejectReason::EmptyRange;
+        return CellSpanCapacityRejectReason::ExceedsSpanPerAxis;
+    return CellSpanCapacityRejectReason::None;
+struct CellSpanCapacityPreflight {
+    CellSpanCapacityRejectReason reason = CellSpanCapacityRejectReason::None;
+    bool withinSpanLimit() const { return reason == CellSpanCapacityRejectReason::None; }
+FUSE_PHYSICS_INLINE CellSpanCapacityPreflight preflightCellSpanCapacity(
+    CellSpanCapacityPreflight preflight{};
+    preflight.reason = cellSpanCapacityRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellSpanCapacityRejectReason::EmptyRange;
+    preflight.exceedsSpanPerAxis = preflight.reason == CellSpanCapacityRejectReason::ExceedsSpanPerAxis;
+    return !preflightCellSpanCapacity(range, maxSpanPerAxis).withinSpanLimit();
+    return preflightCellSpanCapacity(range, maxSpanPerAxis).withinSpanLimit();
+    CellSpanCapacityRejectReason expected) {
+    return cellSpanCapacityRejectReason(range, maxSpanPerAxis) == expected;

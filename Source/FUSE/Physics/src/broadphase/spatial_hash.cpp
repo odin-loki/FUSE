@@ -1574,3 +1574,9 @@ MergePairIntoBufferPreflight preflightMergePairIntoBuffer(
     case MergePairsIntoBufferRejectReason::InsufficientCapacity:
         return MergePairsIntoBufferRejectReason::InsufficientCapacity;
     preflight.insufficientCapacity = preflight.reason == MergePairsIntoBufferRejectReason::InsufficientCapacity ||
+
+// --- deepen additive from deepen-b4-broadphase-guards-5bcc ---
+const char* cellSpanCapacityRejectReasonName(CellSpanCapacityRejectReason reason) {
+    case CellSpanCapacityRejectReason::None:
+    case CellSpanCapacityRejectReason::EmptyRange:
+    case CellSpanCapacityRejectReason::ExceedsSpanPerAxis:

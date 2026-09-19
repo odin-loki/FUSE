@@ -3895,3 +3895,23 @@ void testMergePairsIntoBufferCapacityPreflightGuards() {
 // --- deepen additive from b4-broadphase-deepen-guards-5f81 ---
 void testRefineInvalidateSlotPreflightGuards() {
     testRefineInvalidateSlotPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-5bcc ---
+void testCellSpanCapacityGuards() {
+void testCellSpanCapacityRejectReasonGuards() {
+                 fuse::physics::broadphase::cellSpanCapacityRejectReason(validRange, 4u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanCapacityRejectReason::None),
+    expectTrue(std::strcmp(fuse::physics::broadphase::cellSpanCapacityRejectReasonName(
+                               fuse::physics::broadphase::CellSpanCapacityRejectReason::ExceedsSpanPerAxis),
+                 fuse::physics::broadphase::cellSpanCapacityRejectReason(wideRange, 8u)),
+    expectTrue(fuse::physics::broadphase::cellSpanCapacityRejectsForReason(
+                   wideRange, 8u, fuse::physics::broadphase::CellSpanCapacityRejectReason::ExceedsSpanPerAxis),
+                 fuse::physics::broadphase::cellSpanCapacityRejectReason(inverted, 4u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanCapacityRejectReason::EmptyRange),
+    const fuse::physics::broadphase::CellSpanCapacityPreflight preflight =
+        fuse::physics::broadphase::preflightCellSpanCapacity(wideRange, 8u);
+    const fuse::physics::broadphase::CellSpanCapacityPreflight planePreflight =
+        fuse::physics::broadphase::preflightCellSpanCapacity(planeRange, 8u);
+    expectTrue(planePreflight.exceedsSpanPerAxis, "2D span-capacity preflight marks exceedsSpanPerAxis");
+void testDedupeBroadphasePairBufferLayerGuards() {
+    testCellSpanCapacityRejectReasonGuards();
