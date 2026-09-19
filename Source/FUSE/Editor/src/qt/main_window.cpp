@@ -23,12 +23,15 @@ MainWindow::MainWindow(const QString& samplesRoot, QWidget* parent)
     auto* splitter = new QSplitter(Qt::Horizontal, central);
     m_projectHub = new ProjectHubWidget(splitter);
     m_projectHub->setSamplesRoot(samplesRoot);
+    m_propertyPane = new PropertyPaneWidget(m_featureBridge, splitter);
     m_viewport = new ViewportPlaceholderWidget(splitter);
     splitter->addWidget(m_projectHub);
+    splitter->addWidget(m_propertyPane);
     splitter->addWidget(m_viewport);
     splitter->setStretchFactor(0, 0);
-    splitter->setStretchFactor(1, 1);
-    splitter->setSizes({260, 760});
+    splitter->setStretchFactor(1, 0);
+    splitter->setStretchFactor(2, 1);
+    splitter->setSizes({240, 220, 560});
     layout->addWidget(splitter);
     setCentralWidget(central);
 
@@ -64,11 +67,13 @@ void MainWindow::onProjectOpenRequested(const QString& projectDirectory) {
 }
 
 void MainWindow::refreshStatusBar() {
+    m_propertyPane->refresh();
     m_statusLabel->setText(
-        tr("Game ticks: %1 | Pending: %2 | Applied: %3")
+        tr("Game ticks: %1 | Pending: %2 | Applied: %3 | PIE: %4")
             .arg(m_host.gameTickCount())
             .arg(m_host.commandQueue().pendingCount())
-            .arg(m_host.commandQueue().appliedCount()));
+            .arg(m_host.commandQueue().appliedCount())
+            .arg(m_host.editorState().playing ? tr("on") : tr("off")));
 }
 
 } // namespace fuse::editor::qt

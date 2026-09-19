@@ -1,8 +1,8 @@
 # U6 — Qt 6 Editor Shell (WP-08)
 
 **Phase:** U6 / WP-08 vertical slice  
-**Date:** 2026-09-15  
-**Status:** Minimal desktop shell landed — project hub, viewport placeholder, game-thread command drain
+**Date:** 2026-09-19  
+**Status:** In-process PIE + UI↔game command queue proven (headless tests + optional Qt shell)
 
 ---
 
@@ -10,7 +10,7 @@
 
 | Target | Role |
 |--------|------|
-| `fuse_editor_api` | Qt-free boundary: `CommandQueue`, `EditorHost` |
+| `fuse_editor_api` | Qt-free boundary: `CommandQueue`, `EditorHost`, `FeaturePaneBridge` |
 | `fuse_editor` | Qt 6 desktop executable (optional; gated on `find_package(Qt6)`) |
 
 **Architecture rule (locked):** UI thread **posts** `EditorCommand` envelopes; game thread **drains** via `EditorHost::gameTick()`. No raw `SceneObject*` (or other scene pointers) cross the UI boundary — only `fuse::Handle<T>` in command payloads.
@@ -74,8 +74,8 @@ Linux umbrella CI configures with `FUSE_BUILD_EDITOR=OFF` (default). Tests:
 
 | CTest name | Binary | Purpose |
 |------------|--------|---------|
-| `fuse_editor_command_queue` | `fuse_editor_api_tests` | Command queue post/drain |
-| `fuse_editor_host` | `fuse_editor_host_tests` | `EditorHost` game-tick drain without Qt |
+| `fuse_editor_command_queue` | `fuse_editor_api_tests` | Mutex-backed queue post/drain + payload FIFO |
+| `fuse_editor_host` | `fuse_editor_host_tests` | `EditorHost` game-tick drain, PIE start/stop, cross-thread UI↔game proof, `FeaturePaneBridge` |
 
 ```bash
 cmake -B build-fuse -G Ninja \
@@ -101,13 +101,15 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 │  ┌──────────────────┐   ┌───────────────────────────────┐ │
 │  │ Qt UI thread     │   │ Game thread (QThread + QTimer) │ │
 │  │  ProjectHub      │   │  EditorHost::gameTick()        │ │
-│  │  Viewport stub   │──▶│  CommandQueue::drain()         │ │
+│  │  PropertyPane    │──▶│  CommandQueue::drain()         │ │
+│  │  Viewport stub   │   │  PlaySession tick while PIE    │ │
 │  │  postFromUi()    │   │                                │ │
 │  └──────────────────┘   └───────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 - **Project hub** — lists `Samples/unification/*/project.json` directories.
+- **Property pane (WP-08 hook)** — `PropertyPaneWidget` + `FeaturePaneBridge`; Play/Stop posts `StartPlay`/`StopPlay` commands (no direct scene mutation from UI thread).
 - **Viewport placeholder** — painted panel until embedded GPU viewport lands.
 - **Open project** — posts `SetProperty { project = <name> }` to the queue (handle-only command envelope).
 
@@ -117,17 +119,21 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 
 | Header | Notes |
 |--------|-------|
-| `fuse/editor/command_queue.hpp` | `EditorCommand`, `CommandQueue` |
-| `fuse/editor/editor_host.hpp` | `EditorHost` — `postFromUi()` / `gameTick()` |
+| `fuse/editor/command_queue.hpp` | `EditorCommand`, `CommandQueue` (mutex + deque) |
+| `fuse/editor/editor_host.hpp` | `EditorHost` — `postFromUi()` / `gameTick()` + in-process PIE |
+| `fuse/editor/feature_pane_bridge.hpp` | Feature-pane hook — posts commands for play/stop/selection |
 
 ---
 
-## 8. Follow-ups (out of WP-08 slice)
+## 8. Done vs remaining (WP-08)
 
-- Embedded `fuse_runtime` + real viewport (Vulkan/Metal/GLES)
-- Inspectors, timelines, addon feature panes
-- PIE (play-in-editor) wiring through `fuse_project` loader
-- Thread-safe command queue storage (mutex + deque) once commands carry payloads beyond counters
+| Done (this slice) | Remaining |
+|-------------------|-----------|
+| Mutex-backed command queue with payload retention | Full scene mutation for Delete/Reparent commands |
+| `EditorHost` applies project + PIE + selection on game thread | Embedded `fuse_runtime` viewport (Vulkan/Metal/GLES) |
+| Headless cross-thread queue proof (32 UI posts → game drain) | Inspectors with live property edits through queue |
+| `FeaturePaneBridge` + Qt `PropertyPaneWidget` hook | Timelines, addon feature panes, undo through queue |
+| `PlaySession` tick wired into `gameTick()` while PIE active | Thread-safe payload coalescing beyond counters |
 
 ---
 

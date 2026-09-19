@@ -6,6 +6,7 @@ set(FUSE_EDITOR_API_SOURCES
     src/command_stack.cpp
     src/console_panel.cpp
     src/editor_host.cpp
+    src/feature_pane_bridge.cpp
     src/gizmo_system.cpp
     src/hierarchy_model.cpp
     src/material_editor_panel.cpp
@@ -29,6 +30,7 @@ set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/editor_host.hpp
     include/fuse/editor/editor_scene.hpp
     include/fuse/editor/editor_state.hpp
+    include/fuse/editor/feature_pane_bridge.hpp
     include/fuse/editor/gizmo_system.hpp
     include/fuse/editor/hierarchy_model.hpp
     include/fuse/editor/material_editor_panel.hpp
@@ -84,6 +86,8 @@ if(FUSE_BUILD_EDITOR)
                 src/qt/main_window.hpp
                 src/qt/project_hub_widget.cpp
                 src/qt/project_hub_widget.hpp
+                src/qt/property_pane_widget.cpp
+                src/qt/property_pane_widget.hpp
                 src/qt/viewport_placeholder_widget.cpp
                 src/qt/viewport_placeholder_widget.hpp
                 src/qt/game_loop_thread.cpp

@@ -1,9 +1,11 @@
 #pragma once
 
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/feature_pane_bridge.hpp>
 
 #include "game_loop_thread.hpp"
 #include "project_hub_widget.hpp"
+#include "property_pane_widget.hpp"
 #include "viewport_placeholder_widget.hpp"
 
 #include <QMainWindow>
@@ -26,8 +28,10 @@ private:
     void refreshStatusBar();
 
     EditorHost m_host;
+    FeaturePaneBridge m_featureBridge{m_host};
     GameLoopThread m_gameThread;
     ProjectHubWidget* m_projectHub = nullptr;
+    PropertyPaneWidget* m_propertyPane = nullptr;
     ViewportPlaceholderWidget* m_viewport = nullptr;
     QLabel* m_statusLabel = nullptr;
     QTimer m_statusTimer;

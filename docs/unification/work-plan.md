@@ -160,7 +160,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | In-process PIE; UI thread vs game thread command queue; one feature pane |
 | **Deps** | WP-06, WP-05 |
-| **Status** | ✅ Minimal slice — `fuse_editor_api` + `EditorHost`, Qt 6 `fuse_editor` shell (conditional), headless `fuse_editor_host` test — [U6-EDITOR.md](./U6-EDITOR.md) |
+| **Status** | 🚧 Core slice — mutex queue + `EditorHost` PIE drain + `FeaturePaneBridge` + headless cross-thread proof; Qt property pane when Qt6 present — [U6-EDITOR.md](./U6-EDITOR.md) |
 
 ---
 
@@ -228,7 +228,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 | **U3** | Shared services | I/O job publishes handle; TSan plan live |
 | **U4** | Hybrid demo | `parallel_for` cull + SoA; frame barrier; software demo ✅ — real GLES/Vulkan present ❌ Track B |
 | **U5** | Feature modules | Five `fuse_*` targets; `fuse_ai` BT slice + tests — 🚧 scaffolds + ore backlog ([U5-MODULES.md](./U5-MODULES.md)) |
-| **U6** | Editor PIE | UI/game thread queue proven — 🚧 `fuse_editor_api` stub + expanded tests |
+| **U6** | Editor PIE | UI/game thread queue + in-process PIE proven — 🚧 viewport + full inspectors remain |
 | **U7** | Project format | `fuse_project` + `fuse_import` dry-run — ✅ minimal schema v1 |
 | **U8** | Parity demos | Seven demo binaries + `Samples/unification/` stubs — ✅ minimum set |
 | **P3 (Track A)** | Job system tests | Fiber scheduler + single-thread fallback |

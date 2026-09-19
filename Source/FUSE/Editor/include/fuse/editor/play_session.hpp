@@ -202,13 +202,3 @@ private:
 };
 
 } // namespace fuse::editor
-
-// --- deepen additive from deepen-b6-pie-maxsteps-dirty-snapshot-eb47 ---
-    DirtySnapshotPreflight preflightDirtySnapshotRestore() const;
-
-// --- deepen additive from deepen-pie-fixed-step-dirty-snapshot-guards-38fb ---
-    VariableTickPreflight preflightTick(f32 dt, const PlayModePhysicsState& physics) const;
-
-// --- deepen additive from deepen-b6-editor-pie-fixed-step-dirty-snapshot-guards-fd19 ---
-    bool wouldSimulateFrame() const { return !variableTickSkipped || fixedStep.canDrain(); }
-    bool canRestoreWorldSnapshot() const { return preflightWorldSnapshot().canRestore(); }

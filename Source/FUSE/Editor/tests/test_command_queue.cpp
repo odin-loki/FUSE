@@ -28,6 +28,9 @@ void testCommandQueueRoundTrip() {
     queue.drain();
     expectTrue(queue.pendingCount() == 0u, "queue drained");
     expectTrue(queue.appliedCount() == 1u, "command applied on game thread");
+    expectTrue(queue.lastDrainedBatch().size() == 1u, "last batch retains payload");
+    expectTrue(queue.lastDrainedBatch()[0].propertyName == "position", "property name preserved");
+    expectTrue(queue.lastDrainedBatch()[0].propertyValue == "0 0 0", "property value preserved");
 }
 
 void testCommandQueueMultipleKinds() {
@@ -54,6 +57,29 @@ void testCommandQueueMultipleKinds() {
     queue.drain();
     expectTrue(queue.pendingCount() == 0u, "batch drained");
     expectTrue(queue.appliedCount() == 3u, "all commands applied");
+    expectTrue(queue.lastDrainedBatch().size() == 3u, "batch order preserved");
+    expectTrue(queue.lastDrainedBatch()[1].kind == fuse::editor::CommandKind::DeleteObject,
+               "delete kind preserved");
+    expectTrue(queue.lastDrainedBatch()[2].parent.index() == 1u, "reparent parent handle preserved");
+}
+
+void testCommandQueuePreservesPostOrder() {
+    fuse::editor::CommandQueue queue;
+
+    for (fuse::u32 i = 0; i < 5u; ++i) {
+        fuse::editor::EditorCommand cmd;
+        cmd.kind = fuse::editor::CommandKind::SetProperty;
+        cmd.propertyName = "seq";
+        cmd.propertyValue = std::to_string(i);
+        queue.post(std::move(cmd));
+    }
+
+    queue.drain();
+    expectTrue(queue.lastDrainedBatch().size() == 5u, "five commands in batch");
+    for (fuse::u32 i = 0; i < 5u; ++i) {
+        expectTrue(queue.lastDrainedBatch()[i].propertyValue == std::to_string(i),
+                   "fifo order preserved");
+    }
 }
 
 } // namespace
@@ -62,6 +88,7 @@ int main() {
     fuse::core::initialize();
     testCommandQueueRoundTrip();
     testCommandQueueMultipleKinds();
+    testCommandQueuePreservesPostOrder();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

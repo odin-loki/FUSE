@@ -1,9 +1,14 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/feature_pane_bridge.hpp>
+#include <fuse/ecs/components/transform.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <thread>
 
 namespace {
 
@@ -33,6 +38,8 @@ void testHostDrainsOnGameTick() {
     expectTrue(host.gameTickCount() == 1u, "game tick recorded");
     expectTrue(host.commandQueue().pendingCount() == 0u, "queue drained on game thread");
     expectTrue(host.commandQueue().appliedCount() == 1u, "command applied");
+    expectTrue(host.loadedProject() == "demo_3d_empty", "project property applied on game thread");
+    expectTrue(host.commandsAppliedLastTick() == 1u, "one command applied last tick");
 }
 
 void testHostMultipleTicks() {
@@ -50,12 +57,114 @@ void testHostMultipleTicks() {
     expectTrue(host.commandQueue().appliedCount() == 1u, "single command applied once");
 }
 
+void testHostPieStartStopViaQueue() {
+    fuse::editor::EditorHost host;
+
+    fuse::editor::EditorCommand start;
+    start.kind = fuse::editor::CommandKind::StartPlay;
+    host.postFromUi(std::move(start));
+
+    host.gameTick();
+    expectTrue(host.editorState().playing, "PIE start applied on game thread");
+    expectTrue(host.playSession().isActive(), "play session active after start command");
+
+    fuse::editor::EditorCommand stop;
+    stop.kind = fuse::editor::CommandKind::StopPlay;
+    host.postFromUi(std::move(stop));
+
+    host.gameTick();
+    expectTrue(!host.editorState().playing, "PIE stop applied on game thread");
+    expectTrue(!host.playSession().isActive(), "play session stopped");
+}
+
+void testHostPieTicksOnGameThread() {
+    fuse::editor::EditorHost host;
+    const fuse::ecs::EntityID entity = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
+
+    fuse::editor::EditorCommand start;
+    start.kind = fuse::editor::CommandKind::StartPlay;
+    host.postFromUi(std::move(start));
+    host.gameTick();
+
+    const fuse::u32 ticksBefore = host.playSession().sessionTickCount();
+    host.gameTick();
+    host.gameTick();
+    expectTrue(host.playSession().sessionTickCount() > ticksBefore,
+               "PIE session advances only through gameTick while playing");
+}
+
+void testCrossThreadUiGameQueue() {
+    fuse::editor::EditorHost host;
+    std::atomic<bool> uiDone{false};
+    constexpr fuse::u32 kPosts = 32u;
+
+    std::thread uiThread([&]() {
+        for (fuse::u32 i = 0; i < kPosts; ++i) {
+            fuse::editor::EditorCommand cmd;
+            cmd.kind = fuse::editor::CommandKind::SetProperty;
+            cmd.propertyName = "project";
+            cmd.propertyValue = "thread_" + std::to_string(i);
+            host.postFromUi(std::move(cmd));
+        }
+        uiDone.store(true, std::memory_order_release);
+    });
+
+    std::thread gameThread([&]() {
+        while (!uiDone.load(std::memory_order_acquire) || host.commandQueue().pendingCount() > 0u) {
+            host.gameTick();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+
+    uiThread.join();
+    gameThread.join();
+
+    expectTrue(host.commandQueue().appliedCount() == kPosts,
+               "all UI-thread posts drained on game thread");
+    expectTrue(host.loadedProject() == "thread_" + std::to_string(kPosts - 1u),
+               "last posted project value wins on game thread");
+}
+
+void testFeaturePaneBridgePostsPlayCommands() {
+    fuse::editor::EditorHost host;
+    fuse::editor::FeaturePaneBridge bridge(host);
+
+    bridge.postPlayRequested();
+    host.gameTick();
+    expectTrue(host.editorState().playing, "feature pane play posts StartPlay command");
+
+    bridge.postStopRequested();
+    host.gameTick();
+    expectTrue(!host.editorState().playing, "feature pane stop posts StopPlay command");
+}
+
+void testFeaturePaneBridgeSelectEntity() {
+    fuse::editor::EditorHost host;
+    fuse::editor::FeaturePaneBridge bridge(host);
+
+    const fuse::ecs::EntityID entity = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
+
+    bridge.postSelectEntity(entity);
+    host.gameTick();
+
+    expectTrue(host.editorState().primarySelection == entity, "select entity applied on game thread");
+    bridge.syncPropertyPane();
+    expectTrue(bridge.propertyInspector().hasSelection(), "property pane syncs after selection");
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
     testHostDrainsOnGameTick();
     testHostMultipleTicks();
+    testHostPieStartStopViaQueue();
+    testHostPieTicksOnGameThread();
+    testCrossThreadUiGameQueue();
+    testFeaturePaneBridgePostsPlayCommands();
+    testFeaturePaneBridgeSelectEntity();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

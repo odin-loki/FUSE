@@ -4,7 +4,10 @@
 #include <fuse/object.hpp>
 #include <fuse/types.hpp>
 
+#include <deque>
+#include <mutex>
 #include <string>
+#include <vector>
 
 namespace fuse::editor {
 
@@ -12,6 +15,11 @@ enum class CommandKind {
     SetProperty,
     DeleteObject,
     ReparentObject,
+    SelectEntity,
+    StartPlay,
+    StopPlay,
+    PausePlay,
+    ResumePlay,
 };
 
 /// UI-thread command envelope — applied on the game thread via CommandQueue::drain().
@@ -26,15 +34,21 @@ struct EditorCommand {
     std::string propertyValueBefore;
 };
 
-/// Thread-safe-ish queue: post from UI thread, drain on game thread.
+/// Thread-safe queue: post from UI thread, drain on game thread.
 class CommandQueue {
 public:
     void post(EditorCommand command);
     void drain();
-    u32 pendingCount() const { return m_pending; }
+    u32 pendingCount() const;
     u32 appliedCount() const { return m_applied; }
 
+    /// Commands moved out of the pending queue by the most recent drain() call.
+    const std::vector<EditorCommand>& lastDrainedBatch() const { return m_lastDrained; }
+
 private:
+    mutable std::mutex m_mutex;
+    std::deque<EditorCommand> m_pendingDeque;
+    std::vector<EditorCommand> m_lastDrained;
     u32 m_pending = 0;
     u32 m_applied = 0;
 };

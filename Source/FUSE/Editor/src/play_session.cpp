@@ -446,11 +446,3 @@ void PlaySession::coalesceTransformDirty_(EditorScene& editorScene) {
 }
 
 } // namespace fuse::editor
-
-// --- deepen additive from deepen-b6-pie-maxsteps-dirty-snapshot-eb47 ---
-    FixedStepPreflight preflight;
-DirtySnapshotPreflight PlaySession::preflightDirtySnapshotRestore() const {
-    DirtySnapshotPreflight preflight;
-
-// --- deepen additive from deepen-pie-fixed-step-dirty-snapshot-guards-38fb ---
-VariableTickPreflight PlaySession::preflightTick(f32 dt, const PlayModePhysicsState& physics) const {
