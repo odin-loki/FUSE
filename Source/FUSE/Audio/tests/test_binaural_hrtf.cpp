@@ -2642,3 +2642,6 @@ void testHrtfBinauralCompositeRejectReasonWrappers() {
     expectTrue(!stub_preflight.should_skip(), "ILD/ITD stub preflight is not skipped");
     expectTrue(unity_preflight.should_skip(), "unity preflight skips coupling");
     expectTrue(bypass_preflight.should_skip(), "HrtfDisabled composite preflight should_skip");
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-d084 ---
+                   || reason == fuse::audio::HrtfIrRejectReason::EmptyIr,

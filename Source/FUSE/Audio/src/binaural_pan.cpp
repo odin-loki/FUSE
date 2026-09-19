@@ -2242,3 +2242,6 @@ bool try_preflight_hrtf_binaural_convolve(bool hrtf_enabled, const HrtfIrStub& i
 
 // --- deepen additive from b7-2-hrtf-reject-reasons-701c ---
 bool hrtf_binaural_preflight_rejects_for_reason(const HrtfBinauralPreflight& preflight,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-d084 ---
+bool try_preflight_hrtf_attenuation_coupling_narrow(
