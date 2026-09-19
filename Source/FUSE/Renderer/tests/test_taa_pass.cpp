@@ -4798,3 +4798,6 @@ void testTaaPassTryClassifyGuardWrappers() {
 // --- deepen additive from deepen-b59-taa-pass-try-classify-99bc ---
                "pass tryPreflightJitterSync passes when aligned");
                "pass tryPreflightJitterSync reject reason is None when aligned");
+
+// --- deepen additive from deepen-b59-taa-guards-7ae2 ---
+               "zero-width pass classifyJitterSyncReject still passes for sequence");
