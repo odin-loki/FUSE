@@ -1092,6 +1092,100 @@ void testTryEndDragGuards() {
     expectTrue(result.axis == fuse::editor::GizmoAxis::X, "tryEndDrag records active axis");
 }
 
+void testBeginDragSnapDegradedPreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::BeginDragPreflight degradedPreflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(degradedPreflight.canBegin, "begin preflight still allows drag when snap step invalid");
+    expectTrue(degradedPreflight.snapDegraded, "begin preflight marks snap degraded");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::BeginDragPreflight validPreflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validPreflight.canBegin, "begin preflight accepts valid snap settings");
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears snapDegraded on begin");
+
+    fuse::editor::GizmoTransform transform{};
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    snap.gridSize = 0.f;
+    const fuse::editor::BeginDragPreflight rayDegradedPreflight = fuse::editor::preflightBeginDrag(
+        xRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius, snap);
+    expectTrue(rayDegradedPreflight.canBegin, "ray begin preflight still allows drag");
+    expectTrue(rayDegradedPreflight.snapDegraded, "ray begin preflight marks snap degraded");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::BeginDragPreflight rayValidPreflight = fuse::editor::preflightBeginDrag(
+        xRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius, snap);
+    expectTrue(!rayValidPreflight.snapDegraded, "valid snap clears snapDegraded on ray begin");
+}
+
+void testInteractionPreflightGuards() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::InteractionPreflight idlePreflight = fuse::editor::preflightInteraction(
+        hit, fuse::editor::GizmoMode::Translate, false, fuse::editor::GizmoAxis::None, snap);
+    expectTrue(idlePreflight.canPick(), "interaction preflight accepts valid screen pick");
+    expectTrue(!idlePreflight.canApplySnap(), "interaction preflight rejects invalid snap step");
+    expectTrue(idlePreflight.canBegin(), "interaction preflight allows begin on valid pick");
+    expectTrue(!idlePreflight.canUpdate(), "interaction preflight rejects update when not dragging");
+    expectTrue(!idlePreflight.canEnd(), "interaction preflight rejects end when not dragging");
+    expectTrue(idlePreflight.begin.snapDegraded, "interaction preflight propagates begin snapDegraded");
+    expectTrue(idlePreflight.snap.invalidStep, "interaction preflight propagates snap invalidStep");
+
+    const fuse::editor::InteractionPreflight draggingPreflight = fuse::editor::preflightInteraction(
+        hit, fuse::editor::GizmoMode::Translate, true, fuse::editor::GizmoAxis::X, snap);
+    expectTrue(draggingPreflight.canUpdate(), "interaction preflight accepts update while dragging");
+    expectTrue(draggingPreflight.canEnd(), "interaction preflight accepts end while dragging");
+    expectTrue(draggingPreflight.update.snapDegraded,
+               "interaction preflight propagates update snapDegraded");
+    expectTrue(draggingPreflight.end.snapDegraded,
+               "interaction preflight propagates end snapDegraded");
+
+    fuse::editor::GizmoTransform transform{};
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    const fuse::editor::InteractionPreflight rayPreflight = fuse::editor::preflightInteraction(
+        xRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius, false,
+        fuse::editor::GizmoAxis::None, snap);
+    expectTrue(rayPreflight.canPick(), "ray interaction preflight accepts valid pick");
+    expectTrue(rayPreflight.canBegin(), "ray interaction preflight allows begin");
+    expectTrue(rayPreflight.pick.axis == fuse::editor::GizmoAxis::X,
+               "ray interaction preflight resolves picked axis");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    const fuse::editor::InteractionPreflight gizmoPreflight = gizmo.preflightInteraction(hit);
+    expectTrue(gizmoPreflight.canBegin(), "gizmo interaction preflight allows begin");
+    expectTrue(gizmoPreflight.begin.snapDegraded,
+               "gizmo interaction preflight propagates begin snapDegraded");
+
+    gizmo.beginDrag(hit, transform);
+    const fuse::editor::InteractionPreflight activeGizmoPreflight = gizmo.preflightInteraction(hit);
+    expectTrue(activeGizmoPreflight.canUpdate(), "gizmo interaction preflight accepts active update");
+    expectTrue(activeGizmoPreflight.update.snapDegraded,
+               "gizmo update preflight marks snap degraded via snap-aware wrapper");
+    gizmo.endDrag();
+}
+
 void testDirtyFlagOnEndDrag() {
     fuse::editor::GizmoSystem gizmo;
     fuse::editor::CommandStack commandStack;
@@ -1159,6 +1253,8 @@ int main() {
     testEndDragPreflightGuards();
     testCanEndDragGuards();
     testTryEndDragGuards();
+    testBeginDragSnapDegradedPreflight();
+    testInteractionPreflightGuards();
     testDirtyFlagOnEndDrag();
 
     if (g_failures != 0) {
