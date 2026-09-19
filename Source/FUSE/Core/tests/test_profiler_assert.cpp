@@ -3910,3 +3910,28 @@ void testChromeTraceExportPreflightIgnoredAsyncFlowEnds() {
 void testPeekEventAtGuard() {
 void testChromeTraceExportPreflightRingBufferFull() {
     testChromeTraceExportPreflightRingBufferFull();
+
+// --- deepen additive from deepen-profiler-b16-guards-14e0 ---
+void testWhitespaceOnlyEventNameGuard() {
+void testTryFindEventByNameAndPhaseGuard() {
+               "tryFindFirstEventByName rejects empty query");
+               "tryFindFirstEventByName clears output on invalid query");
+    expectTrue(!fuse::profiler::tryFindLastEventByPhase(fuse::profiler::EventPhase::End, outEvent),
+               "tryFindLastEventByPhase false on empty buffer");
+    expectTrue(fuse::profiler::tryFindFirstEventByName("try_lookup_scope", outEvent),
+               "tryFindFirstEventByName finds scope begin");
+    expectTrue(fuse::profiler::tryFindLastEventByName("try_lookup_scope", outEvent),
+               "tryFindLastEventByName finds scope end");
+               "tryFindLastEventByName copies end phase");
+    expectTrue(fuse::profiler::tryFindFirstEventByPhase(fuse::profiler::EventPhase::FlowStart, outEvent),
+               "tryFindFirstEventByPhase finds flow start");
+               "tryFindFirstEventByPhase copies flow name");
+    expectTrue(fuse::profiler::tryFindLastEventByPhase(fuse::profiler::EventPhase::Counter, outEvent),
+               "tryFindLastEventByPhase finds counter sample");
+    expectTrue(outEvent.counterIntValue == 11, "tryFindLastEventByPhase copies counter payload");
+void testUnpairedBufferEventGuards() {
+    expectTrue(openPreflight.hasUnpairedAsyncFlowEvents,
+    expectTrue(openPreflight.flowStartEventCount == 2u,
+    expectTrue(openPreflight.flowFinishEventCount == 1u,
+    expectTrue(openPreflight.hasExportWarnings(), "open flow adds export warnings");
+    expectTrue(openPreflight.canExportNonEmpty(), "open flow still allows non-empty export");
