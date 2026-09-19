@@ -2037,3 +2037,7 @@ void testCookerReconcileEstimatorGuards() {
 
 // --- deepen additive from deepen-b79-cooker-hash-guards-60fd ---
                "would_invalidate_stale_upstream true when hashes mismatch");
+
+// --- deepen additive from deepen-b79-cooker-hash-d274 ---
+    expectTrue(cooker.cook_manifest(manifest).ok, "chain cook for downstream would_invalidate ok");
+               "producer output would_invalidate_downstream is true");

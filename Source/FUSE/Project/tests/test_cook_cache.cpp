@@ -1206,3 +1206,10 @@ void testCookCacheInvalidationEstimateGuards() {
     expectTrue(cooker.cache().would_invalidate_any(source, desc.output_path, seeded.content_hash),
                "would_invalidate_any true for populated cache");
     testCookHashPreflightMtimeAndDependencyGuards();
+
+// --- deepen additive from deepen-b79-cooker-hash-d274 ---
+               "would_invalidate still true for stale but present entry");
+    expectTrue(removed == 1u, "prune removes entry probed by would_invalidate");
+    expectTrue(!cooker.cache().would_invalidate(seeded.content_hash),
+               "would_invalidate false after prune removes entry");
+    const fuse::project::CookHashPreflight zero_key = fuse::project::preflight_cook_cache_entry({});
