@@ -313,6 +313,16 @@ const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason rea
         return "zero_probe_count";
     case ProbeScheduleRejectReason::ZeroMaxIndices:
         return "zero_max_indices";
+    case ProbeUpdateLaunchRejectReason::EmptyGrid:
+        return "empty_grid";
+    case ProbeUpdateLaunchRejectReason::NullIndices:
+        return "null_indices";
+    case ProbeUpdateLaunchRejectReason::ZeroCount:
+        return "zero_count";
+    case ProbeUpdateLaunchRejectReason::OutOfRangeProbeIndex:
+        return "out_of_range_probe_index";
+    case ProbeUpdateLaunchRejectReason::DuplicateProbeIndex:
+        return "duplicate_probe_index";
     }
     return "unknown";
 }
@@ -1277,11 +1287,13 @@ bool ProbeGridLayout::preflightBuildProbeSampleCoords(const DDGIDesc& desc,
     ProbeSampleCoordsRejectReason local = ProbeSampleCoordsRejectReason::None;
     if (isEmptyGrid(desc)) {
         local = ProbeSampleCoordsRejectReason::EmptyGrid;
-    }
     if (reason != nullptr) {
         *reason = local;
-    }
     return local == ProbeSampleCoordsRejectReason::None;
+bool ProbeGridLayout::canBuildProbeSampleCoords(const DDGIDesc& desc,
+                                                const fuse::math::Vec3& world_position) {
+    ProbeSampleCoords coords{};
+    return buildProbeSampleCoords(desc, world_position, coords);
 }
 
 bool ProbeGridLayout::tryBuildProbeSampleCoords(const DDGIDesc& desc,
@@ -1864,6 +1876,10 @@ bool shouldSkipTrilinearDirectionalProbeSample(const DDGIDesc& desc,
     return shouldSkipTrilinearProbeSample(desc, world_position, cache, cache_count);
 bool wouldSkipSampleAtProbeCoords(const DDGIDesc& desc,
     return !tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
+bool wouldSkipTrilinearSampleAtCoords(const DDGIDesc& desc,
+
+bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
+    return wouldSkipTrilinearSampleAtCoords(desc, coords, cache, cache_count);
 }
 
 bool tryCanSampleAtProbeCoords(const DDGIDesc& desc,
@@ -3722,6 +3738,15 @@ bool tryCanLaunchDdgiProbeUpdate(const DDGIDesc& desc,
             outReason = DdgiLaunchRejectReason::OutOfRangeIndex;
             return ProbeUpdateLaunchRejectReason::OutOfRangeProbeIndex;
 
+    for (u32 i = 0u; i < probe_count; ++i) {
+        for (u32 j = i + 1u; j < probe_count; ++j) {
+            if (probe_indices[i] == probe_indices[j]) {
+                outReason = ProbeUpdateLaunchRejectReason::DuplicateProbeIndex;
+                return false;
+            }
+        }
+    }
+
     outReason = ProbeUpdateLaunchRejectReason::None;
             out_reason = DdgiLaunchRejectReason::OutOfRangeIndex;
 
@@ -4159,6 +4184,10 @@ bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelReject
     return launchable;
 }
 
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeTraceKernel(params);
+}
+
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
     return tryCanLaunchProbeTraceKernel(params, outReason);
     if (!tryCanLaunchProbeTraceKernel(params, outReason)) {
@@ -4399,6 +4428,10 @@ bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelReject
         *reason = localReason;
     }
     return launchable;
+}
+
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeBlendKernel(params);
 }
 
 bool tryLaunch_probe_trace_kernel(const DDGIKernelParams& params,

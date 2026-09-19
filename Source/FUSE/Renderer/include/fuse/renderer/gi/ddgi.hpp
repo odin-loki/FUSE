@@ -422,6 +422,7 @@ enum class ProbeUpdateLaunchRejectReason : u8 {
     NullIndices,
     ZeroCount,
     OutOfRangeProbeIndex,
+    DuplicateProbeIndex,
 };
 
 /// Human-readable label for probe-update launch reject reasons (logging / tests).
@@ -758,6 +759,8 @@ struct ProbeGridLayout {
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
                                        ProbeSampleCoords& out_coords);
+    /// Preflight guard before building sample coords from a world position.
+    static bool canBuildProbeSampleCoords(const DDGIDesc& desc, const fuse::math::Vec3& world_position);
     /// Build sample coords with reject-reason diagnostics.
     /// Build sample coords with reject-reason diagnostics; false on empty grid.
     /// Build with guard preflight and reject-reason diagnostics.
@@ -922,6 +925,9 @@ bool shouldSkipTrilinearProbeSample(const DDGIDesc& desc,
 bool shouldSkipTrilinearDirectionalProbeSample(const DDGIDesc& desc,
 /// Early-out when coord-based probe trilinear sampling would be rejected — same ordering as `tryCanSampleAtProbeCoords`.
 bool wouldSkipSampleAtProbeCoords(const DDGIDesc& desc,
+/// Early-out when coord-based trilinear sampling would be rejected — same ordering as `tryCanSampleAtProbeCoords`.
+bool wouldSkipTrilinearSampleAtCoords(const DDGIDesc& desc,
+/// Early-out when world-space trilinear sampling would be rejected.
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -991,6 +997,9 @@ bool preflightCacheIndexLookup(const DDGIDesc& desc,
 /// True when `probe_index` exceeds the valid probe range and would be clamped (B5.6 deepen).
 bool wouldClampCacheIndexLookup(u32 probe_index, const DDGIDesc& desc);
 bool preflightCacheIndex(const DDGIDesc& desc,
+/// Early-out when irradiance cache read would be rejected — same ordering as `tryReadIrradianceAtIndex`.
+bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
+                                    u32 probe_index);
 /// Early-out when cache-index lookup would be rejected — same ordering as `tryValidateCacheIndex`.
 bool wouldSkipCacheIndexLookup(const DDGIDesc& desc,
                                u32 probe_index,
