@@ -3719,3 +3719,9 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "classifyScreenDepthToSampleCoordsReject none for in-range depth");
                "classifyScreenDepthToSampleCoordsReject depth_out_of_range for below-near depth");
                "classifyScreenDepthToSampleCoordsReject empty_grid for empty desc");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-e4d8 ---
+               "preflightDensityLookup reports index_out_of_range for clampable OOB index");
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightScreenMapping(0.5f, 0.5f, 10.f, desc, camera, &mapReason),
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightScreenMapping(0.5f, 0.5f, 0.01f, desc, camera, &mapReason),
+               "preflightScreenMapping reports depth_out_of_range reject reason");
