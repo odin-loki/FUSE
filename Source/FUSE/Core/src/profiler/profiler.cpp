@@ -303,6 +303,14 @@ bool isFlowNestingBalanced() {
     return flowNestingDepth() == 0u;
 }
 
+bool hasUnbalancedNesting() {
+    return !isScopeNestingBalanced() || !isFlowNestingBalanced();
+}
+
+bool isFlowDepthDetached() {
+    return flowNestingDepth() != openAsyncFlowCount();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -325,6 +333,21 @@ bool isValidEventName(const char* name) {
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return isValidEventName(event.name);
+}
+
+u32 exportableEventCount() {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (isValidEventName(eventAt(i).name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool isEventExportable(u32 index) {
+    return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
 }
 
 const ProfileEvent& emptyProfileEvent() {
@@ -354,6 +377,16 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     return isValidProfileEvent(outEvent);
 }
 
+bool tryFirstEvent(ProfileEvent& outEvent) {
+    const u32 index = firstEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
 bool tryLastEvent(ProfileEvent& outEvent) {
     const u32 index = lastEventIndex();
     if (index == kInvalidEventIndex) {
@@ -362,6 +395,10 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     }
 
     return tryEventAt(index, outEvent);
+}
+
+u32 firstEventIndex() {
+    return hasEvents() ? 0u : kInvalidEventIndex;
 }
 
 u32 lastEventIndex() {
@@ -381,17 +418,18 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
     preflight.profilerDisabled = !enabled();
     preflight.eventCount = eventCount();
-    for (u32 i = 0u; i < preflight.eventCount; ++i) {
-        if (isValidEventName(eventAt(i).name)) {
-            ++preflight.exportableEventCount;
-        }
-    }
+    preflight.exportableEventCount = exportableEventCount();
     preflight.frameIndex = frameIndex();
     preflight.openAsyncFlowCount = openAsyncFlowCount();
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    preflight.maxScopeNestingDepth = maxNestingDepth();
+    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
     preflight.bufferEmpty = isBufferEmpty();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.flowDepthDetached = isFlowDepthDetached();
     return preflight;
 }
 
