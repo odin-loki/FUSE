@@ -157,6 +157,8 @@ bool tryPreflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHis
                                         TaaResolveBlendRejectReason& reason);
 /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
 bool shouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when resolve blend weights pass validation and reuse policy (B5.9 deepen).
+bool taaResolveBlendReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
 bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                       TaaBlendWeights& outWeights, TaaResolveBlendRejectReason& reason);
