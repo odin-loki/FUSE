@@ -1570,3 +1570,14 @@ ScopeNestingPreflight preflightScopeNesting(const char* name) {
     preflight.wouldSkip = preflight.profilerDisabled
     preflight.wouldSkip = wouldSkipAsyncFlowBegin(name);
     preflight.wouldSkip = wouldSkipAsyncFlowEnd(name);
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-ee46 ---
+bool wouldSkipScope(const char* name, ProfilerRecordSkipReason* reason) {
+bool wouldSkipAsyncFlowBegin(const char* name, ProfilerRecordSkipReason* reason) {
+    return wouldSkipScope(name, reason);
+bool wouldSkipAsyncFlowEnd(const char* name, ProfilerRecordSkipReason* reason) {
+bool wouldSkipCounter(const char* track, ProfilerRecordSkipReason* reason) {
+    return wouldSkipScope(track, reason);
+    preflight.wouldSkip = wouldSkipAsyncFlowBegin(name, &preflight.skipReason);
+    preflight.wouldSkip = wouldSkipAsyncFlowEnd(name, &preflight.skipReason);
+bool wouldSkipChromeTraceExport(bool requireBalancedNesting) {

@@ -5665,3 +5665,45 @@ void testAsyncFlowPreflight() {
     if (!fuse::profiler::wouldSkipCounter("counter_skip_probe")) {
                "wouldSkip false records counter sample");
     testAsyncFlowPreflight();
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-ee46 ---
+    expectTrue(!fuse::profiler::wouldSkipScope("valid_scope", &reason),
+               "wouldSkipScope false for valid enabled scope");
+               "wouldSkipScope reports none for valid scope");
+    expectTrue(fuse::profiler::wouldSkipScope(nullptr, &reason),
+               "wouldSkipScope true for null scope name");
+               "wouldSkipScope reports invalid_name for null scope");
+    expectTrue(fuse::profiler::wouldSkipScope("", &reason),
+               "wouldSkipScope true for empty scope name");
+               "wouldSkipScope reports invalid_name for empty scope");
+    expectTrue(fuse::profiler::wouldSkipScope("disabled_scope", &reason),
+               "wouldSkipScope reports profiler_disabled");
+    expectTrue(!fuse::profiler::wouldSkipCounter("valid_counter", &reason),
+               "wouldSkipCounter false for valid enabled counter");
+               "wouldSkipCounter true for empty counter track");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("valid_flow", &reason),
+               "wouldSkipAsyncFlowBegin true for empty flow name");
+               "wouldSkipAsyncFlowBegin reports invalid_name for empty flow");
+               "wouldSkipAsyncFlowEnd reports no_open_async_flows for orphan end");
+    expectTrue(beginPreflight.wouldSkip, "preflightAsyncFlowBegin skips empty name");
+    expectTrue(beginPreflight.skipReason == fuse::profiler::ProfilerRecordSkipReason::InvalidName,
+               "preflightAsyncFlowBegin reports invalid_name");
+        fuse::profiler::preflightAsyncFlowEnd("orphan_flow");
+    expectTrue(orphanPreflight.wouldSkip, "preflightAsyncFlowEnd skips orphan end");
+    expectTrue(orphanPreflight.orphanEnd, "preflightAsyncFlowEnd marks orphan end");
+    expectTrue(orphanPreflight.skipReason == fuse::profiler::ProfilerRecordSkipReason::NoOpenAsyncFlows,
+               "preflightAsyncFlowEnd reports no_open_async_flows for orphan end");
+               "wouldSkipChromeTraceExport false on empty enabled buffer");
+    expectTrue(!fuse::profiler::wouldSkipChromeTraceExport(true),
+               "wouldSkipChromeTraceExport false with balanced nesting on empty buffer");
+               "wouldSkipChromeTraceExport false with open flow when not requiring balance");
+    expectTrue(fuse::profiler::wouldSkipChromeTraceExport(true),
+               "wouldSkipChromeTraceExport true with open flow when requiring balance");
+               "wouldSkipChromeTraceExport false after balanced flow teardown");
+    expectTrue(fuse::profiler::tryFirstEventByName("scope_b", byName),
+               "tryFirstEventByName succeeds for nested scope");
+    expectTrue(fuse::profiler::tryLastEventByName("scope_b", byName),
+               "tryLastEventByName succeeds for nested scope");
+    expectTrue(fuse::profiler::tryFirstEventByFlowId(flowId, flowEvent),
+    expectTrue(flowEvent.scopeId == flowId, "tryFirstEventByFlowId preserves flow id");
+    expectTrue(fuse::profiler::tryLastEventByFlowId(flowId, flowEvent),

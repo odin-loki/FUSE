@@ -608,3 +608,11 @@ bool wouldSkipSafeChromeTraceExport(ProfilerSkipReason* reason = nullptr);
     bool canRecord() const { return !wouldSkip; }
 ScopeNestingPreflight preflightScopeNesting(const char* name = nullptr);
 bool wouldSkipRecording();
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-ee46 ---
+enum class ProfilerRecordSkipReason : u8 {
+bool wouldSkipScope(const char* name, ProfilerRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowBegin(const char* name, ProfilerRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowEnd(const char* name, ProfilerRecordSkipReason* reason = nullptr);
+bool wouldSkipCounter(const char* track, ProfilerRecordSkipReason* reason = nullptr);
+bool wouldSkipChromeTraceExport(bool requireBalancedNesting = false);
