@@ -150,6 +150,31 @@ ManifoldPrunePreflight preflight_manifold_prune(
     f32 duplicateEpsilon = 1e-4f,
     f32 shallowMinDepth = 0.f);
 
+/// Why manifold finalize would reject (B4.5 deepen follow-up).
+enum class ManifoldFinalizeRejectReason : u8 {
+    None = 0,
+    Empty,
+    InvalidNormal,
+    NoPenetratingPoints,
+    EmptyAfterPrune,
+};
+
+/// Human-readable label for manifold finalize reject reasons (B4.5 deepen follow-up).
+const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason);
+
+/// Diagnose why finalize would reject; vacuously succeeds when finalize may proceed (B4.5 deepen follow-up).
+ManifoldFinalizeRejectReason manifold_finalize_reject_reason(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Returns true when `manifold_finalize_reject_reason` matches `expected` (B4.5 deepen follow-up).
+bool manifold_finalize_rejects_for_reason(
+    const ContactManifold& manifold,
+    ManifoldFinalizeRejectReason expected,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
 /// Const preflight for manifold finalize dispatch (B4.4 deepen follow-up).
 struct ManifoldFinalizePreflight {
     bool skipped = false;
@@ -158,6 +183,7 @@ struct ManifoldFinalizePreflight {
     bool wouldBeEmptyAfterPrune = false;
     bool needsFrictionBasis = false;
     bool canReuseFrictionBasis = false;
+    ManifoldFinalizeRejectReason rejectReason = ManifoldFinalizeRejectReason::None;
 
     bool can_finalize() const { return !skipped && canFinalize; }
 };
@@ -175,6 +201,18 @@ bool can_skip_manifold_finalize(
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
+
+/// Returns true when manifold prune dispatch may be skipped (B4.5 deepen follow-up).
+bool should_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Returns true when in-place prune is safe per preflight (B4.5 deepen follow-up).
+bool can_prune_manifold_in_place(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

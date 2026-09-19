@@ -21,6 +21,9 @@ enum class ContactPairRejectReason : u8 {
     DegenerateShape,
     BothSleeping,
     BothKinematic,
+    NegativeInverseMass,
+    BothZeroMass,
+    SleepingKinematicMix,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -166,5 +169,39 @@ bool can_skip_narrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.5 deepen follow-up).
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Returns true when extended preflight rejects this pair (B4.5 deepen follow-up).
+bool is_invalid_contact_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Inverse of `is_invalid_contact_pair_deepen` (B4.5 deepen follow-up).
+bool is_valid_contact_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when either body has negative inverse mass (B4.5 deepen follow-up).
+bool is_negative_inverse_mass_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when both bodies have non-positive inverse mass (B4.5 deepen follow-up).
+bool is_zero_mass_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
+
+/// Returns true when one body is sleeping and the other is kinematic (B4.5 deepen follow-up).
+bool is_sleeping_kinematic_mix_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies);
 
 } // namespace fuse::physics::narrowphase
