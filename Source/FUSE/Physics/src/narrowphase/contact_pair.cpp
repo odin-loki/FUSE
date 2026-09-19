@@ -170,6 +170,28 @@ bool isShapeDegenerate(CollisionShapeType type, const vec3& params) {
     }
 }
 
+bool hasDispatchPath(CollisionShapeType typeA, CollisionShapeType typeB) {
+    if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Sphere) {
+        return true;
+    }
+    if ((typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Plane) ||
+        (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Sphere)) {
+        return true;
+    }
+    if ((typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Box) ||
+        (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Sphere)) {
+        return true;
+    }
+    if ((typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Capsule) ||
+        (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Sphere)) {
+        return true;
+    }
+    if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Box) {
+        return true;
+    }
+    return false;
+}
+
 bool isDeepenDegenerateShapePair(
     const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes) {
@@ -519,6 +541,9 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
     if (is_massless_contact_pair(pair, bodies)) {
         return ContactPairRejectReason::BothMassless;
     }
+    if (is_undispatched_shape_pair(pair, shapes)) {
+        return ContactPairRejectReason::UnsupportedShapePair;
+    }
     return ContactPairRejectReason::None;
 }
 
@@ -577,6 +602,20 @@ bool contact_pair_deepen_rejects_for_reason(
     return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
 }
 
+bool is_undispatched_shape_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+        return false;
+    }
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    return !hasDispatchPath(typeA, typeB);
+}
+
 bool is_plane_plane_contact_pair(
     const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes) {
@@ -607,6 +646,48 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return preflight_narrowphase_batch(pairs, bodies, shapes).can_skip();
+}
+
+bool can_skip_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return should_skip_contact_pair_dispatch(pair, bodies, shapes);
+}
+
+bool should_run_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !can_skip_contact_pair_dispatch(pair, bodies, shapes);
+}
+
+bool can_skip_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !can_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
+bool should_run_narrowphase(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !can_skip_narrowphase(pairs, bodies, shapes);
+}
+
+bool should_run_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !narrowphase_batch_rejects_all(pairs, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase

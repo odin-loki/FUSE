@@ -189,6 +189,20 @@ bool should_skip_manifold_prune(
     f32 duplicateEpsilon = 1e-4f,
     f32 shallowMinDepth = 0.f);
 
+/// Non-mutating prune skip predicate — alias of `should_skip_manifold_prune` (B4.6 deepen follow-up pass).
+bool can_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Non-mutating prune predicate — inverse of `can_skip_manifold_prune` (B4.6 deepen follow-up pass).
+bool should_run_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
 /// Why manifold finalize would early-out (B4.5 deepen follow-up pass).
 enum class ManifoldFinalizeRejectReason : u8 {
     None = 0,
@@ -252,6 +266,34 @@ bool prune_contact_manifold_with_preflight(
 /// Finalize only when preflight passes; no-op otherwise (B4.5 deepen follow-up pass).
 bool finalize_contact_manifold_with_preflight(
     ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Non-mutating prune-with-preflight skip predicate (B4.6 deepen follow-up pass).
+bool can_skip_prune_contact_manifold_with_preflight(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Non-mutating prune-with-preflight predicate — inverse of skip predicate (B4.6 deepen follow-up pass).
+bool should_run_prune_contact_manifold_with_preflight(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Non-mutating finalize-with-preflight skip predicate (B4.6 deepen follow-up pass).
+bool can_skip_finalize_contact_manifold_with_preflight(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Non-mutating finalize-with-preflight predicate — inverse of skip predicate (B4.6 deepen follow-up pass).
+bool should_run_finalize_contact_manifold_with_preflight(
+    const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
