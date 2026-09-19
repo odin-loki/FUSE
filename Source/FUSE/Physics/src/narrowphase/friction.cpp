@@ -1176,38 +1176,23 @@ bool friction_basis_rebuild_rejects_for_reason(
 bool should_run_friction_basis_rebuild(
 bool friction_basis_preflight_skips(const ContactManifold& manifold, f32 epsilon) {
     return should_skip_friction_basis_preflight(manifold, epsilon);
-}
 
 bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
     if (!should_normalize_contact_normal_before_friction(manifold, lengthEpsilon)) {
-        return false;
-    }
 
     const f32 normalLength = manifold.contactNormal.length();
     if (normalLength <= lengthEpsilon) {
-        return false;
-    }
 
     if (normalLength < 1e-8f) {
     manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
-    return true;
-}
 
 bool ensure_friction_basis_after_preflight(ContactManifold& manifold, f32 epsilon) {
     if (should_skip_friction_basis_preflight(manifold, epsilon)) {
         if (should_skip_friction_tangents(manifold)) {
-            invalidate_friction_basis(manifold);
-            return false;
-        }
         return has_cached_friction_basis(manifold);
 
     normalize_contact_normal_if_needed(manifold, epsilon);
-    return rebuild_friction_basis_if_needed(manifold, epsilon);
 
-bool should_run_friction_basis_rebuild(
-    const ContactManifold& manifold,
-    f32 epsilon) {
-    return !should_skip_friction_basis_preflight(manifold, epsilon);
 
 
     return friction_basis_rebuild_reject_reason(manifold, epsilon) == FrictionBasisRebuildRejectReason::None;
@@ -1224,33 +1209,18 @@ FrictionBasisNormalizePreflight preflight_friction_basis_normalize_rebuild(
 bool should_skip_friction_basis_normalize_rebuild(
     return preflight_friction_basis_normalize_rebuild(manifold, epsilon).can_skip_all();
 
-const char* friction_basis_rebuild_reject_reason_name(FrictionBasisRebuildRejectReason reason) {
-    switch (reason) {
-    case FrictionBasisRebuildRejectReason::None:
-        return "None";
     case FrictionBasisRebuildRejectReason::EmptyManifold:
         return "EmptyManifold";
     case FrictionBasisRebuildRejectReason::InvalidNormal:
         return "InvalidNormal";
-    case FrictionBasisRebuildRejectReason::CanReuse:
-        return "CanReuse";
-    return "Unknown";
 
-FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
         return manifold.empty() ? FrictionBasisRebuildRejectReason::EmptyManifold
                                 : FrictionBasisRebuildRejectReason::InvalidNormal;
-    if (can_skip_friction_basis_rebuild(manifold, epsilon)) {
-        return FrictionBasisRebuildRejectReason::CanReuse;
-    return FrictionBasisRebuildRejectReason::None;
 
-bool friction_basis_rebuild_rejects_for_reason(
-    FrictionBasisRebuildRejectReason expected,
-    return friction_basis_rebuild_reject_reason(manifold, epsilon) == expected;
 
 bool should_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
 
 bool can_skip_friction_basis_rebuild_dispatch(const ContactManifold& manifold, f32 epsilon) {
-    return should_skip_friction_basis_preflight(manifold, epsilon);
 
 const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason) {
     case FrictionBasisRejectReason::None:
@@ -1259,7 +1229,6 @@ const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason) 
     case FrictionBasisRejectReason::CanReuse:
 
 FrictionBasisRejectReason friction_basis_reject_reason(
-    if (manifold.empty()) {
         return FrictionBasisRejectReason::EmptyManifold;
     if (!manifold.hasValidNormal()) {
         return FrictionBasisRejectReason::InvalidNormal;
@@ -1289,25 +1258,17 @@ bool can_skip_friction_basis_preflight(
 
 
 
-bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
     if (!contact_normal_needs_normalize(manifold, lengthEpsilon)) {
 
-    const f32 normalLength = manifold.contactNormal.length();
     if (normalLength <= 1e-8f) {
 
-    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
-    return true;
 
 
 
-    if (normalLength <= lengthEpsilon) {
 
 
 bool rebuild_friction_basis_using_preflight(ContactManifold& manifold, f32 epsilon) {
-    const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
-    if (preflight.skipped) {
 
-    if (preflight.can_skip_rebuild()) {
         return manifold.hasFrictionBasis();
 
     manifold.buildFrictionBasis();
@@ -1329,5 +1290,10 @@ void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 eps
 bool compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon) {
     if (preflight.reason != FrictionBasisRejectReason::None) {
     compute_friction_tangents_if_needed(manifold, epsilon);
+
+    if (!should_run_friction_basis_rebuild(manifold, epsilon)) {
+
+    if (should_normalize_contact_normal_before_friction(manifold, epsilon)) {
+        if (normalLength > 1e-8f) {
 
 } // namespace fuse::physics::narrowphase

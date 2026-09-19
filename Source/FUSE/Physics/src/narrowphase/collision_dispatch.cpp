@@ -154,6 +154,7 @@ bool finalize_contact_manifold_if_needed(ContactManifold& manifold) {
 
 void runNarrowphaseDeepenIntoBuffer(
 void runNarrowphaseIntoBufferDeepen(
+void runNarrowphaseIntoBufferWithDeepenPreflight(
     ContactBufferSoA& buffer) {
     const u32 pairCount = static_cast<u32>(pairs.size());
     buffer.preparePairSlots(pairCount);
@@ -197,6 +198,11 @@ std::vector<ContactManifold> runNarrowphaseDeepen(
     ContactBufferSoA buffer;
     buffer.reserve(static_cast<u32>(pairs.size()));
     runNarrowphaseIntoBufferDeepen(pairs, bodies, shapes, buffer);
+        ContactManifold manifold = detect_contacts_pair_with_preflight(pairs[pairIndex], bodies, shapes);
+
+
+std::vector<ContactManifold> runNarrowphaseWithDeepenPreflight(
+    runNarrowphaseIntoBufferWithDeepenPreflight(pairs, bodies, shapes, buffer);
     return buffer.toVector();
 }
 

@@ -671,5 +671,7 @@ bool friction_basis_preflight_skips(const ContactManifold& manifold, f32 epsilon
 
 /// Build friction tangents only when preflight allows; no-op when skipped (B4.6 deepen pass).
 bool compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+/// Non-mutating rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.6 deepen pass).
+
 
 } // namespace fuse::physics::narrowphase
