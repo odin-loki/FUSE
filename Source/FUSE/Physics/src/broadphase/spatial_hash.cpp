@@ -609,6 +609,9 @@ const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason) 
 
 const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason) {
     case CellPairGenRejectReason::None:
+
+    switch (reason) {
+        return "None";
     case CellPairGenRejectReason::EmptyOccupants:
         return "EmptyOccupants";
     case CellPairGenRejectReason::SingleOccupant:
@@ -2149,6 +2152,7 @@ BroadphaseMergeScan scanBroadphaseMergeBodies(
     preflight.estimatedMergePairs = preflight.planeBodyCount * preflight.dynamicBodyCount;
 
 
+
     if (preflight.emptyPlaneBodies) {
         preflight.reason = BroadphaseMergeRejectReason::EmptyPlaneBodies;
     } else if (preflight.emptyDynamicBodies) {
@@ -3123,11 +3127,23 @@ u32 countPairsForOccupants(const std::vector<u32>& occupants) {
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
     const u32 bodyCount = static_cast<u32>(uniqueBodies.size());
     return bodyCount > 1u ? bodyCount * (bodyCount - 1u) / 2u : 0u;
-}
 
 CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants) {
-    if (occupants.size() < 2u) {
         return CellPairGenRejectReason::SingletonOccupant;
+u32 countUniqueCellOccupants(const std::vector<u32>& occupants) {
+    if (occupants.empty()) {
+    std::vector<u32> uniqueBodies = occupants;
+    std::sort(uniqueBodies.begin(), uniqueBodies.end());
+    uniqueBodies.erase(std::unique(uniqueBodies.begin(), uniqueBodies.end()), uniqueBodies.end());
+    return static_cast<u32>(uniqueBodies.size());
+
+u32 estimateCellPairCount(const std::vector<u32>& occupants) {
+    const u32 uniqueBodyCount = countUniqueCellOccupants(occupants);
+    return estimatePairCountForUniqueBodies(uniqueBodyCount);
+
+        return CellPairGenRejectReason::EmptyOccupants;
+    if (uniqueBodyCount < 2u) {
+        return CellPairGenRejectReason::SingleOccupant;
     }
     return CellPairGenRejectReason::None;
 }
@@ -3142,6 +3158,10 @@ CellPairGenPreflight preflightCellPairGen(const std::vector<u32>& occupants) {
     preflight.reason = cellPairGenRejectReason(occupants);
     preflight.singletonOccupant = preflight.reason == CellPairGenRejectReason::SingletonOccupant;
     preflight.estimatedPairCount = countPairsForOccupants(occupants);
+    preflight.emptyOccupants = preflight.reason == CellPairGenRejectReason::EmptyOccupants;
+    preflight.singleOccupant = preflight.reason == CellPairGenRejectReason::SingleOccupant;
+    preflight.uniqueBodyCount = countUniqueCellOccupants(occupants);
+    preflight.estimatedPairCount = estimateCellPairCount(occupants);
     return preflight;
 }
 

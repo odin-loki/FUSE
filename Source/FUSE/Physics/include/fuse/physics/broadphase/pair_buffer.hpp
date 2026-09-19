@@ -2016,6 +2016,9 @@ PairBufferSlotWritePreflight preflightPairBufferSlotWrite(
 
 
 
+
+
+
     const PairBufferSoA& buffer,
     u32 slot,
     u32 idxA,
@@ -2195,13 +2198,21 @@ bool shouldRunPairBufferSlotInvalidate(const PairBufferSoA& buffer, u32 slot);
 /// Why pair-buffer slot reservation would reject (B4.2 deepen follow-up pass).
 enum class PairBufferSlotReservationRejectReason : u8 {
     ExceedsCapacity,
-    bool outOfRangeSlot = false;
-
-};
 
 
-    None = 0,
-    ZeroSlots,
+
+/// Why pair-buffer slot invalidate would early-out (B4.2 deepen follow-up pass).
+
+
+/// Diagnose why slot invalidate would skip; vacuously succeeds when invalidate may proceed.
+
+
+
+
+
+
+/// Non-mutating slot-invalidate predicate — mirrors `preflightPairBufferInvalidateSlot` (B4.2 deepen follow-up pass).
+
 
 /// Human-readable label for pair-buffer slot-reservation reject reasons (logging / tests).
 const char* pairBufferSlotReservationRejectReasonName(PairBufferSlotReservationRejectReason reason);
@@ -2229,6 +2240,7 @@ struct PairBufferSlotReservationPreflight {
 PairBufferSlotReservationPreflight preflightPairBufferSlotReservation(
 
 };
+
 
     const PairBufferSoA& buffer,
     u32 slotCount);

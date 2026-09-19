@@ -228,6 +228,13 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
     return !canSkipBroadphasePairGeneration(bodies, shapes);
 }
 
+/// Non-mutating broadphase predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,
@@ -960,6 +967,7 @@ FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange2& 
 
     if (isEmptyCellRange(range)) {
         return CellSpanRejectReason::EmptyRange;
+
     if (maxSpanPerAxis > 0u) {
         const ivec2 span = cellSpanPerAxis(range);
         if (span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis)) {
@@ -1489,6 +1497,10 @@ FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan(const CellRange3& range,
 
 
 
+
+
+
+
     preflight.reason = cellSpanRejectReason(range, maxSpanPerAxis);
     preflight.emptyRange = preflight.reason == CellSpanRejectReason::EmptyRange;
     preflight.exceedsMaxSpan = preflight.reason == CellSpanRejectReason::ExceedsMaxSpan;
@@ -1582,14 +1594,26 @@ FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange3& range, u32 max
 
 FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
 
+
+
+
+
 /// Why per-cell pair generation would early-out (B4.2 deepen follow-up pass).
 enum class CellPairGenRejectReason : u8 {
     None = 0,
     SingletonOccupant,
+    EmptyOccupants,
+    SingleOccupant,
 };
 
 /// Human-readable label for cell-pair-gen reject reasons (logging / tests).
 const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason);
+
+/// Unique-body count for a cell occupant list (0 when empty).
+u32 countUniqueCellOccupants(const std::vector<u32>& occupants);
+
+/// Estimated canonical pair count for a cell occupant list (n*(n-1)/2 over unique bodies).
+u32 estimateCellPairCount(const std::vector<u32>& occupants);
 
 /// Diagnose why per-cell pair generation would skip; vacuously succeeds when pairs may be emitted.
 CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants);
@@ -1605,6 +1629,11 @@ struct CellPairGenPreflight {
     u32 estimatedPairCount = 0;
 
     bool canGenerate() const { return reason == CellPairGenRejectReason::None; }
+    bool emptyOccupants = false;
+    bool singleOccupant = false;
+    u32 uniqueBodyCount = 0;
+
+};
 
 CellPairGenPreflight preflightCellPairGen(const std::vector<u32>& occupants);
 
