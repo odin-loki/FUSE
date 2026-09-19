@@ -1339,3 +1339,9 @@ void testCookHashPreflightManifestWithUpstream() {
                "recomputed hash makes would_invalidate_stale_content true for stale entry");
 void testCookHashManifestWithUpstreamPreflight() {
     testCookHashManifestWithUpstreamPreflight();
+
+// --- deepen additive from deepen-b79-cooker-hash-90b0 ---
+void testCookHashPreflightManifestCookKey() {
+    const fuse::project::CookHashPreflight all_empty_deps =
+    expectTrue(all_empty_deps.reason == fuse::project::CookHashRejectReason::EmptyDependencyList,
+    testCookHashPreflightManifestCookKey();

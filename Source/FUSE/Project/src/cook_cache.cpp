@@ -887,3 +887,6 @@ CookHashPreflight CookCache::preflight_store_entry(const CookCacheEntry& entry) 
 
 // --- deepen additive from b79-cooker-hash-deepen-2f84 ---
 CookCacheEntryPreflight CookCache::preflight_cook_cache_entry(const CookCacheEntry& entry) {
+
+// --- deepen additive from deepen-b79-cooker-hash-90b0 ---
+    preflight.reason = CookHashRejectReason::SourceUnreadable;
