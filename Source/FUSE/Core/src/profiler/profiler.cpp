@@ -342,33 +342,24 @@ bool isBufferEmpty() {
 
 bool isBufferFull() {
     return eventCount() >= kRingCapacity;
-}
 
 bool isEventIndexValid(u32 index) {
     return index < eventCount();
-}
 
 bool isBlankEventName(const char* name) {
     if (name == nullptr || name[0] == '\0') {
         return true;
-    }
 
     for (const char* cursor = name; *cursor != '\0'; ++cursor) {
         const char ch = *cursor;
         if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
             return false;
-        }
-    }
-    return true;
-}
 
 bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
-}
 
 bool isValidFlowId(u32 flowId) {
     return flowId != 0u;
-}
 
 bool isFlowPhaseEvent(const ProfileEvent& event) {
     return event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish;
@@ -386,53 +377,46 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 
 bool isAsyncFlowPhase(EventPhase phase) {
     return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
-}
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return isValidEventName(event.name);
-}
 
 bool isProfileEventSentinel(const ProfileEvent& event) {
     return event.name == nullptr && event.timestampNs == 0u && event.scopeId == 0u
         && event.phase == EventPhase::Begin;
-}
 
 u32 invalidNameEventCount() {
     const u32 total = eventCount();
     const u32 exportable = exportableEventCount();
     return total >= exportable ? total - exportable : 0u;
-}
 
 bool hasInvalidNameEvents() {
     return invalidNameEventCount() > 0u;
-}
 
 u32 exportableEventCount() {
     u32 count = 0u;
-    const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
         if (isValidEventName(eventAt(i).name)) {
             ++count;
-        }
-    }
     return count;
-}
 
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
-}
 
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
     return kEmpty;
-}
 
 const ProfileEvent& eventAt(u32 index) {
     if (!isEventIndexValid(index)) {
         return emptyProfileEvent();
-    }
 
     const u32 count = eventCount();
+    return count > 0u && index < count;
+
+
+
+
     const u32 head = g_writeHead.load(std::memory_order_acquire);
     const u32 start = head >= count ? head - count : 0u;
     const u32 ringIndex = (start + index) % kRingCapacity;
@@ -847,18 +831,25 @@ void endAsyncFlow(const char* name, u32 flowId) {
 
     if (g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u) {
         g_orphanAsyncFlowEndCount.fetch_add(1u, std::memory_order_acq_rel);
-        return;
-    }
 
     g_openAsyncFlowCount.fetch_sub(1u, std::memory_order_acq_rel);
 
     const u32 flowDepth = currentFlowNestingDepth();
+    const bool enabled = g_enabled.load(std::memory_order_acquire);
+
+    if (!enabled) {
+        if (flowDepth > 0u) {
+            popFlowNestingDepth();
+
     recordEvent(name,
                 EventPhase::FlowFinish,
                 flowId,
                 currentNestingDepth(),
                 flowDepth);
-    popFlowNestingDepth();
+
+    if (flowDepth > 0u) {
+        popFlowNestingDepth();
+    }
 }
 
 void sampleCounter(const char* track, s64 value) {
