@@ -62,6 +62,11 @@ enum class ChromeTraceExportRejectReason : u8 {
     UnbalancedScopeNesting,
     UnbalancedFlowNesting,
     OpenAsyncFlows,
+    FlowDepthDetached,
+
+/// Why a guarded chrome trace export preflight rejected the request (B1.6 deepen).
+    ProfilerDisabled,
+    NoExportableEvents,
 };
 
 /// Why an event lookup preflight rejected the request (B1.6 deepen).
@@ -547,6 +552,14 @@ u32 exportableLastEventIndex();
 u32 findFirstEventIndex(EventPhase phase);
 u32 findLastEventIndex(EventPhase phase);
 bool tryFindEventByName(const char* name, u32 startIndex, u32& outIndex, ProfileEvent& outEvent);
+bool tryValidateEventName(const char* name, EventNameRejectReason& outReason);
+const char* eventNameRejectReasonLabel(EventNameRejectReason reason);
+bool isProfilerStateBalanced();
+bool preflightProfilerState(NestingStateRejectReason* reason = nullptr);
+const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason);
+bool canLookupEventAt(u32 index);
+bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason);
+const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
 u32 firstEventIndex();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
@@ -807,6 +820,8 @@ bool hasExportableEvents();
 /// True when at least one buffered event has a valid name for chrome export.
 /// True when chrome export would emit zero trace events (empty buffer or no valid names).
 bool isChromeTraceExportEmpty();
+bool preflightChromeTraceNesting(ChromeTraceExportRejectReason* reason = nullptr);
+const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason);
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
@@ -852,6 +867,7 @@ std::string exportChromeTraceJson();
 bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason = nullptr);
 /// Export preflight — writes chrome JSON and reports whether any trace events were emitted.
 bool tryExportChromeTraceJson(std::string& outJson);
+/// Guarded export — returns false when nesting/export preflight rejects (profiler disabled, empty export, or unbalanced nesting).
 
 } // namespace fuse::profiler
 
