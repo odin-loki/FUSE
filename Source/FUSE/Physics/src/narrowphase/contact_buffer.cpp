@@ -902,3 +902,7 @@ ContactBufferBuildFrictionRejectReason contact_buffer_build_friction_reject_reas
 ContactBufferBuildFrictionPreflight preflight_contact_buffer_build_friction(const ContactBufferSoA& buffer) {
     ContactBufferBuildFrictionPreflight preflight{};
     preflight.emptyBuffer = preflight.reason == ContactBufferBuildFrictionRejectReason::EmptyBuffer;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-5f30 ---
+    const ContactBufferClampPreflight clampPreflight = preflight_contact_buffer_clamp(*this);
+ContactBufferWarmStartPreflight preflight_contact_buffer_warm_start(const ContactBufferSoA& buffer, u32 slot) {

@@ -3536,3 +3536,24 @@ void testRunNarrowphaseBufferPreflightGuards() {
     expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight can dispatch valid batch");
     expectTrue(!dispatchPreflight.can_skip(), "dispatch preflight does not skip valid batch");
 void testManifoldFrictionDeepenPassFollowUpGuards() {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-5f30 ---
+void testContactBufferWriteSlotRejectReasonGuards() {
+            fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::None,
+            fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::OutOfRangeSlot,
+            fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::InvalidManifold,
+            fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::SelfPair,
+void testContactBufferToVectorAndCompactionGuards() {
+            fuse::physics::narrowphase::ContactBufferToVectorRejectReason::EmptyBuffer,
+            fuse::physics::narrowphase::ContactBufferToVectorRejectReason::None,
+void testContactBufferWarmStartAndFrictionSkipGuards() {
+            fuse::physics::narrowphase::ContactBufferWarmStartRejectReason::OutOfRangeSlot,
+            fuse::physics::narrowphase::ContactBufferWarmStartRejectReason::InvalidSlot,
+void testRunNarrowphaseIntoBufferPreflightGuards() {
+    fuse::physics::narrowphase::runNarrowphaseIntoBufferWithPreflight(rejectedPairs, bodies, shapes, buffer);
+void testManifoldFinalizePreflightWrapperGuards() {
+void testFrictionTangentsPreflightWrapperGuards() {
+    testContactBufferWriteSlotRejectReasonGuards();
+    testRunNarrowphaseIntoBufferPreflightGuards();
+    testManifoldFinalizePreflightWrapperGuards();
+    testFrictionTangentsPreflightWrapperGuards();
