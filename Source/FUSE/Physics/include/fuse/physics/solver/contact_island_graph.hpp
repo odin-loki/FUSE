@@ -16,6 +16,8 @@ enum class ContactIslandGraphBuildRejectReason : u8 {
 /// Why island graph build would early-out (B4.4 deepen follow-up).
 enum class IslandBuildRejectReason : u8 {
     ZeroBodyCount,
+/// Why island graph build would early-out (B4.4 deepen follow-up pass).
+enum class IslandGraphBuildRejectReason : u8 {
     OutOfRangeContactBodies,
     OutOfRangeDistanceBodies,
 };
@@ -847,6 +849,7 @@ struct ContactIslandGraph {
     /// Build only when `can_build_island_graph` passes; clears and returns false otherwise.
     /// Guarded build; returns false and clears when preflight rejects inputs.
     /// Guarded build entry: skips empty inputs and out-of-range constraint refs.
+                       IslandGraphBuildRejectReason* reason = nullptr);
 
     void clear();
 
