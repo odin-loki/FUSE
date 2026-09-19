@@ -7737,6 +7737,155 @@ void testFroxelTrilinearAndDensityLookupGuards() {
                "empty desc fails populate ForDesc preflight");
 }
 
+void testFroxelTrilinearStrictLookupAndPopulateGuards() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    grid.allocate(desc);
+    grid.density[0] = 1.f;
+    grid.density[desc.maxFroxelIndex()] = 2.f;
+
+    expectTrue(fuse::renderer::froxel_util::isDensityLookupIndexInRange(0u, desc),
+               "origin index is in range");
+    expectTrue(fuse::renderer::froxel_util::isDensityLookupIndexInRange(desc.maxFroxelIndex(), desc),
+               "last index is in range");
+    expectTrue(!fuse::renderer::froxel_util::isDensityLookupIndexInRange(999u, desc),
+               "OOB index is not in range");
+
+    fuse::renderer::FroxelGridDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    expectTrue(!fuse::renderer::froxel_util::isDensityLookupIndexInRange(0u, zeroDesc),
+               "any index is out of range on empty grid");
+
+    expectTrue(fuse::renderer::froxel_util::canLookupAtIndexStrict(grid, desc, 0u),
+               "strict lookup preflight succeeds for in-range index");
+    expectTrue(!fuse::renderer::froxel_util::canLookupAtIndexStrict(grid, desc, 999u),
+               "strict lookup preflight rejects OOB index");
+    expectTrue(fuse::renderer::froxel_util::canLookupAtIndex(grid, desc, 999u),
+               "permissive lookup preflight still succeeds for OOB index");
+
+    fuse::renderer::DensityLookupRejectReason lookupReason = fuse::renderer::DensityLookupRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryCanLookupAtIndexStrict(grid, desc, 5u, lookupReason),
+               "strict lookup preflight succeeds for in-range index with reason");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::None,
+               "in-range strict lookup reports no reject reason");
+    expectTrue(!fuse::renderer::froxel_util::tryCanLookupAtIndexStrict(grid, desc, 999u, lookupReason),
+               "strict lookup preflight rejects OOB index with reason");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::IndexOutOfRange,
+               "OOB strict lookup reports index_out_of_range reject reason");
+
+    expectTrue(fuse::renderer::froxel_util::canLookupAtCoordStrict(grid, desc, 1u, 1u, 2u),
+               "strict coord lookup preflight succeeds for in-range coords");
+    expectTrue(!fuse::renderer::froxel_util::canLookupAtCoordStrict(grid, desc, 99u, 99u, 99u),
+               "strict coord lookup preflight rejects OOB coords");
+    expectTrue(fuse::renderer::froxel_util::tryCanLookupAtCoord(grid, desc, 99u, 99u, 99u, lookupReason),
+               "permissive coord lookup preflight still succeeds for OOB coords");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::IndexOutOfRange,
+               "OOB permissive coord lookup reports index_out_of_range reject reason");
+
+    fuse::renderer::FroxelSampleCoords inBounds{};
+    inBounds.tileX0 = 0u;
+    inBounds.tileY0 = 0u;
+    inBounds.tileX1 = 1u;
+    inBounds.tileY1 = 1u;
+    inBounds.sliceZ0 = 0u;
+    inBounds.sliceZ1 = 1u;
+    inBounds.tx = 0.5f;
+    inBounds.ty = 0.5f;
+    inBounds.tz = 0.5f;
+
+    expectTrue(fuse::renderer::froxel_util::canSampleAtCoords(grid, desc, inBounds),
+               "canSampleAtCoords succeeds for in-bounds coords");
+    expectTrue(fuse::renderer::froxel_util::canPreflightTrilinearDensitySample(grid, desc, inBounds),
+               "trilinear preflight succeeds for in-bounds coords");
+    expectTrue(!fuse::renderer::froxel_util::shouldSkipFroxelTrilinearSample(grid, desc, inBounds),
+               "in-bounds trilinear sample is not skipped");
+    expectTrue(!fuse::renderer::froxel_util::wouldClampTrilinearDensitySample(grid, desc, inBounds),
+               "in-bounds trilinear sample would not clamp");
+
+    fuse::renderer::FroxelSampleCoords warnWeights = inBounds;
+    warnWeights.tx = 2.f;
+    expectTrue(fuse::renderer::froxel_util::canPreflightTrilinearDensitySample(grid, desc, warnWeights),
+               "trilinear preflight warns but succeeds for clampable weights");
+    expectTrue(fuse::renderer::froxel_util::wouldClampTrilinearDensitySample(grid, desc, warnWeights),
+               "clampable weights would clamp before trilinear sampling");
+    expectTrue(!fuse::renderer::froxel_util::shouldSkipFroxelTrilinearSample(grid, desc, warnWeights),
+               "clampable weights do not skip trilinear sampling");
+
+    fuse::renderer::FroxelSampleCoords hardOob = inBounds;
+    hardOob.tileX0 = 99u;
+    expectTrue(!fuse::renderer::froxel_util::canSampleAtCoords(grid, desc, hardOob),
+               "canSampleAtCoords rejects hard OOB tile coord");
+    expectTrue(!fuse::renderer::froxel_util::canPreflightTrilinearDensitySample(grid, desc, hardOob),
+               "trilinear preflight rejects hard OOB tile coord");
+    expectTrue(fuse::renderer::froxel_util::shouldSkipFroxelTrilinearSample(grid, desc, hardOob),
+               "hard OOB coords skip trilinear sampling");
+
+    fuse::renderer::SampleCoordRejectReason sampleReason = fuse::renderer::SampleCoordRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryPreflightTrilinearDensitySample(grid, desc, inBounds, sampleReason),
+               "tryPreflightTrilinearDensitySample succeeds for in-bounds coords");
+    expectTrue(sampleReason == fuse::renderer::SampleCoordRejectReason::None,
+               "successful trilinear preflight reports no reject reason");
+
+    fuse::f32 trilinearSample = 0.f;
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityTrilinear(grid, desc, inBounds, trilinearSample, sampleReason),
+               "trySampleDensityTrilinear with reason succeeds for in-bounds coords");
+    expectNear(trilinearSample,
+               fuse::renderer::froxel_util::sampleDensityTrilinear(grid, desc, inBounds),
+               1e-5f,
+               "trySampleDensityTrilinear with reason matches unguarded sample");
+
+    fuse::f32 rejectedTrilinear = 1.f;
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityTrilinear(grid, desc, hardOob, rejectedTrilinear, sampleReason),
+               "trySampleDensityTrilinear with reason rejects hard OOB coords");
+    expectNear(rejectedTrilinear, 0.f, 1e-6f, "trySampleDensityTrilinear with reason zeroes output on hard OOB rejection");
+    expectTrue(sampleReason == fuse::renderer::SampleCoordRejectReason::OutOfBounds,
+               "hard OOB trilinear sample reports out_of_bounds reject reason");
+
+    fuse::renderer::FroxelCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+    fuse::f32 screenSample = 0.f;
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtScreen(
+                   grid, desc, camera, 0.25f, 0.25f, 3.16f, screenSample),
+               "guarded screen sample routes through trilinear preflight");
+    expectNear(screenSample,
+               fuse::renderer::froxel_util::sampleDensityAtScreen(grid, desc, camera, 0.25f, 0.25f, 3.16f),
+               1e-5f,
+               "guarded screen sample matches unguarded screen sample");
+
+    fuse::renderer::VolumetricFogParams params{};
+    params.density = 0.02f;
+    params.march_steps = 32u;
+
+    fuse::renderer::FroxelDensityGrid populated{};
+    fuse::renderer::froxel_util::populateFromAnalyticFog(populated, desc, camera, params);
+    fuse::renderer::FroxelPopulateRejectReason populateReason = fuse::renderer::FroxelPopulateRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryValidatePopulateResult(populated, desc, camera, params, populateReason),
+               "successful populate validates result");
+    expectTrue(populateReason == fuse::renderer::FroxelPopulateRejectReason::None,
+               "successful populate reports no reject reason");
+
+    fuse::renderer::VolumetricFogParams zeroDensity{};
+    zeroDensity.density = 0.f;
+    fuse::renderer::FroxelDensityGrid skipped{};
+    fuse::renderer::froxel_util::populateFromAnalyticFog(skipped, desc, camera, zeroDensity);
+    expectTrue(fuse::renderer::froxel_util::tryValidatePopulateResult(skipped, desc, camera, zeroDensity, populateReason),
+               "skipped populate vacuously validates zero-density result");
+    expectTrue(populateReason == fuse::renderer::FroxelPopulateRejectReason::None,
+               "skipped populate reports no reject reason");
+
+    fuse::renderer::FroxelDensityGrid mismatched{};
+    mismatched.density.resize(desc.froxelCount() + 1u, 0.f);
+    expectTrue(!fuse::renderer::froxel_util::tryValidatePopulateResult(mismatched, desc, camera, params, populateReason),
+               "mismatched populate storage fails validation");
+    expectTrue(populateReason == fuse::renderer::FroxelPopulateRejectReason::EmptyDesc,
+               "mismatched populate reports empty_desc reject reason");
+}
+
 void testZeroDimensionFroxelGrid() {
     fuse::renderer::FroxelGridDesc zeroDesc{};
     zeroDesc.tilesX = 0u;
@@ -9085,6 +9234,7 @@ int main() {
     testFroxelTrilinearAndPopulatePreflightGuards();
     testFroxelClassifyAndPreflightGuards();
     testFroxelTrilinearAndDensityLookupGuards();
+    testFroxelTrilinearStrictLookupAndPopulateGuards();
     testEmptySceneVolumetricFog();
     testZeroDimensionFroxelGrid();
     testFroxelPopulateFromAnalyticFog();
