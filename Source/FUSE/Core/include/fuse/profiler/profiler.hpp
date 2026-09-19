@@ -140,6 +140,11 @@ struct ChromeTraceExportPreflight {
     u32 flowStartEventCount = 0;
     u32 flowFinishEventCount = 0;
     u32 counterEventCount = 0;
+    u32 firstEventIndex = kInvalidEventIndex;
+    u32 lastEventIndex = kInvalidEventIndex;
+    u32 ringCapacity = 0;
+    u32 droppedEventCount = 0;
+    bool isBufferFull = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -376,6 +381,28 @@ struct ExportPreflight {
     bool hasBufferedScopeImbalance() const { return scopeBeginEventCount != scopeEndEventCount; }
     bool hasBufferedFlowImbalance() const { return flowStartEventCount != flowFinishEventCount; }
         return canExport() && !flowDepthDetached && !hasBufferedFlowImbalance();
+    bool canExportTrace() const { return canExport() && hasExportableEvents(); }
+    bool hasExportWarnings() const { return hasUnbalancedNesting() || flowDepthDetached; }
+
+/// Read-only scope/async nesting diagnostics — safe before mutating profile slices.
+struct NestingStatePreflight {
+    u32 openAsyncFlows = 0;
+    u32 maxScopeDepth = 0;
+    u32 maxFlowDepth = 0;
+    bool flowDepthDetached = false;
+    bool hasOpenAsyncFlows = false;
+
+    bool isClean() const {
+        return scopeBalanced && flowBalanced && !flowDepthDetached && !hasOpenAsyncFlows;
+
+/// Read-only async-flow begin diagnostics — mirrors `beginAsyncFlow()` guards.
+    bool profilerDisabled = false;
+
+    bool canBegin() const { return !profilerDisabled && !emptyName; }
+
+/// Read-only async-flow end diagnostics — mirrors `endAsyncFlow()` guards.
+
+    bool canEnd() const { return !profilerDisabled && !emptyName && !orphanEnd; }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -558,6 +585,7 @@ bool isEventIndexValid(u32 index);
 bool isBlankEventName(const char* name);
 bool isFirstEventIndex(u32 index);
 bool isLastEventIndex(u32 index);
+bool isEmptyEventName(const char* name);
 bool isValidEventName(const char* name);
 bool isValidFlowId(u32 flowId);
 bool isFlowPhaseEvent(const ProfileEvent& event);
@@ -592,6 +620,7 @@ bool isLastEventIndex(u32 index);
 u32 countEventsByPhase(EventPhase phase);
 u32 findFirstEventIndexByPhase(EventPhase phase);
 bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
+u32 droppedEventCount();
 u32 firstEventIndex();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
@@ -674,6 +703,9 @@ ProfilerRecordPreflight preflightRecord(const char* name);
 ProfilerExportPreflight preflightChromeTraceExport();
 void reset();
 
+NestingStatePreflight preflightNestingState();
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name);
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name);
 ChromeTraceExportPreflight preflightChromeTraceExport();
 ProfileScopePreflight preflightProfileScope(const char* name);
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);
