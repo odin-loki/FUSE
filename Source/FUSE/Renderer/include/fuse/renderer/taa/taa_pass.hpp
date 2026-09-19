@@ -396,6 +396,10 @@ public:
     /// True when history is warmed, reuse is allowed, and blend preflight passes (B5.9 deepen).
     bool preflightTemporalResolve(const TaaResolveDesc& desc,
     /// Classify why NDC jitter production would be rejected (B5.9 deepen).
+    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
+    /// Classify why pass jitter sync would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
     /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).
     bool preflightJitterNdc(TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
@@ -467,6 +471,16 @@ public:
     /// True when jitter can sync to `frameIndex` and produce NDC for the pass viewport (B5.9 deepen).
     /// Early-out when pass jitter sync+NDC preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSyncAndNdc(u32 frameIndex) const;
+    /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterNdcReject() const;
+    /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
+    bool preflightJitterAdvance(TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
+    bool shouldSkipJitterAdvance() const;
+    /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
+    /// Classify why pass jitter advance would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterAdvanceReject() const;
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).
