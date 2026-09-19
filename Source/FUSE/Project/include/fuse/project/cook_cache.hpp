@@ -159,3 +159,9 @@ struct CookCacheStorePreflight {
     [[nodiscard]] bool would_invalidate() const {
 [[nodiscard]] CookCacheLookupPreflight preflight_cook_cache_lookup(const CookCache& cache, u64 content_hash);
 [[nodiscard]] CookCacheStorePreflight preflight_cook_cache_store(const CookCacheEntry& entry);
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-7fd3 ---
+    [[nodiscard]] bool would_prune() const { return total() > 0; }
+    [[nodiscard]] bool would_invalidate() const { return affected_count > 0; }
+    [[nodiscard]] bool would_reconcile() const { return total() > 0; }
+[[nodiscard]] CookCacheKeyPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);

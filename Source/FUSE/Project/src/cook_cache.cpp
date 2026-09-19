@@ -808,3 +808,9 @@ CookCacheLookupPreflight preflight_cook_cache_lookup(const CookCache& cache, u64
     CookCacheLookupPreflight preflight;
 CookCacheStorePreflight preflight_cook_cache_store(const CookCacheEntry& entry) {
     CookCacheStorePreflight preflight;
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-7fd3 ---
+CookCacheKeyPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookCacheKeyPreflight preflight{};
+        preflight.reason = CookCacheKeyRejectReason::ZeroSourceHash;
+        preflight.reason = CookCacheKeyRejectReason::UncacheableFold;

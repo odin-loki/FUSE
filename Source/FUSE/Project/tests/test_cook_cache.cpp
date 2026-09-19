@@ -830,3 +830,18 @@ void testCookImportHashPreflightGuards() {
     testCookCacheLookupPreflightGuards();
     testCookCacheStorePreflightGuards();
     testCookImportHashPreflightGuards();
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-7fd3 ---
+void testCookCacheHashPreflightGuards() {
+    const fuse::project::CookCacheKeyPreflight zero_source =
+    expectTrue(zero_source.reason == fuse::project::CookCacheKeyRejectReason::ZeroSourceHash,
+    const fuse::project::CookCacheKeyPreflight valid_source =
+    const fuse::project::CookFileHashPreflight empty_path =
+    expectTrue(empty_path.reason == fuse::project::CookFileHashRejectReason::EmptyPath,
+    const fuse::project::CookFileHashPreflight missing =
+    expectTrue(missing.reason == fuse::project::CookFileHashRejectReason::UnreadableSource,
+    const fuse::project::CookFileHashPreflight readable =
+    const fuse::project::CookCacheKeyPreflight entry_preflight =
+    expectTrue(!empty.probe_invalidate_source("/tmp/fuse_b79_probe.obj").would_invalidate(),
+    expectTrue(stale_probe.would_invalidate(), "stale-content probe detects mismatched hash");
+    testCookCacheHashPreflightGuards();

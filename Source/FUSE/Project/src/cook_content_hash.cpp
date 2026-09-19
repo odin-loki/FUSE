@@ -381,3 +381,14 @@ CookImportHashPreflight preflight_import_paths(const std::string& input_path, co
 CookImportHashPreflight preflight_mesh_import(const MeshImportDesc& desc) {
 CookImportHashPreflight preflight_texture_import(const TextureImportDesc& desc) {
 CookImportHashPreflight preflight_audio_import(const AudioImportDesc& desc) {
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-7fd3 ---
+    CookCacheKeyPreflight preflight{};
+        preflight.reason = CookCacheKeyRejectReason::ZeroSourceHash;
+        preflight.reason = CookCacheKeyRejectReason::UncacheableFold;
+    preflight.reason = CookCacheKeyRejectReason::None;
+CookFileHashPreflight preflight_file_content_hash(const std::string& path) {
+    CookFileHashPreflight preflight{};
+        preflight.reason = CookFileHashRejectReason::EmptyPath;
+        preflight.reason = CookFileHashRejectReason::UnreadableSource;
+    preflight.reason = CookFileHashRejectReason::None;

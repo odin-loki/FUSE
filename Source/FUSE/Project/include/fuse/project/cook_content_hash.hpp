@@ -89,3 +89,11 @@ struct CookImportHashPreflight {
 [[nodiscard]] CookImportHashPreflight preflight_mesh_import(const MeshImportDesc& desc);
 [[nodiscard]] CookImportHashPreflight preflight_texture_import(const TextureImportDesc& desc);
 [[nodiscard]] CookImportHashPreflight preflight_audio_import(const AudioImportDesc& desc);
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-7fd3 ---
+enum class CookCacheKeyRejectReason : u8 {
+    CookCacheKeyRejectReason reason = CookCacheKeyRejectReason::None;
+enum class CookFileHashRejectReason : u8 {
+struct CookFileHashPreflight {
+    CookFileHashRejectReason reason = CookFileHashRejectReason::None;
+[[nodiscard]] CookFileHashPreflight preflight_file_content_hash(const std::string& path);
