@@ -345,6 +345,16 @@ HrtfIrPreflight preflight_hrtf_ir_stub(const HrtfIrStub& ir);
 /// Non-mutating IR convolution preflight (B7.2 deepen).
 
 /// True when IR stub can drive convolution; optional reject reason on failure (B7.2 deepen).
+/// Why an HRTF IR stub cannot select the convolution path (B7.2 deepen).
+
+    bool empty = false;
+
+    bool can_convolve() const { return reason == HrtfIrRejectReason::None; }
+    bool skips_convolution() const { return !can_convolve(); }
+
+/// Preflight an HRTF IR stub without mutation.
+
+/// True when \p ir fails preflight for \p expected.
 
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
@@ -563,6 +573,21 @@ enum class HrtfPanPathPreflightReject : u8 {
 /// Returns true when pan-path preflight selects a spatial path (ILD/ITD or convolution).
 bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
                                  HrtfPanPathPreflightReject* reject = nullptr);
+/// Why HRTF pan resolves to centre bypass (B7.2 deepen).
+    Disabled = 1,
+    CoLocated = 2,
+
+/// Read-only pan-path diagnostics — no mutation (B7.2 deepen).
+    HrtfPanPathRejectReason reject_reason = HrtfPanPathRejectReason::None;
+
+    bool bypassed() const { return path == HrtfPanPath::Bypass; }
+    bool can_spatial_pan() const { return path != HrtfPanPath::Bypass; }
+
+/// Preflight pan-path resolution without IR wiring.
+
+/// IR-aware pan-path preflight.
+
+/// True when pan-path preflight rejects for \p expected.
 
 /// True when a resolved pan path bypasses HRTF (disabled or co-located).
 bool is_hrtf_pan_bypassed(HrtfPanPath path);
@@ -1299,6 +1324,21 @@ bool hrtf_attenuation_coupling_skip_reason_is_blocking(HrtfAttenuationCouplingSk
 
 /// One-shot attenuation-coupling preflight with skip diagnostics.
 HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling_for_path(
+/// Why attenuation coupling would skip spatial narrowing (B7.2 deepen).
+
+    HrtfAttenuationCouplingSkipReason skip_reason = HrtfAttenuationCouplingSkipReason::None;
+    float distance_attenuation = 1.f;
+    float occlusion_gain = 1.f;
+
+    bool should_narrow() const { return skip_reason == HrtfAttenuationCouplingSkipReason::None; }
+    bool can_apply_coupling() const { return should_narrow(); }
+    bool skips_coupling() const { return !can_apply_coupling(); }
+
+/// Preflight distance/occlusion coupling without mutating pan gains.
+
+/// True when attenuation-coupling preflight skips for \p expected.
+bool hrtf_attenuation_coupling_skips_for_reason(HrtfPanPath path, float distance_attenuation,
+                                                HrtfAttenuationCouplingSkipReason expected,
 
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
