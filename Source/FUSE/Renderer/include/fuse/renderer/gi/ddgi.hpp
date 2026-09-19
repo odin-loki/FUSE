@@ -446,7 +446,6 @@ bool tryValidateProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReaso
 bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason* reason = nullptr);
 
 /// Early-out when probe-grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
-/// True when a probe-grid source reject reason would block sampling (B5.6 deepen pass).
 
 /// Classify why the probe grid cannot serve as an irradiance source.
 
@@ -464,6 +463,25 @@ bool wouldSkipProbeGridSource(const DDGIDesc& desc);
 /// True when a probe-grid-source reject reason would block use of the volume (B5.6 deepen pass).
 
 /// Non-mutating probe-grid source preflight — returns true when the grid can participate in sampling.
+/// Why probe grid source validation rejected the request (B5.6 deepen pass).
+enum class ProbeGridRejectReason : u8 {
+    ZeroSpacing,
+
+/// Human-readable label for probe-grid reject reasons (logging / tests).
+const char* probeGridRejectReasonLabel(ProbeGridRejectReason reason);
+
+/// True when a probe-grid reject reason would block sampling (B5.6 deepen pass).
+bool probeGridRejectReasonIsBlocking(ProbeGridRejectReason reason);
+
+/// Diagnose why probe grid source preflight would reject; vacuously succeeds on sampleable grids.
+bool tryValidateProbeGridSource(const DDGIDesc& desc, ProbeGridRejectReason& outReason);
+
+/// Classify why probe grid source would reject — same ordering as `tryValidateProbeGridSource`.
+ProbeGridRejectReason classifyProbeGridReject(const DDGIDesc& desc);
+
+bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridRejectReason* reason = nullptr);
+
+/// Early-out when probe grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
 
 /// Why probe sample coord validation rejected the request (B5.6 deepen).
 enum class ProbeSampleCoordsRejectReason : u8 {
@@ -1467,6 +1485,7 @@ struct ProbeGridLayout {
     /// Early-out when sample-coord preflight would reject — same ordering as `tryPreflightProbeSampleCoords`.
     /// Early-out when world-position sample-coord build/preflight would reject.
     static bool wouldSkipProbeSampleCoords(const DDGIDesc& desc, const fuse::math::Vec3& world_position);
+    static bool wouldSkipProbeSampleCoordPreflight(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
