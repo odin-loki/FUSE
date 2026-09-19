@@ -102,6 +102,15 @@ u64 combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     return fnv1a64_combine(source_hash, upstream_hash);
 }
 
+CookCacheKeyPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    CookCacheKeyPreflight result;
+    result.zero_source = source_hash == 0;
+    const u64 combined = combine_cook_cache_key(source_hash, upstream_hash);
+    result.zero_combined = combined == 0;
+    result.cacheable = combined != 0;
+    return result;
+}
+
 u64 hash_mesh_import(const MeshImportDesc& desc) {
     if (desc.input_path.empty() || desc.output_path.empty()) {
         return 0;

@@ -26,6 +26,17 @@ namespace fuse::project {
 /// Combine source/descriptor hash with upstream dependency hash for cache lookup.
 [[nodiscard]] u64 combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
+/// Non-mutating preflight for combined cook cache keys (B7.9 deepen).
+struct CookCacheKeyPreflight {
+    bool zero_source = true;
+    bool zero_combined = true;
+    bool cacheable = false;
+
+    [[nodiscard]] bool can_cache() const { return cacheable; }
+};
+
+[[nodiscard]] CookCacheKeyPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash);
+
 /// Content hash over source bytes plus import descriptor knobs (identical inputs → identical hash).
 [[nodiscard]] u64 hash_mesh_import(const MeshImportDesc& desc);
 [[nodiscard]] u64 hash_texture_import(const TextureImportDesc& desc);
