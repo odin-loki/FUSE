@@ -3452,3 +3452,16 @@ void testBroadphaseCellPairBuildPreflightGuards() {
     testPairBufferAcceptPreflightGuards();
     testCellRangeSpanClampPreflightGuards();
     testBroadphaseCellPairBuildPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-1225 ---
+                 fuse::physics::broadphase::pairBufferWriteSlotRejectReason(buffer, 1u, 1u, 1u)),
+        fuse::physics::broadphase::preflightPairBufferWriteSlot(buffer, 0u, 2u, 3u);
+    const fuse::physics::broadphase::CellSpanClampPreflight widePreflight =
+    expectTrue(widePreflight.needsClamp(), "wide-range preflight needs clamp");
+    expectTrue(widePreflight.exceedsSpanPerAxis, "wide-range preflight marks exceedsSpanPerAxis");
+                 fuse::physics::broadphase::cellSpanClampRejectReason(inverted, 8u)),
+    expectTrue(!fuse::physics::broadphase::preflightCellSpanClamp(inverted, 8u).canClamp(),
+    const fuse::physics::broadphase::CellSpanClampPreflight planePreflight =
+        fuse::physics::broadphase::preflightCellSpanClamp2D(planeRange, 8u);
+    expectTrue(planePreflight.needsClamp(), "2D wide-range preflight needs clamp");
+    expectEq(planePreflight.spanPerAxis.x, 16, "2D preflight reports x span");

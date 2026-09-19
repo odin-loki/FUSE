@@ -1448,3 +1448,8 @@ struct BroadphaseCellPairBuildPreflight {
     BroadphaseCellPairBuildRejectReason reason = BroadphaseCellPairBuildRejectReason::None;
     bool canBuild() const { return reason == BroadphaseCellPairBuildRejectReason::None; }
 BroadphaseCellPairBuildPreflight preflightBroadphaseCellPairBuild(u32 totalCellSlots);
+
+// --- deepen additive from deepen-b4-broadphase-guards-1225 ---
+    bool canClamp() const { return reason != CellSpanClampRejectReason::EmptyRange; }
+    bool needsClamp() const { return reason == CellSpanClampRejectReason::ExceedsSpanPerAxis; }
+FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp2D(const CellRange2& range, u32 maxSpanPerAxis) {
