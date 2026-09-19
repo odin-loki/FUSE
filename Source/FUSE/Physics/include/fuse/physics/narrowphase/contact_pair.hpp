@@ -428,3 +428,20 @@ NarrowphasePairDispatchPreflight preflight_narrowphase_pair_dispatch(
 
 // --- deepen additive from b4-narrowphase-deepen-guards-69fc ---
 ContactPairRejectReason narrowphase_batch_first_reject_reason(
+
+// --- deepen additive from b4-narrowphase-deepen-c201 ---
+enum class ContactPairDetectRejectReason : u8 {
+struct ContactPairDetectPreflight {
+    ContactPairRejectReason rejectReason = ContactPairRejectReason::None;
+    ContactPairDetectRejectReason reason = ContactPairDetectRejectReason::None;
+inline const char* contact_pair_detect_reject_reason_name(ContactPairDetectRejectReason reason) {
+    case ContactPairDetectRejectReason::None:
+    case ContactPairDetectRejectReason::RejectedPair:
+inline ContactPairDetectRejectReason contact_pair_detect_reject_reason(
+        return ContactPairDetectRejectReason::RejectedPair;
+    return ContactPairDetectRejectReason::None;
+    ContactPairDetectRejectReason expected) {
+inline ContactPairDetectPreflight preflight_detect_contacts_pair(
+    ContactPairDetectPreflight preflight{};
+    preflight.rejected = preflight.reason != ContactPairDetectRejectReason::None;
+           ContactPairDetectRejectReason::None;

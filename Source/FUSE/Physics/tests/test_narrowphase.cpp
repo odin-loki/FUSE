@@ -3442,3 +3442,17 @@ void testContactPairManifoldFrictionDeepenRunGuards() {
             buffer, 99u, valid, fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::OutOfRangeSlot),
             buffer, 99u, fuse::physics::narrowphase::ContactBufferWarmStartRejectReason::OutOfRangeSlot),
 void testContactPairManifoldFrictionDeepenPassGuards() {
+
+// --- deepen additive from b4-narrowphase-deepen-c201 ---
+void testContactBufferSoAGuards() {
+            fuse::physics::narrowphase::ContactBufferFrictionTangentRejectReason::AllOrthonormal),
+void testNarrowphaseIntoBufferGuards() {
+    expectTrue(skippedPreflight.can_skip(), "into-buffer preflight skips all-rejected batch");
+    expectTrue(skippedPreflight.skipped, "into-buffer preflight marks skipped");
+void testContactPairDetectPreflightGuards() {
+    expectTrue(validPreflight.can_detect(), "detect preflight allows valid pair");
+    expectTrue(!selfPreflight.can_detect(), "detect preflight rejects self pair");
+            fuse::physics::narrowphase::ContactPairDetectRejectReason::RejectedPair),
+void testManifoldFrictionPreflightSkipGuards() {
+    testContactPairDetectPreflightGuards();
+    testManifoldFrictionPreflightSkipGuards();

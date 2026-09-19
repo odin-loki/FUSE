@@ -263,3 +263,7 @@ bool should_skip_narrowphase_slot_dispatch(
 // --- deepen additive from b4-narrowphase-buffer-guards-0bb9 ---
 struct NarrowphaseBufferDispatchPreflight {
 NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
+
+// --- deepen additive from b4-narrowphase-deepen-c201 ---
+FUSE_PHYSICS_INLINE NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
+    NarrowphaseIntoBufferPreflight preflight{};

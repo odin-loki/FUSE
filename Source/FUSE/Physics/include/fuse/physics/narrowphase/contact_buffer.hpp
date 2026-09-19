@@ -367,3 +367,87 @@ ContactBufferWarmStartRejectReason contact_buffer_warm_start_reject_reason(
     bool can_apply() const { return reason == ContactBufferWarmStartRejectReason::None; }
 ContactBufferWarmStartPreflight preflight_contact_buffer_warm_start(
     bool needs_rebuild() const { return reason == ContactBufferFrictionBasesRejectReason::None; }
+
+// --- deepen additive from b4-narrowphase-deepen-c201 ---
+FUSE_PHYSICS_INLINE ContactBufferWriteSlotRejectReason contact_buffer_write_slot_reject_reason(
+FUSE_PHYSICS_INLINE ContactBufferWriteSlotPreflight preflight_contact_buffer_write_slot(
+FUSE_PHYSICS_INLINE ContactBufferCompactionRejectReason contact_buffer_compaction_reject_reason(
+FUSE_PHYSICS_INLINE ContactBufferCompactionPreflight preflight_contact_buffer_compaction(
+FUSE_PHYSICS_INLINE const char* contact_buffer_clamp_reject_reason_name(ContactBufferClampRejectReason reason);
+FUSE_PHYSICS_INLINE ContactBufferClampRejectReason contact_buffer_clamp_reject_reason(
+FUSE_PHYSICS_INLINE ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer);
+FUSE_PHYSICS_INLINE ContactBufferFrictionTangentRejectReason contact_buffer_friction_tangent_reject_reason(
+    ContactBufferFrictionTangentRejectReason expected);
+    bool needs_rebuild() const { return reason == ContactBufferFrictionTangentRejectReason::None; }
+FUSE_PHYSICS_INLINE ContactBufferFrictionTangentPreflight preflight_contact_buffer_friction_tangent_rebuild(
+FUSE_PHYSICS_INLINE ContactBufferCompactAndClampRejectReason contact_buffer_compact_and_clamp_reject_reason(
+FUSE_PHYSICS_INLINE ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp(
+FUSE_PHYSICS_INLINE ContactBufferToVectorRejectReason contact_buffer_to_vector_reject_reason(
+FUSE_PHYSICS_INLINE ContactBufferToVectorPreflight preflight_contact_buffer_to_vector(
+    ContactBufferWriteSlotRejectReason reason) {
+    case ContactBufferWriteSlotRejectReason::None:
+    case ContactBufferWriteSlotRejectReason::OutOfRangeSlot:
+    case ContactBufferWriteSlotRejectReason::InvalidManifold:
+    case ContactBufferWriteSlotRejectReason::SelfPair:
+        return ContactBufferWriteSlotRejectReason::OutOfRangeSlot;
+        return ContactBufferWriteSlotRejectReason::InvalidManifold;
+        return ContactBufferWriteSlotRejectReason::SelfPair;
+    return ContactBufferWriteSlotRejectReason::None;
+    ContactBufferWriteSlotRejectReason expected) {
+    ContactBufferWriteSlotPreflight preflight{};
+        preflight.reason == ContactBufferWriteSlotRejectReason::OutOfRangeSlot;
+        preflight.reason == ContactBufferWriteSlotRejectReason::InvalidManifold;
+    preflight.selfPair = preflight.reason == ContactBufferWriteSlotRejectReason::SelfPair;
+    ContactBufferCompactionRejectReason reason) {
+    case ContactBufferCompactionRejectReason::None:
+    case ContactBufferCompactionRejectReason::EmptyBuffer:
+    case ContactBufferCompactionRejectReason::AllValid:
+        return ContactBufferCompactionRejectReason::EmptyBuffer;
+        return ContactBufferCompactionRejectReason::AllValid;
+    return ContactBufferCompactionRejectReason::None;
+    ContactBufferCompactionRejectReason expected) {
+    ContactBufferCompactionPreflight preflight{};
+    preflight.emptyBuffer = preflight.reason == ContactBufferCompactionRejectReason::EmptyBuffer;
+    preflight.allValid = preflight.reason == ContactBufferCompactionRejectReason::AllValid;
+FUSE_PHYSICS_INLINE const char* contact_buffer_clamp_reject_reason_name(ContactBufferClampRejectReason reason) {
+    case ContactBufferClampRejectReason::None:
+    case ContactBufferClampRejectReason::EmptyBuffer:
+    case ContactBufferClampRejectReason::WithinCapacity:
+        return ContactBufferClampRejectReason::EmptyBuffer;
+        return ContactBufferClampRejectReason::WithinCapacity;
+    return ContactBufferClampRejectReason::None;
+    ContactBufferClampRejectReason expected) {
+FUSE_PHYSICS_INLINE ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer) {
+    ContactBufferClampPreflight preflight{};
+    preflight.emptyBuffer = preflight.reason == ContactBufferClampRejectReason::EmptyBuffer;
+    preflight.withinCapacity = preflight.reason == ContactBufferClampRejectReason::WithinCapacity;
+    ContactBufferFrictionTangentRejectReason reason) {
+    case ContactBufferFrictionTangentRejectReason::None:
+    case ContactBufferFrictionTangentRejectReason::EmptyBuffer:
+    case ContactBufferFrictionTangentRejectReason::AllOrthonormal:
+        return ContactBufferFrictionTangentRejectReason::EmptyBuffer;
+        return ContactBufferFrictionTangentRejectReason::AllOrthonormal;
+    return ContactBufferFrictionTangentRejectReason::None;
+    ContactBufferFrictionTangentRejectReason expected) {
+    ContactBufferFrictionTangentPreflight preflight{};
+        preflight.reason == ContactBufferFrictionTangentRejectReason::EmptyBuffer;
+        preflight.reason == ContactBufferFrictionTangentRejectReason::AllOrthonormal;
+    ContactBufferCompactAndClampRejectReason reason) {
+    case ContactBufferCompactAndClampRejectReason::None:
+    case ContactBufferCompactAndClampRejectReason::EmptyBuffer:
+    case ContactBufferCompactAndClampRejectReason::NoWork:
+        return ContactBufferCompactAndClampRejectReason::EmptyBuffer;
+            return ContactBufferCompactAndClampRejectReason::None;
+        return ContactBufferCompactAndClampRejectReason::NoWork;
+    ContactBufferCompactAndClampRejectReason expected) {
+    ContactBufferCompactAndClampPreflight preflight{};
+        preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer;
+    preflight.noWork = preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork;
+    ContactBufferToVectorRejectReason reason) {
+    case ContactBufferToVectorRejectReason::None:
+    case ContactBufferToVectorRejectReason::EmptyBuffer:
+        return ContactBufferToVectorRejectReason::EmptyBuffer;
+    return ContactBufferToVectorRejectReason::None;
+    ContactBufferToVectorRejectReason expected) {
+    ContactBufferToVectorPreflight preflight{};
+    preflight.emptyBuffer = preflight.reason == ContactBufferToVectorRejectReason::EmptyBuffer;

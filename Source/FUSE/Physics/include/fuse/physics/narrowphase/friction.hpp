@@ -257,3 +257,6 @@ FrictionBasisRejectReason friction_basis_deepen_reject_reason(
 
 // --- deepen additive from b4-narrowphase-b46-deepen-ee53 ---
 FrictionBasisRejectReason friction_basis_stale_reject_reason(
+
+// --- deepen additive from b4-narrowphase-deepen-c201 ---
+    return should_skip_friction_tangents(manifold) ||
