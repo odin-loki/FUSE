@@ -482,15 +482,16 @@ const char* probeSampleSkipReasonLabel(ProbeSampleSkipReason reason);
 bool probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason reason);
 /// Why a DDGI irradiance sample request preflight rejected the request (B5.6 deepen).
 enum class SampleRequestRejectReason : u8 {
-    None = 0,
 /// Why a DDGI sample request preflight rejected the request (B5.6 deepen).
     EmptyGrid,
     NotSampleable,
     UndersizedCache,
-};
 
 /// Human-readable label for sample-request reject reasons (logging / tests).
 const char* sampleRequestRejectReasonLabel(SampleRequestRejectReason reason);
+
+
+/// Human-readable label for probe schedule reject reasons (logging / tests).
 
 /// CPU-side octahedral direction encoding for probe irradiance atlas tiles (B5.6 deepen).
 /// Mirrors `GBufferEncoding` and the deferred-shade probe sampling path.
@@ -643,6 +644,8 @@ struct ProbeGridLayout {
     /// True when corner indices or interpolation weights would be clamped before sampling.
     static bool wouldClampProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Grid-only sample-coord preflight; false on empty grid or hard OOB corner indices.
+    /// True when interpolation weights or corner indices would be clamped before sampling.
+    /// Grid-only sample-coord preflight; false on empty grid or hard OOB corners.
     static bool tryPreflightProbeSampleCoords(const DDGIDesc& desc,
                                               const ProbeSampleCoords& coords,
                                               ProbeSampleCoordsRejectReason& outReason);
@@ -930,6 +933,10 @@ bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count
 bool isCacheIndexValid(const DDGIDesc& desc,
 /// Diagnose why cache-index preflight would reject, including null-cache check.
 bool tryValidateCacheIndex(const DDGIDesc& desc,
+/// Diagnose cache-index + null-cache preflight; vacuously succeeds on valid lookups.
+bool tryValidateCacheIndexLookup(const DDGIDesc& desc,
+/// True when a cache lookup at `probe_index` would clamp into the valid probe range.
+bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -979,6 +986,11 @@ enum class ProbeScheduleRejectReason : u8 {
 /// Human-readable label for probe-schedule reject reasons (logging / tests).
 const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
 
+/// Preflight guard before probe scheduling; false on null outputs or zero capacity.
+/// Diagnose why probe scheduling preflight would reject; vacuously succeeds when schedulable.
+bool tryCanScheduleProbeUpdates(u32 probe_count,
+/// Early-out when probe scheduling would be rejected — same ordering as `canScheduleProbeUpdates`.
+bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
 void scheduleProbeUpdates(u32 frame_index,
                           u32 probe_count,
                           u32 probes_per_frame,

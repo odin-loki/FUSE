@@ -241,6 +241,11 @@ bool hasProbeBlendKernelSurfaces(const DDGIKernelParams& params);
 /// Diagnose missing blend-kernel surfaces without affecting stub launch paths.
 bool tryValidateProbeBlendKernelSurfaces(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
+/// Unified preflight guard before probe trace/blend kernel launch.
+bool canLaunchDdgiKernelParams(const DDGIKernelParams& params);
+/// Diagnose why unified kernel launch preflight would reject.
+bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
 /// Launch probe trace kernel with reject-reason diagnostics; false when preflight rejects.
