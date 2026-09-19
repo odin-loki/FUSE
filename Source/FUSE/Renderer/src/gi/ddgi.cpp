@@ -2460,3 +2460,11 @@ bool wouldSkipProbeSchedule(u32 probe_count, u32* out_indices, u32 max_indices, 
             (outReason == ProbeScheduleRejectReason::NullOutput ||
              outReason == ProbeScheduleRejectReason::ZeroProbeCount ||
              outReason == ProbeScheduleRejectReason::ZeroMaxIndices)) {
+
+// --- deepen additive from deepen-ddgi-guards-c8ba ---
+bool ProbeGridLayout::tryNormalizeAndValidateProbeSampleCoords(const DDGIDesc& desc,
+    return tryScheduleProbeUpdates(0u, probe_count, probes_per_frame, out_indices, max_indices, out_count, reason);
+    case ProbeKernelRejectReason::NullProbeWorldPositions:
+bool tryPreflightProbeTraceKernelResources(const DDGIKernelParams& params,
+        outReason = ProbeKernelRejectReason::NullProbeWorldPositions;
+bool tryPreflightProbeBlendKernelResources(const DDGIKernelParams& params,

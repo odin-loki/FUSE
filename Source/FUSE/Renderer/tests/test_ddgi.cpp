@@ -2906,3 +2906,29 @@ void testCacheIndexNullCacheGuards() {
 void testCacheIndexNullCacheGuard() {
                "cache-aware tryValidate succeeds for in-range index");
                "cache-aware tryValidate rejects null cache");
+
+// --- deepen additive from deepen-ddgi-guards-c8ba ---
+void testProbeSampleCoordPreflightHelpers() {
+    expectTrue(fuse::renderer::ProbeGridLayout::canPreflightProbeSampleCoords(desc, reversed),
+    expectTrue(fuse::renderer::ProbeGridLayout::tryNormalizeAndValidateProbeSampleCoords(desc, normalized),
+               "tryNormalizeAndValidate fixes reversed corners");
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryNormalizeAndValidateProbeSampleCoords(empty, emptyCoords),
+               "tryNormalizeAndValidate rejects empty grid");
+void testProbeKernelResourcePreflights() {
+    expectTrue(fuse::renderer::gi::tryPreflightProbeTraceKernelResources(params, reason),
+    expectTrue(!fuse::renderer::gi::tryPreflightProbeTraceKernelResources(nullWorld, reason),
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::NullProbeWorldPositions,
+    expectTrue(fuse::renderer::gi::tryPreflightProbeBlendKernelResources(params, reason),
+    expectTrue(!fuse::renderer::gi::tryPreflightProbeBlendKernelResources(nullIrradiance, reason),
+    expectTrue(!fuse::renderer::gi::tryPreflightProbeBlendKernelResources(nullDepth, reason),
+    expectTrue(count == 4u, "trySchedule schedules requested probes");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(16u, 4u, indices, 8u, &count),
+               "trySchedule rejects null count buffer");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(16u, 4u, nullptr, 8u, &count),
+               "wouldSkip true for null index buffer");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(16u, 4u, indices, 8u, nullptr),
+               "wouldSkip true for null count buffer");
+    expectTrue(fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 0u, 64u, indices, 8u, &noOpCount, reason),
+               "trySchedule succeeds for zero probe count no-op");
+    testProbeSampleCoordPreflightHelpers();
+    testProbeKernelResourcePreflights();
