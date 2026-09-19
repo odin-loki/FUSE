@@ -6,6 +6,13 @@
 
 namespace fuse::renderer {
 
+/// Why jitter sync to a monotonic frame counter is blocked (B5.9 deepen).
+enum class TaaJitterSyncBlockReason : u8 {
+    None = 0,
+    InvalidSequence,
+    DriftedFromFrame,
+};
+
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
 
@@ -30,11 +37,17 @@ struct TaaJitterLayout {
     static fuse::math::Vec2 haltonPixelOffset(u32 index, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     static fuse::math::Vec2 haltonNdcOffset(u32 index, u32 width, u32 height,
                                             u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// Returns zero when viewport dimensions are invalid (B5.9 deepen guard).
+    static fuse::math::Vec2 safeHaltonNdcOffset(u32 index, u32 width, u32 height,
+                                                u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Halton offset for a monotonic frame counter (wraps via `frameIndexInSequence`).
     static fuse::math::Vec2 offsetForFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// NDC jitter for a monotonic frame counter (wraps via `frameIndexInSequence`).
     static fuse::math::Vec2 ndcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
                                                    u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// Returns zero when viewport dimensions are invalid (B5.9 deepen guard).
+    static fuse::math::Vec2 safeNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
+                                                       u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
     static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
 };
@@ -77,5 +90,15 @@ private:
     u32 m_index = 0;
     u32 m_monotonicFrame = 0;
 };
+
+/// Human-readable label for jitter sync block reasons (B5.9 deepen).
+const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason);
+/// Classify why jitter is not aligned to `frameIndex` (B5.9 deepen).
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(const TaaJitter& jitter, u32 frameIndex);
+/// True when jitter can align to `frameIndex` without drift (B5.9 deepen).
+bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex,
+                            TaaJitterSyncBlockReason* reason = nullptr);
+/// True when jitter monotonic counter or slot differs from `frameIndex` (B5.9 deepen).
+bool taaJitterNeedsResyncToFrameIndex(const TaaJitter& jitter, u32 frameIndex);
 
 } // namespace fuse::renderer

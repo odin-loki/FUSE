@@ -73,6 +73,22 @@ public:
     /// True when expected resolve blend weights pass validation and reuse policy (B5.9 deepen).
     bool preflightResolveBlendWeights(const TaaResolveDesc& desc,
                                       TaaResolveBlendRejectReason* reason = nullptr) const;
+    /// True when resolve request passes skip preflight guards (B5.9 deepen).
+    bool canResolveFrame(const TaaResolveDesc& desc) const;
+    /// Sanitize desc and return whether resolve can proceed (B5.9 deepen).
+    bool prepareAndCanResolve(TaaResolveDesc& desc) const;
+    /// True when resolve skip and blend-weight preflights both pass (B5.9 deepen).
+    bool preflightResolveFrame(const TaaResolveDesc& desc,
+                               TaaResolveSkipReason* skipReason = nullptr,
+                               TaaResolveBlendRejectReason* blendReason = nullptr) const;
+    /// True when pass jitter monotonic counter or slot differs from `frameIndex` (B5.9 deepen).
+    bool jitterNeedsResyncToFrameIndex(u32 frameIndex) const;
+    /// True when pass jitter can align to `frameIndex` without drift (B5.9 deepen).
+    bool preflightJitterSync(u32 frameIndex, TaaJitterSyncBlockReason* reason = nullptr) const;
+    /// Frames remaining before pass history may be temporally reused (B5.9 deepen).
+    u32 historyWarmupFramesRemaining() const;
+    /// True when pass history has completed warm-up (B5.9 deepen).
+    bool historyWarmupComplete() const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
