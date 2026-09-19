@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cctype>
 #include <cstdio>
 #include <mutex>
 
@@ -25,8 +26,43 @@ std::atomic<u32> g_eventCount{0};
 std::atomic<u32> g_maxNestingDepth{0};
 std::atomic<u32> g_maxFlowNestingDepth{0};
 std::atomic<u32> g_openAsyncFlowCount{0};
+std::atomic<u32> g_rejectedInvalidNameCount{0};
+std::atomic<u32> g_orphanFlowEndCount{0};
 
 std::mutex g_exportMutex;
+
+bool isWhitespaceOnlyEventName(const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    }
+
+    for (const char* cursor = name; *cursor != '\0'; ++cursor) {
+        if (!std::isspace(static_cast<unsigned char>(*cursor))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void noteRejectedEventName(const char* name) {
+    g_rejectedInvalidNameCount.fetch_add(1u, std::memory_order_acq_rel);
+}
+
+bool shouldRejectEventName(const char* name) {
+    if (name == nullptr) {
+        noteRejectedEventName(name);
+        return true;
+    }
+    if (name[0] == '\0') {
+        noteRejectedEventName(name);
+        return true;
+    }
+    if (isWhitespaceOnlyEventName(name)) {
+        noteRejectedEventName(name);
+        return true;
+    }
+    return false;
+}
 
 u64 nowNanoseconds() {
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
@@ -224,7 +260,7 @@ bool isValidEventName(const char* name);
 
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
-      m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
+      m_active(g_enabled.load(std::memory_order_acquire) && !shouldRejectEventName(name)) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -331,23 +367,134 @@ bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
 
+bool isNullEventName(const char* name) {
+    return name == nullptr;
+}
+
+bool isEmptyEventName(const char* name) {
+    return name != nullptr && name[0] == '\0';
+}
+
+bool isBlankEventName(const char* name) {
+    return isNullEventName(name) || isEmptyEventName(name) || isWhitespaceOnlyEventName(name);
+}
+
+bool tryValidateEventName(const char* name, EventNameRejectReason& outReason) {
+    if (isNullEventName(name)) {
+        outReason = EventNameRejectReason::Null;
+        return false;
+    }
+    if (isEmptyEventName(name)) {
+        outReason = EventNameRejectReason::Empty;
+        return false;
+    }
+    if (isWhitespaceOnlyEventName(name)) {
+        outReason = EventNameRejectReason::Blank;
+        return false;
+    }
+    outReason = EventNameRejectReason::None;
+    return true;
+}
+
+EventNameRejectReason eventNameRejectReason(const char* name) {
+    EventNameRejectReason reason = EventNameRejectReason::None;
+    tryValidateEventName(name, reason);
+    return reason;
+}
+
+bool wouldRecordEventName(const char* name) {
+    EventNameRejectReason reason = EventNameRejectReason::None;
+    return enabled() && tryValidateEventName(name, reason);
+}
+
+u32 rejectedInvalidNameCount() {
+    return g_rejectedInvalidNameCount.load(std::memory_order_acquire);
+}
+
+bool hasRejectedInvalidNames() {
+    return rejectedInvalidNameCount() > 0u;
+}
+
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return isValidEventName(event.name);
+    EventNameRejectReason reason = EventNameRejectReason::None;
+    return tryValidateEventName(event.name, reason);
 }
 
 u32 exportableEventCount() {
     u32 count = 0u;
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
-        if (isValidEventName(eventAt(i).name)) {
+        if (isEventExportable(i)) {
             ++count;
         }
     }
     return count;
 }
 
+u32 nonExportableEventCount() {
+    const u32 total = eventCount();
+    const u32 exportable = exportableEventCount();
+    return total >= exportable ? total - exportable : 0u;
+}
+
 bool isEventExportable(u32 index) {
-    return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
+    if (!isEventIndexValid(index)) {
+        return false;
+    }
+
+    EventNameRejectReason reason = EventNameRejectReason::None;
+    return tryValidateEventName(eventAt(index).name, reason);
+}
+
+EventLookupRejectReason eventLookupRejectReason(u32 index) {
+    if (isBufferEmpty()) {
+        return EventLookupRejectReason::EmptyBuffer;
+    }
+    if (!isEventIndexValid(index)) {
+        return EventLookupRejectReason::OutOfRange;
+    }
+
+    EventNameRejectReason nameReason = EventNameRejectReason::None;
+    if (!tryValidateEventName(eventAt(index).name, nameReason)) {
+        return EventLookupRejectReason::InvalidEvent;
+    }
+    return EventLookupRejectReason::None;
+}
+
+bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason) {
+    outReason = eventLookupRejectReason(index);
+    return outReason == EventLookupRejectReason::None;
+}
+
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
+    EventLookupRejectReason lookupReason = EventLookupRejectReason::None;
+    if (!tryCanLookupEventAt(index, lookupReason)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return isEventExportable(index);
+}
+
+bool tryFirstExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = firstEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryLastExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
 }
 
 const ProfileEvent& emptyProfileEvent() {
@@ -414,6 +561,75 @@ const ProfileEvent& lastEvent() {
     return eventAt(index);
 }
 
+u32 totalWriteCount() {
+    return g_writeHead.load(std::memory_order_acquire);
+}
+
+u32 droppedEventCount() {
+    const u32 writes = totalWriteCount();
+    const u32 stored = eventCount();
+    return writes > stored ? writes - stored : 0u;
+}
+
+u32 remainingEventCapacity() {
+    const u32 stored = eventCount();
+    return stored < kRingCapacity ? kRingCapacity - stored : 0u;
+}
+
+bool hasDroppedEvents() {
+    return droppedEventCount() > 0u;
+}
+
+bool hasRingWrapped() {
+    return totalWriteCount() >= kRingCapacity;
+}
+
+u32 orphanAsyncFlowEndCount() {
+    return g_orphanFlowEndCount.load(std::memory_order_acquire);
+}
+
+bool hasOrphanAsyncFlowEnds() {
+    return orphanAsyncFlowEndCount() > 0u;
+}
+
+bool wouldIgnoreOrphanAsyncFlowEnd() {
+    return openAsyncFlowCount() == 0u;
+}
+
+bool canEndAsyncFlow() {
+    return !wouldIgnoreOrphanAsyncFlowEnd();
+}
+
+NestingStateRejectReason nestingStateRejectReason() {
+    if (!isScopeNestingBalanced()) {
+        return NestingStateRejectReason::UnbalancedScopeNesting;
+    }
+    if (!isFlowNestingBalanced()) {
+        return NestingStateRejectReason::UnbalancedFlowNesting;
+    }
+    if (hasOpenAsyncFlows()) {
+        return NestingStateRejectReason::OpenAsyncFlows;
+    }
+    if (isFlowDepthDetached()) {
+        return NestingStateRejectReason::FlowDepthDetached;
+    }
+    return NestingStateRejectReason::None;
+}
+
+bool preflightProfilerState(NestingStateRejectReason* reason) {
+    const NestingStateRejectReason stateReason = nestingStateRejectReason();
+    if (reason != nullptr) {
+        *reason = stateReason;
+    }
+    return stateReason == NestingStateRejectReason::None;
+}
+
+void reconcileDetachedFlowDepth() {
+    if (openAsyncFlowCount() == 0u && flowNestingDepth() > 0u) {
+        threadLocalFlowNestingDepth() = 0u;
+    }
+}
+
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
     preflight.profilerDisabled = !enabled();
@@ -430,7 +646,58 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.totalWriteCount = totalWriteCount();
+    preflight.droppedEventCount = droppedEventCount();
+    preflight.remainingEventCapacity = remainingEventCapacity();
+    preflight.bufferFull = isBufferFull();
+    preflight.hasDroppedEvents = hasDroppedEvents();
+    preflight.hasRingWrapped = hasRingWrapped();
+    preflight.rejectReason = chromeTraceExportRejectReason();
     return preflight;
+}
+
+ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
+    if (!enabled()) {
+        return ChromeTraceExportRejectReason::ProfilerDisabled;
+    }
+    if (exportableEventCount() == 0u) {
+        return ChromeTraceExportRejectReason::NoExportableEvents;
+    }
+    if (hasDroppedEvents()) {
+        return ChromeTraceExportRejectReason::BufferOverflow;
+    }
+    if (!isScopeNestingBalanced()) {
+        return ChromeTraceExportRejectReason::UnbalancedScopeNesting;
+    }
+    if (!isFlowNestingBalanced()) {
+        return ChromeTraceExportRejectReason::UnbalancedFlowNesting;
+    }
+    if (hasOpenAsyncFlows()) {
+        return ChromeTraceExportRejectReason::OpenAsyncFlows;
+    }
+    if (isFlowDepthDetached()) {
+        return ChromeTraceExportRejectReason::FlowDepthDetached;
+    }
+    return ChromeTraceExportRejectReason::None;
+}
+
+bool canExportChromeTrace() {
+    return chromeTraceExportRejectReason() == ChromeTraceExportRejectReason::None;
+}
+
+bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason) {
+    const ChromeTraceExportRejectReason rejectReason = chromeTraceExportRejectReason();
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    }
+
+    if (rejectReason != ChromeTraceExportRejectReason::None) {
+        outJson.clear();
+        return false;
+    }
+
+    outJson = exportChromeTraceJson();
+    return true;
 }
 
 void reset() {
@@ -443,6 +710,8 @@ void reset() {
     g_maxNestingDepth.store(0u, std::memory_order_release);
     g_maxFlowNestingDepth.store(0u, std::memory_order_release);
     g_openAsyncFlowCount.store(0u, std::memory_order_release);
+    g_rejectedInvalidNameCount.store(0u, std::memory_order_release);
+    g_orphanFlowEndCount.store(0u, std::memory_order_release);
     threadLocalNestingDepth() = 0u;
     threadLocalFlowNestingDepth() = 0u;
 }
@@ -452,7 +721,7 @@ u32 nextFlowId() {
 }
 
 void beginAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire) || shouldRejectEventName(name)) {
         return;
     }
 
@@ -466,11 +735,12 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 }
 
 void endAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire) || shouldRejectEventName(name)) {
         return;
     }
 
     if (g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u) {
+        g_orphanFlowEndCount.fetch_add(1u, std::memory_order_acq_rel);
         return;
     }
 
@@ -486,7 +756,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
 }
 
 void sampleCounter(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || shouldRejectEventName(track)) {
         return;
     }
 
@@ -502,7 +772,7 @@ void sampleCounter(const char* track, s64 value) {
 }
 
 void sampleCounterFloat(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || shouldRejectEventName(track)) {
         return;
     }
 
@@ -518,7 +788,7 @@ void sampleCounterFloat(const char* track, f64 value) {
 }
 
 void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || shouldRejectEventName(track)) {
         return;
     }
 
@@ -534,7 +804,7 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
 }
 
 void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || shouldRejectEventName(track)) {
         return;
     }
 
@@ -726,6 +996,72 @@ std::string exportChromeTraceJson() {
 
     json += "]}";
     return json;
+}
+
+const char* eventNameRejectReasonLabel(EventNameRejectReason reason) {
+    switch (reason) {
+    case EventNameRejectReason::None:
+        return "none";
+    case EventNameRejectReason::Null:
+        return "null";
+    case EventNameRejectReason::Empty:
+        return "empty";
+    case EventNameRejectReason::Blank:
+        return "blank";
+    }
+    return "unknown";
+}
+
+const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason) {
+    switch (reason) {
+    case EventLookupRejectReason::None:
+        return "none";
+    case EventLookupRejectReason::EmptyBuffer:
+        return "empty_buffer";
+    case EventLookupRejectReason::OutOfRange:
+        return "out_of_range";
+    case EventLookupRejectReason::InvalidEvent:
+        return "invalid_event";
+    }
+    return "unknown";
+}
+
+const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason) {
+    switch (reason) {
+    case NestingStateRejectReason::None:
+        return "none";
+    case NestingStateRejectReason::UnbalancedScopeNesting:
+        return "unbalanced_scope_nesting";
+    case NestingStateRejectReason::UnbalancedFlowNesting:
+        return "unbalanced_flow_nesting";
+    case NestingStateRejectReason::OpenAsyncFlows:
+        return "open_async_flows";
+    case NestingStateRejectReason::FlowDepthDetached:
+        return "flow_depth_detached";
+    }
+    return "unknown";
+}
+
+const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason) {
+    switch (reason) {
+    case ChromeTraceExportRejectReason::None:
+        return "none";
+    case ChromeTraceExportRejectReason::ProfilerDisabled:
+        return "profiler_disabled";
+    case ChromeTraceExportRejectReason::NoExportableEvents:
+        return "no_exportable_events";
+    case ChromeTraceExportRejectReason::BufferOverflow:
+        return "buffer_overflow";
+    case ChromeTraceExportRejectReason::UnbalancedScopeNesting:
+        return "unbalanced_scope_nesting";
+    case ChromeTraceExportRejectReason::UnbalancedFlowNesting:
+        return "unbalanced_flow_nesting";
+    case ChromeTraceExportRejectReason::OpenAsyncFlows:
+        return "open_async_flows";
+    case ChromeTraceExportRejectReason::FlowDepthDetached:
+        return "flow_depth_detached";
+    }
+    return "unknown";
 }
 
 } // namespace fuse::profiler

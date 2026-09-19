@@ -1595,6 +1595,248 @@ void testChromeTraceExportPreflightDetachedFlow() {
     expectTrue(preflight.openAsyncFlowCount == 0u, "preflight open flow count cleared by worker end");
 }
 
+void testBlankWhitespaceNameGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    {
+        fuse::profiler::ProfileScope blankScope("   ");
+        fuse::profiler::ProfileScope tabScope("\t\n");
+    }
+    fuse::profiler::beginAsyncFlow("  ", 1u);
+    fuse::profiler::sampleCounter(" \t", 1);
+
+    expectTrue(fuse::profiler::eventCount() == 0u, "whitespace-only names record nothing");
+    expectTrue(fuse::profiler::isBlankEventName("   "), "spaces-only name is blank");
+    expectTrue(fuse::profiler::isBlankEventName("\t"), "tab-only name is blank");
+    expectTrue(fuse::profiler::isBlankEventName(nullptr), "null name is blank");
+    expectTrue(fuse::profiler::isBlankEventName(""), "empty name is blank");
+    expectTrue(!fuse::profiler::isBlankEventName("valid"), "non-blank name is not blank");
+    expectTrue(fuse::profiler::rejectedInvalidNameCount() == 4u,
+               "blank attempts increment rejected invalid name count");
+    expectTrue(fuse::profiler::hasRejectedInvalidNames(), "hasRejectedInvalidNames after blank attempts");
+
+    fuse::profiler::EventNameRejectReason reason = fuse::profiler::EventNameRejectReason::None;
+    expectTrue(!fuse::profiler::tryValidateEventName("   ", reason),
+               "tryValidateEventName rejects whitespace-only name");
+    expectTrue(reason == fuse::profiler::EventNameRejectReason::Blank, "whitespace maps to Blank reason");
+    expectTrue(fuse::profiler::eventNameRejectReason(nullptr) == fuse::profiler::EventNameRejectReason::Null,
+               "null maps to Null reason");
+    expectTrue(fuse::profiler::eventNameRejectReason("") == fuse::profiler::EventNameRejectReason::Empty,
+               "empty maps to Empty reason");
+    expectTrue(!fuse::profiler::wouldRecordEventName("   "), "wouldRecordEventName false for blank name");
+}
+
+void testEventLookupRejectReasonGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::EventLookupRejectReason reason = fuse::profiler::EventLookupRejectReason::None;
+    expectTrue(!fuse::profiler::tryCanLookupEventAt(0u, reason),
+               "tryCanLookupEventAt false on empty buffer");
+    expectTrue(reason == fuse::profiler::EventLookupRejectReason::EmptyBuffer,
+               "empty buffer maps to EmptyBuffer reason");
+    expectTrue(fuse::profiler::eventLookupRejectReason(99u) == fuse::profiler::EventLookupRejectReason::EmptyBuffer,
+               "eventLookupRejectReason empty buffer on OOB when empty");
+
+    {
+        FUSE_PROFILE_SCOPE("lookup_scope");
+    }
+
+    expectTrue(fuse::profiler::tryCanLookupEventAt(0u, reason), "tryCanLookupEventAt true for first event");
+    expectTrue(reason == fuse::profiler::EventLookupRejectReason::None, "valid lookup reason is None");
+    expectTrue(fuse::profiler::eventLookupRejectReason(2u) == fuse::profiler::EventLookupRejectReason::OutOfRange,
+               "out-of-range maps to OutOfRange reason");
+
+    fuse::profiler::ProfileEvent exportable{};
+    expectTrue(fuse::profiler::tryExportableEventAt(0u, exportable),
+               "tryExportableEventAt true for begin event");
+    expectTrue(exportable.phase == fuse::profiler::EventPhase::Begin, "tryExportableEventAt copies begin phase");
+    expectTrue(!fuse::profiler::tryExportableEventAt(99u, exportable),
+               "tryExportableEventAt false when out of range");
+    expectTrue(exportable.name == nullptr, "tryExportableEventAt clears output on failure");
+
+    fuse::profiler::ProfileEvent firstExportable{};
+    fuse::profiler::ProfileEvent lastExportable{};
+    expectTrue(fuse::profiler::tryFirstExportableEvent(firstExportable), "tryFirstExportableEvent succeeds");
+    expectTrue(fuse::profiler::tryLastExportableEvent(lastExportable), "tryLastExportableEvent succeeds");
+    expectTrue(firstExportable.phase == fuse::profiler::EventPhase::Begin,
+               "tryFirstExportableEvent returns begin");
+    expectTrue(lastExportable.phase == fuse::profiler::EventPhase::End,
+               "tryLastExportableEvent returns end");
+    expectTrue(fuse::profiler::nonExportableEventCount() == 0u,
+               "nonExportableEventCount zero when all events exportable");
+}
+
+void testOrphanAsyncFlowEndCountGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::orphanAsyncFlowEndCount() == 0u, "reset leaves orphan count at zero");
+    expectTrue(fuse::profiler::wouldIgnoreOrphanAsyncFlowEnd(), "wouldIgnore when no open flows");
+    expectTrue(!fuse::profiler::canEndAsyncFlow(), "canEndAsyncFlow false with no open flows");
+
+    FUSE_PROFILE_ASYNC_FLOW_END("orphan_a", 1u);
+    FUSE_PROFILE_ASYNC_FLOW_END("orphan_b", 2u);
+    expectTrue(fuse::profiler::orphanAsyncFlowEndCount() == 2u, "orphan ends increment counter");
+    expectTrue(fuse::profiler::hasOrphanAsyncFlowEnds(), "hasOrphanAsyncFlowEnds after orphan ends");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("paired_flow", flowId);
+    expectTrue(fuse::profiler::canEndAsyncFlow(), "canEndAsyncFlow true after begin");
+    FUSE_PROFILE_ASYNC_FLOW_END("paired_flow", flowId);
+    expectTrue(fuse::profiler::orphanAsyncFlowEndCount() == 2u,
+               "paired flow end does not reset orphan counter");
+}
+
+void testNestingStateRejectReasonGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::NestingStateRejectReason reason = fuse::profiler::NestingStateRejectReason::None;
+    expectTrue(fuse::profiler::preflightProfilerState(&reason), "preflightProfilerState true on reset");
+    expectTrue(reason == fuse::profiler::NestingStateRejectReason::None, "reset nesting reason is None");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("nesting_probe");
+        expectTrue(fuse::profiler::nestingStateRejectReason()
+                       == fuse::profiler::NestingStateRejectReason::UnbalancedScopeNesting,
+                   "active scope reports unbalanced scope nesting reason");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("nesting_flow", flowId);
+        expectTrue(fuse::profiler::nestingStateRejectReason()
+                       == fuse::profiler::NestingStateRejectReason::UnbalancedScopeNesting,
+                   "open flow inside scope still reports scope nesting first");
+        FUSE_PROFILE_ASYNC_FLOW_END("nesting_flow", flowId);
+    }
+
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("open_flow", flowId);
+    expectTrue(fuse::profiler::nestingStateRejectReason()
+                   == fuse::profiler::NestingStateRejectReason::UnbalancedFlowNesting,
+               "unmatched begin reports unbalanced flow nesting reason");
+    FUSE_PROFILE_ASYNC_FLOW_END("open_flow", flowId);
+}
+
+void testReconcileDetachedFlowDepthGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("detach_flow", flowId);
+
+    std::atomic<bool> workerDone{false};
+    std::thread worker([&]() {
+        FUSE_PROFILE_ASYNC_FLOW_END("detach_flow", flowId);
+        workerDone.store(true, std::memory_order_release);
+    });
+    worker.join();
+    expectTrue(workerDone.load(std::memory_order_acquire), "worker thread completed");
+
+    expectTrue(fuse::profiler::isFlowDepthDetached(), "cross-thread end leaves detached flow depth");
+    expectTrue(fuse::profiler::flowNestingDepth() == 1u, "begin thread retains flow depth before reconcile");
+
+    fuse::profiler::reconcileDetachedFlowDepth();
+    expectTrue(fuse::profiler::flowNestingDepth() == 0u, "reconcile clears detached flow depth");
+    expectTrue(fuse::profiler::nestingStateRejectReason() == fuse::profiler::NestingStateRejectReason::None,
+               "reconcile restores balanced nesting state");
+}
+
+void testDroppedEventCountOnRingSaturation() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 capacity = fuse::profiler::ringCapacity();
+    for (fuse::u32 i = 0u; i < capacity; ++i) {
+        fuse::profiler::sampleCounter("fill", static_cast<fuse::s64>(i));
+    }
+
+    expectTrue(fuse::profiler::isBufferFull(), "buffer full after capacity writes");
+    expectTrue(fuse::profiler::droppedEventCount() == 0u, "no drops until overflow");
+    expectTrue(fuse::profiler::totalWriteCount() == capacity, "total write count matches capacity");
+    expectTrue(!fuse::profiler::hasDroppedEvents(), "hasDroppedEvents false before overflow");
+    expectTrue(fuse::profiler::remainingEventCapacity() == 0u, "no remaining capacity when full");
+
+    fuse::profiler::sampleCounter("overflow", 99);
+    expectTrue(fuse::profiler::droppedEventCount() == 1u, "overflow increments dropped count");
+    expectTrue(fuse::profiler::eventCount() == capacity, "event count capped at ring capacity");
+    expectTrue(fuse::profiler::hasDroppedEvents(), "hasDroppedEvents true after overflow");
+    expectTrue(fuse::profiler::hasRingWrapped(), "hasRingWrapped true after overflow");
+    expectTrue(fuse::profiler::nonExportableEventCount() == 0u,
+               "overflow does not create non-exportable slots");
+}
+
+void testChromeTraceExportRejectReasonGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::chromeTraceExportRejectReason()
+                   == fuse::profiler::ChromeTraceExportRejectReason::NoExportableEvents,
+               "empty buffer rejects with NoExportableEvents");
+    expectTrue(!fuse::profiler::canExportChromeTrace(), "canExportChromeTrace false on empty buffer");
+
+    std::string json;
+    fuse::profiler::ChromeTraceExportRejectReason reason = fuse::profiler::ChromeTraceExportRejectReason::None;
+    expectTrue(!fuse::profiler::tryExportChromeTraceJson(json, &reason),
+               "tryExportChromeTraceJson false on empty buffer");
+    expectTrue(reason == fuse::profiler::ChromeTraceExportRejectReason::NoExportableEvents,
+               "tryExport sets NoExportableEvents reason");
+    expectTrue(json.empty(), "tryExport clears output json on failure");
+
+    {
+        FUSE_PROFILE_SCOPE("strict_export_scope");
+    }
+
+    expectTrue(fuse::profiler::canExportChromeTrace(), "canExportChromeTrace true with valid events");
+    expectTrue(fuse::profiler::tryExportChromeTraceJson(json, &reason),
+               "tryExportChromeTraceJson succeeds with valid events");
+    expectTrue(reason == fuse::profiler::ChromeTraceExportRejectReason::None, "success reason is None");
+    expectTrue(json.find("\"name\":\"strict_export_scope\"") != std::string::npos,
+               "tryExport returns populated trace json");
+
+    fuse::profiler::setEnabled(false);
+    expectTrue(fuse::profiler::chromeTraceExportRejectReason()
+                   == fuse::profiler::ChromeTraceExportRejectReason::ProfilerDisabled,
+               "disabled profiler rejects with ProfilerDisabled");
+    fuse::profiler::setEnabled(true);
+}
+
+void testPreflightReportsBufferOverflow() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 capacity = fuse::profiler::ringCapacity();
+    for (fuse::u32 i = 0u; i < capacity + 1u; ++i) {
+        fuse::profiler::sampleCounter("preflight_fill", static_cast<fuse::s64>(i));
+    }
+
+    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(preflight.bufferFull, "preflight marks buffer full after overflow");
+    expectTrue(preflight.hasDroppedEvents, "preflight marks dropped events after overflow");
+    expectTrue(preflight.droppedEventCount == 1u, "preflight dropped count tracks overflow");
+    expectTrue(preflight.hasRingWrapped, "preflight marks ring wrapped after overflow");
+    expectTrue(preflight.totalWriteCount == capacity + 1u, "preflight total write count tracks overflow");
+    expectTrue(preflight.rejectReason == fuse::profiler::ChromeTraceExportRejectReason::BufferOverflow,
+               "preflight reject reason is BufferOverflow after saturation");
+    expectTrue(!preflight.canExportStrict(), "canExportStrict false after buffer overflow");
+}
+
+void testRejectReasonLabels() {
+    resetState();
+
+    expectTrue(std::string(fuse::profiler::eventNameRejectReasonLabel(
+                   fuse::profiler::EventNameRejectReason::Blank)) == "blank",
+               "event name reject label for blank");
+    expectTrue(std::string(fuse::profiler::eventLookupRejectReasonLabel(
+                   fuse::profiler::EventLookupRejectReason::OutOfRange)) == "out_of_range",
+               "event lookup reject label for out of range");
+    expectTrue(std::string(fuse::profiler::nestingStateRejectReasonLabel(
+                   fuse::profiler::NestingStateRejectReason::OpenAsyncFlows)) == "open_async_flows",
+               "nesting state reject label for open flows");
+    expectTrue(std::string(fuse::profiler::chromeTraceExportRejectReasonLabel(
+                   fuse::profiler::ChromeTraceExportRejectReason::BufferOverflow)) == "buffer_overflow",
+               "chrome export reject label for buffer overflow");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -1687,6 +1929,15 @@ int main() {
     testChromeTraceExportPreflightActiveScope();
     testChromeTraceExportPreflightNestingDepths();
     testChromeTraceExportPreflightDetachedFlow();
+    testBlankWhitespaceNameGuards();
+    testEventLookupRejectReasonGuards();
+    testOrphanAsyncFlowEndCountGuard();
+    testNestingStateRejectReasonGuard();
+    testReconcileDetachedFlowDepthGuard();
+    testDroppedEventCountOnRingSaturation();
+    testChromeTraceExportRejectReasonGuards();
+    testPreflightReportsBufferOverflow();
+    testRejectReasonLabels();
     testFatalHandlerHook();
     testVerifyMacro();
 

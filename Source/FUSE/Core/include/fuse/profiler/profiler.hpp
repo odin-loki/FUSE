@@ -24,6 +24,43 @@ enum class CounterValueKind : u8 {
     Float,
 };
 
+/// Why an event name was rejected by recording guards (B1.6 deepen).
+enum class EventNameRejectReason : u8 {
+    None,
+    Null,
+    Empty,
+    Blank,
+};
+
+/// Why an event index lookup was rejected (B1.6 deepen).
+enum class EventLookupRejectReason : u8 {
+    None,
+    EmptyBuffer,
+    OutOfRange,
+    InvalidEvent,
+};
+
+/// Why profiler nesting state is unbalanced or detached (B1.6 deepen).
+enum class NestingStateRejectReason : u8 {
+    None,
+    UnbalancedScopeNesting,
+    UnbalancedFlowNesting,
+    OpenAsyncFlows,
+    FlowDepthDetached,
+};
+
+/// Why a strict chrome trace export would be rejected (B1.6 deepen).
+enum class ChromeTraceExportRejectReason : u8 {
+    None,
+    ProfilerDisabled,
+    NoExportableEvents,
+    BufferOverflow,
+    UnbalancedScopeNesting,
+    UnbalancedFlowNesting,
+    OpenAsyncFlows,
+    FlowDepthDetached,
+};
+
 struct ProfileEvent {
     const char* name = nullptr;
     u64 timestampNs = 0;
@@ -54,10 +91,20 @@ struct ChromeTraceExportPreflight {
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
     bool flowDepthDetached = false;
+    u32 totalWriteCount = 0;
+    u32 droppedEventCount = 0;
+    u32 remainingEventCapacity = 0;
+    bool bufferFull = false;
+    bool hasDroppedEvents = false;
+    bool hasRingWrapped = false;
+    ChromeTraceExportRejectReason rejectReason = ChromeTraceExportRejectReason::None;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+    bool canExportStrict() const {
+        return !profilerDisabled && exportableEventCount > 0 && rejectReason == ChromeTraceExportRejectReason::None;
+    }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -102,9 +149,23 @@ bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidEventName(const char* name);
+bool isNullEventName(const char* name);
+bool isEmptyEventName(const char* name);
+bool isBlankEventName(const char* name);
+bool tryValidateEventName(const char* name, EventNameRejectReason& outReason);
+EventNameRejectReason eventNameRejectReason(const char* name);
+bool wouldRecordEventName(const char* name);
+u32 rejectedInvalidNameCount();
+bool hasRejectedInvalidNames();
 bool isValidProfileEvent(const ProfileEvent& event);
 u32 exportableEventCount();
+u32 nonExportableEventCount();
 bool isEventExportable(u32 index);
+EventLookupRejectReason eventLookupRejectReason(u32 index);
+bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason);
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
+bool tryFirstExportableEvent(ProfileEvent& outEvent);
+bool tryLastExportableEvent(ProfileEvent& outEvent);
 u32 firstEventIndex();
 u32 lastEventIndex();
 const ProfileEvent& emptyProfileEvent();
@@ -113,9 +174,24 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
+u32 totalWriteCount();
+u32 droppedEventCount();
+u32 remainingEventCapacity();
+bool hasDroppedEvents();
+bool hasRingWrapped();
+u32 orphanAsyncFlowEndCount();
+bool hasOrphanAsyncFlowEnds();
+bool wouldIgnoreOrphanAsyncFlowEnd();
+bool canEndAsyncFlow();
+NestingStateRejectReason nestingStateRejectReason();
+bool preflightProfilerState(NestingStateRejectReason* reason = nullptr);
+void reconcileDetachedFlowDepth();
 void reset();
 
 ChromeTraceExportPreflight preflightChromeTraceExport();
+ChromeTraceExportRejectReason chromeTraceExportRejectReason();
+bool canExportChromeTrace();
+bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason = nullptr);
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
@@ -154,6 +230,11 @@ inline void sampleCounterSnapshotAtFrameDispatch(const char* track, T value) {
 
 /// Stub export for chrome://tracing offline analysis (not hot path).
 std::string exportChromeTraceJson();
+
+const char* eventNameRejectReasonLabel(EventNameRejectReason reason);
+const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
+const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason);
+const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason);
 
 } // namespace fuse::profiler
 
