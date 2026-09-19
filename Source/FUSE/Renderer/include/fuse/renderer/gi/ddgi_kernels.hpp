@@ -167,8 +167,6 @@ bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelReject
 /// Non-mutating blend kernel launch preflight — returns true when blend would proceed.
 bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
-/// Kernel launch preflight with mandatory reject-reason output (B5.6 deepen pass).
-bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
 bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& reason);
 
