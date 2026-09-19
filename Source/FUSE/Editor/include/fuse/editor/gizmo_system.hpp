@@ -967,3 +967,6 @@ private:
 };
 
 } // namespace fuse::editor
+
+// --- deepen additive from deepen-b6-gizmo-begin-drag-snap-bfd5 ---
+BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, const GizmoTransform& transform,

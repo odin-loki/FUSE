@@ -2221,3 +2221,12 @@ bool GizmoSystem::shouldSkipEndDrag() const { return fuse::editor::shouldSkipEnd
 // --- deepen additive from deepen-b6-gizmo-begin-drag-snap-ce02 ---
     return tryPickAxis(ray, transform, mode, space, axisLength, pickRadius, axis);
     return tryPickAxis(hit, mode, axis);
+
+// --- deepen additive from deepen-b6-gizmo-begin-drag-snap-bfd5 ---
+BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, const GizmoTransform& transform,
+    BeginDragPreflight out{};
+    if (!tryPickAxis(hit, mode, axis)) {
+    if (!tryPickAxis(ray, transform, mode, space, axisLength, pickRadius, axis)) {
+BeginDragPreflight GizmoSystem::preflightBeginDrag(const GizmoHitTest& hit,
+    return fuse::editor::preflightBeginDrag(hit, current, m_mode);
+    return fuse::editor::preflightBeginDrag(ray, current, m_mode, m_space, kAxisLength,

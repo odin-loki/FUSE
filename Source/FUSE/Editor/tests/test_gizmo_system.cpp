@@ -2920,3 +2920,20 @@ void testTryBeginDragAlreadyDraggingGuard() {
                "tryBeginDrag rejects when already dragging");
     testCanPickAxisPreflight();
     testCanBeginDragPreflight();
+
+// --- deepen additive from deepen-b6-gizmo-begin-drag-snap-bfd5 ---
+void testRayNormalizeAndValidityGuards() {
+void testPreflightBeginDragGuards() {
+    const fuse::editor::BeginDragPreflight emptyScreen =
+        gizmo.preflightBeginDrag(emptyHit, transform);
+    const fuse::editor::BeginDragPreflight missScreen =
+        gizmo.preflightBeginDrag(deadZone, transform);
+    const fuse::editor::BeginDragPreflight okScreen = gizmo.preflightBeginDrag(hit, transform);
+    const fuse::editor::BeginDragPreflight emptyRayResult =
+        gizmo.preflightBeginDrag(emptyRay, transform);
+    const fuse::editor::BeginDragPreflight okRay = gizmo.preflightBeginDrag(xRay, transform);
+    expectTrue(!gizmo.tryUpdateDrag(hit, updateResult),
+    expectTrue(gizmo.isDragging(), "empty viewport tryUpdateDrag keeps drag active");
+    expectTrue(gizmo.tryUpdateDrag(hit, updateResult), "tryUpdateDrag accepts valid viewport");
+    expectTrue(updateResult.changed, "valid tryUpdateDrag reports change");
+    testPreflightBeginDragGuards();
