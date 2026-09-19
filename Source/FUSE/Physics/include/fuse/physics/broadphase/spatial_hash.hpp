@@ -1647,3 +1647,9 @@ FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity(const CellRange2
 // --- deepen additive from deepen-b4-broadphase-guards-e0c4 ---
 struct RefineAndDedupeBroadphasePreflight {
 RefineAndDedupeBroadphasePreflight preflightRefineAndDedupeBroadphase(
+
+// --- deepen additive from b4-broadphase-deepen-guards-0ec6 ---
+CellSpanPreflight preflightCellSpan(const CellRange3& range, u32 maxSpanPerAxis);
+CellSpanPreflight preflightCellSpan2D(const CellRange2& range, u32 maxSpanPerAxis);
+    return cellSpanRejectReason(range, maxSpanPerAxis) != CellSpanRejectReason::None;
+    bool passesRefine() const { return reason == RefinePairRejectReason::None; }

@@ -1654,3 +1654,25 @@ RefineAndDedupeBroadphasePreflight preflightRefineAndDedupeBroadphase(
     return !preflightRefineAndDedupeBroadphase(bodies, shapes, buffer).canRunEither();
     return preflightRefineAndDedupeBroadphase(bodies, shapes, buffer).canRunEither();
         if (preflightPairBufferPush(buffer, pair.bodyA, pair.bodyB).canPush()) {
+
+// --- deepen additive from b4-broadphase-deepen-guards-0ec6 ---
+CellSpanPreflight preflightCellSpan(const CellRange3& range, u32 maxSpanPerAxis) {
+    CellSpanPreflight preflight{};
+    preflight.reason = cellSpanRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellSpanRejectReason::EmptyRange;
+    preflight.exceedsSpanLimit = preflight.reason == CellSpanRejectReason::ExceedsSpanLimit;
+CellSpanPreflight preflightCellSpan2D(const CellRange2& range, u32 maxSpanPerAxis) {
+    case RefinePairRejectReason::Separated:
+        return RefinePairRejectReason::Separated;
+    return refinePairRejectReason(bodyA, bodyB, bodies, shapes) == expected;
+    preflight.reason = refinePairRejectReason(bodyA, bodyB, bodies, shapes);
+    preflight.separated = preflight.reason == RefinePairRejectReason::Separated;
+    return !preflightRefinePair(bodyA, bodyB, bodies, shapes).passesRefine();
+    case MergePairIntoBufferRejectReason::AtCapacity:
+    return static_cast<MergePairIntoBufferRejectReason>(
+        static_cast<u8>(pairBufferPushRejectReason(buffer, pair.bodyA, pair.bodyB)));
+    return mergePairIntoBufferRejectReason(pair, buffer) == expected;
+    preflight.reason = mergePairIntoBufferRejectReason(pair, buffer);
+    preflight.atCapacity = preflight.reason == MergePairIntoBufferRejectReason::AtCapacity;
+    return !preflightMergePairIntoBuffer(pair, buffer).canMerge();
+    return preflightMergePairIntoBuffer(pair, buffer).canMerge();

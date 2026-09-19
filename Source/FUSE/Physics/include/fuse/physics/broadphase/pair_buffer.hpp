@@ -593,3 +593,6 @@ PairBufferWritePreflight preflightPairBufferWrite(const PairBufferSoA& buffer, u
 
 // --- deepen additive from b4-broadphase-deepen-guards-ed9f ---
 PairBufferInvalidatePreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
+
+// --- deepen additive from b4-broadphase-deepen-guards-0ec6 ---
+PairBufferWritePreflight preflightPairBufferWriteSlot(

@@ -4031,3 +4031,24 @@ void testMergePairsIntoBufferDeepenPreflightGuards() {
     testRefineAndDedupeBroadphasePreflightGuards();
     testBroadphaseMergeDeepenPreflightGuards();
     testMergePairsIntoBufferDeepenPreflightGuards();
+
+// --- deepen additive from b4-broadphase-deepen-guards-0ec6 ---
+void testPairBufferWriteInvalidatePreflightGuards() {
+void testCellSpanCapacityPreflightGuards() {
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanRejectReason::ExceedsSpanLimit),
+        fuse::physics::broadphase::preflightCellSpan(smallRange, 8u);
+    expectTrue(planePreflight.withinLimit(), "2D cell span preflight accepts within-limit range");
+    expectEq(planePreflight.spanPerAxis.x, 3, "2D cell span preflight reports x span");
+void testRefinePairAndDedupeDeepenGuards() {
+                 fuse::physics::broadphase::refinePairRejectReason(0u, 1u, bodies, shapes)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::RefinePairRejectReason::Separated),
+    const fuse::physics::broadphase::RefinePairPreflight overlappingPreflight =
+        fuse::physics::broadphase::preflightRefinePair(0u, 1u, bodies, shapes);
+    expectTrue(overlappingPreflight.passesRefine(), "refine-pair preflight accepts overlapping pair");
+                               fuse::physics::broadphase::RefinePairRejectReason::Separated),
+                 fuse::physics::broadphase::mergePairIntoBufferRejectReason(invalidPair, buffer)),
+    const fuse::physics::broadphase::MergePairsIntoBufferPreflight batchPreflight =
+    expectEq(batchPreflight.mergeablePairCount, 1u, "batch merge preflight counts mergeable pairs");
+    expectTrue(batchPreflight.partialMergeOnly, "batch merge preflight marks partial merge");
+    testPairBufferWriteInvalidatePreflightGuards();
+    testCellSpanCapacityPreflightGuards();
