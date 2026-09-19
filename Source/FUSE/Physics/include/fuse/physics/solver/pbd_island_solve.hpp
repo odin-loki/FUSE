@@ -610,4 +610,114 @@ IslandBatchWarmStartResult warm_start_all_islands_combined_result(
     const std::vector<f32>& priorDistanceLambdas,
     const std::vector<f32>& priorContactLambdas = {});
 
+/// True when body flags carry `RB_SLEEPING` (B4.4 deepen).
+bool is_island_body_sleeping(u32 bodyFlags);
+
+/// True when body flags carry `RB_STATIC` or `RB_KINEMATIC` (B4.4 deepen).
+bool is_island_body_static_or_kinematic(u32 bodyFlags);
+
+/// Per-island sleep eligibility preflight (B4.4 deepen).
+struct IslandSleepPreflight {
+    u32 bodyCount = 0;
+    u32 sleepingCount = 0;
+    u32 staticOrKinematicCount = 0;
+    u32 awakeDynamicCount = 0;
+    bool skipped = false;
+
+    bool all_dynamic_sleeping() const {
+        return !skipped && awakeDynamicCount == 0u && sleepingCount > 0u;
+    }
+
+    bool can_attempt_sleep() const { return !skipped && awakeDynamicCount > 0u; }
+};
+
+/// Per-island wake preflight when sleeping bodies share constraints (B4.4 deepen).
+struct IslandWakePreflight {
+    u32 sleepingBodyCount = 0;
+    u32 awakeBodyCount = 0;
+    u32 ownedConstraintCount = 0;
+    bool skipped = false;
+
+    bool should_wake() const {
+        return !skipped && sleepingBodyCount > 0u &&
+               (awakeBodyCount > 0u || ownedConstraintCount > 0u);
+    }
+};
+
+/// Aggregate sleep/wake counts for graph-level batch guards (B4.4 deepen).
+struct IslandSleepWakeStats {
+    u32 totalIslands = 0;
+    u32 allSleepingCount = 0;
+    u32 wakeCandidateCount = 0;
+    u32 emptyCount = 0;
+};
+
+/// Graph-level sleep/wake preflight for selective per-island sleep batching (B4.4 deepen).
+struct IslandSleepWakeGraphPreflight {
+    IslandSleepWakeStats stats{};
+    bool skipped = false;
+
+    bool has_wake_candidates() const { return !skipped && stats.wakeCandidateCount > 0u; }
+    bool all_islands_sleeping() const {
+        return !skipped && stats.totalIslands > 0u && stats.allSleepingCount == stats.totalIslands;
+    }
+};
+
+/// Constraint participation coverage for one island solve pass (sleep/static guards, B4.4 deepen).
+struct IslandSolveParticipationPreflight {
+    u32 ownedBodyCount = 0;
+    u32 participatingBodyCount = 0;
+    u32 sleepingBodyCount = 0;
+    u32 staticOrKinematicBodyCount = 0;
+    bool skipped = false;
+
+    bool can_solve() const { return !skipped && participatingBodyCount > 0u; }
+};
+
+/// Preflight per-island sleep eligibility from body flags (B4.4 deepen).
+IslandSleepPreflight preflight_island_sleep(const ContactIslandGraph::Island& island,
+                                            const RigidBodySoA& bodies);
+
+/// Preflight per-island wake when sleeping and awake bodies share an island (B4.4 deepen).
+IslandWakePreflight preflight_island_wake(const ContactIslandGraph::Island& island,
+                                          const RigidBodySoA& bodies);
+
+/// Preflight sleep by island index; out-of-range indices are marked skipped (B4.4 deepen).
+IslandSleepPreflight preflight_island_sleep_by_index(const ContactIslandGraph& graph,
+                                                     u32 islandIndex,
+                                                     const RigidBodySoA& bodies);
+
+/// Preflight wake by island index; out-of-range indices are marked skipped (B4.4 deepen).
+IslandWakePreflight preflight_island_wake_by_index(const ContactIslandGraph& graph,
+                                                   u32 islandIndex,
+                                                   const RigidBodySoA& bodies);
+
+/// Summarize all-sleeping vs wake-candidate islands for graph-level guards (B4.4 deepen).
+IslandSleepWakeStats compute_island_sleep_wake_stats(const ContactIslandGraph& graph,
+                                                     const RigidBodySoA& bodies);
+
+/// Graph-level sleep/wake preflight; sets `skipped` when the graph is empty (B4.4 deepen).
+IslandSleepWakeGraphPreflight preflight_island_sleep_wake_graph(const ContactIslandGraph& graph,
+                                                                const RigidBodySoA& bodies);
+
+/// Early-out guard for graph-level wake batching (B4.4 deepen).
+bool should_skip_island_wake_graph(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
+
+/// Collect island indices that pass per-island wake preflight (B4.4 deepen).
+std::vector<u32> collect_wake_candidate_island_indices(const ContactIslandGraph& graph,
+                                                         const RigidBodySoA& bodies);
+
+/// Early-out guard when every dynamic body in an island is sleeping (B4.4 deepen).
+bool should_skip_island_solve_all_sleeping(const ContactIslandGraph::Island& island,
+                                           const RigidBodySoA& bodies);
+
+/// Early-out guard when an island has no participating dynamic bodies for constraint solve (B4.4 deepen).
+bool should_skip_island_solve_no_participation(const ContactIslandGraph::Island& island,
+                                               const RigidBodySoA& bodies);
+
+/// Preflight constraint participation for one island; sets `skipped` for empty islands (B4.4 deepen).
+IslandSolveParticipationPreflight preflight_island_solve_participation(
+    const ContactIslandGraph::Island& island,
+    const RigidBodySoA& bodies);
+
 } // namespace fuse::physics
