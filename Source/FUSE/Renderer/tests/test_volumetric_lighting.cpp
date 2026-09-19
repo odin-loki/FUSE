@@ -4080,3 +4080,37 @@ void testFroxelDeepenIsBlockingAndPreflightGuards() {
                    0.5f, 0.5f, 10.f, zeroDesc, camera) == fuse::renderer::ScreenMappingRejectReason::EmptyGrid,
                "preflightFroxelTrilinearSample reports clampable_weights");
     expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulate(desc, badCamera, params, &populateReason),
+
+// --- deepen additive from b511-froxel-volumetrics-deepen-6169 ---
+               "preflightScreenMappingReady reports no reject reason on success");
+               "preflightScreenMappingReady reports depth_out_of_range on rejection");
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightSampleCoordsReady(inBounds, desc, &sampleReason),
+               "preflightSampleCoordsReady reports no reject reason on success");
+               "preflightSampleCoordsReady still succeeds for clampable weights");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupReady(grid, desc, 0u, &lookupReason),
+               "preflightDensityLookupReady succeeds for in-range index");
+               "preflightDensityLookupReady reports no reject reason on success");
+               "preflightDensityLookupReady still succeeds for OOB index that clamps");
+               "preflightDensityLookupReady reports empty_storage on rejection");
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSampleReady(grid, desc, inBounds, &trilinearReason),
+               "preflightTrilinearSampleReady succeeds for in-bounds coords");
+               "preflightTrilinearSampleReady reports no reject reason on success");
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSampleReady(grid, desc, warnWeights, &trilinearReason),
+               "preflightTrilinearSampleReady still succeeds for clampable weights");
+               "preflightTrilinearSampleReady reports clampable_weights for OOB weights");
+    expectTrue(!fuse::renderer::froxel_util::preflightTrilinearSampleReady(grid, desc, hardOob, &trilinearReason),
+               "preflightTrilinearSampleReady rejects hard OOB coords");
+               "preflightTrilinearSampleReady reports invalid_sample_coords for hard OOB coords");
+    expectTrue(fuse::renderer::froxel_util::preflightGridDensityReady(grid, desc, &densityReason),
+               "preflightGridDensityReady reports no reject reason on success");
+               "preflightGridDensityReady reports undersized_storage on rejection");
+    expectTrue(fuse::renderer::froxel_util::preflightPopulateReady(desc, camera, params, &populateReason),
+               "preflightPopulateReady succeeds for valid populate inputs");
+               "preflightPopulateReady reports no reject reason on success");
+    expectTrue(!fuse::renderer::froxel_util::preflightPopulateReady(desc, camera, zeroDensity, &populateReason),
+               "preflightPopulateReady rejects zero density");
+               "preflightPopulateReady reports zero_density on rejection");
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSampleReady(grid, desc, inBounds) ==
+               "preflightTrilinearSampleReady mirrors canTrilinearSampleAtCoords on valid coords");
+    expectTrue(fuse::renderer::froxel_util::preflightPopulateReady(desc, camera, params) ==
+               "preflightPopulateReady mirrors canPopulateFromAnalyticFog on valid inputs");

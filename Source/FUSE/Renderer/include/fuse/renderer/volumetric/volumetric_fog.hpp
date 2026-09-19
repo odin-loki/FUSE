@@ -910,3 +910,7 @@ bool preflightGridDensityReady(const FroxelDensityGrid& grid,
     static ScreenMappingRejectReason classifyScreenMappingFroxelIndexReject(f32 screenX,
     static bool preflightMapScreenDepthToFroxelIndex(f32 screenX,
 bool preflightTrilinearSampleAtCoords(const FroxelDensityGrid& grid,
+
+// --- deepen additive from b511-froxel-volumetrics-deepen-6169 ---
+bool preflightTrilinearSampleReady(const FroxelDensityGrid& grid,
+bool preflightPopulateReady(const FroxelGridDesc& desc,

@@ -2404,3 +2404,7 @@ bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-f48a ---
         tryMapScreenDepthToFroxelIndex(screenX, screenY, viewDepth, desc, camera, index, mapReason);
+
+// --- deepen additive from b511-froxel-volumetrics-deepen-6169 ---
+bool preflightTrilinearSampleReady(const FroxelDensityGrid& grid,
+bool preflightPopulateReady(const FroxelGridDesc& desc,
