@@ -4264,3 +4264,39 @@ void testCellCapacityPreflightAndWouldSkipGuards() {
     expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(mergePairs, mergeBuffer, &mergeIntoReason),
              "wouldSkipMergePairsIntoBuffer records BufferFull reason");
     testCellCapacityPreflightAndWouldSkipGuards();
+
+// --- deepen additive from b4-broadphase-deepen-guards-136e ---
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferPush(buffer, 2u, 3u),
+    fuse::physics::broadphase::PairBufferPushRejectReason reason =
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferPush(buffer, 2u, 3u, &reason),
+               "wouldSkipPairBufferPush writes reject reason");
+             "wouldSkipPairBufferPush reports AtCapacity");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferPush(buffer, 2u, 3u) ==
+               "wouldSkipPairBufferPush agrees with canSkipPairBufferPush");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 8u, &reason),
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 8u) ==
+               "wouldSkipPairBufferInvalidateSlot agrees with canSkipPairBufferInvalidateSlot");
+    fuse::physics::broadphase::CellPairGenRejectReason reason =
+        fuse::physics::broadphase::CellPairGenRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipCellPairGeneration(emptyOccupants, &reason),
+               "wouldSkipCellPairGeneration true on empty cell");
+             "wouldSkipCellPairGeneration reports EmptyCell");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellPairGeneration(multiOccupants) ==
+               "wouldSkipCellPairGeneration agrees with canSkipCellPairGeneration");
+    fuse::physics::broadphase::ShapeCellInsertRejectReason reason =
+        fuse::physics::broadphase::ShapeCellInsertRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipShapeCellInsert(0u, bodies, shapes, params, false, &reason),
+               "wouldSkipShapeCellInsert true for oversized shape");
+             "wouldSkipShapeCellInsert reports OccupancySkipped");
+    expectTrue(fuse::physics::broadphase::wouldSkipShapeCellInsert(1u, bodies, shapes, params, false) ==
+               "wouldSkipShapeCellInsert agrees with canSkipShapeCellInsert");
+    fuse::physics::broadphase::BroadphaseRejectReason broadphaseReason =
+    expectTrue(fuse::physics::broadphase::wouldSkipBroadphase(bodies, shapes, &broadphaseReason),
+             "wouldSkipBroadphase reports EmptyInput");
+               "wouldSkipBroadphase agrees with canSkipBroadphase");
+    expectTrue(!fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(pairs, buffer, &mergeIntoReason),
+    expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(pairs, buffer) ==
+               "wouldSkipMergePairsIntoBuffer agrees with canSkipMergePairsIntoBuffer");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(overBudget, 8u, &occupancyReason),
+               "wouldSkipCellOccupancyIteration true when range exceeds budget");
+             "wouldSkipCellOccupancyIteration reports ExceedsBudget");

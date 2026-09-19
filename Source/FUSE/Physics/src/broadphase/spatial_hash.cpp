@@ -1765,3 +1765,10 @@ ShapeCellInsertionPreflight preflightShapeCellInsertion(
 // --- deepen additive from deepen-b4-broadphase-guards-1f69 ---
     case CellCapacityRejectReason::ExceedsOccupancyBudget:
         if (wouldSkipCellCapacityInsertion(range, maxOccupancy, maxSpan)) {
+
+// --- deepen additive from b4-broadphase-deepen-guards-136e ---
+bool wouldSkipCellPairGeneration(const std::vector<u32>& occupants, CellPairGenRejectReason* reason) {
+bool wouldSkipShapeCellInsert(
+    ShapeCellInsertRejectReason* reason) {
+    const ShapeCellInsertPreflight preflight =
+        preflightShapeCellInsert(shapeIndex, bodies, shapes, params, use2D);

@@ -1758,3 +1758,9 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellCapacityInsertion(
     CellCapacityRejectReason* reason = nullptr) {
     const CellCapacityRejectReason reject = cellCapacityRejectReason(range, maxCells, maxSpanPerAxis);
     return reject != CellCapacityRejectReason::None;
+
+// --- deepen additive from b4-broadphase-deepen-guards-136e ---
+bool wouldSkipCellPairGeneration(
+    CellPairGenRejectReason* reason = nullptr);
+bool wouldSkipShapeCellInsert(
+    ShapeCellInsertRejectReason* reason = nullptr);
