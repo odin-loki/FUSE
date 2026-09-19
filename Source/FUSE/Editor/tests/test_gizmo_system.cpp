@@ -3519,3 +3519,12 @@ void testBeginDragPreflightPickedAxis() {
     const fuse::editor::InteractionPreflight activeGizmoPreflight = gizmo.preflightInteraction(hit);
     expectTrue(activeGizmoPreflight.canUpdate(), "gizmo interaction preflight accepts active update");
     expectTrue(activeGizmoPreflight.update.snapDegraded,
+
+// --- deepen additive from deepen-gizmo-preflights-dcb1 ---
+void testHitTestInBoundsGuards() {
+    expectTrue(!deadZonePreflight.canUpdate(), "update preflight rejects translate dead zone");
+    expectTrue(!gizmo.tryUpdateDrag(hit, result), "tryUpdateDrag rejects translate dead zone");
+    expectTrue(gizmo.preflightUpdateDrag(hit).canUpdate(),
+void testBeginDragPreflightOutOfBounds() {
+    expectTrue(!outOfBoundsPreflight.canBegin, "begin preflight rejects out-of-bounds screen hit");
+    testBeginDragPreflightOutOfBounds();
