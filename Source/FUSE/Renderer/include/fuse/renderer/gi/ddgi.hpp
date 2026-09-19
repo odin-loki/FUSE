@@ -842,3 +842,12 @@ bool tryCanScheduleProbeUpdates(u32 frame_index,
 
 // --- deepen additive from deepen-ddgi-b56-guards-87a1 ---
 bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-add8 ---
+    static bool wouldSkipBuildProbeSampleCoords(const DDGIDesc& desc);
+bool wouldSkipSampleAtProbeCoords(const DDGIDesc& desc,
+bool preflightCacheIndex(const DDGIDesc& desc,
+bool wouldSkipTrilinearProbeIrradiance(const DDGIDesc& desc,
+bool wouldSkipTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
+bool tryValidateScheduledProbeIndices(const DDGIDesc& desc,
+bool wouldSkipScheduledProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count);

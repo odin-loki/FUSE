@@ -2590,3 +2590,27 @@ bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
     return wouldSkipDdgiProbeUpdate(desc, probe_indices, probe_count);
     return wouldSkipProbeTraceKernel(params);
     return wouldSkipProbeBlendKernel(params);
+
+// --- deepen additive from deepen-ddgi-guards-add8 ---
+bool ProbeGridLayout::wouldSkipBuildProbeSampleCoords(const DDGIDesc& desc) {
+    ProbeSampleCoordsRejectReason localReason = ProbeSampleCoordsRejectReason::None;
+    const bool valid = tryValidateProbeSampleCoords(desc, coords, localReason);
+bool wouldSkipSampleAtProbeCoords(const DDGIDesc& desc,
+bool preflightCacheIndex(const DDGIDesc& desc,
+    CacheIndexRejectReason localReason = CacheIndexRejectReason::None;
+    const bool valid = tryValidateCacheIndex(desc, probe_index, cache_count, localReason);
+    const bool valid = tryValidateCacheIndex(desc, cache, probe_index, cache_count, localReason);
+    ProbeScheduleRejectReason localReason = ProbeScheduleRejectReason::None;
+    const bool schedulable = tryCanScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count, localReason);
+bool wouldSkipTrilinearProbeIrradiance(const DDGIDesc& desc,
+    return !tryTrilinearProbeIrradiance(desc, world_position, cache, cache_count, irradiance);
+bool wouldSkipTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
+    return !tryTrilinearDirectionalProbeIrradiance(
+bool tryValidateScheduledProbeIndices(const DDGIDesc& desc,
+    return tryCanLaunchDdgiProbeUpdate(desc, probe_indices, probe_count, outReason);
+bool wouldSkipScheduledProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count) {
+    ProbeUpdateLaunchRejectReason localReason = ProbeUpdateLaunchRejectReason::None;
+    const bool launchable = tryCanLaunchDdgiProbeUpdate(desc, probe_indices, probe_count, localReason);
+    ProbeKernelRejectReason localReason = ProbeKernelRejectReason::None;
+    const bool launchable = tryCanLaunchProbeTraceKernel(params, localReason);
+    const bool launchable = tryCanLaunchProbeBlendKernel(params, localReason);
