@@ -3649,3 +3649,11 @@ void testFroxelClassifyPreflightAndBilinearGuards() {
                "trySampleDensityAtScreen with lookup reason rejects desc mismatch");
     expectNear(rejectedScreen, 0.f, 1e-6f, "trySampleDensityAtScreen with lookup reason zeroes output on rejection");
     testFroxelClassifyPreflightAndBilinearGuards();
+
+// --- deepen additive from deepen-b511-froxel-classify-guards-1c1d ---
+               "preflightSampleCoords reports out_of_bounds reject reason");
+               "preflightFroxelTrilinearSample reports no reject reason");
+               "preflightGridDensity reports no reject reason");
+               "preflightFroxelPopulate reports no reject reason");
+    expectTrue(fuse::renderer::froxel_util::classifyDensityLookupReject(grid, zeroDesc, 0u) ==
+               "classifyDensityLookupReject empty_grid for empty desc");
