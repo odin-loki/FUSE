@@ -639,3 +639,6 @@ bool wouldSkipPairBufferDedupe(const PairBufferSoA& buffer);
 bool wouldSkipPairBufferSort(const PairBufferSoA& buffer);
 bool wouldSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer);
 bool wouldSkipPairBufferToVector(const PairBufferSoA& buffer);
+
+// --- deepen additive from b4-broadphase-deepen-invalidate-wouldskip-1401 ---
+FUSE_PHYSICS_INLINE bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {

@@ -4550,3 +4550,13 @@ void testWouldSkipBroadphaseGuardParity() {
     expectTrue(!planePreflight.canInsert(), "2D cell capacity preflight rejects over-budget range");
     expectTrue(fuse::physics::broadphase::wouldSkipShapeCellInsertion(planeRange, 4u),
                "wouldSkipMergePairsIntoBuffer false for valid merge into non-full buffer");
+
+// --- deepen additive from b4-broadphase-deepen-invalidate-wouldskip-1401 ---
+    expectTrue(fuse::physics::broadphase::wouldSkipShapeCellOccupancy(overBudgetRange, params),
+               "wouldSkipShapeCellOccupancy true over maxCellOccupancy budget");
+        fuse::physics::broadphase::preflightShapeCellOccupancy(overBudgetRange, params);
+    expectTrue(!shapePreflight.canIterate(), "preflightShapeCellOccupancy rejects over-budget range");
+    expectTrue(!fuse::physics::broadphase::wouldSkipCellSpanClamp(overSpanRange, params),
+               "wouldSkipCellSpanClamp false when span exceeds params budget");
+               "shouldRunCellSpanClamp agrees with wouldSkipCellSpanClamp inverse");
+               "wouldSkipPairBufferWriteSlot false for valid pair");

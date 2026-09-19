@@ -1821,3 +1821,10 @@ FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity(const CellRange2
 FUSE_PHYSICS_INLINE bool wouldSkipShapeCellInsertion(const CellRange3& range, u32 maxOccupancy) {
     return !preflightCellCapacity(range, maxOccupancy).canInsert();
 FUSE_PHYSICS_INLINE bool wouldSkipShapeCellInsertion(const CellRange2& range, u32 maxOccupancy) {
+
+// --- deepen additive from b4-broadphase-deepen-invalidate-wouldskip-1401 ---
+        *reason = broadphaseRejectReason(bodies, shapes);
+FUSE_PHYSICS_INLINE bool wouldSkipShapeCellOccupancy(const CellRange3& range, const SpatialHashParams& params) {
+FUSE_PHYSICS_INLINE bool wouldSkipShapeCellOccupancy(const CellRange2& range, const SpatialHashParams& params) {
+FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(const CellRange3& range, const SpatialHashParams& params) {
+FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(const CellRange2& range, const SpatialHashParams& params) {
