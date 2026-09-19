@@ -558,6 +558,12 @@ bool generate_contact_manifold(ContactManifold& manifold) {
     manifold.pruneAndRetainPenetrating();
     if (manifold.empty()) {
     if (!manifold.pruneContactPointsIfNeeded()) {
+    const ManifoldFinalizePreflight finalizePreflight = preflight_manifold_finalize(manifold);
+    if (finalizePreflight.wouldBeEmptyAfterPrune) {
+        manifold.clear();
+        return false;
+    }
+
 
     if (!manifold.hasValidNormal()) {
 
