@@ -201,6 +201,28 @@ bool should_skip_refine_broadphase(
     return preflight_refine_broadphase(bodies, shapes, buffer).skipped;
 }
 
+BroadphaseRefinePreflight preflightRefineBroadphasePairs(
+    const PairBufferSoA& buffer,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    BroadphaseRefinePreflight preflight{};
+    preflight.emptyBroadphaseInput = canSkipBroadphase(bodies, shapes);
+    preflight.emptyBuffer = buffer.canSkipSoAIteration() || !buffer.hasValidPairs();
+    preflight.skipped = preflight.emptyBroadphaseInput || preflight.emptyBuffer;
+    return preflight;
+}
+
+bool canSkipRefineBroadphasePairs(
+    const PairBufferSoA& buffer,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflightRefineBroadphasePairs(buffer, bodies, shapes).skipped;
+}
+
+bool canSkipDedupeBuffer(const PairBufferSoA& buffer) {
+    return buffer.canSkipDedupe();
+}
+
 namespace {
 
 constexpr u32 kBuildGrainSize = 8u;
@@ -426,6 +448,9 @@ void populateShapeCells(
         if (!occupancyPreflight.can_insert()) {
         if (isEmptyCellRange(range)) {
         if (canSkipCellOccupancyInsert(range, params.maxCellOccupancy)) {
+        const CellOccupancyPreflight occupancyPreflight =
+            preflightCellOccupancy(range, perShapeCellBudget(maxSpan, true));
+        if (occupancyPreflight.skipped || occupancyPreflight.exceedsBudget) {
             return;
         }
         if (params.maxCellOccupancyPerShape > 0u) {
@@ -455,6 +480,9 @@ void populateShapeCells(
     if (canSkipShapeCellInsertion(range, maxOccupancy)) {
     const ShapeCellOccupancyPreflight occupancyPreflight = preflight_shape_cell_occupancy(range, maxSpan);
     if (!occupancyPreflight.can_insert()) {
+    const CellOccupancyPreflight occupancyPreflight =
+        preflightCellOccupancy(range, perShapeCellBudget(maxSpan, false));
+    if (occupancyPreflight.skipped || occupancyPreflight.exceedsBudget) {
         return;
     }
     if (isEmptyCellRange(range)) {
@@ -495,6 +523,7 @@ void dedupeBuffer(PairBufferSoA& buffer) {
     const PairBufferSoA::DedupePreflight preflight = buffer.preflight_dedupe();
     if (!preflight.needs_dedupe()) {
     if (should_skip_dedupe_pair_buffer(buffer)) {
+    if (canSkipDedupeBuffer(buffer)) {
         return;
     }
 
@@ -595,8 +624,12 @@ void runBroadphaseIntoBufferInternal(
 
     buffer.preparePairSlots(totalCellSlots);
     if (!shouldRunBroadphaseCellPairGen(totalCellSlots)) {
+    const PairSlotPreflight slotPreflight = preflightPairSlots(totalCellSlots, buffer);
+    if (slotPreflight.skipped) {
         return;
     }
+
+    buffer.preparePairSlots(totalCellSlots);
 
     fuse::jobs::parallel_for(0u, tableSize, kCellGrainSize, [&](u32 cellIndex) {
         if (cells.buckets[cellIndex].empty()) {
@@ -668,6 +701,7 @@ void refineBroadphasePairsParallelImpl(
     const BroadphaseRefinePreflight preflight = preflight_broadphase_refine(bodies, shapes, buffer);
     if (!preflight.can_refine()) {
     if (should_skip_refine_broadphase(bodies, shapes, buffer)) {
+    if (canSkipRefineBroadphasePairs(buffer, bodies, shapes)) {
         return;
     }
 

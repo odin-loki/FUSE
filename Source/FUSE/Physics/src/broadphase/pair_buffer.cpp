@@ -16,6 +16,19 @@ CandidatePair canonicalPair(u32 idxA, u32 idxB) {
 
 } // namespace
 
+PairSlotPreflight preflightPairSlots(u32 slotCount, const PairBufferSoA& buffer) {
+    PairSlotPreflight preflight{};
+    preflight.slotCount = slotCount;
+    if (slotCount == 0u) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    if (buffer.maxCapacity > 0u && slotCount > buffer.maxCapacity) {
+        preflight.exceedsBufferCapacity = true;
+    }
+    return preflight;
+}
+
 void PairBufferSoA::reserve(u32 capacity) {
     bodyA.reserve(capacity);
     bodyB.reserve(capacity);
@@ -111,6 +124,9 @@ void PairBufferSoA::invalidateSlot(u32 slot) {
     if (pairSlotCount > 0u && slot >= pairSlotCount) {
         return;
     }
+    if (pairSlotCount > 0u && slot >= pairSlotCount) {
+        return;
+    }
     validFlags[slot] = 0u;
 }
 
@@ -140,6 +156,15 @@ bool PairBufferSoA::canApplyMaxCapacityClamp() const {
 
 bool PairBufferSoA::wouldRejectPush(u32 idxA, u32 idxB) const {
     return !isValidCandidatePair(idxA, idxB) || isFull();
+bool PairBufferSoA::canSkipDedupe() const {
+    if (canSkipSoAIteration()) {
+        return true;
+    }
+
+    return countValidSlots() <= 1u;
+
+bool PairBufferSoA::canSkipCompactAndClamp() const {
+    return canSkipSoAIteration() || countValidSlots() == 0u;
 
 bool PairBufferSoA::push(u32 idxA, u32 idxB) {
     if (!isValidCandidatePair(idxA, idxB)) {
@@ -444,6 +469,7 @@ bool PairBufferSoA::isSortedCanonical() const {
                 return false;
             }
         }
+
         prevBodyA = currBodyA;
         prevBodyB = currBodyB;
         hasPrev = true;

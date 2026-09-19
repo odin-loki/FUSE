@@ -274,6 +274,8 @@ struct CellRange2 {
     ivec2 maxCell{};
 };
 
+struct PairBufferSoA;
+
 /// True when any axis has an inverted min/max span (empty occupancy iteration).
 FUSE_PHYSICS_INLINE bool isEmptyCellRange(const CellRange3& range) {
 FUSE_PHYSICS_INLINE s32 cellAxisSpan(s32 minCell, s32 maxCell) {
@@ -766,6 +768,37 @@ BroadphaseRefinePreflight preflight_broadphase_refine(
 FUSE_PHYSICS_INLINE bool canSkipBroadphaseRefine(
     const PairBufferSoA& buffer) {
     return !preflight_broadphase_refine(bodies, shapes, buffer).can_refine();
+/// Cell-capacity preflight for shape occupancy iteration (B4.2 deepen pass).
+struct CellOccupancyPreflight {
+    u32 cellCount = 0u;
+
+/// Populate cell-occupancy preflight without mutating the range (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRange3& range, u32 maxCells) {
+    CellOccupancyPreflight preflight{};
+    preflight.cellCount = estimateCellOccupancyCount(range);
+    if (maxCells > 0u) {
+        preflight.exceedsBudget = preflight.cellCount > maxCells;
+
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRange2& range, u32 maxCells) {
+
+/// Per-shape cell budget derived from `maxCellSpanPerAxis` (0 = unlimited).
+FUSE_PHYSICS_INLINE u32 perShapeCellBudget(u32 maxCellSpanPerAxis, bool use2D) {
+    if (maxCellSpanPerAxis == 0u) {
+        return 0u;
+    const u32 span = maxCellSpanPerAxis;
+    return use2D ? span * span : span * span * span;
+
+/// Refine-pass preflight for parallel pair invalidation (B4.2 deepen pass).
+    bool emptyBroadphaseInput = false;
+
+BroadphaseRefinePreflight preflightRefineBroadphasePairs(
+    const PairBufferSoA& buffer,
+
+/// Early-out guard combining refine preflight checks (B4.2 deepen pass).
+bool canSkipRefineBroadphasePairs(
+
+/// Dedupe-pass preflight: true when sort+unique would be a no-op (B4.2 deepen pass).
+bool canSkipDedupeBuffer(const PairBufferSoA& buffer);
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {

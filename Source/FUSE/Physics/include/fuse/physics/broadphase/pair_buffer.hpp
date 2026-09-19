@@ -7,6 +7,17 @@
 
 namespace fuse::physics::broadphase {
 
+struct PairBufferSoA;
+
+/// Pair-buffer slot preflight before `preparePairSlots` (B4.2 deepen pass).
+struct PairSlotPreflight {
+    bool skipped = false;
+    u32 slotCount = 0u;
+    bool exceedsBufferCapacity = false;
+};
+
+PairSlotPreflight preflightPairSlots(u32 slotCount, const PairBufferSoA& buffer);
+
 /// SoA candidate-pair storage with clear/reuse for frame-to-frame broadphase output (B4.2 deepen).
 struct PairBufferSoA {
     std::vector<u32> bodyA;
@@ -56,6 +67,9 @@ struct PairBufferSoA {
     bool needsDedupe() const;
     /// True when refine dispatch may early-out for this buffer alone (B4.2 deepen pass).
     bool canSkipRefine() const { return canSkipSoAIteration() || !hasValidPairs(); }
+    bool canSkipDedupe() const;
+    /// True when compact+clamp would leave the buffer unchanged.
+    bool canSkipCompactAndClamp() const;
     /// True when slot storage has no invalid flags (compact is a no-op).
     bool canSkipCompaction() const;
     /// True when compact has no invalidated slots to gather.
