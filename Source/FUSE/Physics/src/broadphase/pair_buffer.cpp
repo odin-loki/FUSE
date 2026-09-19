@@ -3007,6 +3007,8 @@ bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer,
 
     if (slot < buffer.validFlags.size() && buffer.validFlags[slot] == 0u) {
 
+
+
 bool pairBufferInvalidateSlotRejectsForReason(
     const PairBufferSoA& buffer,
     u32 slot,
@@ -3090,6 +3092,9 @@ bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer,
 
 
         *reason = reject;
+
+
+
 
 
 
