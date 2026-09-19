@@ -8,6 +8,43 @@
 
 namespace fuse::physics {
 
+/// Why island graph build preflight rejected early-out (B4.4 deepen).
+enum class IslandBuildRejectReason : u8 {
+    None = 0,
+    ZeroBodies,
+    AllConstraintsStale,
+};
+
+/// Const preflight for island graph build dispatch (B4.4 deepen).
+struct IslandBuildPreflight {
+    u32 bodyCount = 0;
+    u32 validContactCount = 0;
+    u32 validDistanceCount = 0;
+    u32 staleContactCount = 0;
+    u32 staleDistanceCount = 0;
+    IslandBuildRejectReason reason = IslandBuildRejectReason::None;
+    bool skipped = false;
+
+    bool can_build() const { return !skipped; }
+};
+
+/// Populate island build preflight without mutating a graph (B4.4 deepen).
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Returns true when island graph build should be skipped before mutation (B4.4 deepen).
+bool should_skip_island_build(u32 bodyCount,
+                              const std::vector<narrowphase::ContactManifold>& contacts,
+                              const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// True when at least one contact or distance constraint references in-range bodies (B4.4 deepen).
+bool has_usable_island_build_constraints(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
