@@ -3116,3 +3116,57 @@ void testPreflightWarmStartIslandCombined() {
     testPreflightWarmStartIslandContactImpulses();
     testPreflightWarmStartContactImpulsesGraph();
     testPreflightWarmStartIslandCombined();
+
+// --- deepen additive from pbd-island-guards-deepen-1f2e ---
+void testPreflightIslandSolveInputsGuards() {
+    const IslandSolveInputsPreflight validPreflight =
+    expectTrue(!validPreflight.skipped, "solve-inputs preflight does not skip constrained island");
+    expectTrue(validPreflight.can_solve(), "solve-inputs preflight can solve with in-range indices");
+    expectTrue(validPreflight.ownedContactCount == 1u, "solve-inputs preflight counts owned contacts");
+    expectTrue(validPreflight.ownedDistanceCount == 1u, "solve-inputs preflight counts owned distances");
+    expectTrue(!should_skip_island_solve_inputs(graph.island(constrainedIndex), 1u, 1u),
+               "should_skip_island_solve_inputs false for valid inputs");
+    const IslandSolveInputsPreflight outOfRangeContacts =
+    expectTrue(should_skip_island_solve_inputs(graph.island(constrainedIndex), 0u, 1u),
+               "should_skip_island_solve_inputs true for OOB contacts");
+    const IslandSolveInputsPreflight outOfRangeIndex =
+        const IslandSolveInputsPreflight emptyPreflight = preflight_island_solve_inputs(island, 1u, 1u);
+        expectTrue(emptyPreflight.skipped, "solve-inputs preflight skips empty island");
+        expectTrue(!emptyPreflight.can_solve(), "empty island cannot pass solve-inputs preflight");
+    const IslandContactImpulsePreflight validPreflight =
+    expectTrue(!validPreflight.skipped, "impulse preflight does not skip contact island");
+    expectTrue(!validPreflight.invalidDt, "impulse preflight accepts valid dt");
+    expectTrue(validPreflight.ownedContactCount == 1u, "impulse preflight counts owned contacts");
+    expectTrue(validPreflight.inRangeContactCount == 1u, "impulse preflight counts in-range contacts");
+    expectTrue(validPreflight.nonZeroImpulseCount == 1u, "impulse preflight counts non-zero impulses");
+    expectTrue(validPreflight.can_warm_start(), "impulse preflight can warm-start with non-zero impulse");
+    expectTrue(!should_skip_warm_start_contact_impulses(graph.island(islandA), contacts, dt),
+               "should_skip false when impulse data exists");
+    const IslandContactImpulsePreflight invalidDt =
+               "should_skip true when dt is invalid");
+    const IslandContactImpulsePreflight outOfRangeIndex =
+        const IslandContactImpulsePreflight emptyPreflight =
+        expectTrue(should_skip_contact_impulse_warm_start_island_index(graph, islandIndex),
+                   "should_skip_contact_impulse_warm_start_island_index on empty island");
+void testPreflightCombinedWarmStartGuards() {
+    expectTrue(!combinedPreflight.skipped, "combined preflight does not skip contact island");
+    expectTrue(combinedPreflight.lambda.can_warm_start(), "combined preflight lambda path can warm-start");
+    expectTrue(combinedPreflight.impulse.can_warm_start(), "combined preflight impulse path can warm-start");
+    expectTrue(combinedPreflight.can_warm_start(), "combined preflight can warm-start with both paths");
+    expectTrue(!should_skip_warm_start_island_combined(graph.island(islandA),
+               "should_skip false when combined paths can seed");
+    const IslandCombinedWarmStartPreflight noDataPreflight =
+    expectTrue(!noDataPreflight.can_warm_start(), "combined preflight cannot warm-start without data and invalid dt");
+    expectTrue(should_skip_warm_start_island_combined(graph.island(islandA), contacts, 0.f, {}, {}),
+               "should_skip true when combined paths cannot seed");
+void testContactImpulseWarmStartGraphBatchGuards() {
+    expectTrue(!graphPreflight.skipped, "graph impulse preflight does not skip when seedable islands exist");
+    expectTrue(graphPreflight.can_warm_start(), "graph impulse preflight can warm-start");
+    expectTrue(graphPreflight.stats.impulseSeedableCount == graph.constrainedIslandCount(),
+    expectTrue(graphPreflight.stats.emptyCount + graphPreflight.stats.impulseSeedableCount +
+                       graphPreflight.stats.noImpulseDataCount + graphPreflight.stats.invalidDtCount ==
+                   graphPreflight.stats.impulseSeedableCount,
+               "should_skip_warm_start_contact_impulses_graph false when seedable");
+    expectTrue(should_skip_warm_start_contact_impulses_graph(graph, contacts, 0.f),
+    testPreflightIslandSolveInputsGuards();
+    testPreflightCombinedWarmStartGuards();

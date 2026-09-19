@@ -1176,3 +1176,14 @@ bool should_skip_island_solve_invalid_indices(const IslandSolveJob& job,
 bool should_skip_island_solve_index(const ContactIslandGraph& graph,
 IslandContactImpulseWarmStartPreflight preflight_warm_start_island_contact_impulses(
 IslandContactImpulseWarmStartPreflight preflight_warm_start_island_contact_impulses_by_index(
+
+// --- deepen additive from pbd-island-guards-deepen-1f2e ---
+struct IslandSolveInputsPreflight {
+struct IslandContactImpulsePreflight {
+    IslandContactImpulsePreflight impulse{};
+IslandSolveInputsPreflight preflight_island_solve_inputs(const ContactIslandGraph::Island& island,
+IslandSolveInputsPreflight preflight_island_solve_inputs_by_index(const ContactIslandGraph& graph,
+bool should_skip_island_solve_inputs(const ContactIslandGraph::Island& island,
+IslandContactImpulsePreflight preflight_warm_start_contact_impulses(
+IslandContactImpulsePreflight preflight_warm_start_contact_impulses_by_index(
+bool should_skip_warm_start_island_combined(const ContactIslandGraph::Island& island,
