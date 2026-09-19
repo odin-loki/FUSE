@@ -54,6 +54,7 @@ struct CookHashPreflight {
 
 /// Combine source/descriptor hash with upstream dependency hash for cache lookup.
 /// Returns zero when `source_hash` is zero — upstream alone is never cacheable.
+/// Returns zero when `source_hash` is zero (B7.9 deepen guard).
 [[nodiscard]] u64 combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
 /// True when `combine_cook_cache_key` would yield a non-zero lookup key (B7.9 deepen).

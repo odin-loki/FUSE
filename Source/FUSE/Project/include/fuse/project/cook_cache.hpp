@@ -123,6 +123,7 @@ public:
     [[nodiscard]] std::vector<std::string> probe_downstream_sources(
         const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
     /// Run invalid-entry then stale-content pruning — no-op on empty cache (B7.9 deepen).
+    /// Run stale then invalid pruning — no-op when the cache is empty (B7.9 deepen).
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

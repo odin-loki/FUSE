@@ -507,6 +507,7 @@ std::vector<std::string> CookCache::probe_downstream_sources(
     return sources;
     u32 removed = prune_invalid_entries();
     removed += prune_stale_entries();
+    const u32 removed = prune_stale_entries() + prune_invalid_entries();
     return removed;
 }
 

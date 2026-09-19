@@ -189,6 +189,7 @@ CookBatchResult AssetCooker::cook_manifest(const CookManifest& manifest) {
 
 u32 AssetCooker::invalidate_upstream_dependency(const CookManifest& manifest, const std::string& changed_source) {
     if (!is_valid_cook_cache_path(changed_source) || m_cache.empty()) {
+    if (m_cache.empty() || !is_valid_cook_cache_path(changed_source)) {
         return 0;
     }
 
@@ -331,6 +332,7 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
     if (manifest.assets.empty() || m_cache.empty()) {
+    if (m_cache.empty() || manifest.assets.empty()) {
         return 0;
     }
 
