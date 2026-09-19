@@ -3702,3 +3702,26 @@ void testDdgiKernelPerPassPreflightGuards() {
     testDdgiScheduleAtRatePreflightGuards();
     testDdgiSampleCoordSkipPreflight();
     testDdgiKernelPerPassPreflightGuards();
+
+// --- deepen additive from deepen-ddgi-guards-3160 ---
+void testTrilinearSampleDeepenGuards() {
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearProbeSampleAtCoords(desc, coords, cache.data(), 8u),
+               "wouldSkip false for valid coord-based trilinear sample");
+    expectTrue(fuse::renderer::ddgi_util::classifyTrilinearProbeIrradianceReject(
+               "classifyTrilinearProbeIrradianceReject none for interior sample");
+               "wouldSkip false for valid world-position trilinear sample");
+               "wouldSkip true for null cache world-position sample");
+               "classifyTrilinearProbeIrradianceReject empty_grid");
+void testProbeScheduleAtRateDeepenGuards() {
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, oobIndices),
+               "wouldSkip true for hard OOB sample coord indices");
+               "non-sampleable grid fails tryBuildProbeSampleCoords");
+    expectTrue(fuse::renderer::probeSampleCoordsRejectReasonIsBlocking(reason),
+void testKernelPerPassPreflight() {
+    expectTrue(fuse::renderer::gi::preflightProbeTraceKernelLaunch(validParams),
+    expectTrue(fuse::renderer::gi::preflightProbeBlendKernelLaunch(validParams),
+    expectTrue(!fuse::renderer::gi::preflightProbeTraceKernelLaunch(zeroCount, &reason),
+               "preflightProbeTraceKernelLaunch rejects zero update count");
+    expectTrue(!fuse::renderer::gi::preflightProbeBlendKernelLaunch(zeroCount, &reason),
+               "preflightProbeBlendKernelLaunch rejects zero update count");
+    testKernelPerPassPreflight();

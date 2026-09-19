@@ -905,3 +905,6 @@ ProbeScheduleRejectReason classifyProbeScheduleAtRateReject(u32 probe_count,
 
 // --- deepen additive from deepen-ddgi-guards-5dcb ---
 bool preflightProbeTrilinearSample(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-3160 ---
+ProbeTrilinearSampleRejectReason classifyTrilinearProbeIrradianceReject(const DDGIDesc& desc,

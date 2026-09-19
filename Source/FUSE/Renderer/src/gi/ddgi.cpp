@@ -2817,3 +2817,9 @@ bool tryPreflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRej
 bool preflightProbeTrilinearSample(const DDGIDesc& desc,
     return preflightProbeTrilinearSample(desc, coords, cache, cache_count, reason);
     return !preflightProbeTrilinearSample(desc, coords, cache, cache_count);
+
+// --- deepen additive from deepen-ddgi-guards-3160 ---
+ProbeTrilinearSampleRejectReason classifyTrilinearProbeIrradianceReject(const DDGIDesc& desc,
+        classifyTrilinearProbeIrradianceReject(desc, world_position, cache, cache_count);
+    const bool ok = tryCanLaunchProbeTraceKernel(params, reject);
+    const bool ok = tryCanLaunchProbeBlendKernel(params, reject);
