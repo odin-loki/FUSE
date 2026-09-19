@@ -330,6 +330,14 @@ u32 droppedEventCount() {
     return g_droppedEventCount.load(std::memory_order_acquire);
 
 u32 ringBufferCapacity() {
+u32 exportableEventCount() {
+    const u32 count = eventCount();
+    u32 exportable = 0u;
+    for (u32 i = 0u; i < count; ++i) {
+        if (isValidProfileEvent(eventAt(i))) {
+            ++exportable;
+        }
+    return exportable;
 
 u32 maxNestingDepth() {
     return g_maxNestingDepth.load(std::memory_order_acquire);
@@ -567,6 +575,7 @@ bool hasExportableEvents() {
 
 bool hasOpenAsyncFlows() {
     return openAsyncFlowCount() > 0u;
+    return exportableEventCount() > 0u;
 }
 
 bool isBufferEmpty() {
@@ -624,6 +633,10 @@ bool isValidProfileName(const char* name) {
 }
 
 bool isValidProfileName(const char* name) {
+    return isValidEventName(name);
+}
+
+bool isValidProfilerName(const char* name) {
     return isValidEventName(name);
 }
 
@@ -702,7 +715,6 @@ const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason rea
 bool canLookupEventAt(u32 index) {
     EventLookupRejectReason reason = EventLookupRejectReason::None;
     return tryCanLookupEventAt(index, reason);
-}
 
 bool isValidProfileName(const char* name) {
     return isRecordableName(name);
@@ -752,14 +764,14 @@ const ProfileEvent& eventAt(u32 index) {
 
 
 
-const ProfileEvent& emptyProfileEvent() {
-    static const ProfileEvent kEmpty{};
-    return kEmpty;
 
 
 
 
-    const u32 count = eventCount();
+
+
+
+
     const u32 head = g_writeHead.load(std::memory_order_acquire);
     const u32 start = head >= count ? head - count : 0u;
     const u32 ringIndex = (start + index) % kRingCapacity;
@@ -1162,6 +1174,7 @@ bool hasExportableEvents() {
 bool isChromeTraceExportEmpty() {
     return !hasExportableEvents();
 
+
 void reset() {
     const std::lock_guard<std::mutex> lock(g_exportMutex);
     g_writeHead.store(0u, std::memory_order_release);
@@ -1497,13 +1510,11 @@ ChromeExportPreflight preflightChromeTraceExport() {
     preflight.unbalancedFlowNesting = !isFlowNestingBalanced();
     preflight.openAsyncFlows = hasOpenAsyncFlows();
     return preflight;
-}
 
 ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
     const ChromeTraceExportPreflight preflight = preflightChromeTraceExport();
     if (preflight.emptyBuffer) {
         return ChromeTraceExportRejectReason::EmptyBuffer;
-    }
     if (preflight.unbalancedScopeNesting) {
         return ChromeTraceExportRejectReason::UnbalancedScopeNesting;
     if (preflight.openAsyncFlows) {
@@ -1514,7 +1525,21 @@ ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
         return ChromeTraceExportRejectReason::BufferFull;
     return ChromeTraceExportRejectReason::None;
 
+bool isValidChromeTraceExport(const std::string& json) {
+    if (json.empty() || json.front() != '{' || json.back() != '}') {
+        return false;
+
+    return json.find("\"displayTimeUnit\":\"ns\"") != std::string::npos &&
+           json.find("\"metadata\":{\"name\":\"FUSE CPU profiler\"") != std::string::npos &&
+           json.find("\"traceEvents\":[") != std::string::npos;
+
 std::string exportChromeTraceJson() {
+    std::string json;
+    tryExportChromeTraceJson(json);
+    return json;
+}
+
+bool tryExportChromeTraceJson(std::string& outJson) {
     const std::lock_guard<std::mutex> lock(g_exportMutex);
 
     char header[192];
@@ -1527,6 +1552,7 @@ std::string exportChromeTraceJson() {
     std::string json = header;
     const u32 count = eventCount();
     bool first = true;
+    bool exportedAny = false;
 
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
@@ -1684,15 +1710,18 @@ std::string exportChromeTraceJson() {
             json += formatCounterArgsJson(event);
             json += '}';
             first = false;
+            exportedAny = true;
             continue;
         }
         }
         json += buffer;
         first = false;
+        exportedAny = true;
     }
 
     json += "]}";
-    return json;
+    outJson = std::move(json);
+    return exportedAny;
 }
 
 bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason) {

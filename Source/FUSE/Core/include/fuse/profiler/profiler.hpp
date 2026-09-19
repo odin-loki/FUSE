@@ -327,6 +327,7 @@ u32 eventCount();
 u32 ringCapacity();
 u32 droppedEventCount();
 u32 ringBufferCapacity();
+u32 exportableEventCount();
 u32 maxNestingDepth();
 u32 nestingDepth();
 u32 maxFlowNestingDepth();
@@ -436,7 +437,6 @@ bool hasInvalidNameEvents();
 u32 exportableEventCount();
 bool isEventExportable(u32 index);
 u32 firstEventIndex();
-bool isValidProfileName(const char* name);
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
 bool hasOpenAsyncFlows();
@@ -446,7 +446,6 @@ ChromeTraceExportPreflight preflightChromeTraceExport();
 [[nodiscard]] inline bool isValidProfileName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
-bool isValidEventName(const char* name);
 bool tryValidateEventName(const char* name, EventNameRejectReason& outReason);
 const char* eventNameRejectReasonLabel(EventNameRejectReason reason);
 bool isProfilerStateBalanced();
@@ -477,6 +476,8 @@ bool tryFindFirstEventIndexByFlowId(u32 flowId, u32& outIndex);
 bool tryFindLastEventIndexByFlowId(u32 flowId, u32& outIndex);
 u32 orphanAsyncFlowEndCount();
 bool hasOrphanAsyncFlowEnds();
+bool isValidProfilerName(const char* name);
+bool isValidChromeTraceExport(const std::string& json);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
@@ -725,6 +726,8 @@ inline void sampleCounterSnapshotAtFrameDispatch(const char* track, T value) {
 std::string exportChromeTraceJson();
 /// Guarded export — returns false when `preflightChromeTraceExport` would reject.
 bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason = nullptr);
+/// Export preflight — writes chrome JSON and reports whether any trace events were emitted.
+bool tryExportChromeTraceJson(std::string& outJson);
 
 } // namespace fuse::profiler
 
