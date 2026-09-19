@@ -2849,3 +2849,6 @@ void testResolveSurfaceGuards() {
     expectTrue(!fuse::renderer::taaResolveRejectionSurfacesComplete(desc),
     expectTrue(resolve.wouldSkip(desc, history, &skipReason) ==
                "shouldSkipTaaResolve matches TaaResolve::wouldSkip");
+
+// --- deepen additive from deepen-b59-taa-history-resolve-skip-guards-878f ---
+void testHistoryReusableGuard() {
