@@ -1680,6 +1680,39 @@ void testCookHashPreflightShouldSkipGuards() {
                "combine cache key preflight should_skip for zero source");
 }
 
+void testCookHashShouldSkipGuards() {
+    expectTrue(fuse::project::should_skip_file_content_hash(""),
+               "should_skip rejects empty file path");
+    expectTrue(fuse::project::should_skip_file_content_hash("/tmp/fuse_b79_missing_should_skip.obj"),
+               "should_skip rejects missing file");
+    expectTrue(fuse::project::should_skip_cook_cache_key(0, 42u),
+               "should_skip rejects zero source cache key");
+    expectTrue(!fuse::project::should_skip_cook_cache_key(99u, 42u),
+               "should_skip accepts valid cache key");
+    expectTrue(fuse::project::should_skip_fnv1a64_bytes(nullptr, 4u),
+               "should_skip rejects null bytes with non-zero size");
+    expectTrue(!fuse::project::should_skip_fnv1a64_bytes(nullptr, 0),
+               "should_skip accepts zero-size null bytes");
+    expectTrue(fuse::project::should_skip_combine_cook_cache_key(0, 42u),
+               "should_skip combine rejects zero source");
+    expectTrue(!fuse::project::should_skip_combine_cook_cache_key(99u, 0),
+               "should_skip combine allows zero upstream");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_should_skip_mesh.obj", "# should skip mesh\n");
+    fuse::project::MeshImportDesc mesh;
+    mesh.input_path = source;
+    mesh.output_path = "/tmp/fuse_b79_should_skip_mesh.fusemesh";
+    expectTrue(!fuse::project::should_skip_mesh_import_hash(mesh),
+               "should_skip mesh import ok for readable source");
+    expectTrue(fuse::project::preflight_mesh_import_hash(mesh).should_skip() ==
+                   fuse::project::should_skip_mesh_import_hash(mesh),
+               "should_skip_mesh mirrors preflight struct method");
+
+    fuse::project::CookManifest manifest;
+    expectTrue(fuse::project::should_skip_upstream_dependencies_hash({}, manifest),
+               "should_skip upstream deps rejects empty list");
+}
+
 void testCookCacheInvalidationProbes() {
     expectTrue(!cache.would_invalidate(42u), "would_invalidate on empty cache is false");
     expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_probe.obj"),
@@ -1900,6 +1933,7 @@ void testCookCachePruneReconcileEstimateGuards() {
     expectTrue(!cache.should_skip_prune_reconcile(), "shader stale entry should not skip prune reconcile");
     expectTrue(!estimate.should_skip(), "stale prune estimate should_skip is false");
     expectTrue(!cache.should_skip_prune_reconcile(), "stale cache should_skip_prune_reconcile is false");
+    expectTrue(!estimate.should_skip_prune(), "stale shader entry should not skip prune");
     expectTrue(cache.count_stale_entries() == 1u, "count_stale_entries matches estimate");
     expectTrue(cache.count_prunable_entries() == estimate.total(), "count_prunable matches estimate total");
 
@@ -7651,6 +7685,7 @@ int main() {
     testCookCacheShouldSkipAndWouldInvalidateHelpers();
     testCookCacheWouldInvalidateAndShouldSkipHelpers();
     testCookCacheShouldSkipAndWouldInvalidateGuards();
+    testCookHashShouldSkipGuards();
     testCookCacheInvalidationProbes();
     testCookCacheProbeUniqueStaleUpstreamSources();
     testCookHashPreflightManifestDependencyOutputs();

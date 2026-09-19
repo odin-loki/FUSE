@@ -2007,6 +2007,13 @@ void testCookStaleDependencyHashReconcileEstimate() {
 
     expectTrue(cooker.should_skip_stale_dependency_invalidation(manifest),
                "fresh cache should_skip stale dependency invalidation");
+               "should_skip upstream invalidation for empty changed source");
+               "should_skip upstream invalidation false for seeded source");
+               "would_invalidate upstream dependency true for seeded source");
+               "would_invalidate upstream dependency false for empty source");
+
+               "should_skip stale dependency invalidation on fresh cache");
+               "would_invalidate stale dependency hashes false on fresh cache");
 
     const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
     expectTrue(removed >= upstream_count, "upstream invalidation removes at least probed count");
@@ -3216,6 +3223,7 @@ void testCookerReconcileEstimateProbes() {
                "should_skip_reconcile_invalidation true for fresh estimate");
                "cooker should_skip_reconcile_invalidation on fresh cache");
     expectTrue(cooker.should_skip_prune_reconcile(), "cooker should_skip_prune_reconcile on fresh cache");
+    expectTrue(fresh.should_skip_reconcile(), "fresh cache should_skip reconcile is true");
 
     writeTempFile(source_a, "# reconcile a revised\n");
     const fuse::u32 stale_count = cooker.count_stale_dependency_invalidation(manifest);
@@ -3248,6 +3256,9 @@ void testCookerReconcileEstimateProbes() {
     expectTrue(cooker.would_reconcile_invalidation(manifest) == !stale.should_skip(),
                "would_reconcile_invalidation mirrors estimate should_skip");
                "cooker should_skip_reconcile_invalidation false after upstream change");
+    expectTrue(!stale.should_skip_reconcile(), "stale cache should not skip reconcile");
+    expectTrue(cooker.would_invalidate_stale_dependency_hashes(manifest),
+               "would_invalidate stale dependency hashes true after upstream change");
 
     const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
     expectTrue(removed >= stale_count, "stale dependency invalidation removes at least estimated count");
@@ -4111,6 +4122,7 @@ void testCookCacheDownstreamSourceProbe() {
                "would_invalidate_downstream mirrors count_downstream_of");
                "would_invalidate_downstream_of rejects empty output path");
                "would_invalidate_downstream guarded on empty output path");
+               "would_invalidate_downstream_of guarded on empty output path");
     expectTrue(cooker.cache().probe_downstream_sources("", graph.edges(), graph.jobs()).empty(),
                "empty output path downstream probe is guarded");
     expectTrue(!cooker.cache().would_invalidate_downstream_of("", graph.edges(), graph.jobs()),

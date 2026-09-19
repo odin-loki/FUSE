@@ -175,6 +175,7 @@ struct CookCacheInvalidationSurface {
     /// True when no prune reconcile work is needed — mirrors `total() == 0` (B7.9 deepen).
     /// True when no invalid or stale records would be pruned (B7.9 deepen).
     /// True when prune reconcile should be skipped — no invalid or stale entries (B7.9 deepen).
+    [[nodiscard]] bool should_skip_prune() const { return total() == 0; }
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.

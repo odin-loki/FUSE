@@ -188,6 +188,7 @@ struct CookUpstreamInvalidateEstimate {
     /// True when reconcile invalidation should be skipped — no stale deps or prunable entries (B7.9 deepen).
     /// True when dependency + prune reconcile can be skipped (B7.9 deepen).
     [[nodiscard]] bool would_invalidate() const { return total() != 0; }
+    [[nodiscard]] bool should_skip_reconcile() const { return total() == 0; }
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -560,6 +561,17 @@ public:
     /// Read-only upstream invalidation probe — mirrors `count_upstream_invalidation` (B7.9 deepen).
     /// Read-only stale dependency invalidation probe (B7.9 deepen).
     /// True when stale dependency invalidation would be a no-op (B7.9 deepen).
+
+    /// Non-mutating skip predicates — mirror count/estimate probes (B7.9 deepen).
+    [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
+                                                           const std::string& changed_source) const;
+    [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
+    [[nodiscard]] bool should_skip_prune_reconcile() const;
+    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
+    /// Read-only invalidation probes — true when corresponding `invalidate_*` would remove entries (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_upstream_dependency(const CookManifest& manifest,
+                                                            const std::string& changed_source) const;
+    [[nodiscard]] bool would_invalidate_stale_dependency_hashes(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
