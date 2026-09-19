@@ -2202,3 +2202,40 @@ void testFroxelPreflightGuardsDeepen() {
     expectTrue(populateReason == fuse::renderer::FroxelPopulateRejectReason::EmptyGrid,
     expectTrue(std::strcmp(fuse::renderer::froxelPopulateRejectReasonLabel(populateReason), "empty_grid") == 0,
     testFroxelPreflightGuardsDeepen();
+
+// --- deepen additive from deepen-froxel-volumetric-guards-d18a ---
+void testFroxelPreflightValidateAndLookupReasonGuards() {
+    expectTrue(fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(inBounds, desc, sampleReason),
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(reversed, desc, sampleReason),
+               "tryValidateSampleCoords rejects unordered corners");
+    expectTrue(sampleReason == fuse::renderer::SampleCoordRejectReason::UnorderedCorners,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(sampleReason), "unordered_corners") == 0,
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(anyCoords, zeroDesc, sampleReason),
+               "tryValidateSampleCoords rejects empty grid");
+    fuse::renderer::GridDensityRejectReason gridReason = fuse::renderer::GridDensityRejectReason::None;
+    expectTrue(fuse::renderer::FroxelGridLayout::tryPreflightNonEmptyGrid(desc, gridReason),
+               "tryPreflightNonEmptyGrid succeeds on non-empty grid");
+    expectTrue(gridReason == fuse::renderer::GridDensityRejectReason::None,
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryPreflightNonEmptyGrid(zeroDesc, gridReason),
+               "tryPreflightNonEmptyGrid rejects empty grid");
+    expectTrue(gridReason == fuse::renderer::GridDensityRejectReason::EmptyDesc,
+    expectTrue(std::strcmp(fuse::renderer::gridDensityRejectReasonLabel(gridReason), "empty_desc") == 0,
+    expectTrue(fuse::renderer::froxel_util::tryPreflightDensityGridAccess(grid, desc, gridReason),
+               "tryPreflightDensityGridAccess succeeds on accessible grid");
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightDensityGridAccess(emptyGrid, desc, gridReason),
+               "tryPreflightDensityGridAccess rejects empty storage");
+    expectTrue(gridReason == fuse::renderer::GridDensityRejectReason::UndersizedStorage,
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightDensityGridAccess(grid, zeroDesc, gridReason),
+               "tryPreflightDensityGridAccess rejects empty desc");
+    expectTrue(fuse::renderer::froxel_util::tryValidateGridDensityForDesc(grid, desc, gridReason),
+    expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensityForDesc(grid, mismatched, gridReason),
+    expectTrue(gridReason == fuse::renderer::GridDensityRejectReason::DescMismatch,
+    expectTrue(fuse::renderer::froxel_util::tryValidateGridDensityForDesc(emptyGrid, zeroDesc, gridReason),
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 3u, sampled, lookupReason),
+    expectNear(sampled, 4.25f, 1e-5f, "trySampleDensityAtIndex with reason returns written density");
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtCoord(grid, desc, 1u, 1u, 2u, 5.5f, lookupReason),
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, desc, 1u, 1u, 2u, coordSample, lookupReason),
+    expectNear(coordSample, 5.5f, 1e-5f, "trySampleDensityAtCoord with reason returns written density");
+    expectTrue(!fuse::renderer::froxel_util::tryWriteDensityAtCoord(grid, mismatched, 0u, 0u, 0u, 9.f, lookupReason),
+               "tryWriteDensityAtCoord with reason rejects desc mismatch");
+    testFroxelPreflightValidateAndLookupReasonGuards();

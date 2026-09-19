@@ -1630,3 +1630,13 @@ bool wouldSkipFroxelSample(const FroxelDensityGrid& grid,
                                                                          : ScreenMappingRejectReason::None;
     return !tryCanPopulateFromAnalyticFog(desc, params, reason);
         outReason = FroxelPopulateRejectReason::EmptyGrid;
+
+// --- deepen additive from deepen-froxel-volumetric-guards-d18a ---
+        outReason = SampleCoordRejectReason::UnorderedCorners;
+bool FroxelGridLayout::tryPreflightNonEmptyGrid(const FroxelGridDesc& desc, GridDensityRejectReason& outReason) {
+    return tryValidateSampleCoords(coords, desc, reason);
+    case SampleCoordRejectReason::UnorderedCorners:
+bool tryPreflightDensityGridAccess(const FroxelDensityGrid& grid,
+                                   GridDensityRejectReason& outReason) {
+    if (!FroxelGridLayout::tryPreflightNonEmptyGrid(desc, outReason)) {
+    return tryValidateGridDensityForDesc(grid, desc, reason, epsilon);

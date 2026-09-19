@@ -647,3 +647,8 @@ const char* sampleCoordBoundsRejectReasonLabel(SampleCoordBoundsRejectReason rea
 SampleCoordRejectReason classifyFroxelSampleReject(const FroxelDensityGrid& grid,
 bool wouldSkipFroxelSample(const FroxelDensityGrid& grid,
                          SampleCoordRejectReason* outReason = nullptr);
+
+// --- deepen additive from deepen-froxel-volumetric-guards-d18a ---
+    static bool tryPreflightNonEmptyGrid(const FroxelGridDesc& desc, GridDensityRejectReason& outReason);
+bool tryPreflightDensityGridAccess(const FroxelDensityGrid& grid,
+                                   GridDensityRejectReason& outReason);
