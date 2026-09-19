@@ -2208,3 +2208,21 @@ void testFrictionBasisPreflightRebuildHelpers() {
     testZeroFrictionAndBatchPreflightGuards();
     testManifoldPruneAndFinalizePreflightHelpers();
     testFrictionBasisPreflightRebuildHelpers();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d130 ---
+void testContactPairDeepenPassGuards() {
+    const auto listPreflight =
+    expectTrue(listPreflight.totalPairs == 2u, "pair-list preflight reports total pairs");
+    expectTrue(listPreflight.dispatchableCount == 1u, "pair-list preflight reports dispatchable count");
+    expectTrue(listPreflight.rejectedCount == 1u, "pair-list preflight reports rejected count");
+    expectTrue(listPreflight.can_dispatch(), "pair-list preflight can dispatch mixed list");
+    expectTrue(!listPreflight.can_skip(), "pair-list preflight cannot skip mixed list");
+            fuse::physics::narrowphase::ManifoldPruneRejectReason::Empty,
+            empty, fuse::physics::narrowphase::ManifoldPruneRejectReason::Empty),
+                fuse::physics::narrowphase::ManifoldPruneRejectReason::WouldBeEmpty),
+        fuse::physics::narrowphase::should_skip_manifold_prune(empty),
+        "should_skip_manifold_prune on empty manifold");
+            fuse::physics::narrowphase::ManifoldPruneRejectReason::WouldBeEmpty,
+        fuse::physics::narrowphase::should_skip_manifold_prune(allSeparated),
+        "should_skip_manifold_prune when prune would leave no points");
+    expectTrue(dirtyPreflight.can_skip_prune(), "can_skip_prune true after prune_if_needed");

@@ -647,3 +647,10 @@ bool can_finalize_with_preflight(const ManifoldFinalizePreflight& preflight) {
 
 // --- deepen additive from deepen-b4-narrowphase-guards-c9f2 ---
     if (should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon)) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d130 ---
+    case ManifoldPruneRejectReason::Empty:
+    case ManifoldPruneRejectReason::WouldBeEmpty:
+        return ManifoldPruneRejectReason::Empty;
+        return ManifoldPruneRejectReason::WouldBeEmpty;
+    return !should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
