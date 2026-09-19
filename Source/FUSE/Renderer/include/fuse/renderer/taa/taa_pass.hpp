@@ -142,7 +142,6 @@ public:
     /// True when the next resolve would sample prior history (B5.9 deepen).
     bool resolveWillReuseHistory(const TaaResolveDesc& desc) const;
     /// True when pass jitter slot and monotonic counter match a frame index (B5.9 deepen).
-    bool isJitterSyncedToFrameIndex(u32 frameIndex) const;
     TaaHistoryWarmupPreflight preflightHistoryWarmup() const;
     TaaHistoryReusePreflight preflightHistoryReuse(u32 observedGeneration) const;
     TaaHistoryReusePreflight preflightHistoryReuseForDesc(const TaaResolveDesc& desc) const;
@@ -153,6 +152,10 @@ public:
     /// True when pass jitter is aligned to a monotonic frame counter (B5.9 deepen).
     /// Preflight resolve blend weights without mutating history (B5.9 deepen).
     bool preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* out = nullptr) const;
+    /// Classify why pass history reuse would be rejected (B5.9 deepen).
+    TaaHistoryReuseRejectReason classifyHistoryReuseReject(u32 observedGeneration) const;
+    /// Preflight resolve eligibility and blend weights without mutating history (B5.9 deepen).
+    bool preflightResolveBlend(const TaaResolveDesc& desc, TaaResolveBlendPreflight* out = nullptr) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

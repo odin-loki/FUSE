@@ -198,6 +198,37 @@ bool taaHistoryIsReusable(const TaaHistoryBuffer& history, const TaaResolveDesc&
     if (!history.isReady() || !history.hasValidHistory()) {
     return !taaResolveHistoryGenerationIsStale(desc, history);
 
+bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                     TaaBlendWeights* outWeights) {
+    if (!preflightTaaResolve(desc, history)) {
+        return false;
+    }
+
+    const bool firstFrame = !history.hasValidHistory();
+    const TaaBlendWeights weights = computeTaaBlendWeights(firstFrame, desc.params);
+    if (outWeights != nullptr) {
+        *outWeights = weights;
+    }
+    return taaBlendWeightsValid(weights);
+}
+
+bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveBlendPreflight* out) {
+    TaaResolveBlendPreflight snapshot{};
+    snapshot.resolve_skip_reason = classifyTaaResolveSkip(desc, history);
+    snapshot.resolve_would_pass = !taaResolveSkipReasonIsBlocking(snapshot.resolve_skip_reason);
+
+    const bool firstFrame = !history.hasValidHistory();
+    snapshot.weights = computeTaaBlendWeights(firstFrame, desc.params);
+    snapshot.blend_weights_valid = taaBlendWeightsValid(snapshot.weights);
+    snapshot.history_blend_allowed = taaHistoryBlendAllowed(firstFrame, history);
+
+    if (out != nullptr) {
+        *out = snapshot;
+    }
+    return snapshot.passes();
+}
+
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanAccumulate(history)) {
         return TaaResolveSkipReason::HistoryNotReady;

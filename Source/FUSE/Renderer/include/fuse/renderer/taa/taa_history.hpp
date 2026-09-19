@@ -24,6 +24,8 @@ public:
     /// True when ping-pong targets are allocated and history is warm enough to sample (B5.9 deepen).
     bool canReadForResolve() const { return m_ready && m_validity.hasValidHistory; }
     bool canReuseHistory() const { return m_ready && m_validity.hasValidHistory; }
+    /// True when the read target is ready, warmed, and bound (B5.9 deepen).
+    bool hasReadableHistory() const;
     /// True until the first successful resolve warms the ping-pong targets.
     bool needsWarmup() const { return !m_validity.hasValidHistory; }
     /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).

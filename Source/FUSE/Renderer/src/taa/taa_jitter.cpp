@@ -126,6 +126,10 @@ bool TaaJitterLayout::canComputeNdcOffset(u32 width, u32 height) {
     return validateViewportDimensions(width, height);
 }
 
+bool TaaJitterLayout::canSyncToFrameIndex(u32 sequenceLength) {
+    return validateSequenceLength(sequenceLength);
+}
+
 u32 TaaJitterLayout::sequencePeriod(u32 sequenceLength) {
     return validateSequenceLength(sequenceLength) ? sequenceLength : 0u;
 }
@@ -269,6 +273,11 @@ bool TaaJitter::canProvideNdcOffset(u32 width, u32 height) const {
     return TaaJitterLayout::canComputeNdcOffset(width, height);
 }
 
+bool TaaJitter::isSyncedToFrameIndex(u32 frameIndex) const {
+    return m_monotonicFrame == frameIndex &&
+           m_index == TaaJitterLayout::frameIndexInSequence(frameIndex, m_sequenceLength);
+}
+
 void TaaJitter::advance() {
     ++m_monotonicFrame;
     m_index = TaaJitterLayout::frameIndexInSequence(m_monotonicFrame, m_sequenceLength);
@@ -320,6 +329,33 @@ TaaJitterSyncPreflight preflightTaaJitterSync(const TaaJitter& jitter, u32 frame
 
 bool TaaJitter::slotMatchesMonotonicFrame() const {
     return TaaJitterLayout::monotonicFrameMatchesSlot(m_monotonicFrame, m_index, m_sequenceLength);
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason) {
+    switch (reason) {
+    case TaaJitterSyncRejectReason::None:
+        return "none";
+    case TaaJitterSyncRejectReason::InvalidSequence:
+        return "invalid_sequence";
+    case TaaJitterSyncRejectReason::InvalidViewport:
+        return "invalid_viewport";
+    case TaaJitterSyncRejectReason::FrameIndexMismatch:
+        return "frame_index_mismatch";
+    return "unknown";
+
+bool taaJitterSlotMatchesFrame(u32 frameIndex, u32 slot, u32 sequenceLength) {
+    return TaaJitterLayout::frameIndexInSequence(frameIndex, sequenceLength) == slot;
+
+bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height,
+                            TaaJitterSyncRejectReason* reason) {
+    if (!jitter.canAdvance()) {
+        if (reason != nullptr) {
+            *reason = TaaJitterSyncRejectReason::InvalidSequence;
+        return false;
+    if (!jitter.canProduceNdcOffset(width, height)) {
+            *reason = TaaJitterSyncRejectReason::InvalidViewport;
+    if (!jitter.isSyncedToFrameIndex(frameIndex)) {
+            *reason = TaaJitterSyncRejectReason::FrameIndexMismatch;
+        *reason = TaaJitterSyncRejectReason::None;
+    return true;
 }
 
 } // namespace fuse::renderer
