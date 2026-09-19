@@ -1206,3 +1206,10 @@ IslandContactImpulseGraphPreflight preflight_contact_impulse_graph(
 bool should_skip_contact_impulse_graph(const ContactIslandGraph& graph,
 bool should_skip_contact_impulse_island(const ContactIslandGraph::Island& island,
 bool should_skip_contact_impulse_island_index(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-f8cf ---
+struct IslandDispatchJobPreflight {
+IslandDispatchJobPreflight preflight_dispatch_island_job(const IslandSolveJob& job, f32 dt);
+bool should_skip_dispatch_island_job(const IslandSolveJob& job, f32 dt);
+bool should_skip_warm_start_contact_impulses_island(const ContactIslandGraph::Island& island);
+bool should_skip_warm_start_contact_impulses_island_index(const ContactIslandGraph& graph, u32 islandIndex);

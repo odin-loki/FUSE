@@ -1991,3 +1991,13 @@ bool should_skip_contact_impulse_graph(const ContactIslandGraph& graph,
 bool should_skip_contact_impulse_island(const ContactIslandGraph::Island& island,
 bool should_skip_contact_impulse_island_index(const ContactIslandGraph& graph,
     const IslandContactImpulseGraphPreflight preflight = preflight_contact_impulse_graph(graph, contacts, dt);
+
+// --- deepen additive from deepen-pbd-island-guards-f8cf ---
+IslandDispatchJobPreflight preflight_dispatch_island_job(const IslandSolveJob& job, f32 dt) {
+    IslandDispatchJobPreflight preflight{};
+    preflight.emptyJob = should_skip_island_solve_job(job);
+bool should_skip_dispatch_island_job(const IslandSolveJob& job, f32 dt) {
+    const IslandDispatchJobPreflight preflight = preflight_dispatch_island_job(job, dt);
+bool should_skip_warm_start_contact_impulses_island(const ContactIslandGraph::Island& island) {
+bool should_skip_warm_start_contact_impulses_island_index(const ContactIslandGraph& graph, u32 islandIndex) {
+    return should_skip_warm_start_island_index(graph, islandIndex);

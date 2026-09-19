@@ -3231,3 +3231,20 @@ void testPreflightIslandContactImpulsesByIndex() {
     expectTrue(constrainedPreflight.can_warm_start(), "index impulse preflight can warm-start constrained island");
     testPreflightIslandContactImpulsesGuards();
     testPreflightIslandContactImpulsesByIndex();
+
+// --- deepen additive from deepen-pbd-island-guards-f8cf ---
+void testPreflightDispatchIslandJobGuards() {
+    const IslandDispatchJobPreflight invalidPreflight = preflight_dispatch_island_job(invalid, 1.f / 60.f);
+    expectTrue(invalidPreflight.emptyJob, "default job preflight marks empty job");
+    expectTrue(should_skip_dispatch_island_job(invalid, 1.f / 60.f),
+               "should_skip_dispatch_island_job on default job");
+        const IslandDispatchJobPreflight preflight = preflight_dispatch_island_job(job, 1.f / 60.f);
+        const IslandDispatchJobPreflight invalidDt = preflight_dispatch_island_job(job, 0.f);
+    expectTrue(constrainedPreflight.impulseCoverage == 1u, "impulse preflight counts warm impulses");
+        expectTrue(should_skip_warm_start_contact_impulses_island(island),
+                   "should_skip_warm_start_contact_impulses_island on empty island");
+    const IslandContactImpulseGraphPreflight graphPreflight =
+    expectTrue(!graphPreflight.skipped, "graph impulse preflight does not skip when impulses exist");
+               "should_skip false when impulse islands exist");
+               "should_skip impulse graph warm-start on empty graph");
+    testPreflightDispatchIslandJobGuards();
