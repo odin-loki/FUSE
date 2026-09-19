@@ -258,3 +258,6 @@ const char* contact_pair_preflight_reason_name(const ContactPairPreflight& prefl
 struct ManifoldFinalizePreflight {
     bool wouldBeEmptyAfterPrune = false;
 ManifoldFinalizePreflight preflight_finalize_contact_manifold(const ContactManifold& manifold);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-e063 ---
+    bool rejected() const { return reason != ContactPairRejectReason::None; }

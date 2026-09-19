@@ -288,3 +288,6 @@ inline ContactManifold invalidContactManifold() {
         const ManifoldPrunePreflight& preflight,
 ManifoldPrunePreflight preflight_manifold_prune_ex(
 bool can_skip_manifold_prune(const ManifoldPrunePreflight& preflight);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-e063 ---
+bool should_skip_manifold_finalize(

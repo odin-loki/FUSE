@@ -1877,3 +1877,30 @@ void testManifoldPruneDeepenPreflightGuards() {
     expectTrue(stalePreflight.needs_rebuild(), "friction preflight needs rebuild when stale");
     testContactPairDeepenPreflightGuards();
     testManifoldPruneDeepenPreflightGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-e063 ---
+void testContactPairRejectBreakdownGuards() {
+        selfBreakdown.reason == fuse::physics::narrowphase::ContactPairRejectReason::SelfPair,
+        triggerBreakdown.reason == fuse::physics::narrowphase::ContactPairRejectReason::BothTriggers,
+    expectTrue(!emptyPreflight.can_finalize(), "finalize preflight rejects empty manifold");
+        fuse::physics::narrowphase::should_skip_manifold_finalize(empty),
+        "should_skip_finalize true for empty manifold");
+    const auto noNormalPreflight = fuse::physics::narrowphase::preflight_manifold_finalize(noNormal);
+    expectTrue(separatedPreflight.wouldBeEmptyAfterPrune, "finalize preflight flags prune-to-empty");
+        !readyPreflight.needs_prune_before_finalize(),
+    const auto dirtyPreflight = fuse::physics::narrowphase::preflight_manifold_finalize(dirty);
+    expectTrue(dirtyPreflight.needs_prune_before_finalize(), "finalize preflight requests prune");
+    expectTrue(dirtyPreflight.can_finalize(), "finalize preflight still allows finalize after prune");
+        fuse::physics::narrowphase::should_skip_friction_basis_rebuild(empty),
+        "should_skip_friction_rebuild true for empty manifold");
+    expectTrue(missingPreflight.missingBasis, "friction preflight flags missing basis");
+    expectTrue(missingPreflight.needs_rebuild(), "friction preflight needs rebuild without basis");
+        !fuse::physics::narrowphase::should_skip_friction_basis_rebuild(needsBuild),
+        "should_skip_friction_rebuild false when basis missing");
+    const auto cachedPreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(needsBuild);
+    expectTrue(cachedPreflight.can_reuse_cached(), "friction preflight reuses valid cached basis");
+        fuse::physics::narrowphase::should_skip_friction_basis_rebuild(needsBuild),
+        "should_skip_friction_rebuild true for cached basis");
+    const auto stalePreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(stale);
+    expectTrue(stalePreflight.staleBasis, "friction preflight flags stale basis");
+    expectTrue(stalePreflight.needs_rebuild(), "friction preflight needs rebuild for stale basis");

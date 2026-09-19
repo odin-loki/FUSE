@@ -637,3 +637,12 @@ const char* contact_pair_preflight_reason_name(const ContactPairPreflight& prefl
 ManifoldFinalizePreflight preflight_finalize_contact_manifold(const ContactManifold& manifold) {
     ManifoldFinalizePreflight preflight{};
     const ManifoldFinalizePreflight preflight = preflight_finalize_contact_manifold(manifold);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-e063 ---
+        breakdown.reason = ContactPairRejectReason::SelfPair;
+        breakdown.reason = ContactPairRejectReason::OutOfRangeBody;
+        breakdown.reason = ContactPairRejectReason::MissingShape;
+        breakdown.reason = ContactPairRejectReason::BothTriggers;
+        breakdown.reason = ContactPairRejectReason::UnsupportedShapePair;
+        breakdown.reason = ContactPairRejectReason::BothStatic;
+        breakdown.reason = ContactPairRejectReason::DegenerateShape;

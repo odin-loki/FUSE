@@ -611,3 +611,8 @@ ManifoldPrunePreflight preflight_manifold_prune_ex(
 bool can_skip_manifold_prune(const ManifoldPrunePreflight& preflight) {
 bool ContactManifold::pruneFromPreflight(
     const ManifoldPrunePreflight& preflight,
+
+// --- deepen additive from b4-narrowphase-deepen-guards-e063 ---
+    preflight.needsPrune = prunePreflight.needs_pruning();
+bool should_skip_manifold_finalize(
+    if (should_skip_manifold_finalize(manifold)) {
