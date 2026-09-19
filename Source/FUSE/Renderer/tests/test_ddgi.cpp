@@ -4383,3 +4383,21 @@ void testDdgiKernelUpdatePreflightGuards() {
                "preflightCacheIndexLookupAtCoord succeeds for valid coord");
     expectTrue(fuse::renderer::ddgi_util::classifyCacheIndexRejectAtCoord(desc, cache.data(), invalidCoord, 8u) ==
                "classifyCacheIndexRejectAtCoord out_of_range_probe_index");
+
+// --- deepen additive from deepen-b56-ddgi-guards-a5ff ---
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeGridSource(desc) ==
+               "wouldSkipProbeGridSource matches shouldSkipProbeGrid");
+               "classifyProbeGridSourceReject not_sampleable for zero spacing");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, 1u, 1u, 1u, 8u),
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, cache.data(), 1u, 1u, 1u, 8u),
+               "wouldSkipCacheIndexLookupAtCoord false for valid cache pointer");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, 99u, 99u, 99u, 8u),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(empty, cache.data(), 0u, 0u, 0u, 8u),
+               "wouldSkipCacheIndexLookupAtCoord true for empty grid");
+    expectTrue(fuse::renderer::ddgi_util::tryValidateCacheIndexAtCoord(desc, 99u, 99u, 99u, 8u, cacheReason),
+               "tryValidateCacheIndexAtCoord succeeds for clampable OOB coord");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateCacheIndexAtCoord(desc, nullptr, 1u, 1u, 1u, 8u, cacheReason),
+               "tryValidateCacheIndexAtCoord rejects null cache");
+               "clampable_sample_coords is not blocking for wouldSkip");
+               "wouldSkipProbeTrilinearSample true for hard OOB sample coords");
+               "preflightProbeBlendKernel reports zero_rays_per_probe reason");

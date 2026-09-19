@@ -3165,3 +3165,12 @@ bool preflightCacheIndexLookupAtCoord(const DDGIDesc& desc,
     const CacheIndexRejectReason reject = classifyCacheIndexRejectAtCoord(desc, cache, coord, cache_count);
     return !preflightCacheIndexLookupAtCoord(desc, cache, coord, cache_count);
 bool wouldClampCacheIndexCoordForLookup(const DDGIDesc& desc, const ProbeGridCoord& coord) {
+
+// --- deepen additive from deepen-b56-ddgi-guards-a5ff ---
+        outReason = ProbeTrilinearSampleRejectReason::ClampableSampleCoords;
+    if (!tryValidateCacheIndex(desc, 0u, cache_count, outReason)) {
+    return tryValidateCacheIndexAtCoord(desc, x, y, z, cache_count, outReason);
+bool wouldSkipCacheIndexLookupAtCoord(const DDGIDesc& desc, u32 x, u32 y, u32 z, u32 cache_count) {
+    return !tryValidateCacheIndexAtCoord(desc, x, y, z, cache_count, reason);
+    return !tryValidateCacheIndexAtCoord(desc, cache, x, y, z, cache_count, reason);
+bool wouldClampCacheIndexLookupCoord(const DDGIDesc& desc, u32 x, u32 y, u32 z) {
