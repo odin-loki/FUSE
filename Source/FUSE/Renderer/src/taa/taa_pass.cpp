@@ -63,6 +63,10 @@ bool TaaPass::currentJitterNdcIfReady(fuse::math::Vec2& out) const {
     return m_jitter.currentNdcOffsetIfReady(m_desc.width, m_desc.height, out);
 }
 
+bool TaaPass::currentJitterPixelOffsetIfReady(fuse::math::Vec2& out) const {
+    return m_jitter.currentPixelOffsetIfReady(out);
+}
+
 void TaaPass::advanceJitter() {
     m_jitter.advance();
     m_stats.lastJitterNdc = currentJitterNdc();
@@ -112,6 +116,18 @@ bool TaaPass::matchesDimensions(u32 width, u32 height) const {
 
 u32 TaaPass::warmupFramesRemaining() const {
     return m_history.warmupFramesRemaining();
+}
+
+bool TaaPass::historyWarmupComplete() const {
+    return taaHistoryWarmupComplete(m_history);
+}
+
+bool TaaPass::shouldSkipHistoryWarmup() const {
+    return shouldSkipTaaHistoryWarmup(m_history);
+}
+
+bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason) const {
+    return preflightTaaHistoryWarmup(m_history, reason);
 }
 
 bool TaaPass::canReuseHistory() const {
@@ -169,6 +185,31 @@ bool TaaPass::shouldSkipResolveBlend(const TaaResolveDesc& desc) const {
 
 bool TaaPass::preflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason* reason) const {
     return preflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), reason);
+}
+
+bool TaaPass::shouldSkipJitterSync(u32 frameIndex) const {
+    return shouldSkipTaaJitterSync(frameIndex, m_jitter.sequenceLength());
+}
+
+bool TaaPass::preflightJitterNdc(TaaJitterGuardRejectReason* reason) const {
+    return preflightTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength(), reason);
+}
+
+bool TaaPass::shouldSkipJitterNdc() const {
+    return shouldSkipTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength());
+}
+
+bool TaaPass::preflightResolveReuseAndBlend(const TaaResolveDesc& desc, u32 observedGeneration,
+                                            TaaResolveReuseBlendRejectReason* reason) const {
+    return preflightTaaResolveReuseAndBlend(desc, m_history, observedGeneration, reason);
+}
+
+bool TaaPass::shouldSkipResolveReuseAndBlend(const TaaResolveDesc& desc, u32 observedGeneration) const {
+    return shouldSkipTaaResolveReuseAndBlend(desc, m_history, observedGeneration);
+}
+
+bool TaaPass::invalidateHistoryIfStale(u32 observedGeneration) {
+    return m_history.invalidateHistoryIfStale(observedGeneration);
 }
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
