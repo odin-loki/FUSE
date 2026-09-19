@@ -30,6 +30,15 @@ u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history) {
     return taaHistoryNeedsWarmup(history) ? 1u : 0u;
 }
 
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return !taaHistoryNeedsWarmup(history);
+}
+
+bool tryCanBeginTemporalReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                              TaaHistoryReuseBlockReason* reason) {
+    return preflightTaaHistoryReuse(history, observedGeneration, reason);
+}
+
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
                               TaaHistoryReuseBlockReason* reason) {
     const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlock(history, observedGeneration);
