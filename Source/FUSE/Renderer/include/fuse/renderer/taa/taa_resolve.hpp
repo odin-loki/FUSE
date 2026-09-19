@@ -34,6 +34,9 @@ public:
     /// Predict whether resolve would bail before history update (does not mutate history).
     bool wouldSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                    TaaResolveSkipReason* reason = nullptr) const;
+    /// Preflight resolve skip and blend-weight guards without mutating history (B5.9 deepen).
+    bool preflightDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                       TaaResolveDescPreflight* result = nullptr) const;
     void resetBookkeeping();
 
     const TaaResolveStats& lastStats() const { return m_stats; }
