@@ -30,6 +30,10 @@ const char* candidate_pair_reject_reason_name(CandidatePairRejectReason reason) 
         return "SelfPair";
     case CandidatePairRejectReason::OutOfRangeBody:
         return "OutOfRangeBody";
+    case CandidatePairRejectReason::AabbSeparated:
+        return "AabbSeparated";
+    case CandidatePairRejectReason::BufferFull:
+        return "BufferFull";
     }
     return "Unknown";
 
@@ -269,6 +273,7 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReasonImpl(
     const u32 maxSpan = params.maxCellSpanPerAxis;
     const u32 maxOccupancy = params.maxCellOccupancy;
     const u32 maxOccupancy = params.maxCellOccupancyCount;
+    const u32 occupancyBudget = use2D ? cellOccupancyBudgetFromSpan2D(maxSpan) : cellOccupancyBudgetFromSpan(maxSpan);
     const CollisionShapeType type = shapeType(shapes, shapeIndex);
 
     if (use2D) {
@@ -439,6 +444,16 @@ bool pairPassesAabbRefine(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return candidatePairRejectReasonImpl({bodyA, bodyB}, bodies, shapes) == CandidateRejectReason::None;
+    const CandidatePairRejectReason indexReason = candidatePairRejectReason(bodyA, bodyB, bodies.count());
+    if (indexReason != CandidatePairRejectReason::None) {
+        return false;
+    }
+
+    const vec3 posA = bodies.positions[bodyA];
+    const vec3 posB = bodies.positions[bodyB];
+    const f32 radiusA = bodyShapeRadius(shapes, bodyA);
+    const f32 radiusB = bodyShapeRadius(shapes, bodyB);
+    return sphereAabbOverlap(posA, radiusA, posB, radiusB);
 }
 
 void runBroadphaseIntoBufferInternal(
@@ -459,6 +474,8 @@ void runBroadphaseIntoBufferInternal(
     const u32 tableSize = normalizedParams.tableSize;
     const SpatialHashParams safeParams = sanitizeSpatialHashParams(params);
     const u32 tableSize = clampTableSize(safeParams.tableSize);
+
+    const u32 tableSize = safeParams.tableSize;
     const u32 bodyCount = bodies.count();
     CellBuckets cells(tableSize);
 
@@ -559,6 +576,17 @@ void refineBroadphasePairsParallelImpl(
         const CandidateRejectReason rejectReason =
             candidatePairRejectReasonImpl({bodyA, bodyB}, bodies, shapes);
         if (rejectReason != CandidateRejectReason::None) {
+        const CandidatePairRejectReason rejectReason = [&]() {
+            const CandidatePairRejectReason indexReason =
+                candidatePairRejectReason(bodyA, bodyB, bodies.count());
+            if (indexReason != CandidatePairRejectReason::None) {
+                return indexReason;
+            }
+            if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
+                return CandidatePairRejectReason::AabbSeparated;
+            return CandidatePairRejectReason::None;
+        }();
+        if (rejectReason != CandidatePairRejectReason::None) {
             buffer.lastRejectReason = rejectReason;
             buffer.invalidateSlot(pairIndex);
         }
@@ -790,6 +818,18 @@ CandidateRejectReason candidatePairRejectReason(
     if (!sphereAabbOverlap(posA, radiusA, posB, radiusB)) {
         return CandidateRejectReason::AabbSeparated;
     return CandidateRejectReason::None;
+CandidatePairRejectReason candidatePairRejectReason(
+    const CandidatePairRejectReason indexReason = candidatePairRejectReason(pair, bodies.count());
+    if (indexReason != CandidatePairRejectReason::None) {
+
+    f32 radiusA = 0.5f;
+    f32 radiusB = 0.5f;
+        if (shapes.bodyIndices[shapeIndex] == pair.bodyA) {
+            radiusA = shapes.params[shapeIndex].x;
+        if (shapes.bodyIndices[shapeIndex] == pair.bodyB) {
+            radiusB = shapes.params[shapeIndex].x;
+        return CandidatePairRejectReason::AabbSeparated;
+    return CandidatePairRejectReason::None;
 }
 
 void refineBroadphasePairsParallel(

@@ -40,6 +40,7 @@ void PairBufferSoA::clear() {
     pairSlotCount = 0;
     droppedCount = 0;
     lastRejectReason = CandidateRejectReason::None;
+    lastRejectReason = CandidatePairRejectReason::None;
     bodyA.resize(0);
     bodyB.resize(0);
     validFlags.resize(0);
@@ -74,6 +75,7 @@ void PairBufferSoA::preparePairSlots(u32 slotCount) {
 
 void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB) {
     if (!preflightPairBufferWriteSlot(*this, slot, idxA, idxB).canWrite()) {
+void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB, u32 bodyCount) {
     if (slot >= pairSlotCount) {
         return;
     }
@@ -83,6 +85,8 @@ void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB) {
         lastRejectReason = rejectReason;
 void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB, u32 bodyCount) {
     if (slot >= pairSlotCount || !isValidCandidatePair(idxA, idxB, bodyCount)) {
+    const CandidatePairRejectReason rejectReason = candidatePairRejectReason(idxA, idxB, bodyCount);
+    if (rejectReason != CandidatePairRejectReason::None) {
         return;
     }
 
@@ -90,6 +94,7 @@ void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB, u32 bodyCount) {
     bodyA[slot] = pair.bodyA;
     bodyB[slot] = pair.bodyB;
     validFlags[slot] = 1u;
+    lastRejectReason = CandidatePairRejectReason::None;
 }
 
 void PairBufferSoA::invalidateSlot(u32 slot) {
@@ -124,6 +129,16 @@ bool PairBufferSoA::wouldRejectPush(u32 idxA, u32 idxB) const {
 
 bool PairBufferSoA::push(u32 idxA, u32 idxB) {
     if (!isValidCandidatePair(idxA, idxB)) {
+bool PairBufferSoA::wouldRejectPush(u32 idxA, u32 idxB, u32 bodyCount) const {
+    if (!isValidCandidatePair(idxA, idxB, bodyCount)) {
+        return true;
+    }
+    return isFull();
+
+bool PairBufferSoA::push(u32 idxA, u32 idxB, u32 bodyCount) {
+    const CandidatePairRejectReason rejectReason = candidatePairRejectReason(idxA, idxB, bodyCount);
+    if (rejectReason != CandidatePairRejectReason::None) {
+        lastRejectReason = rejectReason;
         return false;
 
     const PairBufferPushPreflight preflight = preflightPairBufferPush(*this, idxA, idxB);
@@ -140,6 +155,8 @@ bool PairBufferSoA::wouldRejectPush(u32 idxA, u32 idxB, u32 bodyCount) const {
 bool PairBufferSoA::push(u32 idxA, u32 idxB, u32 bodyCount) {
     if (wouldRejectPush(idxA, idxB, bodyCount)) {
         if (isValidCandidatePair(idxA, idxB, bodyCount) && isFull()) {
+        ++droppedCount;
+        lastRejectReason = CandidatePairRejectReason::BufferFull;
         return false;
     }
 
@@ -150,6 +167,7 @@ bool PairBufferSoA::push(u32 idxA, u32 idxB, u32 bodyCount) {
     ++activeCount;
     pairSlotCount = activeCount;
     lastRejectReason = CandidateRejectReason::None;
+    lastRejectReason = CandidatePairRejectReason::None;
     return true;
 }
 
@@ -413,22 +431,26 @@ u32 PairBufferSoA::countValidSlots() const {
     return validCount;
 }
 
+bool PairBufferSoA::hasInvalidSlots() const {
+    if (canSkipSoAIteration()) {
+        return false;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool PairBufferSoA::canSkipCompaction() const {
     if (canSkipSoAIteration()) {
         return true;
     }
 
-    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
-    if (scanCount == 0u) {
-        return true;
-    }
-
-    for (u32 slot = 0; slot < scanCount; ++slot) {
-        if (validFlags[slot] == 0u) {
-            return false;
-        }
-    }
-    return true;
+    return !hasInvalidSlots();
 }
 
 bool PairBufferSoA::slotIsValid(u32 slot) const {
