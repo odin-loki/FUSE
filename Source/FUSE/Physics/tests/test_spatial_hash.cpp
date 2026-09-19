@@ -3891,3 +3891,7 @@ void testMergePairsIntoBufferCapacityPreflightGuards() {
     testCellOccupancyPreflightRemainingBudgetGuards();
     testRefineAndDedupePreflightCountGuards();
     testMergePairsIntoBufferCapacityPreflightGuards();
+
+// --- deepen additive from b4-broadphase-deepen-guards-5f81 ---
+void testRefineInvalidateSlotPreflightGuards() {
+    testRefineInvalidateSlotPreflightGuards();
