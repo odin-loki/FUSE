@@ -4464,3 +4464,16 @@ void testChromeTraceExportPreflightExportableOnly() {
     expectTrue(guardedPreflight.canExportWithEvents(),
     expectTrue(guardedPreflight.eventCount == validPreflight.eventCount,
     testChromeTraceExportPreflightExportableOnly();
+
+// --- deepen additive from deepen-b16-profiler-name-flow-lookup-0de5 ---
+void testExportableEventIndexGuard() {
+               "tryLastExportableEvent copies last scope end phase");
+void testActiveScopeAndFlowNestingGuards() {
+    expectTrue(fuse::profiler::tryFirstEventByName("name_lookup_inner", outEvent),
+    expectTrue(fuse::profiler::tryLastEventByName("name_lookup_outer", outEvent),
+               "tryLastEventByName succeeds for outer end");
+               "tryLastEventByName copies outer end phase");
+    expectTrue(fuse::profiler::tryFirstEventByFlowId(outerFlowId, outEvent),
+               "tryFirstEventByFlowId succeeds for outer start");
+    expectTrue(fuse::profiler::tryLastEventByFlowId(innerFlowId, outEvent),
+               "tryLastEventByFlowId succeeds for inner finish");
