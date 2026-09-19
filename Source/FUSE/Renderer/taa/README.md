@@ -24,6 +24,9 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaJitter` honours `TaaJitterDesc::sequence_length` (default 8) when advancing and wrapping
 - `TaaJitter::syncToFrameIndex(frame)` — align jitter state to a wrapped monotonic frame counter
 - `TaaJitter::monotonicFrameIndex()` — monotonic frame counter incremented by `advance`, set by `syncToFrameIndex`
+- `shouldSkipTaaJitterSync` / `shouldSkipTaaJitterNdc` — early-out when jitter sync/NDC preflight would reject
+- `tryPreflightTaaJitterNdc` — NDC jitter preflight with mandatory reject-reason output
+- `TaaJitter::shouldSkipSyncToFrameIndex` / `shouldSkipNdcOffset` — instance-level jitter skip helpers
 
 ## History validity (B5.9 deepen)
 
@@ -49,6 +52,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `taaResolveBypassesHistoryGenerationGuard(desc)` — true when `observed_history_generation` uses the no-guard sentinel
 - `taaResolveSkipReasonIsBlocking(reason)` — true when resolve would bail before history update
 - `stampObservedHistoryGeneration(desc, history)` — fill observed generation from history when sentinel is set
+- `TaaTemporalGuardRejectReason` / `classifyTaaTemporalGuardReject` — combined history-reuse + blend-weight guard classification
+- `preflightTaaTemporalResolve` / `tryPreflightTaaTemporalResolve` / `shouldSkipTaaTemporalResolve` — chained temporal resolve preflight
 - `TaaResolve::wouldSkip(desc, history, &reason)` — preflight skip check without mutating history
 - `TaaResolve::resetBookkeeping()` — clears resolve stats/message (called on `TaaPass::destroy` / `invalidateHistory`)
 - `TaaPass::invalidateHistory()` — clears history validity and resolve bookkeeping without destroying buffers
@@ -59,6 +64,9 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::historyInvalidateGeneration()` — current history invalidate epoch
 - `TaaPass::stampObservedHistoryGeneration(desc)` — stamp observed generation from pass history
 - `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter
+- `TaaPass::preflightTemporalResolve` / `shouldSkipTemporalResolve` — pass-level chained temporal resolve preflight
+- `TaaPass::preflightJitterNdc` / `shouldSkipJitterSync` / `shouldSkipJitterNdc` — pass-level jitter skip/preflight helpers
+- `TaaPass::invalidateHistoryIfStale(observedGeneration)` — invalidate when observed epoch differs; resets resolve bookkeeping
 
 ## Pipeline (stub)
 
