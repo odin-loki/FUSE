@@ -1435,3 +1435,7 @@ AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 flowId) {
 
 // --- deepen additive from deepen-b16-profiler-guards-52e0 ---
 AsyncFlowPreflight preflightAsyncFlow() {
+
+// --- deepen additive from deepen-b16-profiler-name-flow-lookup-7ab9 ---
+bool tryFindExportableEventByName(const char* name, ProfileEvent& outEvent) {
+bool tryFindExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {

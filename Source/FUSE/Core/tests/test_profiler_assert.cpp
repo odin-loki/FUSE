@@ -4708,3 +4708,29 @@ void testAsyncFlowPreflightCrossThreadHandoff() {
     expectTrue(fuse::profiler::tryFirstEventByName("valid_after_empty_lookup", scopeEvent),
     testScopeNestingPreflightGuard();
     testAsyncFlowPreflightCrossThreadHandoff();
+
+// --- deepen additive from deepen-b16-profiler-name-flow-lookup-7ab9 ---
+void testTryFindExportableEventByNameAndFlowIdGuard() {
+    expectTrue(!fuse::profiler::tryFindExportableEventByName(nullptr, outEvent),
+               "tryFindExportableEventByName false for null name");
+               "tryFindExportableEventByName clears output for null name");
+    expectTrue(!fuse::profiler::tryFindExportableEventByFlowId(0u, outEvent),
+               "tryFindExportableEventByFlowId false for zero flow id");
+               "tryFindExportableEventByFlowId clears output for zero flow id");
+    expectTrue(fuse::profiler::tryFindExportableEventByName("try_lookup_scope", outEvent),
+               "tryFindExportableEventByName true for recorded scope");
+               "tryFindExportableEventByName copies scope begin phase");
+    expectTrue(fuse::profiler::tryFindExportableEventByFlowId(flowId, outEvent),
+               "tryFindExportableEventByFlowId true for recorded flow");
+               "tryFindExportableEventByFlowId copies flow start phase");
+    expectTrue(outEvent.scopeId == flowId, "tryFindExportableEventByFlowId preserves flow id");
+void testOrphanFlowEventPreflightGuard() {
+    expectTrue(openPreflight.orphanFlowStartCount == 1u,
+    expectTrue(openPreflight.hasOrphanFlowEvents, "preflight marks orphan flow events");
+    expectTrue(orphanPreflight.orphanFlowStartCount == 1u,
+    expectTrue(orphanPreflight.orphanFlowFinishCount == 1u,
+    expectTrue(orphanPreflight.hasOrphanFlowEvents, "preflight marks orphan finish event");
+void testHasNestingCleanupPendingGuard() {
+    expectTrue(fuse::profiler::tryFindExportableEventByName("valid_lookup_name", counterEvent),
+               "tryFindExportableEventByName succeeds after empty-name attempts");
+    testOrphanFlowEventPreflightGuard();
