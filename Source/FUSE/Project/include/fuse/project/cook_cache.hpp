@@ -172,6 +172,14 @@ struct CookCacheEntryPreflight {
     [[nodiscard]] bool ok() const { return can_store; }
 };
 
+/// Read-only upstream invalidation breakdown — mirrors `invalidate_downstream_of` (B7.9 deepen).
+struct CookCacheUpstreamInvalidationEstimate {
+    u32 direct_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -405,6 +413,7 @@ struct CookCacheInvalidationEstimate {
     return preflight_file_content_hash(entry.source_path);
 
 /// Structural store preflight — mirrors `is_valid_cook_cache_entry` with reject reasons (B7.9 deepen).
+/// Read-only cache-entry hash preflight — paths, key, and on-disk source readability (B7.9 deepen).
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -544,6 +553,10 @@ public:
     [[nodiscard]] u32 count_stale_entries() const;
     /// Entries `invalidate_all` would remove — read-only planning helper (B7.9 deepen).
     [[nodiscard]] CookCacheInvalidationEstimate estimate_invalidate_all_removals() const;
+    /// Upstream invalidation breakdown without mutating stats (B7.9 deepen).
+    [[nodiscard]] CookCacheUpstreamInvalidationEstimate estimate_upstream_invalidation(
+        const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
+        const std::vector<CookJob>& jobs) const;
     /// Prune reconcile breakdown without mutating stats (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_removals() const;
     /// Invalidation reconcile breakdown without mutating stats (B7.9 deepen).
