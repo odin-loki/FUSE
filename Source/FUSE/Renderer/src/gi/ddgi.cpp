@@ -1409,6 +1409,10 @@ bool trySampleCacheAtCoord(const DDGIDesc& desc,
     return trySampleCacheAtIndex(desc, cache, cache_count, index, outIrradiance);
 }
 
+bool isCacheIndexValid(const DDGIDesc& desc, u32 probe_index, u32 cache_count) {
+    return ProbeGridLayout::isValidProbeIndex(desc, probe_index) && probe_index < cache_count;
+}
+
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& /*request*/,
                           u32 cache_count) {
@@ -1821,9 +1825,6 @@ fuse::math::Vec3 trilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
     if (!ProbeGridLayout::buildAndClampProbeSampleCoords(desc, world_position, coords)) {
         return {};
     }
-    if (!ProbeGridLayout::isValidProbeSampleCoords(desc, coords)) {
-        return {};
-    }
 
     const auto sample_probe = [&](u32 x, u32 y, u32 z) -> fuse::math::Vec3 {
         const ProbeGridCoord probe_coord{x, y, z};
@@ -1987,10 +1988,10 @@ bool tryCanLaunchDdgiProbeUpdate(const DDGIDesc& desc,
     }
     if (probe_indices == nullptr) {
         outReason = ProbeUpdateLaunchRejectReason::NullIndices;
-        return false;
-    }
     if (probe_count == 0u) {
         outReason = ProbeUpdateLaunchRejectReason::ZeroCount;
+bool canLaunchDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count) {
+    if (probe_count == 0u || probe_indices == nullptr || ProbeGridLayout::isEmptyGrid(desc)) {
         return false;
     }
 
@@ -1999,20 +2000,16 @@ bool tryCanLaunchDdgiProbeUpdate(const DDGIDesc& desc,
             outReason = ProbeUpdateLaunchRejectReason::OutOfRangeProbeIndex;
             return false;
         }
-    }
 
     outReason = ProbeUpdateLaunchRejectReason::None;
     return true;
-}
 
 bool canLaunchDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count) {
     ProbeUpdateLaunchRejectReason reason = ProbeUpdateLaunchRejectReason::None;
     return tryCanLaunchDdgiProbeUpdate(desc, probe_indices, probe_count, reason);
-}
 
 bool wouldSkipDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count) {
     return !canLaunchDdgiProbeUpdate(desc, probe_indices, probe_count);
-}
 
 bool tryLaunch_ddgi_probe_update(const DDGIDesc& desc,
                                  const u32* probe_indices,
@@ -2020,10 +2017,8 @@ bool tryLaunch_ddgi_probe_update(const DDGIDesc& desc,
                                  void* cuda_stream,
                                  ProbeUpdateLaunchRejectReason& outReason) {
     if (!tryCanLaunchDdgiProbeUpdate(desc, probe_indices, probe_count, outReason)) {
-        return false;
-    }
     return launch_ddgi_probe_update(desc, probe_indices, probe_count, cuda_stream);
-}
+
 
 bool launch_ddgi_probe_update(const DDGIDesc& desc,
                               const u32* probe_indices,
@@ -2180,6 +2175,8 @@ bool preflightProbeBlendKernel(const DDGIKernelParams& params, DdgiKernelLaunchR
 
 
     if (!preflightProbeTraceKernel(params, reason)) {
+
+    return params.probe_update_count > 0u && params.probe_indices_to_update != nullptr;
 
     (void)cuda_stream;
 #if defined(FUSE_HAS_CUDA)

@@ -749,6 +749,8 @@ bool tryCanLaunchDdgiProbeUpdate(const DDGIDesc& desc,
 /// Diagnose why probe-update launch would reject.
 bool preflightDdgiProbeUpdate(const DDGIDesc& desc,
                               DdgiLaunchRejectReason& outReason);
+/// Preflight guard for probe update launch — non-empty grid, non-null indices, in-range probe indices.
+
 /// Host launcher for probe trace + blend kernels — stub until CUDA kernels land.
 bool launch_ddgi_probe_update(const DDGIDesc& desc,
                               const u32* probe_indices,

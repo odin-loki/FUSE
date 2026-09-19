@@ -948,6 +948,7 @@ void testProbeSampleCoordGuards() {
                "tryBuildProbeSampleCoords succeeds for interior sample");
     expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, tryBuilt),
                "tryBuild sample coords pass validity guard");
+    expectTrue(fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, built),
 
     fuse::renderer::ProbeSampleCoords reversed{};
     reversed.x0 = 1u;
@@ -993,6 +994,7 @@ void testProbeSampleCoordGuards() {
                "empty grid sample coords invalid");
     fuse::renderer::ProbeSampleCoords emptyBuilt{};
     expectTrue(!fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(empty, {0.f, 0.f, 0.f}, emptyBuilt),
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryBuildProbeSampleCoords(empty, {0.5f, 0.5f, 0.5f}, built),
                "tryBuildProbeSampleCoords fails on empty grid");
 }
 
@@ -1000,6 +1002,11 @@ void testCacheIndexGuards() {
 
     expectTrue(fuse::renderer::ddgi_util::requiredCacheCount(desc) == 8u,
                "requiredCacheCount matches probeCount");
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+    desc.irradiance_res = 8;
+
+               "requiredCacheCount matches probe count for sampleable grid");
     expectTrue(fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 8u),
                "cache sized at required count");
     expectTrue(!fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 7u),
@@ -1016,6 +1023,8 @@ void testCacheIndexGuards() {
     expectTrue(!fuse::renderer::ddgi_util::isCacheIndexValid(desc, 3u, 2u),
                "in-range probe index rejected when cache undersized");
 
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
     expectTrue(fuse::renderer::ddgi_util::requiredCacheCount(empty) == 0u,
                "requiredCacheCount zero on empty grid");
     expectTrue(!fuse::renderer::ddgi_util::isCacheIndexValid(empty, 0u, 8u),
@@ -1023,6 +1032,11 @@ void testCacheIndexGuards() {
 
 void testLaunchProbeUpdateGuards() {
 void testLaunchProbeUpdateIndexGuard() {
+}
+
+void testLaunchGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
 
     fuse::u32 validIndices[2] = {0u, 7u};
     expectTrue(fuse::renderer::canLaunchDdgiProbeUpdate(desc, validIndices, 2u),
@@ -1956,6 +1970,17 @@ void testDdgiLaunchGuards() {
                "kernel blend preflight rejects zero update count");
     expectTrue(kernelReason == fuse::renderer::gi::DdgiKernelLaunchRejectReason::ZeroUpdateCount,
                "kernel blend reports zero_update_count reason");
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+
+    expectTrue(!fuse::renderer::gi::canLaunchProbeKernels(params),
+               "kernel preflight rejects empty params");
+    params.probe_indices_to_update = validIndices;
+               "kernel preflight accepts non-zero probe list");
+    expectTrue(!fuse::renderer::gi::launch_probe_trace_kernel(params, nullptr),
+               "trace kernel launch rejects null indices");
+    expectTrue(!fuse::renderer::gi::launch_probe_blend_kernel(params, nullptr),
+               "blend kernel launch rejects null indices");
 }
 
 void testSampleGuards() {
@@ -2347,6 +2372,7 @@ int main() {
     testDdgiPreflightDeepenGuards();
     testLaunchProbeUpdateIndexGuard();
     testKernelLaunchGuards();
+    testLaunchGuards();
     testSampleGuards();
     testProbeSampleAndCacheGuards();
     testKernelLaunchGuards();
