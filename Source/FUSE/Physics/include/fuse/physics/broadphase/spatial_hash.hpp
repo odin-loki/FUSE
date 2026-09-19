@@ -2144,6 +2144,7 @@ FUSE_PHYSICS_INLINE CellPairGenRejectReason cellPairGenRejectReason(u32 uniqueOc
 /// Returns true when `cellPairGenRejectReason` matches `expected` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool cellPairGenRejectsForReason(u32 uniqueOccupantCount, CellPairGenRejectReason expected) {
     return cellPairGenRejectReason(uniqueOccupantCount) == expected;
+}
 
 /// Read-only per-cell pair-generation diagnostics — no mutation (B4.2 deepen pass).
 struct CellPairGenPreflight {
@@ -2154,6 +2155,7 @@ struct CellPairGenPreflight {
 
     bool canGenerate() const { return reason == CellPairGenRejectReason::None; }
     u32 pairCount = 0;
+
 
 };
 
@@ -2199,6 +2201,10 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReason(
 
 /// Returns true when `shapeCellInsertRejectReason` matches `expected` (B4.2 deepen pass).
 bool shapeCellInsertRejectsForReason(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
     bool use2D,
     ShapeCellInsertRejectReason expected);
 
@@ -2300,6 +2306,9 @@ bool shouldRunCellCapacityInsert(
     u32 occupancyCount = 0;
 
 
+
+};
+
     u32 shapeIndex,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
@@ -2332,6 +2341,16 @@ bool canSkipCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& r
 bool shouldRunCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy);
 
 bool shouldRunCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy);
+/// Non-mutating shape→cell insert skip predicate — inverse of `canInsert` (B4.2 deepen pass).
+bool canSkipShapeCellInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D);
+
+/// Non-mutating shape→cell insert predicate — mirrors `preflightShapeCellInsert` (B4.2 deepen pass).
+bool shouldRunShapeCellInsert(
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
