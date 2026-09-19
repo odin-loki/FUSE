@@ -1847,7 +1847,7 @@ void testFindEventIndexByNameGuard() {
                "findFirstEventIndexByName locates outer scope begin");
     expectTrue(fuse::profiler::findLastEventIndexByName("name_lookup_outer") == 4u,
                "findLastEventIndexByName locates outer scope end");
-    expectTrue(fuse::profiler::findFirstEventIndexByName("name_lookup_inner") == 1u,
+    expectTrue(fuse::profiler::findFirstEventIndexByName("name_lookup_inner") == 2u,
                "findFirstEventIndexByName locates inner scope begin");
     expectTrue(fuse::profiler::countEventsByName("name_lookup_outer") == 2u,
                "countEventsByName counts paired scope events");
@@ -1979,7 +1979,9 @@ void testEmptyNameAttemptsDoNotAffectNameLookup() {
     expectTrue(fuse::profiler::countEventsByName("") == 0u,
                "countEventsByName returns zero for empty string query");
 
-    FUSE_PROFILE_SCOPE("valid_after_empty_lookup");
+    {
+        FUSE_PROFILE_SCOPE("valid_after_empty_lookup");
+    }
     expectTrue(fuse::profiler::findFirstEventIndexByName("valid_after_empty_lookup") == 0u,
                "name lookup finds valid scope after empty-name attempts");
     expectTrue(fuse::profiler::countEventsByName("valid_after_empty_lookup") == 2u,
