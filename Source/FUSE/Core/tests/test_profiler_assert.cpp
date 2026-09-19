@@ -4506,3 +4506,34 @@ void testPreflightAsyncFlowBeginEndGuard() {
     const fuse::profiler::AsyncFlowBeginPreflight disabledBegin = fuse::profiler::preflightBeginAsyncFlow("disabled");
     testPreflightNestingStateGuard();
     testPreflightAsyncFlowBeginEndGuard();
+
+// --- deepen additive from deepen-b16-profiler-name-flow-guards-2034 ---
+void testIsValidFlowIdGuard() {
+    expectTrue(!fuse::profiler::tryFindFirstExportableEventByName(nullptr, outEvent),
+               "tryFindFirstExportableEventByName false for null name");
+    expectTrue(!fuse::profiler::tryFindFirstExportableEventByFlowId(0u, outEvent),
+               "tryFindFirstExportableEventByFlowId false for invalid flow id");
+    expectTrue(fuse::profiler::tryFindFirstExportableEventByName("lookup_scope", outEvent),
+               "tryFindFirstExportableEventByName succeeds for scope begin");
+    expectTrue(fuse::profiler::tryFindFirstExportableEventByFlowId(flowId, outEvent),
+               "tryFindFirstExportableEventByFlowId succeeds for flow start");
+    expectTrue(!fuse::profiler::tryFindFirstExportableEventByName("missing_track", outEvent),
+               "tryFindFirstExportableEventByName false for missing name");
+void testChromeTraceExportPreflightPairedEventCounts() {
+    expectTrue(!emptyPreflight.hasUnpairedScopeEvents, "empty preflight has paired scope events");
+    expectTrue(!emptyPreflight.hasUnpairedFlowEvents, "empty preflight has paired flow events");
+        expectTrue(activePreflight.scopeEndEventCount == 0u,
+        expectTrue(activePreflight.flowFinishEventCount == 0u,
+        expectTrue(activePreflight.hasUnpairedScopeEvents,
+        expectTrue(activePreflight.hasUnpairedFlowEvents,
+        expectTrue(activePreflight.exportableEventCount == 3u,
+    expectTrue(openFlowPreflight.scopeBeginEventCount == 1u,
+    expectTrue(openFlowPreflight.scopeEndEventCount == 1u,
+    expectTrue(openFlowPreflight.flowStartEventCount == 1u,
+    expectTrue(openFlowPreflight.flowFinishEventCount == 0u,
+    expectTrue(!openFlowPreflight.hasUnpairedScopeEvents,
+    expectTrue(openFlowPreflight.hasUnpairedFlowEvents,
+    expectTrue(closedPreflight.scopeEndEventCount == 1u,
+    expectTrue(!closedPreflight.hasUnpairedScopeEvents,
+    expectTrue(closedPreflight.exportableEventCount == 5u,
+    testChromeTraceExportPreflightPairedEventCounts();

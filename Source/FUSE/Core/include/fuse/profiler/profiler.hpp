@@ -486,3 +486,7 @@ bool wouldSkipFlowIdLookup(u32 flowId);
 // --- deepen additive from b16-profiler-deepen-guards-891a ---
 bool tryFindFirstEventByFlow(u32 flowId, ProfileEvent& outEvent);
 bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent);
+
+// --- deepen additive from deepen-b16-profiler-name-flow-guards-2034 ---
+bool tryFindFirstExportableEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindFirstExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent);
