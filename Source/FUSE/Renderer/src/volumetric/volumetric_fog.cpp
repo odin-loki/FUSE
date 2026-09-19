@@ -1905,3 +1905,6 @@ bool wouldSkipDensityLookupAtIndex(const FroxelDensityGrid& grid, const FroxelGr
         outReason = sampleReason == SampleCoordRejectReason::EmptyGrid
                         ? FroxelTrilinearSampleRejectReason::EmptyGrid
                         : FroxelTrilinearSampleRejectReason::HardOutOfBounds;
+
+// --- deepen additive from deepen-b511-froxel-guards-5875 ---
+    froxel_util::tryCanTrilinearSampleAtCoords(grid, desc, coords, reason);

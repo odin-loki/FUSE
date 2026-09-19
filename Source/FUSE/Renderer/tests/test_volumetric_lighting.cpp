@@ -2821,3 +2821,21 @@ void testFroxelTrilinearAndPreflightDeepenGuards() {
                "zero density skips via tryShouldSkip");
     expectTrue(fuse::renderer::froxel_util::tryShouldSkipFroxelPopulate(desc, badCamera, params, populateReason),
                "invalid camera skips via tryShouldSkip");
+
+// --- deepen additive from deepen-b511-froxel-guards-5875 ---
+    expectTrue(fuse::renderer::classifyDensityLookupReject(grid, desc, 0u) ==
+               "classifyDensityLookupReject returns none for in-range index");
+    expectTrue(fuse::renderer::classifyDensityLookupReject(grid, desc, 999u) ==
+               "classifyDensityLookupReject returns index_out_of_range for OOB index");
+    expectTrue(fuse::renderer::classifyDensityLookupReject(emptyGrid, desc, 0u) ==
+               "classifyDensityLookupReject returns empty_storage for empty grid");
+    expectTrue(fuse::renderer::classifyFroxelTrilinearSampleReject(grid, desc, inBounds) ==
+               "classifyFroxelTrilinearSampleReject returns none for in-bounds coords");
+               "classifySampleCoordReject returns invalid_weights for clampable weights");
+    expectTrue(fuse::renderer::FroxelGridLayout::classifySampleCoordReject(hardOob, desc) ==
+               "classifySampleCoordReject returns out_of_bounds for hard OOB coords");
+               "classifyFroxelPopulateReject returns none for valid inputs");
+    expectTrue(fuse::renderer::classifyFroxelPopulateReject(zeroDesc, camera, params) ==
+               "classifyFroxelPopulateReject returns empty_desc for zero-dimension grid");
+    expectTrue(fuse::renderer::classifyFroxelPopulateReject(desc, badCamera, params) ==
+               "classifyFroxelPopulateReject returns invalid_camera for bad camera");
