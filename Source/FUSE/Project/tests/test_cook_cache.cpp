@@ -1314,3 +1314,10 @@ void testCookCacheWouldInvalidateGuards() {
                "would_invalidate_stale_content true after source change");
     const fuse::project::CookHashPreflight ok = cache.preflight_store_entry(valid);
     expectTrue(cache.preflight_store_entry(invalid).reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+
+// --- deepen additive from deepen-fuse-b79-cooker-hash-54cf ---
+    expectTrue(!cooker.cache().would_invalidate_source(""), "would_invalidate_source guards empty path");
+    expectTrue(!cooker.cache().would_invalidate_output(""), "would_invalidate_output guards empty path");
+void testCookHashPreflightManifestWithUpstream() {
+    const fuse::project::CookHashPreflight with_deps =
+    testCookHashPreflightManifestWithUpstream();
