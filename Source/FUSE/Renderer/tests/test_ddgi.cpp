@@ -2851,3 +2851,21 @@ void testCacheIndexNullCacheGuards() {
     expectTrue(!fuse::renderer::gi::tryLaunch_probe_trace_kernel(nullIndices, nullptr, reason),
                "tryLaunch trace rejects null indices");
                "tryLaunch trace null indices reports null_probe_indices reason");
+
+// --- deepen additive from deepen-b56-ddgi-guards-bfe3 ---
+               "canPreflight succeeds on valid coords");
+    expectTrue(fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(desc, oobWeights, reason),
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(desc, oobIndices, reason),
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(desc, reversed, reason),
+               "trySchedule succeeds with valid outputs");
+    expectTrue(count == 4u, "trySchedule writes expected count");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(8u, indices, 8u, &count),
+    expectTrue(fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 0u, 4u, indices, 8u, &count, reason),
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::NullOutputBuffer,
+    expectTrue(std::strcmp(fuse::renderer::probeScheduleRejectReasonLabel(reason), "null_output_buffer") == 0,
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(8u, indices, 0u, &count),
+               "wouldSkip true for zero max_indices");
+               "wouldSkip false for valid trace params");
+               "wouldSkip false for valid blend params");
+               "wouldSkip true for zero update count");
+               "wouldSkip true for null probe indices");

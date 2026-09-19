@@ -2440,3 +2440,11 @@ bool tryValidateProbeSchedule(u32 probe_count,
     return tryValidateCacheIndex(desc, probe_index, cache, cache_count, reason);
     return tryValidateProbeSchedule(probe_count, max_indices, out_indices, out_count, reason);
     if (!tryValidateProbeSchedule(probe_count, max_indices, out_indices, out_count, outReason)) {
+
+// --- deepen additive from deepen-b56-ddgi-guards-bfe3 ---
+    case ProbeScheduleRejectReason::NullOutputBuffer:
+bool wouldClampProbeIndex(u32 probe_index, const DDGIDesc& desc) {
+    return tryScheduleProbeUpdates(0u, probe_count, 0u, out_indices, max_indices, out_count, reason);
+        outReason = ProbeScheduleRejectReason::NullOutputBuffer;
+bool wouldSkipProbeSchedule(u32 probe_count, u32* out_indices, u32 max_indices, u32* out_count) {
+    if (!tryScheduleProbeUpdates(frame_index,

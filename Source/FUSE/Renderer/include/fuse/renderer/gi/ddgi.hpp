@@ -811,3 +811,7 @@ bool tryProbeWorldPosition(const DDGIDesc& desc,
 
 // --- deepen additive from deepen-b56-ddgi-guards-1017 ---
 bool tryValidateProbeSchedule(u32 probe_count,
+
+// --- deepen additive from deepen-b56-ddgi-guards-bfe3 ---
+bool wouldClampProbeIndex(u32 probe_index, const DDGIDesc& desc);
+bool wouldSkipProbeSchedule(u32 probe_count, u32* out_indices, u32 max_indices, u32* out_count);
