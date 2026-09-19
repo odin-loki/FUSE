@@ -1618,3 +1618,19 @@ bool tryLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
     if (!tryFindLastEventIndexByPhase(phase, index)) {
     return preflightChromeTraceExport().wouldSkipExport();
     return preflightChromeTraceExport().wouldSkipSafeExport();
+
+// --- deepen additive from deepen-b16-profiler-guards-7c9c ---
+EventNameRejectReason classifyEventNameReject(const char* name) {
+    case EventNameRejectReason::ProfilerDisabled:
+    preflight.reason = classifyEventNameReject(name);
+    preflight.valid = preflight.reason == EventNameRejectReason::None;
+        preflight.reason = EventNameRejectReason::ProfilerDisabled;
+bool tryPreflightEventName(const char* name, EventNameRejectReason& reason) {
+    const EventNamePreflight preflight = preflightEventName(name);
+bool tryFindFirstFlowStartById(u32 flowId, ProfileEvent& outEvent) {
+bool tryFindLastFlowFinishById(u32 flowId, ProfileEvent& outEvent) {
+    AsyncFlowPreflight preflight = preflightAsyncFlow();
+    preflight.scopeNesting = preflightScopeNesting();
+    preflight.asyncFlow = preflightAsyncFlow();
+    preflight.wouldSkipInvalidNameExport = preflight.hasInvalidNameEvents;
+bool wouldSkipCounter(const char* name) {

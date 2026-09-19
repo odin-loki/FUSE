@@ -639,3 +639,14 @@ bool wouldSkipChromeTraceExportCleanly();
     bool wouldSkip() const { return !canEnd(); }
 bool tryFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
 bool tryLastEventByPhase(EventPhase phase, ProfileEvent& outEvent);
+
+// --- deepen additive from deepen-b16-profiler-guards-7c9c ---
+    EventNameRejectReason reason = EventNameRejectReason::None;
+    ScopeNestingPreflight scopeNesting{};
+    AsyncFlowPreflight asyncFlow{};
+    bool wouldSkipInvalidNameExport = false;
+EventNameRejectReason classifyEventNameReject(const char* name);
+bool tryPreflightEventName(const char* name, EventNameRejectReason& reason);
+bool tryFindFirstFlowStartById(u32 flowId, ProfileEvent& outEvent);
+bool tryFindLastFlowFinishById(u32 flowId, ProfileEvent& outEvent);
+bool wouldSkipCounter(const char* name);
