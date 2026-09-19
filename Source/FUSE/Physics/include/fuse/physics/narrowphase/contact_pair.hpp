@@ -30,6 +30,9 @@ enum class ContactPairRejectReason : u8 {
     BothZeroInvMass,
     NoColliderDispatch,
     ZeroInvMass,
+    NegativeInverseMass,
+    BothZeroMass,
+    SleepingKinematicMix,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -787,21 +790,15 @@ NarrowphaseBatchPreflight preflight_narrowphase_batch(
 /// Const batch preflight for narrowphase pair dispatch (B4.4 deepen follow-up pass).
 struct ContactPairBatchPreflight {
     u32 totalPairs = 0u;
-/// Const preflight for narrowphase batch dispatch (B4.4 deepen follow-up pass).
-struct NarrowphaseBatchPreflight {
     u32 pairCount = 0u;
     u32 rejectedCount = 0u;
     u32 dispatchableCount = 0u;
-    bool skipped = false;
 
     bool can_dispatch() const { return !skipped && dispatchableCount > 0u; }
-};
 
-/// Populate batch preflight without running shape dispatch (B4.4 deepen follow-up pass).
 ContactPairBatchPreflight preflight_contact_pair_batch(
     bool can_run() const { return !skipped && dispatchableCount > 0u; }
 
-NarrowphaseBatchPreflight preflight_narrowphase_batch(
 /// Per-batch narrowphase pair dispatch counts (B4.5 deepen follow-up).
 struct NarrowphasePairBatchStats {
     u32 dispatchablePairs = 0u;
@@ -862,7 +859,6 @@ struct NarrowphasePreflight {
     NarrowphaseRejectReason reason = NarrowphaseRejectReason::None;
     bool emptyPairList = false;
     bool allPairsRejected = false;
-    u32 totalPairs = 0;
     u32 dispatchablePairs = 0;
     u32 rejectedPairs = 0;
 
@@ -873,13 +869,24 @@ NarrowphasePreflight preflight_narrowphase(
 
 /// Non-mutating narrowphase skip predicate — mirrors `can_skip_narrowphase` (B4.4 deepen follow-up pass).
 bool can_skip_narrowphase_preflight(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// True when at least one pair passes extended deepen preflight (B4.4 deepen follow-up pass).
 bool has_dispatchable_contact_pairs(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
+
+/// Returns true when extended preflight rejects this pair (B4.5 deepen follow-up).
+bool is_invalid_contact_pair_deepen(
+
+/// Inverse of `is_invalid_contact_pair_deepen` (B4.5 deepen follow-up).
+bool is_valid_contact_pair_deepen(
+
+/// Returns true when either body has negative inverse mass (B4.5 deepen follow-up).
+bool is_negative_inverse_mass_pair(
+    const RigidBodySoA& bodies);
+
+/// Returns true when both bodies have non-positive inverse mass (B4.5 deepen follow-up).
+bool is_zero_mass_contact_pair(
+
+/// Returns true when one body is sleeping and the other is kinematic (B4.5 deepen follow-up).
+bool is_sleeping_kinematic_mix_pair(
 
 } // namespace fuse::physics::narrowphase

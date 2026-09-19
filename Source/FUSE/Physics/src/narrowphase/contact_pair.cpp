@@ -245,6 +245,12 @@ const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
         return "NoColliderDispatch";
     case ContactPairRejectReason::ZeroInvMass:
         return "ZeroInvMass";
+    case ContactPairRejectReason::NegativeInverseMass:
+        return "NegativeInverseMass";
+    case ContactPairRejectReason::BothZeroMass:
+        return "BothZeroMass";
+    case ContactPairRejectReason::SleepingKinematicMix:
+        return "SleepingKinematicMix";
     }
     return "Unknown";
 }
@@ -348,6 +354,37 @@ bool is_zero_inv_mass_contact_pair(
     }
     return bodies.invMasses[pair.bodyA] <= invMassEpsilon &&
            bodies.invMasses[pair.bodyB] <= invMassEpsilon;
+}
+
+bool is_negative_inverse_mass_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    return bodies.invMasses[pair.bodyA] < 0.f || bodies.invMasses[pair.bodyB] < 0.f;
+}
+
+bool is_zero_mass_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    return bodies.invMasses[pair.bodyA] <= 0.f && bodies.invMasses[pair.bodyB] <= 0.f;
+}
+
+bool is_sleeping_kinematic_mix_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool sleepingA = (bodies.flags[pair.bodyA] & RB_SLEEPING) != 0u;
+    const bool sleepingB = (bodies.flags[pair.bodyB] & RB_SLEEPING) != 0u;
+    const bool kinematicA = (bodies.flags[pair.bodyA] & RB_KINEMATIC) != 0u;
+    const bool kinematicB = (bodies.flags[pair.bodyB] & RB_KINEMATIC) != 0u;
+    return (sleepingA && kinematicB) || (kinematicA && sleepingB);
 }
 
 bool is_degenerate_shape_pair(
@@ -1313,6 +1350,15 @@ ContactPairRejectReason contact_pair_deepen2_reject_reason(
     if (is_zero_inv_mass_contact_pair(pair, bodies)) {
         return ContactPairRejectReason::ZeroInvMass;
     }
+    if (is_negative_inverse_mass_pair(pair, bodies)) {
+        return ContactPairRejectReason::NegativeInverseMass;
+    }
+    if (is_zero_mass_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothZeroMass;
+    }
+    if (is_sleeping_kinematic_mix_pair(pair, bodies)) {
+        return ContactPairRejectReason::SleepingKinematicMix;
+    }
     return ContactPairRejectReason::None;
 }
 
@@ -1563,6 +1609,28 @@ bool has_dispatchable_contact_pairs(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return count_dispatchable_contact_pairs(pairs, bodies, shapes) > 0u;
+}
+
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected) {
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
+}
+
+bool is_invalid_contact_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+}
+
+bool is_valid_contact_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !is_invalid_contact_pair_deepen(pair, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase

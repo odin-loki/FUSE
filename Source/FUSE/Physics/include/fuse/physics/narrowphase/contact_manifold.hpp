@@ -472,6 +472,27 @@ bool can_skip_manifold_prune(
     f32 shallowMinDepth = 0.f);
 
 /// Const preflight for manifold finalize dispatch (B4.4 deepen pass).
+/// Why manifold finalize would reject (B4.5 deepen follow-up).
+enum class ManifoldFinalizeRejectReason : u8 {
+    None = 0,
+    Empty,
+    InvalidNormal,
+    NoPenetratingPoints,
+    EmptyAfterPrune,
+};
+
+/// Human-readable label for manifold finalize reject reasons (B4.5 deepen follow-up).
+const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason);
+
+/// Diagnose why finalize would reject; vacuously succeeds when finalize may proceed (B4.5 deepen follow-up).
+ManifoldFinalizeRejectReason manifold_finalize_reject_reason(
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Returns true when `manifold_finalize_reject_reason` matches `expected` (B4.5 deepen follow-up).
+bool manifold_finalize_rejects_for_reason(
+    ManifoldFinalizeRejectReason expected,
+
+/// Const preflight for manifold finalize dispatch (B4.4 deepen follow-up).
 struct ManifoldFinalizePreflight {
     bool isEmpty = false;
     bool hasInvalidNormal = false;
@@ -737,6 +758,7 @@ struct ManifoldFinalizeDeepenPreflight {
     bool wouldBeEmptyAfterPrune = false;
     bool needsFrictionBasis = false;
     bool canReuseFrictionBasis = false;
+    ManifoldFinalizeRejectReason rejectReason = ManifoldFinalizeRejectReason::None;
 
     bool can_finalize() const { return !skipped && canFinalize; }
 };
@@ -880,36 +902,31 @@ ManifoldPruneChainPreflight preflight_manifold_prune_chain(
 
 /// Returns true when prune chain would be a no-op (B4.4 deepen follow-up pass).
 bool can_skip_manifold_prune(
-    const ContactManifold& manifold,
-    f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f,
-    f32 shallowMinDepth = 0.f);
 
 /// Prune only when preflight reports work; returns true when points remain (B4.4 deepen follow-up pass).
 bool prune_contact_points_if_needed(
     ContactManifold& manifold,
-    f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f);
 
 /// Combined finalize-chain preflight (prune + generate) (B4.4 deepen follow-up pass).
 struct ManifoldFinalizeChainPreflight {
     ManifoldPruneChainPreflight prune{};
     ManifoldGeneratePreflight generate{};
-    bool skipped = false;
 
     bool can_finalize() const { return !skipped && generate.can_generate(); }
-};
 
 /// Populate finalize-chain preflight without mutating the manifold (B4.4 deepen follow-up pass).
 ManifoldFinalizeChainPreflight preflight_manifold_finalize_chain(
-    const ContactManifold& manifold,
-    f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f,
     f32 shallowMinDepth = 0.f,
     f32 frictionEpsilon = 1e-4f);
 
 /// Finalize only when preflight allows; no-op otherwise (B4.4 deepen follow-up pass).
 bool finalize_contact_manifold_if_needed(ContactManifold& manifold);
+/// Returns true when manifold prune dispatch may be skipped (B4.5 deepen follow-up).
+bool should_skip_manifold_prune(
+
+/// Returns true when in-place prune is safe per preflight (B4.5 deepen follow-up).
+bool can_prune_manifold_in_place(
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

@@ -541,6 +541,11 @@ const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason re
     case ManifoldFinalizeRejectReason::NoPenetratingPoints:
         return "NoPenetratingPoints";
 
+    case ManifoldFinalizeRejectReason::Empty:
+        return "Empty";
+    case ManifoldFinalizeRejectReason::EmptyAfterPrune:
+        return "EmptyAfterPrune";
+
     const ContactManifold& manifold,
     f32 separationEpsilon,
     f32 duplicateEpsilon) {
@@ -586,6 +591,9 @@ bool manifold_finalize_rejects_for_reason(
     const ContactManifold& manifold,
     f32 separationEpsilon,
     f32 duplicateEpsilon) {
+        return ManifoldFinalizeRejectReason::Empty;
+        return ManifoldFinalizeRejectReason::EmptyAfterPrune;
+
 
 ManifoldFinalizePreflight preflight_manifold_finalize(
     const ContactManifold& manifold,
@@ -594,6 +602,7 @@ ManifoldFinalizePreflight preflight_manifold_finalize(
     f32 frictionEpsilon) {
     ManifoldFinalizePreflight preflight{};
     preflight.reason = manifold_finalize_reject_reason(manifold, separationEpsilon, duplicateEpsilon);
+    preflight.rejectReason = manifold_finalize_reject_reason(manifold, separationEpsilon, duplicateEpsilon);
     if (manifold.empty()) {
         return ManifoldFinalizeRejectReason::EmptyManifold;
     }
@@ -647,6 +656,7 @@ ManifoldFinalizePreflight preflight_manifold_finalize(
 
     preflight.canFinalize = true;
     preflight.needsNormalNormalization = !manifold.hasUnitNormal(frictionEpsilon);
+    preflight.rejectReason = ManifoldFinalizeRejectReason::None;
     preflight.canReuseFrictionBasis = can_skip_friction_basis_rebuild(manifold, frictionEpsilon);
     preflight.needsFrictionBasis = needs_friction_basis_refresh(manifold, frictionEpsilon);
 
@@ -1221,10 +1231,6 @@ ManifoldPruneChainPreflight preflight_manifold_prune_chain(
     preflight.wouldBeEmpty = manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon);
 
 bool can_skip_manifold_prune(
-    const ContactManifold& manifold,
-    f32 separationEpsilon,
-    f32 duplicateEpsilon,
-    f32 shallowMinDepth) {
     const ManifoldPrunePreflight preflight =
         preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
     if (preflight.skipped) {
@@ -1232,20 +1238,16 @@ bool can_skip_manifold_prune(
 bool finalize_contact_manifold_if_needed(
     ContactManifold& manifold,
     return preflight.skipped || !preflight.needs_any_pruning(shallowMinDepth);
-}
 
 bool prune_manifold_if_needed(
-    f32 separationEpsilon,
     if (can_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
         return !manifold.empty();
 
     if (preflight.needs_pruning()) {
         if (!manifold.pruneContactPointsIfNeeded(separationEpsilon, duplicateEpsilon)) {
-            return false;
     if (preflight.needs_shallow_pruning(shallowMinDepth)) {
         if (!manifold.pruneShallowPenetrationsIfNeeded(shallowMinDepth)) {
 
-    f32 frictionEpsilon) {
     const ManifoldFinalizePreflight preflight =
         preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
     if (!preflight.can_finalize()) {
@@ -1253,7 +1255,6 @@ bool prune_manifold_if_needed(
     if (preflight.needsPruning) {
             manifold.clear();
 
-    if (!manifold.hasValidNormal()) {
 
     if (preflight.needsNormalNormalization) {
         const f32 normalLength = manifold.contactNormal.length();
@@ -1268,15 +1269,11 @@ bool prune_manifold_if_needed(
 
 bool generate_contact_manifold_deepen(
     f32 shallowMinDepth,
-    if (manifold.empty()) {
 
-    if (shallowMinDepth > 0.f) {
         manifold.pruneShallowPenetrationsIfNeeded(shallowMinDepth);
 
     return finalize_contact_manifold_if_needed(
         manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
-    f32 duplicateEpsilon) {
-        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
     if (preflight.skipped || preflight.reason != ManifoldPruneRejectReason::None) {
         if (preflight.reason == ManifoldPruneRejectReason::AllSeparated) {
     return manifold.pruneContactPointsIfNeeded(separationEpsilon, duplicateEpsilon);
@@ -1287,26 +1284,18 @@ bool finalize_contact_manifold_if_needed(ContactManifold& manifold) {
     return manifold.canSkipPruneContactPoints(separationEpsilon, duplicateEpsilon);
 
 const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason) {
-    switch (reason) {
     case ManifoldFinalizeRejectReason::None:
-        return "None";
     case ManifoldFinalizeRejectReason::EmptyManifold:
-        return "EmptyManifold";
     case ManifoldFinalizeRejectReason::InvalidNormal:
         return "InvalidNormal";
     case ManifoldFinalizeRejectReason::NoPenetratingPoints:
         return "NoPenetratingPoints";
     case ManifoldFinalizeRejectReason::WouldBeEmptyAfterPrune:
-        return "WouldBeEmptyAfterPrune";
-    return "Unknown";
 
 ManifoldFinalizeRejectReason manifold_finalize_reject_reason(
-    const ContactManifold& manifold,
         return ManifoldFinalizeRejectReason::EmptyManifold;
         return ManifoldFinalizeRejectReason::InvalidNormal;
-    if (manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon)) {
         return ManifoldFinalizeRejectReason::WouldBeEmptyAfterPrune;
-    if (!manifold.hasPenetratingPoints(separationEpsilon)) {
         return ManifoldFinalizeRejectReason::NoPenetratingPoints;
     return ManifoldFinalizeRejectReason::None;
 
@@ -1319,10 +1308,7 @@ bool manifold_finalize_rejects_for_reason(
 bool prune_contact_points_if_needed(
 
 ManifoldFinalizeChainPreflight preflight_manifold_finalize_chain(
-    f32 duplicateEpsilon,
     ManifoldFinalizeChainPreflight preflight{};
-        preflight.skipped = true;
-        return preflight;
 
     preflight.prune = preflight_manifold_prune_chain(
         manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
@@ -1330,7 +1316,11 @@ ManifoldFinalizeChainPreflight preflight_manifold_finalize_chain(
         preflight_generate_contact_manifold(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
 
     if (can_skip_generate_contact_manifold(manifold)) {
-    return generate_contact_manifold_if_needed(manifold);
+bool should_skip_manifold_prune(
+    return preflight.skipped || !preflight.needs_pruning();
+
+bool can_prune_manifold_in_place(
+    return preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon).can_prune_in_place();
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

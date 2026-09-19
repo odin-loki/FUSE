@@ -150,7 +150,6 @@ FrictionBasisRejectReason friction_basis_reject_reason(const ContactManifold& ma
 bool friction_basis_rejects_for_reason(
     const ContactManifold& manifold,
     FrictionBasisRejectReason expected);
-/// Why friction-basis rebuild would early-out (B4.4 deepen follow-up pass).
     SkippedManifold,
     ValidCachedBasis,
 
@@ -173,6 +172,15 @@ FrictionBasisRejectReason friction_basis_reject_reason(
 
 /// Diagnose why friction-basis rebuild would skip (B4.4 deepen follow-up pass).
 
+/// Why friction-basis rebuild would reject or skip (B4.5 deepen follow-up).
+    Skipped,
+    MissingNormal,
+
+/// Human-readable label for friction-basis reject reasons (B4.5 deepen follow-up).
+
+/// Diagnose why friction-basis rebuild would skip; vacuously succeeds when rebuild may proceed (B4.5 deepen follow-up).
+
+/// Returns true when `friction_basis_reject_reason` matches `expected` (B4.5 deepen follow-up).
 
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
 struct FrictionBasisPreflight {
@@ -182,6 +190,7 @@ struct FrictionBasisPreflight {
     bool needsNormalNormalize = false;
     bool canReuse = false;
     bool needsRebuild = false;
+    FrictionBasisRejectReason rejectReason = FrictionBasisRejectReason::None;
 
     bool can_skip_rebuild() const {
         return skipped || reason != FrictionBasisRejectReason::None || canReuse;
@@ -478,5 +487,8 @@ bool can_skip_friction_basis_ensure(
 
 /// Rebuild basis using preflight gate; returns false when tangents should be skipped (B4.4 deepen follow-up pass).
 bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Returns true when friction-basis rebuild dispatch may proceed (B4.5 deepen follow-up).
+bool can_dispatch_friction_basis_rebuild(
 
 } // namespace fuse::physics::narrowphase
