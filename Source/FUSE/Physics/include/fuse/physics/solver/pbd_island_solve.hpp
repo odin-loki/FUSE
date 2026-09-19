@@ -1362,3 +1362,10 @@ bool should_skip_solve_sleeping_island(const ContactIslandGraph::Island& island,
 bool should_skip_island_wake_check(const ContactIslandGraph::Island& island,
 IslandSolveCombinedPreflight preflight_island_solve_combined(
 bool should_skip_island_solve_combined(const IslandSolveJob& job,
+
+// --- deepen additive from deepen-pbd-island-guards-3045 ---
+struct IslandBodyRefsPreflight {
+    IslandBodyRefsPreflight bodies{};
+IslandBodyRefsPreflight preflight_island_body_refs(const ContactIslandGraph::Island& island,
+bool should_skip_island_body_refs(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies);
+IslandWakePreflight preflight_island_wake(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies);

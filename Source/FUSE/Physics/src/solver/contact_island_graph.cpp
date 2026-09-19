@@ -331,3 +331,9 @@ IslandBuildRejectReason island_build_reject_reason(
         return IslandBuildRejectReason::NoConstraints;
     preflight.zeroBodies = preflight.reason == IslandBuildRejectReason::ZeroBodies;
     preflight.noConstraints = preflight.reason == IslandBuildRejectReason::NoConstraints;
+
+// --- deepen additive from deepen-pbd-island-guards-3045 ---
+    case IslandBuildRejectReason::OutOfRangeContactBody:
+    case IslandBuildRejectReason::OutOfRangeDistanceBody:
+        return IslandBuildRejectReason::OutOfRangeContactBody;
+        return IslandBuildRejectReason::OutOfRangeDistanceBody;

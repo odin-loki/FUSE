@@ -2201,3 +2201,11 @@ IslandSolveCombinedPreflight preflight_island_solve_combined(
     IslandSolveCombinedPreflight preflight{};
 bool should_skip_island_solve_combined(const IslandSolveJob& job,
     const IslandSolveCombinedPreflight preflight = preflight_island_solve_combined(
+
+// --- deepen additive from deepen-pbd-island-guards-3045 ---
+IslandBodyRefsPreflight preflight_island_body_refs(const ContactIslandGraph::Island& island,
+    IslandBodyRefsPreflight preflight{};
+bool should_skip_island_body_refs(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies) {
+    const IslandSleepPreflight preflight = preflight_island_sleep_state(island, bodies);
+IslandWakePreflight preflight_island_wake(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies) {
+    if (should_skip_island_constraint_solve(island, bodies, contacts, distanceConstraints, dt)) {
