@@ -298,6 +298,7 @@ bool preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason* reason);
 enum class HrtfIrPreflightReject : u8 {
 
 /// Empty-HRTF IR preflight — read-only guard diagnostics before convolution dispatch.
+
     bool ready = false;
     bool skipConvolution = true;
     HrtfIrPreflightReject reject = HrtfIrPreflightReject::None;
@@ -402,6 +403,8 @@ struct HrtfIrPreflight {
 
 
 HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
+
+
 
 
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
@@ -608,6 +611,7 @@ enum class HrtfPanPathPreflightReject : u8 {
     Disabled,
 
 /// HRTF pan-path preflight — read-only routing diagnostics before spatial pan dispatch.
+
     bool skipSpatialPan = true;
     bool skipConvolution = true;
     HrtfPanPathPreflightReject reject = HrtfPanPathPreflightReject::None;
@@ -617,6 +621,12 @@ enum class HrtfPanPathPreflightReject : u8 {
 /// Populate pan-path preflight from HRTF enable flag, IR stub, and listener-local offset.
 
 /// Populate pan-path preflight when no IR is wired.
+};
+
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+                                             const Vec3& rel_listener);
+
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
 
 /// Returns true when pan-path preflight selects a spatial path (ILD/ITD or convolution).
 bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
@@ -1346,9 +1356,6 @@ HrtfAttenuationCouplingPreflight preflightHrtfAttenuationCoupling(
     const BinauralPanParams& params = {});
 
     HrtfAttenuationCouplingRejectReason reject_reason = HrtfAttenuationCouplingRejectReason::None;
-/// Read-only attenuation-coupling diagnostics — no mutation (B7.2 deepen).
-struct HrtfAttenuationCouplingPreflight {
-    bool skipped = false;
     bool bypass_path = false;
     bool unity_attenuation = false;
     float spatial_blend = 1.f;
@@ -1494,14 +1501,12 @@ struct HrtfGuardedPanPreflight {
 HrtfGuardedPanPreflight preflight_hrtf_guarded_pan(bool hrtf_enabled, const HrtfIrStub& ir,
                                                    const Vec3& rel_listener,
                                                    float distance_attenuation, float occlusion_gain,
-                                       float occlusion_gain,
-                                       const HrtfAttenuationCoupling& coupling = {},
-                                       const BinauralPanParams& params = {});
 
 
-    HrtfPanPath path, float distance_attenuation, float occlusion_gain,
-    bool can_narrow() const { return !skipped; }
-};
+
+
+
+
 
 
 
