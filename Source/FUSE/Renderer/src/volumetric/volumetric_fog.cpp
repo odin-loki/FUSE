@@ -2124,3 +2124,24 @@ DensityLookupRejectReason classifyDensityLookupAtCoord(const FroxelDensityGrid& 
     const bool ok = tryCanSampleAtCoords(grid, desc, coords, rejectReason);
 bool preflightDensityAtScreen(const FroxelDensityGrid& grid,
     const bool ok = FroxelGridLayout::tryMapScreenDepthToSampleCoords(
+
+// --- deepen additive from deepen-froxel-b511-guards-2df3 ---
+bool FroxelGridLayout::preflightFroxelSampleCoords(const FroxelSampleCoords& coords,
+bool FroxelGridLayout::preflightFroxelScreenDepth(f32 screenX,
+    case GridDensityRejectReason::NonFiniteDensity:
+    case FroxelCameraRejectReason::InvalidPlanes:
+    case FroxelCameraRejectReason::ZeroScreenDimensions:
+bool froxelCameraRejectReasonIsBlocking(FroxelCameraRejectReason reason) {
+    return reason != FroxelCameraRejectReason::None;
+bool tryValidateFroxelCamera(const FroxelCameraDesc& camera, FroxelCameraRejectReason& outReason) {
+        outReason = FroxelCameraRejectReason::InvalidPlanes;
+        outReason = FroxelCameraRejectReason::ZeroScreenDimensions;
+    return tryValidateFroxelCamera(camera, reason);
+            return FroxelTrilinearSampleRejectReason::EmptyStorage;
+            return FroxelTrilinearSampleRejectReason::DescMismatch;
+        return GridDensityRejectReason::EmptyDesc;
+        return GridDensityRejectReason::UndersizedStorage;
+        return GridDensityRejectReason::DescMismatch;
+        return GridDensityRejectReason::NonFiniteDensity;
+        return GridDensityRejectReason::DensityCountMismatch;
+    return GridDensityRejectReason::None;

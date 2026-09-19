@@ -826,3 +826,9 @@ ScreenMappingRejectReason classifyScreenDensitySampleReject(const FroxelDensityG
 DensityLookupRejectReason classifyDensityLookupAtIndex(const FroxelDensityGrid& grid,
 DensityLookupRejectReason classifyDensityLookupAtCoord(const FroxelDensityGrid& grid,
 bool preflightDensityAtScreen(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-froxel-b511-guards-2df3 ---
+    static bool preflightFroxelSampleCoords(const FroxelSampleCoords& coords,
+    static bool preflightFroxelScreenDepth(f32 screenX,
+bool froxelCameraRejectReasonIsBlocking(FroxelCameraRejectReason reason);
+bool tryValidateFroxelCamera(const FroxelCameraDesc& camera, FroxelCameraRejectReason& outReason);
