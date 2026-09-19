@@ -455,3 +455,9 @@ inline bool try_finalize_contact_manifold(
     const ManifoldFinalizeRejectReason rejectReason =
     if (wouldSkipManifoldPrune(manifold, nullptr, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
     if (wouldSkipManifoldFinalize(manifold, nullptr, separationEpsilon, duplicateEpsilon, frictionEpsilon)) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-6ef0 ---
+FUSE_PHYSICS_INLINE bool would_skip_manifold_prune(
+FUSE_PHYSICS_INLINE bool would_skip_manifold_finalize(
+FUSE_PHYSICS_INLINE bool try_prune_contact_manifold(
+FUSE_PHYSICS_INLINE bool try_finalize_contact_manifold(

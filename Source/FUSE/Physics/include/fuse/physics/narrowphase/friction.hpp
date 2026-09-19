@@ -324,3 +324,16 @@ inline bool tryComputeFrictionTangents(ContactManifold& manifold, f32 epsilon = 
 // --- deepen additive from b4-narrowphase-guards-18a7 ---
 inline void tryComputeFrictionTangents(ContactManifold& manifold, f32 epsilon = 1e-4f) {
     if (!wouldSkipFrictionBasisRebuild(manifold, epsilon)) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-6ef0 ---
+bool would_skip_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+bool would_skip_friction_tangent_build(const ContactManifold& manifold);
+bool try_rebuild_friction_basis(ContactManifold& manifold, f32 epsilon = 1e-4f);
+bool try_compute_friction_tangents(ContactManifold& manifold, f32 epsilon = 1e-4f);
+FUSE_PHYSICS_INLINE bool would_skip_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
+FUSE_PHYSICS_INLINE bool would_skip_friction_tangent_build(const ContactManifold& manifold) {
+    return should_skip_friction_tangents(manifold);
+FUSE_PHYSICS_INLINE bool try_rebuild_friction_basis(ContactManifold& manifold, f32 epsilon) {
+FUSE_PHYSICS_INLINE bool try_compute_friction_tangents(ContactManifold& manifold, f32 epsilon) {
+    if (would_skip_friction_tangent_build(manifold)) {
+    if (!would_skip_friction_basis_rebuild(manifold, epsilon)) {

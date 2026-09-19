@@ -712,3 +712,23 @@ FUSE_PHYSICS_INLINE ContactBufferFrictionBasesPreflight preflightContactBufferFr
     preflight.noValidContacts = preflight.reason == ContactBufferFrictionBasesRejectReason::NoValidContacts;
     return !preflightContactBufferFrictionBases(buffer).canBuild();
     return preflightContactBufferFrictionBases(buffer).canBuild();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-6ef0 ---
+u32 applyContactBufferMaxCapacityClampWithPreflight(ContactBufferSoA& buffer);
+bool buildContactBufferFrictionTangentBasesWithPreflight(ContactBufferSoA& buffer);
+FUSE_PHYSICS_INLINE bool tryWriteContactBufferSlot(
+FUSE_PHYSICS_INLINE u32 compactContactBufferWithPreflight(ContactBufferSoA& buffer) {
+FUSE_PHYSICS_INLINE u32 applyContactBufferMaxCapacityClampWithPreflight(ContactBufferSoA& buffer) {
+FUSE_PHYSICS_INLINE u32 compactAndClampContactBufferWithPreflight(ContactBufferSoA& buffer) {
+    const ContactBufferCompactAndClampPreflight preflight = preflightContactBufferCompactAndClamp(buffer);
+FUSE_PHYSICS_INLINE const char* contactBufferFrictionBasisRejectReasonName(
+    case ContactBufferFrictionBasisRejectReason::NoValidSlots:
+FUSE_PHYSICS_INLINE ContactBufferFrictionBasisRejectReason contactBufferFrictionBasisRejectReason(
+        return ContactBufferFrictionBasisRejectReason::NoValidSlots;
+    return contactBufferFrictionBasisRejectReason(buffer) == expected;
+FUSE_PHYSICS_INLINE ContactBufferFrictionBasisPreflight preflightContactBufferFrictionBasis(
+    preflight.reason = contactBufferFrictionBasisRejectReason(buffer);
+    preflight.noValidSlots = preflight.reason == ContactBufferFrictionBasisRejectReason::NoValidSlots;
+    return !preflightContactBufferFrictionBasis(buffer).needsRebuild();
+    return preflightContactBufferFrictionBasis(buffer).needsRebuild();
+FUSE_PHYSICS_INLINE bool buildContactBufferFrictionTangentBasesWithPreflight(ContactBufferSoA& buffer) {

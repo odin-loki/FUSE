@@ -3773,3 +3773,37 @@ void testWouldSkipTryWrapperGuards() {
     fuse::physics::narrowphase::tryComputeFrictionTangents(needsBasis);
     expectTrue(needsBasis.hasFrictionBasis(), "tryComputeFrictionTangents stores basis");
     testContactBufferSoAPreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-6ef0 ---
+    expectTrue(validWritePreflight.canWrite(), "write-slot preflight allows valid manifold");
+        "tryWriteContactBufferSlot writes valid manifold");
+        "tryWriteContactBufferSlot skips self pair");
+        fuse::physics::narrowphase::tryWriteContactBufferSlot(buffer, 1u, second),
+        "tryWriteContactBufferSlot writes second valid manifold");
+        fuse::physics::narrowphase::compactContactBufferWithPreflight(buffer) == 2u,
+        fuse::physics::narrowphase::applyContactBufferMaxCapacityClampWithPreflight(buffer) == 1u,
+        fuse::physics::narrowphase::buildContactBufferFrictionTangentBasesWithPreflight(buffer),
+            fuse::physics::narrowphase::contactBufferFrictionBasisRejectReasonName(
+                fuse::physics::narrowphase::ContactBufferFrictionBasisRejectReason::NoValidSlots),
+    expectTrue(!emptyPreflight.canDispatch(), "into-buffer preflight rejects empty pair list");
+    expectTrue(emptyPreflight.emptyPairs, "into-buffer preflight flags emptyPairs");
+        !fuse::physics::narrowphase::runNarrowphaseIntoBufferWithPreflight(emptyPairs, bodies, shapes, skippedBuffer),
+        "runNarrowphaseIntoBufferWithPreflight skips empty pair list");
+        fuse::physics::narrowphase::preflightNarrowphaseIntoBuffer(rejectedPairs, bodies, shapes);
+    expectTrue(!rejectedPreflight.canDispatch(), "into-buffer preflight rejects all deepen-rejected pairs");
+    expectTrue(rejectedPreflight.allPairsRejected, "into-buffer preflight flags allPairsRejected");
+            fuse::physics::narrowphase::NarrowphaseIntoBufferRejectReason::AllPairsRejected),
+        "runNarrowphaseIntoBufferWithPreflight runs for valid pair");
+            fuse::physics::narrowphase::narrowphaseIntoBufferRejectReasonName(
+        "would_skip mirrors should_skip for self pair");
+        "would_skip deepen mirrors should_skip for sleeping pair");
+        fuse::physics::narrowphase::would_skip_manifold_prune(clean),
+        "would_skip_manifold_prune true for clean manifold");
+        !fuse::physics::narrowphase::would_skip_manifold_finalize(clean),
+        "would_skip_manifold_finalize false for ready manifold");
+        fuse::physics::narrowphase::would_skip_friction_tangent_build(
+        "would_skip_friction_tangent_build on empty manifold");
+        !fuse::physics::narrowphase::would_skip_friction_basis_rebuild(needsBuild),
+        "would_skip_friction_basis_rebuild false without cached basis");
+        fuse::physics::narrowphase::would_skip_friction_basis_rebuild(needsBuild),
+        "would_skip_friction_basis_rebuild true after build");

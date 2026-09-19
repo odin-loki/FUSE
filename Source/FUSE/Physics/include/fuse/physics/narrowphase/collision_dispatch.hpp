@@ -368,3 +368,12 @@ FUSE_PHYSICS_INLINE NarrowphaseIntoBufferPreflight preflightNarrowphaseIntoBuffe
     return !preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).can_dispatch();
     return preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).can_dispatch();
 FUSE_PHYSICS_INLINE bool runNarrowphaseIntoBufferWithPreflight(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-6ef0 ---
+    bool canDispatch() const { return reason == NarrowphaseIntoBufferRejectReason::None; }
+FUSE_PHYSICS_INLINE const char* narrowphaseIntoBufferRejectReasonName(NarrowphaseIntoBufferRejectReason reason) {
+    case NarrowphaseIntoBufferRejectReason::AllPairsRejected:
+        return NarrowphaseIntoBufferRejectReason::AllPairsRejected;
+    preflight.allPairsRejected = preflight.reason == NarrowphaseIntoBufferRejectReason::AllPairsRejected;
+    return !preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).canDispatch();
+    return preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).canDispatch();

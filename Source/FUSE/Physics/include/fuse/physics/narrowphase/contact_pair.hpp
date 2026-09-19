@@ -517,3 +517,10 @@ inline bool tryGenerateContactManifoldIfNeeded(ContactManifold& manifold) {
 
 // --- deepen additive from b4-narrowphase-guards-18a7 ---
 inline bool wouldSkipNarrowphaseBatch(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-6ef0 ---
+bool try_generate_contact_manifold(ContactManifold& manifold);
+FUSE_PHYSICS_INLINE bool would_skip_contact_pair_dispatch(
+FUSE_PHYSICS_INLINE bool would_skip_contact_pair_deepen_dispatch(
+FUSE_PHYSICS_INLINE bool would_skip_narrowphase_batch(
+FUSE_PHYSICS_INLINE bool try_generate_contact_manifold(ContactManifold& manifold) {
