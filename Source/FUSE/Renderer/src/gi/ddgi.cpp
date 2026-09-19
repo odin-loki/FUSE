@@ -342,6 +342,11 @@ bool ProbeGridLayout::tryValidateProbeSampleCoords(const DDGIDesc& desc,
     return true;
 }
 
+bool ProbeGridLayout::wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    ProbeSampleCoordsRejectReason reason = ProbeSampleCoordsRejectReason::None;
+    return !tryValidateProbeSampleCoords(desc, coords, reason);
+}
+
 bool ProbeGridLayout::tryClampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords) {
     ProbeSampleCoordsRejectReason reason = ProbeSampleCoordsRejectReason::None;
     return tryClampProbeSampleCoords(desc, coords, reason);
@@ -744,6 +749,14 @@ bool tryCanSampleAtProbeCoords(const DDGIDesc& desc,
     return true;
 }
 
+bool wouldSkipTrilinearProbeSampleAtCoords(const DDGIDesc& desc,
+                                           const ProbeSampleCoords& coords,
+                                           const IrradianceCacheEntry* cache,
+                                           u32 cache_count) {
+    ProbeTrilinearSampleRejectReason reason = ProbeTrilinearSampleRejectReason::None;
+    return !tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
+}
+
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               const IrradianceCacheEntry* cache,
                               u32 cache_count,
@@ -760,6 +773,14 @@ bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
     }
     out_irradiance = cache[probe_index].irradiance;
     return true;
+}
+
+bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
+                                    const IrradianceCacheEntry* cache,
+                                    u32 cache_count,
+                                    u32 probe_index) {
+    fuse::math::Vec3 irradiance{};
+    return !tryReadIrradianceAtIndex(desc, cache, cache_count, probe_index, irradiance);
 }
 
 u32 requiredCacheCount(const DDGIDesc& desc) {
@@ -1312,6 +1333,14 @@ bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRej
 bool canLaunchProbeBlendKernel(const DDGIKernelParams& params) {
     ProbeKernelRejectReason reason = ProbeKernelRejectReason::None;
     return tryCanLaunchProbeBlendKernel(params, reason);
+}
+
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeTraceKernel(params);
+}
+
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeBlendKernel(params);
 }
 
 bool tryLaunch_probe_trace_kernel(const DDGIKernelParams& params,
