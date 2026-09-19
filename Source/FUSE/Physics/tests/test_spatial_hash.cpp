@@ -2977,3 +2977,18 @@ void testBroadphaseMergePreflightBodyCounts() {
     testCellOccupancyPreflightBudgetRemaining();
     testRefineBroadphasePreflightValidPairCount();
     testBroadphaseMergePreflightBodyCounts();
+
+// --- deepen additive from deepen-b4-broadphase-guards-1d11 ---
+void testPairBufferCompactAndClampRejectReasonGuards() {
+void testShouldRunPairBufferDedupeGuards() {
+    const fuse::physics::broadphase::MergePairsIntoBufferPreflight emptyPreflight =
+        fuse::physics::broadphase::preflightMergePairsIntoBuffer(emptyPairs, buffer);
+    expectTrue(!emptyPreflight.canMerge(), "empty pairs cannot merge into buffer");
+    expectTrue(emptyPreflight.emptyPairs, "merge preflight marks empty pairs");
+    expectTrue(validPreflight.canMerge(), "valid pairs can merge into empty buffer");
+    const fuse::physics::broadphase::MergePairsIntoBufferPreflight fullPreflight =
+    expectTrue(!fullPreflight.canMerge(), "merge preflight rejects full buffer");
+    expectTrue(fullPreflight.bufferFull, "merge preflight marks buffer full");
+void testMergePairsIntoBufferRejectReasonGuards() {
+    testPairBufferCompactAndClampRejectReasonGuards();
+    testMergePairsIntoBufferRejectReasonGuards();
