@@ -204,6 +204,15 @@ bool can_dispatch_contact_pair(
 struct ContactPairDeepenPreflight {
     ContactPairRejectReason reason = ContactPairRejectReason::None;
     bool rejected = false;
+/// Extended pair reject preflight with per-check flags (B4.5 deepen pass).
+struct ContactPairRejectPreflight {
+    bool selfPair = false;
+    bool outOfRange = false;
+    bool missingShape = false;
+    bool bothTriggers = false;
+    bool unsupportedPair = false;
+    bool bothStatic = false;
+    bool degenerateShape = false;
 
     bool can_dispatch() const { return !rejected; }
 };
@@ -322,6 +331,42 @@ struct ContactManifoldFinalizePreflight {
 
 /// Populate finalize preflight without mutating manifold slots (B4.4 deepen pass).
 ContactManifoldFinalizePreflight preflight_contact_manifold_finalize(
+/// Populate extended pair reject preflight without shape dispatch (B4.5 deepen pass).
+ContactPairRejectPreflight preflight_contact_pair_reject(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Explicit reject predicate mirroring `is_invalid_contact_pair` (B4.5 deepen pass).
+bool should_reject_contact_pair(
+
+/// True when pair indices are in range and distinct (B4.5 deepen pass).
+bool contact_pair_has_valid_indices(
+    const RigidBodySoA& bodies);
+
+/// True when both bodies have collision shapes (B4.5 deepen pass).
+bool contact_pair_has_shapes(
+
+/// Diagnostic reason finalize rejects a manifold (B4.5 deepen pass).
+enum class ManifoldFinalizeRejectReason : u8 {
+    None = 0,
+    Empty,
+    InvalidNormal,
+    NoPenetratingPoints,
+    PruneWouldEmpty,
+};
+
+/// Human-readable label for finalize reject diagnostics (B4.5 deepen pass).
+const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason);
+
+/// Const preflight for finalize dispatch (B4.5 deepen pass).
+    ManifoldFinalizeRejectReason reason = ManifoldFinalizeRejectReason::None;
+    bool rejected = false;
+
+    bool can_finalize() const { return !rejected; }
+
+/// Populate finalize preflight without mutating slots (B4.5 deepen pass).
+ManifoldFinalizePreflight preflight_finalize_contact_manifold(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f);
@@ -369,5 +414,34 @@ bool contact_pair_preflight_matches_reason(
 u32 count_rejected_contact_pairs(
 
 /// Count pairs that pass contact-pair preflight (B4.5 deepen pass).
+/// First finalize reject reason, or `None` when finalize may proceed (B4.5 deepen pass).
+ManifoldFinalizeRejectReason manifold_finalize_reject_reason(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Returns true when finalize should be skipped (B4.5 deepen pass).
+bool should_skip_finalize_contact_manifold(
+
+/// Finalize only when preflight passes; returns false without mutation on reject (B4.5 deepen pass).
+bool generate_contact_manifold_if_needed(ContactManifold& manifold);
+
+/// Combined prune+finalize pipeline preflight (B4.5 deepen pass).
+struct ManifoldPruneFinalizePreflight {
+    ManifoldPrunePreflight prune{};
+    ManifoldFinalizePreflight finalize{};
+    bool skipped = false;
+
+    bool can_finalize_after_prune() const {
+        return !skipped && finalize.can_finalize() &&
+               (!prune.needs_pruning() || !prune.wouldBeEmpty);
+    }
+};
+
+/// Combined prune+finalize preflight without mutation (B4.5 deepen pass).
+ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
+
+/// True when prune should be skipped because the manifold is empty or prune would clear all slots (B4.5 deepen pass).
+bool should_skip_prune_contact_manifold(
 
 } // namespace fuse::physics::narrowphase

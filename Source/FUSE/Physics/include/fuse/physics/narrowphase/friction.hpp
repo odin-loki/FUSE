@@ -286,5 +286,12 @@ struct FrictionBasisRebuildResult {
 /// Rebuild friction basis only when preflight requires it (B4.5 deepen pass).
 FrictionBasisRebuildResult rebuild_friction_basis_guarded(
     ContactManifold& manifold,
+/// Const preflight for friction basis rebuild dispatch (B4.5 deepen pass).
+
+    bool can_skip_rebuild() const { return skipped || canReuse; }
+
+/// Populate friction basis rebuild preflight without mutation (B4.5 deepen pass).
+
+/// Ensure basis is valid; no-op when rebuild can be skipped (B4.5 deepen pass).
 
 } // namespace fuse::physics::narrowphase
