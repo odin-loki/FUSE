@@ -298,7 +298,6 @@ bool ContactManifold::pruneIfEmpty(f32 separationEpsilon, f32 duplicateEpsilon) 
 
 bool ContactManifold::canSkipPruneNonPenetrating(f32 epsilon) const {
     return !hasSeparatedPoints(epsilon);
-}
 
 bool ContactManifold::canSkipPruneDuplicates(f32 positionEpsilon) const {
     return !hasDuplicatePoints(positionEpsilon);
@@ -317,7 +316,6 @@ bool ContactManifold::hasShallowPenetrations(f32 minDepth) const {
 
 bool ContactManifold::pruneContactPointsIfNeeded(f32 separationEpsilon, f32 duplicateEpsilon) {
     if (canSkipPruneContactPoints(separationEpsilon, duplicateEpsilon)) {
-        return !empty();
     return pruneIfEmpty(separationEpsilon, duplicateEpsilon);
 
 bool ContactManifold::canSkipPruneShallowPenetrations(f32 minDepth) const {
@@ -449,6 +447,55 @@ bool should_run_manifold_finalize(
 
 bool can_prune_manifold_in_place(
         .can_prune_in_place();
+void ContactManifold::pruneShallowPenetrationPoints(f32 minPenetration) {
+    u32 writeIndex = 0u;
+    for (u32 readIndex = 0u; readIndex < pointCount; ++readIndex) {
+        if (points[readIndex].penetration < minPenetration) {
+            continue;
+        if (writeIndex != readIndex) {
+            points[writeIndex] = points[readIndex];
+        ++writeIndex;
+
+    for (u32 i = writeIndex; i < pointCount; ++i) {
+        points[i] = {};
+    pointCount = writeIndex;
+    syncLegacyFields();
+
+bool ContactManifold::pruneAndRetainPenetrating(f32 separationEpsilon, f32 duplicateEpsilon) {
+    if (empty()) {
+        clearWarmStartIfEmpty();
+
+void ContactManifold::clearWarmStartIfEmpty() {
+    if (!empty()) {
+        return;
+    warmNormalImpulse = 0.f;
+    warmTangentImpulse = {};
+    frictionBasis = {};
+    valid = false;
+
+namespace {
+
+bool hasDuplicatePoints(
+    if (manifold.pointCount <= 1u) {
+
+    const f32 epsilonSq = duplicateEpsilon * duplicateEpsilon;
+    for (u32 i = 0u; i < manifold.pointCount; ++i) {
+        for (u32 j = i + 1u; j < manifold.pointCount; ++j) {
+            const vec3 delta = manifold.points[i].point - manifold.points[j].point;
+            if (delta.dot(delta) <= epsilonSq) {
+
+} // namespace
+
+bool manifold_needs_prune(
+    u32 maxPoints,
+    f32 shallowPenetration) {
+    if (manifold.pointCount == 0u) {
+    if (manifold.pointCount > maxPoints) {
+    if (hasDuplicatePoints(manifold, duplicateEpsilon)) {
+
+        const f32 penetration = manifold.points[i].penetration;
+        if (penetration < -separationEpsilon) {
+        if (penetration < shallowPenetration) {
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};

@@ -16,6 +16,8 @@ enum class ContactPairRejectReason : u8 {
     OutOfRangeBody,
     MissingShape,
     BothTriggers,
+    BothStatic,
+    BothSleeping,
     UnsupportedShapePair,
     BothStatic,
     DegenerateShape,
@@ -87,29 +89,33 @@ bool is_static_contact_pair(
 
 /// Returns true when both bodies carry `RB_SLEEPING` (B4.4 deepen follow-up).
 bool is_sleeping_contact_pair(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies);
 
 /// Returns true when both bodies carry `RB_KINEMATIC` (B4.4 deepen follow-up).
 bool is_kinematic_contact_pair(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies);
 
 /// Returns true when either body carries `RB_TRIGGER` (B4.4 deepen pass).
 bool is_any_trigger_contact_pair(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies);
 
 /// Returns true when both bodies have non-positive inverse mass (B4.4 deepen pass).
 bool is_massless_contact_pair(
-    const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     f32 invMassEpsilon = 1e-8f);
 
 /// Returns true when either shape has zero or negative extent (B4.3 deepen pass).
 bool is_degenerate_shape_pair(
-    const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes);
+
+/// Returns true when both bodies are static (no dynamic response stub).
+bool is_static_static_pair(
+
+/// Returns true when both bodies are sleeping (solver early-out stub).
+bool is_both_sleeping_pair(
+
+/// Returns true when narrowphase dispatch may proceed for this pair.
+bool contact_pair_should_dispatch(
+
+/// Human-readable label for diagnostics and tests (B4.3 deepen).
+const char* contact_pair_reject_reason_label(ContactPairRejectReason reason);
 
 /// Returns true when the resolved shape types have no narrowphase dispatch path.
 bool is_unsupported_shape_pair(

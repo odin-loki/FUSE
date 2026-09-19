@@ -250,6 +250,7 @@ bool is_trigger_contact_pair(
 }
 
 bool is_static_contact_pair(
+bool is_static_static_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies) {
     if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
@@ -261,6 +262,7 @@ bool is_static_contact_pair(
 }
 
 bool is_sleeping_contact_pair(
+bool is_both_sleeping_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies) {
     if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
@@ -280,44 +282,28 @@ bool is_kinematic_contact_pair(
     const bool kinematicA = (bodies.flags[pair.bodyA] & RB_KINEMATIC) != 0u;
     const bool kinematicB = (bodies.flags[pair.bodyB] & RB_KINEMATIC) != 0u;
     return kinematicA && kinematicB;
-}
 
 bool is_any_trigger_contact_pair(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies) {
-    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
-        return false;
-    }
     const bool triggerA = (bodies.flags[pair.bodyA] & RB_TRIGGER) != 0u;
     const bool triggerB = (bodies.flags[pair.bodyB] & RB_TRIGGER) != 0u;
     return triggerA || triggerB;
-}
 
 bool is_massless_contact_pair(
-    const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     f32 invMassEpsilon) {
-    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
-        return false;
-    }
     return bodies.invMasses[pair.bodyA] <= invMassEpsilon &&
            bodies.invMasses[pair.bodyB] <= invMassEpsilon;
-}
 
 bool is_degenerate_shape_pair(
-    const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes) {
     const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
     const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
     if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
-        return false;
-    }
 
     const CollisionShapeType typeA = shapeType(shapes, shapeA);
     const CollisionShapeType typeB = shapeType(shapes, shapeB);
     return isShapeDegenerate(typeA, shapes.params[shapeA]) ||
            isShapeDegenerate(typeB, shapes.params[shapeB]);
-}
 
 bool is_unsupported_shape_pair(
     const broadphase::CandidatePair& pair,
@@ -397,6 +383,12 @@ ContactPairRejectReason contact_pair_reject_reason(
     if (is_trigger_contact_pair(pair, bodies)) {
         return ContactPairRejectReason::BothTriggers;
     }
+    if (is_static_static_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothStatic;
+    }
+    if (is_both_sleeping_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothSleeping;
+    }
     if (is_unsupported_shape_pair(pair, shapes)) {
         return ContactPairRejectReason::UnsupportedShapePair;
     }
@@ -415,6 +407,31 @@ bool contact_pair_rejects_for_reason(
     const CollisionShapeSoA& shapes,
     ContactPairRejectReason expected) {
     return contact_pair_reject_reason(pair, bodies, shapes) == expected;
+bool contact_pair_should_dispatch(
+    const CollisionShapeSoA& shapes) {
+    return contact_pair_reject_reason(pair, bodies, shapes) == ContactPairRejectReason::None;
+}
+
+const char* contact_pair_reject_reason_label(ContactPairRejectReason reason) {
+    switch (reason) {
+    case ContactPairRejectReason::None:
+        return "none";
+    case ContactPairRejectReason::SelfPair:
+        return "self_pair";
+    case ContactPairRejectReason::OutOfRangeBody:
+        return "out_of_range_body";
+    case ContactPairRejectReason::MissingShape:
+        return "missing_shape";
+    case ContactPairRejectReason::BothTriggers:
+        return "both_triggers";
+    case ContactPairRejectReason::BothStatic:
+        return "both_static";
+    case ContactPairRejectReason::BothSleeping:
+        return "both_sleeping";
+    case ContactPairRejectReason::UnsupportedShapePair:
+        return "unsupported_shape_pair";
+    default:
+        return "unknown";
 }
 
 bool is_invalid_contact_pair(
@@ -457,7 +474,7 @@ bool generate_contact_manifold(ContactManifold& manifold) {
         return false;
     }
 
-    manifold.pruneContactPoints();
+    manifold.pruneAndRetainPenetrating();
     if (manifold.empty()) {
         manifold.clear();
         return false;

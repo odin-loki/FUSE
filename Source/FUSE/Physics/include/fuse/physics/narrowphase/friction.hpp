@@ -2,6 +2,7 @@
 
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
+#include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
 namespace fuse::physics::narrowphase {
@@ -136,21 +137,16 @@ struct FrictionBasisPreflight {
     bool can_skip_rebuild() const {
         return skipped || reason != FrictionBasisRejectReason::None || canReuse;
     }
-};
 
 /// Populate friction-basis preflight without mutating the manifold (B4.4 deepen follow-up).
 FrictionBasisPreflight preflight_friction_basis_rebuild(
-    const ContactManifold& manifold,
     f32 epsilon = 1e-4f);
 
 /// Returns true when friction-basis rebuild should be skipped (B4.4 deepen follow-up).
 bool should_skip_friction_basis_preflight(
-    const ContactManifold& manifold,
-    f32 epsilon = 1e-4f);
 
 /// Returns true when the normal must be normalized before friction-basis rebuild (B4.4 deepen pass).
 bool should_normalize_contact_normal_before_friction(
-    const ContactManifold& manifold,
     f32 lengthEpsilon = 1e-4f);
 
 /// Rebuild friction tangents only when preflight allows; returns false when skipped (B4.5 deepen follow-up pass).
@@ -158,5 +154,19 @@ bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilo
 
 /// Non-mutating friction-basis rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.6 deepen pass).
 bool should_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+/// Returns true when friction response should be skipped for this manifold and coefficients (B4.3 deepen).
+bool should_skip_friction_for_manifold(
+
+/// Combine per-body friction coefficients using geometric-mean stub (B4.3 deepen).
+vec2 combine_body_friction_coefficients(
+    const RigidBodySoA& bodies,
+    u32 bodyA,
+    u32 bodyB);
+
+/// Returns true when the contact normal changed enough to invalidate a cached basis (B4.3 deepen).
+bool should_rebuild_friction_basis(
+    vec3 previousNormal,
+    vec3 currentNormal,
+    f32 angleThresholdRadians = 1e-3f);
 
 } // namespace fuse::physics::narrowphase
