@@ -3040,3 +3040,21 @@ bool GizmoSystem::tryPreflightUpdateDragInteraction(const GizmoHitTest& hit,
 bool GizmoSystem::tryPreflightUpdateDragInteraction(const GizmoHitTest& hit, f32 delta,
 bool GizmoSystem::tryPreflightEndDragInteraction(GizmoEndDragRejectReason& reason) const {
     return fuse::editor::tryPreflightEndDragInteraction(m_dragging, m_activeAxis, m_mode, m_snap,
+
+// --- deepen additive from deepen-gizmo-b6-preflights-8685 ---
+GizmoSnapDragRejectReason classifyUpdateDragInteractionSnapDragReject(
+    return classifySnapDragReject(preflight.snapDrag);
+                                         GizmoUpdateDragRejectReason* dragReason,
+        *dragReason = classifyUpdateDragInteractionReject(preflight);
+        *snapDragReason = classifyUpdateDragInteractionSnapDragReject(preflight);
+                                       GizmoUpdateDragRejectReason& dragReason,
+                                       GizmoSnapDragRejectReason& snapDragReason) {
+bool preflightUpdateDragInteractionSnapDragReady(const GizmoHitTest& hit, bool dragging,
+        *reason = classifyUpdateDragInteractionSnapDragReject(preflight);
+    return fuse::editor::tryPreflightBeginDragInteraction(ray, transform, m_mode, m_space,
+    const GizmoHitTest& hit, f32 delta, GizmoUpdateDragRejectReason* dragReason,
+    const GizmoHitTest& hit, f32 delta, GizmoUpdateDragRejectReason& dragReason,
+    GizmoSnapDragRejectReason& snapDragReason) const {
+bool GizmoSystem::preflightUpdateDragInteractionSnapDragReady(
+    const GizmoHitTest& hit, f32 delta, GizmoSnapDragRejectReason* reason) const {
+    return fuse::editor::preflightUpdateDragInteractionSnapDragReady(hit, m_dragging, m_activeAxis,

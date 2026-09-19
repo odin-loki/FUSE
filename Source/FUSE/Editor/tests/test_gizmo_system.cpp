@@ -4384,3 +4384,35 @@ void testInteractionRejectReasonGuards() {
                "gizmo preflightEndDragInteractionReady accepts active drag");
     expectTrue(gizmo.tryPreflightEndDragInteraction(endReason),
                "gizmo tryPreflightEndDragInteraction accepts active drag");
+
+// --- deepen additive from deepen-gizmo-b6-preflights-8685 ---
+void testBeginDragInteractionRejectReasonGuards() {
+    expectTrue(!fuse::editor::tryPreflightBeginDragInteraction(emptyHit,
+               "tryPreflightBeginDragInteraction rejects empty viewport");
+    const fuse::editor::BeginDragInteractionPreflight validInteraction =
+    expectTrue(fuse::editor::classifyBeginDragInteractionReject(validInteraction) ==
+               "classifyBeginDragInteractionReject maps valid begin");
+               "preflightBeginDragInteractionReady rejects empty ray");
+void testUpdateDragInteractionRejectReasonGuards() {
+    fuse::editor::GizmoUpdateDragRejectReason dragReason =
+    expectTrue(!fuse::editor::tryPreflightUpdateDragInteraction(hit, false,
+               "tryPreflightUpdateDragInteraction rejects inactive drag");
+    expectTrue(dragReason == fuse::editor::GizmoUpdateDragRejectReason::NotDragging,
+    expectTrue(gizmo.tryPreflightUpdateDragInteraction(hit, 0.37f, dragReason, snapDragReason),
+               "gizmo tryPreflightUpdateDragInteraction accepts finite delta");
+    expectTrue(gizmo.preflightUpdateDragInteractionSnapDragReady(hit, 0.37f),
+               "gizmo preflightUpdateDragInteractionSnapDragReady accepts finite delta");
+    expectTrue(!gizmo.preflightUpdateDragInteractionSnapDragReady(
+               "gizmo preflightUpdateDragInteractionSnapDragReady rejects non-finite delta");
+    const fuse::editor::UpdateDragInteractionPreflight nanInteraction =
+    expectTrue(fuse::editor::classifyUpdateDragInteractionSnapDragReject(nanInteraction) ==
+               "classifyUpdateDragInteractionSnapDragReject maps deltaNonFinite flag");
+void testEndDragInteractionRejectReasonGuards() {
+    expectTrue(!fuse::editor::tryPreflightEndDragInteraction(false, fuse::editor::GizmoAxis::None,
+               "tryPreflightEndDragInteraction rejects inactive drag");
+    const fuse::editor::EndDragInteractionPreflight activeInteraction =
+    expectTrue(fuse::editor::classifyEndDragInteractionReject(activeInteraction) ==
+               "classifyEndDragInteractionReject maps active end");
+    testBeginDragInteractionRejectReasonGuards();
+    testUpdateDragInteractionRejectReasonGuards();
+    testEndDragInteractionRejectReasonGuards();

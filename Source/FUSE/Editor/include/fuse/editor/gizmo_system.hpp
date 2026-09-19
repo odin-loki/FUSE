@@ -1302,3 +1302,17 @@ bool tryPreflightEndDragInteraction(bool dragging, GizmoAxis activeAxis, GizmoMo
     [[nodiscard]] bool tryPreflightUpdateDragInteraction(
         const GizmoHitTest& hit, f32 delta, GizmoUpdateDragRejectReason& reason) const;
     [[nodiscard]] bool tryPreflightEndDragInteraction(GizmoEndDragRejectReason& reason) const;
+
+// --- deepen additive from deepen-gizmo-b6-preflights-8685 ---
+GizmoSnapDragRejectReason classifyUpdateDragInteractionSnapDragReject(
+                                         GizmoUpdateDragRejectReason* dragReason = nullptr,
+                                       GizmoUpdateDragRejectReason& dragReason,
+                                       GizmoSnapDragRejectReason& snapDragReason);
+bool preflightUpdateDragInteractionSnapDragReady(const GizmoHitTest& hit, bool dragging,
+    [[nodiscard]] bool tryPreflightBeginDragInteraction(const GizmoRay& ray,
+        const GizmoHitTest& hit, f32 delta, GizmoUpdateDragRejectReason* dragReason = nullptr,
+        const GizmoHitTest& hit, GizmoUpdateDragRejectReason& reason) const;
+        const GizmoHitTest& hit, f32 delta, GizmoUpdateDragRejectReason& dragReason,
+        GizmoSnapDragRejectReason& snapDragReason) const;
+    [[nodiscard]] bool preflightUpdateDragInteractionSnapDragReady(
+        const GizmoHitTest& hit, f32 delta, GizmoSnapDragRejectReason* reason = nullptr) const;
