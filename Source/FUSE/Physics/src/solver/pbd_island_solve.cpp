@@ -2435,3 +2435,50 @@ bool should_skip_island_wake_and_solve_graph(const ContactIslandGraph& graph,
         const IslandWakeAndSolvePreflight preflight =
     const IslandWakeAndSolvePreflight preflight = preflight_island_wake_and_solve(
     const IslandWakeAndSolveGraphPreflight preflight = preflight_island_wake_and_solve_graph(graph, bodies, dt);
+
+// --- deepen additive from deepen-pbd-island-guards-3f17 ---
+const char* island_build_reject_reason_name(IslandBuildRejectReason reason) {
+    case IslandBuildRejectReason::EmptyInput:
+    case IslandBuildRejectReason::OutOfRangeContactRefs:
+    case IslandBuildRejectReason::OutOfRangeDistanceRefs:
+            return IslandBuildRejectReason::EmptyInput;
+            return IslandBuildRejectReason::OutOfRangeContactRefs;
+            return IslandBuildRejectReason::OutOfRangeDistanceRefs;
+const char* island_constraint_solve_reject_reason_name(IslandConstraintSolveRejectReason reason) {
+    case IslandConstraintSolveRejectReason::OutOfRangeIslandIndex:
+    case IslandConstraintSolveRejectReason::StaleConstraintRefs:
+        return IslandConstraintSolveRejectReason::StaleConstraintRefs;
+IslandConstraintSolveRejectReason island_constraint_solve_reject_reason_by_index(
+        return IslandConstraintSolveRejectReason::OutOfRangeIslandIndex;
+const char* island_sleep_reject_reason_name(IslandSleepRejectReason reason) {
+    case IslandSleepRejectReason::None:
+    case IslandSleepRejectReason::EmptyIsland:
+    case IslandSleepRejectReason::OutOfRangeIslandIndex:
+    case IslandSleepRejectReason::AllSleeping:
+IslandSleepRejectReason island_sleep_reject_reason(const ContactIslandGraph::Island& island,
+        return IslandSleepRejectReason::EmptyIsland;
+        return IslandSleepRejectReason::AllSleeping;
+    return IslandSleepRejectReason::None;
+IslandSleepRejectReason island_sleep_reject_reason_by_index(const ContactIslandGraph& graph,
+        return IslandSleepRejectReason::OutOfRangeIslandIndex;
+                                     IslandSleepRejectReason expected) {
+const char* island_sleep_graph_reject_reason_name(IslandSleepGraphRejectReason reason) {
+    case IslandSleepGraphRejectReason::NoConstrainedIslands:
+    case IslandSleepGraphRejectReason::AllIslandsSleeping:
+IslandSleepGraphRejectReason island_sleep_graph_reject_reason(const ContactIslandGraph& graph,
+        return IslandSleepGraphRejectReason::NoConstrainedIslands;
+        return IslandSleepGraphRejectReason::AllIslandsSleeping;
+const char* island_wake_reject_reason_name(IslandWakeRejectReason reason) {
+    case IslandWakeRejectReason::OutOfRangeIslandIndex:
+    case IslandWakeRejectReason::NoSleepingBodies:
+        return IslandWakeRejectReason::NoSleepingBodies;
+        return IslandWakeRejectReason::OutOfRangeIslandIndex;
+const char* island_wake_graph_reject_reason_name(IslandWakeGraphRejectReason reason) {
+IslandWakeGraphRejectReason island_wake_graph_reject_reason(const ContactIslandGraph& graph,
+    if (preflight.reason == IslandConstraintSolveRejectReason::EmptyIsland) {
+    if (preflight.reason == IslandSleepRejectReason::EmptyIsland) {
+    preflight.allSleeping = preflight.reason == IslandSleepRejectReason::AllSleeping;
+        preflight.reason = IslandSleepRejectReason::OutOfRangeIslandIndex;
+    if (preflight.reason == IslandWakeRejectReason::EmptyIsland) {
+        preflight.reason == IslandWakeRejectReason::None && preflight.sleepingCount > 0u &&
+        preflight.reason = IslandWakeRejectReason::OutOfRangeIslandIndex;

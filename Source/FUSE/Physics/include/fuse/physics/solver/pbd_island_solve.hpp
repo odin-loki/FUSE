@@ -1510,3 +1510,22 @@ IslandWakeAndSolvePreflight preflight_island_wake_and_solve_by_index(
 bool should_skip_island_wake_and_solve(const ContactIslandGraph::Island& island,
 IslandWakeAndSolveGraphPreflight preflight_island_wake_and_solve_graph(const ContactIslandGraph& graph,
 bool should_skip_island_wake_and_solve_graph(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-3f17 ---
+const char* island_build_reject_reason_name(IslandBuildRejectReason reason);
+const char* island_constraint_solve_reject_reason_name(IslandConstraintSolveRejectReason reason);
+IslandConstraintSolveRejectReason island_constraint_solve_reject_reason_by_index(
+enum class IslandSleepRejectReason : u8 {
+const char* island_sleep_reject_reason_name(IslandSleepRejectReason reason);
+IslandSleepRejectReason island_sleep_reject_reason(const ContactIslandGraph::Island& island,
+IslandSleepRejectReason island_sleep_reject_reason_by_index(const ContactIslandGraph& graph,
+                                     IslandSleepRejectReason expected);
+const char* island_sleep_graph_reject_reason_name(IslandSleepGraphRejectReason reason);
+IslandSleepGraphRejectReason island_sleep_graph_reject_reason(const ContactIslandGraph& graph,
+const char* island_wake_reject_reason_name(IslandWakeRejectReason reason);
+const char* island_wake_graph_reject_reason_name(IslandWakeGraphRejectReason reason);
+IslandWakeGraphRejectReason island_wake_graph_reject_reason(const ContactIslandGraph& graph,
+    bool can_build() const { return reason == IslandBuildRejectReason::None; }
+    IslandSleepRejectReason reason = IslandSleepRejectReason::None;
+    bool can_skip_solve() const { return reason == IslandSleepRejectReason::AllSleeping; }
+    bool should_wake_sleepers() const { return reason == IslandWakeRejectReason::None && hasMixedSleepState; }
