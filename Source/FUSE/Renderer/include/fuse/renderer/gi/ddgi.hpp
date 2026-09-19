@@ -1024,3 +1024,7 @@ bool wouldSkipProbeGridSource(const ProbeGridSource& source);
 
 // --- deepen additive from deepen-ddgi-b56-guards-8377 ---
 bool wouldSkipProbeSample(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-e593 ---
+bool tryPreflightTrilinearProbeIrradiance(const DDGIDesc& desc,
+bool tryPreflightTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,

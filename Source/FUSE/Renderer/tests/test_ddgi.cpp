@@ -4346,3 +4346,23 @@ void testDdgiKernelUpdatePreflightGuards() {
                                fuse::renderer::ProbeGridSourceRejectReason::NotSampleable),
     expectTrue(fuse::renderer::ddgi_util::classifyTrilinearProbeSampleReject(desc, built, cache.data(), 8u) ==
                "classifyTrilinearProbeSampleReject none for valid sample");
+
+// --- deepen additive from deepen-ddgi-guards-e593 ---
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(nullCache, sourceReason),
+               "tryValidateProbeGridSource rejects null cache");
+    expectTrue(sourceReason == fuse::renderer::ProbeGridSourceRejectReason::NullCache,
+    expectTrue(std::strcmp(fuse::renderer::probeGridSourceRejectReasonLabel(sourceReason), "null_cache") == 0,
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(undersized) ==
+               "classifyProbeGridSourceReject undersized_cache");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, centrePos, cache.data(), 8u),
+               "wouldSkipProbeTrilinearSample false for valid world position");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, built, cache.data(), 4u),
+    expectTrue(fuse::renderer::ddgi_util::tryPreflightTrilinearProbeIrradiance(
+               "tryPreflightTrilinearProbeIrradiance succeeds for valid sample");
+               "tryPreflightTrilinearProbeIrradiance reports no reject reason");
+    expectTrue(!fuse::renderer::ddgi_util::tryPreflightTrilinearProbeIrradiance(
+               "tryPreflightTrilinearProbeIrradiance rejects null cache");
+               "null cache tryPreflightTrilinear reports null_cache reason");
+    expectTrue(fuse::renderer::ddgi_util::tryPreflightTrilinearDirectionalProbeIrradiance(
+               "tryPreflightTrilinearDirectionalProbeIrradiance succeeds for valid sample");
+               "tryPreflightProbeKernelLaunch rejects zero rays");

@@ -3148,3 +3148,13 @@ bool preflightPopulatedProbeKernelLaunch(DDGIKernelParams& params,
 // --- deepen additive from deepen-b56-ddgi-guards-f8af ---
         return ProbeGridSourceRejectReason::NotSampleable;
     const ProbeTrilinearSampleRejectReason reject = classifyTrilinearProbeSampleReject(desc, coords, cache, cache_count);
+
+// --- deepen additive from deepen-ddgi-guards-e593 ---
+    return !tryValidateProbeGridSource(source, reason);
+    return wouldSkipProbeTrilinearSample(desc, coords, cache, cache_count);
+    return tryCanScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count, outReason);
+    const bool ok = tryTrilinearProbeIrradiance(desc, world_position, cache, cache_count, ignored, reject);
+bool tryPreflightTrilinearProbeIrradiance(const DDGIDesc& desc,
+    return tryTrilinearProbeIrradiance(desc, world_position, cache, cache_count, ignored, outReason);
+    const bool ok = tryTrilinearDirectionalProbeIrradiance(
+bool tryPreflightTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
