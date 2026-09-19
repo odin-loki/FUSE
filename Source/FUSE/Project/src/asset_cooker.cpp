@@ -202,20 +202,39 @@ u32 AssetCooker::invalidate_upstream_dependency(const CookManifest& manifest, co
 
 u32 AssetCooker::count_upstream_invalidation(const CookManifest& manifest,
                                              const std::string& changed_source) const {
-    if (!is_valid_cook_cache_path(changed_source)) {
+    return estimate_upstream_invalidation(manifest, changed_source).total();
+}
+
+u32 AssetCooker::count_output_invalidation(const CookManifest& manifest,
+                                           const std::string& changed_output) const {
+    if (!is_valid_cook_cache_path(changed_output)) {
         return 0;
     }
 
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
 
-    u32 count = m_cache.count_by_source(changed_source);
+    return m_cache.count_downstream_of(changed_output, graph.edges(), graph.jobs());
+}
+
+CookUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
+    const CookManifest& manifest, const std::string& changed_source) const {
+    CookUpstreamInvalidationEstimate estimate;
+    if (!is_valid_cook_cache_path(changed_source)) {
+        return estimate;
+    }
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    estimate.direct_source_entries = m_cache.count_by_source(changed_source);
     for (const CookJob& job : graph.jobs()) {
         if (job.source_path == changed_source) {
-            count += m_cache.count_downstream_of(job.output_path, graph.edges(), graph.jobs());
+            estimate.downstream_entries +=
+                m_cache.count_downstream_of(job.output_path, graph.edges(), graph.jobs());
         }
     }
-    return count;
+    return estimate;
 }
 
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
