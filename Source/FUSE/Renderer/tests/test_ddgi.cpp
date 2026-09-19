@@ -4629,3 +4629,15 @@ void testKernelPreflightSplitGuards() {
                "preflightProbeTrilinearSample succeeds for clampable weights");
     expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(desc, warnWeights),
 void testDdgiScheduleAndKernelDeepenGuards() {
+
+// --- deepen additive from deepen-ddgi-guards-2d25 ---
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridReject(emptyGrid) ==
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeGridSource(emptyGrid),
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridReject(zeroSpacing) ==
+                   fuse::renderer::ProbeGridRejectReason::ZeroSpacing,
+               "classifyProbeGridReject zero_spacing");
+                               fuse::renderer::ProbeGridRejectReason::ZeroSpacing),
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, interiorSample),
+               "wouldSkipProbeSampleCoords false for interior world position");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(emptyGrid, originSample),
+               "wouldSkipProbeSampleCoords true for empty grid world position");
