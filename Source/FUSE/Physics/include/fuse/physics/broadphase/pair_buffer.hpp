@@ -190,14 +190,118 @@ PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer)
 /// Non-mutating dedupe skip predicate — mirrors `PairBufferSoA::canSkipDedupe` (B4.2 deepen follow-up pass).
 bool canSkipPairBufferDedupe(const PairBufferSoA& buffer);
 
+/// Non-mutating dedupe predicate — inverse of `canSkipPairBufferDedupe` (B4.2 deepen pass).
+bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
+
+/// Why pair-buffer slot write would reject (B4.2 deepen pass).
+enum class PairBufferWriteSlotRejectReason : u8 {
+    None = 0,
+    InvalidSlot,
+    InvalidPair,
+};
+
+/// Human-readable label for pair-buffer write-slot reject reasons (logging / tests).
+const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason);
+
+/// Diagnose why writeSlot would reject; vacuously succeeds when write may proceed.
+PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Returns true when `pairBufferWriteSlotRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferWriteSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB,
+    PairBufferWriteSlotRejectReason expected);
+
+/// Read-only write-slot diagnostics — no mutation (B4.2 deepen pass).
+struct PairBufferWriteSlotPreflight {
+    PairBufferWriteSlotRejectReason reason = PairBufferWriteSlotRejectReason::None;
+    bool invalidSlot = false;
+    bool invalidPair = false;
+
+    bool canWrite() const { return reason == PairBufferWriteSlotRejectReason::None; }
+};
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Why pair-buffer canonical sort would early-out (B4.2 deepen pass).
+enum class PairBufferSortRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    SinglePair,
+};
+
+/// Human-readable label for pair-buffer sort reject reasons (logging / tests).
+const char* pairBufferSortRejectReasonName(PairBufferSortRejectReason reason);
+
+/// Diagnose why sort would skip; vacuously succeeds when sort may proceed.
+PairBufferSortRejectReason pairBufferSortRejectReason(const PairBufferSoA& buffer);
+
+/// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortRejectReason expected);
+
 /// Read-only canonical-sort diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct PairBufferSortPreflight {
+    PairBufferSortRejectReason reason = PairBufferSortRejectReason::None;
     bool emptyBuffer = false;
     bool singlePair = false;
 
-    bool needsSort() const { return !emptyBuffer && !singlePair; }
+    bool needsSort() const { return reason == PairBufferSortRejectReason::None; }
 };
 
 PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer);
+
+/// Non-mutating sort skip predicate — inverse of `needsSort` (B4.2 deepen pass).
+bool canSkipPairBufferSort(const PairBufferSoA& buffer);
+
+/// Non-mutating sort predicate — mirrors `preflightPairBufferSort` (B4.2 deepen pass).
+bool shouldRunPairBufferSort(const PairBufferSoA& buffer);
+
+/// Why pair-buffer merge would early-out (B4.2 deepen pass).
+enum class PairBufferMergeRejectReason : u8 {
+    None = 0,
+    EmptyPairs,
+    AtCapacity,
+};
+
+/// Human-readable label for pair-buffer merge reject reasons (logging / tests).
+const char* pairBufferMergeRejectReasonName(PairBufferMergeRejectReason reason);
+
+/// Diagnose why merge would skip; vacuously succeeds when at least one pair may be merged.
+PairBufferMergeRejectReason pairBufferMergeRejectReason(
+    const PairBufferSoA& buffer,
+    u32 pairCount);
+
+/// Returns true when `pairBufferMergeRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferMergeRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 pairCount,
+    PairBufferMergeRejectReason expected);
+
+/// Read-only merge diagnostics — no mutation (B4.2 deepen pass).
+struct PairBufferMergePreflight {
+    PairBufferMergeRejectReason reason = PairBufferMergeRejectReason::None;
+    bool emptyPairs = false;
+    bool atCapacity = false;
+
+    bool canMerge() const { return reason == PairBufferMergeRejectReason::None; }
+};
+
+PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount);
+
+/// Non-mutating merge skip predicate — inverse of `canMerge` (B4.2 deepen pass).
+bool canSkipPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount);
+
+/// Non-mutating merge predicate — mirrors `preflightPairBufferMerge` (B4.2 deepen pass).
+bool shouldRunPairBufferMerge(const PairBufferSoA& buffer, u32 pairCount);
 
 } // namespace fuse::physics::broadphase
