@@ -154,7 +154,3 @@ bool is_bus_parent_chain_muted(const AudioBusMixer& mixer, AudioBus bus);
 bool is_bus_muted(const AudioBusMixer& mixer, AudioBus bus);
 
 } // namespace fuse::audio
-
-// --- deepen additive from deepen-b72-audio-bus-mute-solo-master-guards-743f ---
-bool should_skip_listener_master_mix(float volume);
-bool should_skip_parent_chain_mix(const AudioBusMixer& mixer, AudioBus bus);

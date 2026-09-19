@@ -27,15 +27,6 @@ bool has_occlusion_blockers(const AABB* blockers, u32 blocker_count);
 /// Readable alias — true when the blocker list is null or zero-length.
 bool is_empty_occlusion_blockers(const AABB* blockers, u32 blocker_count);
 
-/// Clamp a blocker factor scalar into [0, 1].
-float clamp_blocker_factor(float factor);
-
-/// True when a clamped blocker factor is at or below zero (clear line-of-sight).
-bool is_clear_blocker_factor(float factor);
-
-/// True when a clamped blocker factor is at or above unity (fully blocked segment).
-bool is_fully_blocked_blocker_factor(float factor);
-
 /// Co-located listener/source positions skip segment-vs-AABB blocker evaluation.
 bool should_skip_blocker_evaluation(const Vec3& listener, const Vec3& source);
 
@@ -54,15 +45,6 @@ bool should_skip_occlusion_blocker_attenuation(const Vec3& listener, const Vec3&
 /// True when segment-vs-AABB blocker ray evaluation can be skipped (empty list or fully occluded source).
 bool should_skip_occlusion_blocker_raycast(float source_occlusion, const AABB* blockers,
                                          u32 blocker_count);
-
-/// True when segment-vs-AABB blocker ray evaluation may change visibility.
-bool should_evaluate_occlusion_blocker_raycast(float source_occlusion, const AABB* blockers,
-                                               u32 blocker_count);
-
-/// True when blocker evaluation should be bypassed (empty list, co-located, or fully occluded source).
-bool should_skip_occlusion_blocker_evaluation(const AABB* blockers, u32 blocker_count,
-                                               const Vec3& listener, const Vec3& source,
-                                               float source_occlusion);
 
 /// True when visibility combine can be bypassed (zero blocker factor or fully occluded source).
 bool should_skip_combine_occlusion_visibility(float source_occlusion, float blocker_factor);
@@ -128,18 +110,3 @@ OcclusionAttenuation evaluate_occlusion_from_blockers(const Vec3& listener, cons
                                                       const OcclusionParams& params = {});
 
 } // namespace fuse::audio
-
-// --- deepen additive from deepen-b72-occlusion-reverb-e7fc ---
-bool should_skip_occlusion_blocker_eval(const Vec3& listener, const Vec3& source,
-
-// --- deepen additive from deepen-b72-audio-occlusion-blocker-wet-mix-guards-4627 ---
-bool should_skip_occlusion_blocker_evaluation(const AABB* blockers, u32 blocker_count,
-
-// --- deepen additive from deepen-b72-audio-occlusion-77d8 ---
-bool should_skip_occlusion_from_blockers(const Vec3& listener, const Vec3& source,
-
-// --- deepen additive from deepen-b72-audio-occlusion-guards-9580 ---
-bool should_skip_occlusion_blockers(const AABB* blockers, u32 blocker_count);
-
-// --- deepen additive from deepen-b72-audio-occlusion-blocker-wet-mix-guards-4901 ---
-bool should_skip_occlusion_blocker_raycast(const Vec3& listener, const Vec3& source,

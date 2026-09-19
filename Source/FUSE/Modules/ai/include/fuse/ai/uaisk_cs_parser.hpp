@@ -13,8 +13,11 @@ namespace fuse::ai::uaisk {
 struct UaiskCsParseResult {
     std::string moduleName;
     std::string className;
+    std::string baseClass;
     std::string fuseRegistryTypeId;
     std::vector<std::string> behaviorTreeHooks;
+    std::vector<std::string> methodNames;
+    std::vector<std::string> fieldNames;
     u32 profileId = 0;
     bool valid = false;
 };

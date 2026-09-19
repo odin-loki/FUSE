@@ -1,5 +1,6 @@
 #include <fuse/editor/editor_host.hpp>
 
+#include <fuse/ai/agent_entity_bind.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
@@ -361,10 +362,40 @@ void EditorHost::setAiAgentEntityBinding(u32 agentIndex, Handle<Object> entity) 
     for (AiAgentEntityBinding& binding : m_aiAgentEntityBindings) {
         if (binding.agentIndex == agentIndex) {
             binding.entity = entity;
+            syncPieAiBindings_();
             return;
         }
     }
     m_aiAgentEntityBindings.push_back({agentIndex, entity});
+    syncPieAiBindings_();
+}
+
+void EditorHost::syncPieAiBindings_() {
+    std::vector<fuse::ai::AgentEntityBinding> bindings;
+    bindings.reserve(m_aiAgentEntityBindings.size());
+    for (const AiAgentEntityBinding& binding : m_aiAgentEntityBindings) {
+        bindings.push_back({binding.agentIndex, binding.entity});
+    }
+    fuse::ai::wireAgentEntityBindings(m_pieBehaviorRuntime, bindings);
+
+    m_pieBehaviorRuntime.setAgentPositionProvider(
+        [this](Handle<Object> entity, float& outX, float& outY) {
+            ecs::EntityID ecsEntity{};
+            ecsEntity.index = entity.index();
+            ecsEntity.generation = entity.generation();
+            if (!ecsEntity.valid() || !editorScene().registry().alive(ecsEntity)) {
+                return false;
+            }
+            if (!editorScene().registry().has<ecs::Transform>(ecsEntity)) {
+                return false;
+            }
+            const ecs::Transform* transform = editorScene().registry().get<ecs::Transform>(ecsEntity);
+            outX = transform->position.x;
+            outY = transform->position.y;
+            return true;
+        });
+
+    m_pieBehaviorRuntime.syncAgentBindingsFromEntities();
 }
 
 void EditorHost::setLoadedCinematicsSeqAsset(std::string assetText) {
@@ -503,6 +534,7 @@ void EditorHost::gameTick() {
     m_runtimeViewport.tick(*this, kEditorTickDt);
 
     if (m_state.playing && !m_state.paused) {
+        syncPieAiBindings_();
         m_playSession.tick(kEditorTickDt, m_editorScene, m_physics);
     }
 

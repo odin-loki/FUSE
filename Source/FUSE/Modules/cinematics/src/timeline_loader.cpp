@@ -275,4 +275,40 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
     return true;
 }
 
+bool scrub_seq_preview(const std::string& text, TimelineMs time_ms, Timeline& outTimeline,
+                       SeqScrubPreview& outPreview, std::string* errorOut) {
+    outPreview = SeqScrubPreview{};
+    if (!load_timeline_from_asset(text, outTimeline, errorOut)) {
+        return false;
+    }
+
+    const TimelineMs clamped = std::max<TimelineMs>(0, std::min(time_ms, outTimeline.playhead().duration_ms()));
+    outTimeline.scrub_to(clamped);
+    outPreview.time_ms = clamped;
+    outPreview.valid = true;
+
+    for (const TrackGroup& group : outTimeline.groups()) {
+        for (const std::unique_ptr<Track>& track : group.tracks()) {
+            if (track == nullptr || !track->enabled()) {
+                continue;
+            }
+            switch (track->kind()) {
+            case TrackKind::Actor:
+                outPreview.has_actor_events = true;
+                break;
+            case TrackKind::Motion:
+                outPreview.has_motion_track = true;
+                break;
+            case TrackKind::Camera:
+                outPreview.has_camera_track = true;
+                break;
+            default:
+                break;
+            }
+        }
+    }
+
+    return true;
+}
+
 } // namespace fuse::cinematics

@@ -1,6 +1,7 @@
 #include <fuse/cinematics/vactor_bridge.hpp>
 
 #include <fuse/cinematics/camera_track.hpp>
+#include <fuse/cinematics/mount_orientation.hpp>
 #include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/cinematics/motion_track.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
@@ -88,7 +89,7 @@ void VActorBridge::apply_shapebase_attach(const std::string& actor_id,
     }
 
     state.offset = mount_offset_for(mount_point);
-    state.offset.yaw_deg += mount_yaw_deg;
+    state.offset.yaw_deg = combine_mount_yaw_deg(state.offset.yaw_deg, mount_yaw_deg);
     state.mounted = true;
     ++m_shapebaseAttachCount;
     sync_bound_objects();
@@ -104,7 +105,8 @@ void VActorBridge::sync_bound_objects() {
         state.object->setPosition(state.baseX + state.offset.x + state.motionX,
                                   state.baseY + state.offset.y + state.motionY);
         state.object->setZ(state.baseZ + state.offset.z + state.motionZ);
-        state.object->setYawDeg(state.offset.yaw_deg);
+        const MountQuaternion mountQuat = yaw_deg_to_quaternion(state.offset.yaw_deg);
+        state.object->setYawDeg(quaternion_to_yaw_deg(mountQuat));
     }
     ++m_syncCount;
 }

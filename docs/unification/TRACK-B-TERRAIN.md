@@ -1,6 +1,6 @@
 # Track B — Terrain System (B7.5 deepen)
 
-**Status:** B7.5 deepen — LOD residency set, skirt/morph stubs, budget clamp helpers, residency queue priority/budget  
+**Status:** B7.5 deepen — LOD residency set, skirt/morph stubs, budget clamp helpers, residency queue priority/budget (deepen-trailer corruption removed wave 10)  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.5  
 **Source narrative:** [P7.md](../sources/P7.md) §7.5
 

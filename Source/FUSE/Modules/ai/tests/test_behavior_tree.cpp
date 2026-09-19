@@ -1,3 +1,4 @@
+#include <fuse/ai/agent_entity_bind.hpp>
 #include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/ai/behavior_tree.hpp>
 #include <fuse/ai/uaisk_script_import.hpp>
@@ -328,8 +329,10 @@ void testUaiskScriptHostBridge() {
 
 void testUaiskCsCodegen() {
     static const char* kCsText =
-        "class PatrolSquad {\n"
+        "class PatrolSquad : BehaviorBase {\n"
         "  behaviorTree = \"patrol_squad.bt\";\n"
+        "  float patrolRadius;\n"
+        "  void onPatrol() {}\n"
         "}\n";
 
     fuse::ai::BehaviorTree tree;
@@ -342,6 +345,27 @@ void testUaiskCsCodegen() {
     expectTrue(fuse::ai::uaisk::importCodegenProfile("aiBehaviors.cs", kCsText, 1, runtime, &error),
                "UAISK codegen imports runtime profile");
     expectTrue(runtime.treeProfileCount() == 1u, "UAISK codegen profile registered");
+
+    fuse::ai::uaisk::UaiskCsParseResult parsed;
+    fuse::ai::uaisk::UaiskCsAst ast;
+    expectTrue(fuse::ai::uaisk::parseCsModule("aiBehaviors.cs", kCsText, parsed), "AST parse for codegen");
+    expectTrue(fuse::ai::uaisk::buildAstFromParse(parsed, ast), "AST build succeeds");
+    expectTrue(ast.baseClass == "BehaviorBase", "AST captures base class");
+    expectTrue(ast.methods.size() == 1u, "AST captures method ref");
+    expectTrue(ast.fields.size() == 1u, "AST captures field ref");
+}
+
+void testWireAgentEntityBindings() {
+    fuse::ai::BehaviorRuntime runtime;
+    runtime.registerTreeProfile(0, fuse::ai::BehaviorTree::makeMoveTowardDemoTree(0.1f));
+    fuse::ai::AgentBinding binding{};
+    binding.x = 1.f;
+    binding.y = 2.f;
+    runtime.addAgent(binding);
+
+    const fuse::Handle<fuse::Object> entity(9u, 1u);
+    fuse::ai::wireAgentEntityBindings(runtime, {{0u, entity}});
+    expectTrue(runtime.bindings()[0].agent.index() == 9u, "wire sets agent entity handle");
 }
 
 void testUaiskCsParser() {
@@ -2004,6 +2028,7 @@ int main() {
     testUaiskScriptHostBridge();
     testUaiskCsParser();
     testUaiskCsCodegen();
+    testWireAgentEntityBindings();
     testUaiskScriptImportProfile();
     testUaiskPatrolSquadTemplateLoad();
     testGuideBotMoveTowardLeaf();

@@ -9,7 +9,9 @@ add_library(fuse_ai STATIC
     src/uaisk_script_import.cpp
     src/uaisk_cs_parser.cpp
     src/uaisk_cs_codegen.cpp
+    src/agent_entity_bind.cpp
     src/uaisk_script_host_bridge.cpp
+    include/fuse/ai/agent_entity_bind.hpp
     include/fuse/ai/agent_snapshot.hpp
     include/fuse/ai/blackboard.hpp
     include/fuse/ai/behavior_tree.hpp

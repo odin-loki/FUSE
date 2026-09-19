@@ -1,6 +1,6 @@
 # Track B — VFX System (B7.7 deepen)
 
-**Status:** B7.7 deepen — SoA free-list emission, jobified CPU simulation, GPU buffer/dispatch stubs  
+**Status:** B7.7 deepen — SoA free-list emission, jobified CPU simulation, GPU buffer/dispatch stubs (deepen-trailer corruption removed wave 10)  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B7.7  
 **Source narrative:** [P7.md](../sources/P7.md) §7.7
 

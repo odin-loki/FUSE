@@ -12,12 +12,8 @@ bool is_empty_reverb_zones(const ReverbZoneParams* zones, u32 zone_count) {
     return !has_reverb_zones(zones, zone_count);
 }
 
-bool is_empty_reverb_zone_list(const ReverbZoneParams* zones, u32 zone_count) {
-    return is_empty_reverb_zones(zones, zone_count);
-}
-
 bool should_skip_reverb_zone_blend(const ReverbZoneParams* zones, u32 zone_count) {
-    return is_empty_reverb_zone_list(zones, zone_count);
+    return is_empty_reverb_zones(zones, zone_count);
 }
 
 bool listener_has_active_reverb_zones(const Vec3& listener, const ReverbZoneParams* zones,
@@ -116,18 +112,6 @@ bool should_skip_wet_mix_processing(const ReverbZoneBlend& blend) {
     return !should_apply_reverb_wet_mix(blend);
 }
 
-bool should_skip_reverb_wet_mix(const ReverbZoneBlend& blend) {
-    return should_skip_wet_mix_processing(blend);
-}
-
-bool should_skip_reverb_wet_mix(const Vec3& listener, const ReverbZoneParams* zones,
-                                u32 zone_count) {
-    if (should_skip_listener_reverb_zones(listener, zones, zone_count)) {
-        return true;
-    }
-    return should_skip_reverb_wet_mix(blend_reverb_zones(listener, zones, zone_count));
-}
-
 float compute_effective_wet_mix(const Vec3& listener, const ReverbZoneParams* zones,
                                 u32 zone_count) {
     if (should_skip_listener_reverb_zones(listener, zones, zone_count)) {
@@ -156,19 +140,11 @@ float compute_effective_send_gain(const ReverbZoneBlend& blend) {
 
 bool should_skip_reverb_sample_blend(const Vec3& listener, const ReverbZoneParams* zones,
                                      u32 zone_count) {
-    return should_skip_reverb_wet_mix(listener, zones, zone_count);
-}
-
-bool should_apply_reverb_sample_blend(const Vec3& listener, const ReverbZoneParams* zones,
-                                      u32 zone_count) {
-    return !should_skip_reverb_sample_blend(listener, zones, zone_count);
-}
-
-float blend_dry_wet_from_reverb_blend(const ReverbZoneBlend& blend, float dry, float wet) {
-    if (should_skip_reverb_wet_mix(blend)) {
-        return dry;
+    if (should_skip_reverb_zone_blend(zones, zone_count)) {
+        return true;
     }
-    return blend_dry_wet_sample(dry, wet, compute_effective_wet_mix(blend));
+    const ReverbZoneBlend blend = blend_reverb_zones(listener, zones, zone_count);
+    return should_skip_wet_mix_processing(blend);
 }
 
 float blend_reverb_sample(float dry, float wet, const Vec3& listener, const ReverbZoneParams* zones,
@@ -176,31 +152,8 @@ float blend_reverb_sample(float dry, float wet, const Vec3& listener, const Reve
     if (should_skip_reverb_sample_blend(listener, zones, zone_count)) {
         return dry;
     }
-    return blend_dry_wet_from_reverb_blend(blend_reverb_zones(listener, zones, zone_count), dry,
-                                           wet);
+    const ReverbZoneBlend blend = blend_reverb_zones(listener, zones, zone_count);
+    return blend_dry_wet_sample(dry, wet, compute_effective_wet_mix(blend));
 }
 
 } // namespace fuse::audio
-
-// --- deepen additive from deepen-b72-occlusion-reverb-e7fc ---
-    return should_skip_reverb_wet_mix(blend);
-bool should_skip_reverb_wet_mix(const ReverbZoneBlend& blend) {
-    if (should_skip_reverb_wet_mix(blend)) {
-
-// --- deepen additive from deepen-b72-audio-occlusion-blocker-wet-mix-guards-4627 ---
-bool should_skip_reverb_wet_mix(const Vec3& listener, const ReverbZoneParams* zones,
-    return should_skip_reverb_wet_mix(blend_reverb_zones(listener, zones, zone_count));
-
-// --- deepen additive from deepen-b72-audio-occlusion-77d8 ---
-bool should_skip_dry_wet_blend(float wet_mix) {
-bool should_skip_reverb_wet_convolution(const ReverbZoneBlend& blend) {
-    if (should_skip_reverb_wet_convolution(blend)) {
-
-// --- deepen additive from deepen-b72-audio-occlusion-guards-9580 ---
-    return !should_skip_reverb_wet_mix(blend);
-bool should_skip_reverb_zone_blend(const Vec3& listener, const ReverbZoneParams* zones,
-    if (should_skip_reverb_zone_blend(listener, zones, zone_count)) {
-
-// --- deepen additive from deepen-b72-audio-occlusion-blocker-wet-mix-guards-4901 ---
-    if (should_skip_listener_reverb_zone_blend(listener, zones, zone_count)) {
-bool should_skip_listener_reverb_zone_blend(const Vec3& listener, const ReverbZoneParams* zones,

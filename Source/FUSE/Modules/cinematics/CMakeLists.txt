@@ -12,6 +12,7 @@ add_library(fuse_cinematics STATIC
     src/actor_track.cpp
     src/hybrid_timeline_drive.cpp
     src/vactor_bridge.cpp
+    src/mount_orientation.cpp
     src/timeline_loader.cpp
     src/cue_queue.cpp
     src/cue_preview.cpp
@@ -32,6 +33,7 @@ add_library(fuse_cinematics STATIC
     include/fuse/cinematics/actor_track.hpp
     include/fuse/cinematics/hybrid_timeline_drive.hpp
     include/fuse/cinematics/vactor_bridge.hpp
+    include/fuse/cinematics/mount_orientation.hpp
     include/fuse/cinematics/timeline_loader.hpp
     include/fuse/cinematics/cue_payload.hpp
     include/fuse/cinematics/cue_queue.hpp

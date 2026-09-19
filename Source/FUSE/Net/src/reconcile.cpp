@@ -119,31 +119,3 @@ ReconcileResult reconcile_rollback_buffer(RollbackBuffer& buffer, u32 frame, con
 
 } // namespace fuse::net
 
-// --- deepen additive from deepen-b74-net-rollback-input-history-5dc1 ---
-InputReconcilePreflight preflight_reconcile_input(const InputHistoryBuffer& history, u32 frame) {
-    InputReconcilePreflight result;
-RollbackReconcilePreflight preflight_reconcile_rollback(const RollbackBuffer& buffer, u32 frame) {
-    RollbackReconcilePreflight result;
-bool should_skip_reconcile_input(const InputHistoryBuffer& history, u32 frame) {
-bool should_skip_reconcile_rollback(const RollbackBuffer& buffer, u32 frame) {
-    if (should_skip_reconcile_input(history, frame)) {
-    if (should_skip_reconcile_rollback(buffer, frame)) {
-
-// --- deepen additive from deepen-b74-net-rollback-input-history-5525 ---
-ReconcileInputPreflight preflight_reconcile_input(const InputHistoryBuffer& history, u32 frame) {
-    ReconcileInputPreflight result{};
-ReconcileRollbackPreflight preflight_reconcile_rollback(const RollbackBuffer& buffer, u32 frame) {
-    ReconcileRollbackPreflight result{};
-    const ReconcileInputPreflight preflight = preflight_reconcile_input(history, frame);
-
-// --- deepen additive from deepen-b74-net-rollback-guards-0483 ---
-InputReconcilePreflight preflight_reconcile_input(const InputHistoryBuffer& history, u32 frame,
-    InputReconcilePreflight result{};
-RollbackReconcilePreflight preflight_reconcile_rollback(const RollbackBuffer& buffer, u32 frame,
-    RollbackReconcilePreflight result{};
-bool should_skip_input_reconcile(const InputHistoryBuffer& history, u32 frame, const PlayerInput& input) {
-    const InputReconcilePreflight preflight = preflight_reconcile_input(history, frame, input);
-bool should_skip_rollback_reconcile(const RollbackBuffer& buffer, u32 frame, const PlayerInput& remote) {
-    const RollbackReconcilePreflight preflight = preflight_reconcile_rollback(buffer, frame, remote);
-    if (should_skip_input_reconcile(history, frame, authoritative)) {
-    if (should_skip_rollback_reconcile(buffer, frame, remote)) {

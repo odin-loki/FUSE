@@ -223,6 +223,3 @@ void AudioEngine::sync_backend_sources_(AudioRegistry& registry) {
 }
 
 } // namespace fuse::audio
-
-// --- deepen additive from deepen-b72-occlusion-reverb-guards-4674 ---
-    if (should_skip_reverb_wet_mix(blend)) {

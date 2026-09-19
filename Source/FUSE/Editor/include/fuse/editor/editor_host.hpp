@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/command_stack.hpp>
 #include <fuse/editor/editor_scene.hpp>
@@ -54,6 +55,8 @@ public:
     const std::string& loadedProject() const { return m_loadedProject; }
     u32 selectedAiTreeProfileId() const { return m_selectedAiTreeProfileId; }
     const std::vector<AiAgentEntityBinding>& aiAgentEntityBindings() const { return m_aiAgentEntityBindings; }
+    fuse::ai::BehaviorRuntime& pieBehaviorRuntime() { return m_pieBehaviorRuntime; }
+    const fuse::ai::BehaviorRuntime& pieBehaviorRuntime() const { return m_pieBehaviorRuntime; }
     const std::string& loadedCinematicsSeqAsset() const { return m_loadedCinematicsSeqAsset; }
     u32 gameTickCount() const { return m_gameTickCount; }
     u32 commandsAppliedLastTick() const { return m_commandsAppliedLastTick; }
@@ -78,6 +81,7 @@ private:
     void ensureInitialized_();
     void applyCommand_(const EditorCommand& command);
     void drainPropertyCommandQueue_();
+    void syncPieAiBindings_();
 
     CommandQueue m_queue;
     CommandStack m_commandStack;
@@ -92,6 +96,7 @@ private:
     std::string m_loadedCinematicsSeqAsset;
     u32 m_selectedAiTreeProfileId = 0;
     std::vector<AiAgentEntityBinding> m_aiAgentEntityBindings;
+    fuse::ai::BehaviorRuntime m_pieBehaviorRuntime;
     u32 m_gameTickCount = 0;
     u32 m_commandsAppliedLastTick = 0;
     bool m_initialized = false;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <fuse/ai/agent_snapshot.hpp>
-#include <fuse/ai/agent_entity_bind.hpp>
 #include <fuse/ai/behavior_tree.hpp>
 #include <fuse/ai/blackboard.hpp>
 #include <fuse/ai/spatial_query.hpp>
@@ -10,10 +9,13 @@
 #include <fuse/object.hpp>
 #include <fuse/types.hpp>
 
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
 namespace fuse::ai {
+
+using AgentPositionProvider = std::function<bool(Handle<Object> entity, float& outX, float& outY)>;
 
 enum class TreeReloadPolicy {
     PreserveBlackboard,
@@ -51,6 +53,7 @@ public:
     void clearAgents();
     void addAgent(const AgentBinding& binding);
     void setBindingPosition(u32 agentIndex, float x, float y);
+    void setAgentEntity(u32 agentIndex, Handle<Object> entity);
     u32 agentCount() const { return static_cast<u32>(m_bindings.size()); }
 
     Blackboard& blackboard() { return m_blackboard; }

@@ -950,16 +950,3 @@ void run_script_console_tests() {
     testCustomCommandShadowsBuiltIn();
     testCustomCommandDispatch();
 }
-
-// --- deepen additive from deepen-b73-script-console-history-repeat-resolve-guards-259a ---
-void testRepeatArgsGuard() {
-void testResolveWhitespaceGuard() {
-
-// --- deepen additive from deepen-b73-console-guards-96fe ---
-void testPeekRepeatLineGuard() {
-void testHistoryNavigationStateGuards() {
-void testResolveGuardAccessors() {
-
-// --- deepen additive from deepen-b73-script-console-history-resolve-guards-c15d ---
-void testHistoryNavigationCanRecallGuards() {
-void testIsMetaCommandAndWouldRecordHistoryGuards() {

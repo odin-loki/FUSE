@@ -351,6 +351,21 @@ void testAfxMissionScriptVm() {
     expectTrue(vm.dispatchCount() == 1u, "mission VM dispatch counted");
 }
 
+void testAfxMissionLoaderVmBridge() {
+    static const char* kMisText =
+        "function onSpellCast(%caster, %spell) {\n"
+        "}\n"
+        "function onAmbientFx() {\n"
+        "}\n";
+
+    fuse::fx::FxComposer composer;
+    fuse::fx::AfxMissionScriptVm vm;
+    std::string error;
+    expectTrue(fuse::fx::register_afx_mission_from_mis(kMisText, composer, vm, &error),
+               ".mis bridge registers mission VM hooks");
+    expectTrue(vm.hookCount() >= 2u, ".mis bridge populates VM table");
+}
+
 void testAfxMissionLoaderFromMis() {
     static const char* kMisText =
         "new Scene(ExampleLevel) {\n"
@@ -433,6 +448,7 @@ int main() {
     testAfxMissionHooks();
     testAfxMissionScriptVm();
     testAfxMissionLoaderFromMis();
+    testAfxMissionLoaderVmBridge();
     testAfxMissionScriptVmImpactHook();
     testParticlePoolCudaSkipReason();
     testParticlePoolCudaSkip();

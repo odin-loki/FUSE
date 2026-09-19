@@ -591,24 +591,3 @@ void run_snapshot_delta_tests() {
 }
 
 } // namespace fuse::net::tests
-
-// --- deepen additive from deepen-snapshot-delta-preflight-c635 ---
-    const fuse::net::SnapshotDeltaPreflight bad_target_frame_preflight =
-    expectTrue(fuse::net::should_skip_redundant_empty_apply(base, empty_delta),
-    expectTrue(fuse::net::should_skip_delta_apply(frame_only_empty_delta),
-    const fuse::net::SnapshotHistoryPreflight stored_target_preflight =
-
-// --- deepen additive from deepen-snapshot-delta-preflight-mask-6337 ---
-    expectTrue(empty_preflight.should_skip_apply(), "preflight should_skip_apply for empty delta");
-    expectTrue(empty_history_preflight.should_skip_apply(), "history preflight should_skip_apply when skipped");
-    expectTrue(!history_preflight.should_skip_apply(), "patch history preflight should not skip apply");
-    const fuse::net::SnapshotDeltaPreflight mask_only_preflight =
-    const fuse::net::SnapshotDeltaPreflight bad_mask_only_preflight =
-    expectTrue(empty_verified.should_skip_apply(), "verified empty delta result should_skip_apply");
-    expectTrue(!verified.should_skip_apply(), "verified patch result should not skip apply");
-
-// --- deepen additive from deepen-b74-snapshot-delta-preflight-mask-guards-5203 ---
-    const fuse::net::SnapshotDeltaPreflight duplicate_preflight =
-    expectTrue(fuse::net::should_skip_verified_apply(base, bad_checksum_delta),
-    expectTrue(!fuse::net::should_skip_verified_apply(base, patch_delta),
-    const fuse::net::SnapshotHistoryPreflight frame_mismatch_preflight =

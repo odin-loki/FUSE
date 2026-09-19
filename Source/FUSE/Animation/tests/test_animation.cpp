@@ -2496,24 +2496,3 @@ int main() {
     std::fprintf(stderr, "fuse_animation_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
-
-// --- deepen additive from deepen-b71-ik-solve-helpers-edb4 ---
-void testPoseBindFallbackGuards() {
-
-// --- deepen additive from deepen-b71-animation-ik-d5b3 ---
-void testFabrikEmptySkeletonGuards() {
-void testRetargetIsValidRejectsDuplicates() {
-
-// --- deepen additive from deepen-b71-animation-blend-9cfe ---
-void testSkeletonIsEmptyGuard() {
-void testStateMachineTransitionIndexGuards() {
-void testStateMachineTransitionEdgeGuards() {
-
-// --- deepen additive from deepen-b71-animation-blend-guards-408b ---
-void testBlendTreeEmptySkeletonGuards() {
-void testStateMachineTransitionValidationGuards() {
-
-// --- deepen additive from deepen-b71-animation-blend-guards-df46 ---
-void testStateMachineCrossfadeBindFallbackGuard() {
-void testEmptySkeletonBlendTreeGuards() {
-void testLayeredBlendBindFallbackGuard() {

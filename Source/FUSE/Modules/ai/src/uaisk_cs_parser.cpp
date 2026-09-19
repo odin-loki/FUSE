@@ -83,9 +83,38 @@ bool parseCsModule(std::string_view csModule, std::string_view csText, UaiskCsPa
 
         if (line.rfind("class ", 0) == 0) {
             const std::size_t nameStart = line.find(' ') + 1;
-            const std::size_t nameEnd = line.find_first_of(" :{", nameStart);
+            const std::size_t colonPos = line.find(':');
+            const std::size_t nameEnd = line.find_first_of(colonPos != std::string_view::npos ? " :{" : " {",
+                                                            nameStart);
             if (nameEnd != std::string_view::npos && nameStart < nameEnd) {
                 outResult.className = std::string(line.substr(nameStart, nameEnd - nameStart));
+            }
+            if (colonPos != std::string_view::npos) {
+                std::string_view base = trimView(line.substr(colonPos + 1));
+                const std::size_t baseEnd = base.find_first_of(" {");
+                if (baseEnd != std::string_view::npos) {
+                    base = base.substr(0, baseEnd);
+                }
+                outResult.baseClass = std::string(trimView(base));
+            }
+        }
+
+        if (line.rfind("void ", 0) == 0) {
+            const std::size_t nameStart = 5;
+            const std::size_t nameEnd = line.find('(', nameStart);
+            if (nameEnd != std::string_view::npos && nameStart < nameEnd) {
+                outResult.methodNames.push_back(std::string(trimView(line.substr(nameStart, nameEnd - nameStart))));
+            }
+        }
+
+        const std::size_t semi = line.find(';');
+        if (semi != std::string_view::npos && line.rfind("class ", 0) != 0 && line.rfind("void ", 0) != 0) {
+            const std::size_t space = line.find(' ');
+            if (space != std::string_view::npos && space < semi) {
+                const std::string fieldName = std::string(trimView(line.substr(space + 1, semi - space - 1)));
+                if (!fieldName.empty() && fieldName.find('=') == std::string::npos) {
+                    outResult.fieldNames.push_back(fieldName);
+                }
             }
         }
 

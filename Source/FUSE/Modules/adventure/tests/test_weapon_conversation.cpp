@@ -1,4 +1,5 @@
 #include <fuse/adventure/conversation_interactable.hpp>
+#include <fuse/adventure/conversation_script_vm.hpp>
 #include <fuse/adventure/interaction.hpp>
 #include <fuse/adventure/inventory.hpp>
 #include <fuse/adventure/weapon_pickup_interactable.hpp>
@@ -44,8 +45,13 @@ int main() {
 
     fuse::adventure::WeaponRuntime weaponRuntime;
     weaponRuntime.setAmmoType(fuse::adventure::ItemId("energy_cell"));
+    fuse::adventure::WeaponStats stats{};
+    stats.damage = 25.f;
+    stats.range = 80.f;
+    weaponRuntime.setStats(stats);
     expectTrue(weaponRuntime.fire(inventory), "weapon runtime fires with ammo");
     expectTrue(weaponRuntime.fireCount() == 1u, "weapon runtime fire counted");
+    expectTrue(weaponRuntime.lastDamageDealt() == 25.f, "weapon runtime records damage stat");
     expectTrue(inventory.getInventory(fuse::adventure::ItemId("energy_cell")) == 19u, "weapon runtime consumes ammo");
 
     fuse::adventure::ConversationBranch polite;
@@ -61,6 +67,15 @@ int main() {
     const std::string branchLine = system.converseBranch(ctx, guard, "polite");
     expectTrue(branchLine == "Thank you, traveler. Proceed with caution.", "conversation branch selected");
     expectTrue(guard.activeBranchId() == "polite", "active branch tracked");
+
+    fuse::adventure::ConversationScriptVm scriptVm;
+    fuse::adventure::registerOutpostConversationScriptHooks(scriptVm);
+    expectTrue(!scriptVm.canDispatchBranch("outpost_guard", "aggressive", ctx),
+               "aggressive branch gated without security pass");
+    inventory.setMaxLimit(fuse::adventure::ItemId("security_pass"), 1);
+    inventory.incInventory(fuse::adventure::ItemId("security_pass"), 1);
+    expectTrue(scriptVm.canDispatchBranch("outpost_guard", "aggressive", ctx),
+               "aggressive branch allowed with security pass");
 
     fuse::core::shutdown();
 

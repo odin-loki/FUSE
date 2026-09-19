@@ -13,12 +13,28 @@ class BehaviorRuntime;
 
 namespace fuse::ai::uaisk {
 
+/// Method reference distilled from UAISK `.cs` (behavior-tree hook ore).
+struct UaiskCsMethodRef {
+    std::string name;
+    std::vector<std::string> behaviorTreeRefs;
+};
+
+/// Field reference distilled from UAISK `.cs` (blackboard / tuning ore).
+struct UaiskCsFieldRef {
+    std::string name;
+    std::string typeName;
+    std::string defaultValue;
+};
+
 /// Lightweight AST distilled from `UaiskCsParseResult` for codegen passes.
 struct UaiskCsAst {
     std::string moduleName;
     std::string className;
+    std::string baseClass;
     std::string primaryRegistryTypeId;
     std::vector<std::string> behaviorTreeHooks;
+    std::vector<UaiskCsMethodRef> methods;
+    std::vector<UaiskCsFieldRef> fields;
 };
 
 /// Build an AST view from parsed `.cs` metadata.

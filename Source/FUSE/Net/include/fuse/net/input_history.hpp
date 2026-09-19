@@ -88,12 +88,3 @@ private:
 [[nodiscard]] bool inputs_equal(const PlayerInput& a, const PlayerInput& b);
 
 } // namespace fuse::net
-
-// --- deepen additive from deepen-b74-net-rollback-input-history-5dc1 ---
-struct InputReconcilePreflight;
-    [[nodiscard]] InputReconcilePreflight preflight_reconcile(u32 frame) const;
-    [[nodiscard]] bool should_skip_reconcile(u32 frame) const;
-
-// --- deepen additive from deepen-b74-net-rollback-input-history-5525 ---
-struct ReconcileInputPreflight;
-    [[nodiscard]] ReconcileInputPreflight preflight_authoritative(u32 frame) const;

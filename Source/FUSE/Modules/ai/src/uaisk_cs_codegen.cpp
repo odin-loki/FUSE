@@ -62,8 +62,28 @@ bool buildAstFromParse(const UaiskCsParseResult& parsed, UaiskCsAst& outAst) {
 
     outAst.moduleName = parsed.moduleName;
     outAst.className = parsed.className;
+    outAst.baseClass = parsed.baseClass;
     outAst.primaryRegistryTypeId = parsed.fuseRegistryTypeId;
     outAst.behaviorTreeHooks = parsed.behaviorTreeHooks;
+
+    for (const std::string& methodName : parsed.methodNames) {
+        UaiskCsMethodRef method;
+        method.name = methodName;
+        for (const std::string& hook : parsed.behaviorTreeHooks) {
+            if (hook.find(methodName) != std::string::npos) {
+                method.behaviorTreeRefs.push_back(hook);
+            }
+        }
+        outAst.methods.push_back(std::move(method));
+    }
+
+    for (const std::string& fieldName : parsed.fieldNames) {
+        UaiskCsFieldRef field;
+        field.name = fieldName;
+        field.typeName = "float";
+        outAst.fields.push_back(std::move(field));
+    }
+
     return true;
 }
 

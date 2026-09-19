@@ -1,5 +1,8 @@
 #include <fuse/fx/afx_mission_loader.hpp>
 
+#include <fuse/fx/afx_mission_script_vm.hpp>
+#include <fuse/fx/fx_composer.hpp>
+
 #include <cctype>
 #include <sstream>
 
@@ -90,6 +93,18 @@ bool load_afx_mission_hooks_from_mis(const std::string& misText,
         return false;
     }
 
+    return true;
+}
+
+bool register_afx_mission_from_mis(const std::string& misText, FxComposer& composer, AfxMissionScriptVm& vm,
+                                   std::string* errorOut) {
+    std::vector<AfxMissionHook> hooks;
+    if (!load_afx_mission_hooks_from_mis(misText, hooks, errorOut)) {
+        return false;
+    }
+
+    vm.registerHooks(hooks);
+    (void)composer;
     return true;
 }
 

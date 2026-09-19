@@ -239,18 +239,28 @@ Headless proof: `fuse_hybrid_module_gates_tests` (shared `hybrid_module_gates.cp
 
 Hybrid proof extended: `fuse_hybrid_module_gates_tests` covers UAISK `.cs` parser import, cue preview + ShapeBase motion sync, CUDA skip-reason path, physics broadphase pipeline, JSON scene placement, and conversation script VM branch dispatch.
 
-#### Landed this slice (post-81994b5ce)
+#### Landed wave 9 (post-57b5753e8)
 
 | Module | Delivered |
 |--------|-----------|
-| `fuse_ai` | `uaisk_cs_codegen` AST→`NodeLoadSpec` codegen + `importCodegenProfile()`; editor `ai.agent_entity` apply on game thread |
-| `fuse_cinematics` | `SceneObject3D::yawDeg` applied in `VActorBridge::sync_bound_objects()`; cue preview motion/camera/sprite samples |
+| `fuse_ai` | `uaisk_cs_codegen` AST→`NodeLoadSpec` codegen + `importCodegenProfile()`; editor `ai.agent_entity` command posts |
+| `fuse_cinematics` | `SceneObject3D::yawDeg` in `VActorBridge::sync_bound_objects()`; cue preview motion/camera/sprite samples |
 | `fuse_fx` | `afx_mission_loader` TorqueScript `.mis` hook scan; CUDA stub advances packed particle age/lifetime |
 | `fuse_mechanics` | `SpawnComponent` GMK leaf; `broadphaseProxyMasksCollide()` btBroadphaseProxy group/mask deepen |
 | `fuse_adventure` | `WeaponRuntime::fire()` ammo consumption; `ConversationScriptVm` injects hook lines |
-| **Build hygiene** | Restored `test_ecs_query_filter.cpp` (removed deepen-merge corruption blocking umbrella ctest) |
 
-Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneObject3D`, UAISK codegen profile import, `.mis` mission hook loader.
+#### Landed wave 10 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | Fuller `UaiskCsAst` (methods/fields/base class); `wireAgentEntityBindings()`; PIE `pieBehaviorRuntime` sync on game thread |
+| `fuse_cinematics` | `mount_orientation` yaw↔quaternion helpers; `scrub_seq_preview()` editor scrub stub |
+| `fuse_fx` | `register_afx_mission_from_mis()` TorqueScript→mission VM bridge |
+| `fuse_mechanics` | `DestroyComponent` GMK leaf |
+| `fuse_adventure` | `WeaponStats` damage/range on fire; `canDispatchBranch()` inventory-gated conversation branches |
+| **Build hygiene** | Truncated terrain/VFX/audio/net/world-partition deepen corruption; restored pre-corruption headers; build green |
+
+Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneObject3D`, UAISK codegen AST, `.mis` mission VM bridge.
 
 ---
 

@@ -17,4 +17,16 @@ namespace fuse::cinematics {
 ///   motion <path_id> <t0>,<x>,<y>,<z> <t1>,...
 bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, std::string* errorOut = nullptr);
 
+struct SeqScrubPreview {
+    TimelineMs time_ms = 0;
+    bool valid = false;
+    bool has_actor_events = false;
+    bool has_motion_track = false;
+    bool has_camera_track = false;
+};
+
+/// Editor scrub stub — load `.seq` text and seek playhead without consuming cues.
+[[nodiscard]] bool scrub_seq_preview(const std::string& text, TimelineMs time_ms, Timeline& outTimeline,
+                                     SeqScrubPreview& outPreview, std::string* errorOut = nullptr);
+
 } // namespace fuse::cinematics

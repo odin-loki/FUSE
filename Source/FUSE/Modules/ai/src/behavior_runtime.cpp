@@ -78,6 +78,12 @@ void BehaviorRuntime::setBindingPosition(u32 agentIndex, float x, float y) {
     }
 }
 
+void BehaviorRuntime::setAgentEntity(u32 agentIndex, Handle<Object> entity) {
+    if (agentIndex < m_bindings.size()) {
+        m_bindings[agentIndex].agent = entity;
+    }
+}
+
 u32 BehaviorRuntime::maxTreeNodeCount() const {
     u32 maxNodes = 0;
     for (const auto& entry : m_treeProfiles) {

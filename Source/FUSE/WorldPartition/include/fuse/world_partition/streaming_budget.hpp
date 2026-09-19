@@ -245,7 +245,3 @@ enum class EvictionPolicy : u8 {
 }
 
 } // namespace fuse::world_partition
-
-// --- deepen additive from deepen-b75-terrain-lod-budget-residency-guards-02af ---
-[[nodiscard]] inline bool would_exceed_pending_submit_cap(u32 max_pending_submits, u32 pending_submits) {
-[[nodiscard]] inline bool would_exceed_async_budget(u32 in_flight, u32 completed_undrained,

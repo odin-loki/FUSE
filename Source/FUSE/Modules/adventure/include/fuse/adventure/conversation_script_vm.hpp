@@ -14,6 +14,8 @@ struct ConversationScriptHook {
     std::string npcId;
     std::string branchId;
     std::vector<std::string> lines;
+    std::string requiredItem;
+    u32 minInventoryCount = 0;
 };
 
 /// Dispatches conversation branch hooks into ConversationInteractable (3DAAK script VM stub).
@@ -25,6 +27,10 @@ public:
                         const std::string& branchId,
                         InteractContext& ctx,
                         ConversationInteractable& target);
+
+    [[nodiscard]] bool canDispatchBranch(const std::string& npcId,
+                                         const std::string& branchId,
+                                         const InteractContext& ctx) const;
 
     u32 dispatchCount() const { return m_dispatchCount; }
     u32 hookCount() const { return static_cast<u32>(m_hooks.size()); }

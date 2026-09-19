@@ -78,21 +78,3 @@ struct RollbackReconcilePreflight {
                                                           const PlayerInput& remote);
 
 } // namespace fuse::net
-
-// --- deepen additive from deepen-b74-net-rollback-input-history-5dc1 ---
-[[nodiscard]] InputReconcilePreflight preflight_reconcile_input(const InputHistoryBuffer& history, u32 frame);
-[[nodiscard]] RollbackReconcilePreflight preflight_reconcile_rollback(const RollbackBuffer& buffer, u32 frame);
-[[nodiscard]] bool should_skip_reconcile_input(const InputHistoryBuffer& history, u32 frame);
-[[nodiscard]] bool should_skip_reconcile_rollback(const RollbackBuffer& buffer, u32 frame);
-
-// --- deepen additive from deepen-b74-net-rollback-input-history-5525 ---
-struct ReconcileInputPreflight {
-struct ReconcileRollbackPreflight {
-[[nodiscard]] ReconcileInputPreflight preflight_reconcile_input(const InputHistoryBuffer& history, u32 frame);
-[[nodiscard]] ReconcileRollbackPreflight preflight_reconcile_rollback(const RollbackBuffer& buffer, u32 frame);
-
-// --- deepen additive from deepen-b74-net-rollback-guards-0483 ---
-[[nodiscard]] InputReconcilePreflight preflight_reconcile_input(const InputHistoryBuffer& history, u32 frame,
-[[nodiscard]] RollbackReconcilePreflight preflight_reconcile_rollback(const RollbackBuffer& buffer, u32 frame,
-[[nodiscard]] bool should_skip_input_reconcile(const InputHistoryBuffer& history, u32 frame, const PlayerInput& input);
-[[nodiscard]] bool should_skip_rollback_reconcile(const RollbackBuffer& buffer, u32 frame, const PlayerInput& remote);

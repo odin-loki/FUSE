@@ -8,6 +8,7 @@
 #include <fuse/cinematics/event_track.hpp>
 #include <fuse/cinematics/interpolate.hpp>
 #include <fuse/cinematics/look_at.hpp>
+#include <fuse/cinematics/mount_orientation.hpp>
 #include <fuse/cinematics/motion_track.hpp>
 #include <fuse/cinematics/property_track.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
@@ -1415,6 +1416,28 @@ void testActorMountYawAt() {
     expectTrue(track.mount_yaw_at(2'000) == 22.5f, "mount yaw sampled after mount event");
 }
 
+void testMountOrientationYawQuaternion() {
+    const fuse::cinematics::MountQuaternion quat = fuse::cinematics::yaw_deg_to_quaternion(90.f);
+    expectNear(fuse::cinematics::quaternion_to_yaw_deg(quat), 90.f, 0.01f, "yaw/quaternion round trip");
+    expectNear(fuse::cinematics::combine_mount_yaw_deg(15.f, 7.5f), 22.5f, 0.001f, "mount yaw combine");
+}
+
+void testSeqScrubPreviewStub() {
+    static const char* kText =
+        "duration_ms=5000\n"
+        "camera 0,0,0,8,55 5000,0,30,12,70\n"
+        "actor agent mount 1000 cockpit 10\n";
+    fuse::cinematics::Timeline timeline;
+    fuse::cinematics::SeqScrubPreview preview;
+    std::string error;
+    expectTrue(fuse::cinematics::scrub_seq_preview(kText, 2'500, timeline, preview, &error),
+               "seq scrub preview loads and seeks");
+    expectTrue(preview.valid, "seq scrub preview valid");
+    expectTrue(preview.time_ms == 2'500, "seq scrub preview clamps time");
+    expectTrue(preview.has_camera_track, "seq scrub preview sees camera track");
+    expectTrue(preview.has_actor_events, "seq scrub preview sees actor track");
+}
+
 void testSeqAssetMotionLoader() {
     static const char* kText =
         "duration_ms=1000\n"
@@ -1563,6 +1586,8 @@ int main() {
     testCuePreviewActorMount();
     testCuePreviewMotionCameraSprite();
     testActorMountYawAt();
+    testMountOrientationYawQuaternion();
+    testSeqScrubPreviewStub();
     testSeqAssetMotionLoader();
     testVActorMotionSync();
     fuse::core::shutdown();

@@ -2094,18 +2094,3 @@ int main() {
     std::fprintf(stderr, "fuse_world_partition_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
-
-// --- deepen additive from deepen-b76-partition-streaming-queue-residency-guards-9350 ---
-void testStreamingRequestQueuePendingGuards() {
-void testResidencyFocusDistanceGuards() {
-
-// --- deepen additive from deepen-b76-partition-eviction-7714 ---
-void testEvictionDeficitAndScoreGuards() {
-
-// --- deepen additive from deepen-b76-eviction-budget-guards-ea1b ---
-void testEmptyResidencyEvictionSkipGuard() {
-void testResidencyEvictionCandidateGuards() {
-
-// --- deepen additive from deepen-b75-terrain-lod-budget-residency-guards-02af ---
-void testAsyncSubmitBudgetGuards() {
-void testStreamingRequestQueueTrySubmitGuarded() {

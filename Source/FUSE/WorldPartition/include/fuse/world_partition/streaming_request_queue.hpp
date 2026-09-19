@@ -176,9 +176,3 @@ private:
 }
 
 } // namespace fuse::world_partition
-
-// --- deepen additive from deepen-b76-partition-streaming-queue-residency-guards-9350 ---
-[[nodiscard]] inline bool try_dequeue_pending_guarded(StreamingRequestQueue& queue, StreamingRequest& out) {
-
-// --- deepen additive from deepen-b75-terrain-lod-budget-residency-guards-02af ---
-[[nodiscard]] inline bool try_submit_guarded(StreamingRequestQueue& queue, StreamingRequest request,

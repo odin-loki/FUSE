@@ -14,4 +14,11 @@ namespace fuse::fx {
                                                  std::vector<AfxMissionHook>& outHooks,
                                                  std::string* errorOut = nullptr);
 
+class AfxMissionScriptVm;
+class FxComposer;
+
+/// TorqueScript `.mis` bridge — scan hooks and register them on the mission VM + composer.
+[[nodiscard]] bool register_afx_mission_from_mis(const std::string& misText, FxComposer& composer,
+                                                 AfxMissionScriptVm& vm, std::string* errorOut = nullptr);
+
 } // namespace fuse::fx

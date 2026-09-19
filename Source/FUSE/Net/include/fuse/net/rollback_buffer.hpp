@@ -66,12 +66,3 @@ private:
 };
 
 } // namespace fuse::net
-
-// --- deepen additive from deepen-b74-net-rollback-input-history-5dc1 ---
-struct RollbackReconcilePreflight;
-    [[nodiscard]] RollbackReconcilePreflight preflight_reconcile(u32 frame) const;
-    [[nodiscard]] bool should_skip_reconcile(u32 frame) const;
-
-// --- deepen additive from deepen-b74-net-rollback-input-history-5525 ---
-struct ReconcileRollbackPreflight;
-    [[nodiscard]] ReconcileRollbackPreflight preflight_remote_reconcile(u32 frame) const;

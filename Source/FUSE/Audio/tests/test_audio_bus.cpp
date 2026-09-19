@@ -447,13 +447,3 @@ int main() {
     testComputeMixOutputGainGuards();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
-
-// --- deepen additive from deepen-b72-audio-bus-mute-solo-master-guards-743f ---
-void testListenerMasterAudibleGuards() {
-    expectTrue(!fuse::audio::should_skip_listener_master_mix(0.75f),
-    expectTrue(!fuse::audio::should_skip_parent_chain_mix(mixer, fuse::audio::AudioBus::Voice),
-    expectTrue(fuse::audio::should_skip_parent_chain_mix(mixer, fuse::audio::AudioBus::Voice),
-
-// --- deepen additive from deepen-b72-audio-bus-mute-solo-master-guards-d457 ---
-void testListenerMasterNearZeroGuard() {
-    expectTrue(fuse::audio::should_skip_listener_master_mix(-1.f),

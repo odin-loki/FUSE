@@ -80,12 +80,3 @@ void run_rollback_buffer_tests() {
 }
 
 } // namespace fuse::net::tests
-
-// --- deepen additive from deepen-b74-net-rollback-input-history-5dc1 ---
-    const fuse::net::RollbackReconcilePreflight future_preflight = capacity_buffer.preflight_reconcile(8u);
-    expectTrue(capacity_buffer.should_skip_reconcile(8u), "rollback should_skip true for future frame");
-
-// --- deepen additive from deepen-b74-net-rollback-input-history-5525 ---
-    const fuse::net::ReconcileRollbackPreflight wrap_preflight = preflight_wrap.preflight_remote_reconcile(4u);
-    expectTrue(!preflight_wrap.should_skip_reconcile(4u), "should_skip false for wrapped newest frame");
-    expectTrue(preflight_wrap.should_skip_reconcile(0u), "should_skip true for evicted wrapped frame");

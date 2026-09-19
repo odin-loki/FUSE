@@ -4,6 +4,7 @@ namespace fuse::adventure {
 
 bool WeaponRuntime::fire(Inventory& inventory) {
     m_lastAmmoConsumed = 0;
+    m_lastDamageDealt = 0.f;
     if (inventory.activeWeapon().name.empty()) {
         return false;
     }
@@ -16,6 +17,7 @@ bool WeaponRuntime::fire(Inventory& inventory) {
         return false;
     }
 
+    m_lastDamageDealt = m_stats.damage;
     ++m_fireCount;
     return true;
 }
