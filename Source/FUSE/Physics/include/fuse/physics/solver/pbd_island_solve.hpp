@@ -1381,3 +1381,13 @@ struct IslandSleepWakeGraphPreflight {
 IslandSleepWakePreflight preflight_island_sleep_wake(const ContactIslandGraph::Island& island,
 IslandSleepWakeGraphPreflight preflight_island_sleep_wake_graph(const ContactIslandGraph& graph,
 bool should_skip_island_solve_sleep_wake(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
+
+// --- deepen additive from deepen-pbd-island-guards-a489 ---
+struct IslandSolveBodyRefsPreflight {
+    IslandSolveBodyRefsPreflight bodies{};
+IslandSolveBodyRefsPreflight preflight_island_solve_bodies(const ContactIslandGraph::Island& island,
+IslandSleepWakePreflight preflight_island_sleep_wake_by_index(const ContactIslandGraph& graph,
+bool should_skip_island_solve_for_sleep(const ContactIslandGraph::Island& island,
+bool should_skip_island_solve_for_sleep_index(const ContactIslandGraph& graph,
+bool should_skip_island_sleep_wake_graph(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
+bool should_skip_island_constraint_solve(const IslandSolveJob& job,

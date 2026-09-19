@@ -144,3 +144,6 @@ IslandBuildRejectReason island_build_reject_reason(
 // --- deepen additive from deepen-pbd-island-guards-bda2 ---
 enum class IslandBuildRejectReason : u32 {
     bool can_build() const { return reason == IslandBuildRejectReason::None; }
+
+// --- deepen additive from deepen-pbd-island-guards-a489 ---
+    bool inputs_clean() const { return reason == IslandBuildRejectReason::None; }
