@@ -539,3 +539,12 @@ AsyncFlowNestingPreflight preflightAsyncFlowNesting();
 bool wouldSkipBeginAsyncFlow(const char* name);
 bool wouldSkipEndAsyncFlow(const char* name);
 bool wouldSkipCounter(const char* track);
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-c0fe ---
+enum class ProfileRecordSkipReason : u8 {
+bool tryFindFirstFlowEventById(u32 flowId, ProfileEvent& outEvent);
+bool tryFindLastFlowEventById(u32 flowId, ProfileEvent& outEvent);
+bool wouldSkipProfileScope(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowBegin(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowEnd(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipCounterSample(const char* track, ProfileRecordSkipReason* reason = nullptr);

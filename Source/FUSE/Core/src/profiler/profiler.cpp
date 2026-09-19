@@ -1485,3 +1485,15 @@ bool wouldSkipEndAsyncFlow(const char* name) {
     return !preflightEndAsyncFlow(name, 0u).canEnd;
 bool wouldSkipCounter(const char* track) {
     return wouldSkipCounter(track);
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-c0fe ---
+bool wouldSkipProfileRecord(const char* name,
+bool tryFindFirstFlowEventById(u32 flowId, ProfileEvent& outEvent) {
+bool tryFindLastFlowEventById(u32 flowId, ProfileEvent& outEvent) {
+bool wouldSkipProfileScope(const char* name, ProfileRecordSkipReason* reason) {
+    return wouldSkipProfileRecord(name, false, reason);
+bool wouldSkipAsyncFlowBegin(const char* name, ProfileRecordSkipReason* reason) {
+bool wouldSkipAsyncFlowEnd(const char* name, ProfileRecordSkipReason* reason) {
+    return wouldSkipProfileRecord(name, true, reason);
+bool wouldSkipCounterSample(const char* track, ProfileRecordSkipReason* reason) {
+    return wouldSkipProfileRecord(track, false, reason);
