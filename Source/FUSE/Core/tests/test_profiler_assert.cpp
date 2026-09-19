@@ -4397,3 +4397,18 @@ void testNestingAsyncFlowPreflightGuard() {
                "tryLastEventByName copies inner end phase");
                "tryFirstEventByFlowId succeeds for flow start");
                "tryLastEventByFlowId succeeds for flow finish");
+
+// --- deepen additive from deepen-b16-profiler-name-flow-lookup-c5ea ---
+void testHasActiveScopeAndFlowNestingGuards() {
+    expectTrue(fuse::profiler::tryFirstEventByName("lookup_counter", outEvent),
+               "tryFirstEventByName true for first counter sample");
+    expectTrue(outEvent.counterIntValue == 3, "tryFirstEventByName copies first counter value");
+    expectTrue(fuse::profiler::tryLastEventByName("lookup_counter", outEvent),
+               "tryLastEventByName true for last counter sample");
+    expectTrue(outEvent.counterIntValue == 5, "tryLastEventByName copies last counter value");
+               "tryFirstEventByName clears output on empty name");
+    expectTrue(fuse::profiler::tryFirstFlowEvent(innerFlowId, outEvent),
+               "tryFirstFlowEvent true for inner flow start");
+    expectTrue(fuse::profiler::tryLastFlowEvent(outerFlowId, outEvent),
+               "tryLastFlowEvent true for outer flow finish");
+    expectTrue(outEvent.scopeId == outerFlowId, "tryLastFlowEvent preserves flow id");
