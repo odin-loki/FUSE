@@ -1026,3 +1026,17 @@ PairBufferAcceptPairsPreflight preflightPairBufferAcceptPairs(
     case PairBufferSortRejectReason::AlreadySorted:
         return PairBufferSortRejectReason::AlreadySorted;
     preflight.alreadySorted = preflight.reason == PairBufferSortRejectReason::AlreadySorted;
+
+// --- deepen additive from deepen-b4-broadphase-guards-7f22 ---
+const char* pairBufferPrepareSlotsRejectReasonName(PairBufferPrepareSlotsRejectReason reason) {
+    case PairBufferPrepareSlotsRejectReason::None:
+    case PairBufferPrepareSlotsRejectReason::ZeroSlots:
+PairBufferPrepareSlotsRejectReason pairBufferPrepareSlotsRejectReason(u32 slotCount) {
+        return PairBufferPrepareSlotsRejectReason::ZeroSlots;
+    return PairBufferPrepareSlotsRejectReason::None;
+bool pairBufferPrepareSlotsRejectsForReason(u32 slotCount, PairBufferPrepareSlotsRejectReason expected) {
+    return pairBufferPrepareSlotsRejectReason(slotCount) == expected;
+    preflight.reason = pairBufferPrepareSlotsRejectReason(slotCount);
+    preflight.zeroSlots = preflight.reason == PairBufferPrepareSlotsRejectReason::ZeroSlots;
+    return !preflightPairBufferPrepareSlots(slotCount).canPrepare();
+    return preflightPairBufferPrepareSlots(slotCount).canPrepare();

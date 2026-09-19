@@ -538,3 +538,11 @@ struct PairBufferAcceptPairsPreflight {
     PairBufferAcceptPairsRejectReason reason = PairBufferAcceptPairsRejectReason::None;
     bool canAccept() const { return reason == PairBufferAcceptPairsRejectReason::None; }
 PairBufferAcceptPairsPreflight preflightPairBufferAcceptPairs(
+
+// --- deepen additive from deepen-b4-broadphase-guards-7f22 ---
+enum class PairBufferPrepareSlotsRejectReason : u8 {
+const char* pairBufferPrepareSlotsRejectReasonName(PairBufferPrepareSlotsRejectReason reason);
+PairBufferPrepareSlotsRejectReason pairBufferPrepareSlotsRejectReason(u32 slotCount);
+bool pairBufferPrepareSlotsRejectsForReason(u32 slotCount, PairBufferPrepareSlotsRejectReason expected);
+    PairBufferPrepareSlotsRejectReason reason = PairBufferPrepareSlotsRejectReason::None;
+    bool canPrepare() const { return reason == PairBufferPrepareSlotsRejectReason::None; }

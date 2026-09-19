@@ -3306,3 +3306,34 @@ void testBroadphasePairSlotRejectReasonGuards() {
         fuse::physics::broadphase::preflightBroadphasePairSlots(4u);
     expectTrue(validPreflight.canWriteSlots(), "pair-slot preflight accepts non-zero slots");
     testBroadphasePairSlotRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-7f22 ---
+        fuse::physics::broadphase::preflightPairBufferWriteSlot(buffer, 1u, 0u, 2u);
+void testPairBufferPrepareSlotsPreflightGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferPrepareSlotsRejectReason(0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferPrepareSlotsRejectReason::ZeroSlots),
+    expectTrue(fuse::physics::broadphase::pairBufferPrepareSlotsRejectsForReason(
+                   0u, fuse::physics::broadphase::PairBufferPrepareSlotsRejectReason::ZeroSlots),
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferPrepareSlotsRejectReasonName(
+                               fuse::physics::broadphase::PairBufferPrepareSlotsRejectReason::ZeroSlots),
+    const fuse::physics::broadphase::PairBufferPrepareSlotsPreflight zeroPreflight =
+    expectTrue(!zeroPreflight.canPrepare(), "prepare preflight rejects zero slot count");
+    expectTrue(zeroPreflight.zeroSlots, "prepare preflight marks zero slots");
+    const fuse::physics::broadphase::PairBufferPrepareSlotsPreflight validPreflight =
+        fuse::physics::broadphase::preflightPairBufferPrepareSlots(4u);
+    expectTrue(validPreflight.canPrepare(), "prepare preflight accepts non-zero slot count");
+                 fuse::physics::broadphase::cellSpanClampRejectReason(withinRange, 8u)),
+                   wideRange, 8u, fuse::physics::broadphase::CellSpanClampRejectReason::ExceedsSpanPerAxis),
+                               fuse::physics::broadphase::CellSpanClampRejectReason::ExceedsSpanPerAxis),
+        fuse::physics::broadphase::preflightCellSpanClamp(wideRange, 8u);
+                   planeRange, 8u, fuse::physics::broadphase::CellSpanClampRejectReason::ExceedsSpanPerAxis),
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseCellPairRejectReason::ZeroCellSlots),
+                   0u, fuse::physics::broadphase::BroadphaseCellPairRejectReason::ZeroCellSlots),
+                               fuse::physics::broadphase::BroadphaseCellPairRejectReason::ZeroCellSlots),
+        fuse::physics::broadphase::preflightBroadphaseCellPairGeneration(0u);
+    expectTrue(!zeroPreflight.canDispatch(), "cell-pair preflight rejects zero cell slots");
+    expectTrue(zeroPreflight.zeroCellSlots, "cell-pair preflight marks zeroCellSlots");
+        fuse::physics::broadphase::preflightBroadphaseCellPairGeneration(4u);
+    expectTrue(validPreflight.canDispatch(), "cell-pair preflight accepts non-zero cell slots");
+void testShouldRunBroadphasePairGenerationGuards() {
+    testPairBufferPrepareSlotsPreflightGuards();

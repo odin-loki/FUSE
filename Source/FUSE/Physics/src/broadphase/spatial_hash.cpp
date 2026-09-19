@@ -1270,3 +1270,13 @@ BroadphaseShapeInsertPreflight preflightBroadphaseShapeInsert(
 const char* broadphasePairSlotRejectReasonName(BroadphasePairSlotRejectReason reason) {
     case BroadphasePairSlotRejectReason::None:
     case BroadphasePairSlotRejectReason::ZeroPairSlots:
+
+// --- deepen additive from deepen-b4-broadphase-guards-7f22 ---
+    case CellSpanClampRejectReason::ExceedsSpanPerAxis:
+    if (!preflightBroadphaseCellPairGeneration(totalCellSlots).canDispatch()) {
+    case BroadphaseCellPairRejectReason::ZeroCellSlots:
+        return BroadphaseCellPairRejectReason::ZeroCellSlots;
+BroadphaseCellPairPreflight preflightBroadphaseCellPairGeneration(u32 totalCellSlots) {
+    preflight.zeroCellSlots = preflight.reason == BroadphaseCellPairRejectReason::ZeroCellSlots;
+    return !preflightBroadphaseCellPairGeneration(totalCellSlots).canDispatch();
+    return preflightBroadphaseCellPairGeneration(totalCellSlots).canDispatch();
