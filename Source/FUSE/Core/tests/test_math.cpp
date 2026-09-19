@@ -1352,3 +1352,53 @@ int main() {
     expectTrue(fuse::math::simd::tryTransformRigidAabb(rigid, box, simdWorld),
                "simd tryTransformRigidAabb succeeds");
     expectAabbNear(simdWorld, scalarWorld, 1e-4f, "simd tryTransformRigidAabb matches scalar");
+
+// --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-a428 ---
+    expectTrue(fuse::math::tryExtractTranslation(matrix, translation),
+               "tryExtractTranslation succeeds for affine matrix");
+    expectVec3Near(translation, {-2.f, 4.f, 1.f}, 1e-5f, "tryExtractTranslation reads affine column");
+               "tryExtractTranslation early-outs on non-affine matrix");
+    expectTrue(box.tryRayInterval({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, tEnter, tExit),
+    expectTrue(!box.tryRayInterval({-3.f, 2.f, 0.f}, {1.f, 0.f, 0.f}, tEnter, tExit),
+    expectTrue(box.tryRayIntervalClamped({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 2.5f, 3.5f, tEnter, tExit),
+    expectTrue(!box.tryRayIntervalClamped({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 5.f, 4.f, tEnter, tExit),
+               "tryRayIntervalClamped early-outs on inverted clamp range");
+    expectTrue(box.tryRayHits({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.f, 10.f),
+    expectTrue(!box.tryRayHits({-3.f, 2.f, 0.f}, {1.f, 0.f, 0.f}, 0.f, 10.f),
+    expectTrue(!box.tryRayHits({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 5.f, 4.f),
+               "tryRayHits early-outs on inverted clamp range");
+    expectTrue(box.tryRayIntersect({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, hit),
+    expectNear(hit, 2.f, 1e-4f, "tryRayIntersect parametric distance");
+    expectTrue(!box.tryRayIntersect({-3.f, 2.f, 0.f}, {1.f, 0.f, 0.f}, hit),
+    expectTrue(!empty.tryRayInterval({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, tEnter, tExit),
+    expectTrue(!empty.tryRayIntervalClamped({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.f, 10.f, tEnter, tExit),
+    expectTrue(!empty.tryRayHits({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}), "tryRayHits early-outs on empty box");
+    expectTrue(!empty.tryRayIntersect({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, hit),
+    expectTrue(fuse::math::tryTransformAabb(rigid, local, out), "tryTransformAabb accepts rigid matrix");
+                   "tryTransformAabb matches transformAabb for rigid matrix");
+    expectTrue(!fuse::math::tryTransformAabb(nonUniform, local, out),
+               "tryTransformAabb early-outs on non-rigid matrix");
+    expectTrue(fuse::math::tryTransformAabb(rigid, empty, out),
+               "tryTransformAabb succeeds for empty box");
+    expectTrue(out.isEmpty(), "tryTransformAabb preserves empty bounds");
+    expectTrue(fuse::math::tryClassifyAabb(plane, above, side), "tryClassifyAabb succeeds for valid plane");
+    expectTrue(fuse::math::tryClipSegmentAgainstPlane(clipPlane, a, b),
+    expectNear(a.x, 0.f, 1e-5f, "tryClipSegmentAgainstPlane moves start to plane");
+    expectTrue(!fuse::math::tryClipSegmentAgainstPlane(degenerate, degenerateA, degenerateB),
+    expectTrue(fuse::math::tryClipPolygonAgainstPlane(clipPlane, square, 4, clipped, 8, clippedCount),
+    expectTrue(clippedCount == 4, "tryClipPolygonAgainstPlane keeps in-front square");
+    expectTrue(!fuse::math::tryClipPolygonAgainstPlane(degenerate, square, 4, clipped, 8, degenerateCount),
+void testSimdTryGuardParity() {
+    expectTrue(box.tryRayInterval({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, scalarEnter, scalarExit),
+    expectTrue(fuse::math::simd::tryRayIntervalAabb(box, {-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, simdEnter, simdExit),
+               "simd tryRayIntervalAabb hits");
+    expectNear(simdEnter, scalarEnter, 1e-4f, "simd tryRayIntervalAabb entry matches scalar");
+    expectNear(simdExit, scalarExit, 1e-4f, "simd tryRayIntervalAabb exit matches scalar");
+    expectTrue(box.tryRayIntersect({-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, scalarHit),
+    expectTrue(fuse::math::simd::tryRayIntersectAabb(box, {-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, simdHit),
+               "simd tryRayIntersectAabb hits");
+    expectNear(simdHit, scalarHit, 1e-4f, "simd tryRayIntersectAabb matches scalar");
+    expectTrue(fuse::math::tryClassifyAabb(plane, box, scalarSide), "scalar tryClassifyAabb succeeds");
+    expectTrue(fuse::math::simd::tryClassifyAabb(plane, box, simdSide), "simd tryClassifyAabb succeeds");
+    expectTrue(fuse::math::tryTransformAabb(rigid, box, scalarOut), "scalar tryTransformAabb succeeds");
+    expectTrue(fuse::math::simd::tryTransformAabb(rigid, box, simdOut), "simd tryTransformAabb succeeds");

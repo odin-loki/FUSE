@@ -265,3 +265,10 @@ inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
 
 // --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-27ba ---
 inline bool tryTransformRigidAabb(const Mat4& matrix, const AABB& box, AABB& out, f32 epsilon = 1e-4f) {
+
+// --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-a428 ---
+    bool tryRayInterval(const Vec3& origin, const Vec3& direction, f32& tEnter, f32& tExit) const {
+    bool tryRayIntervalClamped(const Vec3& origin, const Vec3& direction, f32 tMin, f32 tMax, f32& tEnter,
+    bool tryRayHits(const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
+    bool tryRayIntersect(const Vec3& origin, const Vec3& direction, f32& t) const {
+inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out, f32 epsilon = 1e-4f) {

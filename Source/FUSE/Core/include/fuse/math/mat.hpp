@@ -458,3 +458,6 @@ inline Mat3 operator*(const Mat3& a, const Mat3& b) { return multiply(a, b); }
 
 // --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-27ba ---
 inline bool tryExtractTranslation(const Mat4& matrix, Vec3& translation, f32 epsilon = 1e-5f) {
+
+// --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-a428 ---
+inline bool tryExtractTranslation(const Mat4& matrix, Vec3& out, f32 epsilon = 1e-5f) {

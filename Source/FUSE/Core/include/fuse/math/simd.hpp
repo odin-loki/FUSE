@@ -429,3 +429,18 @@ inline bool tryExtractTranslation(const fuse::math::Mat4& matrix, Vec3& translat
     return fuse::math::tryExtractTranslation(matrix, translation, epsilon);
 inline bool tryTransformRigidAabb(const fuse::math::Mat4& matrix, const AABB& box, AABB& out,
     return fuse::math::tryTransformRigidAabb(matrix, box, out, epsilon);
+
+// --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-a428 ---
+inline bool tryExtractTranslation(const fuse::math::Mat4& matrix, Vec3& out, f32 epsilon = 1e-5f) {
+    return fuse::math::tryExtractTranslation(matrix, out, epsilon);
+inline bool tryTransformAabb(const fuse::math::Mat4& matrix, const AABB& box, AABB& out,
+    return fuse::math::tryTransformAabb(matrix, box, out, epsilon);
+inline bool tryRayIntervalAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32& tEnter,
+    return box.tryRayInterval(origin, direction, tEnter, tExit);
+inline bool tryRayIntervalClampedAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin,
+    return box.tryRayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
+inline bool tryRayHitsAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
+    return box.tryRayHits(origin, direction, tMin, tMax);
+inline bool tryRayIntersectAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
+    return box.tryRayIntersect(origin, direction, t);
+    return fuse::math::tryClipPolygonAgainstPlane(plane, input, inputCount, output, maxOutput, outCount,
