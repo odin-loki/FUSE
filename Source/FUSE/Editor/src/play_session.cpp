@@ -226,6 +226,14 @@ WorldSnapshotPreflight PlaySession::preflightWorldSnapshot() const {
     return preflight;
 }
 
+VariableTickPreflight PlaySession::preflightVariableTick(f32 dt,
+                                                         const PlayModePhysicsState& physics) const {
+    VariableTickPreflight preflight{};
+    preflight.skipped = shouldSkipVariableTick(dt, physics);
+    preflight.wouldSimulate = !preflight.skipped;
+    return preflight;
+}
+
 bool PlaySession::shouldSkipVariableTick(f32 dt, const PlayModePhysicsState& physics) const {
     return !m_controller.isPlaying() || !physics.simulationActive || dt <= 0.f;
     return !m_controller.isPlaying() || !physics.simulationActive || dt < 0.f;
@@ -233,6 +241,28 @@ bool PlaySession::shouldSkipVariableTick(f32 dt, const PlayModePhysicsState& phy
 
 bool PlaySession::shouldSkipFixedStepDrain(f32 fixedDt, const PlayModePhysicsState& physics) const {
     return !m_controller.isPlaying() || !physics.simulationActive || fixedDt <= 0.f;
+}
+
+bool PlaySession::hasPendingFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics) const {
+    if (shouldSkipFixedStepDrain(fixedDt, physics)) {
+        return false;
+    }
+
+    return pendingFixedStepCount(fixedDt) > 0;
+}
+
+bool PlaySession::canConsumeFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics,
+                                       u32 maxSteps) const {
+    const FixedStepPreflight preflight = preflightFixedSteps(fixedDt, physics, maxSteps);
+    return !preflight.skipped && preflight.allowed > 0;
+}
+
+f32 PlaySession::fixedAccumulatorRemainder(f32 fixedDt) const {
+    if (fixedDt <= 0.f) {
+        return 0.f;
+    }
+
+    return m_tickAccumulator - static_cast<f32>(pendingFixedStepCount(fixedDt)) * fixedDt;
 }
 
 DirtySnapshotInfo PlaySession::dirtySnapshotInfo() const {
@@ -245,6 +275,8 @@ DirtySnapshotInfo PlaySession::dirtySnapshotInfo() const {
     info.sceneModified = m_dirtySnapshot.sceneModified;
     info.entityCount = static_cast<u32>(m_dirtySnapshot.transformDirty.size());
     info.dirtyEntityCount = dirtySnapshotDirtyEntityCount();
+    return info;
+}
 
 ecs::EntityID PlaySession::dirtySnapshotEntityAt(usize index) const {
     if (!m_hasDirtySnapshot || index >= m_dirtySnapshot.transformDirty.size()) {
@@ -305,6 +337,62 @@ DirtySnapshotPreflight PlaySession::preflightDirtySnapshotRestore() const {
     preflight.skipped = false;
     preflight.entityCount = static_cast<u32>(m_dirtySnapshot.transformDirty.size());
     preflight.sceneModifiedCaptured = m_dirtySnapshot.sceneModified;
+}
+
+bool PlaySession::transformDirtyForEntity(ecs::EntityID entityId) const {
+    if (!m_hasDirtySnapshot || !entityId.valid()) {
+        return false;
+    }
+
+    for (const std::pair<ecs::EntityID, bool>& entry : m_dirtySnapshot.transformDirty) {
+        if (entry.first == entityId) {
+            return entry.second;
+        }
+    }
+
+    return false;
+}
+
+u32 PlaySession::dirtySnapshotDirtyEntityCount() const {
+    if (!m_hasDirtySnapshot) {
+        return 0;
+    }
+
+    u32 dirtyCount = 0;
+    for (const std::pair<ecs::EntityID, bool>& entry : m_dirtySnapshot.transformDirty) {
+        if (entry.second) {
+            ++dirtyCount;
+        }
+    }
+
+    return dirtyCount;
+}
+
+WorldSnapshotInfo PlaySession::worldSnapshotInfo() const {
+    WorldSnapshotInfo info{};
+    info.captured = m_hasWorldSnapshot;
+    if (!m_hasWorldSnapshot) {
+        return info;
+    }
+
+    info.entityCount = static_cast<u32>(m_worldSnapshot.entities.size());
+    return info;
+}
+
+ecs::EntityID PlaySession::worldSnapshotEntityAt(usize index) const {
+    if (!m_hasWorldSnapshot || index >= m_worldSnapshot.entities.size()) {
+        return ecs::EntityID{};
+    }
+
+    return m_worldSnapshot.entities[index].first;
+}
+
+bool PlaySession::shouldSkipWorldSnapshotDrain() const {
+    return !m_hasWorldSnapshot;
+}
+
+bool PlaySession::shouldSkipDirtySnapshotDrain() const {
+    return !m_hasDirtySnapshot;
 }
 
 PlayWorldSnapshot PlaySession::captureWorldSnapshot(EditorScene& editorScene) const {

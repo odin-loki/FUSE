@@ -28,6 +28,8 @@ struct FixedStepPreflight {
 struct VariableTickPreflight {
     bool wouldSimulate = false;
     bool wouldAdvanceAccumulator = false;
+    bool skipped = false;
+};
 
 /// Captured dirty-flag metadata for PIE restore (B6.12 deepen follow-up).
 struct DirtySnapshotInfo {
@@ -71,6 +73,10 @@ struct TickFixedStepPreflight {
     bool sceneModifiedCaptured = false;
 
     bool canRestore() const { return !skipped; }
+};
+
+    bool captured = false;
+    u32 entityCount = 0;
 };
 
 /// ECS world snapshot for PIE restore (B6.12 deepen — transform payloads per entity).
@@ -141,6 +147,7 @@ public:
     /// Preflight world snapshot drain without mutating editor state.
     WorldSnapshotPreflight preflightWorldSnapshot() const;
     bool canDrainWorldSnapshot() const { return preflightWorldSnapshot().canDrain(); }
+                              u32 maxSteps = 0) const;
     u32 dirtySnapshotEntityCount() const {
         return m_hasDirtySnapshot ? static_cast<u32>(m_dirtySnapshot.transformDirty.size()) : 0u;
     }
