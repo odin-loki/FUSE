@@ -1088,3 +1088,8 @@ void testCookHashPreflightFnvAndManifestCook() {
     expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source reports seeded source");
     expectTrue(!cooker.cache().would_invalidate_source("/tmp/fuse_b79_unknown_source.obj"),
                "would_invalidate_source rejects unknown source");
+
+// --- deepen additive from deepen-b79-cooker-hash-reconcile-5e9c ---
+    const fuse::project::CookHashPreflight combine_preflight =
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, current_hash),
+               "would_invalidate_stale_content with stale hash is true");

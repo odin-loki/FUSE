@@ -508,3 +508,9 @@ CookHashPreflight preflight_manifest_cook_hash(const CookManifestEntry& entry, c
 
 // --- deepen additive from deepen-b79-cooker-hash-b4e0 ---
 CookHashPreflight preflight_manifest_entry_with_upstream_hash(const CookManifestEntry& entry,
+
+// --- deepen additive from deepen-b79-cooker-hash-reconcile-5e9c ---
+    case CookHashRejectReason::UnresolvedDependency:
+CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry& entry) {
+            preflight.reason = dependency_preflight.reason == CookHashRejectReason::EmptyPath
+                                   ? CookHashRejectReason::UnresolvedDependency

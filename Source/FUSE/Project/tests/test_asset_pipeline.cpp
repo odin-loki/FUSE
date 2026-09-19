@@ -2000,3 +2000,9 @@ void testCookerReconcileEstimatorGuards() {
                "would_invalidate_upstream_dependency false for empty source");
     expectTrue(!fresh_reconcile.would_invalidate(), "fresh cache would not reconcile");
     expectTrue(stale_reconcile.would_invalidate(), "stale reconcile would invalidate");
+
+// --- deepen additive from deepen-b79-cooker-hash-reconcile-5e9c ---
+    entryA.output_path = "/tmp/fuse_b79_reconcile_chain_a.fusemesh";
+    entryB.output_path = "/tmp/fuse_b79_reconcile_chain_b.fusemesh";
+        cooker.cache().probe_downstream_sources(entryA.output_path, graph.edges(), graph.jobs());
+    expectTrue(downstream[0] == entryA.output_path,
