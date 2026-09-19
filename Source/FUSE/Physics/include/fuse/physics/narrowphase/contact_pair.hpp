@@ -1988,9 +1988,6 @@ ContactPairDetectPreflight preflight_detect_contacts_pair(
 bool can_skip_detect_contacts_pair(
 
 /// Run shape dispatch only when deepen preflight passes; invalid manifold otherwise (B4.6 deepen pass).
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Finalize only when `can_finalize_contact_manifold` passes; no-op otherwise (B4.6 deepen follow-up pass).
 bool generate_contact_manifold_with_preflight(ContactManifold& manifold);
@@ -2004,9 +2001,6 @@ ContactPairRejectReason contact_pair_deepen_followup_reject_reason(
 ContactManifold detect_contacts_pair_with_deepen_preflight(
 /// Non-mutating pair-dispatch predicate — mirrors `preflight_contact_pair` (B4.6 deepen follow-up pass).
 bool should_run_contact_pair_dispatch(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Returns true when extended deepen follow-up rejects this pair (B4.6 deepen follow-up pass).
 bool should_skip_contact_pair_deepen_followup_dispatch(
@@ -2072,5 +2066,56 @@ inline bool can_skip_detect_contacts_pair(
     return !preflight_detect_contacts_pair(pair, bodies, shapes).can_detect();
 
 inline ContactManifold detect_contacts_pair_with_preflight(
+/// Extended reject reason including plane-plane pairs (B4.6 deepen pass).
+/// Does not alter `contact_pair_deepen_reject_reason`; use for additive preflight only.
+inline ContactPairRejectReason contact_pair_deepen_pass_reject_reason(
+        return ContactPairRejectReason::PlanePlane;
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes);
+
+/// Human-readable label for deepen-pass reject reasons (B4.6 deepen pass).
+inline const char* contact_pair_deepen_pass_reject_reason_name(ContactPairRejectReason reason) {
+    if (reason == ContactPairRejectReason::PlanePlane) {
+        return "PlanePlane";
+    return contact_pair_reject_reason_name(reason);
+
+/// Returns true when `contact_pair_deepen_pass_reject_reason` matches `expected` (B4.6 deepen pass).
+inline bool contact_pair_deepen_pass_rejects_for_reason(
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected) {
+    return contact_pair_deepen_pass_reject_reason(pair, bodies, shapes) == expected;
+
+/// Const preflight with plane-plane reject checks (B4.6 deepen pass).
+struct ContactPairDeepenPassPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+
+    bool can_dispatch() const { return !rejected; }
+
+/// Populate deepen-pass pair preflight without running shape dispatch (B4.6 deepen pass).
+inline ContactPairDeepenPassPreflight preflight_contact_pair_deepen_pass(
+    ContactPairDeepenPassPreflight preflight{};
+    preflight.reason = contact_pair_deepen_pass_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+
+/// Returns true when deepen-pass preflight rejects this pair (B4.6 deepen pass).
+inline bool should_skip_contact_pair_deepen_pass_dispatch(
+    return contact_pair_deepen_pass_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+
+/// Count pairs that pass deepen-pass preflight (B4.6 deepen pass).
+inline u32 count_deepen_pass_dispatchable_contact_pairs(
+    u32 dispatchable = 0u;
+    for (const broadphase::CandidatePair& pair : pairs) {
+        if (!should_skip_contact_pair_deepen_pass_dispatch(pair, bodies, shapes)) {
+            ++dispatchable;
+    return dispatchable;
+
+/// True when at least one pair passes deepen-pass preflight (B4.6 deepen pass).
+inline bool has_deepen_pass_dispatchable_contact_pair(
+    if (pairs.empty()) {
+        return false;
+    return count_deepen_pass_dispatchable_contact_pairs(pairs, bodies, shapes) > 0u;
+
+/// True when all pairs are rejected by deepen-pass preflight or the pair list is empty (B4.6 deepen pass).
+inline bool can_skip_narrowphase_deepen_pass(
+    return !has_deepen_pass_dispatchable_contact_pair(pairs, bodies, shapes);
 
 } // namespace fuse::physics::narrowphase

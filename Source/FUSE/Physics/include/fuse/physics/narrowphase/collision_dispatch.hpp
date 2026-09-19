@@ -673,5 +673,34 @@ inline NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
 
 inline bool can_skip_narrowphase_dispatch(
     return preflight_narrowphase_dispatch(pairs, bodies, shapes).can_skip();
+struct NarrowphaseBufferPreflight {
+    ContactBufferCompactAndClampPreflight bufferPostPass{};
+    bool allPairsRejected = false;
+    bool bufferAlreadyPacked = false;
+
+    bool can_dispatch() const { return batch.can_dispatch(); }
+
+    bool can_skip() const {
+        return emptyPairList || allPairsRejected;
+
+/// Populate narrowphase buffer preflight without running dispatch (B4.6 deepen pass).
+inline NarrowphaseBufferPreflight preflight_run_narrowphase_into_buffer(
+    const ContactBufferSoA& buffer) {
+    NarrowphaseBufferPreflight preflight{};
+    preflight.allPairsRejected = !preflight.batch.can_dispatch();
+    preflight.bufferPostPass = preflightContactBufferCompactAndClamp(buffer);
+    preflight.bufferAlreadyPacked = buffer.canSkipCompactAndClamp();
+
+/// Returns true when narrowphase buffer dispatch should be skipped (B4.6 deepen pass).
+inline bool can_skip_run_narrowphase_into_buffer(
+    return can_skip_narrowphase_deepen_pass(pairs, bodies, shapes);
+
+/// Returns true when narrowphase buffer dispatch may proceed (B4.6 deepen pass).
+inline bool should_run_narrowphase_into_buffer(
+    return !can_skip_run_narrowphase_into_buffer(pairs, bodies, shapes);
+
+/// Run narrowphase into buffer only when deepen-pass preflight allows (B4.6 deepen pass).
+inline void run_narrowphase_into_buffer_with_preflight(
+    if (can_skip_run_narrowphase_into_buffer(pairs, bodies, shapes)) {
 
 } // namespace fuse::physics::narrowphase

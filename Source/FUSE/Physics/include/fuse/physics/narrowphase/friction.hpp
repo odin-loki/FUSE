@@ -933,5 +933,66 @@ inline bool compute_friction_tangents_with_preflight(ContactManifold& manifold, 
         return false;
     if (preflight.can_skip_rebuild()) {
     return rebuild_friction_basis_with_preflight(manifold, epsilon);
+/// Why friction tangent compute would early-out (B4.6 deepen pass).
+enum class FrictionTangentComputeRejectReason : u8 {
+    CachedBasis,
+
+/// Human-readable label for friction tangent compute reject reasons (B4.6 deepen pass).
+inline const char* friction_tangent_compute_reject_reason_name(FrictionTangentComputeRejectReason reason) {
+    switch (reason) {
+    case FrictionTangentComputeRejectReason::None:
+        return "None";
+    case FrictionTangentComputeRejectReason::EmptyManifold:
+        return "EmptyManifold";
+    case FrictionTangentComputeRejectReason::InvalidNormal:
+        return "InvalidNormal";
+    case FrictionTangentComputeRejectReason::CachedBasis:
+        return "CachedBasis";
+    return "Unknown";
+
+/// Diagnose why `compute_friction_tangents` would skip; vacuously succeeds when compute may proceed (B4.6 deepen pass).
+inline FrictionTangentComputeRejectReason friction_tangent_compute_reject_reason(
+    const FrictionBasisRejectReason basisReason = friction_basis_reject_reason(manifold);
+    if (basisReason == FrictionBasisRejectReason::EmptyManifold) {
+        return FrictionTangentComputeRejectReason::EmptyManifold;
+    if (basisReason == FrictionBasisRejectReason::InvalidNormal) {
+        return FrictionTangentComputeRejectReason::InvalidNormal;
+    if (can_skip_friction_basis_rebuild(manifold, epsilon)) {
+        return FrictionTangentComputeRejectReason::CachedBasis;
+    return FrictionTangentComputeRejectReason::None;
+
+/// Returns true when `friction_tangent_compute_reject_reason` matches `expected` (B4.6 deepen pass).
+inline bool friction_tangent_compute_rejects_for_reason(
+    FrictionTangentComputeRejectReason expected,
+    return friction_tangent_compute_reject_reason(manifold, epsilon) == expected;
+
+/// Read-only friction tangent compute diagnostics — no mutation (B4.6 deepen pass).
+struct FrictionTangentComputePreflight {
+    FrictionTangentComputeRejectReason reason = FrictionTangentComputeRejectReason::None;
+    bool needsCompute = false;
+
+    bool can_compute() const {
+        return !skipped && reason == FrictionTangentComputeRejectReason::None && needsCompute;
+
+    bool can_skip_compute() const {
+        return skipped || reason != FrictionTangentComputeRejectReason::None || !needsCompute;
+
+/// Populate friction tangent compute preflight without mutation (B4.6 deepen pass).
+inline FrictionTangentComputePreflight preflight_friction_tangent_compute(
+    FrictionTangentComputePreflight preflight{};
+    preflight.reason = friction_tangent_compute_reject_reason(manifold, epsilon);
+    if (preflight.reason == FrictionTangentComputeRejectReason::EmptyManifold ||
+        preflight.reason == FrictionTangentComputeRejectReason::InvalidNormal) {
+        preflight.skipped = true;
+        return preflight;
+    if (preflight.reason == FrictionTangentComputeRejectReason::CachedBasis) {
+    preflight.needsCompute = needs_friction_basis_refresh(manifold, epsilon);
+
+/// Returns true when friction tangent compute should be skipped (B4.6 deepen pass).
+inline bool can_skip_compute_friction_tangents(const ContactManifold& manifold, f32 epsilon = 1e-4f) {
+    return preflight_friction_tangent_compute(manifold, epsilon).can_skip_compute();
+
+/// Compute friction tangents only when preflight allows (B4.6 deepen pass).
+    const FrictionTangentComputePreflight preflight = preflight_friction_tangent_compute(manifold, epsilon);
 
 } // namespace fuse::physics::narrowphase
