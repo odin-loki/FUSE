@@ -57,3 +57,9 @@ NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
     NarrowphasePairSlotPreflight preflight{};
 bool should_skip_narrowphase_pair_slot(
         if (should_skip_narrowphase_pair_slot(pair, bodies, shapes)) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-37c2 ---
+    preflight.pairPreflight = preflight_contact_pair(pair, bodies, shapes);
+    preflight.skipped = !preflight.pairPreflight.can_dispatch();
+    return !should_skip_narrowphase_pair_slot(pair, bodies, shapes);
+        if (should_skip_narrowphase_pair_slot(pairs[pairIndex], bodies, shapes)) {

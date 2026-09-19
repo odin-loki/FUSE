@@ -510,3 +510,28 @@ ContactBufferClampPreflight preflightContactBufferClamp(const ContactBufferSoA& 
 
 // --- deepen additive from b4-narrowphase-guard-pass-0376 ---
     const ContactBufferWritePreflight preflight = preflight_contact_buffer_write(*this, slot, manifold);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-37c2 ---
+    if (!preflightContactBufferWrite(*this, slot, manifold).canWrite()) {
+    const ContactBufferCompactPreflight compactionPreflight = preflightContactBufferCompact(*this);
+    if (compactionPreflight.reason == ContactBufferCompactRejectReason::EmptyBuffer) {
+    if (compactionPreflight.reason == ContactBufferCompactRejectReason::AllValid) {
+const char* contactBufferCompactRejectReasonName(ContactBufferCompactRejectReason reason) {
+    case ContactBufferCompactRejectReason::None:
+    case ContactBufferCompactRejectReason::EmptyBuffer:
+    case ContactBufferCompactRejectReason::AllValid:
+ContactBufferCompactRejectReason contactBufferCompactRejectReason(const ContactBufferSoA& buffer) {
+        return ContactBufferCompactRejectReason::EmptyBuffer;
+        return ContactBufferCompactRejectReason::AllValid;
+    return ContactBufferCompactRejectReason::None;
+    ContactBufferCompactRejectReason expected) {
+    return contactBufferCompactRejectReason(buffer) == expected;
+    return !preflightContactBufferWrite(buffer, slot, manifold).canWrite();
+    return preflightContactBufferWrite(buffer, slot, manifold).canWrite();
+ContactBufferCompactPreflight preflightContactBufferCompact(const ContactBufferSoA& buffer) {
+    ContactBufferCompactPreflight preflight{};
+    preflight.reason = contactBufferCompactRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferCompactRejectReason::EmptyBuffer;
+    preflight.allValid = preflight.reason == ContactBufferCompactRejectReason::AllValid;
+    return !preflightContactBufferCompact(buffer).needsCompaction();
+    return preflightContactBufferCompact(buffer).needsCompaction();

@@ -158,3 +158,13 @@ ContactBufferCompactionPreflight preflightContactBufferCompaction(const ContactB
 const char* contactBufferClampRejectReasonName(ContactBufferClampRejectReason reason);
 ContactBufferClampRejectReason contactBufferClampRejectReason(const ContactBufferSoA& buffer);
 ContactBufferClampPreflight preflightContactBufferClamp(const ContactBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-37c2 ---
+enum class ContactBufferCompactRejectReason : u8 {
+const char* contactBufferCompactRejectReasonName(ContactBufferCompactRejectReason reason);
+ContactBufferCompactRejectReason contactBufferCompactRejectReason(const ContactBufferSoA& buffer);
+    ContactBufferCompactRejectReason expected);
+struct ContactBufferCompactPreflight {
+    ContactBufferCompactRejectReason reason = ContactBufferCompactRejectReason::None;
+    bool needsCompaction() const { return reason == ContactBufferCompactRejectReason::None; }
+ContactBufferCompactPreflight preflightContactBufferCompact(const ContactBufferSoA& buffer);

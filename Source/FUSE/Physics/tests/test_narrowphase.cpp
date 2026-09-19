@@ -2578,3 +2578,19 @@ void testContactBufferCompactionRejectReasonGuards() {
 void testRunNarrowphaseDeepenIntoBufferGuards() {
     testContactBufferWriteRejectReasonGuards();
     testContactBufferCompactionRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-37c2 ---
+void testContactPairGuardPassShouldRunHelpers() {
+void testManifoldPruneFinalizeGuardPassShouldRun() {
+void testFrictionBasisRebuildGuardPassShouldRun() {
+        "should_skip preflight true for empty manifold");
+void testContactBufferGuardPassPreflights() {
+            fuse::physics::narrowphase::ContactBufferCompactRejectReason::AllValid),
+            fuse::physics::narrowphase::ContactBufferCompactRejectReason::EmptyBuffer),
+void testNarrowphasePairSlotPreflightGuards() {
+    expectTrue(validPreflight.can_dispatch(), "pair-slot preflight allows valid pair");
+        "should_skip pair slot false for valid pair");
+    expectTrue(!selfPreflight.can_dispatch(), "pair-slot preflight rejects self pair");
+        "should_skip pair slot true for self pair");
+    testContactBufferGuardPassPreflights();
+    testNarrowphasePairSlotPreflightGuards();
