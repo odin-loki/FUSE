@@ -498,6 +498,15 @@ bool AssetCooker::would_need_stale_dependency_reconcile(const CookManifest& mani
     return m_cache.estimate_stale_upstream_reconciliation(source_upstream, graph.edges(), graph.jobs());
 }
 
+bool AssetCooker::would_invalidate_upstream_dependency(const CookManifest& manifest,
+                                                       const std::string& changed_source) const {
+    return count_upstream_invalidation(manifest, changed_source) > 0;
+}
+
+bool AssetCooker::would_reconcile_stale_dependencies(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) > 0;
+}
+
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
     if (manifest.assets.empty() || m_cache.empty()) {
     if (m_cache.empty() || manifest.assets.empty()) {

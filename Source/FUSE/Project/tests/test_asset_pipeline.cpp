@@ -2160,6 +2160,8 @@ void testCookerUpstreamProbeAndReconcileEstimate() {
     entryA.output_path = "/tmp/fuse_b79_est_chain_a.fusemesh";
 void testCookerStaleDependencyReconcileEstimate() {
 
+void testCookerReconcileEstimatorGuards() {
+
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
@@ -2335,6 +2337,21 @@ void testCookerPruneReconcileEstimator() {
 
     expectTrue(removed >= stale_estimate.stale_upstream,
                "stale dependency invalidation removes at least direct stale estimate");
+
+    expectTrue(cooker.would_invalidate_upstream_dependency(manifest, sourceA),
+               "fresh cache would invalidate upstream chain");
+    expectTrue(!cooker.would_invalidate_upstream_dependency(manifest, ""),
+               "empty changed source upstream estimator is false");
+    expectTrue(!cooker.would_reconcile_stale_dependencies(manifest),
+               "fresh cache stale reconcile estimator is false");
+
+    expectTrue(cooker.would_reconcile_stale_dependencies(manifest),
+               "upstream hash change marks reconcile estimator true");
+    expectTrue(cooker.count_stale_dependency_invalidation(manifest) >= 1u,
+               "stale reconcile count matches estimator");
+
+    expectTrue(removed >= 1u, "stale dependency reconcile removes probed entries");
+               "reconcile estimator false after stale invalidation");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -2553,6 +2570,7 @@ int main() {
     testCookerStaleDependencyReconcileEstimators();
     testCookerUpstreamProbeAndReconcileEstimate();
     testCookerStaleDependencyReconcileEstimate();
+    testCookerReconcileEstimatorGuards();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

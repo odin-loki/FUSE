@@ -1700,7 +1700,6 @@ bool CookCache::would_invalidate_source(const std::string& source_path) const {
 
 bool CookCache::would_invalidate_output(const std::string& output_path) const {
     return count_by_output(output_path) > 0;
-        }
 
 
 
@@ -1717,9 +1716,7 @@ u32 CookCache::estimate_prune_invalid_entries() const {
     return count_prunable_entries();
 
 
-u32 CookCache::estimate_prune_stale_entries() const {
 
-        return 0;
 
 CookCacheReconcileEstimate CookCache::estimate_reconcile() const {
     CookCacheReconcileEstimate estimate;
@@ -2010,14 +2007,15 @@ CookCachePruneEstimate CookCache::estimate_prune_removals() const {
         } else if (is_stale_cache_entry_(entry)) {
             ++estimate.stale_entries;
 
-    if (m_entries.empty()) {
     return count_invalid_entries() + count_stale_entries();
 
 
 
 
-    for (const CookCacheEntry& entry : m_entries) {
-        if (is_valid_cook_cache_entry(entry) && is_stale_cache_entry_(entry)) {
+
+
+
+
 }
 
 bool CookCache::contains(u64 content_hash) const {

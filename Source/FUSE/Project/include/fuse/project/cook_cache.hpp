@@ -503,6 +503,7 @@ public:
     /// Estimate `prune_all` removal count without mutating stats (B7.9 deepen).
 
     /// Source paths with stale content keys — one entry per matching cache record (B7.9 deepen).
+    /// Read-only prune estimator — mirrors `prune_all` guards without mutating stats (B7.9 deepen).
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

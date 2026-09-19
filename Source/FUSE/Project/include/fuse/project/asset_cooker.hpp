@@ -160,6 +160,9 @@ public:
     /// Source paths that `invalidate_upstream_dependency` would touch — guarded on empty `changed_source` (B7.9 deepen).
     /// Read-only stale dependency reconcile breakdown via cook job graph (B7.9 deepen).
     [[nodiscard]] CookCacheStaleUpstreamEstimate estimate_stale_dependency_reconciliation(
+    /// True when `invalidate_upstream_dependency` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_upstream_dependency(const CookManifest& manifest,
+    /// True when `invalidate_stale_dependency_hashes` would reconcile at least one entry (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
