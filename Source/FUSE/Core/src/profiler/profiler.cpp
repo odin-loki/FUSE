@@ -6,7 +6,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
+#include <unordered_map>
 
 namespace fuse::profiler {
 
@@ -426,6 +428,46 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 }
 
+bool tryFirstEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByName(name);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryLastEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByName(name);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryFirstFlowEvent(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByFlowId(flowId);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByFlowId(flowId);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -464,6 +506,161 @@ u32 countEventsByPhase(EventPhase phase) {
     return count;
 }
 
+namespace {
+
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    return isValidEventName(name) && isValidEventName(event.name) && std::strcmp(event.name, name) == 0;
+}
+
+bool isFlowPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+}
+
+u32 countOrphanEndsForPhases(EventPhase beginPhase, EventPhase endPhase) {
+    std::unordered_map<u32, u32> openIds;
+    u32 orphanEnds = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (!isValidEventName(event.name) || event.scopeId == 0u) {
+            continue;
+        }
+
+        if (event.phase == beginPhase) {
+            openIds[event.scopeId]++;
+        } else if (event.phase == endPhase) {
+            if (openIds[event.scopeId] == 0u) {
+                ++orphanEnds;
+            } else {
+                openIds[event.scopeId]--;
+            }
+        }
+    }
+    return orphanEnds;
+}
+
+} // namespace
+
+u32 findFirstEventIndexByName(const char* name) {
+    if (wouldSkipNameLookup(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (eventNameMatches(event, name)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByName(const char* name) {
+    if (wouldSkipNameLookup(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (eventNameMatches(event, name)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByName(const char* name) {
+    if (wouldSkipNameLookup(name)) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (eventNameMatches(event, name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 findFirstEventIndexByFlowId(u32 flowId) {
+    if (wouldSkipFlowIdLookup(flowId)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByFlowId(u32 flowId) {
+    if (wouldSkipFlowIdLookup(flowId)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByFlowId(u32 flowId) {
+    if (wouldSkipFlowIdLookup(flowId)) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool wouldSkipNameLookup(const char* name) {
+    return !isValidEventName(name) || isBufferEmpty();
+}
+
+bool wouldSkipFlowIdLookup(u32 flowId) {
+    return flowId == 0u || isBufferEmpty();
+}
+
+bool isRecordedScopePairingConsistent() {
+    return orphanScopeEndCount() == 0u;
+}
+
+bool isRecordedAsyncFlowPairingConsistent() {
+    return orphanFlowEndCount() == 0u;
+}
+
+bool isRecordedNestingConsistent() {
+    return isRecordedScopePairingConsistent() && isRecordedAsyncFlowPairingConsistent();
+}
+
+u32 orphanScopeEndCount() {
+    return countOrphanEndsForPhases(EventPhase::Begin, EventPhase::End);
+}
+
+u32 orphanFlowEndCount() {
+    return countOrphanEndsForPhases(EventPhase::FlowStart, EventPhase::FlowFinish);
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -497,6 +694,10 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.ringBufferFull = isBufferFull();
     preflight.hasInvalidNameEvents = hasInvalidNameEvents();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+    preflight.orphanScopeEndCount = orphanScopeEndCount();
+    preflight.orphanFlowEndCount = orphanFlowEndCount();
+    preflight.recordedScopePairingConsistent = isRecordedScopePairingConsistent();
+    preflight.recordedFlowPairingConsistent = isRecordedAsyncFlowPairingConsistent();
     return preflight;
 }
 
