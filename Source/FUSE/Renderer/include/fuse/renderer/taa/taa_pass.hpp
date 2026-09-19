@@ -85,6 +85,18 @@ public:
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// True when pass jitter can sync to `frameIndex` (B5.9 deepen).
     bool preflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Combined jitter sync + NDC preflight for a monotonic frame counter (B5.9 deepen).
+    TaaJitterFramePreflight preflightJitterFrame(u32 frameIndex) const;
+    /// Combined warm-up + reuse preflight for pass history (B5.9 deepen).
+    TaaHistoryWarmupPreflight preflightHistoryWarmup(u32 observedGeneration) const;
+    /// Combined resolve blend-weight preflight for the next resolve (B5.9 deepen).
+    TaaResolveBlendPreflight preflightResolveBlendFrame(const TaaResolveDesc& desc) const;
+    /// Combined history warm-up + resolve blend guard preflight (B5.9 deepen).
+    TaaFrameGuardPreflight preflightFrameGuards(const TaaResolveDesc& desc, u32 observedGeneration) const;
+    /// True when pass history warm-up is complete (B5.9 deepen).
+    bool isHistoryWarmupComplete() const;
+    /// Early-out when pass history still needs warm-up (B5.9 deepen).
+    bool shouldSkipHistoryWarmup() const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
