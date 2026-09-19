@@ -1976,3 +1976,6 @@ void testCookCachePreflightAndReconcileEstimators() {
 // --- deepen additive from deepen-b79-cooker-hash-guards-2531 ---
 void testCookerReconcileEstimatorGuards() {
     expectTrue(cooker.would_invalidate_upstream_dependency(manifest, sourceA),
+
+// --- deepen additive from deepen-fuse-b79-cooker-hash-fdd2 ---
+    expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes({{sourceB, 0u}}) ||

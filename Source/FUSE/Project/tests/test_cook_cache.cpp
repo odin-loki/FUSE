@@ -1053,3 +1053,11 @@ void testCookHashPreflightDeepenGuards() {
 // --- deepen additive from deepen-b79-cooker-hash-645a ---
                "would_invalidate_stale_content false when hash matches");
                "would_invalidate_stale_content true when hash mismatches");
+
+// --- deepen additive from deepen-fuse-b79-cooker-hash-fdd2 ---
+                   fuse::project::CookHashRejectReason::UnknownDependencyOutput)) == "unknown_dependency_output",
+                       .reason == fuse::project::CookHashRejectReason::UnknownDependencyOutput,
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_incr_probe.obj"),
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_incr_probe.fusemesh"),
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_incr_probe.obj", 42u),
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_incr_probe.obj", 1u}}),

@@ -491,3 +491,9 @@ CookFnvInputPreflight preflight_fnv1a64_input(const u8* data, usize size) {
 CookHashPreflight preflight_cacheable_cook_key(u64 source_hash, u64 upstream_hash) {
     const CookHashPreflight source_preflight = preflight_cook_cache_key(source_hash, upstream_hash);
         preflight.reason = CookHashRejectReason::NonCacheableCombinedKey;
+
+// --- deepen additive from deepen-fuse-b79-cooker-hash-fdd2 ---
+    case CookHashRejectReason::UnknownDependencyOutput:
+CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry, const CookManifest& manifest) {
+    const CookHashPreflight source_preflight = preflight_manifest_entry_hash(entry);
+            preflight.reason = CookHashRejectReason::UnknownDependencyOutput;
