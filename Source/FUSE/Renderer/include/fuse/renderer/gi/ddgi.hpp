@@ -1073,6 +1073,11 @@ bool wouldSkipTrilinearProbeIrradiance(const DDGIDesc& desc,
 bool preflightTrilinearProbeSampleAtCoords(const DDGIDesc& desc,
 /// Non-mutating trilinear sample preflight from a world position.
 /// Early-out when world-position trilinear sampling would be rejected.
+/// Classify why coord-based probe trilinear sample preflight would reject.
+/// Early-out when coord-based trilinear sample would be rejected.
+/// Non-mutating trilinear sample preflight at probe coords — returns true when sample would proceed.
+/// Build coords from world position and run trilinear sample preflight (B5.6 deepen pass).
+bool preflightTrilinearProbeSampleAtWorldPosition(const DDGIDesc& desc,
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1571,11 +1576,16 @@ bool shouldSkipProbeSchedule(u32 probe_count,
 /// Non-mutating rate-aware schedule preflight — returns true when scheduling would proceed.
 bool preflightProbeScheduleAtRate(u32 probe_count,
                                   u32 probes_per_frame,
+/// Classify why rate-aware probe scheduling would reject.
+ProbeScheduleRejectReason classifyProbeScheduleRejectAtRate(u32 probe_count,
                                   ProbeScheduleRejectReason* reason = nullptr);
 /// Schedule probe updates with rate-aware reject-reason diagnostics; false when preflight rejects.
 bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
                                    u32 probe_count,
                                    u32* out_indices,
+                                   u32 probes_per_frame,
+                                   u32 max_indices,
+                                   u32* out_count,
                                    ProbeScheduleRejectReason& outReason);
 /// True when output capacity would cap scheduled probes below `probes_per_frame`.
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
