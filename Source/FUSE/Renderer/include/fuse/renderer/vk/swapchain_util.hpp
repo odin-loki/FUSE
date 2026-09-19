@@ -64,3 +64,7 @@ inline bool isResizeCoalesceRequest(bool resizePending,
 }
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-b2-rhi-present-fence-resize-guards-fdcb ---
+enum class EmptyPresentSkipReason : u8 {
+enum class EmptyAcquireSkipReason : u8 {
