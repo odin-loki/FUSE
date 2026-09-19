@@ -274,6 +274,14 @@ const char* chromePhaseToken(EventPhase phase) {
     return "X";
 }
 
+void setProfilerRecordSkipReason(ProfilerRecordSkipReason* reason, ProfilerRecordSkipReason value) {
+    if (reason != nullptr) {
+        *reason = value;
+    }
+
+bool isFlowPhaseEvent(const ProfileEvent& event) {
+    return event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish;
+
 bool eventNameEquals(const char* lhs, const char* rhs) {
     if (lhs == nullptr || rhs == nullptr) {
         return lhs == rhs;
@@ -1659,6 +1667,14 @@ bool wouldSkipCounterSample(const char* track) {
 
 bool wouldSkipChromeTraceExport() {
     return !enabled() || exportableEventCount() == 0u;
+}
+
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
 }
 
 bool hasActiveScope() {
@@ -3476,6 +3492,16 @@ bool tryLastExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
+
+
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -5040,6 +5066,16 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 
 
 
+
+
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -5583,6 +5619,31 @@ ScopeNestingPreflight preflightScopeNesting(const char* name) {
     preflight.wouldSkip = wouldSkipAsyncFlowBegin(name);
 
     preflight.wouldSkip = wouldSkipAsyncFlowEnd(name);
+const char* profilerRecordSkipReasonLabel(ProfilerRecordSkipReason reason) {
+    case ProfilerRecordSkipReason::None:
+    case ProfilerRecordSkipReason::ProfilerDisabled:
+    case ProfilerRecordSkipReason::InvalidName:
+    case ProfilerRecordSkipReason::NoOpenAsyncFlows:
+        return "no_open_async_flows";
+
+bool wouldSkipScope(const char* name, ProfilerRecordSkipReason* reason) {
+        setProfilerRecordSkipReason(reason, ProfilerRecordSkipReason::ProfilerDisabled);
+        setProfilerRecordSkipReason(reason, ProfilerRecordSkipReason::InvalidName);
+    setProfilerRecordSkipReason(reason, ProfilerRecordSkipReason::None);
+
+bool wouldSkipAsyncFlowBegin(const char* name, ProfilerRecordSkipReason* reason) {
+    return wouldSkipScope(name, reason);
+
+bool wouldSkipAsyncFlowEnd(const char* name, ProfilerRecordSkipReason* reason) {
+        setProfilerRecordSkipReason(reason, ProfilerRecordSkipReason::NoOpenAsyncFlows);
+
+bool wouldSkipCounter(const char* track, ProfilerRecordSkipReason* reason) {
+    return wouldSkipScope(track, reason);
+
+    preflight.wouldSkip = wouldSkipAsyncFlowBegin(name, &preflight.skipReason);
+
+    preflight.wouldSkip = wouldSkipAsyncFlowEnd(name, &preflight.skipReason);
+    preflight.orphanEnd = preflight.skipReason == ProfilerRecordSkipReason::NoOpenAsyncFlows;
 }
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
@@ -6401,6 +6462,17 @@ bool wouldSkipSafeChromeTraceExport(ProfilerSkipReason* reason) {
     }
 
     assignSkipReason(reason, ProfilerSkipReason::None);
+    return false;
+}
+
+bool wouldSkipChromeTraceExport(bool requireBalancedNesting) {
+    const ChromeTraceExportPreflight preflight = preflightChromeTraceExport();
+    if (!preflight.canExport()) {
+        return true;
+    }
+    if (requireBalancedNesting && !preflight.canExportSafely()) {
+        return true;
+    }
     return false;
 }
 

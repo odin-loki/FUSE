@@ -26821,15 +26821,10 @@ void testWouldSkipMirrorsRecordingGuards() {
     fuse::profiler::sampleCounter("", 1);
     expectTrue(fuse::profiler::eventCount() == 0u, "empty counter still records nothing");
 
-    {
         FUSE_PROFILE_SCOPE("valid_after_skips");
-    }
     expectTrue(fuse::profiler::eventCount() == 2u, "valid events still record after wouldSkip probes");
-}
 
 void testWouldSkipRecordingHelpers() {
-    resetState();
-    fuse::platform::registerMainThread();
 
     expectTrue(!fuse::profiler::wouldSkipProfileScope("valid_scope"),
                "wouldSkipProfileScope false for valid name when enabled");
@@ -26862,51 +26857,34 @@ void testWouldSkipRecordingHelpers() {
                "wouldSkipChromeTraceExport true when profiler disabled");
     expectTrue(fuse::profiler::wouldSkipChromeTraceExportSafely(),
                "wouldSkipChromeTraceExportSafely true when profiler disabled");
-}
 
 void testWouldSkipMatchesRecordingBehavior() {
-    resetState();
-    fuse::platform::registerMainThread();
 
     if (!fuse::profiler::wouldSkipProfileScope("recorded_scope")) {
         FUSE_PROFILE_SCOPE("recorded_scope");
-    }
     expectTrue(fuse::profiler::eventCount() == 2u,
                "non-skipped scope records begin/end");
 
     fuse::profiler::reset();
     if (!fuse::profiler::wouldSkipCounter("budget")) {
         FUSE_PROFILE_COUNTER("budget", 5);
-    }
     expectTrue(fuse::profiler::eventCount() == 1u,
                "non-skipped counter records one event");
 
-    fuse::profiler::reset();
     const fuse::u32 flowId = fuse::profiler::nextFlowId();
     if (!fuse::profiler::wouldSkipAsyncFlow("io_flow")) {
         FUSE_PROFILE_ASYNC_FLOW_BEGIN("io_flow", flowId);
         FUSE_PROFILE_ASYNC_FLOW_END("io_flow", flowId);
-    }
-    expectTrue(fuse::profiler::eventCount() == 2u,
                "non-skipped async flow records start/finish");
-}
 
 void testWouldSkipChromeTraceExportSafelyWithUnbalancedNesting() {
-    resetState();
-    fuse::platform::registerMainThread();
 
-    const fuse::u32 flowId = fuse::profiler::nextFlowId();
     FUSE_PROFILE_ASYNC_FLOW_BEGIN("unsafe_flow", flowId);
-    expectTrue(fuse::profiler::wouldSkipChromeTraceExportSafely(),
                "wouldSkipChromeTraceExportSafely true with open async flow");
     FUSE_PROFILE_ASYNC_FLOW_END("unsafe_flow", flowId);
-    expectTrue(!fuse::profiler::wouldSkipChromeTraceExportSafely(),
                "wouldSkipChromeTraceExportSafely false after flow closes");
-}
 
 void testPreflightNestingHelpers() {
-    resetState();
-    fuse::platform::registerMainThread();
 
     const fuse::profiler::ProfilerNestingPreflight resetPreflight = fuse::profiler::preflightNesting();
     expectTrue(resetPreflight.canRecord(), "preflightNesting canRecord on reset");
@@ -26925,7 +26903,6 @@ void testPreflightNestingHelpers() {
     expectTrue(!fuse::profiler::preflightEndAsyncFlow(""),
                "preflightEndAsyncFlow false for empty name");
 
-    const fuse::u32 flowId = fuse::profiler::nextFlowId();
     FUSE_PROFILE_ASYNC_FLOW_BEGIN("preflight_flow", flowId);
     expectTrue(fuse::profiler::preflightEndAsyncFlow("preflight_flow"),
                "preflightEndAsyncFlow true with matching open flow");
@@ -26933,7 +26910,6 @@ void testPreflightNestingHelpers() {
                "hasActiveAsyncFlowNesting true with open flow");
     expectTrue(!fuse::profiler::hasActiveScope(), "hasActiveScope false without scope");
 
-    {
         FUSE_PROFILE_SCOPE("preflight_scope");
         expectTrue(fuse::profiler::hasActiveScope(), "hasActiveScope true inside scope");
         const fuse::profiler::ProfilerNestingPreflight activePreflight = fuse::profiler::preflightNesting();
@@ -26943,13 +26919,84 @@ void testPreflightNestingHelpers() {
                    "preflightNesting marks active scope as unbalanced");
         expectTrue(activePreflight.activeFlowNestingDepth == 1u,
                    "preflightNesting preserves open flow depth inside scope");
-    }
 
     FUSE_PROFILE_ASYNC_FLOW_END("preflight_flow", flowId);
     const fuse::profiler::ProfilerNestingPreflight closedPreflight = fuse::profiler::preflightNesting();
     expectTrue(closedPreflight.isBalanced(), "preflightNesting balanced after scope and flow end");
     expectTrue(!fuse::profiler::hasActiveAsyncFlowNesting(),
                "hasActiveAsyncFlowNesting false after flow end");
+void testWouldSkipScopeAndCounterGuards() {
+
+    fuse::profiler::ProfilerRecordSkipReason reason = fuse::profiler::ProfilerRecordSkipReason::None;
+    expectTrue(!fuse::profiler::wouldSkipScope("valid_scope", &reason),
+               "wouldSkipScope false for valid enabled scope");
+    expectTrue(reason == fuse::profiler::ProfilerRecordSkipReason::None,
+               "wouldSkipScope reports none for valid scope");
+
+    expectTrue(fuse::profiler::wouldSkipScope(nullptr, &reason),
+               "wouldSkipScope true for null scope name");
+    expectTrue(reason == fuse::profiler::ProfilerRecordSkipReason::InvalidName,
+               "wouldSkipScope reports invalid_name for null scope");
+
+    expectTrue(fuse::profiler::wouldSkipScope("", &reason),
+               "wouldSkipScope true for empty scope name");
+               "wouldSkipScope reports invalid_name for empty scope");
+
+    expectTrue(fuse::profiler::wouldSkipScope("disabled_scope", &reason),
+               "wouldSkipScope true when profiler disabled");
+    expectTrue(reason == fuse::profiler::ProfilerRecordSkipReason::ProfilerDisabled,
+               "wouldSkipScope reports profiler_disabled");
+
+    fuse::profiler::setEnabled(true);
+    expectTrue(!fuse::profiler::wouldSkipCounter("valid_counter", &reason),
+               "wouldSkipCounter false for valid enabled counter");
+    expectTrue(fuse::profiler::wouldSkipCounter("", &reason),
+               "wouldSkipCounter true for empty counter track");
+
+void testWouldSkipAsyncFlowGuards() {
+
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("valid_flow", &reason),
+               "wouldSkipAsyncFlowBegin false for valid enabled flow");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("", &reason),
+               "wouldSkipAsyncFlowBegin true for empty flow name");
+               "wouldSkipAsyncFlowBegin reports invalid_name for empty flow");
+
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("orphan_flow", &reason),
+               "wouldSkipAsyncFlowEnd true with no open flows");
+    expectTrue(reason == fuse::profiler::ProfilerRecordSkipReason::NoOpenAsyncFlows,
+               "wouldSkipAsyncFlowEnd reports no_open_async_flows for orphan end");
+
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("paired_flow", flowId);
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowEnd("paired_flow", &reason),
+               "wouldSkipAsyncFlowEnd false with matching open flow");
+    FUSE_PROFILE_ASYNC_FLOW_END("paired_flow", flowId);
+
+    const fuse::profiler::AsyncFlowBeginPreflight beginPreflight =
+        fuse::profiler::preflightAsyncFlowBegin("");
+    expectTrue(beginPreflight.wouldSkip, "preflightAsyncFlowBegin skips empty name");
+    expectTrue(beginPreflight.skipReason == fuse::profiler::ProfilerRecordSkipReason::InvalidName,
+               "preflightAsyncFlowBegin reports invalid_name");
+
+    const fuse::profiler::AsyncFlowEndPreflight orphanPreflight =
+        fuse::profiler::preflightAsyncFlowEnd("orphan_flow");
+    expectTrue(orphanPreflight.wouldSkip, "preflightAsyncFlowEnd skips orphan end");
+    expectTrue(orphanPreflight.orphanEnd, "preflightAsyncFlowEnd marks orphan end");
+    expectTrue(orphanPreflight.skipReason == fuse::profiler::ProfilerRecordSkipReason::NoOpenAsyncFlows,
+               "preflightAsyncFlowEnd reports no_open_async_flows for orphan end");
+
+void testWouldSkipChromeTraceExportGuard() {
+
+               "wouldSkipChromeTraceExport false on empty enabled buffer");
+    expectTrue(!fuse::profiler::wouldSkipChromeTraceExport(true),
+               "wouldSkipChromeTraceExport false with balanced nesting on empty buffer");
+
+
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("export_skip_flow", flowId);
+               "wouldSkipChromeTraceExport false with open flow when not requiring balance");
+    expectTrue(fuse::profiler::wouldSkipChromeTraceExport(true),
+               "wouldSkipChromeTraceExport true with open flow when requiring balance");
+    FUSE_PROFILE_ASYNC_FLOW_END("export_skip_flow", flowId);
+               "wouldSkipChromeTraceExport false after balanced flow teardown");
 }
 
 void testFindEventIndexByNameGuard() {
@@ -26965,11 +27012,9 @@ void testFindEventIndexByNameGuard() {
 
     {
         FUSE_PROFILE_SCOPE("lookup_outer");
-        {
             FUSE_PROFILE_SCOPE("lookup_inner");
         }
         FUSE_PROFILE_COUNTER("lookup_counter", 3);
-    }
 
     expectTrue(fuse::profiler::findFirstEventIndexByName("lookup_outer") == 0u,
                "findFirstEventIndexByName locates outer scope begin");
@@ -26996,7 +27041,6 @@ void testFindEventIndexByNameGuard() {
     expectTrue(!fuse::profiler::tryFirstEventByName("missing", byName),
                "tryFirstEventByName false for missing name");
     expectTrue(byName.name == nullptr, "tryFirstEventByName clears output on miss");
-}
 
 void testFindFlowEventIndexGuard() {
     resetState();
@@ -27038,9 +27082,69 @@ void testFindFlowEventIndexGuard() {
     expectTrue(!fuse::profiler::tryFirstFlowEvent(outerFlowId + 999u, flowEvent),
                "tryFirstFlowEvent false for unknown flow id");
     expectTrue(flowEvent.name == nullptr, "tryFirstFlowEvent clears output on miss");
-}
 
 void testExportableEventIndexLookup() {
+    expectTrue(fuse::profiler::findFirstEventIndexByName(nullptr)
+                   == fuse::profiler::kInvalidEventIndex,
+               "findFirstEventIndexByName invalid for null name");
+    expectTrue(fuse::profiler::countEventsByName("scope_a") == 0u,
+               "countEventsByName zero for missing name");
+
+        FUSE_PROFILE_SCOPE("scope_a");
+        FUSE_PROFILE_COUNTER("scope_a_counter", 1);
+            FUSE_PROFILE_SCOPE("scope_b");
+
+    expectTrue(fuse::profiler::findFirstEventIndexByName("scope_a") == 0u,
+               "findFirstEventIndexByName locates first scope begin");
+    expectTrue(fuse::profiler::findLastEventIndexByName("scope_a") == 4u,
+               "findLastEventIndexByName locates scope end after nested scope");
+    expectTrue(fuse::profiler::countEventsByName("scope_a") == 2u,
+               "countEventsByName counts begin/end for scope_a");
+    expectTrue(fuse::profiler::countEventsByName("scope_a_counter") == 1u,
+               "countEventsByName counts counter track separately from scope");
+    expectTrue(fuse::profiler::countEventsByName("scope_b") == 2u,
+               "countEventsByName counts begin/end for scope_b");
+
+    expectTrue(fuse::profiler::tryFirstEventByName("scope_b", byName),
+               "tryFirstEventByName succeeds for nested scope");
+               "tryFirstEventByName copies begin phase");
+    expectTrue(byName.name != nullptr && std::string(byName.name) == "scope_b",
+               "tryFirstEventByName copies scope name");
+
+    expectTrue(fuse::profiler::tryLastEventByName("scope_b", byName),
+               "tryLastEventByName succeeds for nested scope");
+               "tryLastEventByName copies end phase");
+
+void testFindEventIndexByFlowIdGuard() {
+
+    const fuse::u32 flowId = 88u;
+    expectTrue(fuse::profiler::findFirstEventIndexByFlowId(flowId)
+               "findFirstEventIndexByFlowId invalid on empty buffer");
+    expectTrue(fuse::profiler::countEventsByFlowId(flowId) == 0u,
+               "countEventsByFlowId zero on empty buffer");
+
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("flow_lookup", flowId);
+    FUSE_PROFILE_COUNTER("between_flow", 2);
+    FUSE_PROFILE_ASYNC_FLOW_END("flow_lookup", flowId);
+
+    expectTrue(fuse::profiler::findFirstEventIndexByFlowId(flowId) == 0u,
+               "findFirstEventIndexByFlowId locates flow start");
+    expectTrue(fuse::profiler::findLastEventIndexByFlowId(flowId) == 2u,
+               "findLastEventIndexByFlowId locates flow finish");
+    expectTrue(fuse::profiler::countEventsByFlowId(flowId) == 2u,
+               "countEventsByFlowId counts paired flow events");
+
+    expectTrue(fuse::profiler::tryFirstEventByFlowId(flowId, flowEvent),
+               "tryFirstEventByFlowId succeeds for flow start");
+               "tryFirstEventByFlowId copies flow start phase");
+    expectTrue(flowEvent.scopeId == flowId, "tryFirstEventByFlowId preserves flow id");
+
+    expectTrue(fuse::profiler::tryLastEventByFlowId(flowId, flowEvent),
+               "tryLastEventByFlowId succeeds for flow finish");
+    expectTrue(flowEvent.phase == fuse::profiler::EventPhase::FlowFinish,
+               "tryLastEventByFlowId copies flow finish phase");
+
+void testFirstAndLastExportableEventIndexGuard() {
     resetState();
     fuse::platform::registerMainThread();
 
@@ -27066,9 +27170,45 @@ void testExportableEventIndexLookup() {
                "preflight lastExportableEventIndex matches lookup helper");
     expectTrue(preflight.canExportNonEmptyTrace(),
                "preflight canExportNonEmptyTrace true with exportable events");
-}
 
 void testEmptyNameLookupAttemptsDoNotAffectNameSearch() {
+        FUSE_PROFILE_SCOPE("exportable_scope");
+        FUSE_PROFILE_COUNTER("exportable_counter", 5);
+
+               "firstExportableEventIndex points at first recorded event");
+    expectTrue(fuse::profiler::nonExportableEventCount() == 0u,
+               "nonExportableEventCount zero for valid names");
+
+    fuse::profiler::ProfileEvent outEvent{};
+    expectTrue(fuse::profiler::tryFirstExportableEvent(outEvent),
+               "tryFirstExportableEvent true after recording");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Begin,
+               "tryFirstExportableEvent copies begin phase");
+    expectTrue(fuse::profiler::tryLastExportableEvent(outEvent),
+               "tryLastExportableEvent true after recording");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End,
+               "tryLastExportableEvent copies end phase");
+
+void testHasActiveScopeAndAsyncFlowNestingGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::hasActiveScope(), "reset leaves hasActiveScope false");
+    expectTrue(!fuse::profiler::hasActiveAsyncFlowNesting(),
+               "reset leaves hasActiveAsyncFlowNesting false");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("active_scope_probe");
+        expectTrue(fuse::profiler::hasActiveScope(), "active scope reports hasActiveScope");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("active_flow_probe", flowId);
+        expectTrue(fuse::profiler::hasActiveAsyncFlowNesting(),
+                   "open flow reports hasActiveAsyncFlowNesting");
+        FUSE_PROFILE_ASYNC_FLOW_END("active_flow_probe", flowId);
+                   "flow end clears hasActiveAsyncFlowNesting");
+    expectTrue(!fuse::profiler::hasActiveScope(), "scope end clears hasActiveScope");
+
+void testEmptyNameAttemptsDoNotAffectPhaseLookup() {
     resetState();
     fuse::platform::registerMainThread();
 
@@ -30108,6 +30248,11 @@ int main() {
     testPreflightAsyncFlowGuards();
     testEmptyNameAttemptsDoNotAffectNameAndFlowLookup();
     testChromeTraceExportPreflightBlocksInvalidNamesInSafeExport();
+    testWouldSkipScopeAndCounterGuards();
+    testWouldSkipAsyncFlowGuards();
+    testWouldSkipChromeTraceExportGuard();
+    testFirstAndLastExportableEventIndexGuard();
+    testHasActiveScopeAndAsyncFlowNestingGuard();
     testEmptyNameAttemptsDoNotAffectPhaseLookup();
     testWouldSkipScopeGuard();
     testWouldSkipAsyncFlowGuards();

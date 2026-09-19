@@ -155,6 +155,9 @@ enum class ChromeTraceExportSkipReason : u8 {
     UnpairedFlowEvents,
 /// Classify why a profiler record or export would be skipped — mirrors hot-path guard ordering.
 enum class ProfilerSkipReason : u8 {
+/// Why a profiler record call would be skipped without recording (B1.6 deepen).
+enum class ProfilerRecordSkipReason : u8 {
+    NoOpenAsyncFlows,
 };
 
 struct ProfileEvent {
@@ -1012,6 +1015,19 @@ struct AsyncFlowPreflight {
     bool canRecord() const { return !wouldSkip; }
 };
 
+/// Read-only async-flow begin preflight — mirrors `beginAsyncFlow` skip logic without recording.
+struct AsyncFlowBeginPreflight {
+    bool wouldSkip = false;
+    ProfilerRecordSkipReason skipReason = ProfilerRecordSkipReason::None;
+};
+
+/// Read-only async-flow end preflight — mirrors `endAsyncFlow` skip logic without recording.
+struct AsyncFlowEndPreflight {
+    bool wouldSkip = false;
+    bool orphanEnd = false;
+    ProfilerRecordSkipReason skipReason = ProfilerRecordSkipReason::None;
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -1460,7 +1476,6 @@ u32 findFirstFlowEventIndex(u32 flowId);
 u32 findLastFlowEventIndex(u32 flowId);
 u32 countFlowEvents(u32 flowId);
 bool isFlowIdTracked(u32 flowId);
-const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
 bool eventNameMatches(const char* eventName, const char* queryName);
 bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
@@ -1579,6 +1594,12 @@ bool wouldSkipChromeTraceExport(ProfilerSkipReason* reason = nullptr);
 bool wouldSkipSafeChromeTraceExport(ProfilerSkipReason* reason = nullptr);
 
 ProfilerNestingPreflight preflightNesting();
+const char* profilerRecordSkipReasonLabel(ProfilerRecordSkipReason reason);
+bool wouldSkipScope(const char* name, ProfilerRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowBegin(const char* name, ProfilerRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowEnd(const char* name, ProfilerRecordSkipReason* reason = nullptr);
+bool wouldSkipCounter(const char* track, ProfilerRecordSkipReason* reason = nullptr);
+bool wouldSkipChromeTraceExport(bool requireBalancedNesting = false);
 ChromeTraceExportPreflight preflightChromeTraceExport();
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);
 AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 flowId);
