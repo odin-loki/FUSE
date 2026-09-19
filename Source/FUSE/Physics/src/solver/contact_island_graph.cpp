@@ -499,3 +499,12 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
     case IslandGraphBuildRejectReason::OutOfRangeDistanceRefs:
         return IslandGraphBuildRejectReason::OutOfRangeContactRefs;
         return IslandGraphBuildRejectReason::OutOfRangeDistanceRefs;
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-40bb ---
+    case IslandGraphBuildRejectReason::OutOfRangeContactBodies:
+    case IslandGraphBuildRejectReason::OutOfRangeDistanceBodies:
+        return IslandGraphBuildRejectReason::OutOfRangeContactBodies;
+        return IslandGraphBuildRejectReason::OutOfRangeDistanceBodies;
+                                       IslandGraphBuildRejectReason* reason) {
+    const IslandGraphBuildRejectReason rejectReason =
+    if (rejectReason != IslandGraphBuildRejectReason::None) {

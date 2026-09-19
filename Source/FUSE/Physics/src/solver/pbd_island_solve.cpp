@@ -3067,3 +3067,8 @@ IslandSolveRejectReason islandSolveJobRejectReason(const IslandSolveJob& job, f3
         preflight.reason = IslandDispatchRejectReason::NoDispatchableIslands;
         preflight.reason = IslandSleepGraphRejectReason::NoSolveableIslands;
         preflight.reason = IslandWakeGraphRejectReason::NoWakeableIslands;
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-40bb ---
+    case IslandWakeRejectReason::NoMixedState:
+        return IslandWakeRejectReason::NoMixedState;
+                                IslandGraphBuildRejectReason* reason) {

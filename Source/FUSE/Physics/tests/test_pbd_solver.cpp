@@ -5381,3 +5381,39 @@ void testIslandPipelineRejectReasonPreflights() {
     const IslandWakeGraphPreflight noWakeGraph =
              static_cast<fuse::u32>(IslandWakeGraphRejectReason::NoWakeableIslands),
     testIslandPipelineRejectReasonPreflights();
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-40bb ---
+    expectTrue(island_graph_build_rejects_for_reason(4, contacts, {}, IslandGraphBuildRejectReason::OutOfRangeContactBodies),
+    expectTrue(island_graph_build_rejects_for_reason(4, {}, constraints, IslandGraphBuildRejectReason::OutOfRangeDistanceBodies),
+    IslandGraphBuildRejectReason reason = IslandGraphBuildRejectReason::None;
+    expectTrue(reason == IslandGraphBuildRejectReason::EmptyInput, "build_guarded reason is EmptyInput");
+    expectTrue(reason == IslandGraphBuildRejectReason::OutOfRangeContactBodies,
+    expectTrue(preflight.reason == IslandGraphBuildRejectReason::OutOfRangeContactBodies,
+    expectTrue(island_dispatch_rejects_for_reason(emptyGraph, 1.f / 60.f, IslandDispatchRejectReason::NoDispatchableIslands),
+    expectTrue(island_dispatch_rejects_for_reason(graph, 1.f / 60.f, IslandDispatchRejectReason::None),
+    expectTrue(preflight.reason == IslandDispatchRejectReason::None, "dispatch preflight reason is None");
+    expectTrue(invalidPreflight.reason == IslandDispatchRejectReason::InvalidDt,
+    expectTrue(island_solve_job_rejects_for_reason(emptyJob, 1.f / 60.f, IslandSolveJobRejectReason::EmptyJob),
+    expectTrue(island_solve_job_rejects_for_reason(emptyJob, 0.f, IslandSolveJobRejectReason::InvalidDt),
+    expectTrue(island_solve_job_rejects_for_reason(job, 1.f / 60.f, IslandSolveJobRejectReason::None),
+    const IslandSolveJobPreflight preflight = preflight_solve_island_job(job, 1.f / 60.f);
+    expectTrue(preflight.reason == IslandSolveJobRejectReason::None, "solve job preflight reason is None");
+    const IslandConstraintSolvePreflight preflight = preflight_island_constraint_solve(
+    expectTrue(island_sleep_rejects_for_reason(graph.island(sleepingIsland), bodies, IslandSleepRejectReason::AllSleeping),
+    expectTrue(island_wake_rejects_for_reason(graph.island(sleepingIsland), bodies, IslandWakeRejectReason::NoMixedState),
+    expectTrue(wakePreflight.reason == IslandWakeRejectReason::None, "wake preflight reason is None for mixed island");
+    expectTrue(outOfRangeWake.reason == IslandWakeRejectReason::OutOfRangeIndex,
+    expectTrue(std::strcmp(island_wake_reject_reason_name(IslandWakeRejectReason::NoMixedState),
+void testRejectReasonMirrorsExistingPreflights() {
+    const IslandSolvePreflight solvePreflight = preflight_island_solve(graph);
+    expectTrue(solvePreflight.reason == IslandDispatchRejectReason::None,
+    expectTrue(solvePreflight.can_dispatch(), "solve preflight can_dispatch mirrors reason");
+    expectTrue(emptySolvePreflight.reason == IslandDispatchRejectReason::NoDispatchableIslands,
+    expectTrue(!emptySolvePreflight.can_dispatch(), "empty solve preflight cannot dispatch");
+    const IslandSleepGraphPreflight allSleepingGraph = preflight_island_sleep_graph(graph, bodies);
+    expectTrue(island_sleep_graph_rejects_for_reason(graph, bodies, IslandSleepGraphRejectReason::NoSolveableIslands),
+    expectTrue(allSleepingGraph.reason == IslandSleepGraphRejectReason::NoSolveableIslands,
+    const IslandWakeGraphPreflight loneWakeGraph = preflight_island_wake_graph(loneGraph, bodies);
+    expectTrue(island_wake_graph_rejects_for_reason(loneGraph, bodies, IslandWakeGraphRejectReason::NoWakeableIslands),
+    expectTrue(loneWakeGraph.reason == IslandWakeGraphRejectReason::NoWakeableIslands,
+    testRejectReasonMirrorsExistingPreflights();

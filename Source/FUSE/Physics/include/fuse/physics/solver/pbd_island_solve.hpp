@@ -1808,3 +1808,6 @@ IslandSleepRejectReason islandSleepGraphRejectReason(const ContactIslandGraph& g
 IslandWakeRejectReason islandWakeGraphRejectReason(const ContactIslandGraph& graph,
         return reason == IslandWakeRejectReason::None && hasMixedSleepState && activeDynamicCount > 0u;
     bool has_solveable_islands() const { return reason == IslandSleepRejectReason::None; }
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-40bb ---
+                                IslandGraphBuildRejectReason* reason = nullptr);
