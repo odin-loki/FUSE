@@ -2047,3 +2047,13 @@ void testCookerReconcileEstimatorGuards() {
     expectTrue(cooker.cook_manifest(manifest).ok, "chain cook for would_invalidate_downstream ok");
                "would_invalidate_downstream_of reports dependents");
                "leaf output would_invalidate_downstream is false when no dependents cached");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-82a4 ---
+    expectTrue(cooker.would_invalidate_upstream(manifest, source_a),
+               "would_invalidate_upstream true for seeded chain");
+    expectTrue(!cooker.would_invalidate_upstream(manifest, ""), "empty changed source would_invalidate guarded");
+    expectTrue(!cooker.would_invalidate_stale_dependencies(manifest),
+               "fresh cache would_invalidate_stale_dependencies is false");
+    expectTrue(cooker.would_invalidate_stale_dependencies(manifest),
+               "would_invalidate_stale_dependencies true after upstream change");
+               "would_invalidate_stale_dependencies false after reconcile");

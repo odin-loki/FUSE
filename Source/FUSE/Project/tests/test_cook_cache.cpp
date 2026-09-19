@@ -1265,3 +1265,7 @@ void testCookHashPreflightImportPathsAndCacheEntry() {
                "would_invalidate_stale_upstream true when stale upstream entries exist");
     expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_unique_up_c.obj", 20u}}),
                "would_invalidate_stale_upstream false when upstream hashes match");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-82a4 ---
+    expectTrue(removed == 1u, "prune removes entry probed by would_invalidate_stale_content");
+    expectTrue(!cooker.cache().would_invalidate_source(source), "would_invalidate_source false after prune");

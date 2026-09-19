@@ -238,3 +238,6 @@ struct CookCacheEntryPreflight {
 
 // --- deepen additive from deepen-b79-cooker-hash-0e64 ---
     [[nodiscard]] CookHashPreflight preflight_store_entry(const CookCacheEntry& entry) const;
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-82a4 ---
+        preflight.reason = CookHashRejectReason::SourceUnreadable;
