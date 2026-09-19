@@ -4022,3 +4022,23 @@ void testFroxelDeepenPreflightAndClassifyGuards() {
 
 // --- deepen additive from deepen-b511-froxel-preflight-4caa ---
                "preflightDensityLookup succeeds when OOB coords would clamp");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-1d0f ---
+               "preflightDensityLookupReady succeeds when only clamp warning applies");
+               "preflightDensityLookupReady with reason succeeds for clampable index");
+               "preflightDensityLookupReady reports empty_storage for empty grid");
+               "preflightDensityLookupAtCoordReady succeeds when only clamp warning applies");
+               "preflightSampleCoordsReady reports invalid_weights for clampable weights");
+               "preflightSampleCoordsReady reports out_of_bounds for hard OOB coords");
+               "preflightScreenMappingReady with reason succeeds for valid mapping");
+               "preflightScreenMappingReady reports none for valid mapping");
+               "preflightScreenMappingReady rejects below-near depth");
+               "preflightScreenMappingReady reports depth_out_of_range for below-near depth");
+               "preflightFroxelTrilinearSampleReady reports clampable_weights for OOB weights");
+               "preflightFroxelTrilinearSampleReady reports invalid_sample_coords for hard OOB coords");
+    expectTrue(!fuse::renderer::froxel_util::preflightGridDensityReady(undersized, desc, &densityReason),
+               "preflightGridDensityReady reports undersized_storage for undersized grid");
+               "preflightFroxelPopulateReady reports zero_density for zero density");
+               "preflightSampleCoordsReady mirrors canPreflightSampleCoords on valid coords");
+               "preflightDensityLookupReady mirrors canLookupAtIndex on accessible grid");
+               "preflightFroxelPopulateReady mirrors canPopulateFromAnalyticFog on valid inputs");
