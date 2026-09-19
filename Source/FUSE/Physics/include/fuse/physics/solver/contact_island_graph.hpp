@@ -8,6 +8,41 @@
 
 namespace fuse::physics {
 
+/// Why island graph build would reject or skip constraint union (B4.4 deepen).
+enum class IslandBuildRejectReason : u8 {
+    None = 0,
+    ZeroBodies,
+    OutOfRangeBodies,
+};
+
+/// Read-only island graph build diagnostics — no mutation (B4.4 deepen).
+struct IslandBuildPreflight {
+    IslandBuildRejectReason reason = IslandBuildRejectReason::None;
+    u32 bodyCount = 0;
+    u32 validContactCount = 0;
+    u32 skippedContactCount = 0;
+    u32 validDistanceCount = 0;
+    u32 skippedDistanceCount = 0;
+    bool skipped = false;
+
+    bool can_build() const { return !skipped && reason == IslandBuildRejectReason::None; }
+};
+
+/// True when `bodyIndex` is in range for island graph union.
+bool is_valid_island_build_body_index(u32 bodyIndex, u32 bodyCount);
+
+/// Preflight island graph build; flags out-of-range body references without mutating.
+IslandBuildPreflight preflight_island_graph_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Early-out guard when island graph build inputs are invalid.
+bool should_skip_island_graph_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
@@ -45,5 +80,11 @@ private:
     std::vector<u32> parent_;
     std::vector<Island> islands_;
 };
+
+/// Build only when preflight passes; returns false without mutating on reject.
+bool build_island_graph_guarded(ContactIslandGraph& graph,
+                                u32 bodyCount,
+                                const std::vector<narrowphase::ContactManifold>& contacts,
+                                const std::vector<DistanceConstraint>& distanceConstraints);
 
 } // namespace fuse::physics
