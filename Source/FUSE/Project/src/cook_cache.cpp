@@ -818,3 +818,16 @@ CookCacheKeyPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
 // --- deepen additive from b79-hash-preflight-probes-fd33 ---
 bool CookCache::probe_would_invalidate_hash(u64 content_hash) const {
 bool CookCache::probe_would_invalidate_source(const std::string& source_path) const {
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-27fe ---
+CookCacheStorePreflight CookCache::preflight_store(const CookCacheEntry& entry) const {
+CookCacheLookupPreflight CookCache::preflight_lookup(u64 content_hash) const {
+        probe.would_invalidate_count = 1;
+            ++probe.would_invalidate_count;
+    std::vector<std::string> would_invalidate;
+                would_invalidate.push_back(source_path);
+    return would_invalidate;
+    probe.would_invalidate_count = probe_invalidate_source(output_path).would_invalidate_count;
+        probe.would_invalidate_count += probe_invalidate_source(to_job->source_path).would_invalidate_count;
+        probe.would_invalidate_count +=
+            probe_invalidate_downstream_of(to_job->output_path, edges, jobs).would_invalidate_count;

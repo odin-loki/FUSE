@@ -1934,3 +1934,9 @@ void testCookCachePreflightAndReconcileEstimators() {
 // --- deepen additive from b79-hash-preflight-probes-fd33 ---
     fuse::project::CookHashPreflightRejectReason reason = fuse::project::CookHashPreflightRejectReason::None;
     expectTrue(reason == fuse::project::CookHashPreflightRejectReason::EmptyPath,
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-27fe ---
+    expectTrue(!clean_probe.would_invalidate(), "clean cache stale-dependency estimator reports no removal");
+    expectTrue(dirty_probe.would_invalidate(), "upstream change estimator reports pending invalidation");
+    expectTrue(dirty_probe.would_invalidate_count >= 1u, "stale dependency estimator counts at least one entry");
+    expectTrue(removed >= dirty_probe.would_invalidate_count,

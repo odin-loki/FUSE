@@ -376,3 +376,8 @@ CookBatchResult AssetCooker::cook_dirty(AssetGraph& graph, const std::string& pr
 }
 
 } // namespace fuse::project
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-27fe ---
+    probe.would_invalidate_count = static_cast<u32>(stale_sources.size());
+                probe.would_invalidate_count +=
+                        .would_invalidate_count;

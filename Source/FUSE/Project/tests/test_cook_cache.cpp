@@ -857,3 +857,26 @@ void testCookCacheHashPreflightGuards() {
     expectTrue(!cooker.cache().probe_would_invalidate_hash(seeded.content_hash + 1u),
     expectTrue(cooker.cache().probe_would_invalidate_source(source),
     expectTrue(!cooker.cache().probe_would_invalidate_source(""),
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-27fe ---
+void testContentHashPreflightGuards() {
+    const fuse::project::CookContentHashPreflight empty_path =
+    const fuse::project::CookContentHashPreflight missing =
+    const fuse::project::CookContentHashPreflight ok = fuse::project::preflight_file_content_hash(source);
+    const fuse::project::CookImportHashPreflight mesh_preflight = fuse::project::preflight_mesh_import(mesh);
+    const fuse::project::CookImportHashPreflight mesh_ok = fuse::project::preflight_mesh_import(mesh);
+void testCookCachePreflightAndLookupGuards() {
+    const fuse::project::CookCacheStorePreflight store_preflight =
+    const fuse::project::CookCacheLookupPreflight empty_lookup = cache.preflight_lookup(77u);
+    const fuse::project::CookCacheLookupPreflight hit_lookup = fuse::project::preflight_cook_cache_lookup(cache, 808u);
+    expectTrue(!unknown_hash.would_invalidate(), "unknown hash probe reports no removal");
+    expectTrue(known_hash.would_invalidate(), "known hash probe reports removal");
+    expectTrue(known_hash.would_invalidate_count == 1u, "known hash probe counts one entry");
+    expectTrue(source_probe.would_invalidate_count == 1u, "source probe counts seeded entry");
+    expectTrue(stale_probe.would_invalidate_count == 1u, "stale-content probe counts mismatched entry");
+    expectTrue(output_probe.would_invalidate_count == 1u, "output probe counts seeded entry");
+    expectTrue(!cache.probe_invalidate_downstream_of("", {}, {}).would_invalidate(),
+void testCookCacheReconcileEstimatorGuards() {
+void testCookCacheStaleClassificationGuards() {
+    testContentHashPreflightGuards();
+    testCookCachePreflightAndLookupGuards();

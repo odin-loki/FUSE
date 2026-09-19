@@ -102,3 +102,8 @@ struct CookFileHashPreflight {
 enum class CookHashPreflightRejectReason : u8 {
 const char* cookHashPreflightRejectReasonLabel(CookHashPreflightRejectReason reason);
                                                CookHashPreflightRejectReason* reason = nullptr);
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-27fe ---
+struct CookContentHashPreflight {
+[[nodiscard]] CookContentHashPreflight preflight_file_content_hash(const std::string& path);
+[[nodiscard]] CookImportHashPreflight preflight_manifest_entry(const CookManifestEntry& entry);

@@ -169,3 +169,10 @@ struct CookCacheStorePreflight {
 // --- deepen additive from b79-hash-preflight-probes-fd33 ---
     [[nodiscard]] bool probe_would_invalidate_hash(u64 content_hash) const;
     [[nodiscard]] bool probe_would_invalidate_source(const std::string& source_path) const;
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-27fe ---
+    [[nodiscard]] bool would_hit() const { return !zero_content_hash && !cache_empty && entry_present; }
+    u32 would_invalidate_count = 0;
+        return !cache_empty && !invalid_args && would_invalidate_count > 0;
+    [[nodiscard]] CookCacheStorePreflight preflight_store(const CookCacheEntry& entry) const;
+    [[nodiscard]] CookCacheLookupPreflight preflight_lookup(u64 content_hash) const;

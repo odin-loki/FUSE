@@ -413,3 +413,8 @@ bool preflight_hash_audio_import(const AudioImportDesc& desc, CookHashPreflightR
 bool preflight_hash_manifest_entry(const CookManifestEntry& entry, CookHashPreflightRejectReason* reason) {
 bool preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash, CookHashPreflightRejectReason* reason) {
         return set_preflight_reason(reason, CookHashPreflightRejectReason::ZeroSourceHash);
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-27fe ---
+CookContentHashPreflight preflight_file_content_hash(const std::string& path) {
+    CookContentHashPreflight preflight;
+CookImportHashPreflight preflight_manifest_entry(const CookManifestEntry& entry) {
