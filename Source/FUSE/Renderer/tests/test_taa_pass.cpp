@@ -4773,3 +4773,8 @@ void testTaaPassTryClassifyGuardWrappers() {
 // --- deepen additive from deepen-b59-taa-pass-guards-63b1 ---
                "pass classifyJitterAdvanceReject passes after init");
                "pass tryPreflightJitterNdc fails for zero width");
+
+// --- deepen additive from deepen-taa-pass-guards-b7d0 ---
+    expectTrue(zeroPass->trySyncJitterToFrameIndex(0u, jitterReject),
+               "zero-width pass trySyncJitterToFrameIndex succeeds when sequence valid");
+               "zero-width pass trySyncJitterToFrameIndex reject reason is None");
