@@ -193,6 +193,8 @@ enum class LightGridRebuildRejectReason : u8 {
 /// Human-readable label for light-grid rebuild reject reasons (logging / tests).
 
 
+
+
 const char* lightGridRebuildRejectReasonLabel(LightGridRebuildRejectReason reason);
 
 /// CPU light-grid packing helpers — mirrors the GPU offset rebuild pass.
