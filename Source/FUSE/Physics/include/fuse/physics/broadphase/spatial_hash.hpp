@@ -3765,6 +3765,13 @@ u32 countUniqueBodiesInCell(const std::vector<u32>& occupants);
     EmptyOccupants,
 
 
+
+/// Unique body count in a hash-cell occupant list (0 when fewer than two entries).
+u32 uniqueOccupantCount(const std::vector<u32>& occupants);
+
+/// Pair count for unique occupants in one hash cell (0 when fewer than two unique bodies).
+u32 countPairsForOccupants(const std::vector<u32>& occupants);
+
 /// Diagnose why per-cell pair generation would skip; vacuously succeeds when generation may proceed.
 CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants);
 
@@ -3858,7 +3865,6 @@ bool shouldRunCellShapeInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& ra
     u32 pairCount = 0;
 
 
-};
 
 CellPairGenPreflight preflightCellPairGen(u32 occupantCount);
 
@@ -3876,7 +3882,6 @@ bool shouldRunCellPairGen(const std::vector<u32>& occupants);
 /// Pair count for a cell with `uniqueBodyCount` bodies (0 when insufficient occupants).
 u32 estimateCellPairCount(u32 uniqueBodyCount);
 
-u32 estimateCellPairCount(const std::vector<u32>& occupants);
 
 /// Canonical pair slot count for unique bodies in a cell (0 when generation would skip).
 u32 countCellPairSlots(const std::vector<u32>& occupants);
@@ -3886,7 +3891,13 @@ enum class CellCapacityInsertRejectReason : u8 {
     None = 0,
     OutOfRangeBody,
     EmptyRange,
-    ExceedsBudget,
+/// Read-only per-cell pair-generation diagnostics — no mutation (B4.2 deepen pass).
+
+
+
+
+
+    OccupancyRejected,
 };
 
 /// Human-readable label for cell-capacity insert reject reasons (logging / tests).
@@ -3953,14 +3964,12 @@ enum class ShapeCellInsertRejectReason : u8 {
 /// Human-readable label for shape cell-insert reject reasons (logging / tests).
 const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason);
 
-/// Diagnose why shape→cell insertion would skip; vacuously succeeds when insertion may proceed.
 ShapeCellInsertRejectReason shapeCellInsertRejectReason(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy);
 
 ShapeCellInsertRejectReason shapeCellInsertRejectReason(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy);
 
 /// Returns true when `shapeCellInsertRejectReason` matches `expected` (B4.2 deepen pass).
 bool shapeCellInsertRejectsForReason(
-    u32 maxOccupancy,
     ShapeCellInsertRejectReason expected);
 
 
@@ -3986,12 +3995,7 @@ bool shouldRunShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& ra
 
 };
 
-    u32 bodyIndex,
-    u32 bodyCount,
-    const CellRange3& range,
-    u32 maxOccupancy);
 
-    const CellRange2& range,
 
 bool canSkipCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy);
 
@@ -4000,6 +4004,22 @@ bool canSkipCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& r
 bool shouldRunCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy);
 
 bool shouldRunCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy);
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D);
+
+    bool use2D,
+
+/// Read-only shape→cell insert diagnostics — no mutation (B4.2 deepen pass).
+    bool occupancyRejected = false;
+
+
+
+bool canSkipCellCapacityInsert(
+
+bool shouldRunCellCapacityInsert(
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(

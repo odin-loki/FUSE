@@ -3372,6 +3372,14 @@ bool pairBufferInvalidateRejectsForReason(
     PairBufferInvalidateRejectReason expected) {
     return pairBufferInvalidateRejectReason(buffer, slot) == expected;
 
+
+
+
+
+
+
+
+
 PairBufferInvalidatePreflight preflightPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot) {
     PairBufferInvalidatePreflight preflight{};
     preflight.reason = pairBufferInvalidateRejectReason(buffer, slot);
@@ -3383,5 +3391,9 @@ bool canSkipPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot) {
 
 bool shouldRunPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot) {
     return preflightPairBufferInvalidate(buffer, slot).canInvalidate();
+    return preflight;
+}
+
+
 
 } // namespace fuse::physics::broadphase

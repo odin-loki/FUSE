@@ -1910,6 +1910,7 @@ bool canSkipPairBufferClamp(const PairBufferSoA& buffer);
 enum class PairBufferSlotWriteRejectReason : u8 {
 /// Why pair-buffer slot write would reject (B4.2 deepen pass).
 enum class PairBufferWriteSlotRejectReason : u8 {
+enum class PairBufferWriteRejectReason : u8 {
     None = 0,
     OutOfRangeSlot,
     InvalidPair,
@@ -2162,6 +2163,7 @@ enum class PairBufferWriteRejectReason : u8 {
 /// Human-readable label for pair-buffer write reject reasons (logging / tests).
 const char* pairBufferWriteRejectReasonName(PairBufferWriteRejectReason reason);
 
+
 PairBufferWriteRejectReason pairBufferWriteRejectReason(
     const PairBufferSoA& buffer,
     u32 slot,
@@ -2271,6 +2273,8 @@ struct PairBufferWritePreflight {
     bool unpreparedBuffer = false;
 
     bool canWrite() const { return reason == PairBufferWriteRejectReason::None; }
+
+
 
 PairBufferWritePreflight preflightPairBufferWrite(
     const PairBufferSoA& buffer,
@@ -2521,9 +2525,13 @@ bool shouldRunPairBufferWrite(const PairBufferSoA& buffer, u32 slot, u32 idxA, u
 /// Why pair-buffer invalidateSlot would reject (B4.2 deepen pass).
 enum class PairBufferInvalidateRejectReason : u8 {
 
+/// Non-mutating slot-write predicate — mirrors `preflightPairBufferWrite` (B4.2 deepen pass).
+
+
 /// Human-readable label for pair-buffer invalidate reject reasons (logging / tests).
 const char* pairBufferInvalidateRejectReasonName(PairBufferInvalidateRejectReason reason);
 
+/// Diagnose why slot invalidate would reject; vacuously succeeds when invalidate may proceed.
 PairBufferInvalidateRejectReason pairBufferInvalidateRejectReason(const PairBufferSoA& buffer, u32 slot);
 
 /// Returns true when `pairBufferInvalidateRejectReason` matches `expected` (B4.2 deepen pass).
@@ -2541,6 +2549,18 @@ PairBufferInvalidatePreflight preflightPairBufferInvalidate(const PairBufferSoA&
 bool canSkipPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot);
 
 /// Non-mutating invalidate predicate — mirrors `preflightPairBufferInvalidate` (B4.2 deepen pass).
+    const PairBufferSoA& buffer,
+    u32 slot,
+
+/// Read-only slot-invalidate diagnostics — no mutation (B4.2 deepen pass).
+    bool outOfRangeSlot = false;
+
+};
+
+
+/// Non-mutating slot-invalidate skip predicate — inverse of `canInvalidate` (B4.2 deepen pass).
+
+/// Non-mutating slot-invalidate predicate — mirrors `preflightPairBufferInvalidate` (B4.2 deepen pass).
 bool shouldRunPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot);
 
 } // namespace fuse::physics::broadphase
