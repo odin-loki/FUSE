@@ -2010,3 +2010,56 @@ bool should_skip_hrtf_convolution_ready(bool hrtf_enabled, const HrtfIrStub& ir,
 HrtfBinauralRejectReason classify_hrtf_binaural_pan_reject(const HrtfBinauralPreflight& preflight) {
 bool try_preflight_hrtf_binaural_pan(bool hrtf_enabled, const HrtfIrStub& ir,
 bool try_preflight_hrtf_binaural_pan(bool hrtf_enabled, const Vec3& rel_listener,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-0cb8 ---
+    preflight.reason = classifyHrtfIrReject(preflight);
+HrtfIrRejectReason classifyHrtfIrReject(const HrtfIrPreflight& preflight) {
+bool preflightHrtfIrReady(const HrtfIrStub& ir, HrtfIrRejectReason* reason) {
+    return preflightHrtfIrReady(ir, &reason);
+    preflight.rejectReason = classifyHrtfPanPathReject(preflight);
+        classifyHrtfPanConvolutionReject(preflight, preflight_hrtf_ir(ir));
+const char* hrtfPanConvolutionRejectReasonLabel(HrtfPanConvolutionRejectReason reason) {
+HrtfPanPathRejectReason classifyHrtfPanPathReject(const HrtfPanPathPreflight& preflight) {
+HrtfPanConvolutionRejectReason classifyHrtfPanConvolutionReject(const HrtfPanPathPreflight& panPath,
+                                                               const HrtfIrPreflight& ir) {
+bool preflightHrtfPanPathReady(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+bool preflightHrtfPanPathReady(bool hrtf_enabled, const Vec3& rel_listener,
+    return preflightHrtfPanPathReady(hrtf_enabled, make_empty_hrtf_ir(), rel_listener, reason);
+    return preflightHrtfPanPathReady(hrtf_enabled, ir, rel_listener, &reason);
+    return preflightHrtfPanPathReady(hrtf_enabled, rel_listener, &reason);
+bool preflightHrtfPanConvolutionReady(bool hrtf_enabled, const HrtfIrStub& ir,
+    const HrtfPanPathPreflight panPath = preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
+        *reason = panPath.convolutionRejectReason;
+bool tryPreflightHrtfPanConvolution(bool hrtf_enabled, const HrtfIrStub& ir,
+    return preflightHrtfPanConvolutionReady(hrtf_enabled, ir, rel_listener, &reason);
+    preflight.reason = classifyHrtfAttenuationCouplingReject(preflight);
+bool preflightHrtfAttenuationCouplingReady(HrtfPanPath path, float distance_attenuation,
+    return preflightHrtfAttenuationCouplingReady(path, distance_attenuation, occlusion_gain,
+HrtfBinauralRejectReason classifyHrtfBinauralPanReject(const HrtfBinauralPreflight& preflight) {
+    const HrtfPanPathRejectReason panReason = classifyHrtfPanPathReject(preflight.panPath);
+HrtfBinauralRejectReason classifyHrtfBinauralConvolutionReject(
+    const HrtfPanConvolutionRejectReason convolutionReason =
+        classifyHrtfPanConvolutionReject(preflight.panPath, preflight.ir);
+HrtfBinauralRejectReason classifyHrtfBinauralNarrowingReject(
+    const HrtfAttenuationCouplingRejectReason couplingReason =
+        classifyHrtfAttenuationCouplingReject(preflight.attenuationCoupling);
+bool preflightHrtfBinauralPanReady(bool hrtf_enabled, const HrtfIrStub& ir,
+        *reason = classifyHrtfBinauralPanReject(preflight);
+bool preflightHrtfBinauralPanReady(bool hrtf_enabled, const Vec3& rel_listener,
+    return preflightHrtfBinauralPanReady(hrtf_enabled, make_empty_hrtf_ir(), rel_listener,
+bool tryPreflightHrtfBinauralPan(bool hrtf_enabled, const HrtfIrStub& ir,
+    return preflightHrtfBinauralPanReady(hrtf_enabled, ir, rel_listener, distance_attenuation,
+bool tryPreflightHrtfBinauralPan(bool hrtf_enabled, const Vec3& rel_listener,
+    return preflightHrtfBinauralPanReady(hrtf_enabled, rel_listener, distance_attenuation,
+bool preflightHrtfBinauralConvolutionReady(bool hrtf_enabled, const HrtfIrStub& ir,
+        *reason = classifyHrtfBinauralConvolutionReject(preflight);
+bool tryPreflightHrtfBinauralConvolution(bool hrtf_enabled, const HrtfIrStub& ir,
+    return preflightHrtfBinauralConvolutionReady(hrtf_enabled, ir, rel_listener,
+bool preflightHrtfBinauralNarrowingReady(bool hrtf_enabled, const HrtfIrStub& ir,
+        *reason = classifyHrtfBinauralNarrowingReject(preflight);
+bool preflightHrtfBinauralNarrowingReady(bool hrtf_enabled, const Vec3& rel_listener,
+    return preflightHrtfBinauralNarrowingReady(hrtf_enabled, make_empty_hrtf_ir(), rel_listener,
+bool tryPreflightHrtfBinauralNarrowing(bool hrtf_enabled, const HrtfIrStub& ir,
+    return preflightHrtfBinauralNarrowingReady(hrtf_enabled, ir, rel_listener,
+bool tryPreflightHrtfBinauralNarrowing(bool hrtf_enabled, const Vec3& rel_listener,
+    return preflightHrtfBinauralNarrowingReady(hrtf_enabled, rel_listener, distance_attenuation,
