@@ -351,7 +351,6 @@ struct ChromeTraceExportPreflight {
     u32 orphanFlowEndCount = 0;
     bool hasUnpairedFlowEvents = false;
     bool nestingStateConsistent = false;
-    u32 firstExportableEventIndex = kInvalidEventIndex;
     bool hasActiveScope = false;
     bool hasActiveAsyncFlowNesting = false;
     bool hasUnbalancedBufferedFlowPairs = false;
@@ -436,6 +435,7 @@ struct AsyncFlowPreflight {
     bool hasOpenFlows = false;
 
 
+
 /// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
 struct ProfileScopePreflight {
     bool profilerDisabled = false;
@@ -455,6 +455,12 @@ struct AsyncFlowEndPreflight {
 struct NestingAsyncFlowPreflight {
 /// Read-only scope/async-flow nesting diagnostics — safe before recording or export.
 struct NestingPreflight {
+};
+
+    bool profilerDisabled = false;
+    bool invalidName = false;
+
+
     u32 activeScopeNestingDepth = 0;
     u32 activeFlowNestingDepth = 0;
     u32 maxScopeNestingDepth = 0;
@@ -1363,8 +1369,6 @@ u32 findFirstFlowEventIndex(u32 flowId);
 u32 findLastFlowEventIndex(u32 flowId);
 u32 countFlowEvents(u32 flowId);
 bool isFlowIdTracked(u32 flowId);
-EventLookupRejectReason eventLookupRejectReason(u32 index);
-EventLookupRejectReason exportableEventLookupRejectReason(u32 index);
 const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
@@ -1690,6 +1694,10 @@ bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId, AsyncFlowEndSkipReason*
 bool wouldSkipCounterSample(const char* track, CounterSampleSkipReason* reason = nullptr);
 bool wouldSkipChromeTraceExport(ChromeTraceExportSkipReason* reason = nullptr);
 bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason = nullptr);
+ProfileScopePreflight preflightProfileScope(const char* name);
+
+/// Preflight skip checks — mirror recording guards without mutating profiler state.
+bool wouldSkipChromeTraceExport();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
