@@ -94,7 +94,6 @@ Vec3 resolve_look_at_or_fallback(const CameraKeyframe& keyframe,
 
 /// Resolve look-at, using `default_camera_look_at_for_position` when fixed aim is unset.
 Vec3 resolve_look_at_world_or_default(const CameraKeyframe& keyframe,
-                                      const LookAtResolver& resolver,
                                       float default_distance = kDefaultCameraLookAtDistance);
 
 /// Use `keyframe.look_at` when distinct from `camera_position`; otherwise offset along -Z.
@@ -111,5 +110,13 @@ std::vector<std::string> collect_camera_look_at_target_ids(
 
 /// Count keyframes that bind look-at to an entity id.
 std::size_t camera_keyframe_entity_look_at_count(const std::vector<CameraKeyframe>& keyframes);
+/// True when `resolver` is non-null and has a resolve callback installed.
+bool look_at_resolver_available(const LookAtResolver* resolver);
+
+/// Probe whether `resolver` can resolve `target_id` without mutating world state.
+bool look_at_resolver_can_resolve_target(const LookAtResolver& resolver, const std::string& target_id);
+
+                              float default_look_distance = 10.f);
+
 
 } // namespace fuse::cinematics
