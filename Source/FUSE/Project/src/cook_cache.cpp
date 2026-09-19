@@ -896,3 +896,14 @@ CookCacheEntryPreflight CookCache::preflight_cook_cache_entry(const CookCacheEnt
         return {false, CookHashRejectReason::EmptyOutputPath};
         return {false, CookHashRejectReason::ZeroSourceHash};
         return {true, CookHashRejectReason::None};
+
+// --- deepen additive from b79-cooker-hash-deepen-3135 ---
+const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason) {
+    case CookCacheEntryRejectReason::None:
+    case CookCacheEntryRejectReason::ZeroContentHash:
+    case CookCacheEntryRejectReason::EmptySourcePath:
+    case CookCacheEntryRejectReason::EmptyOutputPath:
+        preflight.reason = CookCacheEntryRejectReason::ZeroContentHash;
+        preflight.reason = CookCacheEntryRejectReason::EmptySourcePath;
+        preflight.reason = CookCacheEntryRejectReason::EmptyOutputPath;
+    preflight.reason = CookCacheEntryRejectReason::None;

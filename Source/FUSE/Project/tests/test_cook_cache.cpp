@@ -1407,3 +1407,19 @@ void testCookHashPreflightCookCacheEntry() {
     const fuse::project::CookHashPreflight invalid_preflight =
     expectTrue(invalid_preflight.reason == fuse::project::CookHashRejectReason::InvalidCacheEntry,
     testCookHashPreflightCookCacheEntry();
+
+// --- deepen additive from b79-cooker-hash-deepen-3135 ---
+                   fuse::project::CookCacheEntryRejectReason::ZeroContentHash,
+                   fuse::project::CookCacheEntryRejectReason::EmptySourcePath,
+    expectTrue(std::string(fuse::project::cookCacheEntryRejectReasonLabel(
+                   fuse::project::CookCacheEntryRejectReason::EmptyOutputPath)) == "empty_output_path",
+void testCookHashPreflightUnknownDependencyAndShaderGuards() {
+    const fuse::project::CookHashPreflight unknown_dep =
+    expectTrue(unknown_dep.reason == fuse::project::CookHashRejectReason::UnknownDependency,
+                   fuse::project::CookHashRejectReason::UnsupportedKind,
+                   fuse::project::CookHashRejectReason::UnknownDependency)) == "unknown_dependency",
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_would.obj"), "would_invalidate_source on empty cache");
+               "would_invalidate_output on empty cache");
+    expectTrue(!cache.would_invalidate_all(), "would_invalidate_all on empty cache");
+    expectTrue(cooker.cache().would_invalidate_all(), "would_invalidate_all true when cache populated");
+    testCookHashPreflightUnknownDependencyAndShaderGuards();

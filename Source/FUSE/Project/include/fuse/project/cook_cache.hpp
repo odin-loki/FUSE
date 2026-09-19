@@ -251,3 +251,8 @@ struct CookCacheEntryPreflight {
 // --- deepen additive from b79-cooker-hash-deepen-6979 ---
     [[nodiscard]] bool would_prune_invalid() const;
     [[nodiscard]] bool would_prune_stale() const;
+
+// --- deepen additive from b79-cooker-hash-deepen-3135 ---
+enum class CookCacheEntryRejectReason : u8 {
+    CookCacheEntryRejectReason reason = CookCacheEntryRejectReason::None;
+const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason);

@@ -209,3 +209,6 @@ struct CookFnvInputPreflight {
 [[nodiscard]] bool tryPreflightManifestEntryHash(const CookManifestEntry& entry, CookHashRejectReason& reason);
 [[nodiscard]] bool tryPreflightCookCacheEntry(const CookCacheEntry& entry, CookHashRejectReason& reason);
 [[nodiscard]] inline bool shouldSkipManifestEntryHash(const CookManifestEntry& entry) {
+
+// --- deepen additive from b79-cooker-hash-deepen-3135 ---
+[[nodiscard]] CookHashPreflight preflight_shader_manifest_hash(const CookManifestEntry& entry);

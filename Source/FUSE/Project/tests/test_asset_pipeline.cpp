@@ -2073,3 +2073,6 @@ void testCookerUpstreamEstimateAndWouldGuards() {
 
 // --- deepen additive from deepen-b79-cooker-hash-guards-552b ---
                "would_invalidate_upstream_dependency guarded on empty source");
+
+// --- deepen additive from b79-cooker-hash-deepen-3135 ---
+void testCookerReconcileWouldAndProbeGuards() {

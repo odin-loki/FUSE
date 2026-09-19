@@ -592,3 +592,10 @@ bool tryPreflightManifestEntryHash(const CookManifestEntry& entry, CookHashRejec
     const CookHashPreflight preflight = preflight_manifest_entry_hash(entry);
 bool tryPreflightCookCacheEntry(const CookCacheEntry& entry, CookHashRejectReason& reason) {
     const CookHashPreflight preflight = preflight_cook_cache_entry(entry);
+
+// --- deepen additive from b79-cooker-hash-deepen-3135 ---
+    case CookHashRejectReason::UnknownDependency:
+    case CookHashRejectReason::UnsupportedKind:
+CookHashPreflight preflight_shader_manifest_hash(const CookManifestEntry& entry) {
+    preflight.reason = CookHashRejectReason::UnsupportedKind;
+            preflight.reason = CookHashRejectReason::UnknownDependency;
