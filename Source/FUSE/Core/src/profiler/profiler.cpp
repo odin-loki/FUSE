@@ -388,94 +388,49 @@ namespace {
 
 bool isAsyncFlowPhase(EventPhase phase) {
     return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
-}
 
 bool eventNameMatches(const ProfileEvent& event, const char* name) {
     return isValidEventName(event.name) && isValidEventName(name) && std::strcmp(event.name, name) == 0;
-}
 
 bool isAsyncFlowEventForId(const ProfileEvent& event, u32 flowId) {
     return isAsyncFlowPhase(event.phase) && isValidEventName(event.name) && event.scopeId == flowId;
-}
 
 } // namespace
 
-bool eventNameMatches(const ProfileEvent& event, const char* name) {
     return isValidEventName(name) && isValidEventName(event.name) && std::strcmp(event.name, name) == 0;
-}
 
 bool eventFlowIdMatches(const ProfileEvent& event, u32 flowId) {
     if (flowId == 0u) {
-        return false;
-    }
 
     return (event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)
         && event.scopeId == flowId;
-}
 
-bool eventNameMatches(const ProfileEvent& event, const char* name) {
     return isValidEventName(event.name) && isValidEventName(name)
         && std::strcmp(event.name, name) == 0;
-}
 
 bool isFlowEventPhase(EventPhase phase) {
-    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
-}
 
 bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
     return flowId != 0u && isFlowEventPhase(event.phase) && event.scopeId == flowId
         && isValidEventName(event.name);
-}
 
 bool eventMatchesName(const ProfileEvent& event, const char* name) {
     if (!isValidEventName(name) || !isValidEventName(event.name)) {
-        return false;
-    }
     return std::strcmp(event.name, name) == 0;
-}
 
 bool isFlowPhase(EventPhase phase) {
-    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
-}
 
 bool eventMatchesFlow(const ProfileEvent& event, u32 flowId) {
     return isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name);
-}
 
-bool eventNameMatches(const ProfileEvent& event, const char* name) {
-    return isValidEventName(event.name) && isValidEventName(name)
-        && std::strcmp(event.name, name) == 0;
-}
 
-bool isFlowEventPhase(EventPhase phase) {
-    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
-}
 
-bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
-    return flowId != 0u && isFlowEventPhase(event.phase) && event.scopeId == flowId
-        && isValidEventName(event.name);
-}
 
-namespace {
 
-bool eventMatchesName(const ProfileEvent& event, const char* name) {
-    if (!isValidEventName(name) || !isValidEventName(event.name)) {
-        return false;
-    }
-    return std::strcmp(event.name, name) == 0;
-}
 
-bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
-    if (flowId == 0u) {
-        return false;
-    }
     if (event.phase != EventPhase::FlowStart && event.phase != EventPhase::FlowFinish) {
-        return false;
-    }
     return isValidEventName(event.name) && event.scopeId == flowId;
-}
 
-} // namespace
 
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
@@ -1503,6 +1458,7 @@ bool isFlowPhase(EventPhase phase) {
 
 } // namespace
 
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
 
@@ -2038,6 +1994,7 @@ namespace {
 
 bool isAsyncFlowPhase(EventPhase phase) {
     return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+}
 
 bool eventNameMatches(const ProfileEvent& event, const char* name) {
     return isValidEventName(name) && isValidEventName(event.name) && std::strcmp(event.name, name) == 0;
@@ -2063,6 +2020,7 @@ void accumulateFlowPairCounts(std::unordered_map<u32, FlowPairCounts>& counts) {
         } else {
             ++pair.finishCount;
         }
+    }
 
 } // namespace
 
@@ -2600,6 +2558,13 @@ bool tryFirstFlowStartById(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
+
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
         const ProfileEvent& event = eventAt(i);
@@ -2703,6 +2668,17 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+            return true;
+        }
+
+    outEvent = ProfileEvent{};
+    return false;
+
+    if (flowId == 0u) {
+
+    const u32 total = eventCount();
+            outEvent = event;
 
 
 u32 firstEventIndex() {
@@ -3176,6 +3152,22 @@ bool hasFlowFinishEvent(u32 flowId) {
 
 bool isFlowPairRecorded(u32 flowId) {
     return hasFlowStartEvent(flowId) && hasFlowFinishEvent(flowId);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -3682,6 +3674,14 @@ bool tryExportableLastEvent(ProfileEvent& outEvent) {
 
 
 
+
+
+        }
+
+    std::unordered_map<u32, FlowPairCounts> counts;
+    accumulateFlowPairCounts(counts);
+
+    for (const auto& entry : counts) {
 
 
 
@@ -4357,6 +4357,24 @@ NestingConsistencyPreflight preflightNestingConsistency() {
 
     preflight.scopeEventsUnbalanced = preflight.scopeBeginEventCount != preflight.scopeEndEventCount;
     preflight.flowEventsUnbalanced = preflight.flowStartEventCount != preflight.flowFinishEventCount;
+    return preflight;
+}
+
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
+    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
+        && !preflight.wouldUnderflowOpenCount;
     return preflight;
 }
 
