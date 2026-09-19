@@ -263,6 +263,24 @@ bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHisto
     return reason == TaaResolveBlendRejectReason::None;
 }
 
+bool preflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                    TaaResolveSkipReason* skipReason,
+                                    TaaResolveBlendRejectReason* blendReason) {
+    const bool skipOk = preflightTaaResolve(desc, history, skipReason);
+    const bool blendOk = preflightTaaResolveBlendWeights(desc, history, blendReason);
+    return skipOk && blendOk;
+}
+
+bool tryPreflightTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                       TaaResolveSkipReason& skipReason,
+                                       TaaResolveBlendRejectReason& blendReason) {
+    return preflightTaaResolveFrameGuards(desc, history, &skipReason, &blendReason);
+}
+
+bool shouldSkipTaaResolveFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !preflightTaaResolveFrameGuards(desc, history);
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
         return false;

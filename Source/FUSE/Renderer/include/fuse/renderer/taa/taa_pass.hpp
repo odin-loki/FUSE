@@ -64,6 +64,15 @@ public:
     bool historyReuseReady(u32 observedGeneration) const;
     /// Early-out when pass history temporal reuse should be skipped (B5.9 deepen).
     bool shouldSkipHistoryReuse(u32 observedGeneration) const;
+    /// Classify history warm-up phase for pass history (B5.9 deepen).
+    TaaHistoryWarmupPhase historyWarmupPhase() const;
+    /// Early-out when pass history reuse should be skipped for a resolve request (B5.9 deepen).
+    bool shouldSkipHistoryReuseForResolve(const TaaResolveDesc& desc) const;
+    /// True when pass history temporal reuse is allowed for a resolve request (B5.9 deepen).
+    bool preflightHistoryReuseForResolve(const TaaResolveDesc& desc,
+                                         TaaHistoryReuseBlockReason* reason = nullptr) const;
+    /// Invalidate when observed generation differs from pass history epoch (B5.9 deepen).
+    bool invalidateHistoryIfStale(u32 observedGeneration);
     /// True when history blend is allowed on the next resolve (B5.9 deepen).
     bool historyBlendAllowed() const;
     /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).
@@ -85,6 +94,17 @@ public:
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// True when pass jitter can sync to `frameIndex` (B5.9 deepen).
     bool preflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).
+    bool preflightJitterNdc(TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Early-out when pass jitter sync should be skipped (B5.9 deepen).
+    bool shouldSkipJitterSync() const;
+    /// Early-out when pass jitter NDC production should be skipped (B5.9 deepen).
+    bool shouldSkipJitterNdc() const;
+    /// True when resolve skip and blend-weight preflights both pass (B5.9 deepen).
+    bool preflightResolveFrameGuards(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason = nullptr,
+                                     TaaResolveBlendRejectReason* blendReason = nullptr) const;
+    /// Early-out when resolve frame guards would reject (B5.9 deepen).
+    bool shouldSkipResolveFrameGuards(const TaaResolveDesc& desc) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
