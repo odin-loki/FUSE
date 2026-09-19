@@ -423,6 +423,33 @@ bool shouldSkipTaaJitterAlignment(u32 frameIndex, const TaaJitter& jitter) {
     return !preflightTaaJitterAligned(frameIndex, jitter);
 }
 
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(const TaaJitter& jitter, u32 frameIndex) {
+    const TaaJitterGuardRejectReason syncReject = classifyTaaJitterSyncReject(jitter.sequenceLength());
+    if (syncReject != TaaJitterGuardRejectReason::None) {
+        return syncReject;
+    }
+    if (!jitter.isAlignedToFrameIndex(frameIndex)) {
+        return TaaJitterGuardRejectReason::Misaligned;
+    }
+    return TaaJitterGuardRejectReason::None;
+}
+
+bool preflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex, TaaJitterGuardRejectReason* reason) {
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterAlignmentReject(jitter, frameIndex);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaJitterGuardRejectReason::None;
+}
+
+bool tryPreflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex, TaaJitterGuardRejectReason& reason) {
+    return preflightTaaJitterAlignment(jitter, frameIndex, &reason);
+}
+
+bool shouldSkipTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex) {
+    return !preflightTaaJitterAlignment(jitter, frameIndex);
+}
+
 bool TaaJitterLayout::validateSequenceLength(u32 length) {
     return length > 0u && length <= kTaaMaxJitterSequenceLength;
 }

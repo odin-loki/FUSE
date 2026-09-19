@@ -40,6 +40,7 @@ bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncRej
 /// Classify why jitter sync to a monotonic frame counter would be blocked (B5.9 deepen).
 TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 sequenceLength);
 
+class TaaJitter;
 
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
@@ -204,6 +205,15 @@ bool tryAdvanceTaaJitter(TaaJitter& jitter, TaaJitterGuardRejectReason& reason);
 bool taaJitterNeedsResync(u32 frameIndex, const TaaJitter& jitter);
 /// Early-out when jitter should resync to `frameIndex` (B5.9 deepen).
 bool shouldResyncTaaJitter(u32 frameIndex, const TaaJitter& jitter);
+/// Classify why jitter alignment to `frameIndex` would be rejected (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(const TaaJitter& jitter, u32 frameIndex);
+/// True when jitter state matches `frameIndex` for the active sequence (B5.9 deepen).
+bool preflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex,
+/// Jitter alignment preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex,
+                                     TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter alignment preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
