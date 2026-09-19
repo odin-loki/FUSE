@@ -115,5 +115,14 @@ struct MaterialInspectorRefreshInfo {
 
 /// Count set property bits in a dirty mask (B6.7 deepen).
 [[nodiscard]] u32 materialPropertyDirtyCount(u32 dirtyMask);
+/// Refresh guard — binding must be live before external edit-state pull (B6.7 deepen follow-up).
+[[nodiscard]] bool canRefreshMaterialBinding(const MaterialPropertyBinding& binding);
+
+/// True when panel refresh can be skipped for this binding (B6.7 deepen follow-up).
+[[nodiscard]] bool shouldSkipMaterialPanelRefresh(const MaterialPropertyBinding& binding);
+
+/// True when a property row still needs inspector repaint (B6.7 deepen follow-up).
+[[nodiscard]] bool isMaterialPropertyRefreshPending(const MaterialPropertyBinding& binding,
+                                                    MaterialPropertyId id);
 
 } // namespace fuse::editor

@@ -88,6 +88,7 @@ public:
     [[nodiscard]] bool tryIsPropertyDirty(MaterialPropertyId id) const;
     /// Number of distinct dirty property bits currently set (B6.7 deepen).
     [[nodiscard]] u32 dirtyPropertyCount() const;
+    [[nodiscard]] bool hasAnyPropertyDirty() const { return m_dirtyMask != 0u; }
     [[nodiscard]] bool needsPanelRefresh() const { return m_panelRefreshPending; }
     [[nodiscard]] u32 dirtyPropertyMask() const { return m_dirtyMask; }
     [[nodiscard]] u32 coalescedDirtyCount() const { return m_coalescedDirtyCount; }
@@ -98,6 +99,11 @@ public:
     }
     /// Dirty-clear guard — property id valid and currently dirty (B6.7 deepen).
     [[nodiscard]] bool canClearPropertyDirty(MaterialPropertyId id) const;
+    /// Refresh guard — bound with a live edit-state pointer (B6.7 deepen follow-up).
+    [[nodiscard]] bool canRefreshFromEditState() const { return canPostProperty(); }
+    /// True when panel refresh can be skipped safely (B6.7 deepen follow-up).
+    [[nodiscard]] bool shouldSkipPanelRefresh() const {
+        return !needsPanelRefresh() || !canPostProperty();
 
     void clearPropertyDirty(MaterialPropertyId id);
     /// Guarded dirty clear — rejects invalid or clean property ids (B6.7 deepen).
@@ -109,12 +115,14 @@ public:
 
     /// Guarded refresh/dirty helpers — no-op when unbound or property id invalid (B6.7 deepen follow-up).
     bool tryRefreshFromEditState(const MaterialEditState& state);
-    bool tryMarkPanelRefreshed();
     bool tryClearPropertyDirty(MaterialPropertyId id);
     [[nodiscard]] bool tryIsPropertyDirty(MaterialPropertyId id) const;
 
     void refreshFromEditState(const MaterialEditState& state);
     /// Guarded edit-state refresh — early-out when unbound (B6.7 deepen).
+    /// Guarded refresh — no-op and returns false when unbound (B6.7 deepen follow-up).
+
+    /// Guarded external refresh — clamps and clears dirty only when bound (B6.7 deepen follow-up).
     bool tryRefreshFromEditState(const MaterialEditState& state);
 
 private:

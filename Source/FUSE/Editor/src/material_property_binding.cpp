@@ -108,7 +108,7 @@ void MaterialPropertyBinding::markPropertyDirty_(MaterialPropertyId id) {
 bool MaterialPropertyBinding::postProperty_(MaterialPropertyId id,
                                             const std::string& propertyValue,
                                             CommandStack& cmds) {
-    if (!isBound()) {
+    if (!canPostProperty()) {
         return false;
     }
 
@@ -298,6 +298,7 @@ bool MaterialPropertyBinding::tryRefreshFromEditState(const MaterialEditState& s
     return true;
 
     if (!isBound()) {
+    if (shouldSkipPanelRefresh()) {
         return false;
     }
     markPanelRefreshed();
@@ -329,20 +330,14 @@ bool MaterialPropertyBinding::canTryGetPropertyScalar(MaterialPropertyId id) con
 }
 
 bool MaterialPropertyBinding::canTrySetPropertyScalar(MaterialPropertyId id) const {
-    return canPostProperty() && canTryMaterialPropertyScalar(id);
-}
 
 bool MaterialPropertyBinding::canTryGetPropertyVec3(MaterialPropertyId id) const {
     return canPostProperty() && canTryMaterialPropertyVec3(id);
-}
 
 bool MaterialPropertyBinding::canTrySetPropertyVec3(MaterialPropertyId id) const {
-    return canPostProperty() && canTryMaterialPropertyVec3(id);
-}
 
 MaterialInspectorRefreshInfo MaterialPropertyBinding::refreshInfo() const {
     return {m_panelRefreshPending, m_dirtyMask, m_coalescedDirtyCount};
-}
 
 bool MaterialPropertyBinding::tryRefreshFromEditState(const MaterialEditState& state) {
     if (!canRefreshFromEditState()) {

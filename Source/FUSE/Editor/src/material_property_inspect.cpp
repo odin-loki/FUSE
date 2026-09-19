@@ -164,43 +164,43 @@ bool shouldEarlyOutMaterialEdit(u32 catalogCount, u32 materialId) {
 
 bool canBindMaterialProperty(MaterialPropertyId id, u32 materialId, u32 catalogCount) {
     return canBindMaterialSlot(materialId, catalogCount) && isMaterialPropertyIdValid(id);
-}
 
 bool canTryMaterialPropertyScalar(MaterialPropertyId id) {
     return isMaterialPropertyIdValid(id) && !materialPropertyIsVec3(id);
-}
 
 bool canTryMaterialPropertyVec3(MaterialPropertyId id) {
     return isMaterialPropertyIdValid(id) && materialPropertyIsVec3(id);
-}
 
 bool shouldRefreshMaterialInspector(const MaterialInspectorRefreshInfo& info) {
     return info.pending || info.dirtyMask != 0u;
-}
 
 bool shouldSkipMaterialInspectorRefresh(bool isBound) {
     return !isBound;
-}
 
 u32 materialPropertyDirtyBit(MaterialPropertyId id) {
     if (!isMaterialPropertyIdValid(id)) {
         return 0u;
-    }
     return 1u << static_cast<u32>(id);
-}
 
 bool isPropertyDirtyMaskEmpty(u32 dirtyMask) {
     return dirtyMask == 0u;
-}
 
 u32 materialPropertyDirtyCount(u32 dirtyMask) {
     u32 count = 0u;
     for (u32 i = 0u; i < materialPropertyCount(); ++i) {
         if ((dirtyMask & materialPropertyDirtyBit(materialPropertyIdAt(i))) != 0u) {
             ++count;
-        }
-    }
     return count;
+bool canRefreshMaterialBinding(const MaterialPropertyBinding& binding) {
+    return binding.canRefreshFromEditState();
+
+bool shouldSkipMaterialPanelRefresh(const MaterialPropertyBinding& binding) {
+    return binding.shouldSkipPanelRefresh();
+
+bool isMaterialPropertyRefreshPending(const MaterialPropertyBinding& binding, MaterialPropertyId id) {
+    if (!isMaterialPropertyIdValid(id) || shouldSkipMaterialPanelRefresh(binding)) {
+        return false;
+    return binding.isPropertyDirty(id);
 }
 
 } // namespace fuse::editor
