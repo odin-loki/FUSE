@@ -5764,3 +5764,29 @@ void testWouldSkipGuards() {
 void testWouldSkipSafeChromeTraceExportGuard() {
                "wouldSkipSafeChromeTraceExport false on balanced empty buffer");
                "wouldSkipSafeChromeTraceExport true with open async flow");
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-lookup-c4ca ---
+    expectTrue(!fuse::profiler::wouldSkipScope("valid_scope"), "wouldSkipScope false for valid enabled scope");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("flow_begin", flowId),
+               "wouldSkipAsyncFlowBegin false for valid begin");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("flow_end", flowId),
+               "wouldSkipAsyncFlowEnd true with no open flow");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("", flowId),
+void testWouldSkipCounterAndExportGuards() {
+               "wouldSkipChromeTraceExportSafely true when disabled");
+    expectTrue(fuse::profiler::tryFindFirstEventByName("name_inner", byName),
+               "tryFindFirstEventByName succeeds for inner scope");
+    expectTrue(fuse::profiler::tryFindFirstEventByFlowId(flowId, flowEvent),
+               "tryFindFirstEventByFlowId succeeds");
+    expectTrue(flowEvent.scopeId == flowId, "tryFindFirstEventByFlowId preserves flow id");
+    expectTrue(fuse::profiler::tryFirstExportableEvent(exportable),
+    expectTrue(fuse::profiler::tryLastExportableEvent(exportable),
+    expectTrue(!closedPreflight.hasActiveScope, "preflight clears active scope after end");
+    expectTrue(fuse::profiler::wouldSkipScope("tracked_scope") == false, "scope preflight passes");
+    expectTrue(fuse::profiler::eventCount() == 2u, "scope records when wouldSkip false");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("tracked_flow", flowId),
+    expectTrue(fuse::profiler::eventCount() == 3u, "flow begin records when wouldSkip false");
+    expectTrue(!fuse::profiler::wouldSkipCounterSample("tracked_counter"),
+    expectTrue(fuse::profiler::eventCount() == 4u, "counter records when wouldSkip false");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowEnd("tracked_flow", flowId),
+    expectTrue(fuse::profiler::eventCount() == 5u, "flow end records when wouldSkip false");
