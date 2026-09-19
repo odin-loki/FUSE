@@ -1538,3 +1538,19 @@ bool hrtf_convolution_rejects_for_reason(const HrtfBinauralPreflight& preflight,
 HrtfBinauralRejectReason binaural_reject_from_pan_path(HrtfPanPathRejectReason reason) {
 HrtfConvolutionRejectReason convolution_reject_reason_from_preflight(
         return HrtfConvolutionRejectReason::EmptyIr;
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-69f7 ---
+const char* hrtf_binaural_convolve_reject_reason_label(HrtfBinauralConvolveRejectReason reason) {
+    case HrtfBinauralConvolveRejectReason::None:
+    case HrtfBinauralConvolveRejectReason::Bypass:
+    case HrtfBinauralConvolveRejectReason::EmptyIr:
+    case HrtfBinauralConvolveRejectReason::NullSamples:
+    case HrtfBinauralConvolveRejectReason::ZeroLength:
+    case HrtfBinauralConvolveRejectReason::MalformedIr:
+HrtfBinauralConvolveRejectReason classify_hrtf_binaural_convolve_reject(
+        return HrtfBinauralConvolveRejectReason::None;
+        return HrtfBinauralConvolveRejectReason::Bypass;
+        return HrtfBinauralConvolveRejectReason::MalformedIr;
+        return HrtfBinauralConvolveRejectReason::NullSamples;
+        return HrtfBinauralConvolveRejectReason::ZeroLength;
+        return HrtfBinauralConvolveRejectReason::EmptyIr;

@@ -2088,3 +2088,12 @@ void testRejectReasonMirrorsExistingPreflights() {
 // --- deepen additive from deepen-b72-hrtf-reject-reasons-cf7e ---
     expectTrue(stub_preflight.convolutionReason == fuse::audio::HrtfConvolutionRejectReason::EmptyIr,
                    fuse::audio::HrtfConvolutionRejectReason::EmptyIr),
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-69f7 ---
+    expectTrue(null_preflight.reject == fuse::audio::HrtfIrRejectReason::NullSamples,
+    expectTrue(preflight.reject == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+    expectTrue(stub_preflight.convolveReject
+    expectTrue(malformed_preflight.convolveReject
+    expectTrue(conv_preflight.convolveReject == fuse::audio::HrtfBinauralConvolveRejectReason::None,
+    expectTrue(bypass_preflight.convolveReject
+    expectTrue(composite.convolveReject

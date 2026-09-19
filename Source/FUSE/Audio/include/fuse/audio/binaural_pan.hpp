@@ -1000,3 +1000,13 @@ bool hrtf_ir_rejects_for_reason(const HrtfIrPreflight& preflight, HrtfIrRejectRe
 bool hrtf_pan_path_rejects_for_reason(const HrtfPanPathPreflight& preflight,
 HrtfConvolutionRejectReason classify_hrtf_convolution_reject(const HrtfBinauralPreflight& preflight);
 bool hrtf_convolution_rejects_for_reason(const HrtfBinauralPreflight& preflight,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-69f7 ---
+    HrtfIrRejectReason reject = HrtfIrRejectReason::None;
+    HrtfPanPathRejectReason reject = HrtfPanPathRejectReason::None;
+    HrtfAttenuationCouplingRejectReason reject = HrtfAttenuationCouplingRejectReason::None;
+enum class HrtfBinauralConvolveRejectReason : u8 {
+    HrtfBinauralRejectReason reject = HrtfBinauralRejectReason::None;
+    HrtfBinauralConvolveRejectReason convolveReject = HrtfBinauralConvolveRejectReason::None;
+const char* hrtf_binaural_convolve_reject_reason_label(HrtfBinauralConvolveRejectReason reason);
+HrtfBinauralConvolveRejectReason classify_hrtf_binaural_convolve_reject(
