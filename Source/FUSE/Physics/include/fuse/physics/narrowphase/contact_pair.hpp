@@ -1266,22 +1266,15 @@ ContactPairRejectReason first_contact_pair_deepen_reject_in_batch(
 ContactPairRejectReason first_contact_pair_deepen_reject_reason(
 /// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
 ContactManifold detect_contacts_pair_with_deepen_preflight(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Collect pairs that pass extended deepen preflight without mutating input (B4.6 deepen pass).
 std::vector<broadphase::CandidatePair> filter_dispatchable_contact_pairs(
     const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Non-mutating deepen-dispatch skip predicate — mirrors `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
 bool can_skip_contact_pair_deepen_dispatch(
-    const broadphase::CandidatePair& pair,
 
 /// Non-mutating deepen-dispatch predicate — inverse of `can_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
-bool should_run_contact_pair_deepen_dispatch(
 
 /// Human-readable label for narrowphase batch reject reasons (B4.6 deepen pass).
 const char* narrowphase_batch_reject_reason_name(NarrowphaseBatchRejectReason reason);
@@ -1322,7 +1315,6 @@ bool first_contact_pair_deepen_rejects_for_reason(
     ContactPairRejectReason expected);
 
 /// Shape dispatch only when deepen preflight passes; invalid manifold otherwise (B4.6 deepen pass).
-ContactManifold detect_contacts_pair_with_deepen_preflight(
 
     bool skipped = false;
 
@@ -1341,5 +1333,22 @@ bool write_contact_manifold_to_buffer_with_preflight(
     ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold);
+/// Count pairs rejected by a specific deepen reason (B4.6 deepen pass).
+u32 count_contact_pairs_rejected_for_reason(
+    ContactPairRejectReason reason);
+
+/// Const preflight for per-slot narrowphase dispatch (B4.6 deepen pass).
+struct NarrowphasePairSlotPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+    bool canWriteSlot = false;
+
+    bool can_dispatch() const { return !rejected; }
+
+/// Populate per-slot dispatch preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+
+/// Returns true when narrowphase should skip this pair slot before dispatch (B4.6 deepen pass).
+bool should_skip_narrowphase_pair_slot(
 
 } // namespace fuse::physics::narrowphase

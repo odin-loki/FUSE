@@ -32,6 +32,31 @@ NarrowphaseRunPreflight preflightNarrowphaseRun(
 
 bool canSkipNarrowphaseRun(
     return can_skip_narrowphase_run(pairs, bodies, shapes);
+namespace {
+
+u32 countBaseDispatchableContactPairs(
+    u32 dispatchable = 0u;
+    for (const broadphase::CandidatePair& pair : pairs) {
+        if (!should_skip_narrowphase_pair_slot(pair, bodies, shapes)) {
+            ++dispatchable;
+    return dispatchable;
+
+} // namespace
+
+NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
+    const CollisionShapeSoA& shapes,
+    const ContactBufferSoA& buffer) {
+    NarrowphaseIntoBufferPreflight preflight{};
+    preflight.pairCount = static_cast<u32>(pairs.size());
+    preflight.dispatchableCount = countBaseDispatchableContactPairs(pairs, bodies, shapes);
+    preflight.canSkipPass = preflight.pairCount == 0u;
+    preflight.canSkipBufferCompaction = buffer.canSkipCompaction();
+    preflight.canSkipBufferClamp = buffer.canSkipMaxCapacityClamp();
+
+bool can_skip_narrowphase_into_buffer(
+    if (pairs.empty()) {
+        return true;
+    return countBaseDispatchableContactPairs(pairs, bodies, shapes) == 0u;
 }
 
 void runNarrowphaseIntoBuffer(
@@ -75,6 +100,9 @@ void runNarrowphaseIntoBuffer(
 
 
         if (generate_contact_manifold_if_needed(manifold)) {
+        }
+
+        if (generate_contact_manifold_with_preflight(manifold)) {
             buffer.writeSlot(pairIndex, manifold);
 
 

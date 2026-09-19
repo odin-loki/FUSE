@@ -2236,4 +2236,36 @@ std::vector<broadphase::CandidatePair> filter_dispatchable_contact_pairs(
     return dispatchable;
 }
 
+u32 count_contact_pairs_rejected_for_reason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason reason) {
+    u32 rejected = 0u;
+    for (const broadphase::CandidatePair& pair : pairs) {
+        if (contact_pair_deepen_reject_reason(pair, bodies, shapes) == reason) {
+            ++rejected;
+        }
+    }
+    return rejected;
+}
+
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphasePairSlotPreflight preflight{};
+    preflight.reason = contact_pair_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+    preflight.canWriteSlot = !preflight.rejected;
+    return preflight;
+}
+
+bool should_skip_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !preflight_narrowphase_pair_slot(pair, bodies, shapes).can_dispatch();
+}
+
 } // namespace fuse::physics::narrowphase
