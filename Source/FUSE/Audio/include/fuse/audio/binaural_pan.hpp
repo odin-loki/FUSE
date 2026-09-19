@@ -1388,3 +1388,7 @@ bool try_preflight_hrtf_ir_convolve(const HrtfIrStub& ir, HrtfIrRejectReason& re
 
 // --- deepen additive from b72-hrtf-reject-reason-wrappers-9880 ---
 HrtfPanPathRejectReason classify_hrtf_binaural_pan_reject(const HrtfBinauralPreflight& preflight);
+
+// --- deepen additive from b72-hrtf-reject-reason-wrappers-4cd0 ---
+                                               HrtfBinauralConvolutionRejectReason* reason = nullptr,
+                                             HrtfBinauralConvolutionRejectReason& reason,

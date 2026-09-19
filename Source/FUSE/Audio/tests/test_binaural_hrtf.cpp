@@ -2662,3 +2662,6 @@ void testHrtfBinauralCompositeRejectReasonWrappers() {
     fuse::audio::HrtfIrRejectReason irReason = fuse::audio::HrtfIrRejectReason::None;
     expectTrue(irReason == fuse::audio::HrtfIrRejectReason::NullSamples,
     expectTrue(irReason == fuse::audio::HrtfIrRejectReason::None,
+
+// --- deepen additive from b72-hrtf-reject-reason-wrappers-4cd0 ---
+    expectTrue(conv_reason == fuse::audio::HrtfBinauralConvolutionRejectReason::MalformedIr,
