@@ -344,6 +344,10 @@ bool eventNameEquals(const char* eventName, const char* name) {
     if (eventName == nullptr || eventName[0] == '\0' || name == nullptr || name[0] == '\0') {
     return std::strcmp(eventName, name) == 0;
 
+bool eventNameMatches(const char* eventName, const char* queryName) {
+    if (eventName == nullptr || eventName[0] == '\0' || queryName == nullptr || queryName[0] == '\0') {
+    return std::strcmp(eventName, queryName) == 0;
+
 }
 
 } // namespace
@@ -1267,6 +1271,14 @@ bool hasActiveFlowNesting() {
 
 bool hasNestedAsyncFlowContext() {
     return hasActiveScopeNesting() && hasActiveFlowNesting();
+}
+
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
 }
 
 bool hasActiveScope() {
@@ -2789,6 +2801,16 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
+
+
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -3880,6 +3902,17 @@ bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
     return isValidEventName(event.name)
         && (event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)
         && event.scopeId == flowId;
+
+
+
+
+
+
+
+
+
+
+
 
 
 
