@@ -1239,3 +1239,6 @@ void testCookCachePreflightStoreEntry() {
 void testCookHashShaderAndManifestUpstreamPreflights() {
     const fuse::project::CookHashPreflight with_upstream =
     testCookHashShaderAndManifestUpstreamPreflights();
+
+// --- deepen additive from deepen-b79-cooker-hash-3f9b ---
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash),
