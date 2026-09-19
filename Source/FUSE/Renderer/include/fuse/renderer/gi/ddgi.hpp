@@ -295,8 +295,12 @@ struct ProbeGridLayout {
     static ProbeValidityFlags probeValidityFromClampedIndex(const DDGIDesc& desc, u32 probe_index);
     /// True when `probe_index` exceeds the valid probe range (would be clamped).
     static bool isProbeIndexOutOfRange(u32 probe_index, const DDGIDesc& desc);
+    /// Last valid flat probe index; returns 0 when the grid is empty.
+    static u32 maxProbeIndex(const DDGIDesc& desc);
     /// Clamp a flat probe index to [0, probeCount - 1]; returns 0 when the grid is empty.
     static u32 clampProbeIndex(u32 probe_index, const DDGIDesc& desc);
+    /// Clamp `probe_index` into range; returns false and zeroes `out_index` on an empty grid.
+    static bool tryClampProbeIndex(u32 probe_index, const DDGIDesc& desc, u32& out_index);
     static u32 clampProbeCoordX(u32 x, const DDGIDesc& desc);
     static u32 clampProbeCoordY(u32 y, const DDGIDesc& desc);
     static u32 clampProbeCoordZ(u32 z, const DDGIDesc& desc);
@@ -360,6 +364,8 @@ struct ProbeGridLayout {
     static bool isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// True when any trilinear corner lies on the probe grid border shell.
     static bool sampleCoordsTouchBorder(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Build then clamp trilinear sample coordinates; false when grid is empty.
+    static bool buildAndClampProbeSampleCoords(const DDGIDesc& desc,
     /// Fractional grid coordinates — origin cell centre is (0,0,0).
     static fuse::math::Vec3 worldToProbeGridCoord(const DDGIDesc& desc,
                                                   const fuse::math::Vec3& world_position);
@@ -489,10 +495,15 @@ bool isCacheIndexInRange(u32 cache_index, u32 cache_count);
 u32 clampCacheIndex(u32 cache_index, const DDGIDesc& desc, u32 cache_count);
 /// Guarded irradiance read; returns zero when the index is out of range or `cache` is null.
 fuse::math::Vec3 sampleIrradianceAtCacheIndex(const IrradianceCacheEntry* cache,
-                                              u32 cache_count,
                                               u32 cache_index);
 /// Minimum irradiance-cache length required for full-grid trilinear sampling.
-u32 requiredCacheCount(const DDGIDesc& desc);
+/// Minimum cache entries required for full-grid trilinear sampling (equals `probeCount`).
+/// True when `probe_index` is a valid offset into a cache of `cache_count` entries.
+bool isProbeIndexCacheAccessible(u32 probe_index, u32 cache_count);
+/// True when `probe_index` exceeds the cache range (would be clamped or rejected).
+bool isProbeIndexCacheOutOfRange(u32 probe_index, u32 cache_count);
+/// Clamp a flat probe index to [0, cache_count - 1]; returns 0 when the cache is empty.
+u32 clampProbeIndexForCache(u32 probe_index, u32 cache_count);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,

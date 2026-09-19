@@ -112,6 +112,35 @@ void testProbeGridWorldCoord() {
     expectNear(clampedGrid.z, 2.f, 1e-5f, "OOB grid z clamped to max");
 }
 
+void testMaxProbeIndexAndTryClamp() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {4, 2, 3};
+
+    expectTrue(fuse::renderer::ProbeGridLayout::maxProbeIndex(desc) == 23u,
+               "maxProbeIndex is last flat index");
+    expectTrue(fuse::renderer::ProbeGridLayout::maxProbeIndex(desc) ==
+                   fuse::renderer::ddgi_util::probeCount(desc) - 1u,
+               "maxProbeIndex is probeCount - 1");
+
+    fuse::u32 clampedIndex = 0u;
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeIndex(17u, desc, clampedIndex),
+               "tryClamp succeeds on non-empty grid");
+    expectTrue(clampedIndex == 17u, "tryClamp preserves in-bounds index");
+
+    fuse::u32 clampedOob = 0u;
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeIndex(999u, desc, clampedOob),
+               "tryClamp succeeds when clamping OOB index");
+    expectTrue(clampedOob == fuse::renderer::ProbeGridLayout::maxProbeIndex(desc),
+               "tryClamp clamps OOB index to max");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    fuse::u32 emptyClamp = 99u;
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryClampProbeIndex(5u, empty, emptyClamp),
+               "tryClamp rejects empty grid");
+    expectTrue(emptyClamp == 0u, "tryClamp zeroes output on empty grid");
+}
+
 void testProbeIndexClamp() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {4, 2, 3};
@@ -292,6 +321,42 @@ void testProbePerAxisClamp() {
                "empty grid clamped coord index is 0");
     expectTrue(fuse::renderer::ProbeGridLayout::clampProbeCoordX(5u, empty) == 0u,
                "empty grid clamp probe X returns 0");
+}
+
+void testProbeSampleCoordValidation() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_origin = {0.f, 0.f, 0.f};
+    desc.probe_spacing = {1.f, 1.f, 1.f};
+    desc.grid_dims = {2, 2, 2};
+
+    fuse::renderer::ProbeSampleCoords built{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, built),
+               "buildProbeSampleCoords succeeds for interior sample");
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, built),
+               "built interior sample coords are valid");
+
+    fuse::renderer::ProbeSampleCoords clampedBuilt{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildAndClampProbeSampleCoords(
+                   desc, {100.f, 100.f, 100.f}, clampedBuilt),
+               "buildAndClampProbeSampleCoords succeeds on OOB world position");
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, clampedBuilt),
+               "buildAndClamp output passes validation");
+
+    fuse::renderer::ProbeSampleCoords invalid{};
+    invalid.x0 = 5u;
+    invalid.x1 = 1u;
+    invalid.tx = 2.f;
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, invalid),
+               "OOB indices and weights fail validation");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    fuse::renderer::ProbeSampleCoords emptyBuilt{};
+    expectTrue(!fuse::renderer::ProbeGridLayout::buildAndClampProbeSampleCoords(
+                   empty, {0.f, 0.f, 0.f}, emptyBuilt),
+               "buildAndClamp fails on empty grid");
+    expectTrue(!fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(empty, built),
+               "sample coord validation fails on empty grid");
 }
 
 void testClampProbeSampleCoords() {
@@ -905,15 +970,10 @@ void testLaunchProbeUpdateIndexGuard() {
     expectTrue(!fuse::renderer::canLaunchDdgiProbeUpdate(desc, validIndices, 0u),
                "preflight rejects zero probe count");
 
-    fuse::renderer::DDGIDesc empty{};
-    empty.grid_dims = {0, 2, 2};
     expectTrue(!fuse::renderer::canLaunchDdgiProbeUpdate(empty, validIndices, 2u),
                "preflight rejects empty grid");
-}
 
 void testProbeSampleCoordRejectReasons() {
-    fuse::renderer::DDGIDesc desc{};
-    desc.grid_dims = {2, 2, 2};
 
     fuse::renderer::ProbeSampleCoords built{};
     expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, built),
@@ -1019,7 +1079,6 @@ void testCacheIndexRejectReasons() {
 
 void testLaunchProbeUpdateRejectReasons() {
 
-    fuse::u32 validIndices[2] = {0u, 7u};
     fuse::renderer::ProbeUpdateLaunchRejectReason reason = fuse::renderer::ProbeUpdateLaunchRejectReason::None;
     expectTrue(fuse::renderer::tryCanLaunchDdgiProbeUpdate(desc, validIndices, 2u, reason),
                "tryCanLaunch succeeds for valid indices");
@@ -1028,7 +1087,6 @@ void testLaunchProbeUpdateRejectReasons() {
     expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(reason), "none") == 0,
                "none launch reject reason label");
 
-    fuse::u32 oobIndices[2] = {0u, 99u};
     expectTrue(!fuse::renderer::tryCanLaunchDdgiProbeUpdate(desc, oobIndices, 2u, reason),
                "tryCanLaunch rejects OOB probe indices");
     expectTrue(reason == fuse::renderer::ProbeUpdateLaunchRejectReason::OutOfRangeProbeIndex,
@@ -1660,6 +1718,21 @@ void testDdgiPreflightDeepenGuards() {
                "classifyProbeKernelReject zero_rays_per_probe");
     expectTrue(fuse::renderer::gi::wouldSkipProbeKernelLaunch(zeroRays),
                "wouldSkipProbeKernelLaunch true for zero rays");
+    expectTrue(fuse::renderer::ddgi_util::isProbeIndexCacheAccessible(7u, 8u),
+               "last cache index is accessible");
+    expectTrue(!fuse::renderer::ddgi_util::isProbeIndexCacheAccessible(8u, 8u),
+               "index equal to cache_count is not accessible");
+    expectTrue(fuse::renderer::ddgi_util::isProbeIndexCacheOutOfRange(8u, 8u),
+               "index equal to cache_count is out of range");
+    expectTrue(fuse::renderer::ddgi_util::isProbeIndexCacheOutOfRange(0u, 0u),
+               "any index out of range on empty cache");
+
+    expectTrue(fuse::renderer::ddgi_util::clampProbeIndexForCache(17u, 8u) == 7u,
+               "clampProbeIndexForCache clamps to last cache slot");
+    expectTrue(fuse::renderer::ddgi_util::clampProbeIndexForCache(3u, 8u) == 3u,
+               "clampProbeIndexForCache preserves in-range index");
+    expectTrue(fuse::renderer::ddgi_util::clampProbeIndexForCache(99u, 0u) == 0u,
+               "clampProbeIndexForCache returns 0 on empty cache");
 }
 
 void testSampleGuards() {
@@ -1670,6 +1743,9 @@ void testSampleGuards() {
     expectTrue(fuse::renderer::ddgi_util::canSampleProbeGrid(desc), "default grid is sampleable");
     expectTrue(fuse::renderer::ddgi_util::requiredCacheCount(desc) == 8u, "required cache count matches probe count");
     expectTrue(fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 8u), "full cache sized for grid");
+    expectTrue(fuse::renderer::ddgi_util::isCacheSizedForGrid(desc,
+                                                             fuse::renderer::ddgi_util::requiredCacheCount(desc)),
+               "requiredCacheCount satisfies isCacheSizedForGrid");
     expectTrue(!fuse::renderer::ddgi_util::isCacheSizedForGrid(desc, 4u), "undersized cache rejected");
     expectTrue(fuse::renderer::ddgi_util::cacheEntriesMissing(desc, 8u) == 0u, "full cache has zero missing entries");
     expectTrue(fuse::renderer::ddgi_util::cacheEntriesMissing(desc, 4u) == 4u, "undersized cache reports shortfall");
@@ -1908,6 +1984,10 @@ void testDdgiInitUpdateSample() {
     expectTrue(!fuse::renderer::launch_ddgi_probe_update(emptyDesc, emptyIndices, 4u, nullptr),
                "empty grid probe update launch returns false");
 
+    fuse::u32 oobIndices[2] = {0u, 9999u};
+    expectTrue(!fuse::renderer::launch_ddgi_probe_update(desc, oobIndices, 2u, nullptr),
+               "OOB probe index rejects launch_ddgi_probe_update");
+
     fuse::renderer::DDGISampleRequest sampleRequest{};
     sampleRequest.world_position = fuse::renderer::ddgi_util::probeWorldPosition(desc, 0u);
     sampleRequest.world_normal = {0.f, 1.f, 0.f};
@@ -1946,8 +2026,10 @@ int main() {
     testProbeGridMath();
     testProbeGridIndexing();
     testProbeGridWorldCoord();
+    testMaxProbeIndexAndTryClamp();
     testProbeIndexClamp();
     testProbeSampleCoords();
+    testProbeSampleCoordValidation();
     testEmptyProbeGrid();
     testProbeValidityFlags();
     testProbePerAxisClamp();
