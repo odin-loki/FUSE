@@ -1205,6 +1205,11 @@ FUSE_PHYSICS_INLINE bool tryPreflightCellOccupancy(
 
 
 
+/// Cell-capacity preflight with mandatory reject-reason output (B4.2 deepen pass).
+
+
+/// Early-out when cell-capacity preflight would reject — same ordering as `tryPreflightCellOccupancy`.
+
 
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
@@ -4611,6 +4616,8 @@ bool tryPreflightRefineBroadphase(
 
 /// Early-out when refine preflight would reject (B4.2 deepen pass).
 
+/// Early-out when refine preflight would reject — same ordering as `tryPreflightRefineBroadphase`.
+
 /// Why broadphase pair dedupe would early-out (B4.2 deepen follow-up pass).
 enum class DedupeBroadphaseRejectReason : u8 {
     SinglePair,
@@ -4757,6 +4764,8 @@ bool tryPreflightDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseR
 /// Dedupe preflight with mandatory reject-reason output (B4.2 deepen pass).
 
 /// Early-out when dedupe preflight would reject (B4.2 deepen pass).
+
+/// Early-out when dedupe preflight would reject — same ordering as `tryPreflightDedupeBroadphase`.
 
 /// Why plane/dynamic merge would early-out (B4.2 deepen pass).
 enum class BroadphaseMergeRejectReason : u8 {
@@ -4979,6 +4988,8 @@ bool tryPreflightBroadphaseMerge(
 /// Plane/dynamic merge preflight with mandatory reject-reason output (B4.2 deepen pass).
 
 /// Early-out when plane/dynamic merge preflight would reject (B4.2 deepen pass).
+
+/// Early-out when plane/dynamic merge preflight would reject — same ordering as `tryPreflightBroadphaseMerge`.
 
 /// Why merge-into-buffer would early-out before pushing pairs (B4.2 deepen pass).
 enum class MergePairsIntoBufferRejectReason : u8 {
@@ -6188,6 +6199,8 @@ bool tryPreflightMergePairsIntoBuffer(
 /// Merge-into-buffer preflight with mandatory reject-reason output (B4.2 deepen pass).
 
 /// Early-out when merge-into-buffer preflight would reject (B4.2 deepen pass).
+
+/// Early-out when merge-into-buffer preflight would reject — same ordering as `tryPreflightMergePairsIntoBuffer`.
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(

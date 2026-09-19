@@ -1799,6 +1799,9 @@ enum class PairBufferInvalidateSlotRejectReason : u8 {
     EmptyBuffer,
 
 
+
+/// Early-out when write-slot preflight would reject — same ordering as `tryPreflightPairBufferWriteSlot`.
+
     OutOfRangeSlot,
     AlreadyInvalid,
 };
@@ -2040,11 +2043,15 @@ struct PairBufferInvalidateSlotPreflight {
 
 
 
-    bool outOfRangeSlot = false;
-    bool alreadyInvalid = false;
 
 
 
+
+
+/// Diagnose why invalidate would reject; vacuously succeeds when invalidate may proceed.
+
+
+/// Read-only invalidate diagnostics — no mutation (B4.2 deepen pass).
 
 };
 
@@ -2158,6 +2165,13 @@ bool tryPreflightPairBufferInvalidateSlot(
 /// Invalidate-slot preflight with mandatory reject-reason output (B4.2 deepen pass).
 
 /// Early-out when invalidate-slot preflight would reject (B4.2 deepen pass).
+/// Invalidate preflight with mandatory reject-reason output (B4.2 deepen pass).
+
+/// Early-out when invalidate preflight would reject — same ordering as `tryPreflightPairBufferInvalidateSlot`.
+
+/// Non-mutating invalidate skip predicate — inverse of `canInvalidate` (B4.2 deepen pass).
+
+/// Non-mutating invalidate predicate — mirrors `preflightPairBufferInvalidateSlot` (B4.2 deepen pass).
 
 /// Why pair-buffer toVector would early-out (B4.2 deepen follow-up pass).
 enum class PairBufferToVectorRejectReason : u8 {
