@@ -878,3 +878,8 @@ HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(HrtfPanPath
 
 // --- deepen additive from hrtf-preflight-guards-3b23 ---
 HrtfIrPreflight preflight_hrtf_ir(const float* samples, u32 length) {
+
+// --- deepen additive from deepen-hrtf-preflights-44d8 ---
+    return !should_skip_hrtf_spatial_pan(path);
+bool should_skip_hrtf_attenuation_coupling_for_inputs(HrtfPanPath path, float distance_attenuation,
+    if (should_skip_hrtf_attenuation_coupling_for_inputs(path, distance_attenuation,

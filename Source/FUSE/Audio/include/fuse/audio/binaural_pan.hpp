@@ -598,3 +598,6 @@ struct HrtfSpatialPanPreflight {
 // --- deepen additive from hrtf-preflight-guards-3b23 ---
 [[nodiscard]] HrtfIrPreflight preflight_hrtf_ir(const float* samples, u32 length);
     HrtfIrPreflight ir_preflight{};
+
+// --- deepen additive from deepen-hrtf-preflights-44d8 ---
+bool should_skip_hrtf_attenuation_coupling_for_inputs(HrtfPanPath path, float distance_attenuation,
