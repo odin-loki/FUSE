@@ -2553,3 +2553,15 @@ void testNarrowphasePairSlotGuardPassHelpers() {
     expectTrue(selfPreflight.pairRejected, "pair-slot preflight marks self pair rejected");
         fuse::physics::narrowphase::should_skip_narrowphase_pair_slot({bodyA, bodyA}, bodies, shapes),
         "should_skip pair-slot true for self pair");
+
+// --- deepen additive from b4-narrowphase-deepen-guards-4d64 ---
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight allows mixed pair batch");
+    expectTrue(dispatchPreflight.dispatchableCount == 1u, "dispatch preflight counts dispatchable pairs");
+    expectTrue(emptyPreflight.skipped, "dispatch preflight skips empty pair list");
+    expectTrue(!emptyPreflight.can_dispatch(), "dispatch preflight cannot dispatch empty list");
+void testManifoldPruneFinalizeRejectReasonGuards() {
+            clean, fuse::physics::narrowphase::ManifoldPruneRejectReason::AllValid),
+            withBasis, fuse::physics::narrowphase::FrictionBasisRejectReason::CanReuse),
+            buffer, fuse::physics::narrowphase::ContactBufferClampRejectReason::EmptyBuffer),
+            buffer, 0u, invalid, fuse::physics::narrowphase::ContactBufferWriteRejectReason::InvalidManifold),
+    testManifoldPruneFinalizeRejectReasonGuards();

@@ -731,3 +731,7 @@ ManifoldPruneDispatchPreflight preflight_manifold_prune_dispatch(
 ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
     ManifoldPruneFinalizePreflight preflight{};
 bool should_skip_manifold_prune_finalize(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-4d64 ---
+    case ManifoldPruneRejectReason::AllValid:
+        return ManifoldPruneRejectReason::AllValid;

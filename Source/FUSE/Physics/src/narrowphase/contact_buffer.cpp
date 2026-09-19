@@ -504,3 +504,6 @@ ContactBufferClampPreflight preflightContactBufferClamp(const ContactBufferSoA& 
     return contactBufferCompactionRejectReason(*this) != ContactBufferCompactionRejectReason::None;
     return contactBufferClampRejectReason(*this) != ContactBufferClampRejectReason::None;
     if (clampPreflight.reason != ContactBufferClampRejectReason::None) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-4d64 ---
+    if (!preflightContactBufferClamp(*this).needsClamp()) {

@@ -333,3 +333,7 @@ struct ContactPairDeepenPassPreflight {
 ContactPairDeepenPassPreflight preflight_contact_pair_deepen_pass(
 bool should_skip_contact_pair_deepen_pass_dispatch(
 bool should_skip_contact_pair_batch(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-4d64 ---
+struct NarrowphaseDispatchPreflight {
+NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
