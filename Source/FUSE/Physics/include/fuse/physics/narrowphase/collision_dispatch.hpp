@@ -377,3 +377,12 @@ FUSE_PHYSICS_INLINE const char* narrowphaseIntoBufferRejectReasonName(Narrowphas
     preflight.allPairsRejected = preflight.reason == NarrowphaseIntoBufferRejectReason::AllPairsRejected;
     return !preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).canDispatch();
     return preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).canDispatch();
+
+// --- deepen additive from b4-narrowphase-b46-guards-34a6 ---
+        return reason == NarrowphaseIntoBufferRejectReason::None && dispatchableCount > 0u;
+        return reason != NarrowphaseIntoBufferRejectReason::None || dispatchableCount == 0u;
+    case NarrowphaseIntoBufferRejectReason::AllRejected:
+        return NarrowphaseIntoBufferRejectReason::AllRejected;
+    preflight.allRejected = preflight.reason == NarrowphaseIntoBufferRejectReason::AllRejected;
+    if (would_skip_narrowphase_into_buffer(pairs, bodies, shapes)) {
+    return runNarrowphaseIntoBufferWithPreflight(pairs, bodies, shapes, buffer);

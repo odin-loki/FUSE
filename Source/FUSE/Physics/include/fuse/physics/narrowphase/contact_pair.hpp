@@ -524,3 +524,7 @@ FUSE_PHYSICS_INLINE bool would_skip_contact_pair_dispatch(
 FUSE_PHYSICS_INLINE bool would_skip_contact_pair_deepen_dispatch(
 FUSE_PHYSICS_INLINE bool would_skip_narrowphase_batch(
 FUSE_PHYSICS_INLINE bool try_generate_contact_manifold(ContactManifold& manifold) {
+
+// --- deepen additive from b4-narrowphase-b46-guards-34a6 ---
+bool try_generate_contact_manifold_if_needed(ContactManifold& manifold);
+FUSE_PHYSICS_INLINE bool try_generate_contact_manifold_if_needed(ContactManifold& manifold) {

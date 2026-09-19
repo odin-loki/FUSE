@@ -3807,3 +3807,22 @@ void testWouldSkipTryWrapperGuards() {
         "would_skip_friction_basis_rebuild false without cached basis");
         fuse::physics::narrowphase::would_skip_friction_basis_rebuild(needsBuild),
         "would_skip_friction_basis_rebuild true after build");
+
+// --- deepen additive from b4-narrowphase-b46-guards-34a6 ---
+        fuse::physics::narrowphase::tryWriteContactBufferSlot(buffer, 1u, valid),
+        !fuse::physics::narrowphase::writeContactBufferSlotWithPreflight(buffer, 0u, selfPair),
+    const fuse::u32 compacted = fuse::physics::narrowphase::compactContactBufferWithPreflight(buffer);
+        fuse::physics::narrowphase::applyMaxCapacityClampWithPreflight(buffer) == 1u,
+        fuse::physics::narrowphase::would_skip_narrowphase_into_buffer({}, bodies, shapes),
+        "would_skip on empty pair list");
+            {}, bodies, shapes, fuse::physics::narrowphase::NarrowphaseIntoBufferRejectReason::EmptyPairs),
+        fuse::physics::narrowphase::would_skip_narrowphase_into_buffer(rejectedPairs, bodies, shapes),
+        "would_skip when all pairs deepen-rejected");
+            fuse::physics::narrowphase::NarrowphaseIntoBufferRejectReason::AllRejected),
+        "would_skip_contact_pair_dispatch flags self pair");
+        "would_skip_contact_pair_deepen_dispatch flags sleeping pair");
+        fuse::physics::narrowphase::would_skip_narrowphase_batch({{sleepingA, sleepingB}}, bodies, shapes),
+        "would_skip_narrowphase_batch when all pairs rejected");
+        !fuse::physics::narrowphase::would_skip_friction_basis_rebuild(needsBasis),
+        fuse::physics::narrowphase::would_skip_friction_basis_rebuild(needsBasis),
+        "would_skip_friction_basis_rebuild true after rebuild");

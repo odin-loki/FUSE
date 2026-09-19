@@ -732,3 +732,8 @@ FUSE_PHYSICS_INLINE ContactBufferFrictionBasisPreflight preflightContactBufferFr
     return !preflightContactBufferFrictionBasis(buffer).needsRebuild();
     return preflightContactBufferFrictionBasis(buffer).needsRebuild();
 FUSE_PHYSICS_INLINE bool buildContactBufferFrictionTangentBasesWithPreflight(ContactBufferSoA& buffer) {
+
+// --- deepen additive from b4-narrowphase-b46-guards-34a6 ---
+FUSE_PHYSICS_INLINE u32 applyMaxCapacityClampWithPreflight(ContactBufferSoA& buffer) {
+FUSE_PHYSICS_INLINE bool writeContactBufferSlotWithPreflight(
+    return writeContactBufferSlotWithPreflight(buffer, slot, manifold);
