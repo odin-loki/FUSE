@@ -440,3 +440,11 @@ IslandGraphBuildRejectReason island_graph_build_reject_reason(
             return IslandGraphBuildRejectReason::OutOfRangeContactBody;
             return IslandGraphBuildRejectReason::OutOfRangeDistanceBody;
     return IslandGraphBuildRejectReason::None;
+
+// --- deepen additive from deepen-pbd-island-preflights-e740 ---
+    case IslandGraphBuildRejectReason::EmptyInput:
+    case IslandGraphBuildRejectReason::UnsafeContactRefs:
+    case IslandGraphBuildRejectReason::UnsafeDistanceRefs:
+        return IslandGraphBuildRejectReason::EmptyInput;
+            return IslandGraphBuildRejectReason::UnsafeContactRefs;
+            return IslandGraphBuildRejectReason::UnsafeDistanceRefs;

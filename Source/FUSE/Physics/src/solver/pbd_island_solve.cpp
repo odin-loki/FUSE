@@ -2773,3 +2773,14 @@ IslandWakeGraphRejectPreflight preflight_island_wake_graph_reject(const ContactI
     case IslandWakeRejectReason::UniformSleepState:
         return IslandWakeRejectReason::UniformSleepState;
     if (result.reason != IslandConstraintSolveRejectReason::None) {
+
+// --- deepen additive from deepen-pbd-island-preflights-e740 ---
+    if (should_skip_island_solve_bodies(island, bodies)) {
+    case IslandSleepSolveRejectReason::HasActiveDynamics:
+        return IslandSleepSolveRejectReason::HasActiveDynamics;
+    case IslandWakeRejectReason::NoActiveDynamics:
+        return IslandWakeRejectReason::NoActiveDynamics;
+    return should_skip_island_build(bodyCount, contacts, distanceConstraints);
+    return should_skip_island_constraint_solve(island, bodies, contacts, distanceConstraints);
+    return should_skip_island_sleep_solve(island, bodies);
+    return should_skip_island_wake(island, bodies);

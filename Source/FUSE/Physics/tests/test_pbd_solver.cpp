@@ -4950,3 +4950,16 @@ void testIslandGraphBuildRejectReasonGuards() {
     expectTrue(mixedSleep.reason == IslandSleepSolveRejectReason::None,
     expectTrue(mixedWake.reason == IslandWakeRejectReason::None, "mixed wake preflight has no reject reason");
     testIslandGraphBuildRejectReasonGuards();
+
+// --- deepen additive from deepen-pbd-island-preflights-e740 ---
+                                                     IslandGraphBuildRejectReason::UnsafeContactRefs),
+    expectTrue(island_graph_build_reject_reason(0, {}, {}) == IslandGraphBuildRejectReason::EmptyInput,
+                                                     IslandGraphBuildRejectReason::UnsafeDistanceRefs),
+    expectTrue(preflight.reason == IslandGraphBuildRejectReason::UnsafeContactRefs,
+    const IslandConstraintSolvePreflight combined =
+    expectTrue(combined.reason == IslandConstraintSolveRejectReason::NoMovableBodies,
+    expectTrue(mixedSleep.reason == IslandSleepSolveRejectReason::HasActiveDynamics,
+    expectTrue(allSleeping.reason == IslandSleepSolveRejectReason::None,
+    expectTrue(mixedWake.reason == IslandWakeRejectReason::None, "mixed island has no wake reject reason");
+    expectTrue(sleepingWake.reason == IslandWakeRejectReason::NoActiveDynamics,
+                                              IslandWakeRejectReason::NoActiveDynamics),

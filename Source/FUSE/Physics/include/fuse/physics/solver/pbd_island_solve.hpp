@@ -1692,3 +1692,6 @@ using IslandBuildPreflight = IslandGraphBuildPreflight;
     IslandGraphBuildRejectReason reason = IslandGraphBuildRejectReason::None;
         return !skipped && reason == IslandGraphBuildRejectReason::None && !has_unsafe_refs();
         return !skipped && (reason == IslandSleepSolveRejectReason::AllSleeping || allSleeping);
+
+// --- deepen additive from deepen-pbd-island-preflights-e740 ---
+        return !skipped && reason == IslandSleepSolveRejectReason::None && allSleeping;
