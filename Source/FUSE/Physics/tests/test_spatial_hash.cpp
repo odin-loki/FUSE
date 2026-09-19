@@ -3541,3 +3541,37 @@ void testCellCapacityInsertPreflightGuards() {
                                fuse::physics::broadphase::CellCapacityInsertRejectReason::ExceedsBudget),
     testPairBufferInvalidateSlotPreflightGuards();
     testCellCapacityInsertPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-16b4 ---
+        fuse::physics::broadphase::preflightPairBufferWriteSlot(buffer, 2u, 0u, 1u);
+    const fuse::physics::broadphase::PairBufferInvalidateSlotPreflight outOfRange =
+        fuse::physics::broadphase::preflightPairBufferInvalidateSlot(buffer, 2u);
+        fuse::physics::broadphase::preflightPairBufferSlotReservation(buffer, 2u);
+        fuse::physics::broadphase::preflightPairBufferSlotReservation(buffer, 8u);
+                 fuse::physics::broadphase::cellSpanRejectReason(wideRange, 64u)),
+        fuse::physics::broadphase::preflightCellSpan(wideRange, 64u);
+    expectTrue(!spanPreflight.canClamp(), "span preflight rejects over-span range");
+    expectTrue(spanPreflight.exceedsMaxSpan, "span preflight marks exceedsMaxSpan");
+    expectEq(spanPreflight.spanPerAxis.x, 128, "span preflight reports per-axis span");
+        fuse::physics::broadphase::preflightCellSpan(validRange, 64u);
+    expectTrue(validPreflight.canClamp(), "span preflight accepts in-span range");
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellPairGenRejectReason::EmptyOccupants),
+    const fuse::physics::broadphase::CellPairGenPreflight singletonPreflight =
+        fuse::physics::broadphase::preflightCellPairGen(singletonOccupants);
+    expectTrue(!singletonPreflight.canGenerate(), "cell-pair preflight rejects singleton occupants");
+    expectTrue(singletonPreflight.insufficientOccupants, "cell-pair preflight marks insufficient occupants");
+    expectEq(singletonPreflight.uniqueOccupantCount, 1u, "cell-pair preflight counts unique occupants");
+    const fuse::physics::broadphase::CellPairGenPreflight pairPreflight =
+        fuse::physics::broadphase::preflightCellPairGen(pairOccupants);
+    expectTrue(pairPreflight.canGenerate(), "cell-pair preflight accepts multi-body cell");
+    expectEq(pairPreflight.estimatedPairCount, 1u, "cell-pair preflight estimates one canonical pair");
+void testRefineMergePreflightCountGuards() {
+    expectEq(mergePreflight.planeBodyCount, 1u, "merge preflight counts plane bodies");
+    expectEq(mergePreflight.dynamicBodyCount, 1u, "merge preflight counts dynamic bodies");
+    expectEq(mergePreflight.estimatedMergePairs, 1u, "merge preflight estimates merge pair count");
+    const fuse::physics::broadphase::RefineBroadphasePreflight refinePreflight =
+    expectTrue(refinePreflight.canRefine(), "refine preflight accepts buffer with valid pairs");
+    expectEq(refinePreflight.validPairCount, 1u, "refine preflight reports valid pair count");
+    expectTrue(!dedupePreflight.canDedupe(), "dedupe preflight skips single-pair buffer");
+    expectEq(dedupePreflight.pairCount, 1u, "dedupe preflight reports active pair count");
+    testRefineMergePreflightCountGuards();

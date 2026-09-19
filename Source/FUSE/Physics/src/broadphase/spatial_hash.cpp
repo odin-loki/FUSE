@@ -1419,3 +1419,10 @@ CellCapacityInsertPreflight preflightCellCapacityInsert(
     return buildCellCapacityInsertPreflight(preflightCellOccupancy(range, maxCells), bodyIndex, bodyCount);
     return !preflightCellCapacityInsert(range, maxCells, bodyIndex, bodyCount).canInsert();
     return preflightCellCapacityInsert(range, maxCells, bodyIndex, bodyCount).canInsert();
+
+// --- deepen additive from deepen-b4-broadphase-guards-16b4 ---
+    case CellPairGenRejectReason::EmptyOccupants:
+        return CellPairGenRejectReason::EmptyOccupants;
+        return CellPairGenRejectReason::InsufficientOccupants;
+    preflight.emptyOccupants = preflight.reason == CellPairGenRejectReason::EmptyOccupants;
+    preflight.insufficientOccupants = preflight.reason == CellPairGenRejectReason::InsufficientOccupants;
