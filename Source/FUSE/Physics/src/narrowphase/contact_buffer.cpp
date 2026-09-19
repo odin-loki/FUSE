@@ -725,6 +725,55 @@ void ContactBufferSoA::invalidateSlot(u32 slot) {
 
 
 
+bool bufferHasNoPairSlots(const ContactBufferSoA& buffer) {
+
+
+
+
+    if (bufferHasNoPairSlots(*this)) {
+
+
+    return validCount <= maxCapacity;
+
+const char* contact_buffer_compact_reject_reason_name(ContactBufferCompactRejectReason reason) {
+    case ContactBufferCompactRejectReason::None:
+    case ContactBufferCompactRejectReason::EmptyBuffer:
+    case ContactBufferCompactRejectReason::AllValid:
+
+ContactBufferCompactRejectReason contact_buffer_compact_reject_reason(const ContactBufferSoA& buffer) {
+    if (bufferHasNoPairSlots(buffer)) {
+        return ContactBufferCompactRejectReason::EmptyBuffer;
+        return ContactBufferCompactRejectReason::AllValid;
+    return ContactBufferCompactRejectReason::None;
+
+bool contact_buffer_compact_rejects_for_reason(
+    ContactBufferCompactRejectReason expected) {
+    return contact_buffer_compact_reject_reason(buffer) == expected;
+
+ContactBufferCompactPreflight preflight_contact_buffer_compact(const ContactBufferSoA& buffer) {
+    ContactBufferCompactPreflight preflight{};
+    preflight.reason = contact_buffer_compact_reject_reason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferCompactRejectReason::EmptyBuffer;
+    preflight.allValid = preflight.reason == ContactBufferCompactRejectReason::AllValid;
+
+bool can_skip_contact_buffer_compact(const ContactBufferSoA& buffer) {
+    return !preflight_contact_buffer_compact(buffer).needsCompaction();
+
+bool should_run_contact_buffer_compact(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_compact(buffer).needsCompaction();
+
+
+
+
+
+
+
+
+    if (!should_run_contact_buffer_compact(buffer) && !should_run_contact_buffer_clamp(buffer)) {
+
+
+
+
 
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
@@ -1446,6 +1495,10 @@ bool ContactBufferSoA::canSkipClamp() const {
 
 
 
+    const ContactBufferCompactPreflight preflight = preflight_contact_buffer_compact(*this);
+    if (preflight.reason == ContactBufferCompactRejectReason::EmptyBuffer) {
+    if (preflight.reason == ContactBufferCompactRejectReason::AllValid) {
+
     u32 writeIndex = 0;
     for (u32 readIndex = 0; readIndex < pairSlotCount; ++readIndex) {
 
@@ -1649,6 +1702,15 @@ u32 ContactBufferSoA::compactAndClampIfNeeded() {
     if (canSkipMaxCapacityClamp()) {
         return activeCount;
     }
+u32 ContactBufferSoA::compactAndClamp() {
+    const ContactBufferCompactAndClampPreflight preflight = preflight_contact_buffer_compact_and_clamp(*this);
+    if (preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer) {
+        activeCount = 0u;
+        pairSlotCount = 0u;
+    if (preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork) {
+        activeCount = countValidSlots();
+
+    compact();
     return applyMaxCapacityClamp();
 }
 

@@ -570,6 +570,14 @@ bool should_run_manifold_prune(
            ManifoldPruneRejectReason::None;
 }
 
+bool should_run_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    return !should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
 const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason) {
     switch (reason) {
     case ManifoldFinalizeRejectReason::None:
@@ -1609,6 +1617,13 @@ bool should_skip_manifold_prune(
     return preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon).can_skip_prune();
 
 bool prune_manifold_if_needed(
+bool should_run_manifold_finalize(
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    return !can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
+bool prune_contact_manifold_with_preflight(
     ContactManifold& manifold,
     if (should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon)) {
         return !manifold.empty();

@@ -911,6 +911,10 @@ bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEps
 
     manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
     return true;
+bool should_run_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    return !should_skip_friction_basis_preflight(manifold, epsilon);
 
 bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon) {
     const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);

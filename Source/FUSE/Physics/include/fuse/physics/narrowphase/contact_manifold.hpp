@@ -438,6 +438,13 @@ ManifoldPrunePreflight preflight_manifold_prune(
 /// Returns true when manifold prune should be skipped (B4.4 deepen pass).
 bool should_skip_manifold_prune(
 
+/// Non-mutating prune predicate — inverse of `should_skip_manifold_prune` (B4.5 deepen pass).
+bool should_run_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
 /// Why manifold finalize would early-out (B4.5 deepen follow-up pass).
 enum class ManifoldFinalizeRejectReason : u8 {
     InvalidNormal,
@@ -759,6 +766,17 @@ bool should_run_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.5 deepen pass).
+bool should_run_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+
+/// Prune only when preflight reports in-place pruning is possible; returns true when points remain (B4.5 deepen follow-up pass).
+bool prune_contact_manifold_with_preflight(
+    ContactManifold& manifold,
     f32 shallowMinDepth = 0.f);
 
 /// Prune only when `should_run_manifold_prune` passes; returns true when points remain (B4.4 deepen pass).
