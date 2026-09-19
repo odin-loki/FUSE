@@ -3110,3 +3110,17 @@ void testSnapPreflightNoChange() {
     expectTrue(!endResult.active, "tryEndDrag marks drag inactive");
     expectTrue(endResult.changed, "tryEndDrag reports transform change");
     expectTrue(!gizmo.endDrag().changed, "endDrag no-op after tryEndDrag");
+
+// --- deepen additive from deepen-b6-gizmo-end-drag-preflight-9b89 ---
+    expectTrue(!inactivePreflight.canEnd, "end preflight rejects inactive drag");
+    expectTrue(activePreflight.canEnd, "end preflight accepts active drag");
+    const fuse::editor::EndDragPreflight gizmoInactivePreflight = gizmo.preflightEndDrag();
+    expectTrue(gizmoInactivePreflight.notDragging, "gizmo end preflight marks inactive drag");
+    const fuse::editor::EndDragPreflight gizmoActivePreflight = gizmo.preflightEndDrag();
+    expectTrue(gizmoActivePreflight.canEnd, "gizmo end preflight accepts active drag");
+    expectTrue(!gizmo.isDragging(), "inactive tryEndDrag leaves drag inactive");
+    expectTrue(result.changed, "active tryEndDrag marks result changed");
+    expectTrue(!result.active, "tryEndDrag clears active flag");
+    expectTrue(!gizmo.isDragging(), "tryEndDrag ends drag session");
+    expectTrue(!gizmo.tryEndDrag(result), "tryEndDrag rejects second end without drag");
+    expectTrue(!result.changed, "second tryEndDrag leaves result unchanged");
