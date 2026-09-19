@@ -341,6 +341,82 @@ bool CookCache::has_prunable_entries() const {
     return false;
 }
 
+u32 CookCache::count_stale_entries() const {
+    if (m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_valid_cook_cache_entry(entry) && is_stale_cache_entry_(entry)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 CookCache::count_invalid_entries() const {
+    if (m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (!is_valid_cook_cache_entry(entry)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 CookCache::count_stale_upstream_entries(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    if (m_entries.empty() || source_upstream_by_path.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const auto& pair : source_upstream_by_path) {
+        const std::string& source_path = pair.first;
+        if (!is_valid_cook_cache_path(source_path)) {
+            continue;
+        }
+        const u64 current_upstream = pair.second;
+
+        for (const CookCacheEntry& entry : m_entries) {
+            if (entry.source_path == source_path && entry.upstream_hash != current_upstream) {
+                ++count;
+            }
+        }
+    }
+    return count;
+}
+
+u32 CookCache::probe_stale_content_for_source(const std::string& source_path, u64 current_content_hash) const {
+    if (!is_valid_cook_cache_path(source_path) || !is_valid_cook_cache_key(current_content_hash) ||
+        m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.source_path != source_path) {
+            continue;
+        }
+        if (entry.content_hash != current_content_hash) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 CookCache::estimate_prune_all() const {
+    if (m_entries.empty() || !has_prunable_entries()) {
+        return 0;
+    }
+    return count_invalid_entries() + count_stale_entries();
+}
+
 bool CookCache::contains(u64 content_hash) const {
     if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {
         return false;
