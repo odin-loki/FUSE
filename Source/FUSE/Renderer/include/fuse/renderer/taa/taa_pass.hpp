@@ -326,6 +326,10 @@ public:
     /// Compute pass resolve blend weights with reject-reason diagnostics (B5.9 deepen).
     /// Classify why resolve would skip for the pass history state (B5.9 deepen).
     /// Classify why pass NDC jitter would be rejected (B5.9 deepen).
+    /// History reuse preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const;
+    /// History resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& reason) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// Early-out when resolve preflight would bail (B5.9 deepen).
@@ -390,6 +394,8 @@ public:
     /// Sync jitter only when preflight passes; returns false when blocked (B5.9 deepen).
     bool trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason);
     /// Pass jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Classify why pass jitter sync would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
     /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
@@ -519,6 +525,8 @@ public:
     bool tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& reason) const;
     /// Preflight resolve without mutating history (B5.9 deepen).
     bool preflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
+    /// Classify why resolve would skip for the pass history state (B5.9 deepen).
+    TaaResolveSkipReason classifyResolveSkip(const TaaResolveDesc& desc) const;
     /// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
     bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
     /// Early-out when resolve preflight would skip (B5.9 deepen).
