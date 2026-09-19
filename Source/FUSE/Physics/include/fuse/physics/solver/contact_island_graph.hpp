@@ -215,6 +215,7 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
 
 
 
+
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -236,6 +237,7 @@ bool island_graph_build_rejects_for_reason(
 /// Read-only island graph build diagnostics — no mutation (B4.4 deepen follow-up pass).
 struct IslandGraphBuildPreflight {
     u32 bodyCount = 0;
+
 
     u32 contactSlotCount = 0;
     u32 distanceSlotCount = 0;
@@ -802,6 +804,8 @@ bool islandGraphBuildRejectsForReason(u32 bodyCount,
 
 
 /// Non-mutating build predicate — mirrors `preflight_island_graph_build` (B4.4 deepen follow-up pass).
+
+
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
