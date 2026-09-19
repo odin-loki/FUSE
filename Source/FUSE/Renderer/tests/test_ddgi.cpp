@@ -4775,3 +4775,28 @@ void testTrilinearAndCachePreflightDeepen() {
                "zero probes_per_frame tryScheduleAtRate reports zero_probes_per_frame reason");
                "preflightProbeScheduleAtRate zero rate reports zero_probes_per_frame reason");
     testTrilinearAndCachePreflightDeepen();
+
+// --- deepen additive from deepen-ddgi-b56-guards-7519 ---
+    expectTrue(!fuse::renderer::tryValidateProbeGridSource(zeroSpacing, reason),
+    expectTrue(reason == fuse::renderer::ProbeGridSourceRejectReason::ZeroSpacing,
+    expectTrue(std::strcmp(fuse::renderer::probeGridSourceRejectReasonLabel(reason), "zero_spacing") == 0,
+    expectTrue(!fuse::renderer::tryValidateProbeGridSource(zeroIrradiance, reason),
+    expectTrue(!fuse::renderer::tryValidateProbeGridSource(zeroDepth, reason),
+    expectTrue(std::strcmp(fuse::renderer::probeGridSourceRejectReasonLabel(reason), "zero_depth_res") == 0,
+void testWouldSkipProbeSampleCoordPreflight() {
+               "wouldSkip false for clampable OOB weights");
+void testTrilinearCachePreflights() {
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, coords, cache.data(), 4u),
+    expectTrue(count == 64u, "tryScheduleAtRate schedules 64 probes");
+               "successful tryScheduleAtRate reports no reject reason");
+               "tryScheduleAtRate rejects zero probe count");
+               "zero probe count tryScheduleAtRate reports zero_probe_count");
+               "tryScheduleAtRate rejects zero probes_per_frame");
+               "zero probes_per_frame tryScheduleAtRate reports zero_probes_per_frame");
+               "successful tryLaunch_probe_kernels reports no reject reason");
+               "tryLaunch_probe_kernels zero count reports zero_update_count reason");
+    expectTrue(!fuse::renderer::gi::tryLaunch_probe_kernels(nullIndices, nullptr, reason),
+               "tryLaunch_probe_kernels rejects null probe indices");
+               "tryLaunch_probe_kernels null indices reports null_probe_indices reason");
+    testWouldSkipProbeSampleCoordPreflight();
+    testTrilinearCachePreflights();
