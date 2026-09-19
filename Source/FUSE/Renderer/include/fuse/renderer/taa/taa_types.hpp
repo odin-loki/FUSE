@@ -392,6 +392,9 @@ const char* taaResolveBlendPreflightRejectReasonLabel(TaaResolveBlendPreflightRe
 TaaResolveBlendPreflightRejectReason diagnoseTaaResolveBlendPreflight(const TaaResolveDesc& desc,
 /// Preflight guard before applying resolve blend weights; false when history is not ready or weights violate reuse policy (B5.9 deepen).
                               TaaResolveBlendPreflightRejectReason* reason = nullptr);
+/// Preflight history reuse for an observed invalidate epoch (B5.9 deepen).
+/// Preflight resolve blend weights for consistency with reuse policy (B5.9 deepen).
+                              TaaBlendWeights* weights = nullptr);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

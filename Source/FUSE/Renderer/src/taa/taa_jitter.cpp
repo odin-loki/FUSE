@@ -168,6 +168,8 @@ u32 TaaJitterLayout::expectedSlotForMonotonicFrame(u32 monotonicFrame, u32 seque
 
 bool TaaJitterLayout::monotonicFrameMatchesSlot(u32 monotonicFrame, u32 slot, u32 sequenceLength) {
     return expectedSlotForMonotonicFrame(monotonicFrame, sequenceLength) == slot;
+bool TaaJitterLayout::jitterIndexMatchesFrameIndex(u32 frameIndex, u32 index, u32 sequenceLength) {
+    return frameIndexInSequence(frameIndex, sequenceLength) == index;
 }
 
 fuse::math::Vec2 TaaJitterLayout::haltonPixelOffset(u32 index, u32 sequenceLength) {
@@ -482,6 +484,8 @@ bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
     syncToFrameIndex(frameIndex);
 
            TaaJitterLayout::monotonicFrameMatchesSlot(frameIndex, m_index, m_sequenceLength);
+
+           TaaJitterLayout::jitterIndexMatchesFrameIndex(frameIndex, m_index, m_sequenceLength);
 }
 
 } // namespace fuse::renderer

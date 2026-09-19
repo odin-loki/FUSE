@@ -60,7 +60,11 @@ public:
     /// Align jitter only when sync preflight passes; returns false when blocked (B5.9 deepen).
     /// True when pass jitter matches the expected slot for `frameIndex` (B5.9 deepen).
     bool isJitterSyncedTo(u32 frameIndex) const;
+    /// Align jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
+    /// True when pass jitter index and monotonic counter match `frameIndex` (B5.9 deepen).
     void invalidateHistory();
+    /// Invalidate when `observedGeneration` differs from pass history epoch (B5.9 deepen).
+    bool invalidateHistoryIfStale(u32 observedGeneration);
     void resize(u32 width, u32 height);
     bool matchesDimensions(u32 width, u32 height) const;
     /// True when the resolve request matches this pass viewport dimensions.
@@ -203,6 +207,10 @@ public:
     TaaResolveBlendPreflight preflightResolveBlend(const TaaResolveDesc& desc) const;
     /// Resolve + blend preflight using pass history — optionally fills projected blend weights (B5.9 deepen).
     bool preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* weights = nullptr) const;
+    /// Preflight history reuse for an observed invalidate epoch (B5.9 deepen).
+    bool preflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason* reason = nullptr) const;
+    /// Preflight resolve blend weights for consistency with reuse policy (B5.9 deepen).
+    bool preflightResolveBlend(const TaaResolveDesc& desc) const;
     /// Stamp `observed_history_generation` from pass history when still at the no-guard sentinel.
     void stampObservedHistoryGeneration(TaaResolveDesc& desc) const;
     /// Clamp params and stamp observed generation from pass history.
