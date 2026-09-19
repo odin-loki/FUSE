@@ -199,6 +199,15 @@ struct NarrowphasePairSlotPreflight {
 
 /// Populate pair-slot preflight without running shape dispatch (B4.4 deepen guard pass).
 NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+/// Const preflight for per-slot narrowphase dispatch (B4.6 deepen pass).
+struct NarrowphaseSlotPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+
+    bool can_dispatch() const { return !rejected; }
+
+/// Populate per-slot narrowphase preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphaseSlotPreflight preflight_narrowphase_slot(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -261,13 +270,12 @@ bool can_skip_narrowphase_buffer_finalize(const ContactBufferSoA& buffer);
 
 
 
-    const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
-/// Returns true when narrowphase-into-buffer should early-out before pair dispatch (B4.6 deepen pass).
-bool should_skip_narrowphase_into_buffer(
-    const std::vector<broadphase::CandidatePair>& pairs,
+/// Returns true when extended deepen preflight rejects this slot (B4.6 deepen pass).
+bool should_skip_narrowphase_slot_dispatch(
+    const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 

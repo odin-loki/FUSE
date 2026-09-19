@@ -301,6 +301,8 @@ struct ContactBufferSoA {
     void rebuildFrictionTangentBasesIfNeeded(f32 epsilon = 1e-4f);
     bool writeSlotWithFinalize(u32 slot, ContactManifold& manifold, f32 frictionEpsilon = 1e-4f);
     bool slotNeedsFrictionBasisRebuild(u32 slot, f32 epsilon = 1e-4f) const;
+    bool frictionBasisMatchesNormalAt(u32 slot, f32 epsilon = 1e-4f) const;
+    bool canSkipBuildFrictionTangentBases(f32 epsilon = 1e-4f) const;
     u32 compact();
     /// Compact only when preflight allows (B4.6 deepen pass).
     u32 compactWithPreflight();
@@ -548,7 +550,6 @@ bool should_skip_contact_buffer_write_slot(
 
 
 
-};
 
 
 
@@ -557,7 +558,6 @@ bool should_skip_contact_buffer_write_slot(
 
 
 
-    None = 0,
 
 /// Human-readable label for contact-buffer compaction reject reasons (B4.6 deepen pass).
 const char* contact_buffer_compaction_reject_reason_name(ContactBufferCompactionRejectReason reason);
@@ -2081,5 +2081,12 @@ ContactBufferFrictionBuildRejectReason contact_buffer_friction_build_reject_reas
 /// Non-mutating skip predicate — inverse of `needs_build` (B4.6 deepen pass).
 
 /// Non-mutating rebuild predicate — mirrors `preflight_contact_buffer_friction_build` (B4.6 deepen pass).
+
+    bool can_skip_rebuild() const { return staleCount == 0u; }
+    bool needs_rebuild() const { return staleCount > 0u; }
+
+/// Populate friction tangent rebuild preflight without mutating slots (B4.6 deepen pass).
+
+/// Returns true when all active slots already store orthonormal tangent frames (B4.6 deepen pass).
 
 } // namespace fuse::physics::narrowphase

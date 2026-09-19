@@ -46,6 +46,7 @@ enum class ContactPairRejectReason : u8 {
     BothCcd,
     MeshShapePair,
     BoxThinPair,
+    NoDispatchPath,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -1199,6 +1200,25 @@ bool is_capsule_capsule_contact_pair(
 
 /// Returns true when one shape is a box and the other is a capsule (B4.5 deepen pass).
 bool is_box_capsule_contact_pair(
+/// Returns true when one shape is a box and the other is a plane (B4.6 deepen pass).
+bool is_box_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when one shape is a capsule and the other is a plane (B4.6 deepen pass).
+bool is_capsule_plane_contact_pair(
+
+/// Returns true when both shapes resolve to capsule types (B4.6 deepen pass).
+bool is_capsule_capsule_contact_pair(
+
+/// Returns true when one shape is a box and the other is a capsule (B4.6 deepen pass).
+
+/// Returns true when `dispatchShapePair` has no narrowphase path despite passing base checks (B4.6 deepen pass).
+bool is_undispatched_shape_pair(
+
+/// Run shape dispatch only when extended deepen preflight allows (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_deepen(
+    const RigidBodySoA& bodies,
 
 /// Const preflight for narrowphase batch dispatch (B4.5 deepen follow-up pass).
 struct NarrowphaseBatchPreflight {

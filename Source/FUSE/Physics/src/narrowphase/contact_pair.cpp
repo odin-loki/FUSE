@@ -197,6 +197,14 @@ bool isDispatchableShapePair(CollisionShapeType typeA, CollisionShapeType typeB)
     if (typeB == CollisionShapeType::Sphere) {
         switch (typeA) {
     if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Box) {
+bool hasNarrowphaseDispatchPath(CollisionShapeType typeA, CollisionShapeType typeB) {
+    if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Sphere) {
+    if ((typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Plane) ||
+        (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Sphere)) {
+    if ((typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Box) ||
+        (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Sphere)) {
+    if ((typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Capsule) ||
+        (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Sphere)) {
 }
 
 bool isDeepenDegenerateShapePair(
@@ -305,6 +313,8 @@ const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
         return "MeshShapePair";
     case ContactPairRejectReason::BoxThinPair:
         return "BoxThinPair";
+    case ContactPairRejectReason::NoDispatchPath:
+        return "NoDispatchPath";
     }
     return "Unknown";
 }
@@ -673,6 +683,16 @@ ContactManifold detect_contacts_pair(
     return dispatchShapePair(pair, bodies, shapes);
 }
 
+ContactManifold detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
+}
+
 bool can_finalize_contact_manifold(const ContactManifold& manifold) {
     if (manifold.empty()) {
         return false;
@@ -842,6 +862,8 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
     }
     if (is_ccd_contact_pair(pair, bodies)) {
         return ContactPairRejectReason::BothCcd;
+    if (is_undispatched_shape_pair(pair, shapes)) {
+        return ContactPairRejectReason::NoDispatchPath;
     return ContactPairRejectReason::None;
 
 bool contact_pair_deepen_rejects_for_reason(
@@ -1638,7 +1660,58 @@ bool contact_pair_deepen_rejects_for_reason(
     return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
 }
 
+CollisionShapeType shapeTypeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex) {
+    const u32 shapeIndex = findShapeForBody(shapes, bodyIndex, CollisionShapeType::Sphere);
+    if (shapeIndex >= shapes.count()) {
+        return CollisionShapeType::Sphere;
+    }
+    return shapeType(shapes, shapeIndex);
+}
+
 bool is_plane_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const CollisionShapeType typeA = shapeTypeForBody(shapes, pair.bodyA);
+    const CollisionShapeType typeB = shapeTypeForBody(shapes, pair.bodyB);
+    return typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Plane;
+}
+
+bool is_box_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const CollisionShapeType typeA = shapeTypeForBody(shapes, pair.bodyA);
+    const CollisionShapeType typeB = shapeTypeForBody(shapes, pair.bodyB);
+    return (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Plane) ||
+           (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Box);
+}
+
+bool is_capsule_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const CollisionShapeType typeA = shapeTypeForBody(shapes, pair.bodyA);
+    const CollisionShapeType typeB = shapeTypeForBody(shapes, pair.bodyB);
+    return (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Plane) ||
+           (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Capsule);
+}
+
+bool is_capsule_capsule_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const CollisionShapeType typeA = shapeTypeForBody(shapes, pair.bodyA);
+    const CollisionShapeType typeB = shapeTypeForBody(shapes, pair.bodyB);
+    return typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Capsule;
+}
+
+bool is_box_capsule_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const CollisionShapeType typeA = shapeTypeForBody(shapes, pair.bodyA);
+    const CollisionShapeType typeB = shapeTypeForBody(shapes, pair.bodyB);
+    return (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Capsule) ||
+           (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Box);
+}
+
+bool is_undispatched_shape_pair(
     const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes) {
     const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
@@ -1649,7 +1722,7 @@ bool is_plane_plane_contact_pair(
 
     const CollisionShapeType typeA = shapeType(shapes, shapeA);
     const CollisionShapeType typeB = shapeType(shapes, shapeB);
-    return typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Plane;
+    return !hasNarrowphaseDispatchPath(typeA, typeB);
 }
 
 bool is_invalid_plane_normal_pair(

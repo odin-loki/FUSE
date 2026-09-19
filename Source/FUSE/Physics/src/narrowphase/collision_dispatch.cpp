@@ -77,13 +77,15 @@ NarrowphaseBufferFinalizePreflight preflight_narrowphase_buffer_finalize(const C
 bool can_skip_narrowphase_buffer_finalize(const ContactBufferSoA& buffer) {
     const NarrowphaseBufferFinalizePreflight preflight = preflight_narrowphase_buffer_finalize(buffer);
     return preflight.skipped || (!preflight.needsCompaction && !preflight.needsClamp);
-    }
-    return preflight;
 
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
 
+NarrowphaseSlotPreflight preflight_narrowphase_slot(
+    NarrowphaseSlotPreflight preflight{};
+    preflight.reason = contact_pair_deepen_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+
+bool should_skip_narrowphase_slot_dispatch(
+    return !preflight_narrowphase_slot(pair, bodies, shapes).can_dispatch();
 }
 
 void runNarrowphaseIntoBuffer(

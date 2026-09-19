@@ -1320,7 +1320,6 @@ bool generate_contact_manifold_with_preflight(ContactManifold& manifold);
 
 
 /// Normalize the contact normal when `needsNormalNormalization` is true (B4.6 deepen pass).
-bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
 
 /// Prune only when `preflight_manifold_prune` reports work; returns true when points remain (B4.6 deepen pass).
 
@@ -1423,9 +1422,6 @@ bool prune_and_finalize_contact_manifold(
 
 /// Returns true when `manifold_prune_second_reject_reason` matches `expected` (B4.6 narrowphase deepen pass).
 bool manifold_prune_second_rejects_for_reason(
-    const ContactManifold& manifold,
-    f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f);
 
 /// Returns true when second-layer manifold prune should be skipped (B4.6 narrowphase deepen pass).
 bool can_skip_manifold_prune_second(
@@ -1444,6 +1440,18 @@ bool can_skip_manifold_finalize_second(
 
 /// Finalize using second-layer preflight; no-op otherwise (B4.6 narrowphase deepen pass).
 bool finalize_contact_manifold_second_with_preflight(
+
+/// Normalize `contactNormal` when valid and non-unit; returns false when the normal is invalid (B4.6 deepen pass).
+bool normalize_contact_normal(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Normalize only when `needsNormalNormalization` is true (B4.6 deepen pass).
+
+/// True when the contact normal is already unit length or invalid (B4.6 deepen pass).
+bool can_skip_normalize_contact_normal(
+
+/// Prune only when preflight reports work; no-op when prune should be skipped (B4.6 deepen pass).
+
+/// Finalize only when preflight allows; no-op when finalize should be skipped (B4.6 deepen pass).
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

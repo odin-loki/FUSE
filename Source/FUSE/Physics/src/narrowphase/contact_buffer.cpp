@@ -1611,6 +1611,15 @@ bool ContactBufferSoA::slotNeedsFrictionBasisRebuild(u32 slot, f32 epsilon) cons
         const TangentBasis basis = buildTangentBasis(contactNormals[slot]);
         tangent1[slot] = basis.tangent1;
         tangent2[slot] = basis.tangent2;
+bool ContactBufferSoA::frictionBasisMatchesNormalAt(u32 slot, f32 epsilon) const {
+    return isOrthonormalTangentBasis(contactNormals[slot], basis, epsilon);
+
+bool ContactBufferSoA::canSkipBuildFrictionTangentBases(f32 epsilon) const {
+    return can_skip_build_friction_tangent_bases(*this, epsilon);
+
+    if (canSkipBuildFrictionTangentBases()) {
+
+        if (validFlags[slot] == 0u || frictionBasisMatchesNormalAt(slot)) {
 }
 
 TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {
@@ -3371,8 +3380,6 @@ bool writeContactSlotWithPreflight(
 
 
 
-    u32 slot,
-    const ContactManifold& manifold) {
 
     if (!preflight_contact_buffer_compaction(buffer).needs_compaction()) {
         if (preflight_contact_buffer_compaction(buffer).emptyBuffer) {
@@ -3413,13 +3420,9 @@ u32 clampContactBufferWithPreflight(ContactBufferSoA& buffer) {
 
 u32 compactAndClampContactBufferWithPreflight(ContactBufferSoA& buffer) {
     const ContactBufferCompactAndClampPreflight preflight = preflightContactBufferCompactAndClamp(buffer);
-        return false;
-    return true;
     preflight.noValidSlots = preflight.reason == ContactBufferFrictionBasisRejectReason::NoValidSlots;
 
 
-    return preflight;
-}
 
 
     preflight.emptyBuffer =
@@ -3430,6 +3433,11 @@ u32 compactAndClampContactBufferWithPreflight(ContactBufferSoA& buffer) {
     return !preflight_contact_buffer_friction_build(buffer).needs_build();
 
     return preflight_contact_buffer_friction_build(buffer).needs_build();
+    preflight.activeCount = buffer.activeCount;
+        if (!buffer.frictionBasisMatchesNormalAt(slot, epsilon)) {
+            ++preflight.staleCount;
+
+bool can_skip_build_friction_tangent_bases(const ContactBufferSoA& buffer, f32 epsilon) {
 }
 
 } // namespace fuse::physics::narrowphase
