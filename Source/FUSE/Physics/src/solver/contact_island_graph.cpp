@@ -891,6 +891,56 @@ bool body_pair_in_range(u32 bodyCount, u32 bodyA, u32 bodyB) {
     return bodyA < bodyCount && bodyB < bodyCount;
 }
 
+bool contact_manifold_bodies_in_range(u32 bodyCount, const narrowphase::ContactManifold& contact) {
+    return contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+}
+
+bool distance_constraint_bodies_in_range(u32 bodyCount, const DistanceConstraint& constraint) {
+    return constraint.bodyA < bodyCount && constraint.bodyB < bodyCount;
+}
+
+IslandBuildInputScan scan_island_build_inputs(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildInputScan scan{};
+    scan.bodyCount = bodyCount;
+    scan.contactSlotCount = static_cast<u32>(contacts.size());
+    scan.distanceSlotCount = static_cast<u32>(distanceConstraints.size());
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (contact.valid) {
+            ++scan.validContactCount;
+        }
+        if (contact_manifold_bodies_in_range(bodyCount, contact)) {
+            ++scan.inRangeContactCount;
+        } else if (contact.valid) {
+            ++scan.outOfRangeContactBodyCount;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (distance_constraint_bodies_in_range(bodyCount, constraint)) {
+            ++scan.inRangeDistanceCount;
+        } else {
+            ++scan.outOfRangeDistanceBodyCount;
+        }
+    }
+
+    return scan;
+}
+
+bool island_build_inputs_safe(const IslandBuildInputScan& scan) {
+    return !scan.has_unsafe_refs();
+}
+
+bool can_partition_island_build_inputs(u32 bodyCount, const IslandBuildInputScan& scan) {
+    if (!island_build_inputs_safe(scan)) {
+        return false;
+    }
+    return bodyCount > 0u || scan.inRangeContactCount > 0u || scan.inRangeDistanceCount > 0u;
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();

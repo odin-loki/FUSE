@@ -115,6 +115,9 @@ ContactIslandBuildInputStats compute_contact_island_build_input_stats(
 /// Input coverage for island graph build (out-of-range body-index guards).
 struct IslandBuildInputStats {
 
+/// Input coverage scan for island graph build (out-of-range body-index guards).
+struct IslandBuildInputScan {
+
     bool has_unsafe_refs() const {
         return outOfRangeContactBodyCount > 0u || outOfRangeDistanceBodyCount > 0u;
     }
@@ -440,6 +443,12 @@ bool has_usable_island_build_constraints(
 
 /// True when both contact body indices are in range for `bodyCount`.
 bool contact_bodies_in_range(u32 bodyCount, u32 bodyA, u32 bodyB);
+    bool is_empty() const {
+        return bodyCount == 0u && inRangeContactCount == 0u && inRangeDistanceCount == 0u;
+    }
+};
+
+bool contact_manifold_bodies_in_range(u32 bodyCount, const narrowphase::ContactManifold& contact);
 
 /// True when both distance-constraint body indices are in range for `bodyCount`.
 bool distance_constraint_bodies_in_range(u32 bodyCount, const DistanceConstraint& constraint);
@@ -606,6 +615,17 @@ struct IslandBuildInputCoverage {
 
     bool isEmptyInput() const {
         return bodyCount == 0u && inRangeContactCount == 0u && inRangeDistanceCount == 0u;
+/// Scan contacts and distance constraints for partition-safe body references.
+IslandBuildInputScan scan_island_build_inputs(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// True when scan reports no out-of-range body references.
+bool island_build_inputs_safe(const IslandBuildInputScan& scan);
+
+/// True when inputs can form a partition (non-empty bodies or in-range constraints, no unsafe refs).
+bool can_partition_island_build_inputs(u32 bodyCount, const IslandBuildInputScan& scan);
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
