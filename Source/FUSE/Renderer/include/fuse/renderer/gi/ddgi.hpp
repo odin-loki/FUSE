@@ -1937,6 +1937,12 @@ bool wouldSkipProbeTrilinearSampleAtCoords(const DDGIDesc& desc,
 /// Non-mutating world-position trilinear sample preflight — builds coords then delegates.
 bool preflightTrilinearProbeSampleAtWorld(const DDGIDesc& desc,
 bool wouldSkipProbeTrilinearSampleAtWorld(const DDGIDesc& desc,
+                                      u32 cache_count,
+bool tryValidateScheduledCacheIndices(const DDGIDesc& desc,
+                                      const IrradianceCacheEntry* cache,
+                                      const u32* probe_indices,
+                                      u32 probe_count,
+                                    u32 cache_count);
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -2507,6 +2513,17 @@ bool preflightProbeScheduleAtRate(u32 probe_count,
                                   u32 probes_per_frame,
                                   u32 max_indices,
                                   const u32* out_indices,
+                                  u32* out_count,
+                                  ProbeScheduleRejectReason* reason = nullptr);
+/// Schedule probe updates with rate-aware reject-reason diagnostics; false when preflight rejects.
+bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
+                                   u32 probe_count,
+                                   u32 probes_per_frame,
+                                   u32* out_indices,
+                                   u32 max_indices,
+                                   ProbeScheduleRejectReason& outReason);
+/// Probes that would be scheduled after capacity/probe-count caps (B5.6 deepen pass).
+u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Schedule probe updates with reject-reason diagnostics; false when preflight rejects.
 bool canScheduleProbeUpdates(u32 probe_count,
 bool wouldSkipProbeSchedule(u32 probe_count,
