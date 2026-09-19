@@ -3337,3 +3337,18 @@ void testPairBufferPrepareSlotsPreflightGuards() {
     expectTrue(validPreflight.canDispatch(), "cell-pair preflight accepts non-zero cell slots");
 void testShouldRunBroadphasePairGenerationGuards() {
     testPairBufferPrepareSlotsPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-6421 ---
+    const fuse::physics::broadphase::CellSpanPreflight withinSpan =
+        fuse::physics::broadphase::preflightCellSpan(inBudget, 8u);
+    const fuse::physics::broadphase::CellSpanPreflight overSpan =
+    const fuse::physics::broadphase::CellSpanPreflight emptySpan =
+        fuse::physics::broadphase::preflightCellSpan(inverted, 4u);
+                 fuse::physics::broadphase::cellSpanRejectReason(validRange, 8u)),
+                   validRange, 8u, fuse::physics::broadphase::CellSpanRejectReason::None),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanRejectReason::ExceedsMaxSpan),
+                   planeRange, 4u, fuse::physics::broadphase::CellSpanRejectReason::ExceedsMaxSpan),
+void testMergePairsIntoBufferRejectsForReasonGuards() {
+                   pairs, buffer, fuse::physics::broadphase::MergePairsIntoBufferRejectReason::None),
+void testBroadphaseDedupeAndClampPreflightIntegration() {
+    testBroadphaseDedupeAndClampPreflightIntegration();

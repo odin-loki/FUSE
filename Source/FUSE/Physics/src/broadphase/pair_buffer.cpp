@@ -1040,3 +1040,6 @@ bool pairBufferPrepareSlotsRejectsForReason(u32 slotCount, PairBufferPrepareSlot
     preflight.zeroSlots = preflight.reason == PairBufferPrepareSlotsRejectReason::ZeroSlots;
     return !preflightPairBufferPrepareSlots(slotCount).canPrepare();
     return preflightPairBufferPrepareSlots(slotCount).canPrepare();
+
+// --- deepen additive from deepen-b4-broadphase-guards-6421 ---
+    if (preflightPairBufferCompaction(buffer).needsCompaction()) {
