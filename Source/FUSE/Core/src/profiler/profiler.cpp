@@ -394,6 +394,17 @@ bool isNonEmptyEventName(const char* name) {
 
 
     return isFlowPhase(event.phase) && event.scopeId == flowId;
+
+bool hasUsableName(const char* name) {
+
+    if (!hasUsableName(name) || !hasUsableName(event.name)) {
+
+    for (const char* lhs = event.name, *rhs = name; *lhs != '\0' || *rhs != '\0'; ++lhs, ++rhs) {
+        if (*lhs != *rhs) {
+    return true;
+
+bool wouldSkipRecording(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !hasUsableName(name);
 }
 
 } // namespace
@@ -1599,6 +1610,58 @@ bool wouldSkipChromeTraceExportSafely(ProfileSkipReason* reason) {
         return true;
     }
     return false;
+}
+
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
+}
+
+ProfilerNestingPreflight preflightNesting() {
+    ProfilerNestingPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    preflight.openAsyncFlowCount = openAsyncFlowCount();
+    preflight.maxScopeNestingDepth = maxNestingDepth();
+    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
+    preflight.scopeNestingBalanced = isScopeNestingBalanced();
+    preflight.flowNestingBalanced = isFlowNestingBalanced();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+    return preflight;
+}
+
+bool preflightBeginAsyncFlow(const char* name) {
+    return !wouldSkipRecording(name);
+}
+
+bool preflightEndAsyncFlow(const char* name) {
+    return !wouldSkipRecording(name) && openAsyncFlowCount() > 0u;
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return wouldSkipRecording(name);
+}
+
+bool wouldSkipAsyncFlow(const char* name) {
+    return wouldSkipRecording(name);
+}
+
+bool wouldSkipCounter(const char* track) {
+    return wouldSkipRecording(track);
+}
+
+bool wouldSkipChromeTraceExport() {
+    return !enabled();
+}
+
+bool wouldSkipChromeTraceExportSafely() {
+    return !preflightChromeTraceExport().canExportSafely();
 }
 
 bool hasEvents() {
@@ -4727,6 +4790,29 @@ bool tryFirstFlowEvent(u32 flowId, ProfileEvent& outEvent) {
 bool tryLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
 
 
+
+
+
+
+
+u32 findFirstFlowEventIndex(u32 flowId) {
+
+u32 findLastFlowEventIndex(u32 flowId) {
+
+u32 countFlowEvents(u32 flowId) {
+
+bool isFlowIdTracked(u32 flowId) {
+    return findFirstFlowEventIndex(flowId) != kInvalidEventIndex;
+
+
+
+
+
+
+
+    const u32 index = findFirstFlowEventIndex(flowId);
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -5301,6 +5387,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.hasUnpairedAsyncFlowEvents = hasUnpairedAsyncFlowEventsInBuffer();
     preflight.scopeBeginEndMismatch = hasScopeBeginEndMismatch();
     preflight.flowStartFinishMismatch = hasFlowStartFinishMismatch();
+    preflight.firstExportableEventIndex = firstExportableEventIndex();
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {

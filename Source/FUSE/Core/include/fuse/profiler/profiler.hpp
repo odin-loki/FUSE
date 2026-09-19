@@ -391,6 +391,9 @@ struct ChromeTraceExportPreflight {
         return activeScopeNestingDepth > 0u || activeFlowNestingDepth > 0u;
     bool hasOnlyExportableEvents() const { return eventCount == exportableEventCount; }
     bool hasUnbalancedRecordedEvents() const { return scopeEventsUnbalanced || flowEventsUnbalanced; }
+    u32 firstExportableEventIndex = kInvalidEventIndex;
+    u32 lastExportableEventIndex = kInvalidEventIndex;
+
     bool canExportSafely() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending
             && !hasUnbalancedRecordedEvents();
@@ -421,20 +424,14 @@ struct ScopeNestingPreflight {
     bool balanced = true;
 
     bool hasUnbalancedNesting() const { return !balanced; }
-};
 
 /// Read-only async-flow diagnostics — safe to call before `FUSE_PROFILE_ASYNC_FLOW_*`.
 struct AsyncFlowPreflight {
-    u32 activeDepth = 0;
-    u32 maxDepth = 0;
     u32 openCount = 0;
-    bool balanced = true;
     bool depthDetached = false;
     bool crossThreadHandoffPending = false;
     bool hasOpenFlows = false;
 
-    bool hasUnbalancedNesting() const { return !balanced; }
-};
 
 /// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
 struct ProfileScopePreflight {
@@ -468,7 +465,6 @@ struct NestingPreflight {
     ProfileScopeSkipReason reason = ProfileScopeSkipReason::None;
 
     bool canRecord() const { return reason == ProfileScopeSkipReason::None; }
-};
 
 /// Read-only async-flow begin preflight — safe to call before `beginAsyncFlow`.
     AsyncFlowBeginSkipReason reason = AsyncFlowBeginSkipReason::None;
@@ -530,7 +526,6 @@ struct NestingStatePreflight {
             && !hasUnbalancedFlowPairsInBuffer;
     u32 unbalancedFlowPairCount = 0;
     bool hasUnbalancedFlowPairsInBuffer = false;
-};
 
 /// Read-only name lookup diagnostics — safe to call before indexing the ring buffer by name.
 struct EventNameLookupPreflight {
@@ -624,7 +619,6 @@ struct ScopePreflight {
 
 
 /// Preflight for active scope nesting depth introspection (B1.6 deepen).
-struct ScopeNestingPreflight {
     u32 current_depth = 0;
     u32 max_observed_depth = 0;
 
@@ -647,7 +641,6 @@ struct ScopeNestingPreflight {
     [[nodiscard]] bool should_skip() const { return !can_end(); }
 
 /// Preflight for counter sample guards (B1.6 deepen).
-struct CounterSamplePreflight {
 
     [[nodiscard]] bool can_sample() const { return !profiler_disabled && !null_name && !empty_name; }
     [[nodiscard]] bool should_skip() const { return !can_sample(); }
@@ -721,15 +714,12 @@ enum class ChromeTraceExportRejectReason : u8 {
     u32 flowDepth = 0;
     bool scopeBalanced = true;
     bool flowBalanced = true;
-    bool hasOpenFlows = false;
 
     bool isBalanced() const { return scopeBalanced && flowBalanced; }
 
 /// Read-only async-flow begin/end diagnostics (B1.6 deepen — async-flow guard).
-struct AsyncFlowPreflight {
     bool emptyName = false;
     bool disabled = false;
-    bool orphanEnd = false;
 
     bool canBegin() const { return !emptyName && !disabled; }
     bool canEnd() const { return !emptyName && !disabled && !orphanEnd; }
@@ -776,7 +766,6 @@ struct ExportPreflight {
     bool hasExportWarnings() const { return hasUnbalancedNesting() || flowDepthDetached; }
 
 /// Read-only scope/async nesting diagnostics — safe before mutating profile slices.
-struct NestingStatePreflight {
     u32 openAsyncFlows = 0;
     u32 maxScopeDepth = 0;
     u32 maxFlowDepth = 0;
@@ -870,16 +859,10 @@ struct NestingStatePreflight {
 
 
 /// Read-only scope nesting diagnostics — safe to call before entering nested scopes.
-    u32 activeDepth = 0;
-    u32 maxDepth = 0;
-    bool balanced = true;
 
     bool isBalanced() const { return balanced; }
 
 /// Read-only async-flow diagnostics — safe to call before flow begin/end handoffs.
-    u32 openCount = 0;
-    bool depthDetached = false;
-    bool crossThreadHandoffPending = false;
 
     bool hasOpenFlows() const { return openCount > 0u; }
 
@@ -927,6 +910,11 @@ struct CounterRecordingPreflight {
     bool isBalanced() const { return !scopeNestingUnbalanced && !flowNestingUnbalanced; }
     bool canNestSafely() const {
         return isBalanced() && !flowDepthDetached && !crossThreadFlowHandoffPending;
+
+/// Read-only nesting/async-flow diagnostics — safe to call before recording events.
+struct ProfilerNestingPreflight {
+
+    bool canRecord() const { return !profilerDisabled; }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -1042,11 +1030,7 @@ bool wouldSkipCounterSample(const char* track);
 bool wouldSkipChromeTraceExport();
 bool wouldSkipChromeTraceExportSafely();
 
-bool wouldSkipProfileScope(const char* name);
-bool wouldSkipAsyncFlowBegin(const char* name);
 bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId);
-bool wouldSkipCounterSample(const char* track);
-bool wouldSkipChromeTraceExport();
 
 bool wouldSkipProfileScope(const char* name, ProfileSkipReason* reason = nullptr);
 bool wouldSkipAsyncFlowBegin(const char* name, ProfileSkipReason* reason = nullptr);
@@ -1054,6 +1038,13 @@ bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId, ProfileSkipReason* reas
 bool wouldSkipCounter(const char* track, ProfileSkipReason* reason = nullptr);
 bool wouldSkipChromeTraceExport(ProfileSkipReason* reason = nullptr);
 bool wouldSkipChromeTraceExportSafely(ProfileSkipReason* reason = nullptr);
+
+ProfilerNestingPreflight preflightNesting();
+bool preflightBeginAsyncFlow(const char* name);
+bool preflightEndAsyncFlow(const char* name);
+
+bool wouldSkipAsyncFlow(const char* name);
+bool wouldSkipCounter(const char* track);
 
 bool hasEvents();
 bool isBufferEmpty();
@@ -1364,6 +1355,10 @@ bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+u32 findFirstFlowEventIndex(u32 flowId);
+u32 findLastFlowEventIndex(u32 flowId);
+u32 countFlowEvents(u32 flowId);
+bool isFlowIdTracked(u32 flowId);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
