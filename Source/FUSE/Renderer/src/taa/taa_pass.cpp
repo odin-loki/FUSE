@@ -963,6 +963,7 @@ TaaHistoryReuseBlockReason TaaPass::classifyHistoryWarmupBlock() const {
 
 TaaHistoryReuseBlockReason TaaPass::classifyHistoryResolveBlock() const {
 
+
 bool TaaPass::preflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason* reason) const {
     return preflightTaaHistoryReuse(m_history, observedGeneration, reason);
 
@@ -1466,6 +1467,10 @@ bool TaaPass::tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& rea
     return tryPreflightTaaHistoryReadyForResolve(m_history, reason);
 }
 
+TaaResolveBlendRejectReason TaaPass::classifyResolveBlendReject(const TaaResolveDesc& desc) const {
+    return classifyTaaResolveBlendReject(desc, m_history);
+}
+
 bool TaaPass::preflightResolveBlendWeights(const TaaResolveDesc& desc,
                                            TaaResolveBlendRejectReason* reason) const {
     return preflightTaaResolveBlendWeights(desc, m_history, reason);
@@ -1744,6 +1749,7 @@ bool TaaPass::tryComputeExpectedResolveBlendWeights(const TaaResolveDesc& desc,
 
 TaaResolveSkipReason TaaPass::classifyResolveSkip(const TaaResolveDesc& desc) const {
     return classifyTaaResolveSkip(desc, m_history);
+
 
 
 
@@ -2195,6 +2201,10 @@ TaaJitterGuardRejectReason TaaPass::classifyJitterSyncReject() const {
 
 TaaJitterGuardRejectReason TaaPass::classifyJitterNdcReject() const {
     return classifyTaaJitterNdcReject(m_desc.width, m_desc.height, m_jitter.sequenceLength());
+}
+
+TaaJitterGuardRejectReason TaaPass::classifyJitterSyncReject() const {
+    return classifyTaaJitterSyncReject(m_jitter.sequenceLength());
 }
 
 TaaJitterGuardRejectReason TaaPass::classifyJitterSyncReject() const {
@@ -4645,6 +4655,14 @@ bool TaaPass::preflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason*
 
 TaaResolveSkipReason TaaPass::classifyResolveSkip(const TaaResolveDesc& desc) const {
     return classifyTaaResolveSkip(desc, m_history);
+}
+
+TaaResolveSkipReason TaaPass::classifyResolveSkip(const TaaResolveDesc& desc) const {
+    return classifyTaaResolveSkip(desc, m_history);
+}
+
+bool TaaPass::tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const {
+    return tryPreflightTaaResolve(desc, m_history, reason);
 }
 
 TaaResolveSkipReason TaaPass::classifyResolveSkip(const TaaResolveDesc& desc) const {

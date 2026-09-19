@@ -350,11 +350,6 @@ public:
     /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
     /// Classify why resolve would skip for this pass (B5.9 deepen).
     /// Classify why pass history warm-up is blocked (B5.9 deepen).
-    /// Classify why expected resolve blend weights would be rejected (B5.9 deepen).
-    TaaResolveBlendRejectReason classifyResolveBlendReject(const TaaResolveDesc& desc) const;
-    /// Resolve blend preflight with mandatory reject-reason output (B5.9 deepen).
-    bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
-    /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
     bool tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
                                        TaaResolveBlendRejectReason& reason) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
@@ -423,6 +418,9 @@ public:
     bool tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const;
     /// History resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& reason) const;
+    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
+    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSync(u32 frameIndex) const;
     /// Sync jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
