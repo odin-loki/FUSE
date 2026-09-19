@@ -30,6 +30,14 @@ struct CookCacheStats {
     u64 invalidations = 0;
 };
 
+/// Read-only prune reconcile breakdown — mirrors `prune_invalid_entries` / `prune_stale_entries` (B7.9 deepen).
+struct CookCachePruneEstimate {
+    u32 invalid_entries = 0;
+    u32 stale_entries = 0;
+
+    [[nodiscard]] u32 total() const { return invalid_entries + stale_entries; }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -98,6 +106,17 @@ public:
                                           const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;
+    [[nodiscard]] u32 count_stale_entries() const;
+    /// Prune reconcile breakdown without mutating stats (B7.9 deepen).
+    [[nodiscard]] CookCachePruneEstimate estimate_prune_removals() const;
+    /// True when `estimate_prune_removals().total()` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool would_prune_all() const;
+    /// Deduplicated source paths whose stored keys are stale on disk (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_content_sources() const;
+    /// Source paths `invalidate_downstream_of` would touch — deduplicated (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_downstream_sources(
+        const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
+        const std::vector<CookJob>& jobs) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

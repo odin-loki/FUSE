@@ -8,6 +8,17 @@
 
 namespace fuse::project {
 
+/// Read-only reconcile planning breakdown for cache + dependency invalidation (B7.9 deepen).
+struct CookCacheReconcileEstimate {
+    u32 stale_dependency_entries = 0;
+    u32 prune_invalid_entries = 0;
+    u32 prune_stale_entries = 0;
+
+    [[nodiscard]] u32 total() const {
+        return stale_dependency_entries + prune_invalid_entries + prune_stale_entries;
+    }
+};
+
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
 class AssetCooker {
 public:
@@ -31,6 +42,11 @@ public:
                                                   const std::string& changed_source) const;
     /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
     [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
+    /// Read-only prune reconcile probe — mirrors `CookCache::estimate_prune_removals` (B7.9 deepen).
+    [[nodiscard]] CookCachePruneEstimate estimate_prune_reconcile() const;
+    /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
+    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile_invalidation(
+        const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
