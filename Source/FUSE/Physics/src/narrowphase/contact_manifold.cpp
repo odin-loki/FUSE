@@ -718,3 +718,6 @@ ManifoldPruneDispatchPreflight preflight_manifold_prune_dispatch(
 // --- deepen additive from deepen-narrowphase-guards-6b0c ---
     case ManifoldPruneRejectReason::NothingToPrune:
         return ManifoldPruneRejectReason::NothingToPrune;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-fbc2 ---
+    return should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);

@@ -2461,3 +2461,21 @@ void testFrictionBasisDeepenPassRejectGuards() {
         static_cast<fuse::u32>(fuse::physics::narrowphase::FrictionBasisRejectReason::None),
         static_cast<fuse::u32>(fuse::physics::narrowphase::FrictionBasisRejectReason::CanReuse),
                 fuse::physics::narrowphase::FrictionBasisRejectReason::CanReuse),
+
+// --- deepen additive from deepen-b4-narrowphase-guards-fbc2 ---
+void testContactPairDeepenPassRejectReasonGuards() {
+    expectTrue(batchPreflight.dispatchableCount == 1u, "batch preflight reports dispatchable count");
+    expectTrue(batchPreflight.rejectedCount == 1u, "batch preflight reports rejected count");
+    expectTrue(!batchPreflight.canSkip, "batch preflight canSkip false with dispatchable pair");
+    expectTrue(batchPreflight.has_dispatchable(), "batch preflight has_dispatchable true");
+    expectTrue(sleepingPreflight.isSleeping, "deepen preflight flags sleeping reject");
+        dirtyPreflight.reason == fuse::physics::narrowphase::ManifoldPruneRejectReason::None,
+            allSeparated, fuse::physics::narrowphase::ManifoldPruneRejectReason::WouldBeEmpty),
+void testFrictionBasisRebuildRejectReasonGuards() {
+            empty, fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::Skipped),
+            needsBuild, fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::None),
+            needsBuild, fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::CanReuse),
+        reusePreflight.reason == fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::CanReuse,
+                fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::Skipped),
+    testContactPairDeepenPassRejectReasonGuards();
+    testFrictionBasisRebuildRejectReasonGuards();

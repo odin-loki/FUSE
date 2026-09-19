@@ -423,3 +423,8 @@ FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
 // --- deepen additive from deepen-narrowphase-guards-6b0c ---
     case FrictionBasisRejectReason::CanReuse:
         return FrictionBasisRejectReason::CanReuse;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-fbc2 ---
+    case FrictionBasisRebuildRejectReason::Skipped:
+        return FrictionBasisRebuildRejectReason::Skipped;
+    return friction_basis_rebuild_reject_reason(manifold, epsilon) == FrictionBasisRebuildRejectReason::None;

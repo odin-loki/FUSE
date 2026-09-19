@@ -215,3 +215,6 @@ enum class FrictionBasisRebuildRejectReason : u8 {
 const char* friction_basis_rebuild_reject_reason_name(FrictionBasisRebuildRejectReason reason);
 FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
     FrictionBasisRebuildRejectReason expected,
+
+// --- deepen additive from deepen-b4-narrowphase-guards-fbc2 ---
+    FrictionBasisRebuildRejectReason reason = FrictionBasisRebuildRejectReason::None;
