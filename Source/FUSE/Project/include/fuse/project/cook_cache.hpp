@@ -507,6 +507,7 @@ public:
     /// True when `prune_all` can be skipped — mirrors `!would_prune_all()` (B7.9 deepen).
     [[nodiscard]] bool should_skip_prune_all() const;
     /// Non-mutating invalidation skip predicates — mirror `would_invalidate_*` negation (B7.9 deepen).
+    /// True when `invalidate_*` would be a no-op — inverse of `would_invalidate_*` probes (B7.9 deepen).
     [[nodiscard]] bool should_skip_invalidate_source(const std::string& source_path) const;
     [[nodiscard]] bool should_skip_invalidate_output(const std::string& output_path) const;
     [[nodiscard]] bool should_skip_invalidate_stale_content_for_source(const std::string& source_path,
@@ -518,6 +519,7 @@ public:
                                                             const std::vector<CookJob>& jobs) const;
     /// True when `store` would reject the entry — mirrors `is_valid_cook_cache_entry` negation (B7.9 deepen).
     [[nodiscard]] static bool should_skip_store(const CookCacheEntry& entry);
+    [[nodiscard]] bool should_skip_prune_all() const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,

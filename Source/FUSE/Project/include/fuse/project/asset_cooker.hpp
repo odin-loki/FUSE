@@ -468,6 +468,9 @@ public:
     /// Read-only stale dependency-hash reconcile skip probe (B7.9 deepen).
     /// Read-only prune reconcile skip probe — mirrors `CookCache::should_skip_prune_all` (B7.9 deepen).
     /// Read-only combined reconcile skip probe — mirrors `estimate_reconcile_invalidation` (B7.9 deepen).
+    /// True when upstream invalidation would be a no-op — mirrors `count_upstream_invalidation` guards (B7.9 deepen).
+    /// True when combined reconcile invalidation estimate is zero (B7.9 deepen).
+    /// True when prune reconcile would be a no-op (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
