@@ -383,10 +383,6 @@ public:
     bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
     /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
-    /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
-    bool preflightJitterAdvance(TaaJitterGuardRejectReason* reason = nullptr) const;
-    /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
-    bool shouldSkipJitterAdvance() const;
     /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).
     bool preflightJitterNdc(TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
@@ -447,6 +443,16 @@ public:
     /// Early-out when pass jitter sync or NDC preflight would reject (B5.9 deepen).
     bool shouldSkipJitterFrame(u32 frameIndex) const;
     /// True when pass jitter can advance (B5.9 deepen).
+    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
+    /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
+    bool preflightJitterAdvance(TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
+    bool shouldSkipJitterAdvance() const;
+    /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
+    /// NDC jitter for a frame counter only when viewport and sequence are valid (B5.9 deepen).
+    bool ndcJitterForFrameIndexIfReady(u32 frameIndex, fuse::math::Vec2& out) const;
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).
