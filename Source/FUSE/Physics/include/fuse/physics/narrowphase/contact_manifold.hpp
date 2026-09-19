@@ -242,6 +242,7 @@ enum class ManifoldPruneRejectReason : u8 {
     AlreadyClean,
 
 /// Human-readable label for manifold prune reject reasons (B4.4 deepen pass).
+
 const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason);
 
 /// Diagnose why prune would skip; vacuously succeeds when prune may proceed.
@@ -310,6 +311,11 @@ struct ManifoldPrunePreflight {
         return needs_shallow_pruning(shallowMinDepth) && !wouldBeEmpty;
     bool needs_any_pruning(f32 shallowMinDepth = 0.f) const {
         return needs_pruning() || needs_shallow_pruning(shallowMinDepth);
+    bool can_skip_prune(f32 shallowMinDepth = 0.f) const {
+        if (reason != ManifoldPruneRejectReason::None) {
+            return true;
+        }
+        return skipped || (!needs_pruning() && !needs_shallow_pruning(shallowMinDepth));
     }
 
 
@@ -619,8 +625,33 @@ enum class ManifoldFinalizeFailureReason : u8 {
     NoPenetratingPoints,
     PruneWouldEmpty,
     MissingFrictionBasis,
+/// Non-mutating prune predicate — inverse of `should_skip_manifold_prune` (B4.4 deepen pass).
+bool should_run_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Why manifold finalize would early-out (B4.4 deepen pass).
+enum class ManifoldFinalizeRejectReason : u8 {
+    EmptyManifold,
+    WouldBeEmptyAfterPrune,
+};
+
+/// Human-readable label for manifold finalize reject reasons (logging / tests).
+const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason);
+
+/// Diagnose why finalize would skip; vacuously succeeds when finalize may proceed.
+ManifoldFinalizeRejectReason manifold_finalize_reject_reason(
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Returns true when `manifold_finalize_reject_reason` matches `expected` (B4.4 deepen pass).
+bool manifold_finalize_rejects_for_reason(
+    ManifoldFinalizeRejectReason expected,
+
 /// Const preflight for manifold finalize dispatch (B4.4 deepen follow-up).
 struct ManifoldFinalizePreflight {
+    ManifoldFinalizeRejectReason reason = ManifoldFinalizeRejectReason::None;
     bool skipped = false;
     bool canFinalize = false;
     bool needsPruning = false;
@@ -632,6 +663,7 @@ struct ManifoldFinalizePreflight {
     bool can_finalize() const { return !skipped && canFinalize; }
 
     bool needs_any_work() const { return needsPruning || needsFrictionBasis; }
+    bool can_finalize() const { return reason == ManifoldFinalizeRejectReason::None && canFinalize; }
 };
 
 /// Human-readable label for finalize failure diagnostics (B4.4 deepen pass).
@@ -1161,6 +1193,13 @@ bool should_run_manifold_finalize(
 /// Finalize only when `should_run_manifold_finalize` passes; no-op otherwise (B4.4 deepen pass).
 bool finalize_contact_manifold_if_needed(
     ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.4 deepen pass).
+bool should_run_manifold_finalize(
+    const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);

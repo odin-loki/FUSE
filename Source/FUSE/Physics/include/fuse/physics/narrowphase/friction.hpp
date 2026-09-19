@@ -134,6 +134,7 @@ bool contact_normal_needs_normalize(const ContactManifold& manifold, f32 lengthE
 
 /// Why friction-basis rebuild would early-out (B4.5 deepen follow-up pass).
 /// Why friction-basis rebuild would early-out (B4.4 deepen follow-up pass).
+/// Why friction-basis rebuild would early-out (B4.4 deepen pass).
 enum class FrictionBasisRejectReason : u8 {
     None = 0,
     EmptyManifold,
@@ -194,6 +195,10 @@ FrictionBasisRejectReason friction_basis_reject_reason(
 
 
 /// Returns true when `friction_basis_reject_reason` matches `expected` (B4.4 deepen pass).
+    CanReuseBasis,
+
+
+
 
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
 struct FrictionBasisPreflight {
@@ -528,5 +533,7 @@ bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEps
 
 /// Rebuild friction basis after preflight normalize/rebuild guards (B4.4 deepen pass).
 bool ensure_friction_basis_after_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Non-mutating friction-basis predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 deepen pass).
 
 } // namespace fuse::physics::narrowphase
