@@ -555,5 +555,17 @@ FUSE_PHYSICS_INLINE void runNarrowphaseIntoBufferWithPreflight(
     if (!preflight.can_dispatch()) {
         buffer.preparePairSlots(pairCount);
         compact_and_clamp_contact_buffer_with_preflight(buffer);
+};
+
+FUSE_PHYSICS_INLINE NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
+    const std::vector<broadphase::CandidatePair>& pairs) {
+    NarrowphaseBufferDispatchPreflight preflight{};
+    preflight.pairCount = static_cast<u32>(pairs.size());
+    preflight.emptyPairList = pairs.empty();
+    preflight.canFinalizeBuffer = !preflight.emptyPairList;
+}
+
+FUSE_PHYSICS_INLINE bool can_skip_narrowphase_buffer_finalize(
+    return preflight_narrowphase_buffer_dispatch(pairs).emptyPairList;
 
 } // namespace fuse::physics::narrowphase

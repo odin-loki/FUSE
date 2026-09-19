@@ -893,4 +893,5 @@ inline void compute_friction_tangents_with_preflight(ContactManifold& manifold, 
         return;
     compute_friction_tangents_if_needed(manifold, epsilon);
 
+
 } // namespace fuse::physics::narrowphase
