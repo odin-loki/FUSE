@@ -4469,3 +4469,8 @@ void testTaaPassTemporalGuardsAndTryPreflight() {
     expectTrue(historyReject == fuse::renderer::TaaHistoryReuseBlockReason::StaleGeneration,
                "zero-width pass tryPreflightJitterNdc rejects invalid viewport");
     testTaaPassTemporalGuardsAndTryPreflight();
+
+// --- deepen additive from deepen-b59-taa-pass-guards-4baf ---
+               "pass tryPreflightResolve passes with valid desc after init");
+    expectNear(weights.current, 0.35f, 1e-5f, "pass tryCompute steady current weight");
+    expectNear(weights.history, 0.65f, 1e-5f, "pass tryCompute steady history weight");
