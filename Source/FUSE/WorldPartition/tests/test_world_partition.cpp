@@ -2098,3 +2098,6 @@ int main() {
 // --- deepen additive from deepen-b76-partition-streaming-queue-residency-guards-9350 ---
 void testStreamingRequestQueuePendingGuards() {
 void testResidencyFocusDistanceGuards() {
+
+// --- deepen additive from deepen-b76-partition-eviction-7714 ---
+void testEvictionDeficitAndScoreGuards() {
