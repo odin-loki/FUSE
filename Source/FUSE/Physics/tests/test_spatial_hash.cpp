@@ -4539,3 +4539,14 @@ void testWouldSkipBroadphaseGuardParity() {
                "wouldSkipPairBufferCompactAndClamp agrees with canSkipPairBufferCompactAndClamp");
     expectTrue(fuse::physics::broadphase::wouldSkipPairBufferToVector(buffer) ==
                "wouldSkipPairBufferToVector agrees with canSkipPairBufferToVector");
+
+// --- deepen additive from b4-broadphase-deepen-wouldskip-952f ---
+               "wouldSkipPairBufferInvalidateSlot true for already invalid slot");
+    expectTrue(fuse::physics::broadphase::wouldSkipShapeCellInsertion(validRange, 7u) ==
+               "wouldSkipShapeCellInsertion agrees with wouldSkipCellOccupancyIteration");
+                 fuse::physics::broadphase::cellCapacityRejectReason(inverted, 4u)),
+                   inverted, 4u, fuse::physics::broadphase::CellCapacityRejectReason::EmptyRange),
+        fuse::physics::broadphase::preflightCellCapacity(planeRange, 4u);
+    expectTrue(!planePreflight.canInsert(), "2D cell capacity preflight rejects over-budget range");
+    expectTrue(fuse::physics::broadphase::wouldSkipShapeCellInsertion(planeRange, 4u),
+               "wouldSkipMergePairsIntoBuffer false for valid merge into non-full buffer");

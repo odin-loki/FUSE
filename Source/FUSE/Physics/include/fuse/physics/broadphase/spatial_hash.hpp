@@ -1805,3 +1805,19 @@ FUSE_PHYSICS_INLINE bool wouldSkipShapeCellOccupancy(
 // --- deepen additive from deepen-b4-broadphase-guards-0c25 ---
 FUSE_PHYSICS_INLINE bool wouldSkipCellCapacityCheck(const CellRange3& range, u32 maxCells, u32 maxSpanPerAxis) {
 FUSE_PHYSICS_INLINE bool wouldSkipCellCapacityCheck(const CellRange2& range, u32 maxCells, u32 maxSpanPerAxis) {
+
+// --- deepen additive from b4-broadphase-deepen-wouldskip-952f ---
+FUSE_PHYSICS_INLINE CellCapacityRejectReason cellCapacityRejectReason(const CellRange3& range, u32 maxOccupancy) {
+    const CellOccupancyRejectReason occupancyReason = cellOccupancyRejectReason(range, maxOccupancy);
+FUSE_PHYSICS_INLINE CellCapacityRejectReason cellCapacityRejectReason(const CellRange2& range, u32 maxOccupancy) {
+    return cellCapacityRejectReason(range, maxOccupancy) == expected;
+FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity(const CellRange3& range, u32 maxOccupancy) {
+    const CellOccupancyPreflight occupancyPreflight = preflightCellOccupancy(range, maxOccupancy);
+    preflight.emptyRange = occupancyPreflight.emptyRange;
+    preflight.exceedsOccupancyBudget = occupancyPreflight.exceedsBudget;
+    preflight.occupancyCount = occupancyPreflight.occupancyCount;
+    preflight.reason = cellCapacityRejectReason(range, maxOccupancy);
+FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity(const CellRange2& range, u32 maxOccupancy) {
+FUSE_PHYSICS_INLINE bool wouldSkipShapeCellInsertion(const CellRange3& range, u32 maxOccupancy) {
+    return !preflightCellCapacity(range, maxOccupancy).canInsert();
+FUSE_PHYSICS_INLINE bool wouldSkipShapeCellInsertion(const CellRange2& range, u32 maxOccupancy) {
