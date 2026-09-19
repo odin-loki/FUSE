@@ -38,6 +38,61 @@ struct ProfileEvent {
     u32 counterSnapshotFrame = 0;
 };
 
+/// Read-only scope nesting diagnostics (B1.6 deepen — nesting guard).
+struct NestingPreflight {
+    u32 scopeDepth = 0;
+    u32 flowDepth = 0;
+    u32 openFlowCount = 0;
+    bool scopeBalanced = true;
+    bool flowBalanced = true;
+    bool hasOpenFlows = false;
+
+    bool isBalanced() const { return scopeBalanced && flowBalanced; }
+};
+
+/// Read-only async-flow begin/end diagnostics (B1.6 deepen — async-flow guard).
+struct AsyncFlowPreflight {
+    bool emptyName = false;
+    bool disabled = false;
+    bool orphanEnd = false;
+
+    bool canBegin() const { return !emptyName && !disabled; }
+    bool canEnd() const { return !emptyName && !disabled && !orphanEnd; }
+};
+
+/// Read-only profile-scope entry diagnostics (B1.6 deepen — empty-name guard).
+struct ProfileScopePreflight {
+    bool emptyName = false;
+    bool disabled = false;
+
+    bool canEnter() const { return !emptyName && !disabled; }
+};
+
+/// Read-only chrome export diagnostics (B1.6 deepen — export guard).
+struct ExportPreflight {
+    bool disabled = false;
+    bool emptyBuffer = false;
+    u32 bufferedEventCount = 0;
+    u32 exportableEventCount = 0;
+    u32 skippedInvalidNames = 0;
+    u32 frameIndex = 0;
+
+    bool canExport() const { return !disabled; }
+    bool hasExportableEvents() const { return exportableEventCount > 0u; }
+};
+
+/// Read-only event lookup diagnostics (B1.6 deepen — event-lookup preflight).
+struct EventLookupPreflight {
+    bool emptyBuffer = false;
+    bool indexOutOfRange = false;
+    bool invalidEvent = false;
+    u32 index = 0;
+    u32 eventCount = 0;
+
+    bool canLookup() const { return !emptyBuffer && !indexOutOfRange; }
+    bool canReadValidEvent() const { return canLookup() && !invalidEvent; }
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -71,6 +126,24 @@ u32 openAsyncFlowCount();
 bool hasOpenAsyncFlows();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
+
+/// True when `name` is non-null and non-empty (B1.6 deepen — empty-name guard).
+bool isValidEventName(const char* name);
+
+NestingPreflight preflightNesting();
+ProfileScopePreflight preflightProfileScope(const char* name);
+AsyncFlowPreflight preflightBeginAsyncFlow(const char* name);
+AsyncFlowPreflight preflightEndAsyncFlow(const char* name);
+ExportPreflight preflightExport();
+EventLookupPreflight preflightEventAt(u32 index);
+EventLookupPreflight preflightLastEvent();
+
+/// Convenience guards mirroring preflight predicates (B1.6 deepen).
+bool canEnterProfileScope(const char* name);
+bool canBeginAsyncFlow(const char* name);
+bool canEndAsyncFlow(const char* name);
+bool canExportChromeTrace();
+bool canLookupEventAt(u32 index);
 
 bool hasEvents();
 bool isBufferEmpty();
