@@ -2121,3 +2121,12 @@ void testHrtfRejectReasonMirrorsExistingPreflights() {
     expectTrue(preflight.attenuationReason == fuse::audio::HrtfBinauralRejectReason::None,
         fuse::audio::hrtf_binaural_reject_reason_from_ir(fuse::audio::HrtfIrRejectReason::MalformedIr)
             fuse::audio::hrtf_binaural_reject_reason_name(fuse::audio::HrtfBinauralRejectReason::BypassPath),
+
+// --- deepen additive from b72-hrtf-reject-reasons-9d6b ---
+    expectTrue(stub_preflight.convolutionReason == fuse::audio::HrtfPanPathConvolutionRejectReason::EmptyIr,
+    const fuse::audio::HrtfIrPreflight empty_ir_preflight = fuse::audio::preflight_hrtf_ir(empty);
+    expectTrue(conv_preflight.convolutionReason == fuse::audio::HrtfPanPathConvolutionRejectReason::None,
+    expectTrue(unity_preflight.reason == fuse::audio::HrtfAttenuationCouplingRejectReason::UnityAttenuation,
+                   unity_preflight, fuse::audio::HrtfAttenuationCouplingRejectReason::UnityAttenuation),
+    const fuse::audio::HrtfBinauralPreflight narrow_preflight =
+    expectTrue(narrow_preflight.reason == fuse::audio::HrtfBinauralRejectReason::None,

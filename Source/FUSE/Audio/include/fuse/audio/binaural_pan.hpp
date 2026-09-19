@@ -1026,3 +1026,13 @@ HrtfBinauralRejectReason hrtf_binaural_skip_reject_reason(bool hrtf_enabled, con
 HrtfBinauralRejectReason hrtf_binaural_convolution_reject_reason(const HrtfIrStub& ir);
 HrtfBinauralRejectReason hrtf_binaural_attenuation_reject_reason(
     HrtfBinauralRejectReason attenuationReason = HrtfBinauralRejectReason::None;
+
+// --- deepen additive from b72-hrtf-reject-reasons-9d6b ---
+enum class HrtfPanPathConvolutionRejectReason : u8 {
+const char* hrtf_pan_path_convolution_reject_reason_label(HrtfPanPathConvolutionRejectReason reason);
+    HrtfPanPathConvolutionRejectReason convolutionReason = HrtfPanPathConvolutionRejectReason::None;
+HrtfPanPathConvolutionRejectReason classify_hrtf_pan_path_convolution_reject(
+    const HrtfPanPathPreflight& preflight, const HrtfIrPreflight& ir_preflight);
+    const HrtfPanPathPreflight& preflight, const HrtfIrPreflight& ir_preflight,
+    HrtfPanPathConvolutionRejectReason expected);
+bool hrtf_attenuation_coupling_rejects_for_reason(const HrtfAttenuationCouplingPreflight& preflight,

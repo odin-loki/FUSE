@@ -1577,3 +1577,22 @@ HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_attenuation(
 HrtfBinauralRejectReason hrtf_binaural_skip_reject_reason(bool hrtf_enabled,
 HrtfBinauralRejectReason hrtf_binaural_convolution_reject_reason(const HrtfIrStub& ir) {
 HrtfBinauralRejectReason hrtf_binaural_attenuation_reject_reason(
+
+// --- deepen additive from b72-hrtf-reject-reasons-9d6b ---
+const char* hrtf_pan_path_convolution_reject_reason_label(HrtfPanPathConvolutionRejectReason reason) {
+    case HrtfPanPathConvolutionRejectReason::None:
+    case HrtfPanPathConvolutionRejectReason::HrtfDisabled:
+    case HrtfPanPathConvolutionRejectReason::CoLocated:
+    case HrtfPanPathConvolutionRejectReason::EmptyIr:
+    case HrtfPanPathConvolutionRejectReason::MalformedIr:
+HrtfPanPathConvolutionRejectReason classify_hrtf_pan_path_convolution_reject(
+    const HrtfPanPathPreflight& preflight, const HrtfIrPreflight& ir_preflight) {
+            return HrtfPanPathConvolutionRejectReason::HrtfDisabled;
+            return HrtfPanPathConvolutionRejectReason::CoLocated;
+        return HrtfPanPathConvolutionRejectReason::MalformedIr;
+        return HrtfPanPathConvolutionRejectReason::EmptyIr;
+    return HrtfPanPathConvolutionRejectReason::None;
+    const HrtfPanPathPreflight& preflight, const HrtfIrPreflight& ir_preflight,
+    HrtfPanPathConvolutionRejectReason expected) {
+    const HrtfIrPreflight ir_preflight = preflight_hrtf_ir(ir);
+bool hrtf_attenuation_coupling_rejects_for_reason(const HrtfAttenuationCouplingPreflight& preflight,
