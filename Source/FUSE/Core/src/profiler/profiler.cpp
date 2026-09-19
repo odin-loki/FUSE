@@ -250,6 +250,14 @@ bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
 
+EventNameRejectReason diagnoseEventNameRejectReason(const char* name) {
+    if (name == nullptr) {
+        return EventNameRejectReason::Null;
+    }
+    if (name[0] == '\0') {
+        return EventNameRejectReason::Empty;
+    return EventNameRejectReason::None;
+
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
@@ -464,6 +472,32 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     return result;
 }
 
+NestingStateRejectReason diagnoseNestingStateRejectReason() {
+    if (!isScopeNestingBalanced()) {
+        return NestingStateRejectReason::UnbalancedScopeNesting;
+    }
+    if (!isFlowNestingBalanced()) {
+        return NestingStateRejectReason::UnbalancedFlowNesting;
+    }
+    if (hasOpenAsyncFlows()) {
+        return NestingStateRejectReason::OpenAsyncFlows;
+    }
+    return NestingStateRejectReason::None;
+}
+
+ChromeTraceExportRejectReason diagnoseChromeTraceExportRejectReason() {
+    if (!isScopeNestingBalanced()) {
+        return ChromeTraceExportRejectReason::UnbalancedScopeNesting;
+    }
+    if (!isFlowNestingBalanced()) {
+        return ChromeTraceExportRejectReason::UnbalancedFlowNesting;
+    }
+    if (hasOpenAsyncFlows()) {
+        return ChromeTraceExportRejectReason::OpenAsyncFlows;
+    }
+    return ChromeTraceExportRejectReason::None;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -561,6 +595,56 @@ bool isEventExportable(u32 index) {
     return isRecordableName(event.name);
 }
 
+bool tryValidateEventName(const char* name, EventNameRejectReason& outReason) {
+    outReason = diagnoseEventNameRejectReason(name);
+    return outReason == EventNameRejectReason::None;
+
+const char* eventNameRejectReasonLabel(EventNameRejectReason reason) {
+    switch (reason) {
+    case EventNameRejectReason::None:
+        return "none";
+    case EventNameRejectReason::Null:
+        return "null";
+    case EventNameRejectReason::Empty:
+        return "empty";
+    return "unknown";
+
+bool isProfilerStateBalanced() {
+    return diagnoseNestingStateRejectReason() == NestingStateRejectReason::None;
+
+bool preflightProfilerState(NestingStateRejectReason* reason) {
+    const NestingStateRejectReason rejectReason = diagnoseNestingStateRejectReason();
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    return rejectReason == NestingStateRejectReason::None;
+
+const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason) {
+    case NestingStateRejectReason::None:
+    case NestingStateRejectReason::UnbalancedScopeNesting:
+        return "unbalanced_scope_nesting";
+    case NestingStateRejectReason::UnbalancedFlowNesting:
+        return "unbalanced_flow_nesting";
+    case NestingStateRejectReason::OpenAsyncFlows:
+        return "open_async_flows";
+
+bool canExportChromeTrace() {
+    return diagnoseChromeTraceExportRejectReason() == ChromeTraceExportRejectReason::None;
+
+bool preflightChromeTraceExport(ChromeTraceExportRejectReason* reason) {
+    const ChromeTraceExportRejectReason rejectReason = diagnoseChromeTraceExportRejectReason();
+    return rejectReason == ChromeTraceExportRejectReason::None;
+
+const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason) {
+    case ChromeTraceExportRejectReason::None:
+    case ChromeTraceExportRejectReason::UnbalancedScopeNesting:
+    case ChromeTraceExportRejectReason::UnbalancedFlowNesting:
+    case ChromeTraceExportRejectReason::OpenAsyncFlows:
+
+bool canLookupEventAt(u32 index) {
+    EventLookupRejectReason reason = EventLookupRejectReason::None;
+    return tryCanLookupEventAt(index, reason);
+}
+
 bool isValidProfileName(const char* name) {
     return isRecordableName(name);
 
@@ -623,8 +707,43 @@ const ProfileEvent& emptyProfileEvent() {
     return g_events[ringIndex];
 }
 
+bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason) {
+    if (eventCount() == 0u) {
+        outReason = EventLookupRejectReason::EmptyBuffer;
+        return false;
+    }
+    if (index >= eventCount()) {
+        outReason = EventLookupRejectReason::OutOfRange;
+        return false;
+    }
+
+    const ProfileEvent& candidate = eventAt(index);
+    if (!isValidProfileEvent(candidate)) {
+        outReason = EventLookupRejectReason::InvalidEvent;
+        return false;
+    }
+
+    outReason = EventLookupRejectReason::None;
+    return true;
+}
+
+const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason) {
+    switch (reason) {
+    case EventLookupRejectReason::None:
+        return "none";
+    case EventLookupRejectReason::EmptyBuffer:
+        return "empty_buffer";
+    case EventLookupRejectReason::OutOfRange:
+        return "out_of_range";
+    case EventLookupRejectReason::InvalidEvent:
+        return "invalid_event";
+    }
+    return "unknown";
+}
+
 bool tryEventAt(u32 index, ProfileEvent& outEvent) {
-    if (!isEventIndexValid(index)) {
+    EventLookupRejectReason reason = EventLookupRejectReason::None;
+    if (!tryCanLookupEventAt(index, reason)) {
         outEvent = ProfileEvent{};
         return false;
     }
@@ -762,18 +881,10 @@ bool tryEventAt(u32 index, ProfileEvent& out) {
     return isValidProfileEvent(out);
 }
 
-bool tryLastEvent(ProfileEvent& outEvent) {
-    const u32 index = lastEventIndex();
-    if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
         return false;
-    }
 
-    return tryEventAt(index, outEvent);
-}
 
-u32 firstEventIndex() {
-    return hasEvents() ? 0u : kInvalidEventIndex;
 }
 
 u32 lastEventIndex() {
@@ -1485,6 +1596,16 @@ std::string exportChromeTraceJson() {
 
     json += "]}";
     return json;
+}
+
+bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason) {
+    if (!preflightChromeTraceExport(reason)) {
+        outJson.clear();
+        return false;
+    }
+
+    outJson = exportChromeTraceJson();
+    return true;
 }
 
 } // namespace fuse::profiler
