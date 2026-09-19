@@ -110,7 +110,6 @@ struct CookCacheStorePreflight {
 
     [[nodiscard]] bool can_store() const {
         return !zero_content_hash && !empty_source_path && !empty_output_path;
-    }
 };
 
 /// Preflight for cache lookup — mirrors `CookCache::lookup` miss paths (B7.9 deepen).
@@ -135,6 +134,19 @@ struct CookCacheReconcileEstimate {
 
     [[nodiscard]] u32 total_prunable() const { return invalid_entry_count + stale_entry_count; }
     [[nodiscard]] bool needs_reconcile() const { return total_prunable() > 0; }
+
+/// Preflight guard before `store` — true when the entry would be accepted (B7.9 deepen).
+[[nodiscard]] inline CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    if (entry.source_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+    if (entry.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
 
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
@@ -349,6 +361,12 @@ public:
     [[nodiscard]] bool probe_would_invalidate_output(const std::string& output_path) const;
     [[nodiscard]] bool probe_would_invalidate_stale_content(const std::string& source_path,
                                                             u64 current_content_hash) const;
+    /// Valid entries whose recomputed key differs from the stored hash (B7.9 deepen).
+
+    /// Boolean invalidation probes — mirror `count_by_*` / `count_stale_*` guards (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
 
     /// Reconcile estimators — non-mutating mirrors of `prune_*` (B7.9 deepen).
     [[nodiscard]] u32 estimate_prune_stale_entries() const;

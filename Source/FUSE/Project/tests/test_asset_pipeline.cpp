@@ -1654,6 +1654,7 @@ void testCookCachePruneInvalidEntries() {
 }
 
 void testCookerReconcileEstimators() {
+void testCookerStaleDependencyEstimateParity() {
     const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_chain_a.obj", "# est chain a\n");
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_chain_b.obj", "# est chain b\n");
 
@@ -1690,6 +1691,19 @@ void testCookerReconcileEstimators() {
     const fuse::u32 pruned = cooker.cache().prune_all();
     expectTrue(pruned >= 1u, "prune_all removes stale entries estimated by reconcile probes");
     expectTrue(cooker.count_prune_removals() == 0u, "prune estimator zero after reconcile");
+    expectTrue(cooked.ok, "manifest cook for stale dependency estimate ok");
+    expectTrue(cooker.estimate_stale_dependency_invalidation(manifest) == 0u,
+               "fresh cache stale dependency estimate is zero");
+    expectTrue(cooker.count_stale_dependency_invalidation(manifest) ==
+                   cooker.estimate_stale_dependency_invalidation(manifest),
+               "count and estimate stale dependency invalidation agree on fresh cache");
+
+    const fuse::u32 estimate = cooker.estimate_stale_dependency_invalidation(manifest);
+    expectTrue(estimate >= 1u, "stale dependency estimate is non-zero after upstream change");
+
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= estimate, "stale dependency invalidation removes at least estimated count");
+               "stale dependency estimate is zero after reconcile");
 }
 
 void testCookerInvalidationCountProbes() {
@@ -2337,6 +2351,7 @@ int main() {
     testCookerReconcileEstimators();
     testCookerStaleDependencyReconcileEstimator();
     testCookerPruneReconcileEstimator();
+    testCookerStaleDependencyEstimateParity();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
