@@ -1362,3 +1362,13 @@ void testAttenuationCouplingPreflightGuards() {
 
 // --- deepen additive from deepen-hrtf-preflights-4398 ---
     const fuse::audio::HrtfIrPreflight null_only =
+
+// --- deepen additive from deepen-b72-hrtf-preflights-564d ---
+void testPreflightHrtfIrGuards() {
+void testPreflightHrtfPanPathGuards() {
+void testPreflightHrtfAttenuationCouplingGuards() {
+    const fuse::audio::HrtfAttenuationCouplingPreflight ir_aware =
+    const fuse::audio::HrtfAttenuationCouplingPreflight via_path =
+    testPreflightHrtfIrGuards();
+    testPreflightHrtfPanPathGuards();
+    testPreflightHrtfAttenuationCouplingGuards();
