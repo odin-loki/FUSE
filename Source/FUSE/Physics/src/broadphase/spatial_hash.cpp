@@ -270,7 +270,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (!shouldRunDedupeBroadphase(buffer)) {
+    if (!shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
@@ -393,7 +393,7 @@ void runBroadphaseIntoBufferInternal(
         dedupeBuffer(buffer);
     }
 
-    if (buffer.maxCapacity > 0u) {
+    if (shouldRunPairBufferClamp(buffer)) {
         buffer.applyMaxCapacityClamp();
     }
 }
@@ -423,10 +423,24 @@ void refineBroadphasePairsParallelImpl(
         }
     });
 
-    buffer.compact();
+    if (shouldRunPairBufferCompaction(buffer)) {
+        buffer.compact();
+    }
 }
 
 } // namespace
+
+const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason) {
+    switch (reason) {
+    case CellSpanClampRejectReason::None:
+        return "None";
+    case CellSpanClampRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellSpanClampRejectReason::UnlimitedSpan:
+        return "UnlimitedSpan";
+    }
+    return "Unknown";
+}
 
 RefineBroadphaseRejectReason refineBroadphaseRejectReason(
     const RigidBodySoA& bodies,
@@ -599,9 +613,31 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     const std::vector<CandidatePair>& pairs,
     const PairBufferSoA& buffer) {
     MergePairsIntoBufferPreflight preflight{};
+    preflight.requestedPairCount = static_cast<u32>(pairs.size());
     preflight.reason = mergePairsIntoBufferRejectReason(pairs, buffer);
     preflight.emptyPairs = preflight.reason == MergePairsIntoBufferRejectReason::EmptyPairs;
     preflight.bufferFull = preflight.reason == MergePairsIntoBufferRejectReason::BufferFull;
+
+    if (preflight.reason == MergePairsIntoBufferRejectReason::None) {
+        u32 mergeableCount = 0u;
+        u32 remainingSlots = buffer.remainingCapacity();
+        for (const CandidatePair& pair : pairs) {
+            if (!isValidCandidatePair(pair.bodyA, pair.bodyB)) {
+                continue;
+            }
+            if (remainingSlots == 0u) {
+                break;
+            }
+            ++mergeableCount;
+            if (remainingSlots != UINT32_MAX) {
+                --remainingSlots;
+            }
+        }
+        preflight.mergeablePairCount = mergeableCount;
+        preflight.partialCapacity =
+            mergeableCount > 0u && mergeableCount < preflight.requestedPairCount;
+    }
+
     return preflight;
 }
 
