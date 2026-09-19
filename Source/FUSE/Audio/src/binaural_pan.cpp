@@ -2213,3 +2213,29 @@ bool hrtf_binaural_rejects_ir_for_reason(const HrtfBinauralPreflight& preflight,
 bool hrtf_binaural_rejects_pan_path_for_reason(const HrtfBinauralPreflight& preflight,
 HrtfBinauralRejectReason hrtf_binaural_pan_reject_reason(const HrtfBinauralPreflight& preflight) {
 bool hrtf_binaural_pan_rejects_for_reason(const HrtfBinauralPreflight& preflight,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-9425 ---
+const char* hrtf_pan_path_convolve_reject_reason_label(HrtfPanPathConvolveRejectReason reason) {
+    case HrtfPanPathConvolveRejectReason::None:
+    case HrtfPanPathConvolveRejectReason::HrtfDisabled:
+    case HrtfPanPathConvolveRejectReason::CoLocated:
+    case HrtfPanPathConvolveRejectReason::EmptyIr:
+    case HrtfPanPathConvolveRejectReason::MalformedIr:
+HrtfPanPathConvolveRejectReason hrtf_pan_path_convolve_reject_reason(bool hrtf_enabled,
+        return HrtfPanPathConvolveRejectReason::HrtfDisabled;
+        return HrtfPanPathConvolveRejectReason::CoLocated;
+        return HrtfPanPathConvolveRejectReason::MalformedIr;
+        return HrtfPanPathConvolveRejectReason::EmptyIr;
+    return HrtfPanPathConvolveRejectReason::None;
+HrtfPanPathConvolveRejectReason classify_hrtf_pan_path_convolve_reject(
+                                               HrtfPanPathConvolveRejectReason expected) {
+                                            HrtfPanPathConvolveRejectReason* reason) {
+bool try_preflight_hrtf_pan_path_convolve(bool hrtf_enabled, const HrtfIrStub& ir,
+                                          HrtfPanPathConvolveRejectReason& reason) {
+HrtfBinauralRejectReason map_convolve_reject_to_binaural(HrtfPanPathConvolveRejectReason reason) {
+    if (reason == HrtfAttenuationCouplingRejectReason::UnityAttenuation) {
+HrtfBinauralRejectReason classify_hrtf_binaural_convolve_reject(
+    const HrtfBinauralRejectReason pan_reason = classify_hrtf_binaural_pan_reject(preflight);
+    const HrtfBinauralRejectReason convolve_reason = classify_hrtf_binaural_convolve_reject(preflight);
+    if (convolve_reason != HrtfBinauralRejectReason::None) {
+bool try_preflight_hrtf_binaural_convolve(bool hrtf_enabled, const HrtfIrStub& ir,

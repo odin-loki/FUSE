@@ -1348,3 +1348,21 @@ bool hrtf_binaural_rejects_ir_for_reason(const HrtfBinauralPreflight& preflight,
 bool hrtf_binaural_rejects_pan_path_for_reason(const HrtfBinauralPreflight& preflight,
 HrtfBinauralRejectReason hrtf_binaural_pan_reject_reason(const HrtfBinauralPreflight& preflight);
 bool hrtf_binaural_pan_rejects_for_reason(const HrtfBinauralPreflight& preflight,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-9425 ---
+enum class HrtfPanPathConvolveRejectReason : u8 {
+const char* hrtf_pan_path_convolve_reject_reason_label(HrtfPanPathConvolveRejectReason reason);
+HrtfPanPathConvolveRejectReason hrtf_pan_path_convolve_reject_reason(bool hrtf_enabled,
+                                               HrtfPanPathConvolveRejectReason expected);
+    HrtfPanPathConvolveRejectReason convolveReason = HrtfPanPathConvolveRejectReason::None;
+    bool can_convolve() const { return convolveReason == HrtfPanPathConvolveRejectReason::None; }
+    bool should_skip() const { return !can_spatial_pan(); }
+                                            HrtfPanPathConvolveRejectReason* reason = nullptr);
+bool try_preflight_hrtf_pan_path_convolve(bool hrtf_enabled, const HrtfIrStub& ir,
+                                          HrtfPanPathConvolveRejectReason& reason);
+HrtfPanPathConvolveRejectReason classify_hrtf_pan_path_convolve_reject(
+    HrtfBinauralRejectReason convolveReason = HrtfBinauralRejectReason::None;
+    HrtfBinauralRejectReason narrowReason = HrtfBinauralRejectReason::None;
+    bool is_bypass() const { return panPath.should_skip(); }
+bool try_preflight_hrtf_binaural_convolve(bool hrtf_enabled, const HrtfIrStub& ir,
+HrtfBinauralRejectReason classify_hrtf_binaural_convolve_reject(const HrtfBinauralPreflight& preflight);

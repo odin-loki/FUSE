@@ -2630,3 +2630,10 @@ void testHrtfBinauralCompositeRejectReasonWrappers() {
                    stub_preflight, fuse::audio::HrtfBinauralRejectReason::NullSamples),
                    bypass_preflight, fuse::audio::HrtfBinauralRejectReason::BypassPath),
     testHrtfBinauralCompositeRejectReasonWrappers();
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-9425 ---
+                               fuse::audio::HrtfPanPathConvolveRejectReason::EmptyIr),
+    fuse::audio::HrtfPanPathConvolveRejectReason convolve_reason =
+        fuse::audio::HrtfPanPathConvolveRejectReason::None;
+    expectTrue(convolve_reason == fuse::audio::HrtfPanPathConvolveRejectReason::EmptyIr,
+    expectTrue(stub_preflight.convolveReason == fuse::audio::HrtfBinauralRejectReason::EmptyIr,
