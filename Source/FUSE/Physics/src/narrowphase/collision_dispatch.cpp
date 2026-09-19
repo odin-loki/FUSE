@@ -125,3 +125,6 @@ NarrowphaseSlotPreflight preflight_narrowphase_slot(
     NarrowphaseSlotPreflight preflight{};
     preflight.rejected = preflight.reason != ContactPairRejectReason::None;
 bool should_skip_narrowphase_slot_dispatch(
+
+// --- deepen additive from b4-narrowphase-guards-91b3 ---
+    preflight.batchPreflight = preflight_narrowphase_batch(pairs, bodies, shapes);

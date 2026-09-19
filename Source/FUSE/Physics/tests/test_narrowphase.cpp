@@ -3286,3 +3286,13 @@ void testContactPairDeepenB46RejectGuards() {
                 fuse::physics::narrowphase::ManifoldFinalizeRejectReason::AlreadyFinalized),
 void testFrictionBasisB46RejectGuards() {
 void testContactBufferB46Guards() {
+
+// --- deepen additive from b4-narrowphase-guards-91b3 ---
+        validWrite.reason == fuse::physics::narrowphase::ContactBufferWriteRejectReason::None,
+            fuse::physics::narrowphase::ContactBufferFrictionRebuildRejectReason::EmptyBuffer),
+    expectTrue(emptyPreflight.can_skip(), "into-buffer preflight skips empty pair list");
+    expectTrue(validPreflight.can_dispatch(), "into-buffer preflight dispatches non-empty pair list");
+    expectTrue(validPreflight.batchPreflight.dispatchableCount == 1u,
+void testDetectContactsPairDeepenGuards() {
+void testFinalizeContactManifoldIfNeededDeepenGuard() {
+                fuse::physics::narrowphase::FrictionBasisRejectReason::StaleNormal),

@@ -256,3 +256,6 @@ struct NarrowphaseSlotPreflight {
     ContactPairRejectReason reason = ContactPairRejectReason::None;
 NarrowphaseSlotPreflight preflight_narrowphase_slot(
 bool should_skip_narrowphase_slot_dispatch(
+
+// --- deepen additive from b4-narrowphase-guards-91b3 ---
+    NarrowphaseBatchPreflight batchPreflight{};

@@ -785,3 +785,11 @@ bool writeSlotWithPreflight(u32 slot, const ContactManifold& manifold, ContactBu
 u32 compactWithPreflight(ContactBufferSoA& buffer) {
 u32 applyMaxCapacityClampWithPreflight(ContactBufferSoA& buffer) {
 u32 compactAndClampWithPreflight(ContactBufferSoA& buffer) {
+
+// --- deepen additive from b4-narrowphase-guards-91b3 ---
+    case ContactBufferFrictionRebuildRejectReason::NoValidContacts:
+ContactBufferFrictionRebuildRejectReason contact_buffer_friction_rebuild_reject_reason(
+        return ContactBufferFrictionRebuildRejectReason::NoValidContacts;
+    ContactBufferFrictionRebuildRejectReason expected) {
+ContactBufferFrictionRebuildPreflight preflight_contact_buffer_friction_rebuild(
+    preflight.noValidContacts = preflight.reason == ContactBufferFrictionRebuildRejectReason::NoValidContacts;

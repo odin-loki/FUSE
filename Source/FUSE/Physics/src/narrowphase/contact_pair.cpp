@@ -943,3 +943,7 @@ NarrowphasePairDispatchPreflight preflight_narrowphase_pair_dispatch(
     case ContactPairRejectReason::DegeneratePlaneNormal:
         return ContactPairRejectReason::UnsupportedMeshPair;
         return ContactPairRejectReason::DegeneratePlaneNormal;
+
+// --- deepen additive from b4-narrowphase-guards-91b3 ---
+    const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
+    if (preflight.reason != FrictionBasisRejectReason::None) {
