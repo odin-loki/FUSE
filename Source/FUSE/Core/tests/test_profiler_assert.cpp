@@ -4851,3 +4851,54 @@ void testWouldSkipChromeTraceExportGuards() {
 void testPreflightNestingCrossThreadHandoff() {
     const fuse::profiler::NestingPreflight preflight = fuse::profiler::preflightNesting();
     testPreflightNestingCrossThreadHandoff();
+
+// --- deepen additive from deepen-b16-profiler-guards-f01b ---
+               "wouldSkipProfileScope false for valid enabled scope");
+               "wouldSkipProfileScope true for null name");
+               "wouldSkipProfileScope true for empty name");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("valid_flow"),
+               "wouldSkipAsyncFlowBegin false for valid enabled flow");
+               "wouldSkipAsyncFlowBegin true for empty name");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("orphan_flow", 1u),
+               "wouldSkipAsyncFlowEnd true when no open flows");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("", 1u),
+               "wouldSkipAsyncFlowEnd true for empty name");
+    expectTrue(!fuse::profiler::wouldSkipCounterSample("valid_counter"),
+               "wouldSkipCounterSample false for valid enabled counter");
+               "wouldSkipCounterSample true for null track");
+               "wouldSkipChromeTraceExport false when profiler enabled");
+    expectTrue(fuse::profiler::wouldSkipProfileScope("ignored"),
+               "wouldSkipProfileScope true when disabled");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("ignored"),
+               "wouldSkipAsyncFlowBegin true when disabled");
+    expectTrue(fuse::profiler::wouldSkipCounterSample("ignored"),
+               "wouldSkipCounterSample true when disabled");
+               "wouldSkipChromeTraceExport true when disabled");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowEnd("open_flow", flowId),
+               "wouldSkipAsyncFlowEnd false when open flow exists");
+void testTryEventByNameAndFlowIdGuard() {
+    expectTrue(!fuse::profiler::tryFirstEventByName("missing", outEvent),
+               "tryFirstEventByName false on empty buffer");
+               "tryFirstEventByName clears output on empty buffer");
+    expectTrue(!fuse::profiler::tryLastEventByFlowId(1u, outEvent),
+               "tryLastEventByFlowId false on empty buffer");
+               "tryFirstEventByName false for empty search name");
+    expectTrue(resetPreflight.isBalanced(), "preflightNesting balanced on reset");
+               "preflightNesting scope depth zero on reset");
+               "preflightNesting flow depth zero on reset");
+    expectTrue(!resetPreflight.hasOpenAsyncFlows, "preflightNesting no open flows on reset");
+    expectTrue(!resetPreflight.hasPendingHandoff(), "preflightNesting no handoff on reset");
+        expectTrue(!activePreflight.isBalanced(), "preflightNesting unbalanced with open scope and flow");
+                   "preflightNesting reports active scope depth");
+                   "preflightNesting reports active flow depth");
+        expectTrue(activePreflight.hasOpenAsyncFlows, "preflightNesting marks open async flows");
+                   "preflightNesting open flow count tracks begin");
+    expectTrue(closedPreflight.isBalanced(), "preflightNesting balanced after scope and flow end");
+               "preflightNesting max scope depth preserved after teardown");
+               "preflightNesting max flow depth preserved after teardown");
+    if (!fuse::profiler::wouldSkipProfileScope("")) {
+    if (!fuse::profiler::wouldSkipAsyncFlowBegin(nullptr)) {
+    if (!fuse::profiler::wouldSkipCounterSample("")) {
+               "wouldSkip-guarded empty/null attempts record nothing");
+    if (!fuse::profiler::wouldSkipProfileScope("recorded_scope")) {
+               "valid scope records when wouldSkipProfileScope is false");

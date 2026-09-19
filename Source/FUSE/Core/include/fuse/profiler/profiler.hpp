@@ -511,3 +511,6 @@ bool wouldSkipAsyncFlowEnd(const char* name);
 bool wouldSkipCounterSample(const char* track);
 bool wouldSkipChromeTraceExport();
 bool wouldSkipChromeTraceExportSafely();
+
+// --- deepen additive from deepen-b16-profiler-guards-f01b ---
+bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId);
