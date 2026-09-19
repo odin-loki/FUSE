@@ -4597,3 +4597,7 @@ void testChromeTraceExportPreflightBlocksInvalidNamesInSafeExport() {
     expectTrue(tracePreflight.canExportSafely(),
     expectTrue(!tracePreflight.hasInvalidNameEvents,
     testChromeTraceExportPreflightBlocksInvalidNamesInSafeExport();
+
+// --- deepen additive from b16-profiler-deepen-guards-54d4 ---
+    expectTrue(fuse::profiler::tryFindFirstEventByFlowId(outerFlowId, flowEvent),
+               "tryFindFirstEventByFlowId clears output on empty buffer");
