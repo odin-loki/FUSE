@@ -2451,3 +2451,18 @@ DragInteractionPreflight preflightDragInteraction(const GizmoHitTest& hit, Gizmo
 SnapDragPreflight GizmoSystem::preflightSnapDrag() const {
     return fuse::editor::preflightSnapDrag(m_mode, m_snap);
     return fuse::editor::preflightDragInteraction(hit, m_mode, m_snap, m_dragging, m_activeAxis,
+
+// --- deepen additive from deepen-b6-gizmo-preflight-guards-e564 ---
+void applyBeginDragSnapDegraded_(BeginDragPreflight& preflight, GizmoMode mode,
+    return preflightBeginDrag(ray, transform, mode, space, axisLength, pickRadius, {}, alreadyDragging);
+GizmoPickRejectReason GizmoSystem::classifyPickReject(const PickPreflight& preflight) const {
+    return fuse::editor::classifyPickReject(preflight);
+GizmoBeginDragRejectReason GizmoSystem::classifyBeginDragReject(
+    const BeginDragPreflight& preflight) const {
+    return fuse::editor::classifyBeginDragReject(preflight);
+GizmoUpdateDragRejectReason GizmoSystem::classifyUpdateDragReject(
+    const UpdateDragPreflight& preflight) const {
+    return fuse::editor::classifyUpdateDragReject(preflight);
+GizmoEndDragRejectReason GizmoSystem::classifyEndDragReject(
+    const EndDragPreflight& preflight) const {
+    return fuse::editor::classifyEndDragReject(preflight);

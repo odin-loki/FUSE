@@ -1055,3 +1055,16 @@ SnapDragPreflight preflightSnapDrag(GizmoMode mode, const GizmoSnapSettings& set
     SnapDragPreflight snap{};
 DragInteractionPreflight preflightDragInteraction(const GizmoHitTest& hit, GizmoMode mode,
     [[nodiscard]] SnapDragPreflight preflightSnapDrag() const;
+
+// --- deepen additive from deepen-b6-gizmo-preflight-guards-e564 ---
+GizmoPickRejectReason classifyPickReject(const struct PickPreflight& preflight);
+GizmoBeginDragRejectReason classifyBeginDragReject(const struct BeginDragPreflight& preflight);
+GizmoUpdateDragRejectReason classifyUpdateDragReject(const struct UpdateDragPreflight& preflight);
+GizmoEndDragRejectReason classifyEndDragReject(const struct EndDragPreflight& preflight);
+    [[nodiscard]] GizmoPickRejectReason classifyPickReject(const PickPreflight& preflight) const;
+    [[nodiscard]] GizmoBeginDragRejectReason classifyBeginDragReject(
+        const BeginDragPreflight& preflight) const;
+    [[nodiscard]] GizmoUpdateDragRejectReason classifyUpdateDragReject(
+        const UpdateDragPreflight& preflight) const;
+    [[nodiscard]] GizmoEndDragRejectReason classifyEndDragReject(
+        const EndDragPreflight& preflight) const;
