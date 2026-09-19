@@ -3908,3 +3908,26 @@ void testDdgiTrilinearAndWouldSkipGuards() {
                "empty grid classifyProbeCoordReject reports empty_grid");
     expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeLookup(empty, cache.data(), 8u),
     expectTrue(!fuse::renderer::gi::preflightProbeBlendKernel(zeroCount),
+
+// --- deepen additive from deepen-ddgi-b56-guards-2659 ---
+               "preflightTrilinearProbeSample world_position succeeds for interior sample");
+               "tryValidateScheduledCacheIndices passes for in-range indices");
+               "tryValidateScheduledCacheIndices rejects OOB index in batch");
+               "preflightCacheIndexLookup without cache pointer succeeds");
+               "preflightCacheIndexLookup without cache pointer rejects OOB index");
+void testDdgiKernelGridAwarePreflightGuards() {
+    expectTrue(fuse::renderer::gi::classifyProbeKernelReject(validParams, desc) ==
+               "classifyProbeKernelReject none for valid grid-aware params");
+    expectTrue(fuse::renderer::gi::preflightProbeKernelLaunch(validParams, desc),
+               "preflightProbeKernelLaunch grid-aware succeeds for valid params");
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeKernelLaunch(validParams, desc),
+               "wouldSkipProbeKernelLaunch grid-aware false for valid params");
+    expectTrue(fuse::renderer::gi::classifyProbeKernelReject(oobParams, desc) ==
+               "classifyProbeKernelReject out_of_range_probe_index for OOB index");
+               "wouldSkipProbeKernelLaunch grid-aware true for OOB index");
+                   fuse::renderer::gi::ProbeKernelRejectReason::OutOfRangeProbeIndex),
+    expectTrue(fuse::renderer::gi::classifyProbeKernelReject(validParams, empty) ==
+               "classifyProbeKernelReject empty_grid for empty volume");
+    expectTrue(!fuse::renderer::gi::preflightProbeKernelLaunch(validParams, empty),
+               "preflightProbeKernelLaunch grid-aware rejects empty grid");
+    testDdgiKernelGridAwarePreflightGuards();
