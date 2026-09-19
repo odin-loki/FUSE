@@ -3933,4 +3933,52 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
     return preflightPairBufferInvalidateSlot(buffer, slot).canInvalidate();
 }
 
+const char* pairBufferInvalidateSlotRejectReasonName(PairBufferInvalidateSlotRejectReason reason) {
+    switch (reason) {
+    case PairBufferInvalidateSlotRejectReason::None:
+        return "None";
+    case PairBufferInvalidateSlotRejectReason::OutOfRangeSlot:
+        return "OutOfRangeSlot";
+    case PairBufferInvalidateSlotRejectReason::AlreadyInvalid:
+        return "AlreadyInvalid";
+    }
+    return "Unknown";
+}
+
+PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const PairBufferSoA& buffer, u32 slot) {
+    if (slot >= buffer.validFlags.size()) {
+        return PairBufferInvalidateSlotRejectReason::OutOfRangeSlot;
+    }
+    if (buffer.pairSlotCount > 0u && slot >= buffer.pairSlotCount) {
+        return PairBufferInvalidateSlotRejectReason::OutOfRangeSlot;
+    }
+    if (buffer.validFlags[slot] == 0u) {
+        return PairBufferInvalidateSlotRejectReason::AlreadyInvalid;
+    }
+    return PairBufferInvalidateSlotRejectReason::None;
+}
+
+bool pairBufferInvalidateSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    PairBufferInvalidateSlotRejectReason expected) {
+    return pairBufferInvalidateSlotRejectReason(buffer, slot) == expected;
+}
+
+PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
+    PairBufferInvalidateSlotPreflight preflight{};
+    preflight.reason = pairBufferInvalidateSlotRejectReason(buffer, slot);
+    preflight.outOfRangeSlot = preflight.reason == PairBufferInvalidateSlotRejectReason::OutOfRangeSlot;
+    preflight.alreadyInvalid = preflight.reason == PairBufferInvalidateSlotRejectReason::AlreadyInvalid;
+    return preflight;
+}
+
+bool canSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
+    return !preflightPairBufferInvalidateSlot(buffer, slot).canInvalidate();
+}
+
+bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
+    return preflightPairBufferInvalidateSlot(buffer, slot).canInvalidate();
+}
+
 } // namespace fuse::physics::broadphase
