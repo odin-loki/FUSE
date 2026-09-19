@@ -125,3 +125,11 @@ bool can_skip_contact_buffer_friction_basis(const ContactBufferSoA& buffer);
 bool should_run_contact_buffer_friction_basis(const ContactBufferSoA& buffer);
 
 } // namespace fuse::physics::narrowphase
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b463 ---
+struct ContactBufferWritePreflight {
+ContactBufferWritePreflight preflight_contact_buffer_write(const ContactManifold& manifold);
+struct ContactBufferClampPreflight {
+ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer);
+struct ContactBufferFrictionPreflight {
+ContactBufferFrictionPreflight preflight_contact_buffer_friction_rebuild(

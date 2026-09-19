@@ -2270,3 +2270,39 @@ void testManifoldNormalizeAndFinalizeDeepenGuards() {
         fuse::physics::narrowphase::should_skip_friction_basis_deepen_preflight(partial),
         "should_skip_deepen_preflight true after completion");
         unnormalizedPreflight.needsNormalNormalization,
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b463 ---
+void testContactPairBatchPreflightGuards() {
+void testContactPairPlanePlaneAndDeepenDispatchGuards() {
+void testManifoldFinalizeDeepenGuards() {
+    expectTrue(unnormalizedPreflight.needsNormalNormalization, "finalize preflight flags non-unit normal");
+void testContactBufferPreflightGuards() {
+    expectTrue(!compactionPreflight.needsCompaction(), "compaction preflight false after compact");
+    const auto clampPreflight = fuse::physics::narrowphase::preflight_contact_buffer_clamp(buffer);
+    expectTrue(clampPreflight.needsClamp(), "clamp preflight true when over capacity");
+void testContactBufferFrictionRebuildPreflightGuards() {
+    const auto initialPreflight =
+    expectTrue(!initialPreflight.can_skip_rebuild(), "friction preflight needs rebuild for stale basis");
+    expectTrue(initialPreflight.staleSlotCount == 1u, "friction preflight counts one stale slot");
+    expectTrue(initialPreflight.rebuildSlotCount == 1u, "friction preflight counts one rebuild slot");
+    const auto rebuiltPreflight =
+    expectTrue(rebuiltPreflight.can_skip_rebuild(), "friction preflight can skip after rebuild");
+void testWarmStartFrictionPreflightGuards() {
+        fuse::physics::narrowphase::should_skip_warm_start_friction(empty),
+        "should_skip_warm_start on empty manifold");
+    const auto noImpulsePreflight =
+    expectTrue(!noImpulsePreflight.can_warm_start(), "warm-start preflight false without impulses");
+    const auto readyPreflight = fuse::physics::narrowphase::preflight_warm_start_friction(ready);
+    expectTrue(readyPreflight.hasWarmImpulse, "warm-start preflight detects warm impulses");
+    expectTrue(readyPreflight.hasValidBasis, "warm-start preflight accepts valid basis");
+    expectTrue(readyPreflight.can_warm_start(), "warm-start preflight can warm-start ready manifold");
+        !fuse::physics::narrowphase::should_skip_warm_start_friction(ready),
+        "should_skip false for warm-startable manifold");
+    const auto stalePreflight = fuse::physics::narrowphase::preflight_warm_start_friction(ready);
+    expectTrue(!stalePreflight.hasValidBasis, "warm-start preflight rejects stale basis");
+        fuse::physics::narrowphase::should_skip_warm_start_friction(ready),
+        "should_skip true when basis is stale");
+    testContactPairBatchPreflightGuards();
+    testContactBufferPreflightGuards();
+    testContactBufferFrictionRebuildPreflightGuards();
+    testWarmStartFrictionPreflightGuards();

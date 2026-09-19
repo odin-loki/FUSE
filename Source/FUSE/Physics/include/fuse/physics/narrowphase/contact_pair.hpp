@@ -319,3 +319,7 @@ ContactPairRejectReason contact_pair_deepen2_reject_reason(
 struct ContactPairDeepen2Preflight {
 ContactPairDeepen2Preflight preflight_contact_pair_deepen2(
 bool should_skip_contact_pair_deepen2_dispatch(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b463 ---
+struct ContactPairBatchPreflight {
+ContactPairBatchPreflight preflight_contact_pair_batch(

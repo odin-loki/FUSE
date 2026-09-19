@@ -355,3 +355,8 @@ FrictionBasisDeepenPreflight preflight_friction_basis_rebuild_deepen(
     preflight.needsRebuild = basePreflight.needsRebuild;
 bool should_skip_friction_basis_deepen_preflight(
     const FrictionBasisDeepenPreflight preflight =
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b463 ---
+WarmStartFrictionPreflight preflight_warm_start_friction(
+    WarmStartFrictionPreflight preflight{};
+bool should_skip_warm_start_friction(

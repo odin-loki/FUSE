@@ -743,3 +743,7 @@ ContactPairDeepen2Preflight preflight_contact_pair_deepen2(
 bool should_skip_contact_pair_deepen2_dispatch(
     return contact_pair_deepen2_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
         if (!should_skip_contact_pair_deepen2_dispatch(pair, bodies, shapes)) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b463 ---
+ContactPairBatchPreflight preflight_contact_pair_batch(
+    ContactPairBatchPreflight preflight{};

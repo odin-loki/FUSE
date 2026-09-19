@@ -193,3 +193,8 @@ bool should_skip_friction_basis_preflight(const ContactManifold& manifold);
 struct FrictionBasisDeepenPreflight {
 FrictionBasisDeepenPreflight preflight_friction_basis_rebuild_deepen(
 bool should_skip_friction_basis_deepen_preflight(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b463 ---
+struct WarmStartFrictionPreflight {
+WarmStartFrictionPreflight preflight_warm_start_friction(
+bool should_skip_warm_start_friction(
