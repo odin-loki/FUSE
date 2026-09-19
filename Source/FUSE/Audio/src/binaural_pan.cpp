@@ -1273,3 +1273,25 @@ bool is_blocking_hrtf_binaural_reject_reason(HrtfBinauralRejectReason reason) {
         return HrtfBinauralRejectReason::NarrowingBypassPath;
     if (narrowingReject == HrtfAttenuationCouplingRejectReason::UnityAttenuation) {
         return HrtfBinauralRejectReason::NarrowingUnityAttenuation;
+
+// --- deepen additive from deepen-b7-2-hrtf-reject-preflights-f8d6 ---
+HrtfBinauralRejectReason map_pan_path_skip_reject_to_binaural(HrtfPanPathRejectReason reason) {
+HrtfBinauralRejectReason map_pan_path_convolution_reject_to_binaural(HrtfPanPathRejectReason reason) {
+    case HrtfPanPathRejectReason::MalformedIr:
+bool hrtf_ir_preflight_rejects_for_reason(const HrtfIrPreflight& preflight, HrtfIrRejectReason expected) {
+HrtfPanPathRejectReason classify_hrtf_pan_path_skip_reject(bool hrtf_enabled, const Vec3& rel_listener) {
+    const HrtfPanPathRejectReason skip_reason = classify_hrtf_pan_path_skip_reject(hrtf_enabled, rel_listener);
+    if (skip_reason != HrtfPanPathRejectReason::None) {
+    const HrtfIrRejectReason ir_reason = classify_hrtf_ir_reject(ir);
+        return HrtfPanPathRejectReason::MalformedIr;
+bool hrtf_pan_path_preflight_skips_for_reason(const HrtfPanPathPreflight& preflight,
+bool hrtf_pan_path_preflight_convolution_rejects_for_reason(const HrtfPanPathPreflight& preflight,
+    return preflight.convolutionRejectReason == expected;
+    const HrtfAttenuationCouplingPreflight& preflight, HrtfAttenuationCouplingRejectReason expected) {
+HrtfBinauralRejectReason classify_hrtf_binaural_skip_reject(bool hrtf_enabled, const Vec3& rel_listener) {
+HrtfBinauralRejectReason classify_hrtf_binaural_narrowing_reject(HrtfPanPath path,
+    preflight.narrowingRejectReason = classify_hrtf_binaural_narrowing_reject(
+bool hrtf_binaural_preflight_skips_for_reason(const HrtfBinauralPreflight& preflight,
+bool hrtf_binaural_preflight_convolution_rejects_for_reason(const HrtfBinauralPreflight& preflight,
+bool hrtf_binaural_preflight_narrowing_rejects_for_reason(const HrtfBinauralPreflight& preflight,
+    return preflight.narrowingRejectReason == expected;

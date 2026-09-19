@@ -1859,3 +1859,18 @@ void testHrtfBinauralRejectReasonPreflights() {
                    fuse::audio::HrtfBinauralRejectReason::ConvolutionEmptyIr),
     expectTrue(preflight.reason == fuse::audio::HrtfBinauralRejectReason::None,
     expectTrue(preflight.ir.reason == fuse::audio::HrtfIrRejectReason::None,
+
+// --- deepen additive from deepen-b7-2-hrtf-reject-preflights-f8d6 ---
+                   preflight, fuse::audio::HrtfIrRejectReason::NullSamples),
+    expectTrue(preflight.skipReason == fuse::audio::HrtfPanPathRejectReason::None,
+    expectTrue(preflight.convolutionRejectReason == fuse::audio::HrtfPanPathRejectReason::None,
+                   preflight, fuse::audio::HrtfPanPathRejectReason::HrtfDisabled),
+                   preflight, fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath),
+    fuse::audio::HrtfBinauralPreflight preflight{};
+    expectTrue(preflight.skipReason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(preflight.convolutionRejectReason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(preflight.narrowingRejectReason == fuse::audio::HrtfBinauralRejectReason::None,
+    const fuse::audio::HrtfBinauralPreflight empty_ir_preflight =
+                   empty_ir_preflight, fuse::audio::HrtfBinauralRejectReason::EmptyIr),
+    expectTrue(empty_ir_preflight.convolutionRejectReason
+                   unity_preflight, fuse::audio::HrtfBinauralRejectReason::UnityAttenuation),

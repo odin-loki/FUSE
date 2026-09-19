@@ -847,3 +847,20 @@ const char* hrtfBinauralRejectReasonLabel(HrtfBinauralRejectReason reason);
 
 // --- deepen additive from deepen-b72-hrtf-reject-reasons-4c1f ---
 bool is_blocking_hrtf_binaural_reject_reason(HrtfBinauralRejectReason reason);
+
+// --- deepen additive from deepen-b7-2-hrtf-reject-preflights-f8d6 ---
+bool hrtf_ir_preflight_rejects_for_reason(const HrtfIrPreflight& preflight, HrtfIrRejectReason expected);
+HrtfPanPathRejectReason classify_hrtf_pan_path_skip_reject(bool hrtf_enabled, const Vec3& rel_listener);
+    HrtfPanPathRejectReason skipReason = HrtfPanPathRejectReason::None;
+bool hrtf_pan_path_preflight_skips_for_reason(const HrtfPanPathPreflight& preflight,
+bool hrtf_pan_path_preflight_convolution_rejects_for_reason(const HrtfPanPathPreflight& preflight,
+    bool should_skip() const { return !can_narrow(); }
+                                             float occlusion_gain, HrtfAttenuationCouplingPreflight& preflight,
+    const HrtfAttenuationCouplingPreflight& preflight, HrtfAttenuationCouplingRejectReason expected);
+HrtfBinauralRejectReason classify_hrtf_binaural_skip_reject(bool hrtf_enabled, const Vec3& rel_listener);
+HrtfBinauralRejectReason classify_hrtf_binaural_narrowing_reject(HrtfPanPath path,
+    HrtfBinauralRejectReason skipReason = HrtfBinauralRejectReason::None;
+    HrtfBinauralRejectReason narrowingRejectReason = HrtfBinauralRejectReason::None;
+bool hrtf_binaural_preflight_skips_for_reason(const HrtfBinauralPreflight& preflight,
+bool hrtf_binaural_preflight_convolution_rejects_for_reason(const HrtfBinauralPreflight& preflight,
+bool hrtf_binaural_preflight_narrowing_rejects_for_reason(const HrtfBinauralPreflight& preflight,
