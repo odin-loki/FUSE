@@ -459,6 +459,7 @@ enum class ProbeTrilinearSampleRejectReason : u8 {
     EmptyGrid,
     InvalidSampleCoords,
     ClampableSampleCoords,
+    ClampableWeights,
     UndersizedCache,
     NullCache,
     ClampableWeights,
@@ -540,6 +541,8 @@ enum class ProbeGridSourceRejectReason : u8 {
     NullCache,
 
 /// Why probe grid source preflight rejected the request (B5.6 deepen).
+
+/// Why probe-grid source preflight rejected the request (B5.6 deepen).
 
 /// Human-readable label for probe-grid source reject reasons (logging / tests).
 const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason);
@@ -1358,8 +1361,36 @@ bool wouldSkipProbeGridSource(const DDGIDesc& desc, const IrradianceCacheEntry* 
 /// Non-mutating probe-grid source preflight — returns true when sampling would proceed.
 bool preflightProbeGridSource(const DDGIDesc& desc,
                               ProbeGridSourceRejectReason* reason = nullptr);
+/// True when `cache_count` matches the probe count implied by `desc`.
+bool cacheMatchesDesc(const DDGIDesc& desc, u32 cache_count);
 /// True when `cache` is allocated and sized for every probe in `desc`.
 bool isProbeCacheAccessible(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 cache_count);
+/// Diagnose why probe-grid source preflight would reject; vacuously succeeds on accessible grids.
+bool tryValidateProbeGridSource(const DDGIDesc& desc,
+                                const IrradianceCacheEntry* cache,
+                                u32 cache_count,
+                                ProbeGridSourceRejectReason& outReason);
+/// Classify why probe-grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc,
+                                                          const IrradianceCacheEntry* cache,
+                                                          u32 cache_count);
+/// Non-mutating probe-grid source preflight — returns true when sampling would proceed.
+bool preflightProbeGridSource(const DDGIDesc& desc,
+                              const IrradianceCacheEntry* cache,
+                              u32 cache_count,
+                              ProbeGridSourceRejectReason* reason = nullptr);
+/// Early-out when probe-grid source preflight would be rejected.
+bool wouldSkipProbeGridSource(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 cache_count);
+/// Early-out when index-based probe lookup would be rejected — same ordering as `tryValidateCacheIndex`.
+bool wouldSkipProbeLookupAtIndex(const DDGIDesc& desc,
+                                const IrradianceCacheEntry* cache,
+                                u32 probe_index,
+                                u32 cache_count);
+/// Early-out when coord-based probe lookup would be rejected.
+bool wouldSkipProbeLookupAtCoord(const DDGIDesc& desc,
+                                 const IrradianceCacheEntry* cache,
+                                 const ProbeGridCoord& coord,
+                                 u32 cache_count);
 /// Preflight guard before coord-based probe trilinear sampling.
 bool canSampleAtProbeCoords(const DDGIDesc& desc,
                             const ProbeSampleCoords& coords,
@@ -1513,6 +1544,7 @@ bool tryPreflightProbeTrilinearSample(const DDGIDesc& desc,
 bool tryCanTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
 /// Early-out when trilinear probe sampling would be rejected — same ordering as `tryCanTrilinearSampleAtProbeCoords`.
 /// Early-out when coord-based trilinear probe sampling would be rejected.
+/// Preflight guard before trilinear probe irradiance sampling; false on inaccessible cache or hard OOB coords.
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -2133,6 +2165,9 @@ bool tryPreflightProbeScheduleAtRate(u32 probe_count,
 u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Schedule preflight with mandatory reject-reason output.
 /// Rate-aware schedule preflight with mandatory reject-reason output.
+                                  u32 probes_per_frame,
+                                  u32 max_indices,
+                                  const u32* out_indices,
 /// True when output capacity would cap scheduled probes below `probes_per_frame`.
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Early-out when probe scheduling would be rejected — same ordering as `tryScheduleProbeUpdates`.
