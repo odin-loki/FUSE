@@ -1814,11 +1814,10 @@ bool hrtf_binaural_rejects_for_reason(const HrtfBinauralPreflight& preflight,
 
 /// Returns true when \c hrtf_binaural_convolution_reject_reason matches \p expected (B7.2 deepen follow-up pass).
 bool hrtf_binaural_rejects_for_convolution_reason(const HrtfBinauralPreflight& preflight,
-                                                  HrtfBinauralRejectReason expected);
 
 /// Returns true when \c hrtf_binaural_narrowing_reject_reason matches \p expected (B7.2 deepen follow-up pass).
 bool hrtf_binaural_rejects_for_narrowing_reason(const HrtfBinauralPreflight& preflight,
-                                                HrtfBinauralRejectReason expected);
+
 
 /// Preflight all binaural/HRTF guards for one source (IR-aware).
 HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir,
@@ -1841,11 +1840,8 @@ HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const AudioList
                                               const BinauralPanParams& params = {});
 
 /// Preflight all binaural/HRTF guards from listener and source world positions (no IR wired).
-HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const AudioListener& listener,
                                               const Vec3& source_position, float distance_attenuation,
                                               float occlusion_gain,
-                                              const HrtfAttenuationCoupling& coupling = {},
-                                              const BinauralPanParams& params = {});
 
 /// Non-mutating spatial-pan predicate — mirrors \c HrtfBinauralPreflight::can_spatial_pan.
 bool can_apply_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight);
@@ -1864,6 +1860,8 @@ bool should_skip_hrtf_binaural_convolution(const HrtfBinauralPreflight& prefligh
 
 /// True when composite preflight selects ILD/ITD stub (empty IR fallback).
 bool uses_ild_itd_stub_hrtf_binaural(const HrtfBinauralPreflight& preflight);
+
+
 
 /// Apply pan + coupling using a preflight bundle (read-only guards; valid paths unchanged).
 BinauralPanGains compute_binaural_pan_gains_from_preflight(const HrtfBinauralPreflight& preflight,
