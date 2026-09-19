@@ -3032,6 +3032,7 @@ bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer) {
 
     const DedupeBroadphaseRejectReason reject = dedupeBroadphaseRejectReason(buffer);
         *reason = reject;
+    }
 
 BroadphaseMergePreflight preflightBroadphaseMerge(
     const RigidBodySoA& bodies,
@@ -3579,6 +3580,16 @@ bool wouldSkipBroadphaseMerge(
         *reason = reject;
     }
     return canSkipBroadphaseMerge(bodies, shapes);
+}
+
+bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies,
+                              const CollisionShapeSoA& shapes,
+                              BroadphaseMergeRejectReason* reason) {
+    const BroadphaseMergeRejectReason rejectReason = mergeBroadphaseRejectReason(bodies, shapes);
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    }
+    return rejectReason != BroadphaseMergeRejectReason::None;
 }
 
 const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReason reason) {
@@ -5097,6 +5108,15 @@ bool wouldSkipCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis, CellSpa
     return rejectReason != CellSpanRejectReason::ExceedsSpan;
 
 bool wouldSkipCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis, CellSpanRejectReason* reason) {
+    }
+
+                                       u32 maxCells,
+                                       CellOccupancyRejectReason* reason) {
+    const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
+    if (reason != nullptr) {
+        *reason = rejectReason;
+
+
 }
 
 } // namespace fuse::physics::broadphase

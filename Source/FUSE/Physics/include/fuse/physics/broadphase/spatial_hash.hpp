@@ -1034,40 +1034,12 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(const CellRange2& range
 
 /// Preflight cell-occupancy iteration without mutating the range — optional `reason` out-param (B4.2 deepen follow-up pass).
 /// Predict cell-occupancy iteration skip — same ordering as `cellOccupancyRejectReason` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    const CellRange3& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
     const CellOccupancyRejectReason reject = cellOccupancyRejectReason(range, maxCells);
-    if (reason != nullptr) {
         *reason = reject;
-    }
     return reject != CellOccupancyRejectReason::None;
-}
 
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    const CellRange2& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
-    const CellOccupancyRejectReason reject = cellOccupancyRejectReason(range, maxCells);
-    if (reason != nullptr) {
-        *reason = reject;
-    }
-    return reject != CellOccupancyRejectReason::None;
-}
 
-/// Predict cell-occupancy iteration skip — same ordering as `cellOccupancyRejectReason` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
-    const CellRange3& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
-    const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
-    if (reason != nullptr) {
-        *reason = rejectReason;
-    }
-    return rejectReason != CellOccupancyRejectReason::None;
 
-    const CellRange2& range,
 
 /// Predict whether cell-occupancy iteration would bail (B4.2 deepen follow-up pass).
     const CellOccupancyPreflight preflight = preflightCellOccupancy(range, maxCells);
@@ -1079,6 +1051,7 @@ bool wouldSkipCellOccupancyIteration(const CellRange3& range,
                                        CellOccupancyRejectReason* reason = nullptr);
 
 bool wouldSkipCellOccupancyIteration(const CellRange2& range,
+
 
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
@@ -2767,19 +2740,8 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(
         *reason = reject;
     }
     return canSkipCellSpanClamp(range, maxSpanPerAxis);
-}
 
-FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(
     const CellRange2& range,
-    u32 maxSpanPerAxis,
-    CellSpanRejectReason* reason = nullptr) {
-    if (reason != nullptr) {
-        *reason = cellSpanRejectReason(range, maxSpanPerAxis);
-    const CellSpanRejectReason reject = cellSpanRejectReason(range, maxSpanPerAxis);
-        *reason = reject;
-    }
-    return canSkipCellSpanClamp(range, maxSpanPerAxis);
-}
 
 /// Predict cell-span clamp skip — same ordering as `cellSpanRejectReason` (B4.2 deepen pass).
 bool wouldSkipCellSpanClamp(const CellRange3& range,
@@ -2787,6 +2749,8 @@ bool wouldSkipCellSpanClamp(const CellRange3& range,
                             CellSpanRejectReason* reason = nullptr);
 
 bool wouldSkipCellSpanClamp(const CellRange2& range,
+                            u32 maxSpanPerAxis,
+                            CellSpanRejectReason* reason = nullptr);
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {

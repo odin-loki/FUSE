@@ -2991,14 +2991,12 @@ bool pairBufferInvalidateSlotRejectsForReason(
     const PairBufferSoA& buffer,
     u32 slot,
     PairBufferInvalidateSlotRejectReason expected) {
-    case PairBufferInvalidateSlotRejectReason::EmptyBuffer:
-        return "EmptyBuffer";
 
-    if (buffer.canSkipSoAIteration()) {
-        return PairBufferInvalidateSlotRejectReason::EmptyBuffer;
     if (slot >= buffer.pairSlotCount || slot >= buffer.validFlags.size()) {
 
 bool pairBufferInvalidateSlotRejectsForReason(const PairBufferSoA& buffer,
+
+
     return pairBufferInvalidateSlotRejectReason(buffer, slot) == expected;
 }
 
@@ -3072,6 +3070,9 @@ bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer,
 
 
         *reason = reject;
+
+
+
 
 const char* pairBufferToVectorRejectReasonName(PairBufferToVectorRejectReason reason) {
     case PairBufferToVectorRejectReason::None:
