@@ -1001,3 +1001,6 @@ bool wouldSkipProbeGridSource(const DDGIDesc& desc, const IrradianceCacheEntry* 
 bool tryCanTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
 bool tryValidateCacheIndexAtCoord(const DDGIDesc& desc,
 bool wouldClampCacheIndexLookupCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
+
+// --- deepen additive from deepen-b56-ddgi-wouldskip-preflights-a4ee ---
+bool preflightProbeGridSource(const DDGIDesc& desc, ProbeSampleCoordsRejectReason* reason = nullptr);

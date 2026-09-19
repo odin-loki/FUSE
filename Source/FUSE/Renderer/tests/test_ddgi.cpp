@@ -4135,3 +4135,27 @@ void testDdgiDeepenPassGuards() {
     expectNear(coordIrradiance.x, 5.f, 1e-5f, "tryReadIrradianceAtCoord returns stored irradiance");
     expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(empty, cache.data(), validCoord, 8u),
                "wouldSkipCacheIndexLookupAtCoord true on empty grid");
+
+// --- deepen additive from deepen-b56-ddgi-wouldskip-preflights-a4ee ---
+void testDdgiWouldSkipPreflightGuards() {
+    fuse::renderer::ProbeSampleCoordsRejectReason gridReason =
+    expectTrue(!fuse::renderer::ddgi_util::preflightProbeGridSource(empty, &gridReason),
+               "preflightProbeGridSource rejects empty grid");
+    expectTrue(gridReason == fuse::renderer::ProbeSampleCoordsRejectReason::EmptyGrid,
+    expectTrue(!fuse::renderer::ddgi_util::preflightProbeGridSource(zeroRes, &gridReason),
+               "preflightProbeGridSource rejects zero irradiance_res grid");
+    expectTrue(gridReason == fuse::renderer::ProbeSampleCoordsRejectReason::NotSampleableGrid,
+               "build coords for wouldSkip preflight test");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, oobWeights),
+               "wouldSkipProbeSampleCoords true for OOB weights");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, hardOob),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, hardOob, cache.data(), 8u),
+               "wouldSkipTrilinearProbeSample true for invalid sample coords");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, coord, 8u),
+               "wouldSkipCacheIndexLookupAtCoord false for in-range coord");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, cache.data(), coord, 8u),
+               "wouldSkipCacheIndexLookupAtCoord false for in-range coord with cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, coord, 4u),
+               "wouldSkipCacheIndexLookupAtCoord true for undersized cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, invalid, 8u),
+    testDdgiWouldSkipPreflightGuards();

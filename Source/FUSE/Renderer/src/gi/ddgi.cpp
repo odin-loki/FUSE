@@ -3073,3 +3073,11 @@ bool tryCanTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
 bool tryValidateCacheIndexAtCoord(const DDGIDesc& desc,
     return tryValidateCacheIndexAtCoord(desc, coord, cache_count, outReason);
 bool wouldClampCacheIndexLookupCoord(const DDGIDesc& desc, const ProbeGridCoord& coord) {
+
+// --- deepen additive from deepen-b56-ddgi-wouldskip-preflights-a4ee ---
+bool preflightProbeGridSource(const DDGIDesc& desc, ProbeSampleCoordsRejectReason* reason) {
+            *reason = ProbeSampleCoordsRejectReason::EmptyGrid;
+            *reason = ProbeSampleCoordsRejectReason::NotSampleableGrid;
+        *reason = ProbeSampleCoordsRejectReason::None;
+    return !preflightProbeGridSource(desc, nullptr);
+    return wouldSkipProbeGridSource(desc);
