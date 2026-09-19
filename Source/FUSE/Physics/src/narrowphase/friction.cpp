@@ -1,5 +1,6 @@
 #include <fuse/physics/narrowphase/friction.hpp>
 
+#include <fuse/physics/narrowphase/contact_buffer.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 
 #include <algorithm>
@@ -290,6 +291,14 @@ bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilo
         return manifold.hasFrictionBasis();
     }
     return rebuild_friction_basis_if_needed(manifold, epsilon);
+}
+
+bool rebuild_contact_buffer_friction_bases_with_preflight(ContactBufferSoA& buffer) {
+    if (!preflightContactBufferFrictionBuild(buffer).canBuild()) {
+        return false;
+    }
+    buildContactBufferFrictionTangentBasesWithPreflight(buffer);
+    return true;
 }
 
 } // namespace fuse::physics::narrowphase
