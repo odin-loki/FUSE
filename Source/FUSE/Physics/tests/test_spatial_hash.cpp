@@ -1509,6 +1509,162 @@ void testBroadphaseMergeRejectReasonGuards() {
              "merge preflight carries reject reason");
 }
 
+void testShouldRunBroadphaseGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    expectTrue(!fuse::physics::broadphase::shouldRunBroadphase(bodies, shapes),
+               "shouldRunBroadphase false on empty scene");
+    expectTrue(fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
+               "canSkipBroadphase true when shouldRunBroadphase false");
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    expectTrue(!fuse::physics::broadphase::shouldRunBroadphase(bodies, shapes),
+               "shouldRunBroadphase false on singleton scene");
+
+    bodies.addBody({1.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+    expectTrue(fuse::physics::broadphase::shouldRunBroadphase(bodies, shapes),
+               "shouldRunBroadphase true on populated scene");
+    expectTrue(!fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
+               "canSkipBroadphase false when shouldRunBroadphase true");
+
+    const fuse::physics::broadphase::BroadphasePreflight preflight =
+        fuse::physics::broadphase::preflightBroadphase(bodies, shapes);
+    expectTrue(fuse::physics::broadphase::shouldRunBroadphase(bodies, shapes) == preflight.canRun(),
+               "shouldRunBroadphase mirrors preflightBroadphase.canRun");
+}
+
+void testCellSpanClampPreflightGuards() {
+    const fuse::physics::broadphase::CellRange3 wideRange = {
+        {-100, -100, -100},
+        {100, 100, 100},
+    };
+    expectTrue(fuse::physics::broadphase::shouldRunCellSpanClamp(wideRange, 8u),
+               "wide range should run span clamp");
+    expectTrue(!fuse::physics::broadphase::canSkipCellSpanClamp(wideRange, 8u),
+               "wide range does not skip span clamp");
+
+    const fuse::physics::broadphase::CellRange3 unitRange = {{0, 0, 0}, {1, 1, 1}};
+    expectTrue(fuse::physics::broadphase::canSkipCellSpanClamp(unitRange, 8u),
+               "small range skips span clamp within limit");
+    expectTrue(!fuse::physics::broadphase::shouldRunCellSpanClamp(unitRange, 8u),
+               "small range should not run span clamp");
+
+    expectTrue(fuse::physics::broadphase::canSkipCellSpanClamp(unitRange, 0u),
+               "zero max span skips clamp as unlimited");
+    const fuse::physics::broadphase::CellSpanClampPreflight unlimitedPreflight =
+        fuse::physics::broadphase::preflightCellSpanClamp(unitRange, 0u);
+    expectTrue(unlimitedPreflight.unlimitedSpan, "preflight marks unlimited span clamp");
+
+    fuse::physics::broadphase::CellRange3 inverted = {{2, 2, 2}, {1, 1, 1}};
+    expectTrue(fuse::physics::broadphase::canSkipCellSpanClamp(inverted, 4u),
+               "empty range skips span clamp");
+    const fuse::physics::broadphase::CellSpanClampPreflight emptyPreflight =
+        fuse::physics::broadphase::preflightCellSpanClamp(inverted, 4u);
+    expectTrue(emptyPreflight.emptyRange, "preflight marks empty range for span clamp");
+
+    const fuse::physics::broadphase::CellRange2 planeRange = {{0, 0}, {10, 1}};
+    expectTrue(fuse::physics::broadphase::shouldRunCellSpanClamp(planeRange, 4u),
+               "2D wide range should run span clamp");
+}
+
+void testCellSpanClampRejectReasonGuards() {
+    const fuse::physics::broadphase::CellRange3 wideRange = {
+        {-100, -100, -100},
+        {100, 100, 100},
+    };
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::cellSpanClampRejectReason(wideRange, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanClampRejectReason::None),
+             "wide range reports None span clamp reject reason");
+    expectTrue(fuse::physics::broadphase::cellSpanClampRejectsForReason(
+                   wideRange, 8u, fuse::physics::broadphase::CellSpanClampRejectReason::None),
+               "wide range rejects for None");
+
+    const fuse::physics::broadphase::CellRange3 unitRange = {{0, 0, 0}, {1, 1, 1}};
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::cellSpanClampRejectReason(unitRange, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanClampRejectReason::WithinSpanLimit),
+             "small range reports WithinSpanLimit span clamp reject reason");
+    expectTrue(std::strcmp(fuse::physics::broadphase::cellSpanClampRejectReasonName(
+                               fuse::physics::broadphase::CellSpanClampRejectReason::UnlimitedSpan),
+                           "UnlimitedSpan") == 0,
+               "UnlimitedSpan span clamp reject reason has stable label");
+
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::cellSpanClampRejectReason(unitRange, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanClampRejectReason::UnlimitedSpan),
+             "zero max span reports UnlimitedSpan reject reason");
+}
+
+void testPairBufferSortRejectReasonGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferSortRejectReason(buffer)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferSortRejectReason::EmptyBuffer),
+             "empty buffer reports EmptyBuffer sort reject reason");
+    expectTrue(fuse::physics::broadphase::canSkipPairBufferSort(buffer),
+               "canSkipPairBufferSort on empty buffer");
+    expectTrue(!fuse::physics::broadphase::shouldRunPairBufferSort(buffer),
+               "shouldRunPairBufferSort false on empty buffer");
+
+    buffer.push(0u, 1u);
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferSortRejectReason(buffer)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferSortRejectReason::SinglePair),
+             "single pair reports SinglePair sort reject reason");
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferSortRejectReasonName(
+                               fuse::physics::broadphase::PairBufferSortRejectReason::SinglePair),
+                           "SinglePair") == 0,
+               "SinglePair sort reject reason has stable label");
+
+    buffer.push(2u, 3u);
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferSortRejectReason(buffer)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferSortRejectReason::None),
+             "multiple pairs report None sort reject reason");
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferSort(buffer),
+               "shouldRunPairBufferSort true for multiple pairs");
+
+    const fuse::physics::broadphase::PairBufferSortPreflight preflight =
+        fuse::physics::broadphase::preflightPairBufferSort(buffer);
+    expectTrue(preflight.needsSort(), "sort preflight accepts multiple pairs with reason None");
+    expectEq(static_cast<fuse::u32>(preflight.reason),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferSortRejectReason::None),
+             "sort preflight carries reject reason");
+}
+
+void testShouldRunPairBufferDedupeGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    expectTrue(!fuse::physics::broadphase::shouldRunPairBufferDedupe(buffer),
+               "shouldRunPairBufferDedupe false on empty buffer");
+    expectTrue(fuse::physics::broadphase::canSkipPairBufferDedupe(buffer),
+               "canSkipPairBufferDedupe true when shouldRunPairBufferDedupe false");
+
+    buffer.push(0u, 1u);
+    expectTrue(!fuse::physics::broadphase::shouldRunPairBufferDedupe(buffer),
+               "shouldRunPairBufferDedupe false on single pair");
+
+    buffer.push(2u, 3u);
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferDedupe(buffer),
+               "shouldRunPairBufferDedupe true for multiple pairs");
+    expectTrue(!fuse::physics::broadphase::canSkipPairBufferDedupe(buffer),
+               "canSkipPairBufferDedupe false when shouldRunPairBufferDedupe true");
+}
+
+void testPairBufferSortShouldRunIntegration() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.push(2u, 3u);
+    buffer.push(0u, 1u);
+    expectTrue(!buffer.isSortedCanonical(), "unsorted multi-pair buffer is not canonical");
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferSort(buffer),
+               "unsorted buffer should run sort");
+
+    buffer.sortCanonical();
+    expectTrue(buffer.isSortedCanonical(), "sortCanonical leaves canonical order via shouldRun gate");
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferSort(buffer),
+               "multi-pair buffer remains sort-eligible after canonical ordering");
+}
+
 } // namespace
 
 int main() {
@@ -1573,6 +1729,12 @@ int main() {
     testCellOccupancyIterationSkipGuards();
     testRefineBroadphaseShouldRunGuards();
     testBroadphaseMergeRejectReasonGuards();
+    testShouldRunBroadphaseGuards();
+    testCellSpanClampPreflightGuards();
+    testCellSpanClampRejectReasonGuards();
+    testPairBufferSortRejectReasonGuards();
+    testShouldRunPairBufferDedupeGuards();
+    testPairBufferSortShouldRunIntegration();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");
