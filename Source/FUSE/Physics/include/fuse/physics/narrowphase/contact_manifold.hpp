@@ -189,6 +189,13 @@ bool should_skip_manifold_prune(
     f32 duplicateEpsilon = 1e-4f,
     f32 shallowMinDepth = 0.f);
 
+/// Returns true when manifold prune should run (B4.6 deepen follow-up pass).
+bool should_run_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
 /// Why manifold finalize would early-out (B4.5 deepen follow-up pass).
 enum class ManifoldFinalizeRejectReason : u8 {
     None = 0,
@@ -237,6 +244,13 @@ ManifoldFinalizePreflight preflight_manifold_finalize(
 
 /// Returns true when finalize should be skipped for this manifold (B4.4 deepen follow-up).
 bool can_skip_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Returns true when manifold finalize should run (B4.6 deepen follow-up pass).
+bool should_run_manifold_finalize(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
