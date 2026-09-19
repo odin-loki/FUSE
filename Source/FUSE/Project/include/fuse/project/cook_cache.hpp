@@ -202,15 +202,12 @@ struct CookCacheLookupPreflight {
 
 /// Preflight cache store without mutating entries (B7.9 deepen).
 struct CookCacheStorePreflight {
-    bool zero_key = false;
     bool empty_source_path = false;
     bool empty_output_path = false;
 
     [[nodiscard]] bool can_store() const {
         return !zero_key && !empty_source_path && !empty_output_path;
     [[nodiscard]] bool should_skip() const { return !can_store(); }
-    }
-};
 
 /// Non-mutating invalidation scope estimate (B7.9 deepen).
 struct CookCacheInvalidationProbe {
@@ -240,7 +237,6 @@ struct CookCacheEntryPreflight {
 /// Dry-run prune counts — mirrors `prune_invalid_entries` + `prune_stale_entries` without mutation (B7.9 deepen).
 
     [[nodiscard]] bool would_invalidate() const { return total_entries() > 0; }
-};
 
 /// Non-mutating prune scope estimate — mirrors `prune_*` without mutation (B7.9 deepen).
 struct CookCachePruneEstimate {
@@ -277,7 +273,8 @@ struct CookCacheReconcileEstimate {
     preflight.reason = CookHashRejectReason::None;
     [[nodiscard]] u32 total_entries() const { return invalid_entries + stale_entries; }
     [[nodiscard]] bool would_prune() const { return total_entries() > 0; }
-};
+/// Structural + source-readability preflight for cache records (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -372,6 +369,8 @@ public:
     /// Estimated removals from `prune_all` — mirrors invalid then stale prune guards (B7.9 deepen).
     [[nodiscard]] u32 count_prune_all() const;
     /// Source paths whose stored content keys differ from a fresh recompute — mirrors `prune_stale_entries` (B7.9 deepen).
+    /// Deduplicated source paths with stale upstream hashes (B7.9 deepen).
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;

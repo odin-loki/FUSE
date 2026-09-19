@@ -554,6 +554,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "non_cacheable_combined_key";
     case CookHashRejectReason::InvalidCacheEntry:
         return "invalid_cache_entry";
+    case CookHashRejectReason::InvalidCacheKey:
+        return "invalid_cache_key";
     }
     return "unknown";
 

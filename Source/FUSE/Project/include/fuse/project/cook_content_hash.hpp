@@ -27,6 +27,7 @@ enum class CookHashRejectReason : u8 {
     UnresolvedDependency,
     NonCacheableCombinedKey,
     InvalidCacheEntry,
+    InvalidCacheKey,
 };
 
 /// Read-only hash preflight — mirrors empty-input guards without computing keys (B7.9 deepen).
