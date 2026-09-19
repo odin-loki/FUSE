@@ -1110,4 +1110,17 @@ bool shouldRunPairBufferSlotReservation(const PairBufferSoA& buffer, u32 slotCou
 
 
 
+
+/// Non-mutating dedupe predicate — mirrors `preflightPairBufferDedupe` (B4.2 deepen follow-up pass).
+bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
+
+
+
+
+
+
+
+
+
+
 } // namespace fuse::physics::broadphase

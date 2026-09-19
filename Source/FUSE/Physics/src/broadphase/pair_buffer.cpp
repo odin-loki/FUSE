@@ -526,15 +526,12 @@ bool PairBufferSoA::canSkipDedupe() const {
     }
 
     return countValidSlots() <= 1u;
-}
 
 bool PairBufferSoA::canSkipCompactAndClamp() const {
     return canSkipSoAIteration() || countValidSlots() == 0u;
-}
 
 bool PairBufferSoA::canSkipRefineIteration() const {
     return countValidSlots() == 0u;
-}
 
 u32 PairBufferSoA::compactAndClamp() {
     const PairBufferCompactAndClampPreflight preflight = preflightPairBufferCompactAndClamp(*this);
@@ -543,9 +540,7 @@ u32 PairBufferSoA::compactAndClamp() {
         activeCount = 0u;
         pairSlotCount = 0u;
         return activeCount;
-    }
     if (preflight.reason == PairBufferCompactAndClampRejectReason::NoWork) {
-    if (canSkipSoAIteration()) {
         return 0u;
     const PairBufferCompactionPreflight compactionPreflight = preflightPairBufferCompaction(*this);
     if (compactionPreflight.emptyBuffer) {
@@ -555,6 +550,12 @@ u32 PairBufferSoA::compactAndClamp() {
     if (preflight.reason == PairBufferCompactAndClampRejectReason::AlreadyCompactAndWithinCapacity) {
     if (!preflightPairBufferCompactAndClamp(*this).needsWork()) {
     if (!shouldRunPairBufferCompactAndClamp(*this)) {
+    if (preflightPairBufferCompaction(*this).needsCompaction()) {
+        return false;
+    if (!canSkipMaxCapacityClamp()) {
+    // All-valid compaction may still resize when activeCount lags prepared slot storage.
+    return pairSlotCount == 0u || activeCount == pairSlotCount;
+
         return activeCount;
     }
 
@@ -2122,10 +2123,16 @@ PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
 const char* pairBufferCompactAndClampRejectReasonName(PairBufferCompactAndClampRejectReason reason) {
     case PairBufferCompactAndClampRejectReason::None:
 
+
+bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer) {
+    return preflightPairBufferDedupe(buffer).canDedupe();
+
     case PairBufferCompactAndClampRejectReason::EmptyBuffer:
         return "EmptyBuffer";
     case PairBufferCompactAndClampRejectReason::NoWorkNeeded:
         return "NoWorkNeeded";
+    }
+    return "Unknown";
 
 PairBufferCompactAndClampRejectReason pairBufferCompactAndClampRejectReason(const PairBufferSoA& buffer) {
     if (buffer.canSkipSoAIteration()) {
@@ -2140,6 +2147,10 @@ bool pairBufferCompactAndClampRejectsForReason(
     return pairBufferCompactAndClampRejectReason(buffer) == expected;
     if (buffer.canSkipCompaction() && buffer.canSkipMaxCapacityClamp()) {
 
+    }
+    if (buffer.canSkipCompactAndClamp()) {
+
+    const PairBufferSoA& buffer,
 
 PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
     PairBufferCompactAndClampPreflight preflight{};
@@ -2157,6 +2168,10 @@ bool shouldRunPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
     return !preflightPairBufferCompactAndClamp(buffer).needsCompactAndClamp();
 
     return preflightPairBufferCompactAndClamp(buffer).needsCompactAndClamp();
+
+    return preflight;
+}
+
 
 
 } // namespace fuse::physics::broadphase
