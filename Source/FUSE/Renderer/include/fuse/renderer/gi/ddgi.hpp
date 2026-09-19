@@ -368,6 +368,26 @@ const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
 
 /// True when a cache-index reject reason would block lookup (B5.6 deepen pass).
 bool cacheIndexRejectReasonIsBlocking(CacheIndexRejectReason reason);
+/// Why spatial probe irradiance sampling preflight rejected the request (B5.6 deepen).
+enum class ProbeSpatialSampleRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    InvalidSampleCoords,
+    UndersizedCache,
+    NullCache,
+};
+
+/// Human-readable label for spatial sample reject reasons (logging / tests).
+const char* probeSpatialSampleRejectReasonLabel(ProbeSpatialSampleRejectReason reason);
+
+/// Why probe scheduling preflight rejected the request (B5.6 deepen).
+enum class ProbeScheduleRejectReason : u8 {
+    NullOutput,
+    ZeroProbeCount,
+    ZeroMaxIndices,
+
+/// Human-readable label for probe schedule reject reasons (logging / tests).
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
 
 /// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
 enum class ProbeUpdateLaunchRejectReason : u8 {
@@ -375,6 +395,9 @@ enum class ProbeUpdateLaunchRejectReason : u8 {
     ZeroCount,
 
 
+    OutOfRangeProbeIndex,
+    ZeroRaysPerProbe,
+};
 
 /// Human-readable label for probe-update launch reject reasons (logging / tests).
 const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason);
@@ -508,6 +531,8 @@ struct ProbeGridLayout {
     static bool isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// True when sample coords exceed grid bounds or interpolation weights are outside [0, 1].
     static bool isProbeSampleCoordsOutOfRange(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// True when corner indices lie within grid bounds (weights unchecked).
+    static bool areProbeSampleCoordsInBounds(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Diagnose why sample-coord validation would reject; vacuously succeeds on valid coords.
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
@@ -795,9 +820,15 @@ bool shouldSkipProbeUpdate(const DDGIDesc& desc);
 /// Preflight guard before coord-based probe sampling; false on inaccessible grid or invalid coords.
 /// Diagnose why coord-based probe sample preflight would reject.
                                ProbeSampleRejectReason& outReason);
-                               const ProbeSampleCoords& coords,
-                               u32 cache_count,
                                ProbeSampleCoordsRejectReason& outReason);
+/// Preflight guard before cache lookup at a probe grid coordinate.
+bool canLookupCacheAtCoord(const DDGIDesc& desc, const ProbeGridCoord& coord, u32 cache_count);
+/// Diagnose why coord-based cache lookup preflight would reject.
+bool tryCanLookupCacheAtCoord(const DDGIDesc& desc,
+/// Preflight guard before spatial trilinear sampling at probe sample coords.
+bool canSampleAtProbeCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords, u32 cache_count);
+/// Diagnose why spatial sample preflight would reject.
+                               ProbeSpatialSampleRejectReason& outReason);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -823,6 +854,14 @@ u32 irradianceAtlasWidth(const DDGIDesc& desc);
 u32 irradianceAtlasHeight(const DDGIDesc& desc);
 u32 depthAtlasWidth(const DDGIDesc& desc);
 u32 depthAtlasHeight(const DDGIDesc& desc);
+/// Preflight guard before probe scheduling; false on null output or zero capacity.
+bool canScheduleProbeUpdates(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
+/// Diagnose why probe scheduling preflight would reject.
+bool tryScheduleProbeUpdates(u32 probe_count,
+                             u32 max_indices,
+                             const u32* out_indices,
+                             u32* out_count,
+                             ProbeScheduleRejectReason& outReason);
 void scheduleProbeUpdates(u32 frame_index,
                           u32 probe_count,
                           u32 probes_per_frame,
@@ -932,6 +971,7 @@ bool tryTrilinearProbeIrradiance(const DDGIDesc& desc,
                                  u32 cache_count,
                                  fuse::math::Vec3& out_irradiance,
                                  ProbeTrilinearSampleRejectReason& outReason);
+                                 ProbeSpatialSampleRejectReason& outReason);
 /// Directional octahedral bilinear sample within one probe cache entry (CPU stub).
 fuse::math::Vec3 sampleDirectionalIrradianceAtProbe(const IrradianceCacheEntry& entry,
                                                   const fuse::math::Vec3& direction,
@@ -958,6 +998,7 @@ bool tryTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
                                             u32 cache_count,
                                             fuse::math::Vec3& out_irradiance,
                                             ProbeTrilinearSampleRejectReason& outReason);
+                                            ProbeSpatialSampleRejectReason& outReason);
 u32 nearestProbeIndex(const DDGIDesc& desc, const fuse::math::Vec3& world_position);
 } // namespace ddgi_util
 
