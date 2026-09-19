@@ -798,9 +798,18 @@ struct NestingStatePreflight {
 
 
 
+
+
+
 /// Read-only async-flow nesting diagnostics — safe to call before flow begin/end.
 struct AsyncFlowNestingPreflight {
     u32 activeFlowDepth = 0;
+    u32 maxFlowDepth = 0;
+    u32 openFlowCount = 0;
+    bool balanced = true;
+    bool flowDepthDetached = false;
+    bool crossThreadHandoffPending = false;
+    bool hasOpenAsyncFlows = false;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -1530,6 +1539,7 @@ AsyncFlowNestingPreflight preflightAsyncFlowNesting();
 bool wouldSkipBeginAsyncFlow(const char* name);
 bool wouldSkipEndAsyncFlow(const char* name);
 bool wouldSkipCounter(const char* track);
+
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
