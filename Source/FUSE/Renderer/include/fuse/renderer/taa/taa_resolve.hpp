@@ -30,6 +30,9 @@ bool taaResolveRejectionSurfacesSatisfied(const TaaResolveDesc& desc);
 bool canAttemptTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// Stamp observed generation and return whether request can proceed (B5.9 deepen).
 bool prepareTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Boolean preflight — true when resolve would bail before history update (B5.9 deepen).
+/// True when required current/output surfaces are present (B5.9 deepen).
+/// True when rejection surfaces are present when enforcement is enabled (B5.9 deepen).
 /// True when resolve dimensions match allocated history buffer size.
 bool taaResolveDimensionsMatch(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when pass viewport dimensions match the resolve request.

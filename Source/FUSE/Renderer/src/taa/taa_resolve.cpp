@@ -32,6 +32,23 @@ bool taaResolveSurfacesComplete(const TaaResolveDesc& desc) {
     return desc.surfaces.current_frame != nullptr && desc.surfaces.output != nullptr;
 }
 
+bool taaResolveRejectionSurfacesComplete(const TaaResolveDesc& desc) {
+    if (!desc.enforce_rejection_surfaces) {
+        return true;
+    }
+
+    const TAAParams params = clampTaaParams(desc.params);
+    if (taaResolveRequiresVelocity(params) && desc.surfaces.velocity_buffer == nullptr) {
+        return false;
+    if (taaResolveRequiresDepth(params) && desc.surfaces.depth_buffer == nullptr) {
+
+bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                          TaaResolveSkipReason* reason) {
+    const TaaResolveSkipReason skip = classifyTaaResolveSkip(desc, history);
+    if (reason != nullptr) {
+        *reason = skip;
+    return taaResolveSkipReasonIsBlocking(skip);
+
 bool taaResolveDimensionsMatch(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     return history.matchesDimensions(desc.width, desc.height);
 }
@@ -144,6 +161,8 @@ TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const Ta
     }
 
     if (!taaResolveRejectionSurfacesSatisfied(desc)) {
+
+    if (!taaResolveRejectionSurfacesComplete(desc)) {
         const TAAParams params = clampTaaParams(desc.params);
         if (taaResolveRequiresVelocity(params) && desc.surfaces.velocity_buffer == nullptr) {
             return TaaResolveSkipReason::MissingVelocityBuffer;
@@ -334,10 +353,22 @@ f32 computeHistoryBlendWeight(f32 effectiveBlend) {
 
 f32 computeHistoryBlendWeight(bool firstFrame, const TAAParams& params) {
     return computeHistoryBlendWeight(computeEffectiveBlend(firstFrame, params));
+bool isTaaBlendFactorInRange(f32 blend_factor) {
+    return blend_factor >= 0.f && blend_factor <= 1.f;
+}
+
+bool taaBlendWeightReusesHistory(f32 effective_blend) {
+    return clampEffectiveBlend(effective_blend) < 1.f;
+
+
+
+bool taaUsesWarmupBlend(bool first_frame) {
+    return first_frame;
 
 void accumulateTaaResolveSkipReason(TaaResolveSkipCounts& counts, TaaResolveSkipReason reason) {
     if (!taaResolveSkipReasonIsBlocking(reason)) {
         return;
+    }
 
     ++counts.total;
     switch (reason) {
@@ -357,6 +388,8 @@ void accumulateTaaResolveSkipReason(TaaResolveSkipCounts& counts, TaaResolveSkip
     case TaaResolveSkipReason::StaleHistoryGeneration:
         ++counts.staleHistoryGeneration;
     default:
+        break;
+    }
 
 TaaResolveSkipCounts taaResolveSkipCountsFromReason(TaaResolveSkipReason reason) {
     TaaResolveSkipCounts counts{};

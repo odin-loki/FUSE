@@ -199,6 +199,11 @@ f32 computeEffectiveBlend(bool firstFrame, bool historyReusable, const TAAParams
 bool taaBlendUsesHistory(f32 effectiveBlend);
 /// True when effective blend ignores history (warm-up / stale / full-current weight).
 bool taaBlendSkipsHistoryReuse(f32 effectiveBlend);
+/// Clamp an effective blend weight to [0, 1] (B5.9 deepen).
+/// True when effective blend reuses prior history (weight strictly below 1.0) (B5.9 deepen).
+/// History accumulation weight — complement of the current-frame effective blend (B5.9 deepen).
+/// History accumulation weight from frame state and params (B5.9 deepen).
+/// True when warm-up path forces full current-frame weight (no history reuse) (B5.9 deepen).
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
@@ -241,6 +246,8 @@ bool taaResolveSkipReasonIsBlocking(TaaResolveSkipReason reason);
 /// Increment `counts` for one classified skip reason (no-op when `None`).
 void accumulateTaaResolveSkipReason(TaaResolveSkipCounts& counts, TaaResolveSkipReason reason);
 /// Build a single-reason skip breakdown from one classified reason.
+/// Increment `counts` for one classified skip reason (no-op when `None`) (B5.9 deepen).
+/// Build a single-reason skip breakdown from one classified reason (B5.9 deepen).
 TaaResolveSkipCounts taaResolveSkipCountsFromReason(TaaResolveSkipReason reason);
 
 } // namespace fuse::renderer
