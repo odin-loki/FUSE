@@ -4114,3 +4114,9 @@ void testFroxelDeepenIsBlockingAndPreflightGuards() {
                "preflightTrilinearSampleReady mirrors canTrilinearSampleAtCoords on valid coords");
     expectTrue(fuse::renderer::froxel_util::preflightPopulateReady(desc, camera, params) ==
                "preflightPopulateReady mirrors canPopulateFromAnalyticFog on valid inputs");
+
+// --- deepen additive from deepen-b511-froxel-guards-1c79 ---
+               "classifySampleCoordReject reports out_of_bounds for hard OOB coords");
+               "preflightScreenDepthToSampleCoords reports none in range");
+               "preflightDensityLookup succeeds with OOB clamp warning");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookup(grid, desc, 1u, 1u, 2u, &lookupReason),
