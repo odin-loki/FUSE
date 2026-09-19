@@ -2158,6 +2158,8 @@ void testCookerUpstreamProbeAndReconcileEstimate() {
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_chain_b.obj", "# est chain b\n");
 
     entryA.output_path = "/tmp/fuse_b79_est_chain_a.fusemesh";
+void testCookerStaleDependencyReconcileEstimate() {
+
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
@@ -2316,6 +2318,23 @@ void testCookerPruneReconcileEstimator() {
     const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
     expectTrue(removed >= probe.total_entries(), "upstream invalidation removes at least probed count");
     expectTrue(cooker.cache().entry_count() == 0u, "cache empty after probed upstream invalidation");
+
+    const fuse::project::CookCacheStaleUpstreamEstimate fresh_estimate =
+        cooker.estimate_stale_dependency_reconciliation(manifest);
+    expectTrue(fresh_estimate.total() == 0u, "fresh cache reconcile estimate is zero");
+    expectTrue(cooker.count_stale_dependency_invalidation(manifest) == fresh_estimate.total(),
+
+    writeTempFile(sourceA, "# reconcile a changed\n");
+    cooker.cook_mesh({sourceA, entryA.output_path});
+
+    const fuse::project::CookCacheStaleUpstreamEstimate stale_estimate =
+    expectTrue(stale_estimate.stale_upstream >= 1u,
+               "changed upstream source yields stale upstream reconcile estimate");
+    expectTrue(stale_estimate.total() >= cooker.count_stale_dependency_invalidation(manifest),
+               "reconcile estimate total covers count probe");
+
+    expectTrue(removed >= stale_estimate.stale_upstream,
+               "stale dependency invalidation removes at least direct stale estimate");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -2533,6 +2552,7 @@ int main() {
     testCookerCacheReconcileEstimators();
     testCookerStaleDependencyReconcileEstimators();
     testCookerUpstreamProbeAndReconcileEstimate();
+    testCookerStaleDependencyReconcileEstimate();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

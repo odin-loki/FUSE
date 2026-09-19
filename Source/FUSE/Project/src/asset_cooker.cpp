@@ -297,6 +297,10 @@ AssetCooker::CookDependencyReconcileEstimate AssetCooker::estimate_stale_depende
 }
 
 u32 AssetCooker::estimate_stale_dependency_invalidation(const CookManifest& manifest) const {
+    return estimate_stale_dependency_reconciliation(manifest).total();
+
+CookCacheStaleUpstreamEstimate AssetCooker::estimate_stale_dependency_reconciliation(
+    const CookManifest& manifest) const {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
 
@@ -491,6 +495,7 @@ CookCacheReconcileEstimate AssetCooker::estimate_upstream_change_reconcile(const
 bool AssetCooker::would_need_stale_dependency_reconcile(const CookManifest& manifest) const {
     return estimate_stale_dependency_reconcile(manifest).total() > 0;
 
+    return m_cache.estimate_stale_upstream_reconciliation(source_upstream, graph.edges(), graph.jobs());
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

@@ -31,6 +31,7 @@ struct CookCacheStats {
 };
 
 /// Read-only prune reconcile breakdown — mirrors `prune_invalid_entries` / `prune_stale_entries` (B7.9 deepen).
+/// Read-only prune breakdown — mirrors `prune_invalid_entries` + `prune_stale_entries` guards (B7.9 deepen).
 struct CookCachePruneEstimate {
     u32 invalid_entries = 0;
     u32 stale_entries = 0;
@@ -76,6 +77,13 @@ struct CookCacheReconcileEstimate {
 
     [[nodiscard]] bool would_reconcile() const { return total_removable > 0; }
     [[nodiscard]] bool should_skip() const { return !would_reconcile(); }
+
+/// Read-only stale-upstream reconcile breakdown — direct stale rows plus downstream cascade (B7.9 deepen).
+struct CookCacheStaleUpstreamEstimate {
+    u32 stale_upstream = 0;
+    u32 downstream_cascade = 0;
+
+    [[nodiscard]] u32 total() const { return stale_upstream + downstream_cascade; }
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
@@ -149,8 +157,7 @@ struct CookCacheReconcileEstimate {
     preflight.reason = CookHashRejectReason::None;
 /// Read-only store preflight — mirrors `store` guards plus source readability (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
-    }
-        return preflight;
+/// Read-only cache-entry preflight — structural paths plus source readability (B7.9 deepen).
 
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
@@ -315,6 +322,15 @@ public:
     /// Deduped source paths from `probe_stale_upstream_sources` — stable first-seen order (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_unique_stale_upstream_sources(
     [[nodiscard]] u32 count_stale_entries() const;
+    /// Source paths whose stored content hash differs from a fresh recompute (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_content_sources() const;
+    /// Read-only prune breakdown — mirrors `prune_all` without mutating stats (B7.9 deepen).
+    [[nodiscard]] CookCachePruneEstimate estimate_prune_reconciliation() const;
+    /// Read-only stale-upstream reconcile estimate for one invalidation batch (B7.9 deepen).
+    [[nodiscard]] CookCacheStaleUpstreamEstimate estimate_stale_upstream_reconciliation(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path,
+        const std::vector<CookJobDependencyEdge>& edges,
+        const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;
