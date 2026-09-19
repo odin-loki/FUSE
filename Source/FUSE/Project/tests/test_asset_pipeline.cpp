@@ -1628,6 +1628,7 @@ void testCookerReconcileEstimateProbes() {
 
     const fuse::project::CookCacheReconcileEstimate fresh = cooker.estimate_reconcile_invalidation(manifest);
     expectTrue(fresh.total() == 0u, "fresh cache reconcile estimate is zero");
+    expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would_reconcile is false");
     expectTrue(cooker.estimate_prune_reconcile().total() == 0u, "fresh prune reconcile estimate is zero");
 
     writeTempFile(source_a, "# reconcile a revised\n");
@@ -1638,6 +1639,7 @@ void testCookerReconcileEstimateProbes() {
     expectTrue(stale.stale_dependency_entries == stale_count,
                "reconcile estimate stale count matches dependency probe");
     expectTrue(stale.total() >= stale_count, "reconcile estimate total includes stale dependency count");
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "stale cache would_reconcile is true");
 
     const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
     expectTrue(removed >= stale_count, "stale dependency invalidation removes at least estimated count");
@@ -1647,6 +1649,51 @@ void testCookerReconcileEstimateProbes() {
                "stale dependency reconcile estimate zero after stale invalidation");
     expectTrue(after.prune_stale_entries >= 1u,
                "changed upstream entry remains stale for prune reconcile");
+}
+
+void testCookerUpstreamEstimateAndSourceProbe() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_up_est_a.obj", "# up est a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_up_est_b.obj", "# up est b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry_a;
+    entry_a.kind = fuse::project::CookAssetKind::Mesh;
+    entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_up_est_a.fusemesh";
+    manifest.assets.push_back(entry_a);
+
+    fuse::project::CookManifestEntry entry_b;
+    entry_b.kind = fuse::project::CookAssetKind::Mesh;
+    entry_b.source_path = source_b;
+    entry_b.output_path = "/tmp/fuse_b79_up_est_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for upstream estimate ok");
+    expectTrue(cooker.cache().entry_count() == 2u, "two entries seeded for upstream estimate");
+
+    const fuse::project::CookUpstreamInvalidateEstimate estimate =
+        cooker.estimate_upstream_invalidation(manifest, source_a);
+    expectTrue(estimate.direct_entries >= 1u, "upstream estimate includes direct entries");
+    expectTrue(estimate.downstream_entries >= 1u, "upstream estimate includes downstream entries");
+    expectTrue(estimate.total() == cooker.count_upstream_invalidation(manifest, source_a),
+               "upstream estimate total matches count probe");
+    expectTrue(cooker.would_upstream_invalidation(manifest, source_a),
+               "would_upstream_invalidation true for seeded chain");
+    expectTrue(!cooker.would_upstream_invalidation(manifest, ""),
+               "empty changed source would_upstream is guarded");
+
+    const std::vector<std::string> sources = cooker.probe_upstream_invalidation_sources(manifest, source_a);
+    expectTrue(sources.size() >= 2u, "upstream source probe lists changed source and dependents");
+    expectTrue(sources[0] == source_a, "upstream source probe starts at changed source");
+
+    const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, source_a);
+    expectTrue(removed >= estimate.total(), "upstream invalidation removes at least estimated total");
+    expectTrue(!cooker.would_upstream_invalidation(manifest, source_a),
+               "would_upstream false after upstream invalidation");
+    expectTrue(cooker.probe_upstream_invalidation_sources(manifest, source_a).empty(),
+               "upstream source probe empty after invalidation");
 }
 
 void testCookCacheDownstreamSourceProbe() {
@@ -1789,6 +1836,7 @@ int main() {
     testCookDirtyInvalidatesCache();
     testCookerInvalidationCountProbes();
     testCookerReconcileEstimateProbes();
+    testCookerUpstreamEstimateAndSourceProbe();
     testCookCacheDownstreamSourceProbe();
 
     fuse::core::shutdown();
