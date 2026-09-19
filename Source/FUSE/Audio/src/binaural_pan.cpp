@@ -2180,3 +2180,7 @@ bool should_skip_hrtf_binaural_spatial_pan_preflight(bool hrtf_enabled, const Ve
     const HrtfBinauralRejectReason pan_reject = classifyHrtfBinauralPanReject(preflight);
 bool preflight_hrtf_binaural_pan_ready(const HrtfBinauralPreflight& preflight,
 bool try_preflight_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-d3d0 ---
+    const HrtfBinauralRejectReason bypass = classify_hrtf_binaural_reject(preflight);
+    if (bypass != HrtfBinauralRejectReason::None) {

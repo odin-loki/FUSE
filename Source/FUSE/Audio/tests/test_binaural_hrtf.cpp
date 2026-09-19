@@ -2607,3 +2607,6 @@ void testHrtfPanConvolveRejectReasonGuards() {
     fuse::audio::HrtfAttenuationCouplingRejectReason coupling_reason =
     expectTrue(coupling_reason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
     fuse::audio::HrtfBinauralRejectReason composite_reason =
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-d3d0 ---
+               "preflight_hrtf_binaural_ready mirrors should_skip inverse on stub path");
