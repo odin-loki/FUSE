@@ -896,3 +896,7 @@ void testResolveWhitespaceGuard() {
 void testPeekRepeatLineGuard() {
 void testHistoryNavigationStateGuards() {
 void testResolveGuardAccessors() {
+
+// --- deepen additive from deepen-b73-script-console-history-resolve-guards-c15d ---
+void testHistoryNavigationCanRecallGuards() {
+void testIsMetaCommandAndWouldRecordHistoryGuards() {

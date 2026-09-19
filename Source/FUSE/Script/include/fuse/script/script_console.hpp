@@ -103,3 +103,6 @@ private:
 };
 
 } // namespace fuse::script
+
+// --- deepen additive from deepen-b73-script-console-history-resolve-guards-c15d ---
+    [[nodiscard]] bool would_record_history(const char* line) const;
