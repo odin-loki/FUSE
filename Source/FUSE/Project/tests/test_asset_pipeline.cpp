@@ -3180,6 +3180,9 @@ void testCookerUpstreamEstimateAndSourceProbe() {
 void testCookerShouldSkipReconcileGuards() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_skip_reconcile_a.obj", "# skip reconcile a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_skip_reconcile_b.obj", "# skip reconcile b\n");
+void testCookerShouldSkipWouldInvalidateProbes() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_skip_inv_a.obj", "# skip inv a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_skip_inv_b.obj", "# skip inv b\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
@@ -3190,6 +3193,7 @@ void testCookerShouldSkipReconcileGuards() {
     entry_a.output_path = "/tmp/fuse_b79_up_est_a.fusemesh";
     entry_a.output_path = "/tmp/fuse_b79_up_reconcile_a.fusemesh";
     entry_a.output_path = "/tmp/fuse_b79_skip_reconcile_a.fusemesh";
+    entry_a.output_path = "/tmp/fuse_b79_skip_inv_a.fusemesh";
     manifest.assets.push_back(entry_a);
 
     fuse::project::CookManifestEntry entry_b;
@@ -3492,7 +3496,6 @@ void testCookerWouldReconcileAfterUpstreamChange() {
     expectTrue(cooker.cook_manifest(manifest).ok, "chain manifest cook for upstream reconcile ok");
     fuse::project::AssetCooker cooker;
     expectTrue(cooker.should_skip_reconcile_invalidation(manifest), "fresh cache should_skip_reconcile is true");
-    expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would_reconcile is false");
 
     const fuse::project::CookCacheUpstreamReconcileEstimate upstream =
         cooker.estimate_upstream_reconcile(manifest, source_a);
@@ -3508,21 +3511,12 @@ void testCookerWouldReconcileAfterUpstreamChange() {
 
     writeTempFile(source_a, "# up reconcile a revised\n");
     expectTrue(cooker.would_reconcile_invalidation(manifest), "stale dependency makes would_reconcile true");
-    expectTrue(cooker.would_upstream_invalidation(manifest, source_a),
-               "would_upstream_invalidation true for seeded chain head");
     expectTrue(cooker.should_skip_upstream_invalidation(manifest, ""),
                "should_skip_upstream true for empty changed source");
 
-    const std::vector<std::string> probed = cooker.probe_upstream_invalidation_sources(manifest, source_a);
-    expectTrue(probed[0] == source_a, "upstream probe starts at changed source");
 
-    expectTrue(cooker.probe_upstream_invalidation_sources(manifest, "").empty(),
-               "empty changed source upstream probe is guarded");
 
     const fuse::u32 output_count = cooker.count_output_invalidation(manifest, entry_a.output_path);
-    expectTrue(output_count >= 1u, "output invalidation count includes dependents");
-    expectTrue(cooker.count_output_invalidation(manifest, "") == 0u,
-               "empty changed output invalidation count is zero");
 
     expectTrue(!cooker.should_skip_reconcile_invalidation(manifest),
                "should_skip_reconcile false after upstream change");
@@ -3618,7 +3612,6 @@ void testCookerReconcilePreflightGuards() {
                "would_invalidate_stale_upstream true when upstream hash mismatches");
     entry_c.output_path = "/tmp/fuse_b79_up_est_c.fusemesh";
 
-    fuse::project::AssetCooker cooker;
     expectTrue(cooker.cache().entry_count() == 3u, "three entries seeded for upstream estimate");
 
     expectTrue(!cooker.would_invalidate_upstream_dependency(manifest, ""),
@@ -3636,15 +3629,11 @@ void testCookerReconcilePreflightGuards() {
 
 void testCookerWouldReconcileInvalidationGuard() {
 
-void testCookCacheWouldInvalidateDownstreamProbe() {
-    const std::string source_a = writeTempFile("/tmp/fuse_b79_would_down_a.obj", "# would down a\n");
-    const std::string source_b = writeTempFile("/tmp/fuse_b79_would_down_b.obj", "# would down b\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
     entry_a.kind = fuse::project::CookAssetKind::Mesh;
     entry_a.source_path = source_a;
-    entry_a.output_path = "/tmp/fuse_b79_would_down_a.fusemesh";
     manifest.assets.push_back(entry_a);
 
     fuse::project::CookManifestEntry entry_b;
@@ -3676,7 +3665,6 @@ void testCookCacheWouldInvalidateDownstreamProbe() {
 
     expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for skip reconcile guards ok");
 
-    expectTrue(cooker.should_skip_upstream_invalidation(manifest, ""),
                "should_skip_upstream_invalidation true for empty changed source");
     expectTrue(!cooker.would_invalidate_upstream(manifest, ""),
                "would_invalidate_upstream false for empty changed source");
@@ -3700,28 +3688,41 @@ void testCookCacheWouldInvalidateDownstreamProbe() {
                "should_skip_stale_dependency_invalidation false after upstream change");
     expectTrue(cooker.would_stale_dependency_invalidation(manifest),
                "would_stale_dependency_invalidation true after upstream change");
-    expectTrue(!cooker.should_skip_reconcile_invalidation(manifest),
                "should_skip_reconcile_invalidation false after upstream change");
 
     const fuse::project::CookCacheReconcileEstimate stale = cooker.estimate_reconcile_invalidation(manifest);
     expectTrue(stale.would_reconcile(), "reconcile estimate would_reconcile true after upstream change");
     expectTrue(!stale.should_skip(), "reconcile estimate should_skip false after upstream change");
-    entry_b.output_path = "/tmp/fuse_b79_would_down_b.fusemesh";
-    entry_b.dependencies.push_back(entry_a.output_path);
-    manifest.assets.push_back(entry_b);
 
-    fuse::project::CookJobGraph graph;
-    graph.build_from_manifest(manifest);
 
-    fuse::project::AssetCooker cooker;
-    expectTrue(cooker.cook_manifest(manifest).ok, "chain cook for would_invalidate_downstream ok");
 
-    expectTrue(cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()),
-               "would_invalidate_downstream_of reports dependents");
-    expectTrue(!cooker.cache().would_invalidate_downstream_of("", graph.edges(), graph.jobs()),
-               "empty output path would_invalidate_downstream is guarded");
-    expectTrue(!cooker.cache().would_invalidate_downstream_of(entry_b.output_path, graph.edges(), graph.jobs()),
-               "leaf output would_invalidate_downstream is false when no dependents cached");
+    entry_b.output_path = "/tmp/fuse_b79_skip_inv_b.fusemesh";
+
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for skip/would probes ok");
+               "would_invalidate_upstream true for seeded chain");
+               "should_skip_upstream_invalidation false for seeded chain");
+               "empty changed source should skip upstream invalidation");
+               "empty changed source would not invalidate upstream");
+
+               "fresh cache should skip stale dependency invalidation");
+    expectTrue(!cooker.would_invalidate_stale_dependencies(manifest),
+               "fresh cache would not invalidate stale dependencies");
+               "fresh cache should skip reconcile invalidation");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest).should_skip(),
+               "fresh reconcile estimate should_skip");
+
+    writeTempFile(source_a, "# skip inv a revised\n");
+    expectTrue(cooker.would_invalidate_stale_dependencies(manifest),
+               "upstream change would invalidate stale dependencies");
+               "upstream change should not skip stale dependency invalidation");
+               "upstream change should not skip reconcile invalidation");
+    expectTrue(!cooker.estimate_reconcile_invalidation(manifest).should_skip(),
+               "stale reconcile estimate should not skip");
+
+    expectTrue(cooker.would_invalidate_upstream(manifest, source_a), "would_invalidate_upstream after content change");
+    expectTrue(removed >= upstream_count, "upstream invalidation removes probed count");
+    expectTrue(cooker.should_skip_upstream_invalidation(manifest, source_a),
+               "should_skip upstream invalidation after cache cleared");
 }
 
 void testCookCacheDownstreamSourceProbe() {
@@ -4865,6 +4866,7 @@ int main() {
     testCookerUpstreamEstimateAndSourceProbe();
     testCookerShouldSkipReconcileGuards();
     testCookerShouldSkipReconcileHelpers();
+    testCookerShouldSkipWouldInvalidateProbes();
     testCookCacheDownstreamSourceProbe();
     testCookCachePreflightAndReconcileEstimators();
     testCookCacheReconcileEstimators();

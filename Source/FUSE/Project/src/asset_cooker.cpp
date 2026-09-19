@@ -1318,6 +1318,11 @@ bool AssetCooker::would_invalidate_stale_dependency_hashes(const CookManifest& m
 
     return estimate_reconcile_invalidation(manifest).total() == 0;
 
+
+
+
+    return !would_invalidate_stale_dependencies(manifest);
+
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

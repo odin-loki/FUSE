@@ -158,6 +158,7 @@ struct CookCacheInvalidationSurface {
     /// True when `prune_*` would remove at least one entry (B7.9 deepen).
     /// True when prune reconcile can be skipped — mirrors `!would_prune()` (B7.9 deepen).
     /// True when `prune_all` would be a no-op — mirrors `would_prune_all` negation (B7.9 deepen).
+    /// True when no prune reconcile work is pending (B7.9 deepen).
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
@@ -508,6 +509,7 @@ public:
     [[nodiscard]] bool should_skip_prune_all() const;
     /// Non-mutating invalidation skip predicates — mirror `would_invalidate_*` negation (B7.9 deepen).
     /// True when `invalidate_*` would be a no-op — inverse of `would_invalidate_*` probes (B7.9 deepen).
+    /// Read-only skip probes — mirror `would_invalidate_*` and store/lookup/prune guards (B7.9 deepen).
     [[nodiscard]] bool should_skip_invalidate_source(const std::string& source_path) const;
     [[nodiscard]] bool should_skip_invalidate_output(const std::string& output_path) const;
     [[nodiscard]] bool should_skip_invalidate_stale_content_for_source(const std::string& source_path,
@@ -519,6 +521,8 @@ public:
                                                             const std::vector<CookJob>& jobs) const;
     /// True when `store` would reject the entry — mirrors `is_valid_cook_cache_entry` negation (B7.9 deepen).
     [[nodiscard]] static bool should_skip_store(const CookCacheEntry& entry);
+    [[nodiscard]] bool should_skip_store(const CookCacheEntry& entry) const;
+    [[nodiscard]] bool should_skip_lookup(u64 content_hash) const;
     [[nodiscard]] bool should_skip_prune_all() const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
