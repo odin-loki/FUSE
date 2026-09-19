@@ -2397,3 +2397,45 @@ void testProbeKernelExtendedPreflight() {
     testExtendedCacheLookupPreflight();
     testSampleRequestRejectReasons();
     testProbeKernelExtendedPreflight();
+
+// --- deepen additive from deepen-ddgi-guards-dd1a ---
+void testProbeSpatialSampleGuards() {
+    expectTrue(buildReason == fuse::renderer::ProbeSampleCoordsRejectReason::EmptyGrid,
+    fuse::renderer::ProbeSpatialSampleRejectReason spatialReason =
+        fuse::renderer::ProbeSpatialSampleRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryCanSampleAtProbeCoords(desc, built, 8u, spatialReason),
+    expectTrue(spatialReason == fuse::renderer::ProbeSpatialSampleRejectReason::None,
+    expectTrue(std::strcmp(fuse::renderer::probeSpatialSampleRejectReasonLabel(spatialReason), "none") == 0,
+    expectTrue(!fuse::renderer::ddgi_util::tryCanSampleAtProbeCoords(desc, oobWeights, 8u, spatialReason),
+    expectTrue(spatialReason == fuse::renderer::ProbeSpatialSampleRejectReason::InvalidSampleCoords,
+    expectTrue(!fuse::renderer::ddgi_util::tryCanSampleAtProbeCoords(desc, built, 4u, spatialReason),
+    expectTrue(spatialReason == fuse::renderer::ProbeSpatialSampleRejectReason::UndersizedCache,
+               "tryTrilinearProbeIrradiance succeeds with valid inputs");
+    expectTrue(sampled.x > 0.f, "tryTrilinearProbeIrradiance returns non-zero irradiance");
+               "tryTrilinearProbeIrradiance rejects null cache");
+    expectTrue(spatialReason == fuse::renderer::ProbeSpatialSampleRejectReason::NullCache,
+    expectTrue(std::strcmp(fuse::renderer::probeSpatialSampleRejectReasonLabel(spatialReason), "null_cache") == 0,
+               "tryTrilinearDirectionalProbeIrradiance fails closed on undersized cache");
+void testCacheLookupAtCoordGuards() {
+    expectTrue(fuse::renderer::ddgi_util::tryCanLookupCacheAtCoord(desc, interior, 8u, reason),
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::None, "interior coord reports no reject reason");
+    expectTrue(!fuse::renderer::ddgi_util::tryCanLookupCacheAtCoord(desc, invalid, 8u, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryCanLookupCacheAtCoord(desc, interior, 4u, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryCanLookupCacheAtCoord(empty, interior, 8u, reason),
+void testProbeSchedulePreflightGuards() {
+    expectTrue(fuse::renderer::ddgi_util::tryScheduleProbeUpdates(8u, 8u, indices, &count, reason),
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::None, "schedule preflight reports no reject reason");
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(8u, 8u, nullptr, &count, reason),
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::NullOutput,
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(8u, 8u, indices, nullptr, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 8u, indices, &count, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(8u, 0u, indices, &count, reason),
+void testZeroRaysPerProbeLaunchGuards() {
+    expectTrue(!fuse::renderer::tryCanLaunchDdgiProbeUpdate(desc, validIndices, 2u, launchReason),
+    expectTrue(launchReason == fuse::renderer::ProbeUpdateLaunchRejectReason::ZeroRaysPerProbe,
+    expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(launchReason), "zero_rays_per_probe") ==
+    fuse::renderer::gi::ProbeKernelRejectReason kernelReason = fuse::renderer::gi::ProbeKernelRejectReason::None;
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeTraceKernel(params, kernelReason),
+    expectTrue(kernelReason == fuse::renderer::gi::ProbeKernelRejectReason::ZeroRaysPerProbe,
+    expectTrue(std::strcmp(fuse::renderer::gi::probeKernelRejectReasonLabel(kernelReason), "zero_rays_per_probe") ==
+    testProbeSchedulePreflightGuards();

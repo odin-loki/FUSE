@@ -771,3 +771,10 @@ enum class SampleRequestRejectReason : u8 {
 const char* sampleRequestRejectReasonLabel(SampleRequestRejectReason reason);
 bool tryValidateSampleRequest(const DDGIDesc& desc,
                               SampleRequestRejectReason& outReason);
+
+// --- deepen additive from deepen-ddgi-guards-dd1a ---
+enum class ProbeSpatialSampleRejectReason : u8 {
+const char* probeSpatialSampleRejectReasonLabel(ProbeSpatialSampleRejectReason reason);
+bool tryCanLookupCacheAtCoord(const DDGIDesc& desc,
+                               ProbeSpatialSampleRejectReason& outReason);
+bool tryScheduleProbeUpdates(u32 probe_count,

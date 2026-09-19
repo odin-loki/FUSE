@@ -2274,3 +2274,33 @@ bool tryValidateSampleRequest(const DDGIDesc& desc,
         outReason = SampleRequestRejectReason::UndersizedCache;
     outReason = SampleRequestRejectReason::None;
 bool preflightProbeKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
+
+// --- deepen additive from deepen-ddgi-guards-dd1a ---
+const char* probeSpatialSampleRejectReasonLabel(ProbeSpatialSampleRejectReason reason) {
+    case ProbeSpatialSampleRejectReason::None:
+    case ProbeSpatialSampleRejectReason::EmptyGrid:
+    case ProbeSpatialSampleRejectReason::InvalidSampleCoords:
+    case ProbeSpatialSampleRejectReason::UndersizedCache:
+    case ProbeSpatialSampleRejectReason::NullCache:
+    case ProbeScheduleRejectReason::NullOutput:
+    case ProbeUpdateLaunchRejectReason::ZeroRaysPerProbe:
+    return tryCanLookupCacheAtCoord(desc, coord, cache_count, reason);
+bool tryCanLookupCacheAtCoord(const DDGIDesc& desc,
+    return tryValidateCacheIndex(desc, index, cache_count, outReason);
+    ProbeSpatialSampleRejectReason reason = ProbeSpatialSampleRejectReason::None;
+                               ProbeSpatialSampleRejectReason& outReason) {
+        outReason = ProbeSpatialSampleRejectReason::EmptyGrid;
+        outReason = ProbeSpatialSampleRejectReason::UndersizedCache;
+        outReason = ProbeSpatialSampleRejectReason::InvalidSampleCoords;
+    outReason = ProbeSpatialSampleRejectReason::None;
+    return tryScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count, reason);
+bool tryScheduleProbeUpdates(u32 probe_count,
+        outReason = ProbeScheduleRejectReason::NullOutput;
+        outReason = ProbeSpatialSampleRejectReason::NullCache;
+    ProbeSampleCoordsRejectReason buildReason = ProbeSampleCoordsRejectReason::None;
+    if (!ProbeGridLayout::tryBuildProbeSampleCoords(desc, world_position, coords, buildReason)) {
+        outReason = buildReason == ProbeSampleCoordsRejectReason::EmptyGrid
+                        ? ProbeSpatialSampleRejectReason::EmptyGrid
+                        : ProbeSpatialSampleRejectReason::InvalidSampleCoords;
+    if (!tryCanSampleAtProbeCoords(desc, coords, cache_count, outReason)) {
+        outReason = ProbeUpdateLaunchRejectReason::ZeroRaysPerProbe;
