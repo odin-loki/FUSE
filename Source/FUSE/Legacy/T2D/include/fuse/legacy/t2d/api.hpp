@@ -38,6 +38,20 @@ void addPathExpando(const char* expandoName, const char* path);
 bool expandPath(char* dst, u32 size, const char* src, const char* workingDirHint = nullptr,
                 bool ensureTrailingSlash = false);
 void collapsePath(char* dst, u32 size, const char* src, const char* workingDirHint = nullptr);
+void addConstant(const char* name, int type, const void* pointer, const char* usage = nullptr);
+bool removeVariable(const char* name);
+void addVariableNotify(const char* name, void (*callback)(void*), void* userdata = nullptr);
+void removeVariableNotify(const char* name, void (*callback)(void*), void* userdata = nullptr);
+u32 tabComplete(char* inputBuffer, u32 cursorPos, u32 maxResultLength, bool forwardTab);
+const char* evaluate(const char* string, bool echo = false, const char* fileName = nullptr);
+const char* evaluatef(const char* fmt, ...);
+const char* executeArgv(int argc, const char** argv);
+const char* executefArgv(int argc, ...);
+void removePathExpando(const char* expandoName);
+bool isPathExpando(const char* expandoName);
+u32 getPathExpandoCount();
+float getFloatVariable(const char* name, float def = 0.0f);
+void setFloatVariable(const char* name, float value);
 } // namespace Con
 
 u32 stringTableEntryCount();

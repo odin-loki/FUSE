@@ -51,7 +51,7 @@ Scripts are reproducible from the repo roots; counts may drift slightly if upstr
 | Script AST | `ast.h` (basename collision) | `console/torquescript/ast.h` | `console/ast.h` | Include ambiguity |
 | Networking events | `BitStream`, `GameConnection` | `core/stream/bitStream.h`, `T3D/gameBase/gameConnection.h` | `io/bitStream.h`, `game/gameConnection.h` | **ODR** |
 
-**`Con::` API overlap (33 functions):** `execute`, `executef`, `printf`, `errorf`, `warnf`, `getVariable`, `setVariable`, `getIntVariable`, `setIntVariable`, `getBoolVariable`, `setBoolVariable`, `addVariable`, `init`, `expandPath`, `collapsePath`, `getData`, `setData`, `isFunction`, `threadSafeExecute`, and others. Both define `namespace Con { ... }` with overlapping free functions — **guaranteed link failure** if both translation units export the same symbols.
+**`Con::` API overlap (33 functions):** `execute`, `executef`, `executeArgv`, `executefArgv`, `evaluate`, `evaluatef`, `printf`, `errorf`, `warnf`, `getVariable`, `setVariable`, `getIntVariable`, `setIntVariable`, `getBoolVariable`, `setBoolVariable`, `getFloatVariable`, `setFloatVariable`, `addVariable`, `addConstant`, `removeVariable`, `addVariableNotify`, `removeVariableNotify`, `init`, `expandPath`, `collapsePath`, `addPathExpando`, `removePathExpando`, `isPathExpando`, `getPathExpandoCount`, `getData`, `setData`, `isFunction`, `threadSafeExecute`, `tabComplete`. Both define `namespace Con { ... }` with overlapping free functions — **guaranteed link failure** if both translation units export the same symbols. U2 quarantine shims all 33 per dimension (2026-09-19).
 
 **Evidence — identical class declaration pattern:**
 
@@ -222,6 +222,6 @@ These do **not** collide with T2D (T3D-only addons) but reinforce that addon sym
 ## 8. Gate U0 checklist item
 
 - [x] Collision report published under `docs/unification/`
-- [x] Trend tracking begins at U2 — see [U2-SMOKE.md](./U2-SMOKE.md) §4 (**19/33** `Con::` APIs shimmed per dimension as of 2026-09-19; SimObject ODR still blocks raw Engine `.cpp` batches)
+- [x] Trend tracking begins at U2 — see [U2-SMOKE.md](./U2-SMOKE.md) §4 (**33/33** `Con::` APIs shimmed per dimension as of 2026-09-19; SimObject ODR still blocks raw Engine `.cpp` batches)
 
 **Next consumer:** Phase U1 umbrella CMake and Phase U2 one-process smoke tests use this report to choose prefix vs multiprocess fallback (multiprocess is **temporary scaffold only** per prestarter §7).

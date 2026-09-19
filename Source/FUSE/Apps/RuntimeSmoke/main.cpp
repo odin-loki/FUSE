@@ -101,6 +101,58 @@ void runLegacyConSmoke() {
 
     fuse::legacy::t3d::Con::threadSafeExecute("echo threadSafe T3D");
     fuse::legacy::t2d::Con::threadSafeExecute("echo threadSafe T2D");
+
+    fuse::legacy::t3d::Con::setFloatVariable("$SmokeFloat", 3.5f);
+    fuse::legacy::t2d::Con::setFloatVariable("$SmokeFloat", 2.25f);
+    check(fuse::legacy::t3d::Con::getFloatVariable("$SmokeFloat", 0.0f) > 3.4f, "t3d float variable round-trip");
+    check(fuse::legacy::t2d::Con::getFloatVariable("$SmokeFloat", 0.0f) > 2.2f, "t2d float variable round-trip");
+
+    check(fuse::legacy::t3d::Con::isPathExpando("game"), "t3d isPathExpando game");
+    check(fuse::legacy::t2d::Con::isPathExpando("game"), "t2d isPathExpando game");
+    check(fuse::legacy::t3d::Con::getPathExpandoCount() >= 1u, "t3d path expando count");
+    check(fuse::legacy::t2d::Con::getPathExpandoCount() >= 1u, "t2d path expando count");
+    fuse::legacy::t3d::Con::removePathExpando("game");
+    fuse::legacy::t2d::Con::removePathExpando("game");
+    check(!fuse::legacy::t3d::Con::isPathExpando("game"), "t3d removePathExpando");
+    check(!fuse::legacy::t2d::Con::isPathExpando("game"), "t2d removePathExpando");
+    fuse::legacy::t3d::Con::addPathExpando("game", "/game");
+    fuse::legacy::t2d::Con::addPathExpando("game", "/game");
+
+    const int t3dConst = 99;
+    fuse::legacy::t3d::Con::addConstant("$SmokeConst", fuse::legacy::t3d::DynamicType::S32, &t3dConst);
+    fuse::legacy::t2d::Con::addConstant("$SmokeConst", fuse::legacy::t2d::DynamicType::S32, &t3dConst);
+    check(std::strcmp(fuse::legacy::t3d::Con::getVariable("$SmokeConst"), "99") == 0, "t3d addConstant");
+    fuse::legacy::t3d::Con::setVariable("$SmokeConst", "1");
+    check(std::strcmp(fuse::legacy::t3d::Con::getVariable("$SmokeConst"), "99") == 0,
+          "t3d addConstant rejects setVariable");
+
+    fuse::legacy::t3d::Con::setVariable("$NotifyVar", "before");
+    std::atomic<int> notifyCount{0};
+    auto notifyCb = +[](void* ctx) {
+        static_cast<std::atomic<int>*>(ctx)->fetch_add(1, std::memory_order_relaxed);
+    };
+    fuse::legacy::t3d::Con::addVariableNotify("$NotifyVar", notifyCb, &notifyCount);
+    fuse::legacy::t3d::Con::setVariable("$NotifyVar", "after");
+    check(notifyCount.load(std::memory_order_acquire) == 1, "t3d addVariableNotify fires");
+    fuse::legacy::t3d::Con::removeVariableNotify("$NotifyVar", notifyCb, &notifyCount);
+    check(fuse::legacy::t3d::Con::removeVariable("$NotifyVar"), "t3d removeVariable");
+
+    char tabBuffer[64] = "leg";
+    const fuse::u32 tabPos =
+        fuse::legacy::t3d::Con::tabComplete(tabBuffer, 3, sizeof(tabBuffer), true);
+    check(tabPos > 3u, "t3d tabComplete extends legacyBoot prefix");
+    check(std::strncmp(tabBuffer, "legacyBoot", 10) == 0, "t3d tabComplete output");
+
+    const char* evalResult = fuse::legacy::t3d::Con::evaluate("1+1;", false, nullptr);
+    check(evalResult != nullptr, "t3d evaluate returns buffer");
+    const char* evalfResult = fuse::legacy::t3d::Con::evaluatef("%s", "2+2;");
+    check(evalfResult != nullptr, "t3d evaluatef returns buffer");
+
+    const char* execArgv[] = {"echo", "argv", "T3D"};
+    const char* execArgvResult = fuse::legacy::t3d::Con::executeArgv(3, execArgv);
+    check(execArgvResult != nullptr, "t3d executeArgv returns buffer");
+    const char* execfArgvResult = fuse::legacy::t3d::Con::executefArgv(2, "echo", "executefArgv T3D");
+    check(execfArgvResult != nullptr, "t3d executefArgv returns buffer");
 }
 
 void runImageCompressSmoke() {

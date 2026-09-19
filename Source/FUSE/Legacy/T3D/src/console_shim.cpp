@@ -8,6 +8,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace {
 
@@ -19,10 +20,18 @@ struct BoundVariable {
     void* ptr = nullptr;
 };
 
+struct NotifyEntry {
+    void (*callback)(void*) = nullptr;
+    void* userdata = nullptr;
+};
+
 std::unordered_map<std::string, BoundVariable> g_bindings;
+std::unordered_set<std::string> g_constants;
 std::unordered_set<std::string> g_functionNames;
+std::unordered_multimap<std::string, NotifyEntry> g_notifies;
 
 thread_local char g_dataBuffer[512];
+thread_local char g_returnBuffer[1024];
 
 bool parseBool(const char* value, bool def);
 
@@ -115,6 +124,33 @@ void registerFunctionName(const char* name) {
     g_functionNames.emplace(name);
 }
 
+void fireVariableNotifies(const std::string& key) {
+    const auto range = g_notifies.equal_range(key);
+    for (auto it = range.first; it != range.second; ++it) {
+        if (it->second.callback) {
+            it->second.callback(it->second.userdata);
+        }
+    }
+}
+
+const char* emptyReturnBuffer() {
+    g_returnBuffer[0] = '\0';
+    return g_returnBuffer;
+}
+
+void joinArgvToScript(char* dst, std::size_t dstSize, int argc, const char** argv) {
+    if (!dst || dstSize == 0) {
+        return;
+    }
+    dst[0] = '\0';
+    for (int i = 0; i < argc; ++i) {
+        if (i > 0) {
+            std::strncat(dst, " ", dstSize - std::strlen(dst) - 1);
+        }
+        std::strncat(dst, argv && argv[i] ? argv[i] : "", dstSize - std::strlen(dst) - 1);
+    }
+}
+
 void logFormatted(fuse::log::Level level, const char* fmt, va_list args) {
     fuse::log::Logger::instance().logV(level, fmt, args);
 }
@@ -174,7 +210,9 @@ extern "C" void fuse_t3d_Con_init() {
     g_variables.clear();
     g_pathExpandos.clear();
     g_bindings.clear();
+    g_constants.clear();
     g_functionNames.clear();
+    g_notifies.clear();
 }
 
 extern "C" void fuse_t3d_Con_execute(const char* script) {
@@ -232,11 +270,15 @@ extern "C" void fuse_t3d_Con_setVariable(const char* name, const char* value) {
         return;
     }
     const std::string key = normalizeVariableName(name);
+    if (g_constants.find(key) != g_constants.end()) {
+        return;
+    }
     g_variables[key] = value ? value : "";
     const auto bindingIt = g_bindings.find(key);
     if (bindingIt != g_bindings.end()) {
         applyDataValue(bindingIt->second.type, bindingIt->second.ptr, 0, value);
     }
+    fireVariableNotifies(key);
 }
 
 extern "C" int fuse_t3d_Con_getIntVariable(const char* name, int def) {
@@ -393,6 +435,186 @@ extern "C" void fuse_t3d_Con_collapsePath(char* dst, unsigned size, const char* 
     copyToBuffer(dst, size, src);
 }
 
+extern "C" void fuse_t3d_Con_addConstant(const char* name, int type, const void* pointer,
+                                         const char* /*usage*/) {
+    if (!name || !pointer) {
+        return;
+    }
+    const std::string key = normalizeVariableName(name);
+    g_constants.insert(key);
+    g_bindings[key] = BoundVariable{type, const_cast<void*>(pointer)};
+    syncBindingToVariable(key);
+}
+
+extern "C" int fuse_t3d_Con_removeVariable(const char* name) {
+    if (!name) {
+        return 0;
+    }
+    const std::string key = normalizeVariableName(name);
+    const bool existed = g_variables.find(key) != g_variables.end() ||
+                         g_bindings.find(key) != g_bindings.end() ||
+                         g_constants.find(key) != g_constants.end();
+    g_variables.erase(key);
+    g_bindings.erase(key);
+    g_constants.erase(key);
+    g_notifies.erase(key);
+    return existed ? 1 : 0;
+}
+
+extern "C" void fuse_t3d_Con_addVariableNotify(const char* name, void (*callback)(void*),
+                                               void* userdata) {
+    if (!name || !callback) {
+        return;
+    }
+    const std::string key = normalizeVariableName(name);
+    g_notifies.emplace(key, NotifyEntry{callback, userdata});
+}
+
+extern "C" void fuse_t3d_Con_removeVariableNotify(const char* name, void (*callback)(void*),
+                                                  void* userdata) {
+    if (!name || !callback) {
+        return;
+    }
+    const std::string key = normalizeVariableName(name);
+    for (auto it = g_notifies.find(key); it != g_notifies.end() && it->first == key;) {
+        if (it->second.callback == callback && it->second.userdata == userdata) {
+            it = g_notifies.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+extern "C" unsigned fuse_t3d_Con_tabComplete(char* inputBuffer, unsigned cursorPos,
+                                             unsigned maxResultLength, int forwardTab) {
+    if (!inputBuffer || maxResultLength == 0 || cursorPos > std::strlen(inputBuffer)) {
+        return cursorPos;
+    }
+
+    unsigned tokenStart = cursorPos;
+    while (tokenStart > 0 && inputBuffer[tokenStart - 1] != ' ' && inputBuffer[tokenStart - 1] != '\t') {
+        --tokenStart;
+    }
+
+    const std::string prefix(inputBuffer + tokenStart, inputBuffer + cursorPos);
+    std::string bestMatch;
+    const auto consider = [&](const std::string& candidate) {
+        if (candidate.size() <= prefix.size() ||
+            candidate.compare(0, prefix.size(), prefix) != 0) {
+            return;
+        }
+        if (bestMatch.empty()) {
+            bestMatch = candidate;
+            return;
+        }
+        if (forwardTab) {
+            if (candidate < bestMatch) {
+                bestMatch = candidate;
+            }
+        } else if (candidate > bestMatch) {
+            bestMatch = candidate;
+        }
+    };
+
+    for (const auto& entry : g_variables) {
+        std::string name = entry.first;
+        if (!name.empty() && name[0] == '$') {
+            name.erase(0, 1);
+        }
+        consider(name);
+    }
+    for (const auto& fn : g_functionNames) {
+        consider(fn);
+    }
+
+    if (bestMatch.empty()) {
+        return cursorPos;
+    }
+
+    std::string completed(inputBuffer, inputBuffer + cursorPos);
+    completed += bestMatch.substr(prefix.size());
+    std::snprintf(inputBuffer, maxResultLength, "%s", completed.c_str());
+    return static_cast<unsigned>(completed.size());
+}
+
+extern "C" const char* fuse_t3d_Con_evaluate(const char* string, int echo, const char* fileName) {
+    if (echo) {
+        fuse::log::info("[t3d] Con::evaluate: %s", string ? string : "(null)");
+    }
+    (void)fileName;
+    return emptyReturnBuffer();
+}
+
+extern "C" const char* fuse_t3d_Con_evaluatef(const char* fmt, ...) {
+    char buffer[1024];
+    va_list args;
+    va_start(args, fmt);
+    std::vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+    return fuse_t3d_Con_evaluate(buffer, 1, nullptr);
+}
+
+extern "C" const char* fuse_t3d_Con_executeArgv(int argc, const char** argv) {
+    char script[1024];
+    joinArgvToScript(script, sizeof(script), argc, argv);
+    fuse_t3d_Con_execute(script);
+    return emptyReturnBuffer();
+}
+
+extern "C" const char* fuse_t3d_Con_executefArgv(int argc, ...) {
+    char script[1024];
+    script[0] = '\0';
+    va_list args;
+    va_start(args, argc);
+    for (int i = 0; i < argc; ++i) {
+        const char* arg = va_arg(args, const char*);
+        if (i > 0) {
+            std::strncat(script, " ", sizeof(script) - std::strlen(script) - 1);
+        }
+        std::strncat(script, arg ? arg : "", sizeof(script) - std::strlen(script) - 1);
+    }
+    va_end(args);
+    fuse_t3d_Con_execute(script);
+    return emptyReturnBuffer();
+}
+
+extern "C" void fuse_t3d_Con_removePathExpando(const char* expandoName) {
+    if (!expandoName) {
+        return;
+    }
+    g_pathExpandos.erase(expandoName);
+}
+
+extern "C" int fuse_t3d_Con_isPathExpando(const char* expandoName) {
+    if (!expandoName) {
+        return 0;
+    }
+    return g_pathExpandos.find(expandoName) != g_pathExpandos.end() ? 1 : 0;
+}
+
+extern "C" unsigned fuse_t3d_Con_getPathExpandoCount(void) {
+    return static_cast<unsigned>(g_pathExpandos.size());
+}
+
+extern "C" float fuse_t3d_Con_getFloatVariable(const char* name, float def) {
+    const char* value = fuse_t3d_Con_getVariable(name);
+    if (!value || value[0] == '\0') {
+        return def;
+    }
+    char* end = nullptr;
+    const double parsed = std::strtod(value, &end);
+    if (end == value) {
+        return def;
+    }
+    return static_cast<float>(parsed);
+}
+
+extern "C" void fuse_t3d_Con_setFloatVariable(const char* name, float value) {
+    char buffer[64];
+    std::snprintf(buffer, sizeof(buffer), "%g", static_cast<double>(value));
+    fuse_t3d_Con_setVariable(name, buffer);
+}
+
 namespace fuse::legacy::t3d::Con {
 
 void init() {
@@ -488,6 +710,75 @@ bool expandPath(char* dst, fuse::u32 size, const char* src, const char* workingD
 
 void collapsePath(char* dst, fuse::u32 size, const char* src, const char* workingDirHint) {
     fuse_t3d_Con_collapsePath(dst, size, src, workingDirHint);
+}
+
+void addConstant(const char* name, int type, const void* pointer, const char* usage) {
+    fuse_t3d_Con_addConstant(name, type, pointer, usage);
+}
+
+bool removeVariable(const char* name) {
+    return fuse_t3d_Con_removeVariable(name) != 0;
+}
+
+void addVariableNotify(const char* name, void (*callback)(void*), void* userdata) {
+    fuse_t3d_Con_addVariableNotify(name, callback, userdata);
+}
+
+void removeVariableNotify(const char* name, void (*callback)(void*), void* userdata) {
+    fuse_t3d_Con_removeVariableNotify(name, callback, userdata);
+}
+
+fuse::u32 tabComplete(char* inputBuffer, fuse::u32 cursorPos, fuse::u32 maxResultLength, bool forwardTab) {
+    return fuse_t3d_Con_tabComplete(inputBuffer, cursorPos, maxResultLength, forwardTab ? 1 : 0);
+}
+
+const char* evaluate(const char* string, bool echo, const char* fileName) {
+    return fuse_t3d_Con_evaluate(string, echo ? 1 : 0, fileName);
+}
+
+const char* evaluatef(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    char buffer[1024];
+    std::vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+    return evaluate(buffer, true, nullptr);
+}
+
+const char* executeArgv(int argc, const char** argv) {
+    return fuse_t3d_Con_executeArgv(argc, argv);
+}
+
+const char* executefArgv(int argc, ...) {
+    va_list args;
+    va_start(args, argc);
+    const char* argv[32];
+    const int capped = argc > 32 ? 32 : argc;
+    for (int i = 0; i < capped; ++i) {
+        argv[i] = va_arg(args, const char*);
+    }
+    va_end(args);
+    return executeArgv(capped, argv);
+}
+
+void removePathExpando(const char* expandoName) {
+    fuse_t3d_Con_removePathExpando(expandoName);
+}
+
+bool isPathExpando(const char* expandoName) {
+    return fuse_t3d_Con_isPathExpando(expandoName) != 0;
+}
+
+fuse::u32 getPathExpandoCount() {
+    return fuse_t3d_Con_getPathExpandoCount();
+}
+
+float getFloatVariable(const char* name, float def) {
+    return fuse_t3d_Con_getFloatVariable(name, def);
+}
+
+void setFloatVariable(const char* name, float value) {
+    fuse_t3d_Con_setFloatVariable(name, value);
 }
 
 } // namespace fuse::legacy::t3d::Con

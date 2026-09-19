@@ -232,7 +232,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | S per sprint |
 | **Scope** | Route safe T3D/T2D loops to jobs ([FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) B1.5 table); shrink `_forceAllMainThread` reliance |
 | **Deps** | WP-03 |
-| **Status** | 🚧 P1 landed — quarantine `compressMipsParallel` routes Tier A mip loop via `parallel_for_indices`; `imageUtils.cpp` swap deferred (`FUSE_T3D_LEGACY_ENGINE_PROBE` blocked on platform closure; SimObject ODR); Con:: shims 14/33; P2 terrain cell VB next |
+| **Status** | 🚧 P1 landed — quarantine `compressMipsParallel` routes Tier A mip loop via `parallel_for_indices`; `imageUtils.cpp` swap deferred (`FUSE_T3D_LEGACY_ENGINE_PROBE` bitmapUtils only; SimObject ODR); Con:: shims **33/33**; P2 terrain cell VB next |
 
 ---
 

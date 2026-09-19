@@ -101,7 +101,7 @@ No parallel tick; no cross-thread legacy calls (per [architecture-parallel.md](.
 
 | Surface | Status | Next step |
 |---------|--------|-----------|
-| `Con::` logging + variables + paths + data | ✅ **19/33** APIs per dimension | remaining doc-listed overlaps (`executef` variants, notify APIs, …) |
+| `Con::` logging + variables + paths + data | ✅ **33/33** APIs per dimension | class/command registration (`addCommand`, …) deferred to U3 |
 | `StringTable` | ✅ shim singleton per dimension | Route to FUSE core table (U3 / R14) |
 | Scene adapter stub | ✅ `LegacySceneObjectStub` ↔ `SceneObject3D` | Wire first real `SimObject` batch (U3) |
 | Image mip compress | ✅ `compressMipsParallel` (squish + `parallel_for`) | `imageUtils.cpp` call-site swap deferred — Engine batch blocked (below) |
@@ -119,7 +119,7 @@ No parallel tick; no cross-thread legacy calls (per [architecture-parallel.md](.
 
 | Metric (U0 baseline) | U2 status (2026-09-19) |
 |----------------------|------------------------|
-| `Con::` collisions (33) | **19 shimmed** per dimension (`init`, `execute`, `executef`, `printf`, `errorf`, `warnf`, `getVariable`, `setVariable`, `getIntVariable`, `setIntVariable`, `getBoolVariable`, `setBoolVariable`, `addVariable`, `getData`, `setData`, `isFunction`, `threadSafeExecute`, `expandPath`, `collapsePath`) + `addPathExpando` + `StringTable_intern` — **14 open** |
+| `Con::` collisions (33) | ✅ **33/33 shimmed** per dimension — `init`, `execute`, `executef`, `executeArgv`, `executefArgv`, `evaluate`, `evaluatef`, `printf`, `errorf`, `warnf`, `getVariable`, `setVariable`, `getIntVariable`, `setIntVariable`, `getBoolVariable`, `setBoolVariable`, `getFloatVariable`, `setFloatVariable`, `addVariable`, `addConstant`, `removeVariable`, `addVariableNotify`, `removeVariableNotify`, `getData`, `setData`, `isFunction`, `threadSafeExecute`, `tabComplete`, `addPathExpando`, `removePathExpando`, `isPathExpando`, `getPathExpandoCount`, `expandPath`, `collapsePath` + `StringTable_intern` — **0 open** |
 | Class collisions (311) | **0 merged** — adapters deferred to U3–U5 |
 | Basename collisions (237) | **0 merged** — include isolation via separate libs |
 | IMPLEMENT_CONOBJECT dupes (1) | **Unchanged** (`SimXMLDocument`) |
