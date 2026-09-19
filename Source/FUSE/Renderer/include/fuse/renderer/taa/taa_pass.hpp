@@ -195,3 +195,7 @@ void addTaaPassToGraph(RenderGraph& graph);
 
 // --- deepen additive from deepen-b59-taa-guards-2b1e ---
     bool preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* weights = nullptr) const;
+
+// --- deepen additive from deepen-b59-taa-guards-5b8c ---
+                                TaaHistoryReuseRejectReason* reason = nullptr) const;
+                                TaaBlendPreflightRejectReason* reason = nullptr) const;

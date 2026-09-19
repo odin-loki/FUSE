@@ -3032,3 +3032,31 @@ void testHistoryWarmupReuseGuards() {
     expectTrue(!fuse::renderer::preflightTaaResolveBlend(desc, history),
 void testTaaPassSyncWarmupAndBlendPreflight() {
     testTaaPassSyncWarmupAndBlendPreflight();
+
+// --- deepen additive from deepen-b59-taa-guards-5b8c ---
+    fuse::renderer::TaaHistoryReuseRejectReason reuseReason = fuse::renderer::TaaHistoryReuseRejectReason::None;
+    expectTrue(!fuse::renderer::taaHistoryReusePreflight(history, 0u, &reuseReason),
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseRejectReason::HistoryNotWarmed,
+    expectTrue(fuse::renderer::taaHistoryReusePreflight(history, 0u, &reuseReason),
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseRejectReason::None,
+    reuseReason = fuse::renderer::TaaHistoryReuseRejectReason::None;
+    expectTrue(!fuse::renderer::taaHistoryReusePreflight(history, 99u, &reuseReason),
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseRejectReason::StaleGeneration,
+                               fuse::renderer::TaaHistoryReuseRejectReason::HistoryNotWarmed),
+    expectTrue(fuse::renderer::taaJitterSyncPreflight(jitter, 4u, 128u, 128u, &syncReason),
+    expectTrue(syncReason == fuse::renderer::TaaJitterSyncRejectReason::None, "synced jitter reason is None");
+    expectTrue(!fuse::renderer::taaJitterSyncPreflight(jitter, 3u, 128u, 128u, &syncReason),
+    expectTrue(!fuse::renderer::taaJitterSyncPreflight(jitter, 4u, 0u, 128u, &syncReason),
+    fuse::renderer::TaaBlendPreflightRejectReason blendReason =
+        fuse::renderer::TaaBlendPreflightRejectReason::None;
+    expectTrue(!fuse::renderer::taaResolveBlendPreflight(desc, history, &blendReason),
+    expectTrue(blendReason == fuse::renderer::TaaBlendPreflightRejectReason::WarmupRequired,
+    expectTrue(fuse::renderer::taaResolveBlendPreflight(desc, history, &blendReason),
+    blendReason = fuse::renderer::TaaBlendPreflightRejectReason::None;
+    expectTrue(blendReason == fuse::renderer::TaaBlendPreflightRejectReason::StaleGeneration,
+    expectTrue(std::strcmp(fuse::renderer::taaBlendPreflightRejectReasonLabel(
+                               fuse::renderer::TaaBlendPreflightRejectReason::WarmupRequired),
+    expectTrue(!pass->preflightHistoryReuse(0u), "pass reuse preflight rejects unwarmed history");
+    expectTrue(!pass->preflightResolveBlend(desc), "pass blend preflight rejects unwarmed history");
+    expectTrue(pass->preflightHistoryReuse(0u), "pass reuse preflight passes warmed history");
+    expectTrue(pass->preflightResolveBlend(resolveDesc), "pass blend preflight passes warmed history");

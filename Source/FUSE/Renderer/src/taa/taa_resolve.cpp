@@ -454,3 +454,31 @@ TaaBlendWeights computeTaaResolveBlendPreflight(const TaaResolveDesc& desc, cons
 bool taaResolveHistoryBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!tryComputeTaaResolveBlendWeights(desc, history, weights)) {
     return preflightTaaResolve(desc, history) && history.needsWarmup();
+
+// --- deepen additive from deepen-b59-taa-guards-5b8c ---
+TaaBlendPreflightRejectReason classifyTaaBlendPreflightReject(const TaaResolveDesc& desc,
+        return TaaBlendPreflightRejectReason::HistoryNotReady;
+        return TaaBlendPreflightRejectReason::WarmupRequired;
+        return TaaBlendPreflightRejectReason::StaleGeneration;
+    return TaaBlendPreflightRejectReason::None;
+bool taaResolveBlendPreflight(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                               TaaBlendPreflightRejectReason* reason) {
+    const TaaBlendPreflightRejectReason reject = classifyTaaBlendPreflightReject(desc, history);
+    return reject == TaaBlendPreflightRejectReason::None;
+    if (!taaResolveBlendPreflight(desc, history)) {
+const char* taaHistoryReuseRejectReasonLabel(TaaHistoryReuseRejectReason reason) {
+    case TaaHistoryReuseRejectReason::None:
+    case TaaHistoryReuseRejectReason::HistoryNotReady:
+    case TaaHistoryReuseRejectReason::HistoryNotWarmed:
+    case TaaHistoryReuseRejectReason::StaleGeneration:
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason) {
+    case TaaJitterSyncRejectReason::None:
+    case TaaJitterSyncRejectReason::InvalidSequenceLength:
+    case TaaJitterSyncRejectReason::InvalidViewport:
+    case TaaJitterSyncRejectReason::FrameIndexMismatch:
+    case TaaJitterSyncRejectReason::SlotIndexMismatch:
+const char* taaBlendPreflightRejectReasonLabel(TaaBlendPreflightRejectReason reason) {
+    case TaaBlendPreflightRejectReason::None:
+    case TaaBlendPreflightRejectReason::HistoryNotReady:
+    case TaaBlendPreflightRejectReason::WarmupRequired:
+    case TaaBlendPreflightRejectReason::StaleGeneration:

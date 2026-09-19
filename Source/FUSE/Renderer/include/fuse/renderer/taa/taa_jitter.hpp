@@ -132,3 +132,7 @@ TaaJitterSyncPreflight preflightTaaJitterSync(const TaaJitter& jitter, u32 frame
 // --- deepen additive from deepen-b59-taa-guards-94f6 ---
 bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height,
                             TaaJitterSyncRejectReason* reason = nullptr);
+
+// --- deepen additive from deepen-b59-taa-guards-5b8c ---
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(const TaaJitter& jitter, u32 frameIndex, u32 width,
+bool taaJitterSyncPreflight(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height,

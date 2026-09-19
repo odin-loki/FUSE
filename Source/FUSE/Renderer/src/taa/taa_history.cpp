@@ -241,3 +241,8 @@ bool tryTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
 
 // --- deepen additive from deepen-b59-taa-guards-94db ---
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration) {
+
+// --- deepen additive from deepen-b59-taa-guards-5b8c ---
+        return TaaHistoryReuseRejectReason::HistoryNotReady;
+        return TaaHistoryReuseRejectReason::HistoryNotWarmed;
+bool taaHistoryReusePreflight(const TaaHistoryBuffer& history, u32 observedGeneration,

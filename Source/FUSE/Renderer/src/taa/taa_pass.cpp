@@ -390,3 +390,9 @@ bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc, TaaResolveBlendP
 // --- deepen additive from deepen-b59-taa-guards-2b1e ---
 bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* weights) const {
     return preflightTaaResolveBlend(desc, m_history, weights);
+
+// --- deepen additive from deepen-b59-taa-guards-5b8c ---
+bool TaaPass::preflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseRejectReason* reason) const {
+    return taaHistoryReusePreflight(m_history, observedGeneration, reason);
+bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendPreflightRejectReason* reason) const {
+    return taaResolveBlendPreflight(desc, m_history, reason);

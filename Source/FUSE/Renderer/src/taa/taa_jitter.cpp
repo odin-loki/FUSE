@@ -290,3 +290,14 @@ bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, u32 width, 
             *reason = TaaJitterSyncRejectReason::InvalidViewport;
             *reason = TaaJitterSyncRejectReason::FrameIndexMismatch;
         *reason = TaaJitterSyncRejectReason::None;
+
+// --- deepen additive from deepen-b59-taa-guards-5b8c ---
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(const TaaJitter& jitter, u32 frameIndex, u32 width,
+        return TaaJitterSyncRejectReason::InvalidSequenceLength;
+        return TaaJitterSyncRejectReason::InvalidViewport;
+        return TaaJitterSyncRejectReason::FrameIndexMismatch;
+        return TaaJitterSyncRejectReason::SlotIndexMismatch;
+    return TaaJitterSyncRejectReason::None;
+bool taaJitterSyncPreflight(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height,
+    const TaaJitterSyncRejectReason reject = classifyTaaJitterSyncReject(jitter, frameIndex, width, height);
+    return reject == TaaJitterSyncRejectReason::None;
