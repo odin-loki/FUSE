@@ -1834,3 +1834,22 @@ void testFroxelSampleCoordGuards() {
     expectTrue(!fuse::renderer::froxel_util::tryValidateGridDensity(oversized, desc, reason),
                "tryValidate rejects oversized storage");
     expectTrue(std::strcmp(fuse::renderer::froxelDensityRejectReasonLabel(reason), "desc_mismatch") == 0,
+
+// --- deepen additive from deepen-b511-froxel-density-guards-e271 ---
+void testFroxelTryClampAndDensityAccessGuards() {
+               "trySample at origin succeeds");
+    expectNear(sampledDensity, 1.25f, 1e-5f, "trySample at origin returns stored density");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 999u, clampedDensity),
+               "trySample at OOB index succeeds");
+    expectNear(clampedDensity, 2.75f, 1e-5f, "trySample at clamped last index returns stored density");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, desc, 0u, 0u, 0u, coordDensity),
+               "trySample at tile coords succeeds");
+    expectNear(coordDensity, 1.25f, 1e-5f, "trySample at tile coords returns stored density");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtIndex(emptyGrid, desc, 0u, rejectedDensity),
+    expectNear(rejectedDensity, 0.f, 1e-6f, "trySample zeroes output on guard failure");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, mismatched, 0u, 0u, 0u, coordDensity),
+               "trySample at coord rejects desc mismatch");
+    expectTrue(fuse::renderer::FroxelGridLayout::tryClampSampleCoords(unclampedCoords, desc),
+               "tryClamp sample coords clamps tile/slice corners");
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryClampSampleCoords(emptyCoords, zeroDesc),
+    expectTrue(emptyCoords.tileX0 == 99u, "tryClamp leaves coords untouched on empty grid");
