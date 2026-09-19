@@ -1567,6 +1567,46 @@ void testCookCachePruneInvalidEntries() {
     expectTrue(invalidOnly.prune_invalid_entries() == 0u, "prune on empty cache after rejected load");
 }
 
+void testCookStaleDependencyHashReconcileEstimate() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_a.obj", "# est a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_b.obj", "# est b\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_est_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_est_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "manifest cook seeds cache for reconcile estimate");
+    expectTrue(cooker.cache().entry_count() == 2u, "upstream and downstream cached");
+
+    const fuse::project::CookCacheReconcileEstimate fresh_estimate =
+        cooker.estimate_stale_dependency_hashes(manifest);
+    expectTrue(fresh_estimate.should_skip(), "fresh manifest reconcile estimate should skip");
+
+    writeTempFile(sourceA, "# est a revised\n");
+    const fuse::project::CookCacheReconcileEstimate stale_estimate =
+        cooker.estimate_stale_dependency_hashes(manifest);
+    expectTrue(stale_estimate.would_reconcile(), "upstream change reconcile estimate would reconcile");
+    expectTrue(stale_estimate.upstream_stale_entries >= 1u,
+               "upstream change reconcile estimate counts stale upstream entries");
+
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= stale_estimate.upstream_stale_entries,
+               "actual reconcile removes at least estimated upstream stale entries");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 
@@ -1648,6 +1688,7 @@ int main() {
     testCookCacheRoundTrip();
     testCookCacheEmptyKeyPaths();
     testCookDirtyInvalidatesCache();
+    testCookStaleDependencyHashReconcileEstimate();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

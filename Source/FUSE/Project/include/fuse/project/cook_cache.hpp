@@ -30,6 +30,29 @@ struct CookCacheStats {
     u64 invalidations = 0;
 };
 
+/// Non-mutating probe for incremental invalidation — counts entries a call would remove (B7.9 deepen follow-up).
+struct CookCacheInvalidationProbe {
+    u32 affected_entries = 0;
+    bool empty_cache = true;
+    bool empty_path = false;
+    bool zero_hash = false;
+
+    [[nodiscard]] bool would_invalidate() const { return affected_entries > 0; }
+    [[nodiscard]] bool should_skip() const { return !would_invalidate(); }
+};
+
+/// Non-mutating reconcile estimate — counts prunable or stale-upstream entries (B7.9 deepen follow-up).
+struct CookCacheReconcileEstimate {
+    u32 stale_entries = 0;
+    u32 invalid_entries = 0;
+    u32 upstream_stale_entries = 0;
+    u32 total_removable = 0;
+    bool empty_cache = true;
+
+    [[nodiscard]] bool would_reconcile() const { return total_removable > 0; }
+    [[nodiscard]] bool should_skip() const { return !would_reconcile(); }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -81,6 +104,20 @@ public:
     u32 prune_all();
     /// True when invalid or stale records are present — `prune_*` would remove at least one (B7.9 deepen).
     [[nodiscard]] bool has_prunable_entries() const;
+
+    /// Incremental invalidation probes — non-mutating entry counts (B7.9 deepen follow-up).
+    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate(u64 content_hash) const;
+    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate_stale_content_for_source(
+        const std::string& source_path, u64 current_content_hash) const;
+
+    /// Reconcile estimators — non-mutating prune and upstream-hash counts (B7.9 deepen follow-up).
+    [[nodiscard]] CookCacheReconcileEstimate estimate_prune_stale_entries() const;
+    [[nodiscard]] CookCacheReconcileEstimate estimate_prune_invalid_entries() const;
+    [[nodiscard]] CookCacheReconcileEstimate estimate_prune_all() const;
+    [[nodiscard]] CookCacheReconcileEstimate estimate_stale_upstream_invalidations(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

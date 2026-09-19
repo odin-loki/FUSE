@@ -341,6 +341,148 @@ bool CookCache::has_prunable_entries() const {
     return false;
 }
 
+CookCacheInvalidationProbe CookCache::probe_invalidate(u64 content_hash) const {
+    CookCacheInvalidationProbe probe;
+    probe.empty_cache = m_entries.empty();
+    probe.zero_hash = !is_valid_cook_cache_key(content_hash);
+    if (probe.empty_cache || probe.zero_hash) {
+        return probe;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.content_hash == content_hash) {
+            ++probe.affected_entries;
+            break;
+        }
+    }
+    return probe;
+}
+
+CookCacheInvalidationProbe CookCache::probe_invalidate_source(const std::string& source_path) const {
+    CookCacheInvalidationProbe probe;
+    probe.empty_cache = m_entries.empty();
+    probe.empty_path = !is_valid_cook_cache_path(source_path);
+    if (probe.empty_cache || probe.empty_path) {
+        return probe;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.source_path == source_path) {
+            ++probe.affected_entries;
+        }
+    }
+    return probe;
+}
+
+CookCacheInvalidationProbe CookCache::probe_invalidate_output(const std::string& output_path) const {
+    CookCacheInvalidationProbe probe;
+    probe.empty_cache = m_entries.empty();
+    probe.empty_path = !is_valid_cook_cache_path(output_path);
+    if (probe.empty_cache || probe.empty_path) {
+        return probe;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.output_path == output_path) {
+            ++probe.affected_entries;
+        }
+    }
+    return probe;
+}
+
+CookCacheInvalidationProbe CookCache::probe_invalidate_stale_content_for_source(
+    const std::string& source_path, u64 current_content_hash) const {
+    CookCacheInvalidationProbe probe;
+    probe.empty_cache = m_entries.empty();
+    probe.empty_path = !is_valid_cook_cache_path(source_path);
+    probe.zero_hash = !is_valid_cook_cache_key(current_content_hash);
+    if (probe.empty_cache || probe.empty_path || probe.zero_hash) {
+        return probe;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.source_path == source_path && entry.content_hash != current_content_hash) {
+            ++probe.affected_entries;
+        }
+    }
+    return probe;
+}
+
+CookCacheReconcileEstimate CookCache::estimate_prune_stale_entries() const {
+    CookCacheReconcileEstimate estimate;
+    estimate.empty_cache = m_entries.empty();
+    if (estimate.empty_cache) {
+        return estimate;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_stale_cache_entry_(entry)) {
+            ++estimate.stale_entries;
+        }
+    }
+    estimate.total_removable = estimate.stale_entries;
+    return estimate;
+}
+
+CookCacheReconcileEstimate CookCache::estimate_prune_invalid_entries() const {
+    CookCacheReconcileEstimate estimate;
+    estimate.empty_cache = m_entries.empty();
+    if (estimate.empty_cache) {
+        return estimate;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (!is_valid_cook_cache_entry(entry)) {
+            ++estimate.invalid_entries;
+        }
+    }
+    estimate.total_removable = estimate.invalid_entries;
+    return estimate;
+}
+
+CookCacheReconcileEstimate CookCache::estimate_prune_all() const {
+    CookCacheReconcileEstimate estimate;
+    estimate.empty_cache = m_entries.empty();
+    if (estimate.empty_cache || !has_prunable_entries()) {
+        return estimate;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (!is_valid_cook_cache_entry(entry)) {
+            ++estimate.invalid_entries;
+        } else if (is_stale_cache_entry_(entry)) {
+            ++estimate.stale_entries;
+        }
+    }
+    estimate.total_removable = estimate.invalid_entries + estimate.stale_entries;
+    return estimate;
+}
+
+CookCacheReconcileEstimate CookCache::estimate_stale_upstream_invalidations(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    CookCacheReconcileEstimate estimate;
+    estimate.empty_cache = m_entries.empty();
+    if (estimate.empty_cache || source_upstream_by_path.empty()) {
+        return estimate;
+    }
+
+    for (const auto& pair : source_upstream_by_path) {
+        const std::string& source_path = pair.first;
+        if (!is_valid_cook_cache_path(source_path)) {
+            continue;
+        }
+        const u64 current_upstream = pair.second;
+
+        for (const CookCacheEntry& entry : m_entries) {
+            if (entry.source_path == source_path && entry.upstream_hash != current_upstream) {
+                ++estimate.upstream_stale_entries;
+            }
+        }
+    }
+    estimate.total_removable = estimate.upstream_stale_entries;
+    return estimate;
+}
+
 bool CookCache::contains(u64 content_hash) const {
     if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {
         return false;
