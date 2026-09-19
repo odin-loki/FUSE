@@ -2806,3 +2806,12 @@ void testRefineDedupeBroadphasePreflightGuards() {
 // --- deepen additive from deepen-b4-broadphase-guards-603e ---
     const fuse::physics::broadphase::PairBufferCompactionPreflight needsWork =
 void testPairBufferSortAndDedupeSkipGuards() {
+
+// --- deepen additive from b4-broadphase-deepen-preflights-5a84 ---
+    expectEq(static_cast<fuse::u32>(planeOnlyPreflight.reason),
+    expectEq(static_cast<fuse::u32>(mergePreflight.reason),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferClampRejectReason(withinBuffer)),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferDedupeRejectReason(dedupeBuffer)),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferSortRejectReason(dedupeBuffer)),
+    expectTrue(fuse::physics::broadphase::pairBufferSortRejectsForReason(
+                   dedupeBuffer, fuse::physics::broadphase::PairBufferSortRejectReason::None),
