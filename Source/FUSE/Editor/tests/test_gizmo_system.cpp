@@ -3844,3 +3844,22 @@ void testInteractionPrimaryRejectReason() {
     expectTrue(!degradedPreflight.canApply(), "snap-drag preflight rejects invalid step");
     expectTrue(validPreflight.canApply(), "snap-drag preflight accepts valid snap settings");
 void testCanActOnPhaseGuards() {
+
+// --- deepen additive from deepen-gizmo-preflight-guards-cd28 ---
+void testRayAndScreenFiniteGuards() {
+    const fuse::editor::PickPreflight infScreenPick =
+               "tryPickAxis rejects infinite screen Y");
+               "tryPickAxis rejects NaN screen Y");
+    const fuse::editor::BeginDragPreflight nanBeginPreflight = fuse::editor::preflightBeginDrag(
+    expectTrue(nanBeginPreflight.nonFiniteScreen, "begin preflight marks non-finite screen hit");
+    expectTrue(!nanBeginPreflight.canBegin, "begin preflight rejects non-finite screen hit");
+    expectTrue(updatePreflight.canUpdate(), "update preflight accepts finite screen hit");
+    const fuse::editor::UpdateDragPreflight infUpdatePreflight = fuse::editor::preflightUpdateDrag(
+    expectTrue(infUpdatePreflight.nonFiniteScreen,
+    expectTrue(!infUpdatePreflight.canUpdate(), "update preflight rejects non-finite screen hit");
+               "gizmo tryUpdateDrag rejects non-finite screen hit");
+    const fuse::editor::InteractionPreflight degradedBegin = fuse::editor::preflightInteraction(
+    const fuse::editor::InteractionPreflight degradedDrag = fuse::editor::preflightInteraction(
+void testPickSnapPreflightSnapDegraded() {
+    const fuse::editor::PickSnapPreflight degradedPickSnap =
+    testPickSnapPreflightSnapDegraded();
