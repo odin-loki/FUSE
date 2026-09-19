@@ -437,6 +437,40 @@ struct ChromeTraceExportPreflight {
     bool hasNestingCleanupPending() const {
         return hasUnbalancedNesting() || flowDepthDetached || crossThreadFlowHandoffPending;
     }
+};
+
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool canBegin = false;
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
+
+/// Read-only nesting and async-flow diagnostics — safe before scope/flow entry.
+struct NestingAsyncFlowPreflight {
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+    u32 maxScopeNestingDepth = 0;
+    u32 maxFlowNestingDepth = 0;
+    u32 openAsyncFlowCount = 0;
+    bool scopeNestingUnbalanced = false;
+    bool flowNestingUnbalanced = false;
+    bool hasOpenAsyncFlows = false;
+    bool flowDepthDetached = false;
+    bool crossThreadFlowHandoffPending = false;
+
+    bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+    bool isBalanced() const {
+        return !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
+    }
     bool canExportNonEmptyTrace() const { return canExport() && hasExportableEvents(); }
 };
 
@@ -1476,6 +1510,12 @@ bool isEventLookupPreflightOk(u32 index);
 u32 lastEventIndex();
 bool hasEventsWithName(const char* name);
 bool hasEventsWithFlowId(u32 flowId);
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 countEventsByName(const char* name);
+u32 findFirstEventIndexByFlowId(u32 flowId);
+u32 findLastEventIndexByFlowId(u32 flowId);
+u32 countEventsByFlowId(u32 flowId);
 bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex);
 bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex);
 bool tryFindFirstEventIndexByName(const char* name, u32& outIndex);
@@ -1554,12 +1594,6 @@ bool isFlowIdTracked(u32 flowId);
 bool eventNameMatches(const char* eventName, const char* queryName);
 bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
-u32 findFirstEventIndexByName(const char* name);
-u32 findLastEventIndexByName(const char* name);
-u32 countEventsByName(const char* name);
-u32 findFirstEventIndexByFlowId(u32 flowId);
-u32 findLastEventIndexByFlowId(u32 flowId);
-u32 countEventsByFlowId(u32 flowId);
 u32 orphanAsyncFlowEndCount();
 bool hasOrphanAsyncFlowEnds();
 const ProfileEvent& emptyProfileEvent();
