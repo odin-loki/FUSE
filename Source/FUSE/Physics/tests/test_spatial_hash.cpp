@@ -4388,3 +4388,12 @@ void testPairBufferWouldSkipWriteInvalidateGuards() {
              "wouldSkipRefineBroadphase reports None for valid scene");
     expectTrue(fuse::physics::broadphase::wouldSkipBroadphase(emptyBodies, emptyShapes, &broadphaseReason),
     expectTrue(!fuse::physics::broadphase::wouldSkipBroadphase(bodies, shapes, &broadphaseReason),
+
+// --- deepen additive from b4-broadphase-wouldskip-invalidate-bead ---
+void testPairBufferWouldSkipWriteAndInvalidateGuards() {
+             "wouldSkipPairBufferInvalidateSlot reports None for valid slot");
+    expectTrue(!fuse::physics::broadphase::wouldSkipCellSpanClamp(overSpanRange, 3u, &spanReason),
+             "wouldSkipRefineBroadphase reports None on valid scene");
+               "wouldSkipBroadphaseMerge false with plane and dynamic bodies");
+             "wouldSkipBroadphaseMerge reports None for mergeable scene");
+    expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(pairs, mergeBuffer) ==
