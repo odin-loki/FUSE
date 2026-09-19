@@ -60,6 +60,10 @@ public:
     bool syncJitterToFrameIndexIfViewportReady(u32 frameIndex);
     /// Diagnose pass jitter sync; false when sync is blocked (B5.9 deepen).
     bool trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncBlockReason& outReason);
+    /// True when pass jitter is not aligned to `frameIndex` but could sync (B5.9 deepen).
+    bool needsJitterSyncToFrameIndex(u32 frameIndex) const;
+    /// Sync jitter only when misaligned; returns false when blocked (B5.9 deepen).
+    bool syncJitterToFrameIndexIfMisaligned(u32 frameIndex);
     /// True when pass jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
     bool jitterAlignedToFrameIndex(u32 frameIndex) const;
     /// True when pass jitter matches the expected monotonic frame counter (B5.9 deepen).
@@ -118,6 +122,9 @@ public:
     /// True when pass history has completed warm-up (B5.9 deepen).
     /// True when pass history may begin temporal reuse for the observed epoch (B5.9 deepen).
     bool tryCanBeginTemporalReuse(u32 observedGeneration, TaaHistoryReuseBlockReason* reason = nullptr) const;
+    /// Frames remaining before temporal reuse — 0 when warmed (B5.9 deepen).
+    /// True when pass history buffers are allocated and ready for resolve (B5.9 deepen).
+    bool historyReadyForResolve() const;
     /// True when pass history is warmed and may be sampled (B5.9 deepen).
     bool canReuseHistory() const;
     /// True when pass history is ready, warmed, and generation matches for reuse (B5.9 deepen).
@@ -266,7 +273,6 @@ public:
     bool canPreflightResolveBlendWeights(const TaaResolveDesc& desc) const;
     /// Fill `out` only when blend-weight preflight passes (B5.9 deepen).
     bool tryExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& out,
-                                        TaaResolveBlendRejectReason* reason = nullptr) const;
     /// True when history reuse and blend-weight preflights both pass (B5.9 deepen).
     bool preflightResolveTemporalBlend(const TaaResolveDesc& desc,
                                        TaaResolveTemporalRejectReason* reason = nullptr) const;
@@ -330,6 +336,10 @@ public:
     bool syncJitterToFrameIndexIfViewportReady(u32 frameIndex);
     /// History reuse preflight using resolve desc observed generation (B5.9 deepen).
     bool preflightResolveHistoryReuse(const TaaResolveDesc& desc,
+    /// Resolve-desc-aware history reuse preflight (B5.9 deepen).
+    /// True when blend preflight passes and reuse preflight passes when history blend would apply (B5.9 deepen).
+    bool preflightResolveTemporal(const TaaResolveDesc& desc,
+                                  TaaHistoryReuseBlockReason* reuseReason = nullptr,
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

@@ -563,8 +563,6 @@ bool canPreflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHis
 enum class TaaResolveTemporalRejectReason : u8 {
     HistoryReuseBlocked,
     BlendWeightsRejected,
-    None = 0,
-};
 /// Human-readable label for resolve temporal-blend reject reasons (B5.9 deepen).
 const char* taaResolveTemporalRejectReasonLabel(TaaResolveTemporalRejectReason reason);
 /// Classify why resolve temporal-blend preflight would reject (B5.9 deepen).
@@ -632,6 +630,18 @@ bool shouldSkipHistoryBlendAtResolve(const TaaResolveDesc& desc, const TaaHistor
 /// Diagnose resolve blend-weight preflight; false when weights would be rejected (B5.9 deepen).
 /// True when resolve may apply a non-zero history blend weight (B5.9 deepen).
 bool canApplyHistoryBlendAtResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Effective invalidate epoch for resolve reuse checks — stamps from history when sentinel is set (B5.9 deepen).
+u32 effectiveObservedHistoryGeneration(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when history temporal reuse is allowed for a resolve request (B5.9 deepen).
+bool taaHistoryReuseAllowedForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Resolve-desc-aware history reuse preflight (B5.9 deepen).
+bool preflightTaaResolveHistoryReuse(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                     TaaHistoryReuseBlockReason* reason = nullptr);
+/// True when blend preflight passes and reuse preflight passes when history blend would apply (B5.9 deepen).
+bool preflightTaaResolveTemporal(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                 TaaHistoryReuseBlockReason* reuseReason = nullptr,
+/// Compute resolve blend weights only when preflight passes; returns false when rejected (B5.9 deepen).
+                                      TaaBlendWeights* out);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

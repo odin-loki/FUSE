@@ -195,6 +195,8 @@ struct TaaJitterLayout {
     static bool jitterSyncMatches(u32 observedFrameIndex, u32 expectedFrameIndex, u32 sequenceLength);
     /// True when slot index matches the expected slot for a monotonic frame counter (B5.9 deepen).
     static bool slotMatchesMonotonicFrame(u32 slot, u32 frameIndex,
+    /// NDC jitter for a monotonic frame counter when viewport and sequence are valid (B5.9 deepen).
+    static bool ndcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width, u32 height, fuse::math::Vec2* out,
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
     static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
     /// True when `slot` is the expected Halton slot for a monotonic frame counter (B5.9 deepen).
@@ -256,6 +258,10 @@ public:
     /// True when jitter can sync to `frameIndex` for the given viewport (B5.9 deepen).
     bool preflightSyncToFrameIndex(u32 frameIndex, u32 width, u32 height,
                                    TaaJitterSyncBlockReason* reason = nullptr) const;
+    /// True when jitter is not aligned to `frameIndex` but could sync (B5.9 deepen).
+    bool needsSyncToFrameIndex(u32 frameIndex) const;
+    /// Sync only when misaligned; returns false when blocked (B5.9 deepen).
+    bool syncToFrameIndexIfMisaligned(u32 frameIndex);
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
     /// True when jitter slot and monotonic counter match a frame index (B5.9 deepen).

@@ -412,20 +412,21 @@ fuse::math::Vec2 TaaJitterLayout::safeNdcOffsetForFrameIndex(u32 frameIndex, u32
     if (!validateViewportDimensions(width, height)) {
         return {};
     if (!canComputeNdcOffset(width, height)) {
-    }
     return ndcOffsetForFrameIndex(frameIndex, width, height, sequenceLength);
-}
 
 bool TaaJitterLayout::monotonicFrameMatchesSlot(u32 frameIndex, u32 slot, u32 sequenceLength) {
     return slot == frameIndexInSequence(frameIndex, sequenceLength);
 bool TaaJitterLayout::jitterSyncMatches(u32 observedFrameIndex, u32 expectedFrameIndex, u32 sequenceLength) {
     const u32 period = sequencePeriod(sequenceLength);
     if (period == 0u) {
-        return false;
-    }
     return frameIndexInSequence(observedFrameIndex, sequenceLength) ==
            frameIndexInSequence(expectedFrameIndex, sequenceLength);
 bool TaaJitterLayout::slotMatchesMonotonicFrame(u32 slot, u32 frameIndex, u32 sequenceLength) {
+
+bool TaaJitterLayout::ndcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width, u32 height,
+                                                    fuse::math::Vec2* out, u32 sequenceLength) {
+    if (out == nullptr || !canProduceNdcOffset(width, height, sequenceLength)) {
+    *out = ndcOffsetForFrameIndex(frameIndex, width, height, sequenceLength);
 
 bool TaaJitterLayout::fillHaltonSequence(u32 length, fuse::math::Vec2* out) {
     if (out == nullptr || !validateSequenceLength(length)) {
@@ -676,11 +677,16 @@ bool TaaJitter::trySyncToFrameIndexIfViewportReady(u32 frameIndex, u32 width, u3
     outReason = classifyTaaJitterSyncViewportBlock(width, height, m_sequenceLength);
 bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
     return syncToFrameIndexIfReady(frameIndex, nullptr);
-}
 
 bool TaaJitter::preflightSyncToFrameIndex(u32 frameIndex, u32 width, u32 height,
                                           TaaJitterSyncBlockReason* reason) const {
     return preflightTaaJitterSync(frameIndex, width, height, m_sequenceLength, reason);
+bool TaaJitter::needsSyncToFrameIndex(u32 frameIndex) const {
+    return canSyncToFrameIndex(frameIndex) && !isAlignedToFrameIndex(frameIndex);
+
+bool TaaJitter::syncToFrameIndexIfMisaligned(u32 frameIndex) {
+    if (!canSyncToFrameIndex(frameIndex)) {
+    if (isAlignedToFrameIndex(frameIndex)) {
 }
 
 bool TaaJitter::advanceIfReady() {
