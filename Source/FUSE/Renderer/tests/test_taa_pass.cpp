@@ -4778,3 +4778,16 @@ void testTaaPassTryClassifyGuardWrappers() {
     expectTrue(zeroPass->trySyncJitterToFrameIndex(0u, jitterReject),
                "zero-width pass trySyncJitterToFrameIndex succeeds when sequence valid");
                "zero-width pass trySyncJitterToFrameIndex reject reason is None");
+
+// --- deepen additive from deepen-b59-taa-pass-guards-52c4 ---
+               "pass classifyHistoryReuseBlock matches tryPreflightHistoryReuse before init");
+               "pass classifyResolveSkip matches tryPreflightResolve before init");
+    expectTrue(pass->classifyResolveBlendReject(resolveDesc) == blendReason,
+               "pass classifyResolveBlendReject matches tryPreflightResolveBlendWeights before warmup");
+               "pass classifyResolveSkip matches tryPreflightResolve after init");
+               "pass classifyHistoryReuseBlock matches tryPreflightHistoryReuse after warmup");
+               "pass classifyResolveBlendReject matches tryPreflightResolveBlendWeights after warmup");
+               "pass classifyHistoryReuseBlock matches tryPreflightHistoryReuse after invalidate");
+    expectTrue(zeroPass->classifyJitterNdcReject() == jitterReject,
+               "zero-width pass classifyJitterNdcReject matches tryPreflightJitterNdc");
+               "pass classifyResolveSkip matches tryPreflightResolve for invalid dimensions");
