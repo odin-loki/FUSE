@@ -367,6 +367,8 @@ bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRej
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params,
 /// Grid-aware probe blend preflight — validates scheduled indices against `desc`.
 bool tryCanLaunchProbeBlendKernel(const DDGIDesc& desc,
+/// Diagnose why either probe kernel launch preflight would reject.
+bool tryCanLaunchProbeKernels(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 /// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
 /// Diagnose probe-world-position readiness for trace launch (B5.6 deepen).
 bool tryPreflightProbeTraceWorldPositions(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
@@ -616,6 +618,10 @@ bool tryLaunch_probe_kernels(const DDGIKernelParams& params,
 bool tryLaunch_ddgi_probe_kernels(const DDGIKernelParams& params,
                                   void* cuda_stream,
                                   ProbeKernelRejectReason& outReason);
+/// Launch trace + blend kernels with reject-reason diagnostics; false when preflight rejects.
+bool tryLaunch_probe_kernels(const DDGIKernelParams& params,
+                             void* cuda_stream,
+                             ProbeKernelRejectReason& outReason);
 
 /// Launch trace + blend kernels with reject-reason diagnostics; false when either preflight rejects.
 bool tryLaunch_probe_kernels(const DDGIKernelParams& params,
