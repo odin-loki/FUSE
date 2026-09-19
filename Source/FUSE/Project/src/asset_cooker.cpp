@@ -383,6 +383,17 @@ void append_unique_upstream_source_(std::vector<std::string>& sources, const std
         if (recorded == source_path) {
 
 
+    const CookCacheUpstreamInvalidationEstimate estimate =
+        estimate_upstream_invalidation(manifest, changed_source);
+    return estimate.total();
+
+bool AssetCooker::would_invalidate_upstream_dependency(const CookManifest& manifest,
+                                                       const std::string& changed_source) const {
+    return count_upstream_invalidation(manifest, changed_source) != 0;
+
+
+    return m_cache.estimate_upstream_invalidation(changed_source, graph.edges(), graph.jobs());
+
     }
 
     CookJobGraph graph;
@@ -477,6 +488,16 @@ u32 AssetCooker::count_upstream_invalidation(const CookManifest& manifest,
 
 
 
+
+                }
+
+    if (m_cache.would_invalidate_source(changed_source)) {
+        bool already_recorded = false;
+        for (const std::string& recorded : sources) {
+            if (recorded == changed_source) {
+                already_recorded = true;
+                break;
+            sources.insert(sources.begin(), changed_source);
 
 }
 

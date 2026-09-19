@@ -1763,6 +1763,83 @@ CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
     return preflight;
 }
 
+CookHashRejectReason classifyCookHashReject(const CookHashPreflight& preflight) {
+    return preflight.reason;
+}
+
+bool wouldHashFileContent(const std::string& path) {
+    return preflight_file_content_hash(path).ok();
+}
+
+bool wouldHashMeshImport(const MeshImportDesc& desc) {
+    return preflight_mesh_import_hash(desc).ok();
+}
+
+bool wouldHashTextureImport(const TextureImportDesc& desc) {
+    return preflight_texture_import_hash(desc).ok();
+}
+
+bool wouldHashAudioImport(const AudioImportDesc& desc) {
+    return preflight_audio_import_hash(desc).ok();
+}
+
+bool wouldHashManifestEntry(const CookManifestEntry& entry) {
+    return preflight_manifest_entry_hash(entry).ok();
+}
+
+bool wouldHashUpstreamDependencies(const std::vector<std::string>& dependency_output_paths,
+                                   const CookManifest& manifest) {
+    return preflight_upstream_dependencies_hash(dependency_output_paths, manifest).ok();
+}
+
+bool wouldHashCookCacheKey(u64 source_hash, u64 upstream_hash) {
+    return preflight_cook_cache_key(source_hash, upstream_hash).ok();
+}
+
+bool tryPreflightFileContentHash(const std::string& path, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_file_content_hash(path);
+    reason = classifyCookHashReject(preflight);
+    return preflight.ok();
+}
+
+bool tryPreflightMeshImportHash(const MeshImportDesc& desc, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_mesh_import_hash(desc);
+    reason = classifyCookHashReject(preflight);
+    return preflight.ok();
+}
+
+bool tryPreflightTextureImportHash(const TextureImportDesc& desc, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_texture_import_hash(desc);
+    reason = classifyCookHashReject(preflight);
+    return preflight.ok();
+}
+
+bool tryPreflightAudioImportHash(const AudioImportDesc& desc, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_audio_import_hash(desc);
+    reason = classifyCookHashReject(preflight);
+    return preflight.ok();
+}
+
+bool tryPreflightManifestEntryHash(const CookManifestEntry& entry, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_manifest_entry_hash(entry);
+    reason = classifyCookHashReject(preflight);
+    return preflight.ok();
+}
+
+bool tryPreflightUpstreamDependenciesHash(const std::vector<std::string>& dependency_output_paths,
+                                          const CookManifest& manifest, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight =
+        preflight_upstream_dependencies_hash(dependency_output_paths, manifest);
+    reason = classifyCookHashReject(preflight);
+    return preflight.ok();
+}
+
+bool tryPreflightCookCacheKey(u64 source_hash, u64 upstream_hash, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_cook_cache_key(source_hash, upstream_hash);
+    reason = classifyCookHashReject(preflight);
+    return preflight.ok();
+}
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;

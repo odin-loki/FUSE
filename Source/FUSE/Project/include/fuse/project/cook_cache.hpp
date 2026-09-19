@@ -199,6 +199,14 @@ struct CookCacheInvalidationEstimate {
     }
 };
 
+/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
+struct CookCacheUpstreamInvalidationEstimate {
+    u32 direct_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -847,69 +855,22 @@ public:
     /// Deduplicated source paths whose stored upstream hash differs — mirrors `invalidate_stale_upstream_hashes` (B7.9 deepen).
 
     /// Read-only mirrors for remaining `invalidate_*` guards — no stat mutation (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
-    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
-    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
-                                                               u64 current_content_hash) const;
-    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
-                                                    const std::vector<CookJobDependencyEdge>& edges,
-                                                    const std::vector<CookJob>& jobs) const;
-    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     /// Deduplicated count of stale upstream sources — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
-    [[nodiscard]] u32 count_stale_upstream_sources(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
 
-    /// Read-only invalidation probes — mirror `invalidate_*` without mutating stats (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
-    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
-    [[nodiscard]] u32 count_stale_upstream_sources(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    /// Deduplicated upstream stale sources — one entry per matching source path (B7.9 deepen).
-    [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources_deduplicated(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    /// Invalidation reconcile breakdown without mutating stats (B7.9 deepen).
-    [[nodiscard]] CookCacheInvalidationEstimate estimate_invalidation_removals(
-        const std::string& source_path = {},
-        const std::string& output_path = {},
-        u64 current_content_hash = 0,
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path = {}) const;
-    /// True when `estimate_invalidation_removals(...).total()` is non-zero (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_any(
-        const std::string& source_path = {},
-        const std::string& output_path = {},
-        u64 current_content_hash = 0,
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path = {}) const;
 
     /// Read-only invalidation would_* probes — mirror `invalidate_*` guards (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
-    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
-    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
-                                                                 u64 current_content_hash) const;
-    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
-                                                    const std::vector<CookJobDependencyEdge>& edges,
-                                                    const std::vector<CookJob>& jobs) const;
     /// Content hashes `invalidate_source` would remove — one push per matching entry (B7.9 deepen).
     [[nodiscard]] std::vector<u64> probe_invalidation_hashes_for_source(const std::string& source_path) const;
 
-    /// Read-only invalidation would_* probes — mirror `invalidate_*` guards (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
-    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
-    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
-                                                                 u64 current_content_hash) const;
-    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
-                                                    const std::vector<CookJobDependencyEdge>& edges,
-                                                    const std::vector<CookJob>& jobs) const;
     /// True when `estimate_prune_removals().invalid_entries` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_prune_invalid() const;
     /// True when `estimate_prune_removals().stale_entries` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_prune_stale() const;
-    /// Content hashes `invalidate_source` would remove — one push per matching entry (B7.9 deepen).
-    [[nodiscard]] std::vector<u64> probe_invalidation_hashes_for_source(const std::string& source_path) const;
     /// Content hashes `invalidate_output` would remove — one push per matching entry (B7.9 deepen).
     [[nodiscard]] std::vector<u64> probe_invalidation_hashes_for_output(const std::string& output_path) const;
+    /// Upstream invalidation breakdown for `changed_source` — read-only (B7.9 deepen).
+    [[nodiscard]] CookCacheUpstreamInvalidationEstimate estimate_upstream_invalidation(
+        const std::string& changed_source, const std::vector<CookJobDependencyEdge>& edges,
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

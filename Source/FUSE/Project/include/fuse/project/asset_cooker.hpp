@@ -207,6 +207,7 @@ public:
     /// True when `estimate_reconcile_invalidation(manifest).total()` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_reconcile_invalidation(const CookManifest& manifest) const;
     /// Upstream invalidation breakdown without mutating cache stats (B7.9 deepen).
+    /// True when `count_upstream_invalidation` would remove at least one entry (B7.9 deepen).
     /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
     [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
     /// True when `invalidate_stale_dependency_hashes` would remove at least one entry (B7.9 deepen).
