@@ -3905,3 +3905,8 @@ void testFindEventIndexByScopeIdGuard() {
 void testExportableEventBoundaryGuards() {
 void testChromeTraceExportPreflightIgnoredAsyncFlowEnds() {
     testChromeTraceExportPreflightIgnoredAsyncFlowEnds();
+
+// --- deepen additive from deepen-b16-profiler-guards-9482 ---
+void testPeekEventAtGuard() {
+void testChromeTraceExportPreflightRingBufferFull() {
+    testChromeTraceExportPreflightRingBufferFull();
