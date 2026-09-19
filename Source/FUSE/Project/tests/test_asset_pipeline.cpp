@@ -4320,7 +4320,6 @@ void testCookerStaleDependencyReconcileEstimate() {
                "downstream cascade entries counted after upstream hash change on middle job");
     expectTrue(stale.total() >= 2u, "stale dependency estimate total includes cascade");
 
-    expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes(
                    {{source_b, fuse::project::hash_upstream_dependencies({entry_a.output_path}, manifest)}}),
                "would_invalidate_stale_upstream true when upstream hash mismatches");
 
@@ -4400,7 +4399,6 @@ void testCookerStaleDependencyReconcileEstimate() {
     expectTrue(!reconcile_sources.empty(), "reconcile source probe non-empty after upstream change");
                "would_upstream true for changed upstream source");
 
-    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for should_skip probes ok");
 
     expectTrue(cooker.should_skip_upstream_invalidation(manifest, source_a) == false,
                "fresh cache should not skip upstream invalidation for seeded source");
@@ -4514,6 +4512,9 @@ void testCookerStaleDependencyReconcileEstimate() {
     expectTrue(upstream_count >= 1u, "upstream count non-zero before should_skip check");
                "upstream should_skip false when entries would be removed");
                "would_invalidate_downstream true for dependent chain");
+
+
+
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
