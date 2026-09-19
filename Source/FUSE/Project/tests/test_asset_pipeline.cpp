@@ -1159,6 +1159,41 @@ void testCookCacheStaleDependencyHashInvalidation() {
                "downstream misses after stale dependency hash invalidation");
 }
 
+void testCookCacheStaleDependencyHashEstimator() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_a.obj", "# est a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_b.obj", "# est b\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_est_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_est_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "estimator test seeds cache");
+    expectTrue(cooker.estimate_stale_dependency_hashes(manifest) == 0u,
+               "fresh cache estimates zero stale dependency removals");
+
+    writeTempFile(sourceA, "# est a revised\n");
+    const fuse::u32 estimate = cooker.estimate_stale_dependency_hashes(manifest);
+    expectTrue(estimate >= 1u, "stale upstream change yields non-zero reconcile estimate");
+
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed == estimate, "dependency reconcile estimate matches actual invalidation count");
+    expectTrue(cooker.estimate_stale_dependency_hashes(manifest) == 0u,
+               "clean cache estimates zero after reconcile");
+}
+
 void testCookCacheUpstreamInvalidation() {
     const std::string sourceA = writeTempFile("/tmp/fuse_b79_upinv_a.obj", "# upstream a\n");
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_upinv_b.obj", "# downstream b\n");
@@ -1188,7 +1223,10 @@ void testCookCacheUpstreamInvalidation() {
                "downstream entry cached before upstream change");
 
     writeTempFile(sourceA, "# upstream a revised\n");
+    const fuse::u32 estimate = cooker.estimate_upstream_dependency_invalidation(manifest, sourceA);
+    expectTrue(estimate >= 2u, "upstream change yields non-zero upstream invalidation estimate");
     const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
+    expectTrue(removed == estimate, "upstream invalidation estimate matches actual invalidation count");
     expectTrue(removed >= 2u, "upstream change invalidates downstream dependents");
     expectTrue(cooker.cache().lookup(downstream_hash) == fuse::project::CookCacheLookup::Miss,
                "downstream cache misses after upstream invalidation");
@@ -1458,6 +1496,14 @@ void testCookContentHashGuardHelpers() {
     expectTrue(fuse::project::combine_cook_cache_key(0, 42u) == 0,
                "zero source hash stays zero when upstream is non-zero");
     expectTrue(fuse::project::file_mtime_ns("") == 0, "empty path mtime is zero");
+
+    fuse::project::CookHashPreflightRejectReason reason = fuse::project::CookHashPreflightRejectReason::None;
+    expectTrue(!fuse::project::preflight_hash_file_content("", &reason),
+               "empty path fails hash preflight guard");
+    expectTrue(reason == fuse::project::CookHashPreflightRejectReason::EmptyPath,
+               "empty path preflight reports EmptyPath");
+    expectTrue(fuse::project::preflight_combine_cook_cache_key(42u, 0u, &reason),
+               "valid source hash passes combine preflight");
 }
 
 void testCookCacheContainsHelper() {
@@ -1644,6 +1690,7 @@ int main() {
     testCookManifestCacheHitsOnSecondRun();
     testCookCacheInvalidateChain();
     testCookCacheStaleDependencyHashInvalidation();
+    testCookCacheStaleDependencyHashEstimator();
     testCookCacheUpstreamInvalidation();
     testCookCacheRoundTrip();
     testCookCacheEmptyKeyPaths();
