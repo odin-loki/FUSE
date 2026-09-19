@@ -944,3 +944,13 @@ bool probeGridRejectReasonIsBlocking(ProbeGridRejectReason reason);
 // --- deepen additive from deepen-b56-ddgi-guards-50ea ---
 bool tryTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
 bool tryTrilinearProbeIrradianceAtCoords(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-49d7 ---
+enum class ProbeGridCoordRejectReason : u8 {
+const char* probeGridCoordRejectReasonLabel(ProbeGridCoordRejectReason reason);
+bool probeGridCoordRejectReasonIsBlocking(ProbeGridCoordRejectReason reason);
+    static bool tryValidateProbeCoord(const DDGIDesc& desc,
+                                      ProbeGridCoordRejectReason& outReason);
+    static ProbeGridCoordRejectReason classifyProbeCoordReject(const DDGIDesc& desc, const ProbeGridCoord& coord);
+                                    ProbeGridCoordRejectReason* reason = nullptr);
+bool wouldSkipProbeLookup(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 cache_count);

@@ -2919,3 +2919,27 @@ bool tryTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
     tryTrilinearSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
 bool tryTrilinearProbeIrradianceAtCoords(const DDGIDesc& desc,
     if (!tryTrilinearSampleAtProbeCoords(desc, coords, cache, cache_count, outReason)) {
+
+// --- deepen additive from deepen-ddgi-guards-49d7 ---
+const char* probeGridCoordRejectReasonLabel(ProbeGridCoordRejectReason reason) {
+    case ProbeGridCoordRejectReason::None:
+    case ProbeGridCoordRejectReason::EmptyGrid:
+    case ProbeGridCoordRejectReason::OutOfRangeCoord:
+bool probeGridCoordRejectReasonIsBlocking(ProbeGridCoordRejectReason reason) {
+    return reason != ProbeGridCoordRejectReason::None;
+bool ProbeGridLayout::tryValidateProbeCoord(const DDGIDesc& desc,
+                                            ProbeGridCoordRejectReason& outReason) {
+        outReason = ProbeGridCoordRejectReason::EmptyGrid;
+        outReason = ProbeGridCoordRejectReason::OutOfRangeCoord;
+    outReason = ProbeGridCoordRejectReason::None;
+ProbeGridCoordRejectReason ProbeGridLayout::classifyProbeCoordReject(const DDGIDesc& desc,
+    ProbeGridCoordRejectReason reason = ProbeGridCoordRejectReason::None;
+    tryValidateProbeCoord(desc, coord, reason);
+                                          ProbeGridCoordRejectReason* reason) {
+    const ProbeGridCoordRejectReason reject = classifyProbeCoordReject(desc, coord);
+    return !probeGridCoordRejectReasonIsBlocking(reject);
+    return !tryValidateProbeCoord(desc, coord, reason);
+bool wouldSkipProbeLookup(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 cache_count) {
+    if (ProbeGridLayout::wouldSkipProbeCoordPreflight(desc, coord)) {
+    return wouldSkipCacheIndexLookup(desc, cache, index, cache_count);
+    return tryTrilinearProbeIrradianceAtCoords(desc, coords, cache, cache_count, out_irradiance, outReason);

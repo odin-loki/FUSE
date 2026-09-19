@@ -3883,3 +3883,28 @@ void testDdgiTrilinearDeepenGuards() {
     expectTrue(fuse::renderer::probeTrilinearSampleRejectReasonIsBlocking(reason),
     expectTrue(fuse::renderer::ddgi_util::tryTrilinearProbeIrradianceAtCoords(
                "tryTrilinearProbeIrradianceAtCoords succeeds on full cache");
+
+// --- deepen additive from deepen-ddgi-guards-49d7 ---
+void testDdgiTrilinearAndWouldSkipGuards() {
+               "build coords for trilinear wouldSkip test");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeLookup(desc, cache.data(), 8u),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeLookup(desc, nullptr, 8u),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeLookup(desc, cache.data(), 4u),
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, cache.data(), {0, 0, 0}, 8u),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, cache.data(), {9, 9, 9}, 8u),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, nullptr, {0, 0, 0}, 8u),
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipSampleCoordPreflight(desc, coords),
+               "preflightProbeCoord succeeds for origin coord");
+                   fuse::renderer::ProbeGridCoordRejectReason::None,
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeCoordPreflight(desc, validCoord),
+                   fuse::renderer::ProbeGridCoordRejectReason::OutOfRangeCoord,
+               "classifyProbeCoordReject out_of_range_coord");
+    expectTrue(std::strcmp(fuse::renderer::probeGridCoordRejectReasonLabel(
+                               fuse::renderer::ProbeGridCoordRejectReason::OutOfRangeCoord),
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeCoordPreflight(desc, invalidCoord),
+    expectTrue(fuse::renderer::probeGridCoordRejectReasonIsBlocking(
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeCoordReject(empty, validCoord) ==
+                   fuse::renderer::ProbeGridCoordRejectReason::EmptyGrid,
+               "empty grid classifyProbeCoordReject reports empty_grid");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeLookup(empty, cache.data(), 8u),
+    expectTrue(!fuse::renderer::gi::preflightProbeBlendKernel(zeroCount),
