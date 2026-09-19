@@ -718,3 +718,7 @@ bool TaaPass::tryPreflightHistoryTemporal(u32 observedGeneration, TaaHistoryReus
 bool TaaPass::tryPreflightJitterFrame(u32 frameIndex, TaaJitterGuardRejectReason& reason) const {
     if (!tryPreflightJitterSync(frameIndex, reason)) {
     return tryPreflightJitterNdc(reason);
+
+// --- deepen additive from deepen-b59-taa-pass-guards-59bd ---
+TaaJitterGuardRejectReason TaaPass::classifyJitterSyncReject(u32 frameIndex) const {
+bool TaaPass::tryAdvanceJitter(TaaJitterGuardRejectReason& reason) {

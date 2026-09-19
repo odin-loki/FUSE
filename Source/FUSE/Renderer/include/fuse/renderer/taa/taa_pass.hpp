@@ -385,3 +385,7 @@ void addTaaPassToGraph(RenderGraph& graph);
 // --- deepen additive from deepen-b59-taa-pass-guards-5bd0 ---
     bool tryPreflightHistoryTemporal(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const;
     bool tryPreflightJitterFrame(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
+
+// --- deepen additive from deepen-b59-taa-pass-guards-59bd ---
+    TaaJitterGuardRejectReason classifyJitterSyncReject(u32 frameIndex) const;
+    bool tryAdvanceJitter(TaaJitterGuardRejectReason& reason);

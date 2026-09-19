@@ -4640,3 +4640,12 @@ void testTaaPassHistoryWarmupPreflight() {
     expectNear(weights.history, 0.8f, 1e-5f, "pass tryCompute steady history weight");
                "pass tryPreflightHistoryTemporal fails after invalidate");
                "pass tryPreflightHistoryTemporal reason is StaleGeneration after invalidate");
+
+// --- deepen additive from deepen-b59-taa-pass-guards-59bd ---
+void testTaaPassTryPreflightGuardWrappers() {
+    expectTrue(pass->classifyJitterSyncReject(4u) == fuse::renderer::TaaJitterGuardRejectReason::None,
+    expectTrue(pass->jitterAlignedToFrameIndex(6u), "pass jitter aligned after trySyncJitterToFrameIndex");
+    expectTrue(pass->tryAdvanceJitter(jitterReject), "pass tryAdvanceJitter succeeds before init");
+    expectTrue(pass->jitter().index() != jitterIndexBefore, "pass tryAdvanceJitter advances jitter");
+               "pass tryPreflightResolve skip reason is None before warmup");
+    testTaaPassTryPreflightGuardWrappers();
