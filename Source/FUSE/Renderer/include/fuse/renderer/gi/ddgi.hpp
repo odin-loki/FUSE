@@ -683,6 +683,8 @@ bool preflightProbeTrilinearSample(const DDGIDesc& desc,
 
 /// Why probe-grid source preflight rejected the descriptor (B5.6 deepen).
 
+/// Why the probe grid cannot act as an irradiance sample source (B5.6 deepen pass).
+
 /// Human-readable label for probe-grid source reject reasons (logging / tests).
 const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason);
 
@@ -721,6 +723,11 @@ bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason*
 
 /// Early-out when probe-grid source preflight would reject.
 bool wouldSkipProbeGridSource(const DDGIDesc& desc);
+
+
+/// Classify why the probe grid is not sampleable — same ordering as `canSampleProbeGrid`.
+
+/// Non-mutating probe-grid source preflight — returns true when spatial sampling would proceed.
 
 /// Human-readable label for cache-index reject reasons (logging / tests).
 const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
@@ -2564,6 +2571,9 @@ bool tryPreflightProbeScheduleAtRate(u32 probe_count,
 u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Schedule preflight with mandatory reject-reason output.
 /// Rate-aware schedule preflight with mandatory reject-reason output.
+                                  u32 probes_per_frame,
+                                  u32 max_indices,
+                                  const u32* out_indices,
 /// True when output capacity would cap scheduled probes below `probes_per_frame`.
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Early-out when probe scheduling would be rejected — same ordering as `tryScheduleProbeUpdates`.

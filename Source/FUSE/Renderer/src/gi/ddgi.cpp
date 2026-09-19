@@ -804,6 +804,11 @@ bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason*
 bool wouldSkipProbeGridSource(const DDGIDesc& desc) {
     return !preflightProbeGridSource(desc);
 
+
+
+        return ProbeGridSourceRejectReason::ZeroSpacing;
+
+
 const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason) {
     switch (reason) {
     case ProbeScheduleRejectReason::None:
@@ -2447,6 +2452,11 @@ bool ProbeGridLayout::wouldSkipProbeSampleCoordsPreflight(const DDGIDesc& desc, 
 }
 
 bool ProbeGridLayout::wouldSkipSampleCoordPreflight(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    ProbeSampleCoordsRejectReason reason = ProbeSampleCoordsRejectReason::None;
+    return !tryPreflightProbeSampleCoords(desc, coords, reason);
+}
+
+bool ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
     ProbeSampleCoordsRejectReason reason = ProbeSampleCoordsRejectReason::None;
     return !tryPreflightProbeSampleCoords(desc, coords, reason);
 }
@@ -4732,6 +4742,7 @@ bool preflightTrilinearProbeSampleAtCoords(const DDGIDesc& desc,
 
 
 bool preflightProbeTrilinearSampleAtCoords(const DDGIDesc& desc,
+
     const ProbeTrilinearSampleRejectReason reject =
         classifyProbeTrilinearSampleReject(desc, coords, cache, cache_count);
     if (reason != nullptr) {
@@ -4859,6 +4870,7 @@ bool preflightProbeTrilinearSample(const DDGIDesc& desc,
     return preflightProbeTrilinearSampleAtCoords(desc, coords, cache, cache_count, reason);
 
     return !preflightProbeTrilinearSample(desc, world_position, cache, cache_count);
+
 
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               const IrradianceCacheEntry* cache,
@@ -8557,6 +8569,7 @@ bool preflightPopulatedProbeKernelLaunch(DDGIKernelParams& params,
 
 
 
+    return preflightProbeKernelLaunch(params, &outReason);
 }
 
 void populateDDGIKernelParams(DDGIKernelParams& params,
