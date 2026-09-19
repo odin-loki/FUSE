@@ -3241,3 +3241,11 @@ bool wouldSkipProbeGridSource(const DDGIDesc& desc, u32 probe_count) {
 bool wouldSkipProbeGridSource(const ProbeData& data) {
     return !preflightProbeGridSource(data);
 bool preflightDDGIKernelParams(DDGIKernelParams& params,
+
+// --- deepen additive from deepen-ddgi-guards-9443 ---
+    ddgi_util::tryPreflightProbeGridSource(desc, reason);
+    ddgi_util::tryCanTrilinearSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
+    return !tryPreflightProbeGridSource(desc, reason);
+        return tryValidateCacheIndex(desc, ProbeGridLayout::probeIndexFromCoord(desc, clamped), cache_count,
+    return tryValidateCacheIndex(desc, ProbeGridLayout::probeIndexFromCoord(desc, coord), cache_count, outReason);
+    return !tryValidateCacheIndexAtCoord(desc, coord, cache_count, reason);

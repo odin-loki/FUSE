@@ -4513,3 +4513,21 @@ void testCacheIndexAtCoordGuards() {
     expectTrue(!fuse::renderer::gi::preflightDDGIKernelParams(rejected, desc, validIndices, 0u),
                "preflightDDGIKernelParams rejects zero update count");
         fuse::renderer::ProbeSampleCoordsRejectReason::NotSampleableGrid;
+
+// --- deepen additive from deepen-ddgi-guards-9443 ---
+    expectTrue(fuse::renderer::ddgi_util::tryPreflightProbeGridSource(desc, sourceReason),
+               "tryPreflightProbeGridSource succeeds on sampleable grid");
+void testDdgiTrilinearSampleDeepenGuards() {
+               "tryCanTrilinearSampleAtProbeCoords succeeds for valid inputs");
+    expectTrue(fuse::renderer::preflightProbeTrilinearSample(desc, built, cache.data(), 8u),
+void testDdgiLookupSkipGuards() {
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeLookup(desc, cache.data(), 3u, 8u),
+               "wouldSkipProbeLookup false for in-range index");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeLookup(desc, cache.data(), 99u, 8u),
+               "wouldSkipProbeLookup true for OOB index");
+               "wouldSkipCacheIndexLookupAtCoord false for valid coord with cache");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, oobCoord, 8u),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, cache.data(), oobCoord, 4u),
+    expectTrue(fuse::renderer::ddgi_util::tryValidateCacheIndexAtCoord(desc, cache.data(), coord, 8u, cacheReason),
+void testDdgiScheduleAtRatePreflight() {
+    testDdgiScheduleAtRatePreflight();

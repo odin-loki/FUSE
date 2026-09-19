@@ -1061,3 +1061,6 @@ ProbeGridSourceRejectReason classifyProbeGridSourceReject(const ProbeData& data)
 bool preflightProbeGridSource(const ProbeData& data, ProbeGridSourceRejectReason* reason = nullptr);
 bool wouldSkipProbeGridSource(const DDGIDesc& desc, u32 probe_count);
 bool wouldSkipProbeGridSource(const ProbeData& data);
+
+// --- deepen additive from deepen-ddgi-guards-9443 ---
+bool wouldSkipProbeLookup(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 probe_index, u32 cache_count);
