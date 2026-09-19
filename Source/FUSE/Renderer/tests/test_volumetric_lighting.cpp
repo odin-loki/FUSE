@@ -3992,3 +3992,9 @@ void testFroxelIsBlockingAndPreflightGuards() {
                "preflightGridDensity reports no reject reason on accessible grid");
                "classifyGridDensityReject reports none on accessible grid");
     testFroxelIsBlockingAndPreflightGuards();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-54c3 ---
+               "preflightGridDensity succeeds for empty desc");
+               "preflightSampleCoords mirrors canPreflightSampleCoords for in-bounds coords");
+               "preflightDensityLookup mirrors canLookupAtIndex for accessible grid");
+               "preflightFroxelPopulate mirrors canPopulateFromAnalyticFog for valid inputs");
