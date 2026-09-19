@@ -2351,3 +2351,7 @@ bool preflightScreenDepthToFroxelIndex(f32 screenX,
 // --- deepen additive from deepen-froxel-volumetrics-b511-c843 ---
     if (outCoords != nullptr && !screenMappingRejectReasonIsBlocking(reject)) {
     const bool mapped = preflightScreenDepthToSampleCoords(
+
+// --- deepen additive from deepen-b511-froxel-classify-preflight-9310 ---
+    tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, unused, reason);
+        tryMapScreenDepthToFroxelIndex(screenX, screenY, viewDepth, desc, camera, froxelIndex, reject);

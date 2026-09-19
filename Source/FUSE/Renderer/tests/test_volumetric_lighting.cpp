@@ -3866,3 +3866,11 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "preflightScreenDepthToFroxelIndex rejects empty grid");
                "preflightScreenDepthToSampleCoords returns mapped coords on success");
                "preflightScreenDepthToSampleCoords mapped coords in range");
+
+// --- deepen additive from deepen-b511-froxel-classify-preflight-9310 ---
+               "preflightDensityLookupAtIndex succeeds when OOB index would clamp");
+               "preflightDensityLookupAtCoord succeeds when OOB coords would clamp");
+    expectTrue(mappedCoords.sliceZ0 < desc.slicesZ, "preflightScreenDepthToSampleCoords returns mapped coords");
+               "preflightScreenDepthToSampleCoords rejects depth below near plane");
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelTrilinearSampleReject(grid, desc, warnTrilinear) ==
+    expectTrue(fuse::renderer::froxel_util::preflightFroxelTrilinearSample(grid, desc, warnTrilinear),
