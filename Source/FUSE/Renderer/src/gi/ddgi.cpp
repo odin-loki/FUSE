@@ -2524,3 +2524,22 @@ bool wouldClampCacheIndex(u32 probe_index, const DDGIDesc& desc) {
     ddgi_util::tryScheduleProbeUpdates(frame_index,
     ProbeUpdateLaunchRejectReason launch_reason = ProbeUpdateLaunchRejectReason::None;
     m_last_update.kernel_launched = tryLaunch_ddgi_probe_update(
+
+// --- deepen additive from deepen-ddgi-b56-guards-c107 ---
+    return !tryValidateProbeSampleCoords(desc, coords, outReason);
+    return wouldSkipProbeSampleCoords(desc, coords, reason);
+bool wouldSkipProbeTrilinearSample(const DDGIDesc& desc,
+    return !tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, outReason);
+    return wouldSkipProbeTrilinearSample(desc, coords, cache, cache_count, reason);
+    CacheIndexRejectReason local = CacheIndexRejectReason::None;
+    const bool skip = !tryValidateCacheIndex(desc, probe_index, cache_count, local);
+    const bool skip = !tryValidateCacheIndex(desc, cache, probe_index, cache_count, local);
+    ProbeScheduleRejectReason local = ProbeScheduleRejectReason::None;
+    const bool skip = !tryCanScheduleProbeUpdates(probe_count, max_indices, out_indices, out_count, local);
+    ProbeUpdateLaunchRejectReason local = ProbeUpdateLaunchRejectReason::None;
+    const bool skip = !tryCanLaunchDdgiProbeUpdate(desc, probe_indices, probe_count, local);
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason) {
+    ProbeKernelRejectReason local = ProbeKernelRejectReason::None;
+    const bool skip = !tryCanLaunchProbeTraceKernel(params, local);
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason) {
+    const bool skip = !tryCanLaunchProbeBlendKernel(params, local);

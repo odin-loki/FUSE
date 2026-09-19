@@ -825,3 +825,6 @@ CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc, u32 probe_
 
 // --- deepen additive from deepen-ddgi-guards-ea5f ---
 bool wouldClampCacheIndex(u32 probe_index, const DDGIDesc& desc);
+
+// --- deepen additive from deepen-ddgi-b56-guards-c107 ---
+bool wouldSkipProbeTrilinearSample(const DDGIDesc& desc,

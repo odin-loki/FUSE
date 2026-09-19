@@ -2956,3 +2956,53 @@ void testProbeKernelWouldSkipGuards() {
                "wouldSkip true for null probe indices trace");
                "wouldSkip true for null probe indices blend");
     testCacheIndexClampAndReadRejectReasons();
+
+// --- deepen additive from deepen-ddgi-b56-guards-c107 ---
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, 3u, 8u, &cacheReason),
+               "wouldSkip with reason false for valid cache-index lookup");
+               "valid cache-index wouldSkip reason is none");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, nullptr, 3u, 8u, &cacheReason),
+               "wouldSkip with reason true for null cache lookup");
+               "null cache wouldSkip reports null_cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, 99u, 8u, &cacheReason),
+               "wouldSkip with reason true for OOB probe index");
+    expectTrue(cacheReason == fuse::renderer::CacheIndexRejectReason::OutOfRangeProbeIndex,
+               "OOB probe index wouldSkip reports out_of_range_probe_index");
+    expectTrue(!fuse::renderer::wouldSkipDdgiProbeUpdate(desc, validIndices, 2u, &launchReason),
+               "wouldSkip with reason false for valid launch");
+               "valid launch wouldSkip reason is none");
+    expectTrue(fuse::renderer::wouldSkipDdgiProbeUpdate(desc, oobIndices, 2u, &launchReason),
+               "wouldSkip with reason true for OOB indices");
+    expectTrue(launchReason == fuse::renderer::ProbeUpdateLaunchRejectReason::OutOfRangeProbeIndex,
+               "OOB launch wouldSkip reports out_of_range_probe_index");
+               "build coords for wouldSkip sample-coord test");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, built, reason),
+               "wouldSkip with reason false for valid sample coords");
+               "valid sample coords wouldSkip reason is none");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, reversed, reason),
+               "unordered corners wouldSkip reports unordered_corners");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(empty, built, reason),
+               "wouldSkip true for empty grid sample coords");
+               "empty grid sample-coord wouldSkip reports empty_grid");
+               "build coords for wouldSkip trilinear test");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, coords, cache.data(), 8u, reason),
+               "wouldSkip false for accessible trilinear sample");
+               "accessible trilinear sample wouldSkip reason is none");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, coords, nullptr, 8u, reason),
+               "null cache trilinear wouldSkip reports null_cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, coords, cache.data(), 4u),
+               "wouldSkip true for undersized cache without reason out-param");
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeTraceKernel(validParams, &reason),
+               "wouldSkip trace false for valid kernel params");
+               "valid trace kernel wouldSkip reason is none");
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeBlendKernel(validParams, &reason),
+               "wouldSkip blend false for valid kernel params");
+    expectTrue(fuse::renderer::gi::wouldSkipProbeTraceKernel(zeroCount, &reason),
+               "zero update count kernel wouldSkip reports zero_update_count");
+               "wouldSkip blend true for zero update count without reason out-param");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(2048u, 64u, indices, &count, &reason),
+               "wouldSkip with reason false for valid schedule inputs");
+               "valid schedule wouldSkip reason is none");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(0u, 64u, indices, &count, &reason),
+               "wouldSkip with reason true for zero probe count");
+               "zero probe count wouldSkip reports zero_probe_count");

@@ -138,3 +138,7 @@ bool tryCanLaunchProbeBlendKernelWithSurfaces(const DDGIKernelParams& params,
 // --- deepen additive from deepen-ddgi-guards-c8ba ---
 bool tryPreflightProbeTraceKernelResources(const DDGIKernelParams& params,
 bool tryPreflightProbeBlendKernelResources(const DDGIKernelParams& params,
+
+// --- deepen additive from deepen-ddgi-b56-guards-c107 ---
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
