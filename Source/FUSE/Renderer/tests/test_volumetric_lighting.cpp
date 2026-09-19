@@ -3482,3 +3482,25 @@ void testFroxelClassifyAndBlockingGuards() {
                "classifyPopulateReject invalid_camera for bad camera");
     expectTrue(!fuse::renderer::froxel_util::preflightPopulate(desc, badCamera, params),
                "preflightPopulate rejects invalid camera");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-7c28 ---
+               "classifySampleCoordsReject none for in-bounds coords");
+               "classifySampleCoordsReject out_of_bounds for hard OOB tile coord");
+    expectTrue(fuse::renderer::FroxelGridLayout::classifySampleCoordsReject(inBounds, zeroDesc) ==
+               "classifySampleCoordsReject empty_grid for empty desc");
+               "preflightScreenMapping reports depth_out_of_range for below-near depth");
+               "classifyTrilinearSampleReject clampable_weights for OOB interpolation weights");
+               "preflightTrilinearSample reports clampable_weights for OOB interpolation weights");
+               "classifyTrilinearSampleReject inaccessible_grid for empty storage");
+               "preflightPopulate succeeds for valid inputs");
+    expectTrue(!fuse::renderer::froxel_util::preflightPopulate(desc, camera, zeroDensity, &populateReason),
+               "preflightPopulate reports zero_density for zero density");
+    expectTrue(fuse::renderer::froxel_util::classifyPopulateReject(zeroDesc, camera, params) ==
+               "classifyPopulateReject empty_desc for empty grid");
+    expectTrue(!fuse::renderer::froxel_util::preflightPopulate(zeroDesc, camera, params, &populateReason),
+               "preflightPopulate rejects empty desc");
+               "preflightPopulate reports empty_desc for empty grid");
+    expectTrue(fuse::renderer::froxel_util::preflightPopulate(desc, camera, params) ==
+               "preflightPopulate agrees with canPopulateFromAnalyticFog for valid inputs");
+    expectTrue(fuse::renderer::froxel_util::preflightGridDensity(grid, desc) ==
+               "preflightGridDensity agrees with validateGridDensity for accessible grid");
