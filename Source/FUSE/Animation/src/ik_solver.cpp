@@ -147,6 +147,48 @@ bool is_two_bone_target_reachable(const vec3& root,
     return !needs_two_bone_target_clamp(root, target, upper_len, lower_len, reach_epsilon);
 }
 
+bool is_contiguous_bone_chain(const std::vector<u32>& bone_indices, const Skeleton& skel) {
+    if (bone_indices.size() < 2 || skel.bones.empty()) {
+        return false;
+    }
+
+    const u32 boneCount = static_cast<u32>(skel.bones.size());
+    for (size_t i = 0; i < bone_indices.size(); ++i) {
+        const u32 boneIdx = bone_indices[i];
+        if (boneIdx >= boneCount) {
+            return false;
+        }
+
+        for (size_t j = 0; j < i; ++j) {
+            if (bone_indices[j] == boneIdx) {
+                return false;
+            }
+        }
+
+        if (i > 0) {
+            const u32 parentIdx = bone_indices[i - 1];
+            if (skel.bones[boneIdx].parent_index != static_cast<s32>(parentIdx)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool needs_pose_bind_fallback(const Pose& pose, const Skeleton& skel) {
+    if (skel.bones.empty()) {
+        return pose.bone_count != 0 || !pose.bone_world_transforms.empty();
+    }
+
+    return pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.bone_world_transforms.empty();
+}
+
+void ensure_pose_bind_fallback(Pose& pose, const Skeleton& skel) {
+    if (needs_pose_bind_fallback(pose, skel)) {
+        pose = Pose::make_bind_pose(skel);
+    }
+}
+
 bool is_valid_two_bone_chain(u32 root_bone, u32 mid_bone, u32 end_bone, const Skeleton& skel) {
     if (skel.bones.empty()) {
         return false;
@@ -247,31 +289,11 @@ bool solve_two_bone_positions(const vec3& root,
 }
 
 bool FABRIKChain::has_valid_chain(const Skeleton& skel) const {
-    if (bone_indices.size() < 2 || skel.bones.empty()) {
-        return false;
-    }
+    return is_contiguous_bone_chain(bone_indices, skel);
+}
 
-    const u32 boneCount = static_cast<u32>(skel.bones.size());
-    for (size_t i = 0; i < bone_indices.size(); ++i) {
-        const u32 boneIdx = bone_indices[i];
-        if (boneIdx >= boneCount) {
-            return false;
-        }
-
-        for (size_t j = 0; j < i; ++j) {
-            if (bone_indices[j] == boneIdx) {
-                return false;
-            }
-        }
-
-        if (i > 0) {
-            const u32 parentIdx = bone_indices[i - 1];
-            if (skel.bones[boneIdx].parent_index != static_cast<s32>(parentIdx)) {
-                return false;
-            }
-        }
-    }
-    return true;
+bool FABRIKChain::needs_pose_bind_fallback(const Pose& pose, const Skeleton& skel) const {
+    return fuse::animation::needs_pose_bind_fallback(pose, skel);
 }
 
 bool FABRIKChain::has_valid_pose(const Pose& pose) const {
@@ -292,9 +314,7 @@ bool FABRIKChain::solve(Pose& pose, const Skeleton& skel) {
         return false;
     }
 
-    if (pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.bone_world_transforms.empty()) {
-        pose = Pose::make_bind_pose(skel);
-    }
+    ensure_pose_bind_fallback(pose, skel);
     if (!has_valid_pose(pose)) {
         return false;
     }
@@ -343,6 +363,14 @@ bool TwoBoneIK::has_valid_pose(const PoseSoA& pose) const {
     }
 
     return root_bone < pose.bone_count && mid_bone < pose.bone_count && end_bone < pose.bone_count;
+}
+
+bool TwoBoneIK::needs_pose_bind_fallback(const Pose& pose, const Skeleton& skel) const {
+    return fuse::animation::needs_pose_bind_fallback(pose, skel);
+}
+
+bool TwoBoneIK::needs_pose_bind_fallback(const PoseSoA& pose, const Skeleton& skel) const {
+    return needs_pose_soa_bind_fallback(pose, skel);
 }
 
 bool TwoBoneIK::has_degenerate_segments(const Pose& pose) const {
@@ -398,9 +426,7 @@ bool TwoBoneIK::solve(Pose& pose, const Skeleton& skel) {
         return false;
     }
 
-    if (pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.bone_world_transforms.empty()) {
-        pose = Pose::make_bind_pose(skel);
-    }
+    ensure_pose_bind_fallback(pose, skel);
     if (!has_valid_pose(pose) || has_degenerate_segments(pose)) {
         return false;
     }
@@ -425,9 +451,7 @@ bool TwoBoneIK::solve(PoseSoA& pose, const Skeleton& skel) {
         return false;
     }
 
-    if (pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.local_positions.empty()) {
-        pose = PoseSoA::from_bind_pose(skel);
-    }
+    ensure_pose_soa_bind_fallback(pose, skel);
     if (!has_valid_pose(pose) || has_degenerate_segments(pose)) {
         return false;
     }
