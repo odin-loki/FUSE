@@ -164,6 +164,16 @@ IslandGraphBuildRejectReason island_graph_build_reject_reason(
 
 
 /// Preflight contact-island graph build inputs; sets `skipped` when nothing can partition.
+
+
+
+
+/// Outcome for guarded island graph build (skip vs partition).
+struct IslandGraphBuildOutcome {
+    bool built = false;
+    bool unsafeRefs = false;
+
+IslandGraphBuildPreflight preflight_island_graph_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -694,9 +704,7 @@ ContactIslandGraphBuildPreflight preflight_contact_island_graph_build(
 bool should_run_island_graph_build(
 /// Non-mutating island graph build predicate (B4.4 deepen follow-up).
 bool can_build_contact_island_graph(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints);
+bool should_skip_island_graph_build(u32 bodyCount,
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -757,6 +765,8 @@ struct ContactIslandGraph {
     /// Guarded build; returns false when preflight skips build or refs are out of range.
     /// Build while skipping out-of-range constraint refs (additive safe-build stub).
     void build_skipping_unsafe_refs(u32 bodyCount,
+    /// Guarded build; clears graph and returns `skipped` when preflight rejects inputs.
+    IslandGraphBuildOutcome build_guarded(u32 bodyCount,
 
     void clear();
 
