@@ -131,6 +131,34 @@ bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
 u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history);
 
+/// History warm-up classification (B5.9 deepen).
+enum class TaaHistoryWarmupState : u8 {
+    NotReady = 0,
+    AwaitingFirstResolve,
+    Complete,
+};
+/// Human-readable label for history warm-up states (B5.9 deepen).
+const char* taaHistoryWarmupStateLabel(TaaHistoryWarmupState state);
+/// Classify history warm-up state (B5.9 deepen).
+TaaHistoryWarmupState classifyTaaHistoryWarmupState(const TaaHistoryBuffer& history);
+/// True when history warm-up is complete and temporal reuse may proceed (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+/// True when history warm-up is complete; optionally reports the classified state (B5.9 deepen).
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupState* state = nullptr);
+
+/// Resolve blend mode for the current frame (B5.9 deepen).
+enum class TaaResolveBlendMode : u8 {
+    Warmup = 0,
+    Steady,
+    StaleForcedCurrent,
+};
+/// Human-readable label for resolve blend modes (B5.9 deepen).
+const char* taaResolveBlendModeLabel(TaaResolveBlendMode mode);
+/// Classify resolve blend mode considering warm-up and reuse guards (B5.9 deepen).
+TaaResolveBlendMode classifyTaaResolveBlendMode(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when two blend-weight tuples are within `epsilon` (B5.9 deepen).
+bool taaBlendWeightsNearEqual(const TaaBlendWeights& a, const TaaBlendWeights& b, f32 epsilon = 1e-5f);
+
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
     None = 0,
@@ -145,6 +173,10 @@ TaaResolveBlendRejectReason classifyTaaResolveBlendReject(const TaaResolveDesc& 
 /// True when computed resolve blend weights pass validation and reuse policy (B5.9 deepen).
 bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                      TaaResolveBlendRejectReason* reason = nullptr);
+/// Combined resolve-frame preflight — skip check then blend-weight validation (B5.9 deepen).
+bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveSkipReason* skipReason = nullptr,
+                              TaaResolveBlendRejectReason* blendReason = nullptr);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
@@ -166,6 +198,9 @@ struct TaaResolveStats {
     /// `TaaHistoryBuffer::invalidateGeneration()` at resolve time.
     u32 history_invalidate_generation = 0;
 };
+
+/// True when resolve stats record valid, consistent blend weights (B5.9 deepen).
+bool taaResolveStatsBlendConsistent(const TaaResolveStats& stats);
 
 /// True when history allocation dimensions are non-zero (B5.9 deepen).
 bool taaHistoryBufferDescValid(const TaaHistoryBufferDesc& desc);

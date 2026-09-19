@@ -246,6 +246,48 @@ bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistor
     return reject == TaaResolveBlendRejectReason::None;
 }
 
+const char* taaResolveBlendModeLabel(TaaResolveBlendMode mode) {
+    switch (mode) {
+    case TaaResolveBlendMode::Warmup:
+        return "warmup";
+    case TaaResolveBlendMode::Steady:
+        return "steady";
+    case TaaResolveBlendMode::StaleForcedCurrent:
+        return "stale_forced_current";
+    }
+    return "unknown";
+}
+
+TaaResolveBlendMode classifyTaaResolveBlendMode(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    if (!history.hasValidHistory()) {
+        return TaaResolveBlendMode::Warmup;
+    }
+    if (!taaResolveCanReuseHistory(desc, history)) {
+        return TaaResolveBlendMode::StaleForcedCurrent;
+    }
+    return TaaResolveBlendMode::Steady;
+}
+
+bool taaBlendWeightsNearEqual(const TaaBlendWeights& a, const TaaBlendWeights& b, f32 epsilon) {
+    return std::fabs(a.current - b.current) <= epsilon && std::fabs(a.history - b.history) <= epsilon;
+}
+
+bool taaResolveStatsBlendConsistent(const TaaResolveStats& stats) {
+    const TaaBlendWeights weights{stats.effective_blend, stats.history_blend};
+    return taaBlendWeightsValid(weights);
+}
+
+bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveSkipReason* skipReason, TaaResolveBlendRejectReason* blendReason) {
+    if (!preflightTaaResolve(desc, history, skipReason)) {
+        if (blendReason != nullptr) {
+            *blendReason = TaaResolveBlendRejectReason::None;
+        }
+        return false;
+    }
+    return preflightTaaResolveBlendWeights(desc, history, blendReason);
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
         return false;

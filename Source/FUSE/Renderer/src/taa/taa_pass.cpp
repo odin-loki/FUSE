@@ -147,6 +147,27 @@ bool TaaPass::preflightResolveBlendWeights(const TaaResolveDesc& desc,
     return preflightTaaResolveBlendWeights(desc, m_history, reason);
 }
 
+TaaHistoryWarmupState TaaPass::classifyHistoryWarmupState() const {
+    return classifyTaaHistoryWarmupState(m_history);
+}
+
+bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupState* state) const {
+    return preflightTaaHistoryWarmup(m_history, state);
+}
+
+TaaResolveBlendMode TaaPass::classifyResolveBlendMode(const TaaResolveDesc& desc) const {
+    return classifyTaaResolveBlendMode(desc, m_history);
+}
+
+bool TaaPass::jitterNeedsSyncToFrameIndex(u32 frameIndex) const {
+    return m_jitter.needsSyncToFrameIndex(frameIndex);
+}
+
+bool TaaPass::preflightResolveFrame(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason,
+                                    TaaResolveBlendRejectReason* blendReason) const {
+    return preflightTaaResolveFrame(desc, m_history, skipReason, blendReason);
+}
+
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
 }
