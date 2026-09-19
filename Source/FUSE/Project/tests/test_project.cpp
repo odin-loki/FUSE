@@ -2,6 +2,8 @@
 #include <fuse/project/importer.hpp>
 #include <fuse/project/importer_extract.hpp>
 #include <fuse/project/loader.hpp>
+#include <fuse/jobs/worker_count.hpp>
+#include <fuse/platform/power.hpp>
 #include <fuse/project/manifest.hpp>
 
 #include <cstdio>
@@ -50,6 +52,31 @@ void testParseManifest() {
     const fuse::hybrid::DimensionFlags flags =
         fuse::project::toDimensionFlags(result.manifest.dimensions);
     expectTrue(flags.enable3D && !flags.enable2D, "dimension flags mapped");
+}
+
+void testWorkerCapManifest() {
+    const char* json = R"({
+  "schemaVersion": 1,
+  "name": "worker_cap_test",
+  "dimensions": { "enable3D": true, "enable2D": false, "enableUI": false },
+  "modules": { "ai": false, "cinematics": false, "fx": false, "mechanics": false, "adventure": false },
+  "defaultWorld3D": "",
+  "defaultWorld2D": "",
+  "workerCap": 4
+})";
+
+    const fuse::project::LoadResult result = fuse::project::parseManifest(json, "/tmp");
+    expectTrue(result.status == fuse::project::LoadStatus::Ok, "workerCap manifest parses");
+    expectTrue(result.manifest.workerCap == 4u, "workerCap value preserved");
+
+    fuse::jobs::setProjectWorkerCap(result.manifest.workerCap);
+    fuse::jobs::WorkerCountParams params;
+    params.usableCores = 32;
+    params.mobileProfile = false;
+    params.powerState = fuse::platform::PowerState::Normal;
+    params.hardCap = fuse::jobs::projectWorkerCap();
+    expectTrue(fuse::jobs::computeWorkerCount(params) == 4u, "project workerCap applied");
+    fuse::jobs::setProjectWorkerCap(0);
 }
 
 void testUnsupportedSchema() {
@@ -128,6 +155,7 @@ void testProjectImportDryRun() {
 int main() {
     fuse::core::initialize();
     testParseManifest();
+    testWorkerCapManifest();
     testUnsupportedSchema();
     testT3DMissionImporter();
     testT2DModuleImporter();

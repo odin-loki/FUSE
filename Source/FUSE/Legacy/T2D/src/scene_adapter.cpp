@@ -16,6 +16,7 @@ bool importSceneObject(const LegacySceneObjectStub& legacy, SceneObject2D& out) 
     }
     out.setPosition(legacy.x, legacy.y);
     out.setLayer(legacy.layer);
+    out.setSortKey(legacy.sortKey);
     return true;
 }
 
@@ -29,6 +30,7 @@ bool exportSceneObject(const SceneObject2D& src, LegacySceneObjectStub& out) {
     out.x = src.x();
     out.y = src.y();
     out.layer = src.layer();
+    out.sortKey = src.sortKey();
     return true;
 }
 

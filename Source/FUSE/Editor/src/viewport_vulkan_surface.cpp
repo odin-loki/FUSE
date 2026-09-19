@@ -34,6 +34,18 @@ void destroyViewportVulkanSurface(ViewportVulkanSurfaceResult& result) {
     result = {};
 }
 
+QVulkanWindowWsiProbeResult probeQVulkanWindowWsi() {
+    QVulkanWindowWsiProbeResult result{};
+#if defined(FUSE_HAS_QT_VULKAN)
+    extern QVulkanWindowWsiProbeResult probeQVulkanWindowWsiQt();
+    return probeQVulkanWindowWsiQt();
+#else
+    result.headlessSkipped = true;
+    result.note = "qt_vulkan_module_unavailable";
+    return result;
+#endif
+}
+
 ViewportVulkanBootstrapStressResult stressViewportVulkanBootstrapTeardown(u32 cycles) {
     ViewportVulkanBootstrapStressResult stress{};
     if (cycles == 0u) {

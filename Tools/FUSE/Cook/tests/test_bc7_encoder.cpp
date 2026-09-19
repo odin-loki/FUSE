@@ -32,6 +32,25 @@ void testBc7SolidBlockRoundTrip() {
     expectTrue(b >= 24 && b <= 40, "bc7 blue round-trip within tolerance");
 }
 
+void testBc7DualEndpointBlock() {
+    fuse::u8 rgba[64];
+    for (fuse::u32 i = 0; i < 16u; ++i) {
+        const fuse::u8 value = (i < 8u) ? 32u : 224u;
+        rgba[i * 4u + 0] = value;
+        rgba[i * 4u + 1] = value;
+        rgba[i * 4u + 2] = value;
+        rgba[i * 4u + 3] = 255u;
+    }
+
+    fuse::u8 block[16];
+    fuse::cook::bc7_encode_dual_endpoint_block(rgba, block);
+
+    fuse::u8 decoded[64];
+    expectTrue(fuse::cook::bc7_decode_dual_endpoint_block(block, decoded), "dual endpoint decode ok");
+    expectTrue(decoded[0] < 96u, "dark endpoint preserved");
+    expectTrue(decoded[60] > 160u, "bright endpoint preserved");
+}
+
 void testBc7EncodeImageBlocks() {
     const fuse::u8 rgba[] = {
         255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
@@ -71,6 +90,7 @@ void testBc7CookWriter() {
 int main() {
     fuse::core::initialize();
     testBc7SolidBlockRoundTrip();
+    testBc7DualEndpointBlock();
     testBc7EncodeImageBlocks();
     testBc7CookWriter();
     fuse::core::shutdown();

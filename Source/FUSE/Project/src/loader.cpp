@@ -62,6 +62,7 @@ LoadResult parseManifest(std::string_view jsonText, const std::string& projectRo
 
     reader.readString("defaultWorld3D", result.manifest.defaultWorld3D);
     reader.readString("defaultWorld2D", result.manifest.defaultWorld2D);
+    reader.readU32("workerCap", result.manifest.workerCap);
 
     result.status = LoadStatus::Ok;
     return result;

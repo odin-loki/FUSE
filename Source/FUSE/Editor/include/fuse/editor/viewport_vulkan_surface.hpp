@@ -32,4 +32,14 @@ struct ViewportVulkanBootstrapStressResult {
 
 [[nodiscard]] ViewportVulkanBootstrapStressResult stressViewportVulkanBootstrapTeardown(u32 cycles);
 
+/// Headless-safe `QVulkanWindow` WSI probe (wave 9). Skips when no display server.
+struct QVulkanWindowWsiProbeResult {
+    bool attempted = false;
+    bool surfaceReady = false;
+    bool headlessSkipped = false;
+    const char* note = nullptr;
+};
+
+[[nodiscard]] QVulkanWindowWsiProbeResult probeQVulkanWindowWsi();
+
 } // namespace fuse::editor

@@ -31,6 +31,8 @@ void RuntimeEmbedSession::reset() {
     usesExternalSwapchain = false;
     surfaceHandoffPending = false;
     surfaceHandoffConsumed = false;
+    qVulkanWindowWsiProbed = false;
+    qVulkanWindowWsiReady = false;
 }
 
 } // namespace fuse::editor

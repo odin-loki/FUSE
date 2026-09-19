@@ -26,8 +26,14 @@ struct Bc7RgbaImage {
 /// Encode one 4×4 RGBA8 block into 16-byte BC7 mode-6 solid payload.
 void bc7_encode_solid_block(u8 block[16], u8 r, u8 g, u8 b, u8 a = 255);
 
+/// Encode one 4×4 RGBA8 block with dual endpoints (mode 6, low-risk quality deepen).
+void bc7_encode_dual_endpoint_block(const u8* rgba4x4, u8 block[16]);
+
 /// Decode mode-6 solid block (stub round-trip validation).
 bool bc7_decode_solid_block(const u8 block[16], u8& r, u8& g, u8& b, u8& a);
+
+/// Decode mode-6 dual-endpoint block (approximate round-trip validation).
+bool bc7_decode_dual_endpoint_block(const u8 block[16], u8 rgba4x4[64]);
 
 /// Pad dimensions up to multiples of 4.
 u32 bc7_padded_dimension(u32 value);

@@ -188,14 +188,22 @@ Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed
 | `fuse::scene::applyWireBindingsFromScene` | One-shot: populate table from scene, create ECS entities for non-wire objects, apply bindings |
 | `World2D::setProjectWorldSource` | `loadWorld()` resolves `projectRoot + defaultWorld2D` when no explicit fuselevel path is set |
 
-Cook encoder hooks (`fuse_cook_stubs`): vendored Assimp fallback when system `libassimp-dev` is absent; STB RGBA decode + in-house BC7 mode-6 block payload (`fuse/cook/bc7_encoder.hpp`); optional ispc_texcomp when `third_party/ispc_texcomp` is present; OGG when `libvorbisenc` is linked.
+Cook encoder hooks (`fuse_cook_stubs`): vendored Assimp fallback when system `libassimp-dev` is absent; STB RGBA decode + in-house BC7 mode-6 dual-endpoint block payload (`fuse/cook/bc7_encoder.hpp`); optional ispc_texcomp when `third_party/ispc_texcomp` is present; OGG when `libvorbisenc` is linked.
 
-CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_assets_b79`.
+## 11. Wave 9 progress
 
-## 11. Deferred (honest backlog)
+| API | Role |
+|-----|------|
+| `bridgeT2DModuleToRuntime` | Layers, sort keys, composite-sprite hierarchy, physics enable from module extract |
+| `resolveT3DMissionBindings` / `resolveT3DBindingsFromScene` | Owner-linked datablock/material resolution with hashed ref ids |
+| `project.json` `workerCap` | Parsed into `ProjectManifest::workerCap`; applied via `jobs::setProjectWorkerCap` on runtime embed load |
+| `jobs::setProjectWorkerCap` | Hard-caps `computeWorkerCountForCurrentPlatform()` (architecture-parallel §3.1.1) |
 
-- ispc_texcomp-quality BC7/BC5 compression replacing mode-6 solid-block stub
+CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_world_converter`, `fuse_bc7_encoder`, `fuse_assets_b79`.
+
+## 12. Deferred (honest backlog)
+
+- ispc_texcomp-quality BC7/BC5 compression replacing in-house mode-6 encoder
 - libvorbisenc system package on CI images (runtime libs present; dev headers optional today)
-- T2D toybox runtime parity (physics, layers, composite sprites beyond sprite bridge)
+- Full T2D toybox physics shapes / collision layers beyond circle bodies
 - Asset path remapping via VFS mounts ([vfs-mount-plan.md](./vfs-mount-plan.md))
-- `project.json` `workerCap` override for `computeWorkerCount()`

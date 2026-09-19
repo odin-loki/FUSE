@@ -20,4 +20,10 @@ u32 computeWorkerCount(const WorkerCountParams& params);
 /// Convenience: query platform stubs and compute worker count.
 u32 computeWorkerCountForCurrentPlatform();
 
+/// Apply optional `project.json` `workerCap` override (0 clears override).
+void setProjectWorkerCap(u32 cap);
+
+/// Active project override; 0 when unset.
+u32 projectWorkerCap();
+
 } // namespace fuse::jobs

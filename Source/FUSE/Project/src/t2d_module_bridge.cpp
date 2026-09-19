@@ -60,6 +60,19 @@ fuse::scene::SceneEntityTransform makeSceneTransform(const T2DSceneNodeStub& nod
     return transform;
 }
 
+legacy::t2d::LegacySceneObjectStub makeLegacyStub(const T2DSceneNodeStub& node, u32 spriteIndex) {
+    legacy::t2d::LegacySceneObjectStub legacy{};
+    legacy.legacyId = spriteIndex + 1u;
+    legacy.name = node.objectName.empty() ? node.className : node.objectName;
+    legacy.layer = node.layer;
+    legacy.sortKey = node.sortKey;
+    legacy.compositeSprite = node.isCompositeSprite;
+    if (!node.position.empty()) {
+        parseFloatPair(node.position, legacy.x, legacy.y);
+    }
+    return legacy;
+}
+
 } // namespace
 
 u32 populateSceneFromModuleExtract(fuse::scene::Scene& scene, const T2DModuleExtract& extract) {
@@ -99,35 +112,59 @@ T2DRuntimeBridgeResult populateWorld2DFromModuleExtract(fuse::world2d::World2D& 
     T2DRuntimeBridgeResult result;
     result.nodeCount = static_cast<u32>(extract.sceneNodes.size());
 
+    bool anyPhysics = false;
     u32 spriteIndex = 0;
+    std::vector<fuse::SceneObject2D*> depthParents;
+    depthParents.resize(32u, nullptr);
+
     for (const T2DSceneNodeStub& node : extract.sceneNodes) {
-        if (!isSpriteLikeClass(node.className)) {
+        if (!isSpriteLikeClass(node.className) && !node.isCompositeSprite) {
+            if (static_cast<std::size_t>(node.depth) < depthParents.size()) {
+                depthParents[static_cast<std::size_t>(node.depth)] = nullptr;
+            }
             continue;
         }
 
-        fuse::SceneObject2D* sprite = new fuse::SceneObject2D(
+        auto sprite = std::make_unique<fuse::SceneObject2D>(
             node.objectName.empty() ? node.className : node.objectName);
 
-        legacy::t2d::LegacySceneObjectStub legacy{};
-        legacy.legacyId = spriteIndex + 1u;
-        legacy.name = sprite->name();
-        legacy.layer = static_cast<s32>(node.depth);
-        if (!node.position.empty()) {
-            parseFloatPair(node.position, legacy.x, legacy.y);
-        }
-
+        const legacy::t2d::LegacySceneObjectStub legacy = makeLegacyStub(node, spriteIndex);
         if (!legacy::t2d::importSceneObject(legacy, *sprite)) {
-            delete sprite;
             continue;
         }
 
-        world.addSprite(sprite);
+        fuse::SceneObject2D* parent = nullptr;
+        if (node.depth > 0 && static_cast<std::size_t>(node.depth - 1) < depthParents.size()) {
+            parent = depthParents[static_cast<std::size_t>(node.depth - 1)];
+        }
+
+        if (parent != nullptr) {
+            parent->addChild(sprite.get());
+            world.addSprite(sprite.get());
+        } else {
+            world.addSprite(sprite.get());
+        }
+
+        if (static_cast<std::size_t>(node.depth) < depthParents.size()) {
+            depthParents[static_cast<std::size_t>(node.depth)] =
+                node.isCompositeSprite ? sprite.get() : nullptr;
+        }
+
+        world.adoptOwnedSprite(std::move(sprite));
+        if (node.physicsEnabled) {
+            anyPhysics = true;
+        }
         ++spriteIndex;
+    }
+
+    if (anyPhysics) {
+        world.setPhysicsEnabled(true);
     }
 
     result.spriteCount = spriteIndex;
     result.ok = true;
-    result.note = "bridged " + std::to_string(result.spriteCount) + " sprites from T2D module extract";
+    result.note = "bridged " + std::to_string(result.spriteCount) +
+                  " sprites from T2D module extract (layers/physics/composite)";
     return result;
 }
 

@@ -4,9 +4,11 @@
 #include <fuse/editor/editor_scene.hpp>
 #include <fuse/editor/viewport_swapchain_recreate.hpp>
 #include <fuse/editor/viewport_swapchain_wiring.hpp>
+#include <fuse/editor/viewport_vulkan_surface.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/platform/window_wsi.hpp>
+#include <fuse/jobs/worker_count.hpp>
 #include <fuse/project/loader.hpp>
 #include <fuse/scene/project_io.hpp>
 #include <fuse/scene/serialiser.hpp>
@@ -199,6 +201,8 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
         return;
     }
 
+    fuse::jobs::setProjectWorkerCap(projectLoad.manifest.workerCap);
+
     fuse::scene::Scene& runtimeScene = host.runtimeScene();
     const fuse::scene::SerialiseResult loaded =
         fuse::scene::loadForProject(runtimeScene, projectLoad);
@@ -363,6 +367,13 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
 
 void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
     applyPendingResize_();
+
+    if (!m_embedSession.qVulkanWindowWsiProbed) {
+        const QVulkanWindowWsiProbeResult probe = probeQVulkanWindowWsi();
+        m_embedSession.qVulkanWindowWsiProbed = probe.attempted || probe.headlessSkipped;
+        m_embedSession.qVulkanWindowWsiReady = probe.surfaceReady;
+    }
+
     ensureWorldLoaded_(host);
     mirrorEditorEntities_(host);
 

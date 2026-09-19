@@ -142,7 +142,8 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 | ECS `Registry::has_all<Ts...>()` + lazy init (Linux segfault fix); cull light path requires Transform + light | — |
 | `ViewportSwapchainWiring` consumes External handoff via `VulkanBootstrap::ensureSwapchain` (headless fallback; Qt winId stub short-circuits safely) | Live Qt swapchain present |
 | Optional `QVulkanInstance` surface path in viewport widget (headless-safe: skips when no DISPLAY/WAYLAND; winId stub fallback) | — |
-| `RuntimeViewportHook` loads manifest world, applies wire bindings (`wireEcsMaterialApplied` / `wireEcsSpawnApplied`), mirrors editor entities, null WSI headless GPU stub | Full in-process GPU viewport compositing |
+| `probeQVulkanWindowWsi` — headless-safe `QVulkanWindow` surface probe; `RuntimeEmbedSession::qVulkanWindowWsiReady` counter | Full in-process GPU viewport compositing |
+| `RuntimeViewportHook` loads manifest world, applies wire bindings + `workerCap`, mirrors editor entities, `PresentPath` tick counters | Live Qt swapchain present under real WSI |
 
 ---
 

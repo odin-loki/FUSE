@@ -422,6 +422,15 @@ void testRuntimeViewportSurfaceHandoffStub() {
 #endif
 }
 
+void testQVulkanWindowWsiProbeHeadlessSafe() {
+    const fuse::editor::QVulkanWindowWsiProbeResult probe = fuse::editor::probeQVulkanWindowWsi();
+#if defined(FUSE_HAS_QT_VULKAN)
+    expectTrue(probe.attempted || probe.headlessSkipped, "qvulkan window probe attempted or skipped");
+#else
+    expectTrue(probe.headlessSkipped, "qvulkan window probe skipped without Qt Vulkan");
+#endif
+}
+
 void testViewportVulkanSurfaceBootstrapStub() {
     const fuse::editor::ViewportVulkanSurfaceResult result =
         fuse::editor::createViewportVulkanSurfaceFromWinId(4242u, 800u, 450u);
@@ -719,6 +728,7 @@ int main() {
     testRuntimeViewportSurfaceHandoffStub();
     testRuntimeViewportQVulkanSurfaceHandoffCommand();
     testRuntimeViewportQtSurfaceHandoffCommand();
+    testQVulkanWindowWsiProbeHeadlessSafe();
     testViewportVulkanSurfaceBootstrapStub();
     testViewportVulkanBootstrapTeardownStress();
     testRuntimeViewportSwapchainRecreateAfterHandoff();

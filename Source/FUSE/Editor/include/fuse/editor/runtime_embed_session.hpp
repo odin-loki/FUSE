@@ -33,6 +33,8 @@ struct RuntimeEmbedSession {
     bool wsiPresentPathReady = false;
     bool surfaceHandoffPending = false;
     bool surfaceHandoffConsumed = false;
+    bool qVulkanWindowWsiProbed = false;
+    bool qVulkanWindowWsiReady = false;
 
     void reset();
 };

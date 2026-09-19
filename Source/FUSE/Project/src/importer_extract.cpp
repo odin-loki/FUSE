@@ -1,6 +1,7 @@
 #include <fuse/project/importer_extract.hpp>
 
 #include <cctype>
+#include <cstdlib>
 #include <string_view>
 
 namespace fuse::project {
@@ -65,6 +66,39 @@ std::string extractAssignmentValue(std::string_view line, std::string_view key) 
     }
 
     return trimToken(line.substr(cursor, end - cursor));
+}
+
+bool parseU32Token(std::string_view text, u32& out) {
+    std::string trimmed = trimToken(text);
+    if (trimmed.empty()) {
+        return false;
+    }
+
+    char* end = nullptr;
+    const unsigned long value = std::strtoul(trimmed.c_str(), &end, 10);
+    if (end == trimmed.c_str() || (end != nullptr && *end != '\0')) {
+        return false;
+    }
+
+    out = static_cast<u32>(value);
+    return true;
+}
+
+bool parseBoolToken(std::string_view text, bool& out) {
+    const std::string trimmed = trimToken(text);
+    if (trimmed == "true" || trimmed == "1") {
+        out = true;
+        return true;
+    }
+    if (trimmed == "false" || trimmed == "0") {
+        out = false;
+        return true;
+    }
+    return false;
+}
+
+bool isCompositeSpriteClass(const std::string& className) {
+    return className.find("CompositeSprite") != std::string::npos;
 }
 
 bool parseNewObjectLine(std::string_view line, std::string& className, std::string& objectName) {
@@ -169,14 +203,17 @@ T3DMissionExtract extractT3DMissionFields(const std::string& missionText) {
         const std::string materialAsset = extractQuotedValue(line, "MaterialAsset = ");
         if (!materialAsset.empty()) {
             extract.materials.push_back({materialAsset});
-            if (current != nullptr && current->className.find("Sky") != std::string::npos) {
-                current->scale = materialAsset;
+            if (current != nullptr) {
+                current->materialAsset = materialAsset;
             }
         }
 
         const std::string datablock = extractAssignmentValue(line, "dataBlock = ");
         if (!datablock.empty()) {
             extract.datablocks.push_back({datablock});
+            if (current != nullptr) {
+                current->datablockRef = datablock;
+            }
         }
 
         if (current != nullptr) {
@@ -270,6 +307,7 @@ T2DModuleExtract extractT2DModuleFields(const std::string& moduleText, const std
             node.className = className;
             node.objectName = objectName;
             node.depth = depth;
+            node.isCompositeSprite = isCompositeSpriteClass(className);
             extract.sceneNodes.push_back(node);
             current = &extract.sceneNodes.back();
         }
@@ -278,6 +316,39 @@ T2DModuleExtract extractT2DModuleFields(const std::string& moduleText, const std
             const std::string position = extractAssignmentValue(line, "position = ");
             if (!position.empty()) {
                 current->position = position;
+            }
+
+            u32 layerValue = 0;
+            const std::string layer = extractAssignmentValue(line, "layer = ");
+            if (!layer.empty() && parseU32Token(layer, layerValue)) {
+                current->layer = static_cast<s32>(layerValue);
+            }
+
+            const std::string sceneLayer = extractAssignmentValue(line, "SceneLayer = ");
+            if (!sceneLayer.empty() && parseU32Token(sceneLayer, layerValue)) {
+                current->layer = static_cast<s32>(layerValue);
+            }
+
+            u32 sortValue = 0;
+            const std::string sortPoint = extractAssignmentValue(line, "sortPoint = ");
+            if (!sortPoint.empty() && parseU32Token(sortPoint, sortValue)) {
+                current->sortKey = sortValue;
+            }
+
+            const std::string sortKey = extractAssignmentValue(line, "sortKey = ");
+            if (!sortKey.empty() && parseU32Token(sortKey, sortValue)) {
+                current->sortKey = sortValue;
+            }
+
+            bool physics = false;
+            const std::string physicsEnabled = extractAssignmentValue(line, "physicsEnabled = ");
+            if (!physicsEnabled.empty() && parseBoolToken(physicsEnabled, physics)) {
+                current->physicsEnabled = physics;
+            }
+
+            const std::string usePhysics = extractAssignmentValue(line, "usePhysics = ");
+            if (!usePhysics.empty() && parseBoolToken(usePhysics, physics)) {
+                current->physicsEnabled = physics;
             }
         }
 

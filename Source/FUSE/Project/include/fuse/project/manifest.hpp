@@ -30,6 +30,8 @@ struct ProjectManifest {
     ModuleSettings modules;
     std::string defaultWorld3D;
     std::string defaultWorld2D;
+    /// Optional override for `jobs::computeWorkerCount()` (0 = platform default).
+    u32 workerCap = 0;
 };
 
 enum class LoadStatus : u8 {

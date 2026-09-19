@@ -13,6 +13,8 @@ struct T3DSimObjectStub {
     std::string position;
     std::string rotation;
     std::string scale;
+    std::string datablockRef;
+    std::string materialAsset;
 };
 
 struct T3DMaterialRefStub {
@@ -35,6 +37,10 @@ struct T2DSceneNodeStub {
     std::string objectName;
     std::string position;
     s32 depth = 0;
+    s32 layer = 0;
+    u32 sortKey = 0;
+    bool physicsEnabled = false;
+    bool isCompositeSprite = false;
 };
 
 struct T2DModuleExtract {

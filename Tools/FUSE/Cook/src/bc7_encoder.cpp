@@ -52,6 +52,10 @@ u64 read_bits(const u8* block, u32 bitOffset, u32 bitCount) {
     return value;
 }
 
+u32 luminance(u8 r, u8 g, u8 b) {
+    return static_cast<u32>(r) * 30u + static_cast<u32>(g) * 59u + static_cast<u32>(b) * 11u;
+}
+
 void average_rgba4x4(const u8* rgba, u32 width, u32 height, u32 blockX, u32 blockY, u8& r, u8& g,
                      u8& b, u8& a) {
     u32 sumR = 0;
@@ -129,6 +133,122 @@ void bc7_encode_solid_block(u8 block[16], u8 r, u8 g, u8 b, u8 a) {
         write_bits(block, bit, 2, 0);
         bit += 2;
     }
+}
+
+void bc7_encode_dual_endpoint_block(const u8* rgba4x4, u8 block[16]) {
+    u8 minR = 255;
+    u8 minG = 255;
+    u8 minB = 255;
+    u8 minA = 255;
+    u8 maxR = 0;
+    u8 maxG = 0;
+    u8 maxB = 0;
+    u8 maxA = 0;
+
+    for (u32 i = 0; i < 16u; ++i) {
+        const u8 r = rgba4x4[i * 4u + 0];
+        const u8 g = rgba4x4[i * 4u + 1];
+        const u8 b = rgba4x4[i * 4u + 2];
+        const u8 a = rgba4x4[i * 4u + 3];
+        minR = std::min(minR, r);
+        minG = std::min(minG, g);
+        minB = std::min(minB, b);
+        minA = std::min(minA, a);
+        maxR = std::max(maxR, r);
+        maxG = std::max(maxG, g);
+        maxB = std::max(maxB, b);
+        maxA = std::max(maxA, a);
+    }
+
+    if (minR == maxR && minG == maxG && minB == maxB && minA == maxA) {
+        bc7_encode_solid_block(block, minR, minG, minB, minA);
+        return;
+    }
+
+    for (u32 i = 0; i < 16u; ++i) {
+        block[i] = 0;
+    }
+    write_bits(block, 6, 1, 1);
+
+    const u8 r0 = quantize7(minR);
+    const u8 g0 = quantize7(minG);
+    const u8 b0 = quantize7(minB);
+    const u8 a0 = quantize7(minA);
+    const u8 r1 = quantize7(maxR);
+    const u8 g1 = quantize7(maxG);
+    const u8 b1 = quantize7(maxB);
+    const u8 a1 = quantize7(maxA);
+
+    u32 bit = 7;
+    write_bits(block, bit, 7, r0);
+    bit += 7;
+    write_bits(block, bit, 7, r1);
+    bit += 7;
+    write_bits(block, bit, 7, g0);
+    bit += 7;
+    write_bits(block, bit, 7, g1);
+    bit += 7;
+    write_bits(block, bit, 7, b0);
+    bit += 7;
+    write_bits(block, bit, 7, b1);
+    bit += 7;
+    write_bits(block, bit, 7, a0);
+    bit += 7;
+    write_bits(block, bit, 7, a1);
+    bit += 7;
+
+    const u32 minLum = luminance(minR, minG, minB);
+    const u32 maxLum = luminance(maxR, maxG, maxB);
+    const u32 threshold = (minLum + maxLum) / 2u;
+
+    for (u32 index = 0; index < 16u; ++index) {
+        const u8 r = rgba4x4[index * 4u + 0];
+        const u8 g = rgba4x4[index * 4u + 1];
+        const u8 b = rgba4x4[index * 4u + 2];
+        const u32 lum = luminance(r, g, b);
+        const u32 selector = lum >= threshold ? 1u : 0u;
+        write_bits(block, bit, 2, selector);
+        bit += 2;
+    }
+}
+
+bool bc7_decode_dual_endpoint_block(const u8 block[16], u8 rgba4x4[64]) {
+    if ((block[0] & 0x7Fu) != 0x40u) {
+        return false;
+    }
+
+    u32 bit = 7;
+    const u8 r0 = static_cast<u8>(read_bits(block, bit, 7));
+    bit += 7;
+    const u8 r1 = static_cast<u8>(read_bits(block, bit, 7));
+    bit += 7;
+    const u8 g0 = static_cast<u8>(read_bits(block, bit, 7));
+    bit += 7;
+    const u8 g1 = static_cast<u8>(read_bits(block, bit, 7));
+    bit += 7;
+    const u8 b0 = static_cast<u8>(read_bits(block, bit, 7));
+    bit += 7;
+    const u8 b1 = static_cast<u8>(read_bits(block, bit, 7));
+    bit += 7;
+    const u8 a0 = static_cast<u8>(read_bits(block, bit, 7));
+    bit += 7;
+    const u8 a1 = static_cast<u8>(read_bits(block, bit, 7));
+    bit += 7;
+
+    for (u32 index = 0; index < 16u; ++index) {
+        const u32 selector = static_cast<u32>(read_bits(block, bit, 2)) & 1u;
+        bit += 2;
+        const u8 r = expand7(selector == 0u ? r0 : r1);
+        const u8 g = expand7(selector == 0u ? g0 : g1);
+        const u8 b = expand7(selector == 0u ? b0 : b1);
+        const u8 a = expand7(selector == 0u ? a0 : a1);
+        rgba4x4[index * 4u + 0] = r;
+        rgba4x4[index * 4u + 1] = g;
+        rgba4x4[index * 4u + 2] = b;
+        rgba4x4[index * 4u + 3] = a;
+    }
+
+    return true;
 }
 
 bool bc7_decode_solid_block(const u8 block[16], u8& r, u8& g, u8& b, u8& a) {
@@ -212,14 +332,24 @@ Bc7EncodeResult encode_bc7_rgba8(const u8* rgba, u32 width, u32 height, std::vec
     outBlocks.resize(static_cast<std::size_t>(result.blockCount) * 16u);
     for (u32 by = 0; by < blocksY; ++by) {
         for (u32 bx = 0; bx < blocksX; ++bx) {
-            u8 r = 0;
-            u8 g = 0;
-            u8 b = 0;
-            u8 a = 255;
-            average_rgba4x4(rgba, width, height, bx, by, r, g, b, a);
+            u8 tile[64];
+            for (u32 y = 0; y < 4u; ++y) {
+                for (u32 x = 0; x < 4u; ++x) {
+                    const u32 px = bx * 4u + x;
+                    const u32 py = by * 4u + y;
+                    const u32 sx = px < width ? px : (width > 0 ? width - 1u : 0u);
+                    const u32 sy = py < height ? py : (height > 0 ? height - 1u : 0u);
+                    const u32 srcIndex = (sy * width + sx) * 4u;
+                    const u32 dstIndex = (y * 4u + x) * 4u;
+                    tile[dstIndex + 0] = rgba[srcIndex + 0];
+                    tile[dstIndex + 1] = rgba[srcIndex + 1];
+                    tile[dstIndex + 2] = rgba[srcIndex + 2];
+                    tile[dstIndex + 3] = rgba[srcIndex + 3];
+                }
+            }
 
             u8 block[16];
-            bc7_encode_solid_block(block, r, g, b, a);
+            bc7_encode_dual_endpoint_block(tile, block);
             const std::size_t offset = static_cast<std::size_t>((by * blocksX + bx) * 16u);
             for (u32 i = 0; i < 16u; ++i) {
                 outBlocks[offset + i] = block[i];
@@ -228,7 +358,7 @@ Bc7EncodeResult encode_bc7_rgba8(const u8* rgba, u32 width, u32 height, std::vec
     }
 
     result.ok = true;
-    result.note = "bc7 mode-6 block encoding (honest stub)";
+    result.note = "bc7 mode-6 dual-endpoint block encoding";
     return result;
 }
 

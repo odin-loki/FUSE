@@ -17,6 +17,8 @@ struct LegacySceneObjectStub {
     float x = 0.f;
     float y = 0.f;
     s32 layer = 0;
+    u32 sortKey = 0;
+    bool compositeSprite = false;
 };
 
 /// Import legacy stub fields into a greenfield node (game thread only).

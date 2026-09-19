@@ -49,8 +49,10 @@ target_compile_features(fuse_project PUBLIC cxx_std_17)
 add_library(fuse_world_converter STATIC
     src/world_converter.cpp
     src/t2d_module_bridge.cpp
+    src/t3d_datablock_resolve.cpp
     include/fuse/project/world_converter.hpp
     include/fuse/project/t2d_module_bridge.hpp
+    include/fuse/project/t3d_datablock_resolve.hpp
 )
 
 add_library(fuse::world_converter ALIAS fuse_world_converter)

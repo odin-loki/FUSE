@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/project/t2d_module_bridge.hpp>
+#include <fuse/project/t3d_datablock_resolve.hpp>
 #include <fuse/project/world_converter.hpp>
 #include <fuse/scene/serialiser.hpp>
 #include <fuse/world2d/world_2d.hpp>
@@ -7,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <sstream>
 #include <string>
 
 namespace {
@@ -183,6 +185,81 @@ void testConvertT2DModuleHierarchy() {
     expectTrue(foundChildWithParent, "t2d hierarchy parent indices preserved");
 }
 
+void testT3DDatablockResolveFromMission() {
+    const std::string mission = writeTempFile(
+        "/tmp/fuse_t3d_resolve.mis",
+        "new Scene(ExampleLevel) {\n"
+        "   new GroundPlane(Floor) {\n"
+        "      MaterialAsset = \"Prototyping:FloorGray\";\n"
+        "   };\n"
+        "   new SpawnSphere(DefaultCameraSpawnSphere) {\n"
+        "      dataBlock = \"SpawnSphereMarker\";\n"
+        "   };\n"
+        "};\n");
+
+    const std::string text = [&]() {
+        std::ifstream in(mission);
+        std::ostringstream buffer;
+        buffer << in.rdbuf();
+        return buffer.str();
+    }();
+
+    const fuse::project::T3DMissionExtract extract = fuse::project::extractT3DMissionFields(text);
+    const fuse::project::T3DDatablockResolveResult resolved =
+        fuse::project::resolveT3DMissionBindings(extract);
+
+    expectTrue(resolved.ownerLinked >= 2u, "mission resolve linked owners");
+    expectTrue(resolved.datablockCount >= 1u, "datablock resolved");
+    expectTrue(resolved.materialCount >= 1u, "material resolved");
+    expectTrue(resolved.bindings[0].resolvedId != 0u, "resolved id hashed");
+}
+
+void testT3DDatablockResolveFromScene() {
+    const std::string mission = writeTempFile(
+        "/tmp/fuse_t3d_resolve_scene.mis",
+        "new Scene(ExampleLevel) {\n"
+        "   new SpawnSphere(DefaultCameraSpawnSphere) {\n"
+        "      dataBlock = \"SpawnSphereMarker\";\n"
+        "   };\n"
+        "};\n");
+    const std::string output = "/tmp/fuse_t3d_resolve_scene.fuselevel";
+    const fuse::project::ConvertResult converted =
+        fuse::project::convertT3DMissionToFuselevel(mission, output);
+    expectTrue(converted.status == fuse::project::ConvertStatus::Ok, "mission converts for resolve");
+
+    fuse::scene::Scene loaded;
+    const fuse::scene::SerialiseResult loadResult = fuse::scene::SceneSerialiser::load(output, loaded);
+    expectTrue(loadResult.status == fuse::scene::SerialiseStatus::Ok, "fuselevel loads for resolve");
+
+    const fuse::project::T3DDatablockResolveResult resolved =
+        fuse::project::resolveT3DBindingsFromScene(loaded);
+    expectTrue(resolved.datablockCount >= 1u, "scene wire resolve datablock");
+}
+
+void testT2DModuleRuntimeBridgeLayersPhysicsComposite() {
+    const std::string module = writeTempFile(
+        "/tmp/fuse_t2d_deep_bridge.cs",
+        R"(module "CompositeToy";
+new SceneToy() {
+  new CompositeSprite(Composite) {
+    layer = 2;
+    new SpritePlayer(ChildA) {
+      position = "1 2";
+      sortPoint = 10;
+      physicsEnabled = true;
+    };
+  };
+};)");
+
+    fuse::world2d::World2D world;
+    const fuse::project::T2DRuntimeBridgeResult bridged =
+        fuse::project::bridgeT2DModuleToRuntime(world, module);
+
+    expectTrue(bridged.ok, "t2d deep runtime bridge ok");
+    expectTrue(bridged.spriteCount >= 2u, "composite + child sprites bridged");
+    expectTrue(world.isPhysicsEnabled(), "physics enabled when module requests it");
+}
+
 void testT2DModuleRuntimeBridge() {
     const std::string module = writeTempFile(
         "/tmp/fuse_t2d_bridge.cs",
@@ -208,7 +285,10 @@ int main() {
     testConvertT2DModuleToFuselevel();
     testConvertT2DModuleHierarchy();
     testConvertT3DDatablockWiringStubs();
+    testT3DDatablockResolveFromMission();
+    testT3DDatablockResolveFromScene();
     testT2DModuleRuntimeBridge();
+    testT2DModuleRuntimeBridgeLayersPhysicsComposite();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

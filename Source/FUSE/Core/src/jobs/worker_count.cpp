@@ -9,6 +9,8 @@ namespace fuse::jobs {
 
 namespace {
 
+u32 g_projectWorkerCap = 0;
+
 u32 clampU32(u32 value, u32 minValue, u32 maxValue) {
     return std::min(std::max(value, minValue), maxValue);
 }
@@ -67,8 +69,17 @@ u32 computeWorkerCountForCurrentPlatform() {
     params.performanceCores = platform::getPerformanceCoreCount();
     params.powerState = platform::getPowerState();
     params.mobileProfile = platform::isMobileProfile();
+    params.hardCap = g_projectWorkerCap;
 
     return computeWorkerCount(params);
+}
+
+void setProjectWorkerCap(u32 cap) {
+    g_projectWorkerCap = cap;
+}
+
+u32 projectWorkerCap() {
+    return g_projectWorkerCap;
 }
 
 } // namespace fuse::jobs

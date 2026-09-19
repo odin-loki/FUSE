@@ -4,7 +4,10 @@
 
 #include <QGuiApplication>
 #include <QVulkanInstance>
+#include <QVulkanWindow>
 #include <QWindow>
+
+#include <cstdlib>
 
 #include <vulkan/vulkan.h>
 
@@ -66,6 +69,52 @@ ViewportVulkanSurfaceResult createViewportVulkanSurfaceFromWinIdQt(u64 winId, u3
     result.valid = true;
     result.stubPath = false;
     result.message = "QVulkanInstance surface created";
+    return result;
+}
+
+bool hasDisplayServer() {
+#if defined(__linux__)
+    const char* display = std::getenv("DISPLAY");
+    const char* wayland = std::getenv("WAYLAND_DISPLAY");
+    return (display != nullptr && display[0] != '\0') ||
+           (wayland != nullptr && wayland[0] != '\0');
+#else
+    return true;
+#endif
+}
+
+QVulkanWindowWsiProbeResult probeQVulkanWindowWsiQt() {
+    QVulkanWindowWsiProbeResult result{};
+    result.attempted = true;
+
+    if (!hasDisplayServer()) {
+        result.headlessSkipped = true;
+        result.note = "headless_no_display_server";
+        return result;
+    }
+
+    QVulkanInstance* instance = sharedQtVulkanInstance();
+    if (instance == nullptr) {
+        result.note = "qvulkan_instance_create_failed";
+        return result;
+    }
+
+    QVulkanWindow window;
+    window.setVulkanInstance(instance);
+    window.setWidth(64);
+    window.setHeight(64);
+    window.create();
+
+    const VkSurfaceKHR surface = window.vulkanSurface();
+    if (surface == VK_NULL_HANDLE) {
+        result.note = "qvulkan_window_surface_failed";
+        window.destroy();
+        return result;
+    }
+
+    result.surfaceReady = true;
+    result.note = "qvulkan_window_surface";
+    window.destroy();
     return result;
 }
 
