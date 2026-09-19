@@ -1112,6 +1112,7 @@ void runBroadphaseIntoBufferInternal(
     if (!preflight_broadphase_dispatch(bodies, shapes).can_dispatch()) {
     if (should_skip_broadphase_build(bodies, shapes)) {
     if (can_skip_broadphase_dispatch(bodies, shapes)) {
+    if (!shouldRunBroadphase(bodies, shapes)) {
         return;
     }
 

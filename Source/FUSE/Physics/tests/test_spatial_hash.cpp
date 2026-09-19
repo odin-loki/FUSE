@@ -3178,7 +3178,6 @@ void testBroadphaseMergePreflightGuards() {
     expectTrue(!emptyPreflight.canMerge(), "empty scene cannot merge plane-dynamic pairs");
     expectTrue(emptyPreflight.emptyPlaneBodies, "empty scene has no plane bodies");
     expectTrue(emptyPreflight.emptyDynamicBodies, "empty scene has no dynamic bodies");
-    expectEq(static_cast<fuse::u32>(emptyPreflight.reason),
              static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseMergeRejectReason::EmptyPlaneBodies),
              "empty scene merge preflight carries EmptyPlaneBodies reason");
 
@@ -3277,7 +3276,6 @@ void testPairBufferDedupeRejectReasonGuards() {
 void testCellOccupancyIterationSkipGuards() {
     expectTrue(fuse::physics::broadphase::shouldRunCellOccupancyIteration(validRange, 8u),
                "shouldRunCellOccupancyIteration true within budget");
-    expectTrue(!fuse::physics::broadphase::canSkipCellOccupancyIteration(validRange, 8u),
                "canSkipCellOccupancyIteration false within budget");
 
     const fuse::physics::broadphase::CellOccupancyPreflight preflight =
@@ -3289,7 +3287,6 @@ void testCellOccupancyIterationSkipGuards() {
     expectTrue(!fuse::physics::broadphase::shouldRunCellOccupancyIteration(validRange, 7u),
                "shouldRunCellOccupancyIteration false over budget");
 
-    expectTrue(fuse::physics::broadphase::canSkipCellOccupancyIteration(planeRange, 4u),
                "2D canSkipCellOccupancyIteration true over budget");
 
 void testRefineBroadphaseShouldRunGuards() {
@@ -3671,7 +3668,6 @@ void testCellCapacityWouldSkipGuards() {
 
     expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(validRange, 7u, &occupancyReason),
                "wouldSkipCellOccupancyIteration true over budget");
-             static_cast<fuse::u32>(fuse::physics::broadphase::CellOccupancyRejectReason::ExceedsBudget),
              "wouldSkipCellOccupancyIteration reports ExceedsBudget over budget");
     expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(validRange, 7u) ==
                    fuse::physics::broadphase::canSkipCellOccupancyIteration(validRange, 7u),
@@ -3727,7 +3723,6 @@ void testRefineDedupeMergeWouldSkipGuards() {
     expectTrue(fuse::physics::broadphase::wouldSkipBroadphaseMerge(bodies, shapes, &mergeReason),
                "wouldSkipBroadphaseMerge true without plane bodies");
     expectEq(static_cast<fuse::u32>(mergeReason),
-             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseMergeRejectReason::EmptyPlaneBodies),
              "wouldSkipBroadphaseMerge reports EmptyPlaneBodies");
 
     expectTrue(!fuse::physics::broadphase::wouldSkipBroadphaseMerge(bodies, shapes),
@@ -3796,6 +3791,82 @@ void testPairBufferShouldRunDedupeGuards() {
     expectTrue(fuse::physics::broadphase::shouldRunPairBufferDedupe(buffer),
                "shouldRunPairBufferDedupe true for multiple pairs");
                "canSkipPairBufferDedupe false when shouldRunPairBufferDedupe true");
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    expectTrue(fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+               "shouldRunBroadphase false on singleton scene");
+
+    bodies.addBody({1.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+    expectTrue(!fuse::physics::broadphase::canSkipBroadphase(bodies, shapes),
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+
+    expectTrue(fuse::physics::broadphase::pairBufferSortRejectsForReason(
+                   buffer, fuse::physics::broadphase::PairBufferSortRejectReason::EmptyBuffer),
+               "empty buffer rejects for EmptyBuffer sort reason");
+                           "SinglePair") == 0,
+
+    buffer.push(0u, 1u);
+
+    buffer.push(2u, 3u);
+
+        fuse::physics::broadphase::preflightPairBufferSort(buffer);
+    expectTrue(preflight.needsSort(), "sort preflight accepts multiple pairs with reason None");
+    expectEq(static_cast<fuse::u32>(preflight.reason),
+
+void testShouldRunPairBufferDedupeAndSortGuards() {
+
+    expectTrue(fuse::physics::broadphase::canSkipPairBufferDedupe(buffer),
+               "canSkipPairBufferSort true on empty buffer");
+
+               "shouldRunPairBufferSort false on single pair");
+
+    expectTrue(!fuse::physics::broadphase::canSkipPairBufferSort(buffer),
+               "canSkipPairBufferSort false when shouldRunPairBufferSort true");
+
+void testPairSlotPreflightGuards() {
+    buffer.setMaxCapacity(2u);
+
+    const fuse::physics::broadphase::PairSlotPreflight zeroSlots =
+        fuse::physics::broadphase::preflightPairSlots(0u, buffer);
+    expectTrue(zeroSlots.skipped, "zero slot count is skipped");
+    expectTrue(!zeroSlots.canPrepare(), "zero slot preflight cannot prepare");
+
+    const fuse::physics::broadphase::PairSlotPreflight withinCapacity =
+        fuse::physics::broadphase::preflightPairSlots(2u, buffer);
+    expectTrue(withinCapacity.canPrepare(), "slot count within max capacity can prepare");
+    expectTrue(!withinCapacity.exceedsBufferCapacity,
+               "slot count at max capacity does not exceed buffer capacity");
+
+    const fuse::physics::broadphase::PairSlotPreflight exceedsCapacity =
+        fuse::physics::broadphase::preflightPairSlots(4u, buffer);
+    expectTrue(exceedsCapacity.canPrepare(), "exceeding slot count may still prepare slots");
+    expectTrue(exceedsCapacity.exceedsBufferCapacity,
+               "slot count above max capacity flags exceedsBufferCapacity");
+
+    expectEq(static_cast<fuse::u32>(
+             "empty buffer reports EmptyBuffer compact+clamp reject reason");
+    expectTrue(!fuse::physics::broadphase::shouldRunPairBufferCompactAndClamp(buffer),
+               "shouldRunPairBufferCompactAndClamp false on empty buffer");
+
+                 fuse::physics::broadphase::PairBufferCompactAndClampRejectReason::NoWorkNeeded),
+             "all-valid within-capacity buffer reports NoWorkNeeded");
+    expectTrue(buffer.canSkipCompactAndClamp(), "all-valid buffer skips compact+clamp");
+    expectEq(buffer.compactAndClamp(), 2u, "compactAndClamp no-op preserves active count");
+
+    buffer.preparePairSlots(3u);
+    buffer.writeSlot(0u, 0u, 1u);
+    buffer.writeSlot(2u, 2u, 3u);
+               "sparse slots need compact+clamp work");
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferCompactAndClampRejectReasonName(
+                           "NoWorkNeeded") == 0,
+               "NoWorkNeeded compact+clamp reject reason has stable label");
+    expectEq(buffer.compactAndClamp(), 2u, "compactAndClamp gathers sparse valid slots");
 
 void testBroadphaseMergeRejectReasonGuards() {
 
@@ -6381,6 +6452,9 @@ int main() {
     testCanSkipCellOccupancyIterationGuards();
     testPairBufferRejectReasonAndSkipGuards();
     testPairBufferSkipHelperGuards();
+    testBroadphaseMergeRejectReasonGuards();
+    testShouldRunPairBufferDedupeAndSortGuards();
+    testPairSlotPreflightGuards();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");

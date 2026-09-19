@@ -55,6 +55,8 @@ struct PairBufferSoA {
     /// True when post-pass maxCapacity clamp is unnecessary.
     /// True when push would fail due to invalid pair or capacity.
     bool wouldRejectPush(u32 idxA, u32 idxB) const;
+    /// True when compact+clamp would leave the buffer unchanged (B4.2 deepen pass).
+    bool canSkipCompactAndClamp() const;
     /// True when both dense and slot storage are empty (safe to skip SoA scans).
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
     /// True when AABB refine can be skipped (no pairs to test).
@@ -605,6 +607,9 @@ enum class PairBufferSortRejectReason : u8 {
     None = 0,
     EmptyBuffer,
     SinglePair,
+    bool emptyBuffer = false;
+    bool singlePair = false;
+
 };
 
 /// Human-readable label for pair-buffer sort reject reasons (logging / tests).
@@ -634,6 +639,27 @@ enum class PairBufferCompactAndClampRejectReason : u8 {
 const char* pairBufferCompactAndClampRejectReasonName(PairBufferCompactAndClampRejectReason reason);
 
 /// Diagnose why compact-and-clamp would skip; vacuously succeeds when work may proceed.
+/// Non-mutating sort launch predicate — mirrors `preflightPairBufferSort` (B4.2 deepen pass).
+
+/// Pair-buffer slot preflight before `preparePairSlots` (B4.2 deepen pass).
+struct PairSlotPreflight {
+    bool skipped = false;
+    u32 slotCount = 0u;
+    bool exceedsBufferCapacity = false;
+
+    bool canPrepare() const { return !skipped; }
+};
+
+PairSlotPreflight preflightPairSlots(u32 slotCount, const PairBufferSoA& buffer);
+
+/// Why pair-buffer compact+clamp would early-out (B4.2 deepen pass).
+    None = 0,
+    EmptyBuffer,
+    NoWorkNeeded,
+
+/// Human-readable label for compact+clamp reject reasons (logging / tests).
+
+/// Diagnose why compact+clamp would skip; vacuously succeeds when work may proceed.
 PairBufferCompactAndClampRejectReason pairBufferCompactAndClampRejectReason(const PairBufferSoA& buffer);
 
 /// Returns true when `pairBufferCompactAndClampRejectReason` matches `expected` (B4.2 deepen pass).
@@ -952,5 +978,14 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
 bool canSkipPairBufferClamp(const PairBufferSoA& buffer);
 
 /// Non-mutating sort skip predicate — inverse of `preflightPairBufferSort::needsSort` (B4.2 deepen pass).
+
+
+    bool noWorkNeeded = false;
+
+
+
+/// Non-mutating compact+clamp skip predicate — inverse of `needsCompactAndClamp` (B4.2 deepen pass).
+
+/// Non-mutating compact+clamp launch predicate — mirrors `preflightPairBufferCompactAndClamp` (B4.2 deepen pass).
 
 } // namespace fuse::physics::broadphase

@@ -255,6 +255,7 @@ bool PairBufferSoA::canSkipDedupe() const {
 
 bool PairBufferSoA::canSkipCompactAndClamp() const {
     return canSkipSoAIteration() || countValidSlots() == 0u;
+    return canSkipCompaction() && canSkipMaxCapacityClamp();
 
 bool PairBufferSoA::push(u32 idxA, u32 idxB) {
     if (!isValidCandidatePair(idxA, idxB)) {
@@ -550,6 +551,7 @@ u32 PairBufferSoA::compactAndClamp() {
     if (compactionPreflight.emptyBuffer) {
     if (canSkipPairBufferCompactAndClamp(*this)) {
 
+    if (!preflightPairBufferCompactAndClamp(*this).needsCompactAndClamp()) {
     compact();
     if (isEmpty()) {
         return 0u;
@@ -1450,6 +1452,36 @@ bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortR
     return pairBufferSortRejectReason(buffer) == expected;
 }
 
+bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer) {
+    return preflightPairBufferDedupe(buffer).canDedupe();
+}
+
+const char* pairBufferSortRejectReasonName(PairBufferSortRejectReason reason) {
+    switch (reason) {
+    case PairBufferSortRejectReason::None:
+        return "None";
+    case PairBufferSortRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case PairBufferSortRejectReason::SinglePair:
+        return "SinglePair";
+    }
+    return "Unknown";
+}
+
+PairBufferSortRejectReason pairBufferSortRejectReason(const PairBufferSoA& buffer) {
+    if (buffer.canSkipSoAIteration()) {
+        return PairBufferSortRejectReason::EmptyBuffer;
+    }
+    if (buffer.activeCount <= 1u) {
+        return PairBufferSortRejectReason::SinglePair;
+    }
+    return PairBufferSortRejectReason::None;
+}
+
+bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortRejectReason expected) {
+    return pairBufferSortRejectReason(buffer) == expected;
+}
+
 PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer) {
     PairBufferSortPreflight preflight{};
     preflight.reason = pairBufferSortRejectReason(buffer);
@@ -1638,7 +1670,6 @@ const char* pairBufferPushRejectReasonName(PairBufferPushRejectReason reason) {
     case PairBufferPushRejectReason::AtCapacity:
         return "AtCapacity";
     return "Unknown";
-    }
 
 PairBufferPushRejectReason pairBufferPushRejectReason(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
     if (!isValidCandidatePair(idxA, idxB)) {
@@ -1751,7 +1782,6 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
     preflight.incomingPairCount = incomingPairCount;
     preflight.buffer = preflightPairBufferMerge(buffer, incomingPairCount);
 
-    return preflight;
 const char* pairBufferSortRejectReasonName(PairBufferSortRejectReason reason) {
     case PairBufferSortRejectReason::None:
     case PairBufferSortRejectReason::EmptyBuffer:
@@ -1765,48 +1795,52 @@ PairBufferSortRejectReason pairBufferSortRejectReason(const PairBufferSoA& buffe
 bool pairBufferSortRejectsForReason(
     PairBufferSortRejectReason expected) {
     return pairBufferSortRejectReason(buffer) == expected;
-PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
-    PairBufferCompactAndClampPreflight preflight{};
 
-bool canSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
     return preflightPairBufferCompactAndClamp(buffer).emptyBuffer;
 
     return buffer.canSkipCompaction();
 
     return buffer.canSkipMaxCapacityClamp();
-}
-
-bool canSkipPairBufferSort(const PairBufferSoA& buffer) {
-    return !preflightPairBufferSort(buffer).needsSort();
-
-
-    const PairBufferSoA& buffer,
-
-
-    switch (reason) {
-        return "None";
-        return "EmptyBuffer";
-    return "Unknown";
-
-    if (buffer.canSkipSoAIteration()) {
 
 
 
 
 
 
-PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
-    PairBufferCompactAndClampPreflight preflight{};
+
+
+
+
+
+
 
     const u32 projectedCount = buffer.countValidSlots();
-}
 
     preflight.compaction = preflightPairBufferCompaction(buffer);
     preflight.clamp = preflightPairBufferClamp(buffer);
-    return preflight;
 
-bool canSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
     return !preflightPairBufferCompactAndClamp(buffer).needsWork();
+
+
+
+
+PairSlotPreflight preflightPairSlots(u32 slotCount, const PairBufferSoA& buffer) {
+    PairSlotPreflight preflight{};
+    preflight.slotCount = slotCount;
+    if (slotCount == 0u) {
+        preflight.skipped = true;
+    if (buffer.maxCapacity > 0u && slotCount > buffer.maxCapacity) {
+        preflight.exceedsBufferCapacity = true;
+
+    case PairBufferCompactAndClampRejectReason::NoWorkNeeded:
+        return "NoWorkNeeded";
+
+    if (buffer.canSkipCompaction() && buffer.canSkipMaxCapacityClamp()) {
+        return PairBufferCompactAndClampRejectReason::NoWorkNeeded;
+
+
+    preflight.noWorkNeeded = preflight.reason == PairBufferCompactAndClampRejectReason::NoWorkNeeded;
+
 
 
 } // namespace fuse::physics::broadphase
