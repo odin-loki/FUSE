@@ -272,6 +272,8 @@ void testBlendWeightGuards() {
                "warmup blend does not reuse history");
     expectNear(fuse::renderer::computeHistoryContributionWeight(warmupBlend), 0.f, 1e-5f,
                "warmup history contribution is zero");
+    expectNear(fuse::renderer::computeHistoryBlend(warmupBlend), 0.f, 1e-5f,
+               "warmup history blend matches contribution weight");
 
     const fuse::f32 steadyBlend = fuse::renderer::computeEffectiveBlend(false, params);
     expectNear(steadyBlend, 0.15f, 1e-5f, "steady effective blend uses configured factor");
@@ -280,6 +282,124 @@ void testBlendWeightGuards() {
     expectNear(fuse::renderer::computeHistoryContributionWeight(steadyBlend), 0.85f, 1e-5f,
                "steady history contribution complements effective blend");
 }
+
+void testHistoryReuseGuards() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for history reuse guard test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for reuse guard test");
+    expectTrue(!history.canReuseHistory(), "history cannot reuse before first resolve");
+    expectTrue(!fuse::renderer::taaHistoryCanReuse(history), "free helper rejects unwarmed history");
+    expectTrue(!fuse::renderer::taaHistoryReuseReady(history, 0u),
+               "reuse-ready requires warmed history");
+
+    history.markResolved();
+    expectTrue(history.canReuseHistory(), "history can reuse after first resolve");
+    expectTrue(fuse::renderer::taaHistoryCanReuse(history), "free helper accepts warmed history");
+    expectTrue(fuse::renderer::taaHistoryReuseReady(history, 0u),
+               "reuse-ready passes with matching generation");
+    expectTrue(fuse::renderer::taaHistoryIsGenerationCurrent(history, 0u),
+               "generation current helper matches warmed epoch");
+
+    history.invalidateHistory();
+    expectTrue(!history.canReuseHistory(), "invalidate clears reuse readiness");
+               "stale generation fails reuse-ready guard");
+    expectTrue(!fuse::renderer::taaHistoryReuseReady(history, history.invalidateGeneration()),
+               "reuse-ready requires warmed history even with current generation");
+    expectTrue(fuse::renderer::taaHistoryIsGenerationCurrent(history, history.invalidateGeneration()),
+               "current generation matches after invalidate");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testJitterNdcGuards() {
+    using fuse::renderer::TaaJitterLayout;
+
+    expectTrue(TaaJitterLayout::canComputeNdcOffset(1920u, 1080u), "non-zero viewport can compute NDC");
+    expectTrue(!TaaJitterLayout::canComputeNdcOffset(0u, 1080u), "zero width cannot compute NDC");
+    expectTrue(TaaJitterLayout::validateViewportDimensions(1920u, 1080u),
+               "validateViewportDimensions agrees with canComputeNdcOffset");
+
+    const fuse::math::Vec2 safeZero = TaaJitterLayout::safeNdcOffsetForFrameIndex(0u, 0u, 1080u, 8u);
+    expectNear(safeZero.x, 0.f, 1e-6f, "safe NDC offset is zero for invalid viewport X");
+    expectNear(safeZero.y, 0.f, 1e-6f, "safe NDC offset is zero for invalid viewport Y");
+
+    const fuse::math::Vec2 safeValid = TaaJitterLayout::safeNdcOffsetForFrameIndex(0u, 1920u, 1080u, 8u);
+    const fuse::math::Vec2 direct =
+        TaaJitterLayout::ndcOffsetForFrameIndex(0u, 1920u, 1080u, 8u);
+    expectNear(safeValid.x, direct.x, 1e-6f, "safe NDC offset matches direct offset for valid viewport");
+    expectNear(safeValid.y, direct.y, 1e-6f, "safe NDC offset Y matches direct offset");
+
+    fuse::renderer::TaaJitter jitter;
+    expectTrue(jitter.canProvideNdcOffset(128u, 128u), "jitter can provide NDC for valid viewport");
+    expectTrue(!jitter.canProvideNdcOffset(0u, 128u), "jitter rejects zero-width viewport");
+
+void testResolvePreflightGuards() {
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for resolve preflight guard test");
+
+
+
+    expectTrue(history.init(resources, historyDesc), "history ready for resolve preflight guard test");
+    expectTrue(fuse::renderer::taaHistoryCanAccumulate(history), "ready history can accumulate");
+
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    expectTrue(!fuse::renderer::taaResolveSurfacesSatisfied(desc),
+               "surfaces guard rejects missing bindings");
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    expectTrue(fuse::renderer::taaResolveSurfacesSatisfied(desc),
+               "surfaces guard accepts current/output bindings");
+    expectTrue(fuse::renderer::canAttemptTaaResolve(desc, history),
+               "canAttempt passes valid resolve request");
+    expectTrue(fuse::renderer::prepareTaaResolveDesc(desc, history),
+               "prepare stamps generation and passes valid request");
+    expectTrue(desc.observed_history_generation == 0u, "prepare stamps current generation");
+
+    desc.observed_history_generation = fuse::renderer::kTaaResolveNoHistoryGeneration;
+               "prepare restamps sentinel generation");
+    expectTrue(desc.observed_history_generation == 0u, "prepare fills sentinel with current generation");
+
+    desc.observed_history_generation = 0u;
+    expectTrue(!fuse::renderer::canAttemptTaaResolve(desc, history),
+               "canAttempt rejects stale generation");
+               "prepare restamps after invalidate");
+
+
+void testTaaPassCanResolveFrame() {
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass canResolve test");
+
+
+
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 64;
+    passDesc.height = 64;
+
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    expectTrue(pass->init(resources), "TaaPass initialized for canResolve test");
+
+    expectTrue(pass->canResolveFrame(desc), "pass canResolveFrame passes valid desc");
+    expectTrue(pass->prepareAndCanResolve(desc), "pass prepareAndCanResolve stamps and passes");
+    expectTrue(desc.observed_history_generation == 0u, "pass prepare stamps generation");
+
+    desc.width = 32;
+    expectTrue(!pass->canResolveFrame(desc), "pass canResolveFrame rejects dimension mismatch");
+
+    pass->destroy();
 
 void testClampTaaParams() {
     fuse::renderer::TAAParams raw{};
@@ -3683,6 +3803,10 @@ int main() {
     testHistoryBufferPingPong();
     testHistoryValidityFlags();
     testBlendWeightGuards();
+    testHistoryReuseGuards();
+    testJitterNdcGuards();
+    testResolvePreflightGuards();
+    testTaaPassCanResolveFrame();
     testClampTaaParams();
     testRejectionSurfaceGuards();
     testSanitizeAndPreflightResolve();

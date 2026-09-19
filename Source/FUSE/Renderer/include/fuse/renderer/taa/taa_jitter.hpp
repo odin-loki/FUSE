@@ -61,6 +61,8 @@ struct TaaJitterLayout {
     static bool canSyncToFrameIndex(u32 /*frameIndex*/, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// True when `slot` is the active Halton index for `frameIndex` (B5.9 deepen).
     static bool jitterSlotMatchesFrameIndex(u32 frameIndex, u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// True when NDC jitter can be computed for the viewport (B5.9 deepen).
+    static bool canComputeNdcOffset(u32 width, u32 height);
     /// Returns the jitter cycle length after validation (0 when invalid).
     static u32 sequencePeriod(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Maps a monotonic frame counter into the active Halton slot.
@@ -82,6 +84,7 @@ struct TaaJitterLayout {
     static bool ndcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
                                               fuse::math::Vec2& out);
     /// Returns zero when viewport dimensions are invalid (B5.9 deepen guard).
+    /// NDC jitter for a frame counter; returns zero when viewport dimensions are invalid (B5.9 deepen).
     static fuse::math::Vec2 safeNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
                                                        u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
@@ -97,6 +100,8 @@ public:
     fuse::math::Vec2 currentNdcOffset(u32 width, u32 height) const;
     /// NDC offset only when viewport and sequence are valid; returns false when blocked (B5.9 deepen).
     bool currentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out) const;
+    /// True when viewport dimensions allow NDC jitter output (B5.9 deepen).
+    bool canProvideNdcOffset(u32 width, u32 height) const;
 
     void advance();
     /// Advance only when the sequence is valid; returns false when blocked (B5.9 deepen).

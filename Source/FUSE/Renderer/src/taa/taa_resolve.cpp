@@ -18,6 +18,17 @@ bool taaHistoryCanAccumulate(const TaaHistoryBuffer& history) {
 
 bool taaHistoryIsGenerationCurrent(const TaaHistoryBuffer& history, u32 observed_generation) {
     return history.isGenerationCurrent(observed_generation);
+bool taaHistoryCanReuse(const TaaHistoryBuffer& history) {
+    return history.canReuseHistory();
+}
+
+bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observed_generation) {
+    return history.canReuseHistory() && history.generationMatches(observed_generation);
+
+    return history.generationMatches(observed_generation);
+
+bool taaResolveSurfacesSatisfied(const TaaResolveDesc& desc) {
+    return desc.surfaces.current_frame != nullptr && desc.surfaces.output != nullptr;
 }
 
 bool taaResolveDimensionsValid(u32 width, u32 height) {
@@ -337,6 +348,18 @@ f32 computeEffectiveBlend(bool firstFrame, const TAAParams& params) {
     if (taaUsesWarmupBlend(firstFrame)) {
 f32 computeEffectiveBlend(bool firstFrame, bool historyReusable, const TAAParams& params) {
     if (firstFrame || !historyReusable) {
+bool isTaaBlendFactorInRange(f32 blend_factor) {
+    return blend_factor >= 0.f && blend_factor <= 1.f;
+
+bool taaBlendWeightReusesHistory(f32 effective_blend) {
+    return effective_blend < 1.f;
+
+f32 computeHistoryContributionWeight(f32 effective_blend) {
+    return computeHistoryBlend(effective_blend);
+
+bool taaUsesWarmupBlend(bool first_frame) {
+    return first_frame;
+
         return 1.f;
     }
     return clampTaaParams(params).blend_factor;
