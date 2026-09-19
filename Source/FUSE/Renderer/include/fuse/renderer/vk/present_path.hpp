@@ -47,8 +47,11 @@ struct PresentPathStatus {
     u32 resizeNoOpCount = 0;
     u32 emptyAcquireCount = 0;
     u32 emptyPresentCount = 0;
+    u32 queueSubmitCount = 0;
+    u32 presentSkippedNoWsiCount = 0;
     u32 fenceWaitSkippedCount = 0;
     u32 lastPendingFenceCount = 0;
+    bool lastQueueSubmitOk = false;
     std::string message;
 };
 
@@ -86,8 +89,11 @@ public:
     /// Mark render record complete — transitions ImageAcquired → ReadyToPresent.
     bool markReadyToPresent();
 
-    /// Present the acquired image; headless succeeds without queue submit.
+    /// Present the acquired image; headless succeeds without `vkQueuePresentKHR`.
     bool presentImage();
+
+    /// Mirror queue-submit diagnostics from the paired RHI context (optional).
+    void noteQueueSubmit(bool ok, bool submitted, bool headless);
 
     /// Convenience: wait → acquire for frame N (render record happens between acquire and present).
     bool beginFrame(u32 frameIndex);

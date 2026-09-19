@@ -117,7 +117,6 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
         }
 
         m_lastGraphBarrierCount = m_renderGraph.compileInfo().barrierCount;
-        frameManager->endFrame();
     }
 
     ensureRasterPath();
@@ -129,6 +128,25 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
     if (m_compositePass && m_compositePass->isReady()) {
         m_compositePass->recordFrame(commands);
         m_lastCompositeStats = m_compositePass->lastStats();
+    }
+
+    if (frameManager != nullptr && frameManager->isReady()) {
+        VulkanDevice* device = m_bootstrap->device();
+        if (device != nullptr && device->isValid()) {
+            GraphicsQueueSubmitDesc submitDesc{};
+            submitDesc.device = device;
+            submitDesc.frameManager = frameManager;
+            submitDesc.swapchain = m_bootstrap->swapchain();
+            submitDesc.acquiredImageIndex = m_acquiredSwapchainImage;
+            m_lastQueueSubmit = submitGraphicsQueue(submitDesc);
+            if (m_lastQueueSubmit.submitted) {
+                ++m_queueSubmitCount;
+            }
+            if (!m_lastQueueSubmit.ok) {
+                return false;
+            }
+        }
+        frameManager->endFrame();
     }
 
     m_lastCommandCount = commands.commandCount();

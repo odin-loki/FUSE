@@ -48,7 +48,9 @@ public:
     u32 currentIndex() const { return m_info.currentIndex; }
     u64 totalFrames() const { return m_info.totalFrames; }
 
+    FrameSyncData& current();
     const FrameSyncData& current() const;
+    FrameSyncData& slot(u32 index);
     const FrameSyncData& slot(u32 index) const;
     void* currentCommandBuffer() const;
 

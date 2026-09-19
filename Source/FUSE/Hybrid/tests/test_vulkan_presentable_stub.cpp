@@ -86,6 +86,10 @@ void testPresentPathThroughHybridBootstrap() {
     expectTrue(presentPath->status().width == 800u, "resize width applied through render");
     expectTrue(presentPath->status().height == 600u, "resize height applied through render");
     expectTrue(presentPath->status().presentedFrames >= 2u, "second present frame after resize render");
+    expectTrue(presentPath->status().queueSubmitCount >= 1u,
+               "hybrid render path records vkQueueSubmit through RHI mirror");
+    expectTrue(presentPath->status().presentSkippedNoWsiCount >= 1u,
+               "headless CI uses honest no-WSI present sink");
 
     runtime->shutdown();
     fuse::core::shutdown();

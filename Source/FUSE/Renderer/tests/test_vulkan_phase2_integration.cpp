@@ -70,6 +70,9 @@ void testPhase2HeadlessIntegration() {
                    "RasterPath stats advance per frame");
         expectTrue(rhi->renderGraph().compileInfo().compiled,
                    "render graph compile succeeded each frame");
+        expectTrue(rhi->queueSubmitCount() == frameIndex + 1u,
+                   "vkQueueSubmit issued each frame on headless ICD");
+        expectTrue(rhi->lastQueueSubmitOk(), "last queue submit succeeded");
     }
 
     expectTrue(rhi->submittedFrameCount() == kFramesToExercise,

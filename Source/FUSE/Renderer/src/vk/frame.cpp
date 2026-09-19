@@ -156,8 +156,16 @@ void FrameManager::shutdown() {
 #endif
 }
 
+FrameSyncData& FrameManager::current() {
+    return m_slots[m_info.currentIndex % kFramesInFlight];
+}
+
 const FrameSyncData& FrameManager::current() const {
     return m_slots[m_info.currentIndex % kFramesInFlight];
+}
+
+FrameSyncData& FrameManager::slot(u32 index) {
+    return m_slots[index % kFramesInFlight];
 }
 
 const FrameSyncData& FrameManager::slot(u32 index) const {

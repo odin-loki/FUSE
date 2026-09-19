@@ -2,6 +2,8 @@
 
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
 
+#include <cstdint>
+
 namespace fuse::hybrid {
 
 HybridRendererBootstrap::HybridRendererBootstrap(HybridRendererBootstrapDesc desc)
@@ -108,16 +110,28 @@ void HybridRendererBootstrap::render(frame::FrameCtx& ctx) {
                                      presentableStatus.pendingResizeHeight);
     }
 
-    // B2.2 — present-path fence wait + acquire before RHI record; present after software+RHI mirror.
+    // B2.2 / WP-06c — fence wait → acquire → RHI record + vkQueueSubmit → present (WSI or headless sink).
+    u32 acquiredImageIndex = UINT32_MAX;
     if (m_presentPath != nullptr) {
-        m_presentPath->waitInFlightFence();
-        m_presentPath->acquireImage();
-        m_presentPath->markReadyToPresent();
+        if (!m_presentPath->waitInFlightFence()) {
+            return;
+        }
+        acquiredImageIndex = m_presentPath->acquireImage();
+    }
+
+    if (m_rendererBootstrap != nullptr && m_rendererBootstrap->rhiContext() != nullptr) {
+        m_rendererBootstrap->rhiContext()->setAcquiredSwapchainImage(acquiredImageIndex);
     }
 
     m_composer.render(ctx);
 
     if (m_presentPath != nullptr) {
+        if (m_rendererBootstrap != nullptr && m_rendererBootstrap->rhiContext() != nullptr) {
+            const renderer::GraphicsQueueSubmitResult& submit =
+                m_rendererBootstrap->rhiContext()->lastQueueSubmit();
+            m_presentPath->noteQueueSubmit(submit.ok, submit.submitted, submit.headless);
+        }
+        m_presentPath->markReadyToPresent();
         m_presentPath->presentImage();
     }
 }

@@ -1,6 +1,6 @@
 # Track B — Vulkan Bootstrap (B2.1–B2.10) + CUDA Ray March (B2.7)
 
-**Status:** WP-06b ✅ B2.1 bootstrap + B2.2 swapchain/frame ring + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
+**Status:** WP-06b ✅ B2.1 bootstrap + B2.2 swapchain/frame ring + **WP-06c ✅ real `vkQueueSubmit` + honest headless present sink** + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.7, §B2.8, §B2.9, §B2.10  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
@@ -73,9 +73,10 @@ Workers produce snapshot SOA / staging data only. Job code never includes `<vulk
 `HybridRendererBootstrap::render()` (preferred entry):
 
 1. Forward resize → `PresentPath::requestResize` when `VulkanPresentable` needs recreate
-2. `PresentPath::waitInFlightFence` → `acquireImage` → `markReadyToPresent` (headless stubs on CI)
-3. `HybridComposer::render()` — software placeholder + RHI mirror (below)
-4. `PresentPath::presentImage` (no `vkQueuePresentKHR` when headless)
+2. `PresentPath::waitInFlightFence` → `acquireImage` (headless: `UINT32_MAX`; WSI: real index)
+3. `RhiContext::setAcquiredSwapchainImage` — wires acquire result into queue submit
+4. `HybridComposer::render()` — software placeholder + RHI mirror + `submitGraphicsQueue` (below)
+5. `PresentPath::markReadyToPresent` → `presentImage` (`vkQueuePresentKHR` when WSI; headless honest sink otherwise)
 
 `HybridComposer::render()`:
 
@@ -128,6 +129,7 @@ Headless is intentional for CI: Lavapipe provides an ICD but umbrella tests run 
 | `VulkanPresentable` | **PlatformWindow** | Defers swapchain until `VkSurfaceKHR` exists; wires `SurfaceKind::External` |
 | `HybridRendererBootstrap` | either | Owns `VulkanPresentable`; populates `SwapchainDesc.surface` + WSI instance extensions |
 | `PresentPath` | headless or WSI | Acquire / present / fence-wait state machine over `FrameManager` + `VulkanSwapchain` |
+| `submitGraphicsQueue` | `queue_submit.hpp` | Real `vkQueueSubmit` on frame-slot CB + fence; WSI semaphores when External surface acquires |
 | `VsyncMode` | `Fifo` / `Mailbox` / `Immediate` | Maps to `VkPresentModeKHR`; default `Fifo` for CI |
 
 #### Present path state machine (B2.2 deepen)
@@ -146,7 +148,8 @@ ResizePending → (waitAllInFlightFences) → recreateSwapchain → Idle
 | `waitInFlightFenceForSlot` / `waitCurrentInFlightFence` / `waitAllInFlightFences` | `fence_wait.hpp` helpers — per-slot acquire wait; OOB slot rejection; `countPendingInFlightFences` for diagnostics |
 | `PresentPath::acquireImage` | Returns `UINT32_MAX`; advances state |
 | `PresentPath::markReadyToPresent` | `ImageAcquired` → `ReadyToPresent` after render record |
-| `PresentPath::presentImage` | Succeeds without `vkQueuePresentKHR` |
+| `submitGraphicsQueue` | Real `vkQueueSubmit` on slot primary CB + `inFlightFence`; no WSI wait semaphores |
+| `PresentPath::presentImage` | Succeeds without `vkQueuePresentKHR` — honest headless present sink after queue submit |
 | `PresentPath::requestResize` | Coalesces to latest dimensions; `rebuild()` on next fence wait or `recreateSwapchain()` |
 | `PresentPath::recreateSwapchain` | Explicit resize apply; no-op when nothing pending |
 | `PresentPath::fenceWaitCount` / `swapchainRecreateCount` | Diagnostics counters for CI acceptance |
@@ -513,6 +516,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_hybrid_renderer_bootstrap` | Hybrid glue, shared RhiContext, runFrame lifecycle |
 | `fuse_hybrid_vulkan_presentable` | Headless presentable stubs — vsync mode, resize recreate, present-path state machine via hybrid bootstrap |
 | `fuse_rhi_present_path_stub` | RHI `PresentPath` acquire/present/fence-wait/resize stubs without GPU window |
+| `fuse_rhi_queue_submit` | Real `vkQueueSubmit` on frame ring; headless semaphores-off path; RHI + present-path mirror |
 | `fuse_hybrid_tests` | Existing U4 software renderer regressions |
 | `fuse_cuda_jobs` | `submit_cuda` hook signals counter without CUDA toolkit |
 | `fuse_cuda_interop` | Vulkan/CUDA import + timeline stubs degrade on CI |
@@ -522,7 +526,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_renderer_bootstrap|fuse_vulkan_phase2|fuse_hybrid_renderer|fuse_hybrid_vulkan_presentable|fuse_rhi_present_path_stub|fuse_hybrid|fuse_cuda|fuse_ray_march|fuse_screen_space_effects'
+ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|fuse_graphics_pipeline|fuse_render_command|fuse_render_graph|fuse_composite_pass|fuse_renderer_bootstrap|fuse_vulkan_phase2|fuse_hybrid_renderer|fuse_hybrid_vulkan_presentable|fuse_rhi_present_path_stub|fuse_rhi_queue_submit|fuse_hybrid|fuse_cuda|fuse_ray_march|fuse_screen_space_effects'
 ```
 
 ---
@@ -539,7 +543,23 @@ ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|
 | `HybridRendererBootstrap` dual path | **Done** | Software `PlaceholderRenderer` + RHI mirror + `PresentPath` per frame |
 | Headless bootstrap tests | **Done** | `fuse_vulkan_bootstrap`, `fuse_vulkan_swapchain`, `fuse_hybrid_renderer_bootstrap`, `fuse_hybrid_vulkan_presentable` |
 
-**Deferred (post–WP-06b):** real `vkQueueSubmit` + WSI present on desktop window; Editor Qt surface (`U6`); Android/MoltenVK WSI; bindless descriptor pool (B2.4 follow-up).
+## WP-06c deliverables (B2.2 follow-up — queue submit + honest present)
+
+| Deliverable | Status | Notes |
+|-------------|--------|-------|
+| `submitGraphicsQueue` / `recordFrameSlotCommands` | **Done** | Real `vkQueueSubmit` on triple-buffered frame slot; Lavapipe/headless CI |
+| `RhiContext::submitFrame` queue submit | **Done** | Graph execute → raster/composite → `vkQueueSubmit` → `endFrame` |
+| WSI semaphore wiring | **Done (API)** | `imageAvailable` wait + `renderFinished` signal when External surface + valid acquire |
+| Headless honest present sink | **Done** | No `vkQueuePresentKHR`; `presentSkippedNoWsiCount` diagnostics |
+| `HybridRendererBootstrap` present ordering | **Done** | Acquire → render/submit → mark ready → present |
+| `fuse_rhi_queue_submit` tests | **Done** | Direct submit + RHI integration + present-path mirror |
+| Lavapipe CTest `VK_ICD_FILENAMES` | **Done** | Renderer/Hybrid Vulkan tests set `lvp_icd.json` when ICD needed |
+
+**Deferred (post–WP-06c):** `vkQueuePresentKHR` on desktop GLFW window; Editor Qt native surface (`U6`); Android/MoltenVK WSI; real `vkCmdBeginRenderPass` in graph execute (B2.5 follow-up); bindless descriptor pool (B2.4 follow-up).
+
+---
+
+**Deferred (historical WP-06b):** ~~real `vkQueueSubmit`~~ → landed WP-06c; WSI present on desktop window still deferred.
 
 ---
 
@@ -607,7 +627,8 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] B2.10 renderer init & main-loop glue — `RendererBootstrap`, `HybridRendererBootstrap`, lifecycle tests
 - [x] B2.11 Phase 2 deliverables & integration test suite — checklist in this doc; `fuse_vulkan_phase2_integration`
 - [ ] B2.4 follow-up: bindless descriptor pool + graphics pipeline cache
-- [ ] B2.5 follow-up: real `vkCmdBeginRenderPass` / queue submit wiring (B2.8 draw list)
+- [x] WP-06c: real `vkQueueSubmit` on frame ring + honest headless present sink (`fuse_rhi_queue_submit`)
+- [ ] B2.5 follow-up: real `vkCmdBeginRenderPass` in graph execute (queue submit landed WP-06c)
 - [ ] B2.6 follow-up: `cudaImportExternalMemory`, timeline semaphores, real shared textures
 - [ ] Replace `PlaceholderRenderer` present path incrementally — keep software fallback for headless CI
 - [x] Own Hybrid presentable path stubs — `PlatformWindow` (null/GLFW), `VulkanPresentable`, `HybridRendererBootstrap` wiring

@@ -1,6 +1,9 @@
+set(FUSE_VULKAN_TEST_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+
 add_executable(fuse_vulkan_bootstrap test_vulkan_bootstrap.cpp)
 target_link_libraries(fuse_vulkan_bootstrap PRIVATE fuse_rhi)
 add_test(NAME fuse_vulkan_bootstrap COMMAND fuse_vulkan_bootstrap)
+set_tests_properties(fuse_vulkan_bootstrap PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
 
 add_executable(fuse_vulkan_swapchain test_vulkan_swapchain.cpp)
 target_link_libraries(fuse_vulkan_swapchain PRIVATE fuse_rhi)
@@ -9,6 +12,12 @@ add_test(NAME fuse_vulkan_swapchain COMMAND fuse_vulkan_swapchain)
 add_executable(fuse_rhi_present_path_stub test_rhi_present_path_stub.cpp)
 target_link_libraries(fuse_rhi_present_path_stub PRIVATE fuse_rhi)
 add_test(NAME fuse_rhi_present_path_stub COMMAND fuse_rhi_present_path_stub)
+set_tests_properties(fuse_rhi_present_path_stub PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
+
+add_executable(fuse_rhi_queue_submit test_rhi_queue_submit.cpp)
+target_link_libraries(fuse_rhi_queue_submit PRIVATE fuse_rhi)
+add_test(NAME fuse_rhi_queue_submit COMMAND fuse_rhi_queue_submit)
+set_tests_properties(fuse_rhi_queue_submit PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
 
 add_executable(fuse_rhi_resource_destroy_order test_rhi_resource_destroy_order.cpp)
 target_link_libraries(fuse_rhi_resource_destroy_order PRIVATE fuse_rhi)
@@ -55,6 +64,7 @@ add_test(NAME fuse_renderer_bootstrap COMMAND fuse_renderer_bootstrap)
 add_executable(fuse_vulkan_phase2_integration test_vulkan_phase2_integration.cpp)
 target_link_libraries(fuse_vulkan_phase2_integration PRIVATE fuse_rhi)
 add_test(NAME fuse_vulkan_phase2_integration COMMAND fuse_vulkan_phase2_integration)
+set_tests_properties(fuse_vulkan_phase2_integration PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
 
 add_executable(fuse_gbuffer test_gbuffer.cpp)
 target_link_libraries(fuse_gbuffer PRIVATE fuse_rhi)

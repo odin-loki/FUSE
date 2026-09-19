@@ -5,8 +5,10 @@
 #include <fuse/renderer/render_command_list.hpp>
 #include <fuse/renderer/render_graph.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
+#include <fuse/renderer/vk/queue_submit.hpp>
 #include <fuse/renderer/vk/raster_path.hpp>
 
+#include <cstdint>
 #include <memory>
 
 namespace fuse::renderer {
@@ -37,10 +39,18 @@ public:
     /// Begin frame slot after tick barrier. Returns false off render thread.
     bool beginFrame(u32 frameIndex);
 
-    /// Records commands and advances frame ring. Returns false off render thread.
+    /// Records commands, issues `vkQueueSubmit` on the frame slot, advances frame ring.
+    /// Returns false off render thread.
     bool submitFrame(const RenderCommandList& commands, u32 frameIndex = 0);
 
+    /// Swapchain image from `PresentPath::acquireImage` — UINT32_MAX on headless CI.
+    void setAcquiredSwapchainImage(u32 imageIndex) { m_acquiredSwapchainImage = imageIndex; }
+    u32 acquiredSwapchainImage() const { return m_acquiredSwapchainImage; }
+
     u32 submittedFrameCount() const { return m_submittedFrames; }
+    u32 queueSubmitCount() const { return m_queueSubmitCount; }
+    bool lastQueueSubmitOk() const { return m_lastQueueSubmit.ok; }
+    const GraphicsQueueSubmitResult& lastQueueSubmit() const { return m_lastQueueSubmit; }
     u32 lastSubmittedCommandCount() const { return m_lastCommandCount; }
     u32 lastGraphPassCount() const { return m_lastGraphPassCount; }
     u32 lastGraphBarrierCount() const { return m_lastGraphBarrierCount; }
@@ -70,6 +80,9 @@ private:
     u32 m_lastGraphPassCount = 0;
     u32 m_lastGraphBarrierCount = 0;
     u32 m_lastRecordedCommands = 0;
+    u32 m_acquiredSwapchainImage = UINT32_MAX;
+    u32 m_queueSubmitCount = 0;
+    GraphicsQueueSubmitResult m_lastQueueSubmit{};
 };
 
 } // namespace fuse::renderer

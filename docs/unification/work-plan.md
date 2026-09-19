@@ -123,7 +123,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Mobile** | Hybrid demo runs on iOS **or** Android device/sim; respect surface loss / background |
 | **Exit** | Demo: 3D clear + spinning 2D sprite one window (desktop + one mobile); TSan clean on cull path |
 | **Deps** | WP-05, WP-03 |
-| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B present/swapchain ❌ — see [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md) |
+| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B queue submit + headless present sink ✅ (WP-06c) — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
 
 ---
 
@@ -137,6 +137,19 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Exit** | Headless bootstrap tests green; CI honest stub/Lavapipe story documented (umbrella CI not re-enabled); U4 placeholder renderer unchanged |
 | **Deps** | WP-06 scaffolding |
 | **Status** | ✅ B2.1 instance/device + B2.2 swapchain/frame ring + present-path stubs landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06b |
+
+---
+
+### WP-06c — Track B queue submit + honest present (B2.2 follow-up)
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M |
+| **Scope** | `submitGraphicsQueue`, `RhiContext` frame-slot submit, `HybridRendererBootstrap` acquire→render→present ordering, headless Lavapipe path, `fuse_rhi_queue_submit` |
+| **MT note** | `vkQueueSubmit` on `renderThread()` only; headless CI skips `vkQueuePresentKHR` with explicit diagnostics |
+| **Exit** | Real `vkQueueSubmit` under Lavapipe; hybrid bootstrap + phase2 integration assert submit count; desktop WSI/Qt deferred |
+| **Deps** | WP-06b |
+| **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06c |
 
 ---
 

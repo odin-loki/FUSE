@@ -135,7 +135,7 @@ bool PresentPath::waitInFlightFence() {
     ++m_status.fenceWaitCount;
     m_status.fenceWaited = true;
     m_status.state = PresentPathState::FenceWaited;
-    m_status.message = m_status.headless ? "Headless fence wait stub (slot bookkeeping)"
+    m_status.message = m_status.headless ? "Headless fence wait (slot bookkeeping before submit)"
                                          : "In-flight fence waited before acquire";
     return true;
 }
@@ -210,9 +210,25 @@ bool PresentPath::presentImage() {
     m_status.acquireAttempted = false;
     m_status.presentAttempted = false;
     m_status.state = PresentPathState::Presented;
-    m_status.message = m_status.headless ? "Headless present stub (no queue submit)"
-                                         : "Swapchain image presented";
+    if (m_status.headless || isEmptyAcquireResult(m_status.acquiredImageIndex)) {
+        ++m_status.presentSkippedNoWsiCount;
+        m_status.message = m_status.lastQueueSubmitOk
+                               ? "Headless present sink (vkQueueSubmit done, no WSI)"
+                               : "Headless present stub (no queue submit)";
+    } else {
+        m_status.message = "Swapchain image presented";
+    }
     return true;
+}
+
+void PresentPath::noteQueueSubmit(bool ok, bool submitted, bool headless) {
+    m_status.lastQueueSubmitOk = ok;
+    if (submitted) {
+        ++m_status.queueSubmitCount;
+    }
+    if (headless) {
+        m_status.headless = true;
+    }
 }
 
 bool PresentPath::beginFrame(u32 frameIndex) {
