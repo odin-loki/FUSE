@@ -881,6 +881,18 @@ bool should_skip_friction_basis_preflight(
 }
 
 void rebuild_friction_basis_guarded(ContactManifold& manifold, f32 epsilon) {
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (!contact_normal_needs_normalize(manifold, lengthEpsilon)) {
+        return false;
+    }
+
+    const f32 normalLength = manifold.contactNormal.length();
+    if (normalLength <= 1e-8f) {
+
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    return true;
+
+bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon) {
     const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
     if (preflight.skipped) {
         invalidate_friction_basis(manifold);
@@ -1146,6 +1158,10 @@ bool rebuild_friction_basis_with_normalize_preflight(ContactManifold& manifold, 
     normalize_contact_normal_for_friction(manifold, epsilon);
     invalidate_friction_basis(manifold);
     return ensure_friction_basis(manifold);
+    if (preflight.needsNormalNormalize) {
+        normalize_contact_normal_if_needed(manifold, epsilon);
+    }
+    return rebuild_friction_basis_if_needed(manifold, epsilon);
 }
 
 bool should_rebuild_friction_basis(

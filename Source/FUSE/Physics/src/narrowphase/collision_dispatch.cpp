@@ -65,6 +65,18 @@ NarrowphaseIntoBufferPreflight preflightNarrowphaseIntoBuffer(
 
 bool should_skip_narrowphase_into_buffer(
     return !preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).can_run();
+NarrowphaseBufferFinalizePreflight preflight_narrowphase_buffer_finalize(const ContactBufferSoA& buffer) {
+    NarrowphaseBufferFinalizePreflight preflight{};
+    preflight.pairSlotCount = buffer.pairSlotCount;
+    preflight.validSlotCount = buffer.countValidSlots();
+    if (preflight.pairSlotCount == 0u) {
+
+    preflight.needsCompaction = should_run_contact_buffer_compaction(buffer);
+    preflight.needsClamp = should_run_contact_buffer_clamp(buffer);
+
+bool can_skip_narrowphase_buffer_finalize(const ContactBufferSoA& buffer) {
+    const NarrowphaseBufferFinalizePreflight preflight = preflight_narrowphase_buffer_finalize(buffer);
+    return preflight.skipped || (!preflight.needsCompaction && !preflight.needsClamp);
 }
 
 void runNarrowphaseIntoBuffer(

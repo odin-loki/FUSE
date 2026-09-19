@@ -1365,6 +1365,7 @@ bool should_skip_narrowphase_pair_slot(
 /// Returns true when per-slot narrowphase should skip dispatch (B4.6 deepen pass).
 /// Returns true when per-pair dispatch preflight rejects this pair (B4.6 deepen pass).
 bool should_skip_contact_pair_dispatch_preflight(
+/// Run shape dispatch only when pair preflight allows; returns invalid manifold when skipped (B4.6 deepen follow-up pass).
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);

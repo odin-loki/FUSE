@@ -742,6 +742,15 @@ bool should_run_contact_pair_dispatch(
 }
 
 ContactPairRejectReason contact_pair_deepen_reject_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (!is_out_of_range_contact_pair(pair, bodies) &&
+        !is_missing_shape_contact_pair(pair, shapes) &&
+        is_plane_plane_contact_pair(pair, shapes)) {
+        return ContactPairRejectReason::PlanePlane;
+    }
+
     const ContactPairRejectReason baseReason = contact_pair_reject_reason(pair, bodies, shapes);
     if (baseReason != ContactPairRejectReason::None) {
         return baseReason;
@@ -2317,6 +2326,16 @@ ContactManifold detect_contacts_pair_deepen(
 
 bool generate_contact_manifold_deepen(ContactManifold& manifold) {
     return finalize_contact_manifold_with_preflight(manifold);
+}
+
+ContactManifold detect_contacts_pair_with_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_contact_pair_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase
