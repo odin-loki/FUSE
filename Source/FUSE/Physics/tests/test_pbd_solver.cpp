@@ -4755,3 +4755,26 @@ void testDispatchSolveIslandConstraintGuarded() {
                "should_skip solveable graph false when mixed island exists");
     testPreflightIslandBuildSelfContactGuard();
     testPreflightIslandConstraintRefsOutOfRangeCounts();
+
+// --- deepen additive from deepen-pbd-island-guards-fbc0 ---
+void testPreflightSolveIslandJobFullGuards() {
+    const IslandFullSolvePreflight preflight =
+    expectTrue(!should_skip_solve_island_job_full(job, bodies, work.contactManifolds(), constraints, 1.f / 60.f),
+               "should_skip false for solveable island");
+    const IslandFullSolvePreflight sleepingPreflight =
+    expectTrue(!sleepingPreflight.can_solve(), "full job preflight rejects all-sleeping island");
+    expectTrue(should_skip_solve_island_job_full(job, bodies, work.contactManifolds(), constraints, 1.f / 60.f),
+void testWakeAndSolveIslandGuarded() {
+    const IslandSleepWakeSolvePreflight mixedPreflight = preflight_island_sleep_wake_solve(
+    expectTrue(!mixedPreflight.skipped, "sleep-wake-solve preflight does not skip mixed island");
+    expectTrue(mixedPreflight.needs_wake(), "mixed island needs wake before solve");
+    expectTrue(mixedPreflight.can_solve(), "mixed island can solve after wake");
+    expectTrue(should_skip_island_sleep_wake_solve(
+               "should_skip sleep-wake-solve for all-sleeping island");
+    const IslandSleepWakeSolveGraphPreflight graphPreflight = preflight_island_sleep_wake_solve_graph(
+    expectTrue(!graphPreflight.skipped, "graph sleep-wake-solve preflight has solveable island");
+    expectTrue(graphPreflight.stats.solveableCount == 1u, "graph counts one solveable island after wake");
+void testPreflightIslandSolveBodiesOutOfRangeCount() {
+    const IslandSolveBodiesPreflight preflight = preflight_island_solve_bodies(island, bodies);
+    testPreflightSolveIslandJobFullGuards();
+    testPreflightIslandSolveBodiesOutOfRangeCount();

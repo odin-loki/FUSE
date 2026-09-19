@@ -1619,3 +1619,15 @@ bool should_skip_island_solve_pipeline_by_index(const ContactIslandGraph& graph,
 
 // --- deepen additive from deepen-pbd-island-guards-ae58 ---
 IslandWakeThenSolvePreflight preflight_wake_then_solve_island(const ContactIslandGraph::Island& island,
+
+// --- deepen additive from deepen-pbd-island-guards-fbc0 ---
+struct IslandFullSolvePreflight {
+struct IslandSleepWakeSolvePreflight {
+struct IslandSleepWakeSolveGraphPreflight {
+IslandFullSolvePreflight preflight_solve_island_job_full(
+bool should_skip_solve_island_job_full(const IslandSolveJob& job,
+IslandSleepWakeSolvePreflight preflight_island_sleep_wake_solve(
+IslandSleepWakeSolvePreflight preflight_island_sleep_wake_solve_by_index(
+bool should_skip_island_sleep_wake_solve(const ContactIslandGraph::Island& island,
+IslandSleepWakeSolveGraphPreflight preflight_island_sleep_wake_solve_graph(
+bool should_skip_island_sleep_wake_solve_graph(

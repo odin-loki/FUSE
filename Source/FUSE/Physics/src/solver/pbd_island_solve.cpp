@@ -2635,3 +2635,21 @@ bool should_skip_island_solve_pipeline_by_index(const ContactIslandGraph& graph,
         if (solvePreflight.skipped) {
         if (solvePreflight.can_solve()) {
         } else if (!solvePreflight.bodies.can_solve()) {
+
+// --- deepen additive from deepen-pbd-island-guards-fbc0 ---
+IslandFullSolvePreflight preflight_solve_island_job_full(
+    IslandFullSolvePreflight preflight{};
+    if (job.island == nullptr || should_skip_island_solve_job(job)) {
+bool should_skip_solve_island_job_full(const IslandSolveJob& job,
+IslandSleepWakeSolvePreflight preflight_island_sleep_wake_solve(
+    IslandSleepWakeSolvePreflight preflight{};
+IslandSleepWakeSolvePreflight preflight_island_sleep_wake_solve_by_index(
+bool should_skip_island_sleep_wake_solve(const ContactIslandGraph::Island& island,
+    const IslandSleepWakeSolvePreflight preflight =
+        const IslandSleepWakeSolvePreflight preflight = preflight_island_sleep_wake_solve(
+IslandSleepWakeSolveGraphPreflight preflight_island_sleep_wake_solve_graph(
+    IslandSleepWakeSolveGraphPreflight preflight{};
+bool should_skip_island_sleep_wake_solve_graph(
+    const IslandSleepWakeSolveGraphPreflight preflight = preflight_island_sleep_wake_solve_graph(
+        const IslandSleepWakeSolvePreflight islandPreflight = preflight_island_sleep_wake_solve(
+        if (islandPreflight.needs_wake() &&
