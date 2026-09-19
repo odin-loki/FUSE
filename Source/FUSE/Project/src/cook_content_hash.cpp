@@ -566,3 +566,12 @@ CookHashPreflight preflight_manifest_entry_with_dependencies(const CookManifestE
 
 // --- deepen additive from deepen-b79-cooker-hash-90b0 ---
 CookHashPreflight preflight_manifest_cook_key(const CookManifestEntry& entry, const CookManifest& manifest) {
+
+// --- deepen additive from b79-cooker-hash-deepen-6979 ---
+CookHashPreflight preflight_import_cook_key_(const CookHashPreflight& import_preflight, u64 source_hash,
+CookHashPreflight preflight_mesh_import_cook_key(const MeshImportDesc& desc, u64 upstream_hash) {
+    const CookHashPreflight import_preflight = preflight_mesh_import_hash(desc);
+CookHashPreflight preflight_texture_import_cook_key(const TextureImportDesc& desc, u64 upstream_hash) {
+    const CookHashPreflight import_preflight = preflight_texture_import_hash(desc);
+CookHashPreflight preflight_audio_import_cook_key(const AudioImportDesc& desc, u64 upstream_hash) {
+    const CookHashPreflight import_preflight = preflight_audio_import_hash(desc);

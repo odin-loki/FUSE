@@ -1345,3 +1345,7 @@ void testCookHashPreflightManifestCookKey() {
     const fuse::project::CookHashPreflight all_empty_deps =
     expectTrue(all_empty_deps.reason == fuse::project::CookHashRejectReason::EmptyDependencyList,
     testCookHashPreflightManifestCookKey();
+
+// --- deepen additive from b79-cooker-hash-deepen-6979 ---
+void testCookHashPreflightImportCookKeys() {
+    testCookHashPreflightImportCookKeys();
