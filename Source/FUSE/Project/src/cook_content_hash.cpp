@@ -55,84 +55,44 @@ const char* cookHashPreflightRejectReasonLabel(CookHashPreflightRejectReason rea
         return "ZeroSourceHash";
     }
     return "Unknown";
-}
 
 bool preflight_hash_file_content(const std::string& path, CookHashPreflightRejectReason* reason) {
     if (path.empty()) {
         return set_preflight_reason(reason, CookHashPreflightRejectReason::EmptyPath);
-    }
     if (!path_exists(path)) {
         return set_preflight_reason(reason, CookHashPreflightRejectReason::MissingFile);
-    }
     return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
-}
 
 bool preflight_hash_mesh_import(const MeshImportDesc& desc, CookHashPreflightRejectReason* reason) {
     if (desc.input_path.empty() || desc.output_path.empty()) {
         return set_preflight_reason(reason, CookHashPreflightRejectReason::EmptyInputOrOutput);
-    }
     if (!preflight_hash_file_content(desc.input_path, reason)) {
         return false;
-    }
-    return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
-}
 
 bool preflight_hash_texture_import(const TextureImportDesc& desc, CookHashPreflightRejectReason* reason) {
-    if (desc.input_path.empty() || desc.output_path.empty()) {
-        return set_preflight_reason(reason, CookHashPreflightRejectReason::EmptyInputOrOutput);
-    }
-    if (!preflight_hash_file_content(desc.input_path, reason)) {
-        return false;
-    }
-    return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
-}
 
 bool preflight_hash_audio_import(const AudioImportDesc& desc, CookHashPreflightRejectReason* reason) {
-    if (desc.input_path.empty() || desc.output_path.empty()) {
-        return set_preflight_reason(reason, CookHashPreflightRejectReason::EmptyInputOrOutput);
-    }
-    if (!preflight_hash_file_content(desc.input_path, reason)) {
-        return false;
-    }
-    return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
-}
 
 bool preflight_hash_manifest_entry(const CookManifestEntry& entry, CookHashPreflightRejectReason* reason) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
-        return set_preflight_reason(reason, CookHashPreflightRejectReason::EmptyInputOrOutput);
-    }
     if (!preflight_hash_file_content(entry.source_path, reason)) {
-        return false;
-    }
     for (const std::string& dependency : entry.dependencies) {
         if (dependency.empty()) {
             continue;
-        }
         if (!preflight_hash_file_content(dependency, reason)) {
-            return false;
-        }
-    }
-    return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
-}
 
 bool preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash, CookHashPreflightRejectReason* reason) {
     if (source_hash == 0) {
         return set_preflight_reason(reason, CookHashPreflightRejectReason::ZeroSourceHash);
-    }
-    return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
-}
 
 bool preflight_hash_upstream_dependencies(const std::vector<std::string>& dependency_output_paths,
                                           const CookManifest& manifest,
                                           CookHashPreflightRejectReason* reason) {
     if (dependency_output_paths.empty()) {
-        return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
-    }
 
     bool saw_non_empty = false;
     for (const std::string& dependency_output : dependency_output_paths) {
         if (dependency_output.empty()) {
-            continue;
         saw_non_empty = true;
 
         bool found_manifest_entry = false;
@@ -140,13 +100,16 @@ bool preflight_hash_upstream_dependencies(const std::vector<std::string>& depend
             if (asset.output_path != dependency_output) {
             found_manifest_entry = true;
             if (!preflight_hash_file_content(asset.source_path, reason)) {
-                return false;
             break;
 
         if (!found_manifest_entry) {
-            return set_preflight_reason(reason, CookHashPreflightRejectReason::MissingFile);
 
     if (!saw_non_empty) {
+
+CookFnvInputPreflight preflight_fnv1a64_input(const u8* data, usize size) {
+    CookFnvInputPreflight preflight;
+    preflight.null_data = size > 0 && data == nullptr;
+    return preflight;
 
 u64 fnv1a64_bytes(const u8* data, usize size) {
     if (!is_valid_fnv1a64_input(data, size)) {

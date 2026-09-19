@@ -127,6 +127,15 @@ struct CookCacheKeyPreflight {
 [[nodiscard]] CookHashPreflight preflight_texture_import(const TextureImportDesc& desc);
 [[nodiscard]] CookHashPreflight preflight_audio_import(const AudioImportDesc& desc);
 [[nodiscard]] CookHashPreflight preflight_manifest_entry(const CookManifestEntry& entry);
+/// Preflight FNV-1a byte input — null pointer with non-zero length is rejected (B7.9 deepen).
+struct CookFnvInputPreflight {
+    bool null_data = false;
+
+    [[nodiscard]] bool can_hash() const { return !null_data; }
+    [[nodiscard]] bool should_skip() const { return !can_hash(); }
+};
+
+[[nodiscard]] CookFnvInputPreflight preflight_fnv1a64_input(const u8* data, usize size);
 
 /// Last-write-time in nanoseconds; returns 0 when the path is missing or unreadable.
 [[nodiscard]] u64 file_mtime_ns(const std::string& path);

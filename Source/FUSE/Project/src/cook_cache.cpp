@@ -137,6 +137,10 @@ CookCacheLookupPreflight preflight_cook_cache_lookup(const CookCache& cache, u64
     if (preflight.empty_cache) {
 
     preflight.has_entry = cache.contains(content_hash);
+    }
+
+        return preflight;
+
 
 CookCacheStorePreflight preflight_cook_cache_store(const CookCacheEntry& entry) {
     CookCacheStorePreflight preflight;
@@ -183,6 +187,7 @@ CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
     case CookAssetKind::Shader:
         preflight.can_hash = true;
         preflight.reason = CookHashRejectReason::None;
+    return preflight;
 }
 
 CookCacheEntry* CookCache::find_entry_(u64 content_hash) {
@@ -1922,6 +1927,39 @@ std::vector<std::string> CookCache::probe_stale_content_sources() const {
 
 
         if (is_stale_cache_entry_(entry)) {
+u32 CookCache::probe_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path);
+
+u32 CookCache::probe_stale_content_for_source(const std::string& source_path,
+    return count_stale_content_for_source(source_path, current_content_hash);
+
+std::vector<std::string> CookCache::probe_stale_upstream_hashes(
+
+
+
+u32 CookCache::probe_stale_upstream_hash_entries(
+    return count_stale_upstream_hashes(source_upstream_by_path);
+
+u32 CookCache::probe_downstream_of(const std::string& output_path,
+    return count_downstream_of(output_path, edges, jobs);
+
+CookCacheInvalidationProbe CookCache::probe_upstream_invalidation(
+    const std::string& changed_source,
+    CookCacheInvalidationProbe probe;
+    if (!is_valid_cook_cache_path(changed_source) || m_entries.empty()) {
+        return probe;
+
+    probe.direct_entries = probe_invalidate_source(changed_source);
+    for (const CookJob& job : jobs) {
+        if (job.source_path == changed_source) {
+            probe.downstream_entries += probe_downstream_of(job.output_path, edges, jobs);
+
+CookCachePruneEstimate CookCache::estimate_prune_removals() const {
+    CookCachePruneEstimate estimate;
+
+            ++estimate.invalid_entries;
+        } else if (is_stale_cache_entry_(entry)) {
+            ++estimate.stale_entries;
 
 bool CookCache::contains(u64 content_hash) const {
     if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {

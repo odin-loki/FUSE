@@ -2116,6 +2116,11 @@ void testCookerCacheReconcileEstimators() {
 void testCookerStaleDependencyReconcileEstimators() {
 
     entryA.output_path = "/tmp/fuse_b79_reconcile_a.fusemesh";
+void testCookerUpstreamProbeAndReconcileEstimate() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_chain_a.obj", "# est chain a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_chain_b.obj", "# est chain b\n");
+
+    entryA.output_path = "/tmp/fuse_b79_est_chain_a.fusemesh";
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
@@ -2123,6 +2128,7 @@ void testCookerStaleDependencyReconcileEstimators() {
     entryB.source_path = sourceB;
     entryB.output_path = "/tmp/fuse_b79_est_up_b.fusemesh";
     entryB.output_path = "/tmp/fuse_b79_reconcile_b.fusemesh";
+    entryB.output_path = "/tmp/fuse_b79_est_chain_b.fusemesh";
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
@@ -2248,6 +2254,31 @@ void testCookerPruneReconcileEstimator() {
     expectTrue(removed >= reconcile_estimate.total(),
                "stale dependency reconcile removes at least estimated count");
                "cache is clean after stale dependency reconcile");
+    expectTrue(cooked.ok, "manifest cook for reconcile estimate ok");
+    expectTrue(cooker.cache().entry_count() == 2u, "two entries seeded for reconcile estimate");
+
+    const fuse::project::CookCacheInvalidationProbe probe =
+        cooker.probe_upstream_dependency(manifest, sourceA);
+    expectTrue(probe.would_invalidate(), "upstream probe reports invalidation scope");
+    expectTrue(probe.total_entries() >= 2u, "upstream probe estimates chain removals");
+    expectTrue(probe.direct_entries == cooker.cache().count_by_source(sourceA),
+               "upstream probe direct count matches count_by_source");
+
+    const fuse::project::CookCacheInvalidationProbe empty_probe =
+        cooker.probe_upstream_dependency(manifest, "");
+    expectTrue(!empty_probe.would_invalidate(), "empty changed source upstream probe is zero");
+
+    const fuse::project::AssetCooker::CookDependencyReconcileEstimate fresh_estimate =
+    expectTrue(!fresh_estimate.would_reconcile(), "fresh cache reconcile estimate is zero");
+    expectTrue(fresh_estimate.stale_source_paths.empty(), "fresh cache has no stale source paths");
+
+    const fuse::u32 stale_count = cooker.count_stale_dependency_invalidation(manifest);
+    expectTrue(stale_count == fresh_estimate.total_entries(),
+               "count_stale_dependency_invalidation matches reconcile estimate total");
+
+    const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
+    expectTrue(removed >= probe.total_entries(), "upstream invalidation removes at least probed count");
+    expectTrue(cooker.cache().entry_count() == 0u, "cache empty after probed upstream invalidation");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -2462,6 +2493,7 @@ int main() {
     testCookerStaleDependencyEstimateParity();
     testCookerCacheReconcileEstimators();
     testCookerStaleDependencyReconcileEstimators();
+    testCookerUpstreamProbeAndReconcileEstimate();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
