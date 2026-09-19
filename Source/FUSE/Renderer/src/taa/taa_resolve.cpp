@@ -602,3 +602,8 @@ bool preflightTaaResolveTemporal(const TaaResolveDesc& desc, const TaaHistoryBuf
 
 // --- deepen additive from deepen-b59-taa-guards-614c ---
 bool wouldRejectTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+
+// --- deepen additive from deepen-b59-taa-guards-b05b ---
+    const bool resolveOk = preflightTaaResolve(desc, history, skipReason);
+    const bool blendOk = preflightTaaResolveBlendWeights(desc, history, blendReason);
+    return !preflightTaaResolveFrame(desc, history);

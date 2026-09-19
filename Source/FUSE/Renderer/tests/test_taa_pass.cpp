@@ -3548,3 +3548,9 @@ void testResolvePreflightShouldSkip() {
     expectTrue(!zeroPass->tryPreflightJitterNdc(jitterReject),
     expectTrue(jitterReject == fuse::renderer::TaaJitterGuardRejectReason::InvalidViewport,
     testResolvePreflightShouldSkip();
+
+// --- deepen additive from deepen-b59-taa-guards-b05b ---
+void testTaaPassCombinedPreflightGuards() {
+    expectTrue(pass->tryPreflightJitterSync(3u, jitterReject), "pass tryPreflightJitterSync passes");
+    expectTrue(!zeroPass->preflightJitterNdc(&jitterReject),
+    testTaaPassCombinedPreflightGuards();

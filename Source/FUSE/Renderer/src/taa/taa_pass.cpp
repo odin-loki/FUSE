@@ -518,3 +518,7 @@ bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupRejectReason* reason) const
 // --- deepen additive from deepen-b59-taa-guards-3780 ---
 bool TaaPass::tryPreflightHistoryWarmup(TaaHistoryWarmupBlockReason& reason) const {
     return tryPreflightTaaHistoryWarmup(m_history, reason);
+
+// --- deepen additive from deepen-b59-taa-guards-b05b ---
+    return preflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), &reason);
+    return preflightTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength(), &reason);
