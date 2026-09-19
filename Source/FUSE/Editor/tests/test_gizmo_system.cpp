@@ -6358,6 +6358,7 @@ void testBeginDragRejectReasonGuards() {
     expectTrue(!fuse::editor::tryPreflightBeginDrag(
                    fuse::editor::GizmoSystem::kPickRadius, reason),
                "tryPreflightBeginDrag rejects non-finite ray");
+    nanRay.origin.x = std::numeric_limits<fuse::f32>::quiet_NaN();
     expectTrue(std::strcmp(fuse::editor::gizmoBeginDragRejectReasonLabel(
                    fuse::editor::GizmoBeginDragRejectReason::NonFiniteRay),
                "NonFiniteRay") == 0,
