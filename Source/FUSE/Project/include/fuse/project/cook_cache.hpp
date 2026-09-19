@@ -95,6 +95,13 @@ struct CookCacheStaleUpstreamEstimate {
     }
 };
 
+/// Read-only invalidation planning breakdown — mirrors `invalidate_*` probes (B7.9 deepen).
+struct CookCacheInvalidationEstimate {
+    u32 all_entries = 0;
+
+    [[nodiscard]] bool would_invalidate_all() const { return all_entries != 0; }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -167,6 +174,7 @@ struct CookCacheReconcileEstimate {
 /// Read-only store preflight — mirrors `store` guards plus source readability (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 /// Read-only cache-entry preflight — structural paths plus source readability (B7.9 deepen).
+/// Read-only cache-entry hash preflight — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
 
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
@@ -323,6 +331,8 @@ public:
                                                       const std::vector<CookJob>& jobs) const;
     [[nodiscard]] bool would_invalidate_stale_content(const std::string& source_path,
     [[nodiscard]] bool would_invalidate_stale_upstream(
+    /// True when `invalidate_all` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_all() const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
@@ -367,6 +377,8 @@ public:
     [[nodiscard]] u32 count_stale_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;
+    /// Entries `invalidate_all` would remove — read-only planning helper (B7.9 deepen).
+    [[nodiscard]] CookCacheInvalidationEstimate estimate_invalidate_all_removals() const;
     /// Prune reconcile breakdown without mutating stats (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_removals() const;
     /// True when `estimate_prune_removals().total()` is non-zero (B7.9 deepen).

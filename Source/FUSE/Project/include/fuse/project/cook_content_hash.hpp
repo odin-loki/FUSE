@@ -26,6 +26,7 @@ enum class CookHashRejectReason : u8 {
     NonCacheableKey,
     UnresolvedDependency,
     NonCacheableCombinedKey,
+    InvalidCacheEntry,
 };
 
 /// Read-only hash preflight — mirrors empty-input guards without computing keys (B7.9 deepen).
@@ -329,5 +330,9 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 /// Read-only FNV input guard — mirrors `is_valid_fnv1a64_input` with reject reason (B7.9 deepen).
 /// Read-only manifest entry guard — source plus dependency paths must be readable (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry& entry);
+/// Cacheable fold preflight — rejects zero combined keys after source/upstream guards (B7.9 deepen).
+/// Manifest entry plus dependency source readability — additive over `preflight_manifest_entry_hash` (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_manifest_entry_with_dependencies_hash(
+    const CookManifestEntry& entry, const CookManifest& manifest);
 
 } // namespace fuse::project

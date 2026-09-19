@@ -227,6 +227,7 @@ public:
     [[nodiscard]] u32 estimate_prune_reconcile() const;
     /// Combined stale-upstream and prunable-entry reconcile estimate (B7.9 deepen).
     [[nodiscard]] u32 estimate_full_cache_reconcile(const CookManifest& manifest) const;
+        const CookManifest& manifest, const std::string& changed_source) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
