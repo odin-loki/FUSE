@@ -184,6 +184,9 @@ FrictionBasisRejectReason friction_basis_reject_reason(
 
 
 
+
+
+
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
 struct FrictionBasisPreflight {
     FrictionBasisRejectReason reason = FrictionBasisRejectReason::None;

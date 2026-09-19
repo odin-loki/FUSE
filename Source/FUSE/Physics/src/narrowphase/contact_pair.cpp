@@ -1695,6 +1695,14 @@ NarrowphaseBatchPreflight preflight_narrowphase_batch(
             ++preflight.rejectedCount;
         } else {
             ++preflight.dispatchableCount;
+NarrowphasePairListPreflight preflight_narrowphase_pair_list(
+    NarrowphasePairListPreflight preflight{};
+    preflight.emptyPairList = preflight.reason == NarrowphaseRejectReason::EmptyPairList;
+    preflight.allPairsRejected = preflight.reason == NarrowphaseRejectReason::AllPairsRejected;
+
+    if (preflight.reason == NarrowphaseRejectReason::None) {
+        preflight.dispatchablePairCount = static_cast<u32>(pairs.size());
+                --preflight.dispatchablePairCount;
         }
     }
     return preflight;
@@ -1709,12 +1717,11 @@ bool can_skip_narrowphase_dispatch(
 
 ContactManifold detect_contacts_pair_if_needed(
     const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
         return invalidContactManifold();
-    }
     return detect_contacts_pair(pair, bodies, shapes);
+bool can_skip_narrowphase(
+    return narrowphase_reject_reason(pairs, bodies, shapes) != NarrowphaseRejectReason::None;
 }
 
 } // namespace fuse::physics::narrowphase

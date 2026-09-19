@@ -730,11 +730,20 @@ struct ContactPairDeepen2Preflight {
     ContactPairRejectReason reason = ContactPairRejectReason::None;
     bool rejected = false;
 
-    bool can_dispatch() const { return !rejected; }
+    bool can_dispatch() const { return reason == ContactPairRejectReason::None; }
 };
 
 /// Populate second deepen pair preflight without running shape dispatch (B4.5 deepen pass).
 ContactPairDeepen2Preflight preflight_contact_pair_deepen2(
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Populate extended pair preflight without running shape dispatch (B4.4 deepen follow-up).
+ContactPairDeepenPreflight preflight_contact_pair_deepen(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -784,8 +793,6 @@ struct NarrowphaseBatchPreflight {
 /// Populate batch preflight without running shape dispatch (B4.4 deepen follow-up pass).
 NarrowphaseBatchPreflight preflight_narrowphase_batch(
     const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Const batch preflight for narrowphase pair dispatch (B4.4 deepen follow-up pass).
 struct ContactPairBatchPreflight {
@@ -811,7 +818,6 @@ NarrowphasePairBatchStats compute_narrowphase_pair_stats(
 /// Does not alter `detect_contacts_pair`; use for additive preflight dispatch only.
 /// Run shape dispatch only when base preflight allows; invalid manifold otherwise (B4.4 deepen follow-up pass).
 ContactManifold detect_contacts_pair_if_valid(
-    const broadphase::CandidatePair& pair,
 
 /// Run shape dispatch only when extended deepen preflight allows (B4.4 deepen follow-up pass).
 ContactManifold detect_contacts_pair_deepen(
@@ -838,6 +844,7 @@ ContactManifold detect_contacts_pair_if_needed(
 u32 count_rejected_contact_pairs_deepen(
 
 /// Why narrowphase batch dispatch would early-out (B4.4 deepen follow-up pass).
+/// Why narrowphase pair dispatch would early-out (B4.4 deepen follow-up pass).
 enum class NarrowphaseRejectReason : u8 {
     None = 0,
     EmptyPairList,
@@ -906,6 +913,16 @@ struct NarrowphaseBatchPreflight {
 
 /// Populate batch narrowphase preflight without running shape dispatch (B4.4 deepen follow-up pass).
 NarrowphaseBatchPreflight preflight_narrowphase_batch(
+/// Diagnose why narrowphase would skip; vacuously succeeds when dispatch may proceed.
+
+
+/// Read-only narrowphase pair-list diagnostics — no mutation (B4.4 deepen follow-up pass).
+struct NarrowphasePairListPreflight {
+    u32 dispatchablePairCount = 0;
+
+
+/// Populate pair-list preflight without running shape dispatch (B4.4 deepen follow-up pass).
+NarrowphasePairListPreflight preflight_narrowphase_pair_list(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
