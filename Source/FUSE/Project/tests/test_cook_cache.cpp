@@ -1958,3 +1958,16 @@ void testCookCachePruneReconcileShouldSkipGuards() {
                "should_skip_upstream_dependencies_hash true for empty dependency list");
     expectTrue(!estimate.should_skip(), "prune estimate should_skip false when stale");
     expectTrue(estimate.should_skip() == !cooker.cache().would_prune_all(),
+
+// --- deepen additive from deepen-b79-cook-hash-guards-c358 ---
+               "should_skip_combine rejects zero source hash");
+               "should_skip allows valid manifest entry");
+               "would_invalidate guarded on zero hash");
+    expectTrue(cooker.cache().would_invalidate(seeded.content_hash) ==
+               "would_invalidate hash aligns with populated cache");
+    expectTrue(cache.should_skip_prune(), "empty cache should_skip_prune is true");
+    expectTrue(cache.should_skip_prune() == !cache.would_prune_all(),
+               "should_skip_prune mirrors would_prune_all");
+    expectTrue(!estimate.should_skip(), "stale shader estimate should_skip is false");
+    expectTrue(!cache.should_skip_prune(), "stale cache should_skip_prune is false");
+               "estimate should_skip mirrors would_prune_all");

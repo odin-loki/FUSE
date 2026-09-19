@@ -2335,3 +2335,13 @@ void testCookerReconcileShouldSkipGuards() {
                "should_skip_upstream_invalidation false when chain entries exist");
                "should_skip_upstream_invalidation mirrors count probe");
     expectTrue(fresh.should_skip() == cooker.should_skip_reconcile_invalidation(manifest),
+
+// --- deepen additive from deepen-b79-cook-hash-guards-c358 ---
+               "should_skip_upstream rejects empty changed source");
+               "should_skip_upstream false when chain is cached");
+    expectTrue(cooker.should_skip_prune_reconcile(), "should_skip_prune true on fresh cache");
+               "should_skip_reconcile true on fresh cache");
+               "should_skip_reconcile mirrors estimate should_skip");
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would_invalidate downstream ok");
+               "would_invalidate_downstream true for cached chain");
+               "would_invalidate_downstream aligns with count probe");
