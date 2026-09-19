@@ -704,6 +704,97 @@ void testResolveCommandNameHelper() {
     console.unregister_command("custom_alpha");
 }
 
+void testWouldRecordHistoryGuard() {
+    fuse::script::ScriptConsole console;
+
+    expectTrue(!console.would_record_history(nullptr), "null line would not record");
+    expectTrue(!console.would_record_history("   "), "whitespace line would not record");
+    expectTrue(!console.would_record_history("help"), "help would not record");
+    expectTrue(!console.would_record_history("resolve help"), "resolve would not record");
+    expectTrue(!console.would_record_history("repeat"), "repeat would not record");
+    expectTrue(!console.would_record_history("history count"), "history would not record");
+    expectTrue(console.would_record_history("echo fuse"), "echo would record");
+    expectTrue(console.would_record_history("clear"), "clear would record");
+
+    console.execute("help");
+    expectTrue(console.historyCount() == 0u, "would_record_history policy matches execute for meta");
+    console.execute("echo tracked");
+    expectTrue(console.historyCount() == 1u, "would_record_history policy matches execute for action");
+}
+
+void testRepeatArgsGuard() {
+    fuse::script::ScriptConsole console;
+
+    console.execute("echo payload");
+    const auto with_args = console.execute("repeat extra");
+    expectTrue(with_args.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "repeat with args fails");
+    expectTrue(with_args.output == "repeat does not accept arguments",
+               "repeat with args guard message");
+
+    const auto whitespace_args = console.execute("repeat   ");
+    expectTrue(whitespace_args.ok(), "repeat with whitespace-only args succeeds");
+    expectTrue(whitespace_args.output == "payload", "repeat ignores whitespace-only args");
+
+    expectTrue(console.historyCount() == 1u, "repeat args guard does not push history");
+    expectTrue(console.can_repeat(), "repeat args guard preserves repeat state");
+}
+
+void testHistorySubcommandStubs() {
+    fuse::script::ScriptConsole console;
+
+    const auto empty_last = console.execute("history last");
+    expectTrue(empty_last.ok(), "history last on empty buffer succeeds");
+    expectTrue(empty_last.output == "history empty", "history last empty early-out");
+
+    const auto empty_newest = console.execute("history newest");
+    expectTrue(empty_newest.ok(), "history newest alias succeeds");
+    expectTrue(empty_newest.output == "history empty", "history newest empty early-out");
+
+    const auto zero_count = console.execute("history count");
+    expectTrue(zero_count.ok(), "history count on empty buffer succeeds");
+    expectTrue(zero_count.output == "0", "history count reports zero");
+
+    console.execute("echo alpha");
+    console.execute("echo beta");
+
+    const auto last = console.execute("history last");
+    expectTrue(last.ok(), "history last succeeds with entries");
+    expectTrue(last.output == "echo beta", "history last returns newest entry");
+    expectTrue(console.history_newest() == "echo beta", "history_newest accessor matches last");
+
+    const auto count = console.execute("history count");
+    expectTrue(count.ok(), "history count succeeds with entries");
+    expectTrue(count.output == "2", "history count reports entry total");
+
+    const auto unknown = console.execute("history bogus");
+    expectTrue(unknown.status == fuse::script::ScriptConsoleCommandStatus::InvalidArgument,
+               "unknown history subcommand fails");
+    expectTrue(unknown.output.find("unknown history subcommand:") != std::string::npos,
+               "unknown history subcommand error message");
+
+    expectTrue(console.historyCount() == 2u, "history subcommands do not push history");
+}
+
+void testHistoryNavigationEntryGuards() {
+    fuse::script::ScriptConsole console;
+
+    expectTrue(!console.is_history_navigating(), "fresh navigation is at end");
+    expectTrue(console.history_navigation_entry().empty(), "navigation entry empty at end");
+
+    console.execute("echo one");
+    console.execute("echo two");
+    expectTrue(!console.is_history_navigating(), "navigation at end after push");
+
+    expectTrue(console.recallHistory(true) == "echo two", "recall positions on newest");
+    expectTrue(console.is_history_navigating(), "recall up enters navigation mode");
+    expectTrue(console.history_navigation_entry() == "echo two", "navigation entry tracks cursor");
+
+    console.resetHistoryNavigation();
+    expectTrue(!console.is_history_navigating(), "reset leaves navigation mode");
+    expectTrue(console.history_navigation_entry().empty(), "navigation entry empty after reset");
+}
+
 void testCanRepeatAccessor() {
     fuse::script::ScriptConsole console;
 
@@ -872,6 +963,10 @@ void run_script_console_tests() {
     testDescribeAndCompleteStubs();
     testPrefixMatchAndCompletionHelpers();
     testResolveCommandStub();
+    testWouldRecordHistoryGuard();
+    testRepeatArgsGuard();
+    testHistorySubcommandStubs();
+    testHistoryNavigationEntryGuards();
     testHistoryEmptyEarlyOut();
     testMetaCommandsSkipHistoryAndRepeat();
     testCanRepeatAccessor();
