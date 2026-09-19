@@ -1744,3 +1744,10 @@ void testHrtfRejectReasonPreflights() {
                "should_skip_hrtf_binaural mirrors spatial reject reason");
     expectTrue(std::strcmp(fuse::audio::hrtfBinauralRejectReasonName(
     expectTrue(unity_preflight.ir.reason == fuse::audio::HrtfIrRejectReason::None,
+
+// --- deepen additive from deepen-hrtf-reject-reason-preflights-8d13 ---
+    expectTrue(fuse::audio::hrtf_ir_rejects_for_reason(empty, fuse::audio::HrtfIrRejectReason::EmptyIr),
+    expectTrue(empty_preflight.reason == fuse::audio::HrtfIrRejectReason::EmptyIr,
+    expectTrue(malformed_preflight.reason == fuse::audio::HrtfIrRejectReason::MalformedIr,
+    expectTrue(stub_preflight.reason == fuse::audio::HrtfPanPathRejectReason::None,
+    expectTrue(co_located_preflight.reason == fuse::audio::HrtfPanPathRejectReason::CoLocated,
