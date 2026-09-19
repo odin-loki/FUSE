@@ -29,6 +29,7 @@ std::atomic<u32> g_maxNestingDepth{0};
 std::atomic<u32> g_maxFlowNestingDepth{0};
 std::atomic<u32> g_openAsyncFlowCount{0};
 std::atomic<u32> g_orphanAsyncFlowEndCount{0};
+std::atomic<u32> g_rejectedInvalidNameCount{0};
 
 std::mutex g_exportMutex;
 
@@ -286,6 +287,14 @@ const char* eventNameRejectReasonLabel(EventNameRejectReason reason) {
     return "unknown";
     }
 
+void recordRejectedInvalidName() {
+    g_rejectedInvalidNameCount.fetch_add(1u, std::memory_order_acq_rel);
+}
+
+void recordOrphanAsyncFlowEnd() {
+    g_orphanAsyncFlowEndCount.fetch_add(1u, std::memory_order_acq_rel);
+}
+
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
@@ -295,6 +304,9 @@ ProfileScope::ProfileScope(const char* name)
       m_active(g_enabled.load(std::memory_order_acquire) && isRecordableName(name)) {
       m_active(g_enabled.load(std::memory_order_acquire) && isValidProfileName(name)) {
       m_active(g_enabled.load(std::memory_order_acquire) && eventNameIsRecordable(name)) {
+    if (g_enabled.load(std::memory_order_acquire) && !isValidEventName(name)) {
+        recordRejectedInvalidName();
+    }
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -410,6 +422,27 @@ bool isValidProfileName(const char* name) {
 
 bool hasOpenAsyncFlows() {
     return openAsyncFlowCount() > 0u;
+}
+
+u32 orphanAsyncFlowEndCount() {
+    return g_orphanAsyncFlowEndCount.load(std::memory_order_acquire);
+}
+
+bool hasOrphanAsyncFlowEnds() {
+    return orphanAsyncFlowEndCount() > 0u;
+}
+
+u32 rejectedInvalidNameCount() {
+    return g_rejectedInvalidNameCount.load(std::memory_order_acquire);
+}
+
+bool hasRejectedInvalidNames() {
+    return rejectedInvalidNameCount() > 0u;
+}
+
+u32 remainingEventCapacity() {
+    const u32 count = eventCount();
+    return count >= kRingCapacity ? 0u : kRingCapacity - count;
 }
 
 bool isScopeNestingBalanced() {
@@ -1422,6 +1455,9 @@ bool hasExportableEvents() {
 bool tryFirstExportableEvent(ProfileEvent& outEvent) {
     const u32 index = exportableFirstEventIndex();
     if (index == kInvalidEventIndex) {
+bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent) {
+    const u32 count = eventCount();
+    if (reverseIndex >= count) {
         outEvent = ProfileEvent{};
         return false;
     }
@@ -1431,6 +1467,31 @@ bool tryFirstExportableEvent(ProfileEvent& outEvent) {
 bool tryLastExportableEvent(ProfileEvent& outEvent) {
     const u32 index = exportableLastEventIndex();
 
+    return tryEventAt(count - 1u - reverseIndex, outEvent);
+}
+
+u32 findEventIndex(EventPhase phase, u32 startIndex) {
+    const u32 count = eventCount();
+    for (u32 i = startIndex; i < count; ++i) {
+        if (eventAt(i).phase == phase) {
+            return i;
+    return kInvalidEventIndex;
+
+u32 countEventsByPhase(EventPhase phase) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+            ++count;
+    return count;
+
+bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.scopeId == scopeId && isValidProfileEvent(event)) {
+            outEvent = event;
+            return true;
+
+    outEvent = ProfileEvent{};
+    return false;
 
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
@@ -1479,6 +1540,9 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.ringBufferWrapped = hasRingBufferWrapped();
     preflight.droppedEventCount = droppedEventCount();
     preflight.nonExportableEventCount = nonExportableEventCount();
+    preflight.remainingEventCapacity = remainingEventCapacity();
+    preflight.rejectedInvalidNameCount = rejectedInvalidNameCount();
+    preflight.orphanAsyncFlowEndCount = orphanAsyncFlowEndCount();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
@@ -1501,6 +1565,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
         preflight.eventCount > preflight.exportableEventCount
             ? preflight.eventCount - preflight.exportableEventCount
             : 0u;
+    preflight.hasRejectedInvalidNames = hasRejectedInvalidNames();
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
@@ -1724,6 +1789,7 @@ void reset() {
     g_orphanAsyncFlowEndCount.store(0u, std::memory_order_release);
     g_droppedEventCount.store(0u, std::memory_order_release);
     g_totalRecordedEvents.store(0u, std::memory_order_release);
+    g_rejectedInvalidNameCount.store(0u, std::memory_order_release);
     threadLocalNestingDepth() = 0u;
     threadLocalFlowNestingDepth() = 0u;
 }
@@ -1880,6 +1946,11 @@ void beginAsyncFlow(const char* name, u32 flowId) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(name)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(name)) {
     if (!g_enabled.load(std::memory_order_acquire) || !eventNameIsRecordable(name)) {
+    if (!g_enabled.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (!isValidEventName(name)) {
+        recordRejectedInvalidName();
         return;
     }
 
@@ -1904,11 +1975,13 @@ void endAsyncFlow(const char* name, u32 flowId) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(name)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(name)) {
     if (!g_enabled.load(std::memory_order_acquire) || !eventNameIsRecordable(name)) {
+        recordRejectedInvalidName();
         return;
     }
 
     if (g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u) {
         g_orphanAsyncFlowEndCount.fetch_add(1u, std::memory_order_acq_rel);
+        recordOrphanAsyncFlowEnd();
         return;
     }
 
@@ -1939,6 +2012,11 @@ void sampleCounter(const char* track, s64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !eventNameIsRecordable(track)) {
+    if (!g_enabled.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (!isValidEventName(track)) {
+        recordRejectedInvalidName();
         return;
     }
 
@@ -1959,6 +2037,11 @@ void sampleCounterFloat(const char* track, f64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !eventNameIsRecordable(track)) {
+    if (!g_enabled.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (!isValidEventName(track)) {
+        recordRejectedInvalidName();
         return;
     }
 
@@ -1979,6 +2062,11 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !eventNameIsRecordable(track)) {
+    if (!g_enabled.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (!isValidEventName(track)) {
+        recordRejectedInvalidName();
         return;
     }
 
@@ -1999,6 +2087,11 @@ void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !eventNameIsRecordable(track)) {
+    if (!g_enabled.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (!isValidEventName(track)) {
+        recordRejectedInvalidName();
         return;
     }
 

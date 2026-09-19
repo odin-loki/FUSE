@@ -115,6 +115,9 @@ struct ChromeTraceExportPreflight {
     bool ringSaturated = false;
     bool bufferFull = false;
     bool ringBufferWrapped = false;
+    u32 remainingEventCapacity = 0;
+    u32 rejectedInvalidNameCount = 0;
+    u32 orphanAsyncFlowEndCount = 0;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
@@ -133,6 +136,7 @@ struct ChromeTraceExportPreflight {
     u32 asyncFlowStartEventCount = 0;
     u32 asyncFlowFinishEventCount = 0;
     u32 nonExportableEventCount = 0;
+    bool hasRejectedInvalidNames = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -416,6 +420,11 @@ u32 scopeNestingDepth();
 u32 flowNestingDepth();
 u32 openAsyncFlowCount();
 bool hasOpenAsyncFlows();
+u32 orphanAsyncFlowEndCount();
+bool hasOrphanAsyncFlowEnds();
+u32 rejectedInvalidNameCount();
+bool hasRejectedInvalidNames();
+u32 remainingEventCapacity();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
 bool hasUnbalancedNesting();
@@ -634,6 +643,9 @@ bool isLastEventIndexValid();
 bool tryFirstExportableEvent(ProfileEvent& outEvent);
 bool tryLastExportableEvent(ProfileEvent& outEvent);
 u32 countEventsByPhase(EventPhase phase);
+bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent);
+u32 findEventIndex(EventPhase phase, u32 startIndex = 0u);
+bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
