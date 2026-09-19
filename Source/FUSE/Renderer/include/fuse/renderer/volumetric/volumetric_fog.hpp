@@ -505,6 +505,7 @@ struct FroxelGridLayout {
     /// Early-out when sample-coord preflight would be rejected — same ordering as `tryPreflightSampleCoords`.
     static bool wouldSkipSampleCoordPreflight(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
     /// Classify why sample-coord preflight would reject — same ordering as `tryPreflightSampleCoords`.
+    /// Classify sample-coord rejection — same ordering as `tryPreflightSampleCoords`.
     static SampleCoordRejectReason classifySampleCoordReject(const FroxelSampleCoords& coords,
                                                              const FroxelGridDesc& desc);
     /// Non-mutating sample-coord preflight — returns true when sampling would proceed.
@@ -768,6 +769,9 @@ bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 /// True when a populate reject reason would block meaningful analytic fill (B5.11 deepen).
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
+/// True when a populate reject reason would block analytic fill (B5.11 deepen pass).
+bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
+
 /// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
 enum class DensityLookupRejectReason : u8 {
     None = 0,
@@ -888,6 +892,7 @@ bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReas
 /// True when a density-lookup reject reason blocks guarded lookup (B5.11 deepen).
 
 
+
 /// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
 namespace froxel_util {
 f32 lerpDensity(f32 a, f32 b, f32 t);
@@ -943,6 +948,12 @@ DensityLookupRejectReason classifyDensityLookupRejectAtCoord(const FroxelDensity
 bool preflightDensityLookup(const FroxelDensityGrid& grid,
                             u32 index,
                             DensityLookupRejectReason* reason = nullptr);
+DensityLookupRejectReason classifyDensityLookupReject(const FroxelDensityGrid& grid,
+                                                      const FroxelGridDesc& desc,
+/// Non-mutating index density lookup preflight — returns true when lookup would proceed.
+/// Non-mutating coord density lookup preflight — returns true when lookup would proceed.
+bool preflightDensityLookupAtCoord(const FroxelDensityGrid& grid,
+                                   u32 sliceZ,
 /// Preflight guard before index-based density lookup; false on empty grid or desc mismatch.
 bool canLookupAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
 /// Quick density-lookup preflight without index diagnostics.
@@ -1398,6 +1409,7 @@ bool preflightDensityTrilinearSample(const FroxelDensityGrid& grid,
                                      FroxelTrilinearSampleRejectReason* reason = nullptr);
 /// Early-out when bilinear density sampling would be rejected — same ordering as `tryCanSampleAtCoords`.
 bool wouldSkipDensityBilinearSample(const FroxelDensityGrid& grid,
+FroxelTrilinearSampleRejectReason classifyFroxelTrilinearSampleReject(const FroxelDensityGrid& grid,
 /// True when at least one froxel exceeds `epsilon`; false when storage is empty.
 bool hasNonZeroDensity(const FroxelDensityGrid& grid, f32 epsilon = 1e-6f);
 /// Early-out when the grid is inaccessible or uniformly below `epsilon`.
@@ -1955,6 +1967,7 @@ FroxelPopulateRejectReason classifyPopulateReject(const FroxelGridDesc& desc,
                                                   const FroxelCameraDesc& camera,
                                                   const VolumetricFogParams& params);
 /// Non-mutating populate preflight — returns true when meaningful fill would proceed.
+/// Non-mutating populate preflight — returns true when analytic fill would proceed.
 /// Guarded populate — always mirrors `populateFromAnalyticFog`; returns false when preflight rejects fill.
 bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
                                 const FroxelGridDesc& desc,
