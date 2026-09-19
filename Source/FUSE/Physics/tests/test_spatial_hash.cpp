@@ -825,8 +825,12 @@ void testPairBufferPreparePairSlotsZeroGuard() {
     buffer.preparePairSlots(0u);
     expectTrue(buffer.canSkipSoAIteration(), "preparePairSlots(0) clears slot storage");
     expectTrue(buffer.isEmpty(), "preparePairSlots(0) leaves empty buffer");
+    expectTrue(buffer.canSkipCompactAndClamp(), "zero-prepared buffer skips compactAndClamp");
+    expectTrue(buffer.canSkipRefineIteration(), "zero-prepared buffer skips refine iteration");
     expectEq(buffer.compact(), 0u, "compact on zero slots returns zero");
     expectEq(buffer.countValidSlots(), 0u, "countValidSlots on zero slots returns zero");
+    expectEq(buffer.compactAndClamp(), 0u, "compactAndClamp on zero-prepared buffer is no-op");
+}
 
 void testNormalizeSpatialHashParamsAndOccupancy() {
     fuse::physics::broadphase::SpatialHashParams params;
@@ -1224,7 +1228,6 @@ void testCanSkipBroadphaseGuards() {
                "canSkipCellPairGeneration on single occupant");
     expectTrue(!fuse::physics::broadphase::canSkipCellPairGeneration(2u),
                "canSkipCellPairGeneration false for pair-capable cell");
-}
 
 void testCellOccupancyBudgetGuards() {
     const fuse::physics::broadphase::CellRange3 unitCube = {{0, 0, 0}, {1, 1, 1}};
@@ -1249,7 +1252,6 @@ void testCellOccupancyBudgetGuards() {
              "shrinkCellRangeToOccupancyBudget fits budget");
     expectTrue(!fuse::physics::broadphase::exceedsCellOccupancyBudget(shrunk, 4u),
                "shrunk range respects occupancy budget");
-}
 
 void testPruneInvalidCandidatePairs() {
     std::vector<fuse::physics::broadphase::CandidatePair> pairs = {
@@ -1267,10 +1269,8 @@ void testPruneInvalidCandidatePairs() {
                "first pruned pair is valid");
     expectTrue(fuse::physics::broadphase::isValidCandidatePair(pairs[1], 3u),
                "second pruned pair is valid");
-}
 
 void testPairBufferWouldRejectPush() {
-    fuse::physics::broadphase::PairBufferSoA buffer;
     expectTrue(buffer.wouldRejectPush(1u, 1u), "wouldRejectPush on self-pair");
     expectTrue(!buffer.wouldRejectPush(0u, 1u), "wouldRejectPush accepts valid pair");
 
@@ -1279,9 +1279,85 @@ void testPairBufferWouldRejectPush() {
     expectTrue(buffer.wouldRejectPush(2u, 3u), "wouldRejectPush when buffer is full");
     expectTrue(buffer.canSkipMaxCapacityClamp(), "at-capacity buffer skips post clamp");
     expectTrue(!buffer.canApplyMaxCapacityClamp(), "canSkipMaxCapacityClamp inverse of canApply");
-}
 
 void testBroadphaseCellOccupancyBudgetIntegration() {
+void testPairBufferSlotValidityBounds() {
+    buffer.writeSlot(0u, 0u, 1u);
+
+    expectTrue(!buffer.slotIsValid(2u), "slotIsValid rejects slot at pairSlotCount boundary");
+    expectTrue(!buffer.slotIsValid(99u), "slotIsValid rejects out-of-range slot");
+
+    buffer.invalidateSlot(2u);
+    expectTrue(buffer.slotIsValid(0u), "invalidateSlot ignores out-of-range slot");
+    buffer.invalidateSlot(99u);
+    expectTrue(buffer.slotIsValid(0u), "invalidateSlot ignores far out-of-range slot");
+
+    buffer.invalidateSlot(0u);
+    expectTrue(!buffer.slotIsValid(0u), "invalidateSlot clears in-range slot");
+
+void testPairBufferSlotModeDedupeGuard() {
+    buffer.preparePairSlots(3u);
+    buffer.writeSlot(0u, 1u, 2u);
+    buffer.writeSlot(2u, 3u, 4u);
+
+    expectEq(buffer.activeCount, 0u, "slot-mode buffer keeps activeCount zero before compact");
+    expectEq(buffer.countValidSlots(), 2u, "slot-mode buffer tracks valid slots before compact");
+    expectTrue(!buffer.canSkipDedupe(), "multi-slot buffer does not skip dedupe");
+    expectTrue(!buffer.canSkipCompactAndClamp(), "valid slot-mode buffer does not skip compactAndClamp");
+
+    expectEq(buffer.compactAndClamp(), 2u, "compactAndClamp gathers slot-mode pairs");
+    expectTrue(buffer.isSortedCanonical(), "compactAndClamp leaves slot-mode buffer sorted");
+    expectTrue(buffer.containsCanonicalPair(1u, 2u), "compactAndClamp preserves first slot pair");
+
+void testPairBufferWouldRejectAdditionalPairs() {
+    buffer.setMaxCapacity(2u);
+    expectTrue(!buffer.wouldRejectAdditionalPairs(2u), "empty buffer accepts two pairs");
+    expectTrue(buffer.wouldRejectAdditionalPairs(3u), "empty buffer rejects three pairs");
+    expectTrue(!buffer.wouldRejectAdditionalPairs(0u), "zero additional pairs never rejected");
+
+    expectTrue(buffer.wouldRejectAdditionalPairs(2u), "partial buffer rejects two more pairs");
+    expectTrue(!buffer.wouldRejectAdditionalPairs(1u), "partial buffer accepts one more pair");
+
+void testCanSkipBroadphaseRefineGuard() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    expectTrue(fuse::physics::broadphase::canSkipBroadphaseRefine(bodies, shapes, buffer),
+               "empty scene and buffer skips refine");
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+               "empty pair buffer skips refine on populated scene");
+
+    buffer.push(0u, 0u);
+               "self-pair buffer still skips refine when no valid slots");
+
+    buffer.clear();
+    expectTrue(!fuse::physics::broadphase::canSkipBroadphaseRefine(bodies, shapes, buffer),
+               "valid pair buffer does not skip refine");
+
+void testMaxCellSpanAxisGuards() {
+    const fuse::physics::broadphase::CellRange3 range = {{0, 0, 0}, {3, 1, 2}};
+    expectEq(fuse::physics::broadphase::maxCellSpanAxis(range), 4u,
+             "maxCellSpanAxis reports largest 3D span");
+    expectTrue(!fuse::physics::broadphase::exceedsMaxCellSpanPerAxis(range, 4u),
+               "span at limit does not exceed per-axis cap");
+    expectTrue(fuse::physics::broadphase::exceedsMaxCellSpanPerAxis(range, 3u),
+               "span above limit exceeds per-axis cap");
+    expectTrue(fuse::physics::broadphase::hasUnlimitedCellOccupancyBudget(0u),
+               "zero budget means unlimited occupancy");
+
+    const fuse::physics::broadphase::CellRange2 planeRange = {{0, 0}, {5, 1}};
+    expectEq(fuse::physics::broadphase::maxCellSpanAxis(planeRange), 6u,
+             "maxCellSpanAxis reports largest 2D span");
+    expectTrue(fuse::physics::broadphase::exceedsMaxCellSpanPerAxis(planeRange, 4u),
+               "2D per-axis span guard flags overflow");
+
+    fuse::physics::broadphase::CellRange3 inverted = {{2, 2, 2}, {1, 1, 1}};
+    expectEq(fuse::physics::broadphase::maxCellSpanAxis(inverted), 0u,
+             "empty range reports zero max span");
+
+void testBroadphaseBoxShapeCellRange() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
 
@@ -2476,6 +2552,11 @@ int main() {
     testPruneInvalidCandidatePairs();
     testPairBufferWouldRejectPush();
     testBroadphaseCellOccupancyBudgetIntegration();
+    testPairBufferSlotValidityBounds();
+    testPairBufferSlotModeDedupeGuard();
+    testPairBufferWouldRejectAdditionalPairs();
+    testCanSkipBroadphaseRefineGuard();
+    testMaxCellSpanAxisGuards();
     testBroadphaseBoxShapeCellRange();
     testBroadphaseSingletonEarlyOut();
     testBroadphaseCellOccupancyBudgetIntegration();

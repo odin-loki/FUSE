@@ -564,6 +564,7 @@ void refineBroadphasePairsParallelImpl(
     if (buffer.canSkipRefine() || bodies.count() == 0 || shapes.count() == 0) {
     if (shouldSkipBroadphaseRefine(buffer.activeCount, buffer.pairSlotCount, bodies.count(), shapes.count())) {
     if (buffer.canSkipRefine() || !buffer.hasValidPairs() || canSkipBroadphase(bodies, shapes)) {
+    if (canSkipBroadphaseRefine(bodies, shapes, buffer)) {
         return;
     }
 
