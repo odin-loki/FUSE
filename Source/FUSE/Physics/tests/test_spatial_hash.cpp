@@ -2299,3 +2299,14 @@ void testCandidatePairAabbRejectReason() {
              static_cast<fuse::u32>(fuse::physics::broadphase::CandidatePairRejectReason::AabbSeparated),
     testPairBufferLastRejectReasonGuards();
     testCandidatePairAabbRejectReason();
+
+// --- deepen additive from deepen-b4-broadphase-guards-bcce ---
+void testPairBufferSlotModeDedupeGuard() {
+void testPairBufferWouldRejectAdditionalPairs() {
+    expectTrue(!buffer.wouldRejectAdditionalPairs(2u), "empty buffer accepts two pairs");
+    expectTrue(buffer.wouldRejectAdditionalPairs(3u), "empty buffer rejects three pairs");
+    expectTrue(!buffer.wouldRejectAdditionalPairs(0u), "zero additional pairs never rejected");
+    expectTrue(buffer.wouldRejectAdditionalPairs(2u), "partial buffer rejects two more pairs");
+    expectTrue(!buffer.wouldRejectAdditionalPairs(1u), "partial buffer accepts one more pair");
+void testCanSkipBroadphaseRefineGuard() {
+void testMaxCellSpanAxisGuards() {
