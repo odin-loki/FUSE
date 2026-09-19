@@ -17,6 +17,13 @@ enum class ParticleGpuSyncGuard : u8 {
     CapacityMismatch,
 };
 
+/// Slot index validation for kernel column access (B7.7 GPU stub).
+enum class ParticleGpuSlotGuard : u8 {
+    Ok,
+    OutOfRange,
+    InvalidCapacity,
+};
+
 /// GPU SoA column identifiers — mirrors P7 `ParticleSoAGPU` device arrays.
 enum class ParticleGpuColumn : u8 {
     Positions,
@@ -108,6 +115,25 @@ struct ParticleGpuBufferLayout {
     static std::array<ParticleGpuColumnSpan, 8> collectColumnSpans(u32 capacity);
     static const char* columnName(ParticleGpuColumn column);
     static const char* syncGuardName(ParticleGpuSyncGuard guard);
+    static const char* slotGuardName(ParticleGpuSlotGuard guard);
+
+    [[nodiscard]] static bool isSlotInRange(u32 slot_index, u32 capacity);
+    [[nodiscard]] static ParticleGpuSlotGuard slotGuard(u32 slot_index, u32 capacity);
+    [[nodiscard]] static usize slotElementByteOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity);
+    [[nodiscard]] static usize slotColumnByteOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity);
+};
+
+/// Non-mutating simulate/emit launch diagnostics for stub tests.
+struct ParticleGpuDispatchPreflight {
+    u32 element_count = 0u;
+    u32 block_count = 0u;
+    u32 block_size = 0u;
+    u32 covered_threads = 0u;
+    u32 padding_threads = 0u;
+    bool skipped = true;
+
+    [[nodiscard]] bool coversElements() const { return !skipped && covered_threads >= element_count; }
+    [[nodiscard]] bool hasPadding() const { return padding_threads > 0u; }
 };
 
 /// Dispatch preflight for stub CUDA launch wiring (B7.7 GPU deepen follow-up).
@@ -136,6 +162,10 @@ struct ParticleGpuDispatch {
     [[nodiscard]] static ParticleGpuDispatch forSimulate(u32 capacity);
     [[nodiscard]] static ParticleGpuDispatch forEmit(u32 emit_count);
     [[nodiscard]] static ParticleGpuDispatch forFrame(u32 capacity, u32 emit_count);
+    [[nodiscard]] static ParticleGpuDispatchPreflight preflightSimulate(u32 capacity);
+    [[nodiscard]] static ParticleGpuDispatchPreflight preflightEmit(u32 emit_count);
+    [[nodiscard]] ParticleGpuDispatchPreflight simPreflight(u32 slot_count) const;
+    [[nodiscard]] ParticleGpuDispatchPreflight emitPreflight(u32 emit_count) const;
     [[nodiscard]] u32 totalSimThreads() const { return simBlockCount * simThreadCount; }
     [[nodiscard]] u32 totalEmitThreads() const { return emitBlockCount * emitThreadCount; }
     [[nodiscard]] bool simCovers(u32 slot_count) const { return totalSimThreads() >= slot_count; }
@@ -186,6 +216,16 @@ struct ParticleGpuBuffers {
     [[nodiscard]] ParticleGpuBufferPreflight preflight() const;
 };
 
+/// Non-mutating CPU mirror sync/write diagnostics for stub tests.
+struct ParticleGpuMirrorSyncPreflight {
+    ParticleGpuSyncGuard guard = ParticleGpuSyncGuard::Ok;
+    bool needs_resize = false;
+    bool can_sync = false;
+    bool can_write = false;
+
+    [[nodiscard]] bool ready() const { return guard == ParticleGpuSyncGuard::Ok; }
+};
+
 /// CPU-side column mirror for layout/dispatch stub tests — no device readback in production.
 struct ParticleGpuMirror {
     std::vector<math::Vec3> positions;
@@ -212,6 +252,10 @@ struct ParticleGpuMirror {
     [[nodiscard]] ParticleGpuMirrorUploadPreflight preflightDeviceUpload(const ParticleSoA& cpu) const;
     [[nodiscard]] bool shouldSkipSyncFromCpu(const ParticleSoA& cpu) const;
     [[nodiscard]] bool aliveCountMatchesFlags() const;
+    [[nodiscard]] ParticleGpuMirrorSyncPreflight preflightSyncFromCpu(const ParticleSoA& cpu) const;
+    [[nodiscard]] ParticleGpuMirrorSyncPreflight preflightWriteToCpu(const ParticleSoA& cpu) const;
+    [[nodiscard]] ParticleGpuSlotGuard slotGuard(u32 slot_index) const;
+    [[nodiscard]] bool isSlotInRange(u32 slot_index) const;
 
     [[nodiscard]] static ParticleGpuMirror fromCpuSoA(const ParticleSoA& cpu);
     [[nodiscard]] bool writeToCpuSoA(ParticleSoA& cpu) const;
@@ -244,6 +288,22 @@ struct ParticleGpuFramePreflight {
     [[nodiscard]] bool ready_for_stub() const;
     [[nodiscard]] bool can_simulate() const;
     [[nodiscard]] bool can_emit() const;
+/// Non-mutating frame-plan diagnostics for stub tests.
+struct ParticleGpuFramePlanPreflight {
+    u32 capacity = 0u;
+    u32 emit_count = 0u;
+    u32 alive_count = 0u;
+    bool sim_covers_capacity = false;
+    bool emit_covers_count = false;
+    bool skip_sim = true;
+    bool skip_emit = true;
+    u32 sim_padding_threads = 0u;
+    u32 emit_padding_threads = 0u;
+
+    [[nodiscard]] bool isIdle() const { return skip_sim && skip_emit; }
+    [[nodiscard]] bool ready() const {
+        return buffers_ok && (skip_sim || sim_covers_capacity) && (skip_emit || emit_covers_count);
+    }
 };
 
 /// Per-frame GPU stub plan: buffer sizing, dispatch counts, and empty-launch guards.
@@ -255,6 +315,9 @@ struct ParticleGpuFramePlan {
     u32 alive_count = 0u;
 
     [[nodiscard]] static ParticleGpuFramePlan forStub(u32 particle_capacity, u32 emit_count, u32 alive_count);
+    [[nodiscard]] static ParticleGpuFramePlanPreflight preflightStub(u32 particle_capacity, u32 emit_count,
+                                                                      u32 alive_count);
+    [[nodiscard]] ParticleGpuFramePlanPreflight preflight() const;
     [[nodiscard]] bool skipSimLaunch() const;
     [[nodiscard]] bool skipEmitLaunch() const;
     [[nodiscard]] bool isIdle() const { return skipSimLaunch() && skipEmitLaunch(); }
