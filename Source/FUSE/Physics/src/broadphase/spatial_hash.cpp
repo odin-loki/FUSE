@@ -270,7 +270,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (canSkipDedupeBroadphase(buffer)) {
+    if (!shouldRunDedupeBroadphase(buffer)) {
         return;
     }
 
@@ -393,7 +393,7 @@ void runBroadphaseIntoBufferInternal(
         dedupeBuffer(buffer);
     }
 
-    if (buffer.maxCapacity > 0u) {
+    if (shouldRunPairBufferClamp(buffer)) {
         buffer.applyMaxCapacityClamp();
     }
 }
