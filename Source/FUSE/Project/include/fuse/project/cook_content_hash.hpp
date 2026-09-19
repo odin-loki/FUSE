@@ -68,7 +68,6 @@ struct CookContentHashPreflight {
     bool unreadable_file = false;
 
     [[nodiscard]] bool can_hash() const { return !empty_path && !missing_file && !unreadable_file; }
-};
 
 /// Preflight for import descriptor hashing — mirrors `hash_*_import` rejection paths (B7.9 deepen).
 struct CookImportHashPreflight {
@@ -78,7 +77,13 @@ struct CookImportHashPreflight {
 
     [[nodiscard]] bool can_hash() const {
         return !empty_input_path && !empty_output_path && !source_unhashable;
-    }
+/// Why hash preflight rejected a cook cache key input (B7.9 deepen).
+enum class CookHashPreflightReject : u8 {
+    ZeroKey,
+
+/// Read-only hash preflight — mirrors `hash_*` guards without folding bytes (B7.9 deepen).
+    bool ok = false;
+    CookHashPreflightReject reject = CookHashPreflightReject::None;
 
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
 [[nodiscard]] u64 fnv1a64_bytes(const u8* data, usize size);
@@ -95,6 +100,11 @@ struct CookImportHashPreflight {
 
 /// True when `path` is non-empty and yields a non-zero content hash (B7.9 deepen).
 [[nodiscard]] bool is_readable_cook_source_path(const std::string& path);
+[[nodiscard]] CookHashPreflight preflight_hash_file_content(const std::string& path);
+[[nodiscard]] CookHashPreflight preflight_mesh_import(const MeshImportDesc& desc);
+[[nodiscard]] CookHashPreflight preflight_texture_import(const TextureImportDesc& desc);
+[[nodiscard]] CookHashPreflight preflight_audio_import(const AudioImportDesc& desc);
+[[nodiscard]] CookHashPreflight preflight_manifest_entry(const CookManifestEntry& entry);
 
 /// Last-write-time in nanoseconds; returns 0 when the path is missing or unreadable.
 [[nodiscard]] u64 file_mtime_ns(const std::string& path);
@@ -192,6 +202,12 @@ enum class CookHashRejectReason : u8 {
                                                CookHashRejectReason* reason = nullptr);
 /// Non-mutating preflight for `hash_mesh_import` — writes hash on success (B7.9 deepen).
 [[nodiscard]] bool preflight_mesh_import_hash(const MeshImportDesc& desc, u64* out_hash = nullptr,
+[[nodiscard]] inline CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    CookHashPreflight result;
+    result.ok = combine_cook_cache_key(source_hash, upstream_hash) != 0;
+    if (!result.ok) {
+        result.reject = CookHashPreflightReject::ZeroKey;
+    return result;
 
 /// Content hash over source bytes plus import descriptor knobs (identical inputs → identical hash).
 [[nodiscard]] u64 hash_mesh_import(const MeshImportDesc& desc);

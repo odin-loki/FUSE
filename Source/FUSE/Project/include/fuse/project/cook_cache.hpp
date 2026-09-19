@@ -322,6 +322,11 @@ public:
     /// Non-mutating store preflight — valid entries return true (B7.9 deepen).
     [[nodiscard]] bool preflight_store(const CookCacheEntry& entry,
                                        StoreRejectReason* reason = nullptr) const;
+    /// Incremental invalidation probe — entries `prune_stale_entries` would drop (B7.9 deepen).
+    /// Incremental invalidation probe — entries `prune_invalid_entries` would drop (B7.9 deepen).
+    /// Incremental invalidation probe — entries whose upstream hash differs (B7.9 deepen).
+    /// Incremental invalidation probe — entries `invalidate_stale_content_for_source` would drop (B7.9 deepen).
+    /// Reconcile estimator — total entries `prune_all` would remove without mutating (B7.9 deepen).
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
