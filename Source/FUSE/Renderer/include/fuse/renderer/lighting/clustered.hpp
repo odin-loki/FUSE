@@ -120,6 +120,7 @@ struct ClusterGridLayout {
                                              const ClusterCameraDesc& camera,
                                              u32& outClusterIndex);
     /// Screen-depth mapping with empty-grid preflight; returns false without writing `outClusterIndex`.
+    /// Screen-depth mapping with guard preflight; returns false when the grid is empty or depth is out of range.
     static bool tryMapScreenDepthToClusterIndex(f32 screenX,
                                                 f32 screenY,
                                                 f32 viewDepth,
@@ -136,6 +137,12 @@ enum class GridRebuildRejectReason : u8 {
 /// Why light-grid rebuild preflight rejected the request (B5.4 deepen).
 enum class ClusterRebuildRejectReason : u8 {
     CountMismatch,
+    /// Early-out when screen-depth → cluster mapping should be skipped for an empty grid or out-of-range depth.
+    static bool shouldSkipScreenDepthMapping(const ClusterDesc& desc,
+                                             const ClusterCameraDesc& camera,
+                                             f32 viewDepth);
+
+    DescMismatch,
 };
 
 /// Human-readable label for rebuild reject reasons (logging / tests).
@@ -158,6 +165,7 @@ struct ClusterLightGridLayout {
                                        ClusterRebuildRejectReason& outReason);
     /// Early-out when rebuild should be skipped for an empty desc or count mismatch.
     static bool shouldSkipClusterRebuild(const ClusterDesc& desc, u32 clusterCount);
+    /// Early-out when light-grid rebuild should be skipped for an empty desc with a non-zero cluster count.
     static u32 rebuildLightGrid(ClusterGridSoA& grid,
                                 const std::vector<std::vector<u32>>& perClusterLights,
                                 u32 maxLightsPerCluster = 0u);
@@ -179,6 +187,10 @@ struct ClusterLightGridLayout {
                                           const std::vector<std::vector<u32>>& perClusterLights,
                                           ClusterRebuildRejectReason& outReason,
                                           u32 maxLightsPerCluster = 0u);
+    /// Rebuild with preflight guard; returns false when `tryCanRebuildLightGrid` would reject the request.
+                                    u32& outLightsDropped,
+                                    GridRebuildRejectReason& outReason);
+    /// Rebuild for `desc` with preflight guard; returns false when rebuild preflight rejects the request.
     static bool validateContiguousOffsets(const ClusterGridSoA& grid, u32 clusterCount);
     /// Validate contiguous offsets against the clamped cluster count derived from `desc`.
     static bool validateContiguousOffsetsForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
