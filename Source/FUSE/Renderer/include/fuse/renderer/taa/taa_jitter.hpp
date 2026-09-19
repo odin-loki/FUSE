@@ -229,6 +229,20 @@ bool preflightTaaJitterSyncAlignment(u32 frameIndex, u32 slot,
 bool tryPreflightTaaJitterSyncAlignment(u32 frameIndex, u32 slot, u32 sequenceLength,
 /// Early-out when jitter sync slot alignment preflight would reject (B5.9 deepen).
 bool shouldSkipTaaJitterSyncAlignment(u32 frameIndex, u32 slot,
+/// Classify why jitter state is not aligned to a monotonic frame counter (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(u32 frameIndex, u32 monotonicFrame, u32 slot,
+/// True when jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
+bool preflightTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot,
+bool tryPreflightTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot, u32 sequenceLength,
+bool shouldSkipTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot,
+/// Classify why combined jitter sync + NDC production would be rejected (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterSyncAndNdcReject(u32 width, u32 height,
+/// True when jitter can sync and produce NDC offsets for viewport and sequence (B5.9 deepen).
+bool preflightTaaJitterSyncAndNdc(u32 /*frameIndex*/, u32 width, u32 height,
+/// Combined jitter sync + NDC preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterSyncAndNdc(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
+/// Early-out when combined jitter sync + NDC preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterSyncAndNdc(u32 frameIndex, u32 width, u32 height,
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -253,6 +267,7 @@ struct TaaJitterLayout {
     /// Classify why jitter sync would be rejected (B5.9 deepen).
     static TaaJitterSyncRejectReason classifyTaaJitterSyncReject(
         u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// True when jitter can sync and produce NDC offsets for viewport and sequence (B5.9 deepen).
     /// True when `slot` is the active Halton index for `frameIndex` (B5.9 deepen).
     static bool jitterSlotMatchesFrameIndex(u32 frameIndex, u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// True when NDC jitter can be computed for the viewport (B5.9 deepen).
@@ -428,7 +443,6 @@ public:
     /// Circular slot distance from the frame-index mapping (0 when aligned) (B5.9 deepen).
     u32 frameIndexSlotDrift(u32 frameIndex) const;
     /// True when jitter slot differs from the frame-index mapping (B5.9 deepen).
-    bool needsSyncToFrameIndex(u32 frameIndex) const;
     /// Sync with reject-reason diagnostics; returns false when blocked (B5.9 deepen).
     bool syncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason* reason);
     /// True when jitter state differs from the expected slot for `frameIndex` (B5.9 deepen).
@@ -436,6 +450,10 @@ public:
     /// True when jitter must resync before sampling offsets for `frameIndex` (B5.9 deepen).
     /// True when the active slot matches the Halton index for `frameIndex` (B5.9 deepen).
     bool slotAlignedToFrameIndex(u32 frameIndex) const;
+    /// Sync and produce NDC offset only when viewport and sequence are valid (B5.9 deepen).
+    bool syncToFrameIndexAndProduceNdcIfReady(u32 frameIndex, u32 width, u32 height, fuse::math::Vec2& out);
+    /// True when jitter state is aligned to `frameIndex` for the active sequence (B5.9 deepen).
+    bool preflightAlignmentToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
 
     u32 index() const { return m_index; }
     /// True when monotonic frame counter matches `frameIndex` (B5.9 deepen).
