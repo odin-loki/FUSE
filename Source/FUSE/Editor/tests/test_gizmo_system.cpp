@@ -688,6 +688,12 @@ void testPickConfigValid() {
     expectTrue(fuse::editor::isPickConfigValid(fuse::editor::GizmoSystem::kAxisLength,
                                                fuse::editor::GizmoSystem::kPickRadius),
                "isPickConfigValid accepts default gizmo constants");
+    expectTrue(!fuse::editor::isPickConfigFinite(std::numeric_limits<fuse::f32>::quiet_NaN(),
+                                                 fuse::editor::GizmoSystem::kPickRadius),
+               "isPickConfigFinite rejects NaN axis length");
+    expectTrue(!fuse::editor::isPickConfigValid(std::numeric_limits<fuse::f32>::infinity(),
+                                                fuse::editor::GizmoSystem::kPickRadius),
+               "isPickConfigValid rejects non-finite axis length");
 }
 
 void testPickPreflightGuards() {
@@ -2378,6 +2384,130 @@ void testEndDragRejectReasonGuards() {
     gizmo.endDrag();
 }
 
+void testSnapStepFiniteGuards() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = std::numeric_limits<fuse::f32>::quiet_NaN();
+
+    expectTrue(!fuse::editor::isSnapStepFinite(fuse::editor::GizmoMode::Translate, snap),
+               "isSnapStepFinite rejects NaN translate step");
+
+    const fuse::editor::SnapPreflight nanStepPreflight =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(nanStepPreflight.nonFiniteStep, "snap preflight marks non-finite step");
+    expectTrue(!nanStepPreflight.canApply(), "snap preflight rejects non-finite step");
+    expectTrue(fuse::editor::classifySnapReject(nanStepPreflight) ==
+                   fuse::editor::GizmoSnapRejectReason::NonFiniteStep,
+               "classifySnapReject maps nonFiniteStep flag");
+
+    fuse::editor::GizmoSnapRejectReason reason = fuse::editor::GizmoSnapRejectReason::None;
+    expectTrue(!fuse::editor::tryPreflightSnap(fuse::editor::GizmoMode::Translate, snap, reason),
+               "tryPreflightSnap rejects non-finite step");
+    expectTrue(reason == fuse::editor::GizmoSnapRejectReason::NonFiniteStep,
+               "non-finite step reject reason is NonFiniteStep");
+}
+
+void testNonFiniteRejectReasonGuards() {
+    fuse::editor::GizmoTransform transform{};
+
+    fuse::editor::GizmoRay nanRay = rayAlongX();
+    nanRay.origin.x = std::numeric_limits<fuse::f32>::quiet_NaN();
+    fuse::editor::GizmoPickRejectReason pickReason = fuse::editor::GizmoPickRejectReason::None;
+    expectTrue(!fuse::editor::tryPreflightPick(nanRay, transform, fuse::editor::GizmoMode::Translate,
+                                               fuse::editor::GizmoSpace::World,
+                                               fuse::editor::GizmoSystem::kAxisLength,
+                                               fuse::editor::GizmoSystem::kPickRadius, pickReason),
+               "tryPreflightPick rejects non-finite ray");
+    expectTrue(pickReason == fuse::editor::GizmoPickRejectReason::NonFiniteRay,
+               "non-finite ray pick reject reason is NonFiniteRay");
+
+    fuse::editor::GizmoHitTest nanHit{};
+    nanHit.viewportWidth = 100.f;
+    nanHit.viewportHeight = 100.f;
+    nanHit.screenX = std::numeric_limits<fuse::f32>::quiet_NaN();
+    nanHit.screenY = 50.f;
+    expectTrue(!fuse::editor::preflightPickReady(nanHit, fuse::editor::GizmoMode::Translate,
+                                                 &pickReason),
+               "preflightPickReady rejects non-finite hit");
+    expectTrue(pickReason == fuse::editor::GizmoPickRejectReason::NonFiniteHit,
+               "non-finite hit pick reject reason is NonFiniteHit");
+
+    fuse::editor::GizmoBeginDragRejectReason beginReason =
+        fuse::editor::GizmoBeginDragRejectReason::None;
+    expectTrue(!fuse::editor::tryPreflightBeginDrag(nanHit, fuse::editor::GizmoMode::Translate,
+                                                    beginReason),
+               "tryPreflightBeginDrag rejects non-finite hit");
+    expectTrue(beginReason == fuse::editor::GizmoBeginDragRejectReason::NonFiniteHit,
+               "non-finite hit begin reject reason is NonFiniteHit");
+
+    fuse::editor::GizmoUpdateDragRejectReason updateReason =
+        fuse::editor::GizmoUpdateDragRejectReason::None;
+    expectTrue(!fuse::editor::tryPreflightUpdateDrag(nanHit, true, fuse::editor::GizmoAxis::X,
+                                                     updateReason),
+               "tryPreflightUpdateDrag rejects non-finite hit");
+    expectTrue(updateReason == fuse::editor::GizmoUpdateDragRejectReason::NonFiniteHit,
+               "non-finite hit update reject reason is NonFiniteHit");
+
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.5f;
+    fuse::editor::GizmoSnapDragRejectReason snapDragReason =
+        fuse::editor::GizmoSnapDragRejectReason::None;
+    expectTrue(fuse::editor::tryPreflightSnapDrag(0.25f, fuse::editor::GizmoMode::Translate, snap,
+                                                  snapDragReason),
+               "tryPreflightSnapDrag accepts valid delta");
+    expectTrue(snapDragReason == fuse::editor::GizmoSnapDragRejectReason::None,
+               "valid snap-drag reject reason is None");
+    expectTrue(!fuse::editor::tryPreflightSnapDrag(std::numeric_limits<fuse::f32>::quiet_NaN(),
+                                                   fuse::editor::GizmoMode::Translate, snap,
+                                                   snapDragReason),
+               "tryPreflightSnapDrag rejects non-finite delta");
+    expectTrue(snapDragReason == fuse::editor::GizmoSnapDragRejectReason::DeltaNonFinite,
+               "non-finite delta snap-drag reject reason is DeltaNonFinite");
+    expectTrue(std::strcmp(fuse::editor::gizmoSnapDragRejectReasonLabel(
+                   fuse::editor::GizmoSnapDragRejectReason::DeltaNonFinite),
+               "DeltaNonFinite") == 0,
+               "snap-drag reject reason label for DeltaNonFinite");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    expectTrue(gizmo.preflightSnapDragReady(0.25f), "gizmo preflightSnapDragReady accepts delta");
+    expectTrue(gizmo.shouldSkipSnapDrag(std::numeric_limits<fuse::f32>::infinity()),
+               "gizmo shouldSkipSnapDrag true for non-finite delta");
+}
+
+void testUpdateDragInteractionUsesDragDelta() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.5f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+
+    hit.screenX = 20.f;
+    const fuse::editor::UpdateDragInteractionPreflight withDelta =
+        gizmo.preflightUpdateDragInteraction(hit);
+    expectTrue(withDelta.canUpdate(), "update interaction accepts drag with delta");
+    expectTrue(withDelta.snapDragWillApply(), "update interaction applies snap-drag for finite delta");
+
+    const fuse::editor::UpdateDragInteractionPreflight nanDelta =
+        fuse::editor::preflightUpdateDragInteraction(hit, true, fuse::editor::GizmoAxis::X,
+                                                   fuse::editor::GizmoMode::Translate, snap,
+                                                   std::numeric_limits<fuse::f32>::quiet_NaN());
+    expectTrue(nanDelta.canUpdate(), "update interaction still allows drag with non-finite delta");
+    expectTrue(!nanDelta.snapDragWillApply(),
+               "update interaction rejects snap-drag for non-finite delta");
+    gizmo.endDrag();
+}
+
 void testRejectReasonMirrorsExistingPreflights() {
     fuse::editor::GizmoHitTest hit{};
     hit.viewportWidth = 100.f;
@@ -2478,6 +2608,9 @@ int main() {
     testBeginDragRejectReasonGuards();
     testUpdateDragRejectReasonGuards();
     testEndDragRejectReasonGuards();
+    testSnapStepFiniteGuards();
+    testNonFiniteRejectReasonGuards();
+    testUpdateDragInteractionUsesDragDelta();
     testRejectReasonMirrorsExistingPreflights();
 
     if (g_failures != 0) {
