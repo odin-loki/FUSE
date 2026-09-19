@@ -367,7 +367,6 @@ public:
                                        TaaResolveTemporalBlendRejectReason* reason = nullptr) const;
     /// Early-out when combined resolve temporal-blend preflight would reject (B5.9 deepen).
     bool shouldSkipResolveTemporalBlend(const TaaResolveDesc& desc) const;
-    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
     /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
     bool preflightJitterAdvance(TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
@@ -402,8 +401,6 @@ public:
     /// Pass NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
     /// Sync jitter when preflight passes; returns false when blocked (B5.9 deepen).
     bool trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason);
-    /// Classify why pass jitter sync would be rejected (B5.9 deepen).
-    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
     /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
