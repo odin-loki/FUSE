@@ -214,6 +214,20 @@ struct CookCacheReconcileEstimate {
     [[nodiscard]] u32 total_removable() const { return invalid_count + stale_count; }
     [[nodiscard]] bool would_change() const { return total_removable() > 0; }
 
+/// Read-only store preflight — mirrors `is_valid_cook_cache_entry` with reject reasons (B7.9 deepen).
+[[nodiscard]] inline CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    if (!is_valid_cook_cache_path(entry.source_path)) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+    if (!is_valid_cook_cache_path(entry.output_path)) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
 public:
@@ -386,11 +400,6 @@ public:
     [[nodiscard]] u32 count_downstream_entries(const std::string& output_path,
 
     /// Incremental invalidation probes — non-mutating entry counts (B7.9 deepen follow-up).
-    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate(u64 content_hash) const;
-    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate_source(const std::string& source_path) const;
-    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate_output(const std::string& output_path) const;
-    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate_stale_content_for_source(
-        const std::string& source_path, u64 current_content_hash) const;
 
     /// Reconcile estimators — non-mutating prune and upstream-hash counts (B7.9 deepen follow-up).
     [[nodiscard]] CookCacheReconcileEstimate estimate_prune_stale_entries() const;
@@ -399,166 +408,36 @@ public:
     [[nodiscard]] CookCacheReconcileEstimate estimate_stale_upstream_invalidations(
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
 
-    /// Incremental invalidation probes — non-mutating counts matching `invalidate_*` (B7.9 deepen).
-    [[nodiscard]] u32 estimate_invalidation_by_hash(u64 content_hash) const;
-    [[nodiscard]] u32 estimate_invalidation_by_source(const std::string& source_path) const;
-    [[nodiscard]] u32 estimate_invalidation_by_output(const std::string& output_path) const;
-    [[nodiscard]] u32 estimate_stale_content_invalidation(const std::string& source_path,
-                                                          u64 current_content_hash) const;
-    [[nodiscard]] u32 estimate_stale_upstream_invalidation(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    /// One source path per stale entry — mirrors `invalidate_stale_upstream_hashes` push order (B7.9 deepen).
-    [[nodiscard]] std::vector<std::string> probe_stale_upstream_invalidation_sources(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    [[nodiscard]] u32 estimate_invalidation_downstream_of(
-        const std::string& output_path,
         const std::vector<CookJobDependencyEdge>& edges,
         const std::vector<CookJob>& jobs) const;
-    [[nodiscard]] bool probe_would_invalidate_hash(u64 content_hash) const;
-    [[nodiscard]] bool probe_would_invalidate_source(const std::string& source_path) const;
 
-    /// Reconcile estimators — non-mutating mirrors of `prune_*` (B7.9 deepen).
-    [[nodiscard]] u32 estimate_prune_stale_entries() const;
-    [[nodiscard]] u32 estimate_prune_invalid_entries() const;
-    [[nodiscard]] u32 estimate_prune_all() const;
-    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile() const;
 
-    /// Incremental invalidation probes — non-mutating counts matching `invalidate_*` (B7.9 deepen).
-    [[nodiscard]] u32 estimate_invalidation_by_hash(u64 content_hash) const;
-    [[nodiscard]] u32 estimate_invalidation_by_source(const std::string& source_path) const;
-    [[nodiscard]] u32 estimate_invalidation_by_output(const std::string& output_path) const;
-    [[nodiscard]] u32 estimate_stale_content_invalidation(const std::string& source_path,
-                                                          u64 current_content_hash) const;
-    [[nodiscard]] u32 estimate_stale_upstream_invalidation(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    /// One source path per stale entry — mirrors `invalidate_stale_upstream_hashes` push order (B7.9 deepen).
-    [[nodiscard]] std::vector<std::string> probe_stale_upstream_invalidation_sources(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    [[nodiscard]] u32 estimate_invalidation_downstream_of(
-        const std::string& output_path,
-        const std::vector<CookJobDependencyEdge>& edges,
-        const std::vector<CookJob>& jobs) const;
-    [[nodiscard]] bool probe_would_invalidate_hash(u64 content_hash) const;
-    [[nodiscard]] bool probe_would_invalidate_source(const std::string& source_path) const;
 
-    /// Reconcile estimators — non-mutating mirrors of `prune_*` (B7.9 deepen).
-    [[nodiscard]] u32 estimate_prune_stale_entries() const;
-    [[nodiscard]] u32 estimate_prune_invalid_entries() const;
-    [[nodiscard]] u32 estimate_prune_all() const;
-    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile() const;
 
-    /// Incremental invalidation probes — non-mutating counts matching `invalidate_*` (B7.9 deepen).
-    [[nodiscard]] u32 estimate_invalidation_by_hash(u64 content_hash) const;
-    [[nodiscard]] u32 estimate_invalidation_by_source(const std::string& source_path) const;
-    [[nodiscard]] u32 estimate_invalidation_by_output(const std::string& output_path) const;
-    [[nodiscard]] u32 estimate_stale_content_invalidation(const std::string& source_path,
-                                                          u64 current_content_hash) const;
-    [[nodiscard]] u32 estimate_stale_upstream_invalidation(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    /// One source path per stale entry — mirrors `invalidate_stale_upstream_hashes` push order (B7.9 deepen).
-    [[nodiscard]] std::vector<std::string> probe_stale_upstream_invalidation_sources(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    [[nodiscard]] u32 estimate_invalidation_downstream_of(
-        const std::string& output_path,
-        const std::vector<CookJobDependencyEdge>& edges,
-        const std::vector<CookJob>& jobs) const;
-    [[nodiscard]] bool probe_would_invalidate_hash(u64 content_hash) const;
-    [[nodiscard]] bool probe_would_invalidate_source(const std::string& source_path) const;
 
-    /// Reconcile estimators — non-mutating mirrors of `prune_*` (B7.9 deepen).
-    [[nodiscard]] u32 estimate_prune_stale_entries() const;
-    [[nodiscard]] u32 estimate_prune_invalid_entries() const;
-    [[nodiscard]] u32 estimate_prune_all() const;
-    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile() const;
 
-    /// Incremental invalidation probes — non-mutating counts matching `invalidate_*` (B7.9 deepen).
-    [[nodiscard]] u32 estimate_invalidation_by_hash(u64 content_hash) const;
-    [[nodiscard]] u32 estimate_invalidation_by_source(const std::string& source_path) const;
-    [[nodiscard]] u32 estimate_invalidation_by_output(const std::string& output_path) const;
-    [[nodiscard]] u32 estimate_stale_content_invalidation(const std::string& source_path,
-                                                          u64 current_content_hash) const;
-    [[nodiscard]] u32 estimate_stale_upstream_invalidation(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    /// One source path per stale entry — mirrors `invalidate_stale_upstream_hashes` push order (B7.9 deepen).
-    [[nodiscard]] std::vector<std::string> probe_stale_upstream_invalidation_sources(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    [[nodiscard]] u32 estimate_invalidation_downstream_of(
-        const std::string& output_path,
-        const std::vector<CookJobDependencyEdge>& edges,
-        const std::vector<CookJob>& jobs) const;
-    [[nodiscard]] bool probe_would_invalidate_hash(u64 content_hash) const;
-    [[nodiscard]] bool probe_would_invalidate_source(const std::string& source_path) const;
 
-    /// Reconcile estimators — non-mutating mirrors of `prune_*` (B7.9 deepen).
-    [[nodiscard]] u32 estimate_prune_stale_entries() const;
-    [[nodiscard]] u32 estimate_prune_invalid_entries() const;
-    [[nodiscard]] u32 estimate_prune_all() const;
-    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile() const;
 
     /// Incremental invalidation probes — read-only, no stats or mutation (B7.9 deepen).
     [[nodiscard]] u32 probe_stale_content_invalidation(const std::string& source_path,
-                                                       u64 current_content_hash) const;
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_invalidation(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     [[nodiscard]] u32 probe_stale_upstream_invalidation_count(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     [[nodiscard]] u32 probe_invalidate_downstream_of(const std::string& output_path,
-                                                     const std::vector<CookJobDependencyEdge>& edges,
-                                                     const std::vector<CookJob>& jobs) const;
 
     /// Reconcile estimators — count entries `prune_*` / invalidation would remove (B7.9 deepen).
-    [[nodiscard]] u32 estimate_prune_invalid_entries() const;
-    [[nodiscard]] u32 estimate_prune_stale_entries() const;
-    [[nodiscard]] u32 estimate_prune_all() const;
-    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile() const;
 
-    /// Incremental invalidation probes — non-mutating counts matching `invalidate_*` (B7.9 deepen).
-    [[nodiscard]] u32 estimate_invalidation_by_hash(u64 content_hash) const;
-    [[nodiscard]] u32 estimate_invalidation_by_source(const std::string& source_path) const;
-    [[nodiscard]] u32 estimate_invalidation_by_output(const std::string& output_path) const;
-    [[nodiscard]] u32 estimate_stale_content_invalidation(const std::string& source_path,
-                                                          u64 current_content_hash) const;
-    [[nodiscard]] u32 estimate_stale_upstream_invalidation(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    /// One source path per stale entry — mirrors `invalidate_stale_upstream_hashes` push order (B7.9 deepen).
-    [[nodiscard]] std::vector<std::string> probe_stale_upstream_invalidation_sources(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    [[nodiscard]] u32 estimate_invalidation_downstream_of(
-        const std::string& output_path,
-        const std::vector<CookJobDependencyEdge>& edges,
-        const std::vector<CookJob>& jobs) const;
-    [[nodiscard]] bool probe_would_invalidate_hash(u64 content_hash) const;
-    [[nodiscard]] bool probe_would_invalidate_source(const std::string& source_path) const;
 
-    /// Reconcile estimators — non-mutating mirrors of `prune_*` (B7.9 deepen).
-    [[nodiscard]] u32 estimate_prune_stale_entries() const;
-    [[nodiscard]] u32 estimate_prune_invalid_entries() const;
-    [[nodiscard]] u32 estimate_prune_all() const;
-    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile() const;
 
-    /// Incremental invalidation probes — non-mutating counts matching `invalidate_*` (B7.9 deepen).
-    [[nodiscard]] u32 estimate_invalidation_by_hash(u64 content_hash) const;
-    [[nodiscard]] u32 estimate_invalidation_by_source(const std::string& source_path) const;
-    [[nodiscard]] u32 estimate_invalidation_by_output(const std::string& output_path) const;
-    [[nodiscard]] u32 estimate_stale_content_invalidation(const std::string& source_path,
-                                                          u64 current_content_hash) const;
-    [[nodiscard]] u32 estimate_stale_upstream_invalidation(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    /// One source path per stale entry — mirrors `invalidate_stale_upstream_hashes` push order (B7.9 deepen).
-    [[nodiscard]] std::vector<std::string> probe_stale_upstream_invalidation_sources(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
-    [[nodiscard]] u32 estimate_invalidation_downstream_of(
-        const std::string& output_path,
-        const std::vector<CookJobDependencyEdge>& edges,
-        const std::vector<CookJob>& jobs) const;
-    [[nodiscard]] bool probe_would_invalidate_hash(u64 content_hash) const;
-    [[nodiscard]] bool probe_would_invalidate_source(const std::string& source_path) const;
 
-    /// Reconcile estimators — non-mutating mirrors of `prune_*` (B7.9 deepen).
-    [[nodiscard]] u32 estimate_prune_stale_entries() const;
-    [[nodiscard]] u32 estimate_prune_invalid_entries() const;
-    [[nodiscard]] u32 estimate_prune_all() const;
-    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile() const;
+    /// Structurally valid entries whose recomputed key differs — excludes invalid records (B7.9 deepen).
+
+    /// Read-only `invalidate_*` presence probes — guarded like `would_invalidate` (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+    /// Source paths that `invalidate_downstream_of` would touch — one push per matching entry (B7.9 deepen).
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

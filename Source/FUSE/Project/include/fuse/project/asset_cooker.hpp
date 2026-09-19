@@ -112,6 +112,12 @@ public:
     [[nodiscard]] CookCacheReconcileEstimate estimate_stale_dependency_hashes(const CookManifest& manifest) const;
     /// Read-only estimate of `invalidate_stale_dependency_hashes` removals (B7.9 deepen).
     [[nodiscard]] u32 estimate_stale_dependency_hash_invalidations(const CookManifest& manifest) const;
+    /// Read-only prune reconcile estimator — entries `prune_all` would remove (B7.9 deepen).
+    [[nodiscard]] u32 count_prune_removals() const;
+    /// True when stale dependency-hash reconcile would invalidate at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_reconcile_stale_dependencies(const CookManifest& manifest) const;
+    /// Read-only stale-content reconcile probe across manifest job sources (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_content_invalidation(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

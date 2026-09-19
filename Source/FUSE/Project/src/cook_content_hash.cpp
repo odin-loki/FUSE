@@ -665,6 +665,18 @@ CookImportHashPreflight preflight_manifest_entry(const CookManifestEntry& entry)
     return preflight;
 }
 
+CookHashPreflight preflight_fnv1a64_input(const u8* data, usize size) {
+    CookHashPreflight preflight;
+    if (!is_valid_fnv1a64_input(data, size)) {
+        preflight.reason = CookHashRejectReason::NullData;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;

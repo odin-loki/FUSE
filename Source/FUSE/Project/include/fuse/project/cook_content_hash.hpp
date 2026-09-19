@@ -292,5 +292,7 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookImportHashPreflight preflight_texture_import(const TextureImportDesc& desc);
 [[nodiscard]] CookImportHashPreflight preflight_audio_import(const AudioImportDesc& desc);
 [[nodiscard]] CookImportHashPreflight preflight_manifest_entry(const CookManifestEntry& entry);
+/// Null-pointer guard for non-zero-length FNV input — mirrors `is_valid_fnv1a64_input` (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_fnv1a64_input(const u8* data, usize size);
 
 } // namespace fuse::project
