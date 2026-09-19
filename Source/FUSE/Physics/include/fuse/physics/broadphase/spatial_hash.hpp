@@ -623,18 +623,14 @@ struct CellCapacityPreflight {
 };
 
 FUSE_PHYSICS_INLINE CellCapacityPreflight preflight_cell_capacity(
-    const CellRange3& range,
     u32 maxOccupancy = 0u) {
     CellCapacityPreflight preflight{};
     if (isEmptyCellRange(range)) {
         preflight.emptyRange = true;
         preflight.skipped = true;
-        return preflight;
-    preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsSpanClamp = cellSpanExceedsClamp(range, maxSpanPerAxis);
     preflight.exceedsOccupancyBudget = exceedsCellOccupancyBudget(range, maxOccupancy);
 
-    const CellRange2& range,
 /// Why cell occupancy iteration preflight rejected the range (B4.2 deepen follow-up).
 enum class CellOccupancyRejectReason : u8 {
     None = 0,
@@ -660,32 +656,20 @@ struct CellOccupancyPreflight {
 
     bool canIterate() const { return !emptyRange && !exceedsBudget; }
 
-FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRange3& range, u32 maxCells) {
-    CellOccupancyPreflight preflight{};
     preflight.emptyRange = isEmptyCellRange(range);
     preflight.exceedsBudget = cellOccupancyRejectReason(range, maxCells) ==
                               CellOccupancyRejectReason::ExceedsBudget;
 
-FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRange2& range, u32 maxCells) {
-    preflight.reason = cellOccupancyRejectReason(range, maxCells);
-    preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
-    preflight.occupancyCount = estimateCellOccupancyCount(range);
-    preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
-    return preflight;
-}
 
-    CellOccupancyPreflight preflight{};
 
 /// Non-mutating cell-occupancy skip predicate — inverse of `preflightCellOccupancy` (B4.2 deepen pass).
-FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
-    return !preflightCellOccupancy(range, maxCells).canIterate();
 
-FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
-    preflight.reason = cellOccupancyRejectReason(range, maxCells);
-    preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
-    preflight.occupancyCount = estimateCellOccupancyCount(range);
-    preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
-    return preflight;
+
+CellOccupancyPreflight preflightCellOccupancy(const CellRange3& range, u32 maxCells);
+
+CellOccupancyPreflight preflightCellOccupancy(const CellRange2& range, u32 maxCells);
+
+
 }
 
 /// True when cell occupancy iteration would early-out (B4.2 deepen pass).
@@ -1704,6 +1688,9 @@ bool broadphaseMergeRejectsForReason(
 
 
 
+
+
+
     const CollisionShapeSoA& shapes,
     BroadphaseMergeRejectReason expected);
 
@@ -1788,24 +1775,18 @@ bool shouldRunBroadphaseMerge(
 
 /// Non-mutating merge skip predicate — inverse of `preflightBroadphaseMerge().canMerge()`.
 bool canSkipBroadphaseMerge(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Non-mutating merge predicate — inverse of `canSkipBroadphaseMerge` (B4.2 deepen pass).
-bool shouldRunBroadphaseMerge(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Non-mutating merge skip predicate — mirrors `preflightBroadphaseMerge` inversion (B4.2 deepen pass).
-bool canSkipBroadphaseMerge(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Non-mutating merge predicate — inverse of `preflightBroadphaseMerge().canMerge()`.
 bool canSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 
 /// Non-mutating merge predicate — mirrors `preflightBroadphaseMerge().canMerge()`.
 bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
+
+/// Non-mutating merge skip predicate — inverse of `preflightBroadphaseMerge` (B4.2 deepen pass).
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(

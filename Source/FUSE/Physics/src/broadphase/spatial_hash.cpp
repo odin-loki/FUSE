@@ -604,6 +604,36 @@ const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) 
     return "Unknown";
 }
 
+const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) {
+    switch (reason) {
+    case BroadphaseMergeRejectReason::None:
+        return "None";
+    case BroadphaseMergeRejectReason::EmptyPlaneBodies:
+        return "EmptyPlaneBodies";
+    case BroadphaseMergeRejectReason::EmptyDynamicBodies:
+        return "EmptyDynamicBodies";
+    }
+    return "Unknown";
+}
+
+CellOccupancyPreflight preflightCellOccupancy(const CellRange3& range, u32 maxCells) {
+    CellOccupancyPreflight preflight{};
+    preflight.reason = cellOccupancyRejectReason(range, maxCells);
+    preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    return preflight;
+}
+
+CellOccupancyPreflight preflightCellOccupancy(const CellRange2& range, u32 maxCells) {
+    CellOccupancyPreflight preflight{};
+    preflight.reason = cellOccupancyRejectReason(range, maxCells);
+    preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    return preflight;
+}
+
 namespace {
 
 constexpr u32 kBuildGrainSize = 8u;
@@ -1095,6 +1125,7 @@ void runBroadphaseIntoBufferInternal(
     }
 
     if (shouldRunPairBufferClamp(buffer)) {
+    if (!canSkipPairBufferClamp(buffer)) {
         buffer.applyMaxCapacityClamp();
     }
 }
@@ -1281,6 +1312,20 @@ bool canSkipDedupeBroadphase(const PairBufferSoA& buffer) {
 bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason* reason) {
     const DedupeBroadphaseRejectReason reject = dedupeBroadphaseRejectReason(buffer);
     return reject != DedupeBroadphaseRejectReason::None;
+
+BroadphaseMergeRejectReason broadphaseMergeRejectReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    const BroadphaseMergePreflight preflight = preflightBroadphaseMerge(bodies, shapes);
+    return preflight.reason;
+}
+
+bool broadphaseMergeRejectsForReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason expected) {
+    return broadphaseMergeRejectReason(bodies, shapes) == expected;
+}
 
 BroadphaseMergeRejectReason broadphaseMergeRejectReason(
     const RigidBodySoA& bodies,
@@ -1504,6 +1549,11 @@ BroadphaseMergePreflight preflightBroadphaseMerge(
 
     preflight.emptyPlaneBodies = !hasPlaneBodies;
     preflight.emptyDynamicBodies = !hasDynamicBodies;
+    if (preflight.emptyPlaneBodies) {
+        preflight.reason = BroadphaseMergeRejectReason::EmptyPlaneBodies;
+    } else if (preflight.emptyDynamicBodies) {
+        preflight.reason = BroadphaseMergeRejectReason::EmptyDynamicBodies;
+    }
     return preflight;
 }
 
