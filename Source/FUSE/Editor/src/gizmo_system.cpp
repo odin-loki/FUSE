@@ -1304,6 +1304,9 @@ bool isRayNonFinite(const GizmoRay& ray) {
 bool isHitTestNonFinite(const GizmoHitTest& hit) {
     return !std::isfinite(hit.screenX) || !std::isfinite(hit.screenY) ||
            !std::isfinite(hit.viewportWidth) || !std::isfinite(hit.viewportHeight);
+bool isRayNormalized(const GizmoRay& ray) {
+    const f32 len = ray.direction.length();
+    return std::fabs(len - 1.f) <= kEpsilon;
 
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
     PickPreflight preflight{};
@@ -1341,6 +1344,10 @@ PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform
 
     if (isRayUnnormalized(ray)) {
         preflight.unnormalizedRay = true;
+    }
+
+    if (!isRayNormalized(ray)) {
+        preflight.nonUnitRay = true;
     }
 
     if (!isPickConfigValid(axisLength, pickRadius)) {
@@ -1769,6 +1776,19 @@ bool shouldSkipPick(const PickPreflight& preflight) {
 
 bool shouldSkipSnap(const SnapPreflight& preflight) {
     return !preflight.canApply();
+SnapDeltaPreflight preflightSnapDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings) {
+    SnapDeltaPreflight preflight{};
+    preflight.delta = delta;
+    const SnapPreflight snap = preflightSnap(mode, settings);
+    preflight.snapDisabled = snap.snapDisabled;
+    preflight.invalidStep = snap.invalidStep;
+    if (snap.canApply()) {
+        preflight.snappedDelta = snapValue(delta, mode, settings);
+    } else {
+        preflight.snappedDelta = delta;
+
+bool canSnapDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings) {
+    return preflightSnapDelta(delta, mode, settings).canApply();
 
 bool trySnapTransform(const GizmoTransform& transform, GizmoMode mode,
                       const GizmoSnapSettings& settings, GizmoTransform& out) {
@@ -4330,6 +4350,18 @@ bool GizmoSystem::canApplySnapNow() const {
 bool GizmoSystem::canSnapDragDeltaNow() const {
     return fuse::editor::canSnapDragDelta(m_mode, m_snap);
     return preflightSnapDragDelta().canApply();
+SnapDeltaPreflight GizmoSystem::preflightSnapDelta(f32 delta) const {
+    return fuse::editor::preflightSnapDelta(delta, m_mode, m_snap);
+}
+
+bool GizmoSystem::canSnapDelta(f32 delta) const {
+    return fuse::editor::canSnapDelta(delta, m_mode, m_snap);
+
+GizmoInteractionPhase GizmoSystem::interactionPhase() const {
+    return fuse::editor::interactionPhase(m_dragging);
+
+bool GizmoSystem::canActOnPhase(const GizmoHitTest& hit) const {
+    return preflightInteraction(hit).canActOnPhase();
 }
 
 bool GizmoSystem::trySnapTransform(const GizmoTransform& transform, GizmoTransform& out) const {
