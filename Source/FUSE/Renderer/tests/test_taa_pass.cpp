@@ -4387,3 +4387,18 @@ void testTaaPassTryPreflightAndClassifyGuards() {
                "pass tryPreflightJitterSync reason is None before init");
     expectTrue(pass->preflightJitterAdvance(), "pass preflightJitterAdvance passes before init");
     testTaaPassTryPreflightAndClassifyGuards();
+
+// --- deepen additive from deepen-taa-b59-guards-e11c ---
+void testTaaPassTryPreflightAndClassifyWrappers() {
+    expectTrue(pass->tryPreflightJitterSync(4u, jitterReason), "pass tryPreflightJitterSync passes before init");
+               "pass tryPreflightJitterNdc reject reason is None before init");
+               "pass tryPreflightJitterAdvance reject reason is None before init");
+    expectTrue(!pass->preflightResolve(resolveDesc, &skipReason),
+               "pass preflightResolve fails before init");
+    expectNear(weights.current, 0.2f, 1e-5f, "pass tryCompute steady current weight matches blend factor");
+    expectNear(weights.history, 0.8f, 1e-5f, "pass tryCompute steady history weight is complement");
+    expectTrue(zeroSeqPass->classifyJitterAdvanceReject() == fuse::renderer::TaaJitterGuardRejectReason::None,
+               "zero-seq pass classifyJitterAdvanceReject is None after fallback");
+    expectTrue(zeroWidthPass->classifyJitterNdcReject() ==
+    expectTrue(!zeroWidthPass->tryPreflightJitterNdc(jitterReason),
+    testTaaPassTryPreflightAndClassifyWrappers();
