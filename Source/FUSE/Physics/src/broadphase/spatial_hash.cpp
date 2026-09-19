@@ -189,6 +189,10 @@ void writePairsForCellSlots(
     u32 slot = slotStart;
     for (usize i = 0; i < uniqueBodies.size(); ++i) {
         for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
+            if (!shouldRunPairBufferWriteSlot(buffer, slot, uniqueBodies[i], uniqueBodies[j])) {
+                ++slot;
+                continue;
+            }
             buffer.writeSlot(slot++, uniqueBodies[i], uniqueBodies[j]);
         }
     }
@@ -270,7 +274,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (!shouldRunDedupeBroadphase(buffer)) {
+    if (!shouldRunDedupeBroadphase(buffer) || !shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
@@ -336,7 +340,7 @@ void runBroadphaseIntoBufferInternal(
     }
 
     buffer.preparePairSlots(totalCellSlots);
-    if (totalCellSlots == 0u) {
+    if (!shouldRunBroadphaseCellPairGeneration(totalCellSlots)) {
         return;
     }
 
@@ -393,7 +397,7 @@ void runBroadphaseIntoBufferInternal(
         dedupeBuffer(buffer);
     }
 
-    if (buffer.maxCapacity > 0u) {
+    if (shouldRunPairBufferClamp(buffer)) {
         buffer.applyMaxCapacityClamp();
     }
 }
@@ -427,6 +431,43 @@ void refineBroadphasePairsParallelImpl(
 }
 
 } // namespace
+
+const char* broadphaseCellSlotRejectReasonName(BroadphaseCellSlotRejectReason reason) {
+    switch (reason) {
+    case BroadphaseCellSlotRejectReason::None:
+        return "None";
+    case BroadphaseCellSlotRejectReason::ZeroSlots:
+        return "ZeroSlots";
+    }
+    return "Unknown";
+}
+
+BroadphaseCellSlotRejectReason broadphaseCellSlotRejectReason(u32 totalCellSlots) {
+    if (totalCellSlots == 0u) {
+        return BroadphaseCellSlotRejectReason::ZeroSlots;
+    }
+    return BroadphaseCellSlotRejectReason::None;
+}
+
+bool broadphaseCellSlotRejectsForReason(u32 totalCellSlots, BroadphaseCellSlotRejectReason expected) {
+    return broadphaseCellSlotRejectReason(totalCellSlots) == expected;
+}
+
+BroadphaseCellSlotPreflight preflightBroadphaseCellSlots(u32 totalCellSlots) {
+    BroadphaseCellSlotPreflight preflight{};
+    preflight.totalCellSlots = totalCellSlots;
+    preflight.reason = broadphaseCellSlotRejectReason(totalCellSlots);
+    preflight.zeroSlots = preflight.reason == BroadphaseCellSlotRejectReason::ZeroSlots;
+    return preflight;
+}
+
+bool canSkipBroadphaseCellPairGeneration(u32 totalCellSlots) {
+    return !preflightBroadphaseCellSlots(totalCellSlots).canGenerate();
+}
+
+bool shouldRunBroadphaseCellPairGeneration(u32 totalCellSlots) {
+    return preflightBroadphaseCellSlots(totalCellSlots).canGenerate();
+}
 
 RefineBroadphaseRejectReason refineBroadphaseRejectReason(
     const RigidBodySoA& bodies,

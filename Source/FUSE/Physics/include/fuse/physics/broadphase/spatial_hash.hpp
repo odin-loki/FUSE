@@ -718,6 +718,38 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 /// Non-mutating merge-into-buffer predicate — mirrors `preflightMergePairsIntoBuffer` (B4.2 deepen pass).
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
 
+/// Why per-cell pair slot generation would early-out (B4.2 deepen pass).
+enum class BroadphaseCellSlotRejectReason : u8 {
+    None = 0,
+    ZeroSlots,
+};
+
+/// Human-readable label for cell-slot reject reasons (logging / tests).
+const char* broadphaseCellSlotRejectReasonName(BroadphaseCellSlotRejectReason reason);
+
+/// Diagnose why cell pair slot generation would skip; vacuously succeeds when generation may proceed.
+BroadphaseCellSlotRejectReason broadphaseCellSlotRejectReason(u32 totalCellSlots);
+
+/// Returns true when `broadphaseCellSlotRejectReason` matches `expected` (B4.2 deepen pass).
+bool broadphaseCellSlotRejectsForReason(u32 totalCellSlots, BroadphaseCellSlotRejectReason expected);
+
+/// Read-only cell-slot generation diagnostics — no mutation (B4.2 deepen pass).
+struct BroadphaseCellSlotPreflight {
+    BroadphaseCellSlotRejectReason reason = BroadphaseCellSlotRejectReason::None;
+    bool zeroSlots = false;
+    u32 totalCellSlots = 0;
+
+    bool canGenerate() const { return reason == BroadphaseCellSlotRejectReason::None; }
+};
+
+BroadphaseCellSlotPreflight preflightBroadphaseCellSlots(u32 totalCellSlots);
+
+/// Non-mutating cell-slot skip predicate — inverse of `canGenerate` (B4.2 deepen pass).
+bool canSkipBroadphaseCellPairGeneration(u32 totalCellSlots);
+
+/// Non-mutating cell-slot predicate — mirrors `preflightBroadphaseCellSlots` (B4.2 deepen pass).
+bool shouldRunBroadphaseCellPairGeneration(u32 totalCellSlots);
+
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
     const RigidBodySoA& bodies,
