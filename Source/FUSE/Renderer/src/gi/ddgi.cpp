@@ -2448,3 +2448,7 @@ bool wouldClampProbeIndex(u32 probe_index, const DDGIDesc& desc) {
         outReason = ProbeScheduleRejectReason::NullOutputBuffer;
 bool wouldSkipProbeSchedule(u32 probe_count, u32* out_indices, u32 max_indices, u32* out_count) {
     if (!tryScheduleProbeUpdates(frame_index,
+
+// --- deepen additive from deepen-b56-ddgi-guards-7081 ---
+    return tryValidateProbeSampleCoords(desc, coords, outReason);
+    return tryValidateCacheIndex(desc, cache, cache_count, probe_index, reason);

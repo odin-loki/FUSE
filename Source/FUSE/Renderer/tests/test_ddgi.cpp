@@ -2869,3 +2869,29 @@ void testCacheIndexNullCacheGuards() {
                "wouldSkip false for valid blend params");
                "wouldSkip true for zero update count");
                "wouldSkip true for null probe indices");
+
+// --- deepen additive from deepen-b56-ddgi-guards-7081 ---
+    expectTrue(fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 64u, indices, 8u, &count, reason),
+    expectTrue(count == 8u, "trySchedule caps at max_indices");
+    expectTrue(indices[0] == 0u, "trySchedule frame 0 starts at probe 0");
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(0u, 64u, indices, 8u, &count, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 64u, nullptr, 8u, &count, reason),
+               "tryCanSchedule rejects null output indices");
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 64u, indices, 8u, nullptr, reason),
+               "tryCanSchedule rejects null output count");
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 64u, indices, 0u, &count, reason),
+               "tryCanSchedule rejects zero max_indices");
+               "tryPreflight succeeds on valid coords");
+    expectTrue(!fuse::renderer::ProbeGridLayout::canPreflightProbeSampleCoords(desc, reversed),
+               "canPreflight rejects unordered corners");
+               "tryPreflight rejects unordered corners");
+               "cache-pointer tryValidate succeeds for in-range index");
+               "cache-pointer tryValidate rejects null cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, nullptr, 8u, 3u),
+               "wouldSkip true for null cache");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, cache.data(), 8u, 3u),
+               "wouldSkip false for accessible cache");
+               "wouldSkip trace false for valid params");
+               "wouldSkip blend false for valid params");
+               "wouldSkip trace true for zero update count");
+               "wouldSkip blend true for null probe indices");
