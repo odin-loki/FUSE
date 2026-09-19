@@ -530,6 +530,8 @@ public:
 
     /// Read-only reconcile skip guards — mirror count/estimate probes without mutating cache (B7.9 deepen).
     /// Read-only reconcile skip probes — mirror estimate/count guards (B7.9 deepen).
+    /// True when `estimate_prune_reconcile()` would report nothing to remove (B7.9 deepen).
+    /// True when `estimate_reconcile_invalidation` would report nothing to invalidate (B7.9 deepen).
     [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
@@ -545,5 +547,10 @@ private:
 
     CookCache m_cache;
 };
+
+/// Non-mutating skip predicate — mirrors `CookCacheReconcileEstimate::should_skip` (B7.9 deepen).
+[[nodiscard]] inline bool should_skip_reconcile_invalidation(const CookCacheReconcileEstimate& estimate) {
+    return estimate.should_skip();
+}
 
 } // namespace fuse::project

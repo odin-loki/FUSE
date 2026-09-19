@@ -170,6 +170,7 @@ struct CookCacheInvalidationSurface {
     /// True when `prune_*` would be a no-op — mirrors `total() == 0` (B7.9 deepen).
 
     /// True when prune reconcile would be a no-op — `total()` is zero (B7.9 deepen).
+    /// True when prune reconcile would be a no-op — mirrors `total() == 0` (B7.9 deepen).
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
@@ -967,5 +968,8 @@ private:
     return !cache.would_invalidate_output(output_path);
 [[nodiscard]] inline bool should_skip_store_cache_entry(const CookCacheEntry& entry) {
     return preflight_cook_cache_entry(entry).should_skip();
+/// Non-mutating skip predicate — mirrors `CookCachePruneEstimate::should_skip` (B7.9 deepen).
+[[nodiscard]] inline bool should_skip_prune_reconcile(const CookCachePruneEstimate& estimate) {
+    return estimate.should_skip();
 
 } // namespace fuse::project
