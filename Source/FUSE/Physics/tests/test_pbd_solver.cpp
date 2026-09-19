@@ -3644,3 +3644,47 @@ void testPreflightIslandSleepAndWakeGuards() {
     const IslandConstraintSolvePreflight awakeSolve =
     const IslandConstraintSolvePreflight outOfRange =
     testPreflightIslandSleepAndWakeGuards();
+
+// --- deepen additive from deepen-pbd-island-build-sleep-wake-cc0e ---
+    const IslandBuildPreflight emptyPreflight = preflight_island_build(0u, contacts, constraints);
+    expectTrue(emptyPreflight.skipped, "build preflight skips zero body count");
+    expectTrue(emptyPreflight.reason == IslandBuildRejectReason::EmptyBodyCount,
+    expectTrue(!emptyPreflight.can_build(), "build preflight cannot build with zero bodies");
+    expectTrue(should_skip_island_build(0u, contacts, constraints),
+               "should_skip_island_build on zero body count");
+    const IslandBuildPreflight validPreflight = preflight_island_build(2u, {}, constraints);
+    expectTrue(!validPreflight.skipped, "build preflight does not skip positive body count");
+    expectTrue(validPreflight.can_build(), "build preflight can build with bodies");
+    const IslandSleepPreflight sleepPreflight = preflight_island_sleep(bodies, graph.island(0));
+    expectTrue(!sleepPreflight.skipped, "sleep preflight does not skip constrained island");
+    expectTrue(sleepPreflight.sleepingBodyCount == 2u, "sleep preflight counts sleeping bodies");
+    expectTrue(sleepPreflight.awakeBodyCount == 0u, "sleep preflight reports zero awake bodies");
+    expectTrue(sleepPreflight.allDynamicSleeping, "sleep preflight marks all-dynamic-sleeping island");
+    expectTrue(!sleepPreflight.can_solve(), "all-sleeping island cannot solve");
+    expectTrue(should_skip_island_solve_sleeping(bodies, graph.island(0)),
+               "should_skip_island_solve_sleeping on all-sleeping island");
+    const IslandSleepPreflight awakePreflight = preflight_island_sleep(bodies, graph.island(0));
+    expectTrue(awakePreflight.awakeBodyCount == 1u, "sleep preflight counts one awake body");
+    expectTrue(!awakePreflight.allDynamicSleeping, "mixed island is not all-sleeping");
+    expectTrue(awakePreflight.can_solve(), "mixed island can solve");
+        const IslandSleepPreflight emptyPreflight = preflight_island_sleep(bodies, island);
+        expectTrue(emptyPreflight.skipped, "sleep preflight skips empty island");
+    expectTrue(!graphPreflight.skipped, "sleep graph preflight does not skip constrained graph");
+    expectTrue(graphPreflight.has_awake_islands(), "sleep graph preflight sees awake island");
+    const IslandWakePreflight wakePreflight = preflight_island_wake(bodies, graph.island(0));
+    expectTrue(!wakePreflight.skipped, "wake preflight does not skip constrained island");
+    expectTrue(wakePreflight.sleepingBodyCount == 2u, "wake preflight counts sleeping bodies");
+    expectTrue(wakePreflight.wakeCandidateCount == 1u, "wake preflight counts force-driven wake candidate");
+    expectTrue(wakePreflight.needs_wake(), "wake preflight needs wake when force applied");
+    expectTrue(should_skip_island_wake_check(graph.island(0)) == false,
+        expectTrue(should_skip_island_wake_check(island), "should_skip_island_wake_check on empty island");
+        const IslandWakePreflight emptyWake = preflight_island_wake(bodies, island);
+        const IslandWakePreflight indexWake =
+    const IslandConstraintSolvePreflight constrainedPreflight =
+    expectTrue(constrainedPreflight.can_solve(), "constraint solve preflight allows awake island");
+    expectTrue(!should_skip_island_constraint_solve(bodies, graph, graph.bodyIsland(2), dt),
+               "should_skip false for awake constrained island");
+    const IslandConstraintSolvePreflight sleepingConstraintPreflight =
+    expectTrue(!sleepingConstraintPreflight.can_solve(),
+    expectTrue(should_skip_island_constraint_solve(bodies, graph, graph.bodyIsland(0), dt),
+               "should_skip true for all-sleeping island");

@@ -2133,3 +2133,14 @@ IslandSleepGraphPreflight preflight_island_sleep_graph(const RigidBodySoA& bodie
 bool should_skip_island_sleep_dispatch(const RigidBodySoA& bodies, const ContactIslandGraph& graph) {
         if (!should_skip_solve_sleeping_island(bodies, island)) {
     const IslandConstraintSolvePreflight preflight = preflight_island_constraint_solve(bodies, island, dt);
+
+// --- deepen additive from deepen-pbd-island-build-sleep-wake-cc0e ---
+    const IslandSleepPreflight preflight = preflight_island_sleep(bodies, island);
+        const IslandSleepPreflight preflight = preflight_island_sleep(bodies, graph.island(islandIndex));
+bool should_skip_island_solve_sleeping(const RigidBodySoA& bodies,
+bool should_skip_island_solve_sleeping_index(const ContactIslandGraph& graph,
+    return should_skip_island_solve_sleeping(bodies, graph.island(islandIndex));
+        if (should_skip_island_solve_sleeping(bodies, *job.island)) {
+    if (should_skip_island_wake_check(island)) {
+bool should_skip_island_wake_check(const ContactIslandGraph::Island& island) {
+    if (should_skip_island_solve_sleeping(bodies, island)) {

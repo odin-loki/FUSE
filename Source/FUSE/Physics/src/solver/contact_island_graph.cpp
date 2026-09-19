@@ -320,3 +320,6 @@ IslandBuildRejectReason island_build_reject_reason(
     return IslandBuildRejectReason::None;
     IslandBuildRejectReason expected) {
     preflight.skipped = preflight.reason != IslandBuildRejectReason::None;
+
+// --- deepen additive from deepen-pbd-island-build-sleep-wake-cc0e ---
+        preflight.reason = IslandBuildRejectReason::EmptyBodyCount;

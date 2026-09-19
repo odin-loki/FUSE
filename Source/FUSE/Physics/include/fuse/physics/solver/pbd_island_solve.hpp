@@ -1316,3 +1316,9 @@ IslandConstraintSolvePreflight preflight_island_constraint_solve_by_index(const 
 bool should_skip_island_constraint_solve(const RigidBodySoA& bodies,
 IslandSleepGraphPreflight preflight_island_sleep_graph(const RigidBodySoA& bodies,
 bool should_skip_island_sleep_dispatch(const RigidBodySoA& bodies, const ContactIslandGraph& graph);
+
+// --- deepen additive from deepen-pbd-island-build-sleep-wake-cc0e ---
+IslandSleepPreflight preflight_island_sleep(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island);
+bool should_skip_island_solve_sleeping(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island);
+bool should_skip_island_solve_sleeping_index(const ContactIslandGraph& graph,
+bool should_skip_island_wake_check(const ContactIslandGraph::Island& island);
