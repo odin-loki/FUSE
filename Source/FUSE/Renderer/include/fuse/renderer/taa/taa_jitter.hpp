@@ -54,6 +54,7 @@ enum class TaaJitterSyncRejectReason : u8 {
     InvalidViewport,
     Misaligned,
     MisalignedFrame,
+    MisalignedSlot,
 };
 /// Human-readable label for jitter sync reject reasons (B5.9 deepen).
 const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
@@ -220,6 +221,14 @@ TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(u32 frameIndex, u32 
 bool preflightTaaJitterAlignment(u32 frameIndex, u32 slot, u32 monotonicFrame,
 bool tryPreflightTaaJitterAlignment(u32 frameIndex, u32 slot, u32 monotonicFrame, u32 sequenceLength,
 bool shouldSkipTaaJitterAlignment(u32 frameIndex, u32 slot, u32 monotonicFrame,
+/// Classify why jitter sync slot alignment would be rejected (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterSyncAlignmentReject(u32 frameIndex, u32 slot,
+/// True when `slot` matches the Halton index for `frameIndex` (B5.9 deepen).
+bool preflightTaaJitterSyncAlignment(u32 frameIndex, u32 slot,
+/// Jitter sync alignment preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterSyncAlignment(u32 frameIndex, u32 slot, u32 sequenceLength,
+/// Early-out when jitter sync slot alignment preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterSyncAlignment(u32 frameIndex, u32 slot,
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -425,6 +434,8 @@ public:
     /// True when jitter state differs from the expected slot for `frameIndex` (B5.9 deepen).
     /// True when jitter state must resync to `frameIndex` before projection (B5.9 deepen).
     /// True when jitter must resync before sampling offsets for `frameIndex` (B5.9 deepen).
+    /// True when the active slot matches the Halton index for `frameIndex` (B5.9 deepen).
+    bool slotAlignedToFrameIndex(u32 frameIndex) const;
 
     u32 index() const { return m_index; }
     /// True when monotonic frame counter matches `frameIndex` (B5.9 deepen).
