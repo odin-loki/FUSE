@@ -249,6 +249,20 @@ enum class CookHashRejectReason : u8 {
 
 [[nodiscard]] CookCacheKeyPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 [[nodiscard]] bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+/// Read-only preflight for filesystem-backed content keys — no byte reads (B7.9 deepen).
+struct CookHashPreflight {
+    bool empty_path = false;
+    bool empty_input_path = false;
+    bool empty_output_path = false;
+    bool source_missing = false;
+    bool ok = false;
+
+    [[nodiscard]] bool can_hash() const { return ok; }
+
+[[nodiscard]] CookHashPreflight preflight_mesh_import(const MeshImportDesc& desc);
+[[nodiscard]] CookHashPreflight preflight_texture_import(const TextureImportDesc& desc);
+[[nodiscard]] CookHashPreflight preflight_audio_import(const AudioImportDesc& desc);
+[[nodiscard]] CookHashPreflight preflight_manifest_entry(const CookManifestEntry& entry);
 
 /// Content hash over source bytes plus import descriptor knobs (identical inputs → identical hash).
 [[nodiscard]] u64 hash_mesh_import(const MeshImportDesc& desc);

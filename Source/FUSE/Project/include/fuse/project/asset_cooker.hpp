@@ -110,6 +110,8 @@ public:
     [[nodiscard]] u32 estimate_upstream_dependency_invalidation(const CookManifest& manifest,
     /// Non-mutating estimate for `invalidate_stale_dependency_hashes` (B7.9 deepen follow-up).
     [[nodiscard]] CookCacheReconcileEstimate estimate_stale_dependency_hashes(const CookManifest& manifest) const;
+    /// Read-only estimate of `invalidate_stale_dependency_hashes` removals (B7.9 deepen).
+    [[nodiscard]] u32 estimate_stale_dependency_hash_invalidations(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

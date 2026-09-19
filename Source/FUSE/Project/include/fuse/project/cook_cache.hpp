@@ -206,6 +206,14 @@ struct CookCachePruneEstimate {
 /// True when both paths are non-empty and the cooked output file exists on disk (B7.9 deepen).
 [[nodiscard]] bool is_valid_cook_cache_entry_on_disk(const CookCacheEntry& entry);
 
+/// Read-only reconcile estimate — mirrors `prune_invalid_entries` + `prune_stale_entries` (B7.9 deepen).
+struct CookCacheReconcileEstimate {
+    u32 invalid_count = 0;
+    u32 stale_count = 0;
+
+    [[nodiscard]] u32 total_removable() const { return invalid_count + stale_count; }
+    [[nodiscard]] bool would_change() const { return total_removable() > 0; }
+
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
 public:
@@ -484,6 +492,23 @@ public:
     /// Reconcile estimators — non-mutating mirrors of `prune_*` (B7.9 deepen).
     [[nodiscard]] u32 estimate_prune_stale_entries() const;
     [[nodiscard]] u32 estimate_prune_invalid_entries() const;
+    [[nodiscard]] u32 estimate_prune_all() const;
+    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile() const;
+
+    /// Incremental invalidation probes — read-only, no stats or mutation (B7.9 deepen).
+    [[nodiscard]] u32 probe_stale_content_invalidation(const std::string& source_path,
+                                                       u64 current_content_hash) const;
+    [[nodiscard]] std::vector<std::string> probe_stale_upstream_invalidation(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] u32 probe_stale_upstream_invalidation_count(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] u32 probe_invalidate_downstream_of(const std::string& output_path,
+                                                     const std::vector<CookJobDependencyEdge>& edges,
+                                                     const std::vector<CookJob>& jobs) const;
+
+    /// Reconcile estimators — count entries `prune_*` / invalidation would remove (B7.9 deepen).
+    [[nodiscard]] u32 estimate_prune_invalid_entries() const;
+    [[nodiscard]] u32 estimate_prune_stale_entries() const;
     [[nodiscard]] u32 estimate_prune_all() const;
     [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile() const;
 

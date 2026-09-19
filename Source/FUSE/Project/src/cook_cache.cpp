@@ -1949,6 +1949,130 @@ CookCacheReconcileEstimate CookCache::estimate_reconcile() const {
     return estimate;
 }
 
+u32 CookCache::probe_stale_content_invalidation(const std::string& source_path, u64 current_content_hash) const {
+    if (!is_valid_cook_cache_path(source_path) || !is_valid_cook_cache_key(current_content_hash) || m_entries.empty()) {
+        return 0;
+    }
+
+    u32 matches = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.source_path == source_path && entry.content_hash != current_content_hash) {
+            ++matches;
+        }
+    }
+    return matches;
+}
+
+std::vector<std::string> CookCache::probe_stale_upstream_invalidation(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    if (m_entries.empty() || source_upstream_by_path.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> stale_sources;
+    for (const auto& pair : source_upstream_by_path) {
+        const std::string& source_path = pair.first;
+        if (!is_valid_cook_cache_path(source_path)) {
+            continue;
+        }
+        const u64 current_upstream = pair.second;
+
+        for (const CookCacheEntry& entry : m_entries) {
+            if (entry.source_path == source_path && entry.upstream_hash != current_upstream) {
+                stale_sources.push_back(source_path);
+            }
+        }
+    }
+    return stale_sources;
+}
+
+u32 CookCache::probe_stale_upstream_invalidation_count(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    return static_cast<u32>(probe_stale_upstream_invalidation(source_upstream_by_path).size());
+}
+
+u32 CookCache::probe_invalidate_downstream_of(const std::string& output_path,
+                                              const std::vector<CookJobDependencyEdge>& edges,
+                                              const std::vector<CookJob>& jobs) const {
+    if (!is_valid_cook_cache_path(output_path) || m_entries.empty()) {
+        return 0;
+    }
+
+    u32 matches = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.source_path == output_path) {
+            ++matches;
+        }
+    }
+
+    for (const CookJobDependencyEdge& edge : edges) {
+        const CookJob* from_job = find_job_by_id(jobs, edge.from_job_id);
+        if (!from_job || from_job->output_path != output_path) {
+            continue;
+        }
+
+        const CookJob* to_job = find_job_by_id(jobs, edge.to_job_id);
+        if (!to_job) {
+            continue;
+        }
+
+        for (const CookCacheEntry& entry : m_entries) {
+            if (entry.source_path == to_job->source_path) {
+                ++matches;
+            }
+        }
+        matches += probe_invalidate_downstream_of(to_job->output_path, edges, jobs);
+    }
+
+    return matches;
+}
+
+u32 CookCache::estimate_prune_invalid_entries() const {
+    if (m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (!is_valid_cook_cache_entry(entry)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 CookCache::estimate_prune_stale_entries() const {
+    if (m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_valid_cook_cache_entry(entry) && is_stale_cache_entry_(entry)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 CookCache::estimate_prune_all() const {
+    if (m_entries.empty() || !has_prunable_entries()) {
+        return 0;
+    }
+    return estimate_prune_invalid_entries() + estimate_prune_stale_entries();
+}
+
+CookCacheReconcileEstimate CookCache::estimate_reconcile() const {
+    CookCacheReconcileEstimate estimate;
+    if (m_entries.empty()) {
+        return estimate;
+    }
+
+    estimate.invalid_count = estimate_prune_invalid_entries();
+    estimate.stale_count = estimate_prune_stale_entries();
+    return estimate;
+}
+
 bool CookCache::contains(u64 content_hash) const {
     if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {
         return false;

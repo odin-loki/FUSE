@@ -1517,6 +1517,114 @@ void testCookCacheReconcileEstimators() {
                "clean cache reconcile estimate should skip after prune");
 }
 
+void testCookHashPreflightGuards() {
+    const fuse::project::CookHashPreflight empty_path = fuse::project::preflight_hash_file_content("");
+    expectTrue(empty_path.empty_path, "preflight marks empty file path");
+    expectTrue(!empty_path.can_hash(), "empty file path cannot hash");
+
+    const fuse::project::CookHashPreflight missing =
+        fuse::project::preflight_hash_file_content("/tmp/fuse_b79_preflight_missing.obj");
+    expectTrue(missing.source_missing, "preflight marks missing source");
+    expectTrue(!missing.can_hash(), "missing source cannot hash");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_preflight_ok.obj", "# preflight ok\n");
+    const fuse::project::CookHashPreflight ok = fuse::project::preflight_hash_file_content(source);
+    expectTrue(ok.can_hash(), "existing source passes preflight");
+    expectTrue(fuse::project::hash_file_content(source) != 0, "preflight ok path still hashes");
+
+    fuse::project::MeshImportDesc mesh;
+    mesh.input_path = "";
+    mesh.output_path = "/tmp/fuse_b79_preflight_mesh.fusemesh";
+    const fuse::project::CookHashPreflight mesh_empty_input = fuse::project::preflight_mesh_import(mesh);
+    expectTrue(mesh_empty_input.empty_input_path, "mesh preflight marks empty input");
+    expectTrue(!mesh_empty_input.can_hash(), "mesh with empty input cannot hash");
+
+    mesh.input_path = source;
+    mesh.output_path = "";
+    const fuse::project::CookHashPreflight mesh_empty_output = fuse::project::preflight_mesh_import(mesh);
+    expectTrue(mesh_empty_output.empty_output_path, "mesh preflight marks empty output");
+    expectTrue(!mesh_empty_output.can_hash(), "mesh with empty output cannot hash");
+
+    mesh.output_path = "/tmp/fuse_b79_preflight_mesh.fusemesh";
+    expectTrue(fuse::project::preflight_mesh_import(mesh).can_hash(), "valid mesh passes preflight");
+}
+
+void testCookCacheInvalidationProbes() {
+    fuse::project::CookCache cache;
+    expectTrue(cache.probe_stale_content_invalidation("/tmp/fuse_b79_probe.obj", 42u) == 0u,
+               "stale-content probe on empty cache returns zero");
+    expectTrue(cache.probe_stale_upstream_invalidation({}).empty(),
+               "upstream probe on empty cache returns empty list");
+    expectTrue(cache.probe_stale_upstream_invalidation_count({}) == 0u,
+               "upstream probe count on empty cache returns zero");
+    expectTrue(cache.probe_invalidate_downstream_of("/tmp/fuse_b79_probe.fusemesh", {}, {}) == 0u,
+               "downstream probe on empty cache returns zero");
+
+    fuse::project::CookCacheEntry entry;
+    entry.content_hash = 801;
+    entry.upstream_hash = 10;
+    entry.source_path = "/tmp/fuse_b79_probe_source.obj";
+    entry.output_path = "/tmp/fuse_b79_probe_out.fusemesh";
+    cache.store(entry);
+    expectTrue(cache.entry_count() == 1u, "probe setup stores entry");
+
+    expectTrue(cache.probe_stale_content_invalidation(entry.source_path, entry.content_hash) == 0u,
+               "matching content hash probe returns zero");
+    expectTrue(cache.probe_stale_content_invalidation(entry.source_path, entry.content_hash + 1u) == 1u,
+               "mismatched content hash probe counts one entry");
+    expectTrue(cache.probe_stale_content_invalidation("", entry.content_hash + 1u) == 0u,
+               "empty source path stale-content probe is guarded");
+
+    const std::vector<std::pair<std::string, fuse::u64>> matching_upstream = {{entry.source_path, 10u}};
+    expectTrue(cache.probe_stale_upstream_invalidation(matching_upstream).empty(),
+               "matching upstream probe returns empty list");
+    expectTrue(cache.probe_stale_upstream_invalidation_count(matching_upstream) == 0u,
+               "matching upstream probe count is zero");
+
+    const std::vector<std::pair<std::string, fuse::u64>> stale_upstream = {{entry.source_path, 99u}};
+    expectTrue(cache.probe_stale_upstream_invalidation(stale_upstream).size() == 1u,
+               "stale upstream probe lists affected source");
+    expectTrue(cache.probe_stale_upstream_invalidation_count(stale_upstream) == 1u,
+               "stale upstream probe count matches list size");
+
+    const fuse::u64 invalidations_before = cache.stats().invalidations;
+    expectTrue(cache.invalidate_stale_upstream_hashes(stale_upstream).size() == 1u,
+               "actual upstream invalidation still removes probed entry");
+    expectTrue(cache.stats().invalidations == invalidations_before + 1u,
+               "probe path does not mutate stats until invalidation runs");
+}
+
+void testCookCacheReconcileEstimators() {
+    fuse::project::CookCache cache;
+    const fuse::project::CookCacheReconcileEstimate empty_estimate = cache.estimate_reconcile();
+    expectTrue(empty_estimate.total_removable() == 0u, "empty cache reconcile estimate is zero");
+    expectTrue(!empty_estimate.would_change(), "empty cache reconcile would not change");
+    expectTrue(cache.estimate_prune_all() == 0u, "empty cache prune_all estimate is zero");
+
+    fuse::project::CookCacheEntry shader_entry;
+    shader_entry.content_hash = 901;
+    shader_entry.source_path = "/tmp/fuse_b79_estimate_shader.obj";
+    shader_entry.output_path = "/tmp/fuse_b79_estimate_shader.fuseshader";
+    shader_entry.kind = fuse::project::CookAssetKind::Shader;
+    cache.store(shader_entry);
+    expectTrue(cache.estimate_prune_invalid_entries() == 0u, "valid shader entry is not invalid");
+    expectTrue(cache.estimate_prune_stale_entries() == 1u, "shader entry estimated as stale");
+    expectTrue(cache.estimate_prune_all() == 1u, "prune_all estimate counts shader stale entry");
+
+    const fuse::project::CookCacheReconcileEstimate shader_estimate = cache.estimate_reconcile();
+    expectTrue(shader_estimate.stale_count == 1u, "reconcile estimate counts stale shader entry");
+    expectTrue(shader_estimate.would_change(), "shader cache reconcile would change");
+
+    const fuse::u32 prune_estimate = cache.estimate_prune_all();
+    const fuse::u64 invalidations_before = cache.stats().invalidations;
+    const fuse::u32 removed = cache.prune_all();
+    expectTrue(removed == prune_estimate, "prune_all matches prior estimate");
+    expectTrue(cache.stats().invalidations == invalidations_before + removed,
+               "prune after estimate bumps invalidation stats");
+    expectTrue(cache.estimate_reconcile().total_removable() == 0u,
+               "post-prune reconcile estimate is zero");
+}
+
 void testCookCachePruneInvalidEntriesOnLoad() {
     const std::string source = writeTempFile("/tmp/fuse_b79_prune_load_valid.obj", "# prune load valid\n");
     fuse::project::MeshImportDesc desc;
@@ -1941,6 +2049,9 @@ int main() {
     testCookCacheEntryPreflight();
     testCookCachePruneEstimateProbes();
     testCookCacheStaleUpstreamProbes();
+    testCookHashPreflightGuards();
+    testCookCacheInvalidationProbes();
+    testCookCacheReconcileEstimators();
     testFnv1a64BytesEmptyGuard();
     testHashUpstreamDependenciesEmptyPathGuards();
     testHashManifestEntryEmptyDependencyGuards();

@@ -300,22 +300,55 @@ CookImportHashPreflight preflight_import_paths(const std::string& input_path, co
     preflight.empty_output_path = output_path.empty();
     if (!preflight.empty_input_path && !preflight.empty_output_path) {
         preflight.unreadable_source = hash_file_content(input_path) == 0;
-    }
-    return preflight;
-}
 
 } // namespace
 
 CookImportHashPreflight preflight_mesh_import(const MeshImportDesc& desc) {
     return preflight_import_paths(desc.input_path, desc.output_path);
-}
 
 CookImportHashPreflight preflight_texture_import(const TextureImportDesc& desc) {
-    return preflight_import_paths(desc.input_path, desc.output_path);
-}
 
 CookImportHashPreflight preflight_audio_import(const AudioImportDesc& desc) {
-    return preflight_import_paths(desc.input_path, desc.output_path);
+CookHashPreflight preflight_hash_file_content(const std::string& path) {
+    CookHashPreflight result;
+    if (path.empty()) {
+        result.empty_path = true;
+        return result;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(std::filesystem::path(path), ec)) {
+        result.source_missing = true;
+
+    result.ok = true;
+
+CookHashPreflight preflight_mesh_import(const MeshImportDesc& desc) {
+    if (desc.input_path.empty()) {
+        result.empty_input_path = true;
+    if (desc.output_path.empty()) {
+        result.empty_output_path = true;
+
+    result = preflight_hash_file_content(desc.input_path);
+
+CookHashPreflight preflight_texture_import(const TextureImportDesc& desc) {
+
+
+CookHashPreflight preflight_audio_import(const AudioImportDesc& desc) {
+
+
+CookHashPreflight preflight_manifest_entry(const CookManifestEntry& entry) {
+    if (entry.source_path.empty()) {
+    if (entry.output_path.empty()) {
+
+    result = preflight_hash_file_content(entry.source_path);
+    if (!result.ok) {
+
+    for (const std::string& dependency : entry.dependencies) {
+        if (dependency.empty()) {
+            continue;
+        const CookHashPreflight dependency_preflight = preflight_hash_file_content(dependency);
+        if (!dependency_preflight.ok) {
+            return dependency_preflight;
+
 }
 
 u64 combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {

@@ -1153,8 +1153,11 @@ void testCookCacheStaleDependencyHashInvalidation() {
                "downstream cached before upstream hash change");
 
     writeTempFile(sourceA, "# stale a revised\n");
+    const fuse::u32 estimated = cooker.estimate_stale_dependency_hash_invalidations(manifest);
+    expectTrue(estimated >= 1u, "stale dependency reconcile estimator predicts removals");
     const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
     expectTrue(removed >= 1u, "stale upstream hash invalidates dependent cache entries");
+    expectTrue(estimated == removed, "stale dependency reconcile estimate matches invalidation");
     expectTrue(cooker.cache().lookup(downstream_hash) == fuse::project::CookCacheLookup::Miss,
                "downstream misses after stale dependency hash invalidation");
 }
