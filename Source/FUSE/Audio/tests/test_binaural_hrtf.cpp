@@ -2031,3 +2031,14 @@ void testHrtfBinauralRejectReasonEnums() {
     testHrtfPanPathRejectReasonEnums();
     testHrtfAttenuationCouplingRejectReasonEnums();
     testHrtfBinauralRejectReasonEnums();
+
+// --- deepen additive from b72-hrtf-reject-reason-guards-3aaf ---
+               "should_skip_hrtf_ir_convolution true for empty IR");
+    expectTrue(!fuse::audio::should_skip_hrtf_pan_spatial(true, offset),
+               "should_skip_hrtf_pan_spatial false for enabled offset source");
+    expectTrue(fuse::audio::should_skip_hrtf_pan_spatial(false, offset),
+               "should_skip_hrtf_pan_spatial true when disabled");
+    expectTrue(fuse::audio::should_skip_hrtf_pan_spatial(true, co_located),
+               "should_skip_hrtf_pan_spatial true for co-located source");
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_narrowing(
+               "should_skip_hrtf_attenuation_narrowing true on bypass");

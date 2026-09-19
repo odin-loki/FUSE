@@ -951,3 +951,29 @@ HrtfIrRejectReason classify_hrtf_binaural_convolution_reject(const HrtfBinauralP
 HrtfAttenuationCouplingRejectReason classify_hrtf_binaural_narrowing_reject(
                                    float occlusion_gain, HrtfBinauralRejectReason* reason = nullptr,
                                    HrtfBinauralRejectReason* reason = nullptr,
+
+// --- deepen additive from b72-hrtf-reject-reason-guards-3aaf ---
+bool preflight_hrtf_ir_convolution_ready(const HrtfIrStub& ir, HrtfIrRejectReason* reason = nullptr);
+bool preflight_hrtf_ir_convolution_ready(const HrtfIrPreflight& preflight,
+bool try_preflight_hrtf_ir_convolution(const HrtfIrStub& ir, HrtfIrRejectReason& reason);
+bool try_preflight_hrtf_ir_convolution(const HrtfIrPreflight& preflight, HrtfIrRejectReason& reason);
+                                      const Vec3& rel_listener, HrtfPanPathRejectReason* reason = nullptr);
+bool preflight_hrtf_pan_spatial_ready(const HrtfPanPathPreflight& preflight,
+bool try_preflight_hrtf_pan_spatial(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+bool try_preflight_hrtf_pan_spatial(bool hrtf_enabled, const Vec3& rel_listener,
+bool try_preflight_hrtf_pan_spatial(const HrtfPanPathPreflight& preflight,
+bool should_skip_hrtf_pan_spatial(bool hrtf_enabled, const Vec3& rel_listener);
+bool try_preflight_hrtf_attenuation_narrowing(HrtfPanPath path, float distance_attenuation,
+bool try_preflight_hrtf_attenuation_narrowing(
+bool should_skip_hrtf_attenuation_narrowing(HrtfPanPath path, float distance_attenuation,
+HrtfBinauralRejectReason classify_hrtf_binaural_spatial_reject(const HrtfBinauralPreflight& preflight);
+bool preflight_hrtf_binaural_spatial_ready(const HrtfBinauralPreflight& preflight,
+bool try_preflight_hrtf_binaural_spatial(bool hrtf_enabled, const Vec3& rel_listener,
+bool try_preflight_hrtf_binaural_spatial(bool hrtf_enabled, const HrtfIrStub& ir,
+                                         const Vec3& rel_listener, HrtfBinauralRejectReason& reason);
+bool try_preflight_hrtf_binaural_spatial(const HrtfBinauralPreflight& preflight,
+bool preflight_hrtf_binaural_convolution_ready(const HrtfBinauralPreflight& preflight,
+bool try_preflight_hrtf_binaural_convolution(const HrtfBinauralPreflight& preflight,
+bool preflight_hrtf_binaural_narrowing_ready(const HrtfBinauralPreflight& preflight,
+bool try_preflight_hrtf_binaural_narrowing(bool hrtf_enabled, const Vec3& rel_listener,
+bool try_preflight_hrtf_binaural_narrowing(const HrtfBinauralPreflight& preflight,
