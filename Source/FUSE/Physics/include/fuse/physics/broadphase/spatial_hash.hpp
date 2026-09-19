@@ -699,6 +699,9 @@ FUSE_PHYSICS_INLINE bool shouldIterateCellOccupancy(const CellRange2& range, u32
 FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellOccupancyPreflight& preflight) {
     return !preflight.canIterate();
 
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    return preflight;
 }
 
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
@@ -1864,6 +1867,9 @@ bool canSkipRefineDedupeBroadphase(
 
 
 
+
+
+
     const CollisionShapeSoA& shapes,
     BroadphaseMergeRejectReason expected);
 
@@ -1984,6 +1990,8 @@ bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSo
 /// Non-mutating merge skip predicate — inverse of `BroadphaseMergePreflight::canMerge`.
 
 /// Non-mutating merge predicate — inverse of `canSkipBroadphaseMerge`.
+
+/// Non-mutating merge skip predicate — inverse of `canMerge` (B4.2 deepen follow-up pass).
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
