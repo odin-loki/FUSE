@@ -13689,6 +13689,129 @@ void testDdgiDeepenFollowUpGuards() {
                "preflightProbeBlendKernel reports zero_rays_per_probe reason");
 }
 
+void testDdgiDeepenFollowUpGuards() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+    desc.irradiance_res = 8;
+
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridReject(desc) ==
+                   fuse::renderer::ProbeGridRejectReason::None,
+               "classifyProbeGridReject none for sampleable grid");
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeGrid(desc),
+               "preflightProbeGrid succeeds for sampleable grid");
+    expectTrue(!fuse::renderer::probeGridRejectReasonIsBlocking(
+                   fuse::renderer::ProbeGridRejectReason::None),
+               "none probe-grid reject reason is not blocking");
+    expectTrue(fuse::renderer::probeGridRejectReasonIsBlocking(
+                   fuse::renderer::ProbeGridRejectReason::InvalidSpacing),
+               "invalid_spacing probe-grid reject reason is blocking");
+    expectTrue(std::strcmp(fuse::renderer::probeGridRejectReasonLabel(
+                               fuse::renderer::ProbeGridRejectReason::ZeroIrradianceRes),
+                           "zero_irradiance_res") == 0,
+               "zero_irradiance_res probe-grid reject reason label");
+
+    fuse::renderer::DDGIDesc zeroRes = desc;
+    zeroRes.irradiance_res = 0u;
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridReject(zeroRes) ==
+                   fuse::renderer::ProbeGridRejectReason::ZeroIrradianceRes,
+               "classifyProbeGridReject zero_irradiance_res");
+    fuse::renderer::ProbeGridRejectReason gridReason = fuse::renderer::ProbeGridRejectReason::None;
+    expectTrue(!fuse::renderer::ddgi_util::tryCanSampleProbeGrid(zeroRes, gridReason),
+               "tryCanSampleProbeGrid rejects zero irradiance_res");
+    expectTrue(gridReason == fuse::renderer::ProbeGridRejectReason::ZeroIrradianceRes,
+               "tryCanSampleProbeGrid reports zero_irradiance_res reason");
+
+    fuse::renderer::DDGIDesc badSpacing = desc;
+    badSpacing.probe_spacing = {0.f, 2.f, 2.f};
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridReject(badSpacing) ==
+                   fuse::renderer::ProbeGridRejectReason::InvalidSpacing,
+               "classifyProbeGridReject invalid_spacing");
+
+    fuse::u32 indices[64]{};
+    fuse::u32 count = 0u;
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeScheduleRejectAtRate(2048u, 64u, 64u, indices, &count) ==
+                   fuse::renderer::ProbeScheduleRejectReason::None,
+               "classifyProbeScheduleRejectAtRate none for valid rate");
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeScheduleAtRate(2048u, 64u, 64u, indices, &count),
+               "preflightProbeScheduleAtRate succeeds for valid rate");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeScheduleRejectAtRate(2048u, 0u, 64u, indices, &count) ==
+                   fuse::renderer::ProbeScheduleRejectReason::ZeroProbesPerFrame,
+               "classifyProbeScheduleRejectAtRate zero_probes_per_frame");
+
+    fuse::renderer::ProbeSampleCoords built{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, built),
+               "build coords for follow-up deepen test");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipSampleCoordPreflight(desc, built),
+               "wouldSkipSampleCoordPreflight false for valid coords");
+    fuse::renderer::ProbeSampleCoords hardOob = built;
+    hardOob.x0 = 9u;
+    hardOob.x1 = 9u;
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipSampleCoordPreflight(desc, hardOob),
+               "wouldSkipSampleCoordPreflight true for hard OOB indices");
+
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(8);
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeLookupAtIndex(desc, cache.data(), 3u, 8u),
+               "wouldSkipProbeLookupAtIndex false for in-range index");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeLookupAtIndex(desc, cache.data(), 99u, 8u),
+               "wouldSkipProbeLookupAtIndex false for OOB index that would clamp");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeLookupAtIndex(desc, cache.data(), 7u, 4u),
+               "wouldSkipProbeLookupAtIndex true when in-range probe index exceeds cache length");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeLookupAtIndex(desc, nullptr, 3u, 8u),
+               "wouldSkipProbeLookupAtIndex true for null cache");
+
+    fuse::renderer::ProbeTrilinearSampleRejectReason trilinearReason =
+        fuse::renderer::ProbeTrilinearSampleRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryCanTrilinearSampleAtProbeCoords(
+                   desc, built, cache.data(), 8u, trilinearReason),
+               "tryCanTrilinearSampleAtProbeCoords succeeds for valid coords");
+    expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::None,
+               "valid trilinear preflight reports no reject reason");
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeTrilinearSample(desc, built, cache.data(), 8u),
+               "preflightProbeTrilinearSample succeeds for valid coords");
+    expectTrue(!fuse::renderer::probeTrilinearSampleRejectReasonIsBlocking(trilinearReason),
+               "none trilinear reject reason is not blocking");
+
+    fuse::renderer::ProbeSampleCoords warnWeights = built;
+    warnWeights.tx = 2.f;
+    expectTrue(fuse::renderer::ddgi_util::tryCanTrilinearSampleAtProbeCoords(
+                   desc, warnWeights, cache.data(), 8u, trilinearReason),
+               "tryCanTrilinearSampleAtProbeCoords soft-fails clampable weights");
+    expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::ClampableSampleCoords,
+               "clampable weights report clampable_sample_coords reason");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(
+                   desc, warnWeights, cache.data(), 8u),
+               "wouldSkipProbeTrilinearSample false for clampable weights");
+    expectTrue(std::strcmp(fuse::renderer::probeTrilinearSampleRejectReasonLabel(trilinearReason),
+                           "clampable_sample_coords") == 0,
+               "clampable_sample_coords trilinear reject reason label");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, hardOob, cache.data(), 8u),
+               "wouldSkipProbeTrilinearSample true for hard OOB coords");
+
+    fuse::u32 validIndices[2] = {0u, 7u};
+    fuse::renderer::gi::DDGIKernelParams kernelParams{};
+    kernelParams.probe_indices_to_update = validIndices;
+    kernelParams.probe_update_count = 2u;
+    kernelParams.rays_per_probe = 256u;
+    expectTrue(fuse::renderer::gi::classifyProbeTraceKernelReject(kernelParams) ==
+                   fuse::renderer::gi::ProbeKernelRejectReason::None,
+               "classifyProbeTraceKernelReject none for valid params");
+    expectTrue(fuse::renderer::gi::preflightProbeTraceKernel(kernelParams),
+               "preflightProbeTraceKernel succeeds for valid params");
+    expectTrue(fuse::renderer::gi::classifyProbeBlendKernelReject(kernelParams) ==
+                   fuse::renderer::gi::ProbeKernelRejectReason::None,
+               "classifyProbeBlendKernelReject none for valid params");
+    expectTrue(fuse::renderer::gi::preflightProbeBlendKernel(kernelParams),
+               "preflightProbeBlendKernel succeeds for valid params");
+
+    fuse::renderer::gi::DDGIKernelParams nullIndices = kernelParams;
+    nullIndices.probe_indices_to_update = nullptr;
+    expectTrue(fuse::renderer::gi::classifyProbeBlendKernelReject(nullIndices) ==
+                   fuse::renderer::gi::ProbeKernelRejectReason::NullProbeIndices,
+               "classifyProbeBlendKernelReject null_probe_indices");
+    expectTrue(!fuse::renderer::gi::preflightProbeBlendKernel(nullIndices),
+               "preflightProbeBlendKernel rejects null indices");
+}
+
 void testSampleGuards() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {2, 2, 2};
