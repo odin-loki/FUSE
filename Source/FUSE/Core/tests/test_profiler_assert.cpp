@@ -5893,3 +5893,57 @@ void testChromeTraceExportPreflightRingOverflowExtensions() {
                "wouldSkipChromeTraceExportCleanly true after ring overflow");
                "wouldSkipChromeTraceExportSafely false when nesting remains balanced");
     testChromeTraceExportPreflightRingOverflowExtensions();
+
+// --- deepen additive from deepen-b16-profiler-guards-aa19 ---
+    expectTrue(!fuse::profiler::wouldSkipScope("scope"), "wouldSkipScope false for valid enabled scope");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("flow", 1u),
+               "wouldSkipAsyncFlowBegin false for valid enabled begin");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("", 1u),
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("flow", 1u),
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowEnd("skip_flow", flowId),
+               "wouldSkipAsyncFlowEnd false for matched open flow");
+    expectTrue(!fuse::profiler::wouldSkipCounter("counter"), "wouldSkipCounter false for valid track");
+    expectTrue(fuse::profiler::wouldSkipScope("scope"), "wouldSkipScope true when profiler disabled");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("flow", 1u),
+    expectTrue(fuse::profiler::wouldSkipCounter("counter"), "wouldSkipCounter true when profiler disabled");
+               "tryFindFirstEventIndexByName clears outIndex on miss");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByName("name_lookup_outer", outIndex),
+               "tryFindFirstEventIndexByName finds first scope begin");
+    expectTrue(fuse::profiler::tryFindLastEventIndexByName("name_lookup_outer", outIndex),
+               "tryFindLastEventIndexByName finds last scope end");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByName("name_lookup_flow", outIndex),
+               "tryFindFirstEventIndexByName finds flow start");
+               "tryFindFirstEventIndexByName false for null query name");
+    expectTrue(fuse::profiler::tryFirstEventByPhase(fuse::profiler::EventPhase::Counter, phaseEvent),
+               "tryFirstEventByPhase finds counter sample");
+               "tryFirstEventByPhase copies counter name");
+    expectTrue(fuse::profiler::tryLastEventByPhase(fuse::profiler::EventPhase::End, phaseEvent),
+               "tryLastEventByPhase finds final scope end");
+               "tryLastEventByPhase copies outer scope name");
+    expectTrue(!fuse::profiler::tryLastEventByPhase(fuse::profiler::EventPhase::End, phaseEvent),
+               "tryLastEventByPhase false on empty buffer after reset");
+               "tryLastEventByPhase clears output on empty buffer");
+void testScopeAndAsyncFlowPreflights() {
+    expectTrue(resetPreflight.balanced, "reset scope nesting preflight is balanced");
+    expectTrue(resetPreflight.activeDepth == 0u, "reset scope nesting depth is zero");
+    expectTrue(resetPreflight.canEnterScope(), "reset allows entering scope");
+    const fuse::profiler::AsyncFlowBeginPreflight invalidBegin =
+        fuse::profiler::preflightBeginAsyncFlow("", 1u);
+    expectTrue(invalidBegin.wouldSkip(), "empty-name flow begin preflight would skip");
+    expectTrue(orphanEnd.wouldSkip(), "orphan flow end preflight would skip");
+    expectTrue(!validBegin.wouldSkip(), "valid flow begin preflight would not skip");
+        const fuse::profiler::ScopeNestingPreflight activeScope = fuse::profiler::preflightScopeNesting();
+        const fuse::profiler::AsyncFlowBeginPreflight nestedBegin =
+            fuse::profiler::preflightBeginAsyncFlow("nested_flow", flowId + 1u);
+        const fuse::profiler::AsyncFlowEndPreflight matchedEnd =
+void testChromeTraceExportPreflightWouldSkipExtensions() {
+    expectTrue(!emptyPreflight.wouldSkipExport(), "enabled empty buffer would not skip raw export");
+    expectTrue(!emptyPreflight.wouldSkipSafeExport(), "enabled empty buffer would not skip safe export");
+               "wouldSkipChromeTraceExportSafely false when enabled and balanced");
+        FUSE_PROFILE_SCOPE("preflight_would_skip_scope");
+        expectTrue(!activePreflight.wouldSkipExport(), "active scope still allows raw export");
+        expectTrue(activePreflight.wouldSkipSafeExport(),
+    expectTrue(disabledPreflight.wouldSkipExport(), "disabled preflight would skip export");
+    expectTrue(disabledPreflight.wouldSkipSafeExport(), "disabled preflight would skip safe export");
+    testScopeAndAsyncFlowPreflights();
+    testChromeTraceExportPreflightWouldSkipExtensions();

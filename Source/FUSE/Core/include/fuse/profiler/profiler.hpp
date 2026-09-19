@@ -633,3 +633,9 @@ bool wouldSkipInvalidEventName(const char* name);
 bool tryFindFirstFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex);
 bool tryFindLastFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex);
 bool wouldSkipChromeTraceExportCleanly();
+
+// --- deepen additive from deepen-b16-profiler-guards-aa19 ---
+    bool wouldSkip() const { return !canBegin(); }
+    bool wouldSkip() const { return !canEnd(); }
+bool tryFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
+bool tryLastEventByPhase(EventPhase phase, ProfileEvent& outEvent);

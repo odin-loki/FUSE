@@ -1610,3 +1610,11 @@ bool tryFindLastFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex) {
     return !g_enabled.load(std::memory_order_acquire) || wouldSkipInvalidEventName(track);
 bool wouldSkipChromeTraceExportCleanly() {
     return !preflightChromeTraceExport().canExportCleanly();
+
+// --- deepen additive from deepen-b16-profiler-guards-aa19 ---
+bool tryFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    if (!tryFindFirstEventIndexByPhase(phase, index)) {
+bool tryLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    if (!tryFindLastEventIndexByPhase(phase, index)) {
+    return preflightChromeTraceExport().wouldSkipExport();
+    return preflightChromeTraceExport().wouldSkipSafeExport();
