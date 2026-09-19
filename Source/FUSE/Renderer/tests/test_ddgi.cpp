@@ -4641,3 +4641,19 @@ void testDdgiScheduleAndKernelDeepenGuards() {
                "wouldSkipProbeSampleCoords false for interior world position");
     expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(emptyGrid, originSample),
                "wouldSkipProbeSampleCoords true for empty grid world position");
+
+// --- deepen additive from deepen-ddgi-b56-guards-8d84 ---
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(nullCache) ==
+               "classifyProbeGridSourceReject null_cache");
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeTrilinearSample(source, coords),
+               "preflightProbeTrilinearSample succeeds via ProbeGridSource");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(source, coords),
+               "wouldSkipProbeTrilinearSample false for valid source/coords");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(source, coords) ==
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(source, unordered),
+               "wouldSkipProbeTrilinearSample true for unordered corners");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(source, unordered) ==
+void testProbeKernelPreflightDeepenGuards() {
+               "preflightProbeTraceKernel reports zero_update_count reason");
+               "preflightProbeBlendKernel reports zero_update_count reason");
+    testProbeKernelPreflightDeepenGuards();

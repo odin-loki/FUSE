@@ -3300,3 +3300,11 @@ bool wouldSkipProbeTrilinearSampleAtWorld(const DDGIDesc& desc,
     return !preflightProbeSampleCoords(desc, world_position, nullptr, &reason);
         return ProbeGridRejectReason::ZeroSpacing;
     return preflightProbeGrid(desc);
+
+// --- deepen additive from deepen-ddgi-b56-guards-8d84 ---
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const ProbeGridSource& source,
+    return classifyProbeTrilinearSampleReject(source.desc, coords, source.cache, source.cache_count);
+bool preflightProbeTrilinearSample(const ProbeGridSource& source,
+    return preflightProbeTrilinearSample(source.desc, coords, source.cache, source.cache_count, reason);
+bool wouldSkipProbeTrilinearSample(const ProbeGridSource& source, const ProbeSampleCoords& coords) {
+    return !preflightProbeTrilinearSample(source, coords);

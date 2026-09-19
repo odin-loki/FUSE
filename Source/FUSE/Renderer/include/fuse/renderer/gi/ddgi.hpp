@@ -1080,3 +1080,8 @@ bool wouldSkipProbeTrilinearSampleAtCoords(const DDGIDesc& desc,
 // --- deepen additive from deepen-ddgi-b56-guards-e607 ---
 bool preflightTrilinearProbeSampleAtWorld(const DDGIDesc& desc,
 bool wouldSkipProbeTrilinearSampleAtWorld(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-b56-guards-8d84 ---
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const ProbeGridSource& source,
+bool preflightProbeTrilinearSample(const ProbeGridSource& source,
+bool wouldSkipProbeTrilinearSample(const ProbeGridSource& source, const ProbeSampleCoords& coords);
