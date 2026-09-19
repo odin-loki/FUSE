@@ -151,6 +151,9 @@ bool ContactBufferSoA::canAcceptWrites(u32 additionalCount) const {
 
 
 
+
+
+
 bool ContactBufferSoA::canSkipCompaction() const {
     if (canSkipSoAIteration()) {
         return true;
@@ -164,8 +167,13 @@ bool ContactBufferSoA::canSkipCompaction() const {
     for (u32 slot = 0u; slot < scanCount; ++slot) {
         if (validFlags[slot] == 0u) {
             return false;
-        }
-    return true;
+
+    if (pairSlotCount == 0u) {
+
+    for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
+
+bool ContactBufferSoA::canSkipCompactAndClamp() const {
+    return !shouldRunContactBufferCompactAndClamp(*this);
 
 u32 ContactBufferSoA::countValidSlots() const {
     if (canSkipSoAIteration()) {
@@ -494,9 +502,7 @@ bool canSkipContactBufferFrictionBuild(const ContactBufferSoA& buffer) {
 
 
 
-    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
 
-    for (u32 slot = 0u; slot < scanCount; ++slot) {
 
 bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
     return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
@@ -601,6 +607,7 @@ bool ContactBufferSoA::canSkipCompactAndClamp() const {
     return slot < validFlags.size() && validFlags[slot] != 0u;
 
     if (slot >= validFlags.size()) {
+
 
 
 
@@ -914,6 +921,14 @@ bool ContactBufferSoA::writeSlotWithPreflight(u32 slot, const ContactManifold& m
     writeContactBufferSlot(*this, slot, manifold);
 }
 
+void ContactBufferSoA::invalidateSlot(u32 slot) {
+    if (slot >= validFlags.size()) {
+        return;
+    }
+    validFlags[slot] = 0u;
+    pointCounts[slot] = 0u;
+}
+
 void ContactBufferSoA::applyWarmStartStub(u32 slot, ContactManifold& manifold) const {
     if (slot >= pairSlotCount || validFlags[slot] == 0u) {
         return;
@@ -1148,6 +1163,7 @@ bool ContactBufferSoA::canSkipClamp() const {
 
 
         activeCount = countValidSlots();
+
 
     u32 writeIndex = 0;
     for (u32 readIndex = 0; readIndex < pairSlotCount; ++readIndex) {
@@ -1477,6 +1493,7 @@ ContactBufferWriteRejectReason contactBufferWriteRejectReason(
 
 
 
+
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold) {
@@ -1509,6 +1526,8 @@ ContactBufferWritePreflight preflightContactBufferWrite(
     u32 slot,
 
     const ContactManifold& manifold) {
+
+
 
 
 
@@ -1986,25 +2005,16 @@ ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp
 
 
 
-}
-
-
-
-    switch (reason) {
-        return "None";
-        return "EmptyBuffer";
-    return "Unknown";
-
-    if (buffer.canSkipSoAIteration()) {
-
-    const ContactBufferSoA& buffer,
 
 
 
 
-        return "NoWork";
 
-    const ContactBufferSoA& buffer) {
+
+
+
+
+
 
 
 
@@ -2115,26 +2125,16 @@ bool shouldRunContactBufferCompactAndClamp(const ContactBufferSoA& buffer) {
     return preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp();
 
 
-    return preflight;
-}
 
 
 
 const char* contact_buffer_friction_tangent_reject_reason_name(
     ContactBufferFrictionTangentRejectReason reason) {
-    switch (reason) {
     case ContactBufferFrictionTangentRejectReason::None:
-        return "None";
     case ContactBufferFrictionTangentRejectReason::EmptyBuffer:
-        return "EmptyBuffer";
     case ContactBufferFrictionTangentRejectReason::AllValid:
-        return "AllValid";
-    return "Unknown";
 
 ContactBufferFrictionTangentRejectReason contact_buffer_friction_tangent_reject_reason(
-    const ContactBufferSoA& buffer,
-    f32 epsilon) {
-    if (buffer.canSkipSoAIteration()) {
         return ContactBufferFrictionTangentRejectReason::EmptyBuffer;
     if (buffer.canSkipFrictionTangentBuild(epsilon)) {
         return ContactBufferFrictionTangentRejectReason::AllValid;
@@ -2241,9 +2241,7 @@ u32 apply_contact_buffer_max_capacity_clamp_with_preflight(ContactBufferSoA& buf
     if (!preflight_contact_buffer_compact_and_clamp(buffer).needsCompactAndClamp()) {
 
 void build_contact_buffer_friction_tangents_with_preflight(
-    ContactBufferSoA& buffer,
     if (!preflight_contact_buffer_friction_tangents(buffer, epsilon).needsFrictionTangentBuild()) {
-        return;
     buffer.buildFrictionTangentBases();
 
 
@@ -2254,6 +2252,29 @@ void build_contact_buffer_friction_tangents_with_preflight(
     if (preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork) {
 
     buffer.compact();
+
+
+
+
+
+bool canWriteContactBufferSlot(
+
+bool writeContactBufferSlotWithPreflight(
+    if (!preflightContactBufferWrite(buffer, slot, manifold).canWrite()) {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

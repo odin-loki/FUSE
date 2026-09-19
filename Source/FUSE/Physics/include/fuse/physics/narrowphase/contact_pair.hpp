@@ -1267,6 +1267,7 @@ struct ContactPairDispatchPreflight {
 
 /// Populate per-pair dispatch preflight without running shape dispatch (B4.6 deepen pass).
 ContactPairDispatchPreflight preflight_contact_pair_dispatch(
+/// Run shape dispatch only when extended deepen preflight passes (B4.3 deepen follow-up pass).
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1372,5 +1373,11 @@ bool should_skip_contact_pair_dispatch_preflight(
 
 /// Finalize manifold with prune+finalize preflight gates (B4.6 deepen pass).
 bool generate_contact_manifold_deepen(ContactManifold& manifold);
+/// Finalize only when manifold finalize preflight passes; no-op otherwise (B4.3 deepen follow-up pass).
+bool generate_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
