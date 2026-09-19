@@ -1904,3 +1904,14 @@ IslandSolveRejectReason island_solve_bodies_reject_reason(const ContactIslandGra
 IslandSleepRejectReason island_sleep_graph_reject_reason(const ContactIslandGraph& graph,
 IslandWakeRejectReason island_wake_graph_reject_reason(const ContactIslandGraph& graph,
 IslandPipelineDispatchPreflight preflight_pipeline_island_dispatch(
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-4209 ---
+IslandDispatchRejectReason island_dispatch_index_reject_reason(const ContactIslandGraph& graph,
+                                     IslandSolveRejectReason expected,
+        return !skipped && reason == IslandDispatchRejectReason::None && stats.dispatchableCount > 0u;
+        return !skipped && reason == IslandDispatchRejectReason::None && !invalidDt && constraintCount > 0u;
+        return !skipped && reason == IslandSolveRejectReason::None && refs.can_solve() && bodies.can_solve();
+        return !skipped && reason == IslandWakeRejectReason::None && hasMixedSleepState && activeDynamicCount > 0u;
+        return !skipped && reason == IslandWakeRejectReason::None && stats.wakeableCount > 0u;
+        return !skipped && buildReason == IslandGraphBuildRejectReason::None &&
+bool should_skip_island_pipeline_dispatch(u32 bodyCount,

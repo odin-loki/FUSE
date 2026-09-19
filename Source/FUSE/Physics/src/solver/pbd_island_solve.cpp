@@ -3223,3 +3223,20 @@ IslandSolveRejectReason island_solve_bodies_reject_reason(const ContactIslandGra
 IslandSleepRejectReason island_sleep_graph_reject_reason(const ContactIslandGraph& graph,
 IslandWakeRejectReason island_wake_graph_reject_reason(const ContactIslandGraph& graph,
 IslandPipelineDispatchPreflight preflight_pipeline_island_dispatch(
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-4209 ---
+    case IslandSolveRejectReason::NoInRangeConstraintRefs:
+    case IslandSleepRejectReason::AllIslandsSleeping:
+        return IslandDispatchRejectReason::EmptyJob;
+IslandDispatchRejectReason island_dispatch_index_reject_reason(const ContactIslandGraph& graph,
+        preflight.solve.reason == IslandDispatchRejectReason::NoDispatchableIslands) {
+        return IslandSolveRejectReason::NoInRangeConstraintRefs;
+                                     IslandSolveRejectReason expected,
+        return IslandSleepRejectReason::AllIslandsSleeping;
+        preflight.dispatchReason = IslandDispatchRejectReason::InvalidDt;
+    preflight.skipped = preflight.buildReason != IslandGraphBuildRejectReason::None ||
+bool should_skip_island_pipeline_dispatch(u32 bodyCount,
+    if (result.dispatchReason != IslandDispatchRejectReason::None) {
+        result.dispatchReason = IslandDispatchRejectReason::NoDispatchableIslands;
+    if (result.buildReason != IslandGraphBuildRejectReason::None) {
+        result.dispatchReason = IslandDispatchRejectReason::InvalidDt;

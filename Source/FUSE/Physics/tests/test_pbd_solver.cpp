@@ -5613,3 +5613,19 @@ void testPipelineDispatchGuardedHelpers() {
     expectTrue(pipelinePreflight.can_wake(), "pipeline preflight can wake mixed island");
     expectTrue(pipelinePreflight.can_dispatch(), "pipeline preflight can dispatch constrained graph");
     testIslandDispatchSolveRejectReasonGuards();
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-4209 ---
+    expectTrue(preflight.reason == IslandGraphBuildRejectReason::OutOfRangeContactRefs,
+void testIslandDispatchSolveSleepWakeRejectReasons() {
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight can dispatch valid graph");
+    expectTrue(island_dispatch_job_rejects_for_reason(emptyJob, dt, IslandDispatchRejectReason::EmptyJob),
+    expectTrue(sleepPreflight.reason == IslandSleepRejectReason::None,
+void testIslandPipelineDispatchGuarded() {
+    const IslandPipelineDispatchPreflight skippedBuild =
+    expectTrue(skippedBuild.buildReason == IslandGraphBuildRejectReason::EmptyInput,
+    expectTrue(should_skip_island_pipeline_dispatch(0, contacts, constraints, 1.f / 60.f),
+               "should_skip pipeline dispatch on empty build input");
+    expectTrue(pipeline.buildReason == IslandGraphBuildRejectReason::None,
+    expectTrue(pipeline.dispatchReason == IslandDispatchRejectReason::None,
+    expectTrue(invalidDt.dispatchReason == IslandDispatchRejectReason::InvalidDt,
+    testIslandDispatchSolveSleepWakeRejectReasons();
