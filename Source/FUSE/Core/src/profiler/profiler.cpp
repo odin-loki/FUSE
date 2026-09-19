@@ -315,6 +315,14 @@ bool isCrossThreadFlowHandoffPending() {
     return isFlowDepthDetached() && flowNestingDepth() > 0u;
 }
 
+void reconcilePendingFlowHandoff() {
+    if (!isCrossThreadFlowHandoffPending()) {
+        return;
+    }
+
+    popFlowNestingDepth();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -333,6 +341,10 @@ bool isEventIndexValid(u32 index) {
 
 bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
+}
+
+bool isEmptyEventName(const char* name) {
+    return name == nullptr || name[0] == '\0';
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
@@ -426,6 +438,16 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 }
 
+bool tryLastExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -462,6 +484,30 @@ u32 countEventsByPhase(EventPhase phase) {
         }
     }
     return count;
+}
+
+bool hasEventsByPhase(EventPhase phase) {
+    return findFirstEventIndexByPhase(phase) != kInvalidEventIndex;
+}
+
+bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByPhase(phase);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByPhase(phase);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
 }
 
 u32 lastEventIndex() {
