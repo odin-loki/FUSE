@@ -376,6 +376,17 @@ bool eventFlowIdMatches(const ProfileEvent& event, u32 flowId) {
 
 bool isAsyncFlowEventForId(const ProfileEvent& event, u32 flowId) {
         && event.scopeId == flowId;
+void assignSkipReason(ProfileScopeSkipReason* reason, ProfileScopeSkipReason value) {
+    if (reason != nullptr) {
+        *reason = value;
+
+void assignSkipReason(AsyncFlowBeginSkipReason* reason, AsyncFlowBeginSkipReason value) {
+
+void assignSkipReason(AsyncFlowEndSkipReason* reason, AsyncFlowEndSkipReason value) {
+
+void assignSkipReason(CounterSampleSkipReason* reason, CounterSampleSkipReason value) {
+
+void assignSkipReason(ChromeTraceExportSkipReason* reason, ChromeTraceExportSkipReason value) {
 }
 
 } // namespace
@@ -1883,7 +1894,6 @@ ProfileRecordSkipReason classifyProfileRecordSkip(const char* name, bool require
     if (requireOpenAsyncFlow && g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u) {
         return ProfileRecordSkipReason::NoOpenAsyncFlow;
     return ProfileRecordSkipReason::None;
-    }
 
 bool wouldSkipProfileRecord(const char* name,
                             bool requireOpenAsyncFlow,
@@ -1893,7 +1903,10 @@ bool wouldSkipProfileRecord(const char* name,
         *reason = skipReason;
     return skipReason != ProfileRecordSkipReason::None;
 
-    }
+
+    if (!isValidEventName(queryName) || !isValidEventName(eventName)) {
+    return std::strcmp(eventName, queryName) == 0;
+
 
 } // namespace
 
@@ -4672,6 +4685,22 @@ bool eventNameMatches(const char* eventName, const char* searchName) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -4814,6 +4843,44 @@ NestingStatePreflight preflightNestingState() {
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+const char* profileScopeSkipReasonName(ProfileScopeSkipReason reason) {
+    switch (reason) {
+    case ProfileScopeSkipReason::None:
+        return "none";
+    case ProfileScopeSkipReason::ProfilerDisabled:
+        return "profiler_disabled";
+    case ProfileScopeSkipReason::InvalidName:
+        return "invalid_name";
+    }
+    return "unknown";
+
+const char* asyncFlowBeginSkipReasonName(AsyncFlowBeginSkipReason reason) {
+    case AsyncFlowBeginSkipReason::None:
+    case AsyncFlowBeginSkipReason::ProfilerDisabled:
+    case AsyncFlowBeginSkipReason::InvalidName:
+
+const char* asyncFlowEndSkipReasonName(AsyncFlowEndSkipReason reason) {
+    case AsyncFlowEndSkipReason::None:
+    case AsyncFlowEndSkipReason::ProfilerDisabled:
+    case AsyncFlowEndSkipReason::InvalidName:
+    case AsyncFlowEndSkipReason::OrphanEnd:
+        return "orphan_end";
+
+const char* counterSampleSkipReasonName(CounterSampleSkipReason reason) {
+    case CounterSampleSkipReason::None:
+    case CounterSampleSkipReason::ProfilerDisabled:
+    case CounterSampleSkipReason::InvalidName:
+
+const char* chromeTraceExportSkipReasonName(ChromeTraceExportSkipReason reason) {
+    case ChromeTraceExportSkipReason::None:
+    case ChromeTraceExportSkipReason::ProfilerDisabled:
+    case ChromeTraceExportSkipReason::UnbalancedNesting:
+        return "unbalanced_nesting";
+    case ChromeTraceExportSkipReason::FlowDepthDetached:
+        return "flow_depth_detached";
+    case ChromeTraceExportSkipReason::CrossThreadFlowHandoffPending:
+        return "cross_thread_flow_handoff_pending";
+
 ProfileScopePreflight preflightProfileScope(const char* name) {
     ProfileScopePreflight preflight{};
     preflight.profilerDisabled = !enabled();
@@ -5021,6 +5088,79 @@ AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name) {
 CounterRecordingPreflight preflightCounterRecording(const char* track) {
     CounterRecordingPreflight preflight{};
     preflight.invalidName = !isValidEventName(track);
+
+
+    if (preflight.profilerDisabled) {
+        preflight.reason = ProfileScopeSkipReason::ProfilerDisabled;
+    } else if (preflight.invalidName) {
+        preflight.reason = ProfileScopeSkipReason::InvalidName;
+
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+
+        preflight.reason = AsyncFlowBeginSkipReason::ProfilerDisabled;
+        preflight.reason = AsyncFlowBeginSkipReason::InvalidName;
+
+AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name, u32 /*flowId*/) {
+
+        preflight.reason = AsyncFlowEndSkipReason::ProfilerDisabled;
+        preflight.reason = AsyncFlowEndSkipReason::InvalidName;
+    } else if (preflight.orphanEnd) {
+        preflight.reason = AsyncFlowEndSkipReason::OrphanEnd;
+
+CounterSamplePreflight preflightCounterSample(const char* track) {
+    CounterSamplePreflight preflight{};
+
+        preflight.reason = CounterSampleSkipReason::ProfilerDisabled;
+        preflight.reason = CounterSampleSkipReason::InvalidName;
+
+NestingStatePreflight preflightNestingState() {
+    NestingStatePreflight preflight{};
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    preflight.openAsyncFlowCount = openAsyncFlowCount();
+    preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
+    preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+
+ChromeTraceExportSkipReason chromeTraceExportSkipReason() {
+        return ChromeTraceExportSkipReason::ProfilerDisabled;
+    return ChromeTraceExportSkipReason::None;
+
+ChromeTraceExportSkipReason chromeTraceExportSafeSkipReason() {
+    const ChromeTraceExportSkipReason disabledReason = chromeTraceExportSkipReason();
+    if (disabledReason != ChromeTraceExportSkipReason::None) {
+        return disabledReason;
+        return ChromeTraceExportSkipReason::UnbalancedNesting;
+        return ChromeTraceExportSkipReason::FlowDepthDetached;
+        return ChromeTraceExportSkipReason::CrossThreadFlowHandoffPending;
+
+bool wouldSkipProfileScope(const char* name, ProfileScopeSkipReason* reason) {
+    const ProfileScopePreflight preflight = preflightProfileScope(name);
+    assignSkipReason(reason, preflight.reason);
+    return !preflight.canRecord();
+
+bool wouldSkipAsyncFlowBegin(const char* name, AsyncFlowBeginSkipReason* reason) {
+    const AsyncFlowBeginPreflight preflight = preflightAsyncFlowBegin(name);
+    return !preflight.canBegin();
+
+bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId, AsyncFlowEndSkipReason* reason) {
+    const AsyncFlowEndPreflight preflight = preflightAsyncFlowEnd(name, flowId);
+    return !preflight.canEnd();
+
+bool wouldSkipCounterSample(const char* track, CounterSampleSkipReason* reason) {
+    const CounterSamplePreflight preflight = preflightCounterSample(track);
+    return !preflight.canSample();
+
+bool wouldSkipChromeTraceExport(ChromeTraceExportSkipReason* reason) {
+    const ChromeTraceExportSkipReason skipReason = chromeTraceExportSkipReason();
+    assignSkipReason(reason, skipReason);
+    return skipReason != ChromeTraceExportSkipReason::None;
+
+bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason) {
+    const ChromeTraceExportSkipReason skipReason = chromeTraceExportSafeSkipReason();
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
