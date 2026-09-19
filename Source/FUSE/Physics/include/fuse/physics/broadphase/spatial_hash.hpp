@@ -859,6 +859,15 @@ FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange2& range, 
     return !preflightCellOccupancy(range, maxCells).canIterate();
 }
 
+/// Non-mutating cell-occupancy skip predicate — mirrors `canSkipCellOccupancyIteration` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
+    return canSkipCellOccupancyIteration(range, maxCells);
+}
+
+FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
+    return canSkipCellOccupancyIteration(range, maxCells);
+}
+
 /// Non-mutating cell-occupancy predicate — mirrors `preflightCellOccupancy` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool shouldRunCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
     return preflightCellOccupancy(range, maxCells).canIterate();
@@ -2967,6 +2976,8 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellCapacityCheck(const CellRange2& range, u32
 
 /// Early-out when span clamp would be a no-op — same ordering as `canSkipCellSpanClamp` (B4.2 deepen pass).
 
+
+/// Non-mutating span-clamp skip predicate — mirrors `canSkipCellSpanClamp` (B4.2 deepen pass).
 
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
@@ -6073,6 +6084,7 @@ bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs,
 /// Predict whether merge-into-buffer would bail before pushing pairs (B4.2 deepen pass).
 
 /// Early-out when merge-into-buffer would skip — same ordering as `canSkipMergePairsIntoBuffer` (B4.2 deepen pass).
+
 
 
 
