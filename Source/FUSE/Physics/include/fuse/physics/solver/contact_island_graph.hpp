@@ -141,21 +141,10 @@ struct IslandBuildInputStats {
 IslandBuildInputStats compute_island_build_input_stats(
 
 /// Preflight island graph build; sets `skipped` when `bodyCount` is zero.
-struct IslandBuildStats {
-    u32 bodyCount = 0;
-    u32 contactCount = 0;
-    u32 validContactCount = 0;
-    u32 distanceConstraintCount = 0;
     u32 constraintEdgeCount = 0;
-};
 
-struct IslandBuildPreflight {
-    IslandBuildStats stats{};
-    bool zeroBodies = false;
     bool noConstraints = false;
-    bool skipped = false;
 
-    bool can_build() const { return !skipped; }
 
 /// Summarize island build inputs without mutating the graph (B4.4 deepen follow-up).
 IslandBuildStats compute_island_build_input_stats(
@@ -163,9 +152,13 @@ IslandBuildStats compute_island_build_input_stats(
 /// Diagnose why island graph build would skip; vacuously succeeds on populated constrained scenes.
 
 /// Returns true when `island_build_reject_reason` matches `expected` (B4.4 deepen follow-up).
-    const std::vector<DistanceConstraint>& distanceConstraints,
 
 /// Const preflight for island graph build (B4.4 deepen follow-up).
+
+
+
+
+
 IslandBuildPreflight preflight_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
