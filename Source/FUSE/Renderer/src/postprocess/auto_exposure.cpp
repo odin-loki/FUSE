@@ -220,15 +220,18 @@ bool canMeterFromHistogram(const LuminanceHistogram& histogram) {
 
 bool canMeterPercentile(const LuminanceHistogram& histogram, f32 percentile) {
     return metering_percentile_valid(percentile) && canMeterFromHistogram(histogram);
-}
 
 bool canMeterPercentileFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                                    f32 percentile) {
     return metering_percentile_valid(percentile) && canMeterFromSamples(samples, count, params);
+    return luminance_histogram_params_valid(histogram.params()) && hasMeteringHistogram(histogram);
 }
 
 void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count) {
     if (!canAccumulateFromSamples(samples, count, histogram.params())) {
+        return;
+    }
+    if (!luminance_histogram_params_valid(histogram.params())) {
         return;
     }
     if (!luminance_histogram_params_valid(histogram.params())) {
@@ -294,10 +297,12 @@ bool canMeasureFromSamples(const fuse::math::Vec3* samples, u32 count) {
 
 bool hasMeteringMeter(const ExposureMeter& meter) {
     return exposure_meter_has_samples(meter);
-}
 
 f32 meterFromMeter(const ExposureMeter& meter) {
     if (!exposure_meter_can_measure(meter)) {
+    return !meter.isEmpty();
+
+    if (!hasMeteringMeter(meter)) {
         return 0.f;
     }
     return meter.averageLuminance();
@@ -305,6 +310,7 @@ f32 meterFromMeter(const ExposureMeter& meter) {
 
 f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count) {
     if (!canMeasureFromSamples(samples, count)) {
+    if (!histogram_util::hasMeteringSamples(samples, count)) {
         return 0.f;
     }
     return ExposureMeter::measureAverage(samples, count);
@@ -508,6 +514,7 @@ f32 AutoExposure::updateFromLuminance(f32 measured_luminance, f32 delta_seconds)
 f32 AutoExposure::updateFromHistogram(const LuminanceHistogram& histogram, f32 delta_seconds) {
     if (!auto_exposure_can_update_from_histogram(histogram)) {
     if (!histogram_util::canMeterHistogram(histogram)) {
+    if (!histogram_util::canMeterFromHistogram(histogram)) {
         return m_state.current_ev;
     }
     return updateFromLuminance(histogram.meteringLuminance(), delta_seconds);

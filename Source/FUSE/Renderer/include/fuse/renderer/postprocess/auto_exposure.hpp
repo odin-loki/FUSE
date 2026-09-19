@@ -120,6 +120,7 @@ bool canMeterPercentile(const LuminanceHistogram& histogram, f32 percentile);
 /// True when percentile, params, and sample buffer are ready for percentile metering (B5.10 deepen).
 bool canMeterPercentileFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                                    f32 percentile);
+/// True when histogram params are valid and samples are present (B5.10 deepen).
 void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count);
 f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                       f32 percentile);
