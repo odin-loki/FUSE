@@ -337,3 +337,7 @@ bool should_skip_contact_pair_batch(
 // --- deepen additive from b4-narrowphase-deepen-guards-4d64 ---
 struct NarrowphaseDispatchPreflight {
 NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-754b ---
+struct ContactPairBatchDeepenPreflight {
+ContactPairBatchDeepenPreflight preflight_contact_pair_batch_deepen(

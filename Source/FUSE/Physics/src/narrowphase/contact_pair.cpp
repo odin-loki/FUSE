@@ -802,3 +802,7 @@ NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
     preflight.bothKinematic = preflight.reason == ContactPairRejectReason::BothKinematic;
     preflight.anyTrigger = preflight.reason == ContactPairRejectReason::AnyTrigger;
     preflight.bothMassless = preflight.reason == ContactPairRejectReason::BothMassless;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-754b ---
+ContactPairBatchDeepenPreflight preflight_contact_pair_batch_deepen(
+    ContactPairBatchDeepenPreflight preflight{};

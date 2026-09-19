@@ -347,3 +347,7 @@ struct ManifoldPruneFinalizePreflight {
     ManifoldFinalizePreflight finalize{};
 ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
 bool should_skip_manifold_prune_finalize(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-754b ---
+struct ManifoldProcessPreflight {
+ManifoldProcessPreflight preflight_manifold_process(

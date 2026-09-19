@@ -2647,3 +2647,22 @@ void testManifoldPruneFinalizeGuardPass() {
 void testFrictionBasisGuardPass() {
         reusePreflight.reason == fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::CanReuseBasis,
 void testContactBufferGuardPass() {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-754b ---
+void testContactPairBatchDeepenPreflightGuards() {
+    expectTrue(batchPreflight.totalPairs == 3u, "batch preflight reports total pair count");
+    expectTrue(batchPreflight.rejectedCount == 2u, "batch preflight counts rejected pairs");
+    expectTrue(!batchPreflight.allRejected, "batch preflight not all-rejected with one dispatchable pair");
+    expectTrue(batchPreflight.can_dispatch_any(), "batch preflight can dispatch any when one valid pair");
+    const auto allRejectedPreflight = fuse::physics::narrowphase::preflight_contact_pair_batch_deepen(
+    expectTrue(allRejectedPreflight.allRejected, "batch preflight all-rejected when none dispatchable");
+    expectTrue(!allRejectedPreflight.can_dispatch_any(), "batch preflight cannot dispatch when all rejected");
+void testManifoldProcessPreflightGuards() {
+void testFrictionBasisRebuildUsingPreflightGuards() {
+void testContactBufferWritePreflightGuards() {
+void testRunNarrowphaseDeepenPreflightGuards() {
+    testContactPairBatchDeepenPreflightGuards();
+    testManifoldProcessPreflightGuards();
+    testFrictionBasisRebuildUsingPreflightGuards();
+    testContactBufferWritePreflightGuards();
+    testRunNarrowphaseDeepenPreflightGuards();
