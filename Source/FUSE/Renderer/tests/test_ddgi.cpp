@@ -2003,3 +2003,17 @@ void testLaunchProbeUpdateIndexGuard() {
     expectTrue(!fuse::renderer::ProbeGridLayout::tryClampProbeIndex(5u, empty, emptyClamp),
                "tryClamp rejects empty grid");
     expectTrue(emptyClamp == 0u, "tryClamp zeroes output on empty grid");
+
+// --- deepen additive from deepen-ddgi-probe-guards-5f38 ---
+    fuse::math::Vec3 tryResult{};
+                   desc, {0.5f, 0.5f, 0.5f}, cache.data(), 8u, tryResult),
+               "tryTrilinearProbeIrradiance succeeds with sized cache");
+    expectTrue(tryResult.x > 0.f, "tryTrilinearProbeIrradiance returns non-zero irradiance");
+    fuse::math::Vec3 tryRejected{};
+                   desc, {0.5f, 0.5f, 0.5f}, cache.data(), 4u, tryRejected),
+    expectNear(tryRejected.x, 0.f, 1e-5f, "tryTrilinearProbeIrradiance clears output on failure");
+    fuse::math::Vec3 tryDirectional{};
+                   desc, {0.5f, 0.5f, 0.5f}, {0.f, 1.f, 0.f}, cache.data(), 8u, tryDirectional),
+               "tryTrilinearDirectionalProbeIrradiance succeeds with sized cache");
+    expectTrue(tryDirectional.x > 0.f, "tryTrilinearDirectionalProbeIrradiance returns non-zero irradiance");
+void testKernelLaunchGuards() {
