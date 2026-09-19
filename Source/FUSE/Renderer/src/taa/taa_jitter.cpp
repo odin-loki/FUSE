@@ -481,3 +481,10 @@ bool tryPreflightTaaJitterAligned(u32 frameIndex, const TaaJitter& jitter,
     reason = classifyTaaJitterAlignmentReject(frameIndex, jitter);
     return reason == TaaJitterAlignmentRejectReason::None;
     return !preflightTaaJitterAligned(frameIndex, jitter);
+
+// --- deepen additive from deepen-taa-b59-guards-4701 ---
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterNdcReject(width, height, m_sequenceLength);
+    if (reject != TaaJitterGuardRejectReason::None) {
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterSyncReject(m_sequenceLength);
+bool TaaJitter::tryAdvanceIfReady(TaaJitterGuardRejectReason& reason) {
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterAdvanceReject(m_sequenceLength);

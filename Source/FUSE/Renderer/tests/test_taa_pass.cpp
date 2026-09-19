@@ -4119,3 +4119,27 @@ void testTaaPassTryPreflightWrappers() {
     expectTrue(pass->preflightJitterAligned(4u), "pass jitter aligned after sync");
     expectTrue(pass->tryComputeExpectedResolveBlendWeights(resolveDesc, weights, blendReason),
                "pass tryComputeExpectedResolveBlendWeights passes before warmup");
+
+// --- deepen additive from deepen-taa-b59-guards-4701 ---
+void testHistoryWarmupClassifyAndTryPreflight() {
+    expectTrue(jitter.trySyncToFrameIndexIfReady(4u, rejectReason),
+               "trySyncToFrameIndexIfReady succeeds for valid sequence");
+               "trySync reject reason is None");
+    expectTrue(jitter.isAlignedToFrameIndex(4u), "jitter aligned after trySync");
+    expectTrue(jitter.tryAdvanceIfReady(rejectReason), "tryAdvanceIfReady succeeds for valid sequence");
+               "tryAdvance reject reason is None");
+    expectTrue(jitter.index() != indexBefore, "tryAdvanceIfReady advances jitter");
+               "tryCurrentNdcOffsetIfReady succeeds for valid viewport");
+               "tryCurrentNdc reject reason is None");
+               "tryCurrentNdc reject reason is InvalidViewport");
+    expectTrue(!fuse::renderer::preflightTaaResolveFrame(desc, emptyHistory, &skipReason, &blendReason),
+               "tryPreflightTaaResolveFrame passes for valid desc");
+               "tryPreflightTaaResolveFrame passes after warmup");
+               "tryPreflightTaaResolveFrame fails with invalid dimensions");
+    expectTrue(pass->tryPreflightJitterSync(6u, jitterReject),
+               "pass tryPreflightHistoryWarmup reason is NeedsWarmup before resolve");
+    expectTrue(pass->preflightResolveFrame(resolveDesc), "pass preflightResolveFrame passes before warmup");
+               "pass tryPreflightResolve passes before warmup");
+    expectTrue(pass->tryPreflightResolveFrame(resolveDesc, skipReason, blendReason),
+               "pass tryPreflightResolveFrame passes before warmup");
+    testHistoryWarmupClassifyAndTryPreflight();

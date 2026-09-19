@@ -611,3 +611,7 @@ bool TaaPass::preflightJitterAligned(u32 frameIndex, TaaJitterAlignmentRejectRea
     return preflightTaaJitterAligned(frameIndex, m_jitter, reason);
 bool TaaPass::preflightHistoryWarmupComplete(TaaHistoryWarmupRejectReason* reason) const {
     return preflightTaaHistoryWarmupComplete(m_history, reason);
+
+// --- deepen additive from deepen-taa-b59-guards-4701 ---
+                                       TaaResolveBlendRejectReason& blendReason) const {
+    return tryPreflightTaaResolveFrame(desc, m_history, skipReason, blendReason);

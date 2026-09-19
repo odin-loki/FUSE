@@ -751,3 +751,8 @@ bool tryComputeTaaResolveBlendWeightsIfResolveReady(const TaaResolveDesc& desc,
                                     u32 observedGeneration, TaaResolveTemporalRejectReason& reason) {
     reason = classifyTaaResolveTemporalReject(desc, history, observedGeneration);
     return !preflightTaaResolveTemporal(desc, history, observedGeneration);
+
+// --- deepen additive from deepen-taa-b59-guards-4701 ---
+    const TaaResolveBlendRejectReason blendReject = classifyTaaResolveBlendReject(desc, history);
+    return blendReject == TaaResolveBlendRejectReason::None;
+    return preflightTaaResolveFrame(desc, history, &skipReason, &blendReason);
