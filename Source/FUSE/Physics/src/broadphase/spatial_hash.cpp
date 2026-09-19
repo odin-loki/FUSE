@@ -48,6 +48,20 @@ const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     return "Unknown";
 }
 
+const char* cellCapacityRejectReasonName(CellCapacityRejectReason reason) {
+    switch (reason) {
+    case CellCapacityRejectReason::None:
+        return "None";
+    case CellCapacityRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellCapacityRejectReason::ExceedsSpan:
+        return "ExceedsSpan";
+    case CellCapacityRejectReason::ExceedsBudget:
+        return "ExceedsBudget";
+    }
+    return "Unknown";
+}
+
 const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
     switch (reason) {
     case BroadphaseRejectReason::None:
@@ -235,7 +249,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        if (canSkipCellCapacityCheck(range, maxOccupancy, maxSpan)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -255,7 +269,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+    if (canSkipCellCapacityCheck(range, maxOccupancy, maxSpan)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -320,6 +334,53 @@ bool pairPassesAabbRefine(
     return sphereAabbOverlap(posA, radiusA, posB, radiusB);
 }
 
+void mergePlaneDynamicPairsIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    PairBufferSoA& buffer) {
+    std::vector<u32> planeBodies;
+    std::vector<u32> dynamicBodies;
+    for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
+        const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
+        if (bodyIndex >= bodies.count()) {
+            continue;
+        }
+        if (shapeType(shapes, shapeIndex) == CollisionShapeType::Plane) {
+            planeBodies.push_back(bodyIndex);
+        } else if ((bodies.flags[bodyIndex] & RB_STATIC) == 0) {
+            dynamicBodies.push_back(bodyIndex);
+        }
+    }
+
+    std::unordered_set<u64> existing;
+    existing.reserve(buffer.activeCount * 2 + 1);
+    for (u32 i = 0; i < buffer.activeCount; ++i) {
+        const u64 key = (static_cast<u64>(buffer.bodyA[i]) << 32) | buffer.bodyB[i];
+        existing.insert(key);
+    }
+
+    const u32 dynamicCount = static_cast<u32>(dynamicBodies.size());
+    std::vector<std::vector<CandidatePair>> dynamicPlanePairs(dynamicCount);
+    fuse::jobs::parallel_for(0u, dynamicCount, kPlanePairGrainSize, [&](u32 dynamicIndex) {
+        const u32 dynamicBody = dynamicBodies[dynamicIndex];
+        for (u32 planeBody : planeBodies) {
+            if (!isValidCandidatePair(dynamicBody, planeBody, bodies.count())) {
+                continue;
+            }
+            const CandidatePair pair = canonicalPair(dynamicBody, planeBody);
+            const u64 key = (static_cast<u64>(pair.bodyA) << 32) | pair.bodyB;
+            if (existing.find(key) == existing.end()) {
+                dynamicPlanePairs[dynamicIndex].push_back(pair);
+            }
+        }
+    });
+
+    for (const std::vector<CandidatePair>& bucketPairs : dynamicPlanePairs) {
+        mergePairsIntoBuffer(bucketPairs, buffer);
+    }
+    dedupeBuffer(buffer);
+}
+
 void runBroadphaseIntoBufferInternal(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
@@ -361,48 +422,8 @@ void runBroadphaseIntoBufferInternal(
     buffer.compact();
     dedupeBuffer(buffer);
 
-    std::vector<u32> planeBodies;
-    std::vector<u32> dynamicBodies;
-    for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
-        const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
-        if (bodyIndex >= bodies.count()) {
-            continue;
-        }
-        if (shapeType(shapes, shapeIndex) == CollisionShapeType::Plane) {
-            planeBodies.push_back(bodyIndex);
-        } else if ((bodies.flags[bodyIndex] & RB_STATIC) == 0) {
-            dynamicBodies.push_back(bodyIndex);
-        }
-    }
-
     if (shouldRunBroadphaseMerge(bodies, shapes)) {
-        std::unordered_set<u64> existing;
-        existing.reserve(buffer.activeCount * 2 + 1);
-        for (u32 i = 0; i < buffer.activeCount; ++i) {
-            const u64 key = (static_cast<u64>(buffer.bodyA[i]) << 32) | buffer.bodyB[i];
-            existing.insert(key);
-        }
-
-        const u32 dynamicCount = static_cast<u32>(dynamicBodies.size());
-        std::vector<std::vector<CandidatePair>> dynamicPlanePairs(dynamicCount);
-        fuse::jobs::parallel_for(0u, dynamicCount, kPlanePairGrainSize, [&](u32 dynamicIndex) {
-            const u32 dynamicBody = dynamicBodies[dynamicIndex];
-            for (u32 planeBody : planeBodies) {
-                if (!isValidCandidatePair(dynamicBody, planeBody, bodies.count())) {
-                    continue;
-                }
-                const CandidatePair pair = canonicalPair(dynamicBody, planeBody);
-                const u64 key = (static_cast<u64>(pair.bodyA) << 32) | pair.bodyB;
-                if (existing.find(key) == existing.end()) {
-                    dynamicPlanePairs[dynamicIndex].push_back(pair);
-                }
-            }
-        });
-
-        for (const std::vector<CandidatePair>& bucketPairs : dynamicPlanePairs) {
-            mergePairsIntoBuffer(bucketPairs, buffer);
-        }
-        dedupeBuffer(buffer);
+        mergePlaneDynamicPairsIntoBuffer(bodies, shapes, buffer);
     }
 
     if (buffer.maxCapacity > 0u) {
@@ -643,12 +664,31 @@ bool refineBroadphasePairsParallelWithPreflight(
     return true;
 }
 
-void dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer) {
+bool dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer) {
+    if (!shouldRunDedupeBroadphase(buffer)) {
+        return false;
+    }
     dedupeBuffer(buffer);
+    return true;
 }
 
-void mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
+bool mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
+    if (!shouldRunMergePairsIntoBuffer(pairs, buffer)) {
+        return false;
+    }
     mergePairsIntoBuffer(pairs, buffer);
+    return true;
+}
+
+bool mergeBroadphasePlaneDynamicWithPreflight(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    PairBufferSoA& buffer) {
+    if (!shouldRunBroadphaseMerge(bodies, shapes)) {
+        return false;
+    }
+    mergePlaneDynamicPairsIntoBuffer(bodies, shapes, buffer);
+    return true;
 }
 
 void runBroadphaseIntoBuffer(
