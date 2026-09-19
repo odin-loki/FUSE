@@ -2898,3 +2898,21 @@ void testContactNormalNormalizePreflightGuards() {
         fuse::physics::narrowphase::should_skip_contact_buffer_write_slot(buffer, 1u, selfPair),
         "should_skip write-slot on self pair");
 void testNarrowphaseDeepenPassGuards() {
+
+// --- deepen additive from deepen-narrowphase-b4-guards-61f0 ---
+void testContactBufferClampRejectReasonGuards() {
+    const auto withinPreflight = fuse::physics::narrowphase::preflight_contact_buffer_clamp(buffer);
+        withinPreflight.withinCapacity,
+void testContactPairPlanePlaneDeepenRejectGuards() {
+void testDetectContactsPairWithPreflightGuard() {
+void testNormalizeContactNormalIfNeededGuard() {
+void testNarrowphaseBufferFinalizePreflightGuards() {
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_narrowphase_buffer_finalize(buffer);
+    expectTrue(emptyPreflight.skipped, "buffer finalize preflight skips empty buffer");
+    const auto dirtyPreflight = fuse::physics::narrowphase::preflight_narrowphase_buffer_finalize(buffer);
+    expectTrue(!dirtyPreflight.skipped, "buffer finalize preflight does not skip prepared slots");
+    expectTrue(dirtyPreflight.needsCompaction, "buffer finalize preflight needs compaction");
+void testFrictionBasisNormalizeBeforeRebuildGuard() {
+    testContactBufferClampRejectReasonGuards();
+    testDetectContactsPairWithPreflightGuard();
+    testNarrowphaseBufferFinalizePreflightGuards();

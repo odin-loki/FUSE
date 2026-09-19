@@ -108,3 +108,8 @@ bool should_skip_narrowphase_into_buffer(
 // --- deepen additive from deepen-b4-narrowphase-guards-1644 ---
 NarrowphaseDispatchPreflight preflight_run_narrowphase_into_buffer(
 bool should_skip_narrowphase_dispatch(
+
+// --- deepen additive from deepen-narrowphase-b4-guards-61f0 ---
+NarrowphaseBufferFinalizePreflight preflight_narrowphase_buffer_finalize(const ContactBufferSoA& buffer) {
+    NarrowphaseBufferFinalizePreflight preflight{};
+    const NarrowphaseBufferFinalizePreflight preflight = preflight_narrowphase_buffer_finalize(buffer);

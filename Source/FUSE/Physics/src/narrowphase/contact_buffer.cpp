@@ -705,3 +705,6 @@ ContactBufferFrictionBasesRejectReason contact_buffer_friction_bases_reject_reas
 ContactBufferFrictionBasesPreflight preflight_contact_buffer_friction_bases(const ContactBufferSoA& buffer) {
     preflight.allBuilt = preflight.reason == ContactBufferFrictionBasesRejectReason::AllBuilt;
     if (should_skip_contact_buffer_write_slot(*this, slot, manifold)) {
+
+// --- deepen additive from deepen-narrowphase-b4-guards-61f0 ---
+    const ContactBufferCompactAndClampPreflight preflight = preflight_contact_buffer_compact_and_clamp(buffer);
