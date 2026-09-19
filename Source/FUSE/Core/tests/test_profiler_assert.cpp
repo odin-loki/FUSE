@@ -6086,3 +6086,10 @@ void testCounterSamplePreflightGuard() {
                "tryFindFirstEventIndexByPhase finds counter");
                "tryFindLastEventIndexByPhase finds counter");
     testCounterSamplePreflightGuard();
+
+// --- deepen additive from b16-profiler-deepen-guards-5fbe ---
+    expectTrue(fuse::profiler::wouldSkipEndAsyncFlow("valid_flow"),
+               "wouldSkipEndAsyncFlow true with no open flow");
+    expectTrue(!fuse::profiler::wouldSkipEndAsyncFlow("would_skip_flow"),
+               "wouldSkipEndAsyncFlow false with matching open flow");
+    expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow("disabled_flow"),
