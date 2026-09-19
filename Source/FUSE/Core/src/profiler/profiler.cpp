@@ -242,6 +242,7 @@ ProfileScope::ProfileScope(const char* name)
       m_active(name != nullptr && g_enabled.load(std::memory_order_acquire)) {
       m_active(g_enabled.load(std::memory_order_acquire) && isNonEmptyProfileName(name)) {
       m_active(g_enabled.load(std::memory_order_acquire) && isRecordableName(name)) {
+      m_active(g_enabled.load(std::memory_order_acquire) && isValidProfileName(name)) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -717,6 +718,34 @@ ProfilerExportPreflight preflightChromeTraceExport() {
     preflight.has_events = preflight.event_count > 0u;
     preflight.dropped_event_count = droppedEventCount();
     preflight.buffer_full = isBufferFull();
+bool tryEventAt(u32 index, const ProfileEvent*& outEvent) {
+    static const ProfileEvent kEmpty{};
+        outEvent = &kEmpty;
+
+    outEvent = &eventAt(index);
+    return true;
+
+ProfilerGuardPreflight preflightGuardState() {
+    ProfilerGuardPreflight preflight{};
+    preflight.scopeDepth = currentNestingDepth();
+    preflight.flowDepth = currentFlowNestingDepth();
+    preflight.openAsyncFlows = g_openAsyncFlowCount.load(std::memory_order_acquire);
+    preflight.maxScopeDepth = g_maxNestingDepth.load(std::memory_order_acquire);
+    preflight.maxFlowDepth = g_maxFlowNestingDepth.load(std::memory_order_acquire);
+    preflight.hasOpenScopes = preflight.scopeDepth > 0u;
+    preflight.hasOpenAsyncFlows = preflight.openAsyncFlows > 0u;
+    preflight.canEndAsyncFlow = preflight.openAsyncFlows > 0u;
+
+bool hasOpenScopes() {
+    return currentNestingDepth() > 0u;
+
+bool hasOpenAsyncFlows() {
+    return g_openAsyncFlowCount.load(std::memory_order_acquire) > 0u;
+
+    preflight.bufferEmpty = preflight.eventCount == 0u;
+    preflight.canExport = true;
+    preflight.hasOpenScopes = hasOpenScopes();
+    preflight.hasUnmatchedAsyncFlows = preflight.hasOpenAsyncFlows;
     return preflight;
 }
 
@@ -866,6 +895,7 @@ void beginAsyncFlow(const char* name, u32 flowId) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(name)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(name)) {
         return;
     }
 
@@ -888,6 +918,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
     if (!g_enabled.load(std::memory_order_acquire)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(name)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(name)) {
         return;
     }
 
@@ -919,6 +950,7 @@ void sampleCounter(const char* track, s64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
         return;
     }
 
@@ -937,6 +969,7 @@ void sampleCounterFloat(const char* track, f64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
         return;
     }
 
@@ -955,6 +988,7 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
         return;
     }
 
@@ -973,6 +1007,7 @@ void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isNonEmptyProfileName(track)) {
     if (!g_enabled.load(std::memory_order_acquire) || !isRecordableName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidProfileName(track)) {
         return;
     }
 
