@@ -36,6 +36,31 @@ bool should_skip_hrtf_convolution(const HrtfIrStub& ir);
 /// True when IR samples are non-null but length is zero (malformed stub).
 bool is_nonnull_zero_length_hrtf_ir(const HrtfIrStub& ir);
 
+/// Why an HRTF IR stub cannot select the convolution path (B7.2 deepen).
+enum class HrtfIrRejectReason : u8 {
+    None = 0,
+    NullSamples = 1,
+    ZeroLength = 2,
+};
+
+/// Read-only empty-IR diagnostics — no mutation (B7.2 deepen).
+struct HrtfIrPreflight {
+    HrtfIrRejectReason reason = HrtfIrRejectReason::None;
+    bool empty = false;
+    bool null_samples = false;
+    bool zero_length = false;
+    bool malformed = false;
+
+    bool can_convolve() const { return reason == HrtfIrRejectReason::None; }
+    bool skips_convolution() const { return !can_convolve(); }
+};
+
+/// Preflight an HRTF IR stub without mutation.
+HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
+
+/// True when \p ir fails preflight for \p expected.
+bool hrtf_ir_rejects_for_reason(const HrtfIrStub& ir, HrtfIrRejectReason expected);
+
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
     Bypass,
@@ -48,6 +73,38 @@ HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const
 
 /// Select pan path when no IR is wired (ILD/ITD stub or bypass).
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// Why HRTF pan resolves to centre bypass (B7.2 deepen).
+enum class HrtfPanPathRejectReason : u8 {
+    None = 0,
+    Disabled = 1,
+    CoLocated = 2,
+};
+
+/// Read-only pan-path diagnostics — no mutation (B7.2 deepen).
+struct HrtfPanPathPreflight {
+    HrtfPanPathRejectReason reject_reason = HrtfPanPathRejectReason::None;
+    HrtfPanPath path = HrtfPanPath::Bypass;
+    bool hrtf_disabled = false;
+    bool co_located = false;
+    bool empty_ir = false;
+
+    bool bypassed() const { return path == HrtfPanPath::Bypass; }
+    bool can_spatial_pan() const { return path != HrtfPanPath::Bypass; }
+    bool uses_convolution() const { return path == HrtfPanPath::Convolution; }
+    bool uses_ild_itd_stub() const { return path == HrtfPanPath::IldItdStub; }
+};
+
+/// Preflight pan-path resolution without IR wiring.
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+
+/// IR-aware pan-path preflight.
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+                                              const Vec3& rel_listener);
+
+/// True when pan-path preflight rejects for \p expected.
+bool hrtf_pan_path_rejects_for_reason(bool hrtf_enabled, const Vec3& rel_listener,
+                                      HrtfPanPathRejectReason expected);
 
 /// True when a resolved pan path bypasses HRTF (disabled or co-located).
 bool is_hrtf_pan_bypassed(HrtfPanPath path);
@@ -236,6 +293,41 @@ bool should_skip_hrtf_attenuation_coupling(HrtfPanPath path);
 /// Combined guard — spatial path and non-unity attenuation warrant narrowing.
 bool should_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuation,
                                       float occlusion_gain);
+
+/// Why attenuation coupling would skip spatial narrowing (B7.2 deepen).
+enum class HrtfAttenuationCouplingSkipReason : u8 {
+    None = 0,
+    BypassPath = 1,
+    UnityAttenuation = 2,
+};
+
+/// Read-only attenuation-coupling diagnostics — no mutation (B7.2 deepen).
+struct HrtfAttenuationCouplingPreflight {
+    HrtfAttenuationCouplingSkipReason skip_reason = HrtfAttenuationCouplingSkipReason::None;
+    HrtfPanPath path = HrtfPanPath::Bypass;
+    float distance_attenuation = 1.f;
+    float occlusion_gain = 1.f;
+    float spatial_blend = 1.f;
+    bool bypass_path = false;
+    bool unity_attenuation = false;
+    bool unity_spatial_blend = false;
+
+    bool should_narrow() const { return skip_reason == HrtfAttenuationCouplingSkipReason::None; }
+    bool can_apply_coupling() const { return should_narrow(); }
+    bool skips_coupling() const { return !can_apply_coupling(); }
+};
+
+/// Preflight distance/occlusion coupling without mutating pan gains.
+HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
+    HrtfPanPath path, float distance_attenuation, float occlusion_gain,
+    const HrtfAttenuationCoupling& coupling = {}, const BinauralPanParams& params = {});
+
+/// True when attenuation-coupling preflight skips for \p expected.
+bool hrtf_attenuation_coupling_skips_for_reason(HrtfPanPath path, float distance_attenuation,
+                                                float occlusion_gain,
+                                                HrtfAttenuationCouplingSkipReason expected,
+                                                const HrtfAttenuationCoupling& coupling = {},
+                                                const BinauralPanParams& params = {});
 
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
