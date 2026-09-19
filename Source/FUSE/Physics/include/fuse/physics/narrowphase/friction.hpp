@@ -124,4 +124,10 @@ bool should_normalize_contact_normal_before_friction(
     const ContactManifold& manifold,
     f32 lengthEpsilon = 1e-4f);
 
+/// Normalize contact normal in-place when non-unit; returns true when modified (B4.5 deepen pass).
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Rebuild friction basis using preflight guards; returns false when skipped (B4.5 deepen pass).
+bool rebuild_friction_basis_using_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
 } // namespace fuse::physics::narrowphase

@@ -191,6 +191,37 @@ bool can_skip_manifold_finalize(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Prune only when preflight allows in-place prune; returns true when points remain (B4.5 deepen pass).
+bool prune_manifold_using_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Finalize using `ManifoldFinalizePreflight`; no-op when preflight skips (B4.5 deepen pass).
+bool finalize_manifold_using_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Combined const preflight for prune-then-finalize pipeline (B4.5 deepen pass).
+struct ManifoldProcessPreflight {
+    ManifoldPrunePreflight prune{};
+    ManifoldFinalizePreflight finalize{};
+
+    bool can_process() const { return finalize.can_finalize(); }
+    bool can_skip_all() const { return finalize.skipped || !finalize.can_finalize(); }
+};
+
+/// Populate combined prune/finalize preflight without mutating the manifold (B4.5 deepen pass).
+ManifoldProcessPreflight preflight_manifold_process(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f,
+    f32 frictionEpsilon = 1e-4f);
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
