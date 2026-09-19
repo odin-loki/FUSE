@@ -241,12 +241,8 @@ struct ChromeTraceExportPreflight {
     bool canExportSafely() const {
         return canExport() && !hasExportBlockers();
     }
-    bool canExportSafely() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending
             && !hasInconsistentRecordedNesting();
-    }
-    bool canExportSafely() const {
-        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending
             && !ringBufferFull && !hasInvalidNameEvents;
     bool hasBufferPairImbalance() const { return scopePairImbalancedInBuffer || flowPairImbalancedInBuffer; }
             && !hasBufferPairImbalance() && !hasDroppedEvents && !hasInvalidNameEvents;
@@ -271,7 +267,6 @@ struct ChromeTraceExportPreflight {
     bool isNestingStateConsistent() const { return nestingStateConsistent; }
             && !hasUnpairedFlowEvents;
             && !hasUnbalancedFlowPairsInBuffer;
-    }
     u32 unbalancedFlowPairCount = 0;
     bool hasUnbalancedFlowPairsInBuffer = false;
 };
@@ -312,7 +307,6 @@ struct NestingConsistencyPreflight {
 
     bool isConsistent() const {
         return scopeNestingBalanced && flowNestingBalanced && flowDepthAttached && !crossThreadFlowHandoffPending;
-    }
     bool canExportNonEmpty() const { return canExport() && hasExportableEvents(); }
     bool hasExportWarnings() const {
         return hasInvalidNameEvents || hasUnpairedScopeEvents || hasUnpairedAsyncFlowEvents;
@@ -586,50 +580,12 @@ struct NestingStatePreflight {
         return canExportSafely() && !hasInvalidNameEvents && !ringBufferFull && !hasUnbalancedBufferedFlowPairs;
     bool canExportSafelyWithConsistentBuffer() const {
         return canExportSafely() && hasConsistentEventPairsInBuffer();
-};
 
-/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
-struct ProfileScopePreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool canEnter = false;
-};
 
-/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
-struct AsyncFlowBeginPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool canBegin = false;
-};
 
-/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
-struct AsyncFlowEndPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool wouldUnderflowOpenCount = false;
-    bool canEnd = false;
-};
 
-/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
-struct ProfileScopePreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool canEnter = false;
-};
 
-/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
-struct AsyncFlowBeginPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool canBegin = false;
-};
 
-/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
-struct AsyncFlowEndPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool wouldUnderflowOpenCount = false;
-    bool canEnd = false;
 };
 
 /// Read-only scope/async-flow nesting diagnostics — safe before recording or export.
@@ -656,19 +612,13 @@ struct ProfileScopePreflight {
     bool profilerDisabled = false;
     bool invalidName = false;
     bool canEnter = false;
-};
 
 /// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
 struct AsyncFlowBeginPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
     bool canBegin = false;
-};
 
 /// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
 struct AsyncFlowEndPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
     bool wouldUnderflowOpenCount = false;
     bool canEnd = false;
 };

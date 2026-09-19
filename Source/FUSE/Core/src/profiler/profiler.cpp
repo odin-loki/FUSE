@@ -435,6 +435,20 @@ bool eventMatchesFlow(const ProfileEvent& event, u32 flowId) {
     return isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name);
 }
 
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    return isValidEventName(event.name) && isValidEventName(name)
+        && std::strcmp(event.name, name) == 0;
+}
+
+bool isFlowEventPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+}
+
+bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
+    return flowId != 0u && isFlowEventPhase(event.phase) && event.scopeId == flowId
+        && isValidEventName(event.name);
+}
+
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
@@ -1181,6 +1195,14 @@ bool isScopeNameBalancedInBuffer(const char* name) {
         }
     }
     return beginCount == endCount;
+}
+
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
 }
 
 bool hasActiveScope() {
@@ -2499,11 +2521,7 @@ bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
 
 
     const u32 index = findLastEventIndexByName(name);
-    if (index == kInvalidEventIndex) {
-        outEvent = ProfileEvent{};
-        return false;
 
-    return tryExportableEventAt(index, outEvent);
 
 bool tryFirstFlowStartById(u32 flowId, ProfileEvent& outEvent) {
     if (flowId == 0u) {
@@ -2513,7 +2531,6 @@ bool tryFirstFlowStartById(u32 flowId, ProfileEvent& outEvent) {
         const ProfileEvent& event = eventAt(i);
         if (isValidEventName(event.name) && event.phase == EventPhase::FlowStart && event.scopeId == flowId) {
             outEvent = event;
-            return true;
 
 
 bool tryLastFlowFinishById(u32 flowId, ProfileEvent& outEvent) {
@@ -2522,13 +2539,10 @@ bool tryLastFlowFinishById(u32 flowId, ProfileEvent& outEvent) {
         const ProfileEvent& event = eventAt(i - 1u);
         if (isValidEventName(event.name) && event.phase == EventPhase::FlowFinish && event.scopeId == flowId) {
 
-    }
 
 
 bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
-    outEvent = eventAt(index);
-    return isValidProfileEvent(outEvent);
 
 bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
@@ -2538,10 +2552,6 @@ bool tryFirstFlowEvent(u32 flowId, ProfileEvent& outEvent) {
 
 
 
-    const u32 index = findFirstEventIndexByFlowId(flowId);
-    if (index == kInvalidEventIndex) {
-        outEvent = ProfileEvent{};
-        return false;
 
 
 bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
@@ -2572,14 +2582,11 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
-    }
 
-    outEvent = eventAt(index);
-    return isValidProfileEvent(outEvent);
 
-    if (index == kInvalidEventIndex) {
-        outEvent = ProfileEvent{};
-        return false;
+
+
+
 
 
 u32 firstEventIndex() {
@@ -3344,6 +3351,25 @@ bool hasFlowEvent(u32 flowId) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -3432,6 +3458,31 @@ bool tryFirstEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
 
     outEvent = ProfileEvent{};
     return false;
+}
+
+u32 firstExportableEventIndex() {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (isEventExportable(i)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 lastExportableEventIndex() {
+    const u32 total = eventCount();
+    if (total == 0u) {
+        return kInvalidEventIndex;
+    }
+
+    for (u32 i = total; i > 0u; --i) {
+        const u32 index = i - 1u;
+        if (isEventExportable(index)) {
+            return index;
+        }
+    }
+    return kInvalidEventIndex;
 }
 
 const ProfileEvent& lastEvent() {
@@ -3575,6 +3626,10 @@ NestingAsyncFlowPreflight preflightNestingAndAsyncFlow() {
     preflight.scopeNestingBalanced = isScopeNestingBalanced();
     preflight.flowNestingBalanced = isFlowNestingBalanced();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.flowDepthDetached = isFlowDepthDetached();
+    return preflight;
+}
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
