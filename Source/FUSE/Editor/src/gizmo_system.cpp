@@ -8,6 +8,14 @@ namespace {
 
 constexpr f32 kEpsilon = 1e-6f;
 
+bool isFiniteComponent(f32 value) {
+    return std::isfinite(value);
+}
+
+bool isFiniteVec3(const math::Vec3& v) {
+    return isFiniteComponent(v.x) && isFiniteComponent(v.y) && isFiniteComponent(v.z);
+}
+
 f32 normalizedX(const GizmoHitTest& hit) {
     if (hit.viewportWidth <= 0.f) {
         return 0.f;
@@ -356,8 +364,13 @@ bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings) {
     return isSnapEnabled(mode, settings) && isSnapStepValid(mode, settings);
 }
 
-bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings) {
-    return isSnapEnabled(mode, settings) && !isSnapStepValid(mode, settings);
+bool isRayFinite(const GizmoRay& ray) {
+    return isFiniteVec3(ray.origin) && isFiniteVec3(ray.direction);
+}
+
+bool isHitTestScreenFinite(const GizmoHitTest& hit) {
+    return isFiniteComponent(hit.screenX) && isFiniteComponent(hit.screenY) &&
+           isFiniteComponent(hit.viewportWidth) && isFiniteComponent(hit.viewportHeight);
 }
 
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -365,6 +378,11 @@ PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform
     PickPreflight preflight{};
     if (isRayEmpty(ray)) {
         preflight.emptyRay = true;
+        return preflight;
+    }
+
+    if (!isRayFinite(ray)) {
+        preflight.nonFiniteRay = true;
         return preflight;
     }
 
@@ -388,6 +406,11 @@ PickPreflight preflightPick(const GizmoHitTest& hit, GizmoMode mode) {
     PickPreflight preflight{};
     if (isHitTestDimensionsInvalid(hit)) {
         preflight.invalidDimensions = true;
+        return preflight;
+    }
+
+    if (!isHitTestScreenFinite(hit)) {
+        preflight.nonFiniteScreen = true;
         return preflight;
     }
 
@@ -486,6 +509,8 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
 
     if (isHitTestDimensionsInvalid(hit)) {
         preflight.invalidDimensions = true;
+    } else if (!isHitTestScreenFinite(hit)) {
+        preflight.nonFiniteScreen = true;
     } else if (isHitTestEmpty(hit)) {
         preflight.emptyHit = true;
     } else if (isHitTestOutOfBounds(hit)) {
@@ -787,6 +812,7 @@ BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform&
 
     const PickPreflight pick = preflightPick(ray, transform, mode, space, axisLength, pickRadius);
     preflight.emptyRay = pick.emptyRay;
+    preflight.nonFiniteRay = pick.nonFiniteRay;
     preflight.invalidPickConfig = pick.invalidPickConfig;
     preflight.pickMiss = pick.pickMiss;
     if (!pick.canPick()) {
@@ -819,6 +845,7 @@ BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
     const PickPreflight pick = preflightPick(hit, mode);
     preflight.emptyHit = pick.emptyHit;
     preflight.invalidDimensions = pick.invalidDimensions;
+    preflight.nonFiniteScreen = pick.nonFiniteScreen;
     preflight.outOfBounds = pick.outOfBounds;
     preflight.screenMiss = pick.screenMiss;
     if (!pick.canPick()) {
