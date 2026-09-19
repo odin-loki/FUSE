@@ -831,6 +831,14 @@ bool wouldRecordEvent(const char* name) {
     return enabled() && isValidEventName(name);
 }
 
+void reconcileDetachedFlowNesting() {
+    if (!isFlowDepthDetached()) {
+        return;
+    }
+
+    threadLocalFlowNestingDepth() = openAsyncFlowCount();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -1041,6 +1049,10 @@ bool canEndAsyncFlow(const char* name) {
     return canRecordEvent(name) && openAsyncFlowCount() > 0u;
 }
 
+bool isExportableProfileEvent(const ProfileEvent& event) {
+    return isValidProfileEvent(event);
+}
+
 u32 exportableEventCount() {
     u32 count = 0u;
     for (u32 i = 0u; i < total; ++i) {
@@ -1051,6 +1063,17 @@ u32 exportableEventCount() {
 u32 invalidEventCount() {
     const u32 total = eventCount();
     return total >= exportableEventCount() ? total - exportableEventCount() : 0u;
+}
+
+u32 invalidNameEventCount() {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (!isValidEventName(eventAt(i).name)) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 u32 invalidNameEventCount() {
@@ -1686,6 +1709,7 @@ bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent) {
     const u32 count = eventCount();
     if (reverseIndex >= count) {
     const u32 index = firstEventIndex();
+    const u32 index = firstExportableEventIndex();
         outEvent = ProfileEvent{};
         return false;
     }
@@ -1724,7 +1748,11 @@ bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent) {
     const u32 index = lastEventIndex();
     if (index == kInvalidEventIndex) {
 
-    return tryExportableEventAt(index, outEvent);
+    outEvent = eventAt(index);
+    return isExportableProfileEvent(outEvent);
+
+    const u32 index = lastExportableEventIndex();
+
 
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
@@ -1758,6 +1786,30 @@ u32 findFirstEventIndexOfPhase(EventPhase phase) {
     for (u32 i = 0u; i < total; ++i) {
         if (eventAt(i).phase == phase) {
             return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 firstExportableEventIndex() {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (isEventExportable(i)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 lastExportableEventIndex() {
+    const u32 total = eventCount();
+    if (total == 0u) {
+        return kInvalidEventIndex;
+    }
+
+    for (u32 i = total; i > 0u; --i) {
+        if (isEventExportable(i - 1u)) {
+            return i - 1u;
         }
     }
     return kInvalidEventIndex;

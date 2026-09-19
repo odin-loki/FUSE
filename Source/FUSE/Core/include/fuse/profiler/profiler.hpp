@@ -440,6 +440,8 @@ struct NestingStatePreflight {
         return hasUnbalancedNesting() || hasOpenAsyncFlows || flowDepthDetached || invalidNameEventCount > 0u;
     bool canExportWithContent() const { return canExport() && hasExportableEvents(); }
     bool readyForExport() const { return canExport() && (bufferEmpty || hasExportableEvents()); }
+    bool canExportClean() const {
+        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !bufferFull;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -511,6 +513,7 @@ u32 nestingDepth();
 bool needsFlowNestingCleanup();
 bool wouldIgnoreOrphanAsyncFlowEnd();
 bool wouldRecordEvent(const char* name);
+void reconcileDetachedFlowNesting();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();
@@ -560,6 +563,8 @@ bool canBeginAsyncFlow(const char* name);
 bool canEndAsyncFlow(const char* name);
 u32 exportableEventCount();
 u32 invalidEventCount();
+bool isExportableProfileEvent(const ProfileEvent& event);
+u32 invalidNameEventCount();
 bool isEventExportable(u32 index);
 bool isFirstEventIndex(u32 index);
 bool isLastEventIndex(u32 index);
@@ -572,6 +577,8 @@ u32 firstEventIndex();
 u32 lastEventIndex();
 u32 countEventsByPhase(EventPhase phase);
 u32 findFirstEventIndexOfPhase(EventPhase phase);
+u32 firstExportableEventIndex();
+u32 lastExportableEventIndex();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
