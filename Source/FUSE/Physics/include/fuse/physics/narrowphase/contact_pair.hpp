@@ -2329,6 +2329,10 @@ inline bool try_preflight_narrowphase_batch(
     NarrowphaseBatchPreflight& out) {
     out = preflight_narrowphase_batch(pairs, bodies, shapes);
     return out.can_dispatch();
+
+/// Detect contacts only when deepen preflight allows; returns invalid manifold when skipped (B4.3 deepen follow-up pass).
+
+/// Finalize only when `can_finalize_contact_manifold` passes; no-op otherwise (B4.3 deepen follow-up pass).
 }
 
 } // namespace fuse::physics::narrowphase

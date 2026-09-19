@@ -1787,6 +1787,20 @@ inline bool manifold_finalize_preflight_ready(
 /// Manifold finalize preflight with reject-reason output (B4.3 deepen follow-up pass).
 inline bool try_preflight_manifold_finalize(
     ManifoldFinalizeRejectReason& reason,
+/// Non-mutating prune skip predicate — mirrors `should_skip_manifold_prune` (B4.3 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool would_skip_manifold_prune(
+
+/// Non-mutating finalize skip predicate — mirrors `can_skip_manifold_finalize` (B4.3 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool would_skip_manifold_finalize(
+
+/// Prune only when preflight allows; returns false when skipped (B4.3 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool try_prune_contact_manifold_with_preflight(
+    if (would_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+        return !manifold.empty();
+
+/// Finalize only when preflight allows; returns false when skipped (B4.3 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool try_finalize_contact_manifold_with_preflight(
+    if (would_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)) {
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

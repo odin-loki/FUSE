@@ -1104,4 +1104,10 @@ inline bool try_preflight_friction_basis_rebuild(
     FrictionBasisRejectReason& reason,
     reason = preflight.reason;
 
+/// Rebuild friction tangents only when preflight allows; returns false when skipped (B4.3 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool try_rebuild_friction_basis_with_preflight(
+
+/// Rebuild friction tangents only when refresh is needed; no-op when skipped (B4.3 deepen follow-up pass).
+FUSE_PHYSICS_INLINE void try_compute_friction_tangents_if_needed(
+
 } // namespace fuse::physics::narrowphase
