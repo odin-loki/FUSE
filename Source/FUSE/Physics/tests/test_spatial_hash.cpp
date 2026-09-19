@@ -1657,6 +1657,127 @@ void testBroadphaseMergeRejectReasonGuards() {
              "merge preflight carries reject reason");
 }
 
+void testPairBufferWriteRejectReasonGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 0u, 0u, 1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteRejectReason::UnpreparedBuffer),
+             "unprepared buffer reports UnpreparedBuffer write reject reason");
+    expectTrue(fuse::physics::broadphase::canSkipPairBufferWrite(buffer, 0u, 0u, 1u),
+               "canSkipPairBufferWrite on unprepared buffer");
+
+    buffer.preparePairSlots(2u);
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 2u, 0u, 1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteRejectReason::OutOfRangeSlot),
+             "out-of-range slot reports OutOfRangeSlot write reject reason");
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 0u, 1u, 1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteRejectReason::InvalidPair),
+             "self-pair reports InvalidPair write reject reason");
+
+    const fuse::physics::broadphase::PairBufferWritePreflight validWrite =
+        fuse::physics::broadphase::preflightPairBufferWrite(buffer, 0u, 0u, 1u);
+    expectTrue(validWrite.canWrite(), "write preflight accepts valid slot pair");
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferWrite(buffer, 0u, 0u, 1u),
+               "shouldRunPairBufferWrite true for valid slot pair");
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferWriteRejectReasonName(
+                               fuse::physics::broadphase::PairBufferWriteRejectReason::InvalidPair),
+                           "InvalidPair") == 0,
+               "InvalidPair write reject reason has stable label");
+}
+
+void testPairBufferInvalidateRejectReasonGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferInvalidateRejectReason(buffer, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateRejectReason::OutOfRangeSlot),
+             "empty buffer reports OutOfRangeSlot invalidate reject reason");
+
+    buffer.preparePairSlots(2u);
+    buffer.writeSlot(0u, 0u, 1u);
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferInvalidateRejectReason(buffer, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateRejectReason::None),
+             "valid slot reports None invalidate reject reason");
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferInvalidate(buffer, 0u),
+               "shouldRunPairBufferInvalidate true for valid slot");
+
+    buffer.invalidateSlot(0u);
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferInvalidateRejectReason(buffer, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateRejectReason::AlreadyInvalid),
+             "invalidated slot reports AlreadyInvalid invalidate reject reason");
+    expectTrue(fuse::physics::broadphase::pairBufferInvalidateRejectsForReason(
+                   buffer, 0u, fuse::physics::broadphase::PairBufferInvalidateRejectReason::AlreadyInvalid),
+               "invalidate rejects for AlreadyInvalid");
+}
+
+void testCellPairGenPreflightGuards() {
+    const std::vector<fuse::u32> emptyOccupants;
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellPairGenRejectReason(emptyOccupants)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellPairGenRejectReason::EmptyOccupants),
+             "empty occupants report EmptyOccupants cell-pair reject reason");
+    expectTrue(fuse::physics::broadphase::canSkipCellPairGeneration(emptyOccupants),
+               "canSkipCellPairGeneration on empty occupants");
+
+    const std::vector<fuse::u32> singleOccupant = {0u};
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellPairGenRejectReason(singleOccupant)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellPairGenRejectReason::SingleOccupant),
+             "single occupant reports SingleOccupant cell-pair reject reason");
+
+    const std::vector<fuse::u32> duplicateOccupants = {0u, 0u, 1u};
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellPairGenRejectReason(duplicateOccupants)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellPairGenRejectReason::None),
+             "duplicate occupants with two unique bodies report None cell-pair reject reason");
+
+    const fuse::physics::broadphase::CellPairGenPreflight preflight =
+        fuse::physics::broadphase::preflightCellPairGeneration(duplicateOccupants);
+    expectTrue(preflight.canGenerate(), "cell-pair preflight accepts two unique bodies");
+    expectEq(preflight.uniqueBodyCount, 2u, "cell-pair preflight counts unique bodies");
+    expectEq(preflight.pairSlotCount, 1u, "cell-pair preflight counts canonical pair slots");
+    expectEq(fuse::physics::broadphase::countCellPairSlots(duplicateOccupants), 1u,
+             "countCellPairSlots matches preflight pair slot count");
+    expectTrue(fuse::physics::broadphase::shouldRunCellPairGeneration(duplicateOccupants),
+               "shouldRunCellPairGeneration true for two unique bodies");
+}
+
+void testCellCapacityInsertPreflightGuards() {
+    const fuse::physics::broadphase::CellRange3 validRange = {{0, 0, 0}, {1, 1, 1}};
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::cellCapacityInsertRejectReason(0u, 2u, validRange, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellCapacityInsertRejectReason::None),
+             "valid insert reports None cell-capacity insert reject reason");
+    expectTrue(fuse::physics::broadphase::shouldRunCellCapacityInsert(0u, 2u, validRange, 8u),
+               "shouldRunCellCapacityInsert true within budget");
+
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::cellCapacityInsertRejectReason(2u, 2u, validRange, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellCapacityInsertRejectReason::OutOfRangeBody),
+             "out-of-range body reports OutOfRangeBody cell-capacity insert reject reason");
+    expectTrue(fuse::physics::broadphase::cellCapacityInsertRejectsForReason(
+                   2u, 2u, validRange, 8u,
+                   fuse::physics::broadphase::CellCapacityInsertRejectReason::OutOfRangeBody),
+               "cell-capacity insert rejects for OutOfRangeBody");
+
+    fuse::physics::broadphase::CellRange3 inverted = {{2, 2, 2}, {1, 1, 1}};
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::cellCapacityInsertRejectReason(0u, 2u, inverted, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellCapacityInsertRejectReason::EmptyRange),
+             "inverted range reports EmptyRange cell-capacity insert reject reason");
+
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::cellCapacityInsertRejectReason(0u, 2u, validRange, 7u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellCapacityInsertRejectReason::ExceedsBudget),
+             "over-budget range reports ExceedsBudget cell-capacity insert reject reason");
+    expectTrue(fuse::physics::broadphase::canSkipCellCapacityInsert(0u, 2u, validRange, 7u),
+               "canSkipCellCapacityInsert true over budget");
+
+    const fuse::physics::broadphase::CellRange2 planeRange = {{0, 0}, {3, 1}};
+    const fuse::physics::broadphase::CellCapacityInsertPreflight planePreflight =
+        fuse::physics::broadphase::preflightCellCapacityInsert(0u, 2u, planeRange, 4u);
+    expectTrue(!planePreflight.canInsert(), "2D cell-capacity insert preflight rejects over budget");
+    expectTrue(planePreflight.exceedsBudget, "2D cell-capacity insert preflight marks exceedsBudget");
+    expectTrue(std::strcmp(fuse::physics::broadphase::cellCapacityInsertRejectReasonName(
+                               fuse::physics::broadphase::CellCapacityInsertRejectReason::ExceedsBudget),
+                           "ExceedsBudget") == 0,
+               "ExceedsBudget cell-capacity insert reject reason has stable label");
+}
+
 } // namespace
 
 int main() {
@@ -1726,6 +1847,10 @@ int main() {
     testShouldRunBroadphaseGuards();
     testMergePairsIntoBufferPreflightGuards();
     testPairBufferShouldRunDedupeGuards();
+    testPairBufferWriteRejectReasonGuards();
+    testPairBufferInvalidateRejectReasonGuards();
+    testCellPairGenPreflightGuards();
+    testCellCapacityInsertPreflightGuards();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");
