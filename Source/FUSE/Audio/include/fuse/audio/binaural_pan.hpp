@@ -1438,3 +1438,9 @@ HrtfBinauralBypassRejectReason classify_hrtf_binaural_bypass_reject(
                                           HrtfBinauralBypassRejectReason* reason = nullptr);
 bool try_preflight_hrtf_binaural_bypass(bool hrtf_enabled, const Vec3& rel_listener,
                                         HrtfBinauralBypassRejectReason& reason);
+
+// --- deepen additive from b72-hrtf-reject-reason-wrappers-4aca ---
+bool should_skip_hrtf_pan_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_pan_preflight(bool hrtf_enabled, const Vec3& rel_listener);
+bool should_skip_hrtf_attenuation_coupling_inputs(HrtfPanPath path, float distance_attenuation,
+HrtfAttenuationCouplingRejectReason classify_hrtf_binaural_coupling_reject(

@@ -2705,3 +2705,18 @@ void testHrtfBinauralRejectReasonMirrorsExistingPreflights() {
     expectTrue(bypass_reason == fuse::audio::HrtfBinauralBypassRejectReason::None,
         fuse::audio::HrtfBinauralConvolutionRejectReason::HrtfDisabled;
         fuse::audio::HrtfBinauralNarrowingRejectReason::BypassPath;
+
+// --- deepen additive from b72-hrtf-reject-reason-wrappers-4aca ---
+    expectTrue(fuse::audio::should_skip_hrtf_pan_preflight(false, valid, offset),
+               "should_skip_hrtf_pan_preflight true when disabled");
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling_inputs(
+               "should_skip_hrtf_attenuation_coupling_inputs true on bypass");
+void testHrtfBinauralConvolutionRejectReasonGuards() {
+    fuse::audio::HrtfBinauralConvolutionRejectReason reason =
+    expectTrue(reason == fuse::audio::HrtfBinauralConvolutionRejectReason::None,
+    expectTrue(reason == fuse::audio::HrtfBinauralConvolutionRejectReason::EmptyIr,
+    expectTrue(reason == fuse::audio::HrtfBinauralConvolutionRejectReason::MalformedIr,
+                   fuse::audio::HrtfBinauralConvolutionRejectReason::MalformedIr),
+void testHrtfBinauralCouplingRejectReasonGuards() {
+    testHrtfBinauralConvolutionRejectReasonGuards();
+    testHrtfBinauralCouplingRejectReasonGuards();
