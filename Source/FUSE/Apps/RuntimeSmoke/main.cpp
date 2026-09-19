@@ -323,6 +323,8 @@ int main() {
               "engine probe MemStream write/read round-trip");
         check(fuse::legacy::t3d::engineProbe::fileStreamTempRoundTripSmoke(),
               "engine probe FileStream temp file round-trip");
+        check(fuse::legacy::t3d::engineProbe::bitmapStbMemoryLoadSmoke(),
+              "engine probe bitmapSTB MemStream 1x1 BMP load");
     }
 #endif
 

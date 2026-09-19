@@ -433,3 +433,12 @@ bool sWriteStreamSTB(const String& bmType, Stream& stream, GBitmap* bitmap, U32 
 
    return false;
 }
+
+namespace fuse::legacy::t3d::engineProbe {
+
+void bitmapStbRegisterAnchor()
+{
+   // Ensures _privateRegisterSTB static initializer links from fuse_t3d_legacy.a.
+}
+
+} // namespace fuse::legacy::t3d::engineProbe

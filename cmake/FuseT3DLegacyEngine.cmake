@@ -42,6 +42,8 @@ set(_fuse_t3d_legacy_engine_sources
     src/engine_probe/platform_net_stub.cpp
     src/engine_probe/thread_pool_stub.cpp
     src/engine_probe/fs_volume_stub.cpp
+    src/engine_probe/console_stub.cpp
+    src/engine_probe/gbitmap_probe_stub.cpp
     src/engine_probe/bitmap_probe_smoke.cpp
     src/engine_probe/engine_probe_batch_smoke.cpp
     "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/bitmapUtils.cpp"
@@ -56,6 +58,8 @@ set(_fuse_t3d_legacy_engine_sources
     "${CMAKE_SOURCE_DIR}/Engine/source/core/strings/stringFunctions.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/core/util/byteBuffer.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/core/util/refBase.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/util/tVector.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/bitmapSTB.cpp"
 )
 
 target_sources(fuse_t3d_legacy PRIVATE ${_fuse_t3d_legacy_engine_sources})
@@ -88,4 +92,4 @@ target_compile_definitions(fuse_t3d_legacy PRIVATE
     FUSE_T3D_LEGACY_ENGINE_PROBE=1
 )
 
-message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-4: bitmapUtils/ies/md5/hash/swizzles + stream/fileStream + stubs)")
+message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-5: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB + stubs)")

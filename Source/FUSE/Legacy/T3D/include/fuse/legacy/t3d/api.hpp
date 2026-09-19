@@ -69,6 +69,7 @@ bool swizzleBgraSmoke();
 u32 fourccSmoke();
 bool memStreamRoundTripSmoke();
 bool fileStreamTempRoundTripSmoke();
+bool bitmapStbMemoryLoadSmoke();
 } // namespace engineProbe
 #endif
 
