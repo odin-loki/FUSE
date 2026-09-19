@@ -164,11 +164,12 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
 
     m_embedSession.loadedWorldPath = fuse::scene::resolveDefaultWorldPath(projectLoad.manifest);
     m_embedSession.worldEntityCount = runtimeScene.entityCount();
-    fuse::scene::LegacyDatablockTable wireTable;
     const fuse::scene::WireRuntimeBindResult wireBindings =
-        fuse::scene::populateLegacyTableFromScene(runtimeScene, wireTable);
+        fuse::scene::applyWireBindingsFromScene(host.editorScene().registry(), runtimeScene);
     m_embedSession.wireDatablockEntries = wireBindings.datablockEntries;
     m_embedSession.wireMaterialEntries = wireBindings.materialEntries;
+    m_embedSession.wireEcsMaterialApplied = wireBindings.ecsMaterialApplied;
+    m_embedSession.wireEcsSpawnApplied = wireBindings.ecsSpawnApplied;
     m_embedSession.worldLoaded = true;
     m_embedded = true;
 

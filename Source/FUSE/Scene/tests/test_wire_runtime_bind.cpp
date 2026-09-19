@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/spawn_marker.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/project/world_converter.hpp>
@@ -66,6 +67,56 @@ void testLegacyTableFromConvertedMission() {
                "datablock owner lookup");
 }
 
+void testApplyDatablockSpawnBinding() {
+    fuse::ecs::Registry registry;
+    registry.init();
+
+    const fuse::ecs::EntityID spawn = registry.create();
+    registry.add<fuse::ecs::Transform>(spawn);
+
+    std::unordered_map<std::string, fuse::ecs::EntityID> entitiesByName;
+    entitiesByName.emplace("DefaultCameraSpawnSphere", spawn);
+
+    fuse::scene::LegacyDatablockTable table;
+    table.datablocks.push_back({"DefaultCameraSpawnSphere", "SpawnSphereMarker"});
+
+    const fuse::scene::WireRuntimeBindResult applied =
+        fuse::scene::applyWireBindingsToEcs(registry, entitiesByName, table);
+    expectTrue(applied.ecsSpawnApplied == 1u, "datablock wire applied to ECS spawn marker");
+    expectTrue(applied.ecsDatablockResolved == 1u, "datablock resolved count matches spawn bind");
+
+    const fuse::ecs::SpawnMarker* marker = registry.get<fuse::ecs::SpawnMarker>(spawn);
+    expectTrue(marker != nullptr, "spawn marker component readable");
+    expectTrue(marker->datablock_id == fuse::scene::hashWireRefName("SpawnSphereMarker"),
+               "spawn marker datablock id hashed from wire ref");
+    expectTrue(marker->active, "spawn marker active by default");
+}
+
+void testApplyWireBindingsFromScene() {
+    const std::string mission = writeTempFile(
+        "/tmp/fuse_wire_bind_scene.mis",
+        "new Scene(ExampleLevel) {\n"
+        "   new SpawnSphere(DefaultCameraSpawnSphere) {\n"
+        "      dataBlock = \"SpawnSphereMarker\";\n"
+        "   };\n"
+        "};\n");
+    const std::string fuselevel = "/tmp/fuse_wire_bind_scene.fuselevel";
+    const fuse::project::ConvertResult converted =
+        fuse::project::convertT3DMissionToFuselevel(mission, fuselevel);
+    expectTrue(converted.status == fuse::project::ConvertStatus::Ok, "mission converts for scene bind");
+
+    fuse::scene::Scene scene;
+    const fuse::scene::SerialiseResult loaded = fuse::scene::SceneSerialiser::load(fuselevel, scene);
+    expectTrue(loaded.status == fuse::scene::SerialiseStatus::Ok, "fuselevel loads for scene bind");
+
+    fuse::ecs::Registry registry;
+    registry.init();
+    const fuse::scene::WireRuntimeBindResult applied =
+        fuse::scene::applyWireBindingsFromScene(registry, scene);
+    expectTrue(applied.ecsSpawnApplied >= 1u, "scene bind applies spawn marker");
+    expectTrue(applied.datablockEntries >= 1u, "scene bind retains datablock entries");
+}
+
 void testApplyWireBindingsToEcs() {
     fuse::ecs::Registry registry;
     registry.init();
@@ -95,6 +146,8 @@ void testApplyWireBindingsToEcs() {
 int main() {
     fuse::core::initialize();
     testLegacyTableFromConvertedMission();
+    testApplyDatablockSpawnBinding();
+    testApplyWireBindingsFromScene();
     testApplyWireBindingsToEcs();
     fuse::core::shutdown();
 

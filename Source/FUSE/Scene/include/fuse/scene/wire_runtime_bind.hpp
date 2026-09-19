@@ -37,6 +37,7 @@ struct WireRuntimeBindResult {
     u32 datablockEntries = 0;
     u32 materialEntries = 0;
     u32 ecsMaterialApplied = 0;
+    u32 ecsSpawnApplied = 0;
     u32 ecsDatablockResolved = 0;
     u32 skipped = 0;
 };
@@ -50,5 +51,8 @@ WireRuntimeBindResult populateLegacyTableFromScene(const Scene& scene, LegacyDat
 WireRuntimeBindResult applyWireBindingsToEcs(
     ecs::Registry& registry, const std::unordered_map<std::string, ecs::EntityID>& entitiesByName,
     const LegacyDatablockTable& table);
+
+/// Populate wire table from scene, ensure ECS entities for non-wire scene objects, apply bindings.
+WireRuntimeBindResult applyWireBindingsFromScene(ecs::Registry& registry, const Scene& scene);
 
 } // namespace fuse::scene

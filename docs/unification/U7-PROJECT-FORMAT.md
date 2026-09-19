@@ -177,20 +177,23 @@ Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed
 
 `fuselevel_cook_stub.*` populates `hierarchyLinks` from `ConvertResult::wiringStubCount` on `--fuselevel` cooks.
 
-## 10. Wire runtime binding (wave 6 progress)
+## 10. Wire runtime binding (wave 7 progress)
 
 | API | Role |
 |-----|------|
 | `fuse::scene::populateLegacyTableFromScene` | Distill `__fuse.wire|datablock|*` / `material|*` into `LegacyDatablockTable` |
-| `fuse::scene::applyWireBindingsToEcs` | Apply material wires to `ecs::Mesh::material_id` by owner entity name |
+| `fuse::scene::applyWireBindingsToEcs` | Apply material wires to `ecs::Mesh::material_id` and datablock wires to `ecs::SpawnMarker::datablock_id` |
+| `fuse::scene::applyWireBindingsFromScene` | One-shot: populate table from scene, create ECS entities for non-wire objects, apply bindings |
 | `World2D::setProjectWorldSource` | `loadWorld()` resolves `projectRoot + defaultWorld2D` when no explicit fuselevel path is set |
 
-CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`.
+Cook encoder hooks (`fuse_cook_stubs`): vendored Assimp fallback when system `libassimp-dev` is absent; STB RGBA decode + `bc7_blocks`/`bc7_bytes` estimates; OGG when `libvorbisenc` is linked (apt `libvorbis-dev` when available).
+
+CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_assets_b79`.
 
 ## 11. Deferred (honest backlog)
 
-- Link Assimp / BC7 encoder / libvorbisenc so cook hooks produce real binaries (STB RGBA decode path + stub fallback exist today)
-- Full ECS spawn-component bind for datablock wires (table + resolve counts landed; spawn leaf deferred)
+- Real BC7 block encoder (ispc_texcomp or GPU compressor) replacing RGBA passthrough estimates
+- libvorbisenc system package on CI images (runtime libs present; dev headers optional today)
 - T2D toybox → full runtime module bridge beyond `.fuselevel` populate
 - Asset path remapping via VFS mounts ([vfs-mount-plan.md](./vfs-mount-plan.md))
 - `project.json` `workerCap` override for `computeWorkerCount()`

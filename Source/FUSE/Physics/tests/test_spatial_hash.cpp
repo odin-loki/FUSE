@@ -1857,6 +1857,15 @@ void testPairBufferInvalidateSlotRejectReasonGuards() {
              "out-of-range invalidate-slot reports OutOfRangeSlot reject reason");
     expectTrue(fuse::physics::broadphase::canSkipPairBufferInvalidateSlot(buffer, 4u),
                "canSkipPairBufferInvalidateSlot true for out-of-range slot");
+
+    fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason reason =
+        fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 0u, &reason),
+               "wouldSkipPairBufferInvalidateSlot true for already-invalid slot");
+    expectEq(static_cast<fuse::u32>(reason),
+             static_cast<fuse::u32>(
+                 fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::AlreadyInvalid),
+             "wouldSkipPairBufferInvalidateSlot reports AlreadyInvalid for invalidated slot");
 }
 
 void testPairBufferWouldSkipWriteSlotGuards() {

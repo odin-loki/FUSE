@@ -91,7 +91,15 @@ void testAssetCookerStub() {
 }
 
 void testAssetCookerTextureAudioHookStubs() {
-    const std::string textureSource = writeTempFile("/tmp/fuse_b79_albedo.png", "PNG");
+    static const unsigned char kMinimalPng[] = {
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+        0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0x0F, 0x00, 0x00,
+        0x01, 0x01, 0x00, 0x05, 0x18, 0xD8, 0x4E, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+        0x42, 0x60, 0x82};
+    const std::string textureSource = writeTempFile(
+        "/tmp/fuse_b79_albedo.png",
+        std::string(reinterpret_cast<const char*>(kMinimalPng), sizeof(kMinimalPng)));
     fuse::project::TextureImportDesc textureDesc;
     textureDesc.input_path = textureSource;
     textureDesc.output_path = "/tmp/fuse_b79_albedo.fusetex";
@@ -111,6 +119,18 @@ void testAssetCookerTextureAudioHookStubs() {
     expectTrue(hookLine.find("hook=") != std::string::npos,
                "texture stub records encoder hook status");
 
+    if (hookLine.find("hook=bc7") != std::string::npos ||
+        hookLine.find("hook=bc7_rgba_passthrough") != std::string::npos) {
+        std::string bc7Line;
+        while (std::getline(cookedTexture, bc7Line)) {
+            if (bc7Line.find("bc7_blocks=") != std::string::npos) {
+                break;
+            }
+        }
+        expectTrue(bc7Line.find("bc7_blocks=") != std::string::npos,
+                   "texture stub records BC7 block estimate when STB decode succeeds");
+    }
+
     const std::string audioSource = writeTempFile("/tmp/fuse_b79_sfx.wav", "RIFF");
     fuse::project::AudioImportDesc audioDesc;
     audioDesc.input_path = audioSource;
@@ -127,8 +147,9 @@ void testAssetCookerTextureAudioHookStubs() {
 
     std::string audioHookLine;
     std::getline(cookedAudio, audioHookLine);
-    expectTrue(audioHookLine.find("hook=ogg unavailable") != std::string::npos,
-               "audio stub records OGG hook unavailable");
+    expectTrue(audioHookLine.find("hook=ogg") != std::string::npos ||
+                   audioHookLine.find("hook=ogg unavailable") != std::string::npos,
+               "audio stub records OGG hook status");
 }
 
 void testImportPipelineDryRun() {

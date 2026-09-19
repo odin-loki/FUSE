@@ -40,7 +40,10 @@ void testGraphicsPipelineFromFixtures() {
     expectTrue(bootstrap != nullptr, "bootstrap allocated for graphics pipeline tests");
 
     fuse::renderer::VulkanDevice* device = bootstrap->device();
-    expectTrue(device != nullptr, "device pointer available");
+    if (device == nullptr) {
+        expectTrue(!bootstrap->status().deviceReady, "device unavailable without Vulkan loader");
+        return;
+    }
 
     auto renderPass = fuse::renderer::RenderPass::create(*device);
     expectTrue(renderPass != nullptr && renderPass->isValid(), "render pass created");
@@ -91,13 +94,19 @@ void testRasterPathClearTriangle() {
     auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
     expectTrue(bootstrap != nullptr, "bootstrap allocated for raster path tests");
 
+    fuse::renderer::VulkanDevice* device = bootstrap->device();
+    if (device == nullptr) {
+        expectTrue(!bootstrap->status().deviceReady, "device unavailable without Vulkan loader");
+        return;
+    }
+
     const std::string rasterVertPath = fixturePath("minimal.vert.spv");
     const std::string rasterFragPath = fixturePath("minimal.frag.spv");
     fuse::renderer::RasterPathDesc rasterDesc{};
     rasterDesc.vertexSpirvPath = rasterVertPath.c_str();
     rasterDesc.fragmentSpirvPath = rasterFragPath.c_str();
 
-    auto rasterPath = fuse::renderer::RasterPath::create(*bootstrap->device(), rasterDesc);
+    auto rasterPath = fuse::renderer::RasterPath::create(*device, rasterDesc);
     expectTrue(rasterPath != nullptr, "raster path allocated");
 #if defined(FUSE_VULKAN_BACKEND)
     if (bootstrap->status().deviceReady) {

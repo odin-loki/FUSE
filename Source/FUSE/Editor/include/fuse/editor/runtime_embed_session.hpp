@@ -20,6 +20,7 @@ struct RuntimeEmbedSession {
     u32 wireDatablockEntries = 0;
     u32 wireMaterialEntries = 0;
     u32 wireEcsMaterialApplied = 0;
+    u32 wireEcsSpawnApplied = 0;
     bool usesExternalSwapchain = false;
     u32 submittedFrames = 0;
     bool worldLoaded = false;

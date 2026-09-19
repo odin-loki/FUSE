@@ -44,7 +44,7 @@ private:
     u32 m_capacity = kDefaultCapacity;
     u32 m_start = 0;
     u32 m_size = 0;
-    s32 m_navigationCursor = -1;
+    s32 m_navigationCursor = 0;
 };
 
 } // namespace fuse::script

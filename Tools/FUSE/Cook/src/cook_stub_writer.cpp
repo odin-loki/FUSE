@@ -142,6 +142,11 @@ CookStubWriteResult tryCookTextureBc7(const std::string& input_path, const std::
         return result;
     }
 
+    const u32 blockWidth = static_cast<u32>((width + 3) / 4);
+    const u32 blockHeight = static_cast<u32>((height + 3) / 4);
+    const u32 bc7Blocks = blockWidth * blockHeight;
+    const u32 bc7PayloadBytes = bc7Blocks * 16u;
+
     stbi_image_free(pixels);
 
     std::ostringstream payload;
@@ -156,10 +161,12 @@ CookStubWriteResult tryCookTextureBc7(const std::string& input_path, const std::
     payload << "width=" << width << "\n";
     payload << "height=" << height << "\n";
     payload << "channels=4\n";
+    payload << "bc7_blocks=" << bc7Blocks << "\n";
+    payload << "bc7_bytes=" << bc7PayloadBytes << "\n";
 
     CookStubWriteResult written = writeTextStub(output_path, payload.str());
     if (written.ok) {
-        written.note = written.ok ? "texture rgba decode cooked" : written.note;
+        written.note = "texture rgba decode cooked";
     }
     return written;
 #else
@@ -215,9 +222,14 @@ CookStubWriteResult tryCookAudioOgg(const std::string& input_path, const std::st
 
 CookStubWriteResult write_mesh_stub(const std::string& input_path, const std::string& output_path,
                                     u32 lod_count, bool compressed) {
-    const CookStubWriteResult hook = tryCookMeshAssimp(input_path, output_path, lod_count, compressed);
-    if (hook.ok) {
-        return hook;
+    CookStubWriteResult hook{};
+    if (!input_path.empty()) {
+        hook = tryCookMeshAssimp(input_path, output_path, lod_count, compressed);
+        if (hook.ok) {
+            return hook;
+        }
+    } else {
+        hook.note = "missing_input_path";
     }
 
     std::ostringstream payload;

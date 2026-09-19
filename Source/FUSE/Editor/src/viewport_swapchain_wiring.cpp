@@ -28,7 +28,7 @@ ViewportSwapchainWiringResult wireExternalSwapchainFromHandoff(fuse::renderer::R
     if (handoff.qtStubSurface) {
         result.attempted = true;
         result.fellBackToHeadless = true;
-        result.note = "qt_winid_stub_not_vk_surface";
+        result.note = handoff.handoffSource != nullptr ? handoff.handoffSource : "qt_winid_stub_not_vk_surface";
         handoff.pending = false;
         handoff.consumed = true;
         return result;

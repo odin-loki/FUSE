@@ -434,6 +434,50 @@ void testViewportVulkanSurfaceBootstrapStub() {
     expectTrue(!mutableResult.valid, "destroy clears bootstrap result");
 }
 
+void testRuntimeViewportQVulkanSurfaceHandoffCommand() {
+    fuse::editor::EditorHost host;
+
+    fuse::editor::EditorCommand stubCmd;
+    stubCmd.kind = fuse::editor::CommandKind::SetProperty;
+    stubCmd.propertyName = "viewport.vk_surface_qt_stub";
+    stubCmd.propertyValue = "0";
+    host.postFromUi(std::move(stubCmd));
+
+    fuse::editor::EditorCommand widthCmd;
+    widthCmd.kind = fuse::editor::CommandKind::SetProperty;
+    widthCmd.propertyName = "viewport.width";
+    widthCmd.propertyValue = "1024";
+    host.postFromUi(std::move(widthCmd));
+
+    fuse::editor::EditorCommand heightCmd;
+    heightCmd.kind = fuse::editor::CommandKind::SetProperty;
+    heightCmd.propertyName = "viewport.height";
+    heightCmd.propertyValue = "768";
+    host.postFromUi(std::move(heightCmd));
+
+    host.gameTick();
+
+    fuse::editor::EditorCommand surfaceCmd;
+    surfaceCmd.kind = fuse::editor::CommandKind::SetProperty;
+    surfaceCmd.propertyName = "viewport.vk_surface_handle";
+    surfaceCmd.propertyValue = "9001";
+    host.postFromUi(std::move(surfaceCmd));
+
+    host.gameTick();
+
+    expectTrue(host.runtimeViewport().swapchainHandoff().handoffSource != nullptr,
+               "QVulkan handoff source string present");
+    const std::string handoffSource(host.runtimeViewport().swapchainHandoff().handoffSource);
+    expectTrue(handoffSource == "qt_winid_stub" || handoffSource == "qt_vulkan_instance",
+               "handoff source tagged for stub or real Qt Vulkan path");
+    if (handoffSource == "qt_vulkan_instance") {
+        expectTrue(!host.runtimeViewport().swapchainHandoff().qtStubSurface,
+                   "real Qt Vulkan path clears stub surface flag");
+        expectTrue(host.runtimeViewport().swapchainHandoff().qtRealSurface,
+                   "real Qt Vulkan path marks qtRealSurface");
+    }
+}
+
 void testRuntimeViewportQtSurfaceHandoffCommand() {
     fuse::editor::EditorHost host;
 
@@ -588,6 +632,7 @@ int main() {
     testHostUndoDeleteViaQueue();
     testRuntimeViewportLoadsProjectRoot();
     testRuntimeViewportSurfaceHandoffStub();
+    testRuntimeViewportQVulkanSurfaceHandoffCommand();
     testRuntimeViewportQtSurfaceHandoffCommand();
     testViewportVulkanSurfaceBootstrapStub();
     testRuntimeViewportHookTicksWithProject();

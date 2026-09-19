@@ -5,7 +5,24 @@
 #include <vulkan/vulkan.h>
 #endif
 
+#include <cstdlib>
+
 namespace fuse::editor::qt {
+
+namespace {
+
+bool hasDisplayServer() {
+#if defined(__linux__)
+    const char* display = std::getenv("DISPLAY");
+    const char* wayland = std::getenv("WAYLAND_DISPLAY");
+    return (display != nullptr && display[0] != '\0') ||
+           (wayland != nullptr && wayland[0] != '\0');
+#else
+    return true;
+#endif
+}
+
+} // namespace
 
 bool ViewportQtVulkanSurface::initialize(QWindow* window) {
     m_nativeSurface = nullptr;
@@ -13,6 +30,11 @@ bool ViewportQtVulkanSurface::initialize(QWindow* window) {
 
     if (window == nullptr) {
         m_note = "null_window";
+        return false;
+    }
+
+    if (!hasDisplayServer()) {
+        m_note = "headless_no_display_server";
         return false;
     }
 

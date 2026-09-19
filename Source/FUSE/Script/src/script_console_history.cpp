@@ -62,7 +62,7 @@ void ScriptConsoleHistoryBuffer::clear() {
     m_entries.clear();
     m_start = 0;
     m_size = 0;
-    m_navigationCursor = -1;
+    m_navigationCursor = 0;
 }
 
 const std::string& ScriptConsoleHistoryBuffer::newest() const {

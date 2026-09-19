@@ -1,6 +1,8 @@
 #include <fuse/scene/wire_runtime_bind.hpp>
 
 #include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/spawn_marker.hpp>
+#include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
 
 namespace fuse::scene {
@@ -126,9 +128,46 @@ WireRuntimeBindResult applyWireBindingsToEcs(
             continue;
         }
 
+        const ecs::EntityID entity = entityIt->second;
+        if (!registry.has<ecs::SpawnMarker>(entity)) {
+            registry.add<ecs::SpawnMarker>(entity);
+        }
+
+        ecs::SpawnMarker* spawn = registry.get<ecs::SpawnMarker>(entity);
+        if (spawn == nullptr) {
+            ++result.skipped;
+            continue;
+        }
+
+        spawn->datablock_id = hashWireRefName(datablock.refName);
+        spawn->active = true;
+        ++result.ecsSpawnApplied;
         ++result.ecsDatablockResolved;
     }
 
+    return result;
+}
+
+WireRuntimeBindResult applyWireBindingsFromScene(ecs::Registry& registry, const Scene& scene) {
+    LegacyDatablockTable table;
+    WireRuntimeBindResult result = populateLegacyTableFromScene(scene, table);
+
+    std::unordered_map<std::string, ecs::EntityID> entitiesByName;
+    for (const SceneEntity& entity : scene.entities()) {
+        if (isWireStubEntityName(entity.name)) {
+            continue;
+        }
+
+        const ecs::EntityID ecsEntity = registry.create();
+        registry.add<ecs::Transform>(ecsEntity);
+        entitiesByName.emplace(entity.name, ecsEntity);
+    }
+
+    const WireRuntimeBindResult applied = applyWireBindingsToEcs(registry, entitiesByName, table);
+    result.ecsMaterialApplied = applied.ecsMaterialApplied;
+    result.ecsSpawnApplied = applied.ecsSpawnApplied;
+    result.ecsDatablockResolved = applied.ecsDatablockResolved;
+    result.skipped += applied.skipped;
     return result;
 }
 

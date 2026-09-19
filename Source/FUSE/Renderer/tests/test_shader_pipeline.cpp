@@ -65,7 +65,10 @@ void testShaderModuleAndPipelineLayout() {
 
     const std::string vertPath = fixturePath("minimal.vert.spv");
     fuse::renderer::VulkanDevice* device = bootstrap->device();
-    expectTrue(device != nullptr, "device pointer available");
+    if (device == nullptr) {
+        expectTrue(!bootstrap->status().deviceReady, "device unavailable without Vulkan loader");
+        return;
+    }
 
     auto shaderModule = fuse::renderer::ShaderModule::createFromFile(
         *device, fuse::renderer::ShaderStage::Vertex, vertPath.c_str());

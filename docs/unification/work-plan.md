@@ -355,7 +355,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U2 incremental — expand Engine probe + SimObject/StringTable route; U6 Qt External GPU viewport (real `QVulkanInstance` handoff + null WSI headless path); U7 link Assimp/BC7/OGG when vendored; Track B post–WP-06i (full Qt embed teardown, driver-wired timeline stress on toolkit CI).
+**Next:** U2 incremental — expand Engine probe + SimObject/StringTable route; U6 full Qt `VkSurfaceKHR` present under real WSI; U7 real BC7 encoder + libvorbisenc on CI images; Track B post–WP-06i (full Qt embed teardown, driver-wired timeline stress on toolkit CI).
 
 ---
 

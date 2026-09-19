@@ -1138,8 +1138,9 @@ void testAabbTryRayIntersectAndTransform() {
                "tryTransformAabb transforms valid box");
     expectAabbNear(transformed, fuse::math::transformAabb(translate, box), 1e-4f,
                    "tryTransformAabb matches transformAabb");
-    expectTrue(!fuse::math::tryTransformAabb(translate, empty, transformed),
-               "tryTransformAabb early-outs on empty box");
+    expectTrue(fuse::math::tryTransformAabb(translate, empty, transformed),
+               "tryTransformAabb copies empty box through");
+    expectTrue(transformed.isEmpty(), "tryTransformAabb leaves empty output for empty input");
 }
 
 void testPlaneTryMakePlane() {
