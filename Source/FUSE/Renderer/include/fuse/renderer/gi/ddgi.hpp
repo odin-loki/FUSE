@@ -341,6 +341,7 @@ const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason)
 /// True when a probe-grid source reject reason would block sampling (B5.6 deepen pass).
 bool probeGridSourceRejectReasonIsBlocking(ProbeGridSourceRejectReason reason);
 /// Classify why sample-coord validation would reject; vacuously returns `None` on valid coords (B5.6 deepen).
+/// Classify why sample-coord validation would reject; vacuously `None` on valid coords (B5.6 deepen).
 
 /// Why a cache-index lookup preflight rejected the request (B5.6 deepen).
 enum class CacheIndexRejectReason : u8 {
@@ -393,6 +394,9 @@ ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDe
                                                                     const ProbeSampleCoords& coords,
                                                                     const IrradianceCacheEntry* cache,
                                                                     u32 cache_count);
+/// Classify why coord-based probe sample preflight would reject (B5.6 deepen).
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(
+    const DDGIDesc& desc,
 
 /// Why probe scheduling preflight rejected the request (B5.6 deepen).
 /// Human-readable label for cache-index reject reasons (logging / tests).
@@ -404,6 +408,7 @@ CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc, u32 probe_
 CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
                                                 u32 probe_index,
                                                 u32 cache_count);
+/// Classify why cache-index preflight would reject (B5.6 deepen).
 /// Classify cache-index preflight including null-cache rejection (B5.6 deepen).
 CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
                                                 const IrradianceCacheEntry* cache,
@@ -423,6 +428,7 @@ enum class ProbeUpdateLaunchRejectReason : u8 {
 const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason);
 /// Classify why probe-update launch preflight would reject — same ordering as `tryCanLaunchDdgiProbeUpdate`.
 /// Classify why probe-update launch preflight would reject; vacuously returns `None` when launchable (B5.6 deepen).
+/// Classify why probe-update launch preflight would reject (B5.6 deepen).
 ProbeUpdateLaunchRejectReason classifyProbeUpdateLaunchReject(const DDGIDesc& desc,
                                                               const u32* probe_indices,
                                                               u32 probe_count);
@@ -461,6 +467,7 @@ enum class ProbeScheduleRejectReason : u8 {
 const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
 /// Classify why probe scheduling preflight would reject — same ordering as `tryCanScheduleProbeUpdates`.
 /// Classify why probe scheduling preflight would reject; vacuously returns `None` when schedulable (B5.6 deepen).
+/// Classify why probe scheduling preflight would reject (B5.6 deepen).
 ProbeScheduleRejectReason classifyProbeScheduleReject(u32 probe_count,
                                                       u32 max_indices,
                                                       const u32* out_indices,
@@ -673,6 +680,10 @@ struct ProbeGridLayout {
     /// Early-out when sample-coord validation would reject; same ordering as `isValidProbeSampleCoords`.
     static bool wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Grid-only sample-coord preflight with reject-reason diagnostics.
+    /// True when sample coords would be clamped into the valid grid range (B5.6 deepen).
+    /// Sample-coord preflight; false when validation would reject (B5.6 deepen).
+    static bool preflightProbeSampleCoords(const DDGIDesc& desc,
+                                           ProbeSampleCoordsRejectReason* reason = nullptr);
     /// Diagnose why sample-coord validation would reject; vacuously succeeds on valid coords.
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
@@ -1131,6 +1142,10 @@ bool tryValidateCacheIndex(const DDGIDesc& desc,
 bool shouldSkipCacheIndexLookup(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
 /// Early-out when cache-index lookup would be rejected — includes null-cache check.
 bool shouldSkipCacheIndexLookup(const DDGIDesc& desc,
+/// Early-out when cache-index lookup would be rejected — same ordering as `wouldSkipCacheIndexLookup` (B5.6 deepen).
+/// Early-out when cache-index lookup would be rejected — includes null-cache check (B5.6 deepen).
+/// Cache-index preflight; false when validation would reject (B5.6 deepen).
+/// Cache-index preflight including null-cache check (B5.6 deepen).
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -1215,6 +1230,13 @@ bool wouldSkipProbeSchedule(u32 probe_count,
 bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
 /// Early-out when probe scheduling would be rejected — mirrors `wouldSkipProbeSchedule`.
 bool shouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
+/// Early-out when probe scheduling would be rejected — same ordering as `wouldSkipProbeSchedule` (B5.6 deepen).
+/// Probe-schedule preflight; false when scheduling would be rejected (B5.6 deepen).
+bool preflightProbeSchedule(u32 probe_count,
+                            u32 max_indices,
+                            const u32* out_indices,
+                            u32* out_count,
+                            ProbeScheduleRejectReason* reason = nullptr);
 /// Diagnose why probe scheduling preflight would reject; vacuously succeeds when schedulable.
 bool tryCanScheduleProbeUpdates(u32 probe_count,
                                u32 max_indices,
@@ -1417,6 +1439,10 @@ ProbeUpdateLaunchRejectReason classifyProbeUpdateLaunchReject(const DDGIDesc& de
                                                               const u32* probe_indices,
                                                               u32 probe_count);
 bool wouldSkipDdgiProbeUpdate(const DDGIDesc& desc,
+/// Early-out when probe-update launch would be rejected — same ordering as `wouldSkipDdgiProbeUpdate` (B5.6 deepen).
+bool shouldSkipDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count);
+/// Probe-update launch preflight; false when launch would be rejected (B5.6 deepen).
+bool preflightDdgiProbeUpdate(const DDGIDesc& desc,
                               u32 probe_count,
                               ProbeUpdateLaunchRejectReason* reason = nullptr);
 /// Diagnose why probe-update launch preflight would reject; vacuously succeeds when launchable.
