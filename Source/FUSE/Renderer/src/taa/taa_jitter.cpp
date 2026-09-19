@@ -67,6 +67,18 @@ bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterG
     return reject == TaaJitterGuardRejectReason::None;
 }
 
+bool tryPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason& reason) {
+    return preflightTaaJitterNdc(width, height, sequenceLength, &reason);
+}
+
+bool shouldSkipTaaJitterSync(u32 frameIndex, u32 sequenceLength) {
+    return !preflightTaaJitterSync(frameIndex, sequenceLength);
+}
+
+bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength) {
+    return !preflightTaaJitterNdc(width, height, sequenceLength);
+}
+
 bool TaaJitterLayout::validateSequenceLength(u32 length) {
     return length > 0u && length <= kTaaMaxJitterSequenceLength;
 }
