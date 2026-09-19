@@ -624,3 +624,11 @@ inline ContactBufferFrictionBasisPreflight preflight_contact_buffer_friction_bas
     ContactBufferFrictionBasisPreflight preflight{};
     preflight.emptyBuffer = preflight.reason == ContactBufferFrictionBasisRejectReason::EmptyBuffer;
     preflight.allValid = preflight.reason == ContactBufferFrictionBasisRejectReason::AllValid;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-950d ---
+inline ContactBufferCompactionRejectReason contactBufferCompactionRejectReason(const ContactBufferSoA& buffer) {
+inline ContactBufferToVectorRejectReason contactBufferToVectorRejectReason(const ContactBufferSoA& buffer) {
+inline u32 compactContactBufferWithPreflight(ContactBufferSoA& buffer) {
+    if (!preflightContactBufferCompaction(buffer).needsCompaction()) {
+inline u32 compactAndClampContactBufferWithPreflight(ContactBufferSoA& buffer) {
+    if (!preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp()) {

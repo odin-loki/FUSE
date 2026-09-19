@@ -466,3 +466,16 @@ FUSE_PHYSICS_INLINE bool should_skip_contact_pair_deepen_followup_dispatch(
 
 // --- deepen additive from b4-narrowphase-deepen-guards-04be ---
     ContactPairDeepenPreflight pair{};
+
+// --- deepen additive from deepen-b4-narrowphase-guards-950d ---
+inline ContactPairRejectReason contact_pair_deepen_pass_reject_reason(
+        return ContactPairRejectReason::PlanePlane;
+inline const char* contact_pair_deepen_pass_reject_reason_name(ContactPairRejectReason reason) {
+    if (reason == ContactPairRejectReason::PlanePlane) {
+    ContactPairRejectReason expected) {
+inline ContactPairDeepenPassPreflight preflight_contact_pair_deepen_pass(
+    ContactPairDeepenPassPreflight preflight{};
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+inline bool should_skip_contact_pair_deepen_pass_dispatch(
+    return contact_pair_deepen_pass_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+        if (!should_skip_contact_pair_deepen_pass_dispatch(pair, bodies, shapes)) {

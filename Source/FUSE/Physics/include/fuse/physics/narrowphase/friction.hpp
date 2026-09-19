@@ -273,3 +273,30 @@ FrictionBasisRejectReason friction_basis_stale_reject_reason(
 // --- deepen additive from b4-narrowphase-deepen-guards-04be ---
     const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
     if (preflight.reason != FrictionBasisRejectReason::None) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-950d ---
+enum class FrictionTangentComputeRejectReason : u8 {
+inline const char* friction_tangent_compute_reject_reason_name(FrictionTangentComputeRejectReason reason) {
+    case FrictionTangentComputeRejectReason::None:
+    case FrictionTangentComputeRejectReason::EmptyManifold:
+    case FrictionTangentComputeRejectReason::InvalidNormal:
+    case FrictionTangentComputeRejectReason::CachedBasis:
+inline FrictionTangentComputeRejectReason friction_tangent_compute_reject_reason(
+    const FrictionBasisRejectReason basisReason = friction_basis_reject_reason(manifold);
+    if (basisReason == FrictionBasisRejectReason::EmptyManifold) {
+        return FrictionTangentComputeRejectReason::EmptyManifold;
+    if (basisReason == FrictionBasisRejectReason::InvalidNormal) {
+        return FrictionTangentComputeRejectReason::InvalidNormal;
+        return FrictionTangentComputeRejectReason::CachedBasis;
+    return FrictionTangentComputeRejectReason::None;
+    FrictionTangentComputeRejectReason expected,
+struct FrictionTangentComputePreflight {
+    FrictionTangentComputeRejectReason reason = FrictionTangentComputeRejectReason::None;
+        return !skipped && reason == FrictionTangentComputeRejectReason::None && needsCompute;
+        return skipped || reason != FrictionTangentComputeRejectReason::None || !needsCompute;
+inline FrictionTangentComputePreflight preflight_friction_tangent_compute(
+    FrictionTangentComputePreflight preflight{};
+    if (preflight.reason == FrictionTangentComputeRejectReason::EmptyManifold ||
+        preflight.reason == FrictionTangentComputeRejectReason::InvalidNormal) {
+    if (preflight.reason == FrictionTangentComputeRejectReason::CachedBasis) {
+    const FrictionTangentComputePreflight preflight = preflight_friction_tangent_compute(manifold, epsilon);

@@ -3513,3 +3513,21 @@ void testFrictionComputeTangentsPreflightGuards() {
     expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight can dispatch valid pair");
     testManifoldPruneAndFinalizePreflightGuards();
     testFrictionComputeTangentsPreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-950d ---
+void testContactBufferSoAIterationGuards() {
+void testContactBufferWriteSlotPreflightGuards() {
+void testContactBufferClampAndExportGuards() {
+        fuse::physics::narrowphase::compactAndClampContactBufferWithPreflight(buffer);
+void testContactPairDeepenPassPlanePlaneGuards() {
+void testManifoldNormalizeDeepenPassGuards() {
+            empty, fuse::physics::narrowphase::ManifoldNormalizeRejectReason::EmptyManifold),
+    const auto pruneFinalizePreflight =
+    expectTrue(pruneFinalizePreflight.can_finalize(), "prune/finalize preflight can finalize normalized manifold");
+void testFrictionTangentComputeDeepenPassGuards() {
+            empty, fuse::physics::narrowphase::FrictionTangentComputeRejectReason::EmptyManifold),
+            withBasis, fuse::physics::narrowphase::FrictionTangentComputeRejectReason::CachedBasis),
+                fuse::physics::narrowphase::FrictionTangentComputeRejectReason::CachedBasis),
+void testRunNarrowphaseBufferPreflightGuards() {
+    testContactBufferWriteSlotPreflightGuards();
+    testRunNarrowphaseBufferPreflightGuards();

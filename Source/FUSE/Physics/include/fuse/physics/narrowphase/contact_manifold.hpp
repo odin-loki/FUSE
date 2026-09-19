@@ -408,3 +408,26 @@ inline ManifoldPruneAndFinalizePreflight preflight_manifold_prune_and_finalize(
     const ManifoldPruneAndFinalizePreflight preflight = preflight_manifold_prune_and_finalize(
         if (preflight.finalize.reason == ManifoldFinalizeRejectReason::AllSeparatedAfterPrune ||
             preflight.prune.reason == ManifoldPruneRejectReason::AllSeparated) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-950d ---
+enum class ManifoldNormalizeRejectReason : u8 {
+inline const char* manifold_normalize_reject_reason_name(ManifoldNormalizeRejectReason reason) {
+    case ManifoldNormalizeRejectReason::None:
+    case ManifoldNormalizeRejectReason::EmptyManifold:
+    case ManifoldNormalizeRejectReason::InvalidNormal:
+inline ManifoldNormalizeRejectReason manifold_normalize_reject_reason(const ContactManifold& manifold) {
+        return ManifoldNormalizeRejectReason::EmptyManifold;
+        return ManifoldNormalizeRejectReason::InvalidNormal;
+    return ManifoldNormalizeRejectReason::None;
+    ManifoldNormalizeRejectReason expected) {
+struct ManifoldNormalizePreflight {
+    ManifoldNormalizeRejectReason reason = ManifoldNormalizeRejectReason::None;
+        return !skipped && reason == ManifoldNormalizeRejectReason::None && needsNormalize;
+        return skipped || reason != ManifoldNormalizeRejectReason::None || !needsNormalize;
+inline ManifoldNormalizePreflight preflight_manifold_normalize(
+    ManifoldNormalizePreflight preflight{};
+    if (preflight.reason != ManifoldNormalizeRejectReason::None) {
+    const ManifoldNormalizePreflight preflight = preflight_manifold_normalize(manifold, lengthEpsilon);
+inline ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
+    ManifoldPruneFinalizePreflight preflight{};
+    if (preflight.prune.reason != ManifoldPruneRejectReason::None) {

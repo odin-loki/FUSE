@@ -299,3 +299,10 @@ FUSE_PHYSICS_INLINE NarrowphaseDispatchPreflight preflight_run_narrowphase_into_
 
 // --- deepen additive from b4-narrowphase-deepen-guards-04be ---
 inline NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-950d ---
+struct NarrowphaseBufferPreflight {
+    ContactBufferCompactAndClampPreflight bufferPostPass{};
+inline NarrowphaseBufferPreflight preflight_run_narrowphase_into_buffer(
+    NarrowphaseBufferPreflight preflight{};
+    preflight.bufferPostPass = preflightContactBufferCompactAndClamp(buffer);
