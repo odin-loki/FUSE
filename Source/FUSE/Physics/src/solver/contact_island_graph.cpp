@@ -13,11 +13,11 @@ bool ContactIslandGraph::isDistanceInBodyRange(const DistanceConstraint& constra
 }
 
 bool is_contact_in_body_range(const narrowphase::ContactManifold& contact, u32 bodyCount) {
-    return ContactIslandGraph::isContactInBodyRange(contact, bodyCount);
+    return contact.bodyA < bodyCount && contact.bodyB < bodyCount;
 }
 
 bool is_distance_in_body_range(const DistanceConstraint& constraint, u32 bodyCount) {
-    return ContactIslandGraph::isDistanceInBodyRange(constraint, bodyCount);
+    return constraint.bodyA < bodyCount && constraint.bodyB < bodyCount;
 }
 
 IslandGraphBuildPreflight preflight_graph_build(
