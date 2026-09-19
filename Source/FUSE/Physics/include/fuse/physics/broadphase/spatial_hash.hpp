@@ -1216,3 +1216,6 @@ MergeBroadphaseRejectReason mergeBroadphaseRejectReason(
     MergeBroadphaseRejectReason expected);
     MergeBroadphaseRejectReason reason = MergeBroadphaseRejectReason::None;
     bool canMerge() const { return reason == MergeBroadphaseRejectReason::None; }
+
+// --- deepen additive from deepen-b4-broadphase-guards-a79d ---
+FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellOccupancyPreflight& preflight) {

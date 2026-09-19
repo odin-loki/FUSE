@@ -1106,3 +1106,6 @@ MergeBroadphaseRejectReason mergeBroadphaseRejectReason(
     return MergeBroadphaseRejectReason::None;
     MergeBroadphaseRejectReason expected) {
     preflight.reason = mergeBroadphaseRejectReason(bodies, shapes);
+
+// --- deepen additive from deepen-b4-broadphase-guards-a79d ---
+        if (canSkipCellOccupancyIteration(preflightCellOccupancy(range, maxOccupancy))) {

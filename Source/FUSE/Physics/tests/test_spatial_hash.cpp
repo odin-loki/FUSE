@@ -2739,3 +2739,22 @@ void testPairBufferSortAndCompactionSkipGuards() {
     const fuse::physics::broadphase::CellOccupancyPreflight emptyRangePreflight =
     expectEq(static_cast<fuse::u32>(emptyRangePreflight.reason),
     testMergeBroadphaseRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-a79d ---
+             "preflightBroadphaseMerge carries reject reason");
+void testPairBufferCompactionClampRejectReasonGuards() {
+    expectTrue(compactionPreflight.needsCompaction(), "compaction preflight requests invalid slot work");
+    expectEq(static_cast<fuse::u32>(compactionPreflight.reason),
+                   clampBuffer, fuse::physics::broadphase::PairBufferClampRejectReason::WithinCapacity),
+void testPairBufferSkipPredicateGuards() {
+    const fuse::physics::broadphase::CellOccupancyPreflight validPreflight =
+    expectEq(static_cast<fuse::u32>(validPreflight.reason),
+    expectTrue(validPreflight.canIterate(), "valid range preflight can iterate");
+    expectTrue(!fuse::physics::broadphase::canSkipCellOccupancyIteration(validPreflight),
+    const fuse::physics::broadphase::CellOccupancyPreflight emptyPreflight =
+    expectEq(static_cast<fuse::u32>(emptyPreflight.reason),
+    expectTrue(fuse::physics::broadphase::canSkipCellOccupancyIteration(emptyPreflight),
+    const fuse::physics::broadphase::CellOccupancyPreflight overBudgetPreflight =
+    expectEq(static_cast<fuse::u32>(overBudgetPreflight.reason),
+    expectTrue(overBudgetPreflight.exceedsBudget, "over-budget preflight marks exceedsBudget");
+    testPairBufferCompactionClampRejectReasonGuards();
