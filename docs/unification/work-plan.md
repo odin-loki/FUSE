@@ -123,7 +123,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Mobile** | Hybrid demo runs on iOS **or** Android device/sim; respect surface loss / background |
 | **Exit** | Demo: 3D clear + spinning 2D sprite one window (desktop + one mobile); TSan clean on cull path |
 | **Deps** | WP-05, WP-03 |
-| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B bindless composite GPU blit ✅ (WP-06f); CUDA interop/GLFW present/U6 surface handoff ✅ (WP-06g); CUDA interop fill + frame-sync progress + Qt surface stub ✅ (WP-06h); Qt `QVulkanInstance` bootstrap + load-stress stubs ✅ (WP-06i) — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
+| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B bindless composite GPU blit ✅ (WP-06f); CUDA interop/GLFW present/U6 surface handoff ✅ (WP-06g); CUDA interop fill + frame-sync progress + Qt surface stub ✅ (WP-06h); Qt `QVulkanInstance` bootstrap + load-stress stubs ✅ (WP-06i); Lavapipe teardown hardening + Qt embed/timeline stress ✅ (WP-06j) — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
 
 ---
 
@@ -228,6 +228,19 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Exit** | `fuse_editor_host` viewport Vulkan bootstrap test; `fuse_cuda_interop` load-stress tests; parallel `ctest -j` Lavapipe targets green; `fuse_cinematics` builds |
 | **Deps** | WP-06h |
 | **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06i |
+
+---
+
+### WP-06j — Track B Lavapipe teardown hardening + Qt embed/timeline stress
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M |
+| **Scope** | GPU drain on `FrameManager`/`VulkanDevice`/`VulkanBootstrap`/`HybridRendererBootstrap` teardown; `fuse_hybrid_vulkan_presentable` rapid create/render/shutdown rerun; ICD lock post-test quiesce + `RUN_SERIAL` on all Lavapipe targets; `stressViewportVulkanBootstrapTeardown` + `stressFrameSyncTeardownCycle` (headless-safe); keep serial `ctest -j1` green for Vulkan targets |
+| **MT note** | Teardown on render thread only; editor embed stress posts from UI, consumes on game thread |
+| **Exit** | `fuse_hybrid_vulkan_presentable` 8-cycle rapid rerun; `fuse_editor_host` + `fuse_editor_runtime_embed` teardown stress; `fuse_cuda_interop` timeline teardown cycle; Lavapipe ICD tests stable under `ctest -j1` |
+| **Deps** | WP-06i |
+| **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06j |
 
 ---
 
@@ -355,7 +368,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U2 incremental — expand Engine probe + SimObject/StringTable route; U6 full Qt `VkSurfaceKHR` present under real WSI; U7 real BC7 encoder + libvorbisenc on CI images; Track B post–WP-06i (full Qt embed teardown, driver-wired timeline stress on toolkit CI).
+**Next:** U2 incremental — expand Engine probe + SimObject/StringTable route; U6 full Qt `VkSurfaceKHR` present under real WSI; U7 real BC7 encoder + libvorbisenc on CI images; Track B post–WP-06j (full Qt viewport swapchain recreate on display, driver-wired timeline stress on NVIDIA CI).
 
 ---
 

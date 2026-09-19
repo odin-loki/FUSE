@@ -14,7 +14,10 @@ if(FUSE_BUILD_VULKAN)
     set(FUSE_VULKAN_ICD_LOCK_SCRIPT "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
     set(FUSE_VULKAN_TEST_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
     add_test(NAME fuse_editor_host COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_editor_host_tests>")
-    set_tests_properties(fuse_editor_host PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
+    set_tests_properties(fuse_editor_host PROPERTIES
+        ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
+        RUN_SERIAL TRUE
+    )
 else()
     add_test(NAME fuse_editor_host COMMAND fuse_editor_host_tests)
 endif()
@@ -27,7 +30,10 @@ target_link_libraries(fuse_editor_runtime_embed_tests PRIVATE fuse_editor_api fu
 if(FUSE_BUILD_VULKAN)
     target_link_libraries(fuse_editor_runtime_embed_tests PRIVATE fuse_hybrid fuse_rhi)
     add_test(NAME fuse_editor_runtime_embed COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_editor_runtime_embed_tests>")
-    set_tests_properties(fuse_editor_runtime_embed PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
+    set_tests_properties(fuse_editor_runtime_embed PROPERTIES
+        ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
+        RUN_SERIAL TRUE
+    )
 else()
     add_test(NAME fuse_editor_runtime_embed COMMAND fuse_editor_runtime_embed_tests)
 endif()

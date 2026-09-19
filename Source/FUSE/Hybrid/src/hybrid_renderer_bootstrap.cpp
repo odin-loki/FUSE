@@ -2,7 +2,13 @@
 
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
 
+#include <fuse/renderer/vk/fence_wait.hpp>
+
 #include <cstdint>
+
+#if defined(FUSE_VULKAN_BACKEND)
+#include <vulkan/vulkan.h>
+#endif
 
 namespace fuse::hybrid {
 
@@ -90,6 +96,21 @@ bool HybridRendererBootstrap::initialize() {
 void HybridRendererBootstrap::shutdown() {
     if (!m_status.initialized && !m_rendererBootstrap) {
         return;
+    }
+
+    if (m_rendererBootstrap != nullptr) {
+        fuse::renderer::FrameManager* frameManager = m_rendererBootstrap->frameManager();
+        if (frameManager != nullptr && frameManager->isReady()) {
+            waitAllInFlightFences(*frameManager);
+        }
+
+#if defined(FUSE_VULKAN_BACKEND)
+        fuse::renderer::VulkanDevice* device =
+            m_rendererBootstrap->rhiContext()->bootstrap().device();
+        if (device != nullptr && device->isValid()) {
+            vkDeviceWaitIdle(static_cast<VkDevice>(device->nativeHandle()));
+        }
+#endif
     }
 
     m_composer.setSharedRhiContext(nullptr);

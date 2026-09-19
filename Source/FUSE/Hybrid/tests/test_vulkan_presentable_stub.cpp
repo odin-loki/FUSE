@@ -166,6 +166,31 @@ void testHybridBootstrapHeadlessPresentable() {
     runtime->shutdown();
 }
 
+void testHybridBootstrapRapidTeardownRerun() {
+    constexpr fuse::u32 kCycles = 8u;
+    fuse::hybrid::HybridRendererBootstrapDesc desc{};
+    desc.presentable.backend = fuse::hybrid::PresentableBackend::Headless;
+    desc.presentable.vsyncMode = fuse::renderer::VsyncMode::Fifo;
+    desc.renderer.rhi.bootstrap.instance.enableValidation = false;
+
+    for (fuse::u32 cycle = 0; cycle < kCycles; ++cycle) {
+        auto runtime = fuse::hybrid::HybridRendererBootstrap::create(desc);
+        expectTrue(runtime != nullptr, "rapid rerun allocates hybrid runtime");
+        expectTrue(runtime->isReady(), "rapid rerun initializes hybrid runtime");
+
+        fuse::frame::FrameCtx frameCtx{};
+        frameCtx.frameIndex = cycle;
+        runtime->render(frameCtx);
+
+        expectTrue(runtime->presentPath() != nullptr, "rapid rerun wires present path");
+        expectTrue(runtime->presentPath()->status().presentedFrames >= 1u,
+                   "rapid rerun presents at least one frame");
+
+        runtime->shutdown();
+        expectTrue(!runtime->isReady(), "rapid rerun shutdown clears ready state");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -179,6 +204,7 @@ int main() {
     testVsyncModeOnPresentableDesc();
     testPresentPathThroughHybridBootstrap();
     testHybridBootstrapHeadlessPresentable();
+    testHybridBootstrapRapidTeardownRerun();
 
     fuse::core::shutdown();
 

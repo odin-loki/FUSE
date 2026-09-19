@@ -1,8 +1,10 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/viewport_vulkan_surface.hpp>
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 namespace {
 
@@ -57,6 +59,48 @@ void testRuntimeEmbedSwapchainHandoff() {
     expectTrue(session.surfaceHandoffConsumed, "surface handoff consumed on game thread");
 }
 
+void testRuntimeEmbedTeardownStress() {
+    fuse::editor::EditorHost host;
+    constexpr fuse::u32 kCycles = 4u;
+
+    for (fuse::u32 cycle = 0; cycle < kCycles; ++cycle) {
+        const fuse::u64 winId = 9000u + cycle;
+        const fuse::editor::ViewportVulkanSurfaceResult surface =
+            fuse::editor::createViewportVulkanSurfaceFromWinId(winId, 640u, 360u);
+        expectTrue(surface.valid, "embed teardown stress bootstraps viewport surface");
+
+        fuse::editor::EditorCommand widthCmd;
+        widthCmd.kind = fuse::editor::CommandKind::SetProperty;
+        widthCmd.propertyName = "viewport.width";
+        widthCmd.propertyValue = "640";
+        host.postFromUi(std::move(widthCmd));
+
+        fuse::editor::EditorCommand heightCmd;
+        heightCmd.kind = fuse::editor::CommandKind::SetProperty;
+        heightCmd.propertyName = "viewport.height";
+        heightCmd.propertyValue = "360";
+        host.postFromUi(std::move(heightCmd));
+
+        fuse::editor::EditorCommand surfaceCmd;
+        surfaceCmd.kind = fuse::editor::CommandKind::SetProperty;
+        surfaceCmd.propertyName = "viewport.vk_surface_handle";
+        surfaceCmd.propertyValue = std::to_string(winId);
+        host.postFromUi(std::move(surfaceCmd));
+
+        host.gameTick();
+
+        expectTrue(host.runtimeViewport().embedSession().surfaceHandoffConsumed,
+                   "embed teardown stress consumes surface handoff");
+
+        fuse::editor::ViewportVulkanSurfaceResult mutableSurface = surface;
+        fuse::editor::destroyViewportVulkanSurface(mutableSurface);
+        expectTrue(!mutableSurface.valid, "embed teardown stress destroys bootstrap surface");
+    }
+
+    expectTrue(host.runtimeViewport().embedSession().surfaceHandoffCount >= kCycles,
+               "embed teardown stress records repeated handoffs");
+}
+
 } // namespace
 
 int main() {
@@ -64,6 +108,7 @@ int main() {
     testRuntimeViewportHeadlessTick();
     testRuntimeEmbedSessionCounters();
     testRuntimeEmbedSwapchainHandoff();
+    testRuntimeEmbedTeardownStress();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

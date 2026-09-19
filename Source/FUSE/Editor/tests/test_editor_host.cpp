@@ -478,6 +478,20 @@ void testRuntimeViewportQVulkanSurfaceHandoffCommand() {
     }
 }
 
+void testViewportVulkanBootstrapTeardownStress() {
+    const fuse::editor::ViewportVulkanBootstrapStressResult stress =
+        fuse::editor::stressViewportVulkanBootstrapTeardown(6u);
+
+    expectTrue(stress.cyclesAttempted == 6u, "viewport teardown stress attempts all cycles");
+    expectTrue(stress.cyclesCompleted == 6u, "viewport teardown stress completes all cycles");
+#if defined(FUSE_HAS_QT_VULKAN)
+    expectTrue(stress.stubPathCycles + stress.realSurfaceCycles == 6u,
+               "Qt bootstrap stress records surface path per cycle");
+#else
+    expectTrue(stress.stubPathCycles == 6u, "headless CI uses winId stub path for every cycle");
+#endif
+}
+
 void testRuntimeViewportQtSurfaceHandoffCommand() {
     fuse::editor::EditorHost host;
 
@@ -647,6 +661,7 @@ int main() {
     testRuntimeViewportQVulkanSurfaceHandoffCommand();
     testRuntimeViewportQtSurfaceHandoffCommand();
     testViewportVulkanSurfaceBootstrapStub();
+    testViewportVulkanBootstrapTeardownStress();
     testRuntimeViewportHookTicksWithProject();
     testAiTreeProfilePickerPostsCommand();
     testAiAgentEntityBindingPostsCommand();

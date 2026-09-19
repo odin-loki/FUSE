@@ -3,7 +3,7 @@ set(FUSE_VULKAN_ICD_LOCK_FILE "${CMAKE_BINARY_DIR}/fuse_vulkan_icd.lock")
 set(FUSE_VULKAN_ICD_LOCK_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/run_vulkan_icd_locked.sh")
 file(TOUCH "${FUSE_VULKAN_ICD_LOCK_FILE}")
 file(WRITE "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
-"#!/usr/bin/env bash\nset -euo pipefail\nexec flock -x \"${FUSE_VULKAN_ICD_LOCK_FILE}\" \"$@\"\n")
+"#!/usr/bin/env bash\nset -euo pipefail\nflock -x \"${FUSE_VULKAN_ICD_LOCK_FILE}\" bash -c '\n  set -euo pipefail\n  sync\n  sleep 0.05\n  \"$@\"\n  sync\n  sleep 0.25\n' _ \"$@\"\n")
 file(CHMOD "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
     FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 
@@ -17,6 +17,8 @@ set(_fuse_vulkan_icd_tests
     fuse_vulkan_resources
     fuse_graphics_pipeline
     fuse_renderer_bootstrap
+    fuse_render_graph
+    fuse_composite_pass
 )
 
 add_executable(fuse_vulkan_bootstrap test_vulkan_bootstrap.cpp)
@@ -74,11 +76,11 @@ add_test(NAME fuse_graphics_pipeline COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$
 
 add_executable(fuse_render_graph test_render_graph.cpp)
 target_link_libraries(fuse_render_graph PRIVATE fuse_rhi)
-add_test(NAME fuse_render_graph COMMAND fuse_render_graph)
+add_test(NAME fuse_render_graph COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_render_graph>")
 
 add_executable(fuse_composite_pass test_composite_pass.cpp)
 target_link_libraries(fuse_composite_pass PRIVATE fuse_rhi)
-add_test(NAME fuse_composite_pass COMMAND fuse_composite_pass)
+add_test(NAME fuse_composite_pass COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_composite_pass>")
 
 add_executable(fuse_renderer_bootstrap test_renderer_bootstrap.cpp)
 target_link_libraries(fuse_renderer_bootstrap PRIVATE fuse_rhi)
@@ -134,6 +136,9 @@ add_test(NAME fuse_phase5_deferred_integration COMMAND fuse_phase5_deferred_inte
 
 foreach(_fuse_vulkan_test IN LISTS _fuse_vulkan_icd_tests)
     if(TEST ${_fuse_vulkan_test})
-        set_tests_properties(${_fuse_vulkan_test} PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
+        set_tests_properties(${_fuse_vulkan_test} PROPERTIES
+            ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
+            RUN_SERIAL TRUE
+        )
     endif()
 endforeach()

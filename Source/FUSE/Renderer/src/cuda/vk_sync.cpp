@@ -351,4 +351,26 @@ void FrameSyncPair::destroy(void* vkDevice) {
     cudaToVk.destroy(vkDevice);
 }
 
+FrameSyncTeardownStressResult stressFrameSyncTeardownCycle(void* vkDevice, void* vkPhysicalDevice,
+                                                           void* cudaStream, u32 cycles,
+                                                           u32 framesPerCycle) {
+    FrameSyncTeardownStressResult result{};
+    result.framesPerCycle = framesPerCycle;
+    if (cycles == 0u || framesPerCycle == 0u) {
+        return result;
+    }
+
+    for (u32 cycle = 0; cycle < cycles; ++cycle) {
+        FrameSyncPair pair = FrameSyncPair::create(vkDevice, vkPhysicalDevice);
+        const FrameSyncLoadStressResult load =
+            stressFrameSyncUnderLoad(pair, vkDevice, cudaStream, framesPerCycle);
+        result.totalFramesCompleted += load.framesCompleted;
+        result.finalProgress = load.finalProgress;
+        pair.destroy(vkDevice);
+        ++result.teardownCycles;
+    }
+
+    return result;
+}
+
 } // namespace fuse::renderer::cuda

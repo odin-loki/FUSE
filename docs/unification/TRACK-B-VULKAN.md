@@ -657,7 +657,23 @@ spirv-val Source/FUSE/Renderer/shaders/fixtures/composite.frag.spv
 | Lavapipe `RUN_SERIAL` ICD tests | **Done** | `ctest -j` no longer races parallel `VkInstance` creation |
 | Build hygiene (`test_profiler_assert`, `fuse_cinematics`) | **Done** | Restored corrupted deepen merges; `cue_preview` API fix |
 
-**Deferred (post–WP-06i):** full Qt viewport embed with consumed swapchain recreate; driver-wired timeline stress on NVIDIA CI; composite SPIR-V regen on CI runner.
+**Deferred (post–WP-06i):** ~~Lavapipe ICD teardown flake on rapid rerun~~ → WP-06j GPU drain + ICD lock quiesce; ~~Qt embed teardown stress~~ → WP-06j `stressViewportVulkanBootstrapTeardown`; driver-wired timeline stress on NVIDIA CI; composite SPIR-V regen on CI runner.
+
+---
+
+## WP-06j deliverables (Lavapipe teardown hardening + Qt embed/timeline stress)
+
+| Deliverable | Status | Notes |
+|-------------|--------|-------|
+| GPU drain before teardown | **Done** | `waitAllInFlightFences` + `vkDeviceWaitIdle` in `RendererBootstrap::shutdown` and `HybridRendererBootstrap::shutdown` (explicit paths — avoids Lavapipe destructor flake) |
+| `fuse_hybrid_vulkan_presentable` rapid rerun | **Done** | 8-cycle create → render → shutdown in one process (`testHybridBootstrapRapidTeardownRerun`) |
+| ICD lock post-test quiesce | **Done** | `run_vulkan_icd_locked.sh` runs test inside flock, then `sync` + brief sleep before releasing lock |
+| Lavapipe `RUN_SERIAL` on all ICD tests | **Done** | Renderer + Hybrid + Editor Vulkan ICD targets marked `RUN_SERIAL` |
+| `stressViewportVulkanBootstrapTeardown` | **Done** | Headless-safe Qt bootstrap create/destroy cycles; `fuse_editor_host` + `fuse_editor_runtime_embed` |
+| `stressFrameSyncTeardownCycle` | **Done** | Multi-cycle timeline bookkeeping + destroy; deepened `stressFrameSyncUnderLoad` to 16 frames |
+| Lavapipe serial `ctest -j1` | **Done** | Vulkan ICD targets green under serial ctest after teardown hardening |
+
+**Deferred (post–WP-06j):** full Qt viewport embed with consumed swapchain recreate on real display; driver-wired timeline stress on NVIDIA CI; composite SPIR-V regen on CI runner.
 
 ---
 

@@ -34,4 +34,34 @@ void destroyViewportVulkanSurface(ViewportVulkanSurfaceResult& result) {
     result = {};
 }
 
+ViewportVulkanBootstrapStressResult stressViewportVulkanBootstrapTeardown(u32 cycles) {
+    ViewportVulkanBootstrapStressResult stress{};
+    if (cycles == 0u) {
+        return stress;
+    }
+
+    for (u32 i = 0; i < cycles; ++i) {
+        ++stress.cyclesAttempted;
+        const u64 winId = static_cast<u64>(5000u + i);
+        ViewportVulkanSurfaceResult surface =
+            createViewportVulkanSurfaceFromWinId(winId, 640u, 360u);
+        if (!surface.valid) {
+            continue;
+        }
+
+        if (surface.stubPath) {
+            ++stress.stubPathCycles;
+        } else {
+            ++stress.realSurfaceCycles;
+        }
+
+        destroyViewportVulkanSurface(surface);
+        if (!surface.valid) {
+            ++stress.cyclesCompleted;
+        }
+    }
+
+    return stress;
+}
+
 } // namespace fuse::editor

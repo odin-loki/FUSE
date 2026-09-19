@@ -113,17 +113,29 @@ void testFrameSyncLoadStressStub() {
         fuse::renderer::cuda::FrameSyncPair::create(nullptr, nullptr);
 
     const fuse::renderer::cuda::FrameSyncLoadStressResult stress =
-        fuse::renderer::cuda::stressFrameSyncUnderLoad(pair, nullptr, nullptr, 8u);
+        fuse::renderer::cuda::stressFrameSyncUnderLoad(pair, nullptr, nullptr, 16u);
 
-    expectTrue(stress.framesAttempted == 8u, "stress attempts requested frame count");
-    expectTrue(stress.framesCompleted == 8u, "stub build completes bookkeeping for each frame");
-    expectTrue(stress.finalProgress.renderLaneSignals == 8u, "render lane signals scale with load");
-    expectTrue(stress.finalProgress.jobLaneWaits == 8u, "job lane waits scale with load");
-    expectTrue(stress.finalProgress.jobLaneSignals == 8u, "job lane signals scale with load");
-    expectTrue(stress.finalProgress.renderLaneWaits == 8u, "render lane waits scale with load");
-    expectTrue(stress.finalProgress.frameIndex == 8u, "final progress tracks last frame index");
+    expectTrue(stress.framesAttempted == 16u, "stress attempts requested frame count");
+    expectTrue(stress.framesCompleted == 16u, "stub build completes bookkeeping for each frame");
+    expectTrue(stress.finalProgress.renderLaneSignals == 16u, "render lane signals scale with load");
+    expectTrue(stress.finalProgress.jobLaneWaits == 16u, "job lane waits scale with load");
+    expectTrue(stress.finalProgress.jobLaneSignals == 16u, "job lane signals scale with load");
+    expectTrue(stress.finalProgress.renderLaneWaits == 16u, "render lane waits scale with load");
+    expectTrue(stress.finalProgress.frameIndex == 16u, "final progress tracks last frame index");
 
     pair.destroy(nullptr);
+}
+
+void testFrameSyncTeardownStressStub() {
+    const fuse::renderer::cuda::FrameSyncTeardownStressResult stress =
+        fuse::renderer::cuda::stressFrameSyncTeardownCycle(nullptr, nullptr, nullptr, 4u, 12u);
+
+    expectTrue(stress.teardownCycles == 4u, "teardown stress completes all cycles");
+    expectTrue(stress.framesPerCycle == 12u, "teardown stress records frames per cycle");
+    expectTrue(stress.totalFramesCompleted == 48u, "teardown stress completes every frame");
+    expectTrue(stress.finalProgress.renderLaneSignals == 12u,
+               "final cycle records render lane signal count");
+    expectTrue(stress.finalProgress.jobLaneWaits == 12u, "final cycle records job lane waits");
 }
 
 void testInteropFillLoadStressStub() {
@@ -216,6 +228,7 @@ int main() {
     testFrameSyncPairStub();
     testFrameSyncProgressStub();
     testFrameSyncLoadStressStub();
+    testFrameSyncTeardownStressStub();
     testInteropFillLoadStressStub();
     testInteropFillStub();
     testStreamManagerStub();

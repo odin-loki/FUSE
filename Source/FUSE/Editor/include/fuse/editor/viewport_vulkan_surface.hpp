@@ -22,4 +22,14 @@ struct ViewportVulkanSurfaceResult {
 /// Release any resources owned by a prior bootstrap (no-op for winId stubs).
 void destroyViewportVulkanSurface(ViewportVulkanSurfaceResult& result);
 
+/// Headless-safe Qt embed bootstrap + teardown stress (WP-06j).
+struct ViewportVulkanBootstrapStressResult {
+    u32 cyclesAttempted = 0;
+    u32 cyclesCompleted = 0;
+    u32 stubPathCycles = 0;
+    u32 realSurfaceCycles = 0;
+};
+
+[[nodiscard]] ViewportVulkanBootstrapStressResult stressViewportVulkanBootstrapTeardown(u32 cycles);
+
 } // namespace fuse::editor

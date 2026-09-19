@@ -1,6 +1,12 @@
 #include <fuse/core/init.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/renderer/renderer_bootstrap.hpp>
+#include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/fence_wait.hpp>
+
+#if defined(FUSE_VULKAN_BACKEND)
+#include <vulkan/vulkan.h>
+#endif
 
 namespace fuse::renderer {
 
@@ -54,6 +60,20 @@ bool RendererBootstrap::initialize() {
 void RendererBootstrap::shutdown() {
     if (!m_status.initialized && !m_rhiContext) {
         return;
+    }
+
+    if (m_rhiContext != nullptr) {
+        FrameManager* frameManager = m_rhiContext->bootstrap().frameManager();
+        if (frameManager != nullptr && frameManager->isReady()) {
+            waitAllInFlightFences(*frameManager);
+        }
+
+#if defined(FUSE_VULKAN_BACKEND)
+        VulkanDevice* device = m_rhiContext->bootstrap().device();
+        if (device != nullptr && device->isValid()) {
+            vkDeviceWaitIdle(static_cast<VkDevice>(device->nativeHandle()));
+        }
+#endif
     }
 
     m_rhiContext.reset();

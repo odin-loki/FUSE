@@ -72,4 +72,18 @@ struct FrameSyncLoadStressResult {
 [[nodiscard]] FrameSyncLoadStressResult stressFrameSyncUnderLoad(FrameSyncPair& pair, void* vkDevice,
                                                                  void* cudaStream, u32 frameCount);
 
+/// Multi-cycle create → stress → destroy for timeline bookkeeping (WP-06j).
+struct FrameSyncTeardownStressResult {
+    u32 teardownCycles = 0;
+    u32 framesPerCycle = 0;
+    u32 totalFramesCompleted = 0;
+    FrameSyncProgress finalProgress{};
+};
+
+[[nodiscard]] FrameSyncTeardownStressResult stressFrameSyncTeardownCycle(void* vkDevice,
+                                                                         void* vkPhysicalDevice,
+                                                                         void* cudaStream,
+                                                                         u32 cycles,
+                                                                         u32 framesPerCycle);
+
 } // namespace fuse::renderer::cuda
