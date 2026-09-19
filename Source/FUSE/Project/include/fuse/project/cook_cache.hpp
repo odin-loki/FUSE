@@ -46,6 +46,54 @@ struct CookCacheStats {
            is_valid_cook_cache_path(entry.output_path);
 }
 
+/// Inverse of `is_valid_cook_cache_entry` — zero keys or empty paths (B7.9 deepen).
+[[nodiscard]] inline bool is_invalid_cook_cache_entry(const CookCacheEntry& entry) {
+    return !is_valid_cook_cache_entry(entry);
+}
+
+/// True when a structurally valid entry's stored key no longer matches its source (B7.9 deepen).
+[[nodiscard]] bool is_stale_cook_cache_entry(const CookCacheEntry& entry);
+
+/// Preflight for cache store — mirrors `CookCache::store` rejection paths (B7.9 deepen).
+struct CookCacheStorePreflight {
+    bool zero_content_hash = false;
+    bool empty_source_path = false;
+    bool empty_output_path = false;
+
+    [[nodiscard]] bool can_store() const {
+        return !zero_content_hash && !empty_source_path && !empty_output_path;
+    }
+};
+
+/// Preflight for cache lookup — mirrors `CookCache::lookup` miss paths (B7.9 deepen).
+struct CookCacheLookupPreflight {
+    bool zero_content_hash = false;
+    bool cache_empty = true;
+    bool entry_present = false;
+
+    [[nodiscard]] bool would_hit() const { return !zero_content_hash && !cache_empty && entry_present; }
+};
+
+/// Non-destructive invalidation probe — estimates removals without mutating stats (B7.9 deepen).
+struct CookCacheInvalidationProbe {
+    bool cache_empty = true;
+    bool invalid_args = false;
+    u32 would_invalidate_count = 0;
+
+    [[nodiscard]] bool would_invalidate() const {
+        return !cache_empty && !invalid_args && would_invalidate_count > 0;
+    }
+};
+
+/// Reconcile estimator — counts invalid/stale records `prune_all` would remove (B7.9 deepen).
+struct CookCacheReconcileEstimate {
+    u32 invalid_entry_count = 0;
+    u32 stale_entry_count = 0;
+
+    [[nodiscard]] u32 total_prunable() const { return invalid_entry_count + stale_entry_count; }
+    [[nodiscard]] bool needs_reconcile() const { return total_prunable() > 0; }
+};
+
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     return is_valid_cook_cache_key(combine_cook_cache_key(source_hash, upstream_hash));
@@ -81,6 +129,27 @@ public:
     u32 prune_all();
     /// True when invalid or stale records are present — `prune_*` would remove at least one (B7.9 deepen).
     [[nodiscard]] bool has_prunable_entries() const;
+    /// True when structurally invalid records are present — `prune_invalid_entries` would remove at least one.
+    [[nodiscard]] bool has_invalid_entries() const;
+    /// True when valid records have drifted from their recomputed content hash.
+    [[nodiscard]] bool has_stale_entries() const;
+    /// Count of invalid or stale records that `prune_all` would remove — zero on empty cache.
+    [[nodiscard]] u32 count_prunable_entries() const;
+    /// Non-destructive reconcile estimate — does not mutate cache or stats (B7.9 deepen).
+    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile() const;
+
+    /// Incremental invalidation probes — no-op on empty cache / invalid args (B7.9 deepen).
+    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate(u64 content_hash) const;
+    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate_stale_content_for_source(
+        const std::string& source_path, u64 current_content_hash) const;
+    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] std::vector<std::string> probe_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] CookCacheInvalidationProbe probe_invalidate_downstream_of(
+        const std::string& output_path,
+        const std::vector<CookJobDependencyEdge>& edges,
+        const std::vector<CookJob>& jobs) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
@@ -92,6 +161,9 @@ public:
     bool save(const std::string& path) const;
     bool load(const std::string& path);
 
+    [[nodiscard]] CookCacheStorePreflight preflight_store(const CookCacheEntry& entry) const;
+    [[nodiscard]] CookCacheLookupPreflight preflight_lookup(u64 content_hash) const;
+
 private:
     [[nodiscard]] CookCacheEntry* find_entry_(u64 content_hash);
     [[nodiscard]] const CookCacheEntry* find_entry_(u64 content_hash) const;
@@ -99,5 +171,9 @@ private:
     std::vector<CookCacheEntry> m_entries;
     CookCacheStats m_stats;
 };
+
+/// Free-function preflights — delegate to cache helpers without requiring a populated cache (B7.9 deepen).
+[[nodiscard]] CookCacheStorePreflight preflight_cook_cache_store(const CookCacheEntry& entry);
+[[nodiscard]] CookCacheLookupPreflight preflight_cook_cache_lookup(const CookCache& cache, u64 content_hash);
 
 } // namespace fuse::project

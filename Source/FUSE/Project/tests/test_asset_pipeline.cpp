@@ -1159,6 +1159,49 @@ void testCookCacheStaleDependencyHashInvalidation() {
                "downstream misses after stale dependency hash invalidation");
 }
 
+void testCookCacheStaleDependencyEstimatorProbe() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_a.obj", "# estimator a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_b.obj", "# estimator b\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_est_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_est_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "estimator probe seeds cache");
+
+    const fuse::project::CookCacheInvalidationProbe clean_probe =
+        cooker.estimate_stale_dependency_invalidation(manifest);
+    expectTrue(!clean_probe.would_invalidate(), "clean cache stale-dependency estimator reports no removal");
+    expectTrue(cooker.estimate_cache_reconcile().total_prunable() == 0u,
+               "clean cache reconcile estimate is zero");
+
+    writeTempFile(sourceA, "# estimator a revised\n");
+    const fuse::project::CookCacheInvalidationProbe dirty_probe =
+        cooker.estimate_stale_dependency_invalidation(manifest);
+    expectTrue(dirty_probe.would_invalidate(), "upstream change estimator reports pending invalidation");
+    expectTrue(dirty_probe.would_invalidate_count >= 1u, "stale dependency estimator counts at least one entry");
+
+    const fuse::u64 invalidations_before = cooker.cache().stats().invalidations;
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= dirty_probe.would_invalidate_count,
+               "actual stale dependency invalidation meets estimator lower bound");
+    expectTrue(cooker.cache().stats().invalidations > invalidations_before,
+               "stale dependency invalidation bumps stats after estimator probe");
+}
+
 void testCookCacheUpstreamInvalidation() {
     const std::string sourceA = writeTempFile("/tmp/fuse_b79_upinv_a.obj", "# upstream a\n");
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_upinv_b.obj", "# downstream b\n");
@@ -1644,6 +1687,7 @@ int main() {
     testCookManifestCacheHitsOnSecondRun();
     testCookCacheInvalidateChain();
     testCookCacheStaleDependencyHashInvalidation();
+    testCookCacheStaleDependencyEstimatorProbe();
     testCookCacheUpstreamInvalidation();
     testCookCacheRoundTrip();
     testCookCacheEmptyKeyPaths();
