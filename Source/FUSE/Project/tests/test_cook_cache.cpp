@@ -6939,6 +6939,14 @@ void testCookCacheWouldInvalidateProbes() {
     expectTrue(cooker.cache().would_prune_all(), "would_prune_all true after source change");
     expectTrue(!cooker.cache().should_skip_prune_all(),
                "should_skip_prune_all false when prune would remove entries");
+    writeTempFile(source, "# would inv mesh updated\n");
+    const fuse::u64 revised_hash = fuse::project::hash_mesh_import(desc);
+    expectTrue(revised_hash != seeded.content_hash, "source change yields new content hash");
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, revised_hash),
+               "would_invalidate_stale_content true when stored hash differs from revised key");
+    expectTrue(cooker.cache().would_prune_all(), "would_prune_all true for stale entry");
+    expectTrue(cooker.cache().estimate_prune_removals().should_skip() == false,
+               "prune estimate should_skip false when stale entry present");
 
     const fuse::project::CookCachePruneEstimate estimate = cooker.cache().estimate_prune_removals();
     expectTrue(estimate.would_prune(), "prune estimate would_prune true for stale entry");
