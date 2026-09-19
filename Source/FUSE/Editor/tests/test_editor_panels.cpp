@@ -1086,3 +1086,10 @@ void testMaterialPropertyInspectRefreshGuards() {
     expectTrue(!panel.needsPanelRefresh(), "tryRefreshPanel clears binding refresh pending");
     expectTrue(!panel.previewDirty(), "tryRefreshPanel clears preview dirty");
     expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel fails after empty-catalog sync");
+
+// --- deepen additive from deepen-b6-material-inspector-property-binding-guards-b7b9 ---
+    expectTrue(!binding.tryRefreshFromEditState(state), "tryRefreshFromEditState fails when unbound");
+    expectTrue(binding.tryBind(0u, 1u, state), "tryBind succeeds for valid slot");
+    expectTrue(binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed clears pending refresh");
+    expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel no-op when clean");
+    expectTrue(!panel.needsPanelRefresh(), "tryRefreshPanel clears panel refresh flag");
