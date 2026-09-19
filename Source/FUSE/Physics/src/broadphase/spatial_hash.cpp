@@ -315,7 +315,7 @@ void runBroadphaseIntoBufferInternal(
     bool use2D,
     PairBufferSoA& buffer) {
     buffer.clear();
-    if (canSkipBroadphase(bodies, shapes)) {
+    if (!shouldRunBroadphase(bodies, shapes)) {
         return;
     }
 
