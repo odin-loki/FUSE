@@ -4171,3 +4171,31 @@ void testSolveIslandJobGuardedSleepAndRefs() {
                "should_skip combined sleep/refs preflight");
     const IslandSolveSleepPreflight awakePreflight =
     expectTrue(awakePreflight.can_solve(), "awake island passes combined solve preflight");
+
+// --- deepen additive from pbd-island-sleep-wake-guards-c801 ---
+    const IslandBuildPreflight emptyScene = preflight_island_build(0u, {}, {});
+    expectTrue(should_skip_island_build(0u, {}, {}), "should_skip_island_build on empty scene");
+    const IslandSleepWakePreflight sleepingPreflight = preflight_island_sleep_wake(sleeping, bodies);
+    expectTrue(!sleepingPreflight.skipped, "sleep/wake preflight does not skip constrained island");
+    expectTrue(sleepingPreflight.sleepingCount == 2u, "sleep/wake preflight counts sleeping bodies");
+    expectTrue(sleepingPreflight.wakeableCount == 0u, "sleep/wake preflight finds no wakeable bodies");
+    expectTrue(sleepingPreflight.is_all_sleeping(), "sleeping pair island is all sleeping");
+    expectTrue(should_skip_sleeping_island_solve(sleeping, bodies),
+    const IslandSleepWakePreflight wakeablePreflight = preflight_island_sleep_wake(wakeable, bodies);
+    expectTrue(wakeablePreflight.wakeableCount == 1u, "mixed island has one wakeable body");
+    expectTrue(wakeablePreflight.staticOrKinematicCount == 1u, "mixed island has one static body");
+    expectTrue(wakeablePreflight.can_solve(), "wakeable island can solve");
+    expectTrue(!should_skip_sleeping_island_solve(wakeable, bodies),
+               "should_skip false for wakeable island");
+    const IslandSleepWakePreflight outOfRange =
+               "should_skip_sleeping_island_solve_index on out-of-range index");
+    expectTrue(!graphPreflight.skipped, "graph sleep/wake preflight does not skip mixed graph");
+    expectTrue(graphPreflight.can_dispatch(), "graph sleep/wake preflight can dispatch");
+    expectTrue(graphPreflight.stats.wakeableCount == 1u, "graph sleep/wake preflight counts wakeable islands");
+    expectTrue(graphPreflight.stats.allSleepingCount == 1u, "graph sleep/wake preflight counts all-sleeping islands");
+    expectTrue(!should_skip_sleeping_island_graph(graph, bodies),
+               "should_skip_sleeping_island_graph false when wakeable islands exist");
+    expectTrue(should_skip_island_constraint_solve(graph.island(sleepingIsland), bodies, contacts, constraints),
+    const IslandConstraintSolvePreflight contactSolve =
+    expectTrue(!should_skip_island_constraint_solve(graph.island(contactIsland), bodies, contacts, constraints),
+               "should_skip false for wakeable contact island");

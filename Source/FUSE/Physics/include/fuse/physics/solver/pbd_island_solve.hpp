@@ -1420,3 +1420,6 @@ bool should_skip_island_solve_pass(const ContactIslandGraph::Island& island,
 bool should_skip_solve_fully_sleeping_island(const RigidBodySoA& bodies,
 IslandSolveSleepPreflight preflight_solve_island_with_sleep(
 bool should_skip_solve_island_with_sleep(const RigidBodySoA& bodies,
+
+// --- deepen additive from pbd-island-sleep-wake-guards-c801 ---
+bool should_skip_sleeping_island_graph(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
