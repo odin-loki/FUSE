@@ -212,6 +212,9 @@ public:
     [[nodiscard]] CookReconcileEstimate estimate_stale_dependency_reconcile(
     [[nodiscard]] bool would_invalidate_upstream_dependency(const CookManifest& manifest,
     /// Aggregate reconcile estimator — cache prune + stale upstream/direct cascade (B7.9 deepen).
+    /// Read-only stale content-hash reconcile probe — guarded on empty manifest (B7.9 deepen).
+    /// Combined reconcile estimator — stale content plus stale dependency removals (B7.9 deepen).
+    [[nodiscard]] u32 estimate_reconcile_removals(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

@@ -2617,6 +2617,54 @@ void testCookerReconcileEstimateProbes() {
                "downstream probe includes invalidated output path");
 }
 
+void testCookerReconcileEstimators() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_reconcile_a.obj", "# reconcile a v1\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_reconcile_b.obj", "# reconcile b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_reconcile_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_reconcile_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
+    expectTrue(cooked.ok, "manifest cook for reconcile estimators ok");
+    expectTrue(cooker.cache().entry_count() == 2u, "two entries seeded for reconcile estimators");
+
+    expectTrue(cooker.count_stale_content_invalidation(manifest) == 0u,
+               "fresh cache stale content estimate is zero");
+    expectTrue(cooker.count_stale_dependency_invalidation(manifest) == 0u,
+               "fresh cache stale dependency estimate is zero");
+    expectTrue(cooker.estimate_reconcile_removals(manifest) == 0u,
+               "fresh cache combined reconcile estimate is zero");
+
+    fuse::project::CookManifest empty_manifest;
+    expectTrue(cooker.count_stale_content_invalidation(empty_manifest) == 0u,
+               "empty manifest stale content estimate is zero");
+    expectTrue(cooker.estimate_reconcile_removals(empty_manifest) == 0u,
+               "empty manifest reconcile estimate is zero");
+
+    writeTempFile(sourceA, "# reconcile a v2\n");
+    const fuse::u32 stale_content = cooker.count_stale_content_invalidation(manifest);
+    expectTrue(stale_content >= 2u, "stale content estimate includes downstream chain");
+    expectTrue(cooker.estimate_reconcile_removals(manifest) >= stale_content,
+               "combined reconcile estimate is at least stale content count");
+
+    const fuse::u32 pruned = cooker.cache().prune_stale_entries();
+    expectTrue(pruned >= 1u, "prune removes stale content entries");
+    expectTrue(cooker.count_stale_content_invalidation(manifest) == 0u,
+               "stale content estimate zero after prune");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 

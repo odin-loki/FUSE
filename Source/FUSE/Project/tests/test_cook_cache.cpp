@@ -1229,6 +1229,11 @@ void testCookCachePruneReconcileEstimate() {
     dep_entry.dependencies.clear();
     expectTrue(fuse::project::preflight_manifest_entry_dependencies(dep_entry).ok(),
                "manifest entry without dependencies passes dependency preflight");
+    expectTrue(fuse::project::preflight_manifest_entry_dependencies(entry).ok(),
+    entry.dependencies.push_back("/tmp/fuse_b79_missing_dep_preflight.obj");
+    expectTrue(!fuse::project::preflight_manifest_entry_dependencies(entry).ok(),
+               "unreadable dependency fails manifest entry dependency preflight");
+    expectTrue(fuse::project::preflight_manifest_entry_dependencies(entry).reason ==
 }
 
 void testCookCacheInvalidationProbes() {
@@ -2818,6 +2823,47 @@ void testCookCacheReconcileEstimate() {
     expectTrue(removed == stale.prunable_entries(), "prune_all removes reconcile-estimated prunable count");
 }
 
+void testCookCacheStaleContentProbes() {
+    fuse::project::CookCache cache;
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_would_source.obj"),
+               "would_invalidate_source on empty cache is false");
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_would_output.fusemesh"),
+               "would_invalidate_output on empty cache is false");
+    expectTrue(cache.count_stale_entries() == 0u, "count_stale_entries on empty cache returns zero");
+    expectTrue(cache.probe_stale_content_sources().empty(),
+               "probe_stale_content on empty cache returns empty list");
+    expectTrue(cache.count_prune_all() == 0u, "count_prune_all on empty cache returns zero");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_stale_probe.obj", "# stale probe v1\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_stale_probe.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for stale content probes ok");
+    expectTrue(cooker.cache().would_invalidate_source(source),
+               "would_invalidate_source reports seeded source");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path),
+               "would_invalidate_output reports seeded output");
+    expectTrue(!cooker.cache().would_invalidate_source(""), "empty source path would_invalidate is false");
+    expectTrue(cooker.cache().count_stale_entries() == 0u, "fresh entry is not stale");
+    expectTrue(cooker.cache().count_prune_all() == 0u, "count_prune_all on fresh cache returns zero");
+
+    writeTempFile(source, "# stale probe v2\n");
+    expectTrue(cooker.cache().count_stale_entries() == 1u, "count_stale_entries reports stale entry");
+    expectTrue(cooker.cache().count_prune_all() == 1u, "count_prune_all estimates stale removal");
+    const std::vector<std::string> stale_sources = cooker.cache().probe_stale_content_sources();
+    expectTrue(stale_sources.size() == 1u, "probe_stale_content finds one stale source");
+    expectTrue(stale_sources[0] == source, "probe_stale_content returns matching source path");
+
+    const fuse::u32 stale_before = cooker.cache().count_stale_entries();
+    expectTrue(stale_before == 1u, "count_stale_entries reports stale entry before prune");
+    const fuse::u32 removed = cooker.cache().prune_stale_entries();
+    expectTrue(removed == stale_before, "prune stale removes probed stale entries");
+    expectTrue(cooker.cache().count_stale_entries() == 0u, "count_stale_entries zero after prune");
+}
+
 void testCookCachePruneInvalidEntriesOnLoad() {
     const std::string source = writeTempFile("/tmp/fuse_b79_prune_load_valid.obj", "# prune load valid\n");
     fuse::project::MeshImportDesc desc;
@@ -3303,6 +3349,7 @@ int main() {
     testCookCacheSourceOutputAndPruneEstimators();
     testCookCacheWouldInvalidateProbes();
     testCookCacheReconcileEstimate();
+    testCookCacheStaleContentProbes();
     testCookCachePruneInvalidEntriesOnLoad();
     testCookCacheLookupPreflightGuards();
     testCookCacheStorePreflightGuards();

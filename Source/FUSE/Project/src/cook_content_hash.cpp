@@ -870,6 +870,11 @@ CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry&
                                    : dependency_preflight.reason;
 
 
+
+
+            return dependency_preflight;
+
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;
