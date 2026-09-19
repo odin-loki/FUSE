@@ -3669,3 +3669,29 @@ void testTaaPassTemporalAndJitterPreflights() {
     expectTrue(pass->preflightTemporalBlend(resolveDesc, &reuseReason, &blendReason),
     testTemporalBlendPreflight();
     testTaaPassTemporalAndJitterPreflights();
+
+// --- deepen additive from deepen-b59-taa-guards-eb8c ---
+               "tryPreflight sync reject reason is None");
+               "tryPreflight NDC reject reason is None");
+               "tryPreflight NDC reject reason is InvalidViewport");
+void testHistoryWarmupPreflights() {
+void testResolveReuseAndBlendPreflights() {
+    expectTrue(std::strcmp(fuse::renderer::taaResolveReuseBlendRejectReasonLabel(
+                               fuse::renderer::TaaResolveReuseBlendRejectReason::None),
+                               fuse::renderer::TaaResolveReuseBlendRejectReason::HistoryReuseBlocked),
+                               fuse::renderer::TaaResolveReuseBlendRejectReason::BlendWeightsRejected),
+    fuse::renderer::TaaResolveReuseBlendRejectReason rejectReason =
+        fuse::renderer::TaaResolveReuseBlendRejectReason::None;
+    expectTrue(fuse::renderer::classifyTaaResolveReuseBlendReject(desc, emptyHistory, 0u) ==
+                   fuse::renderer::TaaResolveReuseBlendRejectReason::HistoryReuseBlocked,
+    expectTrue(fuse::renderer::tryPreflightTaaResolveReuseAndBlend(desc, history, 0u, rejectReason),
+               "tryPreflightTaaResolveReuseAndBlend passes after warmup");
+    expectTrue(rejectReason == fuse::renderer::TaaResolveReuseBlendRejectReason::None,
+               "tryPreflight reuse-blend reject reason is None");
+    expectTrue(fuse::renderer::classifyTaaResolveReuseBlendReject(desc, history, 0u) ==
+void testTaaPassWarmupAndJitterPreflights() {
+    fuse::renderer::TaaResolveReuseBlendRejectReason reuseBlendReason =
+    expectTrue(pass->preflightResolveReuseAndBlend(resolveDesc, 0u, &reuseBlendReason),
+    testHistoryWarmupPreflights();
+    testResolveReuseAndBlendPreflights();
+    testTaaPassWarmupAndJitterPreflights();

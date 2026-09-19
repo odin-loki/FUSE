@@ -631,3 +631,23 @@ bool tryPreflightTaaResolveTemporal(const TaaResolveDesc& desc, const TaaHistory
 bool preflightTaaTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
     const bool reuseOk = preflightTaaHistoryReuse(history, observedGeneration, reuseReason);
     return !preflightTaaTemporalBlend(desc, history);
+
+// --- deepen additive from deepen-b59-taa-guards-eb8c ---
+const char* taaResolveReuseBlendRejectReasonLabel(TaaResolveReuseBlendRejectReason reason) {
+    case TaaResolveReuseBlendRejectReason::None:
+    case TaaResolveReuseBlendRejectReason::HistoryReuseBlocked:
+    case TaaResolveReuseBlendRejectReason::BlendWeightsRejected:
+TaaResolveReuseBlendRejectReason classifyTaaResolveReuseBlendReject(const TaaResolveDesc& desc,
+        return TaaResolveReuseBlendRejectReason::HistoryReuseBlocked;
+        return TaaResolveReuseBlendRejectReason::BlendWeightsRejected;
+    return TaaResolveReuseBlendRejectReason::None;
+bool preflightTaaResolveReuseAndBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                      u32 observedGeneration, TaaResolveReuseBlendRejectReason* reason) {
+    const TaaResolveReuseBlendRejectReason reject =
+        classifyTaaResolveReuseBlendReject(desc, history, observedGeneration);
+    return reject == TaaResolveReuseBlendRejectReason::None;
+bool tryPreflightTaaResolveReuseAndBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                         u32 observedGeneration, TaaResolveReuseBlendRejectReason& reason) {
+    reason = classifyTaaResolveReuseBlendReject(desc, history, observedGeneration);
+    return reason == TaaResolveReuseBlendRejectReason::None;
+    return !preflightTaaResolveReuseAndBlend(desc, history, observedGeneration);
