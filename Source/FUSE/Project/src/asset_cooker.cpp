@@ -219,6 +219,10 @@ u32 AssetCooker::count_upstream_invalidation(const CookManifest& manifest,
 }
 
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
+    return estimate_stale_dependency_invalidation(manifest);
+}
+
+u32 AssetCooker::estimate_stale_dependency_invalidation(const CookManifest& manifest) const {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
 

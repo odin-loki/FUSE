@@ -30,6 +30,13 @@ struct CookCacheStats {
     u64 invalidations = 0;
 };
 
+/// Non-mutating prune/reconcile budget — mirrors `prune_*` without touching stats (B7.9 deepen).
+struct CookCacheReconcileEstimate {
+    u32 invalid_entries = 0;
+    u32 stale_entries = 0;
+    u32 prunable_entries = 0;
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -44,6 +51,26 @@ struct CookCacheStats {
 [[nodiscard]] inline bool is_valid_cook_cache_entry(const CookCacheEntry& entry) {
     return is_valid_cook_cache_key(entry.content_hash) && is_valid_cook_cache_path(entry.source_path) &&
            is_valid_cook_cache_path(entry.output_path);
+}
+
+/// Preflight guard before `store` — true when the entry would be accepted (B7.9 deepen).
+[[nodiscard]] inline CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+    if (entry.source_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (entry.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
 }
 
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
@@ -98,6 +125,20 @@ public:
                                           const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;
+    /// Valid entries whose recomputed key differs from the stored hash (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_entries() const;
+
+    /// Boolean invalidation probes — mirror `count_by_*` / `count_stale_*` guards (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+
+    /// Reconcile estimators — non-mutating mirrors of `prune_*` (B7.9 deepen).
+    [[nodiscard]] u32 estimate_prune_stale_entries() const;
+    [[nodiscard]] u32 estimate_prune_invalid_entries() const;
+    [[nodiscard]] u32 estimate_prune_all() const;
+    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile() const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
