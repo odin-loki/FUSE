@@ -3465,3 +3465,21 @@ void testPickSnapPreflightGuards() {
     expectTrue(!gizmo.preflightEndInteraction().canEnd(),
     expectTrue(gizmo.preflightEndInteraction().canEnd(), "gizmo end interaction accepts active drag");
     testPickSnapPreflightGuards();
+
+// --- deepen additive from deepen-b6-gizmo-preflight-guards-5c39 ---
+void testScreenHitBoundsGuards() {
+void testPickPreflightOutOfBounds() {
+    const fuse::editor::PickPreflight validPick =
+void testBeginDragPreflightPickedAxis() {
+    expectTrue(validPreflight.canBegin, "begin preflight accepts valid screen hit");
+    expectTrue(validPreflight.pickedAxis == fuse::editor::GizmoAxis::X,
+    expectTrue(outOfBoundsPreflight.outOfBounds, "begin preflight marks out-of-bounds screen hit");
+    expectTrue(outOfBoundsPreflight.pickedAxis == fuse::editor::GizmoAxis::None,
+    expectTrue(rayPreflight.pickedAxis == fuse::editor::GizmoAxis::X,
+    const fuse::editor::UpdateDragPreflight outOfBoundsPreflight = fuse::editor::preflightUpdateDrag(
+    expectTrue(validPreflight.canUpdate(), "update preflight accepts in-bounds screen hit");
+    expectTrue(!validPreflight.outOfBounds, "valid update preflight clears outOfBounds");
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears snapDegraded on gizmo preflight");
+               "gizmo trySnapDragDelta snaps translate delta");
+    testPickPreflightOutOfBounds();
+    testBeginDragPreflightPickedAxis();

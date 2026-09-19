@@ -2496,3 +2496,6 @@ BeginInteractionPreflight preflightBeginInteraction(const GizmoRay& ray,
     preflight.begin = preflightBeginDrag(hit, mode, alreadyDragging, settings);
     return preflightBeginDrag(ray, transform, mode, space, axisLength, pickRadius, false, settings)
     return preflightBeginDrag(hit, mode, false, settings).canBegin;
+
+// --- deepen additive from deepen-b6-gizmo-preflight-guards-5c39 ---
+    const f32 delta = fuse::editor::trySnapDragDelta(dx + dy, m_mode, m_snap);
