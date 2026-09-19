@@ -4601,3 +4601,12 @@ void testChromeTraceExportPreflightBlocksInvalidNamesInSafeExport() {
 // --- deepen additive from b16-profiler-deepen-guards-54d4 ---
     expectTrue(fuse::profiler::tryFindFirstEventByFlowId(outerFlowId, flowEvent),
                "tryFindFirstEventByFlowId clears output on empty buffer");
+
+// --- deepen additive from deepen-b16-profiler-name-flow-lookup-006b ---
+    expectTrue(!fuse::profiler::tryFirstEventByFlowId(999u, outEvent),
+               "tryFirstEventByFlowId false for unknown flow id");
+               "tryFirstEventByFlowId clears output for unknown flow id");
+void testActiveScopeAndFlowNestingPreflight() {
+void testChromeTraceExportPreflightExportableBounds() {
+    testActiveScopeAndFlowNestingPreflight();
+    testChromeTraceExportPreflightExportableBounds();
