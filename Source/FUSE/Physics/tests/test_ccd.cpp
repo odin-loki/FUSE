@@ -1087,3 +1087,7 @@ void testToiBufferWriteSlotGuards() {
 
 // --- deepen additive from deepen-b4-ccd-toibuffer-guards-0635 ---
 void testToiBufferSlotGuards() {
+
+// --- deepen additive from deepen-b4-ccd-toibuffer-guards-37f3 ---
+void testToiBufferWriteSlotRejectsOutOfWindow() {
+void testToiBufferPushRejectsOutOfWindow() {
