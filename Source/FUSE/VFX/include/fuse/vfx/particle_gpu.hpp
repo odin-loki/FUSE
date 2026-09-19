@@ -102,6 +102,28 @@ struct ParticleGpuMirrorUploadPreflight {
     [[nodiscard]] bool can_unpack(const std::vector<u8>& bytes, u32 capacity) const;
 };
 
+/// Mirror pack preflight for guarded device-layout serialization (B7.7 GPU deepen follow-up).
+struct ParticleGpuMirrorPackPreflight {
+    ParticleGpuMirrorPreflight mirror{};
+    bool layout_bytes_ok = false;
+    bool packed_bytes_fit = false;
+
+    [[nodiscard]] bool can_pack() const;
+};
+
+/// Slot-offset preflight for stub kernel access guards (B7.7 GPU deepen follow-up).
+struct ParticleGpuSlotPreflight {
+    ParticleGpuColumn column = ParticleGpuColumn::Positions;
+    u32 slot_index = 0u;
+    u32 capacity = 0u;
+    bool slot_in_bounds = false;
+    bool offset_in_column = false;
+    bool offset_aligned = false;
+    usize device_offset = 0u;
+
+    [[nodiscard]] bool ready_for_stub_access() const;
+};
+
 /// Per-column byte sizing and packed SSBO layout helpers.
 struct ParticleGpuBufferLayout {
     static constexpr u32 kSimBlockSize = 256u;
@@ -129,6 +151,10 @@ struct ParticleGpuBufferLayout {
                                           u32 capacity);
     static bool locateSlotAtByteOffset(usize byte_offset, u32 capacity, ParticleGpuColumn* out_column,
                                      u32* out_slot_index);
+    static bool isSlotOffsetAligned(ParticleGpuColumn column, u32 slot_index, u32 capacity);
+    static ParticleGpuSlotPreflight preflightSlotAccess(ParticleGpuColumn column, u32 slot_index, u32 capacity);
+    static u32 slotIndexAtColumnOffset(ParticleGpuColumn column, usize column_relative_offset, u32 capacity);
+    static bool locateSlotAtOffset(usize byte_offset, u32 capacity, ParticleGpuColumn* out_column, u32* out_slot_index);
     static bool containsByteOffset(usize byte_offset, u32 capacity);
     static bool locateColumnAtOffset(usize byte_offset, u32 capacity, ParticleGpuColumnSpan* out_span);
     static bool locateSlotAtOffset(usize byte_offset, u32 capacity, ParticleGpuColumn* out_column, u32* out_slot);
@@ -335,7 +361,10 @@ struct ParticleGpuMirror {
     [[nodiscard]] bool canWriteToCpuSoA(const ParticleSoA& cpu) const;
     [[nodiscard]] ParticleGpuMirrorPreflight preflightFromCpu(const ParticleSoA& cpu) const;
     [[nodiscard]] ParticleGpuMirrorUploadPreflight preflightDeviceUpload(const ParticleSoA& cpu) const;
+    [[nodiscard]] ParticleGpuMirrorPackPreflight preflightPack() const;
     [[nodiscard]] bool shouldSkipSyncFromCpu(const ParticleSoA& cpu) const;
+    [[nodiscard]] bool validateSlotAccess(u32 slot_index) const;
+    [[nodiscard]] ParticleGpuSlotPreflight preflightSlot(u32 slot_index, ParticleGpuColumn column) const;
     [[nodiscard]] bool aliveCountMatchesFlags() const;
     [[nodiscard]] ParticleGpuMirrorSyncPreflight preflightSyncFromCpu(const ParticleSoA& cpu) const;
     [[nodiscard]] ParticleGpuMirrorSyncPreflight preflightWriteToCpu(const ParticleSoA& cpu) const;
@@ -374,6 +403,7 @@ struct ParticleGpuFramePreflight {
     bool emit_slots_ok = false;
     bool skip_sim_zero_alive = false;
     bool skip_emit_at_capacity = false;
+    bool dispatch_preflight_ok = false;
 
     [[nodiscard]] bool ready_for_stub() const;
     [[nodiscard]] bool can_simulate() const;
@@ -419,6 +449,7 @@ struct ParticleGpuFramePlan {
     [[nodiscard]] bool shouldSkipEmitOverflow() const;
     [[nodiscard]] u32 simPaddingThreadCount() const;
     [[nodiscard]] u32 emitPaddingThreadCount() const;
+    [[nodiscard]] ParticleGpuDispatchPreflight dispatchPreflight() const;
     [[nodiscard]] ParticleGpuFramePreflight preflight() const;
     [[nodiscard]] ParticleSoAGPU gpuPointers(u64 packed_device_address) const;
     [[nodiscard]] FramePlanPreflight preflight() const;
@@ -431,6 +462,7 @@ struct ParticleGpuFramePlan {
 [[nodiscard]] bool should_skip_frame_sim(const ParticleGpuFramePlan& plan);
 [[nodiscard]] bool should_skip_frame_emit(const ParticleGpuFramePlan& plan);
 [[nodiscard]] bool should_skip_empty_buffer(const ParticleGpuBuffers& buffers);
+[[nodiscard]] bool should_skip_device_upload(const ParticleGpuMirror& mirror, const ParticleSoA& cpu);
 
 namespace particle_gpu_util {
 [[nodiscard]] u32 gridDimX(u32 element_count, u32 block_size);
