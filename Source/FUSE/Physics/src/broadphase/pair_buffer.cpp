@@ -179,6 +179,8 @@ void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB, u32 bodyCount) {
     if (rejectReason != CandidatePairRejectReason::None) {
     const CandidatePairRejectReason rejectReason = candidatePairRejectReason(idxA, idxB);
     if (!preflightPairBufferSlotWrite(*this, slot, idxA, idxB).canWrite()) {
+    const PairBufferWriteSlotPreflight preflight = preflightPairBufferWriteSlot(*this, slot, idxA, idxB);
+    if (!preflight.canWrite()) {
         return;
     }
 
@@ -1462,6 +1464,14 @@ PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer)
     preflight.emptyBuffer = preflight.reason == PairBufferDedupeRejectReason::EmptyBuffer;
     preflight.singlePair = preflight.reason == PairBufferDedupeRejectReason::SinglePair;
 
+PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer) {
+    PairBufferSortPreflight preflight{};
+    preflight.reason = pairBufferSortRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == PairBufferSortRejectReason::EmptyBuffer;
+    preflight.singlePair = preflight.reason == PairBufferSortRejectReason::SinglePair;
+    return preflight;
+}
+
 bool canSkipPairBufferDedupe(const PairBufferSoA& buffer) {
     return !preflightPairBufferDedupe(buffer).canDedupe();
 
@@ -2533,11 +2543,6 @@ bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortR
 
 
 
-PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer) {
-    PairBufferSortPreflight preflight{};
-    preflight.reason = pairBufferSortRejectReason(buffer);
-    preflight.emptyBuffer = preflight.reason == PairBufferSortRejectReason::EmptyBuffer;
-    preflight.singlePair = preflight.reason == PairBufferSortRejectReason::SinglePair;
 
 
 
@@ -2741,5 +2746,14 @@ bool canSkipPairBufferCompactClamp(const PairBufferSoA& buffer) {
 
 bool shouldRunPairBufferCompactClamp(const PairBufferSoA& buffer) {
     return preflightPairBufferCompactClamp(buffer).canRun();
+
+
+
+
+
+
+
+
+
 
 } // namespace fuse::physics::broadphase
