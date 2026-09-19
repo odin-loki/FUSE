@@ -336,6 +336,35 @@ bool is_degenerate_shape_pair(
     return isShapeDegenerate(typeA, shapes.params[shapeA]) ||
            isShapeDegenerate(typeB, shapes.params[shapeB]);
 
+bool is_plane_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+        return false;
+    }
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    return typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Plane;
+}
+
+bool has_contact_pair_dispatch_path(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    if (is_missing_shape_contact_pair(pair, shapes)) {
+        return false;
+    }
+    if (is_unsupported_shape_pair(pair, shapes)) {
+        return false;
+    }
+    if (is_degenerate_shape_pair(pair, shapes)) {
+        return false;
+    }
+    return true;
+}
+
 bool is_unsupported_shape_pair(
     const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes) {
@@ -483,6 +512,13 @@ bool is_valid_contact_pair(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return !is_invalid_contact_pair(pair, bodies, shapes);
+}
+
+bool should_skip_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return is_invalid_contact_pair(pair, bodies, shapes);
 }
 
 ContactManifold detect_contacts_pair(
@@ -634,6 +670,15 @@ bool should_run_contact_pair_deepen_dispatch(
 bool should_run_narrowphase_batch(
     return !narrowphase_batch_rejects_all(pairs, bodies, shapes);
     ensureFrictionBasis(manifold);
+    if (has_cached_friction_basis(manifold) && !friction_basis_is_stale(manifold)) {
+        return;
+    }
+
+    const f32 normalLength = manifold.contactNormal.length();
+    if (std::fabs(normalLength - 1.f) > 1e-4f) {
+        manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    invalidate_friction_basis(manifold);
+    manifold.buildFrictionBasis();
 }
 
 } // namespace fuse::physics::narrowphase

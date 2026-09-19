@@ -84,6 +84,22 @@ struct ContactManifold {
     /// Clear cached friction basis so the next tangent build recomputes (B4.3 deepen).
     void invalidateFrictionBasis();
 
+    /// Returns true when at least one penetrating point is shallower than `minDepth` (B4.3 deepen pass 2).
+    bool hasShallowPenetrations(f32 minDepth) const;
+
+    /// Count contact points separated below `-epsilon` (B4.3 deepen pass 2).
+    u32 countSeparatedPoints(f32 epsilon = 1e-6f) const;
+
+    /// Run `pruneContactPoints` only when `needsPruning` is true (B4.3 deepen pass 2).
+    void pruneContactPointsIfNeeded(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f);
+
+    /// Prune, invalidate when empty, and return whether points remain (B4.3 deepen pass 2).
+    bool pruneAndInvalidateIfEmpty(
+        f32 separationEpsilon = 1e-6f,
+        f32 duplicateEpsilon = 1e-4f);
+
     /// Drop separated contact points with penetration below `-epsilon` (B4.3 deepen).
     void pruneNonPenetratingPoints(f32 epsilon = 1e-6f);
 
