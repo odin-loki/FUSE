@@ -52,6 +52,11 @@ public:
     bool warmupComplete() const;
     /// Early-out when temporal reuse should be skipped for the observed epoch (B5.9 deepen).
     bool shouldSkipReuse(u32 observedGeneration) const;
+    /// True when history targets are allocated and ready for resolve (B5.9 deepen).
+    bool readyForResolve() const;
+    /// True when history is warmed for temporal reuse (B5.9 deepen).
+    /// Current warm-up lifecycle state (B5.9 deepen).
+    TaaHistoryWarmupState warmupState() const;
     u32 accumulatedFrames() const { return m_validity.accumulatedFrames; }
     u32 invalidateGeneration() const { return m_validity.invalidateGeneration; }
     /// True when a consumer's observed generation differs from the current history epoch.

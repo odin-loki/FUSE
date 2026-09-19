@@ -405,6 +405,14 @@ public:
     /// Early-out when pass jitter NDC production would be rejected (B5.9 deepen).
     /// True when pass jitter can advance (B5.9 deepen).
     /// Early-out when pass jitter advance would be rejected (B5.9 deepen).
+    /// Early-out when pass jitter sync would be rejected (B5.9 deepen).
+    /// Early-out when pass NDC jitter production would be rejected (B5.9 deepen).
+    /// True when pass jitter NDC production is ready (B5.9 deepen).
+    /// Current pass history warm-up lifecycle state (B5.9 deepen).
+    TaaHistoryWarmupState historyWarmupState() const;
+    /// True when combined resolve temporal preflight passes (B5.9 deepen).
+    /// Early-out when combined resolve temporal preflight would reject (B5.9 deepen).
+    bool shouldSkipResolveTemporal(const TaaResolveDesc& desc) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

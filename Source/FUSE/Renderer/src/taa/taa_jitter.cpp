@@ -228,7 +228,7 @@ bool taaJitterNdcReady(u32 width, u32 height, u32 sequenceLength) {
 
 bool taaJitterNdcReady(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason* reason) {
     return preflightTaaJitterNdc(width, height, sequenceLength, reason);
-    }
+
 
 
 
