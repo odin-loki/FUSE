@@ -1660,6 +1660,9 @@ void testCookCacheReconcileEstimators() {
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_b.obj", "# est b\n");
 
 
+void testCookCacheReconcileEstimator() {
+
+
     entryA.output_path = "/tmp/fuse_b79_est_a.fusemesh";
     manifest.assets.push_back(entryA);
 
@@ -1996,6 +1999,34 @@ void testCookCacheUpstreamInvalidationEstimate() {
     expectTrue(removed == estimated, "upstream invalidation matches estimate");
     expectTrue(cooker.estimate_upstream_invalidation(manifest, sourceA) == 0u,
                "estimate zero after upstream invalidation");
+    expectTrue(batch.ok, "reconcile estimator seeds cache");
+    expectTrue(cooker.cache().entry_count() == 2u, "two entries cached for estimator");
+
+    expectTrue(cooker.estimate_stale_dependency_invalidations(manifest) == 0u,
+               "reconcile estimator is zero on fresh cache");
+
+    const fuse::u32 estimate_before = cooker.estimate_stale_dependency_invalidations(manifest);
+    expectTrue(estimate_before >= 1u, "reconcile estimator detects upstream drift");
+
+    expectTrue(removed == estimate_before, "reconcile estimator matches invalidate count");
+               "reconcile estimator is zero after invalidate");
+
+void testCookCachePruneEstimateMatchesPrune() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_est_prune.obj", "# est prune v1\n");
+
+    desc.output_path = "/tmp/fuse_b79_est_prune.fusemesh";
+
+    expectTrue(first.ok, "seed cook for prune estimate match");
+
+    writeTempFile(source, "# est prune v2\n");
+    const fuse::project::CookCachePruneEstimate estimate = cooker.cache().estimate_prune_all();
+    expectTrue(estimate.would_prune(), "estimate detects stale entry");
+    expectTrue(estimate.total() == cooker.cache().count_prunable_entries(),
+               "estimate total matches count_prunable");
+
+    const fuse::u32 pruned = cooker.cache().prune_stale_entries();
+    expectTrue(pruned == estimate.stale_entries, "prune_stale removes estimated stale count");
+    expectTrue(cooker.cache().estimate_prune_all().total() == 0u, "estimate is zero after prune");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -2181,6 +2212,8 @@ int main() {
     testAssetCookerInvalidationEmptyGuards();
     testContentHashEmptyUpstreamDeps();
     testCookManifestCacheHitsOnSecondRun();
+    testCookCacheReconcileEstimator();
+    testCookCachePruneEstimateMatchesPrune();
     testCookCacheInvalidateChain();
     testCookCacheStaleDependencyHashInvalidation();
     testCookCacheStaleDependencyHashEstimator();

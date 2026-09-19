@@ -165,6 +165,31 @@ struct CookCacheInvalidationProbe {
         return total_entries() > 0 || !stale_source_paths.empty();
 /// Preflight guard before storing a cache record — true when entry passes structural and key checks.
 [[nodiscard]] CookCacheKeyPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+/// Non-mutating preflight for a single cache record — validity, staleness, on-disk probes (B7.9 deepen).
+struct CookCacheEntryPreflight {
+    bool structurally_valid = false;
+    bool empty_path = false;
+    bool source_missing = false;
+    bool output_missing = false;
+    bool shader_kind = false;
+    bool stale_content = false;
+
+    [[nodiscard]] bool is_prunable() const {
+        return !structurally_valid || stale_content;
+
+    [[nodiscard]] bool can_store() const { return structurally_valid; }
+
+/// Dry-run prune counts — mirrors `prune_invalid_entries` + `prune_stale_entries` without mutation (B7.9 deepen).
+struct CookCachePruneEstimate {
+    u32 invalid_entries = 0;
+    u32 stale_entries = 0;
+
+    [[nodiscard]] u32 total() const { return invalid_entries + stale_entries; }
+    [[nodiscard]] bool would_prune() const { return total() > 0; }
+
+[[nodiscard]] CookCacheEntryPreflight preflight_cache_entry(const CookCacheEntry& entry);
+/// True when both paths are non-empty and the cooked output file exists on disk (B7.9 deepen).
+[[nodiscard]] bool is_valid_cook_cache_entry_on_disk(const CookCacheEntry& entry);
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -327,6 +352,12 @@ public:
     /// Incremental invalidation probe — entries whose upstream hash differs (B7.9 deepen).
     /// Incremental invalidation probe — entries `invalidate_stale_content_for_source` would drop (B7.9 deepen).
     /// Reconcile estimator — total entries `prune_all` would remove without mutating (B7.9 deepen).
+    /// Count invalid or stale records — numeric probe for `has_prunable_entries` (B7.9 deepen).
+    /// Dry-run invalid/stale prune counts without mutation (B7.9 deepen).
+    /// Count entries whose stored upstream hash differs from freshly computed values (B7.9 deepen).
+    /// Source paths with stale upstream hashes — dry-run probe for `invalidate_stale_upstream_hashes` (B7.9 deepen).
+    /// Count entries that `invalidate_downstream_of` would remove — dry-run probe (B7.9 deepen).
+    [[nodiscard]] u32 count_downstream_entries(const std::string& output_path,
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

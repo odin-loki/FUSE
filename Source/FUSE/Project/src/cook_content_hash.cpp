@@ -374,6 +374,12 @@ bool preflight_mesh_import_hash(const MeshImportDesc& desc, u64* out_hash, CookH
 
     const u64 hash = hash_mesh_import(desc);
 
+    CookCacheKeyPreflight result;
+    result.zero_source = source_hash == 0;
+    const u64 combined = combine_cook_cache_key(source_hash, upstream_hash);
+    result.zero_combined = combined == 0;
+    result.cacheable = combined != 0;
+    return result;
 }
 
 u64 hash_mesh_import(const MeshImportDesc& desc) {

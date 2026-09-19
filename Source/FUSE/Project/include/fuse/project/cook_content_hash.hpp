@@ -209,6 +209,14 @@ enum class CookHashRejectReason : u8 {
         result.reject = CookHashPreflightReject::ZeroKey;
     return result;
 
+/// Non-mutating preflight for combined cook cache keys (B7.9 deepen).
+    bool zero_source = true;
+    bool zero_combined = true;
+    bool cacheable = false;
+
+    [[nodiscard]] bool can_cache() const { return cacheable; }
+
+
 /// Content hash over source bytes plus import descriptor knobs (identical inputs → identical hash).
 [[nodiscard]] u64 hash_mesh_import(const MeshImportDesc& desc);
 [[nodiscard]] u64 hash_texture_import(const TextureImportDesc& desc);

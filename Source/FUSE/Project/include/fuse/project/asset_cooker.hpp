@@ -104,6 +104,8 @@ public:
     [[nodiscard]] u32 estimate_upstream_invalidation(const CookManifest& manifest,
     /// Reconcile estimator — upstream stale entries `invalidate_stale_dependency_hashes` would drop (B7.9 deepen).
     [[nodiscard]] u32 estimate_stale_dependency_reconcile(const CookManifest& manifest) const;
+    /// Dry-run reconcile — counts entries `invalidate_stale_dependency_hashes` would remove (B7.9 deepen).
+    [[nodiscard]] u32 estimate_stale_dependency_invalidations(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
