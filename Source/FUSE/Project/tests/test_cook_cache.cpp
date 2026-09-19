@@ -2005,3 +2005,15 @@ void testCookCachePruneReconcileShouldSkipGuards() {
     expectTrue(!cache.should_skip_prune_reconcile(), "stale shader cache should not skip prune reconcile");
                "empty mesh input preflight should_skip");
                "should_skip_combine_cook_cache_key true for zero source");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-926e ---
+    expectTrue(preflight.should_skip() == fuse::project::should_skip_hash_preflight(preflight),
+               "should_skip_hash_preflight matches struct should_skip");
+    expectTrue(preflight.should_skip() == !preflight.ok(), "should_skip is inverse of ok");
+    expectTrue(estimate.should_skip() == (estimate.total() == 0u),
+               "prune estimate should_skip matches zero total");
+    expectTrue(!estimate.should_skip(), "stale entry prune estimate should not skip");
+    expectTrue(cooker.cache().should_skip_prune_reconcile() == estimate.should_skip(),
+               "cache should_skip_prune_reconcile matches estimate");
+    expectTrue(cooker.cache().would_prune_all() == !estimate.should_skip(),
+               "would_prune_all is inverse of estimate should_skip");

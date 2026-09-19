@@ -2354,3 +2354,8 @@ void testCookerReconcileShouldSkipGuards() {
                "fresh prune reconcile estimate should_skip is true");
                "would_invalidate_upstream guarded on empty source");
                "would_invalidate_stale_dependencies false on fresh cache");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-926e ---
+               "cooker should_skip_reconcile matches estimate");
+               "cooker should_skip_reconcile false when stale dependencies present");
+               "would_invalidate_downstream_of true for chain head output");
