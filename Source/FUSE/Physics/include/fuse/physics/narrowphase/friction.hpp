@@ -320,3 +320,7 @@ inline bool try_compute_friction_tangents(ContactManifold& manifold, f32 epsilon
     const FrictionBasisRejectReason rejectReason = friction_basis_reject_reason(manifold);
     if (wouldSkipFrictionBasisRebuild(manifold, nullptr, epsilon)) {
 inline bool tryComputeFrictionTangents(ContactManifold& manifold, f32 epsilon = 1e-4f) {
+
+// --- deepen additive from b4-narrowphase-guards-18a7 ---
+inline void tryComputeFrictionTangents(ContactManifold& manifold, f32 epsilon = 1e-4f) {
+    if (!wouldSkipFrictionBasisRebuild(manifold, epsilon)) {

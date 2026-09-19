@@ -356,3 +356,15 @@ FUSE_PHYSICS_INLINE bool try_run_narrowphase_into_buffer(
     const NarrowphaseIntoBufferRejectReason rejectReason =
     return rejectReason != NarrowphaseIntoBufferRejectReason::None;
 inline bool runNarrowphaseIntoBufferWithPreflight(
+
+// --- deepen additive from b4-narrowphase-guards-18a7 ---
+const char* narrowphaseIntoBufferRejectReasonName(NarrowphaseIntoBufferRejectReason reason);
+NarrowphaseIntoBufferRejectReason narrowphaseIntoBufferRejectReason(
+FUSE_PHYSICS_INLINE const char* narrowphaseIntoBufferRejectReasonName(
+FUSE_PHYSICS_INLINE NarrowphaseIntoBufferRejectReason narrowphaseIntoBufferRejectReason(
+    return narrowphaseIntoBufferRejectReason(pairs, bodies, shapes) == expected;
+FUSE_PHYSICS_INLINE NarrowphaseIntoBufferPreflight preflightNarrowphaseIntoBuffer(
+    preflight.reason = narrowphaseIntoBufferRejectReason(pairs, bodies, shapes);
+    return !preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).can_dispatch();
+    return preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).can_dispatch();
+FUSE_PHYSICS_INLINE bool runNarrowphaseIntoBufferWithPreflight(

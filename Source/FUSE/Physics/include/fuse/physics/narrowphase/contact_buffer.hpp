@@ -691,3 +691,24 @@ FUSE_PHYSICS_INLINE bool ContactBufferSoA::tryBuildFrictionTangentBases(f32 epsi
 inline const char* contactBufferCompactAndClampRejectReasonName(ContactBufferCompactAndClampRejectReason reason) {
 inline ContactBufferCompactAndClampPreflight preflightContactBufferCompactAndClamp(const ContactBufferSoA& buffer) {
 inline bool tryContactBufferWriteSlot(
+
+// --- deepen additive from b4-narrowphase-guards-18a7 ---
+    bool canBuild() const { return reason == ContactBufferFrictionBasesRejectReason::None; }
+FUSE_PHYSICS_INLINE const char* contactBufferFrictionBasesRejectReasonName(
+    ContactBufferFrictionBasesRejectReason reason) {
+    case ContactBufferFrictionBasesRejectReason::None:
+    case ContactBufferFrictionBasesRejectReason::EmptyBuffer:
+    case ContactBufferFrictionBasesRejectReason::NoValidContacts:
+FUSE_PHYSICS_INLINE ContactBufferFrictionBasesRejectReason contactBufferFrictionBasesRejectReason(
+        return ContactBufferFrictionBasesRejectReason::EmptyBuffer;
+        return ContactBufferFrictionBasesRejectReason::NoValidContacts;
+    return ContactBufferFrictionBasesRejectReason::None;
+    ContactBufferFrictionBasesRejectReason expected) {
+    return contactBufferFrictionBasesRejectReason(buffer) == expected;
+FUSE_PHYSICS_INLINE ContactBufferFrictionBasesPreflight preflightContactBufferFrictionBases(
+    ContactBufferFrictionBasesPreflight preflight{};
+    preflight.reason = contactBufferFrictionBasesRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferFrictionBasesRejectReason::EmptyBuffer;
+    preflight.noValidContacts = preflight.reason == ContactBufferFrictionBasesRejectReason::NoValidContacts;
+    return !preflightContactBufferFrictionBases(buffer).canBuild();
+    return preflightContactBufferFrictionBases(buffer).canBuild();

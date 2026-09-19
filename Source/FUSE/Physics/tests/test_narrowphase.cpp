@@ -3748,3 +3748,28 @@ void testFrictionComputeWithPreflightGuards() {
     expectTrue(computeTarget.hasFrictionBasis(), "tryComputeFrictionTangents stores basis");
     expectTrue(!fuse::physics::narrowphase::tryComputeFrictionTangents(noNormal),
                "tryComputeFrictionTangents rejects invalid normal");
+
+// --- deepen additive from b4-narrowphase-guards-18a7 ---
+void testContactBufferSoAPreflightGuards() {
+            buffer, 0u, valid, fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::None),
+        fuse::physics::narrowphase::preflightContactBufferToVector(buffer).canExport(),
+            fuse::physics::narrowphase::contactBufferFrictionBasesRejectReasonName(
+                fuse::physics::narrowphase::ContactBufferFrictionBasesRejectReason::NoValidContacts),
+        fuse::physics::narrowphase::preflightNarrowphaseIntoBuffer(mixedPairs, bodies, shapes);
+        fuse::physics::narrowphase::runNarrowphaseIntoBufferWithPreflight(validPairs, bodies, shapes, buffer),
+        "runNarrowphaseIntoBufferWithPreflight dispatches valid pairs");
+        "runNarrowphaseIntoBufferWithPreflight skips rejected pairs");
+void testWouldSkipTryWrapperGuards() {
+        !fuse::physics::narrowphase::wouldSkipContactPairDispatch({bodyA, bodyB}, bodies, shapes),
+        "wouldSkipContactPairDispatch false for valid pair");
+    expectTrue(!skipped.valid, "tryDetectContactsPair returns invalid for self pair");
+        "tryGenerateContactManifold finalizes penetrating manifold");
+    expectTrue(ready.valid, "tryGenerateContactManifold sets validity");
+        "wouldSkipManifoldPrune false when separated slot present");
+    expectTrue(dirty.pointCount == 1u, "tryPruneContactManifold removes separated slot");
+        fuse::physics::narrowphase::tryFinalizeContactManifold(finalizeReady),
+        "tryFinalizeContactManifold succeeds for penetrating manifold");
+    expectTrue(finalizeReady.hasFrictionBasis(), "tryFinalizeContactManifold builds friction basis");
+    fuse::physics::narrowphase::tryComputeFrictionTangents(needsBasis);
+    expectTrue(needsBasis.hasFrictionBasis(), "tryComputeFrictionTangents stores basis");
+    testContactBufferSoAPreflightGuards();

@@ -514,3 +514,6 @@ inline bool tryDetectContactsPair(
 inline bool tryDetectContactsPairDeepen(
     if (wouldSkipContactPairDeepenDispatch(pair, bodies, shapes)) {
 inline bool tryGenerateContactManifoldIfNeeded(ContactManifold& manifold) {
+
+// --- deepen additive from b4-narrowphase-guards-18a7 ---
+inline bool wouldSkipNarrowphaseBatch(
