@@ -1673,3 +1673,20 @@ void testHrtfBinauralRejectReasonPreflight() {
     testHrtfPanPathRejectReasonPreflight();
     testHrtfAttenuationCouplingRejectReasonPreflight();
     testHrtfBinauralRejectReasonPreflight();
+
+// --- deepen additive from b72-hrtf-reject-reason-preflights-62b4 ---
+                   malformed, fuse::audio::HrtfIrRejectReason::MalformedStub),
+    expectTrue(disabled.reason == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
+    expectTrue(stub.reason == fuse::audio::HrtfPanPathRejectReason::None,
+    expectTrue(bypass.reason == fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath,
+    expectTrue(narrowed.reason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+    const fuse::audio::HrtfBinauralPreflight stub =
+    expectTrue(stub.rejectReason() == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(stub.ir.reason == fuse::audio::HrtfIrRejectReason::NullSamples,
+    expectTrue(stub.panPath.reason == fuse::audio::HrtfPanPathRejectReason::None,
+    expectTrue(!fuse::audio::should_skip_hrtf_binaural(stub),
+               "composite should_skip false on spatial stub path");
+    const fuse::audio::HrtfBinauralPreflight bypass =
+    expectTrue(bypass.rejectReason() == fuse::audio::HrtfBinauralRejectReason::HrtfDisabled,
+    expectTrue(fuse::audio::should_skip_hrtf_binaural(bypass),
+               "composite should_skip true on disabled HRTF");

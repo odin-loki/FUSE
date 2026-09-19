@@ -1092,3 +1092,9 @@ bool try_preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
     preflight.skipped = preflight.reason != HrtfAttenuationCouplingRejectReason::None;
 HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const Vec3& rel_listener) {
     const HrtfPanPathRejectReason pan_reason = hrtf_pan_path_reject_reason(hrtf_enabled, rel_listener);
+
+// --- deepen additive from b72-hrtf-reject-reason-preflights-62b4 ---
+    case HrtfIrRejectReason::MalformedStub:
+        return HrtfIrRejectReason::MalformedStub;
+HrtfBinauralRejectReason hrtf_binaural_reject_reason(HrtfPanPathRejectReason pan_reason) {
+    return preflight.rejectReason() != HrtfBinauralRejectReason::None;

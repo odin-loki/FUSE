@@ -754,3 +754,8 @@ bool try_preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
     bool can_narrow() const { return reason == HrtfAttenuationCouplingRejectReason::None; }
 HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const Vec3& rel_listener);
     bool is_bypass() const { return reason != HrtfBinauralRejectReason::None; }
+
+// --- deepen additive from b72-hrtf-reject-reason-preflights-62b4 ---
+HrtfBinauralRejectReason hrtf_binaural_reject_reason(HrtfPanPathRejectReason pan_reason);
+    HrtfBinauralRejectReason rejectReason() const {
+    bool is_bypass() const { return panPath.reason != HrtfPanPathRejectReason::None; }
