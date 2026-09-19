@@ -489,3 +489,7 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
     return islandGraphBuildRejectReason(bodyCount, contacts, distanceConstraints) == expected;
     if (islandGraphBuildRejectReason(bodyCount, contacts, distanceConstraints) !=
         IslandGraphBuildRejectReason::None) {
+
+// --- deepen additive from deepen-pbd-island-guards-9446 ---
+    case IslandGraphBuildRejectReason::UnsafeRefs:
+        return IslandGraphBuildRejectReason::UnsafeRefs;

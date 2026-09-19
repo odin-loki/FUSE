@@ -3035,3 +3035,27 @@ bool islandSolveRejectsForReason(const ContactIslandGraph& graph, IslandSolveRej
     case IslandSleepGraphRejectReason::NoSolveableIslands:
     return IslandSleepGraphRejectReason::NoSolveableIslands;
     preflight.noSolveableIslands = preflight.reason == IslandSleepGraphRejectReason::NoSolveableIslands;
+
+// --- deepen additive from deepen-pbd-island-guards-9446 ---
+    case IslandSolveRejectReason::NoInRangeRefs:
+    case IslandSleepRejectReason::OutOfRangeIsland:
+    case IslandSleepRejectReason::NoSolveableIslands:
+    case IslandWakeRejectReason::NoWakeableIslands:
+IslandDispatchRejectReason islandDispatchRejectReason(const ContactIslandGraph& graph, f32 dt);
+                                    IslandDispatchRejectReason expected);
+IslandSolveRejectReason islandSolveJobRejectReason(const IslandSolveJob& job, f32 dt);
+IslandSolveRejectReason islandConstraintSolveRejectReason(
+                                 IslandSolveRejectReason expected);
+IslandSleepRejectReason islandSleepGraphRejectReason(const ContactIslandGraph& graph,
+                                 IslandSleepRejectReason expected);
+IslandWakeRejectReason islandWakeGraphRejectReason(const ContactIslandGraph& graph,
+                                IslandWakeRejectReason expected);
+    preflight.invalidDt = preflight.reason == IslandSolveRejectReason::InvalidDt;
+    if (preflight.reason == IslandSolveRejectReason::EmptyIsland) {
+        preflight.reason = IslandSleepRejectReason::OutOfRangeIsland;
+        preflight.reason = IslandWakeRejectReason::OutOfRangeIsland;
+    preflight.skipped = preflight.reason != IslandSleepRejectReason::None;
+IslandSolveRejectReason islandSolveJobRejectReason(const IslandSolveJob& job, f32 dt) {
+        return IslandSolveRejectReason::NoInRangeRefs;
+        return IslandSleepRejectReason::NoSolveableIslands;
+        return IslandWakeRejectReason::NoWakeableIslands;

@@ -1798,3 +1798,13 @@ IslandSolveRejectReason islandSolveRejectReason(const ContactIslandGraph& graph)
 bool islandSolveRejectsForReason(const ContactIslandGraph& graph, IslandSolveRejectReason expected);
     bool can_dispatch() const { return !skipped && reason == IslandSolveRejectReason::None; }
     bool can_skip_solve() const { return !skipped && reason == IslandSleepRejectReason::AllSleeping; }
+
+// --- deepen additive from deepen-pbd-island-guards-9446 ---
+IslandSolveRejectReason islandSolveJobRejectReason(const IslandSolveJob& job, f32 dt);
+IslandSolveRejectReason islandConstraintSolveRejectReason(
+    bool can_dispatch() const { return reason == IslandSolveRejectReason::None; }
+    bool can_solve() const { return reason == IslandSolveRejectReason::None; }
+IslandSleepRejectReason islandSleepGraphRejectReason(const ContactIslandGraph& graph,
+IslandWakeRejectReason islandWakeGraphRejectReason(const ContactIslandGraph& graph,
+        return reason == IslandWakeRejectReason::None && hasMixedSleepState && activeDynamicCount > 0u;
+    bool has_solveable_islands() const { return reason == IslandSleepRejectReason::None; }

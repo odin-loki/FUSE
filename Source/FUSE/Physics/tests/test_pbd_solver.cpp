@@ -5294,3 +5294,44 @@ void testIslandPipelineRejectReasonGuards() {
     expectTrue(solvePreflight.noMovableBodies, "constraint solve preflight marks noMovableBodies");
     expectTrue(!solvePreflight.can_solve(), "constraint solve preflight cannot solve all-sleeping island");
     testIslandPipelineRejectReasonGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-9446 ---
+                   static_cast<u32>(IslandGraphBuildRejectReason::UnsafeRefs),
+    expectTrue(islandGraphBuildRejectsForReason(4, contacts, constraints,
+                                                IslandGraphBuildRejectReason::UnsafeRefs),
+    expectTrue(static_cast<u32>(emptyPreflight.reason) ==
+                   static_cast<u32>(IslandWakeRejectReason::OutOfRangeIsland),
+void testIslandGraphBuildRejectReasonName() {
+    expectTrue(std::strcmp(islandGraphBuildRejectReasonName(IslandGraphBuildRejectReason::UnsafeRefs),
+    expectTrue(static_cast<u32>(islandDispatchRejectReason(graph, 1.f / 60.f)) ==
+    expectTrue(static_cast<u32>(islandDispatchRejectReason(graph, 0.f)) ==
+    expectTrue(static_cast<u32>(islandDispatchRejectReason(emptyGraph, 1.f / 60.f)) ==
+    expectTrue(static_cast<u32>(preflight.reason) == static_cast<u32>(IslandDispatchRejectReason::None),
+void testIslandSolveRejectReasonGuards() {
+    expectTrue(static_cast<u32>(islandSolveJobRejectReason(invalid, 1.f / 60.f)) ==
+                   static_cast<u32>(IslandSolveRejectReason::EmptyIsland),
+    expectTrue(islandSolveRejectsForReason(invalid, 0.f, IslandSolveRejectReason::InvalidDt),
+    expectTrue(static_cast<u32>(islandSleepRejectReason(graph.island(activeIsland), bodies)) ==
+    expectTrue(static_cast<u32>(islandSleepRejectReason(graph.island(sleepingIsland), bodies)) ==
+    expectTrue(static_cast<u32>(sleepPreflight.reason) ==
+    expectTrue(static_cast<u32>(sleepGraph.reason) == static_cast<u32>(IslandSleepRejectReason::None),
+    expectTrue(static_cast<u32>(islandWakeRejectReason(graph.island(activeIsland), bodies)) ==
+    expectTrue(static_cast<u32>(islandWakeRejectReason(graph.island(sleepingIsland), bodies)) ==
+    const IslandWakePreflight wakePreflight = preflight_island_wake(graph.island(activeIsland), bodies);
+    expectTrue(static_cast<u32>(wakePreflight.reason) == static_cast<u32>(IslandWakeRejectReason::None),
+    expectTrue(static_cast<u32>(wakeGraph.reason) == static_cast<u32>(IslandWakeRejectReason::None),
+    expectTrue(static_cast<u32>(islandConstraintSolveRejectReason(
+                   static_cast<u32>(IslandSolveRejectReason::NoInRangeRefs),
+    expectTrue(static_cast<u32>(solvePreflight.reason) ==
+                   static_cast<u32>(IslandSolveRejectReason::NoMovableBodies),
+    expectTrue(std::strcmp(islandSolveRejectReasonName(IslandSolveRejectReason::NoMovableBodies),
+void testIslandRejectReasonMirrorsExistingPreflights() {
+    expectTrue(preflight_island_dispatch(graph, dt).can_dispatch() == !should_skip_island_dispatch(graph, dt),
+               "dispatch preflight can_dispatch mirrors should_skip inverse");
+    expectTrue(preflight_solve_island_job(job, dt).can_dispatch() == !should_skip_solve_island_job(job, dt),
+               "solve job preflight can_dispatch mirrors should_skip inverse");
+                   !should_skip_island_wake(graph.island(0), bodies),
+               "wake preflight should_wake_sleepers mirrors should_skip inverse");
+    testIslandGraphBuildRejectReasonName();
+    testIslandSolveRejectReasonGuards();
+    testIslandRejectReasonMirrorsExistingPreflights();
