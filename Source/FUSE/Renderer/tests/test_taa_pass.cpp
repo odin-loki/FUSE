@@ -4596,3 +4596,10 @@ void testTaaPassHistoryWarmupPreflight() {
     expectTrue(invalidSeqPass->tryPreflightJitterAdvance(jitterReject),
                "fallback pass tryPreflightJitterAdvance passes after defaulting sequence");
                "fallback pass tryPreflightJitterAdvance reject reason is None");
+
+// --- deepen additive from deepen-b59-taa-try-preflights-0d24 ---
+               "pass tryPreflightJitterNdc reason is None before init");
+               "pass tryPreflightJitterAdvance reason is None before init");
+    expectNear(weights.current, 1.f, 1e-5f, "pass tryCompute warmup current weight is full before init");
+    expectNear(weights.history, 0.f, 1e-5f, "pass tryCompute warmup history weight is zero before init");
+    expectTrue(pass->tryPreflightJitterAdvance(jitterReason), "pass tryPreflightJitterAdvance passes after init");
