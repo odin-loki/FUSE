@@ -1743,3 +1743,18 @@ FUSE_PHYSICS_INLINE bool wouldSkipBroadphase(
     const CellOccupancyRejectReason rejectReason = cellOccupancyRejectReason(range, maxCells);
     return rejectReason != CellOccupancyRejectReason::None;
     const CellSpanRejectReason rejectReason = cellSpanRejectReason(range, maxSpanPerAxis);
+
+// --- deepen additive from deepen-b4-broadphase-guards-1f69 ---
+        return CellCapacityRejectReason::ExceedsOccupancyBudget;
+    bool canInsert() const { return reason == CellCapacityRejectReason::None; }
+    preflight.exceedsOccupancyBudget = preflight.reason == CellCapacityRejectReason::ExceedsOccupancyBudget;
+    preflight.exceedsSpan = cellSpanRejectReason(range, maxSpanPerAxis) == CellSpanRejectReason::ExceedsSpan;
+FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity2D(
+    return !preflightCellCapacity(range, maxCells, maxSpanPerAxis).canInsert();
+    return !preflightCellCapacity2D(range, maxCells, maxSpanPerAxis).canInsert();
+    return preflightCellCapacity(range, maxCells, maxSpanPerAxis).canInsert();
+    return preflightCellCapacity2D(range, maxCells, maxSpanPerAxis).canInsert();
+FUSE_PHYSICS_INLINE bool wouldSkipCellCapacityInsertion(
+    CellCapacityRejectReason* reason = nullptr) {
+    const CellCapacityRejectReason reject = cellCapacityRejectReason(range, maxCells, maxSpanPerAxis);
+    return reject != CellCapacityRejectReason::None;

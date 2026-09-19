@@ -4219,3 +4219,48 @@ void testBroadphaseWouldSkipGuards() {
                "wouldSkipBroadphase agrees with canSkipBroadphase on empty scene");
     expectTrue(!fuse::physics::broadphase::wouldSkipBroadphase(bodies, shapes, &reason),
                "wouldSkipBroadphase false on populated scene");
+
+// --- deepen additive from deepen-b4-broadphase-guards-1f69 ---
+    fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason invalidateReason =
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferInvalidateSlot(buffer, 2u, &invalidateReason),
+             "wouldSkipPairBufferInvalidateSlot records OutOfRangeSlot reason");
+    expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(buffer, 1u, 2u, 3u, &writeReason),
+             "wouldSkipPairBufferWriteSlot records None for valid write");
+void testCellCapacityPreflightAndWouldSkipGuards() {
+    const fuse::physics::broadphase::CellCapacityPreflight withinCapacity =
+    fuse::physics::broadphase::CellCapacityRejectReason capacityReason =
+        fuse::physics::broadphase::CellCapacityRejectReason::None;
+    expectTrue(!fuse::physics::broadphase::wouldSkipCellCapacityInsertion(validRange, 8u, 4u, &capacityReason),
+               "wouldSkipCellCapacityInsertion false for valid range");
+             "wouldSkipCellCapacityInsertion records None for valid range");
+                   fuse::physics::broadphase::CellCapacityRejectReason::ExceedsOccupancyBudget),
+        fuse::physics::broadphase::preflightCellCapacity(validRange, 7u, 4u);
+    expectTrue(fuse::physics::broadphase::wouldSkipCellCapacityInsertion(validRange, 7u, 4u, &capacityReason),
+               "wouldSkipCellCapacityInsertion true for over-budget range");
+    const fuse::physics::broadphase::CellCapacityPreflight spanPreflight =
+        fuse::physics::broadphase::preflightCellCapacity(overSpan, 0u, 4u);
+    expectTrue(spanPreflight.canInsert(), "span excess does not block insertion when occupancy is unlimited");
+    expectTrue(spanPreflight.exceedsSpan, "cell-capacity preflight marks exceedsSpan");
+               "wouldSkipCellOccupancyIteration true for over-budget range");
+             "wouldSkipCellOccupancyIteration records ExceedsBudget reason");
+        fuse::physics::broadphase::preflightCellCapacity2D(planeRange, 4u, 4u);
+    expectTrue(!planePreflight.canInsert(), "2D cell-capacity preflight rejects over-budget range");
+    expectEq(planePreflight.occupancyCount, 8u, "2D cell-capacity preflight reports occupancy count");
+             "wouldSkipRefineBroadphase records EmptyBuffer reason");
+               "wouldSkipRefineBroadphase agrees with canSkipRefineBroadphase");
+    expectTrue(!fuse::physics::broadphase::wouldSkipRefineBroadphase(bodies, shapes, buffer, &refineReason),
+               "wouldSkipRefineBroadphase false on valid refine scene");
+             "wouldSkipRefineBroadphase records None on valid refine scene");
+             "wouldSkipDedupeBroadphase records SinglePair reason");
+               "wouldSkipDedupeBroadphase agrees with canSkipDedupeBroadphase");
+    expectTrue(!fuse::physics::broadphase::wouldSkipDedupeBroadphase(buffer, &dedupeReason),
+             "wouldSkipBroadphaseMerge records EmptyPlaneBodies reason");
+    expectTrue(!fuse::physics::broadphase::wouldSkipBroadphaseMerge(bodies, shapes, &mergeReason),
+               "wouldSkipBroadphaseMerge false for plane plus dynamic scene");
+    expectTrue(fuse::physics::broadphase::wouldSkipBroadphaseMerge(bodies, shapes) ==
+               "wouldSkipBroadphaseMerge agrees with canSkipBroadphaseMerge");
+    expectTrue(!fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(mergePairs, mergeBuffer, &mergeIntoReason),
+             "wouldSkipMergePairsIntoBuffer records None for valid merge");
+    expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(mergePairs, mergeBuffer, &mergeIntoReason),
+             "wouldSkipMergePairsIntoBuffer records BufferFull reason");
+    testCellCapacityPreflightAndWouldSkipGuards();

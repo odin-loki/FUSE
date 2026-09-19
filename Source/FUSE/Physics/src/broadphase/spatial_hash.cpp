@@ -1761,3 +1761,7 @@ ShapeCellInsertionPreflight preflightShapeCellInsertion(
     return rejectReason != BroadphaseMergeRejectReason::None;
     const MergePairsIntoBufferRejectReason rejectReason = mergePairsIntoBufferRejectReason(pairs, buffer);
     return rejectReason != MergePairsIntoBufferRejectReason::None;
+
+// --- deepen additive from deepen-b4-broadphase-guards-1f69 ---
+    case CellCapacityRejectReason::ExceedsOccupancyBudget:
+        if (wouldSkipCellCapacityInsertion(range, maxOccupancy, maxSpan)) {
