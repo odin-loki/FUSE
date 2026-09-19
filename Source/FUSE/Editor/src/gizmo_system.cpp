@@ -1339,6 +1339,18 @@ bool isRayNormalized(const GizmoRay& ray) {
     return std::fabs(len - 1.f) <= kEpsilon;
     return isSnapEnabled(mode, settings) &&
            (!isSnapStepValid(mode, settings) || isSnapSettingsNonFinite(settings));
+RayPreflight preflightRay(const GizmoRay& ray) {
+    RayPreflight preflight{};
+        preflight.emptyRay = true;
+
+    preflight.unnormalized = isRayUnnormalized(ray);
+
+bool isRayUnnormalized(const GizmoRay& ray) {
+
+    return std::fabs(len - 1.f) > 1e-3f;
+
+bool canUseRayForPick(const GizmoRay& ray) {
+    return preflightRay(ray).canUse();
 
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
     PickPreflight preflight{};
@@ -3053,10 +3065,6 @@ bool canInteract(const GizmoRay& ray, const GizmoTransform& transform, bool drag
 
                  const GizmoSnapSettings& settings) {
 
-                 GizmoAxis activeAxis, GizmoMode mode, GizmoSpace space, f32 axisLength,
-                 f32 pickRadius, const GizmoSnapSettings& settings) {
-    return preflightInteraction(ray, transform, dragging, activeAxis, mode, space, axisLength,
-                                pickRadius, settings)
         .canInteract();
 }
 
@@ -4892,6 +4900,7 @@ bool GizmoSystem::isSnapDegradedOnPhase() const {
     return preflightSnapInteraction().isDegraded();
 GizmoInteractionPhase GizmoSystem::interactionPhase() const {
     return fuse::editor::interactionPhase(m_dragging);
+
 
 
 }

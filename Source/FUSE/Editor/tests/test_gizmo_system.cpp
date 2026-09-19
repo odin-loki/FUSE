@@ -7355,6 +7355,120 @@ void testRayNonFiniteGuards() {
                "gizmo canBeginDrag rejects non-finite ray");
 }
 
+void testRayPreflightGuards() {
+    fuse::editor::GizmoRay emptyRay{};
+    const fuse::editor::RayPreflight emptyPreflight = fuse::editor::preflightRay(emptyRay);
+    expectTrue(emptyPreflight.emptyRay, "ray preflight marks empty ray");
+    expectTrue(!emptyPreflight.canUse(), "ray preflight rejects empty ray");
+    expectTrue(!fuse::editor::canUseRayForPick(emptyRay),
+               "canUseRayForPick rejects empty ray");
+    expectTrue(!fuse::editor::isRayUnnormalized(emptyRay),
+               "empty ray is not classified as unnormalized");
+
+    fuse::editor::GizmoRay unitRay = rayAlongX();
+    const fuse::editor::RayPreflight unitPreflight = fuse::editor::preflightRay(unitRay);
+    expectTrue(unitPreflight.canUse(), "ray preflight accepts unit ray");
+    expectTrue(!unitPreflight.unnormalized, "unit ray is not unnormalized");
+    expectTrue(fuse::editor::canUseRayForPick(unitRay), "canUseRayForPick accepts unit ray");
+
+    fuse::editor::GizmoRay scaledRay = rayAlongX();
+    scaledRay.direction = {2.f, 0.f, 0.f};
+    expectTrue(fuse::editor::isRayUnnormalized(scaledRay),
+               "non-unit ray direction is unnormalized");
+    const fuse::editor::RayPreflight scaledPreflight = fuse::editor::preflightRay(scaledRay);
+    expectTrue(scaledPreflight.canUse(), "unnormalized ray remains usable for pick");
+    expectTrue(scaledPreflight.unnormalized, "ray preflight marks unnormalized direction");
+
+    fuse::editor::GizmoTransform transform{};
+    expectTrue(fuse::editor::pickAxisFromRay(scaledRay, transform, fuse::editor::GizmoMode::Translate,
+                                             fuse::editor::GizmoSpace::World,
+                                             fuse::editor::GizmoSystem::kAxisLength,
+                                             fuse::editor::GizmoSystem::kPickRadius) ==
+                   fuse::editor::GizmoAxis::X,
+               "unnormalized ray still picks axis on valid path");
+}
+
+void testInteractionPreflightPhaseRouting() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::InteractionPreflight idleInteraction = fuse::editor::preflightInteraction(
+        hit, false, fuse::editor::GizmoAxis::None, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(idleInteraction.canInteract(), "idle interaction can interact via begin or pick");
+    expectTrue(idleInteraction.isSnapDegraded(), "idle interaction marks snap degraded");
+    expectTrue(!idleInteraction.snapWillApplyOnPhase(),
+               "idle interaction snapWillApplyOnPhase false when step invalid");
+    expectTrue(fuse::editor::canActOnPhase(hit, false, fuse::editor::GizmoAxis::None,
+                                           fuse::editor::GizmoMode::Translate, snap),
+               "canActOnPhase accepts idle begin path");
+    expectTrue(fuse::editor::canInteract(hit, false, fuse::editor::GizmoAxis::None,
+                                         fuse::editor::GizmoMode::Translate, snap),
+               "canInteract accepts idle begin or pick path");
+
+    const fuse::editor::InteractionPreflight activeInteraction = fuse::editor::preflightInteraction(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(activeInteraction.canInteract(), "active interaction can interact via update or end");
+    expectTrue(activeInteraction.isSnapDegraded(), "active interaction marks snap degraded");
+    expectTrue(activeInteraction.canActOnPhase(), "active interaction canActOnPhase via update");
+    expectTrue(fuse::editor::canInteract(hit, true, fuse::editor::GizmoAxis::X,
+                                         fuse::editor::GizmoMode::Translate, snap),
+               "canInteract accepts active update or end path");
+
+    hit.viewportWidth = 0.f;
+    const fuse::editor::InteractionPreflight emptyHitInteraction = fuse::editor::preflightInteraction(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!emptyHitInteraction.canActOnPhase(),
+               "active interaction rejects primary action on empty viewport");
+    expectTrue(emptyHitInteraction.canInteract(),
+               "active interaction can still end on empty viewport");
+    expectTrue(fuse::editor::canInteract(hit, true, fuse::editor::GizmoAxis::X,
+                                         fuse::editor::GizmoMode::Translate, snap),
+               "canInteract true when end path remains valid");
+
+    snap.gridSize = 1.f;
+    hit.viewportWidth = 100.f;
+    const fuse::editor::PickSnapPreflight pickSnap =
+        fuse::editor::preflightPickSnap(hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!pickSnap.snapDegraded(), "pick-snap preflight clears snapDegraded with valid step");
+    expectTrue(pickSnap.canSnap(), "pick-snap preflight can snap with valid step");
+
+    const fuse::editor::PickInteractionPreflight pickInteraction =
+        fuse::editor::preflightPickInteraction(hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!pickInteraction.snapDegraded(),
+               "pick interaction preflight clears snapDegraded with valid step");
+    expectTrue(pickInteraction.snapWillApply(), "pick interaction reports snap will apply");
+
+    const fuse::editor::BeginInteractionPreflight beginInteraction =
+        fuse::editor::preflightBeginInteraction(hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!beginInteraction.snapDegraded(),
+               "begin interaction preflight clears snapDegraded with valid step");
+    expectTrue(beginInteraction.snapReady(), "begin interaction preflight snap ready");
+
+    const fuse::editor::InteractionPreflight validSnapInteraction = fuse::editor::preflightInteraction(
+        hit, false, fuse::editor::GizmoAxis::None, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validSnapInteraction.snapWillApplyOnPhase(),
+               "idle interaction snapWillApplyOnPhase true with valid step");
+    expectTrue(!validSnapInteraction.isSnapDegraded(),
+               "idle interaction clears snapDegraded with valid step");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo canActOnPhase accepts idle begin path");
+    expectTrue(gizmo.canInteract(hit), "gizmo canInteract accepts idle path");
+    gizmo.beginDrag(hit, fuse::editor::GizmoTransform{});
+    expectTrue(gizmo.canInteract(hit), "gizmo canInteract accepts active update or end path");
+    expectTrue(gizmo.preflightInteraction(hit).snapWillApplyOnPhase(),
+               "gizmo interaction preflight snapWillApplyOnPhase while dragging");
+    gizmo.endDrag();
+}
+
 void testCanInteractionPredicates() {
     fuse::editor::GizmoSnapSettings snap{};
     snap.translateSnap = true;
@@ -7934,6 +8048,8 @@ int main() {
     testRayNormalizationPreflight();
     testSnapDeltaPreflight();
     testGizmoPhaseRoutingWrappers();
+    testRayPreflightGuards();
+    testInteractionPreflightPhaseRouting();
     testCanInteractionPredicates();
     testPickRejectReasonGuards();
     testSnapRejectReasonGuards();
