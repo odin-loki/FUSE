@@ -4450,3 +4450,22 @@ void testTaaPassTryAndClassifyPreflights() {
                "pass tryPreflightJitterNdc reason is InvalidViewport");
                "pass classifyJitterNdcReject is InvalidViewport");
     testTaaPassTryAndClassifyPreflights();
+
+// --- deepen additive from deepen-taa-b59-guards-48c3 ---
+void testTaaPassTemporalGuardsAndTryPreflight() {
+    expectTrue(!pass->tryPreflightHistoryReuse(0u, historyReject),
+    expectTrue(historyReject == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
+    expectTrue(!pass->tryPreflightHistoryReadyForResolve(historyReject),
+               "pass tryPreflightResolveBlendWeights passes on warmup frame");
+               "pass tryPreflightResolveBlendWeights reject reason is None on warmup");
+               "pass tryComputeResolveBlendWeights passes on warmup frame");
+    expectTrue(pass->preflightTemporalGuards(5u, resolveDesc, 0u, &verdict),
+    expectTrue(pass->tryPreflightHistoryReuse(0u, historyReject),
+    expectTrue(historyReject == fuse::renderer::TaaHistoryReuseBlockReason::None,
+    expectTrue(pass->tryPreflightHistoryReadyForResolve(historyReject),
+               "pass tryPreflightHistoryReadyForResolve passes after warmup");
+    expectNear(weights.current, 0.25f, 1e-5f, "pass tryCompute steady current weight after warmup");
+    expectNear(weights.history, 0.75f, 1e-5f, "pass tryCompute steady history weight after warmup");
+    expectTrue(historyReject == fuse::renderer::TaaHistoryReuseBlockReason::StaleGeneration,
+               "zero-width pass tryPreflightJitterNdc rejects invalid viewport");
+    testTaaPassTemporalGuardsAndTryPreflight();

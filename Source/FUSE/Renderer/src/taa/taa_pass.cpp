@@ -658,3 +658,11 @@ bool TaaPass::preflightHistoryTemporalSample(u32 observedGeneration,
     return tryPreflightTaaJitterAlignment(frameIndex, m_jitter.monotonicFrameIndex(), m_jitter.index(),
 bool TaaPass::preflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return preflightTaaResolve(desc, m_history, reason);
+
+// --- deepen additive from deepen-taa-b59-guards-48c3 ---
+        preflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), &verdict.jitterReject);
+            preflightTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength(), &verdict.jitterReject);
+        preflightTaaHistoryReuse(m_history, observedGeneration, &verdict.historyReject);
+        preflightTaaResolveBlendWeights(desc, m_history, &verdict.blendReject);
+bool TaaPass::preflightTemporalGuards(u32 frameIndex, const TaaResolveDesc& desc, u32 observedGeneration,
+    return !preflightTemporalGuards(frameIndex, desc, observedGeneration);

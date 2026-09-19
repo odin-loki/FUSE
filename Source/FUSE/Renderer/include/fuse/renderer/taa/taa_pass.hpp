@@ -366,3 +366,8 @@ void addTaaPassToGraph(RenderGraph& graph);
 
 // --- deepen additive from deepen-b59-taa-guards-1db7 ---
     bool preflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
+
+// --- deepen additive from deepen-taa-b59-guards-48c3 ---
+    TaaJitterGuardRejectReason jitterReject = TaaJitterGuardRejectReason::None;
+    TaaResolveBlendRejectReason blendReject = TaaResolveBlendRejectReason::None;
+    bool preflightTemporalGuards(u32 frameIndex, const TaaResolveDesc& desc, u32 observedGeneration,
