@@ -1093,3 +1093,21 @@ void testMaterialPropertyInspectRefreshGuards() {
     expectTrue(binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed clears pending refresh");
     expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel no-op when clean");
     expectTrue(!panel.needsPanelRefresh(), "tryRefreshPanel clears panel refresh flag");
+
+// --- deepen additive from deepen-b6-material-inspector-binding-refresh-guards-eedc ---
+void testMaterialPropertyBindingDirtyMaskGuards() {
+               "tryClear rejects clean binding");
+    expectTrue(!binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed rejects clean binding");
+    binding.tryBind(0u, 1u, state);
+               "tryIsPropertyDirty reports roughness dirty");
+               "tryClear clears dirty roughness");
+    expectTrue(binding.tryMarkPanelRefreshed(), "tryMarkPanelRefreshed drains dirty state");
+    expectTrue(!binding.tryRefreshFromEditState(state), "tryRefresh rejects unbound binding");
+    expectTrue(binding.tryRefreshFromEditState(incoming), "tryRefresh accepts bound binding");
+    expectTrue(state.roughness == 1.f, "tryRefresh clamps incoming roughness");
+    expectTrue(state.metallic == 0.f, "tryRefresh clamps incoming metallic");
+void testMaterialEditorPanelRefreshGuards() {
+    expectTrue(!panel.tryRefreshPanel(), "tryRefreshPanel rejects clean panel");
+    expectTrue(panel.tryRefreshPanel(), "tryRefreshPanel drains dirty panel");
+    expectTrue(!panel.needsPanelRefresh(), "tryRefreshPanel clears refresh flag");
+    expectTrue(!panel.tryRefreshPanel(), "second tryRefreshPanel is a no-op");
