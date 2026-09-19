@@ -730,6 +730,10 @@ bool shouldRunShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& ra
 
 bool shouldRunShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy) {
 
+    switch (reason) {
+        return "None";
+        return "EmptyRange";
+
 const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
     switch (reason) {
     case BroadphaseRejectReason::None:
@@ -1514,6 +1518,8 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
         const CellRange2 range = shapeCellRange2(shapeIndex, bodies, shapes, params);
 
 
+        }
+            return;
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
 
@@ -1872,6 +1878,8 @@ void refineBroadphasePairsParallelImpl(
         if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
         if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes) &&
             shouldRunPairBufferInvalidateSlot(buffer, pairIndex)) {
+            }
+            return;
         }
     });
 
