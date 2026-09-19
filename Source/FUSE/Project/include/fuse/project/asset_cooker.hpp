@@ -266,6 +266,7 @@ public:
     [[nodiscard]] std::vector<std::string> probe_stale_dependency_sources(
         const CookManifest& manifest) const;
     /// True when `count_stale_dependency_invalidation` would remove at least one entry (B7.9 deepen).
+    /// Deduplicated source paths `invalidate_stale_dependency_hashes` would touch (B7.9 deepen).
     /// Read-only prune reconcile probe — mirrors `CookCache::estimate_prune_removals` (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_reconcile() const;
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
@@ -440,7 +441,7 @@ public:
     /// Upstream invalidation breakdown — mirrors `count_upstream_invalidation` (B7.9 deepen).
     /// True when `count_stale_dependency_invalidation` would remove at least one entry (B7.9 deepen).
     [[nodiscard]] bool would_stale_dependency_invalidate(const CookManifest& manifest) const;
-        const CookManifest& manifest, const std::string& changed_source) const;
+    /// True when `estimate_reconcile_invalidation().total()` is non-zero (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

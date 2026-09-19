@@ -382,6 +382,7 @@ struct CookCacheInvalidationEstimate {
     if (entry.source_path.empty()) {
     if (entry.output_path.empty()) {
 /// Structural cache-entry preflight — mirrors `is_valid_cook_cache_entry` without storing (B7.9 deepen).
+/// Structural cache-entry preflight — mirrors `store` guards without mutating the cache (B7.9 deepen).
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {

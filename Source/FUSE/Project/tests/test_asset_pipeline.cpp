@@ -3407,6 +3407,10 @@ void testCookerReconcileWouldAndUpstreamProbes() {
                "unknown changed source would_upstream is false");
     expectTrue(cooker.would_upstream_invalidation(manifest, source_a),
                "known changed source would_upstream is true");
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would-reconcile probes ok");
+
+    expectTrue(!cooker.would_invalidate_upstream_dependency(manifest, ""),
     expectTrue(!cooker.would_stale_dependency_invalidation(manifest),
                "fresh cache would_stale_dependency is false");
     expectTrue(!cooker.would_reconcile_invalidation(manifest),
@@ -3475,7 +3479,6 @@ void testCookerReconcileWouldAndUpstreamProbes() {
     const fuse::project::CookUpstreamInvalidationEstimate empty =
         cooker.estimate_upstream_invalidation(manifest, "");
     expectTrue(empty.total() == 0u, "empty changed source upstream estimate is zero");
-    expectTrue(cooker.probe_upstream_invalidation_sources(manifest, "").empty(),
                "empty changed source upstream probe is guarded");
 
     const fuse::project::CookUpstreamInvalidationEstimate estimate =
@@ -3565,7 +3568,6 @@ void testCookerProbeUpstreamInvalidationSources() {
 void testCookerWouldReconcileInvalidation() {
     const std::string source = writeTempFile("/tmp/fuse_b79_would_reconcile.obj", "# would reconcile\n");
 
-}
 
 
     fuse::project::CookManifestEntry entry;
@@ -3772,10 +3774,22 @@ void testCookCacheDownstreamWouldInvalidateProbe() {
     expectTrue(stale_with_source.upstream_invalidation_entries >= 2u,
                "stale upstream reconcile estimate includes upstream count");
 
-    fuse::project::AssetCooker cooker;
-    expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would_reconcile is false");
 
-    expectTrue(cooker.estimate_reconcile_invalidation(manifest).total() != 0u,
+    expectTrue(cooker.probe_stale_dependency_sources(manifest).empty(),
+               "fresh cache stale dependency source probe is empty");
+
+    expectTrue(cooker.would_invalidate_upstream_dependency(manifest, source_a),
+               "would_upstream true when entries exist for changed source");
+    expectTrue(upstream_sources.size() >= 2u, "upstream source probe lists producer and dependent");
+    expectTrue(upstream_sources[0] == source_a, "upstream source probe starts at changed source");
+
+               "would_reconcile true when stale dependency entries exist");
+
+    expectTrue(!stale_sources.empty(), "stale dependency source probe non-empty after upstream change");
+    expectTrue(has_downstream, "stale dependency source probe includes downstream source");
+
+    expectTrue(!cooker.would_stale_dependency_invalidation(manifest),
+               "would_stale_dependency false after stale invalidation");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {

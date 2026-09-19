@@ -468,12 +468,14 @@ u32 AssetCooker::count_upstream_invalidation(const CookManifest& manifest,
 
 bool AssetCooker::would_upstream_invalidate(const CookManifest& manifest,
                                           const std::string& changed_source) const {
+bool AssetCooker::would_invalidate_upstream_dependency(const CookManifest& manifest,
     return count_upstream_invalidation(manifest, changed_source) != 0;
 }
 
 std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
     const CookManifest& manifest, const std::string& changed_source) const {
     if (!is_valid_cook_cache_path(changed_source)) {
+    if (!is_valid_cook_cache_path(changed_source) || m_cache.empty()) {
         return {};
     }
 
@@ -568,6 +570,8 @@ u32 AssetCooker::estimate_reconcile_invalidation(const CookManifest& manifest) c
              m_cache.probe_downstream_sources(job.output_path, graph.edges(), graph.jobs())) {
                 if (recorded == downstream_source) {
                 sources.push_back(downstream_source);
+
+
 
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
     return estimate_stale_dependency_invalidation(manifest);
@@ -812,6 +816,64 @@ bool AssetCooker::would_stale_dependency_invalidate(const CookManifest& manifest
     return count_stale_dependency_invalidation(manifest) != 0;
 }
 
+bool AssetCooker::would_stale_dependency_invalidation(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) != 0;
+}
+
+std::vector<std::string> AssetCooker::probe_stale_dependency_sources(
+    const CookManifest& manifest) const {
+    if (m_cache.empty()) {
+        return {};
+    }
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    std::vector<std::pair<std::string, u64>> source_upstream;
+    source_upstream.reserve(graph.jobs().size());
+    for (const CookJob& job : graph.jobs()) {
+        source_upstream.emplace_back(job.source_path, hash_upstream_from_jobs(job, graph.jobs()));
+    }
+
+    std::vector<std::string> sources;
+    const std::vector<std::string> stale_sources = m_cache.probe_stale_upstream_sources(source_upstream);
+    for (const std::string& stale_source : stale_sources) {
+        bool already_recorded = false;
+        for (const std::string& recorded : sources) {
+            if (recorded == stale_source) {
+                already_recorded = true;
+                break;
+            }
+        }
+        if (!already_recorded) {
+            sources.push_back(stale_source);
+        }
+
+        for (const CookJob& job : graph.jobs()) {
+            if (job.source_path != stale_source) {
+                continue;
+            }
+
+            const std::vector<std::string> downstream =
+                m_cache.probe_downstream_sources(job.output_path, graph.edges(), graph.jobs());
+            for (const std::string& path : downstream) {
+                bool downstream_recorded = false;
+                for (const std::string& recorded : sources) {
+                    if (recorded == path) {
+                        downstream_recorded = true;
+                        break;
+                    }
+                }
+                if (!downstream_recorded) {
+                    sources.push_back(path);
+                }
+            }
+            break;
+        }
+    }
+    return sources;
+}
+
 CookCachePruneEstimate AssetCooker::estimate_prune_reconcile() const {
     return m_cache.estimate_prune_removals();
 }
@@ -944,31 +1006,14 @@ CookCacheInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
         if (job.source_path != changed_source) {
             continue;
 
-        }
-    return estimate;
 
-std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
-    const CookManifest& manifest, const std::string& changed_source) const {
-    if (!is_valid_cook_cache_path(changed_source)) {
-        return {};
-    estimate.direct_source_entries = m_cache.count_by_source(changed_source);
 
-    return estimate_reconcile_invalidation(manifest).total() != 0;
 
     if (!is_valid_cook_cache_path(changed_source) || m_cache.empty()) {
 
-    CookJobGraph graph;
-    graph.build_from_manifest(manifest);
 
 
-    std::vector<std::string> sources;
-    if (m_cache.count_by_source(changed_source) != 0) {
-        sources.push_back(changed_source);
-    }
 
-    for (const CookJob& job : graph.jobs()) {
-        if (job.source_path != changed_source) {
-            continue;
 
         const std::vector<std::string> downstream =
             m_cache.probe_downstream_sources(job.output_path, graph.edges(), graph.jobs());
@@ -1038,35 +1083,17 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(const 
 bool AssetCooker::would_stale_dependency_invalidate(const CookManifest& manifest) const {
     return count_stale_dependency_invalidation(manifest) != 0;
     const auto append_unique = [&](const std::string& source_path) {
-        if (!is_valid_cook_cache_path(source_path)) {
-            return;
-        }
-        for (const std::string& recorded : sources) {
-            if (recorded == source_path) {
-        sources.push_back(source_path);
 
 
 
         for (const std::string& downstream_source :
             append_unique(downstream_source);
 
-    return estimate;
-
-bool AssetCooker::would_reconcile_invalidation(const CookManifest& manifest) const {
-    return estimate_reconcile_invalidation(manifest).total() != 0;
-
-    const CookManifest& manifest, const std::string& changed_source) const {
-    if (!is_valid_cook_cache_path(changed_source)) {
-        return {};
-
-    CookJobGraph graph;
-    graph.build_from_manifest(manifest);
 
 
-            bool already_recorded = false;
-                    already_recorded = true;
-                    break;
-            if (!already_recorded) {
+
+
+
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
