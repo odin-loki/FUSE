@@ -52,7 +52,7 @@ void ContactBufferSoA::preparePairSlots(u32 pairCount) {
 }
 
 void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
-    if (slot >= pairSlotCount || !manifold.valid || manifold.bodyA == manifold.bodyB) {
+    if (!canWriteSlot(slot, pairSlotCount, manifold)) {
         return;
     }
 
@@ -82,6 +82,18 @@ void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
             pointPenetrations[base + pointIndex] = 0.f;
         }
     }
+}
+
+bool ContactBufferSoA::canWriteSlot(u32 slot, u32 pairSlotCount, const ContactManifold& manifold) {
+    return slot < pairSlotCount && manifold.valid && manifold.bodyA != manifold.bodyB;
+}
+
+bool ContactBufferSoA::writeSlotIfValid(u32 slot, const ContactManifold& manifold) {
+    if (!canWriteSlot(slot, pairSlotCount, manifold)) {
+        return false;
+    }
+    writeSlot(slot, manifold);
+    return true;
 }
 
 void ContactBufferSoA::applyWarmStartStub(u32 slot, ContactManifold& manifold) const {

@@ -47,6 +47,12 @@ struct ContactBufferSoA {
     ContactManifold manifoldAt(u32 index) const;
     std::vector<ContactManifold> toVector() const;
 
+    /// Returns true when slot is in range and manifold is valid with distinct bodies (B4.5 deepen pass).
+    static bool canWriteSlot(u32 slot, u32 pairSlotCount, const ContactManifold& manifold);
+
+    /// Write slot only when buffer preflight passes (B4.5 deepen pass).
+    bool writeSlotIfValid(u32 slot, const ContactManifold& manifold);
+
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
 };
