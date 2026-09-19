@@ -263,6 +263,9 @@ u32 lookupClusterLightsAtCoord(const ClusterGridSoA& grid,
                                    u32 sliceZ,
                                    std::vector<u32>& outLights,
                                    u32& outCount);
+/// Screen-depth → cluster lookup; returns false when mapping fails or grid is inaccessible.
+bool tryLookupClusterLightsFromScreen(const ClusterGridSoA& grid,
+                                      const ClusterDesc& desc,
                                       const ClusterCameraDesc& camera,
                                       f32 screenX,
                                       f32 screenY,
