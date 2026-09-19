@@ -183,6 +183,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "source_unreadable";
     case CookHashRejectReason::EmptyDependencyList:
         return "empty_dependency_list";
+    case CookHashRejectReason::UnknownDependencyOutput:
+        return "unknown_dependency_output";
     case CookHashRejectReason::ZeroSourceHash:
         return "zero_source_hash";
     }
@@ -256,7 +258,25 @@ CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry) 
         preflight.reason = CookHashRejectReason::EmptyOutputPath;
         return preflight;
     }
-    return preflight_file_content_hash(entry.source_path);
+
+    const CookHashPreflight source_preflight = preflight_file_content_hash(entry.source_path);
+    if (!source_preflight.can_hash) {
+        return source_preflight;
+    }
+
+    for (const std::string& dependency : entry.dependencies) {
+        if (dependency.empty()) {
+            continue;
+        }
+        const CookHashPreflight dependency_preflight = preflight_file_content_hash(dependency);
+        if (!dependency_preflight.can_hash) {
+            return dependency_preflight;
+        }
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
 }
 
 CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
@@ -278,14 +298,24 @@ CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::st
         if (dependency_output.empty()) {
             continue;
         }
+
+        bool found = false;
         for (const CookManifestEntry& asset : manifest.assets) {
-            if (asset.output_path == dependency_output) {
-                const CookHashPreflight source_preflight = preflight_file_content_hash(asset.source_path);
-                if (!source_preflight.can_hash) {
-                    return source_preflight;
-                }
-                break;
+            if (asset.output_path != dependency_output) {
+                continue;
             }
+
+            found = true;
+            const CookHashPreflight source_preflight = preflight_file_content_hash(asset.source_path);
+            if (!source_preflight.can_hash) {
+                return source_preflight;
+            }
+            break;
+        }
+
+        if (!found) {
+            preflight.reason = CookHashRejectReason::UnknownDependencyOutput;
+            return preflight;
         }
     }
 
