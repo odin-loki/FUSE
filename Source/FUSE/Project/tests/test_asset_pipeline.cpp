@@ -3901,6 +3901,34 @@ void testCookerShouldSkipReconcileHelpers() {
     expectTrue(cooker.would_reconcile_invalidation(manifest), "would_reconcile true after upstream change");
     expectTrue(cooker.estimate_reconcile_invalidation(manifest).total() != 0u,
                "estimate total non-zero when would_reconcile is true");
+    entry_b.output_path = "/tmp/fuse_b79_skip_reconcile_b.fusemesh";
+
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for should_skip reconcile ok");
+    expectTrue(!cooker.should_skip_upstream_invalidation(manifest, source_a),
+               "should_skip_upstream false when chain entries exist");
+    expectTrue(cooker.should_skip_upstream_invalidation(manifest, source_a) ==
+                   (cooker.count_upstream_invalidation(manifest, source_a) == 0),
+               "should_skip_upstream matches zero count probe");
+    expectTrue(cooker.should_skip_upstream_invalidation(manifest, ""),
+               "should_skip_upstream true for empty changed source");
+    expectTrue(cooker.should_skip_stale_dependency_invalidation(manifest),
+               "should_skip_stale_dependency true on fresh cache");
+    expectTrue(cooker.should_skip_prune_reconcile(), "should_skip_prune_reconcile true on fresh cache");
+    expectTrue(cooker.should_skip_reconcile_invalidation(manifest),
+               "should_skip_reconcile_invalidation true on fresh cache");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest).should_skip(),
+               "reconcile estimate should_skip on fresh cache");
+
+    writeTempFile(source_a, "# skip reconcile a revised\n");
+    expectTrue(!cooker.should_skip_stale_dependency_invalidation(manifest),
+               "should_skip_stale_dependency false after upstream change");
+    expectTrue(!cooker.should_skip_reconcile_invalidation(manifest),
+               "should_skip_reconcile false after upstream change");
+
+    const fuse::u32 stale_count = cooker.count_stale_dependency_invalidation(manifest);
+    expectTrue(stale_count >= 1u, "stale dependency count non-zero after upstream change");
+    expectTrue(cooker.should_skip_stale_dependency_invalidation(manifest) == (stale_count == 0u),
+               "should_skip_stale_dependency mirrors count probe");
 
     fuse::project::CookJobGraph graph;
     graph.build_from_manifest(manifest);
@@ -4467,6 +4495,16 @@ void testCookerStaleDependencyReconcileEstimate() {
     expectTrue(estimate.should_skip() == cooker.should_skip_reconcile_invalidation(manifest),
                "estimate should_skip matches cooker helper");
                "stale upstream should not skip dependency invalidation");
+               "would_invalidate_downstream_of true for chained manifest");
+    expectTrue(!cooker.cache().should_skip_invalidate_downstream_of(entry_a.output_path, graph.edges(),
+                                                                    graph.jobs()),
+               "should_skip_invalidate_downstream_of false for chained manifest");
+    expectTrue(cooker.cache().probe_downstream_sources(entry_a.output_path, graph.edges(), graph.jobs()).size() >=
+                   cooker.cache().count_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()),
+               "downstream probe covers counted dependents");
+
+    expectTrue(removed >= stale_count, "stale invalidation removes at least estimated count");
+               "should_skip_stale_dependency true after stale invalidation");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {

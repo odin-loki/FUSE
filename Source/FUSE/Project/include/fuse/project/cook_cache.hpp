@@ -157,6 +157,7 @@ struct CookCacheInvalidationSurface {
     [[nodiscard]] bool would_prune() const { return total() != 0; }
     /// True when `prune_*` would remove at least one entry (B7.9 deepen).
     /// True when prune reconcile can be skipped — mirrors `!would_prune()` (B7.9 deepen).
+    /// True when `prune_all` would be a no-op — mirrors `would_prune_all` negation (B7.9 deepen).
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
@@ -505,6 +506,18 @@ public:
     [[nodiscard]] bool should_skip_cache_lookup(u64 content_hash) const;
     /// True when `prune_all` can be skipped — mirrors `!would_prune_all()` (B7.9 deepen).
     [[nodiscard]] bool should_skip_prune_all() const;
+    /// Non-mutating invalidation skip predicates — mirror `would_invalidate_*` negation (B7.9 deepen).
+    [[nodiscard]] bool should_skip_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool should_skip_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool should_skip_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                       u64 current_content_hash) const;
+    [[nodiscard]] bool should_skip_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] bool should_skip_invalidate_downstream_of(const std::string& output_path,
+                                                            const std::vector<CookJobDependencyEdge>& edges,
+                                                            const std::vector<CookJob>& jobs) const;
+    /// True when `store` would reject the entry — mirrors `is_valid_cook_cache_entry` negation (B7.9 deepen).
+    [[nodiscard]] static bool should_skip_store(const CookCacheEntry& entry);
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,

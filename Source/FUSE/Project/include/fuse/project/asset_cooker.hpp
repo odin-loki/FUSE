@@ -464,6 +464,10 @@ public:
     /// True when `count_upstream_invalidation` is zero — guarded on empty `changed_source` (B7.9 deepen).
     /// True when `count_stale_dependency_invalidation` is zero (B7.9 deepen).
     /// True when `estimate_reconcile_invalidation` would remove nothing (B7.9 deepen).
+    /// Read-only upstream invalidation skip probe — guarded on empty `changed_source` (B7.9 deepen).
+    /// Read-only stale dependency-hash reconcile skip probe (B7.9 deepen).
+    /// Read-only prune reconcile skip probe — mirrors `CookCache::should_skip_prune_all` (B7.9 deepen).
+    /// Read-only combined reconcile skip probe — mirrors `estimate_reconcile_invalidation` (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
