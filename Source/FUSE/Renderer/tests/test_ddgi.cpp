@@ -1992,3 +1992,14 @@ void testProbeSampleAndCacheGuards() {
 
 // --- deepen additive from deepen-b56-ddgi-probe-guards-b315 ---
 void testLaunchProbeUpdateIndexGuard() {
+
+// --- deepen additive from deepen-ddgi-probe-guards-54ac ---
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeIndex(17u, desc, clampedIndex),
+               "tryClamp succeeds on non-empty grid");
+    expectTrue(clampedIndex == 17u, "tryClamp preserves in-bounds index");
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeIndex(999u, desc, clampedOob),
+               "tryClamp succeeds when clamping OOB index");
+               "tryClamp clamps OOB index to max");
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryClampProbeIndex(5u, empty, emptyClamp),
+               "tryClamp rejects empty grid");
+    expectTrue(emptyClamp == 0u, "tryClamp zeroes output on empty grid");

@@ -729,3 +729,6 @@ bool tryLaunch_ddgi_probe_update(const DDGIDesc& desc,
 // --- deepen additive from deepen-ddgi-probe-guards-964a ---
 enum class ProbeSampleSkipReason : u8 {
 bool probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason reason);
+
+// --- deepen additive from deepen-ddgi-probe-guards-54ac ---
+    static bool tryClampProbeIndex(u32 probe_index, const DDGIDesc& desc, u32& out_index);

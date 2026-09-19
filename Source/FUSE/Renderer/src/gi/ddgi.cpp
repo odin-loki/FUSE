@@ -2077,3 +2077,6 @@ void DDGI::releaseResources() {
 // --- deepen additive from deepen-ddgi-probe-guards-964a ---
     if (!ProbeGridLayout::tryBuildProbeSampleCoords(desc, world_position, coords)) {
 bool probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason reason) {
+
+// --- deepen additive from deepen-ddgi-probe-guards-54ac ---
+bool ProbeGridLayout::tryClampProbeIndex(u32 probe_index, const DDGIDesc& desc, u32& out_index) {
