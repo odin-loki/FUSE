@@ -374,19 +374,8 @@ public:
     /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
     bool shouldSkipJitterAdvance() const;
     /// Classify why pass jitter sync to a frame counter would be rejected (B5.9 deepen).
-    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
     /// Classify why pass jitter sync to `frameIndex` would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterSyncReject(u32 frameIndex) const;
-    /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
-    TaaJitterGuardRejectReason classifyJitterNdcReject() const;
-    /// Classify why pass jitter advance would be rejected (B5.9 deepen).
-    TaaJitterGuardRejectReason classifyJitterAdvanceReject() const;
-    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
-    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
-    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
-    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
-    /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
-    bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
     /// True when pass jitter can sync to `frameIndex` (B5.9 deepen).
     bool preflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Classify why jitter sync to a frame counter would be rejected (B5.9 deepen).
@@ -397,8 +386,6 @@ public:
     /// True when pass history has completed warm-up (B5.9 deepen).
     bool isHistoryWarmed() const;
     bool resolveBlendReady(const TaaResolveDesc& desc) const;
-    /// Classify why pass jitter sync to `frameIndex` would be rejected (B5.9 deepen).
-    /// Classify why pass jitter sync to a frame counter would be rejected (B5.9 deepen).
     /// True when pass history is resolve-ready and temporal reuse is allowed (B5.9 deepen).
     /// History temporal preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightHistoryTemporal(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const;
@@ -453,6 +440,8 @@ public:
     /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).
     bool preflightJitterNdc(TaaJitterGuardRejectReason* reason = nullptr) const;
     /// True when jitter sync and NDC preflights both pass (B5.9 deepen).
+    /// NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass NDC jitter preflight would reject (B5.9 deepen).
     bool shouldSkipJitterNdc() const;
     /// True when pass jitter can advance for the active sequence (B5.9 deepen).
@@ -968,6 +957,7 @@ public:
     /// True when resolve preflight passes without mutating history (B5.9 deepen).
     /// Classify why pass resolve would skip (B5.9 deepen).
     /// Classify why resolve would skip — same ordering as `wouldSkipResolve` (B5.9 deepen).
+    /// Classify why resolve would skip before history update (B5.9 deepen).
     TaaResolveSkipReason classifyResolveSkip(const TaaResolveDesc& desc) const;
     /// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
     bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
