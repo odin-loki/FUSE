@@ -1056,3 +1056,10 @@ BroadphaseRefinePreflight preflight_refine_broadphase_pairs(
 bool should_skip_broadphase_refine(
         if (should_skip_shape_cell_insertion(range, maxSpan)) {
     if (should_skip_broadphase_refine(bodies, shapes, buffer)) {
+
+// --- deepen additive from deepen-b4-broadphase-preflights-4247 ---
+bool should_skip_broadphase_build(
+bool should_skip_shape_cell_insert(const CellRange3& range, u32 maxCells) {
+bool should_skip_shape_cell_insert(const CellRange2& range, u32 maxCells) {
+        if (should_skip_shape_cell_insert(range)) {
+    if (should_skip_broadphase_build(bodies, shapes)) {

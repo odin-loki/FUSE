@@ -1179,3 +1179,8 @@ BroadphaseRefinePreflight preflight_refine_broadphase_pairs(
 FUSE_PHYSICS_INLINE bool should_skip_shape_cell_insertion(const CellRange3& range, u32 maxSpanPerAxis) {
 FUSE_PHYSICS_INLINE bool should_skip_shape_cell_insertion(const CellRange2& range, u32 maxSpanPerAxis) {
 bool should_skip_broadphase_refine(
+
+// --- deepen additive from deepen-b4-broadphase-preflights-4247 ---
+bool should_skip_broadphase_build(
+bool should_skip_shape_cell_insert(const CellRange3& range, u32 maxCells = 0u);
+bool should_skip_shape_cell_insert(const CellRange2& range, u32 maxCells = 0u);

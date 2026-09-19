@@ -2580,3 +2580,49 @@ void testShouldSkipShapeCellInsertionGuards() {
     expectTrue(validPreflight.can_refine(), "refine preflight can refine valid input");
     expectTrue(!fuse::physics::broadphase::should_skip_broadphase_refine(bodies, shapes, buffer),
                "should_skip allows valid refine input");
+
+// --- deepen additive from deepen-b4-broadphase-preflights-4247 ---
+    expectTrue(emptyPreflight.emptyBodies, "empty scene reports empty bodies");
+    expectTrue(emptyPreflight.emptyShapes, "empty scene reports empty shapes");
+    expectTrue(!emptyPreflight.can_build(), "empty scene cannot build broadphase");
+    expectTrue(fuse::physics::broadphase::should_skip_broadphase_build(bodies, shapes),
+               "should_skip_broadphase_build on empty scene");
+    expectTrue(validPreflight.can_build(), "populated scene can build broadphase");
+    expectTrue(!fuse::physics::broadphase::should_skip_broadphase_build(bodies, shapes),
+               "should_skip_broadphase_build on populated scene");
+    expectTrue(fuse::physics::broadphase::should_skip_shape_cell_insert(inverted),
+               "should_skip_shape_cell_insert on empty range");
+    expectTrue(planePreflight.exceedsBudget, "2D preflight flags over-budget occupancy");
+    const fuse::physics::broadphase::PairBufferPreflight emptyPreflight =
+    expectTrue(emptyPreflight.skipped, "empty buffer preflight is skipped");
+    expectTrue(emptyPreflight.skipDedupe, "empty buffer skips dedupe");
+    expectTrue(emptyPreflight.skipCompaction, "empty buffer skips compaction");
+    expectTrue(fuse::physics::broadphase::should_skip_pair_buffer_compaction(buffer),
+               "should_skip_pair_buffer_compaction on empty buffer");
+    const fuse::physics::broadphase::PairBufferPreflight partialPreflight =
+    expectTrue(!partialPreflight.skipped, "partial buffer preflight is not skipped");
+    expectTrue(partialPreflight.can_push(1u), "partial buffer can push one more pair");
+    expectTrue(!partialPreflight.full, "partial buffer is not full");
+    expectEq(partialPreflight.remainingCapacity, 1u, "preflight reports remaining capacity");
+    const fuse::physics::broadphase::PairBufferPreflight fullPreflight =
+    expectTrue(fullPreflight.full, "full buffer preflight reports full");
+    expectTrue(!fullPreflight.can_push(1u), "full buffer preflight rejects push");
+    expectTrue(!fullPreflight.skipDedupe, "two-pair buffer does not skip dedupe");
+    const fuse::physics::broadphase::PairBufferPreflight singlePreflight =
+    expectTrue(singlePreflight.skipDedupe, "single canonical pair skips dedupe");
+    const fuse::physics::broadphase::PairBufferPreflight clampPreflight =
+    expectTrue(clampPreflight.needsClamp, "overflow buffer preflight needs clamp");
+    expectTrue(emptyPreflight.emptyInput, "refine preflight reports empty input");
+    expectTrue(emptyPreflight.emptyBuffer, "refine preflight reports empty buffer");
+    expectTrue(!validPreflight.emptyInput, "refine preflight has populated input");
+    expectTrue(!validPreflight.emptyBuffer, "refine preflight has valid buffer");
+               "should_skip_refine_broadphase on valid scene");
+void testPairBufferCompactionPreflightGuards() {
+    const fuse::physics::broadphase::PairBufferPreflight compactPreflight =
+    expectTrue(compactPreflight.skipCompaction, "all-valid slots skip compaction in preflight");
+               "should_skip_pair_buffer_compaction on all-valid slots");
+    const fuse::physics::broadphase::PairBufferPreflight needsCompactPreflight =
+    expectTrue(!needsCompactPreflight.skipCompaction, "invalid slot needs compaction");
+    expectTrue(!fuse::physics::broadphase::should_skip_pair_buffer_compaction(buffer),
+               "should_skip_pair_buffer_compaction false when invalid slots exist");
+    testPairBufferCompactionPreflightGuards();
