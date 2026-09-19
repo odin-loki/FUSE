@@ -213,6 +213,7 @@ inline AABB mergeAabb(const AABB& a, const AABB& b) {
 }
 
 /// Slab ray interval with empty-box early-out; returns false when `box` is empty.
+/// Writes slab interval on hit; returns false for empty boxes or ray miss.
 inline bool tryRayInterval(const AABB& box, const Vec3& origin, const Vec3& direction, f32& tEnter,
                            f32& tExit) {
     if (box.isEmpty()) {
@@ -228,9 +229,14 @@ inline bool tryRayIntervalClamped(const AABB& box, const Vec3& origin, const Vec
         return false;
     }
     return box.rayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
-}
 
 /// Segment ray hit test with empty-box early-out.
+/// Writes the nearest forward hit distance; returns false for empty boxes or ray miss.
+inline bool tryRayIntersect(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
+    t = box.rayIntersect(origin, direction);
+    return t >= 0.f;
+
+/// True when the ray hits the box within `[tMin, tMax]`; returns false for empty boxes.
 inline bool tryRayHits(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
                        f32 tMax = std::numeric_limits<f32>::max()) {
     if (box.isEmpty()) {
@@ -246,17 +252,19 @@ inline bool tryRayIntersect(const AABB& box, const Vec3& origin, const Vec3& dir
     }
     const f32 hit = box.rayIntersect(origin, direction);
     if (hit < 0.f) {
-        return false;
-    }
     t = hit;
     return true;
-}
 
 /// Writes transformed bounds when `box` is non-empty; returns false on empty early-out.
 inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
-    if (box.isEmpty()) {
-        return false;
-    }
+/// Ray interval clamped to `[tMin, tMax]`; returns false for empty boxes, inverted clamp, or miss.
+inline bool tryRayIntervalClamped(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin,
+                                  f32 tMax, f32& tEnter, f32& tExit) {
+    return box.rayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
+
+/// Transforms an AABB through a rigid affine matrix; returns false for empty boxes or non-rigid matrices.
+inline bool tryTransformRigidAabb(const Mat4& matrix, const AABB& box, AABB& out, f32 epsilon = 1e-4f) {
+    if (!isRigid(matrix, epsilon)) {
     out = transformAabb(matrix, box);
     return true;
 }
