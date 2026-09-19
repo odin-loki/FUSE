@@ -3937,3 +3937,6 @@ void testInteractionPreflightSnapOnPhase() {
     expectTrue(!gizmo.preflightInteraction(hit).snapWillApplyOnPhase(),
     testSnapInteractionPreflight();
     testInteractionPreflightSnapOnPhase();
+
+// --- deepen additive from deepen-gizmo-interaction-preflights-2f0c ---
+    expectTrue(!gizmo.tryUpdateDrag(nanHit, result),
