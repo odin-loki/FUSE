@@ -282,6 +282,7 @@ public:
                                    TaaResolveBlendRejectReason* blendReason = nullptr) const;
     /// Early-out when resolve or blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveWithBlend(const TaaResolveDesc& desc) const;
+                                       TaaResolveBlendRejectReason& reason) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
@@ -414,12 +415,10 @@ public:
     /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
-    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
     /// Advance jitter with reject-reason diagnostics; returns false when blocked (B5.9 deepen).
     bool tryAdvanceJitterIfReady(TaaJitterGuardRejectReason& reason);
     /// Sync jitter with reject-reason diagnostics; returns false when blocked (B5.9 deepen).
     bool trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason);
-    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
     /// Classify why pass NDC jitter would be rejected (B5.9 deepen).
     /// True when pass jitter sequence can advance (B5.9 deepen).
     /// History reuse preflight with mandatory reject-reason output (B5.9 deepen).
@@ -450,6 +449,7 @@ public:
     bool preflightJitterFrame(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Early-out when pass jitter sync or NDC preflight would reject (B5.9 deepen).
     bool shouldSkipJitterFrame(u32 frameIndex) const;
+    /// True when pass jitter can advance (B5.9 deepen).
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).
