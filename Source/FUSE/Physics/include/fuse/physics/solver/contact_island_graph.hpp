@@ -445,8 +445,6 @@ bool has_usable_island_build_constraints(
 bool contact_bodies_in_range(u32 bodyCount, u32 bodyA, u32 bodyB);
     bool is_empty() const {
         return bodyCount == 0u && inRangeContactCount == 0u && inRangeDistanceCount == 0u;
-    }
-};
 
 bool contact_manifold_bodies_in_range(u32 bodyCount, const narrowphase::ContactManifold& contact);
 
@@ -614,9 +612,15 @@ struct IslandBuildInputCoverage {
     bool hasUnsafeRefs() const {
 
     bool isEmptyInput() const {
-        return bodyCount == 0u && inRangeContactCount == 0u && inRangeDistanceCount == 0u;
 /// Scan contacts and distance constraints for partition-safe body references.
 IslandBuildInputScan scan_island_build_inputs(
+/// Coverage counts for island graph build inputs (out-of-range body-index guards).
+
+
+
+
+/// Summarize build inputs without mutating a graph.
+IslandGraphBuildStats count_island_graph_build_input(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -626,6 +630,17 @@ bool island_build_inputs_safe(const IslandBuildInputScan& scan);
 
 /// True when inputs can form a partition (non-empty bodies or in-range constraints, no unsafe refs).
 bool can_partition_island_build_inputs(u32 bodyCount, const IslandBuildInputScan& scan);
+/// Const preflight for island graph build dispatch.
+IslandGraphBuildPreflight preflight_contact_island_graph_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Returns true when island graph build should be skipped before mutation.
+bool should_skip_contact_island_graph_build(
+
+/// True when both body indices are in range for union during graph build.
+bool island_build_body_pair_in_range(u32 bodyCount, u32 bodyA, u32 bodyB);
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -681,6 +696,7 @@ struct ContactIslandGraph {
     static bool canAcceptBuildInputs(const IslandBuildInputCoverage& coverage);
 
     /// Guarded build; clears and returns false when inputs are empty or unsafe (B4.4 deepen follow-up pass).
+    /// Build only when `preflight_contact_island_graph_build` passes; clears and returns false otherwise.
 
     void clear();
 
