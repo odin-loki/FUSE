@@ -345,3 +345,7 @@ NestingStatePreflight preflightNestingState();
 
 // --- deepen additive from deepen-b16-profiler-export-preflight-9968 ---
 ChromeExportPreflight preflightChromeTraceExport();
+
+// --- deepen additive from deepen-b16-profiler-export-preflight-bcfd ---
+enum class ChromeTraceExportRejectReason : u8 {
+ChromeTraceExportRejectReason chromeTraceExportRejectReason();

@@ -1166,3 +1166,13 @@ ChromeExportPreflight preflightChromeTraceExport() {
 // --- deepen additive from deepen-b16-profiler-export-preflights-d73d ---
     return preflightChromeTraceExport().canExport();
     return tryEventAt(0u, outEvent);
+
+// --- deepen additive from deepen-b16-profiler-export-preflight-bcfd ---
+ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
+    const ChromeTraceExportPreflight preflight = preflightChromeTraceExport();
+        return ChromeTraceExportRejectReason::EmptyBuffer;
+        return ChromeTraceExportRejectReason::UnbalancedScopeNesting;
+        return ChromeTraceExportRejectReason::OpenAsyncFlows;
+        return ChromeTraceExportRejectReason::UnbalancedFlowNesting;
+        return ChromeTraceExportRejectReason::BufferFull;
+    return ChromeTraceExportRejectReason::None;

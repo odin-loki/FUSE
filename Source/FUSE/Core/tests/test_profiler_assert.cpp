@@ -2908,3 +2908,15 @@ void testChromeTraceExportPreflightUnbalancedNesting() {
     expectTrue(fuse::profiler::isValidProfileEvent(outEvent), "tryLastEvent output passes isValidProfileEvent");
     testChromeTraceExportPreflightOnReset();
     testChromeTraceExportPreflightUnbalancedNesting();
+
+// --- deepen additive from deepen-b16-profiler-export-preflight-bcfd ---
+               "tryLastEvent copies most recent scope name");
+void testChromeTraceExportPreflightEmpty() {
+    expectTrue(fuse::profiler::chromeTraceExportRejectReason()
+void testChromeTraceExportPreflightClean() {
+void testChromeTraceExportPreflightOpenFlowWarning() {
+void testChromeTraceExportPreflightUnbalancedScope() {
+    testChromeTraceExportPreflightEmpty();
+    testChromeTraceExportPreflightClean();
+    testChromeTraceExportPreflightOpenFlowWarning();
+    testChromeTraceExportPreflightUnbalancedScope();
