@@ -1694,3 +1694,29 @@ void testCookCacheWouldInvalidateAndShouldSkipGuards() {
     expectTrue(removed == 1u, "prune removes stale entry for should_skip parity");
     expectTrue(cooker.cache().should_skip_invalidate(seeded.content_hash),
                "should_skip_invalidate true after prune removes entry");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-e2e5 ---
+               "should_skip_mesh_import_hash false for valid mesh");
+               "should_skip_combine allows zero upstream");
+               "should_skip_fnv1a64_bytes false for zero-size span");
+    tex.output_path = "/tmp/fuse_b79_should_skip_tex.fusetex";
+               "should_skip_texture_import_hash false for valid texture");
+    audio.output_path = "/tmp/fuse_b79_should_skip_audio.fuseaudio";
+    expectTrue(!fuse::project::should_skip_audio_import_hash(audio),
+               "should_skip_audio_import_hash false for valid audio");
+    entry.output_path = "/tmp/fuse_b79_should_skip_manifest.fusemesh";
+    expectTrue(!fuse::project::should_skip_manifest_entry_hash(entry),
+               "should_skip_manifest_entry_hash false for valid entry");
+    expectTrue(!cache.would_invalidate(42u), "would_invalidate false on empty cache");
+    expectTrue(cache.should_skip_invalidate_source("/tmp/fuse_b79_skip_source.obj"),
+    expectTrue(cache.should_skip_invalidate_output("/tmp/fuse_b79_skip_output.fusemesh"),
+    expectTrue(cache.should_skip_invalidate_stale_content_for_source("/tmp/fuse_b79_skip_stale.obj", 42u),
+               "should_skip_invalidate_stale_content on empty cache");
+    expectTrue(cache.should_skip_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_skip_up.obj", 1u}}),
+               "should_skip_invalidate_stale_upstream on empty cache");
+    expectTrue(cache.should_skip_invalidate_downstream_of("/tmp/fuse_b79_skip_down.fusemesh", {}, {}),
+               "should_skip_invalidate_downstream on empty cache");
+               "should_skip_invalidate_source false for seeded entry");
+    expectTrue(!cooker.cache().should_skip_prune_all(), "should_skip_prune_all false after content change");
+               "should_skip_invalidate true after removal");
+               "would_invalidate false after removal");

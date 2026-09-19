@@ -2169,3 +2169,15 @@ void testCookerShouldSkipReconcileGuards() {
     expectTrue(!cooker.cache().should_skip_invalidate_downstream_of(entry_a.output_path, graph.edges(),
                "should_skip_invalidate_downstream_of false for chained manifest");
                "should_skip_stale_dependency true after stale invalidation");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-e2e5 ---
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for should_skip reconcile probes ok");
+               "should_skip_stale_dependency_invalidation true after stale invalidation");
+               "should_skip_prune_reconcile false when upstream entry is stale");
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for downstream would_invalidate probe ok");
+               "would_invalidate_downstream_of true for seeded chain");
+               "should_skip_invalidate_downstream_of false for seeded chain");
+    expectTrue(cooker.cache().should_skip_invalidate_downstream_of(entry_a.output_path, graph.edges(),
+               "should_skip_invalidate_downstream_of true after removal");
+    expectTrue(!cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()),
+               "would_invalidate_downstream_of false after removal");
