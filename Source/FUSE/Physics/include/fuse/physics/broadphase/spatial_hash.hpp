@@ -934,6 +934,46 @@ FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange2& range, u32 
     return !shouldRunShapeCellInsertion(range, maxCells);
 }
 
+/// Unified cell-capacity preflight wrapping occupancy budget diagnostics (B4.2 deepen pass).
+struct CellCapacityPreflight {
+    CellOccupancyPreflight occupancy{};
+    u32 budgetRemaining = 0;
+
+    bool canInsert() const { return occupancy.canIterate(); }
+};
+
+FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity(const CellRange3& range, u32 maxCells) {
+    CellCapacityPreflight preflight{};
+    preflight.occupancy = preflightCellOccupancy(range, maxCells);
+    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE CellCapacityPreflight preflightCellCapacity(const CellRange2& range, u32 maxCells) {
+    CellCapacityPreflight preflight{};
+    preflight.occupancy = preflightCellOccupancy(range, maxCells);
+    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
+    return preflight;
+}
+
+/// Non-mutating shape cell-insertion predicate — mirrors `preflightCellCapacity` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange3& range, u32 maxCells) {
+    return preflightCellCapacity(range, maxCells).canInsert();
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange2& range, u32 maxCells) {
+    return preflightCellCapacity(range, maxCells).canInsert();
+}
+
+/// Non-mutating shape cell-insertion skip predicate — inverse of `shouldRunShapeCellInsertion` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange3& range, u32 maxCells) {
+    return !shouldRunShapeCellInsertion(range, maxCells);
+}
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange2& range, u32 maxCells) {
+    return !shouldRunShapeCellInsertion(range, maxCells);
+}
+
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     const CellRange3& range,
@@ -4142,7 +4182,6 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReason(
     u32 shapeIndex,
 /// Why shape cell insertion would skip hash occupancy iteration (B4.2 deepen follow-up pass).
 
-/// Human-readable label for shape cell-insert reject reasons (logging / tests).
 
 /// Diagnose why shape cell insertion would skip; vacuously succeeds when insertion may proceed.
     const SpatialHashParams& params,
@@ -4425,7 +4464,6 @@ FUSE_PHYSICS_INLINE bool shouldRunCellPairGeneration(u32 occupantCount) {
 FUSE_PHYSICS_INLINE bool shouldRunCellPairGeneration(const std::vector<u32>& occupants) {
     return preflightCellPairGeneration(occupants).canGenerate();
 
-    ExceedsOccupancy,
 
 
     u32 maxOccupancy);
@@ -4665,7 +4703,6 @@ bool canSkipMergePairPush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB);
 /// Non-mutating merge-pair push predicate — mirrors `preflightMergePairPush` (B4.2 deepen pass).
 bool shouldRunMergePairPush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB);
 
-/// Why shape→cell insertion would skip for one shape (B4.2 deepen pass).
     CellOccupancyRejected,
 
 
@@ -4763,22 +4800,17 @@ bool canSkipMergeBroadphasePush(const PairBufferSoA& buffer, u32 bodyA, u32 body
 
 /// Non-mutating merge push predicate — mirrors `preflightMergeBroadphasePush` (B4.2 deepen pass).
 bool shouldRunMergeBroadphasePush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB);
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
     bool use2D = false);
 
-    u32 shapeIndex,
     ShapeCellInsertRejectReason expected,
 
 
-};
 
 
 
 
 /// Why refine would invalidate one pair slot (B4.2 deepen pass).
 enum class RefinePairSlotRejectReason : u8 {
-    None = 0,
     Separated,
 
 /// Human-readable label for refine pair-slot reject reasons (logging / tests).
@@ -4786,11 +4818,9 @@ const char* refinePairSlotRejectReasonName(RefinePairSlotRejectReason reason);
 
 /// Diagnose why refine would invalidate slot `pairIndex`; `None` means the pair passes refine.
 RefinePairSlotRejectReason refinePairSlotRejectReason(
-    const PairBufferSoA& buffer);
 
 /// Returns true when `refinePairSlotRejectReason` matches `expected` (B4.2 deepen pass).
 bool refinePairSlotRejectsForReason(
-    const PairBufferSoA& buffer,
     RefinePairSlotRejectReason expected);
 
 /// Read-only refine pair-slot diagnostics — no mutation (B4.2 deepen pass).
@@ -4802,9 +4832,19 @@ struct RefinePairSlotPreflight {
     bool shouldInvalidate() const {
         return reason == RefinePairSlotRejectReason::InvalidPair ||
                reason == RefinePairSlotRejectReason::Separated;
-    }
 
 RefinePairSlotPreflight preflightRefinePairSlot(
+
+    BroadphaseMergeRejectReason mergeReason = BroadphaseMergeRejectReason::None;
+    MergePairsIntoBufferRejectReason bufferReason = MergePairsIntoBufferRejectReason::None;
+    bool emptyMergeScene = false;
+    bool emptyPairs = false;
+
+        return mergeReason == BroadphaseMergeRejectReason::None &&
+               bufferReason == MergePairsIntoBufferRejectReason::None;
+
+
+
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(

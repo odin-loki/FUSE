@@ -1649,6 +1649,9 @@ void dedupeBuffer(PairBufferSoA& buffer) {
     }
         return;
     }
+    if (!shouldRunPairBufferDedupe(buffer)) {
+        return;
+    }
 
     std::vector<CandidatePair> pairs = buffer.toVector();
     dedupePairs(pairs);
@@ -1824,6 +1827,8 @@ void runBroadphaseIntoBufferInternal(
             if (shouldRunMergePairsIntoBuffer(bucketPairs, buffer)) {
                 mergePairsIntoBuffer(bucketPairs, buffer);
             }
+            if (!shouldRunBroadphaseMergeIntoBuffer(bodies, shapes, bucketPairs, buffer)) {
+                continue;
         }
         dedupeBuffer(buffer);
     }
@@ -1900,6 +1905,8 @@ void refineBroadphasePairsParallelImpl(
             return;
         if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
             if (shouldRunPairBufferInvalidateSlot(buffer, pairIndex)) {
+                buffer.invalidateSlot(pairIndex);
+            }
         }
     });
 
@@ -4096,6 +4103,18 @@ u32 countInvalidMergePairs(const std::vector<CandidatePair>& pairs, u32 bodyCoun
 RefinePairSlotPreflight preflightRefinePairSlot(
     preflight.reason = refinePairSlotRejectReason(pairIndex, bodies, shapes, buffer);
     preflight.separated = preflight.reason == RefinePairSlotRejectReason::Separated;
+    const BroadphaseMergePreflight mergePreflight = preflightBroadphaseMerge(bodies, shapes);
+    preflight.mergeReason = mergePreflight.reason;
+    preflight.emptyMergeScene = !mergePreflight.canMerge();
+
+    const MergePairsIntoBufferPreflight bufferPreflight = preflightMergePairsIntoBuffer(pairs, buffer);
+    preflight.bufferReason = bufferPreflight.reason;
+    preflight.emptyPairs = bufferPreflight.emptyPairs;
+    preflight.bufferFull = bufferPreflight.bufferFull;
+
+    return !preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer).canMergeIntoBuffer();
+
+    return preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer).canMergeIntoBuffer();
 
 void refineBroadphasePairsParallel(
     const RigidBodySoA& bodies,

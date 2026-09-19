@@ -2680,6 +2680,9 @@ PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
 
 
 
+
+
+
     PairBufferWriteSlotPreflight preflight{};
     preflight.reason = pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB);
     preflight.outOfRangeSlot = preflight.reason == PairBufferWriteSlotRejectReason::OutOfRangeSlot;
@@ -2856,6 +2859,11 @@ PairBufferSlotWritePreflight preflightPairBufferSlotWrite(
     if (buffer.pairSlotCount > 0u && slot >= buffer.pairSlotCount) {
 
     u32 slot,
+
+
+
+
+
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
     PairBufferInvalidateSlotPreflight preflight{};
@@ -3245,8 +3253,6 @@ PairBufferSlotReservationPreflight preflightPairBufferSlotReservation(
     return "Unknown";
 
     const PairBufferSoA& buffer,
-    if (slotCount == 0u) {
-    if (buffer.maxCapacity > 0u && slotCount > buffer.maxCapacity) {
 
 
     PairBufferSlotReservationPreflight preflight{};
@@ -3647,8 +3653,8 @@ bool canSkipPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot) {
 
 bool shouldRunPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot) {
     return preflightPairBufferInvalidate(buffer, slot).canInvalidate();
-    return preflight;
-}
+
+
 
 
 
