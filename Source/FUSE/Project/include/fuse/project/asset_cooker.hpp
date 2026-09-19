@@ -47,6 +47,11 @@ public:
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
     [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile_invalidation(
         const CookManifest& manifest) const;
+    /// Bool reconcile probes — mirror count/estimate helpers without mutating cache (B7.9 deepen).
+    [[nodiscard]] bool would_upstream_invalidation(const CookManifest& manifest,
+                                                   const std::string& changed_source) const;
+    [[nodiscard]] bool would_stale_dependency_invalidation(const CookManifest& manifest) const;
+    [[nodiscard]] bool would_reconcile_invalidation(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
