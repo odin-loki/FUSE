@@ -15,6 +15,8 @@ public:
     void destroy();
 
     bool isReady() const { return m_ready; }
+    /// True when history buffers are allocated and ready for resolve (B5.9 deepen).
+    bool readyForResolve() const;
     bool hasValidHistory() const { return m_validity.hasValidHistory; }
     /// True when history targets are ready and warmed for temporal reuse (B5.9 deepen).
     bool canReuseHistory() const;
