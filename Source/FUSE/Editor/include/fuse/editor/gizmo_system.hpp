@@ -173,6 +173,8 @@ bool isHitTestFinite(const GizmoHitTest& hit);
 
 /// Current drag lifecycle phase (B6.4 deepen pass).
 GizmoInteractionPhase interactionPhase(bool dragging);
+/// Screen coordinates outside the viewport rectangle (B6.4 deepen pass).
+bool isScreenHitOutOfBounds(const GizmoHitTest& hit);
 
 /// Convenience inverse of `isRayEmpty` / `isHitTestEmpty` (B6.4 deepen follow-up).
 bool isRayValid(const GizmoRay& ray);
@@ -1237,6 +1239,28 @@ BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode, b
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       f32 pickRadius, const GizmoSnapSettings& settings,
                                       bool alreadyDragging = false);
+BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
+                                      GizmoMode mode, GizmoSpace space, f32 axisLength,
+                                      f32 pickRadius, const GizmoSnapSettings& settings,
+                                      bool alreadyDragging = false);
+BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
+                                      const GizmoSnapSettings& settings,
+                                      bool alreadyDragging = false);
+
+/// Combined update-drag + snap diagnostics for one drag frame (B6.4 deepen pass).
+struct DragUpdateFramePreflight {
+    UpdateDragPreflight update;
+    SnapPreflight snap;
+
+    bool canApply() const { return update.canUpdate(); }
+    bool isSnapDegraded() const {
+        return update.snapDegraded || (!snap.snapDisabled && snap.invalidStep);
+    }
+};
+
+DragUpdateFramePreflight preflightDragUpdateFrame(const GizmoHitTest& hit, bool dragging,
+                                                 GizmoAxis activeAxis, GizmoMode mode,
+                                                 const GizmoSnapSettings& settings);
 
 /// Pick axis with empty-hit guards — returns false when pick misses (B6.4 deepen follow-up).
 bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -1496,6 +1520,7 @@ public:
     [[nodiscard]] UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit) const;
     [[nodiscard]] UpdateDragInteractionPreflight preflightUpdateDragInteraction(
         const GizmoHitTest& hit, f32 delta) const;
+    [[nodiscard]] DragUpdateFramePreflight preflightDragUpdateFrame(const GizmoHitTest& hit) const;
     [[nodiscard]] bool canUpdateDrag(const GizmoHitTest& hit) const;
     /// Combined pick + snap diagnostics (B6.4 deepen pass).
     [[nodiscard]] PickSnapPreflight preflightPickSnap(const GizmoHitTest& hit) const;

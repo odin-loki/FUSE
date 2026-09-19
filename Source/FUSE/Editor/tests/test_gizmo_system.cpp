@@ -4313,6 +4313,123 @@ void testGizmoUpdateDragSnapDegradedPreflight() {
     gizmo.endDrag();
 }
 
+void testScreenHitOutOfBoundsGuards() {
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    expectTrue(!fuse::editor::isScreenHitOutOfBounds(hit),
+               "in-bounds screen hit is not out of bounds");
+
+    hit.screenX = -1.f;
+    expectTrue(fuse::editor::isScreenHitOutOfBounds(hit),
+               "negative screen X is out of bounds");
+
+    hit.screenX = 10.f;
+    hit.screenY = 101.f;
+    expectTrue(fuse::editor::isScreenHitOutOfBounds(hit),
+               "screen Y past viewport height is out of bounds");
+
+    hit.viewportWidth = 0.f;
+    expectTrue(!fuse::editor::isScreenHitOutOfBounds(hit),
+               "empty viewport is not classified as out of bounds");
+
+    hit.viewportWidth = 100.f;
+    hit.screenY = 50.f;
+    hit.screenX = 150.f;
+    const fuse::editor::PickPreflight outOfBoundsPick =
+        fuse::editor::preflightPick(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(outOfBoundsPick.outOfBounds, "pick preflight marks out-of-bounds screen hit");
+    expectTrue(!outOfBoundsPick.canPick(), "pick preflight rejects out-of-bounds screen hit");
+
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoAxis axis = fuse::editor::GizmoAxis::X;
+    expectTrue(!gizmo.tryPickAxis(hit, axis), "tryPickAxis rejects out-of-bounds screen hit");
+    expectTrue(axis == fuse::editor::GizmoAxis::None, "out-of-bounds pick leaves axis unset");
+
+    fuse::editor::GizmoTransform transform{};
+    fuse::editor::GizmoResult result{};
+    expectTrue(!gizmo.tryBeginDrag(hit, transform, result),
+               "tryBeginDrag rejects out-of-bounds screen hit");
+    expectTrue(!result.active, "out-of-bounds begin leaves drag inactive");
+
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    gizmo.beginDrag(hit, transform);
+    hit.screenX = 150.f;
+    const fuse::editor::UpdateDragPreflight outOfBoundsUpdate = gizmo.preflightUpdateDrag(hit);
+    expectTrue(outOfBoundsUpdate.outOfBounds, "update preflight marks out-of-bounds screen hit");
+    expectTrue(!outOfBoundsUpdate.canUpdate(), "update preflight rejects out-of-bounds screen hit");
+    expectTrue(!gizmo.tryUpdateDrag(hit, result), "tryUpdateDrag rejects out-of-bounds screen hit");
+    expectTrue(gizmo.isDragging(), "out-of-bounds update reject keeps drag active");
+    gizmo.endDrag();
+}
+
+void testBeginDragSnapDegradedPreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::BeginDragPreflight degradedPreflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(degradedPreflight.canBegin, "begin preflight still allows drag when snap step invalid");
+    expectTrue(degradedPreflight.snapDegraded, "begin preflight marks snap degraded");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::BeginDragPreflight validPreflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validPreflight.canBegin, "begin preflight accepts valid snap settings");
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears snapDegraded on begin");
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    fuse::editor::GizmoTransform transform{};
+    const fuse::editor::BeginDragPreflight rayDegradedPreflight = fuse::editor::preflightBeginDrag(
+        xRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius, snap);
+    expectTrue(rayDegradedPreflight.canBegin, "ray begin preflight still allows drag with valid pick");
+    expectTrue(!rayDegradedPreflight.snapDegraded, "valid snap clears snapDegraded on ray begin");
+}
+
+void testDragUpdateFramePreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::DragUpdateFramePreflight degradedFrame = fuse::editor::preflightDragUpdateFrame(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(degradedFrame.canApply(), "drag frame preflight allows update when snap step invalid");
+    expectTrue(degradedFrame.isSnapDegraded(), "drag frame preflight marks snap degraded");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::DragUpdateFramePreflight validFrame = fuse::editor::preflightDragUpdateFrame(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validFrame.canApply(), "drag frame preflight accepts valid update");
+    expectTrue(!validFrame.isSnapDegraded(), "valid snap clears drag frame snap degraded");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+    hit.screenX = 30.f;
+    const fuse::editor::DragUpdateFramePreflight gizmoFrame = gizmo.preflightDragUpdateFrame(hit);
+    expectTrue(gizmoFrame.canApply(), "gizmo drag frame preflight accepts active drag");
+    expectTrue(!gizmoFrame.isSnapDegraded(), "gizmo drag frame preflight reports valid snap");
+    gizmo.endDrag();
+}
+
 void testDirtyFlagOnEndDrag() {
     fuse::editor::GizmoSystem gizmo;
     fuse::editor::CommandStack commandStack;
@@ -5609,6 +5726,8 @@ int main() {
     testEndDragRejectReasonClassification();
     testBeginDragPreflightAxisAndSnap();
     testCanBeginDragAlreadyDragging();
+    testScreenHitOutOfBoundsGuards();
+    testDragUpdateFramePreflight();
     testDirtyFlagOnEndDrag();
     testHitTestOutOfBoundsGuards();
     testBeginDragPreflightAxisAndSnapDegraded();
