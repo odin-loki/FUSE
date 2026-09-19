@@ -1895,6 +1895,11 @@ void refineBroadphasePairsParallelImpl(
             shouldRunPairBufferInvalidate(buffer, pairIndex)) {
             preflightRefinePairSlot(pairIndex, bodies, shapes, buffer);
         if (!slotPreflight.shouldInvalidate()) {
+                buffer.invalidateSlot(pairIndex);
+            }
+            return;
+        if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
+            if (shouldRunPairBufferInvalidateSlot(buffer, pairIndex)) {
         }
     });
 
@@ -3138,6 +3143,7 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     preflight.remainingCapacity = buffer.remainingCapacity();
     preflight.wouldTruncate = mergePairsIntoBufferWouldTruncate(pairs, buffer);
     preflight.invalidPairCount = countInvalidMergePairs(pairs);
+    preflight.pairCount = static_cast<u32>(pairs.size());
     return preflight;
 }
 

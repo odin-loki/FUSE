@@ -1906,6 +1906,23 @@ FUSE_PHYSICS_INLINE bool cellSpanCapacityRejectsForReason(
     CellSpanCapacityRejectReason expected) {
     return cellSpanCapacityRejectReason(range, maxSpanPerAxis) == expected;
 
+/// Cell-capacity reject reason via broadphase params (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReasonForParams(
+    return cellOccupancyRejectReason(range, params.maxCellOccupancy);
+
+
+/// Cell-capacity preflight via broadphase params (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancyForParams(
+
+
+/// Non-mutating shape cell-occupancy predicate via params (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellOccupancyIteration(
+    return preflightCellOccupancyForParams(range, params).canIterate();
+
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellOccupancyIteration(
+    return !shouldRunShapeCellOccupancyIteration(range, params);
+
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
@@ -3743,6 +3760,7 @@ struct MergePairsIntoBufferPreflight {
     u32 remainingCapacity = 0;
     bool wouldTruncate = false;
     u32 invalidPairCount = 0;
+    u32 pairCount = 0;
 
     bool canMerge() const { return reason == MergePairsIntoBufferRejectReason::None; }
 
