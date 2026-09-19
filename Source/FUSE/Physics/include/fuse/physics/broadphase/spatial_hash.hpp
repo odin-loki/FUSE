@@ -342,6 +342,7 @@ struct CellOccupancyPreflight {
     bool emptyRange = false;
     bool exceedsBudget = false;
     u32 occupancyCount = 0;
+    u32 remainingBudget = 0;
 
     bool canIterate() const { return reason == CellOccupancyRejectReason::None; }
 };
@@ -352,6 +353,7 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRang
     preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
     preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    preflight.remainingBudget = occupancyBudgetRemaining(range, maxCells);
     return preflight;
 }
 
@@ -361,6 +363,7 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRang
     preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
     preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    preflight.remainingBudget = occupancyBudgetRemaining(range, maxCells);
     return preflight;
 }
 
@@ -584,6 +587,7 @@ struct RefineBroadphasePreflight {
     bool emptyBuffer = false;
     bool emptyInput = false;
     bool noValidPairs = false;
+    u32 validPairCount = 0;
 
     bool canRefine() const { return reason == RefineBroadphaseRejectReason::None; }
 };
@@ -626,6 +630,7 @@ struct DedupeBroadphasePreflight {
     DedupeBroadphaseRejectReason reason = DedupeBroadphaseRejectReason::None;
     bool emptyBuffer = false;
     bool singlePair = false;
+    u32 activePairCount = 0;
 
     bool canDedupe() const { return reason == DedupeBroadphaseRejectReason::None; }
 };
@@ -704,6 +709,8 @@ struct MergePairsIntoBufferPreflight {
     MergePairsIntoBufferRejectReason reason = MergePairsIntoBufferRejectReason::None;
     bool emptyPairs = false;
     bool bufferFull = false;
+    u32 incomingPairCount = 0;
+    u32 remainingCapacity = 0;
 
     bool canMerge() const { return reason == MergePairsIntoBufferRejectReason::None; }
 };

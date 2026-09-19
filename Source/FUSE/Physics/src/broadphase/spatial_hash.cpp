@@ -223,7 +223,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        if (!preflightCellOccupancy(range, maxOccupancy).canIterate()) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -243,7 +243,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+    if (!preflightCellOccupancy(range, maxOccupancy).canIterate()) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -270,7 +270,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (!shouldRunDedupeBroadphase(buffer)) {
+    if (!shouldRunDedupeBroadphase(buffer) || !shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
@@ -415,11 +415,15 @@ void refineBroadphasePairsParallelImpl(
         const u32 bodyA = buffer.bodyA[pairIndex];
         const u32 bodyB = buffer.bodyB[pairIndex];
         if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
-            buffer.invalidateSlot(pairIndex);
+            if (shouldRunPairBufferInvalidateSlot(buffer, pairIndex)) {
+                buffer.invalidateSlot(pairIndex);
+            }
             return;
         }
         if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
-            buffer.invalidateSlot(pairIndex);
+            if (shouldRunPairBufferInvalidateSlot(buffer, pairIndex)) {
+                buffer.invalidateSlot(pairIndex);
+            }
         }
     });
 
@@ -460,6 +464,7 @@ RefineBroadphasePreflight preflightRefineBroadphase(
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.noValidPairs = !buffer.hasValidPairs();
     preflight.emptyInput = canSkipBroadphase(bodies, shapes);
+    preflight.validPairCount = buffer.countValidSlots();
     preflight.reason = refineBroadphaseRejectReason(bodies, shapes, buffer);
     return preflight;
 }
@@ -496,6 +501,7 @@ DedupeBroadphasePreflight preflightDedupeBroadphase(const PairBufferSoA& buffer)
     DedupeBroadphasePreflight preflight{};
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.singlePair = !preflight.emptyBuffer && buffer.activeCount <= 1u;
+    preflight.activePairCount = buffer.activeCount;
     preflight.reason = dedupeBroadphaseRejectReason(buffer);
     return preflight;
 }
@@ -602,6 +608,8 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     preflight.reason = mergePairsIntoBufferRejectReason(pairs, buffer);
     preflight.emptyPairs = preflight.reason == MergePairsIntoBufferRejectReason::EmptyPairs;
     preflight.bufferFull = preflight.reason == MergePairsIntoBufferRejectReason::BufferFull;
+    preflight.incomingPairCount = static_cast<u32>(pairs.size());
+    preflight.remainingCapacity = buffer.remainingCapacity();
     return preflight;
 }
 
