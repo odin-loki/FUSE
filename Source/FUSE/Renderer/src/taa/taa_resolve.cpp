@@ -256,6 +256,10 @@ bool shouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffe
     return !preflightTaaResolveBlendWeights(desc, history);
 }
 
+bool wouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return shouldSkipTaaResolveBlend(desc, history);
+}
+
 bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                       TaaBlendWeights& outWeights, TaaResolveBlendRejectReason& reason) {
     outWeights = computeTaaResolveBlendWeights(desc, history);
