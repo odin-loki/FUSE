@@ -1193,6 +1193,8 @@ bool tryFirstExportableEvent(ProfileEvent& outEvent);
 bool tryLastExportableEvent(ProfileEvent& outEvent);
 bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+bool tryFindFirstExportableEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindFirstExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
 bool tryFirstExportableEvent(ProfileEvent& outEvent);

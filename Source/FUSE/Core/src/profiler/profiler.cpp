@@ -1519,6 +1519,15 @@ bool isFlowPhase(EventPhase phase) {
 } // namespace
 
 
+
+
+    return isValidEventName(name) && isValidEventName(event.name)
+        && std::strcmp(event.name, name) == 0;
+
+
+    return isValidFlowId(flowId) && isFlowPhaseEvent(event) && isValidEventName(event.name)
+
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
 
@@ -2216,6 +2225,11 @@ bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+bool tryFindFirstExportableEventByName(const char* name, ProfileEvent& outEvent) {
+
+
+bool tryFindFirstExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 bool tryFirstEvent(ProfileEvent& outEvent) {
@@ -3829,6 +3843,17 @@ bool tryExportableLastEvent(ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -4522,6 +4547,9 @@ NestingConsistencyPreflight preflightNestingConsistency() {
 
 
 
+    preflight.hasUnpairedScopeEvents =
+        preflight.scopeBeginEventCount != preflight.scopeEndEventCount;
+        preflight.flowStartEventCount != preflight.flowFinishEventCount;
     return preflight;
 }
 
