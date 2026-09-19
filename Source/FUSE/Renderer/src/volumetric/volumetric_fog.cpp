@@ -2196,3 +2196,16 @@ bool preflightDensityTrilinearSample(const FroxelDensityGrid& grid,
     return !tryCanSampleAtCoords(grid, desc, coords, reason);
 FroxelPopulateRejectReason classifyPopulateReject(const FroxelGridDesc& desc,
     const FroxelPopulateRejectReason reject = classifyPopulateReject(desc, camera, params);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-2bd2 ---
+    const SampleCoordRejectReason reject = classifySampleCoordsReject(coords, desc);
+    if (!tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, rejectReason)) {
+        *reason = ScreenMappingRejectReason::None;
+    if (!tryMapScreenDepthToFroxelIndex(screenX, screenY, viewDepth, desc, camera, froxelIndex, rejectReason)) {
+ScreenMappingRejectReason classifyScreenMappingReject(f32 screenX,
+DensityLookupRejectReason classifyDensityLookupAtCoordReject(const FroxelDensityGrid& grid,
+        classifyDensityLookupAtCoordReject(grid, desc, tileX, tileY, sliceZ);
+GridDensityRejectReason classifyGridDensityReject(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
+    tryValidateGridDensity(grid, desc, reason);
+                          GridDensityRejectReason* reason) {
+    const GridDensityRejectReason reject = classifyGridDensityReject(grid, desc);

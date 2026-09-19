@@ -849,3 +849,8 @@ bool wouldSkipDensityBilinearSample(const FroxelDensityGrid& grid,
     static bool wouldSkipScreenMapping(f32 screenX,
 bool preflightDensityTrilinearSample(const FroxelDensityGrid& grid,
 FroxelPopulateRejectReason classifyPopulateReject(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-2bd2 ---
+DensityLookupRejectReason classifyDensityLookupAtCoordReject(const FroxelDensityGrid& grid,
+GridDensityRejectReason classifyGridDensityReject(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
+                          GridDensityRejectReason* reason = nullptr);

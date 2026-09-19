@@ -3340,3 +3340,17 @@ void testFroxelClassifyPreflightAndBlockingGuards() {
                "preflightFroxelPopulate rejects invalid camera");
                    fuse::renderer::FroxelPopulateRejectReason::InvalidCamera),
     testFroxelClassifyPreflightAndBlockingGuards();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-2bd2 ---
+               "classifySampleCoordsReject invalid_weights for clampable weights");
+               "preflightSampleCoords rejects hard OOB tile");
+               "classifyDensityLookupReject none for valid index");
+               "preflightDensityLookup succeeds for valid index");
+               "preflightDensityLookup succeeds for clampable OOB index");
+    expectTrue(fuse::renderer::froxel_util::classifyDensityLookupAtCoordReject(grid, desc, 3u, 1u, 2u) ==
+               "classifyDensityLookupAtCoordReject none for valid coords");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupAtCoord(grid, desc, 3u, 1u, 2u),
+    expectTrue(fuse::renderer::froxel_util::classifyDensityLookupAtCoordReject(grid, desc, 99u, 99u, 99u) ==
+               "classifyDensityLookupAtCoordReject index_out_of_range for OOB coords");
+               "preflightFroxelTrilinearSample succeeds for clampable weights");
+               "preflightFroxelTrilinearSample rejects hard OOB tile");
