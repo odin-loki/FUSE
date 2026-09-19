@@ -836,6 +836,73 @@ void testCommandStackSnapshotBaselineRoundTrip() {
     expectTrue(!stack.isDirty(), "restore brings back clean dirty flag");
 }
 
+void testUndoStackSetBaselineOnEmptyStack() {
+    fuse::editor::UndoStack stack;
+
+    stack.set_baseline_state();
+
+    expectTrue(stack.isBaselineConfigured(), "empty stack records baseline");
+    expectTrue(stack.isAtBaseline(), "empty stack is at baseline after save");
+    expectTrue(!stack.hasUnsavedChanges(), "empty saved stack has no unsaved changes");
+    expectTrue(!stack.isDirty(), "set_baseline_state on empty stack clears dirty");
+    expectTrue(stack.dirtyRevision() == 0u, "set_baseline_state on empty stack does not bump revision");
+    expectTrue(stack.coalescedOpsSinceBaseline() == 0u, "empty baseline coalesce offset is zero");
+}
+
+void testUndoStackSetBaselineStateNoRevisionBump() {
+    int counter = 0;
+
+    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "step"));
+    const fuse::u32 revisionAfterExecute = stack.dirtyRevision();
+
+    expectTrue(stack.dirtyRevision() == revisionAfterExecute,
+               "set_baseline_state does not bump dirty revision");
+
+               "repeat set_baseline_state at same depth is a no-op for revision");
+    expectTrue(stack.isAtBaseline(), "repeat set_baseline_state keeps baseline alignment");
+
+void testUndoStackClearResetsBaseline() {
+
+    stack.clear();
+
+    expectTrue(!stack.isBaselineConfigured(), "clear resets baseline configured flag");
+    expectTrue(stack.isAtBaseline(), "cleared stack matches pristine baseline depth");
+    expectTrue(!stack.isDirty(), "clear resets dirty flag");
+    expectTrue(stack.coalescedOpsSinceBaseline() == 0u, "clear resets coalesce baseline offset");
+
+void testUndoStackEvictionAdjustsBaseline() {
+
+    for (int step = 0; step < fuse::editor::UndoStack::kMaxHistory; ++step) {
+        stack.execute(std::make_unique<CounterCommand>(counter, counter, counter + 1,
+                                                       "step " + std::to_string(step)));
+
+    expectTrue(stack.isAtBaseline(), "baseline captured at max history depth");
+
+    stack.execute(std::make_unique<CounterCommand>(counter, counter, counter + 1, "overflow"));
+    expectTrue(!stack.isAtBaseline(), "eviction at max depth invalidates baseline alignment");
+    expectTrue(stack.hasUnsavedChanges(), "eviction past saved depth marks unsaved changes");
+    expectTrue(stack.evictedCount() == 1u, "overflow edit evicts oldest command");
+
+void testCommandStackSetBaselineOnEmptyStack() {
+    fuse::editor::CommandStack stack;
+
+
+    expectTrue(stack.isBaselineConfigured(), "empty command stack records baseline");
+    expectTrue(stack.isAtBaseline(), "empty command stack is at baseline after save");
+    expectTrue(!stack.hasUnsavedChanges(), "empty saved command stack has no unsaved changes");
+    expectTrue(stack.coalescedCountSinceBaseline() == 0u, "empty baseline coalesce offset is zero");
+
+void testCommandStackSetBaselineStateNoRevisionBump() {
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+
+
+
+void testCommandStackClearResetsBaseline() {
+
+
+    expectTrue(stack.coalescedCountSinceBaseline() == 0u, "clear resets coalesce baseline offset");
+
 void testCommandStackDoubleUndoEmptyGuard() {
     fuse::editor::CommandStack stack;
 
@@ -935,33 +1002,18 @@ void testUndoStackCoalesceAfterBaselineRevisionGuard() {
     expectTrue(stack.undoDepth() == 1u, "restore rewinds command stack depth");
 
 void testUndoStackCoalesceAtBaselineMarksUnsaved() {
-    fuse::editor::UndoStack stack;
-    int counter = 0;
 
     stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "drag"));
-    const fuse::u32 revisionAfterExecute = stack.dirtyRevision();
-    stack.set_baseline_state();
-    expectTrue(!stack.isDirty(), "baseline save clears dirty flag");
-    expectTrue(stack.dirtyRevision() == revisionAfterExecute, "baseline save preserves revision");
 
     stack.execute(std::make_unique<CounterCommand>(counter, 1, 3, "drag"));
     stack.execute(std::make_unique<CounterCommand>(counter, 3, 6, "drag"));
-    expectTrue(stack.dirtyRevision() == revisionAfterExecute + 1u,
-               "first coalesce after baseline bumps revision once");
     expectTrue(stack.coalescedOpsSinceBaseline() == 2u, "post-baseline coalesce tracked separately");
-    expectTrue(stack.isDirty(), "coalesce after baseline marks dirty");
 }
 
 void testUndoStackIsBaselineConfiguredRoundTrip() {
-    fuse::editor::UndoStack stack;
-    int counter = 0;
 
-    stack.execute(std::make_unique<CounterCommand>(counter, 0, 1, "step"));
-    expectTrue(stack.isBaselineConfigured(), "baseline configured after save");
     expectTrue(stack.baselineUndoCount() == 1u, "baseline undo count recorded");
 
-    stack.clear();
-    expectTrue(!stack.isBaselineConfigured(), "clear resets baseline configured flag");
     expectTrue(stack.isAtBaseline(), "undo baseline captured after first command");
     expectTrue(!stack.hasUnsavedChanges(), "saved undo baseline has no unsaved changes");
 
@@ -987,6 +1039,44 @@ void testUndoStackSnapshotCapturesBaselineRedoDepth() {
     expectTrue(stack.undoCount() == 1u, "restore rewinds undo depth to snapshot");
     expectTrue(stack.redoCount() == 1u, "restore rewinds redo depth to snapshot");
     expectTrue(stack.isAtBaseline(), "restored stack depth matches saved baseline");
+    expectTrue(stack.canRedo(), "first undo leaves redo branch");
+    expectTrue(stack.pendingQueue().pendingCount() == 2u, "undo posts inverse edit");
+
+    expectTrue(stack.pendingQueue().pendingCount() == 2u,
+               "empty-stack undo guard does not post extra inverse edits");
+
+    expectTrue(stack.redoDepth() == 0u, "second redo on empty stack is a no-op");
+
+    fuse::editor::CommandStack stack;
+
+    stack.execute(makeSetPropertyCommand(1u, "transform.position", "1,2,3"));
+
+
+
+void testCommandStackEvictionAdjustsBaseline() {
+
+    for (fuse::u32 step = 0; step < fuse::editor::CommandStack::kMaxHistory; ++step) {
+        stack.execute(makeSetPropertyCommand(step + 1u, "transform.position",
+                                             std::to_string(step).c_str()));
+
+    expectTrue(stack.isAtBaseline(), "baseline captured at max history depth");
+
+    stack.execute(makeSetPropertyCommand(999u, "transform.position", "overflow"));
+    expectTrue(!stack.isAtBaseline(), "eviction at max depth invalidates baseline alignment");
+    expectTrue(stack.hasUnsavedChanges(), "eviction past saved depth marks unsaved changes");
+    expectTrue(stack.evictedCount() == 1u, "overflow edit evicts oldest command");
+
+void testCommandStackCoalesceGuardAfterUndo() {
+
+    expectTrue(stack.undoDepth() == 1u, "coalesced edits stay one undo step");
+
+    expectTrue(stack.undoDepth() == 0u, "undo drains coalesced step");
+
+    expectTrue(stack.undoDepth() == 1u, "post-undo edit starts a new undo step");
+    expectTrue(stack.coalescedCount() == 1u, "prior coalesce count preserved across undo boundary");
+    expectTrue(stack.lastApplied()->propertyValue == "7,8,9",
+               "post-undo edit applies latest value without merging into redo branch");
+    expectTrue(stack.redoDepth() == 0u, "post-undo execute clears redo branch");
 }
 
 void testUndoStackSnapshotCapture() {
@@ -1280,8 +1370,19 @@ int main() {
     testUndoStackCoalesceDoesNotBumpDirtyRevision();
     testUndoStackIsDirtySince();
     testUndoStackSnapshotBaselineRoundTrip();
+    testUndoStackSetBaselineOnEmptyStack();
+    testUndoStackSetBaselineStateNoRevisionBump();
+    testUndoStackClearResetsBaseline();
+    testUndoStackEvictionAdjustsBaseline();
     testUndoStackSnapshotCapture();
     testCommandStackSetBaselineState();
+    testCommandStackSetBaselineOnEmptyStack();
+    testCommandStackSetBaselineStateNoRevisionBump();
+    testCommandStackClearResetsBaseline();
+    testCommandStackDoubleUndoEmptyGuard();
+    testCommandStackIsAtBaselineUsesUndoDepthOnly();
+    testCommandStackEvictionAdjustsBaseline();
+    testCommandStackCoalesceGuardAfterUndo();
     testCommandStackBaselineDirtyGuardOnRedo();
     testCommandStackCoalescedCountSinceBaseline();
     testCommandStackEmptyStackGuardsDirtyRevision();

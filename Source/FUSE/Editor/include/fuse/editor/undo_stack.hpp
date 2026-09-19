@@ -74,6 +74,7 @@ public:
     void set_baseline_state();
     u32 baselineUndoCount() const { return m_baselineUndoCount; }
     u32 baselineRedoCount() const { return m_baselineRedoCount; }
+    [[nodiscard]] bool isBaselineConfigured() const { return m_baselineConfigured; }
     [[nodiscard]] bool isAtBaseline() const;
 
     /// True when undo/redo depth or post-baseline coalesce differs from the last save point.

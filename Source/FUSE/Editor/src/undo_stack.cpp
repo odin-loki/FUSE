@@ -60,6 +60,7 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
     }
 
     if (canUndo() && !m_undo.empty() && m_undo.back()->merge(*command)) {
+    if (!m_undo.empty() && canUndo() && m_undo.back()->merge(*command)) {
         m_undo.back()->execute();
         ++m_coalescedOps;
         markDirty_();
@@ -76,6 +77,8 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
 void UndoStack::set_baseline_state() {
     if (m_baselineConfigured && isAtBaseline() && m_baselineRedoCount == redoCount() &&
         m_coalescedOpsAtBaseline == m_coalescedOps) {
+    if (m_baselineConfigured && isAtBaseline() && m_coalescedOpsAtBaseline == m_coalescedOps &&
+        m_baselineRedoCount == redoCount()) {
         markClean();
         return;
     }

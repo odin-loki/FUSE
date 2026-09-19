@@ -74,6 +74,8 @@ u32 CommandStack::coalescedCountSinceBaseline() const {
 void CommandStack::set_baseline_state() {
     if (m_baselineConfigured && isAtBaseline() && m_baselineRedoDepth == m_redoDepth &&
         m_coalescedCountAtBaseline == m_coalescedCount) {
+    if (m_baselineConfigured && isAtBaseline() && m_coalescedCountAtBaseline == m_coalescedCount &&
+        m_baselineRedoDepth == m_redoDepth) {
         markClean();
         return;
     }
