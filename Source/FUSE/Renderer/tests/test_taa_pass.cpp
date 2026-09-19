@@ -4853,3 +4853,7 @@ void testTaaPassTryClassifyGuardWrappers() {
                "pass classifyJitterSyncReject still valid for zero-width viewport");
     expectTrue(zeroPass->tryPreflightJitterSync(2u, jitterReject),
                "pass tryPreflightJitterSync still valid for zero-width viewport");
+
+// --- deepen additive from deepen-taa-pass-guards-af67 ---
+               "pass tryPreflightJitterSync passes after init");
+               "pass syncJitterToFrameIndexIfReady succeeds after tryPreflight");
