@@ -4585,3 +4585,23 @@ void testIslandWakeResultAndSleepDispatchGuards() {
                "should_skip sleep dispatch false for mixed graph");
     expectTrue(should_skip_island_sleep_dispatch(graph, bodies, dt),
                "should_skip sleep dispatch true when every island is all-sleeping");
+
+// --- deepen additive from deepen-pbd-island-guards-1f40 ---
+void testIslandBuildResultAndDegenerateGuards() {
+    const IslandBuildPreflight preflight = preflight_island_build(2, contacts, constraints);
+               "should_skip_island_build on degenerate refs");
+    expectTrue(!should_skip_island_constraint_solve_graph(graph, bodies, contacts, constraints),
+               "should_skip constraint-solve graph false when mixed island exists");
+    expectTrue(should_skip_island_constraint_solve_graph(graph, bodies, contacts, constraints),
+               "should_skip constraint-solve graph true when all islands are sleeping");
+void testSolveIslandJobGuardedAndConstraintDispatch() {
+void testPreflightIslandSleepWakeCombinedGuards() {
+    const IslandSleepWakePreflight combined = preflight_island_sleep_wake(graph.island(mixedIsland), bodies);
+    const IslandSleepWakePreflight byIndex =
+    const IslandDispatchSolveablePreflight dispatchPreflight =
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch-solveable preflight can dispatch");
+    expectTrue(!should_skip_island_dispatch_solveable(graph, bodies, contacts, constraints, dt),
+               "should_skip dispatch-solveable false for mixed graph");
+    expectTrue(should_skip_island_dispatch_solveable(emptyGraph, bodies, contacts, constraints, dt),
+               "should_skip dispatch-solveable true for empty graph");
+    testPreflightIslandSleepWakeCombinedGuards();
