@@ -1030,3 +1030,13 @@ void testCookHashPreflightDeepenGuards() {
     expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_deepen_probe.fusemesh"),
     expectTrue(!cooker.cache().would_invalidate_source(""), "empty source path would_invalidate is false");
     testCookHashPreflightDeepenGuards();
+
+// --- deepen additive from deepen-b79-cooker-hash-13ca ---
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_would_source.obj"),
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_would_output.fusemesh"),
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_source.obj", 42u),
+    expectTrue(seeded.ok, "seed cook for would_invalidate mirrors ok");
+               "would_invalidate_source mirrors count_by_source");
+               "would_invalidate_output mirrors count_by_output");
+               "matching hash would_invalidate_stale_content is false");
+               "mismatched hash would_invalidate_stale_content is true");
