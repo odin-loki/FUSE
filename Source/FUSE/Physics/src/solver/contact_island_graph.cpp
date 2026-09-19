@@ -307,3 +307,16 @@ bool should_skip_island_graph_build(u32 bodyCount) {
 
 // --- deepen additive from pbd-island-guards-deepen-5934 ---
     if (should_skip_island_build(bodyCount)) {
+
+// --- deepen additive from deepen-pbd-island-guards-ac8e ---
+const char* island_build_reject_reason_name(IslandBuildRejectReason reason) {
+    case IslandBuildRejectReason::EmptyBodyCount:
+    case IslandBuildRejectReason::InvalidContactBodyIndex:
+    case IslandBuildRejectReason::InvalidDistanceBodyIndex:
+IslandBuildRejectReason island_build_reject_reason(
+        return IslandBuildRejectReason::EmptyBodyCount;
+            return IslandBuildRejectReason::InvalidContactBodyIndex;
+            return IslandBuildRejectReason::InvalidDistanceBodyIndex;
+    return IslandBuildRejectReason::None;
+    IslandBuildRejectReason expected) {
+    preflight.skipped = preflight.reason != IslandBuildRejectReason::None;

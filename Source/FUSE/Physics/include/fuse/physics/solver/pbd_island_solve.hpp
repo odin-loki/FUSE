@@ -1307,3 +1307,12 @@ bool should_skip_island_sleep_detection(const ContactIslandGraph::Island& island
 bool should_skip_island_sleep_detection_index(const ContactIslandGraph& graph,
 IslandSolveJobPreflight preflight_solve_island_job(const ContactIslandGraph::Island& island,
 bool should_skip_solve_island_job_preflight(const ContactIslandGraph::Island& island,
+
+// --- deepen additive from deepen-pbd-island-guards-ac8e ---
+bool should_skip_solve_sleeping_island(const RigidBodySoA& bodies,
+bool should_skip_solve_sleeping_island_index(const RigidBodySoA& bodies,
+IslandConstraintSolvePreflight preflight_island_constraint_solve(const RigidBodySoA& bodies,
+IslandConstraintSolvePreflight preflight_island_constraint_solve_by_index(const RigidBodySoA& bodies,
+bool should_skip_island_constraint_solve(const RigidBodySoA& bodies,
+IslandSleepGraphPreflight preflight_island_sleep_graph(const RigidBodySoA& bodies,
+bool should_skip_island_sleep_dispatch(const RigidBodySoA& bodies, const ContactIslandGraph& graph);

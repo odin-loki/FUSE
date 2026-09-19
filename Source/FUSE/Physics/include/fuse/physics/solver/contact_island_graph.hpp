@@ -133,3 +133,10 @@ bool should_skip_island_build(u32 bodyCount);
 // --- deepen additive from deepen-pbd-island-guards-a261 ---
 IslandBuildPreflight preflight_island_graph_build(
 bool should_skip_island_graph_build(u32 bodyCount);
+
+// --- deepen additive from deepen-pbd-island-guards-ac8e ---
+const char* island_build_reject_reason_name(IslandBuildRejectReason reason);
+    IslandBuildRejectReason expected);
+    IslandBuildRejectReason reason = IslandBuildRejectReason::None;
+    bool can_build() const { return !skipped && reason == IslandBuildRejectReason::None; }
+IslandBuildRejectReason island_build_reject_reason(
