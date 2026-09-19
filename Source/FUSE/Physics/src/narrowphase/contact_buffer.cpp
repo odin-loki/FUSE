@@ -740,3 +740,6 @@ bool ContactBufferSoA::writeSlotIfPreflight(u32 slot, const ContactManifold& man
 
 // --- deepen additive from b4-narrowphase-deepen-guards-cdff ---
     preflight.outOfRange = preflight.reason == ContactBufferWriteRejectReason::OutOfRangeSlot;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56fd ---
+        if (should_skip_friction_basis_beyond_rebuild(manifold, epsilon)) {

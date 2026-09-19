@@ -241,3 +241,9 @@ ContactNormalNormalizePreflight preflight_contact_normal_normalize(
 
 // --- deepen additive from b4-narrowphase-deepen-guards-ed7c ---
         return skipped || (reason == FrictionBasisRejectReason::None && canReuse);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56fd ---
+FrictionBasisRejectReason friction_basis_beyond_reject_reason(
+struct FrictionBasisBeyondPreflight {
+FrictionBasisBeyondPreflight preflight_friction_basis_beyond_rebuild(
+bool should_skip_friction_basis_beyond_rebuild(

@@ -865,3 +865,17 @@ bool should_skip_contact_pair_for_buffer(
 NarrowphaseSlotPreflight preflight_narrowphase_slot(
     NarrowphaseSlotPreflight preflight{};
     preflight.pairRejected = preflight.pairReason != ContactPairRejectReason::None;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56fd ---
+    case ContactPairRejectReason::UndispatchableShapePair:
+ContactPairRejectReason contact_pair_beyond_deepen_reject_reason(
+    const ContactPairRejectReason deepenReason = contact_pair_deepen_reject_reason(pair, bodies, shapes);
+        return ContactPairRejectReason::UndispatchableShapePair;
+ContactPairBeyondDeepenPreflight preflight_contact_pair_beyond(
+    ContactPairBeyondDeepenPreflight preflight{};
+bool should_skip_contact_pair_beyond_dispatch(
+    return contact_pair_beyond_deepen_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+        if (!should_skip_contact_pair_beyond_dispatch(pair, bodies, shapes)) {
+NarrowphaseBeyondBatchPreflight preflight_narrowphase_beyond_batch(
+    NarrowphaseBeyondBatchPreflight preflight{};
+    if (should_skip_contact_pair_beyond_dispatch(pair, bodies, shapes)) {

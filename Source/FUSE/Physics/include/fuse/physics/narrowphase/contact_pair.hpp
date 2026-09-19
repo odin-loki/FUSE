@@ -381,3 +381,11 @@ bool should_skip_contact_pair_for_buffer(
 struct NarrowphaseSlotPreflight {
     ContactPairRejectReason pairReason = ContactPairRejectReason::None;
 NarrowphaseSlotPreflight preflight_narrowphase_slot(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56fd ---
+ContactPairRejectReason contact_pair_beyond_deepen_reject_reason(
+struct ContactPairBeyondDeepenPreflight {
+ContactPairBeyondDeepenPreflight preflight_contact_pair_beyond(
+bool should_skip_contact_pair_beyond_dispatch(
+struct NarrowphaseBeyondBatchPreflight {
+NarrowphaseBeyondBatchPreflight preflight_narrowphase_beyond_batch(

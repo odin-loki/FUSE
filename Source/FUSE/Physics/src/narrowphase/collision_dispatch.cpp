@@ -113,3 +113,6 @@ bool should_skip_narrowphase_dispatch(
 NarrowphaseBufferFinalizePreflight preflight_narrowphase_buffer_finalize(const ContactBufferSoA& buffer) {
     NarrowphaseBufferFinalizePreflight preflight{};
     const NarrowphaseBufferFinalizePreflight preflight = preflight_narrowphase_buffer_finalize(buffer);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56fd ---
+        if (should_skip_contact_pair_beyond_dispatch(pairs[pairIndex], bodies, shapes)) {

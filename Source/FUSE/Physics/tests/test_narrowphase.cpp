@@ -3090,3 +3090,23 @@ void testRunNarrowphaseIfDispatchableGuard() {
     expectTrue(compactAndClampPreflight.needs_compact_and_clamp(),
 void testContactBufferGuardedWriteAndCompact() {
 void testFrictionBasisDeepenGuards() {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56fd ---
+void testContactPairBeyondDeepenRejectGuards() {
+            fuse::physics::narrowphase::ContactPairRejectReason::UndispatchableShapePair,
+    const auto beyondPreflight =
+    expectTrue(!beyondPreflight.can_dispatch(), "beyond preflight rejects capsule-capsule pair");
+        beyondPreflight.reason ==
+        fuse::physics::narrowphase::should_skip_contact_pair_beyond_dispatch(
+            fuse::physics::narrowphase::ContactPairRejectReason::UndispatchableShapePair),
+void testManifoldBeyondPruneFinalizeGuards() {
+        !fuse::physics::narrowphase::should_skip_manifold_beyond_prune(dirty),
+        "should_skip_manifold_beyond_prune false when prune needed");
+        fuse::physics::narrowphase::should_skip_manifold_beyond_prune(clean),
+        "should_skip_manifold_beyond_prune true for clean manifold");
+void testFrictionBasisBeyondRebuildGuards() {
+    expectTrue(needsPreflight.needsRebuild, "beyond friction preflight needs rebuild without basis");
+    expectTrue(!needsPreflight.can_skip_rebuild(), "beyond friction preflight cannot skip missing basis");
+    expectTrue(stalePreflight.stale, "beyond friction preflight flags stale basis");
+        !fuse::physics::narrowphase::should_skip_friction_basis_beyond_rebuild(stale),
+void testRunNarrowphaseBeyondAndBufferGuards() {

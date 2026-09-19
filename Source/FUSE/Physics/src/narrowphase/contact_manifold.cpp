@@ -791,3 +791,12 @@ ManifoldShallowPrunePreflight preflight_manifold_shallow_prune(
     if (expected == ManifoldPruneRejectReason::ExceedsMaxPoints) {
     case ManifoldFinalizeRejectReason::NeedsNormalNormalize:
     if (expected == ManifoldFinalizeRejectReason::NeedsNormalNormalize) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56fd ---
+ManifoldBeyondPrunePreflight preflight_manifold_beyond_prune(
+    ManifoldBeyondPrunePreflight preflight{};
+    const ManifoldPrunePreflight basePreflight =
+    preflight.reason = basePreflight.reason;
+        preflight.reason = ManifoldPruneRejectReason::ExceedsMaxPoints;
+bool should_skip_manifold_beyond_prune(
+    const ManifoldBeyondPrunePreflight preflight =

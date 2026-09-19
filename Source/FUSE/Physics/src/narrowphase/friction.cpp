@@ -491,3 +491,16 @@ ContactNormalNormalizePreflight preflight_contact_normal_normalize(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-f881 ---
     if (expected == FrictionBasisRejectReason::StaleBasis) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56fd ---
+FrictionBasisRejectReason friction_basis_beyond_reject_reason(
+    const FrictionBasisRejectReason baseReason = friction_basis_reject_reason(manifold);
+    if (baseReason != FrictionBasisRejectReason::None) {
+FrictionBasisBeyondPreflight preflight_friction_basis_beyond_rebuild(
+    FrictionBasisBeyondPreflight preflight{};
+    preflight.reason = basePreflight.reason;
+    preflight.needsNormalNormalize = basePreflight.needsNormalNormalize;
+bool should_skip_friction_basis_beyond_rebuild(
+    const FrictionBasisBeyondPreflight preflight =
+    if (should_skip_friction_basis_beyond_rebuild(manifold, epsilon)) {
+        if (friction_basis_reject_reason(manifold) != FrictionBasisRejectReason::None) {
