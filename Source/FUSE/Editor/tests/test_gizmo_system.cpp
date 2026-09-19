@@ -4438,3 +4438,6 @@ void testEndDragInteractionRejectReasonGuards() {
                "tryPreflightUpdateDrag rejects invalid viewport dimensions");
     expectTrue(reason == fuse::editor::GizmoUpdateDragRejectReason::InvalidDimensions,
                    fuse::editor::GizmoUpdateDragRejectReason::InvalidDimensions),
+
+// --- deepen additive from deepen-gizmo-b6-guards-eb15 ---
+    expectTrue(!fuse::editor::tryPreflightBeginDrag(nanRay, transform, fuse::editor::GizmoMode::Translate,
