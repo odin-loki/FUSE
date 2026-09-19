@@ -106,6 +106,35 @@ bool preflightTaaJitterSync(u32 /*frameIndex*/, u32 width, u32 height, u32 seque
     return block == TaaJitterSyncBlockReason::None;
 }
 
+bool taaHistoryIsWarmed(const TaaHistoryBuffer& history) {
+    return history.isReady() && history.hasValidHistory();
+}
+
+const char* taaHistoryWarmupBlockReasonLabel(TaaHistoryWarmupBlockReason reason) {
+    switch (reason) {
+    case TaaHistoryWarmupBlockReason::None:
+        return "none";
+    case TaaHistoryWarmupBlockReason::NotReady:
+        return "not_ready";
+    }
+    return "unknown";
+}
+
+TaaHistoryWarmupBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history) {
+    if (!history.isReady()) {
+        return TaaHistoryWarmupBlockReason::NotReady;
+    }
+    return TaaHistoryWarmupBlockReason::None;
+}
+
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason* reason) {
+    const TaaHistoryWarmupBlockReason block = classifyTaaHistoryWarmupBlock(history);
+    if (reason != nullptr) {
+        *reason = block;
+    }
+    return block == TaaHistoryWarmupBlockReason::None;
+}
+
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
                               TaaHistoryReuseBlockReason* reason) {
     const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlock(history, observedGeneration);

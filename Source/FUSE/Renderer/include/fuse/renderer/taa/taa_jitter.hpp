@@ -73,6 +73,8 @@ struct TaaJitterLayout {
     static bool canSyncToFrameIndex(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// True when two NDC jitter offsets are approximately equal (B5.9 deepen).
     static bool ndcOffsetsMatch(const fuse::math::Vec2& a, const fuse::math::Vec2& b, f32 epsilon = 1e-6f);
+    /// Expected Halton slot for a monotonic frame counter (alias of `frameIndexInSequence`).
+    static u32 expectedSlotForFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Returns the jitter cycle length after validation (0 when invalid).
     static u32 sequencePeriod(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Maps a monotonic frame counter into the active Halton slot.
@@ -164,6 +166,8 @@ public:
     /// True when jitter state matches the expected slot for `frameIndex` (B5.9 deepen).
     /// Align jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
     /// True when jitter index and monotonic counter match `frameIndex` (B5.9 deepen).
+    /// True when jitter must resync to align with `frameIndex` (B5.9 deepen).
+    bool needsResyncToFrameIndex(u32 frameIndex) const;
 
     u32 index() const { return m_index; }
     /// True when monotonic frame counter matches `frameIndex` (B5.9 deepen).
@@ -236,5 +240,16 @@ TaaJitterSyncRejectReason classifyTaaJitterSyncReject(const TaaJitter& jitter, u
                                                       u32 height);
 /// Preflight jitter sync — returns true when jitter matches `frameIndex` for the viewport (B5.9 deepen).
 bool taaJitterSyncPreflight(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height,
+/// Why jitter frame-index sync preflight blocked the request (B5.9 deepen).
+enum class TaaJitterSyncBlockReason : u8 {
+    None = 0,
+    InvalidSequence,
+    Misaligned,
+/// Human-readable label for jitter sync block reasons (B5.9 deepen).
+const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason);
+/// Classify why jitter is not aligned to `frameIndex` (B5.9 deepen).
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(const TaaJitter& jitter, u32 frameIndex);
+/// True when jitter is aligned to `frameIndex` and the sequence is valid (B5.9 deepen).
+bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, TaaJitterSyncBlockReason* reason = nullptr);
 
 } // namespace fuse::renderer
