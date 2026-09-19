@@ -1459,3 +1459,8 @@ HrtfPanPathRejectReason classifyHrtfBinauralPanReject(const HrtfBinauralPrefligh
 HrtfAttenuationCouplingRejectReason classifyHrtfBinauralCouplingReject(
 bool preflightHrtfBinauralReady(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
 bool preflightHrtfBinauralReady(bool hrtf_enabled, const Vec3& rel_listener,
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-d5c8 ---
+struct HrtfIrPreflight;
+struct HrtfPanPathPreflight;
+struct HrtfAttenuationCouplingPreflight;
