@@ -955,6 +955,12 @@ FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange3& 
     return CellSpanRejectReason::None;
 
 FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange2& range, u32 maxSpanPerAxis) {
+            return CellSpanRejectReason::ExceedsMaxSpan;
+        }
+
+    if (isEmptyCellRange(range)) {
+        return CellSpanRejectReason::EmptyRange;
+    if (maxSpanPerAxis > 0u) {
         const ivec2 span = cellSpanPerAxis(range);
         if (span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis)) {
             return CellSpanRejectReason::ExceedsMaxSpan;
@@ -963,6 +969,8 @@ FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange2& 
     if (isEmptyCellRange(range)) {
         return CellSpanRejectReason::EmptyRange;
     if (maxSpanPerAxis > 0u) {
+    }
+    return CellSpanRejectReason::None;
 
 /// Returns true when `cellSpanRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellSpanRejectsForReason(
@@ -1477,6 +1485,10 @@ FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan(const CellRange3& range,
 
 
 
+
+
+
+
     preflight.reason = cellSpanRejectReason(range, maxSpanPerAxis);
     preflight.emptyRange = preflight.reason == CellSpanRejectReason::EmptyRange;
     preflight.exceedsMaxSpan = preflight.reason == CellSpanRejectReason::ExceedsMaxSpan;
@@ -1559,6 +1571,51 @@ FUSE_PHYSICS_INLINE CellSpanPreflight2D preflightCellSpan(const CellRange2& rang
 /// Non-mutating cell-span predicate — true when clamp would shrink an over-span range (B4.2 deepen follow-up pass).
     return maxSpanPerAxis > 0u && cellSpanRejectReason(range, maxSpanPerAxis) == CellSpanRejectReason::ExceedsMaxSpan;
 
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE bool canSkipCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+
+FUSE_PHYSICS_INLINE bool canSkipCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+
+/// Why per-cell pair generation would early-out (B4.2 deepen follow-up pass).
+enum class CellPairGenRejectReason : u8 {
+    None = 0,
+    SingletonOccupant,
+};
+
+/// Human-readable label for cell-pair-gen reject reasons (logging / tests).
+const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason);
+
+/// Diagnose why per-cell pair generation would skip; vacuously succeeds when pairs may be emitted.
+CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants);
+
+/// Returns true when `cellPairGenRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenRejectReason expected);
+
+/// Read-only per-cell pair-generation diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct CellPairGenPreflight {
+    CellPairGenRejectReason reason = CellPairGenRejectReason::None;
+    bool singletonOccupant = false;
+    u32 occupantCount = 0;
+    u32 estimatedPairCount = 0;
+
+    bool canGenerate() const { return reason == CellPairGenRejectReason::None; }
+
+CellPairGenPreflight preflightCellPairGen(const std::vector<u32>& occupants);
+
+/// Non-mutating cell-pair-gen skip predicate — inverse of `canGenerate` (B4.2 deepen follow-up pass).
+bool canSkipCellPairGen(const std::vector<u32>& occupants);
+
+/// Non-mutating cell-pair-gen predicate — mirrors `preflightCellPairGen` (B4.2 deepen follow-up pass).
+bool shouldRunCellPairGen(const std::vector<u32>& occupants);
+
+/// Unique-body pair count for a cell occupant list (0 when fewer than two occupants).
+u32 countPairsForOccupants(const std::vector<u32>& occupants);
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
