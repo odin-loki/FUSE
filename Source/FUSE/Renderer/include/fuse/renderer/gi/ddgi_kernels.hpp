@@ -12,6 +12,8 @@ namespace fuse::renderer::gi {
 
 /// Why a CUDA kernel launch preflight rejected the request (B5.6 deepen).
 enum class DdgiKernelRejectReason : u8 {
+/// Why a DDGI kernel launch preflight rejected the request (B5.6 deepen).
+enum class KernelLaunchRejectReason : u8 {
     None = 0,
     NullIndices,
     ZeroCount,
@@ -27,6 +29,7 @@ enum class DdgiKernelLaunchRejectReason : u8 {
 
 /// Human-readable label for kernel launch reject reasons (logging / tests).
 const char* ddgiKernelLaunchRejectReasonLabel(DdgiKernelLaunchRejectReason reason);
+const char* kernelLaunchRejectReasonLabel(KernelLaunchRejectReason reason);
 
 /// CUDA kernel parameter bundle for DDGI probe update (B5.6 — P5 §5.6).
 ///
@@ -182,6 +185,9 @@ bool preflightDdgiKernelParams(const DDGIKernelParams& params, DdgiKernelRejectR
 /// Diagnose why probe trace kernel launch preflight would reject.
 
 /// Diagnose why probe blend kernel launch preflight would reject.
+bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, KernelLaunchRejectReason& outReason);
+
+bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, KernelLaunchRejectReason& outReason);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
