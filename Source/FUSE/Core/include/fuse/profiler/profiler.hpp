@@ -342,3 +342,6 @@ struct ProfilerGuardPreflight {
 // --- deepen additive from deepen-b16-profiler-preflights-479f ---
 struct NestingStatePreflight {
 NestingStatePreflight preflightNestingState();
+
+// --- deepen additive from deepen-b16-profiler-export-preflight-9968 ---
+ChromeExportPreflight preflightChromeTraceExport();

@@ -2887,3 +2887,14 @@ void testExportPreflightStubs() {
     expectTrue(!fuse::profiler::tryEventAt(99u, out), "tryEventAt false for out-of-range index");
 void testIsValidProfileEventRejectsEmptyName() {
     testExportPreflightStubs();
+
+// --- deepen additive from deepen-b16-profiler-export-preflight-9968 ---
+void testChromeExportPreflightEmptyBuffer() {
+    const fuse::profiler::ChromeExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
+void testChromeExportPreflightWithEvents() {
+void testChromeExportPreflightUnbalancedNesting() {
+void testChromeExportPreflightDisabledProfiler() {
+    testChromeExportPreflightEmptyBuffer();
+    testChromeExportPreflightWithEvents();
+    testChromeExportPreflightUnbalancedNesting();
+    testChromeExportPreflightDisabledProfiler();

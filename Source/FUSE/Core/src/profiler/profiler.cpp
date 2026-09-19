@@ -1159,3 +1159,6 @@ NestingStatePreflight preflightNestingState() {
 
 // --- deepen additive from deepen-b16-profiler-guards-5d2c ---
     ChromeExportPreflight preflight;
+
+// --- deepen additive from deepen-b16-profiler-export-preflight-9968 ---
+ChromeExportPreflight preflightChromeTraceExport() {
