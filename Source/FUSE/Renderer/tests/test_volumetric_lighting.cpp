@@ -3463,3 +3463,9 @@ void testFroxelClassifyAndBlockingGuards() {
                "preflightFroxelPopulate reports none for valid inputs");
                "classifyFroxelPopulateReject reports zero_density for zero density");
                "preflightFroxelPopulate reports zero_density for zero density");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-1f1f ---
+               "preflightScreenMapping rejects below-near depth");
+               "classifyGridDensityReject none for empty desc (vacuous)");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulate(zeroDesc, camera, params),
+               "classifyFroxelPopulateReject invalid_camera for inverted near/far");
