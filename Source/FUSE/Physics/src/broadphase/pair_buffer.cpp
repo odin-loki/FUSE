@@ -2929,6 +2929,9 @@ const char* pairBufferInvalidateSlotRejectReasonName(PairBufferInvalidateSlotRej
     case PairBufferInvalidateSlotRejectReason::AlreadyInvalid:
         return "AlreadyInvalid";
     }
+bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {
+    return canSkipPairBufferWriteSlot(buffer, slot, idxA, idxB);
+
 
 PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const PairBufferSoA& buffer, u32 slot) {
     if (slot >= buffer.pairSlotCount || slot >= buffer.validFlags.size()) {
@@ -2986,6 +2989,7 @@ bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer,
     if (buffer.canSkipSoAIteration() || slot >= pairBufferSlotBound(buffer)) {
 
 
+    }
 
 bool pairBufferInvalidateSlotRejectsForReason(
     const PairBufferSoA& buffer,
@@ -3070,6 +3074,9 @@ bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer,
 
 
         *reason = reject;
+
+
+
 
 
 
@@ -4803,6 +4810,34 @@ bool invalidatePairBufferSlotWithPreflight(PairBufferSoA& buffer, u32 slot) {
     }
     buffer.invalidateSlot(slot);
     return true;
+}
+
+bool wouldSkipPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
+    return !preflightPairBufferPush(buffer, idxA, idxB).canPush();
+}
+
+bool wouldSkipPairBufferCompaction(const PairBufferSoA& buffer) {
+    return canSkipPairBufferCompaction(buffer);
+}
+
+bool wouldSkipPairBufferClamp(const PairBufferSoA& buffer) {
+    return canSkipPairBufferClamp(buffer);
+}
+
+bool wouldSkipPairBufferDedupe(const PairBufferSoA& buffer) {
+    return canSkipPairBufferDedupe(buffer);
+}
+
+bool wouldSkipPairBufferSort(const PairBufferSoA& buffer) {
+    return canSkipPairBufferSort(buffer);
+}
+
+bool wouldSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
+    return canSkipPairBufferCompactAndClamp(buffer);
+}
+
+bool wouldSkipPairBufferToVector(const PairBufferSoA& buffer) {
+    return canSkipPairBufferToVector(buffer);
 }
 
 } // namespace fuse::physics::broadphase
