@@ -229,7 +229,10 @@ void writePairsForCellSlots(
     u32 slot = slotStart;
     for (usize i = 0; i < uniqueBodies.size(); ++i) {
         for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
-            buffer.writeSlot(slot++, uniqueBodies[i], uniqueBodies[j]);
+            if (shouldRunPairBufferWriteSlot(buffer, slot, uniqueBodies[i], uniqueBodies[j])) {
+                buffer.writeSlot(slot, uniqueBodies[i], uniqueBodies[j]);
+            }
+            ++slot;
         }
     }
 }
@@ -396,7 +399,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (!shouldRunDedupeBroadphase(buffer)) {
+    if (!shouldRunDedupeBroadphase(buffer) || !shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
@@ -540,6 +543,9 @@ void refineBroadphasePairsParallelImpl(
 
         const u32 bodyA = buffer.bodyA[pairIndex];
         const u32 bodyB = buffer.bodyB[pairIndex];
+        if (!shouldRunPairBufferInvalidateSlot(buffer, pairIndex)) {
+            return;
+        }
         if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
             buffer.invalidateSlot(pairIndex);
             return;

@@ -1773,6 +1773,30 @@ void testShapeCellInsertRejectReasonGuards() {
     expectTrue(validPreflight.occupancyCount > 0u, "normal shape insert preflight reports occupancy count");
 }
 
+void testRefineInvalidateSlotPreflightGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({0.5f, 0.f, 0.f}, 1.f);
+    bodies.addBody({20.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 2, {1.f, 0.f, 0.f});
+
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.push(0u, 1u);
+    buffer.push(0u, 2u);
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferInvalidateSlot(buffer, 0u),
+               "refine path can invalidate in-range slot");
+    expectTrue(fuse::physics::broadphase::canSkipPairBufferInvalidateSlot(buffer, 8u),
+               "refine path skips out-of-range invalidate slot");
+
+    fuse::physics::broadphase::refineBroadphasePairsParallel(bodies, shapes, buffer);
+    expectEq(buffer.activeCount, 1u, "refine invalidate preflight gate removes separated pair");
+    expectTrue(buffer.containsCanonicalPair(0u, 1u), "refine invalidate preflight gate keeps overlap");
+}
+
 void testPairBufferShouldRunDedupeGuards() {
     fuse::physics::broadphase::PairBufferSoA buffer;
     expectTrue(!fuse::physics::broadphase::shouldRunPairBufferDedupe(buffer),
@@ -1904,6 +1928,7 @@ int main() {
     testPairBufferInvalidateSlotRejectReasonGuards();
     testCellPairGenRejectReasonGuards();
     testShapeCellInsertRejectReasonGuards();
+    testRefineInvalidateSlotPreflightGuards();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");
