@@ -887,3 +887,7 @@ void run_script_console_tests() {
     testCustomCommandShadowsBuiltIn();
     testCustomCommandDispatch();
 }
+
+// --- deepen additive from deepen-b73-script-console-history-repeat-resolve-guards-259a ---
+void testRepeatArgsGuard() {
+void testResolveWhitespaceGuard() {
