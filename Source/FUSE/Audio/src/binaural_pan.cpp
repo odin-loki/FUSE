@@ -2124,3 +2124,8 @@ bool should_skip_hrtf_pan_spatial_preflight(bool hrtf_enabled, const Vec3& rel_l
 bool should_skip_hrtf_attenuation_coupling_narrowing_preflight(
 bool should_skip_hrtf_binaural_narrowing_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
 bool should_skip_hrtf_binaural_narrowing_preflight(bool hrtf_enabled, const Vec3& rel_listener,
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-62d8 ---
+    const HrtfBinauralRejectReason spatial_reject = classify_hrtf_binaural_spatial_reject(preflight);
+HrtfBinauralRejectReason classify_hrtf_binaural_narrow_reject(const HrtfBinauralPreflight& preflight) {
+bool try_preflight_hrtf_binaural_narrow(bool hrtf_enabled, const HrtfIrStub& ir,

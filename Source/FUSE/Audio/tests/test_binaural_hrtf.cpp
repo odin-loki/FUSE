@@ -2531,3 +2531,7 @@ void testHrtfBinauralRejectReasonEnumsAndPreflightWrappers() {
                "should_skip_hrtf_pan_spatial_preflight true when disabled");
     expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling_narrowing_preflight(
                "should_skip coupling narrowing true on bypass path");
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-62d8 ---
+               "should_skip_hrtf_ir_ready true on empty IR");
+               "should_skip_hrtf_ir_ready false on valid IR");
