@@ -26,6 +26,11 @@ enum class ParticleGpuSlotGuard : u8 {
 enum class ParticleGpuSlotOffsetGuard : u8 {
     UninitializedCapacity,
     SlotOutOfRange,
+/// Empty packed-buffer preconditions for stub pack/unpack paths (B7.7 GPU deepen follow-up).
+enum class ParticleGpuBufferGuard : u8 {
+    ZeroCapacity,
+    EmptyPackedBytes,
+    UnboundDevice,
 };
 
 /// GPU SoA column identifiers — mirrors P7 `ParticleSoAGPU` device arrays.
@@ -124,6 +129,48 @@ struct ParticleGpuSlotPreflight {
     [[nodiscard]] bool ready_for_stub_access() const;
 };
 
+/// Pack/unpack preflight for stub device-layout serialization (B7.7 GPU deepen follow-up).
+struct ParticleGpuPackPreflight {
+    ParticleGpuBufferGuard buffer_guard = ParticleGpuBufferGuard::ZeroCapacity;
+    bool mirror_initialized = false;
+    bool layout_valid = false;
+    bool skip_pack = true;
+
+    [[nodiscard]] bool can_pack() const;
+    [[nodiscard]] bool can_unpack() const;
+};
+
+/// Emit-launch preflight for stub CUDA emit kernels (B7.7 GPU deepen follow-up).
+struct ParticleGpuEmitPreflight {
+    u32 emit_count = 0u;
+    u32 free_slots = 0u;
+    u32 allowed_emit = 0u;
+    bool skip_emit = true;
+    bool would_clamp = false;
+
+    [[nodiscard]] bool can_emit() const;
+};
+
+/// Simulate-launch preflight for stub CUDA sim kernels (B7.7 GPU deepen follow-up).
+struct ParticleGpuSimPreflight {
+    u32 alive_count = 0u;
+    u32 capacity = 0u;
+    bool skip_sim = true;
+    bool has_live_particles = false;
+
+    [[nodiscard]] bool can_simulate() const;
+};
+
+/// Buffer sizing preflight for stub device allocation (B7.7 GPU deepen follow-up).
+struct ParticleGpuBufferPreflight {
+    ParticleGpuBufferGuard guard = ParticleGpuBufferGuard::ZeroCapacity;
+    bool layout_valid = false;
+    usize packed_bytes = 0u;
+
+    [[nodiscard]] bool can_allocate() const;
+    [[nodiscard]] bool can_bind() const;
+};
+
 /// Per-column byte sizing and packed SSBO layout helpers.
 struct ParticleGpuBufferLayout {
     static constexpr u32 kSimBlockSize = 256u;
@@ -171,6 +218,8 @@ struct ParticleGpuBufferLayout {
     [[nodiscard]] static ParticleGpuSlotGuard slotGuard(u32 slot_index, u32 capacity);
     [[nodiscard]] static usize slotElementByteOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity);
     [[nodiscard]] static usize slotColumnByteOffset(ParticleGpuColumn column, u32 slot_index, u32 capacity);
+    static const char* bufferGuardName(ParticleGpuBufferGuard guard);
+    static bool isValidCapacity(u32 capacity);
 };
 
 /// Non-mutating simulate/emit launch diagnostics for stub tests.
@@ -383,6 +432,7 @@ struct ParticleGpuMirrorSyncPreflight {
     [[nodiscard]] bool hasDeviceAllocation() const { return deviceBytes > 0u && capacity > 0u; }
     [[nodiscard]] bool isEmptyCapacity() const { return capacity == 0u; }
     [[nodiscard]] ParticleGpuBuffersPreflight preflight() const;
+    [[nodiscard]] bool hasDeviceBinding() const { return packedSoa != 0u && !isEmpty(); }
 };
 
 /// CPU-side column mirror for layout/dispatch stub tests — no device readback in production.
@@ -413,6 +463,9 @@ struct ParticleGpuMirror {
     [[nodiscard]] bool shouldSkipSyncFromCpu(const ParticleSoA& cpu) const;
     [[nodiscard]] bool validateSlotAccess(u32 slot_index) const;
     [[nodiscard]] ParticleGpuSlotPreflight preflightSlot(u32 slot_index, ParticleGpuColumn column) const;
+    [[nodiscard]] ParticleGpuPackPreflight preflightPack() const;
+    [[nodiscard]] bool tryPackToDeviceLayout(std::vector<u8>& out) const;
+    [[nodiscard]] bool shouldSkipPack() const;
     [[nodiscard]] bool aliveCountMatchesFlags() const;
     [[nodiscard]] ParticleGpuMirrorSyncPreflight preflightSyncFromCpu(const ParticleSoA& cpu) const;
     [[nodiscard]] ParticleGpuMirrorSyncPreflight preflightWriteToCpu(const ParticleSoA& cpu) const;
@@ -434,6 +487,7 @@ struct ParticleGpuMirror {
     [[nodiscard]] bool shouldSkipPack() const;
     [[nodiscard]] bool tryPackToDeviceLayout(std::vector<u8>& out) const;
     [[nodiscard]] static ParticleGpuMirror unpackFromDeviceLayout(const std::vector<u8>& bytes, u32 capacity);
+    [[nodiscard]] static ParticleGpuPackPreflight preflightUnpack(const std::vector<u8>& bytes, u32 capacity);
 
     [[nodiscard]] bool matchesCpuSoA(const ParticleSoA& cpu) const;
     [[nodiscard]] bool matchesPackedLayout(const std::vector<u8>& bytes) const;
@@ -508,6 +562,8 @@ struct ParticleGpuFramePlan {
     [[nodiscard]] ParticleGpuFramePlanPreflight preflight() const;
     [[nodiscard]] bool skipSimLaunch() const;
     [[nodiscard]] bool skipEmitLaunch() const;
+    [[nodiscard]] bool skipSimLaunchForAlive() const;
+    [[nodiscard]] bool skipEmitLaunchForSlots(u32 free_slots) const;
     [[nodiscard]] bool isIdle() const { return skipSimLaunch() && skipEmitLaunch(); }
     [[nodiscard]] bool buffersSizedForCapacity() const;
     [[nodiscard]] u32 remainingEmitSlots() const;
@@ -515,6 +571,8 @@ struct ParticleGpuFramePlan {
     [[nodiscard]] bool shouldSkipSimWithZeroAlive() const { return alive_count == 0u; }
     [[nodiscard]] bool shouldSkipEmitAtCapacity() const { return capacity == 0u || alive_count >= capacity; }
     [[nodiscard]] bool shouldSkipEmitOverflow() const;
+    [[nodiscard]] ParticleGpuEmitPreflight preflightEmit(u32 free_slots) const;
+    [[nodiscard]] ParticleGpuSimPreflight preflightSim() const;
     [[nodiscard]] u32 simPaddingThreadCount() const;
     [[nodiscard]] u32 emitPaddingThreadCount() const;
     [[nodiscard]] ParticleGpuDispatchPreflight dispatchPreflight() const;
@@ -551,8 +609,12 @@ struct ParticleGpuFramePlan {
 [[nodiscard]] bool should_skip_mirror_write(const ParticleGpuMirror& mirror, const ParticleSoA& cpu);
 [[nodiscard]] bool should_skip_frame_sim(const ParticleGpuFramePlan& plan);
 [[nodiscard]] bool should_skip_frame_emit(const ParticleGpuFramePlan& plan);
-[[nodiscard]] bool should_skip_empty_buffer(const ParticleGpuBuffers& buffers);
 [[nodiscard]] bool should_skip_device_upload(const ParticleGpuMirror& mirror, const ParticleSoA& cpu);
+[[nodiscard]] bool should_skip_emit_when_full(u32 emit_count, u32 free_slots);
+[[nodiscard]] bool should_skip_pack(const ParticleGpuMirror& mirror);
+[[nodiscard]] bool should_skip_unpack(const std::vector<u8>& bytes, u32 capacity);
+[[nodiscard]] ParticleGpuEmitPreflight preflight_emit_dispatch(u32 emit_count, u32 free_slots);
+[[nodiscard]] ParticleGpuSimPreflight preflight_sim_dispatch(u32 alive_count, u32 capacity);
 
 namespace particle_gpu_util {
 [[nodiscard]] u32 gridDimX(u32 element_count, u32 block_size);
