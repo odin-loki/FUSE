@@ -26,6 +26,10 @@ struct PairBufferSoA {
     bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
     /// Pair-list guard: true when `additionalCount` pairs fit before `maxCapacity` clamp.
     bool canAcceptPairs(u32 additionalCount = 1u) const;
+    /// Inverse of `canAcceptPairs` (B4.2 deepen pass).
+    bool cannotAcceptPairs(u32 additionalCount = 1u) const {
+        return !canAcceptPairs(additionalCount);
+    }
     /// Remaining push slots before `maxCapacity` clamp (unlimited when `maxCapacity == 0`).
     u32 remainingCapacity() const;
     /// True when post-pass truncation would drop pairs.
@@ -91,6 +95,88 @@ struct PairBufferPushPreflight {
 };
 
 PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+
+/// Why pair-buffer accept-pairs would reject (B4.2 deepen pass).
+enum class PairBufferAcceptPairsRejectReason : u8 {
+    None = 0,
+    AtCapacity,
+};
+
+/// Human-readable label for pair-buffer accept-pairs reject reasons (logging / tests).
+const char* pairBufferAcceptPairsRejectReasonName(PairBufferAcceptPairsRejectReason reason);
+
+/// Diagnose why accept-pairs would reject; vacuously succeeds when pairs may be accepted.
+PairBufferAcceptPairsRejectReason pairBufferAcceptPairsRejectReason(
+    const PairBufferSoA& buffer,
+    u32 additionalCount);
+
+/// Returns true when `pairBufferAcceptPairsRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferAcceptPairsRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 additionalCount,
+    PairBufferAcceptPairsRejectReason expected);
+
+/// Read-only accept-pairs diagnostics — no mutation (B4.2 deepen pass).
+struct PairBufferAcceptPairsPreflight {
+    PairBufferAcceptPairsRejectReason reason = PairBufferAcceptPairsRejectReason::None;
+    bool atCapacity = false;
+
+    bool canAccept() const { return reason == PairBufferAcceptPairsRejectReason::None; }
+};
+
+PairBufferAcceptPairsPreflight preflightPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount);
+
+/// Non-mutating accept-pairs skip predicate — inverse of `canAccept` (B4.2 deepen pass).
+bool canSkipPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount);
+
+/// Non-mutating accept-pairs predicate — mirrors `preflightPairBufferAcceptPairs` (B4.2 deepen pass).
+bool shouldRunPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount);
+
+/// Why pair-buffer writeSlot would reject (B4.2 deepen pass).
+enum class PairBufferWriteSlotRejectReason : u8 {
+    None = 0,
+    OutOfRangeSlot,
+    InvalidPair,
+};
+
+/// Human-readable label for pair-buffer writeSlot reject reasons (logging / tests).
+const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason);
+
+/// Diagnose why writeSlot would reject; vacuously succeeds when write may proceed.
+PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Returns true when `pairBufferWriteSlotRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferWriteSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB,
+    PairBufferWriteSlotRejectReason expected);
+
+/// Read-only writeSlot diagnostics — no mutation (B4.2 deepen pass).
+struct PairBufferWriteSlotPreflight {
+    PairBufferWriteSlotRejectReason reason = PairBufferWriteSlotRejectReason::None;
+    bool outOfRangeSlot = false;
+    bool invalidPair = false;
+
+    bool canWrite() const { return reason == PairBufferWriteSlotRejectReason::None; }
+};
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Non-mutating writeSlot skip predicate — inverse of `canWrite` (B4.2 deepen pass).
+bool canSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
+
+/// Non-mutating writeSlot predicate — mirrors `preflightPairBufferWriteSlot` (B4.2 deepen pass).
+bool shouldRunPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
 
 /// Why pair-buffer compaction would early-out (B4.2 deepen pass).
 enum class PairBufferCompactionRejectReason : u8 {
