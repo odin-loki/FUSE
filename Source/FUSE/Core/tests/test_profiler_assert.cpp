@@ -3446,3 +3446,27 @@ void testEventIndexLookupGuards() {
     expectTrue(!filledPreflight.hasExportWarnings(), "preflight hasExportWarnings false after balanced scope");
 void testDroppedEventCountGuard() {
     testAsyncFlowBeginEndPreflights();
+
+// --- deepen additive from deepen-b16-profiler-guards-7793 ---
+void testWouldRecordEventNameGuard() {
+void testInvalidEventCountAndIndexGuards() {
+    expectTrue(phase == fuse::profiler::EventPhase::Begin, "tryEventPhaseAt clears phase on failure");
+    expectTrue(fuse::profiler::tryEventPhaseAt(1u, phase), "tryEventPhaseAt true for counter event");
+    expectTrue(phase == fuse::profiler::EventPhase::Counter, "tryEventPhaseAt copies counter phase");
+    expectTrue(fuse::profiler::tryEventPhaseAt(2u, phase), "tryEventPhaseAt true for end event");
+    expectTrue(!fuse::profiler::tryEventPhaseAt(3u, phase), "tryEventPhaseAt false past event count");
+void testOrphanAsyncFlowEndGuardPredicates() {
+void testChromeTraceExportPreflightGuardFields() {
+    expectTrue(emptyPreflight.invalidEventCount == 0u, "preflight invalidEventCount zero on reset");
+    expectTrue(!emptyPreflight.hasInvalidEventsInBuffer(),
+    expectTrue(!emptyPreflight.hasExportWarnings, "preflight hasExportWarnings false on reset");
+    expectTrue(!emptyPreflight.needsFlowNestingCleanup,
+    const fuse::profiler::ChromeTraceExportPreflight validPreflight =
+    expectTrue(validPreflight.exportableEventCount == 2u,
+    expectTrue(validPreflight.invalidEventCount == 0u,
+    expectTrue(!validPreflight.hasExportWarnings,
+    expectTrue(openPreflight.hasExportWarnings, "preflight warns on open async flow");
+    expectTrue(openPreflight.hasOpenAsyncFlows, "preflight open flow flag set with begin only");
+    expectTrue(detachedPreflight.needsFlowNestingCleanup,
+    expectTrue(detachedPreflight.hasExportWarnings,
+    testChromeTraceExportPreflightGuardFields();
