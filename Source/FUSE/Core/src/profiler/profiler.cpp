@@ -243,6 +243,9 @@ const char* chromeCategory(EventPhase phase) {
 } // namespace
 
 bool isValidEventName(const char* name);
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
 
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
@@ -660,6 +663,8 @@ bool hasOrphanAsyncFlowEnds() {
 
 bool tryEventAt(u32 index, ProfileEvent& out) {
     out = eventAt(index);
+
+    return isValidProfileEvent(out);
 }
 
 u32 lastEventIndex() {
@@ -781,27 +786,18 @@ bool hasOpenAsyncFlows() {
     preflight.bufferEmpty = preflight.eventCount == 0u;
     preflight.canExport = true;
     preflight.hasOpenScopes = hasOpenScopes();
-    return preflight;
-}
 
 
 
-ChromeTraceExportPreflight preflightChromeTraceExport() {
-    ChromeTraceExportPreflight preflight{};
-    preflight.eventCount = eventCount();
-    preflight.frameIndex = frameIndex();
-    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.hasUnmatchedAsyncFlows = preflight.hasOpenAsyncFlows;
 
     preflight.hasUnbalancedAsyncFlows = preflight.openAsyncFlows > 0u;
 
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name) {
-    AsyncFlowBeginPreflight preflight{};
     preflight.profilerDisabled = !g_enabled.load(std::memory_order_acquire);
     preflight.emptyName = !isNonEmptyProfileName(name);
 
 AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name) {
-    AsyncFlowEndPreflight preflight{};
     preflight.orphanEnd = g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
 
 ChromeExportPreflight preflightChromeExport() {
@@ -818,6 +814,19 @@ ChromeExportPreflight preflightChromeExport() {
 
 bool canExportChromeTrace() {
     return preflightChromeExport().canExport();
+
+
+u32 exportableEventCount() {
+    const u32 count = eventCount();
+    u32 exportable = 0u;
+    for (u32 i = 0; i < count; ++i) {
+        if (isValidProfileEvent(eventAt(i))) {
+            ++exportable;
+    return exportable;
+
+bool isExportEmpty() {
+    return exportableEventCount() == 0u;
+
 
 void reset() {
     const std::lock_guard<std::mutex> lock(g_exportMutex);

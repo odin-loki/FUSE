@@ -495,12 +495,10 @@ struct NestingStatePreflight {
     u32 maxScopeDepth = 0;
     u32 maxFlowDepth = 0;
     bool hasOpenScopes = false;
-    bool hasOpenAsyncFlows = false;
     /// True when at least one async flow begin is unmatched by a finish on this thread.
     bool canEndAsyncFlow = false;
 
     [[nodiscard]] bool hasUnmatchedAsyncFlows() const { return openAsyncFlows > 0u; }
-};
 
 [[nodiscard]] ProfilerGuardPreflight preflightGuardState();
 [[nodiscard]] bool hasOpenScopes();
@@ -508,17 +506,12 @@ struct NestingStatePreflight {
 
 /// Chrome export preflight — introspection only; export remains valid even when the buffer is empty.
     bool canExport = true;
-struct ChromeTraceExportPreflight {
-    bool bufferEmpty = true;
-    u32 eventCount = 0;
-    u32 frameIndex = 0;
     /// True when async flow begins were not paired before export (diagnostic only).
     bool hasUnmatchedAsyncFlows = false;
 
     [[nodiscard]] bool hasEventsToExport() const { return eventCount > 0u; }
 
 
-[[nodiscard]] ChromeTraceExportPreflight preflightChromeTraceExport();
     bool hasUnbalancedAsyncFlows = false;
 
     bool isBalanced() const { return !hasUnbalancedAsyncFlows && scopeDepth == 0u && flowDepth == 0u; }
@@ -526,7 +519,6 @@ struct ChromeTraceExportPreflight {
 NestingStatePreflight preflightNestingState();
 
 /// Read-only async-flow begin diagnostics — no mutation (B1.6 deepen).
-struct AsyncFlowBeginPreflight {
     bool profilerDisabled = false;
     bool emptyName = false;
 
@@ -535,7 +527,6 @@ struct AsyncFlowBeginPreflight {
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name);
 
 /// Read-only async-flow end diagnostics — no mutation (B1.6 deepen).
-struct AsyncFlowEndPreflight {
     bool orphanEnd = false;
 
     bool canEnd() const { return !profilerDisabled && !emptyName && !orphanEnd; }
@@ -545,13 +536,18 @@ AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name);
 /// Read-only chrome export diagnostics — no mutation (B1.6 deepen).
 struct ChromeExportPreflight {
     bool bufferEmpty = false;
-    u32 exportableEventCount = 0;
     u32 skippedInvalidNameCount = 0;
     u32 droppedEventCount = 0;
 
     bool canExport() const { return !profilerDisabled; }
 
-ChromeExportPreflight preflightChromeExport();
+/// Introspection stubs for guard state — non-zero when scopes or async flows are open on this thread.
+bool hasOpenScopes();
+bool hasOpenAsyncFlows();
+
+/// Export preflight stubs — inspect buffer/export readiness without emitting chrome JSON.
+u32 exportableEventCount();
+bool isExportEmpty();
 bool canExportChromeTrace();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
