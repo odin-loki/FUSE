@@ -202,3 +202,6 @@ private:
 };
 
 } // namespace fuse::editor
+
+// --- deepen additive from deepen-b6-pie-maxsteps-dirty-snapshot-eb47 ---
+    DirtySnapshotPreflight preflightDirtySnapshotRestore() const;

@@ -1065,3 +1065,16 @@ int main() {
     std::fprintf(stderr, "fuse_editor_play_session_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b6-pie-maxsteps-dirty-snapshot-eb47 ---
+void testPlaySessionFixedStepPreflightMaxSteps() {
+    fuse::scene::Scene scene("PreflightFixedStepTest");
+    const fuse::editor::FixedStepPreflight uncapped =
+    const fuse::editor::FixedStepPreflight capped =
+    const fuse::editor::FixedStepPreflight inactive =
+void testPlaySessionDirtySnapshotPreflight() {
+    const fuse::editor::DirtySnapshotPreflight empty = session.preflightDirtySnapshotRestore();
+    const fuse::editor::DirtySnapshotPreflight captured = session.preflightDirtySnapshotRestore();
+    const fuse::editor::DirtySnapshotPreflight afterStop = session.preflightDirtySnapshotRestore();
+    testPlaySessionFixedStepPreflightMaxSteps();
+    testPlaySessionDirtySnapshotPreflight();

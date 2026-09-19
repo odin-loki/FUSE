@@ -446,3 +446,8 @@ void PlaySession::coalesceTransformDirty_(EditorScene& editorScene) {
 }
 
 } // namespace fuse::editor
+
+// --- deepen additive from deepen-b6-pie-maxsteps-dirty-snapshot-eb47 ---
+    FixedStepPreflight preflight;
+DirtySnapshotPreflight PlaySession::preflightDirtySnapshotRestore() const {
+    DirtySnapshotPreflight preflight;
