@@ -4366,3 +4366,13 @@ void testDdgiKernelUpdatePreflightGuards() {
     expectTrue(fuse::renderer::ddgi_util::tryPreflightTrilinearDirectionalProbeIrradiance(
                "tryPreflightTrilinearDirectionalProbeIrradiance succeeds for valid sample");
                "tryPreflightProbeKernelLaunch rejects zero rays");
+
+// --- deepen additive from deepen-b56-ddgi-guards-6376 ---
+               "preflightProbeGridSource succeeds for valid desc");
+               "wouldSkipProbeGridSource false for valid desc");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(zeroIrradiance, reason),
+    expectTrue(reason == fuse::renderer::ProbeGridSourceRejectReason::ZeroIrradianceRes,
+    expectTrue(std::strcmp(fuse::renderer::probeGridSourceRejectReasonLabel(reason), "zero_irradiance_res") == 0,
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(zeroDepth, reason),
+    expectTrue(reason == fuse::renderer::ProbeGridSourceRejectReason::ZeroDepthRes,
+               "tryScheduleProbeUpdatesAtRate zero probe count reports zero_probe_count reason");
