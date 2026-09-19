@@ -396,6 +396,7 @@ bool tryPreflightTrilinearProbeSample(const DDGIDesc& desc,
 
 /// Early-out when coord-based probe trilinear sampling would be rejected (B5.6 deepen pass).
 bool shouldSkipTrilinearProbeSample(const DDGIDesc& desc,
+/// True when a trilinear sample reject reason would block lookup (B5.6 deepen pass).
 
 /// Human-readable label for cache-index reject reasons (logging / tests).
 const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
@@ -1043,6 +1044,22 @@ bool tryCanSampleAtProbeCoord(const DDGIDesc& desc,
 /// Early-out when coord-based probe trilinear sampling would be rejected (B5.6 deepen pass).
 /// True when coord-based probe trilinear sampling would proceed (B5.6 deepen pass).
 bool trilinearProbeSampleReady(const DDGIDesc& desc,
+/// Classify why coord-based probe sample preflight would reject — same ordering as `tryCanSampleAtProbeCoords`.
+/// Early-out when coord-based trilinear sampling would be rejected.
+/// Non-mutating coord-based trilinear sample preflight — returns true when lookup would proceed.
+/// Build sample coords + cache preflight — returns true when trilinear lookup would proceed.
+/// Diagnose cache-index preflight for every scheduled probe index; vacuously succeeds when all valid.
+bool tryValidateScheduledCacheIndices(const DDGIDesc& desc,
+                                      const u32* probe_indices,
+                                      u32 probe_count,
+                                      CacheIndexRejectReason& outReason);
+/// Diagnose cache-index preflight for scheduled indices including null-cache rejection.
+/// Non-mutating cache-index preflight — returns true when lookup would proceed (no cache pointer).
+bool preflightCacheIndexLookup(const DDGIDesc& desc,
+                               u32 probe_index,
+                               CacheIndexRejectReason* reason = nullptr);
+/// Probes that would be scheduled after capacity/probe-count caps (B5.6 deepen pass).
+u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,

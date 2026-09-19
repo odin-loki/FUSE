@@ -85,6 +85,8 @@ enum class ProbeKernelResourceRejectReason : u8 {
     NullRadianceSurface,
     NullPrevIrradiance,
     NullOutRadiance,
+    EmptyGrid,
+    OutOfRangeProbeIndex,
 };
 
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
@@ -97,21 +99,29 @@ ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params
 bool probeKernelRejectReasonIsBlocking(ProbeKernelRejectReason reason);
 
 /// Classify why probe kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
+ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params);
+/// Classify kernel launch rejection including grid index validation — same ordering as grid-aware preflight.
+ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params, const DDGIDesc& desc);
 
 /// Early-out when either probe kernel launch would be rejected.
 bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
+/// Early-out when grid-aware probe kernel launch would be rejected.
+bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params, const DDGIDesc& desc);
 
 /// Non-mutating kernel launch preflight — returns true when both kernels would proceed.
 bool preflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 /// Kernel launch preflight with mandatory reject-reason output (B5.6 deepen pass).
 bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
-/// Kernel launch preflight with mandatory reject-reason output (B5.6 deepen pass).
 bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& reason);
 
 /// Early-out when either probe kernel launch would be rejected (B5.6 deepen pass).
 /// Early-out when probe kernel launch would be rejected (B5.6 deepen pass).
 bool shouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
+/// Non-mutating grid-aware kernel launch preflight — validates probe indices against `desc`.
+bool preflightProbeKernelLaunch(const DDGIKernelParams& params,
+                                const DDGIDesc& desc,
+                                ProbeKernelRejectReason* reason = nullptr);
 
 /// Populate kernel params from desc + scheduled indices without changing launch guards.
 void populateDDGIKernelParams(DDGIKernelParams& params,
@@ -149,19 +159,22 @@ bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelReject
 ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
 /// Probe trace launch preflight with optional reject-reason output (B5.6 deepen).
 bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
-/// Early-out when probe trace kernel launch would be rejected (B5.6 deepen).
 /// Early-out when probe trace launch would be rejected (B5.6 deepen).
 /// Early-out when probe trace launch would be rejected — same ordering as `wouldSkipProbeTraceKernel` (B5.6 deepen).
 bool shouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Probe trace launch preflight; false when launch would be rejected (B5.6 deepen).
 /// Early-out when probe trace kernel launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
-bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Early-out when probe trace kernel launch would be rejected — includes reject-reason diagnostics.
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
-/// Early-out when probe trace kernel launch would be rejected.
 /// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
 /// Diagnose probe-world-position readiness for trace launch (B5.6 deepen).
 bool tryPreflightProbeTraceWorldPositions(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// Grid-aware preflight guard before probe trace kernel launch.
+bool canLaunchProbeTraceKernel(const DDGIKernelParams& params, const DDGIDesc& desc);
+/// Diagnose why probe trace launch preflight would reject — includes grid index validation.
+bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params,
+                                  const DDGIDesc& desc,
+                                  ProbeKernelRejectReason& outReason);
 
 /// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
@@ -312,7 +325,6 @@ bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelReject
 ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 /// Probe blend launch preflight with optional reject-reason output (B5.6 deepen).
 bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
-/// Early-out when probe blend kernel launch would be rejected (B5.6 deepen).
 
 /// Early-out when probe trace kernel launch would be rejected — same ordering as `tryCanLaunchProbeTraceKernel`.
 /// Early-out when probe blend kernel launch would be rejected — same ordering as `tryCanLaunchProbeBlendKernel`.
@@ -322,7 +334,6 @@ bool shouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 /// Probe blend launch preflight; false when launch would be rejected (B5.6 deepen).
 
 /// Early-out when probe blend kernel launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
-bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 /// Early-out when probe blend kernel launch would be rejected — includes reject-reason diagnostics.
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 /// True when probe trace kernel launch preflight passes (B5.6 deepen).
@@ -330,10 +341,13 @@ bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelReject
 /// True when probe blend kernel launch preflight passes (B5.6 deepen).
 /// Early-out when probe trace kernel launch would be rejected (B5.6 deepen).
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
-/// Early-out when probe blend kernel launch would be rejected.
-/// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
 /// Diagnose atlas/surface readiness for blend launch (B5.6 deepen).
 bool tryPreflightProbeBlendSurfaces(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// Grid-aware preflight guard before probe blend kernel launch.
+bool canLaunchProbeBlendKernel(const DDGIKernelParams& params, const DDGIDesc& desc);
+/// Diagnose why probe blend launch preflight would reject — includes grid index validation.
+bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params,
+                                  const DDGIDesc& desc,
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
