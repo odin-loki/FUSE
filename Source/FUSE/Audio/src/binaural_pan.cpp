@@ -1066,3 +1066,23 @@ HrtfBinauralRejectReason classify_hrtf_binaural_reject(const HrtfBinauralPreflig
 bool try_preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
 bool should_skip_hrtf_binaural_preflight(bool hrtf_enabled, const Vec3& rel_listener) {
     return should_skip_hrtf_pan_path_preflight(hrtf_enabled, rel_listener);
+
+// --- deepen additive from deepen-b72-hrtf-preflight-reasons-53ba ---
+bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason& reason) {
+                                  HrtfPanPathRejectReason& reason) {
+                                              HrtfAttenuationCouplingRejectReason& reason,
+    case HrtfBinauralRejectReason::EmptyIr:
+HrtfBinauralRejectReason classify_hrtf_binaural_reject(bool hrtf_enabled, const HrtfIrStub& ir,
+    const HrtfPanPathRejectReason pan_reject =
+    if (pan_reject == HrtfPanPathRejectReason::HrtfDisabled) {
+    if (pan_reject == HrtfPanPathRejectReason::CoLocated) {
+HrtfBinauralRejectReason classify_hrtf_binaural_coupling_reject(
+    const HrtfAttenuationCouplingRejectReason coupling_reject =
+    if (coupling_reject == HrtfAttenuationCouplingRejectReason::BypassPath) {
+    if (coupling_reject == HrtfAttenuationCouplingRejectReason::UnityAttenuation) {
+                              HrtfBinauralRejectReason* reason,
+    const HrtfBinauralRejectReason reject =
+    return reject == HrtfBinauralRejectReason::None;
+                              float occlusion_gain, HrtfBinauralRejectReason* reason,
+                                  HrtfBinauralRejectReason& reason,
+bool try_preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,

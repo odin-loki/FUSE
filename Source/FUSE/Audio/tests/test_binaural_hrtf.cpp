@@ -1635,3 +1635,13 @@ void testHrtfBinauralRejectReasonClassifiers() {
     testHrtfPanPathRejectReasonClassifiers();
     testHrtfAttenuationCouplingRejectReasonClassifiers();
     testHrtfBinauralRejectReasonClassifiers();
+
+// --- deepen additive from deepen-b72-hrtf-preflight-reasons-53ba ---
+    const fuse::audio::HrtfIrPreflight preflight = fuse::audio::preflight_hrtf_ir(empty);
+    const fuse::audio::HrtfPanPathPreflight preflight =
+    const fuse::audio::HrtfAttenuationCouplingPreflight preflight =
+    fuse::audio::HrtfBinauralRejectReason reason = fuse::audio::HrtfBinauralRejectReason::None;
+    expectTrue(reason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(reason == fuse::audio::HrtfBinauralRejectReason::HrtfDisabled,
+    expectTrue(stub_preflight.ir.reason == fuse::audio::HrtfIrRejectReason::NullSamples,
+                   fuse::audio::HrtfBinauralRejectReason::EmptyIr)) == "empty_ir",

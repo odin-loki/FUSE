@@ -732,3 +732,19 @@ const char* hrtf_binaural_reject_reason_label(HrtfBinauralRejectReason reason);
 HrtfBinauralRejectReason classify_hrtf_binaural_reject(const HrtfBinauralPreflight& preflight);
 bool try_preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
 bool should_skip_hrtf_binaural_preflight(bool hrtf_enabled, const Vec3& rel_listener);
+
+// --- deepen additive from deepen-b72-hrtf-preflight-reasons-53ba ---
+    bool ok() const { return reason == HrtfIrRejectReason::None; }
+bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason& reason);
+    bool ok() const { return reason == HrtfPanPathRejectReason::None; }
+                                  const Vec3& rel_listener, HrtfPanPathRejectReason& reason);
+                                  HrtfPanPathRejectReason& reason);
+    bool ok() const { return reason == HrtfAttenuationCouplingRejectReason::None; }
+                                              HrtfAttenuationCouplingRejectReason& reason,
+HrtfBinauralRejectReason classify_hrtf_binaural_reject(bool hrtf_enabled, const HrtfIrStub& ir,
+HrtfBinauralRejectReason classify_hrtf_binaural_coupling_reject(
+    bool ok() const { return reason == HrtfBinauralRejectReason::None; }
+                              HrtfBinauralRejectReason* reason,
+                              float occlusion_gain, HrtfBinauralRejectReason* reason,
+                                  HrtfBinauralRejectReason& reason,
+bool try_preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
