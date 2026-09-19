@@ -95,7 +95,6 @@ struct BindlessSlotPreflight {
     [[nodiscard]] bool is_generation_mismatch() const {
         return initialized && handle_valid && !heap_empty && index_in_range &&
                (!generation_match || !slot_occupied);
-    }
 };
 
 BindlessSlotPreflight preflightBindlessSlotHandle(BindlessSlotHandle handle, u32 heapCapacity, u32 slotGeneration,
@@ -103,6 +102,36 @@ BindlessSlotPreflight preflightBindlessSlotHandle(BindlessSlotHandle handle, u32
 
 /// Fast early-out before heap table lookup — uninitialized, invalid handle, or empty heap.
 bool shouldSkipBindlessSlotLookup(BindlessSlotHandle handle, u32 heapCapacity, bool initialized);
+/// True when no additional slots can be allocated (live at max and free list empty).
+bool bindlessHeapAtCapacity(BindlessHeapKind kind, u32 heapCapacity, u32 heapLiveCount, u32 heapFreeCount,
+                            u32 heapMaxCapacity);
+
+/// Remaining live slots that can still be allocated before hitting the per-kind ceiling.
+u32 bindlessHeapRemainingCapacity(BindlessHeapKind kind, u32 heapLiveCount, u32 heapMaxCapacity);
+
+/// True when a slot can be allocated from the free list or by growing below the ceiling.
+bool bindlessCanAllocateSlot(BindlessHeapKind kind, u32 heapCapacity, u32 heapLiveCount, u32 heapFreeCount,
+
+/// Preflight checks before bindless slot allocation (B2.3 deepen follow-up).
+struct BindlessSlotAllocPreflight {
+    bool at_capacity = true;
+    u32 heap_capacity = 0;
+    u32 heap_live_count = 0;
+    u32 heap_free_count = 0;
+    u32 remaining_capacity = 0;
+
+    [[nodiscard]] bool can_allocate() const { return initialized && !at_capacity; }
+    [[nodiscard]] bool skipped() const { return !can_allocate(); }
+
+/// Preflight checks before bindless slot free (B2.3 deepen follow-up).
+struct BindlessSlotFreePreflight {
+    bool generation_matches = false;
+    bool already_on_free_list = false;
+
+    [[nodiscard]] bool can_free() const {
+        return initialized && handle_valid && index_in_range && generation_matches && slot_occupied &&
+               !already_on_free_list;
+    [[nodiscard]] bool skipped() const { return !can_free(); }
 
 /// Packs binding + array index into a single u32 for material tables / push data.
 u32 packBindlessBindingIndex(u32 binding, u32 arrayIndex);
@@ -173,6 +202,19 @@ public:
     bool heapIsEmpty(BindlessHeapKind kind) const;
     /// True when slot table is at the per-kind ceiling with no free-list entries.
     bool heapAtCapacity(BindlessHeapKind kind) const;
+    /// True when live count is at the per-kind ceiling and the free list is empty.
+    /// Remaining live slots before the per-kind ceiling is reached.
+    u32 heapRemainingCapacity(BindlessHeapKind kind) const;
+    /// True when allocate*Slot would succeed for this heap kind.
+    bool canAllocateSlot(BindlessHeapKind kind) const;
+    /// Preflight slot allocation without mutating heap state.
+    BindlessSlotAllocPreflight preflightAllocateSlot(BindlessHeapKind kind) const;
+    /// True when free*Slot would release a live, generation-matched handle.
+    bool canFreeSlot(BindlessSlotHandle handle) const;
+    /// Preflight slot free without mutating heap state.
+    BindlessSlotFreePreflight preflightFreeSlot(BindlessSlotHandle handle) const;
+    /// True when `index` is currently queued on the per-kind free list.
+    bool isSlotOnFreeList(BindlessHeapKind kind, u32 index) const;
 
     u32 registerTexture(const Texture& texture, bool storage = false);
     u32 registerBuffer(const Buffer& buffer, bool uniform = false);
