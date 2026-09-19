@@ -33,6 +33,12 @@ std::mutex g_exportMutex;
 
 bool isRecordableName(const char* name) {
     return name != nullptr && name[0] != '\0';
+std::atomic<u32> g_droppedEventCount{0};
+std::atomic<u32> g_totalRecordedEvents{0};
+
+
+bool isNonEmptyProfileName(const char* name) {
+    return name != nullptr && *name != '\0';
 }
 
 u64 nowNanoseconds() {
@@ -194,6 +200,8 @@ void recordEvent(const char* name,
         counterFloatValue,
         counterSnapshotFrame,
     };
+
+    g_totalRecordedEvents.fetch_add(1u, std::memory_order_acq_rel);
 
     const u32 count = g_eventCount.load(std::memory_order_acquire);
     if (count < kRingCapacity) {
@@ -415,6 +423,10 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 bool isAsyncFlowPhase(EventPhase phase) {
     return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
 
+bool isValidProfileName(const char* name) {
+    return isNonEmptyProfileName(name);
+}
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return isValidEventName(event.name);
 
@@ -473,6 +485,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
     return kEmpty;
+    return isNonEmptyProfileName(event.name);
 }
 
 const ProfileEvent& eventAt(u32 index) {
@@ -728,6 +741,16 @@ bool tryEventAt(u32 index, const ProfileEvent*& outEvent) {
 
 ProfilerGuardPreflight preflightGuardState() {
     ProfilerGuardPreflight preflight{};
+bool hasLastEvent() {
+    return lastEventIndex() != kInvalidEventIndex;
+
+
+
+u32 droppedEventCount() {
+    return g_droppedEventCount.load(std::memory_order_acquire);
+
+NestingStatePreflight preflightNestingState() {
+    NestingStatePreflight preflight{};
     preflight.scopeDepth = currentNestingDepth();
     preflight.flowDepth = currentFlowNestingDepth();
     preflight.openAsyncFlows = g_openAsyncFlowCount.load(std::memory_order_acquire);
@@ -757,8 +780,32 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.frameIndex = frameIndex();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.hasUnmatchedAsyncFlows = preflight.hasOpenAsyncFlows;
-    return preflight;
-}
+
+    preflight.hasUnbalancedAsyncFlows = preflight.openAsyncFlows > 0u;
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profilerDisabled = !g_enabled.load(std::memory_order_acquire);
+    preflight.emptyName = !isNonEmptyProfileName(name);
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.orphanEnd = g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+
+ChromeExportPreflight preflightChromeExport() {
+    ChromeExportPreflight preflight{};
+    preflight.droppedEventCount = droppedEventCount();
+
+    for (u32 i = 0; i < preflight.eventCount; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isValidProfileEvent(event)) {
+            ++preflight.exportableEventCount;
+        } else {
+            ++preflight.skippedInvalidNameCount;
+
+
+bool canExportChromeTrace() {
+    return preflightChromeExport().canExport();
 
 void reset() {
     const std::lock_guard<std::mutex> lock(g_exportMutex);
@@ -772,6 +819,8 @@ void reset() {
     g_maxFlowNestingDepth.store(0u, std::memory_order_release);
     g_openAsyncFlowCount.store(0u, std::memory_order_release);
     g_orphanAsyncFlowEndCount.store(0u, std::memory_order_release);
+    g_droppedEventCount.store(0u, std::memory_order_release);
+    g_totalRecordedEvents.store(0u, std::memory_order_release);
     threadLocalNestingDepth() = 0u;
     threadLocalFlowNestingDepth() = 0u;
 }
@@ -1094,6 +1143,7 @@ std::string exportChromeTraceJson() {
         const ProfileEvent& event = eventAt(i);
         if (!isValidEventName(event.name)) {
         if (!isRecordableName(event.name)) {
+        if (!isValidProfileEvent(event)) {
             continue;
         }
 
