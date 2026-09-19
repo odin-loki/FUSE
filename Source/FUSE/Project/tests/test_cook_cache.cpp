@@ -1953,3 +1953,8 @@ void testCookCachePruneReconcileShouldSkipGuards() {
                "prune estimate should_skip after prune_all");
     expectTrue(fuse::project::should_skip_prune_reconcile(cooker.cache().estimate_prune_removals()),
                "should_skip_prune_reconcile true after prune_all");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-3a5f ---
+               "should_skip_upstream_dependencies_hash true for empty dependency list");
+    expectTrue(!estimate.should_skip(), "prune estimate should_skip false when stale");
+    expectTrue(estimate.should_skip() == !cooker.cache().would_prune_all(),

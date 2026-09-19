@@ -2329,3 +2329,9 @@ void testCookerReconcileShouldSkipGuards() {
                "cooker should_skip_reconcile_invalidation false after upstream change");
                "should_skip_prune_reconcile false when stale entry present");
                "would_invalidate_source true for stale upstream entry");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-3a5f ---
+    expectTrue(cooked.ok, "manifest cook for should_skip reconcile helpers ok");
+               "should_skip_upstream_invalidation false when chain entries exist");
+               "should_skip_upstream_invalidation mirrors count probe");
+    expectTrue(fresh.should_skip() == cooker.should_skip_reconcile_invalidation(manifest),
