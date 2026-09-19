@@ -4179,6 +4179,20 @@ const char* gizmoSnapDragRejectReasonLabel(GizmoSnapDragRejectReason reason) {
     return "Unknown";
 }
 
+const char* gizmoSnapDragRejectReasonLabel(GizmoSnapDragRejectReason reason) {
+    switch (reason) {
+    case GizmoSnapDragRejectReason::None:
+        return "None";
+    case GizmoSnapDragRejectReason::DeltaNonFinite:
+        return "DeltaNonFinite";
+    case GizmoSnapDragRejectReason::SnapDisabled:
+        return "SnapDisabled";
+    case GizmoSnapDragRejectReason::InvalidStep:
+        return "InvalidStep";
+    }
+    return "Unknown";
+}
+
 const char* gizmoBeginDragRejectReasonLabel(GizmoBeginDragRejectReason reason) {
     switch (reason) {
     case GizmoSnapDragRejectReason::None:
@@ -4396,6 +4410,19 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
     return GizmoSnapDragRejectReason::None;
 }
 
+GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& preflight) {
+    if (preflight.deltaNonFinite) {
+        return GizmoSnapDragRejectReason::DeltaNonFinite;
+    }
+    if (preflight.snapDisabled) {
+        return GizmoSnapDragRejectReason::SnapDisabled;
+    }
+    if (preflight.invalidStep) {
+        return GizmoSnapDragRejectReason::InvalidStep;
+    }
+    return GizmoSnapDragRejectReason::None;
+}
+
 GizmoBeginDragRejectReason classifyBeginDragReject(const BeginDragPreflight& preflight) {
     if (preflight.alreadyDragging) {
         return GizmoBeginDragRejectReason::AlreadyDragging;
@@ -4429,6 +4456,9 @@ GizmoUpdateDragRejectReason classifyUpdateDragReject(const UpdateDragPreflight& 
         return GizmoUpdateDragRejectReason::NotDragging;
     if (preflight.invalidActiveAxis) {
         return GizmoUpdateDragRejectReason::InvalidActiveAxis;
+        return GizmoUpdateDragRejectReason::NonFiniteHit;
+    }
+    if (preflight.nonFiniteHit) {
         return GizmoUpdateDragRejectReason::NonFiniteHit;
     }
     if (preflight.nonFiniteHit) {
@@ -4601,6 +4631,24 @@ bool preflightEndDragInteractionReady(bool dragging, GizmoAxis activeAxis, Gizmo
 
 bool shouldSkipEndDragInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
     return !preflightEndDragInteractionReady(dragging, activeAxis, mode, settings);
+
+bool preflightSnapDragReady(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings,
+                            GizmoSnapDragRejectReason* reason) {
+    const SnapDragPreflight preflight = preflightSnapDrag(delta, mode, settings);
+    if (reason != nullptr) {
+        *reason = classifySnapDragReject(preflight);
+    }
+    return preflight.canApply();
+}
+
+bool tryPreflightSnapDrag(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings,
+                          GizmoSnapDragRejectReason& reason) {
+    return preflightSnapDragReady(delta, mode, settings, &reason);
+}
+
+bool shouldSkipSnapDrag(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings) {
+    return !preflightSnapDragReady(delta, mode, settings);
+}
 
 bool preflightSnapDragReady(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings,
                             GizmoSnapDragRejectReason* reason) {
