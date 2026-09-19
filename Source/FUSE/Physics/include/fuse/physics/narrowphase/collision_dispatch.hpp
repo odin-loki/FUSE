@@ -285,12 +285,21 @@ void runNarrowphaseIntoBufferIfDispatchable(
 /// Job-safe narrowphase that skips pairs rejected by extended deepen preflight (B4.6 deepen pass).
 void runNarrowphaseFilteredIntoBuffer(
 /// Narrowphase dispatch with batch preflight early-out when all pairs are rejected (B4.6 deepen pass).
+/// Job-safe narrowphase with beyond deepen preflight skip per pair (B4.6 deepen pass).
+/// Existing `runNarrowphaseIntoBuffer` behavior is unchanged on valid paths.
+void runNarrowphaseIntoBufferBeyond(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     ContactBufferSoA& buffer);
 /// Returns true when narrowphase buffer compaction/clamp can be skipped after dispatch (B4.5 deepen pass).
 bool should_skip_narrowphase_buffer_pass(const ContactBufferSoA& buffer);
+
+/// Returns true when beyond batch preflight reports no dispatchable pairs (B4.6 deepen pass).
+bool can_skip_narrowphase_beyond(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 /// CPU stub of the CUDA narrow-phase dispatch (B4.3).
 std::vector<ContactManifold> runNarrowphase(

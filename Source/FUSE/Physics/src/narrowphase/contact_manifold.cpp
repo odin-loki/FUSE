@@ -2037,6 +2037,17 @@ const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason) 
 
 ManifoldPruneRejectReason manifold_prune_reject_reason(
 bool manifold_prune_preflight_skips(
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (!manifold.hasValidNormal()) {
+        return false;
+    if (!manifold.needsNormalNormalization(lengthEpsilon)) {
+        return true;
+
+    const f32 normalLength = manifold.contactNormal.length();
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    return manifold.hasValidNormal();
+
+ManifoldBeyondPrunePreflight preflight_manifold_beyond_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon,
     f32 duplicateEpsilon,
@@ -2372,6 +2383,42 @@ bool manifold_finalize_preflight_rejects_for_reason(
     if (preflight.needsPruning) {
                 manifold, separationEpsilon, duplicateEpsilon)) {
 
+    ManifoldBeyondPrunePreflight preflight{};
+    const ManifoldPrunePreflight basePreflight =
+    preflight.reason = basePreflight.reason;
+    if (preflight.reason != ManifoldPruneRejectReason::None) {
+    }
+
+    preflight.needsNormalNormalize = manifold.needsNormalNormalization();
+    preflight.exceedsMaxPoints = manifold.pointCount > kMaxContactPointsPerManifold;
+    if (preflight.exceedsMaxPoints) {
+        preflight.reason = ManifoldPruneRejectReason::ExceedsMaxPoints;
+
+bool should_skip_manifold_beyond_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    const ManifoldBeyondPrunePreflight preflight =
+        preflight_manifold_beyond_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    if (preflight.skipped) {
+    return preflight.can_skip_prune(shallowMinDepth) &&
+           !preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)
+                .needs_pruning();
+
+bool prune_contact_manifold_beyond_preflight(
+    if (preflight.reason == ManifoldPruneRejectReason::AllSeparated) {
+    if (preflight.reason == ManifoldPruneRejectReason::EmptyManifold) {
+
+    normalize_contact_normal_if_needed(manifold);
+        manifold.pruneToMaxPoints(kMaxContactPointsPerManifold);
+
+bool finalize_contact_manifold_beyond_preflight(
+
+    if (preflight.needsPruning || preflight.needsNormalNormalize) {
+        if (!prune_contact_manifold_beyond_preflight(
+
+bool finalize_contact_manifold_if_needed(ContactManifold& manifold) {
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};

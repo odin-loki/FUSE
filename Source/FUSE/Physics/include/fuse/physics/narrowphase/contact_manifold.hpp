@@ -1330,6 +1330,31 @@ bool manifold_finalize_preflight_rejects_for_reason(
 
 /// Prune then finalize only when both preflights allow (B4.6 deepen pass).
 
+/// Normalize `contactNormal` when `needsNormalNormalization`; returns false when invalid (B4.6 deepen pass).
+
+/// Prune only when beyond preflight reports in-place pruning is possible (B4.6 deepen pass).
+bool prune_contact_manifold_beyond_preflight(
+
+/// Const preflight for beyond manifold prune dispatch (B4.6 deepen pass).
+struct ManifoldBeyondPrunePreflight {
+    ManifoldPruneRejectReason reason = ManifoldPruneRejectReason::None;
+    bool needsNormalNormalize = false;
+    bool exceedsMaxPoints = false;
+
+    bool can_skip_prune(f32 shallowMinDepth = 0.f) const {
+        return skipped || reason != ManifoldPruneRejectReason::None ||
+               (!exceedsMaxPoints && !needsNormalNormalize);
+
+/// Populate beyond prune preflight without mutating slots (B4.6 deepen pass).
+ManifoldBeyondPrunePreflight preflight_manifold_beyond_prune(
+
+/// Returns true when beyond manifold prune should be skipped (B4.6 deepen pass).
+bool should_skip_manifold_beyond_prune(
+
+/// Finalize only when beyond preflight passes; no-op otherwise (B4.6 deepen pass).
+bool finalize_contact_manifold_beyond_preflight(
+
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

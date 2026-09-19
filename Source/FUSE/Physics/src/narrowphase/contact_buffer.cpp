@@ -5,6 +5,8 @@
 
 #include <fuse/physics/narrowphase/friction.hpp>
 
+#include <fuse/physics/narrowphase/contact_pair.hpp>
+
 #include <algorithm>
 #include <climits>
 #include <limits>
@@ -1305,6 +1307,19 @@ bool ContactBufferSoA::rebuildFrictionTangentBasesWithPreflight(f32 epsilon) {
     if (preflight.reason != FrictionBasisRejectReason::None) {
     if (preflight.can_skip_rebuild()) {
         return activeCount > 0u;
+void ContactBufferSoA::rebuildFrictionTangentBasesIfNeeded(f32 epsilon) {
+
+        if (should_skip_friction_basis_beyond_rebuild(manifold, epsilon)) {
+
+        compute_friction_tangents_beyond_preflight(manifold, epsilon);
+        if (manifold.hasFrictionBasis()) {
+
+bool ContactBufferSoA::writeSlotWithFinalize(
+    u32 slot,
+    ContactManifold& manifold,
+    f32 frictionEpsilon) {
+    if (!finalize_contact_manifold_beyond_preflight(manifold, 1e-6f, 1e-4f, frictionEpsilon)) {
+    writeSlot(slot, manifold);
 }
 
 TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {

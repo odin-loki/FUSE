@@ -39,6 +39,7 @@ enum class ContactPairRejectReason : u8 {
     BothPlane,
     BothPlanes,
     RestingPair,
+    UndispatchableShapePair,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -1484,6 +1485,90 @@ ContactPairBatchRejectSummary summarize_contact_pair_batch_rejects(
 /// Returns true when dispatch preflight reports no dispatchable pairs (B4.6 deepen pass).
 bool should_skip_narrowphase_dispatch(
     const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when both shapes are capsules (no narrowphase dispatch stub, B4.6 deepen pass).
+bool is_capsule_capsule_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when the resolved shape types have no `dispatchShapePair` path (B4.6 deepen pass).
+bool is_undispatchable_shape_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Extended reject reason including undispatchable shape combinations (B4.6 deepen pass).
+/// Does not alter `contact_pair_deepen_reject_reason`; use for additive preflight only.
+ContactPairRejectReason contact_pair_beyond_deepen_reject_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Const preflight with beyond deepen undispatchable checks (B4.6 deepen pass).
+struct ContactPairBeyondDeepenPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+
+    bool can_dispatch() const { return !rejected; }
+};
+
+/// Populate beyond deepen pair preflight without running shape dispatch (B4.6 deepen pass).
+ContactPairBeyondDeepenPreflight preflight_contact_pair_beyond(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when beyond deepen preflight rejects this pair (B4.6 deepen pass).
+bool should_skip_contact_pair_beyond_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `contact_pair_beyond_deepen_reject_reason` matches `expected` (B4.6 deepen pass).
+bool contact_pair_beyond_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Count pairs that pass beyond deepen preflight (B4.6 deepen pass).
+u32 count_beyond_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// True when at least one pair passes beyond deepen preflight (B4.6 deepen pass).
+bool has_beyond_dispatchable_contact_pair(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Const preflight for beyond narrowphase batch dispatch (B4.6 deepen pass).
+struct NarrowphaseBeyondBatchPreflight {
+    u32 pairCount = 0u;
+    u32 dispatchableCount = 0u;
+    u32 rejectedCount = 0u;
+
+    bool can_dispatch() const { return dispatchableCount > 0u; }
+    bool can_skip() const { return pairCount == 0u || dispatchableCount == 0u; }
+};
+
+/// Populate beyond batch preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphaseBeyondBatchPreflight preflight_narrowphase_beyond_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when beyond batch preflight reports no dispatchable pairs (B4.6 deepen pass).
+bool narrowphase_beyond_batch_rejects_all(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Run shape dispatch only when beyond deepen preflight allows (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_beyond(
+    const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
