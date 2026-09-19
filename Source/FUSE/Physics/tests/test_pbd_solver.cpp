@@ -3814,3 +3814,61 @@ void testPreflightIslandDispatchWithSleepGuards() {
                "should_skip true when every island is sleeping");
     expectTrue(should_skip_solve_island_job_with_sleep(job, 1.f / 60.f, bodies),
     testPreflightIslandDispatchWithSleepGuards();
+
+// --- deepen additive from pbd-island-guards-deepen-bcee ---
+    const IslandBuildPreflight valid = preflight_island_build(5, contacts, constraints);
+    expectTrue(!should_skip_island_build(5, contacts, constraints),
+               "should_skip false for valid body count");
+               "should_skip true for zero bodies with constraints");
+    const IslandBuildPreflight emptyInput = preflight_island_build(0, {}, {});
+    expectTrue(!should_skip_island_build(0, {}, {}), "should_skip false for empty inputs");
+void testPreflightIslandSleepForSolveGuards() {
+    expectTrue(!awakePreflight.skipped, "sleep preflight does not skip awake island");
+    expectTrue(!awakePreflight.allSleeping, "awake island is not all-sleeping");
+    expectTrue(awakePreflight.awakeCount == 2u, "sleep preflight counts awake dynamic bodies");
+    expectTrue(!should_skip_solve_sleeping_island(graph.island(awakeIsland), bodies),
+    expectTrue(!sleepingPreflight.skipped, "sleep preflight does not skip sleeping island");
+    expectTrue(sleepingPreflight.allSleeping, "sleeping island is all-sleeping");
+    expectTrue(sleepingPreflight.sleepingCount == 2u, "sleep preflight counts sleeping bodies");
+    expectTrue(should_skip_solve_sleeping_island(graph.island(sleepingIsland), bodies),
+    expectTrue(!graphPreflight.skipped, "graph sleep preflight does not skip mixed graph");
+    expectTrue(graphPreflight.can_dispatch(), "mixed graph has solveable islands");
+    expectTrue(graphPreflight.stats.solveableCount == 1u, "graph sleep preflight counts solveable island");
+    expectTrue(graphPreflight.stats.allSleepingCount == 1u, "graph sleep preflight counts sleeping island");
+    expectTrue(!should_skip_island_solve_for_sleep(graph, bodies),
+               "should_skip graph false when solveable islands exist");
+    expectTrue(!wakePreflight.skipped, "wake preflight does not skip sleeping island");
+    expectTrue(wakePreflight.needs_wake_check(), "sleeping island needs wake check");
+    expectTrue(!wakePreflight.can_skip_wake_check(), "sleeping island cannot skip wake check");
+    expectTrue(wakePreflight.sleepingCount == 2u, "wake preflight counts sleeping bodies");
+    expectTrue(wakePreflight.wakeCandidateCount == 1u, "wake preflight counts wake candidates");
+    expectTrue(!should_skip_island_wake_check(graph.island(sleepingIsland), bodies),
+               "should_skip wake false when sleeping bodies exist");
+    const IslandWakePreflight awakeWakePreflight = preflight_island_wake_by_index(
+    expectTrue(awakeWakePreflight.can_skip_wake_check(),
+    expectTrue(should_skip_island_wake_check(graph.island(awakeIsland), bodies),
+               "should_skip wake true when no sleeping bodies");
+void testPreflightIslandSolveCombinedGuards() {
+    const IslandSolveCombinedPreflight awakeCombined =
+    expectTrue(!should_skip_island_solve_combined(awakeJob, bodies, contacts, constraints, dt),
+               "should_skip combined false for awake island");
+    const IslandSolveCombinedPreflight sleepingCombined =
+    expectTrue(should_skip_island_solve_combined(sleepingJob, bodies, contacts, constraints, dt),
+               "should_skip combined true for sleeping island");
+    const IslandSolveCombinedPreflight invalidDt =
+    const IslandSolveCombinedPreflight nonFiniteDt = preflight_island_solve_combined(
+void testPreflightIslandDispatchNonFiniteDt() {
+    const IslandDispatchPreflight finitePreflight = preflight_island_dispatch(graph, 1.f / 60.f);
+    expectTrue(!finitePreflight.nonFiniteDt, "finite dt passes non-finite guard");
+    expectTrue(finitePreflight.can_dispatch(), "finite dt can dispatch");
+    const IslandDispatchPreflight infPreflight =
+    expectTrue(infPreflight.nonFiniteDt, "infinite dt fails non-finite guard");
+    expectTrue(!infPreflight.can_dispatch(), "infinite dt cannot dispatch");
+    expectTrue(should_skip_island_dispatch(graph, std::numeric_limits<f32>::infinity()),
+               "should_skip dispatch true for infinite dt");
+    const IslandSolveJobPreflight jobPreflight =
+    expectTrue(jobPreflight.invalidDt, "NaN dt fails valid-dt guard");
+    expectTrue(!jobPreflight.can_dispatch(), "NaN dt cannot dispatch job");
+    testPreflightIslandSleepForSolveGuards();
+    testPreflightIslandSolveCombinedGuards();
+    testPreflightIslandDispatchNonFiniteDt();

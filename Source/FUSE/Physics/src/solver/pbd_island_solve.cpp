@@ -2189,3 +2189,15 @@ IslandSleepDispatchPreflight preflight_island_dispatch_with_sleep(const ContactI
     IslandSleepDispatchPreflight preflight{};
 bool should_skip_island_dispatch_with_sleep(const ContactIslandGraph& graph,
     if (should_skip_island_solve_sleeping(island, bodies)) {
+
+// --- deepen additive from pbd-island-guards-deepen-bcee ---
+IslandSleepPreflight preflight_island_sleep_for_solve(const ContactIslandGraph::Island& island,
+IslandSleepPreflight preflight_island_sleep_for_solve_by_index(const ContactIslandGraph& graph,
+        const IslandSleepPreflight preflight = preflight_island_sleep_for_solve(island, bodies);
+bool should_skip_island_solve_for_sleep(const ContactIslandGraph& graph,
+bool should_skip_solve_sleeping_island(const ContactIslandGraph::Island& island,
+bool should_skip_island_wake_check(const ContactIslandGraph::Island& island,
+IslandSolveCombinedPreflight preflight_island_solve_combined(
+    IslandSolveCombinedPreflight preflight{};
+bool should_skip_island_solve_combined(const IslandSolveJob& job,
+    const IslandSolveCombinedPreflight preflight = preflight_island_solve_combined(

@@ -1351,3 +1351,14 @@ IslandSolveJobSleepPreflight preflight_solve_island_job_with_sleep(const IslandS
 bool should_skip_solve_island_job_with_sleep(const IslandSolveJob& job,
 IslandSleepDispatchPreflight preflight_island_dispatch_with_sleep(const ContactIslandGraph& graph,
 bool should_skip_island_dispatch_with_sleep(const ContactIslandGraph& graph,
+
+// --- deepen additive from pbd-island-guards-deepen-bcee ---
+struct IslandSolveCombinedPreflight {
+    IslandConstraintRefsPreflight constraintRefs{};
+IslandSleepPreflight preflight_island_sleep_for_solve(const ContactIslandGraph::Island& island,
+IslandSleepPreflight preflight_island_sleep_for_solve_by_index(const ContactIslandGraph& graph,
+bool should_skip_island_solve_for_sleep(const ContactIslandGraph& graph,
+bool should_skip_solve_sleeping_island(const ContactIslandGraph::Island& island,
+bool should_skip_island_wake_check(const ContactIslandGraph::Island& island,
+IslandSolveCombinedPreflight preflight_island_solve_combined(
+bool should_skip_island_solve_combined(const IslandSolveJob& job,
