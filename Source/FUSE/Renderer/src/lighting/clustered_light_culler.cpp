@@ -1008,3 +1008,11 @@ bool ClusterLightGridLayout::tryCanRebuildLightGrid(const ClusterDesc& desc,
         outReason = GridRebuildRejectReason::None;
         outReason = GridRebuildRejectReason::EmptyGrid;
         outReason = GridRebuildRejectReason::ClusterCountMismatch;
+
+// --- deepen additive from deepen-b5-clustered-lights-161a ---
+    GridRebuildRejectReason reason = GridRebuildRejectReason::None;
+    return tryCanRebuildLightGrid(desc, clusterCount, reason);
+bool ClusterLightGridLayout::tryRebuildLightGridForDesc(ClusterGridSoA& grid,
+    if (!tryCanRebuildLightGrid(desc, clusterCount, reason)) {
+    return tryValidateContiguousOffsetsForDesc(grid, desc, reason);
+bool ClusterLightGridLayout::tryValidateContiguousOffsetsForDesc(const ClusterGridSoA& grid,

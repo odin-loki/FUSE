@@ -399,3 +399,7 @@ enum class GridRebuildRejectReason : u8 {
 const char* gridRebuildRejectReasonLabel(GridRebuildRejectReason reason);
     static bool tryCanRebuildLightGrid(const ClusterDesc& desc,
                                        GridRebuildRejectReason& outReason);
+
+// --- deepen additive from deepen-b5-clustered-lights-161a ---
+    static bool tryRebuildLightGridForDesc(ClusterGridSoA& grid,
+    static bool tryValidateContiguousOffsetsForDesc(const ClusterGridSoA& grid,

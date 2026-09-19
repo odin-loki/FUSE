@@ -1515,3 +1515,36 @@ void testClusterCoordLookupRejectReasons() {
     expectTrue(rejectedLights.empty(), "tryCoordLookup with reason clears output on failure");
     testClusterRebuildPreflightGuards();
     testClusterCoordLookupRejectReasons();
+
+// --- deepen additive from deepen-b5-clustered-lights-161a ---
+    fuse::renderer::GridRebuildRejectReason rebuildReason = fuse::renderer::GridRebuildRejectReason::None;
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryCanRebuildLightGrid(desc, clusterCount, rebuildReason),
+    expectTrue(rebuildReason == fuse::renderer::GridRebuildRejectReason::None,
+    expectTrue(std::strcmp(fuse::renderer::gridRebuildRejectReasonLabel(rebuildReason), "none") == 0,
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryCanRebuildLightGrid(desc, 0u, rebuildReason),
+               "tryCanRebuild accepts zero cluster count");
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryCanRebuildLightGrid(desc, clusterCount + 1u, rebuildReason),
+    expectTrue(rebuildReason == fuse::renderer::GridRebuildRejectReason::ClusterCountMismatch,
+    expectTrue(std::strcmp(fuse::renderer::gridRebuildRejectReasonLabel(rebuildReason), "cluster_count_mismatch") == 0,
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryCanRebuildLightGrid(zeroDesc, 4u, rebuildReason),
+    expectTrue(rebuildReason == fuse::renderer::GridRebuildRejectReason::EmptyGrid,
+    expectTrue(std::strcmp(fuse::renderer::gridRebuildRejectReasonLabel(rebuildReason), "empty_grid") == 0,
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryRebuildLightGridForDesc(grid, desc, perClusterLights, 2u,
+               "tryRebuild succeeds on valid desc");
+    expectTrue(dropped == 0u, "tryRebuild reports zero dropped lights when within capacity");
+    fuse::renderer::GridPopulationRejectReason offsetReason = fuse::renderer::GridPopulationRejectReason::None;
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryValidateContiguousOffsetsForDesc(grid, desc, offsetReason),
+               "tryValidateContiguousOffsetsForDesc accepts rebuilt grid");
+    expectTrue(offsetReason == fuse::renderer::GridPopulationRejectReason::None,
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryValidateContiguousOffsetsForDesc(brokenOffsets, desc,
+               "tryValidateContiguousOffsetsForDesc rejects broken offsets");
+    expectTrue(offsetReason == fuse::renderer::GridPopulationRejectReason::NonContiguousOffsets,
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryValidateContiguousOffsetsForDesc(brokenOffsets, mismatched,
+               "tryValidateContiguousOffsetsForDesc rejects desc mismatch");
+    expectTrue(offsetReason == fuse::renderer::GridPopulationRejectReason::DescMismatch,
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryRebuildLightGridForDesc(grid, zeroDesc, perClusterLights, 2u,
+               "tryRebuild vacuously succeeds on empty desc");
+    expectTrue(rejectedDropped == 0u, "tryRebuild clears grid on empty desc");
+    expectTrue(grid.grid.empty() && grid.lightList.empty(), "tryRebuild on empty desc clears storage");
+    expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLightsAtCoord(grid, zeroDesc, 0u, 0u, 0u, rejectedLights,
+               "tryCoordLookup with reason rejects empty grid desc");
