@@ -25,6 +25,7 @@ std::atomic<u32> g_eventCount{0};
 std::atomic<u32> g_maxNestingDepth{0};
 std::atomic<u32> g_maxFlowNestingDepth{0};
 std::atomic<u32> g_openAsyncFlowCount{0};
+std::atomic<u32> g_orphanAsyncFlowEndCount{0};
 
 std::mutex g_exportMutex;
 
@@ -291,8 +292,16 @@ u32 openAsyncFlowCount() {
     return g_openAsyncFlowCount.load(std::memory_order_acquire);
 }
 
+u32 orphanAsyncFlowEndCount() {
+    return g_orphanAsyncFlowEndCount.load(std::memory_order_acquire);
+}
+
 bool hasOpenAsyncFlows() {
     return openAsyncFlowCount() > 0u;
+}
+
+bool hasOrphanAsyncFlowEnds() {
+    return orphanAsyncFlowEndCount() > 0u;
 }
 
 bool isScopeNestingBalanced() {
@@ -323,8 +332,33 @@ bool isBufferFull() {
     return eventCount() >= kRingCapacity;
 }
 
+u32 remainingEventCapacity() {
+    const u32 count = eventCount();
+    return count >= kRingCapacity ? 0u : kRingCapacity - count;
+}
+
 bool isEventIndexValid(u32 index) {
     return index < eventCount();
+}
+
+bool isFirstEventIndex(u32 index) {
+    return hasEvents() && index == 0u;
+}
+
+bool isLastEventIndex(u32 index) {
+    const u32 count = eventCount();
+    return count > 0u && index == count - 1u;
+}
+
+u32 countEventsWithPhase(EventPhase phase) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 bool isValidEventName(const char* name) {
@@ -425,11 +459,17 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.activeFlowNestingDepth = flowNestingDepth();
     preflight.maxScopeNestingDepth = maxNestingDepth();
     preflight.maxFlowNestingDepth = maxFlowNestingDepth();
+    preflight.remainingCapacity = remainingEventCapacity();
+    preflight.orphanAsyncFlowEndCount = orphanAsyncFlowEndCount();
     preflight.bufferEmpty = isBufferEmpty();
+    preflight.bufferFull = isBufferFull();
+    preflight.allEventsExportable =
+        preflight.eventCount == 0u || preflight.exportableEventCount == preflight.eventCount;
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.hasOrphanAsyncFlowEnds = hasOrphanAsyncFlowEnds();
     return preflight;
 }
 
@@ -443,6 +483,7 @@ void reset() {
     g_maxNestingDepth.store(0u, std::memory_order_release);
     g_maxFlowNestingDepth.store(0u, std::memory_order_release);
     g_openAsyncFlowCount.store(0u, std::memory_order_release);
+    g_orphanAsyncFlowEndCount.store(0u, std::memory_order_release);
     threadLocalNestingDepth() = 0u;
     threadLocalFlowNestingDepth() = 0u;
 }
@@ -471,6 +512,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
     }
 
     if (g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u) {
+        g_orphanAsyncFlowEndCount.fetch_add(1u, std::memory_order_acq_rel);
         return;
     }
 
