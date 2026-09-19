@@ -1028,6 +1028,28 @@ struct AsyncFlowEndPreflight {
     ProfilerRecordSkipReason skipReason = ProfilerRecordSkipReason::None;
 };
 
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canBegin = false;
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -1360,6 +1382,7 @@ bool wouldSkipAsyncFlowBegin(const char* name);
 bool wouldSkipAsyncFlowEnd(const char* name);
 bool wouldSkipCounter(const char* track);
 bool wouldSkipChromeTraceExport();
+/// True for null, empty, or whitespace-only names — diagnostic only; does not affect recording guards.
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 bool isFlowPhaseEvent(const ProfileEvent& event);
@@ -1837,6 +1860,8 @@ bool wouldSkipRecording();
 bool wouldSkipScope(const char* name);
 bool wouldSkipAsyncFlowBegin(const char* name);
 bool wouldSkipAsyncFlowEnd(const char* name);
+
+/// Preflight skip checks — mirror entry-point guards without recording events.
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
