@@ -1008,5 +1008,11 @@ bool should_run_compute_friction_tangents(const ContactManifold& manifold, f32 e
 
 /// Returns true when `compute_friction_tangents` would be a no-op (B4.6 deepen pass).
 
+/// Non-mutating friction-basis skip predicate — alias of `should_skip_friction_basis_preflight` (B4.5 deepen pass).
+inline bool can_skip_compute_friction_tangents(
+
+/// Rebuild friction tangents only when preflight allows; returns false when skipped (B4.5 deepen pass).
+inline bool compute_friction_tangents_with_preflight(
+    if (can_skip_compute_friction_tangents(manifold, epsilon)) {
 
 } // namespace fuse::physics::narrowphase

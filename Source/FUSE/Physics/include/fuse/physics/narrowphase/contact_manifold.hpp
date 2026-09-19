@@ -1690,6 +1690,16 @@ bool finalize_contact_manifold_if_needed_with_preflight(
 
 
 
+/// Non-mutating prune skip predicate — alias of `should_skip_manifold_prune` (B4.5 deepen pass).
+inline bool can_skip_manifold_prune(
+    return should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+
+/// Prune only when preflight allows; alias of `prune_contact_manifold_with_preflight` (B4.5 deepen pass).
+inline bool prune_contact_manifold_if_needed(
+    return prune_contact_manifold_with_preflight(
+
+/// Finalize only when preflight allows; alias of `finalize_contact_manifold_with_preflight` (B4.5 deepen pass).
+inline bool finalize_contact_manifold_if_needed(
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

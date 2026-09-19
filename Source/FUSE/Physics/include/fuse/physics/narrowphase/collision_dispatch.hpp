@@ -6,6 +6,7 @@
 #include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 #include <fuse/physics/narrowphase/contact_pair.hpp>
+#include <fuse/physics/narrowphase/contact_buffer.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
@@ -519,7 +520,6 @@ std::vector<ContactManifold> runNarrowphaseWithDeepenPreflight(
     bool can_skip() const { return skipped || batch.can_skip(); }
 
 /// Populate narrowphase dispatch preflight without running shape dispatch (B4.6 deepen pass).
-NarrowphaseDispatchPreflight preflight_run_narrowphase_into_buffer(
 
 /// Returns true when narrowphase dispatch preflight reports no dispatchable pairs (B4.6 deepen pass).
 bool should_skip_narrowphase_dispatch(
@@ -686,7 +686,6 @@ struct NarrowphaseBufferPreflight {
     bool allPairsRejected = false;
     bool bufferAlreadyPacked = false;
 
-    bool can_dispatch() const { return batch.can_dispatch(); }
 
     bool can_skip() const {
         return emptyPairList || allPairsRejected;
@@ -712,12 +711,20 @@ inline void run_narrowphase_into_buffer_with_preflight(
     if (can_skip_run_narrowphase_into_buffer(pairs, bodies, shapes)) {
 /// Returns true when narrowphase buffer dispatch should be skipped (B4.6 deepen follow-up pass).
 bool can_skip_run_narrowphase_into_buffer(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
     const ContactBufferSoA& buffer = ContactBufferSoA{});
 
 /// Run narrowphase into buffer only when dispatch preflight allows; clears buffer otherwise (B4.6 deepen follow-up pass).
 void run_narrowphase_into_buffer_with_preflight(
+/// Const preflight for narrowphase buffer dispatch (B4.5 deepen pass).
+
+
+/// Populate dispatch preflight without running shape dispatch (B4.5 deepen pass).
+
+/// Returns true when narrowphase buffer dispatch should early-out (B4.5 deepen pass).
+inline bool can_skip_narrowphase_into_buffer(
+
+/// Dispatch only when batch preflight reports dispatchable pairs; otherwise clears slots (B4.5 deepen pass).
+        buffer.preparePairSlots(static_cast<u32>(pairs.size()));
+        buffer.compactAndClampIfNeeded();
 
 } // namespace fuse::physics::narrowphase
