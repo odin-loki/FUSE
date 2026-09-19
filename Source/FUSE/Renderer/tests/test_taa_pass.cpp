@@ -3601,3 +3601,23 @@ void testResolveTemporalPreflightGuards() {
     expectTrue(pass->preflightResolveTemporal(resolveDesc, &temporalReason),
     expectTrue(pass->preflightHistoryWarmup(), "pass preflightHistoryWarmup passes after resolve");
     testResolveTemporalPreflightGuards();
+
+// --- deepen additive from deepen-b59-taa-guards-6ba7 ---
+               "tryPreflightTaaHistoryWarmup fails for empty history");
+               "tryPreflightTaaHistoryWarmup fails for unwarmed history");
+    expectTrue(fuse::renderer::tryComputeTaaJitterNdcOffset(3u, 128u, 128u, 8u, ndcOut, rejectReason),
+               "tryComputeTaaJitterNdcOffset succeeds for valid viewport");
+    expectNear(ndcOut.x, expected.x, 1e-6f, "tryComputeTaaJitterNdcOffset matches layout X");
+    expectNear(ndcOut.y, expected.y, 1e-6f, "tryComputeTaaJitterNdcOffset matches layout Y");
+    expectTrue(!fuse::renderer::tryComputeTaaJitterNdcOffset(3u, 0u, 128u, 8u, ndcOut, rejectReason),
+               "tryComputeTaaJitterNdcOffset rejects zero width");
+    expectTrue(jitter.tryCurrentNdcOffset(128u, 128u, ndcOut, rejectReason),
+               "TaaJitter::tryCurrentNdcOffset succeeds for valid viewport");
+    expectNear(ndcOut.x, directNdc.x, 1e-6f, "tryCurrentNdcOffset matches currentNdcOffset X");
+    expectTrue(!jitter.tryCurrentNdcOffset(0u, 128u, ndcOut, rejectReason),
+               "TaaJitter::tryCurrentNdcOffset rejects zero width");
+               "tryPreflightTaaResolve fails for empty history");
+               "tryPreflightTaaResolve fails for invalid dimensions");
+    expectTrue(!pass->preflightHistoryWarmup(), "pass warmup preflight fails before init");
+    expectTrue(pass->preflightJitterNdc(), "pass jitter NDC preflight passes before init");
+    expectTrue(!zeroPass->preflightJitterNdc(), "zero-width pass jitter NDC preflight fails");

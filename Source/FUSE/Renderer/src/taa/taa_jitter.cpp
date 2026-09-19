@@ -393,3 +393,11 @@ bool taaJitterSyncReady(u32 frameIndex, u32 sequenceLength, TaaJitterGuardReject
     return preflightTaaJitterSync(frameIndex, sequenceLength, reason);
 bool taaJitterNdcReady(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason* reason) {
     return preflightTaaJitterNdc(width, height, sequenceLength, reason);
+
+// --- deepen additive from deepen-b59-taa-guards-6ba7 ---
+bool tryComputeTaaJitterNdcOffset(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
+                                  fuse::math::Vec2& outOffset, TaaJitterGuardRejectReason& reason) {
+    if (!preflightTaaJitterNdc(width, height, sequenceLength, &reason)) {
+bool TaaJitter::tryCurrentNdcOffset(u32 width, u32 height, fuse::math::Vec2& out,
+                                    TaaJitterGuardRejectReason& reason) const {
+    if (!preflightTaaJitterNdc(width, height, m_sequenceLength, &reason)) {
