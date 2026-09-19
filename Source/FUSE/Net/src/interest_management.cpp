@@ -649,3 +649,8 @@ void InterestPriorityQueue::heapify_down_(u32 index) {
 // --- deepen additive from deepen-b74-net-interest-diff-radius-guards-df4e ---
 RadiusFilterPreflight preflight_radius_filter(const InterestPolicy& policy,
     RadiusFilterPreflight result;
+
+// --- deepen additive from deepen-b74-net-interest-diff-radius-guards-880a ---
+    const InterestDiffPreflight preflight = preflight_interest_diff(diff, scope);
+bool should_skip_radius_filter(const std::vector<InterestCandidate>& candidates) {
+    if (should_skip_radius_filter(candidates)) {

@@ -910,3 +910,16 @@ void run_interest_management_tests() {
     expectTrue(fuse::net::should_skip_radius_filter(zero_radius_policy, candidates),
                "should_skip_radius_filter true for zero relevance radius");
     const fuse::net::RadiusFilterPreflight valid_radius_preflight =
+
+// --- deepen additive from deepen-b74-net-interest-diff-radius-guards-880a ---
+    expectTrue(fuse::net::should_skip_interest_diff_apply(skip_diff),
+               "should_skip matches is_empty_interest_diff");
+    expectTrue(!fuse::net::should_skip_interest_diff_apply(actionable_diff),
+               "should_skip_interest_diff_apply false for non-empty diff");
+    expectTrue(fuse::net::should_skip_radius_filter(guard_candidates),
+               "should_skip_radius_filter true for empty list");
+    expectTrue(!fuse::net::should_skip_radius_filter(guard_candidates),
+               "should_skip_radius_filter false when candidates present");
+    const fuse::net::InterestRadiusPreflight zero_radius_preflight =
+    expectTrue(zero_radius_preflight.should_skip(), "zero-radius preflight should skip");
+    expectTrue(empty_radius_preflight.should_skip(), "empty-radius preflight should skip");

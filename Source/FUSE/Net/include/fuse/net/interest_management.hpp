@@ -255,3 +255,8 @@ private:
 // --- deepen additive from deepen-b74-net-interest-diff-radius-guards-df4e ---
 struct RadiusFilterPreflight {
 [[nodiscard]] RadiusFilterPreflight preflight_radius_filter(const InterestPolicy& policy,
+
+// --- deepen additive from deepen-b74-net-interest-diff-radius-guards-880a ---
+    bool would_change_scope = false;
+[[nodiscard]] bool should_skip_radius_filter(const std::vector<InterestCandidate>& candidates);
+    [[nodiscard]] bool should_skip() const { return empty_candidates || zero_relevance_radius; }
