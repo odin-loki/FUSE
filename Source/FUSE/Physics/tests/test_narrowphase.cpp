@@ -2536,3 +2536,20 @@ void testContactBufferRejectReasonGuards() {
             buffer, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::None),
             fuse::physics::narrowphase::contactBufferWriteRejectReasonName(
     testContactBufferRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b130 ---
+void testContactPairDeepenGuardPassHelpers() {
+void testManifoldPruneFinalizeGuardPassHelpers() {
+void testFrictionBasisRebuildGuardPassHelpers() {
+                fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::CanReuseCached),
+            withBasis, fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::CanReuseCached),
+void testContactBufferGuardPassHelpers() {
+void testNarrowphasePairSlotGuardPassHelpers() {
+    expectTrue(validPreflight.can_process(), "pair-slot preflight allows valid pair");
+    expectTrue(validPreflight.canDispatch, "pair-slot preflight can dispatch valid pair");
+        !fuse::physics::narrowphase::should_skip_narrowphase_pair_slot({bodyA, bodyB}, bodies, shapes),
+        "should_skip pair-slot false for valid pair");
+    expectTrue(!selfPreflight.can_process(), "pair-slot preflight rejects self pair");
+    expectTrue(selfPreflight.pairRejected, "pair-slot preflight marks self pair rejected");
+        fuse::physics::narrowphase::should_skip_narrowphase_pair_slot({bodyA, bodyA}, bodies, shapes),
+        "should_skip pair-slot true for self pair");

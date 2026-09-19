@@ -51,3 +51,9 @@ NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
     NarrowphaseDispatchPreflight preflight{};
     preflight.compaction = preflightContactBufferCompaction(buffer);
     preflight.clamp = preflightContactBufferClamp(buffer);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b130 ---
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    NarrowphasePairSlotPreflight preflight{};
+bool should_skip_narrowphase_pair_slot(
+        if (should_skip_narrowphase_pair_slot(pair, bodies, shapes)) {

@@ -497,3 +497,10 @@ ContactBufferClampPreflight preflightContactBufferClamp(const ContactBufferSoA& 
     case ContactBufferCompactionRejectReason::AllInvalid:
         return ContactBufferCompactionRejectReason::AllInvalid;
     preflight.allInvalid = preflight.reason == ContactBufferCompactionRejectReason::AllInvalid;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b130 ---
+    return !preflightContactBufferWrite(*this, slot, manifold).canWrite();
+    const ContactBufferWritePreflight writePreflight = preflightContactBufferWrite(*this, slot, manifold);
+    return contactBufferCompactionRejectReason(*this) != ContactBufferCompactionRejectReason::None;
+    return contactBufferClampRejectReason(*this) != ContactBufferClampRejectReason::None;
+    if (clampPreflight.reason != ContactBufferClampRejectReason::None) {

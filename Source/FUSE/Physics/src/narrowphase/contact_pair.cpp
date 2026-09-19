@@ -789,3 +789,6 @@ bool should_skip_contact_pair_batch(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-bc5b ---
     return should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b130 ---
+    if (should_skip_friction_basis_preflight(manifold)) {

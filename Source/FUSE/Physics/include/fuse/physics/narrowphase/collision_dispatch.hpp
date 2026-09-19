@@ -210,3 +210,8 @@ struct NarrowphaseDispatchPreflight {
         return compaction.reason != ContactBufferCompactionRejectReason::None &&
                clamp.reason != ContactBufferClampRejectReason::None;
 NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b130 ---
+struct NarrowphasePairSlotPreflight {
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+bool should_skip_narrowphase_pair_slot(
