@@ -503,6 +503,63 @@ u32 CookCache::count_invalid_entries() const {
     return count;
 }
 
+u32 CookCache::count_stale_entries() const {
+    if (m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_valid_cook_cache_entry(entry) && is_stale_cache_entry_(entry)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+CookCachePruneEstimate CookCache::estimate_prune_reconcile() const {
+    CookCachePruneEstimate estimate;
+    estimate.invalid_count = count_invalid_entries();
+    estimate.stale_count = count_stale_entries();
+    return estimate;
+}
+
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) > 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) > 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) > 0;
+}
+
+std::vector<std::string> CookCache::probe_unique_stale_upstream_sources(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    const std::vector<std::string> stale_sources = probe_stale_upstream_sources(source_upstream_by_path);
+    if (stale_sources.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> unique_sources;
+    for (const std::string& source_path : stale_sources) {
+        bool already_seen = false;
+        for (const std::string& seen : unique_sources) {
+            if (seen == source_path) {
+                already_seen = true;
+                break;
+            }
+        }
+        if (!already_seen) {
+            unique_sources.push_back(source_path);
+        }
+    }
+    return unique_sources;
+}
+
 bool CookCache::contains(u64 content_hash) const {
     if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {
         return false;

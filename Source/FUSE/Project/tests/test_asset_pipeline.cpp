@@ -1593,15 +1593,72 @@ void testCookerInvalidationCountProbes() {
     const fuse::u32 upstream_count = cooker.count_upstream_invalidation(manifest, sourceA);
     expectTrue(upstream_count >= 2u, "upstream count probe estimates chain removals");
 
+    const fuse::project::AssetCooker::CookUpstreamInvalidationEstimate upstream_estimate =
+        cooker.estimate_upstream_invalidation(manifest, sourceA);
+    expectTrue(upstream_estimate.total() == upstream_count,
+               "upstream estimate total matches count probe");
+    expectTrue(upstream_estimate.source_direct >= 1u, "upstream estimate includes direct source entry");
+    expectTrue(upstream_estimate.downstream_cascade >= 1u, "upstream estimate includes downstream cascade");
+
     const fuse::u32 empty_upstream_count = cooker.count_upstream_invalidation(manifest, "");
     expectTrue(empty_upstream_count == 0u, "empty changed source upstream count is zero");
+    expectTrue(cooker.estimate_upstream_invalidation(manifest, "").total() == 0u,
+               "empty changed source upstream estimate is zero");
 
     const fuse::u32 stale_count_before = cooker.count_stale_dependency_invalidation(manifest);
     expectTrue(stale_count_before == 0u, "fresh cache stale dependency count is zero");
 
+    const fuse::project::AssetCooker::CookStaleDependencyEstimate stale_estimate =
+        cooker.estimate_stale_dependency_reconcile(manifest);
+    expectTrue(stale_estimate.total() == stale_count_before,
+               "stale dependency estimate matches count probe on fresh cache");
+    expectTrue(stale_estimate.direct_upstream_stale == 0u,
+               "fresh cache has no direct upstream stale entries");
+    expectTrue(stale_estimate.downstream_cascade == 0u,
+               "fresh cache has no downstream cascade stale entries");
+
     const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
     expectTrue(removed >= upstream_count, "upstream invalidation removes at least probed count");
     expectTrue(cooker.cache().entry_count() == 0u, "cache empty after probed upstream invalidation");
+}
+
+void testCookerStaleDependencyReconcileEstimate() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_stale_a.obj", "# est stale a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_stale_b.obj", "# est stale b\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_est_stale_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_est_stale_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "stale reconcile estimate seeds cache");
+
+    writeTempFile(sourceA, "# est stale a revised\n");
+
+    const fuse::project::AssetCooker::CookStaleDependencyEstimate estimate =
+        cooker.estimate_stale_dependency_reconcile(manifest);
+    expectTrue(estimate.direct_upstream_stale >= 1u,
+               "stale reconcile estimate reports direct upstream stale entries");
+    expectTrue(estimate.total() == cooker.count_stale_dependency_invalidation(manifest),
+               "stale reconcile estimate total matches count probe");
+    expectTrue(estimate.direct_upstream_stale + estimate.downstream_cascade == estimate.total(),
+               "stale reconcile estimate components sum to total");
+
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= estimate.total(),
+               "stale dependency invalidation removes at least estimated total");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -1686,6 +1743,7 @@ int main() {
     testCookCacheEmptyKeyPaths();
     testCookDirtyInvalidatesCache();
     testCookerInvalidationCountProbes();
+    testCookerStaleDependencyReconcileEstimate();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
