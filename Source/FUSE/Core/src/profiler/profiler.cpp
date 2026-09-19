@@ -327,6 +327,10 @@ bool eventMatchesName(const ProfileEvent& event, const char* name) {
 bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
     return (event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)
         && event.scopeId == flowId && event.name != nullptr && event.name[0] != '\0';
+bool isFlowEventPhase(EventPhase phase) {
+
+bool isValidFlowLookupId(u32 flowId) {
+    return flowId != 0u;
 }
 
 } // namespace
@@ -3369,6 +3373,40 @@ bool hasFlowEvent(u32 flowId) {
 
 
 
+    if (!isValidEventName(name) || !isValidEventName(event.name)) {
+
+    return std::strcmp(event.name, name) == 0;
+
+
+
+
+
+
+
+    if (!isValidFlowLookupId(flowId)) {
+
+        if (isFlowEventPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+
+
+
+
+
+
+        if (event.phase == EventPhase::FlowStart && event.scopeId == flowId && isValidEventName(event.name)) {
+
+
+        if (event.phase == EventPhase::FlowFinish && event.scopeId == flowId && isValidEventName(event.name)) {
+
+bool isFlowPairedInBuffer(u32 flowId) {
+
+    u32 startCount = 0u;
+    u32 finishCount = 0u;
+        if (event.scopeId != flowId || !isValidEventName(event.name)) {
+
+            ++startCount;
+        } else if (event.phase == EventPhase::FlowFinish) {
+            ++finishCount;
+    return startCount == 1u && finishCount == 1u;
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -4002,32 +4040,10 @@ NestingConsistencyPreflight preflightNestingConsistency() {
 
     preflight.unpairedAsyncFlowIdCount = unpairedAsyncFlowIdCount();
     preflight.hasUnpairedAsyncFlowsInBuffer = preflight.unpairedAsyncFlowIdCount > 0u;
-    return preflight;
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
+    preflight.hasUnpairedFlowEvents = preflight.flowStartEventCount != preflight.flowFinishEventCount;
     return preflight;
 }
 
