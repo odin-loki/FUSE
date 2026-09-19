@@ -737,6 +737,18 @@ bool hasActiveFlows() {
     return flowNestingDepth() > 0u;
 }
 
+void reconcileDetachedFlowDepth() {
+    if (!isFlowDepthDetached()) {
+        return;
+    }
+
+    threadLocalFlowNestingDepth() = openAsyncFlowCount();
+}
+
+u32 orphanAsyncFlowEndCount() {
+    return g_orphanAsyncFlowEndCount.load(std::memory_order_acquire);
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -991,6 +1003,33 @@ u32 exportableLastEventIndex() {
         const u32 index = i - 1u;
         if (isEventExportable(index)) {
             return index;
+        }
+
+u32 findFirstEventIndex(EventPhase phase) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+
+u32 findLastEventIndex(EventPhase phase) {
+    for (u32 i = total; i > 0u; --i) {
+        if (eventAt(i - 1u).phase == phase) {
+            return i - 1u;
+
+bool tryFindEventByName(const char* name, u32 startIndex, u32& outIndex, ProfileEvent& outEvent) {
+    if (!isValidEventName(name)) {
+        outIndex = kInvalidEventIndex;
+        outEvent = ProfileEvent{};
+        return false;
+
+    if (startIndex >= total) {
+
+    for (u32 i = startIndex; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.name != nullptr && std::strcmp(event.name, name) == 0) {
+            outIndex = i;
+            outEvent = event;
+            return isValidProfileEvent(outEvent);
+
 
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
@@ -1382,6 +1421,10 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.scopeEndEventCount = countEventsWithPhase(EventPhase::End);
     preflight.asyncFlowStartEventCount = countEventsWithPhase(EventPhase::FlowStart);
     preflight.asyncFlowFinishEventCount = countEventsWithPhase(EventPhase::FlowFinish);
+    preflight.nonExportableEventCount =
+        preflight.eventCount > preflight.exportableEventCount
+            ? preflight.eventCount - preflight.exportableEventCount
+            : 0u;
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
@@ -1726,6 +1769,8 @@ void endAsyncFlow(const char* name, u32 flowId) {
 
     if (g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u) {
         g_orphanAsyncFlowEndCount.fetch_add(1u, std::memory_order_acq_rel);
+        return;
+    }
 
     g_openAsyncFlowCount.fetch_sub(1u, std::memory_order_acq_rel);
 
