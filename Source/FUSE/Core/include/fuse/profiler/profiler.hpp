@@ -585,3 +585,7 @@ ProfilerNestingPreflight preflightNesting();
 bool preflightBeginAsyncFlow(const char* name);
 bool preflightEndAsyncFlow(const char* name);
 bool wouldSkipAsyncFlow(const char* name);
+
+// --- deepen additive from deepen-b16-profiler-guards-0dc1 ---
+bool wouldSkipAsyncFlowBegin(const char* name, u32 flowId);
+bool wouldSkipSafeChromeTraceExport();

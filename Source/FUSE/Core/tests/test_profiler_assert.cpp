@@ -5421,3 +5421,59 @@ void testFindFlowEventIndexGuard() {
     expectTrue(detachedPreflight.depthDetached, "detached flow preflight marks depth detached");
     expectTrue(detachedPreflight.crossThreadHandoffPending,
     expectTrue(!detachedPreflight.consistent, "detached flow preflight is inconsistent on begin thread");
+
+// --- deepen additive from deepen-b16-profiler-guards-0dc1 ---
+void testWouldSkipScopeAndCounterGuards() {
+    expectTrue(!fuse::profiler::wouldSkipCounter("valid_counter"), "wouldSkipCounter false for valid track");
+    expectTrue(fuse::profiler::wouldSkipScope("disabled_scope"), "wouldSkipScope true when profiler disabled");
+    expectTrue(fuse::profiler::wouldSkipCounter("disabled_counter"),
+    expectTrue(fuse::profiler::eventCount() == 2u, "wouldSkip guards do not record events by themselves");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("valid_flow", flowId),
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin(nullptr, flowId),
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("", flowId),
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("orphan_flow", flowId),
+               "wouldSkipAsyncFlowEnd true for orphan finish");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd(nullptr, flowId),
+               "wouldSkipAsyncFlowEnd true for null name even with open flow");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("disabled_flow", flowId),
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("disabled_flow", flowId),
+    expectTrue(!fuse::profiler::wouldSkipSafeChromeTraceExport(),
+               "wouldSkipSafeChromeTraceExport false on empty balanced buffer");
+        expectTrue(fuse::profiler::wouldSkipSafeChromeTraceExport(),
+                   "wouldSkipSafeChromeTraceExport true inside active scope");
+               "wouldSkipSafeChromeTraceExport false after scope end");
+               "wouldSkipSafeChromeTraceExport true when profiler disabled");
+void testTryEventByNameAndFlowIdGuards() {
+    expectTrue(!fuse::profiler::tryLastEventByName("missing", outEvent),
+               "tryLastEventByName false on empty buffer");
+    expectTrue(!fuse::profiler::tryFirstEventByFlowId(flowId, outEvent),
+    expectTrue(!fuse::profiler::tryLastEventByFlowId(flowId, outEvent),
+    expectTrue(fuse::profiler::tryFirstEventByName("try_counter", outEvent),
+    expectTrue(outEvent.counterIntValue == 6, "tryFirstEventByName copies counter value");
+               "tryFirstEventByName false for empty lookup name");
+               "tryFirstEventByName clears output for empty lookup name");
+    expectTrue(resetPreflight.isSafe(), "preflightNesting safe on reset");
+    expectTrue(resetPreflight.scopeNestingBalanced, "preflightNesting scope balanced on reset");
+    expectTrue(resetPreflight.flowNestingBalanced, "preflightNesting flow balanced on reset");
+    expectTrue(resetPreflight.activeScopeNestingDepth == 0u, "preflightNesting active scope depth zero on reset");
+    expectTrue(resetPreflight.openAsyncFlowCount == 0u, "preflightNesting open flow count zero on reset");
+        expectTrue(!activePreflight.isSafe(), "preflightNesting unsafe with open scope and flow");
+        expectTrue(activePreflight.hasUnbalancedNesting(), "preflightNesting marks unbalanced nesting");
+        expectTrue(activePreflight.activeScopeNestingDepth == 1u, "preflightNesting reports active scope depth");
+        expectTrue(activePreflight.activeFlowNestingDepth == 1u, "preflightNesting reports active flow depth");
+        expectTrue(activePreflight.openAsyncFlowCount == 1u, "preflightNesting reports open flow count");
+    expectTrue(closedPreflight.isSafe(), "preflightNesting safe after scope and flow teardown");
+    expectTrue(closedPreflight.maxScopeNestingDepth == 1u, "preflightNesting preserves max scope depth");
+    expectTrue(closedPreflight.maxFlowNestingDepth == 1u, "preflightNesting preserves max flow depth");
+    expectTrue(preflight.flowDepthDetached, "preflightNesting marks detached flow depth after handoff");
+               "preflightNesting marks cross-thread handoff pending");
+    expectTrue(!preflight.isSafe(), "preflightNesting unsafe during cross-thread handoff cleanup");
+    expectTrue(!preflight.hasOpenAsyncFlows, "preflightNesting has no open flows after worker end");
+    if (!fuse::profiler::wouldSkipScope("mirror_scope")) {
+    if (!fuse::profiler::wouldSkipCounter("mirror_counter")) {
+    if (!fuse::profiler::wouldSkipAsyncFlowBegin("mirror_flow", flowId)) {
+    if (!fuse::profiler::wouldSkipAsyncFlowEnd("mirror_flow", flowId)) {
+               "wouldSkip false paths record scope, counter, and flow events");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("mirror_flow", flowId),
+               "wouldSkipAsyncFlowEnd true after flow already closed");
+               "orphan wouldSkip path does not record extra flow finish");

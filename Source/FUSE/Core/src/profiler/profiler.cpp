@@ -1533,3 +1533,7 @@ bool preflightEndAsyncFlow(const char* name) {
     return wouldSkipRecording(name);
 bool wouldSkipAsyncFlow(const char* name) {
     return wouldSkipRecording(track);
+
+// --- deepen additive from deepen-b16-profiler-guards-0dc1 ---
+bool wouldSkipAsyncFlowBegin(const char* name, u32 /*flowId*/) {
+bool wouldSkipSafeChromeTraceExport() {
