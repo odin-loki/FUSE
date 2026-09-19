@@ -1124,53 +1124,24 @@ EndDragPreflight preflightEndDrag(bool dragging) {
         preflight.notDragging = true;
     }
     return preflight;
-}
 
 bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode) {
     return preflightUpdateDrag(hit, dragging, mode).canUpdate();
-}
 
 bool canEndDrag(bool dragging) {
     return preflightEndDrag(dragging).canEnd();
-}
 
 bool canUpdateDrag(const GizmoHitTest& hit, bool dragging) {
     return preflightUpdateDrag(hit, dragging).canUpdate();
-}
 
-EndDragPreflight preflightEndDrag(bool dragging) {
-    EndDragPreflight preflight{};
-    if (!dragging) {
-        preflight.notDragging = true;
-    }
-    return preflight;
-}
 
-bool canEndDrag(bool dragging) {
-    return preflightEndDrag(dragging).canEnd();
-}
 
-EndDragPreflight preflightEndDrag(bool dragging) {
-    EndDragPreflight preflight{};
-    if (!dragging) {
-        preflight.notDragging = true;
-    }
-    return preflight;
-}
 
-bool canUpdateDrag(const GizmoHitTest& hit, bool dragging) {
-    return preflightUpdateDrag(hit, dragging).canUpdate();
-}
 
-bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode) {
-    return preflightUpdateDrag(hit, dragging, mode).canUpdate();
-}
 
-bool canEndDrag(bool dragging) {
-    return preflightEndDrag(dragging).canEnd();
-}
 
 EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings) {
+EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis) {
     EndDragPreflight preflight{};
     if (!dragging) {
         preflight.notDragging = true;
@@ -1179,6 +1150,8 @@ EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnap
 
     if (isSnapEnabled(mode, settings) && !canApplySnap(mode, settings)) {
         preflight.snapSkipped = true;
+    if (activeAxis == GizmoAxis::None) {
+        preflight.invalidActiveAxis = true;
     }
 
     return preflight;
@@ -1193,28 +1166,22 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, 
 
 bool canUpdateDrag(const GizmoHitTest& hit, bool dragging) {
     return preflightUpdateDrag(hit, dragging).canUpdate();
-}
 
 bool canEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings) {
     return preflightEndDrag(dragging, mode, settings).canEnd();
 EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings) {
 bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode) {
     return preflightUpdateDrag(hit, dragging, mode).canUpdate();
-}
 
 EndDragPreflight preflightEndDrag(bool dragging) {
     EndDragPreflight preflight{};
     if (!dragging) {
         preflight.notDragging = true;
-    }
-    return preflight;
 
 EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode,
                                   const GizmoSnapSettings& settings) {
     EndDragPreflight preflight = preflightEndDrag(dragging);
     if (!preflight.canEnd()) {
-        return preflight;
-    }
 
     const SnapPreflight snap = preflightSnap(mode, settings);
     preflight.snapDisabled = snap.snapDisabled;
@@ -1223,15 +1190,13 @@ EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode,
 bool canEndDrag(bool dragging) {
     return preflightEndDrag(dragging, GizmoMode::Translate, GizmoSnapSettings{}).canEnd();
     preflight.canEnd = true;
-    return preflight;
-}
 
     return preflightEndDrag(dragging).canEnd;
 
     return preflightEndDrag(dragging).canEnd();
 
-bool canEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings) {
-    return preflightEndDrag(dragging, mode, settings).canEnd();
+bool canEndDrag(bool dragging, GizmoAxis activeAxis) {
+    return preflightEndDrag(dragging, activeAxis).canEnd();
 }
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
@@ -2297,6 +2262,14 @@ GizmoResult GizmoSystem::endDrag() {
 bool GizmoSystem::tryEndDrag(GizmoResult& out) {
     out = {};
     if (!preflightEndDrag().canEnd) {
+bool GizmoSystem::canEndDrag() const {
+    return fuse::editor::canEndDrag(m_dragging, m_activeAxis);
+}
+
+EndDragPreflight GizmoSystem::preflightEndDrag() const {
+    return fuse::editor::preflightEndDrag(m_dragging, m_activeAxis);
+
+        return false;
     }
     return result;
 }
@@ -2348,10 +2321,13 @@ bool GizmoSystem::tryEndDrag(GizmoResult& out) {
     out = endDrag();
     return true;
 
+
 GizmoResult GizmoSystem::endDrag() {
     GizmoResult result;
     if (!tryEndDrag(result)) {
         return result;
+    }
+    return result;
 }
 
 GizmoAxis GizmoSystem::pickAxisScreen_(const GizmoHitTest& hit) const {
