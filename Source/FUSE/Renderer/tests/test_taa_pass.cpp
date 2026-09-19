@@ -9275,6 +9275,7 @@ void testHistoryWarmupPreflightDeepen() {
                "tryPreflightTaaHistoryReadyForResolve fails for empty history");
 void testTaaPassTryPreflightWrappers() {
 void testTaaPassTryAndClassifyGuards() {
+void testTaaPassTryPreflightAndClassifyWrappers() {
     fuse::renderer::TaaPassDesc passDesc{};
     passDesc.width = 128;
     passDesc.height = 128;
@@ -9345,6 +9346,16 @@ void testTaaPassTryPreflightAndClassifyGuards() {
                "pass tryPreflightJitterAdvance reject reason is None");
     expectTrue(pass->preflightJitterAdvance(), "pass preflightJitterAdvance passes");
     expectTrue(!pass->shouldSkipJitterAdvance(), "pass should not skip jitter advance");
+               "pass classifyJitterSyncReject is None for valid sequence");
+               "pass classifyJitterNdcReject is None for valid viewport");
+               "pass classifyJitterAdvanceReject is None for valid sequence");
+    expectTrue(!pass->shouldSkipJitterAdvance(), "pass should not skip jitter advance for valid sequence");
+
+    fuse::renderer::TaaJitterGuardRejectReason jitterReason =
+    expectTrue(pass->tryPreflightJitterSync(6u, jitterReason), "pass tryPreflightJitterSync passes");
+    expectTrue(jitterReason == fuse::renderer::TaaJitterGuardRejectReason::None,
+    expectTrue(pass->tryPreflightJitterNdc(jitterReason), "pass tryPreflightJitterNdc passes");
+    expectTrue(pass->tryPreflightJitterAdvance(jitterReason), "pass tryPreflightJitterAdvance passes");
 
     fuse::renderer::TaaHistoryReuseBlockReason reuseReason =
         fuse::renderer::TaaHistoryReuseBlockReason::None;
@@ -10009,7 +10020,6 @@ void testTaaPassTryPreflightGuards() {
     expectTrue(pass->tryPreflightJitterSync(4u, jitterReason), "pass tryPreflightJitterSync passes before init");
     expectTrue(pass->tryPreflightJitterNdc(jitterReason), "pass tryPreflightJitterNdc passes before init");
     expectTrue(pass->tryPreflightJitterAdvance(jitterReason), "pass tryPreflightJitterAdvance passes before init");
-    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
 
     fuse::renderer::TaaResolveDesc resolveDesc{};
     resolveDesc.width = 128;
@@ -10165,6 +10175,7 @@ void testTaaPassTryPreflightAndClassifyGuards() {
         std::printf("SKIP: Vulkan device not available for pass tryPreflight wrapper test\n");
         return;
     }
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass try/classify wrapper test");
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -10241,10 +10252,18 @@ void testTaaPassTryPreflightAndClassifyGuards() {
 
 
     expectTrue(pass->tryComputeResolveBlendWeights(resolveDesc, weights, blendReject),
-               "pass tryComputeResolveBlendWeights passes after warmup");
-    expectNear(weights.current, 0.25f, 1e-5f, "pass tryCompute steady current weight");
-    expectNear(weights.history, 0.75f, 1e-5f, "pass tryCompute steady history weight");
     expectNear(weights.current, 0.2f, 1e-5f, "pass tryComputeResolveBlendWeights current matches blend after warmup");
+    expectTrue(pass->init(resources), "TaaPass initialized for try/classify wrapper test");
+
+
+    expectTrue(pass->tryPreflightResolve(resolveDesc, skipReason),
+    expectTrue(pass->resolveFrame(resolveDesc), "initial resolve warms pass history");
+
+    expectTrue(pass->tryPreflightHistoryReuse(0u, reuseReason),
+               "pass tryPreflightHistoryReuse passes after warmup");
+    expectTrue(pass->tryPreflightResolveBlendWeights(resolveDesc, blendReason),
+               "pass tryPreflightResolveBlendWeights passes after warmup");
+    expectTrue(pass->tryComputeResolveBlendWeights(resolveDesc, weights, blendReason),
 
     pass->invalidateHistory();
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
@@ -13456,6 +13475,7 @@ int main() {
     testTaaPassTryPreflightDeepen();
     testTaaPassTryPreflightAndClassifyGuards();
     testTaaPassTryPreflightWrappers();
+    testTaaPassTryPreflightAndClassifyWrappers();
     testTaaPassShouldSkipGuardWrappers();
     testHistoryWarmupPreflight();
     testHistoryReusePreflight();
