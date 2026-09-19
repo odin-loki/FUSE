@@ -237,6 +237,8 @@ struct ChromeTraceExportPreflight {
             || crossThreadFlowHandoffPending || hasUnpairedAsyncFlowsInBuffer || hasInvalidNameEvents;
     bool hasActiveNesting() const {
         return activeScopeNestingDepth > 0u || activeFlowNestingDepth > 0u;
+    bool canExportSafely() const {
+        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
     }
 
     bool canExportSafely() const {
@@ -609,6 +611,28 @@ struct NestingStatePreflight {
 
 
         return canExportSafely() && !hasInvalidNameEvents && !ringBufferFull;
+};
+
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canBegin = false;
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -1010,6 +1034,7 @@ bool hasEventWithName(const char* name);
 bool hasFlowEvent(u32 flowId);
 bool eventNameMatches(const ProfileEvent& event, const char* name);
 bool isFlowPairedInBuffer(u32 flowId);
+bool tryFindFirstEventIndexByFlow(u32 flowId, u32& outIndex);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
