@@ -9,6 +9,8 @@
 
 namespace fuse::project {
 
+struct CookCacheEntry;
+
 enum class CookHashRejectReason : u8 {
     None,
     NullData,
@@ -18,6 +20,7 @@ enum class CookHashRejectReason : u8 {
     SourceUnreadable,
     EmptyDependencyList,
     ZeroSourceHash,
+    UnsupportedAssetKind,
 };
 
 /// Read-only hash preflight — mirrors empty-input guards without computing keys (B7.9 deepen).
@@ -70,5 +73,10 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 /// Fold source/upstream preflight — upstream zero is allowed on valid source keys (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+/// Structural + source-readability preflight for cache records — shader kind is rejected (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+/// Manifest entry plus upstream dependency preflight — empty deps skip upstream fold (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_manifest_entry_with_dependencies(const CookManifestEntry& entry,
+                                                                           const CookManifest& manifest);
 
 } // namespace fuse::project

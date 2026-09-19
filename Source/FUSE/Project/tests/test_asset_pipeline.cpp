@@ -1649,6 +1649,56 @@ void testCookerReconcileEstimateProbes() {
                "changed upstream entry remains stale for prune reconcile");
 }
 
+void testCookerUpstreamInvalidationEstimate() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_up_est_a.obj", "# up est a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_up_est_b.obj", "# up est b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry_a;
+    entry_a.kind = fuse::project::CookAssetKind::Mesh;
+    entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_up_est_a.fusemesh";
+    manifest.assets.push_back(entry_a);
+
+    fuse::project::CookManifestEntry entry_b;
+    entry_b.kind = fuse::project::CookAssetKind::Mesh;
+    entry_b.source_path = source_b;
+    entry_b.output_path = "/tmp/fuse_b79_up_est_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for upstream estimate ok");
+    expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would not reconcile");
+
+    const fuse::project::CookCacheUpstreamInvalidationEstimate estimate =
+        cooker.estimate_upstream_invalidation(manifest, source_a);
+    expectTrue(estimate.source_entries == 1u, "upstream estimate counts source entry");
+    expectTrue(estimate.downstream_entries == 1u, "upstream estimate counts downstream entry");
+    expectTrue(estimate.total() == cooker.count_upstream_invalidation(manifest, source_a),
+               "upstream estimate total matches count probe");
+
+    const fuse::project::CookCacheUpstreamInvalidationEstimate empty =
+        cooker.estimate_upstream_invalidation(manifest, "");
+    expectTrue(empty.total() == 0u, "empty changed source upstream estimate is zero");
+
+    writeTempFile(source_a, "# up est a revised\n");
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "stale upstream makes would_reconcile true");
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+    std::vector<std::pair<std::string, fuse::u64>> source_upstream;
+    for (const fuse::project::CookJob& job : graph.jobs()) {
+        source_upstream.emplace_back(job.source_path, 0u);
+    }
+    expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes(source_upstream),
+               "mismatched upstream hash would_invalidate stale upstream");
+    expectTrue(cooker.cache().count_unique_stale_upstream_sources(source_upstream) >= 1u,
+               "unique stale upstream source count is non-zero");
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()),
+               "would_invalidate_downstream reports dependents");
+}
+
 void testCookCacheDownstreamSourceProbe() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_downstream_a.obj", "# downstream a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_downstream_b.obj", "# downstream b\n");
@@ -1789,6 +1839,7 @@ int main() {
     testCookDirtyInvalidatesCache();
     testCookerInvalidationCountProbes();
     testCookerReconcileEstimateProbes();
+    testCookerUpstreamInvalidationEstimate();
     testCookCacheDownstreamSourceProbe();
 
     fuse::core::shutdown();
