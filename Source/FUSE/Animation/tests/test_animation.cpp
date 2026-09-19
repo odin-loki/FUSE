@@ -2364,3 +2364,6 @@ int main() {
     std::fprintf(stderr, "fuse_animation_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b71-ik-solve-helpers-edb4 ---
+void testPoseBindFallbackGuards() {
