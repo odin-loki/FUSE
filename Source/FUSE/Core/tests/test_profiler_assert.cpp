@@ -3764,3 +3764,30 @@ void testChromeTraceExportPreflightDetachedFlowNotClean() {
     expectTrue(reconciledPreflight.canExportCleanly(),
     testChromeTraceExportPreflightBufferFullAndCleanExport();
     testChromeTraceExportPreflightDetachedFlowNotClean();
+
+// --- deepen additive from deepen-b16-profiler-guards-ce9d ---
+    expectTrue(!fuse::profiler::tryFindEventByName(nullptr, outEvent),
+               "tryFindEventByName false for null name");
+    expectTrue(!fuse::profiler::tryFindEventByName("", outEvent),
+               "tryFindEventByName false for empty name");
+    expectTrue(!fuse::profiler::tryFindEventByName("missing", outEvent),
+    expectTrue(fuse::profiler::tryFindEventByName("find_me", outEvent),
+               "tryFindEventByName finds scope begin");
+               "tryFindEventByName returns first matching event phase");
+               "tryFindEventByName copies matching name");
+    expectTrue(fuse::profiler::tryFindEventByName("find_counter", outEvent),
+               "tryFindEventByName finds counter by track name");
+               "tryFindEventByName finds counter phase");
+    expectTrue(outEvent.counterIntValue == 8, "tryFindEventByName copies counter payload");
+void testTryFirstEventOfPhaseGuard() {
+    expectTrue(fuse::profiler::tryFirstEventOfPhase(fuse::profiler::EventPhase::FlowStart, outEvent),
+               "tryFirstEventOfPhase finds first flow start");
+               "tryFirstEventOfPhase copies flow start name");
+               "tryFirstEventOfPhase finds first scope begin");
+               "tryFirstEventOfPhase copies scope begin name");
+void testReconcileDetachedFlowNestingDepthGuard() {
+    expectTrue(emptyPreflight.canExportClean(), "preflight canExportClean on balanced empty buffer");
+    const fuse::profiler::ChromeTraceExportPreflight cleanPreflight =
+    expectTrue(cleanPreflight.canExportClean(), "preflight canExportClean with balanced paired scope");
+    expectTrue(!cleanPreflight.bufferFull, "preflight bufferFull false below ring capacity");
+    expectTrue(!openPreflight.canExportClean(),
