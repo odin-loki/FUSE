@@ -311,3 +311,6 @@ const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason);
     [[nodiscard]] bool should_skip_invalidate_stale_upstream_hashes(
     [[nodiscard]] bool should_skip_invalidate_downstream_of(const std::string& output_path,
     [[nodiscard]] static bool should_skip_store(const CookCacheEntry& entry);
+
+// --- deepen additive from deepen-b79-cooker-hash-b3b9 ---
+    [[nodiscard]] bool should_skip_prune_reconcile() const;

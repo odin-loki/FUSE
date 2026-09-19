@@ -1855,3 +1855,21 @@ void testCookCacheShouldSkipStoreGuard() {
     expectTrue(!cooker.cache().would_invalidate_stale_content_for_source("", seeded.content_hash),
                "would_invalidate_stale_content false for empty source path");
     expectTrue(prune.should_skip() == !cooker.cache().would_prune_all(),
+
+// --- deepen additive from deepen-b79-cooker-hash-b3b9 ---
+    expectTrue(fuse::project::should_skip_file_content_hash("/tmp/fuse_b79_should_skip_missing.obj"),
+    expectTrue(fuse::project::should_skip_mesh_import_hash(mesh),
+    expectTrue(fuse::project::preflight_mesh_import_hash(mesh).should_skip(),
+               "preflight should_skip true for empty mesh input");
+               "should_skip_cook_cache_key true for zero source hash");
+               "should_skip_combine allows zero upstream on valid source");
+               "should_skip_manifest_entry_hash false for readable entry");
+               "should_skip_manifest_entry_hash true for unreadable dependency");
+               "should_skip_upstream_dependencies_hash false for known dependency");
+    expectTrue(fuse::project::should_skip_upstream_dependencies_hash({"/tmp/fuse_b79_unknown_dep.fusemesh"}, manifest),
+               "should_skip_upstream_dependencies_hash true for unknown dependency output");
+void testCookCachePruneReconcileShouldSkipGuards() {
+    expectTrue(cache.estimate_prune_removals().should_skip(), "empty cache prune estimate should_skip");
+    expectTrue(cache.should_skip_prune_reconcile(), "empty cache should_skip_prune_reconcile");
+    expectTrue(!cache.estimate_prune_removals().should_skip(), "shader stale prune estimate should not skip");
+    expectTrue(!cache.should_skip_prune_reconcile(), "shader stale cache should not skip prune reconcile");

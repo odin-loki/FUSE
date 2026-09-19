@@ -959,3 +959,7 @@ bool CookCache::should_skip_invalidate_output(const std::string& output_path) co
     return !would_invalidate_stale_upstream_hashes(source_upstream_by_path);
     return !would_invalidate_downstream_of(output_path, edges, jobs);
 bool CookCache::should_skip_store(const CookCacheEntry& entry) {
+
+// --- deepen additive from deepen-b79-cooker-hash-b3b9 ---
+bool CookCache::should_skip_prune_reconcile() const {
+    return estimate_prune_removals().should_skip();

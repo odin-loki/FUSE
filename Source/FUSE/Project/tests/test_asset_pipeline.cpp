@@ -2271,3 +2271,15 @@ void testCookerReconcileShouldSkipGuards() {
                "should_skip_upstream false when chain would be invalidated");
                "would_invalidate_stale_upstream or stale count non-zero after change");
                "would_invalidate_downstream true for dependent chain");
+
+// --- deepen additive from deepen-b79-cooker-hash-b3b9 ---
+    expectTrue(cooker.should_skip_prune_reconcile(), "fresh cache should_skip_prune_reconcile");
+    expectTrue(cooker.should_skip_reconcile_invalidation(manifest), "fresh cache should_skip_reconcile_invalidation");
+    expectTrue(!upstream_plan.should_skip(), "upstream reconcile plan should not skip when entries exist");
+               "stale cache should_skip_reconcile_invalidation is false");
+    expectTrue(!after.should_skip(), "after stale invalidation reconcile estimate still has prune work");
+    expectTrue(cooker.should_skip_reconcile_invalidation(empty_manifest),
+               "empty manifest reconcile should_skip on empty cache");
+    expectTrue(cooker.should_skip_prune_reconcile(), "empty cache prune reconcile should_skip");
+    expectTrue(cooker.estimate_reconcile_invalidation(empty_manifest).should_skip(),
+               "empty manifest reconcile estimate should_skip");
