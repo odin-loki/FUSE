@@ -1306,6 +1306,86 @@ bool hasActiveAsyncFlowNesting() {
     return flowNestingDepth() > 0u;
 }
 
+bool hasNestingCleanupPending() {
+    return hasUnbalancedNesting() || isFlowDepthDetached() || isCrossThreadFlowHandoffPending();
+}
+
+bool isFlowPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+}
+
+bool eventMatchesName(const ProfileEvent& event, const char* name) {
+    return isValidEventName(event.name) && isValidEventName(name)
+        && std::strcmp(event.name, name) == 0;
+}
+
+bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
+    return flowId != 0u && isFlowPhase(event.phase) && event.scopeId == flowId
+        && isValidEventName(event.name);
+}
+
+bool hasMatchingFlowFinish(const ProfileEvent& flowStart) {
+    if (flowStart.phase != EventPhase::FlowStart || !isValidEventName(flowStart.name)) {
+        return false;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.phase == EventPhase::FlowFinish && event.scopeId == flowStart.scopeId
+            && isValidEventName(event.name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool hasMatchingFlowStart(const ProfileEvent& flowFinish) {
+    if (flowFinish.phase != EventPhase::FlowFinish || !isValidEventName(flowFinish.name)) {
+        return false;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.phase == EventPhase::FlowStart && event.scopeId == flowFinish.scopeId
+            && isValidEventName(event.name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+u32 orphanFlowStartCount() {
+    u32 orphans = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.phase == EventPhase::FlowStart && isValidEventName(event.name)
+            && !hasMatchingFlowFinish(event)) {
+            ++orphans;
+        }
+    }
+    return orphans;
+}
+
+u32 orphanFlowFinishCount() {
+    u32 orphans = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.phase == EventPhase::FlowFinish && isValidEventName(event.name)
+            && !hasMatchingFlowStart(event)) {
+            ++orphans;
+        }
+    }
+    return orphans;
+}
+
+bool hasOrphanFlowEvents() {
+    return orphanFlowStartCount() > 0u || orphanFlowFinishCount() > 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -2303,6 +2383,11 @@ bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+bool tryFindExportableEventByName(const char* name, ProfileEvent& outEvent) {
+
+
+bool tryFindExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 bool tryFirstEvent(ProfileEvent& outEvent) {
@@ -4079,6 +4164,17 @@ bool isFlowIdOpen(u32 flowId) {
             --openCount;
     return openCount > 0u;
 
+
+
+
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -4787,16 +4883,12 @@ NestingConsistencyPreflight preflightNestingConsistency() {
 
 
 
-    return preflight;
-}
 
 ScopeNestingPreflight preflightScopeNesting() {
     ScopeNestingPreflight preflight{};
     preflight.activeDepth = scopeNestingDepth();
     preflight.maxDepth = maxNestingDepth();
     preflight.balanced = isScopeNestingBalanced();
-    return preflight;
-}
 
 AsyncFlowPreflight preflightAsyncFlow() {
     AsyncFlowPreflight preflight{};
@@ -4806,6 +4898,9 @@ AsyncFlowPreflight preflightAsyncFlow() {
     preflight.balanced = isFlowNestingBalanced();
     preflight.depthDetached = isFlowDepthDetached();
     preflight.crossThreadHandoffPending = isCrossThreadFlowHandoffPending();
+    preflight.orphanFlowStartCount = orphanFlowStartCount();
+    preflight.orphanFlowFinishCount = orphanFlowFinishCount();
+    preflight.hasOrphanFlowEvents = hasOrphanFlowEvents();
     return preflight;
 }
 

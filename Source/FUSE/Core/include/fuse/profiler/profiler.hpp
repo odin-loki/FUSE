@@ -254,6 +254,9 @@ struct ChromeTraceExportPreflight {
 
     bool scopeEventsUnbalanced = false;
     bool flowEventsUnbalanced = false;
+    u32 orphanFlowStartCount = 0;
+    u32 orphanFlowFinishCount = 0;
+    bool hasOrphanFlowEvents = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -290,6 +293,10 @@ struct ChromeTraceExportPreflight {
             && !hasInvalidNameEvents;
             && !hasInvalidNameEvents && !ringBufferFull;
             && !ringBufferFull && !hasInvalidNameEvents;
+    bool hasNestingCleanupPending() const {
+        return hasUnbalancedNesting() || flowDepthDetached || crossThreadFlowHandoffPending;
+    }
+        return canExport() && !hasNestingCleanupPending() && !hasInvalidNameEvents;
     }
 
     bool canExportSafely() const {
@@ -833,6 +840,10 @@ u32 unpairedAsyncFlowIdCount();
 bool isScopeNameBalancedInBuffer(const char* name);
 bool isNestingPreflightClean();
 bool isFlowIdOpen(u32 flowId);
+bool hasNestingCleanupPending();
+u32 orphanFlowStartCount();
+u32 orphanFlowFinishCount();
+bool hasOrphanFlowEvents();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();
@@ -1168,6 +1179,8 @@ bool tryFirstEventByName(const char* name, ProfileEvent& outEvent);
 bool tryLastEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+bool tryFindExportableEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
 bool tryFirstExportableEvent(ProfileEvent& outEvent);
