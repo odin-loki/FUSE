@@ -475,4 +475,16 @@ PairBufferPreflight preflight_pair_buffer(const PairBufferSoA& buffer);
 /// True when compaction would be a no-op (B4.2 deepen pass).
 bool should_skip_pair_buffer_compaction(const PairBufferSoA& buffer);
 
+
+    bool canPush() const { return !invalidPair && !atCapacity; }
+
+
+
+    bool needsCompaction() const { return !emptyBuffer && !allValid; }
+
+
+
+    bool needsClamp() const { return !emptyBuffer && !withinCapacity; }
+
+
 } // namespace fuse::physics::broadphase

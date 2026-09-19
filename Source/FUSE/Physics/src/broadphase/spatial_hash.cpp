@@ -495,6 +495,18 @@ bool should_skip_refine_broadphase(
     return preflight_refine_broadphase(bodies, shapes, buffer).skipped;
 }
 
+const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
+    switch (reason) {
+    case CellOccupancyRejectReason::None:
+        return "None";
+    case CellOccupancyRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellOccupancyRejectReason::ExceedsBudget:
+        return "ExceedsBudget";
+    }
+    return "Unknown";
+}
+
 namespace {
 
 constexpr u32 kBuildGrainSize = 8u;
@@ -812,6 +824,7 @@ void dedupeBuffer(PairBufferSoA& buffer) {
     if (should_skip_pair_buffer_dedupe(buffer)) {
     const BroadphaseDedupePreflight preflight = preflight_dedupe_pairs(buffer);
     if (!preflight.can_dedupe()) {
+    if (!shouldRunDedupeBroadphase(buffer)) {
         return;
     }
 
@@ -1268,6 +1281,15 @@ CandidatePairRejectReason candidatePairRejectReason(
         return CandidatePairRejectReason::AabbSeparated;
 
     return CandidatePairRejectReason::None;
+    return preflight;
+}
+
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+
+    preflight.emptyBuffer = buffer.canSkipSoAIteration();
+
 }
 
 void refineBroadphasePairsParallel(

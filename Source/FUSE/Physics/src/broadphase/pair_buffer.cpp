@@ -973,6 +973,13 @@ bool should_skip_pair_buffer_dedupe(const PairBufferSoA& buffer) {
 
 bool should_skip_pair_buffer_compaction(const PairBufferSoA& buffer) {
     return preflight_pair_buffer(buffer).skipCompaction;
+    preflight.invalidPair = !isValidCandidatePair(idxA, idxB);
+    preflight.atCapacity = buffer.isFull();
+
+    preflight.emptyBuffer = buffer.canSkipSoAIteration();
+    preflight.allValid = !preflight.emptyBuffer && buffer.canSkipCompaction();
+
+    preflight.withinCapacity = preflight.emptyBuffer || !buffer.canApplyMaxCapacityClamp();
 }
 
 } // namespace fuse::physics::broadphase
