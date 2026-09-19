@@ -1653,6 +1653,8 @@ struct InteractionPreflight {
             return begin.isSnapDegraded();
             return update.snapDegraded() || end.snapDegraded();
         return false;
+    /// Any interaction path allowed for the active lifecycle phase (B6.4 deepen pass).
+            return canPick() || canBegin();
     }
 };
 
@@ -1881,6 +1883,18 @@ bool canUpdateInteraction(const GizmoHitTest& hit, bool dragging, GizmoAxis acti
 bool canEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
 
 /// Non-mutating combined interaction predicate — mirrors `InteractionPreflight::canInteract` (B6.4 deepen pass).
+bool canInteract(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                 const GizmoSnapSettings& settings);
+bool canInteract(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
+                 GizmoAxis activeAxis, GizmoMode mode, GizmoSpace space, f32 axisLength,
+                 f32 pickRadius, const GizmoSnapSettings& settings);
+
+/// Non-mutating phase-routing predicates — same guards as `InteractionPreflight` (B6.4 deepen pass).
+bool canActOnPhase(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                   const GizmoSnapSettings& settings);
+bool canActOnPhase(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
+                   GizmoAxis activeAxis, GizmoMode mode, GizmoSpace space, f32 axisLength,
+                   f32 pickRadius, const GizmoSnapSettings& settings);
 bool canInteract(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
                  const GizmoSnapSettings& settings);
 bool canInteract(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
@@ -2403,6 +2417,7 @@ public:
     [[nodiscard]] bool canInteract(const GizmoHitTest& hit) const;
     [[nodiscard]] bool canInteract(const GizmoRay& ray, const GizmoTransform& transform) const;
     [[nodiscard]] SnapPhasePreflight preflightSnapPhase() const;
+    /// Non-mutating phase-routing predicates — same guards as `preflightInteraction` (B6.4 deepen pass).
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);

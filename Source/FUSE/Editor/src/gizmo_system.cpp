@@ -2839,6 +2839,14 @@ bool canInteract(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, G
     return preflightInteraction(hit, dragging, activeAxis, mode, settings).canInteract();
 
 bool canInteract(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
+}
+
+                 const GizmoSnapSettings& settings) {
+
+                 GizmoAxis activeAxis, GizmoMode mode, GizmoSpace space, f32 axisLength,
+                 f32 pickRadius, const GizmoSnapSettings& settings) {
+    return preflightInteraction(ray, transform, dragging, activeAxis, mode, space, axisLength,
+                                pickRadius, settings)
         .canInteract();
 }
 
@@ -4645,6 +4653,11 @@ SnapPhasePreflight GizmoSystem::preflightSnapPhase() const {
     return fuse::editor::preflightSnapPhase(m_mode, m_snap,
                                             interactionPhase(m_dragging));
 
+
+
+    return preflightInteraction(hit).canInteract();
+
+    return preflightInteraction(ray, transform).canInteract();
 }
 
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {

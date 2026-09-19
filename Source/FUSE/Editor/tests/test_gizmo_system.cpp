@@ -6740,6 +6740,8 @@ void testInteractionPreflightSnapHelpers() {
     fuse::editor::GizmoSnapSettings snap{};
     snap.translateSnap = true;
     snap.gridSize = 0.f;
+void testInteractionCanInteractRouting() {
+    snap.gridSize = 1.f;
 
     fuse::editor::GizmoHitTest hit{};
     hit.viewportWidth = 100.f;
@@ -6762,7 +6764,6 @@ void testInteractionPreflightSnapHelpers() {
 
     hit.screenX = -5.f;
     const fuse::editor::InteractionPreflight outOfBoundsActive = fuse::editor::preflightInteraction(
-        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
     expectTrue(!outOfBoundsActive.canActOnPhase(),
                "out-of-bounds active interaction blocks primary update action");
     expectTrue(outOfBoundsActive.canEndOnPhase(),
@@ -6785,6 +6786,61 @@ void testInteractionPreflightSnapHelpers() {
 }
 
 void testGizmoPreflightRouter() {
+    const fuse::editor::InteractionPreflight idleInteraction = fuse::editor::preflightInteraction(
+    expectTrue(idleInteraction.canInteract(), "idle interaction allows pick or begin");
+    expectTrue(idleInteraction.canActOnPhase(), "idle interaction primary action is begin");
+    expectTrue(fuse::editor::canInteract(hit, false, fuse::editor::GizmoAxis::None,
+                                           fuse::editor::GizmoMode::Translate, snap),
+               "canInteract accepts idle pick/begin path");
+    expectTrue(fuse::editor::canActOnPhase(hit, false, fuse::editor::GizmoAxis::None,
+               "canActOnPhase accepts idle begin path");
+
+    const fuse::editor::InteractionPreflight activeInteraction = fuse::editor::preflightInteraction(
+    expectTrue(activeInteraction.canInteract(), "active interaction allows update or end");
+    expectTrue(activeInteraction.canActOnPhase(), "active interaction primary action is update");
+
+    const fuse::editor::InteractionPreflight outOfBoundsInteraction =
+        fuse::editor::preflightInteraction(hit, true, fuse::editor::GizmoAxis::X,
+    expectTrue(!outOfBoundsInteraction.canActOnPhase(),
+               "out-of-bounds hit blocks primary update action");
+    expectTrue(outOfBoundsInteraction.canInteract(),
+               "out-of-bounds hit still allows end interaction path");
+    expectTrue(!fuse::editor::canActOnPhase(hit, true, fuse::editor::GizmoAxis::X,
+               "canActOnPhase rejects out-of-bounds update");
+    expectTrue(fuse::editor::canInteract(hit, true, fuse::editor::GizmoAxis::X,
+               "canInteract accepts end path when update is blocked");
+
+    fuse::editor::GizmoTransform transform{};
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    expectTrue(fuse::editor::canInteract(xRay, transform, false, fuse::editor::GizmoAxis::None,
+                                         fuse::editor::GizmoMode::Translate,
+                                         fuse::editor::GizmoSpace::World,
+                                         fuse::editor::GizmoSystem::kAxisLength,
+                                         fuse::editor::GizmoSystem::kPickRadius, snap),
+               "canInteract accepts valid ray when idle");
+    expectTrue(fuse::editor::canActOnPhase(xRay, transform, false, fuse::editor::GizmoAxis::None,
+               "canActOnPhase accepts valid ray begin path when idle");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    expectTrue(gizmo.canInteract(hit), "gizmo canInteract accepts idle pick/begin path");
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo canActOnPhase accepts idle begin path");
+    expectTrue(gizmo.canInteract(xRay, transform),
+               "gizmo canInteract accepts valid ray when idle");
+    expectTrue(gizmo.canActOnPhase(xRay, transform),
+               "gizmo canActOnPhase accepts valid ray begin path when idle");
+
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.canInteract(hit), "gizmo canInteract accepts active update/end path");
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo canActOnPhase accepts active update path");
+
+    expectTrue(!gizmo.canActOnPhase(hit),
+               "gizmo canActOnPhase rejects out-of-bounds update");
+    expectTrue(gizmo.canInteract(hit),
+               "gizmo canInteract accepts end path when update is blocked");
+    gizmo.endDrag();
+
+void testCanInteractionPredicates() {
     fuse::editor::GizmoSnapSettings snap{};
     snap.translateSnap = true;
     snap.gridSize = 1.f;
@@ -7348,6 +7404,7 @@ int main() {
     testShouldSkipPreflights();
     testInteractionPrimaryRejectReason();
     testCanActOnPhaseGuards();
+    testInteractionCanInteractRouting();
     testCanInteractionPredicates();
     testPickRejectReasonGuards();
     testSnapRejectReasonGuards();
