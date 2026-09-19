@@ -73,6 +73,21 @@ struct WorldSnapshotInfo {
     u32 entityCount = 0;
 };
 
+/// Read-only world-snapshot restore diagnostics (B6.12 deepen follow-up — restore guard).
+struct WorldSnapshotPreflight {
+    bool captured = false;
+    u32 entityCount = 0;
+    bool skipped = false;
+
+    bool canRestore() const { return captured; }
+};
+
+/// Captured world snapshot metadata for PIE restore (B6.12 deepen follow-up).
+struct WorldSnapshotInfo {
+    bool captured = false;
+    u32 entityCount = 0;
+};
+
 /// Combined PIE frame preflight — variable tick plus fixed-step drain (B6.12 deepen follow-up).
 struct TickFixedStepPreflight {
     bool variableTickSkipped = false;
@@ -100,12 +115,10 @@ struct TickFixedStepPreflight {
 
     bool captured = false;
     u32 entityCount = 0;
-};
 
 /// Captured world snapshot metadata for PIE restore (B6.12 deepen follow-up).
 struct WorldSnapshotInfo {
-    bool captured = false;
-    u32 entityCount = 0;
+    bool wouldSimulateFrame() const { return !variableTickSkipped || fixedStep.canDrain(); }
 };
 
 /// ECS world snapshot for PIE restore (B6.12 deepen — transform payloads per entity).
@@ -175,6 +188,9 @@ public:
     bool shouldSkipDirtySnapshotRestore() const { return !m_hasDirtySnapshot; }
     bool shouldSkipDirtySnapshotDrain() const;
     bool shouldSkipWorldSnapshotDrain() const;
+    bool shouldSkipDirtySnapshotDrain() const { return shouldSkipDirtySnapshotRestore(); }
+    bool shouldSkipWorldSnapshotRestore() const { return !m_hasWorldSnapshot; }
+    bool shouldSkipWorldSnapshotDrain() const { return shouldSkipWorldSnapshotRestore(); }
     /// Preflight dirty-flag restore without mutating editor state.
     DirtySnapshotPreflight preflightDirtySnapshot() const;
     /// Preflight world-snapshot drain without mutating editor state.
@@ -190,6 +206,8 @@ public:
     /// Sub-fixed remainder in `tickAccumulator()` after draining `fixedDt` slices.
     f32 tickAccumulatorRemainder(f32 fixedDt) const;
     bool canDrainDirtySnapshot() const { return !shouldSkipDirtySnapshotDrain(); }
+    /// Preflight world-snapshot restore without mutating editor state.
+    bool canRestoreWorldSnapshot() const { return preflightWorldSnapshot().canRestore(); }
     u32 dirtySnapshotEntityCount() const {
         return m_hasDirtySnapshot ? static_cast<u32>(m_dirtySnapshot.transformDirty.size()) : 0u;
     }
