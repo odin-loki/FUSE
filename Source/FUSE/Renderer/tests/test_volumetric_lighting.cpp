@@ -3682,3 +3682,6 @@ void testFroxelRejectClassifyAndPreflightGuards() {
     expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulate(desc, camera, zeroMarch),
                "preflightFroxelPopulate rejects zero march steps");
     testFroxelRejectClassifyAndPreflightGuards();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-c27f ---
+               "preflightScreenDepthToSampleCoords rejects empty grid");

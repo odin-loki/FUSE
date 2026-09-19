@@ -2305,3 +2305,6 @@ bool preflightDensityLookupCoord(const FroxelDensityGrid& grid,
         classifyDensityLookupCoordReject(grid, desc, tileX, tileY, sliceZ));
     return froxelTrilinearSampleRejectReasonIsBlocking(classifyFroxelTrilinearSampleReject(grid, desc, coords));
     return froxelPopulateRejectReasonIsBlocking(classifyFroxelPopulateReject(desc, camera, params));
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-c27f ---
+    ScreenMappingRejectReason reject = classifyScreenMappingReject(screenX, screenY, viewDepth, desc, camera);
