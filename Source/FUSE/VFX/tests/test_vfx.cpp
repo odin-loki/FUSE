@@ -2350,3 +2350,34 @@ void testParticleGpuEmptyBufferPackGuards() {
     expectTrue(!packed.empty(), "tryPackToDeviceLayout produces bytes");
     expectTrue(!mirror.tryPackToDeviceLayout(packed), "tryPackToDeviceLayout fails on stale alive_count");
     testParticleGpuBuffersPreflight();
+
+// --- deepen additive from deepen-vfx-gpu-emission-buffer-guards-f997 ---
+void testParticleGpuEmitSimGuards() {
+    expectTrue(!fuse::vfx::should_skip_sim_when_empty(8u), "should_skip_sim_when_empty false with live particles");
+    expectTrue(fuse::vfx::should_skip_emit_when_full(4u, 0u), "should_skip_emit_when_full when no free slots");
+    expectTrue(!fuse::vfx::should_skip_emit_when_full(0u, 0u), "zero emit is not full-guarded");
+    expectTrue(!fuse::vfx::should_skip_emit_when_full(3u, 5u), "partial emit allowed with free slots");
+    const fuse::vfx::ParticleGpuEmitPreflight emit =
+    const fuse::vfx::ParticleGpuEmitPreflight full =
+    const fuse::vfx::ParticleGpuSimPreflight live =
+    const fuse::vfx::ParticleGpuSimPreflight empty =
+    expectTrue(!dead_sim.preflightSim().can_simulate(), "frame plan sim preflight empty");
+    const fuse::vfx::ParticleGpuEmitPreflight frame_emit = emit_full.preflightEmit(0u);
+    expectTrue(fuse::vfx::should_skip_pack(mirror), "should_skip_pack on uninitialized mirror");
+    const fuse::vfx::ParticleGpuPackPreflight empty_pack = mirror.preflightPack();
+    expectTrue(mirror.tryPackToDeviceLayout(packed), "tryPackToDeviceLayout succeeds after reserve");
+    const fuse::vfx::ParticleGpuPackPreflight ready_pack = mirror.preflightPack();
+    expectTrue(fuse::vfx::should_skip_unpack({}, 16u), "should_skip_unpack on empty bytes");
+    expectTrue(fuse::vfx::should_skip_unpack(packed, 0u), "should_skip_unpack on zero capacity");
+    const fuse::vfx::ParticleGpuPackPreflight unpack =
+        fuse::vfx::ParticleGpuMirror::preflightUnpack(packed, 16u);
+    const fuse::vfx::ParticleGpuPackPreflight undersized =
+        fuse::vfx::ParticleGpuMirror::preflightUnpack(truncated, 16u);
+    const fuse::vfx::ParticleGpuBufferPreflight buffer_preflight = buffers.preflight();
+void testParticleGpuFramePlanEmitSimPreflight() {
+    const fuse::vfx::ParticleGpuFramePreflight preflight = active.preflight();
+    const fuse::vfx::ParticleGpuEmitPreflight emit = active.preflightEmit(40u);
+    const fuse::vfx::ParticleGpuSimPreflight sim = active.preflightSim();
+    const fuse::vfx::ParticleGpuFramePreflight dead_preflight = dead.preflight();
+    const fuse::vfx::ParticleGpuFramePreflight full_preflight = full_emit.preflight();
+    testParticleGpuFramePlanEmitSimPreflight();

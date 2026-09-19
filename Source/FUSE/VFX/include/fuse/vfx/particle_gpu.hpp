@@ -334,3 +334,18 @@ struct ParticleGpuFrameLaunchPreflight {
     [[nodiscard]] ParticleGpuFrameLaunchPreflight launchPreflight() const;
 [[nodiscard]] bool should_skip_sim_when_empty(u32 alive_count);
 [[nodiscard]] bool should_skip_pack(u32 capacity);
+
+// --- deepen additive from deepen-vfx-gpu-emission-buffer-guards-f997 ---
+struct ParticleGpuPackPreflight {
+struct ParticleGpuEmitPreflight {
+    bool would_clamp = false;
+struct ParticleGpuSimPreflight {
+    [[nodiscard]] ParticleGpuPackPreflight preflightPack() const;
+    [[nodiscard]] static ParticleGpuPackPreflight preflightUnpack(const std::vector<u8>& bytes, u32 capacity);
+    [[nodiscard]] ParticleGpuEmitPreflight preflightEmit(u32 free_slots) const;
+    [[nodiscard]] ParticleGpuSimPreflight preflightSim() const;
+[[nodiscard]] bool should_skip_emit_when_full(u32 emit_count, u32 free_slots);
+[[nodiscard]] bool should_skip_pack(const ParticleGpuMirror& mirror);
+[[nodiscard]] bool should_skip_unpack(const std::vector<u8>& bytes, u32 capacity);
+[[nodiscard]] ParticleGpuEmitPreflight preflight_emit_dispatch(u32 emit_count, u32 free_slots);
+[[nodiscard]] ParticleGpuSimPreflight preflight_sim_dispatch(u32 alive_count, u32 capacity);

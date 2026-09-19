@@ -1007,3 +1007,30 @@ ParticleGpuFrameLaunchPreflight ParticleGpuFramePlan::launchPreflight() const {
 bool ParticleGpuFrameLaunchPreflight::ready_for_stub() const {
 bool should_skip_sim_when_empty(u32 alive_count) {
 bool should_skip_pack(u32 capacity) {
+
+// --- deepen additive from deepen-vfx-gpu-emission-buffer-guards-f997 ---
+bool ParticleGpuPackPreflight::can_pack() const {
+bool ParticleGpuPackPreflight::can_unpack() const {
+bool ParticleGpuEmitPreflight::can_emit() const {
+bool ParticleGpuSimPreflight::can_simulate() const {
+bool ParticleGpuBufferPreflight::can_bind() const {
+ParticleGpuPackPreflight ParticleGpuMirror::preflightPack() const {
+    ParticleGpuPackPreflight preflight{};
+    const ParticleGpuPackPreflight preflight = preflightPack();
+ParticleGpuPackPreflight ParticleGpuMirror::preflightUnpack(const std::vector<u8>& bytes, u32 particle_capacity) {
+    preflight.skip_pack = should_skip_unpack(bytes, particle_capacity);
+    return should_skip_sim_when_empty(alive_count) || skipSimLaunch();
+    return should_skip_emit_when_full(emit_count, free_slots) || skipEmitLaunch();
+ParticleGpuEmitPreflight ParticleGpuFramePlan::preflightEmit(u32 free_slots) const {
+ParticleGpuSimPreflight ParticleGpuFramePlan::preflightSim() const {
+    const ParticleGpuSimPreflight sim_preflight = preflightSim();
+    const ParticleGpuEmitPreflight emit_preflight = preflightEmit(free_slots);
+bool should_skip_emit_when_full(u32 emit_count, u32 free_slots) {
+bool should_skip_pack(const ParticleGpuMirror& mirror) {
+bool should_skip_unpack(const std::vector<u8>& bytes, u32 capacity) {
+ParticleGpuEmitPreflight preflight_emit_dispatch(u32 emit_count, u32 free_slots) {
+    ParticleGpuEmitPreflight preflight{};
+    preflight.skip_emit = should_skip_emit_dispatch(emit_count) || should_skip_emit_when_full(emit_count, free_slots);
+ParticleGpuSimPreflight preflight_sim_dispatch(u32 alive_count, u32 capacity) {
+    ParticleGpuSimPreflight preflight{};
+    preflight.skip_sim = should_skip_sim_dispatch(capacity) || should_skip_sim_when_empty(alive_count);
