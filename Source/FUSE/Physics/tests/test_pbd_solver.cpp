@@ -4003,3 +4003,41 @@ void testPreflightIslandSleepWakeGraphGuards() {
     const IslandSolveBodyRefsPreflight bodyRefs = preflight_island_solve_bodies(staleIsland, bodies);
     expectTrue(!should_skip_island_solve_bodies(staleIsland, bodies),
                "should_skip bodies false when in-range bodies exist");
+
+// --- deepen additive from pbd-island-guards-deepen-77cf ---
+    const IslandBuildPreflight validPreflight = preflight_island_build(2, contacts, constraints);
+    expectTrue(validPreflight.can_build(), "valid island build preflight can build");
+    expectTrue(validPreflight.inRangeContactCount == 1u, "valid preflight counts in-range contacts");
+    expectTrue(validPreflight.inRangeDistanceCount == 1u, "valid preflight counts in-range distances");
+    expectTrue(!should_skip_island_build(2, contacts, constraints), "should_skip false for valid inputs");
+    expectTrue(std::strcmp(islandBuildRejectReasonName(IslandBuildRejectReason::ZeroBodyCount), "ZeroBodyCount") == 0,
+    const IslandBuildPreflight outOfRangeContact = preflight_island_build(2, contacts, constraints);
+    expectTrue(outOfRangeContact.reason == IslandBuildRejectReason::OutOfRangeContactBodies,
+    const IslandBuildPreflight outOfRangeDistance = preflight_island_build(2, contacts, constraints);
+    expectTrue(outOfRangeDistance.reason == IslandBuildRejectReason::OutOfRangeDistanceBodies,
+    expectTrue(!should_skip_island_body_refs(island, bodies), "should_skip false for valid body refs");
+void testPreflightIslandSolveRefsCombined() {
+    const IslandSolveRefsPreflight preflight =
+    expectTrue(!should_skip_island_solve_refs(island, bodies, contacts, constraints),
+               "should_skip false for valid combined refs");
+    const IslandSleepPreflight awakePreflight = preflight_island_sleep(island, awakeBodies);
+    expectTrue(!awakePreflight.skipped, "sleep preflight does not skip constrained island");
+    expectTrue(awakePreflight.dynamicAwakeCount == 2u, "sleep preflight counts awake dynamic bodies");
+    expectTrue(!awakePreflight.all_dynamic_sleeping(), "awake island is not fully sleeping");
+    expectTrue(!should_skip_island_solve_for_sleep(island, awakeBodies),
+    const IslandSleepPreflight sleepPreflight = preflight_island_sleep(island, sleepingBodies);
+    expectTrue(sleepPreflight.all_dynamic_sleeping(), "all dynamic bodies sleeping");
+    expectTrue(sleepPreflight.can_skip_solve(), "sleep preflight can skip solve");
+    expectTrue(should_skip_island_solve_for_sleep(island, sleepingBodies),
+               "should_skip sleep true for fully sleeping island");
+    const IslandSleepGraphPreflight graphPreflight = preflight_island_sleep_graph(graph, sleepingBodies);
+    expectTrue(graphPreflight.stats.fullySleepingCount == 1u,
+    expectTrue(graphPreflight.all_fully_sleeping(), "graph reports all islands fully sleeping");
+    expectTrue(wakePreflight.wakeCandidateCount >= 1u, "wake preflight counts moving body");
+    expectTrue(wakePreflight.penetratingContactCount >= 1u, "wake preflight counts penetrating contact");
+    expectTrue(wakePreflight.should_wake(), "wake preflight should wake island");
+    expectTrue(forcePreflight.externalForceCount >= 1u, "wake preflight counts external force");
+    expectTrue(forcePreflight.should_wake(), "external force triggers wake preflight");
+    const IslandWakeGraphPreflight graphPreflight =
+    expectTrue(graphPreflight.any_should_wake(), "graph wake preflight finds wakeable island");
+    testPreflightIslandSolveRefsCombined();

@@ -345,3 +345,10 @@ IslandBuildRejectReason island_build_reject_reason(
         preflight.reason = IslandBuildRejectReason::ZeroBodyCount;
         preflight.reason = IslandBuildRejectReason::StaleContactBodyRefs;
         preflight.reason = IslandBuildRejectReason::StaleDistanceBodyRefs;
+
+// --- deepen additive from pbd-island-guards-deepen-77cf ---
+    case IslandBuildRejectReason::OutOfRangeContactBodies:
+    case IslandBuildRejectReason::OutOfRangeDistanceBodies:
+        return IslandBuildRejectReason::ZeroBodyCount;
+            return IslandBuildRejectReason::OutOfRangeContactBodies;
+            return IslandBuildRejectReason::OutOfRangeDistanceBodies;
