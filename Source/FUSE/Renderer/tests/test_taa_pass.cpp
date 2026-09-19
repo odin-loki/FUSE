@@ -4872,3 +4872,7 @@ void testTaaPassTryClassifyGuardWrappers() {
     expectTrue(invalidPass->classifyJitterSyncReject() == fuse::renderer::TaaJitterGuardRejectReason::None,
     expectTrue(invalidPass->tryPreflightJitterSync(3u, jitterReason),
                "pass with fallback jitter sequence tryPreflightJitterSync passes");
+
+// --- deepen additive from deepen-b59-taa-pass-try-classify-ddb4 ---
+    expectTrue(zeroPass->classifyJitterAdvanceReject() ==
+               "zero-width pass classifyJitterAdvanceReject is None");
