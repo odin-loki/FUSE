@@ -18,11 +18,11 @@ void runNarrowphaseIntoBuffer(
     for (u32 pairIndex = 0; pairIndex < pairCount; ++pairIndex) {
         ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
         if (generate_contact_manifold(manifold)) {
-            buffer.writeSlot(pairIndex, manifold);
+            buffer.writeSlotWithPreflight(pairIndex, manifold);
         }
     }
 
-    buffer.compactAndClamp();
+    buffer.compactAndClampWithPreflight();
 }
 
 std::vector<ContactManifold> runNarrowphase(

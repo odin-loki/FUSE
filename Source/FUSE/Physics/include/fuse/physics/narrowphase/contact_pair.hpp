@@ -23,6 +23,7 @@ enum class ContactPairRejectReason : u8 {
     BothKinematic,
     AnyTrigger,
     BothMassless,
+    PlanePlane,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -222,6 +223,18 @@ NarrowphaseBatchPreflight preflight_narrowphase_batch(
 
 /// Returns true when batch preflight reports no dispatchable pairs (B4.5 deepen follow-up pass).
 bool narrowphase_batch_rejects_all(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Count pairs rejected by extended deepen preflight (B4.6 deepen pass).
+u32 count_rejected_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when narrowphase batch should be skipped before dispatch (B4.6 deepen pass).
+bool should_skip_narrowphase_batch(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);

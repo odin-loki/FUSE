@@ -103,6 +103,7 @@ enum class FrictionBasisRejectReason : u8 {
     None = 0,
     EmptyManifold,
     InvalidNormal,
+    StaleBasis,
 };
 
 /// Human-readable label for friction-basis reject reasons (B4.5 deepen follow-up pass).
@@ -126,7 +127,7 @@ struct FrictionBasisPreflight {
     bool needsRebuild = false;
 
     bool can_skip_rebuild() const {
-        return skipped || reason != FrictionBasisRejectReason::None || canReuse;
+        return skipped || (reason == FrictionBasisRejectReason::None && canReuse);
     }
 };
 
@@ -147,5 +148,8 @@ bool should_normalize_contact_normal_before_friction(
 
 /// Rebuild friction tangents only when preflight allows; returns false when skipped (B4.5 deepen follow-up pass).
 bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Build friction tangents only when preflight allows; no-op when skipped (B4.6 deepen pass).
+void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
