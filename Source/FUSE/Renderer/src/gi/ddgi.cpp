@@ -3390,3 +3390,13 @@ bool wouldSkipCacheSampling(const DDGIDesc& desc,
     return !preflightCacheSampling(desc, cache, cache_count);
 bool tryCanLaunchProbeKernels(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
     if (!tryCanLaunchProbeKernels(params, outReason)) {
+
+// --- deepen additive from deepen-ddgi-b56-guards-9273 ---
+ProbeTrilinearSampleRejectReason classifyTrilinearSampleRejectAtCoords(const DDGIDesc& desc,
+bool preflightTrilinearSampleAtCoords(const DDGIDesc& desc,
+        classifyTrilinearSampleRejectAtCoords(desc, coords, cache, cache_count);
+    return !preflightTrilinearSampleAtCoords(desc, coords, cache, cache_count);
+ProbeTrilinearSampleRejectReason classifyTrilinearSampleRejectAtWorld(const DDGIDesc& desc,
+    return classifyTrilinearSampleRejectAtCoords(desc, coords, cache, cache_count);
+        classifyTrilinearSampleRejectAtWorld(desc, world_position, cache, cache_count);
+    const ProbeScheduleRejectReason reject = classifyProbeScheduleAtRateReject(

@@ -1093,3 +1093,8 @@ bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridRejectReason* reaso
 // --- deepen additive from deepen-ddgi-b56-guards-dcb7 ---
 bool preflightCacheSampling(const DDGIDesc& desc,
 bool wouldSkipCacheSampling(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-b56-guards-9273 ---
+ProbeTrilinearSampleRejectReason classifyTrilinearSampleRejectAtCoords(const DDGIDesc& desc,
+bool preflightTrilinearSampleAtCoords(const DDGIDesc& desc,
+ProbeTrilinearSampleRejectReason classifyTrilinearSampleRejectAtWorld(const DDGIDesc& desc,

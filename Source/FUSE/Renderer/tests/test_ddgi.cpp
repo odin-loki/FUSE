@@ -4852,3 +4852,13 @@ void testKernelPreflightHelpers() {
                "preflightProbeBlendKernel zero count reports zero_update_count reason");
     testTrilinearAndCachePreflights();
     testKernelPreflightHelpers();
+
+// --- deepen additive from deepen-ddgi-b56-guards-9273 ---
+    expectTrue(fuse::renderer::ddgi_util::tryValidateProbeGridSource(desc, sourceReason),
+               "wouldSkipProbeGridSource false for default desc");
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearSampleAtCoords(
+               "preflightTrilinearSampleAtCoords succeeds for valid coords");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearSampleAtCoords(desc, built, cache.data(), 8u),
+               "wouldSkipTrilinearSampleAtCoords false for valid coords");
+    expectTrue(fuse::renderer::ddgi_util::classifyTrilinearSampleRejectAtCoords(desc, built, cache.data(), 8u) ==
+               "classifyTrilinearSampleRejectAtCoords none for valid inputs");
