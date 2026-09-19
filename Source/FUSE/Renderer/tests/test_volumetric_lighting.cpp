@@ -3825,3 +3825,16 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "preflightTrilinearSample reports invalid_sample_coords on hard OOB rejection");
                "classifyGridDensityReject undersized_storage for undersized grid");
                "preflightGridDensity reports undersized_storage on rejection");
+
+// --- deepen additive from deepen-froxel-b511-guards-fb8f ---
+               "preflightDensityLookup succeeds when only clamp warning applies");
+               "preflightDensityLookupCoord succeeds on accessible grid");
+               "preflightSampleCoords succeeds when only weights will clamp");
+               "preflightFroxelTrilinearSample succeeds when only weights will clamp");
+               "classifyGridDensityReject none for zero-dimension desc (vacuous pass)");
+               "preflightGridDensity succeeds vacuously for empty desc");
+               "classifyFroxelPopulateReject zero_density for zero density param");
+               "preflightFroxelPopulate rejects zero density param");
+               "preflightSampleCoords agrees with canPreflightSampleCoords");
+               "preflightDensityLookup agrees with canLookupAtIndex on accessible grid");
+               "preflightFroxelPopulate agrees with canPopulateFromAnalyticFog");
