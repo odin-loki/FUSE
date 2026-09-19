@@ -4734,3 +4734,10 @@ void testDispatchAllIslandsWithSleepWakeGuards() {
     expectTrue(should_skip_island_solve_dispatch(graph.island(sleepingIsland), bodies, contacts, constraints),
 void testDispatchSolveIslandGuardedWakesAndSolves() {
 void testDispatchAllIslandsGuardedBatch() {
+
+// --- deepen additive from deepen-pbd-island-guards-d51d ---
+void testPreflightIslandBuildSelfReferentialGuards() {
+               "should_skip_island_build on self-referential refs");
+    const IslandSolvePipelinePreflight mixedPipeline = preflight_island_solve_pipeline(
+    const IslandSolvePipelinePreflight outOfRange =
+    testPreflightIslandBuildSelfReferentialGuards();

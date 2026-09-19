@@ -1613,3 +1613,6 @@ IslandSleepSolveDispatchPreflight preflight_island_sleep_dispatch(const ContactI
 // --- deepen additive from deepen-pbd-island-sleep-wake-dispatch-db11 ---
 IslandSleepWakeDispatchPreflight preflight_island_sleep_wake_dispatch(const ContactIslandGraph& graph,
 bool should_skip_island_sleep_wake_dispatch(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-d51d ---
+bool should_skip_island_solve_pipeline_by_index(const ContactIslandGraph& graph,
