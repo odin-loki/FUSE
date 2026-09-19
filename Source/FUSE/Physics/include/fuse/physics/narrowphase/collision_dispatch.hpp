@@ -200,4 +200,27 @@ std::vector<ContactManifold> runNarrowphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Read-only narrowphase buffer dispatch diagnostics (B4.5 deepen pass).
+struct NarrowphaseDispatchPreflight {
+    bool emptyPairs = false;
+    bool allPairsDeepenRejected = false;
+    u32 pairCount = 0u;
+    u32 dispatchablePairCount = 0u;
+
+    bool can_prepare_buffer() const { return !emptyPairs; }
+    bool can_skip_entire_dispatch() const { return emptyPairs || allPairsDeepenRejected; }
+};
+
+/// Populate narrowphase dispatch preflight without mutating buffers (B4.5 deepen pass).
+NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when pair-slot narrowphase dispatch may be skipped via deepen preflight (B4.5 deepen pass).
+bool should_skip_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase

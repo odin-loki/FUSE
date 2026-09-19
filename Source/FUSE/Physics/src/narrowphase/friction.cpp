@@ -251,4 +251,41 @@ bool should_skip_friction_basis_preflight(
     return preflight_friction_basis_rebuild(manifold, epsilon).can_skip_rebuild();
 }
 
+const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason) {
+    switch (reason) {
+    case FrictionBasisRejectReason::None:
+        return "None";
+    case FrictionBasisRejectReason::Skipped:
+        return "Skipped";
+    case FrictionBasisRejectReason::CanReuse:
+        return "CanReuse";
+    }
+    return "Unknown";
+}
+
+FrictionBasisRejectReason friction_basis_reject_reason(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return FrictionBasisRejectReason::Skipped;
+    }
+    if (can_skip_friction_basis_rebuild(manifold, epsilon)) {
+        return FrictionBasisRejectReason::CanReuse;
+    }
+    return FrictionBasisRejectReason::None;
+}
+
+bool friction_basis_rejects_for_reason(
+    const ContactManifold& manifold,
+    FrictionBasisRejectReason expected,
+    f32 epsilon) {
+    return friction_basis_reject_reason(manifold, epsilon) == expected;
+}
+
+bool should_run_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    return !should_skip_friction_basis_preflight(manifold, epsilon);
+}
+
 } // namespace fuse::physics::narrowphase

@@ -192,4 +192,23 @@ bool has_dispatchable_contact_pair(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.5 deepen pass).
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Returns true when either shape is a plane with a non-unit normal (B4.5 deepen pass).
+bool is_unnormalized_plane_shape_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes,
+    f32 lengthEpsilon = 1e-4f);
+
+/// Returns true when either shape extent is positive but below the deepen epsilon (B4.5 deepen pass).
+bool is_near_degenerate_shape_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes,
+    f32 extentEpsilon = 1e-4f);
+
 } // namespace fuse::physics::narrowphase
