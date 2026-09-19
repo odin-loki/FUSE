@@ -2199,3 +2199,17 @@ bool hrtf_binaural_narrowing_rejects_for_reason(const HrtfBinauralPreflight& pre
 HrtfIrRejectReason hrtf_binaural_convolution_reject_reason(const HrtfBinauralPreflight& preflight) {
 HrtfAttenuationCouplingRejectReason hrtf_binaural_attenuation_reject_reason(
     const HrtfBinauralPreflight& preflight, HrtfAttenuationCouplingRejectReason expected) {
+
+// --- deepen additive from b7-2-hrtf-reject-reason-wrappers-9678 ---
+HrtfIrRejectReason hrtf_ir_reject_reason(const HrtfIrPreflight& preflight) {
+HrtfPanPathRejectReason hrtf_pan_path_reject_reason(const HrtfPanPathPreflight& preflight) {
+HrtfBinauralRejectReason map_ir_reject_reason(HrtfIrRejectReason reason) {
+HrtfBinauralRejectReason map_pan_path_reject_reason(HrtfPanPathRejectReason reason) {
+HrtfBinauralRejectReason map_attenuation_coupling_reject_reason(
+HrtfIrRejectReason hrtf_binaural_ir_reject_reason(const HrtfBinauralPreflight& preflight) {
+HrtfPanPathRejectReason hrtf_binaural_pan_path_reject_reason(const HrtfBinauralPreflight& preflight) {
+HrtfAttenuationCouplingRejectReason hrtf_binaural_attenuation_coupling_reject_reason(
+bool hrtf_binaural_rejects_ir_for_reason(const HrtfBinauralPreflight& preflight,
+bool hrtf_binaural_rejects_pan_path_for_reason(const HrtfBinauralPreflight& preflight,
+HrtfBinauralRejectReason hrtf_binaural_pan_reject_reason(const HrtfBinauralPreflight& preflight) {
+bool hrtf_binaural_pan_rejects_for_reason(const HrtfBinauralPreflight& preflight,

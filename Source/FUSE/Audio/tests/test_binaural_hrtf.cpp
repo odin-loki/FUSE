@@ -2624,3 +2624,9 @@ void testHrtfPanConvolveRejectReasonGuards() {
 void testHrtfBinauralRejectReasonWrappers() {
                    stub_preflight, fuse::audio::HrtfIrRejectReason::NullSamples),
     testHrtfBinauralRejectReasonWrappers();
+
+// --- deepen additive from b7-2-hrtf-reject-reason-wrappers-9678 ---
+void testHrtfBinauralCompositeRejectReasonWrappers() {
+                   stub_preflight, fuse::audio::HrtfBinauralRejectReason::NullSamples),
+                   bypass_preflight, fuse::audio::HrtfBinauralRejectReason::BypassPath),
+    testHrtfBinauralCompositeRejectReasonWrappers();
