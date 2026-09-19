@@ -2855,3 +2855,9 @@ void testHistoryReusableGuard() {
 
 // --- deepen additive from deepen-b59-taa-history-resolve-guards-f513 ---
 void testTaaPassBlendAndReuseGuards() {
+
+// --- deepen additive from deepen-b59-taa-history-blend-guards-748d ---
+void testResolvePreflightHelpers() {
+void testTaaPassResolvePreflight() {
+    testResolvePreflightHelpers();
+    testTaaPassResolvePreflight();
