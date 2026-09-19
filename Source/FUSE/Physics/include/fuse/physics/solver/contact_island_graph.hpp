@@ -8,6 +8,45 @@
 
 namespace fuse::physics {
 
+/// Reject reason for island graph build preflight (additive guards only).
+enum class IslandBuildRejectReason : u32 {
+    None = 0,
+    OutOfRangeBodyRef,
+};
+
+/// Preflight diagnostics for island graph build inputs (B4.4 deepen).
+struct IslandBuildPreflight {
+    u32 bodyCount = 0;
+    u32 contactCount = 0;
+    u32 distanceConstraintCount = 0;
+    u32 validContactCount = 0;
+    u32 validDistanceCount = 0;
+    u32 outOfRangeBodyRefCount = 0;
+    IslandBuildRejectReason reason = IslandBuildRejectReason::None;
+    bool rejected = false;
+
+    bool can_build() const { return !rejected; }
+    bool has_constraints() const { return validContactCount > 0u || validDistanceCount > 0u; }
+};
+
+/// Returns a reject reason when inputs reference out-of-range body indices.
+IslandBuildRejectReason island_build_reject_reason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Preflight island graph build inputs without mutating a graph.
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Early-out guard when island build inputs are rejected.
+bool should_skip_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
