@@ -4533,3 +4533,8 @@ void testTaaPassTryPreflightAndCompositeGuards() {
                "pass preflightResolve passes after init");
     expectTrue(invalidJitterPass->tryPreflightJitterAdvance(jitterReject),
                "pass tryPreflightJitterAdvance passes after fallback sequence");
+
+// --- deepen additive from deepen-b59-taa-try-preflights-53e7 ---
+    expectNear(weights.current, 1.f, 1e-5f, "pass tryComputeResolveBlendWeights current is 1 before warmup");
+    expectNear(weights.current, 0.2f, 1e-5f, "pass tryComputeResolveBlendWeights current matches blend after warmup");
+               "pass tryPreflightJitterAdvance reject reason is None after init");
