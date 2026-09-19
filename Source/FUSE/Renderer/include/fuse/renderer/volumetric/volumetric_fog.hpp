@@ -749,3 +749,6 @@ const char* trilinearSampleRejectReasonLabel(TrilinearSampleRejectReason reason)
     static bool wouldClampTrilinearSlice(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
 bool preflightDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
 bool tryPreflightPopulate(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-b511-froxel-guards-c9a6 ---
+bool wouldSkipDensityLookupAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);

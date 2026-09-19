@@ -2803,3 +2803,21 @@ void testFroxelTrilinearAndPreflightDeepenGuards() {
     expectTrue(!fuse::renderer::froxel_util::tryPreflightPopulate(desc, camera, zeroDensity, emptyGrid, populateReason),
                "tryPreflightPopulate rejects zero density");
     testFroxelTrilinearAndPreflightDeepenGuards();
+
+// --- deepen additive from deepen-b511-froxel-guards-c9a6 ---
+               "tryCanSampleDensityTrilinear succeeds on accessible grid");
+    expectTrue(fuse::renderer::froxel_util::tryCanSampleDensityTrilinear(grid, desc, warnWeights, trilinearReason),
+               "tryCanSampleDensityTrilinear warns but succeeds for clampable weights");
+               "tryCanSampleDensityTrilinear rejects hard OOB tile coord");
+               "tryCanSampleDensityTrilinear rejects empty froxel desc");
+    expectTrue(!fuse::renderer::froxel_util::wouldSkipDensityLookupAtIndex(grid, desc, 0u),
+    expectTrue(fuse::renderer::froxel_util::wouldSkipDensityLookupAtIndex(emptyGrid, desc, 0u),
+    expectTrue(fuse::renderer::FroxelGridLayout::tryClampSampleCoords(clampable, desc, clampReason),
+               "tryClampSampleCoords with reason produces in-bounds coords");
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryClampSampleCoords(emptyClamp, zeroDesc, clampReason),
+               "tryClampSampleCoords with reason rejects empty desc");
+    expectTrue(clampReason == fuse::renderer::SampleCoordRejectReason::EmptyGrid,
+               "valid populate inputs do not skip via tryShouldSkip");
+               "zero density skips via tryShouldSkip");
+    expectTrue(fuse::renderer::froxel_util::tryShouldSkipFroxelPopulate(desc, badCamera, params, populateReason),
+               "invalid camera skips via tryShouldSkip");

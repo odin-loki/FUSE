@@ -1899,3 +1899,9 @@ bool preflightDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc&
         outReason = TrilinearSampleRejectReason::DescMismatch;
     return FroxelGridLayout::tryPreflightTrilinearSampleCoords(coords, desc, outReason);
 bool tryPreflightPopulate(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-b511-froxel-guards-c9a6 ---
+bool wouldSkipDensityLookupAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index) {
+        outReason = sampleReason == SampleCoordRejectReason::EmptyGrid
+                        ? FroxelTrilinearSampleRejectReason::EmptyGrid
+                        : FroxelTrilinearSampleRejectReason::HardOutOfBounds;
