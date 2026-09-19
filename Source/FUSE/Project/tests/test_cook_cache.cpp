@@ -1308,3 +1308,9 @@ void testCookCacheWouldInvalidateGuards() {
                "would_invalidate_stale_upstream true when stale entries exist");
     expectTrue(!cache.would_invalidate_stale_upstream_hashes(fresh_upstream),
                "would_invalidate_stale_upstream false when hashes match");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-68cd ---
+               "count_by_source matches would_invalidate_source");
+               "would_invalidate_stale_content true after source change");
+    const fuse::project::CookHashPreflight ok = cache.preflight_store_entry(valid);
+    expectTrue(cache.preflight_store_entry(invalid).reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
