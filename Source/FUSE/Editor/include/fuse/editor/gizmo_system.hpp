@@ -1049,3 +1049,9 @@ bool endDragRejectsForReason(bool dragging, EndDragRejectReason expected);
     EndDragRejectReason reason = EndDragRejectReason::None;
     bool canEnd() const { return reason == EndDragRejectReason::None; }
     [[nodiscard]] UpdateDragPreflight preflightUpdateDragWithSnap(const GizmoHitTest& hit) const;
+
+// --- deepen additive from deepen-b6-gizmo-preflight-guards-4f45 ---
+SnapDragPreflight preflightSnapDrag(GizmoMode mode, const GizmoSnapSettings& settings);
+    SnapDragPreflight snap{};
+DragInteractionPreflight preflightDragInteraction(const GizmoHitTest& hit, GizmoMode mode,
+    [[nodiscard]] SnapDragPreflight preflightSnapDrag() const;

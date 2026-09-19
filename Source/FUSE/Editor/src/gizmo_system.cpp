@@ -2441,3 +2441,13 @@ BeginDragRejectReason beginDragRejectReason(const GizmoHitTest& hit, GizmoMode m
     preflight.screenOutOfBounds = preflight.reason == BeginDragRejectReason::ScreenOutOfBounds;
     preflight.screenMiss = preflight.reason == BeginDragRejectReason::ScreenMiss;
 UpdateDragPreflight GizmoSystem::preflightUpdateDragWithSnap(const GizmoHitTest& hit) const {
+
+// --- deepen additive from deepen-b6-gizmo-preflight-guards-4f45 ---
+SnapDragPreflight preflightSnapDrag(GizmoMode mode, const GizmoSnapSettings& settings) {
+    return preflightSnapDrag(mode, settings).canApply();
+    const SnapDragPreflight snapDrag = preflightSnapDrag(mode, settings);
+DragInteractionPreflight preflightDragInteraction(const GizmoHitTest& hit, GizmoMode mode,
+    preflight.snap = preflightSnapDrag(mode, settings);
+SnapDragPreflight GizmoSystem::preflightSnapDrag() const {
+    return fuse::editor::preflightSnapDrag(m_mode, m_snap);
+    return fuse::editor::preflightDragInteraction(hit, m_mode, m_snap, m_dragging, m_activeAxis,
