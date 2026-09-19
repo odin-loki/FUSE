@@ -11,6 +11,9 @@ void runNarrowphaseIntoBuffer(
     ContactBufferSoA& buffer) {
     const u32 pairCount = static_cast<u32>(pairs.size());
     buffer.preparePairSlots(pairCount);
+    if (pairCount == 0u) {
+        return;
+    }
 
     // Per-pair slots are job-safe (disjoint writes). Serial dispatch on the CPU stub avoids
     // scheduler reference-capture flakes seen when stacking parallel broadphase + narrowphase
