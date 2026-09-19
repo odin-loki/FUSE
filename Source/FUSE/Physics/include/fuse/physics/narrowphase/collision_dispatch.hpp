@@ -187,6 +187,12 @@ ContactManifold collideBoxBox(
 
 struct ContactBufferSoA;
 
+/// Returns true when narrowphase buffer dispatch may proceed for at least one pair (B4.5 deepen follow-up pass).
+bool should_run_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
