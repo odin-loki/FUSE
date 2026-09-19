@@ -7628,6 +7628,11 @@ void testSnapDragRejectReasonGuards() {
 
                "tryPreflightSnapDrag accepts valid delta and snap after reset");
                "valid snap-drag reject reason is None after reset");
+                                                  reason),
+               "valid snap-drag reject reason is None");
+    expectTrue(fuse::editor::shouldSkipSnapDrag(std::numeric_limits<fuse::f32>::infinity(),
+                                                fuse::editor::GizmoMode::Translate, snap),
+               "shouldSkipSnapDrag true for infinite delta");
 
     const fuse::editor::SnapDragPreflight nanPreflight = fuse::editor::preflightSnapDrag(
         std::numeric_limits<fuse::f32>::quiet_NaN(), fuse::editor::GizmoMode::Translate, snap);
