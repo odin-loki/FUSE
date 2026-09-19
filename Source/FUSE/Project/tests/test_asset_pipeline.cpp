@@ -1706,6 +1706,49 @@ void testCookCacheDownstreamSourceProbe() {
                "empty output path downstream probe is guarded");
 }
 
+void testCookerUpstreamAndReconcileWouldProbes() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_would_chain_a.obj", "# would chain a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_would_chain_b.obj", "# would chain b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry_a;
+    entry_a.kind = fuse::project::CookAssetKind::Mesh;
+    entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_would_chain_a.fusemesh";
+    manifest.assets.push_back(entry_a);
+
+    fuse::project::CookManifestEntry entry_b;
+    entry_b.kind = fuse::project::CookAssetKind::Mesh;
+    entry_b.source_path = source_b;
+    entry_b.output_path = "/tmp/fuse_b79_would_chain_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would probes ok");
+    expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would_reconcile is false");
+    expectTrue(!cooker.would_upstream_invalidate(manifest, ""), "empty changed source would_upstream is guarded");
+    expectTrue(cooker.would_upstream_invalidate(manifest, source_a),
+               "would_upstream reports upstream chain invalidation");
+
+    const std::vector<std::string> probed = cooker.probe_upstream_invalidation_sources(manifest, source_a);
+    expectTrue(probed.size() >= 2u, "upstream probe lists changed source and dependents");
+    expectTrue(probed[0] == source_a, "upstream probe starts at changed source");
+
+    writeTempFile(source_a, "# would chain a revised\n");
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "stale upstream marks would_reconcile true");
+
+    const std::vector<std::string> stale_sources = cooker.probe_stale_dependency_sources(manifest);
+    expectTrue(!stale_sources.empty(), "stale dependency probe lists upstream-stale sources");
+    bool has_dependent = false;
+    for (const std::string& path : stale_sources) {
+        if (path == source_b) {
+            has_dependent = true;
+        }
+    }
+    expectTrue(has_dependent, "stale dependency probe includes dependent manifest source");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 
@@ -1790,6 +1833,7 @@ int main() {
     testCookerInvalidationCountProbes();
     testCookerReconcileEstimateProbes();
     testCookCacheDownstreamSourceProbe();
+    testCookerUpstreamAndReconcileWouldProbes();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
