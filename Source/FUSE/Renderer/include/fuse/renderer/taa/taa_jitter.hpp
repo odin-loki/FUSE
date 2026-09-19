@@ -14,6 +14,7 @@ enum class TaaJitterGuardRejectReason : u8 {
     None = 0,
     InvalidSequence,
     InvalidViewport,
+    Misaligned,
 };
 
 /// Human-readable label for jitter guard reject reasons (B5.9 deepen).
@@ -46,6 +47,19 @@ bool preflightTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLen
 bool tryPreflightTaaJitterAdvance(u32 sequenceLength, TaaJitterGuardRejectReason& reason);
 /// Early-out when jitter advance preflight would reject (B5.9 deepen).
 bool shouldSkipTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Classify why jitter slot/monotonic state would fail alignment to `frameIndex` (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(u32 frameIndex, u32 slot, u32 monotonicFrame,
+                                                            u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// True when jitter slot and monotonic counter match `frameIndex` (B5.9 deepen).
+bool preflightTaaJitterAlignment(u32 frameIndex, u32 slot, u32 monotonicFrame,
+                                 u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                                 TaaJitterGuardRejectReason* reason = nullptr);
+/// Jitter alignment preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterAlignment(u32 frameIndex, u32 slot, u32 monotonicFrame, u32 sequenceLength,
+                                   TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter alignment preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterAlignment(u32 frameIndex, u32 slot, u32 monotonicFrame,
+                                 u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -102,6 +116,8 @@ public:
     bool syncToFrameIndexIfReady(u32 frameIndex);
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
+    /// True when jitter must resync before sampling offsets for `frameIndex` (B5.9 deepen).
+    bool needsSyncToFrameIndex(u32 frameIndex) const;
 
     u32 index() const { return m_index; }
     /// True when the jitter sequence can advance (B5.9 deepen).
