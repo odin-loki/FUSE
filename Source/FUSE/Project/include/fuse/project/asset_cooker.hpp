@@ -170,6 +170,8 @@ struct CookUpstreamInvalidateEstimate {
     /// True when reconcile invalidation can be skipped — all breakdown counts are zero (B7.9 deepen).
 
     /// True when reconcile invalidation can be skipped — all estimate counts are zero (B7.9 deepen).
+
+    /// True when reconcile invalidation can be skipped — no stale/prune/upstream work (B7.9 deepen).
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -510,11 +512,8 @@ public:
     /// True when combined reconcile invalidation would remove zero entries (B7.9 deepen).
 
     /// Non-mutating skip predicates — mirror reconcile estimators (B7.9 deepen).
-    [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
-                                                         const std::string& changed_source) const;
-    [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
-    [[nodiscard]] bool should_skip_prune_reconcile() const;
-    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
+    /// True when `estimate_reconcile_invalidation(manifest).should_skip()` (B7.9 deepen).
+    /// True when `estimate_prune_reconcile().should_skip()` (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

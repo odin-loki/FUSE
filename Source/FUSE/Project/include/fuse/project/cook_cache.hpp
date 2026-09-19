@@ -162,6 +162,7 @@ struct CookCacheInvalidationSurface {
     /// True when `prune_all` would be a no-op — mirrors `total() == 0` (B7.9 deepen).
     /// True when no prune work is needed — `total()` is zero (B7.9 deepen).
     /// True when prune reconcile can be skipped — no invalid or stale records (B7.9 deepen).
+
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
@@ -521,7 +522,6 @@ public:
     [[nodiscard]] static bool should_skip_store(const CookCacheEntry& entry);
     /// Read-only mirror of `invalidate_stale_content_for_source` (B7.9 deepen).
     /// Read-only mirror of `invalidate_stale_upstream_hashes` (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_all() const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
@@ -637,6 +637,8 @@ public:
     /// Read-only entry preflight — mirrors `store` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] CookHashPreflight preflight_store_entry(const CookCacheEntry& entry) const;
     /// True when `prune_all` would be a no-op — inverse of `would_prune_all` (B7.9 deepen).
+    /// True when prune reconcile can be skipped — mirrors `!would_prune_all()` (B7.9 deepen).
+    [[nodiscard]] bool should_skip_prune_reconcile() const;
     /// Deduplicated source paths whose stored keys are stale on disk (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_content_sources() const;
     /// Source paths `invalidate_downstream_of` would touch — deduplicated (B7.9 deepen).

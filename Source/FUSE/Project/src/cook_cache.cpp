@@ -2593,6 +2593,19 @@ bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
     return count_downstream_of(output_path, edges, jobs) != 0;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) != 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
 
@@ -3286,6 +3299,7 @@ void append_unique_source_(std::vector<std::string>& sources, const std::string&
         return;
     for (const std::string& recorded : sources) {
     sources.push_back(source_path);
+
 
 
 
@@ -4185,6 +4199,9 @@ bool CookCache::should_skip_prune_all() const {
         return preflight_audio_import_hash(desc);
     case CookAssetKind::Shader:
         preflight.reason = CookHashRejectReason::SourceUnreadable;
+
+bool CookCache::should_skip_prune_reconcile() const {
+    return estimate_prune_removals().should_skip();
 
 std::vector<std::string> CookCache::probe_stale_content_sources() const {
     if (m_entries.empty()) {
