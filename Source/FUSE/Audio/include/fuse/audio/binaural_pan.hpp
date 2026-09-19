@@ -395,6 +395,8 @@ HrtfIrRejectReason classify_hrtf_ir_reject(const HrtfIrPreflight& preflight);
 
 
 
+/// Why HRTF IR preflight rejected convolution (B7.2 deepen).
+
 /// Empty-IR preflight diagnostics — read-only guard bundle (B7.2 deepen).
 struct HrtfIrPreflight {
     HrtfIrRejectReason reason = HrtfIrRejectReason::None;
@@ -1554,6 +1556,21 @@ bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason& reason);
 /// IR preflight with optional reject-reason output (B7.2 deepen pass).
 bool preflight_hrtf_ir_ready(const HrtfIrStub& ir, HrtfIrRejectReason* reason = nullptr);
 bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason& reason);
+
+/// Human-readable label for HRTF IR reject reasons (logging / tests).
+const char* hrtf_ir_reject_reason_label(HrtfIrRejectReason reason);
+
+/// Classify why HRTF IR preflight rejected convolution.
+HrtfIrRejectReason classify_hrtf_ir_reject(const HrtfIrPreflight& preflight);
+
+/// IR convolution preflight with optional reject-reason output.
+bool preflight_hrtf_ir_ready(const HrtfIrStub& ir, HrtfIrRejectReason* reason = nullptr);
+
+/// IR convolution preflight with mandatory reject-reason output.
+bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason& reason);
+
+/// Early-out when IR convolution preflight would reject.
+bool should_skip_hrtf_ir_preflight(const HrtfIrStub& ir);
 
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
@@ -2835,6 +2852,21 @@ bool tryPreflightHrtfPanPath(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3
 bool tryPreflightHrtfPanPath(bool hrtf_enabled, const Vec3& rel_listener,
 
 
+/// Human-readable label for HRTF pan-path reject reasons (logging / tests).
+
+/// Classify why HRTF pan-path preflight rejected spatial pan.
+
+/// Pan-path preflight with optional reject-reason output (IR-aware).
+
+/// Pan-path preflight with optional reject-reason output (no IR wired).
+
+/// Pan-path preflight with mandatory reject-reason output (IR-aware).
+
+/// Pan-path preflight with mandatory reject-reason output (no IR wired).
+
+/// Early-out when pan-path preflight would reject spatial pan (IR-aware).
+
+/// Early-out when pan-path preflight would reject spatial pan (no IR wired).
 
 /// True when a resolved pan path bypasses HRTF (disabled or co-located).
 bool is_hrtf_pan_bypassed(HrtfPanPath path);
@@ -3698,6 +3730,7 @@ struct HrtfAttenuationCouplingPreflight;
 
 
 
+
 /// Attenuation-coupling preflight diagnostics — read-only guard bundle (B7.2 deepen).
 struct HrtfAttenuationCouplingPreflight {
     HrtfAttenuationCouplingRejectReason reason = HrtfAttenuationCouplingRejectReason::None;
@@ -4427,6 +4460,13 @@ bool tryPreflightHrtfAttenuationCoupling(HrtfPanPath path, float distance_attenu
 
 
 
+/// Classify why attenuation-coupling preflight rejected narrowing.
+
+/// Attenuation-coupling preflight with optional reject-reason output.
+
+
+/// Early-out when attenuation-coupling preflight would reject narrowing.
+
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
 
@@ -5062,6 +5102,8 @@ HrtfBinauralRejectReason classify_hrtf_binaural_reject(const HrtfBinauralPreflig
 
 
 /// Why composite binaural/HRTF preflight rejected the requested path (B7.2 deepen pass).
+
+/// Why composite binaural/HRTF preflight rejected processing (B7.2 deepen).
 
 /// Composite binaural/HRTF preflight — bundles empty-IR, pan-path, and attenuation-coupling guards (B7.2 deepen).
 struct HrtfBinauralPreflight {
@@ -6485,6 +6527,20 @@ bool tryPreflightHrtfBinaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec
 bool tryPreflightHrtfBinaural(bool hrtf_enabled, const Vec3& rel_listener,
 
 
+
+/// Classify why composite binaural preflight rejected processing.
+
+/// Composite binaural preflight with optional reject-reason output (IR-aware).
+
+/// Composite binaural preflight with optional reject-reason output (no IR wired).
+
+/// Composite binaural preflight with mandatory reject-reason output (IR-aware).
+
+/// Composite binaural preflight with mandatory reject-reason output (no IR wired).
+
+/// Early-out when composite binaural preflight would reject processing (IR-aware).
+
+/// Early-out when composite binaural preflight would reject processing (no IR wired).
 
 /// Apply pan + coupling using a preflight bundle (read-only guards; valid paths unchanged).
 BinauralPanGains compute_binaural_pan_gains_from_preflight(const HrtfBinauralPreflight& preflight,
