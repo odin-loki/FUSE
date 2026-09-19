@@ -4,6 +4,79 @@
 
 namespace fuse::physics {
 
+const char* contactIslandGraphBuildRejectReasonName(ContactIslandGraphBuildRejectReason reason) {
+    switch (reason) {
+    case ContactIslandGraphBuildRejectReason::None:
+        return "None";
+    case ContactIslandGraphBuildRejectReason::EmptyInput:
+        return "EmptyInput";
+    case ContactIslandGraphBuildRejectReason::UnsafeRefs:
+        return "UnsafeRefs";
+    case ContactIslandGraphBuildRejectReason::SelfContact:
+        return "SelfContact";
+    }
+    return "Unknown";
+}
+
+ContactIslandGraphBuildPreflight preflightContactIslandGraphBuild(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    ContactIslandGraphBuildPreflight preflight{};
+    preflight.stats.bodyCount = bodyCount;
+    preflight.stats.contactSlotCount = static_cast<u32>(contacts.size());
+    preflight.stats.distanceSlotCount = static_cast<u32>(distanceConstraints.size());
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (contact.valid) {
+            ++preflight.stats.validContactCount;
+        }
+        if (!contact.valid) {
+            continue;
+        }
+        if (contact.bodyA == contact.bodyB) {
+            ++preflight.stats.selfContactCount;
+            continue;
+        }
+        const bool inRange = contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+        if (inRange) {
+            ++preflight.stats.inRangeContactCount;
+        } else {
+            ++preflight.stats.outOfRangeContactBodyCount;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (constraint.bodyA == constraint.bodyB) {
+            ++preflight.stats.selfContactCount;
+            continue;
+        }
+        if (constraint.bodyA < bodyCount && constraint.bodyB < bodyCount) {
+            ++preflight.stats.inRangeDistanceCount;
+        } else {
+            ++preflight.stats.outOfRangeDistanceBodyCount;
+        }
+    }
+
+    if (bodyCount == 0u && preflight.stats.inRangeContactCount == 0u &&
+        preflight.stats.inRangeDistanceCount == 0u) {
+        preflight.skipped = true;
+        preflight.reason = ContactIslandGraphBuildRejectReason::EmptyInput;
+    } else if (preflight.has_unsafe_refs()) {
+        preflight.reason = ContactIslandGraphBuildRejectReason::UnsafeRefs;
+    } else if (preflight.has_self_contacts()) {
+        preflight.reason = ContactIslandGraphBuildRejectReason::SelfContact;
+    }
+
+    return preflight;
+}
+
+bool shouldSkipContactIslandGraphBuild(u32 bodyCount,
+                                       const std::vector<narrowphase::ContactManifold>& contacts,
+                                       const std::vector<DistanceConstraint>& distanceConstraints) {
+    return !preflightContactIslandGraphBuild(bodyCount, contacts, distanceConstraints).can_build();
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
@@ -41,6 +114,17 @@ void ContactIslandGraph::unionBodies(u32 a, u32 b) {
     } else {
         parent_[rootA] = rootB;
     }
+}
+
+bool ContactIslandGraph::buildGuarded(u32 bodyCount,
+                                      const std::vector<narrowphase::ContactManifold>& contacts,
+                                      const std::vector<DistanceConstraint>& distanceConstraints) {
+    if (shouldSkipContactIslandGraphBuild(bodyCount, contacts, distanceConstraints)) {
+        clear();
+        return false;
+    }
+    build(bodyCount, contacts, distanceConstraints);
+    return true;
 }
 
 void ContactIslandGraph::build(u32 bodyCount,
