@@ -1285,3 +1285,15 @@ bool should_skip_island_wake(const ContactIslandGraph::Island& island);
 IslandConstraintSolvePreflight preflight_solve_island(const ContactIslandGraph::Island& island,
 IslandConstraintSolvePreflight preflight_solve_island_by_index(const ContactIslandGraph& graph,
 bool should_skip_solve_island_preflight(const ContactIslandGraph::Island& island,
+
+// --- deepen additive from pbd-island-guards-deepen-5934 ---
+struct WakeOnImpulsePreflight {
+struct IslandBodyPartitionPreflight {
+struct ConstraintIterationPreflight {
+IslandSleepPreflight preflight_sleeping_island(const ContactIslandGraph::Island& island,
+IslandSleepPreflight preflight_sleeping_island_by_index(const ContactIslandGraph& graph,
+bool should_skip_sleeping_island_solve_job(const IslandSolveJob& job,
+WakeOnImpulsePreflight preflight_wake_on_impulse(const RigidBodySoA& bodies,
+IslandBodyPartitionPreflight preflight_island_body_partition(const ContactIslandGraph& graph);
+ConstraintIterationPreflight preflight_constraint_iterations(const SolverParams& params);
+bool should_skip_constraint_iterations(const SolverParams& params);

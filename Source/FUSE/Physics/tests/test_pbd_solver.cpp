@@ -3535,3 +3535,46 @@ void testSolveIslandPreflightAndAwakeDispatch() {
     testPreflightIslandSleepGuards();
     testPreflightIslandWakeGuards();
     testSolveIslandPreflightAndAwakeDispatch();
+
+// --- deepen additive from pbd-island-guards-deepen-5934 ---
+    const IslandBuildPreflight zeroBodies = preflight_island_build(0, contacts, constraints);
+    expectTrue(should_skip_island_build(0), "should_skip_island_build on zero bodies");
+void testPreflightIslandConstraintIndices() {
+    const IslandConstraintIndexPreflight preflight =
+    const IslandConstraintIndexPreflight emptyPreflight =
+    expectTrue(emptyPreflight.skipped, "constraint index preflight skips empty island");
+void testPreflightSleepingIslandGuards() {
+    expectTrue(sleepingPreflight.allSleeping, "sleep preflight detects all-sleeping island");
+    expectTrue(sleepingPreflight.movableBodyCount == 0u, "sleep preflight reports zero movable bodies");
+    expectTrue(!sleepingPreflight.can_solve(), "sleep preflight cannot solve all-sleeping island");
+               "should_skip_sleeping_island_solve on all-sleeping island");
+    const IslandSleepPreflight awakePreflight =
+    expectTrue(awakePreflight.movableBodyCount == 1u, "sleep preflight sees awake lone body");
+    expectTrue(awakePreflight.can_solve(), "sleep preflight can solve awake island");
+    expectTrue(!should_skip_sleeping_island_solve(graph.island(awakeIsland), bodies),
+               "should_skip_sleeping_island_solve false for awake island");
+    expectTrue(should_skip_sleeping_island_solve_job(sleepingJob, bodies),
+               "should_skip_sleeping_island_solve_job on all-sleeping island");
+    const IslandSleepPreflight oobPreflight =
+    expectTrue(oobPreflight.skipped, "sleep preflight by index skips out-of-range island");
+void testPreflightWakeOnImpulseGuards() {
+    const WakeOnImpulsePreflight noImpulse = preflight_wake_on_impulse(bodies, 0);
+    const WakeOnImpulsePreflight withImpulse = preflight_wake_on_impulse(bodies, 0);
+    const WakeOnImpulsePreflight oob = preflight_wake_on_impulse(bodies, 99);
+void testPreflightIslandBodyPartition() {
+    const IslandBodyPartitionPreflight preflight = preflight_island_body_partition(graph);
+void testPreflightConstraintIterations() {
+    const ConstraintIterationPreflight preflight = preflight_constraint_iterations(params);
+    expectTrue(!should_skip_constraint_iterations(params),
+               "should_skip_constraint_iterations false for positive iterations");
+    const ConstraintIterationPreflight zeroPreflight = preflight_constraint_iterations(params);
+    expectTrue(zeroPreflight.skipped, "constraint iteration preflight skips zero iterations");
+    expectTrue(!zeroPreflight.can_iterate(), "constraint iteration preflight cannot iterate at zero");
+    expectTrue(should_skip_constraint_iterations(params),
+               "should_skip_constraint_iterations true for zero iterations");
+void testDispatchSolveIslandSleepGuarded() {
+    testPreflightIslandConstraintIndices();
+    testPreflightSleepingIslandGuards();
+    testPreflightWakeOnImpulseGuards();
+    testPreflightIslandBodyPartition();
+    testPreflightConstraintIterations();
