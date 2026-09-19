@@ -2269,3 +2269,13 @@ bool shouldSkipUpdateDrag(const UpdateDragPreflight& preflight) { return !prefli
     return shouldSkipUpdateDrag(preflightUpdateDrag(hit, dragging));
     return shouldSkipUpdateDrag(preflightUpdateDrag(hit, dragging, activeAxis));
     return fuse::editor::preflightUpdateDrag(hit, m_dragging, m_activeAxis);
+
+// --- deepen additive from deepen-gizmo-end-drag-preflights-339b ---
+SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings,
+    if (trySnapTransform(transform, mode, settings, snapped) &&
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode) {
+    return preflightUpdateDrag(hit, dragging, mode).canUpdate();
+    return preflightEndDrag(dragging).canEnd();
+SnapPreflight GizmoSystem::preflightSnap(const GizmoTransform& transform) const {
+    return fuse::editor::preflightSnap(m_mode, m_snap, transform);
+    return fuse::editor::preflightUpdateDrag(hit, m_dragging, m_mode);

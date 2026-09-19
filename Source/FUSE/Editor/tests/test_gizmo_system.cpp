@@ -3011,3 +3011,34 @@ void testShouldSkipPickGuards() {
 void testShouldSkipSnapGuards() {
         fuse::editor::preflightUpdateDrag(hit, true, fuse::editor::GizmoAxis::None);
     expectTrue(result.changed, "active tryUpdateDrag marks result changed");
+
+// --- deepen additive from deepen-gizmo-end-drag-preflights-339b ---
+    expectTrue(screenMissPreflight.canUpdate(),
+    fuse::editor::GizmoResult tryUpdateResult{};
+    expectTrue(gizmo.tryUpdateDrag(deadZone, tryUpdateResult),
+               "tryUpdateDrag accepts dead-zone hit while drag is active");
+    expectTrue(tryUpdateResult.changed, "tryUpdateDrag applies dead-zone update");
+    fuse::editor::GizmoResult tryRejectResult{};
+    expectTrue(!gizmo.tryUpdateDrag(hit, tryRejectResult),
+    expectTrue(!tryRejectResult.changed, "tryUpdateDrag leaves result unchanged on reject");
+    fuse::editor::GizmoResult tryResult{};
+    expectTrue(!gizmo.tryEndDrag(tryResult), "tryEndDrag rejects when not dragging");
+    expectTrue(!tryResult.changed, "tryEndDrag leaves result unchanged on reject");
+    expectTrue(fuse::editor::preflightEndDrag(true).canEnd(),
+    expectTrue(gizmo.tryEndDrag(tryResult), "tryEndDrag succeeds on active drag");
+    expectTrue(tryResult.changed, "tryEndDrag marks result changed on success");
+    expectTrue(!gizmo.isDragging(), "tryEndDrag clears drag state");
+void testSnapPreflightNoChange() {
+    const fuse::editor::SnapPreflight onGridPreflight =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, snap, onGrid);
+    expectTrue(onGridPreflight.canApply(), "snap preflight accepts enabled snap with valid step");
+    expectTrue(onGridPreflight.noChange, "snap preflight marks transform already on grid");
+    expectTrue(!onGridPreflight.wouldSnap(), "wouldSnap false when transform already on grid");
+    const fuse::editor::SnapPreflight offGridPreflight =
+        fuse::editor::preflightSnap(fuse::editor::GizmoMode::Translate, snap, offGrid);
+    expectTrue(offGridPreflight.canApply(), "snap preflight accepts off-grid transform");
+    expectTrue(!offGridPreflight.noChange, "snap preflight clears noChange for off-grid transform");
+    expectTrue(offGridPreflight.wouldSnap(), "wouldSnap true when transform needs snapping");
+    expectTrue(gizmo.preflightSnap(onGrid).noChange,
+    expectTrue(!gizmo.preflightSnap(offGrid).noChange,
+    testSnapPreflightNoChange();
