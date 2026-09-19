@@ -473,3 +473,10 @@ ContactIslandGraph::BuildPreflight ContactIslandGraph::preflightBuild(
         return IslandBuildRejectReason::EmptyInputs;
 ContactIslandGraphBuildPreflight preflight_contact_island_graph_build(
     preflight.skipped = preflight.reason == IslandBuildRejectReason::EmptyInputs;
+
+// --- deepen additive from deepen-pbd-island-pipeline-guards-6b7f ---
+    case IslandGraphBuildRejectReason::UnsafeContactRef:
+    case IslandGraphBuildRejectReason::UnsafeDistanceRef:
+        return IslandGraphBuildRejectReason::UnsafeContactRef;
+        return IslandGraphBuildRejectReason::UnsafeDistanceRef;
+    preflight.skipped = preflight.reason == IslandGraphBuildRejectReason::EmptyInput;

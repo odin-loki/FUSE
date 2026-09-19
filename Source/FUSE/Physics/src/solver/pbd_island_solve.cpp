@@ -2882,3 +2882,13 @@ IslandPipelineGraphPreflight preflight_island_pipeline_dispatch_graph(const Cont
 bool should_skip_island_pipeline_dispatch_graph(const ContactIslandGraph& graph,
         if (!should_skip_island_pipeline_dispatch(graph,
     const IslandPipelineGraphPreflight preflight = preflight_island_pipeline_dispatch_graph(graph, bodies, dt);
+
+// --- deepen additive from deepen-pbd-island-pipeline-guards-6b7f ---
+const char* island_dispatch_reject_reason_name(IslandDispatchRejectReason reason) {
+    case IslandDispatchRejectReason::AllIslandsSleeping:
+        return IslandDispatchRejectReason::AllIslandsSleeping;
+                        preflight.rejectReason != IslandDispatchRejectReason::None;
+bool should_skip_island_solve_pipeline(u32 bodyCount,
+    const IslandDispatchRejectReason rejectReason = island_dispatch_reject_reason(graph, bodies, dt);
+    if (rejectReason != IslandDispatchRejectReason::None) {
+    if (should_skip_island_solve_pipeline(bodies.count(),

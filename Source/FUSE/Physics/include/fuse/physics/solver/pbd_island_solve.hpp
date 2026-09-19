@@ -1744,3 +1744,9 @@ struct IslandPipelineGraphPreflight {
 IslandPipelineDispatchPreflight preflight_island_pipeline_dispatch_job(
 IslandPipelineGraphPreflight preflight_island_pipeline_dispatch_graph(const ContactIslandGraph& graph,
 bool should_skip_island_pipeline_dispatch_graph(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-pipeline-guards-6b7f ---
+const char* island_dispatch_reject_reason_name(IslandDispatchRejectReason reason);
+    IslandDispatchRejectReason rejectReason = IslandDispatchRejectReason::None;
+    bool can_run() const { return !skipped && rejectReason == IslandDispatchRejectReason::None; }
+bool should_skip_island_solve_pipeline(u32 bodyCount,

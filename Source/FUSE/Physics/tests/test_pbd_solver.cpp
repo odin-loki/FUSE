@@ -5079,3 +5079,28 @@ void testPreflightIslandPipelineDispatchGuards() {
                "should_skip pipeline graph false when mixed island exists");
 void testDispatchIslandPipelineGuarded() {
     testPreflightIslandPipelineDispatchGuards();
+
+// --- deepen additive from deepen-pbd-island-pipeline-guards-6b7f ---
+                                                     IslandGraphBuildRejectReason::UnsafeContactRef),
+                                                     IslandGraphBuildRejectReason::UnsafeDistanceRef),
+                                                     IslandGraphBuildRejectReason::EmptyInput),
+    const ContactIslandGraphBuildPreflight preflight = preflight_contact_island_graph_build(4, contacts, constraints);
+void testIslandDispatchRejectReasons() {
+    expectTrue(island_dispatch_rejects_for_reason(graph, bodies, 0.f, IslandDispatchRejectReason::InvalidDt),
+    expectTrue(island_dispatch_reject_reason(graph, bodies, dt) == IslandDispatchRejectReason::None,
+                                                  IslandDispatchRejectReason::NoDispatchableIslands),
+    expectTrue(island_dispatch_rejects_for_reason(graph, bodies, dt, IslandDispatchRejectReason::AllIslandsSleeping),
+void testIslandSolveRejectReasons() {
+                                           dt) == IslandSolveRejectReason::None,
+                                               IslandSolveRejectReason::NoMovableBodies),
+void testIslandSolvePipelinePreflight() {
+    const IslandSolvePipelinePreflight preflight =
+    expectTrue(should_skip_island_solve_pipeline(0, {}, {}, graph, bodies, dt),
+    expectTrue(should_skip_island_solve_pipeline(4, contacts, constraints, graph, bodies, 0.f),
+void testSolveIslandJobGuardedAndSolveableDispatch() {
+    expectTrue(!indexPreflight.can_solve(), "index constraint solve preflight rejects all-sleeping island");
+    expectTrue(should_skip_island_constraint_solve_index(graph, sleepingIsland, bodies, work.contactManifolds(), constraints),
+               "should_skip index constraint solve on all-sleeping island");
+    testIslandDispatchRejectReasons();
+    testIslandSolveRejectReasons();
+    testIslandSolvePipelinePreflight();
