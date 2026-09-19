@@ -2414,6 +2414,29 @@ bool canActOnPhase(const GizmoRay& ray, const GizmoTransform& transform, bool dr
     return preflightInteraction(ray, transform, dragging, activeAxis, mode, space, axisLength,
                                 pickRadius, settings)
         .canActOnPhase();
+PhaseActionPreflight preflightPhaseAction(const GizmoHitTest& hit, bool dragging,
+                                          GizmoAxis activeAxis, GizmoMode mode,
+    const InteractionPreflight interaction =
+        preflightInteraction(hit, dragging, activeAxis, mode, settings);
+    PhaseActionPreflight preflight{};
+    preflight.phase = interaction.phase();
+    preflight.canAct = interaction.canActOnPhase();
+    preflight.canInteract = interaction.canInteractOnPhase();
+    preflight.snapDegraded = interaction.snapDegradedOnPhase();
+    preflight.snapWillApply = interaction.snapWillApplyOnPhase();
+    return preflight;
+
+    return preflightPhaseAction(hit, dragging, activeAxis, mode, settings).canAct;
+
+bool canInteractOnPhase(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+                        GizmoMode mode, const GizmoSnapSettings& settings) {
+    return preflightPhaseAction(hit, dragging, activeAxis, mode, settings).canInteract;
+
+bool snapDegradedOnPhase(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+    return preflightInteraction(hit, dragging, activeAxis, mode, settings).snapDegradedOnPhase();
+
+bool snapWillApplyOnPhase(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+    return preflightInteraction(hit, dragging, activeAxis, mode, settings).snapWillApplyOnPhase();
 }
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
@@ -4095,6 +4118,18 @@ bool GizmoSystem::canActOnPhase(const GizmoHitTest& hit) const {
 
 bool GizmoSystem::canActOnPhase(const GizmoRay& ray, const GizmoTransform& transform) const {
     return preflightInteraction(ray, transform).canActOnPhase();
+
+bool GizmoSystem::canInteractOnPhase(const GizmoHitTest& hit) const {
+    return preflightInteraction(hit).canInteractOnPhase();
+
+bool GizmoSystem::snapDegradedOnPhase() const {
+    return preflightInteraction(m_lastHit).snapDegradedOnPhase();
+
+bool GizmoSystem::snapWillApplyOnPhase() const {
+    return preflightInteraction(m_lastHit).snapWillApplyOnPhase();
+
+PhaseActionPreflight GizmoSystem::preflightPhaseAction(const GizmoHitTest& hit) const {
+    return fuse::editor::preflightPhaseAction(hit, m_dragging, m_activeAxis, m_mode, m_snap);
 }
 
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
