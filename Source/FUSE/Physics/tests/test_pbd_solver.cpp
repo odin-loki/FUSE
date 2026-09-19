@@ -3248,3 +3248,38 @@ void testPreflightDispatchIslandJobGuards() {
                "should_skip false when impulse islands exist");
                "should_skip impulse graph warm-start on empty graph");
     testPreflightDispatchIslandJobGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-b61c ---
+void testPreflightIslandDispatchFromJobs() {
+    const IslandDispatchJobPreflight validPreflight = preflight_island_dispatch_from_jobs(jobs, 1.f / 60.f);
+    expectTrue(!validPreflight.invalidDt, "job preflight accepts valid dt");
+    expectTrue(!validPreflight.skipped, "job preflight does not skip constrained jobs");
+    expectTrue(validPreflight.can_dispatch(), "job preflight can dispatch constrained jobs");
+    expectTrue(validPreflight.stats.dispatchableCount == graph.constrainedIslandCount(),
+    expectTrue(count_dispatchable_jobs(jobs) == validPreflight.stats.dispatchableCount,
+    expectTrue(!should_skip_island_dispatch_from_jobs(jobs, 1.f / 60.f),
+               "should_skip false for constrained jobs with valid dt");
+    const IslandDispatchJobPreflight invalidDtPreflight = preflight_island_dispatch_from_jobs(jobs, 0.f);
+    expectTrue(!invalidDtPreflight.can_dispatch(), "job preflight blocked on invalid dt");
+    expectTrue(should_skip_island_dispatch_from_jobs(jobs, 0.f),
+               "should_skip_island_dispatch_from_jobs on invalid dt");
+    const IslandDispatchJobPreflight emptyPreflight = preflight_island_dispatch_from_jobs(emptyJobs, 1.f / 60.f);
+    expectTrue(emptyPreflight.skipped, "job preflight skips empty job list");
+               "should_skip_warm_start_contact_impulses_graph false when impulses exist");
+    const IslandContactImpulseWarmStartGraphPreflight invalidDtPreflight =
+    expectTrue(invalidDtPreflight.invalidDt, "impulse graph preflight rejects zero dt");
+    expectTrue(!invalidDtPreflight.can_warm_start(), "impulse graph preflight blocked on invalid dt");
+               "should_skip_warm_start_contact_impulses_graph on invalid dt");
+void testPreflightWarmStartCombinedGraphAndIndex() {
+    const IslandCombinedWarmStartGraphPreflight preflight =
+    expectTrue(!should_skip_warm_start_combined_graph(graph, contacts, dt, priorDistance, priorContact),
+               "should_skip_warm_start_combined_graph false when islands can seed");
+    expectTrue(should_skip_warm_start_combined_island_index(graph, graph.islandCount() + 1u, dt),
+               "should_skip_warm_start_combined_island_index on out-of-range index");
+        expectTrue(should_skip_warm_start_combined_island_index(graph, islandIndex, dt),
+                   "should_skip_warm_start_combined_island_index on empty island");
+    const IslandCombinedWarmStartGraphPreflight invalidDtPreflight =
+    expectTrue(invalidDtPreflight.invalidDt, "combined graph preflight rejects zero dt");
+    expectTrue(!invalidDtPreflight.can_warm_start(), "combined graph preflight blocked on invalid dt");
+    testPreflightIslandDispatchFromJobs();
+    testPreflightWarmStartCombinedGraphAndIndex();

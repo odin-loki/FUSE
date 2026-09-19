@@ -2001,3 +2001,13 @@ bool should_skip_dispatch_island_job(const IslandSolveJob& job, f32 dt) {
 bool should_skip_warm_start_contact_impulses_island(const ContactIslandGraph::Island& island) {
 bool should_skip_warm_start_contact_impulses_island_index(const ContactIslandGraph& graph, u32 islandIndex) {
     return should_skip_warm_start_island_index(graph, islandIndex);
+
+// --- deepen additive from deepen-pbd-island-guards-b61c ---
+IslandDispatchJobPreflight preflight_island_dispatch_from_jobs(const std::vector<IslandSolveJob>& jobs, f32 dt) {
+bool should_skip_island_dispatch_from_jobs(const std::vector<IslandSolveJob>& jobs, f32 dt) {
+IslandCombinedWarmStartPreflight preflight_warm_start_combined_island_by_index(
+bool should_skip_warm_start_combined_island_index(const ContactIslandGraph& graph,
+IslandCombinedWarmStartGraphPreflight preflight_warm_start_combined_graph(
+    IslandCombinedWarmStartGraphPreflight preflight{};
+bool should_skip_warm_start_combined_graph(const ContactIslandGraph& graph,
+    const IslandCombinedWarmStartGraphPreflight preflight =
