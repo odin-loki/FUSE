@@ -3036,6 +3036,7 @@ bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer) {
         *reason = reject;
     return reject != DedupeBroadphaseRejectReason::None;
 
+
 BroadphaseMergePreflight preflightBroadphaseMerge(
     const RigidBodySoA& bodies,
     BroadphaseMergePreflight preflight{};
@@ -3607,6 +3608,17 @@ bool wouldSkipBroadphaseMerge(
 
 bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
     return canSkipBroadphaseMerge(bodies, shapes);
+}
+
+bool wouldSkipBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason* reason) {
+    const BroadphaseMergePreflight preflight = preflightBroadphaseMerge(bodies, shapes);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return !preflight.canMerge();
 }
 
 const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReason reason) {
