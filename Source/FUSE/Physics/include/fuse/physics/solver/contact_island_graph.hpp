@@ -79,6 +79,8 @@ enum class IslandBuildRejectReason : u8 {
     InvalidContactBodyIndex,
     InvalidDistanceBodyIndex,
 /// Why island graph build would early-out (B4.4 deepen follow-up).
+    ZeroBodies,
+    NoConstraints,
 
 /// Human-readable label for island build reject reasons (logging / tests).
 const char* island_build_reject_reason_name(IslandBuildRejectReason reason);
@@ -139,6 +141,31 @@ struct IslandBuildInputStats {
 IslandBuildInputStats compute_island_build_input_stats(
 
 /// Preflight island graph build; sets `skipped` when `bodyCount` is zero.
+struct IslandBuildStats {
+    u32 bodyCount = 0;
+    u32 contactCount = 0;
+    u32 validContactCount = 0;
+    u32 distanceConstraintCount = 0;
+    u32 constraintEdgeCount = 0;
+};
+
+struct IslandBuildPreflight {
+    IslandBuildStats stats{};
+    bool zeroBodies = false;
+    bool noConstraints = false;
+    bool skipped = false;
+
+    bool can_build() const { return !skipped; }
+
+/// Summarize island build inputs without mutating the graph (B4.4 deepen follow-up).
+IslandBuildStats compute_island_build_input_stats(
+
+/// Diagnose why island graph build would skip; vacuously succeeds on populated constrained scenes.
+
+/// Returns true when `island_build_reject_reason` matches `expected` (B4.4 deepen follow-up).
+    const std::vector<DistanceConstraint>& distanceConstraints,
+
+/// Const preflight for island graph build (B4.4 deepen follow-up).
 IslandBuildPreflight preflight_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -262,6 +289,7 @@ struct IslandBuildRejectCounts {
 bool should_skip_island_build(u32 bodyCount);
 /// Early-out guard for island graph build when inputs are rejected.
 /// Returns true when island graph build should be skipped (B4.4 deepen follow-up).
+/// True when island graph build is a no-op (zero bodies).
 bool should_skip_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -371,5 +399,6 @@ bool build_island_graph_guarded(ContactIslandGraph& graph,
 /// True when every contact and distance constraint references in-range body indices.
 bool island_build_inputs_valid(u32 bodyCount,
 /// Guarded build entry: skips when `bodyCount` is zero, otherwise delegates to `build`.
+/// Guarded island graph build; returns false when build is skipped (zero bodies).
 
 } // namespace fuse::physics
