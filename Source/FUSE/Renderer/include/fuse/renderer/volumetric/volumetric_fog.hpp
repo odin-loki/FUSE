@@ -741,3 +741,11 @@ const char* densityTrilinearSampleRejectReasonLabel(DensityTrilinearSampleReject
                                    DensityTrilinearSampleRejectReason& outReason);
 bool wouldClampDensityTrilinearSample(const FroxelDensityGrid& grid,
 bool wouldPopulateAllocateOnly(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-e35c ---
+enum class TrilinearSampleRejectReason : u8 {
+const char* trilinearSampleRejectReasonLabel(TrilinearSampleRejectReason reason);
+    static bool tryPreflightTrilinearSampleCoords(const FroxelSampleCoords& coords,
+    static bool wouldClampTrilinearSlice(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+bool preflightDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
+bool tryPreflightPopulate(const FroxelGridDesc& desc,

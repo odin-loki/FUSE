@@ -1878,3 +1878,24 @@ const char* densityTrilinearSampleRejectReasonLabel(DensityTrilinearSampleReject
     outReason = DensityTrilinearSampleRejectReason::None;
 bool wouldClampDensityTrilinearSample(const FroxelDensityGrid& grid,
 bool wouldPopulateAllocateOnly(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-e35c ---
+bool FroxelGridLayout::tryPreflightTrilinearSampleCoords(const FroxelSampleCoords& coords,
+        outReason = TrilinearSampleRejectReason::EmptyGrid;
+            outReason = TrilinearSampleRejectReason::OutOfBounds;
+        outReason = TrilinearSampleRejectReason::InvalidWeights;
+        outReason = TrilinearSampleRejectReason::InvalidSampleCoords;
+    outReason = TrilinearSampleRejectReason::None;
+const char* trilinearSampleRejectReasonLabel(TrilinearSampleRejectReason reason) {
+    case TrilinearSampleRejectReason::None:
+    case TrilinearSampleRejectReason::EmptyGrid:
+    case TrilinearSampleRejectReason::EmptyStorage:
+    case TrilinearSampleRejectReason::DescMismatch:
+    case TrilinearSampleRejectReason::InvalidSampleCoords:
+    case TrilinearSampleRejectReason::OutOfBounds:
+    case TrilinearSampleRejectReason::InvalidWeights:
+bool preflightDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
+        outReason = TrilinearSampleRejectReason::EmptyStorage;
+        outReason = TrilinearSampleRejectReason::DescMismatch;
+    return FroxelGridLayout::tryPreflightTrilinearSampleCoords(coords, desc, outReason);
+bool tryPreflightPopulate(const FroxelGridDesc& desc,
