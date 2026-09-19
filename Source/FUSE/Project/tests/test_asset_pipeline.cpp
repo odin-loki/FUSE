@@ -2095,3 +2095,16 @@ void testCookerUpstreamInvalidationEstimateAndWouldGuards() {
     expectTrue(!cooker.would_invalidate_upstream_dependency(manifest, source_a),
                "would_invalidate_upstream false after invalidation");
 void testCookerWouldReconcileInvalidationGuard() {
+
+// --- deepen additive from b79-cooker-hash-skip-guards-93f1 ---
+void testCookerShouldSkipReconcileGuards() {
+               "should_skip_upstream_invalidation true for empty changed source");
+               "should_skip_stale_dependency_invalidation true on fresh cache");
+               "should_skip_reconcile_invalidation true on fresh cache");
+    expectTrue(fresh.should_skip(), "reconcile estimate should_skip true on fresh cache");
+    expectTrue(!cooker.should_skip_upstream_invalidation(manifest, source_a),
+               "should_skip_upstream_invalidation false for seeded upstream source");
+               "would_invalidate_upstream true for seeded upstream source");
+               "should_skip_stale_dependency_invalidation false after upstream change");
+               "should_skip_reconcile_invalidation false after upstream change");
+    expectTrue(!stale.should_skip(), "reconcile estimate should_skip false after upstream change");

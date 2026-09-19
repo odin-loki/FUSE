@@ -616,3 +616,22 @@ bool tryPreflightUpstreamDependenciesHash(const std::vector<std::string>& depend
                                           const CookManifest& manifest, CookHashRejectReason& reason) {
 bool tryPreflightCookCacheKey(u64 source_hash, u64 upstream_hash, CookHashRejectReason& reason) {
     const CookHashPreflight preflight = preflight_cook_cache_key(source_hash, upstream_hash);
+
+// --- deepen additive from b79-cooker-hash-skip-guards-93f1 ---
+bool should_skip_cook_cache_store(const CookCacheEntry& entry) {
+bool should_skip_file_content_hash(const std::string& path) {
+    return preflight_file_content_hash(path).should_skip();
+bool should_skip_mesh_import_hash(const MeshImportDesc& desc) {
+    return preflight_mesh_import_hash(desc).should_skip();
+bool should_skip_texture_import_hash(const TextureImportDesc& desc) {
+    return preflight_texture_import_hash(desc).should_skip();
+bool should_skip_audio_import_hash(const AudioImportDesc& desc) {
+    return preflight_audio_import_hash(desc).should_skip();
+bool should_skip_manifest_entry_hash(const CookManifestEntry& entry) {
+    return preflight_manifest_entry_hash(entry).should_skip();
+bool should_skip_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
+    return preflight_upstream_dependencies_hash(dependency_output_paths, manifest).should_skip();
+bool should_skip_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    return preflight_cook_cache_key(source_hash, upstream_hash).should_skip();
+bool should_skip_fnv1a64_bytes(const u8* data, usize size) {
+    return preflight_fnv1a64_bytes(data, size).should_skip();

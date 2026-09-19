@@ -128,3 +128,6 @@ private:
     [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
     [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
     [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
+
+// --- deepen additive from b79-cooker-hash-skip-guards-93f1 ---
+    [[nodiscard]] bool should_skip() const { return !would_reconcile(); }

@@ -1488,3 +1488,36 @@ void testCookHashPreflightDependencyGuards() {
     expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_would.obj", 1u}}),
                "would_invalidate_stale_upstream guarded");
                "would_invalidate_downstream guarded");
+
+// --- deepen additive from b79-cooker-hash-skip-guards-93f1 ---
+void testCookHashShouldSkipGuards() {
+    expectTrue(fuse::project::should_skip_file_content_hash(""),
+               "should_skip rejects empty file path");
+    expectTrue(!fuse::project::should_skip_cook_cache_key(99u, 42u),
+               "should_skip accepts valid cache key");
+    expectTrue(fuse::project::should_skip_cook_cache_key(0, 42u),
+               "should_skip rejects zero source cache key");
+    expectTrue(fuse::project::should_skip_fnv1a64_bytes(nullptr, 4u),
+               "should_skip rejects null bytes with non-zero size");
+    expectTrue(!fuse::project::should_skip_fnv1a64_bytes(nullptr, 0),
+               "should_skip accepts zero-size null bytes");
+    const std::string source = writeTempFile("/tmp/fuse_b79_should_skip_mesh.obj", "# should skip\n");
+    expectTrue(!fuse::project::should_skip_mesh_import_hash(desc),
+               "should_skip accepts readable mesh import");
+    expectTrue(mesh_preflight.should_skip() == !mesh_preflight.ok(),
+               "preflight should_skip mirrors ok()");
+    expectTrue(fuse::project::should_skip_upstream_dependencies_hash({}, manifest),
+               "should_skip rejects empty upstream dependency list");
+void testCookCacheEntryPreflightAndStoreSkip() {
+    const fuse::project::CookHashPreflight valid_preflight = fuse::project::preflight_cook_cache_entry(valid);
+    expectTrue(!fuse::project::should_skip_cook_cache_store(valid),
+               "should_skip_cook_cache_store false for valid entry");
+    expectTrue(fuse::project::should_skip_cook_cache_store(invalid),
+               "should_skip_cook_cache_store true for zero hash entry");
+    expectTrue(cache.entry_count() == 0u, "store rejects entry that should_skip reports");
+    expectTrue(cache.should_skip_prune_all(), "should_skip_prune_all true on empty cache");
+               "would_invalidate true for seeded hash");
+    expectTrue(cooker.cache().should_skip_prune_all(),
+               "should_skip_prune_all true on fresh non-prunable cache");
+               "should_skip_prune_all false when prune would remove entries");
+    testCookCacheEntryPreflightAndStoreSkip();

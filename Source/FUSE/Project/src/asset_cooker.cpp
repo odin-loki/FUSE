@@ -402,3 +402,6 @@ bool AssetCooker::should_skip_upstream_invalidation(const CookManifest& manifest
 bool AssetCooker::should_skip_stale_dependency_invalidation(const CookManifest& manifest) const {
 bool AssetCooker::should_skip_reconcile_invalidation(const CookManifest& manifest) const {
     return estimate_reconcile_invalidation(manifest).should_skip();
+
+// --- deepen additive from b79-cooker-hash-skip-guards-93f1 ---
+    return !would_invalidate_upstream(manifest, changed_source);

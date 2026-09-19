@@ -264,3 +264,6 @@ const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason);
 enum class CookCacheRejectReason : u8 {
     CookCacheRejectReason reason = CookCacheRejectReason::None;
 const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason);
+
+// --- deepen additive from b79-cooker-hash-skip-guards-93f1 ---
+    [[nodiscard]] bool would_prune() const { return total() != 0; }
