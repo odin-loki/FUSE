@@ -36,6 +36,16 @@ const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     return "Unknown";
 }
 
+const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason) {
+    switch (reason) {
+    case CellSpanClampRejectReason::None:
+        return "None";
+    case CellSpanClampRejectReason::ExceedsSpanPerAxis:
+        return "ExceedsSpanPerAxis";
+    }
+    return "Unknown";
+}
+
 const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
     switch (reason) {
     case BroadphaseRejectReason::None:
@@ -270,7 +280,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (!shouldRunDedupeBroadphase(buffer)) {
+    if (!shouldRunDedupeBroadphase(buffer) || !shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
@@ -336,7 +346,7 @@ void runBroadphaseIntoBufferInternal(
     }
 
     buffer.preparePairSlots(totalCellSlots);
-    if (totalCellSlots == 0u) {
+    if (!preflightBroadphaseCellPairGeneration(totalCellSlots).canDispatch()) {
         return;
     }
 
@@ -393,7 +403,7 @@ void runBroadphaseIntoBufferInternal(
         dedupeBuffer(buffer);
     }
 
-    if (buffer.maxCapacity > 0u) {
+    if (shouldRunPairBufferClamp(buffer)) {
         buffer.applyMaxCapacityClamp();
     }
 }
@@ -611,6 +621,42 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
     return preflightMergePairsIntoBuffer(pairs, buffer).canMerge();
+}
+
+const char* broadphaseCellPairRejectReasonName(BroadphaseCellPairRejectReason reason) {
+    switch (reason) {
+    case BroadphaseCellPairRejectReason::None:
+        return "None";
+    case BroadphaseCellPairRejectReason::ZeroCellSlots:
+        return "ZeroCellSlots";
+    }
+    return "Unknown";
+}
+
+BroadphaseCellPairRejectReason broadphaseCellPairRejectReason(u32 totalCellSlots) {
+    if (totalCellSlots == 0u) {
+        return BroadphaseCellPairRejectReason::ZeroCellSlots;
+    }
+    return BroadphaseCellPairRejectReason::None;
+}
+
+bool broadphaseCellPairRejectsForReason(u32 totalCellSlots, BroadphaseCellPairRejectReason expected) {
+    return broadphaseCellPairRejectReason(totalCellSlots) == expected;
+}
+
+BroadphaseCellPairPreflight preflightBroadphaseCellPairGeneration(u32 totalCellSlots) {
+    BroadphaseCellPairPreflight preflight{};
+    preflight.reason = broadphaseCellPairRejectReason(totalCellSlots);
+    preflight.zeroCellSlots = preflight.reason == BroadphaseCellPairRejectReason::ZeroCellSlots;
+    return preflight;
+}
+
+bool canSkipBroadphaseCellPairGeneration(u32 totalCellSlots) {
+    return !preflightBroadphaseCellPairGeneration(totalCellSlots).canDispatch();
+}
+
+bool shouldRunBroadphaseCellPairGeneration(u32 totalCellSlots) {
+    return preflightBroadphaseCellPairGeneration(totalCellSlots).canDispatch();
 }
 
 void refineBroadphasePairsParallel(

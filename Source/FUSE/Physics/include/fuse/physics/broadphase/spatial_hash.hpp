@@ -110,6 +110,13 @@ FUSE_PHYSICS_INLINE bool canSkipBroadphasePairGeneration(
     return isEmptyBroadphaseInput(bodies, shapes) || isSingletonBroadphaseInput(bodies, shapes);
 }
 
+/// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
+}
+
 /// True when the broadphase pipeline may early-out before hash build (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool canSkipBroadphase(
     const RigidBodySoA& bodies,
@@ -395,6 +402,104 @@ FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     u32 maxCells,
     CellOccupancyRejectReason expected) {
     return cellOccupancyRejectReason(range, maxCells) == expected;
+}
+
+/// Why cell span clamp would reduce occupancy iteration (B4.2 deepen follow-up pass).
+enum class CellSpanClampRejectReason : u8 {
+    None = 0,
+    ExceedsSpanPerAxis,
+};
+
+/// Human-readable label for cell-span clamp reject reasons (logging / tests).
+const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason);
+
+/// True when any axis span exceeds `maxSpanPerAxis` before clamping (0 = unlimited stub).
+FUSE_PHYSICS_INLINE bool exceedsCellSpanPerAxis(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u || isEmptyCellRange(range)) {
+        return false;
+    }
+    const ivec3 span = cellSpanPerAxis(range);
+    const s32 maxSpan = static_cast<s32>(maxSpanPerAxis);
+    return span.x > maxSpan || span.y > maxSpan || span.z > maxSpan;
+}
+
+FUSE_PHYSICS_INLINE bool exceedsCellSpanPerAxis(const CellRange2& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u || isEmptyCellRange(range)) {
+        return false;
+    }
+    const ivec2 span = cellSpanPerAxis(range);
+    const s32 maxSpan = static_cast<s32>(maxSpanPerAxis);
+    return span.x > maxSpan || span.y > maxSpan;
+}
+
+/// Diagnose why cell span clamp would shrink the range; vacuously succeeds when span is within limit.
+FUSE_PHYSICS_INLINE CellSpanClampRejectReason cellSpanClampRejectReason(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
+        return CellSpanClampRejectReason::ExceedsSpanPerAxis;
+    }
+    return CellSpanClampRejectReason::None;
+}
+
+FUSE_PHYSICS_INLINE CellSpanClampRejectReason cellSpanClampRejectReason(const CellRange2& range, u32 maxSpanPerAxis) {
+    if (exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
+        return CellSpanClampRejectReason::ExceedsSpanPerAxis;
+    }
+    return CellSpanClampRejectReason::None;
+}
+
+/// Returns true when `cellSpanClampRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool cellSpanClampRejectsForReason(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    CellSpanClampRejectReason expected) {
+    return cellSpanClampRejectReason(range, maxSpanPerAxis) == expected;
+}
+
+FUSE_PHYSICS_INLINE bool cellSpanClampRejectsForReason(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    CellSpanClampRejectReason expected) {
+    return cellSpanClampRejectReason(range, maxSpanPerAxis) == expected;
+}
+
+/// Read-only cell-span clamp diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct CellSpanClampPreflight {
+    CellSpanClampRejectReason reason = CellSpanClampRejectReason::None;
+    bool exceedsSpanPerAxis = false;
+
+    bool withinSpanLimit() const { return reason == CellSpanClampRejectReason::None; }
+};
+
+FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    CellSpanClampPreflight preflight{};
+    preflight.reason = cellSpanClampRejectReason(range, maxSpanPerAxis);
+    preflight.exceedsSpanPerAxis = preflight.reason == CellSpanClampRejectReason::ExceedsSpanPerAxis;
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    CellSpanClampPreflight preflight{};
+    preflight.reason = cellSpanClampRejectReason(range, maxSpanPerAxis);
+    preflight.exceedsSpanPerAxis = preflight.reason == CellSpanClampRejectReason::ExceedsSpanPerAxis;
+    return preflight;
+}
+
+/// Non-mutating cell-span skip predicate — true when clamp would shrink the range (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool canSkipCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    return preflightCellSpanClamp(range, maxSpanPerAxis).withinSpanLimit();
+}
+
+FUSE_PHYSICS_INLINE bool canSkipCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    return preflightCellSpanClamp(range, maxSpanPerAxis).withinSpanLimit();
+}
+
+/// Non-mutating cell-span predicate — inverse of `canSkipCellSpanClamp` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    return !canSkipCellSpanClamp(range, maxSpanPerAxis);
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    return !canSkipCellSpanClamp(range, maxSpanPerAxis);
 }
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
@@ -717,6 +822,37 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 
 /// Non-mutating merge-into-buffer predicate — mirrors `preflightMergePairsIntoBuffer` (B4.2 deepen pass).
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
+
+/// Why per-cell pair slot dispatch would early-out (B4.2 deepen follow-up pass).
+enum class BroadphaseCellPairRejectReason : u8 {
+    None = 0,
+    ZeroCellSlots,
+};
+
+/// Human-readable label for cell-pair reject reasons (logging / tests).
+const char* broadphaseCellPairRejectReasonName(BroadphaseCellPairRejectReason reason);
+
+/// Diagnose why cell-pair slot dispatch would skip; vacuously succeeds when dispatch may proceed.
+BroadphaseCellPairRejectReason broadphaseCellPairRejectReason(u32 totalCellSlots);
+
+/// Returns true when `broadphaseCellPairRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool broadphaseCellPairRejectsForReason(u32 totalCellSlots, BroadphaseCellPairRejectReason expected);
+
+/// Read-only cell-pair slot dispatch diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct BroadphaseCellPairPreflight {
+    BroadphaseCellPairRejectReason reason = BroadphaseCellPairRejectReason::None;
+    bool zeroCellSlots = false;
+
+    bool canDispatch() const { return reason == BroadphaseCellPairRejectReason::None; }
+};
+
+BroadphaseCellPairPreflight preflightBroadphaseCellPairGeneration(u32 totalCellSlots);
+
+/// Non-mutating cell-pair skip predicate — inverse of `canDispatch` (B4.2 deepen follow-up pass).
+bool canSkipBroadphaseCellPairGeneration(u32 totalCellSlots);
+
+/// Non-mutating cell-pair predicate — mirrors `preflightBroadphaseCellPairGeneration` (B4.2 deepen follow-up pass).
+bool shouldRunBroadphaseCellPairGeneration(u32 totalCellSlots);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
