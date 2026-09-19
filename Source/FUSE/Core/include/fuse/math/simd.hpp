@@ -367,6 +367,7 @@ inline bool tryInverseAffine(const fuse::math::Mat4& matrix, fuse::math::Mat4& o
 inline bool isRigidUpper3x3(const fuse::math::Mat4& matrix, f32 epsilon = 1e-4f) {
     return fuse::math::isRigidUpper3x3(matrix, epsilon);
 
+
 inline bool tryExtractTranslation(const fuse::math::Mat4& matrix, Vec3& translation, f32 epsilon = 1e-5f) {
     return fuse::math::tryExtractTranslation(matrix, translation, epsilon);
 }
@@ -396,6 +397,7 @@ inline bool tryRayIntervalClamped(const AABB& box, const Vec3& origin, const Vec
 inline bool tryTransformRigidAabb(const fuse::math::Mat4& matrix, const AABB& box, AABB& out,
                                   f32 epsilon = 1e-4f) {
     return fuse::math::tryTransformRigidAabb(matrix, box, out, epsilon);
+}
 
 inline bool tryClassifyAabb(const Vec4& plane, const AABB& box, PlaneSide& side, f32 epsilon = 1e-8f) {
     return fuse::math::tryClassifyAabb(plane, box, side, epsilon);

@@ -265,6 +265,7 @@ inline bool tryRayIntervalClamped(const AABB& box, const Vec3& origin, const Vec
 /// Transforms an AABB through a rigid affine matrix; returns false for empty boxes or non-rigid matrices.
 inline bool tryTransformRigidAabb(const Mat4& matrix, const AABB& box, AABB& out, f32 epsilon = 1e-4f) {
     if (!isRigid(matrix, epsilon)) {
+
     out = transformAabb(matrix, box);
     return true;
 }
