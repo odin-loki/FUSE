@@ -185,6 +185,23 @@ bool contact_refs_in_range(u32 bodyCount, const narrowphase::ContactManifold& co
 /// True when distance constraint body indices are in range for `bodyCount`.
 bool distance_refs_in_range(u32 bodyCount, const DistanceConstraint& constraint);
 
+
+
+/// Diagnose why island graph build would reject; vacuously succeeds on safe in-range inputs.
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Returns true when `island_graph_build_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+bool island_graph_build_rejects_for_reason(
+    IslandGraphBuildRejectReason expected);
+
+/// Read-only island graph build diagnostics with reject reason (B4.4 deepen follow-up pass).
+    IslandGraphBuildRejectReason reason = IslandGraphBuildRejectReason::None;
+
+    bool can_build() const { return !skipped && reason == IslandGraphBuildRejectReason::None; }
+
+/// Populate build preflight without mutating a graph (B4.4 deepen follow-up pass).
 IslandGraphBuildPreflight preflight_island_graph_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -731,7 +748,7 @@ bool can_build_contact_island_graph(
 bool should_skip_island_graph_build(u32 bodyCount,
 /// Early-out guard when build inputs cannot form a safe constrained partition.
 /// Returns true when graph build should be skipped before partition (B4.4 deepen follow-up).
-bool should_skip_contact_island_graph_build(
+/// True when island graph build should early-out before union-find (B4.4 deepen follow-up pass).
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -798,6 +815,7 @@ struct ContactIslandGraph {
     /// Guarded build; clears graph and returns `skipped` when preflight rejects inputs.
     IslandGraphBuildOutcome build_guarded(u32 bodyCount,
     /// Guarded build; returns false and clears when preflight skips unsafe inputs.
+    /// Guarded build; clears the graph and returns false when preflight rejects inputs.
 
     void clear();
 
