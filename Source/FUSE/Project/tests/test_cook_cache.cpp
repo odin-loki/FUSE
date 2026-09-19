@@ -1757,3 +1757,20 @@ void testCookCacheShouldSkipStoreGuard() {
     const std::string source = writeTempFile("/tmp/fuse_b79_should_skip.obj", "# should skip\n");
     desc.output_path = "/tmp/fuse_b79_should_skip.fusemesh";
                "should_skip_mesh mirrors preflight should_skip");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-1706 ---
+               "should_skip_file_content_hash for missing file");
+               "should_skip_mesh_import_hash false for readable source");
+               "mesh import preflight should_skip matches free helper");
+               "should_skip_mesh_import_hash for empty input path");
+               "should_skip_cook_cache_key for zero source hash");
+               "should_skip_combine_cook_cache_key allows zero upstream");
+               "should_skip_fnv1a64_bytes for null non-zero span");
+               "should_skip_upstream_dependencies_hash for empty dependency list");
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_skip_inv.obj", 1u}}),
+    expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_skip_inv.fusemesh", {}, {}),
+    expectTrue(cooker.cache().should_skip_invalidate_source("/tmp/fuse_b79_unknown.obj"),
+               "should_skip_invalidate_source true for unknown source");
+    expectTrue(cooker.cache().should_skip_prune_all(), "fresh cook should_skip_prune_all");
+    expectTrue(!cooker.cache().should_skip_prune_all(), "stale entry makes should_skip_prune_all false");
+               "prune estimate should_skip matches cache should_skip_prune_all");

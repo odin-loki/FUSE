@@ -2196,3 +2196,12 @@ void testCookerShouldSkipReconcileGuards() {
     expectTrue(removed >= 1u, "stale dependency invalidation runs after should_skip probes");
                "post-invalidation should_skip upstream returns true");
                "post-invalidation should_skip reconcile returns true");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-1706 ---
+               "fresh cache should_skip_reconcile_invalidation");
+               "fresh cache should_skip_stale_dependency_invalidation");
+               "empty changed source should_skip_upstream_invalidation");
+               "would_invalidate_upstream_dependency for seeded chain");
+               "upstream change makes should_skip_stale_dependency_invalidation false");
+               "upstream change makes should_skip_reconcile_invalidation false");
+               "should_skip_stale_dependency_invalidation after stale reconcile");
