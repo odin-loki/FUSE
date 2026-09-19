@@ -2984,3 +2984,17 @@ void testPreflightWarmStartIsland() {
     zeroPreflight.hasContactImpulses = false;
                                       zeroPreflight);
     testPreflightWarmStartIsland();
+
+// --- deepen additive from deepen-b4-pbd-island-guards-4cc0 ---
+void testPreflightIslandSolveGuards() {
+    bool foundEmptyPreflight = false;
+    bool foundConstrainedPreflight = false;
+            foundEmptyPreflight = true;
+            foundConstrainedPreflight = true;
+    expectTrue(foundEmptyPreflight, "preflight_island_solve covers empty island");
+    expectTrue(foundConstrainedPreflight, "preflight_island_solve covers constrained island");
+void testWarmStartPreflightGuards() {
+void testFrameLambdaWarmStartPreflightSkip() {
+    testPreflightIslandSolveGuards();
+    testWarmStartPreflightGuards();
+    testFrameLambdaWarmStartPreflightSkip();
