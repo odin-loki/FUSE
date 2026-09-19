@@ -456,6 +456,49 @@ void testCookHashPreflightGuards() {
     expectTrue(std::string(fuse::project::cookHashRejectReasonLabel(
                    fuse::project::CookHashRejectReason::EmptyPath)) == "empty_path",
                "reject reason label for empty path");
+
+    const fuse::project::CookHashPreflight null_bytes =
+        fuse::project::preflight_fnv1a64_bytes(nullptr, 4u);
+    expectTrue(!null_bytes.ok(), "null byte buffer fails FNV preflight");
+    expectTrue(null_bytes.reason == fuse::project::CookHashRejectReason::NullData,
+               "null byte buffer preflight reason is NullData");
+    expectTrue(fuse::project::preflight_fnv1a64_bytes(nullptr, 0).ok(),
+               "zero-size null buffer passes FNV preflight");
+
+    const std::string dep = writeTempFile("/tmp/fuse_b79_preflight_dep.obj", "# preflight dep\n");
+    fuse::project::CookManifestEntry entry_with_dep;
+    entry_with_dep.kind = fuse::project::CookAssetKind::Mesh;
+    entry_with_dep.source_path = source;
+    entry_with_dep.output_path = "/tmp/fuse_b79_preflight_mesh.fusemesh";
+    entry_with_dep.dependencies.push_back("/tmp/fuse_b79_preflight_missing.fusemesh");
+
+    fuse::project::CookManifest manifest_with_unreadable_dep;
+    fuse::project::CookManifestEntry unreadable_dep;
+    unreadable_dep.kind = fuse::project::CookAssetKind::Mesh;
+    unreadable_dep.source_path = "/tmp/fuse_b79_preflight_missing_dep.obj";
+    unreadable_dep.output_path = "/tmp/fuse_b79_preflight_missing.fusemesh";
+    manifest_with_unreadable_dep.assets.push_back(unreadable_dep);
+
+    expectTrue(!fuse::project::preflight_manifest_entry_with_upstream(entry_with_dep,
+                                                                     manifest_with_unreadable_dep)
+                   .ok(),
+               "manifest entry with unreadable dependency source fails upstream preflight");
+    expectTrue(fuse::project::preflight_manifest_entry_with_upstream(entry_with_dep,
+                                                                     manifest_with_unreadable_dep)
+                   .reason == fuse::project::CookHashRejectReason::SourceUnreadable,
+               "unreadable dependency source preflight reason is SourceUnreadable");
+
+    fuse::project::CookManifest manifest_with_dep;
+    fuse::project::CookManifestEntry dep_asset;
+    dep_asset.kind = fuse::project::CookAssetKind::Mesh;
+    dep_asset.source_path = dep;
+    dep_asset.output_path = "/tmp/fuse_b79_preflight_dep.fusemesh";
+    manifest_with_dep.assets.push_back(dep_asset);
+    entry_with_dep.dependencies[0] = dep_asset.output_path;
+
+    expectTrue(fuse::project::preflight_manifest_entry_with_upstream(entry_with_dep, manifest_with_dep)
+                   .ok(),
+               "manifest entry with readable dependency passes upstream preflight");
 }
 
 void testCookCacheInvalidationProbes() {
@@ -497,6 +540,46 @@ void testCookCacheInvalidationProbes() {
     const fuse::u32 removed = cooker.cache().prune_stale_entries();
     expectTrue(removed == 1u, "prune removes probed stale entry");
     expectTrue(cooker.cache().count_prunable_entries() == 0u, "count_prunable zero after prune");
+}
+
+void testCookCacheIncrementalInvalidationProbes() {
+    fuse::project::CookCache cache;
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_inc_probe.obj"),
+               "would_invalidate_source on empty cache is false");
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_inc_probe.fusemesh"),
+               "would_invalidate_output on empty cache is false");
+    expectTrue(cache.count_stale_entries() == 0u, "count_stale_entries on empty cache is zero");
+    expectTrue(cache.estimate_prune_removals() == 0u, "estimate_prune_removals on empty cache is zero");
+    expectTrue(cache.probe_stale_content_sources().empty(),
+               "probe_stale_content_sources on empty cache is empty");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_inc_probe.obj", "# inc probe v1\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_inc_probe.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for incremental probes ok");
+    expectTrue(cooker.cache().would_invalidate_source(source),
+               "would_invalidate_source reports seeded entry");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path),
+               "would_invalidate_output reports seeded entry");
+    expectTrue(!cooker.cache().would_invalidate_source(""), "empty source path probe is false");
+    expectTrue(cooker.cache().count_stale_entries() == 0u, "fresh entry is not stale");
+
+    writeTempFile(source, "# inc probe v2\n");
+    expectTrue(cooker.cache().count_stale_entries() == 1u, "count_stale_entries reports stale entry");
+    expectTrue(cooker.cache().estimate_prune_removals() == 1u,
+               "estimate_prune_removals matches stale entry count");
+    const std::vector<std::string> stale_sources = cooker.cache().probe_stale_content_sources();
+    expectTrue(stale_sources.size() == 1u, "probe_stale_content_sources finds one source");
+    expectTrue(stale_sources[0] == source, "probe_stale_content_sources returns stale source path");
+
+    const fuse::u32 removed = cooker.cache().prune_all();
+    expectTrue(removed == 1u, "prune_all removes estimated stale entry");
+    expectTrue(cooker.cache().estimate_prune_removals() == 0u,
+               "estimate_prune_removals zero after prune_all");
 }
 
 void testCookCachePruneInvalidEntriesOnLoad() {
@@ -563,6 +646,7 @@ int main() {
     testCookCachePruneAllMixedInvalidAndStale();
     testCookHashPreflightGuards();
     testCookCacheInvalidationProbes();
+    testCookCacheIncrementalInvalidationProbes();
     testCookCachePruneInvalidEntriesOnLoad();
 
     fuse::core::shutdown();

@@ -241,6 +241,22 @@ u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifes
     return count;
 }
 
+CookCacheReconcileEstimate AssetCooker::estimate_cache_reconcile(const CookManifest& manifest) const {
+    CookCacheReconcileEstimate estimate;
+    estimate.stale_dependency_invalidations = count_stale_dependency_invalidation(manifest);
+    estimate.prunable_entries = m_cache.estimate_prune_removals();
+    estimate.invalid_entries = m_cache.count_invalid_entries();
+    estimate.stale_entries = m_cache.count_stale_entries();
+    return estimate;
+}
+
+CookCacheReconcileEstimate AssetCooker::estimate_upstream_change_reconcile(const CookManifest& manifest,
+                                                                           const std::string& changed_source) const {
+    CookCacheReconcileEstimate estimate = estimate_cache_reconcile(manifest);
+    estimate.upstream_invalidation = count_upstream_invalidation(manifest, changed_source);
+    return estimate;
+}
+
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
