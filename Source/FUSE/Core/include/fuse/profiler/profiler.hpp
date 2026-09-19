@@ -175,7 +175,6 @@ struct ChromeTraceExportPreflight {
     u32 scopeEndEventCount = 0;
     u32 asyncFlowStartEventCount = 0;
     u32 asyncFlowFinishEventCount = 0;
-    u32 nonExportableEventCount = 0;
     bool hasRejectedInvalidNames = false;
     u32 flowStartEventCount = 0;
     u32 flowFinishEventCount = 0;
@@ -211,6 +210,9 @@ struct ChromeTraceExportPreflight {
     u32 orphanFlowEndCount = 0;
     bool hasUnpairedFlowEvents = false;
     bool nestingStateConsistent = false;
+    u32 firstExportableEventIndex = kInvalidEventIndex;
+    bool hasActiveScope = false;
+    bool hasActiveAsyncFlowNesting = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -974,6 +976,8 @@ bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFirstFlowStartById(u32 flowId, ProfileEvent& outEvent);
 bool tryLastFlowFinishById(u32 flowId, ProfileEvent& outEvent);
+bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 ProfilerRecordPreflight preflightRecord(const char* name);
 ProfilerExportPreflight preflightChromeTraceExport();
