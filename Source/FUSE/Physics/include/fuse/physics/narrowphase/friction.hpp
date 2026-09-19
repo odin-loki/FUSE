@@ -148,4 +148,20 @@ bool should_normalize_contact_normal_before_friction(
 /// Rebuild friction tangents only when preflight allows; returns false when skipped (B4.5 deepen follow-up pass).
 bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
+/// Returns true when friction-basis rebuild may proceed (B4.6 deepen pass).
+inline bool should_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f) {
+    return !should_skip_friction_basis_preflight(manifold, epsilon);
+}
+
+/// Build friction tangents only when preflight allows; no-op when skipped (B4.6 deepen pass).
+inline void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f) {
+    if (should_skip_friction_basis_preflight(manifold, epsilon)) {
+        if (should_skip_friction_tangents(manifold)) {
+            invalidate_friction_basis(manifold);
+        }
+        return;
+    }
+    compute_friction_tangents_if_needed(manifold, epsilon);
+}
+
 } // namespace fuse::physics::narrowphase
