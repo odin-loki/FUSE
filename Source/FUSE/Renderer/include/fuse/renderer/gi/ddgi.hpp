@@ -745,3 +745,6 @@ bool tryIsCacheIndexValid(const DDGIDesc& desc,
 
 // --- deepen additive from deepen-ddgi-b56-guards-7061 ---
     bool tryCanLookupCacheAtProbeIndex(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-probe-guards-9a61 ---
+bool tryValidateCacheSizedForGrid(const DDGIDesc& desc,

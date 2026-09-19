@@ -2170,3 +2170,14 @@ bool preflightDDGIKernelParams(const DDGIKernelParams& params, DdgiKernelRejectR
         outReason = DdgiKernelRejectReason::ZeroProbeCount;
         outReason = DdgiKernelRejectReason::NullProbeIndices;
     return preflightDDGIKernelParams(params, reason);
+
+// --- deepen additive from deepen-ddgi-probe-guards-9a61 ---
+    case ProbeSampleCoordsRejectReason::InvalidWeights:
+    case DdgiLaunchRejectReason::NullIndexBuffer:
+    case DdgiLaunchRejectReason::ZeroProbeCount:
+        outReason = ProbeSampleCoordsRejectReason::InvalidWeights;
+bool tryValidateCacheSizedForGrid(const DDGIDesc& desc,
+        outReason = DdgiLaunchRejectReason::ZeroProbeCount;
+        outReason = DdgiLaunchRejectReason::NullIndexBuffer;
+    case DdgiKernelRejectReason::ZeroUpdateCount:
+        outReason = DdgiKernelRejectReason::ZeroUpdateCount;
