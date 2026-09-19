@@ -612,6 +612,9 @@ PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
 
 /// Returns true when `pairBufferWriteSlotRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 bool pairBufferWriteSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
     u32 idxB,
     PairBufferWriteSlotRejectReason expected);
 
@@ -629,6 +632,15 @@ PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
 
 
 
+
+};
+
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Why pair-buffer canonical sort would early-out (B4.2 deepen follow-up pass).
 enum class PairBufferSortRejectReason : u8 {
     None = 0,
     EmptyBuffer,
@@ -672,6 +684,10 @@ enum class PairBufferSortRejectReason : u8 {
     bool singlePair = false;
 
 /// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+
+
+
+
 
 
 
@@ -1249,5 +1265,20 @@ bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
 
 
 
+
+
+
+/// Why pair-buffer compact-and-clamp would early-out (B4.2 deepen follow-up pass).
+
+/// Human-readable label for pair-buffer compact-and-clamp reject reasons (logging / tests).
+
+
+
+
+
+
+/// Non-mutating compact-and-clamp skip predicate — inverse of `needsCompactAndClamp` (B4.2 deepen follow-up pass).
+
+/// Non-mutating compact-and-clamp predicate — mirrors `preflightPairBufferCompactAndClamp` (B4.2 deepen follow-up pass).
 
 } // namespace fuse::physics::broadphase
