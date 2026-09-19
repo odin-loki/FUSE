@@ -597,8 +597,8 @@ inline bool constraint_pair_is_degenerate(u32 bodyA, u32 bodyB) {
     bool any_skipped() const {
         return skippedOutOfRangeContactCount > 0u || skippedOutOfRangeDistanceCount > 0u;
 bool should_skip_contact_island_build(u32 bodyCount,
-                                      const std::vector<narrowphase::ContactManifold>& contacts,
-                                      const std::vector<DistanceConstraint>& distanceConstraints);
+/// True when both body indices are valid for a `bodyCount`-body partition.
+bool body_pair_in_range(u32 bodyCount, u32 bodyA, u32 bodyB);
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island

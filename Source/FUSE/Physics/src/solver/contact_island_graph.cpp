@@ -887,6 +887,10 @@ bool should_skip_contact_island_build(u32 bodyCount,
     return !preflight_contact_island_build(bodyCount, contacts, distanceConstraints).can_build();
 }
 
+bool body_pair_in_range(u32 bodyCount, u32 bodyA, u32 bodyB) {
+    return bodyA < bodyCount && bodyB < bodyCount;
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
