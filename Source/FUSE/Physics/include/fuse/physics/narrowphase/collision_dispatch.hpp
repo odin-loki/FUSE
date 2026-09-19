@@ -4,6 +4,7 @@
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
@@ -196,6 +197,27 @@ void runNarrowphaseIntoBuffer(
 
 /// CPU stub of the CUDA narrow-phase dispatch (B4.3).
 std::vector<ContactManifold> runNarrowphase(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Const preflight for narrowphase buffer dispatch (B4.6 deepen pass).
+struct NarrowphaseDispatchPreflight {
+    NarrowphaseBatchPreflight batch{};
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && batch.can_dispatch(); }
+    bool can_skip() const { return skipped || batch.can_skip(); }
+};
+
+/// Populate narrowphase dispatch preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphaseDispatchPreflight preflight_run_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when narrowphase dispatch preflight reports no dispatchable pairs (B4.6 deepen pass).
+bool should_skip_narrowphase_dispatch(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);

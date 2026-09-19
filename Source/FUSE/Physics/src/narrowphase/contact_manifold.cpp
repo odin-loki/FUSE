@@ -528,6 +528,57 @@ bool finalize_contact_manifold_with_preflight(
     return generate_contact_manifold(manifold);
 }
 
+const char* manifold_shallow_prune_reject_reason_name(ManifoldShallowPruneRejectReason reason) {
+    switch (reason) {
+    case ManifoldShallowPruneRejectReason::None:
+        return "None";
+    case ManifoldShallowPruneRejectReason::EmptyManifold:
+        return "EmptyManifold";
+    case ManifoldShallowPruneRejectReason::NoShallowPenetrations:
+        return "NoShallowPenetrations";
+    }
+    return "Unknown";
+}
+
+ManifoldShallowPruneRejectReason manifold_shallow_prune_reject_reason(
+    const ContactManifold& manifold,
+    f32 minDepth) {
+    if (manifold.empty()) {
+        return ManifoldShallowPruneRejectReason::EmptyManifold;
+    }
+    if (!manifold.hasShallowPenetrations(minDepth)) {
+        return ManifoldShallowPruneRejectReason::NoShallowPenetrations;
+    }
+    return ManifoldShallowPruneRejectReason::None;
+}
+
+bool manifold_shallow_prune_rejects_for_reason(
+    const ContactManifold& manifold,
+    ManifoldShallowPruneRejectReason expected,
+    f32 minDepth) {
+    return manifold_shallow_prune_reject_reason(manifold, minDepth) == expected;
+}
+
+ManifoldShallowPrunePreflight preflight_manifold_shallow_prune(
+    const ContactManifold& manifold,
+    f32 minDepth) {
+    ManifoldShallowPrunePreflight preflight{};
+    preflight.reason = manifold_shallow_prune_reject_reason(manifold, minDepth);
+    if (preflight.reason != ManifoldShallowPruneRejectReason::None) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    preflight.hasShallow = manifold.hasShallowPenetrations(minDepth);
+    return preflight;
+}
+
+bool prune_shallow_penetrations_with_preflight(ContactManifold& manifold, f32 minDepth) {
+    if (!preflight_manifold_shallow_prune(manifold, minDepth).can_prune()) {
+        return !manifold.empty();
+    }
+    return manifold.pruneShallowPenetrationsIfNeeded(minDepth);
+}
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {

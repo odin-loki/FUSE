@@ -226,4 +226,24 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Const preflight for per-pair narrowphase dispatch using deepen reject checks (B4.6 deepen pass).
+struct ContactPairDispatchPreflight {
+    ContactPairDeepenPreflight deepen{};
+    bool rejected = false;
+
+    bool can_dispatch() const { return !rejected && deepen.can_dispatch(); }
+};
+
+/// Populate per-pair dispatch preflight without running shape dispatch (B4.6 deepen pass).
+ContactPairDispatchPreflight preflight_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when per-pair dispatch preflight rejects this pair (B4.6 deepen pass).
+bool should_skip_contact_pair_dispatch_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase
