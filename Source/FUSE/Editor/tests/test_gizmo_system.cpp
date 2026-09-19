@@ -3263,3 +3263,7 @@ void testGizmoUpdatePreflightSnapDegraded() {
     testSnapPreflightStepField();
     testGizmoInteractionPreflight();
     testGizmoUpdatePreflightSnapDegraded();
+
+// --- deepen additive from deepen-gizmo-guards-3c9f ---
+    const fuse::editor::UpdateDragPreflight updatePreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(updatePreflight.snapDegraded,
