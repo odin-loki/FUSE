@@ -4169,3 +4169,17 @@ void testTryPreflightEndDragRejectReason() {
     testTryPreflightBeginDragRejectReason();
     testTryPreflightUpdateDragRejectReason();
     testTryPreflightEndDragRejectReason();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-0cc5 ---
+    expectTrue(!fuse::editor::preflightPickReady(nanHit, fuse::editor::GizmoMode::Translate,
+               "preflightPickReady rejects non-finite screen hit");
+                   fuse::editor::preflightPick(nanHit, fuse::editor::GizmoMode::Translate)) ==
+    expectTrue(fuse::editor::classifyBeginDragReject(fuse::editor::preflightBeginDrag(
+               "tryPreflightBeginDrag rejects non-finite ray");
+    expectTrue(beginReason == fuse::editor::GizmoBeginDragRejectReason::NonFiniteRay,
+    expectTrue(!gizmo.preflightPickReady(nanHit), "gizmo preflightPickReady rejects non-finite hit");
+    expectTrue(!fuse::editor::preflightSnapDragReady(0.37f, fuse::editor::GizmoMode::Translate, snap,
+               "preflightSnapDragReady rejects invalid snap step");
+    expectTrue(fuse::editor::classifySnapDragReject(fuse::editor::preflightSnapDrag(
+               "tryPreflightSnapDrag rejects disabled snap");
+    expectTrue(gizmo.preflightSnapDragReady(0.37f), "gizmo preflightSnapDragReady accepts valid delta");

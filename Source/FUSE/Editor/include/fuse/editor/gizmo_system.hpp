@@ -1259,3 +1259,7 @@ bool canActOnInteraction(const InteractionPreflight& preflight, GizmoInteraction
 bool tryPreflightSnap(GizmoMode mode, const GizmoSnapSettings& settings, GizmoSnapRejectReason& reason);
                            const GizmoSnapSettings& settings, GizmoBeginDragRejectReason& reason,
                          const GizmoSnapSettings& settings, GizmoEndDragRejectReason& reason);
+
+// --- deepen additive from deepen-gizmo-preflight-guards-0cc5 ---
+const char* gizmoSnapDragRejectReasonLabel(GizmoSnapDragRejectReason reason);
+GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& preflight);

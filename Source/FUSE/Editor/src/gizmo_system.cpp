@@ -2935,3 +2935,11 @@ void applyNoTargetGuard(Handle<Object> target, EndDragPreflight& preflight) {
     return !preflightUpdateDrag(hit, dragging, activeAxis, mode, settings).canUpdate();
     return !preflightEndDrag(dragging, activeAxis, GizmoMode::Translate, {}).canEnd();
     return !preflightEndDrag(dragging, activeAxis, mode, settings).canEnd();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-0cc5 ---
+    preflight.snapDrag = preflightSnapDrag(0.f, mode, settings);
+GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& preflight) {
+        return GizmoSnapDragRejectReason::DeltaNonFinite;
+        return GizmoSnapDragRejectReason::SnapDisabled;
+        return GizmoSnapDragRejectReason::InvalidStep;
+    return GizmoSnapDragRejectReason::None;
