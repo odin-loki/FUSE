@@ -166,6 +166,7 @@ struct CookUpstreamInvalidateEstimate {
     /// True when no reconcile invalidation work is pending (B7.9 deepen).
     /// True when reconcile invalidation would be a no-op — mirrors `total() == 0` (B7.9 deepen).
 
+    /// True when no reconcile invalidation is needed — `total()` is zero (B7.9 deepen).
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -486,6 +487,10 @@ public:
     /// True when stale dependency-hash reconcile probes report zero removals (B7.9 deepen).
     /// True when prune reconcile estimate is empty (B7.9 deepen).
     /// True when combined reconcile estimate is empty (B7.9 deepen).
+    /// Convenience guard — `estimate_reconcile_invalidation(manifest).should_skip()` (B7.9 deepen).
+    /// Convenience guard — `estimate_prune_reconcile().should_skip()` (B7.9 deepen).
+    /// Convenience guard — `count_upstream_invalidation(...) == 0` (B7.9 deepen).
+    /// Convenience guard — `count_stale_dependency_invalidation(...) == 0` (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

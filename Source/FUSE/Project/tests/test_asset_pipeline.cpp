@@ -4288,6 +4288,18 @@ void testCookerStaleDependencyReconcileEstimate() {
                "upstream change makes should_skip_reconcile_invalidation false");
 
                "should_skip_stale_dependency_invalidation after stale reconcile");
+
+
+               "upstream invalidation should not skip when entries exist");
+
+               "stale dependency should_skip false after upstream change");
+               "reconcile should_skip false after upstream change");
+
+               "reconcile estimate should_skip matches cooker guard");
+    expectTrue(estimate.total() > 0u, "reconcile estimate non-zero after upstream change");
+
+    expectTrue(removed >= 1u, "stale dependency invalidation runs after should_skip probe");
+               "stale dependency should_skip true after invalidation");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
