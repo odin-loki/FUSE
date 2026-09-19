@@ -1806,3 +1806,20 @@ bool wouldSkipFroxelTrilinearSample(const FroxelDensityGrid& grid,
     return reject != FroxelTrilinearSampleRejectReason::None;
     if (!tryCanSampleTrilinearAtCoords(grid, desc, coords, outReason)) {
     return reject != FroxelPopulateRejectReason::None;
+
+// --- deepen additive from deepen-b511-froxel-guards-874b ---
+bool FroxelGridLayout::tryNormalizeAndPreflightSampleCoords(FroxelSampleCoords& coords,
+    return tryPreflightSampleCoords(coords, desc, outReason);
+    case FroxelTrilinearSampleRejectReason::ClampRequired:
+bool tryPreflightStrictDensityLookupAtIndex(const FroxelDensityGrid& grid,
+    if (outReason == DensityLookupRejectReason::IndexOutOfRange) {
+bool tryPreflightStrictDensityLookupAtCoord(const FroxelDensityGrid& grid,
+bool wouldRejectDensityLookupAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index) {
+    return !tryPreflightStrictDensityLookupAtIndex(grid, desc, index, reason);
+bool wouldRejectDensityLookupAtCoord(const FroxelDensityGrid& grid,
+    return !tryPreflightStrictDensityLookupAtCoord(grid, desc, tileX, tileY, sliceZ, reason);
+    return tryCanSampleTrilinear(grid, desc, coords, reason);
+    if (coordReason == SampleCoordRejectReason::InvalidWeights ||
+        outReason = FroxelTrilinearSampleRejectReason::ClampRequired;
+bool wouldClampTrilinearSample(const FroxelDensityGrid& grid,
+bool tryShouldSkipFroxelPopulate(const FroxelGridDesc& desc,

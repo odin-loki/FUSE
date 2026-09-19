@@ -710,3 +710,12 @@ ScreenMappingRejectReason classifyFroxelScreenMappingReject(f32 screenX,
 bool wouldSkipFroxelDensityLookup(const FroxelDensityGrid& grid,
 bool tryCanSampleTrilinearAtCoords(const FroxelDensityGrid& grid,
 bool wouldSkipFroxelTrilinearSample(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-b511-froxel-guards-874b ---
+    static bool tryNormalizeAndPreflightSampleCoords(FroxelSampleCoords& coords,
+bool tryPreflightStrictDensityLookupAtIndex(const FroxelDensityGrid& grid,
+bool tryPreflightStrictDensityLookupAtCoord(const FroxelDensityGrid& grid,
+bool wouldRejectDensityLookupAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
+bool wouldRejectDensityLookupAtCoord(const FroxelDensityGrid& grid,
+bool wouldClampTrilinearSample(const FroxelDensityGrid& grid,
+bool tryShouldSkipFroxelPopulate(const FroxelGridDesc& desc,

@@ -2635,3 +2635,27 @@ void testFroxelClassifyAndTrilinearPreflightGuards() {
     expectTrue(fuse::renderer::classifyFroxelScreenMappingReject(0.5f, 0.5f, 0.01f, desc, camera) ==
     expectTrue(fuse::renderer::classifyFroxelScreenMappingReject(0.5f, 0.5f, 10.f, zeroDesc, camera) ==
     testFroxelClassifyAndTrilinearPreflightGuards();
+
+// --- deepen additive from deepen-b511-froxel-guards-874b ---
+void testFroxelTrilinearAndStrictLookupGuards() {
+    expectTrue(fuse::renderer::FroxelGridLayout::tryNormalizeAndPreflightSampleCoords(normalized, desc, coordReason),
+               "tryCanSampleTrilinear still succeeds when weights will clamp");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::ClampRequired,
+    expectTrue(std::strcmp(fuse::renderer::froxelTrilinearSampleRejectReasonLabel(trilinearReason), "clamp_required") ==
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleTrilinear(emptyGrid, desc, inBounds, trilinearReason),
+               "tryCanSampleTrilinear rejects empty storage");
+    expectTrue(fuse::renderer::froxel_util::tryPreflightStrictDensityLookupAtIndex(grid, desc, 0u, lookupReason),
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightStrictDensityLookupAtIndex(grid, desc, 999u, lookupReason),
+    expectTrue(fuse::renderer::froxel_util::wouldRejectDensityLookupAtIndex(grid, desc, 999u),
+    expectTrue(!fuse::renderer::froxel_util::wouldRejectDensityLookupAtIndex(grid, desc, 0u),
+    expectTrue(fuse::renderer::froxel_util::tryPreflightStrictDensityLookupAtCoord(grid, desc, 1u, 1u, 2u, lookupReason),
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightStrictDensityLookupAtCoord(grid, desc, 99u, 99u, 99u,
+    expectTrue(fuse::renderer::froxel_util::wouldRejectDensityLookupAtCoord(grid, desc, 99u, 99u, 99u),
+    expectTrue(!fuse::renderer::froxel_util::wouldRejectDensityLookupAtCoord(grid, desc, 3u, 1u, 2u),
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightStrictDensityLookupAtIndex(emptyGrid, desc, 0u, lookupReason),
+    expectTrue(!fuse::renderer::froxel_util::tryShouldSkipFroxelPopulate(desc, camera, params, populateReason),
+               "tryShouldSkipFroxelPopulate false for valid populate inputs");
+    expectTrue(fuse::renderer::froxel_util::tryShouldSkipFroxelPopulate(desc, camera, zeroDensity, populateReason),
+               "tryShouldSkipFroxelPopulate true for zero density");
+    expectTrue(fuse::renderer::froxel_util::tryShouldSkipFroxelPopulate(zeroDesc, camera, params, populateReason),
+               "tryShouldSkipFroxelPopulate true for empty desc");
