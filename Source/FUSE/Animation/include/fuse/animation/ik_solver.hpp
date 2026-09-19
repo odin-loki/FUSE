@@ -65,6 +65,10 @@ void ensure_pose_bind_fallback(Pose& pose, const Skeleton& skel);
 [[nodiscard]] bool is_contiguous_bone_chain(const std::vector<u32>& bone_indices, const Skeleton& skel);
 
 /// True when `pose` has no bones, mismatched bone count, or undersized world-transform buffer.
+/// Returns false when `bone_indices` has fewer than two entries, any index is out of range, indices repeat,
+/// or consecutive bones are not parent→child in the skeleton hierarchy.
+
+/// True when `pose` has no bones, mismatched bone count, or empty world transforms for the skeleton.
 [[nodiscard]] bool needs_pose_bind_fallback(const Pose& pose, const Skeleton& skel);
 
 /// Seed `pose` from skeleton bind pose when it is empty or mismatched.
@@ -103,6 +107,9 @@ struct FABRIKChain {
     /// Returns false when the pose is empty or any chain bone index is out of range for the pose buffer.
     [[nodiscard]] bool has_valid_pose(const Pose& pose) const;
 
+    /// True when `pose` needs bind fallback before solving against `skel`.
+    [[nodiscard]] bool needs_pose_bind_fallback(const Pose& pose, const Skeleton& skel) const;
+
     /// Returns false when `has_valid_chain` is false.
     [[nodiscard]] bool can_solve(const Skeleton& skel) const;
 
@@ -135,6 +142,12 @@ struct TwoBoneIK {
 
     /// SoA variant of `has_valid_pose`.
     [[nodiscard]] bool has_valid_pose(const PoseSoA& pose) const;
+
+    /// True when the AoS pose needs bind fallback before solving against `skel`.
+    [[nodiscard]] bool needs_pose_bind_fallback(const Pose& pose, const Skeleton& skel) const;
+
+    /// SoA variant of `needs_pose_bind_fallback`.
+    [[nodiscard]] bool needs_pose_bind_fallback(const PoseSoA& pose, const Skeleton& skel) const;
 
     /// True when either limb segment has near-zero length in the current pose.
     [[nodiscard]] bool has_degenerate_segments(const Pose& pose) const;

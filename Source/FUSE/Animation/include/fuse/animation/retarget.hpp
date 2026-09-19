@@ -42,6 +42,13 @@ struct RetargetMap {
 
     /// True when both skeletons match the map's recorded bone counts.
     [[nodiscard]] bool are_skeletons_compatible(const Skeleton& source_skel, const Skeleton& target_skel) const;
+    /// True when `target_skel` is non-empty and has at least `target_bone_count` bones.
+
+    /// True when source pose and target skeleton both pass compatibility checks (map may still be invalid).
+    [[nodiscard]] bool is_retarget_pair_compatible(const PoseSoA& source_pose, const Skeleton& target_skel) const;
+
+    /// AoS variant of `is_retarget_pair_compatible`.
+    [[nodiscard]] bool is_retarget_pair_compatible(const Pose& source_pose, const Skeleton& target_skel) const;
 
     [[nodiscard]] u32 mapped_bone_count() const { return static_cast<u32>(bone_map.size()); }
 

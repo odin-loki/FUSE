@@ -228,6 +228,10 @@ bool needs_pose_bind_fallback(const Pose& pose, const Skeleton& skel) {
     }
 
     return pose.bone_world_transforms.size() < pose.bone_count;
+    if (skel.bones.empty()) {
+        return pose.bone_count != 0 || !pose.bone_world_transforms.empty();
+
+    return pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.bone_world_transforms.empty();
 }
 
 void ensure_pose_bind_fallback(Pose& pose, const Skeleton& skel) {
@@ -355,6 +359,9 @@ bool FABRIKChain::has_valid_chain(const Skeleton& skel) const {
     return true;
     return is_contiguous_bone_chain(bone_indices, skel);
 
+bool FABRIKChain::needs_pose_bind_fallback(const Pose& pose, const Skeleton& skel) const {
+    return fuse::animation::needs_pose_bind_fallback(pose, skel);
+
 bool FABRIKChain::has_valid_pose(const Pose& pose) const {
     if (bone_indices.empty() || pose.bone_count == 0 || pose.bone_world_transforms.empty()) {
 
@@ -414,6 +421,7 @@ bool FABRIKChain::solve(Pose& pose, const Skeleton& skel) {
     if (pose.bone_count != expectedBoneCount || pose.bone_world_transforms.empty()) {
         pose = Pose::make_bind_pose(skel);
     }
+    ensure_pose_bind_fallback(pose, skel);
     if (!has_valid_pose(pose)) {
     ensure_pose_bind_fallback(pose, skel);
     if (!can_solve(pose, skel)) {
@@ -480,6 +488,14 @@ bool TwoBoneIK::has_valid_pose(const PoseSoA& pose) const {
     }
 
     return root_bone < pose.bone_count && mid_bone < pose.bone_count && end_bone < pose.bone_count;
+}
+
+bool TwoBoneIK::needs_pose_bind_fallback(const Pose& pose, const Skeleton& skel) const {
+    return fuse::animation::needs_pose_bind_fallback(pose, skel);
+}
+
+bool TwoBoneIK::needs_pose_bind_fallback(const PoseSoA& pose, const Skeleton& skel) const {
+    return needs_pose_soa_bind_fallback(pose, skel);
 }
 
 bool TwoBoneIK::has_degenerate_segments(const Pose& pose) const {
@@ -558,6 +574,7 @@ bool TwoBoneIK::solve(Pose& pose, const Skeleton& skel) {
     if (!two_bone_segment_lengths(root, mid, end, upperLen, lowerLen)) {
     ensure_pose_bind_fallback(pose, skel);
     if (!can_solve(pose, skel)) {
+    if (!has_valid_pose(pose) || has_degenerate_segments(pose)) {
         return false;
     }
 
@@ -595,9 +612,7 @@ bool TwoBoneIK::solve(PoseSoA& pose, const Skeleton& skel) {
         return false;
     }
 
-    if (pose.bone_count != static_cast<u32>(skel.bones.size()) || pose.local_positions.empty()) {
-        pose = PoseSoA::from_bind_pose(skel);
-    }
+    ensure_pose_soa_bind_fallback(pose, skel);
     if (!has_valid_pose(pose) || has_degenerate_segments(pose)) {
     ensure_pose_soa_bind_fallback(pose, skel);
 
