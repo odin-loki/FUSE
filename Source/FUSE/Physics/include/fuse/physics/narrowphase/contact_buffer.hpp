@@ -328,6 +328,15 @@ struct ContactBufferSoA {
         if (slot >= validFlags.size()) {
         if (pairSlotCount > 0u && slot >= pairSlotCount) {
         return validFlags[slot] != 0u;
+    bool canApplyMaxCapacityClamp() const {
+        return maxCapacity > 0u && activeCount > maxCapacity;
+    /// True when every prepared slot is valid (compact is a no-op).
+    bool canSkipCompaction() const {
+        if (pairSlotCount == 0u) {
+        for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
+    u32 countValidSlots() const {
+    bool slotIsValid(u32 slot) const {
+        return slot < pairSlotCount && validFlags[slot] != 0u;
 
     void reserve(u32 capacity);
     void setMaxCapacity(u32 capacity);
@@ -474,6 +483,7 @@ enum class ContactBufferWriteSlotRejectReason : u8 {
 /// Why contact-buffer slot write would reject (B4.5 deepen pass).
 /// Why contact-buffer slot write would reject (B4.5 deepen follow-up pass).
 /// Why contact-buffer writeSlot would reject (B4.5 deepen follow-up pass).
+/// Why contact-buffer slot write would reject (B4.6 deepen follow-up pass).
     InvalidManifold,
     SelfPair,
 };
@@ -545,6 +555,7 @@ FUSE_PHYSICS_INLINE const char* contact_buffer_write_slot_reject_reason_name(
 
 FUSE_PHYSICS_INLINE ContactBufferWriteSlotRejectReason contact_buffer_write_slot_reject_reason(
 /// Why contact-buffer writeSlot would reject (B4.6 deepen pass).
+
 
 
     const ContactBufferSoA& buffer,
@@ -1000,6 +1011,66 @@ FUSE_PHYSICS_INLINE bool contact_buffer_compact_and_clamp_rejects_for_reason(
 /// Read-only compact-and-clamp diagnostics — no mutation (B4.6 deepen pass).
 struct ContactBufferCompactAndClampPreflight {
     ContactBufferCompactAndClampRejectReason reason = ContactBufferCompactAndClampRejectReason::None;
+/// Returns true when `contact_buffer_write_slot_reject_reason` matches `expected` (B4.6 deepen follow-up pass).
+    const ContactBufferSoA& buffer,
+    u32 slot,
+
+/// Read-only write-slot diagnostics — no mutation (B4.6 deepen follow-up pass).
+
+
+    const ContactManifold& manifold);
+
+/// Non-mutating write-slot skip predicate — inverse of `can_write` (B4.6 deepen follow-up pass).
+
+/// Non-mutating write-slot predicate — mirrors `preflight_contact_buffer_write_slot` (B4.6 deepen follow-up pass).
+
+/// Write only when preflight allows; returns false when skipped (B4.6 deepen follow-up pass).
+bool write_contact_buffer_slot_with_preflight(
+
+/// Why contact-buffer compaction would early-out (B4.6 deepen follow-up pass).
+
+
+/// Diagnose why compact would early-out; vacuously succeeds when compaction may proceed.
+
+/// Returns true when `contact_buffer_compaction_reject_reason` matches `expected` (B4.6 deepen follow-up pass).
+
+/// Read-only compaction diagnostics — no mutation (B4.6 deepen follow-up pass).
+
+
+
+/// Non-mutating compaction skip predicate — inverse of `needs_compaction` (B4.6 deepen follow-up pass).
+
+/// Non-mutating compaction predicate — mirrors `preflight_contact_buffer_compaction` (B4.6 deepen follow-up pass).
+
+/// Compact only when preflight allows; returns active count or zero when skipped (B4.6 deepen follow-up pass).
+u32 compact_contact_buffer_with_preflight(ContactBufferSoA& buffer);
+
+/// Why contact-buffer clamp would early-out (B4.6 deepen follow-up pass).
+    NoCapacityLimit,
+
+/// Human-readable label for contact-buffer clamp reject reasons (logging / tests).
+
+/// Diagnose why applyMaxCapacityClamp would early-out; vacuously succeeds when clamp may proceed.
+
+/// Read-only clamp diagnostics — no mutation (B4.6 deepen follow-up pass).
+    bool noCapacityLimit = false;
+
+
+
+/// Non-mutating clamp skip predicate — inverse of `needs_clamp` (B4.6 deepen follow-up pass).
+
+/// Non-mutating clamp predicate — mirrors `preflight_contact_buffer_clamp` (B4.6 deepen follow-up pass).
+
+/// Clamp only when preflight allows; returns active count or prior count when skipped (B4.6 deepen follow-up pass).
+u32 apply_contact_buffer_max_capacity_clamp_with_preflight(ContactBufferSoA& buffer);
+
+/// Why contact-buffer compact-and-clamp would early-out (B4.6 deepen follow-up pass).
+
+/// Human-readable label for contact-buffer compact-and-clamp reject reasons (logging / tests).
+
+/// Diagnose why compactAndClamp would early-out; vacuously succeeds when pass may proceed.
+
+/// Read-only compact-and-clamp diagnostics — no mutation (B4.6 deepen follow-up pass).
 
     bool needs_compact_and_clamp() const {
         return reason == ContactBufferCompactAndClampRejectReason::None;
@@ -2907,6 +2978,101 @@ FUSE_PHYSICS_INLINE bool ContactBufferSoA::canSkipCompactAndClamp() const {
 
     ContactBufferWriteSlotRejectReason reason) {
 FUSE_PHYSICS_INLINE const char* contactBufferWriteSlotRejectReasonName(ContactBufferWriteSlotRejectReason reason) {
+};
+
+
+/// Non-mutating compact-and-clamp skip predicate — inverse of `needs_compact_and_clamp` (B4.6 deepen follow-up pass).
+
+
+/// Compact and clamp only when preflight allows; returns active count or zero when skipped (B4.6 deepen follow-up pass).
+
+/// Why contact-buffer toVector would early-out (B4.6 deepen follow-up pass).
+    None = 0,
+    EmptyBuffer,
+
+
+
+/// Returns true when `contact_buffer_to_vector_reject_reason` matches `expected` (B4.6 deepen follow-up pass).
+    const ContactBufferSoA& buffer,
+
+/// Read-only toVector diagnostics — no mutation (B4.6 deepen follow-up pass).
+    bool emptyBuffer = false;
+
+
+
+/// Non-mutating toVector skip predicate — inverse of `can_export` (B4.6 deepen follow-up pass).
+
+/// Non-mutating toVector predicate — mirrors `preflight_contact_buffer_to_vector` (B4.6 deepen follow-up pass).
+
+/// Export only when preflight allows; returns empty vector when skipped (B4.6 deepen follow-up pass).
+std::vector<ContactManifold> to_vector_contact_buffer_with_preflight(const ContactBufferSoA& buffer);
+
+/// Why contact-buffer manifoldAt would early-out (B4.6 deepen follow-up pass).
+enum class ContactBufferManifoldAtRejectReason : u8 {
+    OutOfRangeIndex,
+
+/// Human-readable label for contact-buffer manifoldAt reject reasons (logging / tests).
+const char* contact_buffer_manifold_at_reject_reason_name(ContactBufferManifoldAtRejectReason reason);
+
+/// Diagnose why manifoldAt would return invalid; vacuously succeeds when read may proceed.
+ContactBufferManifoldAtRejectReason contact_buffer_manifold_at_reject_reason(
+    u32 index);
+
+/// Read-only manifoldAt diagnostics — no mutation (B4.6 deepen follow-up pass).
+struct ContactBufferManifoldAtPreflight {
+    ContactBufferManifoldAtRejectReason reason = ContactBufferManifoldAtRejectReason::None;
+    bool outOfRangeIndex = false;
+    bool invalidSlot = false;
+
+    bool can_read() const { return reason == ContactBufferManifoldAtRejectReason::None; }
+
+ContactBufferManifoldAtPreflight preflight_contact_buffer_manifold_at(
+
+/// Non-mutating manifoldAt skip predicate — inverse of `can_read` (B4.6 deepen follow-up pass).
+bool can_skip_contact_buffer_manifold_at(const ContactBufferSoA& buffer, u32 index);
+
+/// Why contact-buffer warm-start apply would early-out (B4.6 deepen follow-up pass).
+
+/// Human-readable label for contact-buffer warm-start reject reasons (logging / tests).
+
+/// Diagnose why applyWarmStartStub would no-op; vacuously succeeds when apply may proceed.
+
+/// Read-only warm-start diagnostics — no mutation (B4.6 deepen follow-up pass).
+    bool outOfRangeSlot = false;
+
+
+
+/// Non-mutating warm-start skip predicate — inverse of `can_apply` (B4.6 deepen follow-up pass).
+
+/// Apply warm-start only when preflight allows; returns false when skipped (B4.6 deepen follow-up pass).
+bool apply_contact_buffer_warm_start_with_preflight(
+    u32 slot,
+    ContactManifold& manifold);
+
+/// Why contact-buffer tangent-basis build would early-out (B4.6 deepen follow-up pass).
+enum class ContactBufferTangentBasisRejectReason : u8 {
+
+/// Human-readable label for contact-buffer tangent-basis reject reasons (logging / tests).
+const char* contact_buffer_tangent_basis_reject_reason_name(ContactBufferTangentBasisRejectReason reason);
+
+/// Diagnose why buildFrictionTangentBases would no-op; vacuously succeeds when build may proceed.
+ContactBufferTangentBasisRejectReason contact_buffer_tangent_basis_reject_reason(const ContactBufferSoA& buffer);
+
+/// Read-only tangent-basis diagnostics — no mutation (B4.6 deepen follow-up pass).
+struct ContactBufferTangentBasisPreflight {
+    ContactBufferTangentBasisRejectReason reason = ContactBufferTangentBasisRejectReason::None;
+
+    bool can_build() const { return reason == ContactBufferTangentBasisRejectReason::None; }
+
+ContactBufferTangentBasisPreflight preflight_contact_buffer_tangent_basis(const ContactBufferSoA& buffer);
+
+/// Non-mutating tangent-basis skip predicate — inverse of `can_build` (B4.6 deepen follow-up pass).
+bool can_skip_contact_buffer_build_friction_tangent_bases(const ContactBufferSoA& buffer);
+
+/// Build tangent bases only when preflight allows; returns false when skipped (B4.6 deepen follow-up pass).
+bool build_contact_buffer_friction_tangent_bases_with_preflight(ContactBufferSoA& buffer);
+
+FUSE_PHYSICS_INLINE const char* contact_buffer_write_slot_reject_reason_name(
     switch (reason) {
     case ContactBufferWriteSlotRejectReason::None:
         return "None";
@@ -3002,6 +3168,19 @@ enum class ContactBufferCompactionRejectReason : u8 {
 
 /// Human-readable label for contact-buffer compaction reject reasons (B4.6 deepen pass).
 FUSE_PHYSICS_INLINE const char* contactBufferCompactionRejectReasonName(ContactBufferCompactionRejectReason reason) {
+
+
+
+
+
+
+FUSE_PHYSICS_INLINE bool write_contact_buffer_slot_with_preflight(
+    ContactBufferSoA& buffer,
+    if (!should_run_contact_buffer_write_slot(buffer, slot, manifold)) {
+        return false;
+    buffer.writeSlot(slot, manifold);
+    return true;
+
         return "None";
     case ContactBufferCompactionRejectReason::EmptyBuffer:
         return "EmptyBuffer";
@@ -3009,6 +3188,7 @@ FUSE_PHYSICS_INLINE const char* contactBufferCompactionRejectReasonName(ContactB
         return "AllValid";
     }
     return "Unknown";
+}
 
 FUSE_PHYSICS_INLINE ContactBufferCompactionRejectReason contact_buffer_compaction_reject_reason(
     const ContactBufferSoA& buffer) {
@@ -3027,6 +3207,11 @@ FUSE_PHYSICS_INLINE ContactBufferCompactionPreflight preflight_contact_buffer_co
 
     const ContactBufferSoA& buffer,
 
+    if (buffer.countValidSlots() == 0u) {
+        return ContactBufferCompactionRejectReason::EmptyBuffer;
+
+
+    const ContactBufferSoA& buffer) {
     ContactBufferCompactionPreflight preflight{};
     preflight.reason = contact_buffer_compaction_reject_reason(buffer);
     preflight.emptyBuffer = preflight.reason == ContactBufferCompactionRejectReason::EmptyBuffer;
@@ -3219,6 +3404,9 @@ FUSE_PHYSICS_INLINE void write_contact_buffer_slot_with_preflight(
     if (!should_run_contact_buffer_write_slot(buffer, slot, manifold)) {
         return;
     buffer.writeSlot(slot, manifold);
+}
+
+
 
 FUSE_PHYSICS_INLINE u32 compact_contact_buffer_with_preflight(ContactBufferSoA& buffer) {
     const ContactBufferCompactionPreflight preflight = preflight_contact_buffer_compaction(buffer);
@@ -3406,6 +3594,128 @@ enum class ContactBufferWarmStartRejectReason : u8 {
 /// Human-readable label for warm-start reject reasons (B4.6 deepen pass).
 FUSE_PHYSICS_INLINE const char* contactBufferWarmStartRejectReasonName(ContactBufferWarmStartRejectReason reason) {
     case ContactBufferWarmStartRejectReason::None:
+    }
+        buffer.activeCount = buffer.countValidSlots();
+
+FUSE_PHYSICS_INLINE const char* contact_buffer_clamp_reject_reason_name(ContactBufferClampRejectReason reason) {
+    switch (reason) {
+    case ContactBufferClampRejectReason::None:
+        return "None";
+    case ContactBufferClampRejectReason::NoCapacityLimit:
+        return "NoCapacityLimit";
+    case ContactBufferClampRejectReason::WithinCapacity:
+        return "WithinCapacity";
+    return "Unknown";
+
+FUSE_PHYSICS_INLINE ContactBufferClampRejectReason contact_buffer_clamp_reject_reason(
+    const ContactBufferSoA& buffer) {
+    if (buffer.maxCapacity == 0u) {
+        return ContactBufferClampRejectReason::NoCapacityLimit;
+    if (buffer.activeCount <= buffer.maxCapacity) {
+        return ContactBufferClampRejectReason::WithinCapacity;
+    return ContactBufferClampRejectReason::None;
+
+FUSE_PHYSICS_INLINE ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer) {
+    ContactBufferClampPreflight preflight{};
+    preflight.reason = contact_buffer_clamp_reject_reason(buffer);
+    preflight.noCapacityLimit = preflight.reason == ContactBufferClampRejectReason::NoCapacityLimit;
+    preflight.withinCapacity = preflight.reason == ContactBufferClampRejectReason::WithinCapacity;
+    return preflight;
+
+FUSE_PHYSICS_INLINE bool can_skip_contact_buffer_clamp(const ContactBufferSoA& buffer) {
+    return !preflight_contact_buffer_clamp(buffer).needs_clamp();
+
+FUSE_PHYSICS_INLINE bool should_run_contact_buffer_clamp(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_clamp(buffer).needs_clamp();
+
+FUSE_PHYSICS_INLINE u32 apply_contact_buffer_max_capacity_clamp_with_preflight(ContactBufferSoA& buffer) {
+
+FUSE_PHYSICS_INLINE const char* contact_buffer_compact_and_clamp_reject_reason_name(
+    ContactBufferCompactAndClampRejectReason reason) {
+    case ContactBufferCompactAndClampRejectReason::None:
+    case ContactBufferCompactAndClampRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferCompactAndClampRejectReason::NoWork:
+        return "NoWork";
+
+FUSE_PHYSICS_INLINE ContactBufferCompactAndClampRejectReason contact_buffer_compact_and_clamp_reject_reason(
+    if (buffer.canSkipSoAIteration()) {
+        return ContactBufferCompactAndClampRejectReason::EmptyBuffer;
+    if (buffer.canSkipCompaction() && buffer.canSkipMaxCapacityClamp()) {
+        return ContactBufferCompactAndClampRejectReason::NoWork;
+    return ContactBufferCompactAndClampRejectReason::None;
+
+FUSE_PHYSICS_INLINE ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp(
+    ContactBufferCompactAndClampPreflight preflight{};
+    preflight.reason = contact_buffer_compact_and_clamp_reject_reason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer;
+    preflight.noWork = preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork;
+
+FUSE_PHYSICS_INLINE bool can_skip_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer) {
+    return !preflight_contact_buffer_compact_and_clamp(buffer).needs_compact_and_clamp();
+
+FUSE_PHYSICS_INLINE bool should_run_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_compact_and_clamp(buffer).needs_compact_and_clamp();
+
+    if (!should_run_contact_buffer_compact_and_clamp(buffer)) {
+
+FUSE_PHYSICS_INLINE const char* contact_buffer_to_vector_reject_reason_name(
+    ContactBufferToVectorRejectReason reason) {
+    case ContactBufferToVectorRejectReason::None:
+    case ContactBufferToVectorRejectReason::EmptyBuffer:
+
+FUSE_PHYSICS_INLINE ContactBufferToVectorRejectReason contact_buffer_to_vector_reject_reason(
+        return ContactBufferToVectorRejectReason::EmptyBuffer;
+    return ContactBufferToVectorRejectReason::None;
+
+FUSE_PHYSICS_INLINE bool contact_buffer_to_vector_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferToVectorRejectReason expected) {
+    return contact_buffer_to_vector_reject_reason(buffer) == expected;
+
+FUSE_PHYSICS_INLINE ContactBufferToVectorPreflight preflight_contact_buffer_to_vector(
+    ContactBufferToVectorPreflight preflight{};
+    preflight.reason = contact_buffer_to_vector_reject_reason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferToVectorRejectReason::EmptyBuffer;
+
+FUSE_PHYSICS_INLINE bool can_skip_contact_buffer_to_vector(const ContactBufferSoA& buffer) {
+    return !preflight_contact_buffer_to_vector(buffer).can_export();
+
+FUSE_PHYSICS_INLINE bool should_run_contact_buffer_to_vector(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_to_vector(buffer).can_export();
+
+FUSE_PHYSICS_INLINE std::vector<ContactManifold> to_vector_contact_buffer_with_preflight(
+    if (!should_run_contact_buffer_to_vector(buffer)) {
+        return {};
+    return buffer.toVector();
+
+FUSE_PHYSICS_INLINE const char* contact_buffer_manifold_at_reject_reason_name(
+    ContactBufferManifoldAtRejectReason reason) {
+    case ContactBufferManifoldAtRejectReason::None:
+    case ContactBufferManifoldAtRejectReason::OutOfRangeIndex:
+        return "OutOfRangeIndex";
+    case ContactBufferManifoldAtRejectReason::InvalidSlot:
+        return "InvalidSlot";
+
+FUSE_PHYSICS_INLINE ContactBufferManifoldAtRejectReason contact_buffer_manifold_at_reject_reason(
+    u32 index) {
+    if (index >= buffer.activeCount) {
+        return ContactBufferManifoldAtRejectReason::OutOfRangeIndex;
+    if (buffer.validFlags[index] == 0u) {
+        return ContactBufferManifoldAtRejectReason::InvalidSlot;
+    return ContactBufferManifoldAtRejectReason::None;
+
+FUSE_PHYSICS_INLINE ContactBufferManifoldAtPreflight preflight_contact_buffer_manifold_at(
+    ContactBufferManifoldAtPreflight preflight{};
+    preflight.reason = contact_buffer_manifold_at_reject_reason(buffer, index);
+    preflight.outOfRangeIndex = preflight.reason == ContactBufferManifoldAtRejectReason::OutOfRangeIndex;
+    preflight.invalidSlot = preflight.reason == ContactBufferManifoldAtRejectReason::InvalidSlot;
+
+FUSE_PHYSICS_INLINE bool can_skip_contact_buffer_manifold_at(const ContactBufferSoA& buffer, u32 index) {
+    return !preflight_contact_buffer_manifold_at(buffer, index).can_read();
+
+FUSE_PHYSICS_INLINE const char* contact_buffer_warm_start_reject_reason_name(
+    ContactBufferWarmStartRejectReason reason) {
     case ContactBufferWarmStartRejectReason::OutOfRangeSlot:
         return "OutOfRangeSlot";
     case ContactBufferWarmStartRejectReason::InvalidSlot:
@@ -3475,5 +3785,58 @@ FUSE_PHYSICS_INLINE bool canSkipContactBufferToVector(const ContactBufferSoA& bu
 /// Non-mutating toVector predicate — mirrors `preflightContactBufferToVector` (B4.6 deepen pass).
 FUSE_PHYSICS_INLINE bool shouldRunContactBufferToVector(const ContactBufferSoA& buffer) {
     return preflightContactBufferToVector(buffer).canExport();
+    }
+    return "Unknown";
+
+FUSE_PHYSICS_INLINE ContactBufferWarmStartRejectReason contact_buffer_warm_start_reject_reason(
+    const ContactBufferSoA& buffer,
+    if (buffer.validFlags[slot] == 0u) {
+
+FUSE_PHYSICS_INLINE ContactBufferWarmStartPreflight preflight_contact_buffer_warm_start(
+    preflight.reason = contact_buffer_warm_start_reject_reason(buffer, slot);
+    return preflight;
+
+FUSE_PHYSICS_INLINE bool can_skip_contact_buffer_warm_start(const ContactBufferSoA& buffer, u32 slot) {
+    return !preflight_contact_buffer_warm_start(buffer, slot).can_apply();
+
+FUSE_PHYSICS_INLINE bool apply_contact_buffer_warm_start_with_preflight(
+    u32 slot,
+    ContactManifold& manifold) {
+    if (!preflight_contact_buffer_warm_start(buffer, slot).can_apply()) {
+        return false;
+    buffer.applyWarmStartStub(slot, manifold);
+    return true;
+
+FUSE_PHYSICS_INLINE const char* contact_buffer_tangent_basis_reject_reason_name(
+    ContactBufferTangentBasisRejectReason reason) {
+    switch (reason) {
+    case ContactBufferTangentBasisRejectReason::None:
+        return "None";
+    case ContactBufferTangentBasisRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferTangentBasisRejectReason::NoValidSlots:
+        return "NoValidSlots";
+
+FUSE_PHYSICS_INLINE ContactBufferTangentBasisRejectReason contact_buffer_tangent_basis_reject_reason(
+    const ContactBufferSoA& buffer) {
+    if (buffer.activeCount == 0u) {
+        return ContactBufferTangentBasisRejectReason::EmptyBuffer;
+    for (u32 slot = 0u; slot < buffer.activeCount; ++slot) {
+        if (buffer.validFlags[slot] != 0u) {
+            return ContactBufferTangentBasisRejectReason::None;
+    return ContactBufferTangentBasisRejectReason::NoValidSlots;
+
+FUSE_PHYSICS_INLINE ContactBufferTangentBasisPreflight preflight_contact_buffer_tangent_basis(
+    ContactBufferTangentBasisPreflight preflight{};
+    preflight.reason = contact_buffer_tangent_basis_reject_reason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferTangentBasisRejectReason::EmptyBuffer;
+    preflight.noValidSlots = preflight.reason == ContactBufferTangentBasisRejectReason::NoValidSlots;
+
+FUSE_PHYSICS_INLINE bool can_skip_contact_buffer_build_friction_tangent_bases(const ContactBufferSoA& buffer) {
+    return !preflight_contact_buffer_tangent_basis(buffer).can_build();
+
+FUSE_PHYSICS_INLINE bool build_contact_buffer_friction_tangent_bases_with_preflight(ContactBufferSoA& buffer) {
+    if (!preflight_contact_buffer_tangent_basis(buffer).can_build()) {
+    buffer.buildFrictionTangentBases();
 
 } // namespace fuse::physics::narrowphase

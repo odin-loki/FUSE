@@ -1,6 +1,9 @@
 #pragma once
 
+#include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
+
+#include <cmath>
 #include <fuse/physics/narrowphase/friction.hpp>
 #include <fuse/types.hpp>
 
@@ -1520,6 +1523,15 @@ FUSE_PHYSICS_INLINE bool normalize_contact_normal_if_needed(ContactManifold& man
     manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
     return true;
 
+/// Returns true when normal normalization would be a no-op (B4.6 deepen follow-up pass).
+bool can_skip_contact_normal_normalize(const ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Normalize contact normal only when needed; returns false when normal is invalid (B4.6 deepen follow-up pass).
+
+/// Prune shallow slots only when preflight allows; returns false when prune rejects (B4.6 deepen follow-up pass).
+bool prune_shallow_contact_manifold_with_preflight(
+    f32 minDepth,
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
@@ -1531,13 +1543,37 @@ FUSE_PHYSICS_INLINE void compute_friction_tangents_with_preflight(ContactManifol
             invalidate_friction_basis(manifold);
         }
         return;
-    }
 
     if (should_normalize_contact_normal_before_friction(manifold, epsilon)) {
         normalize_contact_normal_if_needed(manifold, epsilon);
-    }
 
     compute_friction_tangents_if_needed(manifold, epsilon);
+FUSE_PHYSICS_INLINE bool can_skip_contact_normal_normalize(
+    const ContactManifold& manifold,
+    f32 lengthEpsilon) {
+    return !manifold.needsNormalNormalization(lengthEpsilon);
+
+FUSE_PHYSICS_INLINE bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (!manifold.hasValidNormal()) {
+        return false;
+    if (can_skip_contact_normal_normalize(manifold, lengthEpsilon)) {
+        return true;
+    const f32 normalLength = manifold.contactNormal.length();
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+
+FUSE_PHYSICS_INLINE bool prune_shallow_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 minDepth,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    const ManifoldPrunePreflight preflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, minDepth);
+    if (preflight.reason != ManifoldPruneRejectReason::None) {
+        if (preflight.reason == ManifoldPruneRejectReason::AllSeparated) {
+            manifold.clear();
+    if (!preflight.needs_shallow_pruning(minDepth)) {
+        return !manifold.empty();
+    return manifold.pruneShallowPenetrationsIfNeeded(minDepth);
 }
 
 } // namespace fuse::physics::narrowphase
