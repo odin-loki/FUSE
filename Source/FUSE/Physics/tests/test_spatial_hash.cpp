@@ -4520,3 +4520,8 @@ void testWouldSkipBroadphaseGuardHelpers() {
     expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(planeRange, 2u) ==
                "wouldSkipMergePairsIntoBuffer agrees with canSkipMergePairsIntoBuffer on empty buffer");
                "wouldSkipMergePairsIntoBuffer is inverse of shouldRunMergePairsIntoBuffer");
+
+// --- deepen additive from deepen-b4-broadphase-guards-6b27 ---
+void testWouldSkipBroadphaseHelperGuards() {
+               "wouldSkipMergePairsIntoBuffer false for non-empty pairs into empty buffer");
+               "wouldSkipMergePairsIntoBuffer agrees with canSkipMergePairsIntoBuffer on full buffer");

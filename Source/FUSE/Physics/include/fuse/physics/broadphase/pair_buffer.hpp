@@ -626,3 +626,7 @@ bool wouldSkipPairBufferCompactAndClamp(
     PairBufferCompactAndClampRejectReason* reason = nullptr);
 bool wouldSkipPairBufferToVector(const PairBufferSoA& buffer, PairBufferToVectorRejectReason* reason = nullptr);
 bool invalidatePairBufferSlotWithPreflight(PairBufferSoA& buffer, u32 slot);
+
+// --- deepen additive from deepen-b4-broadphase-guards-6b27 ---
+FUSE_PHYSICS_INLINE bool wouldSkipPairBufferWriteSlot(
+FUSE_PHYSICS_INLINE bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
