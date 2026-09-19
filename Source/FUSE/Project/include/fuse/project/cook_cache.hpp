@@ -163,6 +163,7 @@ struct CookCacheInvalidationSurface {
     /// True when no prune work is needed — `total()` is zero (B7.9 deepen).
     /// True when prune reconcile can be skipped — no invalid or stale records (B7.9 deepen).
 
+
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
