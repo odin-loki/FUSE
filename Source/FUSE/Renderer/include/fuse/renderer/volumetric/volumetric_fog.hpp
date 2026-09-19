@@ -462,6 +462,7 @@ struct FroxelGridLayout {
                                                   TrilinearSampleRejectReason& outReason);
     /// True when slice corners or tz would be clamped before trilinear sampling.
     static bool wouldClampTrilinearSlice(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+    /// Classify sample-coord reject — same ordering as `tryPreflightSampleCoords` (B5.11 deepen).
 };
 
 /// Why screen-depth → sample-coord mapping rejected the request (B5.11 deepen).
@@ -642,6 +643,7 @@ DensityLookupRejectReason classifyFroxelDensityLookupReject(const FroxelDensityG
 /// Classify sample-coord reject — same ordering as `tryPreflightSampleCoords` (B5.11 deepen).
 SampleCoordRejectReason classifyFroxelSampleCoordReject(const FroxelSampleCoords& coords,
                                                         const FroxelGridDesc& desc);
+DensityLookupRejectReason classifyDensityLookupReject(const FroxelDensityGrid& grid,
 /// Classify analytic populate reject — same ordering as `tryCanPopulateFromAnalyticFog` (B5.11 deepen).
 FroxelPopulateRejectReason classifyFroxelPopulateReject(const FroxelGridDesc& desc,
                                                         const FroxelCameraDesc& camera,
@@ -658,6 +660,8 @@ enum class DensityTrilinearSampleRejectReason : u8 {
     ClampableWeights,
 
 const char* densityTrilinearSampleRejectReasonLabel(DensityTrilinearSampleRejectReason reason);
+/// Classify trilinear sample reject — same ordering as `tryCanTrilinearSampleAtCoords` (B5.11 deepen).
+                                                                      const FroxelGridDesc& desc,
 
 /// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
 namespace froxel_util {
@@ -794,6 +798,11 @@ bool wouldRejectDensityLookupAtCoord(const FroxelDensityGrid& grid,
 bool wouldSkipDensityLookupAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
 /// True when coord-based density lookup should be skipped (inaccessible grid).
 bool wouldSkipDensityLookupAtCoord(const FroxelDensityGrid& grid,
+/// Early-out when density lookup would be rejected — same ordering as `tryCanLookupAtIndex`.
+bool wouldSkipDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
+/// Early-out when index-based density lookup would be rejected; OOB indices that clamp are not skipped.
+bool wouldSkipDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
+/// Early-out when coord-based density lookup would be rejected; OOB coords that clamp are not skipped.
 /// True when a lookup at `index` would clamp into the valid froxel range.
 bool wouldClampDensityLookupIndex(u32 index, const FroxelGridDesc& desc);
 /// True when a lookup at tile/slice coords would clamp into the valid froxel range.
