@@ -4232,3 +4232,7 @@ void testUpdateDragRejectReasonNonFiniteGuards() {
     testPickRejectReasonNonFiniteGuards();
     testBeginDragRejectReasonNonFiniteGuards();
     testUpdateDragRejectReasonNonFiniteGuards();
+
+// --- deepen additive from deepen-gizmo-reject-reasons-3339 ---
+    expectTrue(fuse::editor::classifyBeginDragReject(nanBeginPreflight) ==
+    expectTrue(fuse::editor::classifyUpdateDragReject(nanUpdatePreflight) ==
