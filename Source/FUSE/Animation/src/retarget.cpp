@@ -135,6 +135,32 @@ RetargetMap RetargetMap::build_by_name(const Skeleton& source, const Skeleton& t
     return map;
 }
 
+bool RetargetMap::can_apply_pose_soa(const PoseSoA& source_pose, const Skeleton& target_skel) const {
+    if (!is_valid() || target_skel.bones.empty() || source_pose.bone_count == 0) {
+        return false;
+    }
+
+    if (source_pose.bone_count != source_bone_count ||
+        static_cast<u32>(target_skel.bones.size()) != target_bone_count) {
+        return false;
+    }
+
+    return true;
+}
+
+bool RetargetMap::can_apply_pose(const Pose& source_pose, const Skeleton& target_skel) const {
+    if (!is_valid() || target_skel.bones.empty() || source_pose.bone_count == 0) {
+        return false;
+    }
+
+    if (source_pose.bone_count != source_bone_count ||
+        static_cast<u32>(target_skel.bones.size()) != target_bone_count) {
+        return false;
+    }
+
+    return true;
+}
+
 void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
                                  const Skeleton& target_skel,
                                  PoseSoA& out_pose) const {
