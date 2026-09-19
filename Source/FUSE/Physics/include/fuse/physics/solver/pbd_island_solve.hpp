@@ -1556,3 +1556,10 @@ IslandSleepAwareDispatchPreflight preflight_island_sleep_aware_dispatch_by_index
 IslandSleepAwareDispatchPreflight preflight_island_sleep_aware_dispatch_job(
 IslandSleepAwareGraphPreflight preflight_island_sleep_aware_graph(const ContactIslandGraph& graph,
 bool should_skip_island_sleep_aware_dispatch(const ContactIslandGraph::Island& island,
+
+// --- deepen additive from deepen-pbd-island-guards-ecc4 ---
+struct IslandConstraintSolveJobPreflight {
+IslandConstraintSolveJobPreflight preflight_solve_island_job_with_bodies(
+bool should_skip_solve_island_job_with_bodies(const IslandSolveJob& job,
+IslandSleepDispatchPreflight preflight_island_sleep_dispatch(const ContactIslandGraph& graph,
+bool should_skip_island_sleep_dispatch(const ContactIslandGraph& graph,

@@ -4570,3 +4570,18 @@ void testGuardedIslandSleepAwareDispatch() {
                "should_skip sleep-aware dispatch true for all-sleeping island");
     const IslandSleepAwareGraphPreflight graphPreflight = preflight_island_sleep_aware_graph(graph, bodies, dt);
     expectTrue(graphPreflight.can_dispatch(), "sleep-aware graph preflight has dispatchable islands");
+
+// --- deepen additive from deepen-pbd-island-guards-ecc4 ---
+void testSolveIslandJobWithBodiesGuards() {
+    const IslandConstraintSolveJobPreflight mixedPreflight =
+    expectTrue(mixedPreflight.can_solve(), "mixed island job preflight can solve");
+    expectTrue(!should_skip_solve_island_job_with_bodies(mixedJob, bodies, work.contactManifolds(), constraints, dt),
+    const IslandConstraintSolveJobPreflight sleepingPreflight =
+    expectTrue(!sleepingPreflight.can_solve(), "all-sleeping island job preflight cannot solve");
+    expectTrue(should_skip_solve_island_job_with_bodies(sleepingJob, bodies, work.contactManifolds(), constraints, dt),
+void testIslandWakeResultAndSleepDispatchGuards() {
+    const IslandSleepDispatchPreflight sleepDispatch = preflight_island_sleep_dispatch(graph, bodies, dt);
+    expectTrue(!should_skip_island_sleep_dispatch(graph, bodies, dt),
+               "should_skip sleep dispatch false for mixed graph");
+    expectTrue(should_skip_island_sleep_dispatch(graph, bodies, dt),
+               "should_skip sleep dispatch true when every island is all-sleeping");

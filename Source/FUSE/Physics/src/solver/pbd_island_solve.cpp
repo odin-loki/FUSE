@@ -2543,3 +2543,13 @@ bool should_skip_island_sleep_aware_dispatch(const ContactIslandGraph::Island& i
     if (should_skip_island_sleep_aware_dispatch(island, bodies, contacts, distanceConstraints, dt)) {
     const IslandSleepAwareGraphPreflight preflight = preflight_island_sleep_aware_graph(graph, bodies, dt);
         } else if (should_skip_island_constraint_solve(
+
+// --- deepen additive from deepen-pbd-island-guards-ecc4 ---
+IslandConstraintSolveJobPreflight preflight_solve_island_job_with_bodies(
+    IslandConstraintSolveJobPreflight preflight{};
+bool should_skip_solve_island_job_with_bodies(const IslandSolveJob& job,
+    if (should_skip_solve_island_job_with_bodies(job, bodies, contacts, distanceConstraints, dt)) {
+        if (should_skip_island_constraint_solve(*job.island, bodies, contacts, distanceConstraints)) {
+IslandSleepDispatchPreflight preflight_island_sleep_dispatch(const ContactIslandGraph& graph,
+bool should_skip_island_sleep_dispatch(const ContactIslandGraph& graph,
+    if (should_skip_island_sleep_dispatch(graph, bodies, dt)) {
