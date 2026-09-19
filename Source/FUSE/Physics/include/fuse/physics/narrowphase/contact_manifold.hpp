@@ -390,3 +390,8 @@ ManifoldFinalizeRejectReason manifold_finalize_second_reject_reason(
 // --- deepen additive from b4-narrowphase-deepen-guards-1595 ---
     if (should_skip_friction_basis_preflight(manifold, epsilon)) {
         if (friction_basis_reject_reason(manifold) != FrictionBasisRejectReason::None) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-af6c ---
+    const ManifoldPrunePreflight preflight =
+    if (preflight.reason != ManifoldPruneRejectReason::None) {
+        if (preflight.reason == ManifoldPruneRejectReason::AllSeparated) {

@@ -265,3 +265,7 @@ FrictionBasisRejectReason friction_basis_stale_reject_reason(
     return !should_skip_friction_basis_preflight(manifold, epsilon);
     if (should_skip_friction_basis_preflight(manifold, epsilon)) {
         if (should_skip_friction_tangents(manifold)) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-af6c ---
+    return should_skip_friction_basis_preflight(manifold, epsilon);
+    return should_skip_tangential_velocity_solve(

@@ -450,3 +450,16 @@ inline ContactPairDetectPreflight preflight_detect_contacts_pair(
     return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
     if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
     return !should_skip_contact_pair_dispatch(pair, bodies, shapes);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-af6c ---
+ContactPairRejectReason contact_pair_deepen_followup_reject_reason(
+bool should_skip_contact_pair_deepen_followup_dispatch(
+    return should_skip_contact_pair_dispatch(pair, bodies, shapes);
+FUSE_PHYSICS_INLINE ContactPairRejectReason contact_pair_deepen_followup_reject_reason(
+    const ContactPairRejectReason deepenReason = contact_pair_deepen_reject_reason(pair, bodies, shapes);
+    if (deepenReason != ContactPairRejectReason::None) {
+        return ContactPairRejectReason::UnsupportedShapePair;
+    return ContactPairRejectReason::None;
+FUSE_PHYSICS_INLINE bool should_skip_contact_pair_deepen_followup_dispatch(
+    return contact_pair_deepen_followup_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+    if (should_skip_friction_basis_preflight(manifold, epsilon)) {

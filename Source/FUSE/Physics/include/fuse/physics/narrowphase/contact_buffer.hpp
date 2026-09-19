@@ -541,3 +541,48 @@ FUSE_PHYSICS_INLINE ContactBufferToVectorPreflight preflightContactBufferToVecto
     preflight.reason = contactBufferToVectorRejectReason(buffer);
     return !preflightContactBufferToVector(buffer).canExport();
     return preflightContactBufferToVector(buffer).canExport();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-af6c ---
+enum class ContactBufferManifoldAtRejectReason : u8 {
+const char* contact_buffer_manifold_at_reject_reason_name(ContactBufferManifoldAtRejectReason reason);
+ContactBufferManifoldAtRejectReason contact_buffer_manifold_at_reject_reason(
+struct ContactBufferManifoldAtPreflight {
+    ContactBufferManifoldAtRejectReason reason = ContactBufferManifoldAtRejectReason::None;
+    bool can_read() const { return reason == ContactBufferManifoldAtRejectReason::None; }
+ContactBufferManifoldAtPreflight preflight_contact_buffer_manifold_at(
+enum class ContactBufferTangentBasisRejectReason : u8 {
+const char* contact_buffer_tangent_basis_reject_reason_name(ContactBufferTangentBasisRejectReason reason);
+ContactBufferTangentBasisRejectReason contact_buffer_tangent_basis_reject_reason(const ContactBufferSoA& buffer);
+struct ContactBufferTangentBasisPreflight {
+    ContactBufferTangentBasisRejectReason reason = ContactBufferTangentBasisRejectReason::None;
+    bool can_build() const { return reason == ContactBufferTangentBasisRejectReason::None; }
+ContactBufferTangentBasisPreflight preflight_contact_buffer_tangent_basis(const ContactBufferSoA& buffer);
+    case ContactBufferClampRejectReason::NoCapacityLimit:
+        return ContactBufferClampRejectReason::NoCapacityLimit;
+    preflight.noCapacityLimit = preflight.reason == ContactBufferClampRejectReason::NoCapacityLimit;
+    ContactBufferManifoldAtRejectReason reason) {
+    case ContactBufferManifoldAtRejectReason::None:
+    case ContactBufferManifoldAtRejectReason::OutOfRangeIndex:
+    case ContactBufferManifoldAtRejectReason::InvalidSlot:
+FUSE_PHYSICS_INLINE ContactBufferManifoldAtRejectReason contact_buffer_manifold_at_reject_reason(
+        return ContactBufferManifoldAtRejectReason::OutOfRangeIndex;
+        return ContactBufferManifoldAtRejectReason::InvalidSlot;
+    return ContactBufferManifoldAtRejectReason::None;
+FUSE_PHYSICS_INLINE ContactBufferManifoldAtPreflight preflight_contact_buffer_manifold_at(
+    ContactBufferManifoldAtPreflight preflight{};
+    preflight.outOfRangeIndex = preflight.reason == ContactBufferManifoldAtRejectReason::OutOfRangeIndex;
+    preflight.invalidSlot = preflight.reason == ContactBufferManifoldAtRejectReason::InvalidSlot;
+FUSE_PHYSICS_INLINE ContactBufferWarmStartRejectReason contact_buffer_warm_start_reject_reason(
+FUSE_PHYSICS_INLINE ContactBufferWarmStartPreflight preflight_contact_buffer_warm_start(
+    ContactBufferTangentBasisRejectReason reason) {
+    case ContactBufferTangentBasisRejectReason::None:
+    case ContactBufferTangentBasisRejectReason::EmptyBuffer:
+    case ContactBufferTangentBasisRejectReason::NoValidSlots:
+FUSE_PHYSICS_INLINE ContactBufferTangentBasisRejectReason contact_buffer_tangent_basis_reject_reason(
+        return ContactBufferTangentBasisRejectReason::EmptyBuffer;
+            return ContactBufferTangentBasisRejectReason::None;
+    return ContactBufferTangentBasisRejectReason::NoValidSlots;
+FUSE_PHYSICS_INLINE ContactBufferTangentBasisPreflight preflight_contact_buffer_tangent_basis(
+    ContactBufferTangentBasisPreflight preflight{};
+    preflight.emptyBuffer = preflight.reason == ContactBufferTangentBasisRejectReason::EmptyBuffer;
+    preflight.noValidSlots = preflight.reason == ContactBufferTangentBasisRejectReason::NoValidSlots;

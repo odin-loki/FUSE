@@ -3467,3 +3467,11 @@ void testContactBufferSoAGuardPreflights() {
     expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight can dispatch mixed batch");
     fuse::physics::narrowphase::runNarrowphaseIntoBufferWithPreflight(
     testContactBufferSoAGuardPreflights();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-af6c ---
+    const auto manifoldPreflight =
+    expectTrue(manifoldPreflight.can_read(), "contact buffer manifoldAt preflight allows valid index");
+    expectTrue(dispatchPreflight.can_dispatch(), "narrowphase dispatch preflight allows valid pair");
+void testContactPairManifoldDeepenFollowupGuards() {
+        fuse::physics::narrowphase::should_skip_contact_pair_deepen_followup_dispatch({planeA, planeB}, bodies, shapes),
+void testFrictionDeepenFollowupGuards() {

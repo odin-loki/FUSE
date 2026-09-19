@@ -277,3 +277,22 @@ FUSE_PHYSICS_INLINE void runNarrowphaseIntoBufferWithPreflight(
 // --- deepen additive from b4-narrowphase-deepen-guards-1595 ---
 FUSE_PHYSICS_INLINE NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
     NarrowphaseBufferDispatchPreflight preflight{};
+
+// --- deepen additive from b4-narrowphase-deepen-guards-af6c ---
+enum class NarrowphaseDispatchRejectReason : u8 {
+const char* narrowphase_dispatch_reject_reason_name(NarrowphaseDispatchRejectReason reason);
+NarrowphaseDispatchRejectReason narrowphase_dispatch_reject_reason(
+    NarrowphaseDispatchRejectReason expected);
+    NarrowphaseDispatchRejectReason reason = NarrowphaseDispatchRejectReason::None;
+    bool can_dispatch() const { return !rejected && reason == NarrowphaseDispatchRejectReason::None; }
+    NarrowphaseDispatchRejectReason reason) {
+    case NarrowphaseDispatchRejectReason::None:
+    case NarrowphaseDispatchRejectReason::EmptyPairList:
+    case NarrowphaseDispatchRejectReason::AllPairsRejected:
+FUSE_PHYSICS_INLINE NarrowphaseDispatchRejectReason narrowphase_dispatch_reject_reason(
+        return NarrowphaseDispatchRejectReason::EmptyPairList;
+        return NarrowphaseDispatchRejectReason::AllPairsRejected;
+    return NarrowphaseDispatchRejectReason::None;
+    NarrowphaseDispatchRejectReason expected) {
+FUSE_PHYSICS_INLINE NarrowphaseDispatchPreflight preflight_run_narrowphase_into_buffer(
+    preflight.rejected = preflight.reason != NarrowphaseDispatchRejectReason::None;
