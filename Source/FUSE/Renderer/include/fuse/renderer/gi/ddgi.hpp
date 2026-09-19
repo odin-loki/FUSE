@@ -970,3 +970,17 @@ bool wouldSkipProbeLookup(const DDGIDesc& desc, const IrradianceCacheEntry* cach
 ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc, ProbeGridSourceKind kind);
 bool wouldSkipProbeGridSource(const DDGIDesc& desc, ProbeGridSourceKind kind);
 ProbeTrilinearSampleRejectReason classifyTrilinearSampleReject(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-b56-guards-a29f ---
+enum class ProbeIndexRejectReason : u8 {
+enum class ProbeCoordRejectReason : u8 {
+const char* probeIndexRejectReasonLabel(ProbeIndexRejectReason reason);
+const char* probeCoordRejectReasonLabel(ProbeCoordRejectReason reason);
+bool probeIndexRejectReasonIsBlocking(ProbeIndexRejectReason reason);
+bool probeCoordRejectReasonIsBlocking(ProbeCoordRejectReason reason);
+                                      ProbeIndexRejectReason& outReason);
+    static ProbeIndexRejectReason classifyProbeIndexReject(const DDGIDesc& desc, u32 probe_index);
+                                    ProbeIndexRejectReason* reason = nullptr);
+                                      ProbeCoordRejectReason& outReason);
+    static ProbeCoordRejectReason classifyProbeCoordReject(const DDGIDesc& desc, const ProbeGridCoord& coord);
+                                    ProbeCoordRejectReason* reason = nullptr);

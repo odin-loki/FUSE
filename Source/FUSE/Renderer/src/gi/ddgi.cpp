@@ -2994,3 +2994,35 @@ bool preflightProbeKernelLaunchForDesc(const DDGIDesc& desc,
     const ProbeKernelRejectReason reject = classifyProbeKernelRejectForDesc(desc, params);
 bool wouldSkipProbeKernelLaunchForDesc(const DDGIDesc& desc, const DDGIKernelParams& params) {
     return !preflightProbeKernelLaunchForDesc(desc, params);
+
+// --- deepen additive from deepen-ddgi-b56-guards-a29f ---
+const char* probeIndexRejectReasonLabel(ProbeIndexRejectReason reason) {
+    case ProbeIndexRejectReason::None:
+    case ProbeIndexRejectReason::EmptyGrid:
+    case ProbeIndexRejectReason::OutOfRangeIndex:
+const char* probeCoordRejectReasonLabel(ProbeCoordRejectReason reason) {
+    case ProbeCoordRejectReason::None:
+    case ProbeCoordRejectReason::EmptyGrid:
+    case ProbeCoordRejectReason::OutOfRangeCoord:
+bool probeIndexRejectReasonIsBlocking(ProbeIndexRejectReason reason) {
+    return reason != ProbeIndexRejectReason::None;
+bool probeCoordRejectReasonIsBlocking(ProbeCoordRejectReason reason) {
+    return reason != ProbeCoordRejectReason::None;
+                                            ProbeIndexRejectReason& outReason) {
+        outReason = ProbeIndexRejectReason::EmptyGrid;
+        outReason = ProbeIndexRejectReason::OutOfRangeIndex;
+    outReason = ProbeIndexRejectReason::None;
+ProbeIndexRejectReason ProbeGridLayout::classifyProbeIndexReject(const DDGIDesc& desc, u32 probe_index) {
+    ProbeIndexRejectReason reason = ProbeIndexRejectReason::None;
+                                          ProbeIndexRejectReason* reason) {
+    const ProbeIndexRejectReason reject = classifyProbeIndexReject(desc, probe_index);
+    return !probeIndexRejectReasonIsBlocking(reject);
+                                            ProbeCoordRejectReason& outReason) {
+        outReason = ProbeCoordRejectReason::EmptyGrid;
+        outReason = ProbeCoordRejectReason::OutOfRangeCoord;
+    outReason = ProbeCoordRejectReason::None;
+ProbeCoordRejectReason ProbeGridLayout::classifyProbeCoordReject(const DDGIDesc& desc,
+    ProbeCoordRejectReason reason = ProbeCoordRejectReason::None;
+                                          ProbeCoordRejectReason* reason) {
+    const ProbeCoordRejectReason reject = classifyProbeCoordReject(desc, coord);
+    return !probeCoordRejectReasonIsBlocking(reject);
