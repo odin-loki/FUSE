@@ -3833,3 +3833,14 @@ void testInteractionPrimaryRejectReason() {
     testGizmoInteractionRejectReasons();
     testShouldSkipPreflights();
     testInteractionPrimaryRejectReason();
+
+// --- deepen additive from deepen-gizmo-interaction-preflights-50ff ---
+    const fuse::editor::PickPreflight nonFinitePick =
+    expectTrue(beginPreflight.canBegin, "begin preflight accepts finite screen hit");
+    const fuse::editor::BeginDragPreflight nonFiniteBegin = fuse::editor::preflightBeginDrag(
+    expectTrue(updatePreflight.nonFiniteHit, "update preflight marks non-finite screen hit");
+    expectTrue(!updatePreflight.canUpdate(), "update preflight rejects non-finite screen hit");
+    expectTrue(degradedPreflight.isDegraded(), "snap-drag preflight marks degraded snap");
+    expectTrue(!degradedPreflight.canApply(), "snap-drag preflight rejects invalid step");
+    expectTrue(validPreflight.canApply(), "snap-drag preflight accepts valid snap settings");
+void testCanActOnPhaseGuards() {
