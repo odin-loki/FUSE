@@ -468,3 +468,9 @@ inline bool try_preflight_manifold_prune(
     const ManifoldFinalizePreflight preflight =
 inline bool try_preflight_manifold_finalize(
     ManifoldFinalizeRejectReason& reason,
+
+// --- deepen additive from deepen-b4-narrowphase-b3e2 ---
+FUSE_PHYSICS_INLINE bool try_prune_contact_manifold_with_preflight(
+    if (would_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+FUSE_PHYSICS_INLINE bool try_finalize_contact_manifold_with_preflight(
+    if (would_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)) {

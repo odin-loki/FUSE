@@ -3846,3 +3846,19 @@ void testWouldSkipAndTryPreflightWrappers() {
         frictionReason == fuse::physics::narrowphase::FrictionBasisRejectReason::None,
     fuse::physics::narrowphase::NarrowphaseBatchPreflight batch{};
     testWouldSkipAndTryPreflightWrappers();
+
+// --- deepen additive from deepen-b4-narrowphase-b3e2 ---
+    expectTrue(writePreflight.canWrite(), "write preflight accepts valid manifold");
+    const auto warmStartPreflight =
+    expectTrue(warmStartPreflight.canApply(), "warm-start preflight accepts valid slot");
+            fuse::physics::narrowphase::NarrowphaseIntoBufferRejectReason::BatchRejectsAll),
+void testWouldSkipAndTryWrapperGuards() {
+        "would_skip deepen dispatch for sleeping pair");
+        !fuse::physics::narrowphase::would_skip_contact_pair_dispatch({bodyA, bodyB}, bodies, shapes),
+        "would_skip base dispatch allows valid pair");
+        "would_skip manifold prune for clean manifold");
+        !fuse::physics::narrowphase::would_skip_manifold_prune(dirty),
+        "would_skip manifold prune false when separated slot exists");
+        !fuse::physics::narrowphase::would_skip_manifold_finalize(finalizeReady),
+        "would_skip finalize false for penetrating manifold");
+        "would_skip friction rebuild true after valid basis built");

@@ -397,3 +397,8 @@ bool try_preflight_narrowphase_into_buffer(
     const NarrowphaseIntoBufferPreflight preflight = preflight_narrowphase_into_buffer(pairs, bodies, shapes);
 FUSE_PHYSICS_INLINE bool try_preflight_narrowphase_into_buffer(
     NarrowphaseIntoBufferRejectReason& reason) {
+
+// --- deepen additive from deepen-b4-narrowphase-b3e2 ---
+    case NarrowphaseIntoBufferRejectReason::BatchRejectsAll:
+        return NarrowphaseIntoBufferRejectReason::BatchRejectsAll;
+    preflight.batchRejectsAll = preflight.reason == NarrowphaseIntoBufferRejectReason::BatchRejectsAll;

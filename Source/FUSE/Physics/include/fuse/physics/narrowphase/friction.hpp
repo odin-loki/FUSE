@@ -345,3 +345,6 @@ FUSE_PHYSICS_INLINE bool try_ensure_friction_basis(ContactManifold& manifold) {
 // --- deepen additive from b4-narrowphase-deepen-guards-bcad ---
 inline bool try_preflight_friction_basis_rebuild(
     FrictionBasisRejectReason& reason,
+
+// --- deepen additive from deepen-b4-narrowphase-b3e2 ---
+FUSE_PHYSICS_INLINE bool try_rebuild_friction_basis_with_preflight(
