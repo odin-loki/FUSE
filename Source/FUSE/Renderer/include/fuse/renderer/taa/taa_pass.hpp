@@ -273,6 +273,15 @@ public:
     /// Compute expected resolve blend weights with reject-reason diagnostics (B5.9 deepen).
     /// Classify why pass resolve blend weights would be rejected (B5.9 deepen).
     /// True when pass history buffers are allocated and ready for resolve (B5.9 deepen).
+    /// Combined history warmup + reuse preflight (B5.9 deepen).
+    bool preflightHistoryTemporal(u32 observedGeneration, TaaHistoryReuseBlockReason* reason = nullptr) const;
+    /// Early-out when pass history warmup or reuse preflight would reject (B5.9 deepen).
+    bool shouldSkipHistoryTemporal(u32 observedGeneration) const;
+    /// Combined resolve + blend-weight preflight (B5.9 deepen).
+    bool preflightResolveWithBlend(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason = nullptr,
+                                   TaaResolveBlendRejectReason* blendReason = nullptr) const;
+    /// Early-out when resolve or blend-weight preflight would reject (B5.9 deepen).
+    bool shouldSkipResolveWithBlend(const TaaResolveDesc& desc) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
@@ -437,6 +446,10 @@ public:
     bool offsetForFrameIndexIfReady(u32 frameIndex, fuse::math::Vec2& out) const;
     /// NDC jitter for a frame counter when viewport and sequence are valid (B5.9 deepen).
     bool ndcOffsetForFrameIndexIfReady(u32 frameIndex, fuse::math::Vec2& out) const;
+    /// Combined jitter sync + NDC preflight for a frame (B5.9 deepen).
+    bool preflightJitterFrame(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Early-out when pass jitter sync or NDC preflight would reject (B5.9 deepen).
+    bool shouldSkipJitterFrame(u32 frameIndex) const;
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).

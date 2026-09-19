@@ -13001,6 +13001,147 @@ void testTaaPassTryPreflightAndClassifyWrappers() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testTaaPassTryPreflightAndCompositeGuards() {
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 128;
+    passDesc.height = 128;
+    passDesc.params.blend_factor = 0.25f;
+
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+
+    fuse::renderer::TaaHistoryReuseBlockReason reuseReason = fuse::renderer::TaaHistoryReuseBlockReason::None;
+    expectTrue(!pass->tryPreflightHistoryReadyForResolve(reuseReason),
+               "tryPreflightHistoryReadyForResolve fails before init");
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
+               "history ready preflight reason is NotReady before init");
+    expectTrue(!pass->tryPreflightHistoryWarmup(reuseReason),
+               "tryPreflightHistoryWarmup fails before init");
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
+               "history warmup preflight reason is NotWarm before init");
+    expectTrue(pass->shouldSkipHistoryTemporal(0u),
+               "pass should skip temporal history before init");
+    expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
+               "tryPreflightHistoryReuse fails before init");
+
+    fuse::renderer::TaaJitterGuardRejectReason jitterReason =
+        fuse::renderer::TaaJitterGuardRejectReason::None;
+    expectTrue(pass->tryPreflightJitterSync(4u, jitterReason),
+               "tryPreflightJitterSync passes before init");
+    expectTrue(jitterReason == fuse::renderer::TaaJitterGuardRejectReason::None,
+               "jitter sync try preflight reason is None before init");
+    expectTrue(pass->tryPreflightJitterNdc(jitterReason),
+               "tryPreflightJitterNdc passes before init");
+    expectTrue(pass->tryPreflightJitterAdvance(jitterReason),
+               "tryPreflightJitterAdvance passes before init");
+    expectTrue(!pass->shouldSkipJitterAdvance(), "pass should not skip jitter advance before init");
+    expectTrue(pass->preflightJitterFrame(4u, &jitterReason),
+               "preflightJitterFrame passes before init");
+    expectTrue(!pass->shouldSkipJitterFrame(4u), "pass should not skip jitter frame before init");
+
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for try/composite guard test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+    expectTrue(pass->init(resources), "TaaPass initialized for try/composite guard test");
+
+    expectTrue(pass->tryPreflightHistoryReadyForResolve(reuseReason),
+               "tryPreflightHistoryReadyForResolve passes after init");
+    expectTrue(!pass->tryPreflightHistoryWarmup(reuseReason),
+               "tryPreflightHistoryWarmup fails before first resolve");
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
+               "history warmup preflight reason is NotWarm before first resolve");
+    expectTrue(pass->shouldSkipHistoryTemporal(0u),
+               "pass should skip temporal history before first resolve");
+
+    fuse::renderer::TaaResolveDesc resolveDesc{};
+    resolveDesc.width = 128;
+    resolveDesc.height = 128;
+    resolveDesc.surfaces.current_frame = reinterpret_cast<void*>(0x10);
+    resolveDesc.surfaces.output = reinterpret_cast<void*>(0x20);
+    resolveDesc.params = passDesc.params;
+
+    fuse::renderer::TaaResolveSkipReason skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(pass->tryPreflightResolve(resolveDesc, skipReason),
+               "tryPreflightResolve passes with valid desc after init");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::None,
+               "tryPreflightResolve skip reason is None after init");
+
+    fuse::renderer::TaaResolveBlendRejectReason blendReason =
+        fuse::renderer::TaaResolveBlendRejectReason::None;
+    expectTrue(pass->tryPreflightResolveBlendWeights(resolveDesc, blendReason),
+               "tryPreflightResolveBlendWeights passes before first resolve");
+    expectTrue(pass->preflightResolveWithBlend(resolveDesc, &skipReason, &blendReason),
+               "preflightResolveWithBlend passes before first resolve");
+    expectTrue(!pass->shouldSkipResolveWithBlend(resolveDesc),
+               "pass should not skip resolve-with-blend before first resolve");
+
+    fuse::renderer::TaaBlendWeights weights{};
+    expectTrue(pass->tryComputeResolveBlendWeights(resolveDesc, weights, blendReason),
+               "tryComputeResolveBlendWeights passes before first resolve");
+    expectNear(weights.current, 1.f, 1e-5f, "tryCompute warmup current weight is full");
+    expectNear(weights.history, 0.f, 1e-5f, "tryCompute warmup history weight is zero");
+
+    expectTrue(pass->resolveFrame(resolveDesc), "initial resolve warms pass history");
+
+    expectTrue(pass->tryPreflightHistoryWarmup(reuseReason),
+               "tryPreflightHistoryWarmup passes after resolve");
+    expectTrue(pass->tryPreflightHistoryReuse(0u, reuseReason),
+               "tryPreflightHistoryReuse passes after resolve");
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::None,
+               "history reuse try preflight reason is None after resolve");
+    expectTrue(!pass->shouldSkipHistoryTemporal(0u),
+               "pass should not skip temporal history after resolve");
+    expectTrue(pass->preflightHistoryTemporal(0u, &reuseReason),
+               "preflightHistoryTemporal passes after resolve");
+
+    expectTrue(pass->tryComputeResolveBlendWeights(resolveDesc, weights, blendReason),
+               "tryComputeResolveBlendWeights passes after resolve");
+    expectNear(weights.current, 0.25f, 1e-5f, "tryCompute steady current weight");
+    expectNear(weights.history, 0.75f, 1e-5f, "tryCompute steady history weight");
+
+    pass->syncJitterToFrameIndex(9u);
+    expectTrue(pass->preflightJitterFrame(9u, &jitterReason),
+               "preflightJitterFrame passes after sync");
+    expectTrue(pass->jitterAlignedToFrameIndex(9u), "pass jitter aligned after sync");
+
+    pass->invalidateHistory();
+    expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
+               "tryPreflightHistoryReuse fails after invalidate");
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::StaleGeneration,
+               "history reuse try preflight reason is StaleGeneration after invalidate");
+    expectTrue(pass->shouldSkipHistoryTemporal(0u),
+               "pass should skip temporal history after invalidate");
+
+    fuse::renderer::TaaPassDesc zeroWidthDesc{};
+    zeroWidthDesc.width = 0;
+    zeroWidthDesc.height = 128;
+    auto zeroPass = fuse::renderer::TaaPass::create(zeroWidthDesc);
+    expectTrue(zeroPass->shouldSkipJitterFrame(0u), "zero-width pass should skip jitter frame");
+    expectTrue(!zeroPass->tryPreflightJitterNdc(jitterReason),
+               "tryPreflightJitterNdc fails for zero-width pass");
+    expectTrue(jitterReason == fuse::renderer::TaaJitterGuardRejectReason::InvalidViewport,
+               "zero-width jitter NDC try preflight reason is InvalidViewport");
+
+    resolveDesc.width = 0u;
+    expectTrue(!pass->tryPreflightResolve(resolveDesc, skipReason),
+               "tryPreflightResolve fails with invalid dimensions");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::InvalidDimensions,
+               "tryPreflightResolve skip reason is InvalidDimensions");
+    expectTrue(pass->shouldSkipResolveWithBlend(resolveDesc),
+               "pass should skip resolve-with-blend with invalid dimensions");
+
+    pass->destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 } // namespace
 
 int main() {
@@ -13310,6 +13451,7 @@ int main() {
     testTaaPassTryAndClassifyGuards();
     testTaaPassTryAndClassifyPreflights();
     testTaaPassTemporalGuardsAndTryPreflight();
+    testTaaPassTryPreflightAndCompositeGuards();
 
     fuse::core::shutdown();
 
