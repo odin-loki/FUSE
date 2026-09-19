@@ -3760,3 +3760,27 @@ void testTaaPassWarmupAndJitterPreflightFollowUp() {
     testJitterShouldSkipAndAdvancePreflights();
     testResolveBlendPreflightFollowUp();
     testTaaPassWarmupAndJitterPreflightFollowUp();
+
+// --- deepen additive from deepen-b59-taa-guards-3066 ---
+        std::fprintf(stderr, "SKIP: bootstrap allocated for pass wouldSkip test (Vulkan device unavailable)\n");
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryWarmup(emptyHistory, state),
+               "tryPreflight warm-up fails for empty history");
+               "tryPreflight warm-up state is NotReady for empty history");
+    expectTrue(fuse::renderer::preflightTaaHistoryWarmup(history, &state) == false,
+    expectTrue(fuse::renderer::tryPreflightTaaHistoryWarmup(history, state),
+               "tryPreflight warm-up passes after first resolve");
+               "tryPreflight warm-up state is Complete after first resolve");
+void testJitterShouldSkipAndPixelOffsetGuards() {
+    expectTrue(fuse::renderer::classifyTaaResolveTemporalBlendReject(desc, emptyHistory) ==
+    fuse::renderer::TaaResolveTemporalRejectReason rejectReason =
+    expectTrue(!fuse::renderer::preflightTaaResolveTemporalBlend(desc, history, &rejectReason),
+    expectTrue(rejectReason == fuse::renderer::TaaResolveTemporalRejectReason::HistoryReuseBlocked,
+    expectTrue(fuse::renderer::tryPreflightTaaResolveTemporalBlend(desc, history, rejectReason),
+    expectTrue(rejectReason == fuse::renderer::TaaResolveTemporalRejectReason::None,
+void testTaaPassTemporalAndJitterPreflightWrappers() {
+    expectTrue(!pass->preflightHistoryWarmup(), "pass warm-up preflight fails before init");
+    fuse::renderer::TaaResolveTemporalRejectReason temporalReject =
+    expectTrue(!pass->preflightResolveTemporalBlend(resolveDesc, &temporalReject),
+    expectTrue(temporalReject == fuse::renderer::TaaResolveTemporalRejectReason::HistoryReuseBlocked,
+    expectTrue(pass->preflightResolveTemporalBlend(resolveDesc, &temporalReject),
+    testTaaPassTemporalAndJitterPreflightWrappers();

@@ -674,3 +674,10 @@ bool tryPreflightTaaTemporalResolve(const TaaResolveDesc& desc, const TaaHistory
 // --- deepen additive from deepen-b59-taa-guards-2077 ---
     preflight.reject_reason = classifyTaaResolveBlendReject(desc, history);
     preflight.can_apply = preflight.reject_reason == TaaResolveBlendRejectReason::None;
+
+// --- deepen additive from deepen-b59-taa-guards-3066 ---
+TaaResolveTemporalRejectReason classifyTaaResolveTemporalBlendReject(const TaaResolveDesc& desc,
+    const TaaResolveTemporalRejectReason reject = classifyTaaResolveTemporalBlendReject(desc, history);
+bool tryPreflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+    reason = classifyTaaResolveTemporalBlendReject(desc, history);
+    return !preflightTaaResolveTemporalBlend(desc, history);
