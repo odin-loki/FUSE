@@ -2815,3 +2815,30 @@ void testPairBufferSortAndDedupeSkipGuards() {
     expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferSortRejectReason(dedupeBuffer)),
     expectTrue(fuse::physics::broadphase::pairBufferSortRejectsForReason(
                    dedupeBuffer, fuse::physics::broadphase::PairBufferSortRejectReason::None),
+
+// --- deepen additive from deepen-b4-broadphase-guards-9072 ---
+void testPairBufferWriteSlotPreflightGuards() {
+    const fuse::physics::broadphase::PairBufferWriteSlotPreflight invalidSlot =
+        fuse::physics::broadphase::preflightPairBufferWriteSlot(buffer, 4u, 0u, 1u);
+    const fuse::physics::broadphase::PairBufferWriteSlotPreflight selfPair =
+        fuse::physics::broadphase::preflightPairBufferWriteSlot(buffer, 0u, 0u, 5u, 2u);
+void testPairBufferMergePreflightGuards() {
+    const fuse::physics::broadphase::PairBufferMergePreflight emptyIncoming =
+        fuse::physics::broadphase::preflightPairBufferMerge(buffer, 0u);
+    const fuse::physics::broadphase::PairBufferMergePreflight partialMerge =
+        fuse::physics::broadphase::preflightPairBufferMerge(buffer, 1u);
+void testPairBufferPushBodyCountPreflightGuards() {
+        fuse::physics::broadphase::preflightPairBufferPush(buffer, 0u, 1u, 2u);
+    const fuse::physics::broadphase::PairBufferPushPreflight outOfRangePush =
+        fuse::physics::broadphase::preflightPairBufferPush(buffer, 0u, 2u, 2u);
+void testRefineBroadphaseEmptyInputRejectReason() {
+             static_cast<fuse::u32>(fuse::physics::broadphase::RefineBroadphaseRejectReason::EmptyInput),
+                               fuse::physics::broadphase::RefineBroadphaseRejectReason::EmptyInput),
+void testRefineBroadphaseNoValidPairsRejectReason() {
+             static_cast<fuse::u32>(fuse::physics::broadphase::RefineBroadphaseRejectReason::NoValidPairs),
+    expectTrue(mergePreflight.canMerge(), "sphere-over-plane scene passes merge preflight");
+    testPairBufferWriteSlotPreflightGuards();
+    testPairBufferMergePreflightGuards();
+    testPairBufferPushBodyCountPreflightGuards();
+    testRefineBroadphaseEmptyInputRejectReason();
+    testRefineBroadphaseNoValidPairsRejectReason();

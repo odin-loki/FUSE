@@ -470,3 +470,7 @@ struct BroadphaseMergeIntoBufferPreflight {
     BroadphaseMergePreflight merge{};
     PairBufferMergePreflight buffer{};
 BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
+
+// --- deepen additive from deepen-b4-broadphase-guards-9072 ---
+    bool wouldTruncate = false;
+PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingPairCount);
