@@ -15,6 +15,9 @@ struct HrtfIrStub {
 /// Listener-local distance below which a source is treated as co-located.
 float hrtf_co_located_epsilon();
 
+/// True when listener and source share the same listener-local position.
+bool is_co_located_hrtf_source(const Vec3& rel_listener);
+
 /// Canonical empty IR stub for guard fallbacks.
 HrtfIrStub make_empty_hrtf_ir();
 
@@ -411,6 +414,13 @@ bool can_narrow_hrtf_spatial_image(const HrtfAttenuationCouplingPreflight& prefl
 bool should_skip_hrtf_attenuation_coupling_preflight(const HrtfAttenuationCouplingPreflight& preflight);
 
 /// True when attenuation coupling should not narrow the binaural image.
+/// Early-out inverse of `should_apply_hrtf_attenuation_coupling`.
+
+/// Clamp occlusion blend weight into [0, 1].
+float clamp_hrtf_occlusion_coupling_weight(float weight);
+
+/// True when distance and occlusion are both fully audible (no narrowing).
+bool is_unity_hrtf_attenuation(float distance_attenuation, float occlusion_gain);
 
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
@@ -419,6 +429,10 @@ bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
 bool should_skip_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
                                     const HrtfAttenuationCoupling& coupling = {},
                                     const BinauralPanParams& params = {});
+
+/// Combined guard — spatial path and non-unity attenuation warrant narrowing.
+bool should_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuation,
+                                      float occlusion_gain);
 
 /// Combined spatial blend from distance attenuation and occlusion LF gain.
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
