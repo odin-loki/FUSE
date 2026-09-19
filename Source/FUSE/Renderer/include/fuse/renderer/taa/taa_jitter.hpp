@@ -16,6 +16,8 @@ enum class TaaJitterGuardRejectReason : u8 {
     InvalidViewport,
 };
 
+class TaaJitter;
+
 /// Human-readable label for jitter guard reject reasons (B5.9 deepen).
 const char* taaJitterGuardRejectReasonLabel(TaaJitterGuardRejectReason reason);
 /// Classify why jitter sync to a frame counter would be rejected (B5.9 deepen).
@@ -46,6 +48,23 @@ bool preflightTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLen
 bool tryPreflightTaaJitterAdvance(u32 sequenceLength, TaaJitterGuardRejectReason& reason);
 /// Early-out when jitter advance preflight would reject (B5.9 deepen).
 bool shouldSkipTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Classify why a jitter slot index would be rejected (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterSlotReject(u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// True when jitter slot index is within the active sequence (B5.9 deepen).
+bool preflightTaaJitterSlot(u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                             TaaJitterGuardRejectReason* reason = nullptr);
+/// Jitter slot preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterSlot(u32 slot, u32 sequenceLength, TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter slot preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterSlot(u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Sync jitter state only when the sequence is valid; returns false when blocked (B5.9 deepen).
+bool trySyncTaaJitter(TaaJitter& jitter, u32 frameIndex, TaaJitterGuardRejectReason& reason);
+/// Advance jitter state only when the sequence is valid; returns false when blocked (B5.9 deepen).
+bool tryAdvanceTaaJitter(TaaJitter& jitter, TaaJitterGuardRejectReason& reason);
+/// True when jitter can sync to `frameIndex` but is not yet aligned (B5.9 deepen).
+bool taaJitterNeedsResync(u32 frameIndex, const TaaJitter& jitter);
+/// Early-out when jitter should resync to `frameIndex` (B5.9 deepen).
+bool shouldResyncTaaJitter(u32 frameIndex, const TaaJitter& jitter);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -88,6 +107,8 @@ public:
     explicit TaaJitter(const TaaJitterDesc& desc = {});
 
     fuse::math::Vec2 currentPixelOffset() const;
+    /// Pixel offset only when the sequence is valid; returns false when blocked (B5.9 deepen).
+    bool currentPixelOffsetIfReady(fuse::math::Vec2& out) const;
     fuse::math::Vec2 currentNdcOffset(u32 width, u32 height) const;
     /// NDC offset only when viewport and sequence are valid; returns false when blocked (B5.9 deepen).
     bool currentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out) const;
