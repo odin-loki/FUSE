@@ -612,3 +612,12 @@ void DeferredPNGWriter::end()
    png_write_end(mData->guard.png_ptr, mData->guard.info_ptr);
    mActive = false;
 }
+
+namespace fuse::legacy::t3d::engineProbe {
+
+void bitmapPngRegisterAnchor()
+{
+   // Ensures _privateRegisterPNG static initializer links from fuse_t3d_legacy.a.
+}
+
+} // namespace fuse::legacy::t3d::engineProbe

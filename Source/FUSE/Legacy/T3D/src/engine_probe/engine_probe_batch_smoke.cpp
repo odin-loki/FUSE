@@ -7,6 +7,9 @@
 #include "core/util/swizzle.h"
 #include "core/stream/fileStream.h"
 #include "core/stream/memStream.h"
+#include "core/bitVector.h"
+#include "core/crc.h"
+#include "core/idGenerator.h"
 #include "core/util/tSignal.h"
 #include "core/util/timeClass.h"
 #include "gfx/bitmap/loaders/ies/ies_loader.h"
@@ -127,6 +130,28 @@ bool signalSmoke() {
     sig.notify(signalSmokeIncrement);
     sig.trigger();
     return g_signalSmokeCount == 1 && !sig.isEmpty();
+}
+
+bool crcSmoke() {
+    const char payload[] = "fuse_u2_crc";
+    const U32 crc = CRC::calculateCRC(payload, static_cast<S32>(sizeof(payload) - 1));
+    return crc != CRC::INITIAL_CRC_VALUE && crc != CRC::INVALID_CRC;
+}
+
+bool idGeneratorSmoke() {
+    IdGenerator gen(100, 10);
+    const U32 id1 = gen.alloc();
+    gen.free(id1);
+    const U32 id2 = gen.alloc();
+    return id1 == id2;
+}
+
+bool bitVectorSmoke() {
+    BitVector bits;
+    bits.setSize(8);
+    bits.clear();
+    bits.set(3);
+    return bits.test(3) && !bits.test(0);
 }
 
 } // namespace fuse::legacy::t3d::engineProbe

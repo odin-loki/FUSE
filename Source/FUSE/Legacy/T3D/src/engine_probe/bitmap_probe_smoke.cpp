@@ -2,6 +2,7 @@
 #include <fuse/legacy/t3d/api.hpp>
 
 #include "platform/platform.h"
+#include "core/frameAllocator.h"
 #include "core/stream/fileStream.h"
 #include "core/stream/memStream.h"
 #include "core/util/path.h"
@@ -10,12 +11,16 @@
 #include "platform/types.h"
 
 #include <cstdio>
+#include <cstring>
 
 extern void bitmapExtrude5551_c(const void* srcMip, void* mip, U32 srcHeight, U32 srcWidth);
 
 namespace fuse::legacy::t3d::engineProbe {
 
 void bitmapStbRegisterAnchor();
+#if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG)
+void bitmapPngRegisterAnchor();
+#endif
 
 void bitmapExtrude5551Smoke(const void* srcMip, void* mip, u32 srcHeight, u32 srcWidth) {
     bitmapExtrude5551_c(srcMip, mip, srcHeight, srcWidth);
@@ -58,6 +63,103 @@ bool readBitmapRejectsUnknownSmoke() {
     GBitmap bitmap;
     return !bitmap.readBitmapStream(String("unknown_fmt"), stream, 0u);
 }
+
+bool writeBitmapRejectsUnknownSmoke() {
+    GBitmap bitmap;
+    bitmap.allocateBitmap(1, 1, false, GFXFormatR8G8B8A8);
+    MemStream stream(64, true, true);
+    return !bitmap.writeBitmapStream(String("unknown_fmt"), stream);
+}
+
+bool writeBitmapStreamRoundTripSmoke() {
+    bitmapStbRegisterAnchor();
+
+    GBitmap bitmap;
+    bitmap.allocateBitmap(2, 2, false, GFXFormatR8G8B8);
+    U8* bits = bitmap.getWritableBits();
+    for (U32 i = 0; i < 12; ++i) {
+        bits[i] = static_cast<U8>(i);
+    }
+
+    // STB stream writer prefixes chunks (stbiWriteFunc) — exercise encode only.
+    MemStream writer(256, true, true);
+    if (!bitmap.writeBitmapStream(String("tga"), writer)) {
+        return false;
+    }
+    return writer.getPosition() > 0u;
+}
+
+bool writeBitmapPathSmoke() {
+#if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG)
+    bitmapPngRegisterAnchor();
+    FrameAllocator::init(4 * 1024 * 1024);
+
+    GBitmap bitmap;
+    bitmap.allocateBitmap(1, 1, false, GFXFormatR8G8B8A8);
+    U8* bits = bitmap.getWritableBits();
+    bits[0] = 0xAA;
+    bits[1] = 0xBB;
+    bits[2] = 0xCC;
+    bits[3] = 0xFF;
+
+    const String path("/tmp/fuse_u2_writebitmap_probe.png");
+    const bool wrote = bitmap.writeBitmap(String("png"), Torque::Path(path), 1u);
+    GBitmap loaded;
+    const bool ok =
+        wrote && loaded.readBitmap(String("png"), Torque::Path(path)) && loaded.getWidth() == 1u &&
+        loaded.getHeight() == 1u;
+    std::remove(path.c_str());
+    FrameAllocator::destroy();
+    return ok;
+#else
+    bitmapStbRegisterAnchor();
+
+    GBitmap bitmap;
+    bitmap.allocateBitmap(1, 1, false, GFXFormatR8G8B8);
+    U8* bits = bitmap.getWritableBits();
+    bits[0] = 0xAA;
+    bits[1] = 0xBB;
+    bits[2] = 0xCC;
+
+    const String path("/tmp/fuse_u2_writebitmap_probe.bmp");
+    const bool wrote = bitmap.writeBitmap(String("bmp"), Torque::Path(path));
+    GBitmap loaded;
+    const bool ok =
+        wrote && loaded.readBitmap(String("bmp"), Torque::Path(path)) && loaded.getWidth() == 1u &&
+        loaded.getHeight() == 1u;
+    std::remove(path.c_str());
+    return ok;
+#endif
+}
+
+#if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG)
+bool writeBitmapPngRoundTripSmoke() {
+    bitmapPngRegisterAnchor();
+
+    FrameAllocator::init(4 * 1024 * 1024);
+
+    GBitmap bitmap;
+    bitmap.allocateBitmap(2, 2, false, GFXFormatR8G8B8A8);
+    U8* bits = bitmap.getWritableBits();
+    for (U32 i = 0; i < 16; ++i) {
+        bits[i] = static_cast<U8>(0x10 + i);
+    }
+
+    MemStream writer(4096, true, true);
+    if (!bitmap.writeBitmapStream(String("png"), writer, 1u)) {
+        FrameAllocator::destroy();
+        return false;
+    }
+    const U32 len = writer.getPosition();
+    writer.setPosition(0);
+
+    GBitmap loaded;
+    const bool ok =
+        loaded.readBitmapStream(String("png"), writer, len) && loaded.getWidth() == 2u && loaded.getHeight() == 2u;
+    FrameAllocator::destroy();
+    return ok;
+}
+#endif
 
 bool readBitmapPathSmoke() {
     bitmapStbRegisterAnchor();

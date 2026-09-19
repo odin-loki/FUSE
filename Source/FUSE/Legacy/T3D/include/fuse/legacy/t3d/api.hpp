@@ -72,8 +72,17 @@ bool fileStreamTempRoundTripSmoke();
 bool bitmapStbMemoryLoadSmoke();
 bool readBitmapRejectsUnknownSmoke();
 bool readBitmapPathSmoke();
+bool writeBitmapRejectsUnknownSmoke();
+bool writeBitmapStreamRoundTripSmoke();
+bool writeBitmapPathSmoke();
+#if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG)
+bool writeBitmapPngRoundTripSmoke();
+#endif
 bool timeClassSmoke();
 bool signalSmoke();
+bool crcSmoke();
+bool idGeneratorSmoke();
+bool bitVectorSmoke();
 } // namespace engineProbe
 #endif
 

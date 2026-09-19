@@ -24,5 +24,8 @@ endif()
 if(FUSE_T3D_LEGACY_ENGINE_PROBE)
     target_compile_definitions(fuse_runtime_smoke PRIVATE FUSE_T3D_LEGACY_ENGINE_PROBE=1)
 endif()
+if(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG)
+    target_compile_definitions(fuse_runtime_smoke PRIVATE FUSE_T3D_LEGACY_ENGINE_PROBE_PNG=1)
+endif()
 
 add_test(NAME fuse_runtime_smoke COMMAND fuse_runtime_smoke)

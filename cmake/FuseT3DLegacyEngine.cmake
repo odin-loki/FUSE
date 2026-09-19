@@ -43,6 +43,7 @@ set(_fuse_t3d_legacy_engine_sources
     src/engine_probe/thread_pool_stub.cpp
     src/engine_probe/fs_volume_stub.cpp
     src/engine_probe/console_stub.cpp
+    src/engine_probe/platform_assert_stub.cpp
     src/engine_probe/gbitmap_probe_stub.cpp
     src/engine_probe/bitmap_probe_smoke.cpp
     src/engine_probe/engine_probe_batch_smoke.cpp
@@ -62,18 +63,31 @@ set(_fuse_t3d_legacy_engine_sources
     "${CMAKE_SOURCE_DIR}/Engine/source/core/util/timeClass.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/core/util/tSignal.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/bitmapSTB.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/crc.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/bitVector.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/idGenerator.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/util/tDictionary.cpp"
 )
 
-# bitmapPng.cpp needs bundled lpng + libpng dev headers — skip when unavailable.
+# bitmapPng.cpp uses bundled lpng headers (Engine/lib/lpng) + system libpng/zlib.
 find_package(PNG QUIET)
-if(PNG_FOUND)
+find_package(ZLIB QUIET)
+set(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG OFF)
+if(PNG_FOUND AND ZLIB_FOUND)
     list(APPEND _fuse_t3d_legacy_engine_sources
         "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/bitmapPng.cpp"
     )
-    target_link_libraries(fuse_t3d_legacy PRIVATE PNG::PNG)
-    message(STATUS "FUSE: engine probe bitmapPng enabled (libpng found)")
+    target_link_libraries(fuse_t3d_legacy PRIVATE PNG::PNG ZLIB::ZLIB)
+    target_include_directories(fuse_t3d_legacy PRIVATE
+        "${CMAKE_SOURCE_DIR}/Engine/lib"
+        "${CMAKE_SOURCE_DIR}/Engine/lib/zlib"
+    )
+    target_compile_definitions(fuse_t3d_legacy PRIVATE FUSE_T3D_LEGACY_ENGINE_PROBE_PNG=1)
+    set(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG ON CACHE BOOL "Engine probe linked bitmapPng.cpp" FORCE)
+    message(STATUS "FUSE: engine probe bitmapPng enabled (libpng+zlib found)")
 else()
-    message(STATUS "FUSE: engine probe bitmapPng skipped (libpng not found)")
+    set(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG OFF CACHE BOOL "Engine probe linked bitmapPng.cpp" FORCE)
+    message(STATUS "FUSE: engine probe bitmapPng skipped (libpng or zlib not found)")
 endif()
 
 target_sources(fuse_t3d_legacy PRIVATE ${_fuse_t3d_legacy_engine_sources})
@@ -106,4 +120,4 @@ target_compile_definitions(fuse_t3d_legacy PRIVATE
     FUSE_T3D_LEGACY_ENGINE_PROBE=1
 )
 
-message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-6: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB + readBitmap stub + timeClass/tSignal + stubs)")
+message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-7: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB/PNG + read/writeBitmap stub + crc/bitVector/idGenerator/tDictionary + timeClass/tSignal + stubs)")

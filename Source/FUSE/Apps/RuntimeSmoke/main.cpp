@@ -329,10 +329,26 @@ int main() {
               "engine probe readBitmapStream rejects unknown format");
         check(fuse::legacy::t3d::engineProbe::readBitmapPathSmoke(),
               "engine probe readBitmap path dispatch loads 1x1 BMP");
+        check(fuse::legacy::t3d::engineProbe::writeBitmapRejectsUnknownSmoke(),
+              "engine probe writeBitmapStream rejects unknown format");
+        check(fuse::legacy::t3d::engineProbe::writeBitmapStreamRoundTripSmoke(),
+              "engine probe writeBitmapStream STB TGA encode");
+        check(fuse::legacy::t3d::engineProbe::writeBitmapPathSmoke(),
+              "engine probe writeBitmap path dispatch PNG/BMP round-trip");
+#if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG)
+        check(fuse::legacy::t3d::engineProbe::writeBitmapPngRoundTripSmoke(),
+              "engine probe writeBitmapStream PNG round-trip via bitmapPng");
+#endif
         check(fuse::legacy::t3d::engineProbe::timeClassSmoke(),
               "engine probe Torque::Time date round-trip");
         check(fuse::legacy::t3d::engineProbe::signalSmoke(),
               "engine probe Signal<void> notify/trigger");
+        check(fuse::legacy::t3d::engineProbe::crcSmoke(),
+              "engine probe CRC::calculateCRC non-trivial digest");
+        check(fuse::legacy::t3d::engineProbe::idGeneratorSmoke(),
+              "engine probe IdGenerator allocate/free/reuse");
+        check(fuse::legacy::t3d::engineProbe::bitVectorSmoke(),
+              "engine probe BitVector set/test");
     }
 #endif
 

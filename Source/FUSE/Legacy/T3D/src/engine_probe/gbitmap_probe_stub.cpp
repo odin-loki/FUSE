@@ -2,6 +2,7 @@
 // Implements allocation, registration, transparency, and readBitmap dispatch — not full gBitmap.cpp.
 
 #include "console/console.h"
+#include "core/stream/fileStream.h"
 #include "core/stream/stream.h"
 #include "core/util/path.h"
 #include "gfx/bitmap/gBitmap.h"
@@ -255,6 +256,14 @@ U8* GBitmap::Face::getWritableBits(const U32 mipLevel) {
     return &mBits[mMipLevelOffsets[mipLevel]];
 }
 
+U8* GBitmap::Face::getAddress(const S32 x, const S32 y, const U32 mipLevel) {
+    return getWritableBits(mipLevel) + static_cast<U32>(((y * getWidth(mipLevel)) + x) * mBytesPerPixel);
+}
+
+const U8* GBitmap::Face::getAddress(const S32 x, const S32 y, const U32 mipLevel) const {
+    return getBits(mipLevel) + static_cast<U32>(((y * getWidth(mipLevel)) + x) * mBytesPerPixel);
+}
+
 bool GBitmap::readBitmap(const String& bmType, const Torque::Path& path) {
     PROFILE_SCOPE(ResourceGBitmap_readBitmap);
     const GBitmap::Registration* regInfo = GBitmap::sFindRegInfo(bmType);
@@ -273,4 +282,36 @@ bool GBitmap::readBitmapStream(const String& bmType, Stream& ioStream, U32 len) 
         return false;
     }
     return regInfo->readStreamFunc(ioStream, this, len);
+}
+
+bool GBitmap::writeBitmap(const String& bmType, const Torque::Path& path, U32 compressionLevel) {
+    FileStream stream;
+    if (!stream.open(path, Torque::FS::File::Write)) {
+        Con::errorf("GBitmap::writeBitmap failed to open path %s", path.getFullFileName().c_str());
+        stream.close();
+        return false;
+    }
+
+    // free file for stb
+    stream.close();
+
+    const GBitmap::Registration* regInfo = GBitmap::sFindRegInfo(bmType);
+    if (regInfo == nullptr) {
+        Con::errorf("[GBitmap::writeBitmap] unable to find registration for extension [%s]", bmType.c_str());
+        return false;
+    }
+
+    return regInfo->writeFunc(path, this,
+                              (compressionLevel == U32_MAX) ? regInfo->defaultCompression : compressionLevel);
+}
+
+bool GBitmap::writeBitmapStream(const String& bmType, Stream& ioStream, U32 compressionLevel) {
+    const GBitmap::Registration* regInfo = GBitmap::sFindRegInfo(bmType);
+    if (regInfo == nullptr) {
+        Con::errorf("[GBitmap::writeBitmap] unable to find registration for extension [%s]", bmType.c_str());
+        return false;
+    }
+
+    return regInfo->writeStreamFunc(bmType, ioStream, this,
+                                    (compressionLevel == U32_MAX) ? regInfo->defaultCompression : compressionLevel);
 }
