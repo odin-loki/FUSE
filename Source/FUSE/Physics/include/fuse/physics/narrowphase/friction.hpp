@@ -103,6 +103,7 @@ enum class FrictionBasisRejectReason : u8 {
     None = 0,
     EmptyManifold,
     InvalidNormal,
+    StaleNormal,
 };
 
 /// Human-readable label for friction-basis reject reasons (B4.5 deepen follow-up pass).
@@ -129,6 +130,11 @@ struct FrictionBasisPreflight {
         return skipped || reason != FrictionBasisRejectReason::None || canReuse;
     }
 };
+
+/// Returns true when a cached basis no longer matches the contact normal (B4.5 deepen pass).
+bool friction_basis_stale_reject_reason_matches(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
 
 /// Populate friction-basis preflight without mutating the manifold (B4.4 deepen follow-up).
 FrictionBasisPreflight preflight_friction_basis_rebuild(
