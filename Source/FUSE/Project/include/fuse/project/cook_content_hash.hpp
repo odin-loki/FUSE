@@ -63,6 +63,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_texture_import_hash(const TextureImportDesc& desc);
 [[nodiscard]] CookHashPreflight preflight_audio_import_hash(const AudioImportDesc& desc);
 [[nodiscard]] CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry);
+/// Dependency path readability preflight — skips empty dependency strings (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry& entry);
 [[nodiscard]] CookHashPreflight preflight_upstream_dependencies_hash(
     const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
 [[nodiscard]] CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash);
