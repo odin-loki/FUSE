@@ -264,6 +264,8 @@ public:
     explicit TaaJitter(const TaaJitterDesc& desc = {});
 
     fuse::math::Vec2 currentPixelOffset() const;
+    /// Pixel offset only when the sequence is valid; returns false when blocked (B5.9 deepen).
+    bool currentPixelOffsetIfReady(fuse::math::Vec2& out) const;
     fuse::math::Vec2 currentNdcOffset(u32 width, u32 height) const;
     /// NDC offset only when viewport and sequence are valid; returns false when blocked (B5.9 deepen).
     bool currentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out) const;

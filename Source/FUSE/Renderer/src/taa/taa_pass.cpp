@@ -65,6 +65,8 @@ bool TaaPass::currentJitterNdcIfReady(fuse::math::Vec2& out) const {
 
 bool TaaPass::tryCurrentJitterNdcIfReady(fuse::math::Vec2& out, TaaJitterGuardRejectReason& reason) const {
     return m_jitter.tryCurrentNdcOffsetIfReady(m_desc.width, m_desc.height, out, reason);
+bool TaaPass::currentJitterPixelOffsetIfReady(fuse::math::Vec2& out) const {
+    return m_jitter.currentPixelOffsetIfReady(out);
 }
 
 void TaaPass::advanceJitter() {
@@ -225,6 +227,18 @@ bool TaaPass::shouldSkipHistoryWarmup() const {
 
 bool TaaPass::historyWarmupComplete() const {
     return m_history.warmupComplete();
+}
+
+bool TaaPass::historyWarmupComplete() const {
+    return taaHistoryWarmupComplete(m_history);
+}
+
+bool TaaPass::shouldSkipHistoryWarmup() const {
+    return shouldSkipTaaHistoryWarmup(m_history);
+}
+
+bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason) const {
+    return preflightTaaHistoryWarmup(m_history, reason);
 }
 
 bool TaaPass::canReuseHistory() const {
@@ -935,6 +949,15 @@ bool TaaPass::preflightHistoryWarmup(TaaHistoryReuseBlockReason* reason) const {
 
 bool TaaPass::shouldSkipResolve(const TaaResolveDesc& desc) const {
     return shouldSkipTaaResolve(desc, m_history);
+bool TaaPass::preflightResolveReuseAndBlend(const TaaResolveDesc& desc, u32 observedGeneration,
+                                            TaaResolveReuseBlendRejectReason* reason) const {
+    return preflightTaaResolveReuseAndBlend(desc, m_history, observedGeneration, reason);
+
+bool TaaPass::shouldSkipResolveReuseAndBlend(const TaaResolveDesc& desc, u32 observedGeneration) const {
+    return shouldSkipTaaResolveReuseAndBlend(desc, m_history, observedGeneration);
+
+bool TaaPass::invalidateHistoryIfStale(u32 observedGeneration) {
+    return m_history.invalidateHistoryIfStale(observedGeneration);
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);

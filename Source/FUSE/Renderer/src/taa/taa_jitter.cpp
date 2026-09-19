@@ -513,6 +513,14 @@ fuse::math::Vec2 TaaJitter::currentPixelOffset() const {
     return TaaJitterLayout::haltonPixelOffset(m_index, m_sequenceLength);
 }
 
+bool TaaJitter::currentPixelOffsetIfReady(fuse::math::Vec2& out) const {
+    if (!canAdvance()) {
+        return false;
+    }
+    out = TaaJitterLayout::haltonPixelOffset(m_index, m_sequenceLength);
+    return true;
+}
+
 fuse::math::Vec2 TaaJitter::currentNdcOffset(u32 width, u32 height) const {
     if (!canProduceNdcOffset(width, height)) {
         return {};
