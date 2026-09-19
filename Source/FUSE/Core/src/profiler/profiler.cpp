@@ -466,6 +466,17 @@ bool eventNameMatches(const ProfileEvent& event, const char* name) {
     return isValidEventName(event.name) && isValidEventName(name) && std::strcmp(event.name, name) == 0;
 }
 
+bool eventNameEquals(const char* lhs, const char* rhs) {
+    if (lhs == nullptr || rhs == nullptr) {
+        return false;
+    }
+    return std::strcmp(lhs, rhs) == 0;
+}
+
+bool isFlowPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+}
+
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
@@ -1433,6 +1444,114 @@ bool wouldSkipCounterSample(const char* track) {
 
 bool wouldSkipChromeTraceExport() {
     return !enabled();
+}
+
+bool wouldSkipProfileScope(const char* name, ProfileSkipReason* reason) {
+    if (!enabled()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::ProfilerDisabled;
+        }
+        return true;
+    }
+    if (!isValidEventName(name)) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::InvalidName;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name, ProfileSkipReason* reason) {
+    if (!enabled()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::ProfilerDisabled;
+        }
+        return true;
+    }
+    if (!isValidEventName(name)) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::InvalidName;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/, ProfileSkipReason* reason) {
+    if (!enabled()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::ProfilerDisabled;
+        }
+        return true;
+    }
+    if (!isValidEventName(name)) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::InvalidName;
+        }
+        return true;
+    }
+    if (openAsyncFlowCount() == 0u) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::NoOpenFlow;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool wouldSkipCounter(const char* track, ProfileSkipReason* reason) {
+    if (!enabled()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::ProfilerDisabled;
+        }
+        return true;
+    }
+    if (!isValidEventName(track)) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::InvalidName;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool wouldSkipChromeTraceExport(ProfileSkipReason* reason) {
+    if (!enabled()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::ProfilerDisabled;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool wouldSkipChromeTraceExportSafely(ProfileSkipReason* reason) {
+    if (!enabled()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::ProfilerDisabled;
+        }
+        return true;
+    }
+    if (hasUnbalancedNesting()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::UnbalancedNesting;
+        }
+        return true;
+    }
+    if (isFlowDepthDetached()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::FlowDepthDetached;
+        }
+        return true;
+    }
+    if (isCrossThreadFlowHandoffPending()) {
+        if (reason != nullptr) {
+            *reason = ProfileSkipReason::CrossThreadFlowHandoffPending;
+        }
+        return true;
+    }
+    return false;
 }
 
 bool hasEvents() {
@@ -2772,6 +2891,7 @@ bool tryLastExportableEvent(ProfileEvent& outEvent) {
 bool tryExportableFirstEvent(ProfileEvent& outEvent) {
 bool tryFirstEventByName(const char* name, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByName(name);
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
         outEvent = ProfileEvent{};
         return false;
     }
@@ -3060,6 +3180,13 @@ bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 
 
+
+
+
+
+
+
+    return tryExportableEventAt(index, outEvent);
 
 
 
@@ -4362,6 +4489,14 @@ bool eventNameMatches(const char* eventName, const char* searchName) {
 
 
 
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -4638,6 +4773,14 @@ ScopeNestingPreflight preflightScopeNesting() {
 AsyncFlowPreflight preflightAsyncFlow() {
     preflight.openCount = openAsyncFlowCount();
     preflight.activeFlowDepth = flowNestingDepth();
+    preflight.hasActiveScope = preflight.activeDepth > 0u;
+    return preflight;
+}
+
+    AsyncFlowPreflight preflight{};
+    preflight.activeDepth = flowNestingDepth();
+    preflight.maxDepth = maxFlowNestingDepth();
+    preflight.openFlowCount = openAsyncFlowCount();
     preflight.balanced = isFlowNestingBalanced();
     preflight.depthDetached = isFlowDepthDetached();
     preflight.crossThreadHandoffPending = isCrossThreadFlowHandoffPending();

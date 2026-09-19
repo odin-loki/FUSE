@@ -74,14 +74,12 @@ enum class EventLookupRejectReason : u8 {
     EmptyBuffer,
     OutOfRange,
     InvalidEvent,
-};
 
 /// Why profiler nesting state is unbalanced or detached (B1.6 deepen).
 
 /// Why a strict chrome trace export would be rejected (B1.6 deepen).
     BufferOverflow,
 /// Why an event lookup preflight rejected the request.
-    None = 0,
     NotExportable,
 
 /// Why profiler nesting/async state is unbalanced.
@@ -91,6 +89,11 @@ enum class EventLookupRejectReason : u8 {
 
 /// Why chrome trace safe export preflight rejected the request.
     UnbalancedNesting,
+
+/// Classify why a profiler operation would skip — mirrors guard ordering in record paths.
+enum class ProfileSkipReason : u8 {
+    InvalidName,
+    NoOpenFlow,
 
 struct ProfileEvent {
     const char* name = nullptr;
@@ -153,6 +156,7 @@ struct AsyncFlowEndPreflight {
 
     bool canEnd() const { return !profilerDisabled && !emptyName && !orphanEnd; }
 /// Read-only scope nesting diagnostics — safe to call before entering nested scopes.
+/// Read-only scope nesting diagnostics — safe to call while scopes are active.
 struct ScopeNestingPreflight {
     u32 activeDepth = 0;
     u32 maxDepth = 0;
@@ -164,6 +168,17 @@ struct ScopeNestingPreflight {
     u32 openCount = 0;
     u32 activeFlowDepth = 0;
     u32 maxFlowDepth = 0;
+    bool hasActiveScope = false;
+
+    bool canEnterScope() const { return balanced; }
+};
+
+/// Read-only async-flow nesting diagnostics — safe to call while flows are open.
+struct AsyncFlowPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    u32 openFlowCount = 0;
+    bool balanced = true;
     bool depthDetached = false;
     bool crossThreadHandoffPending = false;
     bool hasOpenFlows = false;
@@ -172,6 +187,8 @@ struct ScopeNestingPreflight {
     bool canSafelyExport() const {
         return isBalanced() && !flowDepthDetached && !crossThreadFlowHandoffPending;
     }
+    bool canBeginFlow() const { return !depthDetached; }
+    bool canEndFlow() const { return hasOpenFlows; }
 };
 
 /// Read-only chrome export diagnostics — safe to call before `exportChromeTraceJson()`.
@@ -888,6 +905,13 @@ bool wouldSkipAsyncFlowBegin(const char* name);
 bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId);
 bool wouldSkipCounterSample(const char* track);
 bool wouldSkipChromeTraceExport();
+
+bool wouldSkipProfileScope(const char* name, ProfileSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowBegin(const char* name, ProfileSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId, ProfileSkipReason* reason = nullptr);
+bool wouldSkipCounter(const char* track, ProfileSkipReason* reason = nullptr);
+bool wouldSkipChromeTraceExport(ProfileSkipReason* reason = nullptr);
+bool wouldSkipChromeTraceExportSafely(ProfileSkipReason* reason = nullptr);
 
 bool hasEvents();
 bool isBufferEmpty();
