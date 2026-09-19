@@ -66,6 +66,9 @@ u32 hash32Smoke(const char* text);
 u64 hash64Smoke(const char* text);
 const char* stringHash64Smoke(const char* text);
 bool swizzleBgraSmoke();
+u32 fourccSmoke();
+bool memStreamRoundTripSmoke();
+bool fileStreamTempRoundTripSmoke();
 } // namespace engineProbe
 #endif
 

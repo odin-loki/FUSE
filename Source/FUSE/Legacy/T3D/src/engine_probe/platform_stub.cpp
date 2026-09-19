@@ -37,3 +37,15 @@ void* dMemset(void* dst, S32 c, dsize_t size) {
 S32 dMemcmp(const void* ptr1, const void* ptr2, dsize_t size) {
     return static_cast<S32>(std::memcmp(ptr1, ptr2, size));
 }
+
+void* dMalloc_r(dsize_t size, const char*, const dsize_t) {
+    return dMalloc(size);
+}
+
+void* dRealloc_r(void* ptr, dsize_t size, const char*, const dsize_t) {
+    return dRealloc(ptr, size);
+}
+
+void dFree_r(void* ptr, const char*, const dsize_t) {
+    dFree(ptr);
+}

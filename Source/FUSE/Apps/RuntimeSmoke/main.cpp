@@ -317,6 +317,12 @@ int main() {
         const char* stringHash64 = fuse::legacy::t3d::engineProbe::stringHash64Smoke("line\nbreak");
         check(stringHash64 != nullptr && stringHash64[0] != '\0', "engine probe getStringHash64 non-empty");
         check(fuse::legacy::t3d::engineProbe::swizzleBgraSmoke(), "engine probe Swizzles::bgra ToBuffer");
+        check(fuse::legacy::t3d::engineProbe::fourccSmoke() == 0x45535546u,
+              "engine probe MakeFourCC FUSE tag");
+        check(fuse::legacy::t3d::engineProbe::memStreamRoundTripSmoke(),
+              "engine probe MemStream write/read round-trip");
+        check(fuse::legacy::t3d::engineProbe::fileStreamTempRoundTripSmoke(),
+              "engine probe FileStream temp file round-trip");
     }
 #endif
 
