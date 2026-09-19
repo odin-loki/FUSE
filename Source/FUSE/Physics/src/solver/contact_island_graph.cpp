@@ -4,6 +4,76 @@
 
 namespace fuse::physics {
 
+namespace {
+
+bool bodyIndexInRange(u32 bodyIndex, u32 bodyCount) {
+    return bodyIndex < bodyCount;
+}
+
+} // namespace
+
+bool is_valid_island_build_body_count(u32 bodyCount) {
+    return bodyCount > 0u;
+}
+
+IslandBuildInputStats compute_island_build_input_stats(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildInputStats stats{};
+    stats.bodyCount = bodyCount;
+    stats.distanceConstraintCount = static_cast<u32>(distanceConstraints.size());
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (!contact.valid) {
+            continue;
+        }
+        ++stats.validContactCount;
+        if (!bodyIndexInRange(contact.bodyA, bodyCount) || !bodyIndexInRange(contact.bodyB, bodyCount)) {
+            ++stats.invalidContactBodyRefs;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (!bodyIndexInRange(constraint.bodyA, bodyCount) || !bodyIndexInRange(constraint.bodyB, bodyCount)) {
+            ++stats.invalidDistanceBodyRefs;
+        }
+    }
+
+    return stats;
+}
+
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildPreflight preflight{};
+    preflight.stats = compute_island_build_input_stats(bodyCount, contacts, distanceConstraints);
+    preflight.emptyBodyCount = bodyCount == 0u;
+    preflight.skipped = preflight.emptyBodyCount;
+    return preflight;
+}
+
+bool should_skip_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    return preflight_island_build(bodyCount, contacts, distanceConstraints).skipped;
+}
+
+bool build_island_graph_guarded(ContactIslandGraph& graph,
+                                u32 bodyCount,
+                                const std::vector<narrowphase::ContactManifold>& contacts,
+                                const std::vector<DistanceConstraint>& distanceConstraints) {
+    const IslandBuildPreflight preflight = preflight_island_build(bodyCount, contacts, distanceConstraints);
+    if (!preflight.can_build()) {
+        graph.clear();
+        return false;
+    }
+    graph.build(bodyCount, contacts, distanceConstraints);
+    return true;
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
