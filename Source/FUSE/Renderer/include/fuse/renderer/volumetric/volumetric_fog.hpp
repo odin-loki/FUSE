@@ -795,3 +795,17 @@ bool tryCanSampleAtTrilinear(const FroxelDensityGrid& grid,
 bool preflightFroxelTrilinearSample(const FroxelDensityGrid& grid,
                                     FroxelTrilinearSampleRejectReason* outReason = nullptr);
                           GridDensityRejectReason* outReason = nullptr,
+
+// --- deepen additive from deepen-froxel-preflight-guards-cfa4 ---
+    static bool preflightScreenDepthToFroxelIndex(f32 screenX,
+    static bool wouldSkipScreenDepthMapping(f32 screenX,
+DensityLookupRejectReason classifyDensityLookupIndexReject(const FroxelDensityGrid& grid,
+SampleCoordRejectReason classifyDensitySampleCoordReject(const FroxelDensityGrid& grid,
+bool preflightDensitySampleAtCoords(const FroxelDensityGrid& grid,
+bool wouldSkipDensitySampleAtCoords(const FroxelDensityGrid& grid,
+bool wouldSkipGridDensityValidation(const FroxelDensityGrid& grid,
+bool preflightTrilinearDensitySample(const FroxelDensityGrid& grid,
+bool wouldSkipTrilinearDensitySample(const FroxelDensityGrid& grid,
+bool preflightScreenDensitySample(const FroxelDensityGrid& grid,
+bool wouldSkipScreenDensitySample(const FroxelDensityGrid& grid,
+bool wouldSkipPopulateFromAnalyticFog(const FroxelGridDesc& desc,

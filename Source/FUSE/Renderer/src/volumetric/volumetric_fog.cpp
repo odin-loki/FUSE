@@ -2050,3 +2050,37 @@ bool preflightFroxelTrilinearSample(const FroxelDensityGrid& grid,
                                     FroxelTrilinearSampleRejectReason* outReason) {
     if (froxelTrilinearSampleRejectReasonIsBlocking(reject)) {
                           GridDensityRejectReason* outReason,
+
+// --- deepen additive from deepen-froxel-preflight-guards-cfa4 ---
+        return ScreenMappingRejectReason::NonFiniteScreenCoords;
+        return ScreenMappingRejectReason::NonFiniteDepth;
+        return ScreenMappingRejectReason::ScreenCoordsOutOfRange;
+bool FroxelGridLayout::preflightScreenDepthToFroxelIndex(f32 screenX,
+    if (!preflightScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, &coords, reason)) {
+bool FroxelGridLayout::wouldSkipScreenDepthMapping(f32 screenX,
+    return !preflightScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera);
+    case ScreenMappingRejectReason::ScreenCoordsOutOfRange:
+    case ScreenMappingRejectReason::NonFiniteScreenCoords:
+    case ScreenMappingRejectReason::NonFiniteDepth:
+DensityLookupRejectReason classifyDensityLookupIndexReject(const FroxelDensityGrid& grid,
+    const DensityLookupRejectReason reject = classifyDensityLookupIndexReject(grid, desc, index);
+    return !preflightDensityLookupAtIndex(grid, desc, index);
+    return !preflightDensityLookupAtCoord(grid, desc, tileX, tileY, sliceZ);
+SampleCoordRejectReason classifyDensitySampleCoordReject(const FroxelDensityGrid& grid,
+bool preflightDensitySampleAtCoords(const FroxelDensityGrid& grid,
+    const SampleCoordRejectReason reject = classifyDensitySampleCoordReject(grid, desc, coords);
+bool wouldSkipDensitySampleAtCoords(const FroxelDensityGrid& grid,
+    return !preflightDensitySampleAtCoords(grid, desc, coords);
+bool wouldSkipGridDensityValidation(const FroxelDensityGrid& grid,
+    return !preflightGridDensity(grid, desc, nullptr, epsilon);
+bool preflightTrilinearDensitySample(const FroxelDensityGrid& grid,
+    return preflightDensitySampleAtCoords(grid, desc, coords, reason);
+bool wouldSkipTrilinearDensitySample(const FroxelDensityGrid& grid,
+    return wouldSkipDensitySampleAtCoords(grid, desc, coords);
+bool preflightScreenDensitySample(const FroxelDensityGrid& grid,
+            *reason = ScreenMappingRejectReason::EmptyGrid;
+    return FroxelGridLayout::preflightScreenDepthToSampleCoords(
+bool wouldSkipScreenDensitySample(const FroxelDensityGrid& grid,
+    return !preflightScreenDensitySample(grid, desc, camera, screenX, screenY, viewDepth);
+bool wouldSkipPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+    return !preflightPopulateFromAnalyticFog(desc, camera, params);
