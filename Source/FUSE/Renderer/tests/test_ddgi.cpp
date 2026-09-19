@@ -871,6 +871,20 @@ void testCacheIndexRejectReasons() {
     expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, nullptr, 3u, 8u),
                "wouldSkip true for null cache lookup");
 
+    fuse::renderer::CacheIndexRejectReason cacheReason = fuse::renderer::CacheIndexRejectReason::None;
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, 3u, 8u, &cacheReason),
+               "wouldSkip with reason false for valid cache-index lookup");
+    expectTrue(cacheReason == fuse::renderer::CacheIndexRejectReason::None,
+               "valid cache-index wouldSkip reason is none");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, nullptr, 3u, 8u, &cacheReason),
+               "wouldSkip with reason true for null cache lookup");
+    expectTrue(cacheReason == fuse::renderer::CacheIndexRejectReason::NullCache,
+               "null cache wouldSkip reports null_cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, 99u, 8u, &cacheReason),
+               "wouldSkip with reason true for OOB probe index");
+    expectTrue(cacheReason == fuse::renderer::CacheIndexRejectReason::OutOfRangeProbeIndex,
+               "OOB probe index wouldSkip reports out_of_range_probe_index");
+
     fuse::renderer::DDGIDesc empty{};
     empty.grid_dims = {0, 2, 2};
     expectTrue(!fuse::renderer::ddgi_util::tryValidateCacheIndex(empty, 0u, 8u, reason),
@@ -1141,6 +1155,17 @@ void testWouldSkipDdgiProbeUpdate() {
                "wouldSkip true for OOB indices");
     expectTrue(fuse::renderer::wouldSkipDdgiProbeUpdate(desc, nullptr, 1u),
                "wouldSkip true for null indices");
+
+    fuse::renderer::ProbeUpdateLaunchRejectReason launchReason =
+        fuse::renderer::ProbeUpdateLaunchRejectReason::None;
+    expectTrue(!fuse::renderer::wouldSkipDdgiProbeUpdate(desc, validIndices, 2u, &launchReason),
+               "wouldSkip with reason false for valid launch");
+    expectTrue(launchReason == fuse::renderer::ProbeUpdateLaunchRejectReason::None,
+               "valid launch wouldSkip reason is none");
+    expectTrue(fuse::renderer::wouldSkipDdgiProbeUpdate(desc, oobIndices, 2u, &launchReason),
+               "wouldSkip with reason true for OOB indices");
+    expectTrue(launchReason == fuse::renderer::ProbeUpdateLaunchRejectReason::OutOfRangeProbeIndex,
+               "OOB launch wouldSkip reports out_of_range_probe_index");
 }
 
 void testTryLaunchDdgiProbeUpdate() {
@@ -1160,6 +1185,89 @@ void testTryLaunchDdgiProbeUpdate() {
                "tryLaunch rejects OOB indices");
     expectTrue(reason == fuse::renderer::ProbeUpdateLaunchRejectReason::OutOfRangeProbeIndex,
                "tryLaunch OOB reports out_of_range_probe_index reason");
+}
+
+void testWouldSkipProbeSampleCoords() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    fuse::renderer::ProbeSampleCoords built{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, built),
+               "build coords for wouldSkip sample-coord test");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, built),
+               "wouldSkip false for valid sample coords");
+
+    fuse::renderer::ProbeSampleCoordsRejectReason reason =
+        fuse::renderer::ProbeSampleCoordsRejectReason::None;
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, built, reason),
+               "wouldSkip with reason false for valid sample coords");
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::None,
+               "valid sample coords wouldSkip reason is none");
+
+    fuse::renderer::ProbeSampleCoords reversed = built;
+    reversed.x0 = 1u;
+    reversed.x1 = 0u;
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, reversed, reason),
+               "wouldSkip true for unordered corners");
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::UnorderedCorners,
+               "unordered corners wouldSkip reports unordered_corners");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(empty, built, reason),
+               "wouldSkip true for empty grid sample coords");
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::EmptyGrid,
+               "empty grid sample-coord wouldSkip reports empty_grid");
+}
+
+void testWouldSkipProbeTrilinearSample() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+    desc.irradiance_res = 8;
+
+    fuse::renderer::ProbeSampleCoords coords{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, coords),
+               "build coords for wouldSkip trilinear test");
+
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(8);
+    fuse::renderer::ProbeTrilinearSampleRejectReason reason =
+        fuse::renderer::ProbeTrilinearSampleRejectReason::None;
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, coords, cache.data(), 8u, reason),
+               "wouldSkip false for accessible trilinear sample");
+    expectTrue(reason == fuse::renderer::ProbeTrilinearSampleRejectReason::None,
+               "accessible trilinear sample wouldSkip reason is none");
+
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, coords, nullptr, 8u, reason),
+               "wouldSkip true for null cache trilinear sample");
+    expectTrue(reason == fuse::renderer::ProbeTrilinearSampleRejectReason::NullCache,
+               "null cache trilinear wouldSkip reports null_cache");
+
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, coords, cache.data(), 4u),
+               "wouldSkip true for undersized cache without reason out-param");
+}
+
+void testWouldSkipKernelLaunch() {
+    fuse::u32 indices[2] = {0u, 1u};
+    fuse::renderer::gi::DDGIKernelParams validParams{};
+    validParams.probe_indices_to_update = indices;
+    validParams.probe_update_count = 2u;
+
+    fuse::renderer::gi::ProbeKernelRejectReason reason = fuse::renderer::gi::ProbeKernelRejectReason::None;
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeTraceKernel(validParams, &reason),
+               "wouldSkip trace false for valid kernel params");
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::None,
+               "valid trace kernel wouldSkip reason is none");
+    expectTrue(!fuse::renderer::gi::wouldSkipProbeBlendKernel(validParams, &reason),
+               "wouldSkip blend false for valid kernel params");
+
+    fuse::renderer::gi::DDGIKernelParams zeroCount = validParams;
+    zeroCount.probe_update_count = 0u;
+    expectTrue(fuse::renderer::gi::wouldSkipProbeTraceKernel(zeroCount, &reason),
+               "wouldSkip trace true for zero update count");
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::ZeroUpdateCount,
+               "zero update count kernel wouldSkip reports zero_update_count");
+    expectTrue(fuse::renderer::gi::wouldSkipProbeBlendKernel(zeroCount),
+               "wouldSkip blend true for zero update count without reason out-param");
 }
 
 void testProbeScheduleRejectReasons() {
@@ -1206,6 +1314,15 @@ void testProbeScheduleRejectReasons() {
                "wouldSkip true for zero probe count");
     expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(2048u, 64u, indices, &count),
                "wouldSkip false for valid schedule inputs");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(2048u, 64u, indices, &count, &reason),
+               "wouldSkip with reason false for valid schedule inputs");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::None,
+               "valid schedule wouldSkip reason is none");
+
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(0u, 64u, indices, &count, &reason),
+               "wouldSkip with reason true for zero probe count");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::ZeroProbeCount,
+               "zero probe count wouldSkip reports zero_probe_count");
 }
 
 void testTryClampProbeSampleCoordsRejectReason() {
@@ -1534,6 +1651,9 @@ int main() {
     testTryTrilinearProbeIrradiance();
     testTryTrilinearDirectionalProbeIrradiance();
     testWouldSkipDdgiProbeUpdate();
+    testWouldSkipProbeSampleCoords();
+    testWouldSkipProbeTrilinearSample();
+    testWouldSkipKernelLaunch();
     testTryLaunchDdgiProbeUpdate();
     testCacheIndexGuards();
     testCacheIndexRejectReasons();
