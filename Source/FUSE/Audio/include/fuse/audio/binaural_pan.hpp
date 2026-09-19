@@ -977,3 +977,12 @@ bool try_preflight_hrtf_binaural_convolution(const HrtfBinauralPreflight& prefli
 bool preflight_hrtf_binaural_narrowing_ready(const HrtfBinauralPreflight& preflight,
 bool try_preflight_hrtf_binaural_narrowing(bool hrtf_enabled, const Vec3& rel_listener,
 bool try_preflight_hrtf_binaural_narrowing(const HrtfBinauralPreflight& preflight,
+
+// --- deepen additive from hrtf-reject-reason-enums-2d4f ---
+enum class HrtfConvolutionRejectReason : u8 {
+const char* hrtf_convolution_reject_reason_name(HrtfConvolutionRejectReason reason);
+HrtfConvolutionRejectReason hrtf_convolution_reject_reason(bool hrtf_enabled, const HrtfIrStub& ir,
+                                         HrtfConvolutionRejectReason expected);
+    HrtfConvolutionRejectReason convolutionReason = HrtfConvolutionRejectReason::None;
+HrtfConvolutionRejectReason hrtf_binaural_convolution_reject_reason(
+bool hrtf_binaural_convolution_rejects_for_reason(const HrtfBinauralPreflight& preflight,

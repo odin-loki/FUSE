@@ -1486,3 +1486,24 @@ bool try_preflight_hrtf_binaural_convolution(const HrtfBinauralPreflight& prefli
 bool preflight_hrtf_binaural_narrowing_ready(const HrtfBinauralPreflight& preflight,
 bool try_preflight_hrtf_binaural_narrowing(const HrtfBinauralPreflight& preflight,
 bool try_preflight_hrtf_binaural_narrowing(bool hrtf_enabled, const Vec3& rel_listener,
+
+// --- deepen additive from hrtf-reject-reason-enums-2d4f ---
+const char* hrtf_convolution_reject_reason_name(HrtfConvolutionRejectReason reason) {
+    case HrtfConvolutionRejectReason::None:
+    case HrtfConvolutionRejectReason::HrtfDisabled:
+    case HrtfConvolutionRejectReason::CoLocated:
+    case HrtfConvolutionRejectReason::MalformedIr:
+    case HrtfConvolutionRejectReason::NullSamples:
+HrtfConvolutionRejectReason hrtf_convolution_reject_reason(bool hrtf_enabled, const HrtfIrStub& ir,
+    const HrtfPanPathRejectReason bypass = hrtf_pan_path_reject_reason(hrtf_enabled, rel_listener);
+    if (bypass == HrtfPanPathRejectReason::HrtfDisabled) {
+        return HrtfConvolutionRejectReason::HrtfDisabled;
+    if (bypass == HrtfPanPathRejectReason::CoLocated) {
+        return HrtfConvolutionRejectReason::CoLocated;
+    const HrtfIrRejectReason irReason = hrtf_ir_reject_reason(ir);
+        return HrtfConvolutionRejectReason::MalformedIr;
+        return HrtfConvolutionRejectReason::NullSamples;
+        return HrtfConvolutionRejectReason::None;
+                                         HrtfConvolutionRejectReason expected) {
+HrtfConvolutionRejectReason hrtf_binaural_convolution_reject_reason(
+bool hrtf_binaural_convolution_rejects_for_reason(const HrtfBinauralPreflight& preflight,

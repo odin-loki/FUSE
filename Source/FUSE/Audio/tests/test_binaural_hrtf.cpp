@@ -2042,3 +2042,14 @@ void testHrtfBinauralRejectReasonEnums() {
                "should_skip_hrtf_pan_spatial true for co-located source");
     expectTrue(fuse::audio::should_skip_hrtf_attenuation_narrowing(
                "should_skip_hrtf_attenuation_narrowing true on bypass");
+
+// --- deepen additive from hrtf-reject-reason-enums-2d4f ---
+    expectTrue(std::strcmp(fuse::audio::hrtf_ir_reject_reason_name(fuse::audio::HrtfIrRejectReason::None),
+                   fuse::audio::hrtf_ir_reject_reason_name(fuse::audio::HrtfIrRejectReason::MalformedIr),
+    expectTrue(stub_preflight.convolutionReason == fuse::audio::HrtfConvolutionRejectReason::NullSamples,
+    expectTrue(conv_preflight.convolutionReason == fuse::audio::HrtfConvolutionRejectReason::None,
+                                                                fuse::audio::HrtfConvolutionRejectReason::None),
+                                                                fuse::audio::HrtfConvolutionRejectReason::NullSamples),
+    expectTrue(bypass_preflight.reason == fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath,
+                   stub_preflight, fuse::audio::HrtfConvolutionRejectReason::NullSamples),
+                   conv_preflight, fuse::audio::HrtfConvolutionRejectReason::None),
