@@ -12,6 +12,7 @@ bool CommandStack::canCoalesce_(const EditorCommand& previous, const EditorComma
     }
 
     if (previous.propertyValue.empty() || incoming.propertyValue.empty()) {
+    if (!previous.target.isValid() || !incoming.target.isValid()) {
         return false;
     }
 

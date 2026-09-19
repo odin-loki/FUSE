@@ -61,6 +61,7 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
 
     if (canUndo() && !m_undo.empty() && m_undo.back()->merge(*command)) {
     if (!m_undo.empty() && canUndo() && m_undo.back()->merge(*command)) {
+    if (canUndo() && m_undo.back()->merge(*command)) {
         m_undo.back()->execute();
         ++m_coalescedOps;
         markDirty_();
