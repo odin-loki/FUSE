@@ -259,10 +259,17 @@ bool can_skip_narrowphase_buffer_finalize(const ContactBufferSoA& buffer);
     bool can_run() const { return !emptyPairs && dispatchableCount > 0u; }
 };
 
+
+
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Returns true when narrowphase-into-buffer should early-out before pair dispatch (B4.6 deepen pass).
+bool should_skip_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.
 void runNarrowphaseIntoBuffer(

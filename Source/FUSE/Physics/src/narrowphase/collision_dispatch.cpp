@@ -83,6 +83,7 @@ bool can_skip_narrowphase_buffer_finalize(const ContactBufferSoA& buffer) {
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
+
 }
 
 void runNarrowphaseIntoBuffer(

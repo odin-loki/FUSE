@@ -1318,6 +1318,8 @@ bool is_finalized_contact_manifold(
 /// True when `finalize_contact_manifold_if_needed` would be a no-op (B4.6 deepen pass).
 bool can_skip_finalize_contact_manifold_if_finalized(
 
+
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

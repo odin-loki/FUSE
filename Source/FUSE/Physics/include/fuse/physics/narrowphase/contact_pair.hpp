@@ -1331,7 +1331,6 @@ ContactPairRejectReason first_contact_pair_deepen_reject_reason(
 ContactManifold detect_contacts_pair_with_deepen_preflight(
 
 /// Collect pairs that pass extended deepen preflight without mutating input (B4.6 deepen pass).
-std::vector<broadphase::CandidatePair> filter_dispatchable_contact_pairs(
 
 /// Non-mutating deepen-dispatch skip predicate — mirrors `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
 bool can_skip_contact_pair_deepen_dispatch(
@@ -1346,7 +1345,6 @@ NarrowphaseBatchRejectReason narrowphase_batch_reject_reason(
 
 /// Returns true when `narrowphase_batch_reject_reason` matches `expected` (B4.6 deepen pass).
 bool narrowphase_batch_rejects_for_reason(
-    const CollisionShapeSoA& shapes,
     NarrowphaseBatchRejectReason expected);
 
 /// Non-mutating batch skip predicate — mirrors `can_skip_narrowphase` (B4.6 deepen pass).
@@ -1373,7 +1371,6 @@ bool can_skip_narrowphase_run(
 /// Run shape dispatch only when deepen preflight allows; returns invalid manifold when rejected (B4.6 deepen pass).
 /// Returns true when `first_contact_pair_deepen_reject_reason` matches `expected` (B4.6 deepen pass).
 bool first_contact_pair_deepen_rejects_for_reason(
-    ContactPairRejectReason expected);
 
 /// Shape dispatch only when deepen preflight passes; invalid manifold otherwise (B4.6 deepen pass).
 
@@ -1430,8 +1427,6 @@ ContactManifold detect_contacts_pair_if_dispatchable(
 ContactPairUnionPreflight preflight_contact_pair_union(
 
     u32 slot,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Per-slot narrowphase write preflight combining pair reject + manifold validity (B4.6 deepen pass).
 struct NarrowphaseSlotPreflight {
@@ -1458,6 +1453,6 @@ struct ContactPairBatchRejectSummary {
 
 /// Populate batch reject summary without running shape dispatch (B4.6 deepen pass).
 ContactPairBatchRejectSummary summarize_contact_pair_batch_rejects(
-    const std::vector<broadphase::CandidatePair>& pairs,
+
 
 } // namespace fuse::physics::narrowphase

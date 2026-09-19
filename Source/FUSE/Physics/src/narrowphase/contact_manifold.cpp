@@ -2359,6 +2359,7 @@ bool is_finalized_contact_manifold(
 bool can_skip_finalize_contact_manifold_if_finalized(
     return is_finalized_contact_manifold(manifold, lengthEpsilon, frictionEpsilon);
 
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {

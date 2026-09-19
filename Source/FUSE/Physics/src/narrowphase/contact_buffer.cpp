@@ -83,15 +83,11 @@ bool ContactBufferSoA::canSkipCompactAndClamp() const {
     return canSkipSoAIteration() || countValidSlots() == 0u;
 
 u32 ContactBufferSoA::countValidSlots() const {
-    if (canSkipSoAIteration()) {
         return 0u;
 
 
 
-bool ContactBufferSoA::canSkipCompaction() const {
 
-    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
-    if (scanCount == 0u) {
 
     u32 validCount = 0u;
     u32 firstInvalid = scanCount;
@@ -104,7 +100,6 @@ bool ContactBufferSoA::canSkipCompaction() const {
     if (validCount == 0u) {
 
     for (u32 slot = firstInvalid; slot < scanCount; ++slot) {
-            return false;
     return validCount == activeCount || validCount == scanCount;
 
     return validCount;
@@ -112,7 +107,6 @@ bool ContactBufferSoA::canSkipCompaction() const {
 
 
 
-    for (u32 slot = 0; slot < scanCount; ++slot) {
 
 
 
@@ -121,15 +115,12 @@ bool ContactBufferSoA::canSkipCompaction() const {
     if (activeCount > 0u && activeCount == validCount) {
         bool packedPrefix = true;
         for (u32 slot = 0u; slot < activeCount; ++slot) {
-            if (validFlags[slot] == 0u) {
                 packedPrefix = false;
                 break;
         if (packedPrefix) {
             for (u32 slot = activeCount; slot < scanCount; ++slot) {
 
 
-bool ContactBufferSoA::canSkipCompactAndClamp() const {
-    return canSkipSoAIteration() || countValidSlots() == 0u;
 
 bool ContactBufferSoA::slotIsValid(u32 slot) const {
     if (slot >= validFlags.size()) {
@@ -167,9 +158,6 @@ bool slotHasValidFrictionTangent(
 
 
     return slot < pairSlotCount && validFlags[slot] != 0u;
-bool tangentBasisIsBuilt(vec3 normal, vec3 tangent1, vec3 tangent2) {
-    if (normal.length() < 1e-8f) {
-    return isOrthonormalTangentBasis(normal, {tangent1, tangent2});
 
 
 
@@ -199,7 +187,6 @@ void writeSlotUnchecked(u32 slot, ContactBufferSoA& buffer, const ContactManifol
     const u32 pointCount = std::min(manifold.pointCount, kMaxContactPointsPerManifold);
     buffer.pointCounts[slot] = static_cast<u8>(pointCount);
     const u32 base = slot * kMaxContactPointsPerManifold;
-    for (u32 pointIndex = 0u; pointIndex < kMaxContactPointsPerManifold; ++pointIndex) {
         if (pointIndex < pointCount) {
             buffer.pointSlots[base + pointIndex] = manifold.points[pointIndex].point;
             buffer.pointPenetrations[base + pointIndex] = manifold.points[pointIndex].penetration;
@@ -306,10 +293,8 @@ bool contact_buffer_write_slot_rejects_for_reason(
     return contact_buffer_write_slot_reject_reason(buffer, slot, manifold) == expected;
 
 ContactBufferWriteSlotPreflight preflight_contact_buffer_write_slot(
-    }
 
 
-    if (canSkipSoAIteration()) {
 
 
 
@@ -324,20 +309,12 @@ bool should_skip_contact_buffer_write_slot(
     return !preflight_contact_buffer_write_slot(buffer, slot, manifold).canWrite();
 
 const char* contact_buffer_compaction_reject_reason_name(ContactBufferCompactionRejectReason reason) {
-    }
-
-    const ContactBufferSoA& buffer,
-    u32 slot,
 
 
 
-    return preflight;
 
-    const ContactManifold& manifold) {
 
-    switch (reason) {
-    case ContactBufferCompactionRejectReason::None:
-        return "None";
+
     case ContactBufferCompactionRejectReason::EmptyBuffer:
         return "EmptyBuffer";
     case ContactBufferCompactionRejectReason::AllValid:
@@ -412,7 +389,6 @@ bool canSkipContactBufferClamp(const ContactBufferSoA& buffer) {
 
 bool shouldRunContactBufferClamp(const ContactBufferSoA& buffer) {
     return preflightContactBufferClamp(buffer).needsClamp();
-namespace {
 
 bool contactBufferIsEmpty(const ContactBufferSoA& buffer) {
     return buffer.pairSlotCount == 0u;
@@ -438,7 +414,6 @@ bool tangentBasisMatchesNormal(vec3 normal, const TangentBasis& basis, f32 epsil
            std::fabs(basis.tangent2.dot(unitNormal)) <= epsilon &&
            std::fabs(basis.tangent1.dot(basis.tangent2)) <= epsilon;
 
-} // namespace
 
 bool ContactBufferSoA::canSkipMaxCapacityClamp() const {
     if (maxCapacity == 0u || activeCount == 0u) {
@@ -517,7 +492,6 @@ bool shouldRunContactBufferCompactAndClamp(const ContactBufferSoA& buffer) {
     return preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp();
 
 void writeContactBufferSlotWithPreflight(
-    ContactBufferSoA& buffer,
     if (!preflightContactBufferWrite(buffer, slot, manifold).canWrite()) {
         return;
     buffer.writeSlot(slot, manifold);
@@ -617,19 +591,12 @@ ContactBufferFrictionBasesRejectReason contact_buffer_friction_bases_reject_reas
 
     for (u32 slot = 0u; slot < buffer.activeCount; ++slot) {
         if (buffer.validFlags[slot] == 0u) {
-    }
-    return "Unknown";
-
-
-    const ContactBufferSoA& buffer,
-
-    return preflight;
 
 
 
-    switch (reason) {
-        return "None";
-        return "EmptyBuffer";
+
+
+
 
 
 
@@ -649,10 +616,8 @@ ContactBufferFrictionBasesRejectReason contact_buffer_friction_bases_reject_reas
 bool contact_buffer_friction_bases_rejects_for_reason(
     ContactBufferFrictionBasesRejectReason expected) {
     return contact_buffer_friction_bases_reject_reason(buffer) == expected;
-        }
 
 
-    const ContactBufferSoA& buffer,
 
 ContactBufferFrictionBasesPreflight preflight_contact_buffer_friction_bases(const ContactBufferSoA& buffer) {
     ContactBufferFrictionBasesPreflight preflight{};
@@ -724,85 +689,40 @@ void ContactBufferSoA::invalidateSlot(u32 slot) {
 
 
 
-u32 ContactBufferSoA::remainingCapacity() const {
-    if (maxCapacity == 0u) {
-        return UINT32_MAX;
-    return activeCount < maxCapacity ? maxCapacity - activeCount : 0u;
-
-bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
-    return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
 
 
 
 
-u32 ContactBufferSoA::countValidSlots() const {
-    if (canSkipSoAIteration()) {
-        return 0u;
-
-    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
-    u32 validCount = 0u;
-    for (u32 slot = 0u; slot < scanCount; ++slot) {
-        if (validFlags[slot] != 0u) {
-            ++validCount;
-    return validCount;
-
-bool ContactBufferSoA::canSkipCompaction() const {
-        return true;
-
-    if (scanCount == 0u) {
-
-        if (validFlags[slot] == 0u) {
-            return false;
-
-bool ContactBufferSoA::canSkipCompactAndClamp() const {
-
-bool ContactBufferSoA::slotIsValid(u32 slot) const {
-    return slot < validFlags.size() && validFlags[slot] != 0u;
-
-    for (u32 slot = 0; slot < scanCount; ++slot) {
 
 
 
 
-    if (slot >= validFlags.size()) {
-    if (pairSlotCount > 0u && slot >= pairSlotCount) {
-    return validFlags[slot] != 0u;
-
-
-    return preflight;
-}
 
 
 
-    switch (reason) {
-    case ContactBufferCompactAndClampRejectReason::None:
-        return "None";
-    case ContactBufferCompactAndClampRejectReason::EmptyBuffer:
-        return "EmptyBuffer";
-    case ContactBufferCompactAndClampRejectReason::NoWork:
-        return "NoWork";
-    return "Unknown";
-
-    const ContactBufferSoA& buffer) {
-    if (buffer.canSkipSoAIteration()) {
-        return ContactBufferCompactAndClampRejectReason::EmptyBuffer;
-        const u32 validCount = buffer.countValidSlots();
-        if (buffer.pairSlotCount > 0u && buffer.activeCount != validCount) {
-            return ContactBufferCompactAndClampRejectReason::None;
-        if (buffer.activeCount != validCount) {
-        return ContactBufferCompactAndClampRejectReason::NoWork;
-
-    const ContactBufferSoA& buffer,
-    ContactBufferCompactAndClampRejectReason expected) {
-
-    ContactBufferCompactAndClampPreflight preflight{};
-    preflight.emptyBuffer = preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer;
-    preflight.noWork = preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork;
 
 
 
-        return buffer.activeCount;
-    return buffer.compactAndClamp();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
@@ -1453,8 +1373,6 @@ bool ContactBufferSoA::canSkipClamp() const {
 
 
 
-        return activeCount;
-    }
 
     u32 writeIndex = 0;
     for (u32 readIndex = 0; readIndex < pairSlotCount; ++readIndex) {
@@ -1465,6 +1383,8 @@ bool ContactBufferSoA::canSkipClamp() const {
 
     u32 writeIndex = 0u;
     for (u32 readIndex = 0u; readIndex < scanCount; ++readIndex) {
+
+
 
 
 
@@ -2025,6 +1945,7 @@ ContactBufferWriteRejectReason contactBufferWriteRejectReason(
 
 
 
+
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold) {
@@ -2057,6 +1978,8 @@ ContactBufferWritePreflight preflightContactBufferWrite(
     u32 slot,
 
     const ContactManifold& manifold) {
+
+
 
 
 
@@ -2817,6 +2740,27 @@ bool contactBufferFrictionBasesRejectsForReason(
     ContactBufferFrictionBasesRejectReason expected) {
     return contactBufferFrictionBasesRejectReason(buffer) == expected;
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ContactBufferFrictionBasesPreflight preflightContactBufferFrictionBases(const ContactBufferSoA& buffer) {
     ContactBufferFrictionBasesPreflight preflight{};
     preflight.reason = contactBufferFrictionBasesRejectReason(buffer);
@@ -2828,6 +2772,10 @@ bool canSkipContactBufferFrictionBases(const ContactBufferSoA& buffer) {
 
 bool shouldRunContactBufferFrictionBases(const ContactBufferSoA& buffer) {
     return preflightContactBufferFrictionBases(buffer).needsRebuild();
+    return preflight;
+}
+
+
 
 bool buildContactBufferFrictionBasesWithPreflight(ContactBufferSoA& buffer) {
     const ContactBufferFrictionBasesPreflight preflight = preflightContactBufferFrictionBases(buffer);
@@ -3061,6 +3009,9 @@ u32 clampContactBufferWithPreflight(ContactBufferSoA& buffer) {
 
 u32 compactAndClampContactBufferWithPreflight(ContactBufferSoA& buffer) {
     const ContactBufferCompactAndClampPreflight preflight = preflightContactBufferCompactAndClamp(buffer);
+        return false;
+    }
+    return true;
 }
 
 } // namespace fuse::physics::narrowphase
