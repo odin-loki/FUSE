@@ -178,6 +178,18 @@ const char* probeTrilinearSampleRejectReasonLabel(ProbeTrilinearSampleRejectReas
 /// Human-readable label for cache-index reject reasons (logging / tests).
 const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
 
+/// Why probe scheduling preflight rejected the request (B5.6 deepen).
+enum class ProbeScheduleRejectReason : u8 {
+    None = 0,
+    NullOutputIndices,
+    NullOutputCount,
+    ZeroProbeCount,
+    ZeroMaxIndices,
+};
+
+/// Human-readable label for probe-schedule reject reasons (logging / tests).
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
+
 /// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
 enum class ProbeUpdateLaunchRejectReason : u8 {
     None = 0,
@@ -256,6 +268,8 @@ struct ProbeGridLayout {
     static bool isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// True when sample coords exceed grid bounds or interpolation weights are outside [0, 1].
     static bool isProbeSampleCoordsOutOfRange(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Early-out when sample-coord validation would reject; same ordering as `isValidProbeSampleCoords`.
+    static bool wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Diagnose why sample-coord validation would reject; vacuously succeeds on valid coords.
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
@@ -326,6 +340,13 @@ bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 cache_count,
                               u32 probe_index,
                               fuse::math::Vec3& out_irradiance);
+/// Read irradiance with cache-index reject-reason diagnostics.
+bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
+                              const IrradianceCacheEntry* cache,
+                              u32 cache_count,
+                              u32 probe_index,
+                              fuse::math::Vec3& out_irradiance,
+                              CacheIndexRejectReason& outReason);
 /// Minimum irradiance-cache entries for trilinear sampling; 0 when the grid is not sampleable.
 u32 requiredCacheCount(const DDGIDesc& desc);
 /// True when `cache_count` covers every probe in `desc`.
@@ -334,9 +355,25 @@ bool isCacheSizedForGrid(const DDGIDesc& desc, u32 cache_count);
 u32 cacheEntriesMissing(const DDGIDesc& desc, u32 cache_count);
 /// Combined probe-index + cache-length guard for cache lookups.
 bool isCacheIndexValid(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+/// Combined probe-index + cache pointer/length guard for cache lookups.
+bool isCacheIndexValid(const DDGIDesc& desc,
+                       u32 probe_index,
+                       const IrradianceCacheEntry* cache,
+                       u32 cache_count);
+/// Early-out when cache-index lookup would be rejected — same ordering as `isCacheIndexValid`.
+bool wouldSkipCacheIndexLookup(const DDGIDesc& desc,
+                               u32 probe_index,
+                               const IrradianceCacheEntry* cache,
+                               u32 cache_count);
 /// Diagnose why cache-index preflight would reject; vacuously succeeds on valid indices.
 bool tryValidateCacheIndex(const DDGIDesc& desc,
                            u32 probe_index,
+                           u32 cache_count,
+                           CacheIndexRejectReason& outReason);
+/// Diagnose why cache-index preflight would reject; includes null-cache guard.
+bool tryValidateCacheIndex(const DDGIDesc& desc,
+                           u32 probe_index,
+                           const IrradianceCacheEntry* cache,
                            u32 cache_count,
                            CacheIndexRejectReason& outReason);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
@@ -350,12 +387,30 @@ u32 irradianceAtlasWidth(const DDGIDesc& desc);
 u32 irradianceAtlasHeight(const DDGIDesc& desc);
 u32 depthAtlasWidth(const DDGIDesc& desc);
 u32 depthAtlasHeight(const DDGIDesc& desc);
+/// Preflight guard before probe scheduling; false on null outputs or zero capacity.
+bool canScheduleProbeUpdates(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
+/// Early-out when probe scheduling would be rejected — same ordering as `canScheduleProbeUpdates`.
+bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
+/// Diagnose why probe scheduling preflight would reject; vacuously succeeds when schedulable.
+bool tryValidateProbeSchedule(u32 probe_count,
+                              u32 max_indices,
+                              const u32* out_indices,
+                              u32* out_count,
+                              ProbeScheduleRejectReason& outReason);
 void scheduleProbeUpdates(u32 frame_index,
                           u32 probe_count,
                           u32 probes_per_frame,
                           u32* out_indices,
                           u32 max_indices,
                           u32* out_count);
+/// Schedule probe updates with reject-reason diagnostics; false when preflight rejects.
+bool tryScheduleProbeUpdates(u32 frame_index,
+                             u32 probe_count,
+                             u32 probes_per_frame,
+                             u32* out_indices,
+                             u32 max_indices,
+                             u32* out_count,
+                             ProbeScheduleRejectReason& outReason);
 fuse::math::Vec3 blendIrradiance(const fuse::math::Vec3& previous,
                                  const fuse::math::Vec3& incoming,
                                  f32 hysteresis);
