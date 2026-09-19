@@ -2,6 +2,16 @@
 
 namespace fuse::renderer {
 
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason) {
+    switch (reason) {
+    case TaaJitterSyncRejectReason::None:
+        return "none";
+    case TaaJitterSyncRejectReason::InvalidSequence:
+        return "invalid_sequence";
+    }
+    return "unknown";
+}
+
 f32 TaaJitterLayout::halton(u32 index, u32 base) {
     if (base < 2u) {
         return 0.f;
@@ -44,6 +54,22 @@ bool TaaJitterLayout::jitterSlotMatchesFrameIndex(u32 frameIndex, u32 slot, u32 
         return false;
     }
     return frameIndexInSequence(frameIndex, sequenceLength) == slot;
+}
+
+TaaJitterSyncRejectReason TaaJitterLayout::classifySyncReject(u32 sequenceLength) {
+    if (!validateSequenceLength(sequenceLength)) {
+        return TaaJitterSyncRejectReason::InvalidSequence;
+    }
+    return TaaJitterSyncRejectReason::None;
+}
+
+bool TaaJitterLayout::preflightSyncToFrameIndex(u32 /*frameIndex*/, u32 sequenceLength,
+                                                TaaJitterSyncRejectReason* reason) {
+    const TaaJitterSyncRejectReason reject = classifySyncReject(sequenceLength);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaJitterSyncRejectReason::None;
 }
 
 u32 TaaJitterLayout::sequencePeriod(u32 sequenceLength) {
@@ -135,6 +161,22 @@ bool TaaJitter::isAlignedToFrameIndex(u32 frameIndex) const {
 
 bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
     if (!canSyncToFrameIndex(frameIndex)) {
+        return false;
+    }
+    syncToFrameIndex(frameIndex);
+    return true;
+}
+
+TaaJitterSyncRejectReason TaaJitter::classifySyncReject(u32 frameIndex) const {
+    return TaaJitterLayout::classifySyncReject(m_sequenceLength);
+}
+
+bool TaaJitter::preflightSyncToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason* reason) {
+    const TaaJitterSyncRejectReason reject = classifySyncReject(frameIndex);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    if (reject != TaaJitterSyncRejectReason::None) {
         return false;
     }
     syncToFrameIndex(frameIndex);
