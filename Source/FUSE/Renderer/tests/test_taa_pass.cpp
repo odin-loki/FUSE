@@ -4413,3 +4413,14 @@ void testTaaPassTryPreflightAndClassifyWrappers() {
     expectTrue(pass->tryPreflightJitterSync(5u, jitterReason), "pass tryPreflightJitterSync passes before init");
                "pass classifyResolveBlendReject returns None before init");
                "pass classifyResolveBlendReject returns None after warmup");
+
+// --- deepen additive from deepen-b59-taa-try-preflights-fb09 ---
+               "pass tryPreflightResolveBlendWeights reason is None before init");
+    expectNear(weights.current, 1.f, 1e-5f, "pass tryCompute warmup current weight before init");
+    expectNear(weights.history, 0.f, 1e-5f, "pass tryCompute warmup history weight before init");
+    expectNear(weights.current, 0.35f, 1e-5f, "pass tryCompute steady current weight after warmup");
+    expectNear(weights.history, 0.65f, 1e-5f, "pass tryCompute steady history weight after warmup");
+    expectTrue(pass->tryPreflightJitterSync(9u, jitterReason),
+               "pass tryPreflightJitterSync passes after sync");
+               "pass tryPreflightJitterAdvance passes after init");
+               "pass tryPreflightJitterAdvance reason is None after init");
