@@ -27,6 +27,7 @@ std::atomic<u32> g_writeHead{0};
 std::atomic<u32> g_eventCount{0};
 std::atomic<u32> g_droppedEventCount{0};
 std::atomic<u32> g_totalEventsWritten{0};
+std::atomic<u64> g_totalRecorded{0};
 std::atomic<u32> g_maxNestingDepth{0};
 std::atomic<u32> g_maxFlowNestingDepth{0};
 std::atomic<u32> g_openAsyncFlowCount{0};
@@ -240,6 +241,7 @@ void recordEvent(const char* name,
 
     g_totalRecordedEvents.fetch_add(1u, std::memory_order_acq_rel);
     g_totalEventsWritten.fetch_add(1u, std::memory_order_acq_rel);
+    g_totalRecorded.fetch_add(1u, std::memory_order_acq_rel);
 
     const u32 count = g_eventCount.load(std::memory_order_acquire);
     if (count < kRingCapacity) {
@@ -2316,6 +2318,9 @@ u32 asyncFlowStartFinishEventDelta() {
         if (event.name != nullptr && std::strcmp(event.name, name) == 0) {
 
 
+
+
+
             return i - 1u;
         }
     }
@@ -2399,6 +2404,16 @@ u32 exportableLastEventIndex() {
         const u32 index = i - 1u;
         if (isEventExportable(index)) {
             return index;
+
+bool hasScopeBeginEndMismatch() {
+    return countEventsByPhase(EventPhase::Begin) != countEventsByPhase(EventPhase::End);
+
+bool hasFlowStartFinishMismatch() {
+    return countEventsByPhase(EventPhase::FlowStart) != countEventsByPhase(EventPhase::FlowFinish);
+
+    const u64 total = g_totalRecorded.load(std::memory_order_acquire);
+    const u32 retained = eventCount();
+    return total > static_cast<u64>(retained) ? static_cast<u32>(total - static_cast<u64>(retained)) : 0u;
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -2718,6 +2733,9 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.hasIgnoredAsyncFlowEnds = hasIgnoredAsyncFlowEnds();
     preflight.hasUnpairedScopeEvents = hasUnpairedScopeEventsInBuffer();
     preflight.hasUnpairedAsyncFlowEvents = hasUnpairedAsyncFlowEventsInBuffer();
+    preflight.droppedEventCount = droppedEventCount();
+    preflight.scopeBeginEndMismatch = hasScopeBeginEndMismatch();
+    preflight.flowStartFinishMismatch = hasFlowStartFinishMismatch();
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
@@ -2994,6 +3012,7 @@ void reset() {
     g_eventCount.store(0u, std::memory_order_release);
     g_droppedEventCount.store(0u, std::memory_order_release);
     g_totalEventsWritten.store(0u, std::memory_order_release);
+    g_totalRecorded.store(0u, std::memory_order_release);
     g_frameIndex.store(0u, std::memory_order_release);
     g_nextScopeId.store(1u, std::memory_order_release);
     g_nextFlowId.store(1u, std::memory_order_release);

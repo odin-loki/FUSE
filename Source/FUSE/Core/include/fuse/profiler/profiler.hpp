@@ -204,6 +204,9 @@ struct ChromeTraceExportPreflight {
     bool hasIgnoredAsyncFlowEnds = false;
     bool hasUnpairedScopeEvents = false;
     bool hasUnpairedAsyncFlowEvents = false;
+    u32 droppedEventCount = 0;
+    bool scopeBeginEndMismatch = false;
+    bool flowStartFinishMismatch = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -218,6 +221,8 @@ struct ChromeTraceExportPreflight {
             && !hasBufferPairImbalance() && !hasDroppedEvents && !hasInvalidNameEvents;
             && !ringBufferFull;
             && !hasInvalidNameEvents && !ringBufferFull;
+    bool hasEventPairingMismatch() const { return scopeBeginEndMismatch || flowStartFinishMismatch; }
+            && !hasEventPairingMismatch() && !ringBufferFull;
     }
     bool canExportNonEmpty() const { return canExport() && hasExportableEvents(); }
     bool hasExportWarnings() const {
@@ -836,6 +841,8 @@ u32 findFirstEventIndexByScopeId(u32 scopeId);
 u32 countEventsByScopeId(u32 scopeId);
 u32 exportableFirstEventIndex();
 u32 exportableLastEventIndex();
+bool hasScopeBeginEndMismatch();
+bool hasFlowStartFinishMismatch();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
