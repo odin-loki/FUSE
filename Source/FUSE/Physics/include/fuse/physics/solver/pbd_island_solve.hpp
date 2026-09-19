@@ -1881,3 +1881,9 @@ bool try_preflight_island_wake(const ContactIslandGraph::Island& island,
 IslandDispatchRejectPreflight preflight_island_dispatch_reject(const ContactIslandGraph& graph, f32 dt);
 IslandSolveJobRejectPreflight preflight_island_solve_job_reject(const IslandSolveJob& job, f32 dt);
 IslandSleepSolveRejectPreflight preflight_island_sleep_solve_reject(const ContactIslandGraph::Island& island,
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-32d9 ---
+    bool can_dispatch() const { return !skipped && reason == IslandSolveRejectReason::None && stats.dispatchableCount > 0u; }
+        return !skipped && reason == IslandDispatchRejectReason::None && !invalidDt && solve.can_dispatch();
+        return !skipped && reason == IslandSolveJobRejectReason::None && !invalidDt && constraintCount > 0u;
+    bool can_skip_solve() const { return !skipped && reason == IslandSleepRejectReason::None && allSleeping; }

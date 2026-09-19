@@ -5554,3 +5554,16 @@ void testIslandSleepWakeRejectReasons() {
     const IslandSolveJobRejectPreflight preflight = preflight_island_solve_job_reject(job, dt);
     const IslandSleepGraphRejectPreflight sleepGraph = preflight_island_sleep_graph_reject(graph, bodies);
     const IslandWakeGraphRejectPreflight wakeGraph = preflight_island_wake_graph_reject(graph, bodies);
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-32d9 ---
+    expectTrue(!buildPreflight.skipped, "build preflight not skipped for unsafe refs alone");
+    expectTrue(!buildPreflight.can_build(), "build preflight cannot build with unsafe reject reason");
+    expectTrue(std::strcmp(island_solve_reject_reason_name(IslandSolveRejectReason::None), "None") == 0,
+    const IslandDispatchPreflight validDispatchPreflight = preflight_island_dispatch(graph, 1.f / 60.f);
+    expectTrue(validDispatchPreflight.reason == IslandDispatchRejectReason::None,
+    const IslandSolveJobPreflight invalidJobPreflight = preflight_solve_island_job(invalidJob, 0.f);
+    expectTrue(invalidJobPreflight.reason == IslandSolveJobRejectReason::InvalidDt,
+    expectTrue(emptyJobPreflight.reason == IslandSolveJobRejectReason::EmptyIsland,
+    expectTrue(sleepingWake.reason == IslandWakeRejectReason::NoMixedSleepState,
+    const IslandConstraintSolvePreflight staleSolve = preflight_island_constraint_solve(
+    expectTrue(staleSolve.reason == IslandConstraintSolveRejectReason::NoMovableBodies,

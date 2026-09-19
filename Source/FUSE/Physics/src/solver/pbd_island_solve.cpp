@@ -3184,3 +3184,7 @@ IslandSolveJobRejectPreflight preflight_island_solve_job_reject(const IslandSolv
 IslandSleepSolveRejectPreflight preflight_island_sleep_solve_reject(const ContactIslandGraph::Island& island,
     const IslandDispatchRejectReason dispatchReason = island_dispatch_reject_reason(graph, dt);
     if (island_sleep_graph_reject_reason(graph, bodies) != IslandSleepGraphRejectReason::None) {
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-32d9 ---
+        preflight.reason = IslandSolveJobRejectReason::EmptyIsland;
+        preflight.reason = IslandSolveRejectReason::NoDispatchableIslands;
