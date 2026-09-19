@@ -1314,6 +1314,74 @@ CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry
     return preflight;
 }
 
+CookHashPreflight preflight_shader_entry_hash(const CookManifestEntry& entry) {
+    CookHashPreflight preflight;
+    if (entry.source_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (entry.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry& entry,
+                                                         const CookManifest& manifest) {
+    CookHashPreflight preflight;
+    if (entry.kind == CookAssetKind::Shader) {
+        preflight = preflight_shader_entry_hash(entry);
+    } else {
+        preflight = preflight_manifest_entry_hash(entry);
+    }
+    if (!preflight.can_hash) {
+        return preflight;
+    }
+
+    bool has_non_empty_dependency = false;
+    for (const std::string& dependency : entry.dependencies) {
+        if (!dependency.empty()) {
+            has_non_empty_dependency = true;
+            break;
+        }
+    }
+    if (!has_non_empty_dependency) {
+        return preflight;
+    }
+
+    const CookHashPreflight upstream_preflight =
+        preflight_upstream_dependencies_hash(entry.dependencies, manifest);
+    if (!upstream_preflight.can_hash) {
+        return upstream_preflight;
+    }
+
+    return preflight;
+}
+
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookHashRejectReason::ZeroContentHash;
+        return preflight;
+    }
+    if (entry.source_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (entry.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;
