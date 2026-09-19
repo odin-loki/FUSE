@@ -356,10 +356,6 @@ bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings) {
     return isSnapEnabled(mode, settings) && isSnapStepValid(mode, settings);
 }
 
-bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings) {
-    return isSnapEnabled(mode, settings) && !isSnapStepValid(mode, settings);
-}
-
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
                             GizmoSpace space, f32 axisLength, f32 pickRadius) {
     PickPreflight preflight{};
@@ -773,6 +769,46 @@ bool canUpdateInteraction(const GizmoHitTest& hit, bool dragging, GizmoAxis acti
 bool canEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
                        const GizmoSnapSettings& settings) {
     return preflightEndInteraction(dragging, activeAxis, mode, settings).canEnd();
+}
+
+GizmoPreflightRouter preflightGizmoRouter(const GizmoHitTest& hit, bool dragging,
+                                          GizmoAxis activeAxis, GizmoMode mode,
+                                          const GizmoSnapSettings& settings) {
+    GizmoPreflightRouter router{};
+    router.interaction = preflightInteraction(hit, dragging, activeAxis, mode, settings);
+    router.drag = preflightDragInteraction(hit, dragging, activeAxis, mode, settings);
+    router.pickInteraction = preflightPickInteraction(hit, mode, settings);
+    router.beginDragInteraction = preflightBeginDragInteraction(hit, mode, settings, dragging);
+    return router;
+}
+
+GizmoPreflightRouter preflightGizmoRouter(const GizmoRay& ray, const GizmoTransform& transform,
+                                          bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                                          GizmoSpace space, f32 axisLength, f32 pickRadius,
+                                          const GizmoSnapSettings& settings) {
+    GizmoPreflightRouter router{};
+    router.interaction =
+        preflightInteraction(ray, transform, dragging, activeAxis, mode, space, axisLength,
+                             pickRadius, settings);
+    router.drag = preflightDragInteraction({}, dragging, activeAxis, mode, settings);
+    router.pickInteraction =
+        preflightPickInteraction(ray, transform, mode, space, axisLength, pickRadius, settings);
+    router.beginDragInteraction = preflightBeginDragInteraction(
+        ray, transform, mode, space, axisLength, pickRadius, settings, dragging);
+    return router;
+}
+
+bool canGizmoRouter(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                    const GizmoSnapSettings& settings) {
+    return preflightGizmoRouter(hit, dragging, activeAxis, mode, settings).canRouteAny();
+}
+
+bool canGizmoRouter(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
+                    GizmoAxis activeAxis, GizmoMode mode, GizmoSpace space, f32 axisLength,
+                    f32 pickRadius, const GizmoSnapSettings& settings) {
+    return preflightGizmoRouter(ray, transform, dragging, activeAxis, mode, space, axisLength,
+                                pickRadius, settings)
+        .canRouteAny();
 }
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
@@ -1302,6 +1338,28 @@ bool GizmoSystem::canUpdateInteraction(const GizmoHitTest& hit) const {
 
 bool GizmoSystem::canEndInteraction() const {
     return fuse::editor::canEndInteraction(m_dragging, m_activeAxis, m_mode, m_snap);
+}
+
+GizmoPreflightRouter GizmoSystem::preflightRouter(const GizmoHitTest& hit) const {
+    return fuse::editor::preflightGizmoRouter(hit, m_dragging, m_activeAxis, m_mode, m_snap);
+}
+
+GizmoPreflightRouter GizmoSystem::preflightRouter(const GizmoRay& ray,
+                                                  const GizmoTransform& transform) const {
+    return fuse::editor::preflightGizmoRouter(ray, transform, m_dragging, m_activeAxis, m_mode,
+                                              m_space, kAxisLength, kPickRadius, m_snap);
+}
+
+bool GizmoSystem::canRouter(const GizmoHitTest& hit) const {
+    return preflightRouter(hit).canRouteAny();
+}
+
+bool GizmoSystem::canRouter(const GizmoRay& ray, const GizmoTransform& transform) const {
+    return preflightRouter(ray, transform).canRouteAny();
+}
+
+bool GizmoSystem::canActOrEndOnPhase(const GizmoHitTest& hit) const {
+    return preflightRouter(hit).canRouteActOrEnd();
 }
 
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
