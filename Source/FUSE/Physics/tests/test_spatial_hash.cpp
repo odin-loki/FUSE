@@ -4075,3 +4075,42 @@ void testMergePairsIntoBufferPreflightCapacityFields() {
     expectEq(fullPreflight.remainingCapacity, 0u, "merge preflight reports zero remaining capacity on full buffer");
     testDedupePairBufferSoAWithPreflightGuards();
     testMergePairsIntoBufferPreflightCapacityFields();
+
+// --- deepen additive from deepen-b4-broadphase-guards-9ddb ---
+                 fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::EmptyBuffer),
+                 fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(buffer, 1u)),
+    expectTrue(fuse::physics::broadphase::invalidateSlotWithPreflight(buffer, 0u),
+               "invalidateSlotWithPreflight succeeds on valid slot");
+    expectTrue(!buffer.slotIsValid(0u), "invalidateSlotWithPreflight clears slot validity");
+    expectTrue(!fuse::physics::broadphase::invalidateSlotWithPreflight(buffer, 0u),
+               "invalidateSlotWithPreflight skips already-invalid slot");
+void testShapeCellCapacityRejectReasonAndPreflight() {
+                 fuse::physics::broadphase::shapeCellCapacityRejectReason(withinRange, 4u, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellCapacityRejectReason::None),
+    expectTrue(std::strcmp(fuse::physics::broadphase::shapeCellCapacityRejectReasonName(
+                               fuse::physics::broadphase::ShapeCellCapacityRejectReason::ExceedsBudget),
+    expectTrue(fuse::physics::broadphase::shapeCellCapacityRejectsForReason(
+                   fuse::physics::broadphase::ShapeCellCapacityRejectReason::ExceedsSpan),
+                 fuse::physics::broadphase::shapeCellCapacityRejectReason(inverted, 4u, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellCapacityRejectReason::EmptyRange),
+    const fuse::physics::broadphase::ShapeCellCapacityPreflight preflight =
+        fuse::physics::broadphase::preflightShapeCellCapacity(withinRange, 4u, 8u);
+        fuse::physics::broadphase::preflightShapeCellCapacity2D(planeRange, 4u, 4u);
+    expectTrue(!planePreflight.canIterate(), "2D shape cell-capacity preflight rejects over-budget range");
+    expectTrue(planePreflight.exceedsBudget, "2D shape cell-capacity preflight marks exceedsBudget");
+void testBroadphaseMergePairsIntoBufferPreflightGuards() {
+                 fuse::physics::broadphase::broadphaseMergePairsIntoBufferRejectReason(
+                 fuse::physics::broadphase::BroadphaseMergePairsIntoBufferRejectReason::EmptyPlaneBodies),
+                 fuse::physics::broadphase::BroadphaseMergePairsIntoBufferRejectReason::EmptyDynamicBodies),
+    const fuse::physics::broadphase::BroadphaseMergePairsIntoBufferPreflight preflight =
+        fuse::physics::broadphase::preflightBroadphaseMergePairsIntoBuffer(bodies, shapes, pairs, buffer);
+                 fuse::physics::broadphase::BroadphaseMergePairsIntoBufferRejectReason::None),
+    expectTrue(fuse::physics::broadphase::mergeBroadphasePairsIntoBufferWithPreflight(
+               "mergeBroadphasePairsIntoBufferWithPreflight succeeds on valid scene");
+    expectTrue(fuse::physics::broadphase::broadphaseMergePairsIntoBufferRejectsForReason(
+                   fuse::physics::broadphase::BroadphaseMergePairsIntoBufferRejectReason::BufferFull),
+    expectTrue(!fuse::physics::broadphase::mergeBroadphasePairsIntoBufferWithPreflight(
+               "mergeBroadphasePairsIntoBufferWithPreflight skips when buffer is full");
+    expectTrue(fuse::physics::broadphase::mergePairsIntoBufferWithPreflight(mergePairs, mergeBuffer),
+    testShapeCellCapacityRejectReasonAndPreflight();
+    testBroadphaseMergePairsIntoBufferPreflightGuards();

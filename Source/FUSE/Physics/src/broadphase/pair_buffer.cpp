@@ -1178,3 +1178,9 @@ PairBufferWritePreflight preflightPairBufferWriteSlot(
     (void)invalidateSlotWithPreflight(slot);
 bool PairBufferSoA::invalidateSlotWithPreflight(u32 slot) {
 void dedupePairBufferSoAWithPreflight(PairBufferSoA& buffer) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-9ddb ---
+    case PairBufferInvalidateSlotRejectReason::EmptyBuffer:
+        return PairBufferInvalidateSlotRejectReason::EmptyBuffer;
+    preflight.emptyBuffer = preflight.reason == PairBufferInvalidateSlotRejectReason::EmptyBuffer;
+bool invalidateSlotWithPreflight(PairBufferSoA& buffer, u32 slot) {

@@ -1669,3 +1669,35 @@ FUSE_PHYSICS_INLINE ShapeCellInsertionRejectReason shapeCellInsertionRejectReaso
     preflight.exceedsBudget = preflight.reason == ShapeCellInsertionRejectReason::ExceedsOccupancyBudget;
     return !preflightShapeCellInsertion(range, maxCells).canInsert();
 void dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-broadphase-guards-9ddb ---
+enum class ShapeCellCapacityRejectReason : u8 {
+const char* shapeCellCapacityRejectReasonName(ShapeCellCapacityRejectReason reason);
+FUSE_PHYSICS_INLINE ShapeCellCapacityRejectReason shapeCellCapacityRejectReason(
+        return ShapeCellCapacityRejectReason::EmptyRange;
+        return ShapeCellCapacityRejectReason::ExceedsSpan;
+        return ShapeCellCapacityRejectReason::ExceedsBudget;
+    return ShapeCellCapacityRejectReason::None;
+    ShapeCellCapacityRejectReason expected) {
+    return shapeCellCapacityRejectReason(range, maxSpanPerAxis, maxCells) == expected;
+    ShapeCellCapacityRejectReason reason = ShapeCellCapacityRejectReason::None;
+    bool canIterate() const { return reason == ShapeCellCapacityRejectReason::None; }
+    preflight.reason = shapeCellCapacityRejectReason(range, maxSpanPerAxis, maxCells);
+    preflight.emptyRange = preflight.reason == ShapeCellCapacityRejectReason::EmptyRange;
+    preflight.exceedsSpan = preflight.reason == ShapeCellCapacityRejectReason::ExceedsSpan;
+    preflight.exceedsBudget = preflight.reason == ShapeCellCapacityRejectReason::ExceedsBudget;
+FUSE_PHYSICS_INLINE ShapeCellCapacityPreflight preflightShapeCellCapacity2D(
+    return !preflightShapeCellCapacity(range, maxSpanPerAxis, maxCells).canIterate();
+    return !preflightShapeCellCapacity2D(range, maxSpanPerAxis, maxCells).canIterate();
+    return preflightShapeCellCapacity(range, maxSpanPerAxis, maxCells).canIterate();
+    return preflightShapeCellCapacity2D(range, maxSpanPerAxis, maxCells).canIterate();
+bool mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer);
+enum class BroadphaseMergePairsIntoBufferRejectReason : u8 {
+const char* broadphaseMergePairsIntoBufferRejectReasonName(BroadphaseMergePairsIntoBufferRejectReason reason);
+BroadphaseMergePairsIntoBufferRejectReason broadphaseMergePairsIntoBufferRejectReason(
+    BroadphaseMergePairsIntoBufferRejectReason expected);
+struct BroadphaseMergePairsIntoBufferPreflight {
+    BroadphaseMergePairsIntoBufferRejectReason reason = BroadphaseMergePairsIntoBufferRejectReason::None;
+    bool canMerge() const { return reason == BroadphaseMergePairsIntoBufferRejectReason::None; }
+BroadphaseMergePairsIntoBufferPreflight preflightBroadphaseMergePairsIntoBuffer(
+bool mergeBroadphasePairsIntoBufferWithPreflight(

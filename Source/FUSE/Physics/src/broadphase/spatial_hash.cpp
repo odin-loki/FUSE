@@ -1684,3 +1684,38 @@ const char* shapeCellInsertionRejectReasonName(ShapeCellInsertionRejectReason re
     case ShapeCellInsertionRejectReason::ExceedsOccupancyBudget:
             buffer.invalidateSlotWithPreflight(pairIndex);
 void dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-9ddb ---
+const char* shapeCellCapacityRejectReasonName(ShapeCellCapacityRejectReason reason) {
+    case ShapeCellCapacityRejectReason::None:
+    case ShapeCellCapacityRejectReason::EmptyRange:
+    case ShapeCellCapacityRejectReason::ExceedsSpan:
+    case ShapeCellCapacityRejectReason::ExceedsBudget:
+            invalidateSlotWithPreflight(buffer, pairIndex);
+bool mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
+const char* broadphaseMergePairsIntoBufferRejectReasonName(BroadphaseMergePairsIntoBufferRejectReason reason) {
+    case BroadphaseMergePairsIntoBufferRejectReason::None:
+    case BroadphaseMergePairsIntoBufferRejectReason::EmptyPlaneBodies:
+    case BroadphaseMergePairsIntoBufferRejectReason::EmptyDynamicBodies:
+    case BroadphaseMergePairsIntoBufferRejectReason::EmptyPairs:
+    case BroadphaseMergePairsIntoBufferRejectReason::BufferFull:
+BroadphaseMergePairsIntoBufferRejectReason broadphaseMergePairsIntoBufferRejectReason(
+    if (mergePreflight.emptyPlaneBodies) {
+        return BroadphaseMergePairsIntoBufferRejectReason::EmptyPlaneBodies;
+    if (mergePreflight.emptyDynamicBodies) {
+        return BroadphaseMergePairsIntoBufferRejectReason::EmptyDynamicBodies;
+        return BroadphaseMergePairsIntoBufferRejectReason::EmptyPairs;
+        return BroadphaseMergePairsIntoBufferRejectReason::BufferFull;
+    return BroadphaseMergePairsIntoBufferRejectReason::None;
+    BroadphaseMergePairsIntoBufferRejectReason expected) {
+    return broadphaseMergePairsIntoBufferRejectReason(bodies, shapes, pairs, buffer) == expected;
+BroadphaseMergePairsIntoBufferPreflight preflightBroadphaseMergePairsIntoBuffer(
+    BroadphaseMergePairsIntoBufferPreflight preflight{};
+    preflight.reason = broadphaseMergePairsIntoBufferRejectReason(bodies, shapes, pairs, buffer);
+        preflight.reason == BroadphaseMergePairsIntoBufferRejectReason::EmptyPlaneBodies;
+        preflight.reason == BroadphaseMergePairsIntoBufferRejectReason::EmptyDynamicBodies;
+    preflight.emptyPairs = preflight.reason == BroadphaseMergePairsIntoBufferRejectReason::EmptyPairs;
+    preflight.bufferFull = preflight.reason == BroadphaseMergePairsIntoBufferRejectReason::BufferFull;
+    return !preflightBroadphaseMergePairsIntoBuffer(bodies, shapes, pairs, buffer).canMerge();
+    return preflightBroadphaseMergePairsIntoBuffer(bodies, shapes, pairs, buffer).canMerge();
+bool mergeBroadphasePairsIntoBufferWithPreflight(

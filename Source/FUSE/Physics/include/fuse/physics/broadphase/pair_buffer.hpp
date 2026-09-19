@@ -600,3 +600,6 @@ PairBufferWritePreflight preflightPairBufferWriteSlot(
 // --- deepen additive from deepen-b4-broadphase-guards-1159 ---
     bool invalidateSlotWithPreflight(u32 slot);
 void dedupePairBufferSoAWithPreflight(PairBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-broadphase-guards-9ddb ---
+bool invalidateSlotWithPreflight(PairBufferSoA& buffer, u32 slot);
