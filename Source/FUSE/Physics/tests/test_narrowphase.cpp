@@ -2637,3 +2637,13 @@ void testFrictionBasisFollowUpPreflights() {
         staleFrictionPreflight.should_run_rebuild(),
 void testRunNarrowphaseIntoBufferDeepenGuards() {
     testFrictionBasisFollowUpPreflights();
+
+// --- deepen additive from narrowphase-guard-pass-4c08 ---
+void testContactPairGuardPassRejectGuards() {
+    const auto deepenPreflight =
+    expectTrue(deepenPreflight.bothSleeping, "deepen preflight flags bothSleeping");
+    expectTrue(!deepenPreflight.can_dispatch(), "deepen preflight rejects both-sleeping pair");
+void testManifoldPruneFinalizeGuardPass() {
+void testFrictionBasisGuardPass() {
+        reusePreflight.reason == fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::CanReuseBasis,
+void testContactBufferGuardPass() {

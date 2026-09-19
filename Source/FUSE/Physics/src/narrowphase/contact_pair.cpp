@@ -796,3 +796,9 @@ bool should_skip_contact_pair_batch(
 // --- deepen additive from b4-narrowphase-deepen-guards-4d64 ---
 NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
     NarrowphaseDispatchPreflight preflight{};
+
+// --- deepen additive from narrowphase-guard-pass-4c08 ---
+    preflight.bothSleeping = preflight.reason == ContactPairRejectReason::BothSleeping;
+    preflight.bothKinematic = preflight.reason == ContactPairRejectReason::BothKinematic;
+    preflight.anyTrigger = preflight.reason == ContactPairRejectReason::AnyTrigger;
+    preflight.bothMassless = preflight.reason == ContactPairRejectReason::BothMassless;
