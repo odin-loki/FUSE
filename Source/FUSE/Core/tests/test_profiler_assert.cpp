@@ -3683,3 +3683,29 @@ void testChromeTraceExportPreflightBufferAndExportReady() {
     expectTrue(readyPreflight.exportableEventCount == readyPreflight.eventCount,
     expectTrue(closedPreflight.isNestingClean(), "preflight isNestingClean after balanced teardown");
     testChromeTraceExportPreflightBufferAndExportReady();
+
+// --- deepen additive from deepen-b16-profiler-guards-6796 ---
+void testIsEmptyProfileEventGuard() {
+void testTryRecordedEventAtGuard() {
+    expectTrue(!fuse::profiler::tryRecordedEventAt(0u, outEvent),
+               "tryRecordedEventAt false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryRecordedEventAt clears output on empty buffer");
+    expectTrue(fuse::profiler::tryRecordedEventAt(0u, outEvent),
+               "tryRecordedEventAt true for first recorded event");
+               "tryRecordedEventAt copies begin phase without name validation");
+               "tryRecordedEventAt copies event name");
+    expectTrue(fuse::profiler::tryRecordedEventAt(1u, outEvent),
+               "tryRecordedEventAt true for last recorded event");
+               "tryRecordedEventAt copies end phase");
+    expectTrue(!fuse::profiler::tryRecordedEventAt(2u, outEvent),
+               "tryRecordedEventAt false past event count");
+    expectTrue(outEvent.name == nullptr, "tryRecordedEventAt clears output when out of range");
+               "tryEventAt still succeeds for valid recorded events");
+               "tryRecordedEventAt succeeds where tryEventAt succeeds on valid paths");
+void testChromeTraceExportPreflightEventIndices() {
+    expectTrue(!emptyPreflight.hasValidEventIndices(),
+void testChromeTraceExportPreflightBufferFull() {
+    expectTrue(!resetPreflight.flowDepthDetached,
+    expectTrue(resetPreflight.flowNestingUnbalanced == false,
+    testChromeTraceExportPreflightEventIndices();
+    testChromeTraceExportPreflightBufferFull();
