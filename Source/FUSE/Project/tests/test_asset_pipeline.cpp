@@ -2041,3 +2041,9 @@ void testCookerReconcileEstimatorGuards() {
 // --- deepen additive from deepen-b79-cooker-hash-d274 ---
     expectTrue(cooker.cook_manifest(manifest).ok, "chain cook for downstream would_invalidate ok");
                "producer output would_invalidate_downstream is true");
+
+// --- deepen additive from deepen-fuse-b79-cooker-hash-1101 ---
+    const fuse::u32 output_count = cooker.count_output_invalidation(manifest, entryA.output_path);
+    expectTrue(cooker.cook_manifest(manifest).ok, "chain cook for would_invalidate_downstream ok");
+               "would_invalidate_downstream_of reports dependents");
+               "leaf output would_invalidate_downstream is false when no dependents cached");

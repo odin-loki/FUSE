@@ -1232,3 +1232,10 @@ void testCookCachePreflightStoreEntry() {
     testCookHashPreflightManifestDependencyOutputs();
     testCookHashPreflightFileMtime();
     testCookCachePreflightStoreEntry();
+
+// --- deepen additive from deepen-fuse-b79-cooker-hash-1101 ---
+    expectTrue(!cache.would_invalidate_source(""), "empty source path would_invalidate is guarded");
+               "empty output path would_invalidate is guarded");
+void testCookHashShaderAndManifestUpstreamPreflights() {
+    const fuse::project::CookHashPreflight with_upstream =
+    testCookHashShaderAndManifestUpstreamPreflights();

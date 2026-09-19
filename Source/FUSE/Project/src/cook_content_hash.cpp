@@ -548,3 +548,7 @@ CookHashPreflight preflight_fnv1a64_combine(u64 left, u64 /*right*/) {
 CookHashPreflight preflight_manifest_dependency_outputs(const CookManifestEntry& entry,
             preflight.reason = CookHashRejectReason::UnresolvedDependencyOutput;
 CookHashPreflight preflight_file_mtime(const std::string& path) {
+
+// --- deepen additive from deepen-fuse-b79-cooker-hash-1101 ---
+CookHashPreflight preflight_shader_entry_hash(const CookManifestEntry& entry) {
+    const CookHashPreflight upstream_preflight =
