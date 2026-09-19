@@ -2472,6 +2472,8 @@ enum class GizmoPickRejectReason : u8 {
     OutOfBounds,
     ScreenMiss,
     PickMiss,
+    NonFiniteRay,
+    NonFiniteHit,
 };
 
 /// Why snap preflight rejected the request (B6.4 deepen pass).
@@ -2512,6 +2514,9 @@ enum class GizmoBeginDragRejectReason : u8 {
     ScreenMiss,
     PickMiss,
     AlreadyDragging,
+    NonFiniteRay,
+    NonFiniteHit,
+};
 
 /// Why update-drag preflight rejected the request (B6.4 deepen pass).
 enum class GizmoUpdateDragRejectReason : u8 {
@@ -2538,26 +2543,21 @@ enum class GizmoSnapDragRejectReason : u8 {
 
 
 
-};
 
-/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
-enum class GizmoSnapDragRejectReason : u8 {
-    None = 0,
-    DeltaNonFinite,
-    SnapDisabled,
-    InvalidStep,
-};
 
-/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
-enum class GizmoSnapDragRejectReason : u8 {
-    None = 0,
-    DeltaNonFinite,
-    SnapDisabled,
-    InvalidStep,
+    NonFiniteHit,
 };
 
 /// Why end-drag preflight rejected the request (B6.4 deepen pass).
 enum class GizmoEndDragRejectReason : u8 {
+
+/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
+enum class GizmoSnapDragRejectReason : u8 {
+    None = 0,
+    DeltaNonFinite,
+    SnapDisabled,
+    InvalidStep,
+};
 
 /// Why snap-drag preflight rejected the request (B6.4 deepen pass).
 enum class GizmoSnapDragRejectReason : u8 {
