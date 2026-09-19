@@ -435,19 +435,21 @@ u32 orphanAsyncFlowEndCount() {
 
 bool hasOrphanAsyncFlowEnds() {
     return orphanAsyncFlowEndCount() > 0u;
-}
 
 u32 rejectedInvalidNameCount() {
     return g_rejectedInvalidNameCount.load(std::memory_order_acquire);
-}
 
 bool hasRejectedInvalidNames() {
     return rejectedInvalidNameCount() > 0u;
-}
 
 u32 remainingEventCapacity() {
     const u32 count = eventCount();
     return count >= kRingCapacity ? 0u : kRingCapacity - count;
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+
+bool hasActiveFlowDepth() {
+    return flowNestingDepth() > 0u;
 }
 
 bool isScopeNestingBalanced() {
@@ -825,6 +827,10 @@ bool wouldIgnoreOrphanAsyncFlowEnd() {
     return openAsyncFlowCount() == 0u;
 }
 
+bool wouldRecordEvent(const char* name) {
+    return enabled() && isValidEventName(name);
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -1020,6 +1026,17 @@ u32 exportableEventCount() {
 u32 invalidEventCount() {
     const u32 total = eventCount();
     return total >= exportableEventCount() ? total - exportableEventCount() : 0u;
+}
+
+u32 invalidNameEventCount() {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (!isValidEventName(eventAt(i).name)) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 bool isEventExportable(u32 index) {
@@ -1257,6 +1274,7 @@ u32 lastExportableEventIndex() {
 u32 findLastEventIndexByPhase(EventPhase phase) {
         if (eventAt(index).phase == phase) {
 
+
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
     return kEmpty;
@@ -1450,6 +1468,16 @@ bool tryEventAtPhase(u32 index, EventPhase expectedPhase, ProfileEvent& outEvent
         return false;
     }
 
+    return true;
+}
+
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventExportable(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
     return true;
 }
 

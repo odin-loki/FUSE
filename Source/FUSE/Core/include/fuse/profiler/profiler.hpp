@@ -435,6 +435,8 @@ struct NestingStatePreflight {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !hasOpenAsyncFlows;
     bool canExportCleanly() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached;
+        return hasUnbalancedNesting() || hasOpenAsyncFlows || flowDepthDetached || invalidNameEventCount > 0u;
+    bool canExportWithContent() const { return canExport() && hasExportableEvents(); }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -494,6 +496,8 @@ bool hasOrphanAsyncFlowEnds();
 u32 rejectedInvalidNameCount();
 bool hasRejectedInvalidNames();
 u32 remainingEventCapacity();
+bool hasActiveScope();
+bool hasActiveFlowDepth();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
 bool hasUnbalancedNesting();
@@ -503,6 +507,7 @@ NestingAsyncFlowPreflight preflightNestingAndAsyncFlow();
 u32 nestingDepth();
 bool needsFlowNestingCleanup();
 bool wouldIgnoreOrphanAsyncFlowEnd();
+bool wouldRecordEvent(const char* name);
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();
@@ -555,6 +560,7 @@ bool tryEventPhaseAt(u32 index, EventPhase& outPhase);
 u32 nonExportableEventCount();
 u32 totalEventsWritten();
 bool hasRingWrapped();
+u32 invalidNameEventCount();
 u32 firstEventIndex();
 u32 lastEventIndex();
 u32 countEventsByPhase(EventPhase phase);
