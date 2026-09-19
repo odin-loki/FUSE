@@ -95,6 +95,8 @@ void clear_interest_diff(InterestSetDiff& diff);
 [[nodiscard]] bool apply_interest_diff(InterestSetDiff& diff, InterestScopeSet& scope);
 /// True when `diff` is non-empty and at least one enter/leave would modify `scope`.
 [[nodiscard]] bool can_apply_interest_diff(const InterestSetDiff& diff, const InterestScopeSet& scope);
+/// Apply `diff` only when `can_apply_interest_diff` would succeed; returns false on empty/redundant diffs.
+[[nodiscard]] bool apply_interest_diff(const InterestSetDiff& diff, InterestScopeSet& scope);
 
 /// Preflight checks before applying enter/leave diff to a scope snapshot (B7.4 deepen follow-up).
 struct InterestDiffPreflight {
@@ -159,6 +161,24 @@ struct InterestRadiusPreflight {
                                                const std::vector<InterestCandidate>& candidates,
                                                const InterestScopeSet& prior_scope);
 
+/// True when at least one candidate would pass `count_candidates_in_radius` (no hysteresis).
+[[nodiscard]] bool has_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                              const std::vector<InterestCandidate>& candidates);
+
+/// True when at least one candidate would pass hysteresis-aware `count_candidates_in_radius`.
+[[nodiscard]] bool has_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                              const std::vector<InterestCandidate>& candidates,
+                                              const InterestScopeSet& prior_scope);
+
+/// Preflight guard — true when `candidates` is non-empty and radius filter would retain at least one entry.
+[[nodiscard]] bool can_filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                                   const std::vector<InterestCandidate>& candidates);
+
+/// Preflight guard with prior scope for unload hysteresis.
+[[nodiscard]] bool can_filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
+                                                   const std::vector<InterestCandidate>& candidates,
+                                                   const InterestScopeSet& prior_scope);
+
 /// Radius filter stub — collects in-scope entries for an observer (no hysteresis).
 [[nodiscard]] u32 filter_candidates_in_radius(const ecs::vec3& observer, const InterestPolicy& policy,
                                                 const std::vector<InterestCandidate>& candidates,
@@ -183,6 +203,7 @@ public:
     [[nodiscard]] bool register_entity(InterestCandidate candidate);
     /// Remove a registered entity — returns false when the entity is not registered.
     [[nodiscard]] bool unregister_entity(ecs::EntityID entity);
+    /// Register a candidate. Returns false when the entity is already registered.
     /// True when `entity` is present in the registered candidate list.
     [[nodiscard]] bool is_entity_registered(ecs::EntityID entity) const;
     /// Update a registered entity position. Returns false when the entity is not registered.
