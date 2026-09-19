@@ -2108,3 +2108,11 @@ void testCookerShouldSkipReconcileGuards() {
                "should_skip_stale_dependency_invalidation false after upstream change");
                "should_skip_reconcile_invalidation false after upstream change");
     expectTrue(!stale.should_skip(), "reconcile estimate should_skip false after upstream change");
+
+// --- deepen additive from deepen-b79-should-skip-f5c7 ---
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for should_skip helpers ok");
+               "should_skip_upstream_invalidation false for seeded chain head");
+               "should_skip_stale_dependency_invalidation true for fresh cache");
+               "should_skip_reconcile_invalidation true for fresh cache");
+    expectTrue(stale.should_skip() == cooker.should_skip_reconcile_invalidation(manifest),
+               "reconcile estimate should_skip matches cooker helper");

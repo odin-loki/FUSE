@@ -267,3 +267,7 @@ const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason);
 
 // --- deepen additive from b79-cooker-hash-skip-guards-93f1 ---
     [[nodiscard]] bool would_prune() const { return total() != 0; }
+
+// --- deepen additive from deepen-b79-should-skip-f5c7 ---
+    [[nodiscard]] bool should_skip_invalidate(u64 content_hash) const;
+    [[nodiscard]] bool should_skip_prune() const;

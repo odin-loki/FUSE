@@ -921,3 +921,8 @@ const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason) {
         preflight.reason = CookCacheRejectReason::EmptySourcePath;
         preflight.reason = CookCacheRejectReason::EmptyOutputPath;
     preflight.reason = CookCacheRejectReason::None;
+
+// --- deepen additive from deepen-b79-should-skip-f5c7 ---
+bool CookCache::should_skip_invalidate(u64 content_hash) const {
+    return !would_invalidate(content_hash);
+bool CookCache::should_skip_prune() const {

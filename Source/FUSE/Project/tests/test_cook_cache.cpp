@@ -1521,3 +1521,29 @@ void testCookCacheEntryPreflightAndStoreSkip() {
                "should_skip_prune_all true on fresh non-prunable cache");
                "should_skip_prune_all false when prune would remove entries");
     testCookCacheEntryPreflightAndStoreSkip();
+
+// --- deepen additive from deepen-b79-should-skip-f5c7 ---
+               "should_skip_file_content_hash true for empty path");
+    expectTrue(fuse::project::should_skip_file_content_hash("/tmp/fuse_b79_missing_should_skip.obj"),
+               "should_skip_file_content_hash true for missing file");
+               "should_skip_mesh_import_hash false for readable mesh");
+    expectTrue(fuse::project::should_skip_mesh_import_hash(desc),
+               "should_skip_mesh_import_hash true for empty input");
+               "should_skip_cook_cache_key true for zero source");
+               "should_skip_cook_cache_key false for valid fold");
+               "should_skip_fnv1a64_bytes true for null non-zero span");
+               "should_skip_fnv1a64_bytes false for zero-size null span");
+               "should_skip_upstream_dependencies_hash true for empty list");
+    const fuse::project::CookHashPreflight preflight = fuse::project::preflight_mesh_import_hash(desc);
+    expectTrue(preflight.should_skip() == fuse::project::should_skip_mesh_import_hash(desc),
+               "preflight should_skip matches free function");
+    expectTrue(cache.should_skip_invalidate(42u), "should_skip_invalidate on empty cache is true");
+    expectTrue(cache.should_skip_prune(), "should_skip_prune on empty cache is true");
+    const std::string source = writeTempFile("/tmp/fuse_b79_should_skip_mesh.obj", "# should skip cache\n");
+    expectTrue(seeded.ok, "seed cook for should_skip helpers ok");
+    expectTrue(!cooker.cache().should_skip_invalidate(seeded.content_hash),
+               "should_skip_invalidate false for seeded hash");
+    expectTrue(cooker.cache().should_skip_prune(), "should_skip_prune true for fresh entry");
+    expectTrue(!cooker.cache().should_skip_prune(), "should_skip_prune false when entry is stale");
+    expectTrue(estimate.should_skip() == cooker.cache().should_skip_prune(),
+               "prune estimate should_skip matches cache should_skip_prune");
