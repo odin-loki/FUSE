@@ -2958,3 +2958,14 @@ void testContactBufferCompactionClampPreflightGuards() {
     expectTrue(noWorkPreflight.noWork, "compact-and-clamp preflight skips when already compact");
 void testDeepenFollowUpPreflightWrappers() {
     testDeepenFollowUpPreflightWrappers();
+
+// --- deepen additive from fuse-b4-narrowphase-deepen-5724 ---
+    const auto emptyPreflight = fuse::physics::narrowphase::preflightContactBufferCompaction(buffer);
+    expectTrue(emptyPreflight.emptyBuffer, "compaction preflight marks empty buffer");
+    expectTrue(!emptyPreflight.needsCompaction(), "compaction preflight skips empty buffer");
+    const auto allValidPreflight = fuse::physics::narrowphase::preflightContactBufferCompaction(buffer);
+    expectTrue(allValidPreflight.allValid, "compaction preflight marks all-valid buffer");
+    const auto withinPreflight = fuse::physics::narrowphase::preflightContactBufferClamp(buffer);
+    const auto noWorkPreflight = fuse::physics::narrowphase::preflightContactBufferCompactAndClamp(buffer);
+    expectTrue(noWorkPreflight.noWork, "compactAndClamp preflight marks no-work after compact");
+            fuse::physics::narrowphase::contactBufferCompactAndClampRejectReasonName(
