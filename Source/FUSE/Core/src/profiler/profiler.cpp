@@ -393,6 +393,9 @@ u32 totalEventsWritten() {
 
 bool isRingSaturated() {
     return eventCount() >= kRingCapacity;
+u32 droppedEventCount() {
+}
+
 
 u32 maxNestingDepth() {
     return g_maxNestingDepth.load(std::memory_order_acquire);
@@ -1250,6 +1253,11 @@ u32 exportableFirstEventIndex() {
         if (isEventExportable(i)) {
 
 u32 exportableLastEventIndex() {
+            return i;
+        }
+    return kInvalidEventIndex;
+
+    const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
         const u32 index = i - 1u;
         if (isEventExportable(index)) {
@@ -1322,6 +1330,8 @@ u32 findLastEventIndexByPhase(EventPhase phase) {
 
 u32 findFirstEventIndexByName(const char* name) {
 
+        }
+    return kInvalidEventIndex;
 
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
@@ -1552,6 +1562,16 @@ bool tryEventAtPhase(u32 index, EventPhase phase, ProfileEvent& outEvent) {
     }
 
     outEvent = event;
+    return true;
+}
+
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventExportable(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
     return true;
 }
 
@@ -1797,6 +1817,9 @@ bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
 bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByName(name);
 
+
+
+    return tryExportableEventAt(index, outEvent);
 
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;

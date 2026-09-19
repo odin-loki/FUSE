@@ -585,6 +585,8 @@ bool tryEventPhaseAt(u32 index, EventPhase& outPhase);
 u32 nonExportableEventCount();
 u32 totalEventsWritten();
 bool hasRingWrapped();
+u32 exportableFirstEventIndex();
+u32 exportableLastEventIndex();
 u32 firstEventIndex();
 u32 lastEventIndex();
 u32 countEventsByPhase(EventPhase phase);
