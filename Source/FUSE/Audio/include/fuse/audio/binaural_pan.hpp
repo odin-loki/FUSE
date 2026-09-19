@@ -139,6 +139,16 @@ u32 hrtf_ir_stub_sample_count(const HrtfIrStub& ir);
     [[nodiscard]] bool ready_for_stub() const;
 
 /// Build empty-IR preflight from an HRTF IR stub.
+/// Empty-IR preflight — reports why convolution is unavailable without mutating state.
+    bool null_samples = true;
+    bool zero_length = true;
+    bool empty_ir = true;
+
+    [[nodiscard]] bool can_use_convolution() const { return has_samples; }
+    [[nodiscard]] bool should_use_ild_itd_stub() const { return empty_ir; }
+    [[nodiscard]] bool should_skip() const { return empty_ir; }
+
+/// Preflight an HRTF IR stub without mutating state.
 [[nodiscard]] HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
 
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
@@ -295,6 +305,20 @@ bool should_skip_hrtf_pan_path(HrtfPanPath path);
 
 
 /// Preflight HRTF pan routing when no IR is wired (ILD/ITD stub or bypass).
+/// Pan-path preflight — resolved routing without computing binaural gains.
+    bool empty_ir = false;
+    bool bypass = true;
+    bool uses_convolution = false;
+    bool uses_ild_itd_stub = false;
+
+    [[nodiscard]] bool can_apply_spatial_pan() const { return !bypass; }
+    [[nodiscard]] bool should_skip() const { return bypass; }
+
+/// Preflight HRTF pan-path resolution without computing binaural gains.
+[[nodiscard]] HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+
+/// Preflight pan-path resolution when no IR is wired.
+[[nodiscard]] HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled,
 
 /// True when the resolved path produces a lateral spatial image (not centre bypass).
 bool is_spatial_hrtf_pan_path(HrtfPanPath path);
@@ -715,6 +739,16 @@ struct HrtfSpatialPanPreflight {
     [[nodiscard]] bool should_narrow() const { return can_apply_coupling(); }
 
 /// Preflight distance/occlusion coupling before narrowing the binaural image.
+/// Attenuation-coupling preflight — reports whether spatial narrowing would run.
+    bool skipped = true;
+
+    [[nodiscard]] bool can_narrow() const { return !skipped; }
+    [[nodiscard]] bool can_apply_coupling() const { return !skipped; }
+    [[nodiscard]] bool should_skip() const { return skipped; }
+
+/// Preflight attenuation coupling for a resolved pan path.
+
+/// Preflight attenuation coupling from HRTF enable flag, IR stub, and listener offset.
 
 /// Combined spatial blend from distance attenuation and occlusion LF gain.
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
