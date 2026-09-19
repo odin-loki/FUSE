@@ -2425,3 +2425,6 @@ bool preflightDensityLookupCoordReady(const FroxelDensityGrid& grid,
 // --- deepen additive from deepen-froxel-volumetrics-b511-c943 ---
 SampleCoordRejectReason classifyFroxelSampleAtCoordsReject(const FroxelDensityGrid& grid,
     const SampleCoordRejectReason reject = classifyFroxelSampleAtCoordsReject(grid, desc, coords);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-2686 ---
+                                              ScreenMappingRejectReason* reason,

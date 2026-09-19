@@ -4293,3 +4293,8 @@ void testFroxelClassifyRejectAndPreflightGuards() {
                "preflightDensityLookupCoordReady succeeds for in-range coords");
     expectTrue(fuse::renderer::preflightScreenMappingReady(0.5f, 0.5f, 10.f, desc, camera) ==
     testFroxelClassifyRejectAndPreflightGuards();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-2686 ---
+               "preflightScreenMapping mapped tile coords in range");
+    expectTrue(!fuse::renderer::gridDensityRejectReasonIsBlocking(densityReason),
+               "preflightDensityLookup mirrors canLookupAtIndex on accessible grid");
