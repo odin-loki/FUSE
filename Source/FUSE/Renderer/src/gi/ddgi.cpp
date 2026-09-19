@@ -3104,3 +3104,12 @@ bool wouldSkipScheduledCacheIndices(const DDGIDesc& desc,
     return !preflightTrilinearProbeIrradiance(desc, world_position, cache, cache_count, &reason);
         reject = ProbeGridLayout::isEmptyGrid(desc) ? ProbeTrilinearSampleRejectReason::EmptyGrid
     } else if (!tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, reject)) {
+
+// --- deepen additive from deepen-b56-ddgi-guards-c294 ---
+    return probeSampleCoordsRejectReasonIsBlocking(outReason);
+    return cacheIndexRejectReasonIsBlocking(reject);
+    if (!tryCanLookupAtCoord(desc, coord, cache_count, reject)) {
+    if (reject == CacheIndexRejectReason::OutOfRangeProbeIndex) {
+        *reason = CacheIndexRejectReason::None;
+    return probeScheduleRejectReasonIsBlocking(reject);
+    return probeUpdateLaunchRejectReasonIsBlocking(reject);

@@ -4211,3 +4211,29 @@ void testScheduledCacheIndexGuards() {
                "build coords for deepen-pass sample-coord wouldSkip test");
     expectTrue(!fuse::renderer::gi::preflightProbeTraceKernelLaunch(zeroCount),
     expectTrue(!fuse::renderer::gi::preflightProbeBlendKernelLaunch(zeroCount),
+
+// --- deepen additive from deepen-b56-ddgi-guards-c294 ---
+    fuse::renderer::ProbeScheduleRejectReason rateScheduleReason =
+void testDdgiProbeGridSourceGuards() {
+    expectTrue(fuse::renderer::ddgi_util::tryCanLookupAtCoord(desc, valid, 8u, cacheReason),
+    expectTrue(fuse::renderer::ddgi_util::tryCanLookupAtCoord(desc, invalid, 8u, cacheReason),
+               "wouldSkipCacheIndexLookupAtCoord true for OOB coord");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, valid, 8u),
+               "wouldSkipReadIrradianceAtIndex false for valid index");
+               "wouldSkipReadIrradianceAtIndex true for null cache");
+               "wouldSkipProbeSampleCoords true for OOB indices");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, oobIndices, sampleReason),
+               "wouldSkipProbeSampleCoords with reason true for OOB indices");
+    expectTrue(sampleReason == fuse::renderer::ProbeSampleCoordsRejectReason::OutOfRangeIndices,
+               "wouldSkipProbeSampleCoords reports out_of_range_indices reason");
+               "wouldSkipTrilinearProbeSample false for accessible coords");
+               "wouldSkipTrilinearProbeSample true for null cache at coords");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(2048u, 64u, indices, &count, &scheduleReason),
+               "wouldSkipProbeSchedule reports none reason on success");
+    expectTrue(!fuse::renderer::wouldSkipDdgiProbeUpdate(desc, validLaunchIndices, 2u, &launchReason),
+               "wouldSkipDdgiProbeUpdate false for valid launch");
+               "wouldSkipDdgiProbeUpdate reports none reason on success");
+    fuse::renderer::CacheIndexRejectReason indexReason = fuse::renderer::CacheIndexRejectReason::None;
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, 3u, 8u, &indexReason),
+    expectTrue(indexReason == fuse::renderer::CacheIndexRejectReason::None,
+               "wouldSkipCacheIndexLookup reports none reason on success");
