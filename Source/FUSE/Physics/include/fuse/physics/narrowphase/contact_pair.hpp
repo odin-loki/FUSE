@@ -119,7 +119,7 @@ struct ContactPairPreflight {
     ContactPairRejectReason reason = ContactPairRejectReason::None;
     bool rejected = false;
 
-    bool can_dispatch() const { return !rejected; }
+    bool can_dispatch() const { return reason == ContactPairRejectReason::None; }
 };
 
 /// Populate pair preflight without running shape dispatch (B4.4 deepen pass).
@@ -146,8 +146,15 @@ struct ContactPairDeepenPreflight {
     ContactPairRejectReason reason = ContactPairRejectReason::None;
     bool rejected = false;
 
-    bool can_dispatch() const { return !rejected; }
+    bool can_dispatch() const { return reason == ContactPairRejectReason::None; }
 };
+
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
 
 /// Populate extended pair preflight without running shape dispatch (B4.4 deepen follow-up).
 ContactPairDeepenPreflight preflight_contact_pair_deepen(
@@ -163,6 +170,45 @@ bool should_skip_contact_pair_deepen_dispatch(
 
 /// True when all pairs are rejected by extended preflight or the pair list is empty (B4.4 deepen follow-up).
 bool can_skip_narrowphase(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Why narrowphase pair dispatch would early-out (B4.4 deepen follow-up pass).
+enum class NarrowphaseRejectReason : u8 {
+    None = 0,
+    EmptyPairList,
+    AllPairsRejected,
+};
+
+/// Human-readable label for narrowphase batch reject reasons (logging / tests).
+const char* narrowphase_reject_reason_name(NarrowphaseRejectReason reason);
+
+/// Diagnose why narrowphase would skip; vacuously succeeds when dispatch may proceed.
+NarrowphaseRejectReason narrowphase_reject_reason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `narrowphase_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+bool narrowphase_rejects_for_reason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    NarrowphaseRejectReason expected);
+
+/// Read-only narrowphase pair-list diagnostics — no mutation (B4.4 deepen follow-up pass).
+struct NarrowphasePairListPreflight {
+    NarrowphaseRejectReason reason = NarrowphaseRejectReason::None;
+    bool emptyPairList = false;
+    bool allPairsRejected = false;
+    u32 dispatchablePairCount = 0;
+
+    bool can_dispatch() const { return reason == NarrowphaseRejectReason::None; }
+};
+
+/// Populate pair-list preflight without running shape dispatch (B4.4 deepen follow-up pass).
+NarrowphasePairListPreflight preflight_narrowphase_pair_list(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
