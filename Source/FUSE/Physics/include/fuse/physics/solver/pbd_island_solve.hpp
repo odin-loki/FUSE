@@ -1468,3 +1468,36 @@ IslandSolvePipelinePreflight preflight_island_solve_pipeline(const ContactIsland
 struct IslandSleepAwareDispatchPreflight {
 IslandSleepAwareDispatchPreflight preflight_island_sleep_aware_dispatch(const ContactIslandGraph& graph,
 bool should_skip_island_sleep_aware_dispatch(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-574a ---
+enum class IslandBuildRejectReason : u8 {
+const char* islandBuildRejectReasonName(IslandBuildRejectReason reason);
+IslandBuildRejectReason island_build_reject_reason(
+    IslandBuildRejectReason expected);
+struct IslandBuildDeepenPreflight {
+IslandBuildDeepenPreflight preflight_island_build_deepen(
+bool should_skip_island_build_deepen(
+IslandConstraintSolveRejectReason island_constraint_solve_reject_reason(
+struct IslandConstraintSolveDeepenPreflight {
+IslandConstraintSolveDeepenPreflight preflight_island_constraint_solve_deepen(
+bool should_skip_island_constraint_solve_deepen(
+IslandDispatchRejectReason island_dispatch_reject_reason(const ContactIslandGraph& graph, f32 dt);
+struct IslandDispatchDeepenPreflight {
+IslandDispatchDeepenPreflight preflight_island_dispatch_deepen(const ContactIslandGraph& graph, f32 dt);
+bool should_skip_island_dispatch_deepen(const ContactIslandGraph& graph, f32 dt);
+IslandSolveJobRejectReason island_solve_job_reject_reason(const IslandSolveJob& job, f32 dt);
+struct IslandSolveJobDeepenPreflight {
+IslandSolveJobDeepenPreflight preflight_solve_island_job_deepen(const IslandSolveJob& job, f32 dt);
+bool should_skip_solve_island_job_deepen(const IslandSolveJob& job, f32 dt);
+IslandSleepSolveRejectReason island_sleep_solve_reject_reason(const ContactIslandGraph::Island& island,
+IslandSleepSolveRejectReason island_sleep_solve_reject_reason_by_index(const ContactIslandGraph& graph,
+struct IslandSleepSolveDeepenPreflight {
+IslandSleepSolveDeepenPreflight preflight_island_sleep_solve_deepen(const ContactIslandGraph::Island& island,
+IslandSleepSolveDeepenPreflight preflight_island_sleep_solve_deepen_by_index(const ContactIslandGraph& graph,
+bool should_skip_island_sleep_solve_deepen(const ContactIslandGraph::Island& island,
+IslandWakeRejectReason island_wake_reject_reason(const ContactIslandGraph::Island& island,
+IslandWakeRejectReason island_wake_reject_reason_by_index(const ContactIslandGraph& graph,
+struct IslandWakeDeepenPreflight {
+IslandWakeDeepenPreflight preflight_island_wake_deepen(const ContactIslandGraph::Island& island,
+IslandWakeDeepenPreflight preflight_island_wake_deepen_by_index(const ContactIslandGraph& graph,
+bool should_skip_island_wake_deepen(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies);

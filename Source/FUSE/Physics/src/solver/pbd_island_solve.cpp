@@ -2354,3 +2354,70 @@ IslandSleepAwareDispatchPreflight preflight_island_sleep_aware_dispatch(const Co
 bool should_skip_island_sleep_aware_dispatch(const ContactIslandGraph& graph,
         if (should_skip_island_sleep_solve(graph.island(islandIndex), bodies)) {
     const IslandSleepAwareDispatchPreflight preflight =
+
+// --- deepen additive from deepen-pbd-island-guards-574a ---
+const char* islandBuildRejectReasonName(IslandBuildRejectReason reason) {
+    case IslandBuildRejectReason::None:
+    case IslandBuildRejectReason::EmptyInputs:
+    case IslandBuildRejectReason::OutOfRangeContactBodies:
+    case IslandBuildRejectReason::OutOfRangeDistanceBodies:
+IslandBuildRejectReason island_build_reject_reason(
+        return IslandBuildRejectReason::EmptyInputs;
+        return IslandBuildRejectReason::OutOfRangeContactBodies;
+        return IslandBuildRejectReason::OutOfRangeDistanceBodies;
+    return IslandBuildRejectReason::None;
+    IslandBuildRejectReason expected) {
+IslandBuildDeepenPreflight preflight_island_build_deepen(
+    IslandBuildDeepenPreflight deepen{};
+    deepen.rejected = deepen.reason != IslandBuildRejectReason::None;
+bool should_skip_island_build_deepen(
+    return !should_skip_island_build_deepen(bodyCount, contacts, distanceConstraints);
+    case IslandConstraintSolveRejectReason::NoInRangeConstraints:
+IslandConstraintSolveRejectReason island_constraint_solve_reject_reason(
+    const IslandConstraintRefsPreflight refs =
+        return IslandConstraintSolveRejectReason::NoInRangeConstraints;
+    const IslandSolveBodiesPreflight bodyPreflight = preflight_island_solve_bodies(island, bodies);
+    if (!bodyPreflight.can_solve()) {
+IslandConstraintSolveDeepenPreflight preflight_island_constraint_solve_deepen(
+    IslandConstraintSolveDeepenPreflight deepen{};
+    deepen.rejected = deepen.reason != IslandConstraintSolveRejectReason::None;
+bool should_skip_island_constraint_solve_deepen(
+    return !should_skip_island_constraint_solve_deepen(island, bodies, contacts, distanceConstraints);
+IslandDispatchRejectReason island_dispatch_reject_reason(const ContactIslandGraph& graph, f32 dt) {
+IslandDispatchDeepenPreflight preflight_island_dispatch_deepen(const ContactIslandGraph& graph, f32 dt) {
+    IslandDispatchDeepenPreflight deepen{};
+    deepen.rejected = deepen.reason != IslandDispatchRejectReason::None;
+bool should_skip_island_dispatch_deepen(const ContactIslandGraph& graph, f32 dt) {
+    return !should_skip_island_dispatch_deepen(graph, dt);
+    case IslandSolveJobRejectReason::OutOfRangeIndex:
+    case IslandSolveJobRejectReason::EmptyIsland:
+IslandSolveJobRejectReason island_solve_job_reject_reason(const IslandSolveJob& job, f32 dt) {
+        return IslandSolveJobRejectReason::OutOfRangeIndex;
+        return IslandSolveJobRejectReason::EmptyIsland;
+IslandSolveJobDeepenPreflight preflight_solve_island_job_deepen(const IslandSolveJob& job, f32 dt) {
+    IslandSolveJobDeepenPreflight deepen{};
+    deepen.rejected = deepen.reason != IslandSolveJobRejectReason::None;
+bool should_skip_solve_island_job_deepen(const IslandSolveJob& job, f32 dt) {
+    return !should_skip_solve_island_job_deepen(job, dt);
+    case IslandSleepSolveRejectReason::OutOfRangeIndex:
+IslandSleepSolveRejectReason island_sleep_solve_reject_reason(const ContactIslandGraph::Island& island,
+IslandSleepSolveRejectReason island_sleep_solve_reject_reason_by_index(const ContactIslandGraph& graph,
+        return IslandSleepSolveRejectReason::OutOfRangeIndex;
+IslandSleepSolveDeepenPreflight preflight_island_sleep_solve_deepen(const ContactIslandGraph::Island& island,
+    IslandSleepSolveDeepenPreflight deepen{};
+    deepen.rejected = deepen.reason != IslandSleepSolveRejectReason::None;
+IslandSleepSolveDeepenPreflight preflight_island_sleep_solve_deepen_by_index(const ContactIslandGraph& graph,
+        deepen.reason = IslandSleepSolveRejectReason::OutOfRangeIndex;
+bool should_skip_island_sleep_solve_deepen(const ContactIslandGraph::Island& island,
+    return !should_skip_island_sleep_solve_deepen(island, bodies);
+    case IslandWakeRejectReason::OutOfRangeIndex:
+IslandWakeRejectReason island_wake_reject_reason(const ContactIslandGraph::Island& island,
+IslandWakeRejectReason island_wake_reject_reason_by_index(const ContactIslandGraph& graph,
+        return IslandWakeRejectReason::OutOfRangeIndex;
+IslandWakeDeepenPreflight preflight_island_wake_deepen(const ContactIslandGraph::Island& island,
+    IslandWakeDeepenPreflight deepen{};
+    deepen.rejected = deepen.reason != IslandWakeRejectReason::None;
+IslandWakeDeepenPreflight preflight_island_wake_deepen_by_index(const ContactIslandGraph& graph,
+        deepen.reason = IslandWakeRejectReason::OutOfRangeIndex;
+bool should_skip_island_wake_deepen(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies) {
+    return !should_skip_island_wake_deepen(island, bodies);
