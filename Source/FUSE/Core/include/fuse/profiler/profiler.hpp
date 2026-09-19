@@ -48,8 +48,12 @@ struct ChromeTraceExportPreflight {
     u32 activeFlowNestingDepth = 0;
     u32 maxScopeNestingDepth = 0;
     u32 maxFlowNestingDepth = 0;
+    u32 nonExportableEventCount = 0;
+    u32 firstExportableEventIndex = kInvalidEventIndex;
+    u32 lastExportableEventIndex = kInvalidEventIndex;
     bool profilerDisabled = false;
     bool bufferEmpty = false;
+    bool bufferFull = false;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
@@ -58,6 +62,7 @@ struct ChromeTraceExportPreflight {
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+    bool canExportNonEmptyTrace() const { return canExport() && hasExportableEvents(); }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -96,6 +101,8 @@ bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
 bool hasUnbalancedNesting();
 bool isFlowDepthDetached();
+bool hasActiveScope();
+bool hasActiveAsyncFlowNesting();
 
 bool hasEvents();
 bool isBufferEmpty();
@@ -104,14 +111,20 @@ bool isEventIndexValid(u32 index);
 bool isValidEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 u32 exportableEventCount();
+u32 nonExportableEventCount();
 bool isEventExportable(u32 index);
 u32 firstEventIndex();
 u32 lastEventIndex();
+u32 firstExportableEventIndex();
+u32 lastExportableEventIndex();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
+bool tryFirstExportableEvent(ProfileEvent& outEvent);
+bool tryLastExportableEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
