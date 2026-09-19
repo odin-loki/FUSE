@@ -424,6 +424,76 @@ bool isSnapStepValid(GizmoMode mode, const GizmoSnapSettings& settings) {
 
 bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings) {
     return isSnapEnabled(mode, settings) && isSnapStepValid(mode, settings);
+    return preflightSnap(mode, settings).canApply;
+}
+
+SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings) {
+    SnapPreflight preflight{};
+    preflight.step = snapStepForMode(mode, settings);
+    if (!isSnapEnabled(mode, settings)) {
+        preflight.snapDisabled = true;
+        return preflight;
+    if (!isSnapStepValid(mode, settings)) {
+        preflight.invalidStep = true;
+    preflight.canApply = true;
+
+PickPreflight preflightPickAxis(const GizmoRay& ray, const GizmoTransform& transform,
+                                GizmoMode mode, GizmoSpace space, f32 axisLength,
+                                f32 pickRadius) {
+    PickPreflight preflight{};
+    if (isRayEmpty(ray)) {
+        preflight.emptyRay = true;
+
+    if (!isPickConfigValid(axisLength, pickRadius)) {
+        preflight.invalidPickConfig = true;
+
+    preflight.axis =
+        pickAxisFromRay(ray, transform, mode, space, axisLength, pickRadius);
+    if (preflight.axis == GizmoAxis::None) {
+
+    preflight.canPick = true;
+
+PickPreflight preflightPickAxis(const GizmoHitTest& hit, GizmoMode mode) {
+    if (isHitTestEmpty(hit)) {
+        preflight.emptyHit = true;
+
+    if (isScreenHitMiss(hit, mode)) {
+        preflight.screenMiss = true;
+
+    const f32 x = normalizedX(hit);
+    const f32 y = normalizedY(hit);
+
+    if (mode == GizmoMode::Scale && x > 0.4f && x < 0.6f && y > 0.4f && y < 0.6f) {
+        preflight.axis = GizmoAxis::Uniform;
+    } else if (x < 0.33f) {
+        preflight.axis = GizmoAxis::X;
+    } else if (y < 0.33f) {
+        preflight.axis = GizmoAxis::Y;
+    } else {
+        preflight.axis = GizmoAxis::Z;
+
+
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, GizmoMode mode, bool dragging,
+                                        GizmoAxis activeAxis, const GizmoSnapSettings& snap) {
+    UpdateDragPreflight preflight{};
+    if (!dragging) {
+        preflight.notDragging = true;
+
+
+    if (activeAxis == GizmoAxis::None) {
+        preflight.noActiveAxis = true;
+
+    const SnapPreflight snapPreflight = preflightSnap(mode, snap);
+    if (isSnapEnabled(mode, snap) && !snapPreflight.canApply) {
+        preflight.snapSkipped = true;
+
+    preflight.canUpdate = true;
+
+bool canUpdateDrag(const GizmoHitTest& hit, GizmoMode mode, bool dragging, GizmoAxis activeAxis) {
+    (void)hit;
+    (void)mode;
+        return false;
+    return activeAxis != GizmoAxis::None;
 
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
                             GizmoSpace space, f32 axisLength, f32 pickRadius) {
@@ -822,17 +892,14 @@ bool tryPickAxis(const GizmoHitTest& hit, GizmoMode mode, GizmoAxis& outAxis) {
     if (mode == GizmoMode::Scale && x > 0.4f && x < 0.6f && y > 0.4f && y < 0.6f) {
         outAxis = GizmoAxis::Uniform;
         return true;
-    }
     if (x < 0.33f) {
         outAxis = GizmoAxis::X;
-        return true;
-    }
     if (y < 0.33f) {
         outAxis = GizmoAxis::Y;
-        return true;
-    }
     outAxis = GizmoAxis::Z;
-    return true;
+    const PickPreflight preflight = preflightPickAxis(hit, mode);
+    outAxis = preflight.axis;
+    return preflight.canPick;
 }
 
 bool canPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -843,6 +910,9 @@ bool canPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode
 
 bool canPickAxis(const GizmoHitTest& hit, GizmoMode mode) {
     return preflightPick(hit, mode).canPick();
+    return preflightPickAxis(ray, transform, mode, space, axisLength, pickRadius).canPick;
+
+    return preflightPickAxis(hit, mode).canPick;
 }
 
 bool canBeginDrag(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -1573,6 +1643,28 @@ bool GizmoSystem::canEndInteraction() const {
     return fuse::editor::canEndInteraction(m_dragging, m_activeAxis, m_mode, m_snap);
 }
 
+PickPreflight GizmoSystem::preflightPickAxis(const GizmoRay& ray,
+                                             const GizmoTransform& transform) const {
+    return fuse::editor::preflightPickAxis(ray, transform, m_mode, m_space, kAxisLength,
+                                           kPickRadius);
+}
+
+PickPreflight GizmoSystem::preflightPickAxis(const GizmoHitTest& hit) const {
+    return fuse::editor::preflightPickAxis(hit, m_mode);
+}
+
+SnapPreflight GizmoSystem::preflightSnap() const {
+    return fuse::editor::preflightSnap(m_mode, m_snap);
+}
+
+UpdateDragPreflight GizmoSystem::preflightUpdateDrag(const GizmoHitTest& hit) const {
+    return fuse::editor::preflightUpdateDrag(hit, m_mode, m_dragging, m_activeAxis, m_snap);
+}
+
+bool GizmoSystem::canUpdateDrag(const GizmoHitTest& hit) const {
+    return preflightUpdateDrag(hit).canUpdate;
+}
+
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
     GizmoResult result;
     if (!tryBeginDrag(hit, current, result)) {
@@ -1681,7 +1773,6 @@ UpdateDragPreflight GizmoSystem::preflightUpdateDrag(const GizmoHitTest& hit) co
 
 bool GizmoSystem::canUpdateDrag(const GizmoHitTest& hit) const {
     return preflightUpdateDrag(hit).canUpdate;
-}
 
 bool GizmoSystem::tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out) {
     out = {};
@@ -1704,7 +1795,6 @@ GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
     GizmoResult result;
     if (!tryUpdateDrag(hit, result)) {
         return result;
-    }
 void GizmoSystem::cancelDrag() {
     if (!m_dragging) {
         return;
@@ -1712,25 +1802,14 @@ void GizmoSystem::cancelDrag() {
     m_dragging = false;
     m_activeAxis = GizmoAxis::None;
     m_currentTransform = m_startTransform;
-}
 
-void GizmoSystem::cancelDrag() {
-    if (!m_dragging) {
-        return;
-    }
 
-    m_dragging = false;
-    m_activeAxis = GizmoAxis::None;
-    m_currentTransform = m_startTransform;
-}
 
 BeginDragPreflight GizmoSystem::preflightBeginDrag(const GizmoHitTest& hit,
                                                  const GizmoTransform& current) const {
     return fuse::editor::preflightBeginDrag(hit, current, m_mode);
-}
 
 BeginDragPreflight GizmoSystem::preflightBeginDrag(const GizmoRay& ray,
-                                                   const GizmoTransform& current) const {
     return fuse::editor::preflightBeginDrag(ray, current, m_mode, m_space, kAxisLength,
                                             kPickRadius);
 }
