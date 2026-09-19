@@ -386,3 +386,7 @@ ManifoldFinalizeRejectReason manifold_finalize_second_reject_reason(
 
 // --- deepen additive from b4-narrowphase-deepen-8324 ---
     return !should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-1595 ---
+    if (should_skip_friction_basis_preflight(manifold, epsilon)) {
+        if (friction_basis_reject_reason(manifold) != FrictionBasisRejectReason::None) {

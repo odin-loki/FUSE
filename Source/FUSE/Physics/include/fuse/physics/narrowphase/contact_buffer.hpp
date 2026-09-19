@@ -469,3 +469,75 @@ const char* contact_buffer_friction_tangent_reject_reason_name(ContactBufferFric
     const ContactBufferCompactAndClampPreflight preflight = preflight_contact_buffer_compact_and_clamp(buffer);
     if (preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer) {
     if (preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-1595 ---
+FUSE_PHYSICS_INLINE const char* contactBufferWriteSlotRejectReasonName(ContactBufferWriteSlotRejectReason reason) {
+FUSE_PHYSICS_INLINE ContactBufferWriteSlotRejectReason contactBufferWriteSlotRejectReason(
+    return contactBufferWriteSlotRejectReason(buffer, slot, manifold) == expected;
+FUSE_PHYSICS_INLINE ContactBufferWriteSlotPreflight preflightContactBufferWriteSlot(
+    preflight.reason = contactBufferWriteSlotRejectReason(buffer, slot, manifold);
+    return !preflightContactBufferWriteSlot(buffer, slot, manifold).canWrite();
+    return preflightContactBufferWriteSlot(buffer, slot, manifold).canWrite();
+FUSE_PHYSICS_INLINE const char* contactBufferCompactionRejectReasonName(ContactBufferCompactionRejectReason reason) {
+FUSE_PHYSICS_INLINE ContactBufferCompactionRejectReason contactBufferCompactionRejectReason(
+    return contactBufferCompactionRejectReason(buffer) == expected;
+FUSE_PHYSICS_INLINE ContactBufferCompactionPreflight preflightContactBufferCompaction(const ContactBufferSoA& buffer) {
+    preflight.reason = contactBufferCompactionRejectReason(buffer);
+    return !preflightContactBufferCompaction(buffer).needsCompaction();
+    return preflightContactBufferCompaction(buffer).needsCompaction();
+FUSE_PHYSICS_INLINE const char* contactBufferClampRejectReasonName(ContactBufferClampRejectReason reason) {
+FUSE_PHYSICS_INLINE ContactBufferClampRejectReason contactBufferClampRejectReason(const ContactBufferSoA& buffer) {
+    return contactBufferClampRejectReason(buffer) == expected;
+FUSE_PHYSICS_INLINE ContactBufferClampPreflight preflightContactBufferClamp(const ContactBufferSoA& buffer) {
+    preflight.reason = contactBufferClampRejectReason(buffer);
+    return !preflightContactBufferClamp(buffer).needsClamp();
+    return preflightContactBufferClamp(buffer).needsClamp();
+FUSE_PHYSICS_INLINE const char* contactBufferCompactAndClampRejectReasonName(
+FUSE_PHYSICS_INLINE ContactBufferCompactAndClampRejectReason contactBufferCompactAndClampRejectReason(
+    return contactBufferCompactAndClampRejectReason(buffer) == expected;
+FUSE_PHYSICS_INLINE ContactBufferCompactAndClampPreflight preflightContactBufferCompactAndClamp(
+    preflight.reason = contactBufferCompactAndClampRejectReason(buffer);
+    return !preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp();
+    return preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp();
+FUSE_PHYSICS_INLINE const char* contactBufferFrictionBuildRejectReasonName(
+    ContactBufferFrictionBuildRejectReason reason) {
+    case ContactBufferFrictionBuildRejectReason::None:
+    case ContactBufferFrictionBuildRejectReason::EmptyBuffer:
+    case ContactBufferFrictionBuildRejectReason::AllCached:
+FUSE_PHYSICS_INLINE ContactBufferFrictionBuildRejectReason contactBufferFrictionBuildRejectReason(
+        return ContactBufferFrictionBuildRejectReason::EmptyBuffer;
+        return ContactBufferFrictionBuildRejectReason::AllCached;
+    return ContactBufferFrictionBuildRejectReason::None;
+    ContactBufferFrictionBuildRejectReason expected) {
+    return contactBufferFrictionBuildRejectReason(buffer) == expected;
+FUSE_PHYSICS_INLINE ContactBufferFrictionBuildPreflight preflightContactBufferFrictionBuild(
+    ContactBufferFrictionBuildPreflight preflight{};
+    preflight.reason = contactBufferFrictionBuildRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferFrictionBuildRejectReason::EmptyBuffer;
+    preflight.allCached = preflight.reason == ContactBufferFrictionBuildRejectReason::AllCached;
+    return !preflightContactBufferFrictionBuild(buffer).needsFrictionBuild();
+    return preflightContactBufferFrictionBuild(buffer).needsFrictionBuild();
+FUSE_PHYSICS_INLINE const char* contactBufferWarmStartRejectReasonName(ContactBufferWarmStartRejectReason reason) {
+    case ContactBufferWarmStartRejectReason::None:
+    case ContactBufferWarmStartRejectReason::OutOfRangeSlot:
+    case ContactBufferWarmStartRejectReason::InvalidSlot:
+FUSE_PHYSICS_INLINE ContactBufferWarmStartRejectReason contactBufferWarmStartRejectReason(
+        return ContactBufferWarmStartRejectReason::OutOfRangeSlot;
+        return ContactBufferWarmStartRejectReason::InvalidSlot;
+    return ContactBufferWarmStartRejectReason::None;
+    ContactBufferWarmStartRejectReason expected) {
+    return contactBufferWarmStartRejectReason(buffer, slot) == expected;
+FUSE_PHYSICS_INLINE ContactBufferWarmStartPreflight preflightContactBufferWarmStart(
+    ContactBufferWarmStartPreflight preflight{};
+    preflight.reason = contactBufferWarmStartRejectReason(buffer, slot);
+    preflight.outOfRangeSlot = preflight.reason == ContactBufferWarmStartRejectReason::OutOfRangeSlot;
+    preflight.invalidSlot = preflight.reason == ContactBufferWarmStartRejectReason::InvalidSlot;
+    return !preflightContactBufferWarmStart(buffer, slot).canWarmStart();
+    return preflightContactBufferWarmStart(buffer, slot).canWarmStart();
+FUSE_PHYSICS_INLINE const char* contactBufferToVectorRejectReasonName(ContactBufferToVectorRejectReason reason) {
+FUSE_PHYSICS_INLINE ContactBufferToVectorRejectReason contactBufferToVectorRejectReason(
+    return contactBufferToVectorRejectReason(buffer) == expected;
+FUSE_PHYSICS_INLINE ContactBufferToVectorPreflight preflightContactBufferToVector(const ContactBufferSoA& buffer) {
+    preflight.reason = contactBufferToVectorRejectReason(buffer);
+    return !preflightContactBufferToVector(buffer).canExport();
+    return preflightContactBufferToVector(buffer).canExport();

@@ -273,3 +273,7 @@ FUSE_PHYSICS_INLINE NarrowphaseDispatchPreflight preflight_run_narrowphase(
     NarrowphaseDispatchPreflight preflight{};
 FUSE_PHYSICS_INLINE void runNarrowphaseIntoBufferWithPreflight(
     const NarrowphaseDispatchPreflight preflight = preflight_run_narrowphase(pairs, bodies, shapes);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-1595 ---
+FUSE_PHYSICS_INLINE NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
+    NarrowphaseBufferDispatchPreflight preflight{};
