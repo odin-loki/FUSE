@@ -4,6 +4,43 @@
 
 namespace fuse::physics {
 
+bool ContactIslandGraph::partitionBodyInRange(u32 bodyCount, u32 bodyIndex) {
+    return bodyIndex < bodyCount;
+}
+
+bool ContactIslandGraph::contactPartitionInRange(u32 bodyCount,
+                                               const narrowphase::ContactManifold& contact) {
+    return partitionBodyInRange(bodyCount, contact.bodyA) && partitionBodyInRange(bodyCount, contact.bodyB);
+}
+
+bool ContactIslandGraph::distancePartitionInRange(u32 bodyCount, const DistanceConstraint& constraint) {
+    return partitionBodyInRange(bodyCount, constraint.bodyA) &&
+           partitionBodyInRange(bodyCount, constraint.bodyB);
+}
+
+u32 ContactIslandGraph::countUnionableContacts(u32 bodyCount,
+                                             const std::vector<narrowphase::ContactManifold>& contacts) {
+    u32 count = 0;
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (contact.valid && contactPartitionInRange(bodyCount, contact)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 ContactIslandGraph::countUnionableDistanceConstraints(
+    u32 bodyCount,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    u32 count = 0;
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (distancePartitionInRange(bodyCount, constraint)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
