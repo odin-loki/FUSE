@@ -1775,3 +1775,11 @@ void testHrtfRejectReasonPreflights() {
     expectTrue(stub_preflight.reason == fuse::audio::HrtfBinauralRejectReason::EmptyIr,
                "should_skip_hrtf_binaural matches spatial bypass");
     expectTrue(unity_preflight.reason == fuse::audio::HrtfBinauralRejectReason::UnityAttenuation,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-db94 ---
+    expectTrue(fuse::audio::preflight_hrtf_ir(valid).reason == fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(conv_preflight.reason == fuse::audio::HrtfBinauralRejectReason::UnityAttenuation,
+    expectTrue(conv_preflight.ir.reason == fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(malformed_preflight.reason == fuse::audio::HrtfBinauralRejectReason::MalformedIr,
+    const fuse::audio::HrtfBinauralPreflight ideal_preflight =
+    expectTrue(ideal_preflight.reason == fuse::audio::HrtfBinauralRejectReason::None,

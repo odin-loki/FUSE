@@ -1157,3 +1157,15 @@ HrtfBinauralRejectReason map_attenuation_coupling_reject_to_binaural(
     if (hrtf_ir_reject_reason(ir) != HrtfIrRejectReason::None) {
     const HrtfAttenuationCouplingRejectReason coupling_reason =
     if (coupling_reason != HrtfAttenuationCouplingRejectReason::None) {
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-db94 ---
+HrtfBinauralRejectReason map_ir_reject_to_binaural(HrtfIrRejectReason reason) {
+HrtfBinauralRejectReason map_attenuation_reject_to_binaural(
+HrtfBinauralRejectReason compute_hrtf_binaural_reject_reason(
+    const HrtfIrPreflight& ir, const HrtfPanPathPreflight& pan_path,
+    const HrtfAttenuationCouplingPreflight& attenuation) {
+    const HrtfBinauralRejectReason pan_reject = map_pan_path_reject_to_binaural(pan_path.reason);
+    if (pan_reject != HrtfBinauralRejectReason::None) {
+    const HrtfBinauralRejectReason ir_reject = map_ir_reject_to_binaural(ir.reason);
+    if (ir_reject != HrtfBinauralRejectReason::None) {
+                                      float occlusion_gain, HrtfBinauralRejectReason expected) {

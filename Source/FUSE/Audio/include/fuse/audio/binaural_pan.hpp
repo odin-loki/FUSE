@@ -795,3 +795,6 @@ bool hrtfBinauralRejectsForReason(const HrtfBinauralPreflight& preflight,
 HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const HrtfIrStub& ir,
 HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const Vec3& rel_listener,
                                       float occlusion_gain, HrtfBinauralRejectReason expected,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-db94 ---
+                                      float occlusion_gain, HrtfBinauralRejectReason expected);
