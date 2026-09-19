@@ -2248,3 +2248,15 @@ bool preflightPopulate(const FroxelGridDesc& desc,
 
 // --- deepen additive from froxel-volumetric-b511-deepen-b4e6 ---
     return mapped && !screenMappingRejectReasonIsBlocking(rejectReason);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-a55a ---
+bool preflightScreenMapping(f32 screenX,
+SampleCoordRejectReason classifySampleCoordsRejectImpl(const FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
+    return classifySampleCoordsRejectImpl(coords, desc);
+    return FroxelGridLayout::classifySampleCoordsReject(coords, desc);
+bool preflightFroxelSample(const FroxelDensityGrid& grid,
+    const SampleCoordRejectReason reject = classifyFroxelSampleReject(grid, desc, coords);
+    outReason = classifyFroxelSampleReject(grid, desc, coords);
+    const SampleCoordRejectReason sampleReason = FroxelGridLayout::classifySampleCoordsReject(coords, desc);
+    const DensityLookupRejectReason reject = classifyDensityLookupAtIndex(grid, desc, index);
+    const DensityLookupRejectReason reject = classifyDensityLookupAtCoord(grid, desc, tileX, tileY, sliceZ);

@@ -861,3 +861,6 @@ SampleCoordRejectReason classifyFroxelSampleCoordReject(const FroxelDensityGrid&
 
 // --- deepen additive from deepen-froxel-classify-isblocking-34dc ---
 bool preflightPopulate(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-a55a ---
+bool preflightFroxelSample(const FroxelDensityGrid& grid,

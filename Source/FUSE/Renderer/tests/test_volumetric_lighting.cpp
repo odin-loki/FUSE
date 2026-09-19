@@ -3515,3 +3515,24 @@ void testFroxelClassifyAndBlockingGuards() {
                "preflightScreenDepthToSampleCoords succeeds for valid mapping");
                "preflightDensityLookupAtIndex succeeds for clampable OOB index");
                "classifyFroxelPopulateReject invalid_camera");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-a55a ---
+void testFroxelClassifyIsBlockingAndPreflightGuards() {
+    expectTrue(fuse::renderer::preflightScreenMapping(0.5f, 0.5f, 10.f, desc, camera),
+    expectTrue(!fuse::renderer::preflightScreenMapping(0.5f, 0.5f, 0.01f, desc, camera, &mapReason),
+               "preflightScreenMapping reports depth_out_of_range");
+    expectTrue(fuse::renderer::sampleCoordRejectReasonIsBlocking(fuse::renderer::SampleCoordRejectReason::OutOfBounds),
+               "classifySampleCoordsReject invalid_weights for OOB interpolation weight");
+               "preflightSampleCoords still succeeds for clampable weights");
+               "classifyFroxelTrilinearSampleReject none for accessible grid");
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelTrilinearSampleReject(emptyGrid, desc, inBounds) ==
+               "classifyFroxelTrilinearSampleReject inaccessible_grid for empty storage");
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelSampleReject(grid, desc, inBounds) ==
+               "classifyFroxelSampleReject none for accessible grid");
+    expectTrue(fuse::renderer::froxel_util::preflightFroxelSample(grid, desc, inBounds),
+               "preflightFroxelSample succeeds for accessible grid");
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelSampleReject(emptyGrid, desc, inBounds) ==
+               "classifyFroxelSampleReject out_of_bounds for empty storage");
+    expectTrue(!fuse::renderer::froxelPopulateRejectReasonIsBlocking(fuse::renderer::FroxelPopulateRejectReason::None),
+               "classifyFroxelPopulateReject invalid_camera for inverted planes");
+    testFroxelClassifyIsBlockingAndPreflightGuards();
