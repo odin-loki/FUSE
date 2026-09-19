@@ -3638,3 +3638,13 @@ void testCanEndAsyncFlowAndOrphanGuards() {
     expectTrue(detachedPreflight.flowDepthDetached, "preflight extended marks detached flow depth");
     expectTrue(!detachedPreflight.isExportRecommended(),
     expectTrue(detachedPreflight.nonExportableEventCount == 0u,
+
+// --- deepen additive from deepen-b16-profiler-guards-38ed ---
+void testFirstAndLastExportableEventIndexGuard() {
+               "tryExportableEventAt true for exportable begin event");
+               "tryExportableEventAt true for exportable end event");
+void testHasActiveScopeAndAsyncFlowNestingGuard() {
+void testChromeTraceExportPreflightExportableIndices() {
+    expectTrue(emptyPreflight.firstExportableEventIndex == fuse::profiler::kInvalidEventIndex,
+    expectTrue(!emptyPreflight.bufferFull, "preflight bufferFull false on empty buffer");
+    testChromeTraceExportPreflightExportableIndices();
