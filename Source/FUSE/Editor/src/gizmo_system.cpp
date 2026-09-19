@@ -333,57 +333,148 @@ bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings) {
     return isSnapEnabled(mode, settings) && isSnapStepValid(mode, settings);
 }
 
+bool isScreenHitOutOfBounds(const GizmoHitTest& hit) {
+    if (isHitTestEmpty(hit)) {
+        return false;
+    }
+    return hit.screenX < 0.f || hit.screenY < 0.f || hit.screenX > hit.viewportWidth ||
+           hit.screenY > hit.viewportHeight;
+}
+
+bool isScreenHitMiss(const GizmoHitTest& hit, GizmoMode mode) {
+    if (isHitTestEmpty(hit)) {
+        return true;
+    }
+
+    const f32 x = normalizedX(hit);
+    const f32 y = normalizedY(hit);
+
+    if (mode == GizmoMode::Scale) {
+        const bool inUniformHandle = x > 0.4f && x < 0.6f && y > 0.4f && y < 0.6f;
+        const bool onAxisBand = x < 0.33f || y < 0.33f;
+        return !inUniformHandle && !onAxisBand;
+    }
+
+    const bool inDeadZone = x > 0.33f && x < 0.66f && y > 0.33f && y < 0.66f;
+    return inDeadZone;
+}
+
+const char* pickRejectReasonName(PickRejectReason reason) {
+    switch (reason) {
+    case PickRejectReason::None:
+        return "None";
+    case PickRejectReason::EmptyRay:
+        return "EmptyRay";
+    case PickRejectReason::EmptyHit:
+        return "EmptyHit";
+    case PickRejectReason::InvalidPickConfig:
+        return "InvalidPickConfig";
+    case PickRejectReason::ScreenOutOfBounds:
+        return "ScreenOutOfBounds";
+    case PickRejectReason::ScreenMiss:
+        return "ScreenMiss";
+    case PickRejectReason::PickMiss:
+        return "PickMiss";
+    }
+    return "Unknown";
+}
+
+PickRejectReason pickRejectReason(const GizmoRay& ray, const GizmoTransform& transform,
+                                  GizmoMode mode, GizmoSpace space, f32 axisLength,
+                                  f32 pickRadius) {
+    if (isRayEmpty(ray)) {
+        return PickRejectReason::EmptyRay;
+    }
+    if (!isPickConfigValid(axisLength, pickRadius)) {
+        return PickRejectReason::InvalidPickConfig;
+    }
+    if (pickAxisFromRay(ray, transform, mode, space, axisLength, pickRadius) == GizmoAxis::None) {
+        return PickRejectReason::PickMiss;
+    }
+    return PickRejectReason::None;
+}
+
+PickRejectReason pickRejectReason(const GizmoHitTest& hit, GizmoMode mode) {
+    if (isHitTestEmpty(hit)) {
+        return PickRejectReason::EmptyHit;
+    }
+    if (isScreenHitOutOfBounds(hit)) {
+        return PickRejectReason::ScreenOutOfBounds;
+    }
+    if (isScreenHitMiss(hit, mode)) {
+        return PickRejectReason::ScreenMiss;
+    }
+    return PickRejectReason::None;
+}
+
+bool pickRejectsForReason(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                          GizmoSpace space, f32 axisLength, f32 pickRadius,
+                          PickRejectReason expected) {
+    return pickRejectReason(ray, transform, mode, space, axisLength, pickRadius) == expected;
+}
+
+bool pickRejectsForReason(const GizmoHitTest& hit, GizmoMode mode, PickRejectReason expected) {
+    return pickRejectReason(hit, mode) == expected;
+}
+
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
                             GizmoSpace space, f32 axisLength, f32 pickRadius) {
     PickPreflight preflight{};
-    if (isRayEmpty(ray)) {
-        preflight.emptyRay = true;
-        return preflight;
+    preflight.reason = pickRejectReason(ray, transform, mode, space, axisLength, pickRadius);
+    preflight.emptyRay = preflight.reason == PickRejectReason::EmptyRay;
+    preflight.invalidPickConfig = preflight.reason == PickRejectReason::InvalidPickConfig;
+    preflight.pickMiss = preflight.reason == PickRejectReason::PickMiss;
+    if (preflight.canPick()) {
+        preflight.axis =
+            pickAxisFromRay(ray, transform, mode, space, axisLength, pickRadius);
     }
-
-    if (!isPickConfigValid(axisLength, pickRadius)) {
-        preflight.invalidPickConfig = true;
-        return preflight;
-    }
-
-    const GizmoAxis axis =
-        pickAxisFromRay(ray, transform, mode, space, axisLength, pickRadius);
-    if (axis == GizmoAxis::None) {
-        preflight.pickMiss = true;
-    } else {
-        preflight.axis = axis;
-    }
-
     return preflight;
 }
 
 PickPreflight preflightPick(const GizmoHitTest& hit, GizmoMode mode) {
     PickPreflight preflight{};
-    if (isHitTestEmpty(hit)) {
-        preflight.emptyHit = true;
-        return preflight;
+    preflight.reason = pickRejectReason(hit, mode);
+    preflight.emptyHit = preflight.reason == PickRejectReason::EmptyHit;
+    preflight.screenOutOfBounds = preflight.reason == PickRejectReason::ScreenOutOfBounds;
+    preflight.screenMiss = preflight.reason == PickRejectReason::ScreenMiss;
+    if (preflight.canPick()) {
+        preflight.axis = resolveScreenAxis(hit, mode);
     }
-
-    if (isScreenHitMiss(hit, mode)) {
-        preflight.screenMiss = true;
-        return preflight;
-    }
-
-    preflight.axis = resolveScreenAxis(hit, mode);
     return preflight;
+}
+
+const char* snapRejectReasonName(SnapRejectReason reason) {
+    switch (reason) {
+    case SnapRejectReason::None:
+        return "None";
+    case SnapRejectReason::Disabled:
+        return "Disabled";
+    case SnapRejectReason::InvalidStep:
+        return "InvalidStep";
+    }
+    return "Unknown";
+}
+
+SnapRejectReason snapRejectReason(GizmoMode mode, const GizmoSnapSettings& settings) {
+    if (!isSnapEnabled(mode, settings)) {
+        return SnapRejectReason::Disabled;
+    }
+    if (!isSnapStepValid(mode, settings)) {
+        return SnapRejectReason::InvalidStep;
+    }
+    return SnapRejectReason::None;
+}
+
+bool snapRejectsForReason(GizmoMode mode, const GizmoSnapSettings& settings,
+                          SnapRejectReason expected) {
+    return snapRejectReason(mode, settings) == expected;
 }
 
 SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings) {
     SnapPreflight preflight{};
-    if (!isSnapEnabled(mode, settings)) {
-        preflight.snapDisabled = true;
-        return preflight;
-    }
-
-    if (!isSnapStepValid(mode, settings)) {
-        preflight.invalidStep = true;
-    }
-
+    preflight.reason = snapRejectReason(mode, settings);
+    preflight.snapDisabled = preflight.reason == SnapRejectReason::Disabled;
+    preflight.invalidStep = preflight.reason == SnapRejectReason::InvalidStep;
     return preflight;
 }
 
@@ -434,23 +525,52 @@ bool canSnapDragDelta(GizmoMode mode, const GizmoSnapSettings& settings) {
     return canApplySnap(mode, settings);
 }
 
+const char* updateDragRejectReasonName(UpdateDragRejectReason reason) {
+    switch (reason) {
+    case UpdateDragRejectReason::None:
+        return "None";
+    case UpdateDragRejectReason::NotDragging:
+        return "NotDragging";
+    case UpdateDragRejectReason::EmptyHit:
+        return "EmptyHit";
+    case UpdateDragRejectReason::ScreenOutOfBounds:
+        return "ScreenOutOfBounds";
+    case UpdateDragRejectReason::InvalidActiveAxis:
+        return "InvalidActiveAxis";
+    }
+    return "Unknown";
+}
+
+UpdateDragRejectReason updateDragRejectReason(const GizmoHitTest& hit, bool dragging,
+                                              GizmoAxis activeAxis) {
+    if (!dragging) {
+        return UpdateDragRejectReason::NotDragging;
+    }
+    if (activeAxis == GizmoAxis::None) {
+        return UpdateDragRejectReason::InvalidActiveAxis;
+    }
+    if (isHitTestEmpty(hit)) {
+        return UpdateDragRejectReason::EmptyHit;
+    }
+    if (isScreenHitOutOfBounds(hit)) {
+        return UpdateDragRejectReason::ScreenOutOfBounds;
+    }
+    return UpdateDragRejectReason::None;
+}
+
+bool updateDragRejectsForReason(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+                                UpdateDragRejectReason expected) {
+    return updateDragRejectReason(hit, dragging, activeAxis) == expected;
+}
+
 UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
                                         GizmoAxis activeAxis) {
     UpdateDragPreflight preflight{};
-    if (!dragging) {
-        preflight.notDragging = true;
-        return preflight;
-    }
-
-    if (activeAxis == GizmoAxis::None) {
-        preflight.invalidActiveAxis = true;
-        return preflight;
-    }
-
-    if (isHitTestEmpty(hit)) {
-        preflight.emptyHit = true;
-    }
-
+    preflight.reason = updateDragRejectReason(hit, dragging, activeAxis);
+    preflight.notDragging = preflight.reason == UpdateDragRejectReason::NotDragging;
+    preflight.invalidActiveAxis = preflight.reason == UpdateDragRejectReason::InvalidActiveAxis;
+    preflight.emptyHit = preflight.reason == UpdateDragRejectReason::EmptyHit;
+    preflight.screenOutOfBounds = preflight.reason == UpdateDragRejectReason::ScreenOutOfBounds;
     return preflight;
 }
 
@@ -478,11 +598,33 @@ bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
     return preflightUpdateDrag(hit, dragging, activeAxis, mode, settings).canUpdate();
 }
 
+const char* endDragRejectReasonName(EndDragRejectReason reason) {
+    switch (reason) {
+    case EndDragRejectReason::None:
+        return "None";
+    case EndDragRejectReason::NotDragging:
+        return "NotDragging";
+    }
+    return "Unknown";
+}
+
+EndDragRejectReason endDragRejectReason(bool dragging) {
+    if (!dragging) {
+        return EndDragRejectReason::NotDragging;
+    }
+    return EndDragRejectReason::None;
+}
+
+bool endDragRejectsForReason(bool dragging, EndDragRejectReason expected) {
+    return endDragRejectReason(dragging) == expected;
+}
+
 EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
                                   const GizmoSnapSettings& settings) {
     EndDragPreflight preflight{};
-    if (!dragging) {
-        preflight.notDragging = true;
+    preflight.reason = endDragRejectReason(dragging);
+    preflight.notDragging = preflight.reason == EndDragRejectReason::NotDragging;
+    if (!preflight.canEnd()) {
         return preflight;
     }
 
@@ -506,23 +648,102 @@ bool canEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
     return preflightEndDrag(dragging, activeAxis, mode, settings).canEnd();
 }
 
+const char* beginDragRejectReasonName(BeginDragRejectReason reason) {
+    switch (reason) {
+    case BeginDragRejectReason::None:
+        return "None";
+    case BeginDragRejectReason::AlreadyDragging:
+        return "AlreadyDragging";
+    case BeginDragRejectReason::EmptyRay:
+        return "EmptyRay";
+    case BeginDragRejectReason::EmptyHit:
+        return "EmptyHit";
+    case BeginDragRejectReason::InvalidPickConfig:
+        return "InvalidPickConfig";
+    case BeginDragRejectReason::ScreenOutOfBounds:
+        return "ScreenOutOfBounds";
+    case BeginDragRejectReason::ScreenMiss:
+        return "ScreenMiss";
+    case BeginDragRejectReason::PickMiss:
+        return "PickMiss";
+    }
+    return "Unknown";
+}
+
+BeginDragRejectReason beginDragRejectReason(const GizmoRay& ray, const GizmoTransform& transform,
+                                            GizmoMode mode, GizmoSpace space, f32 axisLength,
+                                            f32 pickRadius, bool alreadyDragging) {
+    if (alreadyDragging) {
+        return BeginDragRejectReason::AlreadyDragging;
+    }
+
+    const PickRejectReason pickReason =
+        pickRejectReason(ray, transform, mode, space, axisLength, pickRadius);
+    switch (pickReason) {
+    case PickRejectReason::EmptyRay:
+        return BeginDragRejectReason::EmptyRay;
+    case PickRejectReason::InvalidPickConfig:
+        return BeginDragRejectReason::InvalidPickConfig;
+    case PickRejectReason::PickMiss:
+        return BeginDragRejectReason::PickMiss;
+    case PickRejectReason::None:
+        return BeginDragRejectReason::None;
+    default:
+        return BeginDragRejectReason::None;
+    }
+}
+
+BeginDragRejectReason beginDragRejectReason(const GizmoHitTest& hit, GizmoMode mode,
+                                            bool alreadyDragging) {
+    if (alreadyDragging) {
+        return BeginDragRejectReason::AlreadyDragging;
+    }
+
+    const PickRejectReason pickReason = pickRejectReason(hit, mode);
+    switch (pickReason) {
+    case PickRejectReason::EmptyHit:
+        return BeginDragRejectReason::EmptyHit;
+    case PickRejectReason::ScreenOutOfBounds:
+        return BeginDragRejectReason::ScreenOutOfBounds;
+    case PickRejectReason::ScreenMiss:
+        return BeginDragRejectReason::ScreenMiss;
+    case PickRejectReason::PickMiss:
+        return BeginDragRejectReason::PickMiss;
+    case PickRejectReason::None:
+        return BeginDragRejectReason::None;
+    default:
+        return BeginDragRejectReason::None;
+    }
+}
+
+bool beginDragRejectsForReason(const GizmoRay& ray, const GizmoTransform& transform,
+                               GizmoMode mode, GizmoSpace space, f32 axisLength, f32 pickRadius,
+                               BeginDragRejectReason expected, bool alreadyDragging) {
+    return beginDragRejectReason(ray, transform, mode, space, axisLength, pickRadius,
+                                 alreadyDragging) == expected;
+}
+
+bool beginDragRejectsForReason(const GizmoHitTest& hit, GizmoMode mode,
+                               BeginDragRejectReason expected, bool alreadyDragging) {
+    return beginDragRejectReason(hit, mode, alreadyDragging) == expected;
+}
+
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       GizmoMode mode, GizmoSpace space, f32 axisLength,
                                       f32 pickRadius, bool alreadyDragging) {
     BeginDragPreflight preflight{};
-    if (alreadyDragging) {
-        preflight.alreadyDragging = true;
+    preflight.reason =
+        beginDragRejectReason(ray, transform, mode, space, axisLength, pickRadius, alreadyDragging);
+    preflight.alreadyDragging = preflight.reason == BeginDragRejectReason::AlreadyDragging;
+    preflight.emptyRay = preflight.reason == BeginDragRejectReason::EmptyRay;
+    preflight.invalidPickConfig = preflight.reason == BeginDragRejectReason::InvalidPickConfig;
+    preflight.pickMiss = preflight.reason == BeginDragRejectReason::PickMiss;
+    if (preflight.reason != BeginDragRejectReason::None) {
         return preflight;
     }
 
     const PickPreflight pick = preflightPick(ray, transform, mode, space, axisLength, pickRadius);
-    preflight.emptyRay = pick.emptyRay;
-    preflight.invalidPickConfig = pick.invalidPickConfig;
-    preflight.pickMiss = pick.pickMiss;
-    if (!pick.canPick()) {
-        return preflight;
-    }
-
+    preflight.axis = pick.axis;
     preflight.canBegin = true;
     return preflight;
 }
@@ -530,18 +751,18 @@ BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform&
 BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
                                       bool alreadyDragging) {
     BeginDragPreflight preflight{};
-    if (alreadyDragging) {
-        preflight.alreadyDragging = true;
+    preflight.reason = beginDragRejectReason(hit, mode, alreadyDragging);
+    preflight.alreadyDragging = preflight.reason == BeginDragRejectReason::AlreadyDragging;
+    preflight.emptyHit = preflight.reason == BeginDragRejectReason::EmptyHit;
+    preflight.screenOutOfBounds = preflight.reason == BeginDragRejectReason::ScreenOutOfBounds;
+    preflight.screenMiss = preflight.reason == BeginDragRejectReason::ScreenMiss;
+    preflight.pickMiss = preflight.reason == BeginDragRejectReason::PickMiss;
+    if (preflight.reason != BeginDragRejectReason::None) {
         return preflight;
     }
 
     const PickPreflight pick = preflightPick(hit, mode);
-    preflight.emptyHit = pick.emptyHit;
-    preflight.screenMiss = pick.screenMiss;
-    if (!pick.canPick()) {
-        return preflight;
-    }
-
+    preflight.axis = pick.axis;
     preflight.canBegin = true;
     return preflight;
 }
@@ -601,24 +822,6 @@ bool canBeginDrag(const GizmoRay& ray, const GizmoTransform& transform, GizmoMod
 
 bool canBeginDrag(const GizmoHitTest& hit, GizmoMode mode) {
     return preflightBeginDrag(hit, mode).canBegin;
-}
-
-bool isScreenHitMiss(const GizmoHitTest& hit, GizmoMode mode) {
-    if (isHitTestEmpty(hit)) {
-        return true;
-    }
-
-    const f32 x = normalizedX(hit);
-    const f32 y = normalizedY(hit);
-
-    if (mode == GizmoMode::Scale) {
-        const bool inUniformHandle = x > 0.4f && x < 0.6f && y > 0.4f && y < 0.6f;
-        const bool onAxisBand = x < 0.33f || y < 0.33f;
-        return !inUniformHandle && !onAxisBand;
-    }
-
-    const bool inDeadZone = x > 0.33f && x < 0.66f && y > 0.33f && y < 0.66f;
-    return inDeadZone;
 }
 
 GizmoTransform snapTransform(const GizmoTransform& transform, GizmoMode mode,
@@ -866,6 +1069,10 @@ bool GizmoSystem::trySnapTransform(const GizmoTransform& transform, GizmoTransfo
 
 UpdateDragPreflight GizmoSystem::preflightUpdateDrag(const GizmoHitTest& hit) const {
     return fuse::editor::preflightUpdateDrag(hit, m_dragging, m_activeAxis);
+}
+
+UpdateDragPreflight GizmoSystem::preflightUpdateDragWithSnap(const GizmoHitTest& hit) const {
+    return fuse::editor::preflightUpdateDrag(hit, m_dragging, m_activeAxis, m_mode, m_snap);
 }
 
 bool GizmoSystem::canUpdateDrag(const GizmoHitTest& hit) const {
