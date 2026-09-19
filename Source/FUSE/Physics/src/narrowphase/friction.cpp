@@ -1310,5 +1310,11 @@ bool ensure_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon
 bool rebuild_contact_buffer_friction_bases_with_preflight(ContactBufferSoA& buffer) {
     if (!preflightContactBufferFrictionBuild(buffer).canBuild()) {
     buildContactBufferFrictionTangentBasesWithPreflight(buffer);
+bool friction_basis_is_stale_but_rebuildable(const ContactManifold& manifold, f32 epsilon) {
+    return friction_basis_is_stale(manifold, epsilon);
+
+
+bool rebuild_friction_basis_after_normalize_with_preflight(ContactManifold& manifold, f32 epsilon) {
+    return rebuild_friction_basis_with_preflight(manifold, epsilon);
 
 } // namespace fuse::physics::narrowphase

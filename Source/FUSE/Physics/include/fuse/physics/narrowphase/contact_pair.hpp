@@ -1246,6 +1246,7 @@ struct ContactBufferSoA;
 
 /// Run shape dispatch with extended deepen preflight reject checks (B4.6 deepen pass).
 ContactManifold detect_contacts_pair_deepen(
+bool should_dispatch_contact_pair_deepen(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1263,6 +1264,14 @@ bool is_box_plane_contact_pair(
 ContactPairRejectReason first_contact_pair_deepen_reject_in_batch(
 /// Returns the first deepen reject reason in `pairs`, or `None` when all may dispatch (B4.6 deepen pass).
 ContactPairRejectReason first_contact_pair_deepen_reject_reason(
+/// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_with_deepen_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Collect pairs that pass extended deepen preflight without mutating input (B4.6 deepen pass).
+std::vector<broadphase::CandidatePair> filter_dispatchable_contact_pairs(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);

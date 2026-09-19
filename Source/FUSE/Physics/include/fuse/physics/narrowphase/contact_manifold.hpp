@@ -1242,6 +1242,9 @@ ContactManifoldWritePreflight preflight_contact_manifold_buffer_write(const Cont
 /// Returns true when manifold buffer write should be skipped (B4.6 deepen pass).
 bool should_skip_contact_manifold_buffer_write(const ContactManifold& manifold);
 
+/// Prune then finalize only when both preflights allow; no-op otherwise (B4.6 deepen pass).
+bool finalize_manifold_after_prune_with_preflight(
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
