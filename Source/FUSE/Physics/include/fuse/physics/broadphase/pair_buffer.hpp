@@ -175,6 +175,7 @@ PairBufferPushRejectReason pairBufferPushRejectReason(const PairBufferSoA& buffe
 
 /// Diagnose why a push would fail; vacuously succeeds when push may proceed.
 
+
 bool pairBufferPushRejectsForReason(
     const PairBufferSoA& buffer,
     u32 idxA,
@@ -218,6 +219,9 @@ enum class PairBufferCompactionRejectReason : u8 {
     AllValid,
     None = 0,
 /// Why pair-buffer compaction would early-out (B4.2 deepen follow-up pass).
+/// Non-mutating push skip predicate — inverse of `preflightPairBufferPush` (B4.2 deepen pass).
+bool canSkipPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+
 };
 
 /// Human-readable label for pair-buffer compaction reject reasons (logging / tests).
@@ -342,6 +346,10 @@ enum class PairBufferClampRejectReason : u8 {
 /// Non-mutating compaction skip predicate — inverse of `needsCompaction` (B4.2 deepen follow-up pass).
 
 
+
+
+
+
 const char* pairBufferClampRejectReasonName(PairBufferClampRejectReason reason);
 
 /// Diagnose why clamp would skip; vacuously succeeds when clamp may proceed.
@@ -418,6 +426,8 @@ enum class PairBufferDedupeRejectReason : u8 {
 /// Non-mutating clamp skip predicate — inverse of `needsClamp` (B4.2 deepen follow-up pass).
 
 /// Why pair-buffer dedupe would early-out at the SoA layer (B4.2 deepen follow-up pass).
+/// Non-mutating clamp skip predicate — inverse of `preflightPairBufferClamp` (B4.2 deepen pass).
+
 
 /// Human-readable label for pair-buffer dedupe reject reasons (logging / tests).
 const char* pairBufferDedupeRejectReasonName(PairBufferDedupeRejectReason reason);
@@ -451,6 +461,7 @@ struct PairBufferDedupePreflight {
 
 
 /// Returns true when `pairBufferDedupeRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+
 
 
 };

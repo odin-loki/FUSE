@@ -903,14 +903,8 @@ void populateShapeCells(
         if (should_skip_shape_cell_insert(range)) {
         if (should_skip_shape_cell_insertion_2d(range, maxOccupancy)) {
         if (canSkipCellOccupancyIteration(preflightCellOccupancy(range, maxOccupancy))) {
-            return;
-        }
         if (params.maxCellOccupancyPerShape > 0u) {
             range = shrinkCellRangeToOccupancyBudget(range, params.maxCellOccupancyPerShape);
-            if (isEmptyCellRange(range)) {
-                return;
-            }
-        }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
                 const u32 key = spatialHash2D(cx, cy, tableSize);
@@ -1363,6 +1357,13 @@ bool shouldRunRefineBroadphase(
     return !canSkipRefineBroadphase(bodies, shapes, buffer);
 }
 
+bool shouldRunRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    return !canSkipRefineBroadphase(bodies, shapes, buffer);
+}
+
 DedupeBroadphaseRejectReason dedupeBroadphaseRejectReason(const PairBufferSoA& buffer) {
         return DedupeBroadphaseRejectReason::EmptyBuffer;
     if (buffer.activeCount <= 1u) {
@@ -1628,6 +1629,9 @@ CandidatePairRejectReason candidatePairRejectReason(
 
 const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) {
     case BroadphaseMergeRejectReason::None:
+    if (!hasPlaneBodies) {
+    } else if (!hasDynamicBodies) {
+
     case BroadphaseMergeRejectReason::EmptyPlaneBodies:
         return "EmptyPlaneBodies";
     case BroadphaseMergeRejectReason::EmptyDynamicBodies:
@@ -1745,6 +1749,13 @@ bool canSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA&
 
 bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
     return !canSkipBroadphaseMerge(bodies, shapes);
+
+    return "Unknown";
+
+    return preflightBroadphaseMerge(bodies, shapes).reason;
+
+    const CollisionShapeSoA& shapes,
+
 
 
 void refineBroadphasePairsParallel(
