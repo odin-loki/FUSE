@@ -9,6 +9,21 @@ namespace fuse::renderer {
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
 
+/// Why jitter sync preflight rejected alignment to a monotonic frame counter (B5.9 deepen).
+enum class TaaJitterSyncBlockReason : u8 {
+    None = 0,
+    InvalidSequence,
+};
+
+/// Human-readable label for jitter sync block reasons (B5.9 deepen).
+const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason);
+/// True when a jitter sync block reason prevents alignment (B5.9 deepen).
+bool taaJitterSyncBlockReasonIsBlocking(TaaJitterSyncBlockReason reason);
+/// Classify why jitter cannot align to `frameIndex` with `sequenceLength` (B5.9 deepen).
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(u32 frameIndex, u32 sequenceLength);
+/// True when jitter can align to `frameIndex` with `sequenceLength` (B5.9 deepen).
+bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncBlockReason* reason = nullptr);
+
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
     static f32 halton(u32 index, u32 base);
@@ -55,8 +70,14 @@ public:
     void syncToFrameIndex(u32 frameIndex);
     /// Sync only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool syncToFrameIndexIfReady(u32 frameIndex);
+    /// Classify why sync to `frameIndex` would be blocked (B5.9 deepen).
+    TaaJitterSyncBlockReason classifySyncBlock(u32 frameIndex) const;
+    /// Sync preflight without mutating jitter state (B5.9 deepen).
+    bool preflightSync(u32 frameIndex, TaaJitterSyncBlockReason* reason = nullptr) const;
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
+    /// Advance only when already aligned to `frameIndex`; returns false when desynced (B5.9 deepen).
+    bool advanceIfAlignedToFrameIndex(u32 frameIndex);
 
     u32 index() const { return m_index; }
     /// True when the jitter sequence can advance (B5.9 deepen).

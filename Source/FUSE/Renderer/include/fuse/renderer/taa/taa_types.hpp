@@ -126,6 +126,13 @@ TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlock(const TaaHistoryBuffer& 
 /// True when history temporal reuse is allowed for the observed invalidate epoch (B5.9 deepen).
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
                               TaaHistoryReuseBlockReason* reason = nullptr);
+/// True when a reuse block reason would prevent temporal history sampling (B5.9 deepen).
+bool taaHistoryReuseBlockReasonIsBlocking(TaaHistoryReuseBlockReason reason);
+/// True when history is allocated and warmed for temporal reuse (B5.9 deepen).
+bool taaHistoryWarmupSatisfied(const TaaHistoryBuffer& history);
+/// History reuse preflight using `desc.observed_history_generation` (sentinel bypasses epoch guard).
+bool preflightTaaHistoryReuseForDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                    TaaHistoryReuseBlockReason* reason = nullptr);
 /// True when history buffers are allocated and ready for resolve (B5.9 deepen).
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
@@ -145,6 +152,12 @@ TaaResolveBlendRejectReason classifyTaaResolveBlendReject(const TaaResolveDesc& 
 /// True when computed resolve blend weights pass validation and reuse policy (B5.9 deepen).
 bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                      TaaResolveBlendRejectReason* reason = nullptr);
+/// True when a blend reject reason would block resolve blend-weight application (B5.9 deepen).
+bool taaResolveBlendRejectReasonIsBlocking(TaaResolveBlendRejectReason reason);
+/// Combined resolve skip + blend-weight preflight (B5.9 deepen).
+bool preflightTaaResolveGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                               TaaResolveSkipReason* skipReason = nullptr,
+                               TaaResolveBlendRejectReason* blendRejectReason = nullptr);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

@@ -2,6 +2,35 @@
 
 namespace fuse::renderer {
 
+const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason) {
+    switch (reason) {
+    case TaaJitterSyncBlockReason::None:
+        return "none";
+    case TaaJitterSyncBlockReason::InvalidSequence:
+        return "invalid_sequence";
+    }
+    return "unknown";
+}
+
+bool taaJitterSyncBlockReasonIsBlocking(TaaJitterSyncBlockReason reason) {
+    return reason != TaaJitterSyncBlockReason::None;
+}
+
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(u32 /*frameIndex*/, u32 sequenceLength) {
+    if (!TaaJitterLayout::canSyncToFrameIndex(0u, sequenceLength)) {
+        return TaaJitterSyncBlockReason::InvalidSequence;
+    }
+    return TaaJitterSyncBlockReason::None;
+}
+
+bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncBlockReason* reason) {
+    const TaaJitterSyncBlockReason block = classifyTaaJitterSyncBlock(frameIndex, sequenceLength);
+    if (reason != nullptr) {
+        *reason = block;
+    }
+    return block == TaaJitterSyncBlockReason::None;
+}
+
 f32 TaaJitterLayout::halton(u32 index, u32 base) {
     if (base < 2u) {
         return 0.f;
@@ -133,11 +162,27 @@ bool TaaJitter::isAlignedToFrameIndex(u32 frameIndex) const {
            TaaJitterLayout::jitterSlotMatchesFrameIndex(frameIndex, m_index, m_sequenceLength);
 }
 
+TaaJitterSyncBlockReason TaaJitter::classifySyncBlock(u32 frameIndex) const {
+    return classifyTaaJitterSyncBlock(frameIndex, m_sequenceLength);
+}
+
+bool TaaJitter::preflightSync(u32 frameIndex, TaaJitterSyncBlockReason* reason) const {
+    return preflightTaaJitterSync(frameIndex, m_sequenceLength, reason);
+}
+
 bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
     if (!canSyncToFrameIndex(frameIndex)) {
         return false;
     }
     syncToFrameIndex(frameIndex);
+    return true;
+}
+
+bool TaaJitter::advanceIfAlignedToFrameIndex(u32 frameIndex) {
+    if (!isAlignedToFrameIndex(frameIndex)) {
+        return false;
+    }
+    advance();
     return true;
 }
 
