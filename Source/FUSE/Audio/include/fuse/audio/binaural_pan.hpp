@@ -601,3 +601,7 @@ struct HrtfSpatialPanPreflight {
 
 // --- deepen additive from deepen-hrtf-preflights-44d8 ---
 bool should_skip_hrtf_attenuation_coupling_for_inputs(HrtfPanPath path, float distance_attenuation,
+
+// --- deepen additive from deepen-hrtf-preflight-guards-1cf6 ---
+    bool should_skip_pan() const;
+    bool should_skip_coupling() const;

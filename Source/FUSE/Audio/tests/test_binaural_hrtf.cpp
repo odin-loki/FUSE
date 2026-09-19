@@ -1372,3 +1372,10 @@ void testPreflightHrtfAttenuationCouplingGuards() {
     testPreflightHrtfIrGuards();
     testPreflightHrtfPanPathGuards();
     testPreflightHrtfAttenuationCouplingGuards();
+
+// --- deepen additive from deepen-hrtf-preflight-guards-1cf6 ---
+    const fuse::audio::HrtfPanPathPreflight enabled =
+    expectTrue(!enabled.should_skip_pan(), "spatial path does not skip pan");
+    expectTrue(bypass.should_skip_pan(), "disabled preflight skips pan");
+    expectTrue(unity.should_skip_coupling(), "unity coupling preflight skips coupling");
+    expectTrue(bypass.should_skip_coupling(), "bypass coupling preflight skips coupling");

@@ -883,3 +883,13 @@ HrtfIrPreflight preflight_hrtf_ir(const float* samples, u32 length) {
     return !should_skip_hrtf_spatial_pan(path);
 bool should_skip_hrtf_attenuation_coupling_for_inputs(HrtfPanPath path, float distance_attenuation,
     if (should_skip_hrtf_attenuation_coupling_for_inputs(path, distance_attenuation,
+
+// --- deepen additive from deepen-hrtf-preflight-guards-1cf6 ---
+    return should_skip_hrtf_convolution(ir);
+    preflight.canConvolution = !should_skip_hrtf_convolution(ir);
+bool HrtfPanPathPreflight::can_spatial_pan() const {
+bool HrtfPanPathPreflight::should_skip_pan() const {
+    return should_skip_hrtf_pan_path(path);
+bool HrtfAttenuationCouplingPreflight::can_couple() const {
+bool HrtfAttenuationCouplingPreflight::should_skip_coupling() const {
+    preflight.bypassPath = should_skip_hrtf_attenuation_coupling(path);
