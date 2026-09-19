@@ -656,6 +656,211 @@ void testBinauralPanGainSampleHelpers() {
     expectNear(right, 0.25f, 1e-5f, "centre pan applies equal attenuated mono to right");
 }
 
+void testHrtfIrPreflightSkipAlias() {
+    const fuse::audio::HrtfIrStub empty = fuse::audio::make_empty_hrtf_ir();
+    const fuse::audio::HrtfIrPreflight empty_preflight = fuse::audio::preflight_hrtf_ir(empty);
+    expectTrue(empty_preflight.should_skip_convolution(), "empty IR preflight skips convolution");
+    expectTrue(fuse::audio::should_skip_hrtf_ir_convolution(empty_preflight),
+               "should_skip_hrtf_ir_convolution mirrors struct method");
+    expectTrue(fuse::audio::should_skip_hrtf_ir_convolution(empty_preflight)
+                   == !fuse::audio::can_convolve_hrtf_ir(empty_preflight),
+               "skip/convolve IR preflight predicates are inverses");
+
+    const float samples[] = {0.5f};
+    const fuse::audio::HrtfIrStub valid{samples, 1};
+    const fuse::audio::HrtfIrPreflight valid_preflight = fuse::audio::preflight_hrtf_ir(valid);
+    expectTrue(!valid_preflight.should_skip_convolution(), "valid IR preflight does not skip convolution");
+    expectTrue(!fuse::audio::should_skip_hrtf_ir_convolution(valid_preflight),
+               "valid IR should_skip_hrtf_ir_convolution is false");
+}
+
+void testHrtfPanPathPreflightPredicateAliases() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    const fuse::audio::HrtfIrStub empty{};
+    const float samples[] = {1.f};
+    const fuse::audio::HrtfIrStub valid{samples, 1};
+
+    const fuse::audio::HrtfPanPathPreflight stub_preflight =
+        fuse::audio::preflight_hrtf_pan_path(true, empty, offset);
+    expectTrue(stub_preflight.uses_ild_itd_stub(), "stub preflight selects ILD/ITD path");
+    expectTrue(!stub_preflight.should_skip(), "stub preflight is not skipped");
+    expectTrue(fuse::audio::uses_ild_itd_stub_hrtf_pan_path(stub_preflight),
+               "uses_ild_itd_stub_hrtf_pan_path mirrors struct method");
+    expectTrue(!fuse::audio::should_skip_hrtf_pan_path_preflight(stub_preflight),
+               "should_skip_hrtf_pan_path_preflight false on stub path");
+    expectTrue(fuse::audio::can_convolve_hrtf_pan_path(stub_preflight)
+                   == stub_preflight.can_convolve(),
+               "can_convolve_hrtf_pan_path mirrors struct method");
+
+    const fuse::audio::HrtfPanPathPreflight conv_preflight =
+        fuse::audio::preflight_hrtf_pan_path(true, valid, offset);
+    expectTrue(fuse::audio::can_convolve_hrtf_pan_path(conv_preflight),
+               "convolution pan-path preflight can convolve");
+    expectTrue(!conv_preflight.uses_ild_itd_stub(), "convolution preflight does not use ILD/ITD stub");
+
+    const fuse::audio::HrtfPanPathPreflight bypass_preflight =
+        fuse::audio::preflight_hrtf_pan_path(false, valid, offset);
+    expectTrue(bypass_preflight.should_skip(), "disabled HRTF pan-path preflight is skipped");
+    expectTrue(fuse::audio::should_skip_hrtf_pan_path_preflight(bypass_preflight),
+               "should_skip_hrtf_pan_path_preflight true on bypass");
+    expectTrue(!fuse::audio::can_apply_spatial_hrtf_pan(bypass_preflight),
+               "bypass pan-path preflight cannot spatial-pan");
+}
+
+void testHrtfAttenuationCouplingPreflightSkipAlias() {
+    const fuse::audio::HrtfAttenuationCouplingPreflight unity_preflight =
+        fuse::audio::preflight_hrtf_attenuation_coupling(fuse::audio::HrtfPanPath::Convolution,
+                                                         1.f, 1.f);
+    expectTrue(unity_preflight.should_skip(), "unity attenuation coupling preflight is skipped");
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling_preflight(unity_preflight),
+               "should_skip_hrtf_attenuation_coupling_preflight mirrors struct method");
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling_preflight(unity_preflight)
+                   == !fuse::audio::can_narrow_hrtf_spatial_image(unity_preflight),
+               "skip/can_narrow coupling preflight predicates are inverses");
+
+    const fuse::audio::HrtfAttenuationCouplingPreflight narrow_preflight =
+        fuse::audio::preflight_hrtf_attenuation_coupling(fuse::audio::HrtfPanPath::IldItdStub,
+                                                         0.2f, 0.3f);
+    expectTrue(!narrow_preflight.should_skip(), "reduced attenuation coupling preflight is not skipped");
+    expectTrue(fuse::audio::can_narrow_hrtf_spatial_image(narrow_preflight),
+               "can_narrow_hrtf_spatial_image mirrors struct method");
+}
+
+void testHrtfBinauralPreflightPredicateAliases() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    const fuse::audio::HrtfIrStub empty{};
+    const float samples[] = {1.f};
+    const fuse::audio::HrtfIrStub valid{samples, 1};
+
+    const fuse::audio::HrtfBinauralPreflight stub_preflight =
+        fuse::audio::preflight_hrtf_binaural(true, empty, offset, 0.2f, 0.3f);
+    expectTrue(stub_preflight.uses_ild_itd_stub(), "composite stub path uses ILD/ITD");
+    expectTrue(!stub_preflight.should_skip(), "composite stub path is not skipped");
+    expectTrue(stub_preflight.should_skip_convolution(), "composite stub path skips convolution");
+    expectTrue(fuse::audio::uses_ild_itd_stub_hrtf_binaural(stub_preflight),
+               "uses_ild_itd_stub_hrtf_binaural mirrors struct method");
+    expectTrue(fuse::audio::should_skip_hrtf_binaural_convolution(stub_preflight),
+               "should_skip_hrtf_binaural_convolution mirrors struct method");
+    expectTrue(fuse::audio::can_convolve_hrtf_binaural(stub_preflight)
+                   == stub_preflight.can_convolve(),
+               "can_convolve_hrtf_binaural mirrors struct method");
+    expectTrue(fuse::audio::can_narrow_hrtf_binaural_spatial_image(stub_preflight)
+                   == stub_preflight.can_narrow_spatial_image(),
+               "can_narrow_hrtf_binaural_spatial_image mirrors struct method");
+    expectTrue(fuse::audio::can_apply_hrtf_binaural_pan(stub_preflight)
+                   == stub_preflight.can_spatial_pan(),
+               "can_apply_hrtf_binaural_pan mirrors can_spatial_pan");
+    expectTrue(fuse::audio::should_skip_hrtf_binaural(stub_preflight)
+                   == stub_preflight.should_skip(),
+               "should_skip_hrtf_binaural mirrors should_skip");
+
+    const fuse::audio::HrtfBinauralPreflight conv_preflight =
+        fuse::audio::preflight_hrtf_binaural(true, valid, offset, 1.f, 1.f);
+    expectTrue(fuse::audio::can_convolve_hrtf_binaural(conv_preflight),
+               "valid IR composite preflight can convolve via alias");
+    expectTrue(!fuse::audio::should_skip_hrtf_binaural_convolution(conv_preflight),
+               "valid IR composite preflight does not skip convolution");
+
+    const fuse::audio::HrtfBinauralPreflight bypass_preflight =
+        fuse::audio::preflight_hrtf_binaural(false, valid, offset, 0.1f, 0.1f);
+    expectTrue(bypass_preflight.should_skip(), "composite bypass preflight should_skip");
+    expectTrue(fuse::audio::should_skip_hrtf_binaural(bypass_preflight),
+               "should_skip_hrtf_binaural true on bypass");
+    expectTrue(bypass_preflight.should_skip_convolution(),
+               "bypass composite preflight skips convolution");
+}
+
+void testListenerAwareHrtfBinauralPreflight() {
+    fuse::audio::AudioListener listener{};
+    listener.position = fuse::audio::Vec3{0.f, 0.f, 0.f};
+    listener.forward = fuse::audio::Vec3{0.f, 0.f, -1.f};
+    listener.up = fuse::audio::Vec3{0.f, 1.f, 0.f};
+    const fuse::audio::Vec3 source_position{5.f, 0.f, -5.f};
+
+    const fuse::audio::HrtfBinauralPreflight listener_preflight =
+        fuse::audio::preflight_hrtf_binaural(true, listener, source_position, 0.25f, 0.35f);
+    const fuse::audio::Vec3 rel_listener =
+        fuse::audio::to_listener_space(source_position - listener.position,
+                                       fuse::audio::compute_listener_basis(listener));
+    const fuse::audio::HrtfBinauralPreflight offset_preflight =
+        fuse::audio::preflight_hrtf_binaural(true, rel_listener, 0.25f, 0.35f);
+    expectTrue(listener_preflight.panPath.path == offset_preflight.panPath.path,
+               "listener preflight path matches listener-local preflight");
+    expectTrue(listener_preflight.can_spatial_pan() == offset_preflight.can_spatial_pan(),
+               "listener preflight can_spatial_pan matches offset preflight");
+    expectTrue(listener_preflight.can_narrow_spatial_image()
+                   == offset_preflight.can_narrow_spatial_image(),
+               "listener preflight narrowing matches offset preflight");
+
+    const float samples[] = {1.f};
+    const fuse::audio::HrtfIrStub valid{samples, 1};
+    const fuse::audio::HrtfBinauralPreflight listener_ir_preflight =
+        fuse::audio::preflight_hrtf_binaural(true, listener, source_position, valid, 1.f, 1.f);
+    const fuse::audio::HrtfBinauralPreflight offset_ir_preflight =
+        fuse::audio::preflight_hrtf_binaural(true, valid, rel_listener, 1.f, 1.f);
+    expectTrue(listener_ir_preflight.can_convolve() == offset_ir_preflight.can_convolve(),
+               "listener IR preflight can_convolve matches offset preflight");
+}
+
+void testApplyBinauralPanToSampleFromPreflight() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    const fuse::audio::HrtfIrStub empty{};
+
+    const fuse::audio::HrtfBinauralPreflight stub_preflight =
+        fuse::audio::preflight_hrtf_binaural(true, empty, offset, 0.2f, 0.3f);
+    float left = 0.f;
+    float right = 0.f;
+    fuse::audio::apply_binaural_pan_to_sample_from_preflight(1.f, stub_preflight, offset, 0.5f,
+                                                             left, right);
+    const fuse::audio::BinauralPanGains coupled =
+        fuse::audio::compute_binaural_pan_gains_coupled(true, empty, offset, 0.2f, 0.3f);
+    expectNear(left, 0.5f * coupled.left, 1e-5f,
+               "from_preflight sample apply matches coupled gains on stub path");
+    expectNear(right, 0.5f * coupled.right, 1e-5f,
+               "from_preflight sample apply matches coupled gains on stub path");
+
+    const fuse::audio::HrtfBinauralPreflight bypass_preflight =
+        fuse::audio::preflight_hrtf_binaural(false, empty, offset, 0.1f, 0.1f);
+    left = 0.f;
+    right = 0.f;
+    fuse::audio::apply_binaural_pan_to_sample_from_preflight(1.f, bypass_preflight, offset, 0.25f,
+                                                             left, right);
+    expectNear(left, 0.25f, 1e-5f, "bypass preflight applies centre pan to left");
+    expectNear(right, 0.25f, 1e-5f, "bypass preflight applies centre pan to right");
+}
+
+void testGuardedPanRoutesThroughCompositePreflight() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    const fuse::audio::HrtfIrStub empty{};
+    const float samples[] = {1.f};
+    const fuse::audio::HrtfIrStub valid{samples, 1};
+
+    const fuse::audio::BinauralPanGains guarded =
+        fuse::audio::compute_binaural_pan_gains_guarded(true, offset);
+    const fuse::audio::BinauralPanGains direct =
+        fuse::audio::compute_binaural_pan_gains_for_path(
+            fuse::audio::resolve_hrtf_pan_path(true, offset), offset);
+    expectNear(guarded.left, direct.left, 1e-5f,
+               "guarded pan still matches for_path on valid stub path");
+    expectNear(guarded.right, direct.right, 1e-5f,
+               "guarded pan still matches for_path on valid stub path");
+
+    const fuse::audio::BinauralPanGains ir_guarded =
+        fuse::audio::compute_binaural_pan_gains_guarded(true, valid, offset);
+    const fuse::audio::BinauralPanGains ir_direct =
+        fuse::audio::compute_binaural_pan_gains_for_path(
+            fuse::audio::resolve_hrtf_pan_path(true, valid, offset), offset);
+    expectNear(ir_guarded.left, ir_direct.left, 1e-5f,
+               "IR-aware guarded pan still matches for_path on valid path");
+    expectNear(ir_guarded.right, ir_direct.right, 1e-5f,
+               "IR-aware guarded pan still matches for_path on valid path");
+
+    const fuse::audio::BinauralPanGains bypass_guarded =
+        fuse::audio::compute_binaural_pan_gains_guarded(false, valid, offset);
+    expectTrue(fuse::audio::is_centre_panned(bypass_guarded),
+               "guarded bypass still returns centre pan");
+}
+
 void testHrtfBinauralPreflight() {
     const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
     const fuse::audio::Vec3 co_located{};
@@ -775,6 +980,13 @@ int main() {
     testHrtfPanPathPreflight();
     testHrtfAttenuationCouplingPreflight();
     testBinauralPanGainSampleHelpers();
+    testHrtfIrPreflightSkipAlias();
+    testHrtfPanPathPreflightPredicateAliases();
+    testHrtfAttenuationCouplingPreflightSkipAlias();
+    testHrtfBinauralPreflightPredicateAliases();
+    testListenerAwareHrtfBinauralPreflight();
+    testApplyBinauralPanToSampleFromPreflight();
+    testGuardedPanRoutesThroughCompositePreflight();
     testHrtfBinauralPreflight();
     fuse::core::shutdown();
 
