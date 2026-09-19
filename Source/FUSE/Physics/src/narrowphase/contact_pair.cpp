@@ -609,4 +609,24 @@ bool narrowphase_batch_rejects_all(
     return preflight_narrowphase_batch(pairs, bodies, shapes).can_skip();
 }
 
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    u32 slot,
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphasePairSlotPreflight preflight{};
+    preflight.slot = slot;
+    preflight.reason = contact_pair_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+    return preflight;
+}
+
+bool should_skip_narrowphase_pair_slot(
+    u32 slot,
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !preflight_narrowphase_pair_slot(slot, pair, bodies, shapes).can_dispatch();
+}
+
 } // namespace fuse::physics::narrowphase
