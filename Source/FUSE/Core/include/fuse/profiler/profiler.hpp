@@ -58,12 +58,59 @@ struct ChromeTraceExportPreflight {
     bool ringBufferFull = false;
     bool hasInvalidNameEvents = false;
     bool crossThreadFlowHandoffPending = false;
+    bool exportWouldTrimEvents = false;
+    bool hasOnlyExportableEvents = false;
+    u32 orphanAsyncFlowEndCount = 0;
+    bool hasOrphanAsyncFlowEnds = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+    bool canExportWithEvents() const { return canExport() && hasExportableEvents(); }
     bool canExportSafely() const {
-        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
+        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending
+            && !ringBufferFull && !hasInvalidNameEvents;
+    }
+};
+
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canBegin = false;
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
+};
+
+/// Read-only nesting and async-flow diagnostics — safe before scope/flow entry.
+struct NestingAsyncFlowPreflight {
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+    u32 maxScopeNestingDepth = 0;
+    u32 maxFlowNestingDepth = 0;
+    u32 openAsyncFlowCount = 0;
+    bool scopeNestingUnbalanced = false;
+    bool flowNestingUnbalanced = false;
+    bool hasOpenAsyncFlows = false;
+    bool flowDepthDetached = false;
+    bool crossThreadFlowHandoffPending = false;
+
+    bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+    bool isBalanced() const {
+        return !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
     }
 };
 
@@ -109,6 +156,8 @@ bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
+/// True for null, empty, or whitespace-only names — diagnostic only; does not affect recording guards.
+bool isBlankEventName(const char* name);
 bool isValidEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
@@ -121,16 +170,45 @@ u32 lastEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 countEventsByName(const char* name);
+u32 findFirstEventIndexByFlowId(u32 flowId);
+u32 findLastEventIndexByFlowId(u32 flowId);
+u32 countEventsByFlowId(u32 flowId);
+bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex);
+bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex);
+bool tryFindFirstEventIndexByName(const char* name, u32& outIndex);
+bool tryFindFirstEventIndexByFlowId(u32 flowId, u32& outIndex);
+bool tryFindLastEventIndexByFlowId(u32 flowId, u32& outIndex);
+u32 orphanAsyncFlowEndCount();
+bool hasOrphanAsyncFlowEnds();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
+bool tryExportableFirstEvent(ProfileEvent& outEvent);
+bool tryExportableLastEvent(ProfileEvent& outEvent);
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindFirstFlowEvent(u32 flowId, ProfileEvent& outEvent);
+bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
 ChromeTraceExportPreflight preflightChromeTraceExport();
+ProfileScopePreflight preflightProfileScope(const char* name);
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 flowId);
+NestingAsyncFlowPreflight preflightNestingAsyncFlow();
+
+/// Preflight skip checks — same ordering as the corresponding record entry points (no mutation).
+bool wouldSkipProfileScope(const char* name);
+bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId);
+bool wouldSkipEndAsyncFlow(const char* name, u32 flowId);
+bool wouldSkipCounterSample(const char* track);
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
