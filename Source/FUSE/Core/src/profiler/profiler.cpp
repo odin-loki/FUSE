@@ -1558,3 +1558,15 @@ bool wouldSkipCounter(const char* track, ProfilerSkipReason* reason) {
     return wouldSkipProfileScope(track, reason);
 bool wouldSkipChromeTraceExport(ProfilerSkipReason* reason) {
 bool wouldSkipSafeChromeTraceExport(ProfilerSkipReason* reason) {
+
+// --- deepen additive from deepen-b16-profiler-guards-d3b7 ---
+bool wouldSkipRecording() {
+    return wouldSkipRecording() || !isValidEventName(name);
+    return wouldSkipRecording() || !isValidEventName(name)
+    return wouldSkipRecording() || !isValidEventName(track);
+    return wouldSkipRecording();
+ScopeNestingPreflight preflightScopeNesting(const char* name) {
+    preflight.profilerDisabled = wouldSkipRecording();
+    preflight.wouldSkip = preflight.profilerDisabled
+    preflight.wouldSkip = wouldSkipAsyncFlowBegin(name);
+    preflight.wouldSkip = wouldSkipAsyncFlowEnd(name);

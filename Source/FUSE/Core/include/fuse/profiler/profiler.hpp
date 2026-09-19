@@ -602,3 +602,9 @@ bool wouldSkipAsyncFlowEnd(const char* name, ProfilerSkipReason* reason = nullpt
 bool wouldSkipCounter(const char* track, ProfilerSkipReason* reason = nullptr);
 bool wouldSkipChromeTraceExport(ProfilerSkipReason* reason = nullptr);
 bool wouldSkipSafeChromeTraceExport(ProfilerSkipReason* reason = nullptr);
+
+// --- deepen additive from deepen-b16-profiler-guards-d3b7 ---
+    bool wouldSkip = false;
+    bool canRecord() const { return !wouldSkip; }
+ScopeNestingPreflight preflightScopeNesting(const char* name = nullptr);
+bool wouldSkipRecording();

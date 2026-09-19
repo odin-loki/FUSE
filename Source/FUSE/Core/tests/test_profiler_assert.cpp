@@ -5605,3 +5605,63 @@ void testProfilerNestingPreflight() {
                "wouldSkip agrees with hot path for null counter");
                "invalid-name wouldSkip reasons stay InvalidName");
     testProfilerNestingPreflight();
+
+// --- deepen additive from deepen-b16-profiler-guards-d3b7 ---
+    expectTrue(!fuse::profiler::wouldSkipRecording(), "enabled profiler does not skip recording");
+    expectTrue(!fuse::profiler::wouldSkipScope("valid_scope"), "valid scope name does not skip");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("valid_flow"), "valid flow begin does not skip");
+    expectTrue(!fuse::profiler::wouldSkipCounter("valid_counter"), "valid counter does not skip");
+    expectTrue(!fuse::profiler::wouldSkipChromeTraceExport(), "enabled profiler does not skip export");
+    expectTrue(fuse::profiler::wouldSkipScope(nullptr), "null scope name skips");
+    expectTrue(fuse::profiler::wouldSkipScope(""), "empty scope name skips");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin(nullptr), "null flow begin skips");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd(nullptr), "null flow end skips");
+    expectTrue(fuse::profiler::wouldSkipCounter(""), "empty counter track skips");
+    expectTrue(fuse::profiler::wouldSkipRecording(), "disabled profiler skips recording");
+    expectTrue(fuse::profiler::wouldSkipScope("ignored"), "disabled profiler skips scope");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("ignored"), "disabled profiler skips flow begin");
+    expectTrue(fuse::profiler::wouldSkipCounter("ignored"), "disabled profiler skips counter");
+    expectTrue(fuse::profiler::wouldSkipChromeTraceExport(), "disabled profiler skips export");
+    expectTrue(resetPreflight.balanced, "reset preflight scope nesting balanced");
+    expectTrue(resetPreflight.canRecord(), "reset preflight can record scope");
+    expectTrue(!resetPreflight.wouldSkip, "reset preflight does not skip scope");
+    expectTrue(resetPreflight.activeDepth == 0u, "reset preflight active depth zero");
+    const fuse::profiler::ScopeNestingPreflight invalidPreflight = fuse::profiler::preflightScopeNesting("");
+    expectTrue(invalidPreflight.invalidName, "empty name preflight marks invalid name");
+    expectTrue(invalidPreflight.wouldSkip, "empty name preflight would skip scope");
+    expectTrue(!invalidPreflight.canRecord(), "empty name preflight cannot record");
+            fuse::profiler::preflightScopeNesting("preflight_outer");
+        expectTrue(!activePreflight.balanced, "active scope preflight unbalanced");
+        expectTrue(activePreflight.activeDepth == 1u, "active scope preflight depth one");
+        expectTrue(activePreflight.maxDepth == 1u, "active scope preflight max depth one");
+        expectTrue(activePreflight.canRecord(), "active scope preflight can record valid name");
+    expectTrue(closedPreflight.balanced, "closed scope preflight balanced");
+    expectTrue(closedPreflight.activeDepth == 0u, "closed scope preflight depth zero");
+void testAsyncFlowPreflight() {
+    const fuse::profiler::AsyncFlowPreflight beginInvalid =
+    expectTrue(beginInvalid.wouldSkip, "flow begin preflight skips empty name");
+    const fuse::profiler::AsyncFlowPreflight endOrphan = fuse::profiler::preflightAsyncFlowEnd("orphan");
+    expectTrue(endOrphan.wouldSkip, "flow end preflight skips orphan end");
+        fuse::profiler::preflightAsyncFlowBegin("preflight_flow");
+    expectTrue(beginPreflight.canRecord(), "flow begin preflight can record valid name");
+    expectTrue(!beginPreflight.wouldSkip, "flow begin preflight does not skip valid name");
+    expectTrue(openPreflight.openFlowCount == 1u, "open flow preflight tracks open count");
+    expectTrue(!openPreflight.flowNestingBalanced, "open flow preflight unbalanced");
+    expectTrue(openPreflight.activeFlowDepth == 1u, "open flow preflight active depth one");
+    const fuse::profiler::AsyncFlowPreflight endPreflight =
+    expectTrue(endPreflight.canRecord(), "flow end preflight can record paired end");
+    expectTrue(!endPreflight.orphanEnd, "paired flow end preflight not orphan");
+    expectTrue(closedPreflight.orphanEnd, "post-end preflight marks orphan");
+    expectTrue(closedPreflight.flowNestingBalanced, "post-end preflight flow nesting balanced");
+               "tryLastEventByName succeeds for inner end");
+               "tryFirstEventByFlowId preserves flow name");
+    if (!fuse::profiler::wouldSkipScope("skip_probe")) {
+               "wouldSkip false records scope events");
+    if (!fuse::profiler::wouldSkipScope("")) {
+               "wouldSkip true prevents empty scope recording");
+    if (!fuse::profiler::wouldSkipAsyncFlowBegin("flow_skip_probe")) {
+    if (!fuse::profiler::wouldSkipAsyncFlowEnd("flow_skip_probe")) {
+               "wouldSkip false records paired flow events");
+    if (!fuse::profiler::wouldSkipCounter("counter_skip_probe")) {
+               "wouldSkip false records counter sample");
+    testAsyncFlowPreflight();
