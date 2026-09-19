@@ -158,6 +158,11 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
 struct ContactPairDeepenPreflight {
     ContactPairRejectReason reason = ContactPairRejectReason::None;
     bool rejected = false;
+    bool bothSleeping = false;
+    bool bothKinematic = false;
+    bool anyTrigger = false;
+    bool bothMassless = false;
+    bool degenerateShape = false;
 
     bool can_dispatch() const { return !rejected; }
 };
@@ -189,6 +194,37 @@ u32 count_dispatchable_contact_pairs(
 /// True when at least one pair passes extended deepen preflight (B4.4 deepen pass).
 bool has_dispatchable_contact_pair(
     const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 guard pass).
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Non-mutating pair-dispatch predicate — inverse of `should_skip_contact_pair_dispatch` (B4.4 guard pass).
+bool should_run_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating pair-dispatch skip predicate — mirrors `preflight_contact_pair` (B4.4 guard pass).
+bool can_skip_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating deepen-dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.4 guard pass).
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating deepen-dispatch skip predicate — mirrors `preflight_contact_pair_deepen` (B4.4 guard pass).
+bool can_skip_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
