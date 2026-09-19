@@ -3057,3 +3057,7 @@ void testPreflightsRejectInvalidNamesWithoutRecording() {
     testTryLastEventPreflight();
     testExportPreflights();
     testPreflightsRejectInvalidNamesWithoutRecording();
+
+// --- deepen additive from deepen-b16-profiler-guards-5521 ---
+void testIsProfilerGuardStateBalanced() {
+    expectTrue(fuse::profiler::tryEventAt(0u, recorded), "recorded event passes tryEventAt");
