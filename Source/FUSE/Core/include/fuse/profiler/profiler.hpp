@@ -58,12 +58,21 @@ struct ChromeTraceExportPreflight {
     bool ringBufferFull = false;
     bool hasInvalidNameEvents = false;
     bool crossThreadFlowHandoffPending = false;
+    u32 scopeBeginCount = 0;
+    u32 scopeEndCount = 0;
+    u32 flowStartCount = 0;
+    u32 flowFinishCount = 0;
+    u32 droppedEventCount = 0;
+    bool scopeBeginEndMismatch = false;
+    bool flowStartFinishMismatch = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+    bool hasEventPairingMismatch() const { return scopeBeginEndMismatch || flowStartFinishMismatch; }
     bool canExportSafely() const {
-        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
+        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending
+            && !hasEventPairingMismatch() && !ringBufferFull;
     }
 };
 
@@ -121,6 +130,12 @@ u32 lastEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 countEventsByName(const char* name);
+bool hasScopeBeginEndMismatch();
+bool hasFlowStartFinishMismatch();
+u32 droppedEventCount();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
