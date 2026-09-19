@@ -4749,3 +4749,9 @@ void testTaaPassTryClassifyGuardWrappers() {
                "pass tryPreflightResolve passes after init and warmup");
                "pass tryPreflightJitterAdvance passes with fallback sequence length");
                "pass tryPreflightJitterAdvance reject reason is None with fallback sequence");
+
+// --- deepen additive from deepen-b59-taa-guards-7211 ---
+               "pass classifyJitterNdcReject passes for default viewport");
+               "invalid sequence falls back to default length for classifyJitterSyncReject");
+    expectTrue(invalidPass->tryPreflightJitterSync(3u, jitterReject),
+               "invalid sequence falls back to default length for tryPreflightJitterSync");
