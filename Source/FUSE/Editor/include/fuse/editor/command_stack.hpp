@@ -20,6 +20,9 @@ struct CommandStackSnapshot {
     u32 baselineRedoDepth = 0;
     bool baselineConfigured = false;
     u32 evictedCount = 0;
+    u32 baselineUndoDepth = 0;
+    u32 baselineRedoDepth = 0;
+    bool baselineConfigured = false;
     bool dirty = false;
     u32 dirtyRevision = 0;
 };
@@ -67,6 +70,11 @@ public:
     /// True when undo/redo depth differs from the last `set_baseline_state` call.
     [[nodiscard]] bool hasUnsavedChanges() const { return !isAtBaseline(); }
 
+    /// True when undo/redo depth or post-baseline coalesce differs from the last save point.
+    [[nodiscard]] bool hasUnsavedChanges() const {
+        return !isAtBaseline() || coalescedCountSinceBaseline() > 0u;
+    }
+
     CommandStackSnapshot captureSnapshot() const;
     void restoreSnapshot(const CommandStackSnapshot& snapshot);
 
@@ -83,6 +91,7 @@ private:
     void markDirty_();
     void markDirtyAndBump_();
     /// Clears dirty when undo/redo depth matches the saved baseline; otherwise marks dirty.
+    /// Clears dirty when stack depth matches the saved baseline; otherwise marks dirty.
     void syncBaselineDirty_();
 
     CommandQueue m_pending;
@@ -97,6 +106,9 @@ private:
     u32 m_baselineRedoDepth = 0;
     bool m_baselineConfigured = false;
     u32 m_evictedCount = 0;
+    u32 m_baselineUndoDepth = 0;
+    u32 m_baselineRedoDepth = 0;
+    bool m_baselineConfigured = false;
     bool m_dirty = false;
     u32 m_dirtyRevision = 0;
 };

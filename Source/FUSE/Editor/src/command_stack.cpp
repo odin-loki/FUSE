@@ -52,11 +52,15 @@ void CommandStack::syncBaselineDirty_() {
     }
 
     if (isAtBaseline()) {
+        markDirty_();
+
+    if (isAtBaseline() && coalescedCountSinceBaseline() == 0u) {
         markClean();
         return;
     }
 
     markDirtyAndBump_();
+    markDirty_();
 }
 
 u32 CommandStack::coalescedCountSinceBaseline() const {
@@ -82,6 +86,10 @@ void CommandStack::set_baseline_state() {
 }
 
 bool CommandStack::isAtBaseline() const {
+    if (!m_baselineConfigured) {
+        return m_undoDepth == 0u && m_redoDepth == 0u;
+    }
+
     return m_undoDepth == m_baselineUndoDepth;
 }
 
@@ -171,6 +179,9 @@ void CommandStack::clear() {
     m_baselineRedoDepth = 0;
     m_baselineConfigured = false;
     m_evictedCount = 0;
+    m_baselineUndoDepth = 0;
+    m_baselineRedoDepth = 0;
+    m_baselineConfigured = false;
     m_dirty = false;
     m_dirtyRevision = 0;
 }
@@ -195,6 +206,9 @@ CommandStackSnapshot CommandStack::captureSnapshot() const {
     snapshot.baselineRedoDepth = m_baselineRedoDepth;
     snapshot.baselineConfigured = m_baselineConfigured;
     snapshot.evictedCount = m_evictedCount;
+    snapshot.baselineUndoDepth = m_baselineUndoDepth;
+    snapshot.baselineRedoDepth = m_baselineRedoDepth;
+    snapshot.baselineConfigured = m_baselineConfigured;
     snapshot.dirty = m_dirty;
     snapshot.dirtyRevision = m_dirtyRevision;
     return snapshot;
@@ -212,6 +226,9 @@ void CommandStack::restoreSnapshot(const CommandStackSnapshot& snapshot) {
     m_baselineRedoDepth = snapshot.baselineRedoDepth;
     m_baselineConfigured = snapshot.baselineConfigured;
     m_evictedCount = snapshot.evictedCount;
+    m_baselineUndoDepth = snapshot.baselineUndoDepth;
+    m_baselineRedoDepth = snapshot.baselineRedoDepth;
+    m_baselineConfigured = snapshot.baselineConfigured;
     m_dirty = snapshot.dirty;
     m_dirtyRevision = snapshot.dirtyRevision;
 }

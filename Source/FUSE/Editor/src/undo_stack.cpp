@@ -38,7 +38,7 @@ void UndoStack::syncBaselineDirty_() {
         return;
     }
 
-    if (isAtBaseline()) {
+    if (isAtBaseline() && coalescedOpsSinceBaseline() == 0u) {
         markClean();
         return;
     }
@@ -88,6 +88,10 @@ void UndoStack::set_baseline_state() {
 }
 
 bool UndoStack::isAtBaseline() const {
+    if (!m_baselineConfigured) {
+        return undoCount() == 0u && redoCount() == 0u;
+    }
+
     return undoCount() == m_baselineUndoCount;
 }
 
