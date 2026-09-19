@@ -4372,3 +4372,16 @@ void testDispatchIslandPipelineBatchGuards() {
                "should_skip dispatch-with-bodies false for mixed graph");
     testPreflightIslandGraphBuildDeepenGuards();
     testPreflightIslandSolvePipelineGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-0f38 ---
+void testSolveIslandJobGuardedConstraintPreflight() {
+    const IslandConstraintSolvePreflight mixedPreflight = preflight_island_constraint_solve_by_index(
+    expectTrue(!mixedPreflight.skipped, "index constraint preflight does not skip mixed island");
+    expectTrue(mixedPreflight.can_solve(), "mixed island passes constraint solve preflight");
+    const IslandConstraintSolvePreflight sleepingPreflight = preflight_island_constraint_solve_by_index(
+    expectTrue(!sleepingPreflight.can_solve(), "all-sleeping island fails constraint solve preflight");
+               "should_skip constraint solve by index on all-sleeping island");
+    const IslandSleepAwareDispatchPreflight preflight =
+    expectTrue(!should_skip_island_sleep_aware_dispatch(graph, bodies, dt),
+               "should_skip sleep-aware dispatch false for mixed graph");
+    testSolveIslandJobGuardedConstraintPreflight();

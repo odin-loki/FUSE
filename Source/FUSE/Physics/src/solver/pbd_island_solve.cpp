@@ -2347,3 +2347,10 @@ IslandSolvePipelinePreflight preflight_island_solve_pipeline(const ContactIsland
         const IslandSolvePipelinePreflight islandPreflight = preflight_island_solve_pipeline(
         if (!islandPreflight.can_solve()) {
             if (!islandPreflight.skipped && islandPreflight.sleep.can_skip_solve()) {
+
+// --- deepen additive from deepen-pbd-island-guards-0f38 ---
+IslandSleepAwareDispatchPreflight preflight_island_sleep_aware_dispatch(const ContactIslandGraph& graph,
+    IslandSleepAwareDispatchPreflight preflight{};
+bool should_skip_island_sleep_aware_dispatch(const ContactIslandGraph& graph,
+        if (should_skip_island_sleep_solve(graph.island(islandIndex), bodies)) {
+    const IslandSleepAwareDispatchPreflight preflight =

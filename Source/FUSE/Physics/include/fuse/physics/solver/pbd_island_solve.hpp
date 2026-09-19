@@ -1463,3 +1463,8 @@ IslandSolvePipelinePreflight preflight_island_solve_pipeline(const ContactIsland
 
 // --- deepen additive from deepen-pbd-island-guards-e84e ---
     IslandConstraintSolvePreflight constraint{};
+
+// --- deepen additive from deepen-pbd-island-guards-0f38 ---
+struct IslandSleepAwareDispatchPreflight {
+IslandSleepAwareDispatchPreflight preflight_island_sleep_aware_dispatch(const ContactIslandGraph& graph,
+bool should_skip_island_sleep_aware_dispatch(const ContactIslandGraph& graph,
