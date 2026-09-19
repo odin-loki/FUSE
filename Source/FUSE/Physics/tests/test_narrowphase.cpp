@@ -2712,3 +2712,17 @@ void testContactBufferFrictionBuildPassGuards() {
     const auto compactAndClampPreflight =
         compactAndClampPreflight.reason ==
             fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::NoWork,
+
+// --- deepen additive from b4-narrowphase-deepen-deea ---
+    expectTrue(validPreflight.canWrite(), "write preflight accepts valid manifold");
+        fuse::physics::narrowphase::contactBufferWriteRejectReason(buffer, 0u, valid) ==
+            fuse::physics::narrowphase::ContactBufferWriteRejectReason::None,
+void testContactBufferCompactionPreflightGuards() {
+            fuse::physics::narrowphase::contactBufferCompactionRejectReasonName(
+void testContactBufferClampPreflightGuards() {
+void testContactBufferCompactAndClampPreflightGuards() {
+            fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::EmptyBuffer),
+            fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::NoWork),
+    testContactBufferCompactionPreflightGuards();
+    testContactBufferClampPreflightGuards();
+    testContactBufferCompactAndClampPreflightGuards();

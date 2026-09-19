@@ -591,3 +591,15 @@ ContactBufferFrictionBuildPreflight preflight_contact_buffer_friction_build(cons
     ContactBufferFrictionBuildPreflight preflight{};
     preflight.emptyBuffer = preflight.reason == ContactBufferFrictionBuildRejectReason::EmptyBuffer;
     preflight.noValidSlots = preflight.reason == ContactBufferFrictionBuildRejectReason::NoValidSlots;
+
+// --- deepen additive from b4-narrowphase-deepen-deea ---
+    const ContactBufferCompactAndClampPreflight preflight = preflightContactBufferCompactAndClamp(*this);
+    if (preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer) {
+    if (preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork) {
+const char* contactBufferCompactAndClampRejectReasonName(ContactBufferCompactAndClampRejectReason reason) {
+ContactBufferCompactAndClampRejectReason contactBufferCompactAndClampRejectReason(
+    return contactBufferCompactAndClampRejectReason(buffer) == expected;
+ContactBufferCompactAndClampPreflight preflightContactBufferCompactAndClamp(const ContactBufferSoA& buffer) {
+    preflight.reason = contactBufferCompactAndClampRejectReason(buffer);
+    return !preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp();
+    return preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp();

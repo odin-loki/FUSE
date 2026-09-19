@@ -202,3 +202,8 @@ struct ContactBufferFrictionBuildPreflight {
     ContactBufferFrictionBuildRejectReason reason = ContactBufferFrictionBuildRejectReason::None;
     bool needsFrictionBuild() const { return reason == ContactBufferFrictionBuildRejectReason::None; }
 ContactBufferFrictionBuildPreflight preflight_contact_buffer_friction_build(const ContactBufferSoA& buffer);
+
+// --- deepen additive from b4-narrowphase-deepen-deea ---
+const char* contactBufferCompactAndClampRejectReasonName(ContactBufferCompactAndClampRejectReason reason);
+ContactBufferCompactAndClampRejectReason contactBufferCompactAndClampRejectReason(
+ContactBufferCompactAndClampPreflight preflightContactBufferCompactAndClamp(const ContactBufferSoA& buffer);
