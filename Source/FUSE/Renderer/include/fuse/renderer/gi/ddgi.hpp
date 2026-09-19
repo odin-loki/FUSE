@@ -190,6 +190,17 @@ enum class ProbeUpdateLaunchRejectReason : u8 {
 /// Human-readable label for probe-update launch reject reasons (logging / tests).
 const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason);
 
+/// Why a DDGI irradiance sample request preflight rejected the request (B5.6 deepen).
+enum class SampleRequestRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    NotSampleable,
+    UndersizedCache,
+};
+
+/// Human-readable label for sample-request reject reasons (logging / tests).
+const char* sampleRequestRejectReasonLabel(SampleRequestRejectReason reason);
+
 /// Why probe-update scheduling preflight rejected the request (B5.6 deepen).
 enum class ProbeScheduleRejectReason : u8 {
     None = 0,
@@ -276,6 +287,15 @@ struct ProbeGridLayout {
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
                                              ProbeSampleCoordsRejectReason& outReason);
+    /// Classify why sample-coord validation would reject (B5.6 deepen).
+    static ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& desc,
+                                                                         const ProbeSampleCoords& coords);
+    /// Early-out when sample-coord validation would be rejected (B5.6 deepen).
+    static bool wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Preflight sample-coord validation with optional reject-reason output (B5.6 deepen).
+    static bool preflightProbeSampleCoords(const DDGIDesc& desc,
+                                           const ProbeSampleCoords& coords,
+                                           ProbeSampleCoordsRejectReason* reason = nullptr);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -342,6 +362,13 @@ bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 cache_count,
                               u32 probe_index,
                               fuse::math::Vec3& out_irradiance);
+/// Read irradiance with reject-reason diagnostics (B5.6 deepen).
+bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
+                              const IrradianceCacheEntry* cache,
+                              u32 cache_count,
+                              u32 probe_index,
+                              fuse::math::Vec3& out_irradiance,
+                              CacheIndexRejectReason& outReason);
 /// Minimum irradiance-cache entries for trilinear sampling; 0 when the grid is not sampleable.
 u32 requiredCacheCount(const DDGIDesc& desc);
 /// True when `cache_count` covers every probe in `desc`.
@@ -361,6 +388,20 @@ bool tryValidateCacheIndex(const DDGIDesc& desc,
                            u32 probe_index,
                            u32 cache_count,
                            CacheIndexRejectReason& outReason);
+/// Classify why cache-index preflight would reject (B5.6 deepen).
+CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+/// Classify cache-index preflight including null-cache rejection (B5.6 deepen).
+CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
+                                                const IrradianceCacheEntry* cache,
+                                                u32 probe_index,
+                                                u32 cache_count);
+/// True when cache-index lookup preflight would succeed (B5.6 deepen).
+bool cacheIndexReady(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+/// True when cache-index lookup preflight would succeed — includes null-cache check (B5.6 deepen).
+bool cacheIndexReady(const DDGIDesc& desc,
+                     const IrradianceCacheEntry* cache,
+                     u32 probe_index,
+                     u32 cache_count);
 /// Early-out when cache-index lookup would be rejected — same ordering as `tryValidateCacheIndex`.
 bool wouldSkipCacheIndexLookup(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
 /// Early-out when cache-index lookup would be rejected — includes null-cache check.
@@ -372,6 +413,13 @@ bool wouldSkipCacheIndexLookup(const DDGIDesc& desc,
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
                           u32 cache_count);
+/// Diagnose why sample-request preflight would reject (B5.6 deepen).
+bool tryValidateSampleRequest(const DDGIDesc& desc,
+                              const DDGISampleRequest& request,
+                              u32 cache_count,
+                              SampleRequestRejectReason& outReason);
+/// Early-out when DDGI irradiance sampling would be rejected (B5.6 deepen).
+bool wouldSkipDdgiSample(const DDGIDesc& desc, const DDGISampleRequest& request, u32 cache_count);
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index);
 /// World position after `clampProbeIndex` — safe for OOB scheduling indices.
 fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index);
@@ -403,6 +451,22 @@ bool tryScheduleProbeUpdates(u32 frame_index,
                              u32 max_indices,
                              u32* out_count,
                              ProbeScheduleRejectReason& outReason);
+/// Classify why probe scheduling preflight would reject (B5.6 deepen).
+ProbeScheduleRejectReason classifyProbeScheduleReject(u32 probe_count,
+                                                      u32 max_indices,
+                                                      const u32* out_indices,
+                                                      u32* out_count);
+/// Preflight probe scheduling with optional reject-reason output (B5.6 deepen).
+bool preflightScheduleProbeUpdates(u32 probe_count,
+                                   u32 max_indices,
+                                   const u32* out_indices,
+                                   u32* out_count,
+                                   ProbeScheduleRejectReason* reason = nullptr);
+/// Validate scheduled probe indices before host/CUDA launch (B5.6 deepen).
+bool validateScheduledProbeIndices(const DDGIDesc& desc,
+                                   const u32* probe_indices,
+                                   u32 probe_count,
+                                   ProbeUpdateLaunchRejectReason& outReason);
 fuse::math::Vec3 blendIrradiance(const fuse::math::Vec3& previous,
                                  const fuse::math::Vec3& incoming,
                                  f32 hysteresis);
