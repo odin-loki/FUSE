@@ -4943,3 +4943,14 @@ void testTrilinearCachePreflightGuards() {
                "tryPopulate zero rays reports zero_rays_per_probe reason");
     expectTrue(!fuse::renderer::gi::preflightProbeTraceKernelLaunch(zeroRays, &reason),
     testTrilinearCachePreflightGuards();
+
+// --- deepen additive from ddgi-b56-deepen-guards-2ea6 ---
+                   fuse::renderer::ProbeGridSourceRejectReason::ZeroProbeSpacing),
+               "successful combined kernel tryLaunch reports no reject reason");
+    expectTrue(!fuse::renderer::gi::tryLaunch_ddgi_probe_kernels(zeroRays, nullptr, kernelReason),
+               "tryLaunch_ddgi_probe_kernels rejects zero rays");
+               "combined kernel tryLaunch zero rays reports zero_rays_per_probe reason");
+    expectTrue(fuse::renderer::ddgi_util::classifyDirectionalTrilinearSampleReject(
+               "classifyDirectionalTrilinearSampleReject none for valid sample");
+               "wouldSkipTrilinearDirectionalProbeIrradiance true for null cache");
+               "tryScheduleProbeUpdatesAtRate succeeds for valid rate-aware schedule");

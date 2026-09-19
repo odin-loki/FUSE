@@ -3431,3 +3431,8 @@ bool tryValidateProbeCache(const DDGIDesc& desc,
 // --- deepen additive from deepen-ddgi-b56-guards-d9f5 ---
 bool tryPopulateDDGIKernelParams(DDGIKernelParams& params,
                                  ProbeKernelRejectReason& outReason,
+
+// --- deepen additive from ddgi-b56-deepen-guards-2ea6 ---
+    tryTrilinearProbeIrradiance(desc, world_position, cache, cache_count, irradiance, reason);
+ProbeTrilinearSampleRejectReason classifyDirectionalTrilinearSampleReject(
+    const ProbeTrilinearSampleRejectReason reject = classifyDirectionalTrilinearSampleReject(

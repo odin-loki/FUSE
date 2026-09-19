@@ -1109,3 +1109,6 @@ const char* probeCacheSourceRejectReasonLabel(ProbeCacheSourceRejectReason reaso
 bool probeCacheSourceRejectReasonIsBlocking(ProbeCacheSourceRejectReason reason);
 bool tryValidateProbeCache(const DDGIDesc& desc,
                            ProbeCacheSourceRejectReason& outReason);
+
+// --- deepen additive from ddgi-b56-deepen-guards-2ea6 ---
+ProbeTrilinearSampleRejectReason classifyDirectionalTrilinearSampleReject(
