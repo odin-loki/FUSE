@@ -151,6 +151,29 @@ IslandBuildPreflight preflight_island_graph_build(
 
 bool should_skip_island_graph_build(u32 bodyCount) {
     return bodyCount == 0u;
+bool contact_body_indices_in_range(u32 bodyCount, const narrowphase::ContactManifold& contact) {
+    return contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+
+bool distance_body_indices_in_range(u32 bodyCount, const DistanceConstraint& constraint) {
+    return constraint.bodyA < bodyCount && constraint.bodyB < bodyCount;
+
+
+bool is_valid_island_build_body_count(u32 bodyCount,
+        if (!contact_body_indices_in_range(bodyCount, contact)) {
+            return false;
+
+        if (!distance_body_indices_in_range(bodyCount, constraint)) {
+    return true;
+
+
+            ++preflight.outOfRangeContactCount;
+
+            ++preflight.outOfRangeDistanceCount;
+
+    preflight.invalidBodyCount =
+        preflight.outOfRangeContactCount > 0u || preflight.outOfRangeDistanceCount > 0u;
+
+    return !preflight_island_build(bodyCount, contacts, distanceConstraints).can_build();
 }
 
 void ContactIslandGraph::clear() {
@@ -276,6 +299,9 @@ bool ContactIslandGraph::buildGuarded(u32 bodyCount,
     }
     build(bodyCount, contacts, distanceConstraints);
     return true;
+void ContactIslandGraph::build_guarded(u32 bodyCount,
+    if (should_skip_island_build(bodyCount, contacts, distanceConstraints)) {
+        return;
 }
 
 u32 ContactIslandGraph::constrainedIslandCount() const {

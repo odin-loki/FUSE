@@ -53,7 +53,6 @@ bool contactIslandGraphBuildRejectsForReason(
 /// Read-only island graph build diagnostics — no mutation (B4.4 deepen follow-up pass).
 struct ContactIslandGraphBuildPreflight {
     ContactIslandGraphBuildRejectReason reason = ContactIslandGraphBuildRejectReason::None;
-    u32 bodyCount = 0;
     u32 contactSlotCount = 0;
     u32 distanceSlotCount = 0;
     u32 validContactCount = 0;
@@ -61,7 +60,6 @@ struct ContactIslandGraphBuildPreflight {
     u32 inRangeDistanceCount = 0;
     u32 outOfRangeContactBodyCount = 0;
     u32 outOfRangeDistanceBodyCount = 0;
-    bool skipped = false;
 
     bool has_unsafe_refs() const {
         return outOfRangeContactBodyCount > 0u || outOfRangeDistanceBodyCount > 0u;
@@ -115,7 +113,6 @@ FUSE_PHYSICS_INLINE IslandBuildRejectReason distanceBuildRejectReason(
     if (bodyCount == 0u || constraint.bodyA >= bodyCount || constraint.bodyB >= bodyCount) {
 
 /// Preflight diagnostics for island graph construction (B4.4 deepen).
-struct IslandBuildPreflight {
     u32 invalidContactCount = 0;
     u32 oobContactCount = 0;
     u32 selfPairContactCount = 0;
@@ -123,7 +120,6 @@ struct IslandBuildPreflight {
     u32 oobDistanceCount = 0;
     u32 selfPairDistanceCount = 0;
 
-    bool can_build() const { return !skipped; }
 
 /// Post-build validation of island constraint index references (B4.4 deepen).
 struct IslandBuildValidation {
@@ -138,12 +134,23 @@ IslandBuildPreflight preflight_island_build(u32 bodyCount,
 bool should_skip_island_build(u32 bodyCount,
 /// Preflight island graph build; sets `skipped` when `bodyCount` is zero.
 IslandBuildPreflight preflight_island_graph_build(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Early-out guard when there are no bodies to partition.
 bool should_skip_island_graph_build(u32 bodyCount);
+/// Diagnostic stats for island graph build preflight (B4.4 deepen follow-up).
+    u32 outOfRangeContactCount = 0;
+    u32 outOfRangeDistanceCount = 0;
+    bool invalidBodyCount = false;
+
+    bool can_build() const { return !skipped && !invalidBodyCount; }
+    bool has_union_constraints() const { return validContactCount > 0u || validDistanceCount > 0u; }
+
+/// True when every referenced body index is in range for `bodyCount`.
+bool is_valid_island_build_body_count(u32 bodyCount,
+
+/// Preflight island graph build without mutating graph state (B4.4 deepen follow-up).
+
+/// Early-out when build inputs reference out-of-range body indices (B4.4 deepen follow-up).
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -166,6 +173,8 @@ struct ContactIslandGraph {
     bool buildGuarded(u32 bodyCount,
                       const std::vector<narrowphase::ContactManifold>& contacts,
                       const std::vector<DistanceConstraint>& distanceConstraints);
+    /// Build only when preflight passes; clears the graph when build is skipped (B4.4 deepen follow-up).
+    void build_guarded(u32 bodyCount,
 
     void clear();
 
