@@ -2826,3 +2826,28 @@ void testProbeKernelSurfacePreflights() {
     expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, built) ==
                "wouldSkip matches isProbeSampleCoordsOutOfRange");
                "wouldSkipProbeBlendKernel true for null probe indices");
+
+// --- deepen additive from deepen-ddgi-guards-1f58 ---
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeSchedule(2048u, 0u, indices, &count, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeSchedule(2048u, 8u, nullptr, &count, reason),
+               "tryValidateProbeSchedule rejects null output indices");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeSchedule(2048u, 8u, indices, nullptr, reason),
+               "tryValidateProbeSchedule rejects null output count");
+void testCacheIndexNullCacheGuards() {
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateCacheIndex(desc, 3u, nullptr, 8u, reason),
+    expectTrue(fuse::renderer::ddgi_util::tryValidateCacheIndex(desc, 3u, cache.data(), 8u, reason),
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, 3u, nullptr, 8u),
+               "wouldSkipCacheIndexLookup true for null cache");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, 3u, cache.data(), 8u),
+               "wouldSkipCacheIndexLookup false for accessible cache");
+               "tryRead with reason succeeds for valid index");
+    expectNear(irradiance.x, 0.5f, 1e-5f, "tryRead with reason returns stored irradiance");
+               "tryRead with reason rejects null cache");
+               "tryRead with reason reports null_cache");
+               "wouldSkip true on empty grid");
+               "tryLaunch trace succeeds with valid params");
+    expectTrue(fuse::renderer::gi::wouldSkipProbeTraceKernel(nullIndices),
+               "wouldSkipProbeTraceKernel true for null indices");
+    expectTrue(!fuse::renderer::gi::tryLaunch_probe_trace_kernel(nullIndices, nullptr, reason),
+               "tryLaunch trace rejects null indices");
+               "tryLaunch trace null indices reports null_probe_indices reason");

@@ -2435,3 +2435,8 @@ bool tryCanLaunchProbeBlendKernelWithSurfaces(const DDGIKernelParams& params, Pr
 // --- deepen additive from deepen-b56-ddgi-guards-1017 ---
 bool tryValidateProbeSchedule(u32 probe_count,
     return tryValidateProbeSchedule(probe_count, probes_per_frame, out_indices, max_indices, out_count, reason);
+
+// --- deepen additive from deepen-ddgi-guards-1f58 ---
+    return tryValidateCacheIndex(desc, probe_index, cache, cache_count, reason);
+    return tryValidateProbeSchedule(probe_count, max_indices, out_indices, out_count, reason);
+    if (!tryValidateProbeSchedule(probe_count, max_indices, out_indices, out_count, outReason)) {
