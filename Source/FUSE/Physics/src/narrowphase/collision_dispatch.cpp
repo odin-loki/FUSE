@@ -12,12 +12,22 @@ void runNarrowphaseIntoBuffer(
     const u32 pairCount = static_cast<u32>(pairs.size());
     buffer.preparePairSlots(pairCount);
 
+    if (can_skip_narrowphase(pairs, bodies, shapes)) {
+        buffer.compactAndClamp();
+        return;
+    }
+
     // Per-pair slots are job-safe (disjoint writes). Serial dispatch on the CPU stub avoids
     // scheduler reference-capture flakes seen when stacking parallel broadphase + narrowphase
     // under core::initialize(); the slot layout matches the future parallel_for kernel path.
     for (u32 pairIndex = 0; pairIndex < pairCount; ++pairIndex) {
-        ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
-        if (generate_contact_manifold(manifold)) {
+        const broadphase::CandidatePair& pair = pairs[pairIndex];
+        if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+            continue;
+        }
+
+        ContactManifold manifold = detect_contacts_pair(pair, bodies, shapes);
+        if (generate_contact_manifold_if_needed(manifold)) {
             buffer.writeSlot(pairIndex, manifold);
         }
     }

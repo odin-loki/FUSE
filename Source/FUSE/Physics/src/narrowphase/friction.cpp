@@ -229,19 +229,53 @@ void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon)
     manifold.buildFrictionBasis();
 }
 
+const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason) {
+    switch (reason) {
+    case FrictionBasisRejectReason::None:
+        return "None";
+    case FrictionBasisRejectReason::EmptyOrInvalid:
+        return "EmptyOrInvalid";
+    case FrictionBasisRejectReason::BasisReusable:
+        return "BasisReusable";
+    }
+    return "Unknown";
+}
+
+FrictionBasisRejectReason friction_basis_reject_reason(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return FrictionBasisRejectReason::EmptyOrInvalid;
+    }
+
+    if (can_skip_friction_basis_rebuild(manifold, epsilon)) {
+        return FrictionBasisRejectReason::BasisReusable;
+    }
+
+    return FrictionBasisRejectReason::None;
+}
+
+bool friction_basis_rejects_for_reason(
+    const ContactManifold& manifold,
+    FrictionBasisRejectReason expected,
+    f32 epsilon) {
+    return friction_basis_reject_reason(manifold, epsilon) == expected;
+}
+
 FrictionBasisPreflight preflight_friction_basis_rebuild(
     const ContactManifold& manifold,
     f32 epsilon) {
     FrictionBasisPreflight preflight{};
-    if (should_skip_friction_tangents(manifold)) {
+    preflight.reason = friction_basis_reject_reason(manifold, epsilon);
+    if (preflight.reason == FrictionBasisRejectReason::EmptyOrInvalid) {
         preflight.skipped = true;
         return preflight;
     }
 
     preflight.stale = friction_basis_is_stale(manifold, epsilon);
     preflight.needsNormalNormalize = contact_normal_needs_normalize(manifold, epsilon);
-    preflight.canReuse = can_skip_friction_basis_rebuild(manifold, epsilon);
-    preflight.needsRebuild = needs_friction_basis_refresh(manifold, epsilon);
+    preflight.canReuse = preflight.reason == FrictionBasisRejectReason::BasisReusable;
+    preflight.needsRebuild = preflight.reason == FrictionBasisRejectReason::None;
     return preflight;
 }
 
@@ -249,6 +283,29 @@ bool should_skip_friction_basis_preflight(
     const ContactManifold& manifold,
     f32 epsilon) {
     return preflight_friction_basis_rebuild(manifold, epsilon).can_skip_rebuild();
+}
+
+bool should_run_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    return !should_skip_friction_basis_preflight(manifold, epsilon);
+}
+
+bool can_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
+    const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
+    return preflight.can_rebuild();
+}
+
+bool ensure_friction_basis_if_needed(ContactManifold& manifold, f32 epsilon) {
+    const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
+    if (preflight.skipped) {
+        invalidate_friction_basis(manifold);
+        return false;
+    }
+    if (preflight.can_skip_rebuild()) {
+        return true;
+    }
+    return rebuild_friction_basis_if_needed(manifold, epsilon);
 }
 
 } // namespace fuse::physics::narrowphase
