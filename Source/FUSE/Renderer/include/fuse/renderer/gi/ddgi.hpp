@@ -868,3 +868,13 @@ bool tryCanLookupAtCoord(const DDGIDesc& desc,
 // --- deepen additive from deepen-ddgi-guards-4d4e ---
 bool wouldSkipDdgiSample(const DDGIDesc& desc, const DDGISampleRequest& request, u32 cache_count);
 bool preflightScheduleProbeUpdates(u32 probe_count,
+
+// --- deepen additive from deepen-ddgi-guards-13d5 ---
+                                      ProbeTrilinearSampleRejectReason& reason);
+                                 ProbeUpdateLaunchRejectReason& reason);
+bool tryCanSampleAtProbeCoord(const DDGIDesc& desc,
+CacheIndexRejectReason classifyCacheIndexRejectAtCoord(const DDGIDesc& desc,
+                                  CacheIndexRejectReason& reason);
+bool wouldClampCacheIndexCoord(const DDGIDesc& desc, u32 x, u32 y, u32 z);
+bool tryPreflightProbeSchedule(u32 probe_count,
+                               ProbeScheduleRejectReason& reason);

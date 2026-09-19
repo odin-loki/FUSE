@@ -158,3 +158,6 @@ ProbeKernelRejectReason classifyProbeKernelTraceReject(const DDGIKernelParams& p
 ProbeKernelRejectReason classifyProbeKernelBlendReject(const DDGIKernelParams& params);
 bool tryPreflightProbeTraceWorldPositions(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 bool tryPreflightProbeBlendSurfaces(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+
+// --- deepen additive from deepen-ddgi-guards-13d5 ---
+bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& reason);

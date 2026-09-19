@@ -3401,3 +3401,24 @@ void testKernelWouldSkipAndSurfacePreflight() {
     expectTrue(fuse::renderer::gi::tryPreflightProbeBlendSurfaces(surfacedParams, reason),
     testProbeSampleCoordClassifyAndPreflight();
     testKernelWouldSkipAndSurfacePreflight();
+
+// --- deepen additive from deepen-ddgi-guards-13d5 ---
+void testDdgiThirdPassDeepenGuards() {
+    expectTrue(fuse::renderer::ddgi_util::tryPreflightProbeSchedule(2048u, 64u, indices, &count, scheduleReason),
+               "tryPreflightProbeSchedule succeeds for valid inputs");
+               "tryPreflightProbeSchedule reports none for valid inputs");
+    expectTrue(fuse::renderer::ddgi_util::tryPreflightCacheIndexLookup(desc, cache.data(), 3u, 8u, cacheReason),
+               "tryPreflightCacheIndexLookup reports none for valid cache");
+    expectTrue(fuse::renderer::ddgi_util::classifyCacheIndexRejectAtCoord(desc, cache.data(), 1u, 1u, 0u, 8u) ==
+               "classifyCacheIndexRejectAtCoord none for valid coord");
+    expectNear(coordIrradiance.x, cache[3u].irradiance.x, 1e-5f, "tryReadIrradianceAtCoord returns stored irradiance");
+               "tryReadIrradianceAtIndex with reason reports none");
+    expectTrue(fuse::renderer::tryPreflightTrilinearProbeSample(desc, built, cache.data(), 8u, trilinearReason),
+               "tryPreflightTrilinearProbeSample succeeds for valid sample");
+               "tryPreflightTrilinearProbeSample reports none");
+               "classifyProbeTrilinearSampleReject none for valid sample");
+    expectTrue(fuse::renderer::ddgi_util::tryCanSampleAtProbeCoord(desc, 1u, 0u, 0u, cache.data(), 8u, trilinearReason),
+               "tryCanSampleAtProbeCoord succeeds for valid coord");
+               "tryCanSampleAtProbeCoord reports none");
+               "tryPreflightDdgiProbeUpdate reports none");
+               "tryPreflightProbeKernelLaunch reports none");

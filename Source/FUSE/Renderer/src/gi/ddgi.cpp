@@ -2698,3 +2698,25 @@ bool tryPreflightProbeBlendSurfaces(const DDGIKernelParams& params, ProbeKernelR
     if (!tryCanLaunchProbeBlendKernel(params, baseReason)) {
         outReason = ProbeKernelRejectReason::NullPrevIrradiance;
         outReason = ProbeKernelRejectReason::NullOutRadiance;
+
+// --- deepen additive from deepen-ddgi-guards-13d5 ---
+    return !probeTrilinearSampleRejectReasonIsBlocking(reject);
+                                      ProbeTrilinearSampleRejectReason& reason) {
+    return preflightTrilinearProbeSample(desc, coords, cache, cache_count, &reason);
+                                 ProbeUpdateLaunchRejectReason& reason) {
+    return preflightDdgiProbeUpdate(desc, probe_indices, probe_count, &reason);
+    return !canPreflightProbeSampleCoords(desc, coords);
+bool tryCanSampleAtProbeCoord(const DDGIDesc& desc,
+    return tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, outReason);
+        return tryReadIrradianceAtIndex(desc, cache, cache_count, probe_index, out_irradiance, outReason);
+                                  CacheIndexRejectReason& reason) {
+    return preflightCacheIndexLookup(desc, cache, probe_index, cache_count, &reason);
+CacheIndexRejectReason classifyCacheIndexRejectAtCoord(const DDGIDesc& desc,
+        return classifyCacheIndexReject(desc, cache, probe_index, cache_count);
+bool wouldClampCacheIndexCoord(const DDGIDesc& desc, u32 x, u32 y, u32 z) {
+bool tryPreflightProbeSchedule(u32 probe_count,
+                               ProbeScheduleRejectReason& reason) {
+    return preflightProbeSchedule(probe_count, max_indices, out_indices, out_count, &reason);
+bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& reason) {
+    return preflightProbeKernelLaunch(params, &reason);
+    return wouldSkipProbeKernelLaunch(params);
