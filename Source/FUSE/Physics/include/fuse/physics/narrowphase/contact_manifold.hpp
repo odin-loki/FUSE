@@ -660,26 +660,19 @@ bool should_run_manifold_prune(
 
 /// Why manifold finalize would early-out (B4.4 deepen pass).
 enum class ManifoldFinalizeRejectReason : u8 {
-    EmptyManifold,
 /// Why manifold finalize would early-out (B4.4 deepen guard pass).
-    InvalidNormal,
-    NoPenetratingPoints,
     WouldBeEmptyAfterPrune,
-};
 
 /// Human-readable label for manifold finalize reject reasons (logging / tests).
 const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason);
 
 /// Diagnose why finalize would skip; vacuously succeeds when finalize may proceed.
 ManifoldFinalizeRejectReason manifold_finalize_reject_reason(
-    None = 0,
 
 /// Human-readable label for manifold finalize reject reasons (B4.4 deepen pass).
 
 /// Diagnose why finalize would skip; vacuously succeeds when finalize may proceed (B4.4 deepen pass).
 
-    const ContactManifold& manifold,
-    f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f);
 
 /// Returns true when `manifold_finalize_reject_reason` matches `expected` (B4.4 deepen pass).
@@ -688,17 +681,17 @@ bool manifold_finalize_rejects_for_reason(
 
 
 bool should_run_manifold_finalize(
-    f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 /// Returns true when `manifold_prune_reject_reason` matches `expected` (B4.4 deepen pass).
 bool manifold_prune_rejects_for_reason(
     ManifoldPruneRejectReason expected,
-    f32 shallowMinDepth = 0.f);
 
 /// Non-mutating prune skip predicate — mirrors `should_skip_manifold_prune` (B4.4 deepen pass).
 bool can_skip_manifold_prune(
 
 /// Non-mutating prune predicate — inverse of `can_skip_manifold_prune` (B4.4 deepen pass).
+
+/// Non-mutating prune predicate — inverse of `should_skip_manifold_prune` (B4.4 deepen guard pass).
 
 /// Const preflight for manifold finalize dispatch (B4.4 deepen follow-up).
 struct ManifoldFinalizePreflight {
@@ -1069,43 +1062,18 @@ bool can_skip_manifold_prune_dispatch(
 /// Non-mutating prune skip predicate — mirrors `should_skip_manifold_prune` (B4.4 deepen pass).
 
 /// Why manifold finalize would early-out (B4.4 deepen pass).
-enum class ManifoldFinalizeRejectReason : u8 {
-    None = 0,
-    EmptyManifold,
-    InvalidNormal,
-    NoPenetratingPoints,
     NoPenetration,
-    WouldBeEmptyAfterPrune,
-};
 
-/// Human-readable label for manifold finalize reject reasons (logging / tests).
-const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason);
 
 /// Diagnose why manifold finalize would skip; vacuously succeeds when finalize may proceed.
 
-/// Diagnose why finalize would skip; vacuously succeeds when finalize may proceed.
-ManifoldFinalizeRejectReason manifold_finalize_reject_reason(
-    const ContactManifold& manifold,
-    f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f,
-    f32 frictionEpsilon = 1e-4f);
-/// Diagnose why finalize would skip; vacuously succeeds when finalize may proceed.
-    f32 duplicateEpsilon = 1e-4f);
 
 /// Returns true when `manifold_finalize_reject_reason` matches `expected` (B4.4 deepen pass).
 
 /// Returns true when `manifold_finalize_reject_reason` matches `expected` (B4.4 deepen guard pass).
 
 
-bool manifold_finalize_rejects_for_reason(
-    const ContactManifold& manifold,
-    ManifoldFinalizeRejectReason expected,
-    f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f,
-    f32 frictionEpsilon = 1e-4f);
-    f32 duplicateEpsilon = 1e-4f);
 
-/// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.4 deepen pass).
 
 /// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.4 deepen guard pass).
 

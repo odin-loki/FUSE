@@ -1369,4 +1369,10 @@ bool should_run_friction_basis_rebuild(
     return !can_skip_friction_basis_preflight(manifold, epsilon);
 }
 
+bool should_run_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    return !should_skip_friction_basis_preflight(manifold, epsilon);
+}
+
 } // namespace fuse::physics::narrowphase

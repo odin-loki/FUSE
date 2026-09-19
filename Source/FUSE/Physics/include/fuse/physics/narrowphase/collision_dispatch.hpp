@@ -187,6 +187,28 @@ ContactManifold collideBoxBox(
     u32 idxA,
     u32 idxB);
 
+struct ContactBufferSoA;
+
+/// Const preflight for one narrowphase pair slot dispatch (B4.4 deepen guard pass).
+struct NarrowphasePairSlotPreflight {
+    ContactPairPreflight pairPreflight{};
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && pairPreflight.can_dispatch(); }
+};
+
+/// Populate pair-slot preflight without running shape dispatch (B4.4 deepen guard pass).
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when narrowphase should skip this pair slot before dispatch (B4.4 deepen guard pass).
+bool should_skip_narrowphase_pair_slot(
+
+/// Non-mutating pair-slot predicate — inverse of `should_skip_narrowphase_pair_slot` (B4.4 deepen guard pass).
+bool should_run_narrowphase_pair_slot(
+
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,

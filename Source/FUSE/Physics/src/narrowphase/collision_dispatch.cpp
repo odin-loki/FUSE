@@ -16,6 +16,8 @@ NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
     }
 
     preflight.canDispatch = true;
+    preflight.pairPreflight = preflight_contact_pair(pair, bodies, shapes);
+    preflight.skipped = !preflight.pairPreflight.can_dispatch();
     return preflight;
 }
 
@@ -24,6 +26,14 @@ bool should_skip_narrowphase_pair_slot(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return !preflight_narrowphase_pair_slot(pair, bodies, shapes).can_process();
+    return !preflight_narrowphase_pair_slot(pair, bodies, shapes).can_dispatch();
+}
+
+bool should_run_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_narrowphase_pair_slot(pair, bodies, shapes);
 }
 
 void runNarrowphaseIntoBuffer(
@@ -51,6 +61,8 @@ void runNarrowphaseIntoBuffer(
         if (!should_run_contact_pair_deepen_dispatch(pairs[pairIndex], bodies, shapes)) {
             continue;
         }
+        if (should_skip_narrowphase_pair_slot(pairs[pairIndex], bodies, shapes)) {
+
         ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
         if (finalize_contact_manifold_with_preflight(manifold)) {
         const broadphase::CandidatePair& pair = pairs[pairIndex];

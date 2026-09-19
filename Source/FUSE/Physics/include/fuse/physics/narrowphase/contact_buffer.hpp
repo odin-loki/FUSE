@@ -83,6 +83,11 @@ struct ContactBufferSoA {
 
     /// Non-mutating clamp skip predicate — inverse of `shouldRunClamp` (B4.4 deepen guard pass).
     bool canSkipClamp() const;
+    /// True when slot storage has no valid flags (compact is a no-op).
+    /// True when post-pass truncation would drop contacts.
+    bool canApplyMaxCapacityClamp() const;
+    /// Inverse of `canApplyMaxCapacityClamp` (B4.4 deepen guard pass).
+    bool canSkipMaxCapacityClamp() const { return !canApplyMaxCapacityClamp(); }
 
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
@@ -148,6 +153,7 @@ bool contactBufferWriteRejectsForReason(
 /// Read-only write diagnostics — no mutation (B4.4 deepen guard pass).
 
 /// Returns true when `contact_buffer_write_reject_reason` matches `expected` (B4.4 deepen pass).
+
 
     bool invalidManifold = false;
     bool selfPair = false;
@@ -269,8 +275,6 @@ bool can_skip_contact_buffer_write(
 
 /// Non-mutating write predicate — mirrors `preflight_contact_buffer_write` (B4.4 deepen pass).
 bool should_run_contact_buffer_write(
-    u32 slot,
-    const ContactManifold& manifold);
 
 /// Why contact-buffer compaction would early-out (B4.4 deepen pass).
 enum class ContactBufferCompactionRejectReason : u8 {
@@ -279,6 +283,15 @@ enum class ContactBufferCompactionRejectReason : u8 {
     AllInvalid,
 
 
+
+
+/// Non-mutating write skip predicate — inverse of `canWrite` (B4.4 deepen guard pass).
+bool canSkipContactBufferWrite(
+
+/// Non-mutating write predicate — mirrors `preflightContactBufferWrite` (B4.4 deepen guard pass).
+bool shouldRunContactBufferWrite(
+
+enum class ContactBufferCompactRejectReason : u8 {
     AllValid,
 };
 
@@ -334,6 +347,27 @@ bool shouldRunContactBufferCompaction(const ContactBufferSoA& buffer);
 /// Why contact-buffer max-capacity clamp would early-out (B4.4 deepen guard pass).
 
 
+const char* contactBufferCompactRejectReasonName(ContactBufferCompactRejectReason reason);
+
+ContactBufferCompactRejectReason contactBufferCompactRejectReason(const ContactBufferSoA& buffer);
+
+/// Returns true when `contactBufferCompactRejectReason` matches `expected` (B4.4 deepen guard pass).
+bool contactBufferCompactRejectsForReason(
+    ContactBufferCompactRejectReason expected);
+
+struct ContactBufferCompactPreflight {
+    ContactBufferCompactRejectReason reason = ContactBufferCompactRejectReason::None;
+
+    bool needsCompaction() const { return reason == ContactBufferCompactRejectReason::None; }
+
+ContactBufferCompactPreflight preflightContactBufferCompact(const ContactBufferSoA& buffer);
+
+/// Non-mutating compaction skip predicate — inverse of `needsCompaction` (B4.4 deepen guard pass).
+bool canSkipContactBufferCompact(const ContactBufferSoA& buffer);
+
+/// Non-mutating compaction predicate — mirrors `preflightContactBufferCompact` (B4.4 deepen guard pass).
+bool shouldRunContactBufferCompact(const ContactBufferSoA& buffer);
+
 enum class ContactBufferClampRejectReason : u8 {
     None = 0,
     EmptyBuffer,
@@ -354,6 +388,7 @@ bool contact_buffer_clamp_rejects_for_reason(
 
 bool canSkipContactBufferClamp(const ContactBufferSoA& buffer);
 
+};
 
 /// Human-readable label for contact-buffer clamp reject reasons (logging / tests).
 const char* contactBufferClampRejectReasonName(ContactBufferClampRejectReason reason);
@@ -390,5 +425,19 @@ bool can_skip_contact_buffer_compaction(const ContactBufferSoA& buffer);
 
 /// Non-mutating compaction predicate — mirrors `preflight_contact_buffer_compaction` (B4.4 deepen pass).
 bool should_run_contact_buffer_compaction(const ContactBufferSoA& buffer);
+
+    const ContactBufferSoA& buffer,
+    ContactBufferClampRejectReason expected);
+
+    ContactBufferClampRejectReason reason = ContactBufferClampRejectReason::None;
+
+    bool needsClamp() const { return reason == ContactBufferClampRejectReason::None; }
+};
+
+
+/// Non-mutating clamp skip predicate — inverse of `needsClamp` (B4.4 deepen guard pass).
+bool canSkipContactBufferClamp(const ContactBufferSoA& buffer);
+
+/// Non-mutating clamp predicate — mirrors `preflightContactBufferClamp` (B4.4 deepen guard pass).
 
 } // namespace fuse::physics::narrowphase

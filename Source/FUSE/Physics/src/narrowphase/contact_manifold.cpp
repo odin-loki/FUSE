@@ -1096,6 +1096,14 @@ bool should_run_manifold_prune(
     return !can_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
 }
 
+bool should_run_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    return !should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
 ManifoldFinalizePreflight preflight_manifold_finalize(
     const ContactManifold& manifold,
     f32 separationEpsilon,
@@ -2394,6 +2402,14 @@ bool manifold_finalize_rejects_for_reason(
     f32 duplicateEpsilon,
     f32 frictionEpsilon) {
     return manifold_finalize_reject_reason(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon) == expected;
+}
+
+bool should_run_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    return !can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
 }
 
 bool should_run_manifold_finalize(
