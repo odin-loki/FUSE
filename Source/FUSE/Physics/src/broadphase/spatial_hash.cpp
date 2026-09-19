@@ -223,7 +223,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        if (canSkipShapeCellInsertion(range, maxOccupancy)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -243,7 +243,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+    if (canSkipShapeCellInsertion(range, maxOccupancy)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -262,7 +262,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
     }
 
     for (const CandidatePair& pair : pairs) {
-        if (!preflightPairBufferPush(buffer, pair.bodyA, pair.bodyB).canPush()) {
+        if (!preflightMergeBroadphasePush(buffer, pair.bodyA, pair.bodyB).canPush()) {
             break;
         }
         buffer.push(pair.bodyA, pair.bodyB);
@@ -270,7 +270,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (!shouldRunDedupeBroadphase(buffer)) {
+    if (!shouldRunDedupeBroadphase(buffer) || !shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
@@ -408,16 +408,18 @@ void refineBroadphasePairsParallelImpl(
 
     const u32 pairCount = buffer.activeCount;
     fuse::jobs::parallel_for(0u, pairCount, kPlanePairGrainSize, [&](u32 pairIndex) {
-        if (pairIndex >= buffer.activeCount || !buffer.slotIsValid(pairIndex)) {
+        const RefinePairSlotPreflight slotPreflight =
+            preflightRefinePairSlot(buffer, pairIndex, bodies.count());
+        if (slotPreflight.outOfRangeSlot || slotPreflight.invalidSlot) {
+            return;
+        }
+        if (slotPreflight.invalidPair) {
+            buffer.invalidateSlot(pairIndex);
             return;
         }
 
         const u32 bodyA = buffer.bodyA[pairIndex];
         const u32 bodyB = buffer.bodyB[pairIndex];
-        if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
-            buffer.invalidateSlot(pairIndex);
-            return;
-        }
         if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
             buffer.invalidateSlot(pairIndex);
         }
@@ -611,6 +613,114 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
     return preflightMergePairsIntoBuffer(pairs, buffer).canMerge();
+}
+
+const char* refinePairSlotRejectReasonName(RefinePairSlotRejectReason reason) {
+    switch (reason) {
+    case RefinePairSlotRejectReason::None:
+        return "None";
+    case RefinePairSlotRejectReason::OutOfRangeSlot:
+        return "OutOfRangeSlot";
+    case RefinePairSlotRejectReason::InvalidSlot:
+        return "InvalidSlot";
+    case RefinePairSlotRejectReason::InvalidPair:
+        return "InvalidPair";
+    }
+    return "Unknown";
+}
+
+RefinePairSlotRejectReason refinePairSlotRejectReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 bodyCount) {
+    const u32 scanCount = buffer.pairSlotCount > 0u ? buffer.pairSlotCount : buffer.activeCount;
+    if (slot >= scanCount) {
+        return RefinePairSlotRejectReason::OutOfRangeSlot;
+    }
+    if (!buffer.slotIsValid(slot)) {
+        return RefinePairSlotRejectReason::InvalidSlot;
+    }
+    if (!isValidCandidatePair(buffer.bodyA[slot], buffer.bodyB[slot], bodyCount)) {
+        return RefinePairSlotRejectReason::InvalidPair;
+    }
+    return RefinePairSlotRejectReason::None;
+}
+
+bool refinePairSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 bodyCount,
+    RefinePairSlotRejectReason expected) {
+    return refinePairSlotRejectReason(buffer, slot, bodyCount) == expected;
+}
+
+RefinePairSlotPreflight preflightRefinePairSlot(const PairBufferSoA& buffer, u32 slot, u32 bodyCount) {
+    RefinePairSlotPreflight preflight{};
+    preflight.reason = refinePairSlotRejectReason(buffer, slot, bodyCount);
+    preflight.outOfRangeSlot = preflight.reason == RefinePairSlotRejectReason::OutOfRangeSlot;
+    preflight.invalidSlot = preflight.reason == RefinePairSlotRejectReason::InvalidSlot;
+    preflight.invalidPair = preflight.reason == RefinePairSlotRejectReason::InvalidPair;
+    return preflight;
+}
+
+bool canSkipRefinePairSlot(const PairBufferSoA& buffer, u32 slot, u32 bodyCount) {
+    return !preflightRefinePairSlot(buffer, slot, bodyCount).canRefine();
+}
+
+bool shouldRunRefinePairSlot(const PairBufferSoA& buffer, u32 slot, u32 bodyCount) {
+    return preflightRefinePairSlot(buffer, slot, bodyCount).canRefine();
+}
+
+const char* mergeBroadphasePushRejectReasonName(MergeBroadphasePushRejectReason reason) {
+    switch (reason) {
+    case MergeBroadphasePushRejectReason::None:
+        return "None";
+    case MergeBroadphasePushRejectReason::InvalidPair:
+        return "InvalidPair";
+    case MergeBroadphasePushRejectReason::BufferFull:
+        return "BufferFull";
+    }
+    return "Unknown";
+}
+
+MergeBroadphasePushRejectReason mergeBroadphasePushRejectReason(
+    const PairBufferSoA& buffer,
+    u32 bodyA,
+    u32 bodyB) {
+    if (!isValidCandidatePair(bodyA, bodyB)) {
+        return MergeBroadphasePushRejectReason::InvalidPair;
+    }
+    if (buffer.isFull()) {
+        return MergeBroadphasePushRejectReason::BufferFull;
+    }
+    return MergeBroadphasePushRejectReason::None;
+}
+
+bool mergeBroadphasePushRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 bodyA,
+    u32 bodyB,
+    MergeBroadphasePushRejectReason expected) {
+    return mergeBroadphasePushRejectReason(buffer, bodyA, bodyB) == expected;
+}
+
+MergeBroadphasePushPreflight preflightMergeBroadphasePush(
+    const PairBufferSoA& buffer,
+    u32 bodyA,
+    u32 bodyB) {
+    MergeBroadphasePushPreflight preflight{};
+    preflight.reason = mergeBroadphasePushRejectReason(buffer, bodyA, bodyB);
+    preflight.invalidPair = preflight.reason == MergeBroadphasePushRejectReason::InvalidPair;
+    preflight.bufferFull = preflight.reason == MergeBroadphasePushRejectReason::BufferFull;
+    return preflight;
+}
+
+bool canSkipMergeBroadphasePush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB) {
+    return !preflightMergeBroadphasePush(buffer, bodyA, bodyB).canPush();
+}
+
+bool shouldRunMergeBroadphasePush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB) {
+    return preflightMergeBroadphasePush(buffer, bodyA, bodyB).canPush();
 }
 
 void refineBroadphasePairsParallel(
