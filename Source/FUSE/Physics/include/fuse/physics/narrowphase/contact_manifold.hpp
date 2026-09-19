@@ -395,6 +395,37 @@ ManifoldFinalizePreflight preflight_manifold_finalize(
 bool should_skip_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Diagnostic reason finalize rejects a manifold before friction sync (B4.4 deepen pass).
+enum class ManifoldFinalizeFailureReason : u8 {
+    None = 0,
+    Empty,
+    InvalidNormal,
+    NoPenetratingPoints,
+    PruneWouldEmpty,
+    MissingFrictionBasis,
+};
+
+/// Human-readable label for finalize failure diagnostics (B4.4 deepen pass).
+const char* manifold_finalize_failure_reason_name(ManifoldFinalizeFailureReason reason);
+
+/// Const preflight for manifold finalize dispatch (B4.4 deepen pass).
+struct ManifoldFinalizePreflight {
+    ManifoldFinalizeFailureReason reason = ManifoldFinalizeFailureReason::None;
+    ManifoldPrunePreflight prune{};
+    bool skipped = false;
+
+    bool can_finalize() const {
+        return !skipped && reason == ManifoldFinalizeFailureReason::None;
+    }
+};
+
+/// Populate finalize preflight without mutating the manifold (B4.4 deepen pass).
+ManifoldFinalizePreflight preflight_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f);
 
 /// Returns true when finalize should be skipped (B4.4 deepen pass 2).
@@ -444,9 +475,7 @@ bool generate_contact_manifold_if_ready(ContactManifold& manifold);
     bool needsPruning = false;
     bool needsNormalization = false;
 
-    bool can_finalize() const {
         return !skipped && !empty && !invalidNormal && !noPenetrating;
-    }
 
 /// Populate finalize preflight without mutating the manifold (B4.5 deepen pass).
 ManifoldFinalizePreflight preflight_manifold_finalize(const ContactManifold& manifold);
@@ -464,12 +493,23 @@ bool should_skip_manifold_finalize(const ContactManifold& manifold);
 
 /// Returns true when `generate_contact_manifold` would be a no-op failure (B4.5 deepen pass).
 bool can_skip_manifold_finalize(
-    const ContactManifold& manifold,
-    f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f);
 
 /// Finalize only when preflight allows; returns false otherwise (B4.5 deepen pass).
 bool generate_contact_manifold_if_valid(ContactManifold& manifold);
+/// Returns true when finalize should be skipped for this manifold (B4.4 deepen pass).
+
+/// Per-manifold finalize outcome (skip vs finalize) for batch stubs (B4.4 deepen pass).
+struct ManifoldFinalizeResult {
+    bool finalized = false;
+    ManifoldFinalizeFailureReason reason = ManifoldFinalizeFailureReason::None;
+
+/// Guarded finalize with explicit skip/finalize outcome (B4.4 deepen pass).
+ManifoldFinalizeResult generate_contact_manifold_guarded(ContactManifold& manifold);
+
+/// Guarded finalize returning skip/finalize outcome (B4.4 deepen pass).
+ManifoldFinalizeResult generate_contact_manifold_result(ContactManifold& manifold);
+
+/// Finalize only when preflight passes; returns false when skipped (B4.4 deepen pass).
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

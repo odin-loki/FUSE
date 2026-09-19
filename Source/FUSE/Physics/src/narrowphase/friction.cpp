@@ -685,4 +685,21 @@ bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilo
     return rebuild_friction_basis_if_needed(manifold, epsilon);
 }
 
+FrictionBasisPreflight preflight_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
+    FrictionBasisPreflight preflight{};
+    if (should_skip_friction_tangents(manifold)) {
+        preflight.shouldSkip = true;
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.missing = !has_cached_friction_basis(manifold);
+    preflight.stale = friction_basis_is_stale(manifold, epsilon);
+    return preflight;
+}
+
+bool should_skip_friction_basis_preflight(const ContactManifold& manifold) {
+    return preflight_friction_basis_rebuild(manifold).skipped;
+}
+
 } // namespace fuse::physics::narrowphase

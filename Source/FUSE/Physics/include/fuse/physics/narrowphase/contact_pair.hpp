@@ -235,8 +235,6 @@ ContactPairDeepenPreflight preflight_contact_pair_deepen(
 ContactManifold detect_contacts_pair_if_valid(
 /// Per-reason reject flags for const pair preflight (B4.4 deepen pass 2).
 struct ContactPairRejectBreakdown {
-    bool outOfRangeBody = false;
-    bool unsupportedShapePair = false;
 
     bool rejected() const { return reason != ContactPairRejectReason::None; }
     bool can_dispatch() const { return !rejected(); }
@@ -466,6 +464,10 @@ ContactPairDispatchPreflight preflight_contact_pair_dispatch(
 /// Run preflight then shape dispatch when allowed (B4.5 deepen pass).
 ContactPairDispatchResult dispatch_contact_pair(
 /// Populate reject preflight with per-reason flags (B4.5 deepen pass).
+/// Per-pair narrowphase dispatch outcome (skip vs detect) for parallel batch stubs (B4.4 deepen pass).
+
+/// Guarded pair dispatch with explicit skip/detect outcome (B4.4 deepen pass).
+ContactPairDispatchResult detect_contacts_pair_guarded(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -479,5 +481,10 @@ ContactPairDispatchResult dispatch_contact_pair(
 };
 
 /// Populate combined pair dispatch preflight (B4.5 deepen pass).
+/// Guarded pair dispatch returning skip/detect outcome without mutating on reject (B4.4 deepen pass).
+ContactPairDispatchResult detect_contacts_pair_result(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 } // namespace fuse::physics::narrowphase

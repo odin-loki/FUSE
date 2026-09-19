@@ -706,6 +706,65 @@ bool generate_contact_manifold_guarded(ContactManifold& manifold) {
 bool can_skip_manifold_finalize(
 
 bool generate_contact_manifold_if_valid(ContactManifold& manifold) {
+const char* manifold_finalize_failure_reason_name(ManifoldFinalizeFailureReason reason) {
+    switch (reason) {
+    case ManifoldFinalizeFailureReason::None:
+        return "None";
+    case ManifoldFinalizeFailureReason::Empty:
+        return "Empty";
+    case ManifoldFinalizeFailureReason::InvalidNormal:
+        return "InvalidNormal";
+    case ManifoldFinalizeFailureReason::NoPenetratingPoints:
+        return "NoPenetratingPoints";
+    case ManifoldFinalizeFailureReason::PruneWouldEmpty:
+        return "PruneWouldEmpty";
+    case ManifoldFinalizeFailureReason::MissingFrictionBasis:
+        return "MissingFrictionBasis";
+    return "Unknown";
+
+        preflight.reason = ManifoldFinalizeFailureReason::Empty;
+
+    if (preflight.prune.wouldBeEmpty) {
+        preflight.reason = ManifoldFinalizeFailureReason::PruneWouldEmpty;
+
+        preflight.reason = ManifoldFinalizeFailureReason::InvalidNormal;
+
+    if (!manifold.hasPenetratingPoints(separationEpsilon)) {
+        preflight.reason = ManifoldFinalizeFailureReason::NoPenetratingPoints;
+
+
+
+ManifoldFinalizeResult generate_contact_manifold_result(ContactManifold& manifold) {
+    ManifoldFinalizeResult result{};
+    result.reason = preflight.reason;
+        result.skipped = true;
+        if (preflight.reason == ManifoldFinalizeFailureReason::Empty ||
+            preflight.reason == ManifoldFinalizeFailureReason::PruneWouldEmpty ||
+            preflight.reason == ManifoldFinalizeFailureReason::NoPenetratingPoints) {
+        } else if (preflight.reason == ManifoldFinalizeFailureReason::InvalidNormal ||
+                   preflight.reason == ManifoldFinalizeFailureReason::MissingFrictionBasis) {
+        return result;
+
+    if (!manifold.pruneContactPointsIfNeeded()) {
+        result.reason = ManifoldFinalizeFailureReason::PruneWouldEmpty;
+
+        result.reason = ManifoldFinalizeFailureReason::InvalidNormal;
+
+    const f32 normalLength = manifold.contactNormal.length();
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+
+    manifold.syncLegacyFields();
+    compute_friction_tangents_if_needed(manifold);
+    if (!manifold.hasFrictionBasis()) {
+        result.reason = ManifoldFinalizeFailureReason::MissingFrictionBasis;
+
+    manifold.valid = true;
+    result.finalized = true;
+
+ManifoldFinalizeResult generate_contact_manifold_guarded(ContactManifold& manifold) {
+    return generate_contact_manifold_result(manifold);
+
+    return generate_contact_manifold_guarded(manifold).finalized;
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

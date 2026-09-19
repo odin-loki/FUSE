@@ -330,5 +330,14 @@ bool ensure_friction_basis_guarded(ContactManifold& manifold, f32 epsilon = 1e-4
 /// Returns true when friction-basis rebuild should be skipped (B4.5 deepen pass).
 
 /// Rebuild friction basis using preflight guards; returns false when skipped (B4.5 deepen pass).
+    bool shouldSkip = false;
+
+    bool needs_rebuild() const { return !skipped && !shouldSkip && (missing || stale); }
+
+    bool can_reuse() const { return !skipped && !shouldSkip && !missing && !stale; }
+
+
+/// Returns true when friction-basis rebuild should be skipped entirely (B4.4 deepen pass).
+bool should_skip_friction_basis_preflight(const ContactManifold& manifold);
 
 } // namespace fuse::physics::narrowphase
