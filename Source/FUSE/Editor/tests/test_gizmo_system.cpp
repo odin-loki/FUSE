@@ -4420,3 +4420,7 @@ void testEndDragInteractionRejectReasonGuards() {
 // --- deepen additive from deepen-gizmo-b6-guards-30c7 ---
     fuse::editor::GizmoBeginDragRejectReason beginRayReason =
     expectTrue(beginRayReason == fuse::editor::GizmoBeginDragRejectReason::NonFiniteRay,
+
+// --- deepen additive from deepen-gizmo-guards-5ef1 ---
+    expectTrue(invalidStepPreflight.isDegraded(),
+    expectTrue(!invalidStepPreflight.canApply(), "degraded snap-drag cannot apply");

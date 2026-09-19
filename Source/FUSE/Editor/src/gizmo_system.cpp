@@ -3058,3 +3058,6 @@ bool preflightUpdateDragInteractionSnapDragReady(const GizmoHitTest& hit, bool d
 bool GizmoSystem::preflightUpdateDragInteractionSnapDragReady(
     const GizmoHitTest& hit, f32 delta, GizmoSnapDragRejectReason* reason) const {
     return fuse::editor::preflightUpdateDragInteractionSnapDragReady(hit, m_dragging, m_activeAxis,
+
+// --- deepen additive from deepen-gizmo-guards-5ef1 ---
+    return preflightSnapDrag(delta, mode, settings).isDegraded();
