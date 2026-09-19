@@ -598,6 +598,13 @@ ContactPairPreflight preflight_contact_pair(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     ContactPairPreflight preflight{};
+    preflight.isSelfPair = is_self_contact_pair(pair);
+    preflight.isOutOfRange = is_out_of_range_contact_pair(pair, bodies);
+    preflight.isMissingShape = is_missing_shape_contact_pair(pair, shapes);
+    preflight.isBothTriggers = is_trigger_contact_pair(pair, bodies);
+    preflight.isUnsupportedShape = is_unsupported_shape_pair(pair, shapes);
+    preflight.isBothStatic = is_static_contact_pair(pair, bodies);
+    preflight.isDegenerateShape = is_degenerate_shape_pair(pair, shapes);
     preflight.reason = contact_pair_reject_reason(pair, bodies, shapes);
     preflight.rejected = preflight.reason != ContactPairRejectReason::None;
     return preflight;
@@ -961,10 +968,8 @@ bool contact_pair_has_valid_indices(
 }
 
 bool contact_pair_has_shapes(
-    const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes) {
     return !is_missing_shape_contact_pair(pair, shapes);
-}
 
 const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason) {
     switch (reason) {
@@ -978,9 +983,7 @@ const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason re
         return "NoPenetratingPoints";
     case ManifoldFinalizeRejectReason::PruneWouldEmpty:
         return "PruneWouldEmpty";
-    }
     return "Unknown";
-}
 
 ManifoldFinalizeRejectReason manifold_finalize_reject_reason(
     const ContactManifold& manifold,
@@ -988,23 +991,15 @@ ManifoldFinalizeRejectReason manifold_finalize_reject_reason(
     f32 duplicateEpsilon) {
     if (manifold.empty()) {
         return ManifoldFinalizeRejectReason::Empty;
-    }
     if (!manifold.hasValidNormal()) {
         return ManifoldFinalizeRejectReason::InvalidNormal;
-    }
     if (!manifold.hasPenetratingPoints()) {
         return ManifoldFinalizeRejectReason::NoPenetratingPoints;
-    }
     if (manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon)) {
         return ManifoldFinalizeRejectReason::PruneWouldEmpty;
-    }
     return ManifoldFinalizeRejectReason::None;
-}
 
 ManifoldFinalizePreflight preflight_finalize_contact_manifold(
-    const ContactManifold& manifold,
-    f32 separationEpsilon,
-    f32 duplicateEpsilon) {
     ManifoldFinalizePreflight preflight{};
     preflight.empty = manifold.empty();
     preflight.invalidNormal = !preflight.empty && !manifold.hasValidNormal();
@@ -1014,50 +1009,40 @@ ManifoldFinalizePreflight preflight_finalize_contact_manifold(
     preflight.reason = manifold_finalize_reject_reason(manifold, separationEpsilon, duplicateEpsilon);
     preflight.rejected = preflight.reason != ManifoldFinalizeRejectReason::None;
     return preflight;
-}
 
 bool should_skip_finalize_contact_manifold(
-    const ContactManifold& manifold,
-    f32 separationEpsilon,
-    f32 duplicateEpsilon) {
     return !preflight_finalize_contact_manifold(manifold, separationEpsilon, duplicateEpsilon).can_finalize();
-}
 
 bool generate_contact_manifold_if_needed(ContactManifold& manifold) {
     if (!can_finalize_contact_manifold(manifold)) {
         return false;
-    }
     return generate_contact_manifold(manifold);
-}
 
 ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
-    const ContactManifold& manifold,
-    f32 separationEpsilon,
-    f32 duplicateEpsilon) {
     ManifoldPruneFinalizePreflight preflight{};
-    if (manifold.empty()) {
         preflight.skipped = true;
         preflight.prune.skipped = true;
         preflight.prune.wouldBeEmpty = true;
         preflight.finalize.empty = true;
         preflight.finalize.reason = ManifoldFinalizeRejectReason::Empty;
         preflight.finalize.rejected = true;
-        return preflight;
-    }
 
     preflight.prune = preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
     preflight.finalize = preflight_finalize_contact_manifold(manifold, separationEpsilon, duplicateEpsilon);
-    return preflight;
-}
 
 bool should_skip_prune_contact_manifold(
-    const ContactManifold& manifold,
-    f32 separationEpsilon,
-    f32 duplicateEpsilon) {
-    if (manifold.empty()) {
         return true;
-    }
     return manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon);
+bool contact_pair_preflight_matches_reason(
+    const ContactPairPreflight& preflight,
+    ContactPairRejectReason expected) {
+    return preflight.reason == expected;
+
+bool contact_pair_preflight_rejects_for_reason(
+    return preflight.rejected && preflight.reason == expected;
+
+bool can_dispatch_contact_pair(const ContactPairPreflight& preflight) {
+    return preflight.can_dispatch();
 }
 
 } // namespace fuse::physics::narrowphase

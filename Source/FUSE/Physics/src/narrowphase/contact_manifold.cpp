@@ -375,8 +375,10 @@ ManifoldPruneRejectReason manifold_prune_reject_reason(
 }
 
 ManifoldPrunePreflight preflight_manifold_prune_ex(
-    const ContactManifold& manifold,
-    f32 separationEpsilon,
+    if (minDepth <= 0.f) {
+        return true;
+
+ManifoldPrunePreflight preflight_manifold_prune(
     f32 duplicateEpsilon,
     f32 shallowMinDepth) {
     ManifoldPrunePreflight preflight{};
@@ -405,6 +407,8 @@ ManifoldPrunePreflight preflight_manifold_prune(
     preflight.hasDuplicates = manifold.hasDuplicatePoints(duplicateEpsilon);
     if (shallowMinDepth > 0.f) {
         preflight.hasShallow = manifold.hasShallowPenetrations(shallowMinDepth);
+        preflight.hasShallowPenetrations = manifold.hasShallowPenetrations(shallowMinDepth);
+    }
     preflight.exceedsMaxPoints = manifold.pointCount > kMaxContactPointsPerManifold;
     if (shallowMinDepth > 0.f) {
         preflight.hasShallow = manifold.hasShallowPenetrations(shallowMinDepth);
@@ -662,6 +666,17 @@ bool prune_shallow_penetrations_if_needed(ContactManifold& manifold, f32 minDept
 bool generate_contact_manifold_if_ready(ContactManifold& manifold) {
     const ManifoldFinalizePreflight preflight = preflight_finalize_contact_manifold(manifold);
     if (!preflight.can_finalize()) {
+ManifoldFinalizePreflight preflight_manifold_finalize(const ContactManifold& manifold) {
+        preflight.isEmpty = true;
+
+    preflight.hasInvalidNormal = !manifold.hasValidNormal();
+    preflight.hasNoPenetratingPoints = !manifold.hasPenetratingPoints();
+
+bool should_skip_manifold_finalize(const ContactManifold& manifold) {
+    return !preflight_manifold_finalize(manifold).can_finalize();
+
+bool can_finalize_with_preflight(const ManifoldFinalizePreflight& preflight) {
+    return preflight.can_finalize();
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

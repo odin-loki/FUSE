@@ -293,5 +293,19 @@ FrictionBasisRebuildResult rebuild_friction_basis_guarded(
 /// Populate friction basis rebuild preflight without mutation (B4.5 deepen pass).
 
 /// Ensure basis is valid; no-op when rebuild can be skipped (B4.5 deepen pass).
+    bool hasCachedBasis = false;
+    bool wouldRebuild = false;
+
+    bool can_reuse() const { return !skipped && hasCachedBasis && !stale; }
+
+    bool needs_rebuild() const { return !skipped && wouldRebuild; }
+
+/// Populate friction-basis rebuild preflight without mutating the manifold (B4.4 deepen pass).
+
+/// Returns true when friction-basis rebuild may be skipped per preflight (B4.4 deepen pass).
+bool should_skip_friction_basis_rebuild_preflight(const FrictionBasisPreflight& preflight);
+
+/// Returns true when preflight indicates an existing basis can be reused (B4.4 deepen pass).
+bool can_reuse_friction_basis(const FrictionBasisPreflight& preflight);
 
 } // namespace fuse::physics::narrowphase

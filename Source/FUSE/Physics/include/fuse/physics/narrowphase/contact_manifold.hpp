@@ -234,12 +234,16 @@ struct ManifoldPrunePreflight {
         const ManifoldPrunePreflight& preflight,
         f32 separationEpsilon = 1e-6f,
         f32 duplicateEpsilon = 1e-4f);
+
+    /// True when no penetrating slots are shallower than `minDepth` (B4.4 deepen pass).
+    bool canSkipPruneShallowPenetrations(f32 minDepth) const;
 };
 
 /// Const preflight for manifold prune dispatch (B4.4 deepen pass).
 struct ManifoldPrunePreflight {
     bool hasSeparated = false;
     bool hasDuplicates = false;
+    bool hasShallowPenetrations = false;
     bool exceedsMaxPoints = false;
     bool hasShallow = false;
     bool wouldBeEmpty = false;
@@ -247,6 +251,8 @@ struct ManifoldPrunePreflight {
 
     bool needs_pruning() const {
         return !skipped && (hasSeparated || hasDuplicates || exceedsMaxPoints || hasShallow);
+        return !skipped &&
+               (hasSeparated || hasDuplicates || hasShallowPenetrations || exceedsMaxPoints);
     }
 
     bool can_prune_in_place() const { return needs_pruning() && !wouldBeEmpty; }
@@ -338,7 +344,29 @@ bool can_skip_manifold_prune(const ManifoldPrunePreflight& preflight);
 bool can_skip_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
-    f32 duplicateEpsilon = 1e-4f);
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Const preflight for manifold finalize dispatch (B4.4 deepen pass).
+struct ManifoldFinalizePreflight {
+    bool isEmpty = false;
+    bool hasInvalidNormal = false;
+    bool hasNoPenetratingPoints = false;
+    bool skipped = false;
+
+    bool can_finalize() const {
+        return !skipped && !isEmpty && !hasInvalidNormal && !hasNoPenetratingPoints;
+    }
+};
+
+/// Populate finalize preflight without mutating the manifold (B4.4 deepen pass).
+ManifoldFinalizePreflight preflight_manifold_finalize(const ContactManifold& manifold);
+
+/// Returns true when finalize should be skipped for this manifold (B4.4 deepen pass).
+bool should_skip_manifold_finalize(const ContactManifold& manifold);
+
+/// Returns true when finalize preflight indicates the manifold is ready (B4.4 deepen pass).
+bool can_finalize_with_preflight(const ManifoldFinalizePreflight& preflight);
 
 /// Const preflight for manifold finalize dispatch (B4.4 deepen pass 2).
 struct ManifoldFinalizePreflight {
