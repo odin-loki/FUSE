@@ -4715,3 +4715,15 @@ void testDdgiDeepenGuardPass2() {
     expectTrue(fuse::renderer::gi::tryPreflightProbeKernelLaunch(params, reason),
     expectTrue(!fuse::renderer::gi::tryPreflightProbeKernelLaunch(zeroCount, reason),
                "tryPreflightProbeKernelLaunch rejects zero update count");
+
+// --- deepen additive from deepen-ddgi-b56-guards-0b59 ---
+                               fuse::renderer::ProbeGridSourceRejectReason::NonPositiveSpacing),
+                   fuse::renderer::ProbeGridSourceRejectReason::NonPositiveSpacing,
+               "classifyProbeGridSourceReject non_positive_spacing");
+               "tryScheduleProbeUpdatesAtRate reports zero_probes_per_frame");
+    expectTrue(fuse::renderer::gi::tryLaunch_ddgi_probe_kernels(kernelParams, nullptr, kernelReason),
+               "tryLaunch_ddgi_probe_kernels succeeds for valid params");
+               "tryLaunch_ddgi_probe_kernels reports no reject reason");
+    expectTrue(!fuse::renderer::gi::tryLaunch_ddgi_probe_kernels(nullIndices, nullptr, kernelReason),
+               "tryLaunch_ddgi_probe_kernels rejects null indices");
+               "tryLaunch_ddgi_probe_kernels reports null_probe_indices");

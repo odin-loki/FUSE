@@ -3352,3 +3352,8 @@ bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridRejectReason* reaso
     case ProbeGridSourceRejectReason::InvalidProbeSpacing:
         outReason = ProbeGridSourceRejectReason::InvalidProbeSpacing;
     return wouldSkipTrilinearProbeIrradiance(desc, world_position, cache, cache_count);
+
+// --- deepen additive from deepen-ddgi-b56-guards-0b59 ---
+    case ProbeGridSourceRejectReason::NonPositiveSpacing:
+        outReason = ProbeGridSourceRejectReason::NonPositiveSpacing;
+bool tryLaunch_ddgi_probe_kernels(const DDGIKernelParams& params,

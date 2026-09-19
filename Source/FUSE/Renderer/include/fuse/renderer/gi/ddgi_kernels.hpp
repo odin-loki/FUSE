@@ -203,3 +203,6 @@ bool preflightProbeKernelLaunchWithGrid(const DDGIDesc& desc,
 bool wouldSkipProbeKernelLaunchWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
 bool wouldSkipProbeTraceKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
 bool wouldSkipProbeBlendKernelWithGrid(const DDGIDesc& desc, const DDGIKernelParams& params);
+
+// --- deepen additive from deepen-ddgi-b56-guards-0b59 ---
+bool tryLaunch_ddgi_probe_kernels(const DDGIKernelParams& params,
