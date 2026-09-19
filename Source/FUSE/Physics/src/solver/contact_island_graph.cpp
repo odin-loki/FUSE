@@ -6,6 +6,7 @@ namespace fuse::physics {
 
 void ContactIslandGraph::clear() {
     parent_.clear();
+    bodyToIsland_.clear();
     islands_.clear();
 }
 
@@ -70,13 +71,16 @@ void ContactIslandGraph::build(u32 bodyCount,
     std::vector<u32> rootToIsland(bodyCount, invalidIsland);
     islands_.clear();
 
+    bodyToIsland_.assign(bodyCount, invalidIsland);
     for (u32 bodyIndex = 0; bodyIndex < bodyCount; ++bodyIndex) {
         const u32 root = findRoot(bodyIndex);
         if (rootToIsland[root] == invalidIsland) {
             rootToIsland[root] = static_cast<u32>(islands_.size());
             islands_.push_back({});
         }
-        islands_[rootToIsland[root]].bodyIndices.push_back(bodyIndex);
+        const u32 islandIndex = rootToIsland[root];
+        islands_[islandIndex].bodyIndices.push_back(bodyIndex);
+        bodyToIsland_[bodyIndex] = islandIndex;
     }
 
     for (u32 contactIndex = 0; contactIndex < contacts.size(); ++contactIndex) {
@@ -117,19 +121,10 @@ u32 ContactIslandGraph::constrainedIslandCount() const {
 }
 
 u32 ContactIslandGraph::bodyIsland(u32 bodyIndex) const {
-    if (bodyIndex >= parent_.size()) {
+    if (bodyIndex >= bodyToIsland_.size()) {
         return invalidIsland;
     }
-
-    const u32 root = findRoot(bodyIndex);
-    for (u32 islandIndex = 0; islandIndex < islands_.size(); ++islandIndex) {
-        for (u32 index : islands_[islandIndex].bodyIndices) {
-            if (index == bodyIndex || findRoot(index) == root) {
-                return islandIndex;
-            }
-        }
-    }
-    return invalidIsland;
+    return bodyToIsland_[bodyIndex];
 }
 
 } // namespace fuse::physics

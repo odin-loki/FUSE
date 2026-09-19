@@ -43,6 +43,7 @@ private:
     void compressPath(u32 index);
 
     std::vector<u32> parent_;
+    std::vector<u32> bodyToIsland_;
     std::vector<Island> islands_;
 };
 
