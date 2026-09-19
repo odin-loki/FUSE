@@ -145,6 +145,9 @@ struct ChromeTraceExportPreflight {
     u32 ringCapacity = 0;
     u32 droppedEventCount = 0;
     bool isBufferFull = false;
+    u32 invalidEventCount = 0;
+    bool hasExportWarnings = false;
+    bool needsFlowNestingCleanup = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -403,6 +406,7 @@ struct NestingStatePreflight {
 /// Read-only async-flow end diagnostics — mirrors `endAsyncFlow()` guards.
 
     bool canEnd() const { return !profilerDisabled && !emptyName && !orphanEnd; }
+    bool hasInvalidEventsInBuffer() const { return invalidEventCount > 0; }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -469,6 +473,8 @@ bool isFlowDepthDetached();
 bool isCrossThreadFlowHandoffPending();
 NestingAsyncFlowPreflight preflightNestingAndAsyncFlow();
 u32 nestingDepth();
+bool needsFlowNestingCleanup();
+bool wouldIgnoreOrphanAsyncFlowEnd();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool isValidEventName(const char* name);
@@ -502,6 +508,23 @@ struct ChromeTraceExportPreflight {
 ChromeExportPreflight preflightChromeExport();
 
 u32 ringBufferCapacity();
+bool wouldRecordEventName(const char* name);
+bool isValidProfileEvent(const ProfileEvent& event);
+u32 exportableEventCount();
+u32 invalidEventCount();
+bool isEventExportable(u32 index);
+bool isFirstEventIndex(u32 index);
+bool isLastEventIndex(u32 index);
+bool tryEventPhaseAt(u32 index, EventPhase& outPhase);
+u32 firstEventIndex();
+u32 lastEventIndex();
+const ProfileEvent& emptyProfileEvent();
+const ProfileEvent& eventAt(u32 index);
+bool tryEventAt(u32 index, ProfileEvent& outEvent);
+bool tryFirstEvent(ProfileEvent& outEvent);
+bool tryLastEvent(ProfileEvent& outEvent);
+const ProfileEvent& lastEvent();
+void reset();
 
 ChromeTraceExportPreflight preflightChromeTraceExport();
 bool canExportChromeTrace();

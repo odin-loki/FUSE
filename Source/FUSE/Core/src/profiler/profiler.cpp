@@ -814,6 +814,14 @@ bool hasResidualFlowNestingDepth() {
     return flowNestingDepth() > 0u && openAsyncFlowCount() == 0u;
 }
 
+bool needsFlowNestingCleanup() {
+    return isFlowDepthDetached() || (flowNestingDepth() > 0u && !hasOpenAsyncFlows());
+}
+
+bool wouldIgnoreOrphanAsyncFlowEnd() {
+    return openAsyncFlowCount() == 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -928,16 +936,12 @@ bool isValidProfileName(const char* name) {
 
 bool isValidProfileName(const char* name) {
     return isValidEventName(name);
-}
 
 bool isValidProfilerName(const char* name) {
-    return isValidEventName(name);
-}
 
 bool isBlankEventName(const char* name) {
     if (name == nullptr || name[0] == '\0') {
         return true;
-    }
 
     for (const char* cursor = name; *cursor != '\0'; ++cursor) {
         switch (*cursor) {
@@ -948,17 +952,13 @@ bool isBlankEventName(const char* name) {
             break;
         default:
             return false;
-        }
-    }
-    return true;
-}
 
 bool isValidEventName(const char* name) {
     return !isBlankEventName(name);
-}
 
-bool isValidProfilerName(const char* name) {
-    return isValidEventName(name);
+
+bool wouldRecordEventName(const char* name) {
+    return g_enabled.load(std::memory_order_acquire) && isValidEventName(name);
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return isValidEventName(event.name);
@@ -981,6 +981,11 @@ u32 exportableEventCount() {
         if (isValidEventName(eventAt(i).name)) {
             ++count;
     return count;
+
+u32 invalidEventCount() {
+    const u32 total = eventCount();
+    return total >= exportableEventCount() ? total - exportableEventCount() : 0u;
+}
 
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
@@ -1195,6 +1200,14 @@ u32 findFirstEventIndexByPhase(EventPhase phase) {
 bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByPhase(phase);
 
+
+bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
+    ProfileEvent event{};
+    if (!tryEventAt(index, event)) {
+        outPhase = EventPhase::Begin;
+
+    outPhase = event.phase;
+    return true;
 
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
@@ -1686,6 +1699,10 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.ringCapacity = ringCapacity();
     preflight.droppedEventCount = droppedEventCount();
     preflight.isBufferFull = isBufferFull();
+    preflight.invalidEventCount = invalidEventCount();
+    preflight.needsFlowNestingCleanup = needsFlowNestingCleanup();
+    preflight.hasExportWarnings = preflight.hasUnbalancedNesting() || preflight.flowDepthDetached
+                                  || preflight.hasOpenAsyncFlows;
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
