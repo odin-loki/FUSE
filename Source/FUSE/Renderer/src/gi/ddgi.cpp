@@ -2549,3 +2549,13 @@ bool wouldSkipCanSampleAtProbeCoords(const DDGIDesc& desc,
     if (outReason == ProbeScheduleRejectReason::NullOutIndices && out_count != nullptr) {
     } else if (outReason == ProbeScheduleRejectReason::ZeroProbeCount ||
                outReason == ProbeScheduleRejectReason::ZeroMaxIndices) {
+
+// --- deepen additive from ddgi-deepen-guards-605d ---
+    return tryCanLookupAtProbeIndex(desc, cache, probe_index, cache_count, reason);
+bool tryCanLookupAtProbeIndex(const DDGIDesc& desc,
+bool wouldClampCacheIndexLookup(u32 probe_index, const DDGIDesc& desc) {
+    return wouldSkipCacheIndexLookup(desc, probe_index, cache_count);
+    return wouldSkipCacheIndexLookup(desc, cache, probe_index, cache_count);
+    return wouldSkipProbeSchedule(probe_count, max_indices, out_indices, out_count);
+bool tryCanScheduleProbeUpdates(u32 frame_index,
+    if (!tryCanScheduleProbeUpdates(frame_index,

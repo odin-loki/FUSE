@@ -3028,3 +3028,16 @@ void testClassifyProbeGuardRejectReasons() {
                "wouldSkipCanSampleAtProbeCoords true for null cache");
     expectTrue(fuse::renderer::gi::wouldSkipProbeTraceKernel(kernelParams),
     testClassifyProbeGuardRejectReasons();
+
+// --- deepen additive from ddgi-deepen-guards-605d ---
+void testPreflightProbeSampleCoords() {
+               "canPreflight succeeds for valid coords");
+               "tryPreflight succeeds for valid coords");
+    expectTrue(fuse::renderer::ddgi_util::tryCanLookupAtProbeIndex(desc, cache.data(), 3u, 8u, reason),
+               "tryCanLookupAtProbeIndex succeeds for valid index");
+    expectTrue(fuse::renderer::ddgi_util::tryReadIrradianceAtIndex(desc, cache.data(), 8u, 3u, irradiance, reason),
+    expectNear(irradiance.x, 0.25f, 1e-5f, "tryRead with reason returns stored irradiance");
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(0u, 2048u, 0u, 64u, indices, &count, reason),
+    expectTrue(fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(0u, 2048u, 64u, 64u, indices, &count, reason),
+               "wouldSkip blend true for zero update count");
+    testPreflightProbeSampleCoords();
