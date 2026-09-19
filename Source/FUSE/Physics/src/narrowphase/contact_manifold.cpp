@@ -654,3 +654,13 @@ bool can_finalize_with_preflight(const ManifoldFinalizePreflight& preflight) {
         return ManifoldPruneRejectReason::Empty;
         return ManifoldPruneRejectReason::WouldBeEmpty;
     return !should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1468 ---
+ManifoldFinalizeDeepenPreflight preflight_manifold_finalize_deepen(
+    ManifoldFinalizeDeepenPreflight preflight{};
+    const ManifoldFinalizePreflight basePreflight =
+    preflight.canFinalize = basePreflight.canFinalize;
+    preflight.needsPruning = basePreflight.needsPruning;
+    preflight.wouldBeEmptyAfterPrune = basePreflight.wouldBeEmptyAfterPrune;
+    preflight.needsFrictionBasis = basePreflight.needsFrictionBasis;
+    preflight.canReuseFrictionBasis = basePreflight.canReuseFrictionBasis;

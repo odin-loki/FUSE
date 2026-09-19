@@ -311,3 +311,7 @@ bool can_finalize_with_preflight(const ManifoldFinalizePreflight& preflight);
 // --- deepen additive from deepen-b4-narrowphase-guards-72f5 ---
         return skipped || reason != ManifoldPruneRejectReason::None || !needs_pruning();
     bool can_finalize() const { return reason == ManifoldFinalizeRejectReason::None && canFinalize; }
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1468 ---
+struct ManifoldFinalizeDeepenPreflight {
+ManifoldFinalizeDeepenPreflight preflight_manifold_finalize_deepen(

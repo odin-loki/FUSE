@@ -2244,3 +2244,29 @@ void testFrictionBasisDeepenPreflightGuards() {
     expectTrue(needsPreflight.can_rebuild(), "friction preflight can_rebuild without cached basis");
     testNarrowphasePairBatchPreflightGuards();
     testFrictionBasisDeepenPreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1468 ---
+void testContactPairDeepen2RejectGuards() {
+            fuse::physics::narrowphase::ContactPairRejectReason::BothZeroInvMass,
+            fuse::physics::narrowphase::ContactPairRejectReason::NoColliderDispatch,
+    const auto zeroMassPreflight =
+    expectTrue(!zeroMassPreflight.can_dispatch(), "deepen2 preflight rejects both zero-inv-mass pair");
+        zeroMassPreflight.reason == fuse::physics::narrowphase::ContactPairRejectReason::BothZeroInvMass,
+        fuse::physics::narrowphase::should_skip_contact_pair_deepen2_dispatch({zeroMassA, zeroMassB}, bodies, shapes),
+        !fuse::physics::narrowphase::should_skip_contact_pair_deepen2_dispatch({dynamicA, dynamicB}, bodies, shapes),
+                fuse::physics::narrowphase::ContactPairRejectReason::BothZeroInvMass),
+                fuse::physics::narrowphase::ContactPairRejectReason::NoColliderDispatch),
+void testCanSkipNarrowphaseDeepen2Guards() {
+void testManifoldNormalizeAndFinalizeDeepenGuards() {
+    const auto readyDeepenPreflight = fuse::physics::narrowphase::preflight_manifold_finalize_deepen(ready);
+    expectTrue(readyDeepenPreflight.can_finalize(), "deepen finalize preflight can finalize ready manifold");
+    expectTrue(!readyDeepenPreflight.needsNormalNormalization, "deepen finalize preflight no normal fixup needed");
+    const auto partialPreflight =
+    expectTrue(partialPreflight.partial, "deepen friction preflight flags partial basis");
+    expectTrue(partialPreflight.needsRebuild, "deepen friction preflight needs rebuild for partial basis");
+    expectTrue(!partialPreflight.can_skip_rebuild(), "deepen friction preflight cannot skip partial basis");
+        !fuse::physics::narrowphase::should_skip_friction_basis_deepen_preflight(partial),
+        "should_skip_deepen_preflight false for partial basis");
+        fuse::physics::narrowphase::should_skip_friction_basis_deepen_preflight(partial),
+        "should_skip_deepen_preflight true after completion");
+        unnormalizedPreflight.needsNormalNormalization,

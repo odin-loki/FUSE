@@ -188,3 +188,8 @@ bool should_skip_friction_basis_preflight(const ContactManifold& manifold);
 
 // --- deepen additive from deepen-b4-narrowphase-guards-72f5 ---
         return reason != FrictionBasisRejectReason::None || skipped || canReuse;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1468 ---
+struct FrictionBasisDeepenPreflight {
+FrictionBasisDeepenPreflight preflight_friction_basis_rebuild_deepen(
+bool should_skip_friction_basis_deepen_preflight(

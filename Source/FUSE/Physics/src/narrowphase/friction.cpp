@@ -345,3 +345,13 @@ bool should_skip_friction_basis_preflight(const ContactManifold& manifold) {
 // --- deepen additive from deepen-b4-narrowphase-guards-72f5 ---
     case FrictionBasisRejectReason::BasisCurrent:
         return FrictionBasisRejectReason::BasisCurrent;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1468 ---
+FrictionBasisDeepenPreflight preflight_friction_basis_rebuild_deepen(
+    FrictionBasisDeepenPreflight preflight{};
+    const FrictionBasisPreflight basePreflight = preflight_friction_basis_rebuild(manifold, epsilon);
+    preflight.stale = basePreflight.stale;
+    preflight.canReuse = basePreflight.canReuse;
+    preflight.needsRebuild = basePreflight.needsRebuild;
+bool should_skip_friction_basis_deepen_preflight(
+    const FrictionBasisDeepenPreflight preflight =

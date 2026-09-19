@@ -313,3 +313,9 @@ NarrowphasePreflight preflight_narrowphase(
 // --- deepen additive from b4-narrowphase-deepen-guards-699f ---
 struct NarrowphasePairBatchPreflight {
 NarrowphasePairBatchPreflight preflight_narrowphase_pairs(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1468 ---
+ContactPairRejectReason contact_pair_deepen2_reject_reason(
+struct ContactPairDeepen2Preflight {
+ContactPairDeepen2Preflight preflight_contact_pair_deepen2(
+bool should_skip_contact_pair_deepen2_dispatch(

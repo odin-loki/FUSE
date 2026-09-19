@@ -729,3 +729,17 @@ NarrowphasePreflight preflight_narrowphase(
 // --- deepen additive from b4-narrowphase-deepen-guards-699f ---
 NarrowphasePairBatchPreflight preflight_narrowphase_pairs(
     NarrowphasePairBatchPreflight preflight{};
+
+// --- deepen additive from deepen-b4-narrowphase-guards-1468 ---
+    case ContactPairRejectReason::BothZeroInvMass:
+    case ContactPairRejectReason::NoColliderDispatch:
+ContactPairRejectReason contact_pair_deepen2_reject_reason(
+    const ContactPairRejectReason deepenReason =
+    if (deepenReason != ContactPairRejectReason::None) {
+        return ContactPairRejectReason::BothZeroInvMass;
+        return ContactPairRejectReason::NoColliderDispatch;
+ContactPairDeepen2Preflight preflight_contact_pair_deepen2(
+    ContactPairDeepen2Preflight preflight{};
+bool should_skip_contact_pair_deepen2_dispatch(
+    return contact_pair_deepen2_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+        if (!should_skip_contact_pair_deepen2_dispatch(pair, bodies, shapes)) {
