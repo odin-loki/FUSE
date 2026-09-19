@@ -2503,3 +2503,13 @@ BeginInteractionPreflight preflightBeginInteraction(const GizmoRay& ray,
 // --- deepen additive from deepen-b6-gizmo-interaction-preflights-10fa ---
 void annotateBeginDragSnapDegraded_(BeginDragPreflight& preflight, GizmoMode mode,
 InteractionPreflight preflightInteraction(const GizmoHitTest& hit, GizmoMode mode, bool dragging,
+
+// --- deepen additive from gizmo-interaction-preflight-guards-d31b ---
+SnapDragPreflight preflightSnapDragDelta(GizmoMode mode, const GizmoSnapSettings& settings) {
+SnapDragPreflight GizmoSystem::preflightSnapDragDelta() const {
+    return fuse::editor::preflightSnapDragDelta(m_mode, m_snap);
+    return preflightSnapDragDelta().canApply();
+    return preflightBeginInteraction(hit).canBegin();
+    return preflightBeginInteraction(ray, transform).canBegin();
+    return preflightUpdateInteraction(hit).canUpdate();
+    return preflightEndInteraction().canEnd();

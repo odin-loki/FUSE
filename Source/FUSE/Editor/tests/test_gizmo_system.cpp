@@ -3528,3 +3528,28 @@ void testHitTestInBoundsGuards() {
 void testBeginDragPreflightOutOfBounds() {
     expectTrue(!outOfBoundsPreflight.canBegin, "begin preflight rejects out-of-bounds screen hit");
     testBeginDragPreflightOutOfBounds();
+
+// --- deepen additive from gizmo-interaction-preflight-guards-d31b ---
+void testPickPreflightFiniteGuards() {
+    const fuse::editor::PickPreflight invalidTransformPick = fuse::editor::preflightPick(
+    const fuse::editor::PickPreflight nonFiniteRayPick = fuse::editor::preflightPick(
+    const fuse::editor::PickPreflight nonFiniteHitPick =
+void testBeginDragPreflightFiniteGuards() {
+    const fuse::editor::BeginDragPreflight invalidTransformBegin = fuse::editor::preflightBeginDrag(
+    const fuse::editor::BeginDragPreflight nonFiniteHitBegin =
+void testUpdateDragFiniteAndScreenMissPreflight() {
+    const fuse::editor::UpdateDragPreflight nonFiniteUpdate = fuse::editor::preflightUpdateDrag(
+    const fuse::editor::UpdateDragPreflight screenMissUpdate = fuse::editor::preflightUpdateDrag(
+    const fuse::editor::UpdateDragPreflight gizmoScreenMiss = gizmo.preflightUpdateDrag(hit);
+void testSnapDragPreflight() {
+        fuse::editor::preflightSnapDragDelta(fuse::editor::GizmoMode::Translate, snap);
+    const fuse::editor::SnapDragPreflight invalidStepPreflight =
+    expectTrue(invalidStepPreflight.invalidStep, "snap-drag preflight marks invalid step");
+    expectTrue(!invalidStepPreflight.canApply(), "snap-drag preflight rejects invalid step");
+    expectTrue(validPreflight.canApply(), "snap-drag preflight accepts valid translate snap");
+    expectTrue(gizmo.preflightSnapDragDelta().canApply(),
+void testCanInteractionGuards() {
+    testPickPreflightFiniteGuards();
+    testBeginDragPreflightFiniteGuards();
+    testUpdateDragFiniteAndScreenMissPreflight();
+    testSnapDragPreflight();

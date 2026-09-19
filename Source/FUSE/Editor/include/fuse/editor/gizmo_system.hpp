@@ -1088,3 +1088,7 @@ BeginInteractionPreflight preflightBeginInteraction(const GizmoRay& ray,
 
 // --- deepen additive from deepen-b6-gizmo-interaction-preflights-10fa ---
 InteractionPreflight preflightInteraction(const GizmoHitTest& hit, GizmoMode mode, bool dragging,
+
+// --- deepen additive from gizmo-interaction-preflight-guards-d31b ---
+SnapDragPreflight preflightSnapDragDelta(GizmoMode mode, const GizmoSnapSettings& settings);
+    [[nodiscard]] SnapDragPreflight preflightSnapDragDelta() const;
