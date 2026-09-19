@@ -218,6 +218,88 @@ u32 AssetCooker::count_upstream_invalidation(const CookManifest& manifest,
     return count;
 }
 
+namespace {
+
+void append_probe_source_(std::vector<std::string>& sources, const std::string& source_path) {
+    if (!is_valid_cook_cache_path(source_path)) {
+        return;
+    }
+    for (const std::string& existing : sources) {
+        if (existing == source_path) {
+            return;
+        }
+    }
+    sources.push_back(source_path);
+}
+
+void probe_downstream_sources_(const CookCache& cache,
+                               const std::string& output_path,
+                               const std::vector<CookJobDependencyEdge>& edges,
+                               const std::vector<CookJob>& jobs,
+                               std::vector<std::string>& sources) {
+    if (!is_valid_cook_cache_path(output_path) || cache.empty()) {
+        return;
+    }
+
+    if (cache.count_by_source(output_path) > 0) {
+        append_probe_source_(sources, output_path);
+    }
+
+    for (const CookJobDependencyEdge& edge : edges) {
+        const CookJob* from_job = nullptr;
+        for (const CookJob& job : jobs) {
+            if (job.id == edge.from_job_id) {
+                from_job = &job;
+                break;
+            }
+        }
+        if (!from_job || from_job->output_path != output_path) {
+            continue;
+        }
+
+        const CookJob* to_job = nullptr;
+        for (const CookJob& job : jobs) {
+            if (job.id == edge.to_job_id) {
+                to_job = &job;
+                break;
+            }
+        }
+        if (!to_job) {
+            continue;
+        }
+
+        if (cache.count_by_source(to_job->source_path) > 0) {
+            append_probe_source_(sources, to_job->source_path);
+        }
+        probe_downstream_sources_(cache, to_job->output_path, edges, jobs, sources);
+    }
+}
+
+} // namespace
+
+std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
+    const CookManifest& manifest, const std::string& changed_source) const {
+    if (!is_valid_cook_cache_path(changed_source)) {
+        return {};
+    }
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    std::vector<std::string> sources;
+    if (m_cache.count_by_source(changed_source) > 0) {
+        append_probe_source_(sources, changed_source);
+    }
+
+    for (const CookJob& job : graph.jobs()) {
+        if (job.source_path == changed_source) {
+            probe_downstream_sources_(m_cache, job.output_path, graph.edges(), graph.jobs(), sources);
+        }
+    }
+
+    return sources;
+}
+
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);

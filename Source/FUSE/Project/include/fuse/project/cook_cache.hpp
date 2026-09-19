@@ -98,6 +98,15 @@ public:
                                           const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;
+    /// Structurally valid entries whose recomputed key differs — excludes invalid records (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_entries() const;
+    /// Estimate `prune_all` removal count without mutating stats (B7.9 deepen).
+    [[nodiscard]] u32 count_prune_all() const;
+
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    /// Source paths with stale content keys — one entry per matching cache record (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_content_sources() const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

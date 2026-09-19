@@ -31,6 +31,9 @@ public:
                                                   const std::string& changed_source) const;
     /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
     [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
+    /// Source paths that `invalidate_upstream_dependency` would touch — guarded on empty `changed_source` (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_upstream_invalidation_sources(
+        const CookManifest& manifest, const std::string& changed_source) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

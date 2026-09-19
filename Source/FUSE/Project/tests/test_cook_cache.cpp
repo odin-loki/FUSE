@@ -499,6 +499,97 @@ void testCookCacheInvalidationProbes() {
     expectTrue(cooker.cache().count_prunable_entries() == 0u, "count_prunable zero after prune");
 }
 
+void testCookHashPreflightDeepenGuards() {
+    const fuse::project::CookHashPreflight null_bytes = fuse::project::preflight_fnv1a64_bytes(nullptr, 4u);
+    expectTrue(!null_bytes.ok(), "null data with non-zero size fails FNV preflight");
+    expectTrue(null_bytes.reason == fuse::project::CookHashRejectReason::NullData,
+               "null data FNV preflight reason");
+
+    const fuse::u8 byte = 0x2a;
+    expectTrue(fuse::project::preflight_fnv1a64_bytes(&byte, 1u).ok(),
+               "valid FNV preflight passes for non-null data");
+
+    const fuse::project::CookHashPreflight cacheable =
+        fuse::project::preflight_cacheable_cook_key(99u, 42u);
+    expectTrue(cacheable.ok(), "valid combined key passes cacheable preflight");
+    expectTrue(fuse::project::preflight_cacheable_cook_key(99u, 0u).ok(),
+               "source-only fold passes cacheable preflight");
+
+    const fuse::project::CookHashPreflight zero_source =
+        fuse::project::preflight_cacheable_cook_key(0, 42u);
+    expectTrue(!zero_source.ok(), "zero source fails cacheable preflight");
+    expectTrue(zero_source.reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+               "zero source cacheable preflight reason");
+
+    const std::string tex_source = writeTempFile("/tmp/fuse_b79_preflight_tex.png", "# tex\n");
+    fuse::project::TextureImportDesc tex;
+    tex.input_path = tex_source;
+    tex.output_path = "/tmp/fuse_b79_preflight_tex.fusetex";
+    expectTrue(fuse::project::preflight_texture_import_hash(tex).ok(),
+               "readable texture import passes hash preflight");
+    expectTrue(fuse::project::hash_texture_import(tex) != 0, "texture preflight success implies non-zero hash");
+
+    const std::string audio_source = writeTempFile("/tmp/fuse_b79_preflight_audio.wav", "# audio\n");
+    fuse::project::AudioImportDesc audio;
+    audio.input_path = audio_source;
+    audio.output_path = "/tmp/fuse_b79_preflight_audio.fuseaudio";
+    expectTrue(fuse::project::preflight_audio_import_hash(audio).ok(),
+               "readable audio import passes hash preflight");
+
+    const std::string manifest_source = writeTempFile("/tmp/fuse_b79_preflight_manifest.obj", "# manifest\n");
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = manifest_source;
+    entry.output_path = "/tmp/fuse_b79_preflight_manifest.fusemesh";
+    expectTrue(fuse::project::preflight_manifest_entry_hash(entry).ok(),
+               "readable manifest entry passes hash preflight");
+
+    expectTrue(std::string(fuse::project::cookHashRejectReasonLabel(
+                   fuse::project::CookHashRejectReason::NonCacheableCombinedKey)) == "non_cacheable_combined_key",
+               "reject reason label for non-cacheable combined key");
+}
+
+void testCookCacheDeepenInvalidationProbes() {
+    fuse::project::CookCache cache;
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_deepen_probe.obj"),
+               "would_invalidate_source on empty cache is false");
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_deepen_probe.fusemesh"),
+               "would_invalidate_output on empty cache is false");
+    expectTrue(cache.count_stale_entries() == 0u, "count_stale_entries on empty cache returns zero");
+    expectTrue(cache.count_prune_all() == 0u, "count_prune_all on empty cache returns zero");
+    expectTrue(cache.probe_stale_content_sources().empty(),
+               "probe_stale_content_sources on empty cache returns empty list");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_deepen_stale.obj", "# deepen stale v1\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_deepen_stale.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for deepen probes ok");
+
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source reports seeded entry");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path),
+               "would_invalidate_output reports seeded entry");
+    expectTrue(!cooker.cache().would_invalidate_source(""), "empty source path would_invalidate is false");
+    expectTrue(cooker.cache().count_stale_entries() == 0u, "fresh entry is not stale");
+    expectTrue(cooker.cache().count_prune_all() == 0u, "fresh cache count_prune_all is zero");
+
+    writeTempFile(source, "# deepen stale v2\n");
+    expectTrue(cooker.cache().count_stale_entries() == 1u, "count_stale_entries reports stale entry");
+    expectTrue(cooker.cache().count_prunable_entries() == 1u, "stale entry is also prunable");
+    expectTrue(cooker.cache().count_prune_all() == 1u, "count_prune_all matches stale count on valid cache");
+
+    const std::vector<std::string> stale_sources = cooker.cache().probe_stale_content_sources();
+    expectTrue(stale_sources.size() == 1u, "probe_stale_content_sources finds one stale source");
+    expectTrue(stale_sources[0] == source, "probe_stale_content_sources returns matching source path");
+
+    const fuse::u32 pruned = cooker.cache().prune_stale_entries();
+    expectTrue(pruned == 1u, "prune removes probed stale entry");
+    expectTrue(cooker.cache().count_stale_entries() == 0u, "count_stale_entries zero after prune");
+}
+
 void testCookCachePruneInvalidEntriesOnLoad() {
     const std::string source = writeTempFile("/tmp/fuse_b79_prune_load_valid.obj", "# prune load valid\n");
     fuse::project::MeshImportDesc desc;
@@ -562,7 +653,9 @@ int main() {
     testCookCacheLoadPreservesEntriesWithoutOnDiskSource();
     testCookCachePruneAllMixedInvalidAndStale();
     testCookHashPreflightGuards();
+    testCookHashPreflightDeepenGuards();
     testCookCacheInvalidationProbes();
+    testCookCacheDeepenInvalidationProbes();
     testCookCachePruneInvalidEntriesOnLoad();
 
     fuse::core::shutdown();
