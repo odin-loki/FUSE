@@ -14,6 +14,7 @@
 #include "core/util/timeClass.h"
 #include "gfx/bitmap/loaders/ies/ies_loader.h"
 #include "core/util/md5.h"
+#include "core/dataChunker.h"
 
 #include <cstdio>
 #include <cstring>
@@ -152,6 +153,19 @@ bool bitVectorSmoke() {
     bits.clear();
     bits.set(3);
     return bits.test(3) && !bits.test(0);
+}
+
+bool dataChunkerSmoke() {
+    DataChunker chunker;
+    void* a = chunker.alloc(64);
+    void* b = chunker.alloc(128);
+    if (!a || !b) {
+        return false;
+    }
+    const bool managed = chunker.isManagedByChunker(a) && chunker.isManagedByChunker(b);
+    const dsize_t used = chunker.countUsedBytes();
+    chunker.freeBlocks(false);
+    return managed && used >= 192;
 }
 
 } // namespace fuse::legacy::t3d::engineProbe

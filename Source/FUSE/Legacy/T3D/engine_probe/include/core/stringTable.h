@@ -9,10 +9,20 @@ typedef const char* StringTableEntry;
 
 class _StringTable
 {
+   StringTableEntry _EmptyString = "";
+
 public:
+   StringTableEntry EmptyString() const { return _EmptyString; }
+
    StringTableEntry insert(const char* string, bool /*caseSens*/ = false)
    {
-      return string ? string : "";
+      if (!string) {
+         return _EmptyString;
+      }
+      if (string[0] == '\0') {
+         return _EmptyString;
+      }
+      return string;
    }
 
    StringTableEntry insertn(const char* string, S32 /*len*/, bool /*caseSens*/ = false)

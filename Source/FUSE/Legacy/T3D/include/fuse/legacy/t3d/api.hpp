@@ -83,6 +83,9 @@ bool signalSmoke();
 bool crcSmoke();
 bool idGeneratorSmoke();
 bool bitVectorSmoke();
+bool colorStaticConstSmoke();
+bool stockColorSmoke();
+bool dataChunkerSmoke();
 } // namespace engineProbe
 #endif
 

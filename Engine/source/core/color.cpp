@@ -21,7 +21,11 @@
 //-----------------------------------------------------------------------------
 
 #include "platform/platform.h"
+#ifdef FUSE_T3D_LEGACY_ENGINE_PROBE
+#include "color_real_wrapper.h"
+#else
 #include "core/color.h"
+#endif
 
 const LinearColorF LinearColorF::ZERO( 0, 0, 0, 0 );
 const LinearColorF LinearColorF::ONE( 1, 1, 1, 1 );
@@ -41,7 +45,6 @@ const ColorI ColorI::BLUE( 0, 0, 255 );
 const ColorI ColorI::DARK(24, 24, 24);
 const ColorI ColorI::LIGHT(120, 120, 120);
 
-#include "console/console.h"
 #include "console/consoleTypes.h"
 
 #ifndef _STRINGUNIT_H_

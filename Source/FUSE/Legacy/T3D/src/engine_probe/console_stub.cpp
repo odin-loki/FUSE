@@ -22,4 +22,12 @@ void errorf(const char* fmt, ...) {
     va_end(args);
 }
 
+void warnf(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    std::vfprintf(stderr, fmt, args);
+    std::fprintf(stderr, "\n");
+    va_end(args);
+}
+
 } // namespace Con

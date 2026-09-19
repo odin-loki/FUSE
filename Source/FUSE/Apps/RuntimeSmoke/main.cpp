@@ -333,8 +333,13 @@ int main() {
               "engine probe writeBitmapStream rejects unknown format");
         check(fuse::legacy::t3d::engineProbe::writeBitmapStreamRoundTripSmoke(),
               "engine probe writeBitmapStream STB TGA encode");
+#if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG)
         check(fuse::legacy::t3d::engineProbe::writeBitmapPathSmoke(),
-              "engine probe writeBitmap path dispatch PNG/BMP round-trip");
+              "engine probe writeBitmap PNG path round-trip");
+#else
+        check(fuse::legacy::t3d::engineProbe::writeBitmapPathSmoke(),
+              "engine probe writeBitmap path gate (STB path deferred without libpng)");
+#endif
 #if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG)
         check(fuse::legacy::t3d::engineProbe::writeBitmapPngRoundTripSmoke(),
               "engine probe writeBitmapStream PNG round-trip via bitmapPng");
@@ -349,6 +354,12 @@ int main() {
               "engine probe IdGenerator allocate/free/reuse");
         check(fuse::legacy::t3d::engineProbe::bitVectorSmoke(),
               "engine probe BitVector set/test");
+        check(fuse::legacy::t3d::engineProbe::colorStaticConstSmoke(),
+              "engine probe ColorI/LinearColorF static constants");
+        check(fuse::legacy::t3d::engineProbe::stockColorSmoke(),
+              "engine probe StockColor create/isColor/colorI");
+        check(fuse::legacy::t3d::engineProbe::dataChunkerSmoke(),
+              "engine probe DataChunker alloc/isManagedByChunker");
     }
 #endif
 

@@ -9,6 +9,7 @@
 namespace Con {
 void printf(const char* fmt, ...);
 void errorf(const char* fmt, ...);
+void warnf(const char* fmt, ...);
 } // namespace Con
 
 #endif // _CONSOLE_H_
