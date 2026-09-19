@@ -2424,3 +2424,13 @@ void testFroxelCoordLookupScreenSampleAndDescGuards() {
                "trySampleDensityAtScreen rejects depth below near plane");
     expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtScreen(emptyGrid, zeroDesc, camera, 0.5f, 0.5f, 10.f,
                "trySampleDensityAtScreen rejects empty grid desc");
+
+// --- deepen additive from deepen-froxel-b511-guards-79a2 ---
+void testFroxelCoordLookupAndRejectReasonGuards() {
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 999u, oobSample, lookupReason),
+               "trySampleDensityAtIndex with reason succeeds when index will clamp");
+    expectNear(oobSample, 2.f, 1e-5f, "trySampleDensityAtIndex with reason clamps OOB index");
+    expectNear(rejectedSample, 0.f, 1e-6f, "trySampleDensityAtIndex with reason zeroes output on rejection");
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtIndex(grid, desc, 5u, 2.75f, lookupReason),
+               "trySampleDensityAtCoord with reason succeeds when coords will clamp");
+    testFroxelCoordLookupAndRejectReasonGuards();
