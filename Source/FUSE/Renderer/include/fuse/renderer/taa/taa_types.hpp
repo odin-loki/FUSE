@@ -137,6 +137,12 @@ bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observedGeneratio
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
 u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history);
+/// True when history is allocated and warmed for temporal accumulation (B5.9 deepen).
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason* reason = nullptr);
+/// History warmup preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason& reason);
+/// Early-out when history still needs warm-up before temporal reuse (B5.9 deepen).
+bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history);
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
