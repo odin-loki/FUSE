@@ -245,19 +245,12 @@ u32 count_valid_island_build_contacts(const std::vector<narrowphase::ContactMani
 u32 count_valid_island_build_distance_constraints(
         if (is_valid_island_distance_for_build(constraint, bodyCount)) {
 
-    for (const narrowphase::ContactManifold& contact : contacts) {
         }
 
-    const std::vector<DistanceConstraint>& distanceConstraints,
-    u32 bodyCount) {
-    u32 count = 0u;
-    for (const DistanceConstraint& constraint : distanceConstraints) {
 
-IslandBuildPreflight preflight_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints) {
-    IslandBuildPreflight preflight{};
     preflight.stats.bodyCount = bodyCount;
     preflight.stats.validContactCount = count_valid_island_build_contacts(contacts, bodyCount);
     preflight.stats.skippedInvalidContactCount =
@@ -293,12 +286,9 @@ IslandBuildInput count_island_build_input(
     IslandBuildInput input{};
     input.bodyCount = bodyCount;
     input.distanceConstraintCount = static_cast<u32>(distanceConstraints.size());
-bool bodyIndexInRange(u32 bodyIndex, u32 bodyCount) {
 
 
 
-IslandBuildInputStats compute_island_build_input_stats(
-    IslandBuildInputStats stats{};
 
         if (!contact_references_valid_bodies(contact, bodyCount)) {
             return IslandBuildRejectReason::InvalidContactBodyIndex;
@@ -320,7 +310,6 @@ bool should_skip_island_build(
 bool build_island_graph_guarded(u32 bodyCount,
     ContactIslandGraph graph;
     return graph.build_guarded(bodyCount, contacts, distanceConstraints);
-        }
             ++input.invalidContactCount;
         ++input.validContactCount;
 
@@ -339,9 +328,6 @@ bool build_island_graph_guarded(u32 bodyCount,
         return "NoConstraints";
 
 IslandBuildStats compute_island_build_input_stats(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints) {
 
     stats.constraintEdgeCount = stats.validContactCount + stats.distanceConstraintCount;
 
@@ -354,27 +340,45 @@ IslandBuildStats compute_island_build_input_stats(
 
 
 
-IslandBuildPreflight preflight_island_build(
-    IslandBuildPreflight preflight{};
     preflight.input = count_island_build_input(bodyCount, contacts, distanceConstraints);
         preflight.reason = IslandBuildRejectReason::EmptyBodyCount;
         preflight.skipped = true;
-    return preflight;
 
-    return !preflight_island_build(bodyCount, contacts, distanceConstraints).can_build();
     preflight.stats = compute_island_build_input_stats(bodyCount, contacts, distanceConstraints);
     preflight.emptyBodyCount = bodyCount == 0u;
     preflight.skipped = preflight.emptyBodyCount;
     preflight.zeroBodies = preflight.reason == IslandBuildRejectReason::ZeroBodies;
     preflight.noConstraints = preflight.reason == IslandBuildRejectReason::NoConstraints;
-    preflight.skipped = preflight.zeroBodies;
 
-    return preflight_island_build(bodyCount, contacts, distanceConstraints).skipped;
 
 bool build_island_graph_guarded(ContactIslandGraph& graph,
 
 
-bool should_skip_island_build(u32 bodyCount) {
+
+
+u32 count_valid_island_contacts(u32 bodyCount,
+                              u32* invalidContactCountOut) {
+    u32 validCount = 0;
+    u32 invalidCount = 0;
+            ++invalidCount;
+        ++validCount;
+    if (invalidContactCountOut != nullptr) {
+        *invalidContactCountOut = invalidCount;
+    return validCount;
+
+bool has_island_build_constraints(
+    if (count_valid_island_contacts(bodyCount, contacts) > 0u) {
+        if (constraint.bodyA < bodyCount && constraint.bodyB < bodyCount) {
+
+    preflight.validContactCount =
+        count_valid_island_contacts(bodyCount, contacts, &preflight.invalidContactCount);
+
+            ++preflight.invalidDistanceCount;
+
+    preflight.noConstraints = !has_island_build_constraints(bodyCount, contacts, distanceConstraints);
+
+
+
 
     const IslandBuildPreflight preflight = preflight_island_build(bodyCount, contacts, distanceConstraints);
     if (!preflight.can_build()) {

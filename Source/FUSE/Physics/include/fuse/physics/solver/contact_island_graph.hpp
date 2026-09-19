@@ -51,11 +51,7 @@ IslandBuildStats compute_island_build_stats(
     bool zeroBodies = false;
 
     bool can_build() const { return !skipped && !zeroBodies; }
-};
 
-struct IslandBuildPreflight {
-    IslandBuildStats stats{};
-    bool skipped = false;
 
 
 /// True when `bodyCount` is positive for island graph construction.
@@ -165,8 +161,23 @@ IslandBuildStats compute_island_build_input_stats(
 
 
 
-    u32 bodyCount);
 
+/// Why island graph build preflight rejected the inputs (B4.4 deepen follow-up).
+enum class IslandBuildRejectReason : u32 {
+
+/// Const name for diagnostics/logging (B4.4 deepen follow-up).
+
+
+    bool can_build() const { return reason == IslandBuildRejectReason::None; }
+
+/// Count manifolds with valid flag and in-range body indices.
+u32 count_valid_island_contacts(
+    u32* invalidContactCountOut = nullptr);
+
+/// True when at least one valid contact or distance constraint can partition islands.
+bool has_island_build_constraints(
+
+/// Populate island build preflight without mutating a graph (B4.4 deepen follow-up).
 IslandBuildPreflight preflight_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -401,5 +412,6 @@ bool build_island_graph_guarded(ContactIslandGraph& graph,
 bool island_build_inputs_valid(u32 bodyCount,
 /// Guarded build entry: skips when `bodyCount` is zero, otherwise delegates to `build`.
 /// Guarded island graph build; returns false when build is skipped (zero bodies).
+/// Build only when preflight passes; returns false when build is skipped (B4.4 deepen follow-up).
 
 } // namespace fuse::physics
