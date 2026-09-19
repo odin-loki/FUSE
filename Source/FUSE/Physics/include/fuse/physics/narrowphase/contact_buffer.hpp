@@ -611,6 +611,7 @@ FUSE_PHYSICS_INLINE ContactBufferWriteSlotRejectReason contact_buffer_write_slot
 /// Human-readable label for contact-buffer write-slot reject reasons (B4.3 deepen pass).
 
 /// Diagnose why writeSlot would reject; vacuously succeeds when write may proceed (B4.3 deepen pass).
+
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold);
@@ -4174,5 +4175,58 @@ ContactBufferWarmStartPreflight preflight_contact_buffer_warm_start(const Contac
 /// Compact only when preflight allows; returns active count (B4.3 deepen pass).
 
 /// Compact and clamp only when preflight allows; returns active count (B4.3 deepen pass).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 } // namespace fuse::physics::narrowphase

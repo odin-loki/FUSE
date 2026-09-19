@@ -89,6 +89,9 @@ bool contactHasOrthonormalFrictionBasis(const ContactBufferSoA& buffer, u32 slot
 
 
 
+
+
+
     const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
     u32 validCount = 0u;
     for (u32 slot = 0u; slot < scanCount; ++slot) {
@@ -1069,6 +1072,12 @@ bool ContactBufferSoA::applyWarmStartStubWithPreflight(u32 slot, ContactManifold
 bool ContactBufferSoA::canSkipBuildFrictionTangentBases() const {
 
         if (!contactHasOrthonormalFrictionBasis(*this, slot)) {
+
+
+
+
+
+
 
 
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
@@ -2124,6 +2133,7 @@ u32 ContactBufferSoA::compactIfNeeded() {
     const ContactBufferClampPreflight clampPreflight = preflight_contact_buffer_clamp(*this);
     }
 
+
         return activeCount;
     }
 
@@ -2644,6 +2654,7 @@ ContactBufferWriteSlotRejectReason contact_buffer_write_slot_reject_reason(
 
 
 
+
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold) {
@@ -2898,6 +2909,8 @@ ContactBufferWriteSlotPreflight preflight_contact_buffer_write_slot(
 
 
 
+
+
     ContactBufferWriteSlotPreflight preflight{};
     preflight.reason = contact_buffer_write_slot_reject_reason(buffer, slot, manifold);
     preflight.outOfRangeSlot = preflight.reason == ContactBufferWriteSlotRejectReason::OutOfRangeSlot;
@@ -2911,6 +2924,7 @@ bool can_skip_contact_buffer_write_slot(
 
     return preflight;
 }
+
 
 
     const ContactBufferSoA& buffer,
@@ -2933,6 +2947,7 @@ bool should_run_contact_buffer_write_slot(
     u32 slot,
     const ContactManifold& manifold) {
 
+
 const char* contact_buffer_to_vector_reject_reason_name(ContactBufferToVectorRejectReason reason) {
     switch (reason) {
     case ContactBufferToVectorRejectReason::None:
@@ -2940,6 +2955,7 @@ const char* contact_buffer_to_vector_reject_reason_name(ContactBufferToVectorRej
     case ContactBufferToVectorRejectReason::EmptyBuffer:
         return "EmptyBuffer";
     return "Unknown";
+    }
 
 ContactBufferToVectorRejectReason contact_buffer_to_vector_reject_reason(const ContactBufferSoA& buffer) {
     if (buffer.canSkipSoAIteration()) {
@@ -2949,6 +2965,9 @@ ContactBufferToVectorRejectReason contact_buffer_to_vector_reject_reason(const C
 bool contact_buffer_to_vector_rejects_for_reason(
     ContactBufferToVectorRejectReason expected) {
     return contact_buffer_to_vector_reject_reason(buffer) == expected;
+    }
+
+    const ContactBufferSoA& buffer,
 
 ContactBufferToVectorPreflight preflight_contact_buffer_to_vector(const ContactBufferSoA& buffer) {
     ContactBufferToVectorPreflight preflight{};
@@ -2961,6 +2980,9 @@ bool can_skip_contact_buffer_to_vector(const ContactBufferSoA& buffer) {
 
 bool should_run_contact_buffer_to_vector(const ContactBufferSoA& buffer) {
     return preflight_contact_buffer_to_vector(buffer).canExport();
+}
+
+
 
 const char* contact_buffer_compaction_reject_reason_name(ContactBufferCompactionRejectReason reason) {
     switch (reason) {
@@ -2989,6 +3011,7 @@ bool contact_buffer_compaction_rejects_for_reason(
     }
 
     const ContactBufferSoA& buffer,
+
 
 
 ContactBufferCompactionPreflight preflight_contact_buffer_compaction(const ContactBufferSoA& buffer) {
@@ -3103,6 +3126,11 @@ u32 compactWithPreflight(ContactBufferSoA& buffer) {
 
 
     if (buffer.canSkipMaxCapacityClamp()) {
+
+
+
+
+
 
 
 ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer) {
@@ -3236,6 +3264,12 @@ ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp
     if (buffer.canSkipSoAIteration()) {
 
     const ContactBufferSoA& buffer,
+
+
+
+
+
+
 
     ContactBufferCompactAndClampPreflight preflight{};
     preflight.reason = contact_buffer_compact_and_clamp_reject_reason(buffer);
@@ -4318,6 +4352,9 @@ ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp
 
 
 
+
+
+
         return "None";
     case ContactBufferWarmStartRejectReason::OutOfRangeSlot:
         return "OutOfRangeSlot";
@@ -4606,6 +4643,14 @@ ContactBufferWarmStartPreflight preflight_contact_buffer_warm_start(const Contac
     if (!preflight_contact_buffer_compaction(buffer).needsCompaction()) {
 
     if (!preflight_contact_buffer_compact_and_clamp(buffer).needsCompactAndClamp()) {
+
+
+
+
+
+
+
+
     return buffer.compactAndClamp();
 }
 

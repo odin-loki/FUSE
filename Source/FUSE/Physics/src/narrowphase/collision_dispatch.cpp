@@ -274,6 +274,7 @@ bool can_skip_run_narrowphase_into_buffer(
 
     if (can_skip_run_narrowphase_into_buffer(pairs, bodies, shapes)) {
 
+
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
