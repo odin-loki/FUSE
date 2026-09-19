@@ -120,6 +120,7 @@ bool finalize_contact_manifold_if_needed(ContactManifold& manifold) {
     return generate_contact_manifold_if_needed(manifold);
 
 void runNarrowphaseDeepenIntoBuffer(
+void runNarrowphaseIntoBufferDeepen(
     ContactBufferSoA& buffer) {
     const u32 pairCount = static_cast<u32>(pairs.size());
     buffer.preparePairSlots(pairCount);
@@ -141,6 +142,12 @@ void runNarrowphaseDeepenIntoBuffer(
 bool should_skip_narrowphase_pair_slot(
     const RigidBodySoA& bodies,
     return should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+    if (can_skip_narrowphase(pairs, bodies, shapes)) {
+        return;
+    }
+
+        if (generate_contact_manifold(manifold)) {
+
 }
 
 } // namespace fuse::physics::narrowphase

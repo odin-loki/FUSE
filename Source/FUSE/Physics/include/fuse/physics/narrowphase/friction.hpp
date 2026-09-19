@@ -248,6 +248,8 @@ struct FrictionBasisPreflight {
     bool can_skip_rebuild() const { return reason != FrictionBasisRejectReason::None; }
 
     bool can_rebuild() const { return reason == FrictionBasisRejectReason::None; }
+    /// Inverse of `can_skip_rebuild` (B4.4 deepen follow-up pass).
+    bool should_run_rebuild() const { return !can_skip_rebuild(); }
 };
 
 /// Populate friction-basis preflight without mutating the manifold (B4.4 deepen follow-up).
@@ -642,5 +644,9 @@ bool can_skip_friction_basis_rebuild_dispatch(const ContactManifold& manifold, f
 /// Returns true when `friction_basis_reject_reason` matches `expected` (B4.5 deepen pass).
 
 /// Non-mutating rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.5 deepen pass).
+
+/// Inverse of `should_skip_friction_basis_preflight` (B4.4 deepen follow-up pass).
+
+/// Normalize the contact normal when non-unit; returns true when normalization ran (B4.4 deepen follow-up pass).
 
 } // namespace fuse::physics::narrowphase

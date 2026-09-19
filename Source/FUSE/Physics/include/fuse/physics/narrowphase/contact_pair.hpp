@@ -1007,6 +1007,7 @@ ContactManifold detect_contacts_pair_if_needed(
 /// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.5 deepen follow-up).
 bool contact_pair_deepen_rejects_for_reason(
 /// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen pass).
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     ContactPairRejectReason expected);
@@ -1122,6 +1123,16 @@ struct NarrowphaseDispatchPreflight {
     bool can_dispatch() const { return !skipped && dispatchableCount > 0u; }
 
 /// Populate batch narrowphase dispatch preflight without running shape dispatch (B4.4 deepen pass).
+/// Inverse of `should_skip_contact_pair_deepen_dispatch` (B4.4 deepen follow-up pass).
+bool is_dispatchable_contact_pair(
+
+/// Inverse of `can_skip_narrowphase` (B4.4 deepen follow-up pass).
+
+/// Const preflight for batch narrowphase dispatch (B4.4 deepen follow-up pass).
+
+    bool can_skip_dispatch() const { return pairCount == 0u || dispatchableCount == 0u; }
+
+/// Populate batch narrowphase preflight without running shape dispatch (B4.4 deepen follow-up pass).
 NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
@@ -1149,5 +1160,9 @@ bool is_unnormalized_plane_shape_pair(
 /// Returns true when either shape extent is positive but below the deepen epsilon (B4.5 deepen pass).
 bool is_near_degenerate_shape_pair(
     f32 extentEpsilon = 1e-4f);
+/// Shape dispatch with extended deepen preflight guard; invalid manifold when deepen-rejected (B4.4 deepen follow-up pass).
+ContactManifold detect_contacts_pair_deepen(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 } // namespace fuse::physics::narrowphase

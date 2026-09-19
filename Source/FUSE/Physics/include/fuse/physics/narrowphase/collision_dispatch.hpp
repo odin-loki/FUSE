@@ -283,5 +283,7 @@ void runNarrowphaseDeepenIntoBuffer(
 /// Populate narrowphase dispatch preflight without mutating buffers (B4.5 deepen pass).
 
 /// Returns true when pair-slot narrowphase dispatch may be skipped via deepen preflight (B4.5 deepen pass).
+/// Narrowphase with deepen pair preflight; skips dispatch when all pairs are deepen-rejected (B4.4 deepen follow-up pass).
+void runNarrowphaseIntoBufferDeepen(
 
 } // namespace fuse::physics::narrowphase
