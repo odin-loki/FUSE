@@ -1769,3 +1769,9 @@ void testHrtfRejectReasonPreflights() {
     expectTrue(preflight.panPath.reason == fuse::audio::HrtfPanPathRejectReason::None,
                    preflight, fuse::audio::HrtfBinauralRejectReason::EmptyIr),
     expectTrue(conv_preflight.reason == fuse::audio::HrtfBinauralRejectReason::None,
+
+// --- deepen additive from b72-hrtf-reject-reason-preflights-1e6e ---
+    expectTrue(!fuse::audio::hrtf_ir_rejects_for_reason(valid, fuse::audio::HrtfIrRejectReason::NullSamples),
+    expectTrue(stub_preflight.reason == fuse::audio::HrtfBinauralRejectReason::EmptyIr,
+               "should_skip_hrtf_binaural matches spatial bypass");
+    expectTrue(unity_preflight.reason == fuse::audio::HrtfBinauralRejectReason::UnityAttenuation,

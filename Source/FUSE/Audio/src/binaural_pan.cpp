@@ -1145,3 +1145,15 @@ HrtfBinauralRejectReason resolve_hrtf_binaural_reject_reason(
 HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const HrtfIrStub& ir,
 HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const Vec3& rel_listener,
                                       float occlusion_gain, HrtfBinauralRejectReason expected,
+
+// --- deepen additive from b72-hrtf-reject-reason-preflights-1e6e ---
+    preflight.rejected = preflight.reason != HrtfIrRejectReason::None;
+    preflight.rejected = preflight.reason != HrtfPanPathRejectReason::None;
+    HrtfAttenuationCouplingRejectReason expected, const HrtfAttenuationCoupling& coupling,
+    preflight.rejected = preflight.reason != HrtfAttenuationCouplingRejectReason::None;
+HrtfBinauralRejectReason map_pan_path_reject_to_binaural(HrtfPanPathRejectReason reason) {
+HrtfBinauralRejectReason map_attenuation_coupling_reject_to_binaural(
+    if (pan_reason != HrtfPanPathRejectReason::None) {
+    if (hrtf_ir_reject_reason(ir) != HrtfIrRejectReason::None) {
+    const HrtfAttenuationCouplingRejectReason coupling_reason =
+    if (coupling_reason != HrtfAttenuationCouplingRejectReason::None) {
