@@ -180,8 +180,6 @@ enum class FroxelSampleCoordRejectReason : u8 {
 const char* froxelSampleCoordRejectReasonLabel(FroxelSampleCoordRejectReason reason);
 /// Why screen-depth → froxel mapping rejected the request (B5.11 deepen).
 enum class FroxelScreenMappingRejectReason : u8 {
-    DepthBelowNear,
-    DepthAboveFar,
 
 const char* froxelScreenMappingRejectReasonLabel(FroxelScreenMappingRejectReason reason);
 
@@ -189,6 +187,29 @@ const char* froxelScreenMappingRejectReasonLabel(FroxelScreenMappingRejectReason
     OutOfRange,
     InvertedCorners,
 
+/// Why froxel sample-coord validation rejected the request (B5.11 deepen follow-up).
+    OutOfRangeTile,
+    OutOfRangeWeight,
+
+
+/// Why grid density validation rejected a froxel cache (B5.11 deepen).
+enum class GridDensityRejectReason : u8 {
+    EmptyDesc,
+    UndersizedStorage,
+    DensityCountMismatch,
+
+/// Human-readable label for density reject reasons (logging / tests).
+const char* gridDensityRejectReasonLabel(GridDensityRejectReason reason);
+
+/// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
+enum class DensityLookupRejectReason : u8 {
+    DescMismatch,
+    EmptyStorage,
+    SampleCoordRejected,
+    ScreenMappingFailed,
+
+/// Human-readable label for density lookup reject reasons (logging / tests).
+const char* densityLookupRejectReasonLabel(DensityLookupRejectReason reason);
 
 /// Froxel grid indexing helpers — mirrors clustered light layout (B5.4).
 struct FroxelGridLayout {
@@ -223,6 +244,10 @@ struct FroxelGridLayout {
     static bool isValidSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
     /// Swap reversed corner indices and mirror interpolation weights; clamps weights to [0, 1].
     static void normalizeSampleCoords(FroxelSampleCoords& coords);
+    /// Diagnose why sample coords fail bounds check; vacuously succeeds on in-bounds coords.
+    static bool tryAreSampleCoordsInBounds(const FroxelSampleCoords& coords,
+                                           const FroxelGridDesc& desc,
+                                           SampleCoordRejectReason& outReason);
     /// Clamp interpolation weights and corner indices to grid bounds.
     static void clampSampleCoords(FroxelSampleCoords& coords, const FroxelGridDesc& desc);
     /// Clamp sample coords in place; returns false without modifying `coords` on an empty grid.
@@ -264,6 +289,7 @@ struct FroxelGridLayout {
     static bool isValidSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
     /// Preflight sample coords against grid bounds; vacuously succeeds when coords are valid.
     static bool tryCanSampleAtCoords(const FroxelSampleCoords& coords,
+    /// Fix reversed corner ordering and clamp interpolation weights to [0, 1].
     static bool mapScreenDepthToSampleCoords(f32 screenX,
                                              f32 screenY,
                                              f32 viewDepth,
@@ -301,10 +327,6 @@ struct FroxelGridLayout {
                                                 FroxelScreenMappingRejectReason& outReason);
     /// Screen-depth → froxel index with reject-reason diagnostics; leaves `outFroxelIndex` untouched on failure.
     static bool tryMapScreenDepthToFroxelIndex(f32 screenX,
-                                               f32 screenY,
-                                               f32 viewDepth,
-                                               const FroxelGridDesc& desc,
-                                               const FroxelCameraDesc& camera,
                                                u32& outFroxelIndex,
                                                ScreenMappingRejectReason& outReason);
     /// True when interpolation weights or corner indices would be clamped before sampling.
@@ -331,7 +353,6 @@ struct FroxelGridLayout {
                                        ScreenMappingRejectReason* reason = nullptr);
                                                FroxelSampleRejectReason& outReason);
                                                FroxelSampleCoordRejectReason& outReason);
-                                               FroxelScreenMappingRejectReason& outReason);
 };
 
 /// Why grid density validation rejected a froxel cache (B5.11 deepen).
@@ -341,9 +362,7 @@ enum class GridDensityRejectReason : u8 {
     EmptyGrid,
     DescMismatch,
     UndersizedStorage,
-    DescMismatch,
     DensityCountMismatch,
-};
 
 /// Human-readable label for density reject reasons (logging / tests).
 const char* gridDensityRejectReasonLabel(GridDensityRejectReason reason);
@@ -365,13 +384,9 @@ bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
 /// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
 enum class DensityLookupRejectReason : u8 {
-    EmptyGrid,
     EmptyStorage,
     IndexOutOfRange,
-    None = 0,
-    DescMismatch,
     SampleCoordsOutOfRange,
-};
 
 /// Human-readable label for density lookup reject reasons (logging / tests).
 const char* densityLookupRejectReasonLabel(DensityLookupRejectReason reason);
@@ -391,7 +406,6 @@ enum class FroxelDensityRejectReason : u8 {
 const char* froxelDensityRejectReasonLabel(FroxelDensityRejectReason reason);
 /// Why a froxel lookup preflight rejected the request (B5.11 deepen).
 enum class FroxelLookupRejectReason : u8 {
-};
 
 /// Human-readable label for lookup reject reasons (logging / tests).
 const char* froxelLookupRejectReasonLabel(FroxelLookupRejectReason reason);
@@ -412,12 +426,11 @@ struct FroxelPopulatePreflight {
     bool can_populate() const { return desc_non_empty && params_enabled; }
 /// Why sample-coord preflight rejected froxel interpolation coords (B5.11 deepen).
 enum class SampleCoordRejectReason : u8 {
-    None = 0,
-    EmptyGrid,
     OutOfRange,
 
 /// Human-readable label for sample-coord reject reasons (logging / tests).
 const char* sampleCoordRejectReasonLabel(SampleCoordRejectReason reason);
+
 
 /// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
 namespace froxel_util {
@@ -617,6 +630,7 @@ bool canPopulateFroxelGrid(const FroxelGridDesc& desc, const VolumetricFogParams
 /// Diagnose sample-coord bounds before bilinear/trilinear density lookup.
 bool tryValidateSampleCoords(const FroxelSampleCoords& coords,
                              SampleCoordRejectReason& outReason);
+/// Diagnose density validation against `desc`; rejects non-empty storage on empty desc.
 /// Read density with guard preflight; returns false when `canLookupAtIndex` would reject the request.
 bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
                              u32 index,
