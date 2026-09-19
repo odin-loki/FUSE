@@ -21,9 +21,11 @@ struct CookCacheReconcileEstimate {
     u32 stale_dependency_entries = 0;
     u32 prune_invalid_entries = 0;
     u32 prune_stale_entries = 0;
+    u32 upstream_invalidation_entries = 0;
 
     [[nodiscard]] u32 total() const {
-        return stale_dependency_entries + prune_invalid_entries + prune_stale_entries;
+        return stale_dependency_entries + prune_invalid_entries + prune_stale_entries +
+               upstream_invalidation_entries;
     }
     /// True when no reconcile invalidation is estimated — mirrors `total() == 0` (B7.9 deepen).
     [[nodiscard]] bool should_skip() const { return total() == 0; }
@@ -249,6 +251,8 @@ public:
     [[nodiscard]] CookCacheUpstreamReconcileEstimate estimate_upstream_reconcile(
     /// Read-only upstream invalidation reconcile breakdown (B7.9 deepen).
     [[nodiscard]] CookUpstreamInvalidationEstimate estimate_upstream_invalidation(
+    /// Reconcile estimate including upstream invalidation for a changed source path (B7.9 deepen).
+    [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile_invalidation(
         const CookManifest& manifest, const std::string& changed_source) const;
     /// True when `estimate_reconcile_invalidation(manifest).total()` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_reconcile_invalidation(const CookManifest& manifest) const;
@@ -412,6 +416,7 @@ public:
     /// Upstream invalidation breakdown — mirrors `count_upstream_invalidation` (B7.9 deepen).
     /// True when `count_stale_dependency_invalidation` would remove at least one entry (B7.9 deepen).
     [[nodiscard]] bool would_stale_dependency_invalidate(const CookManifest& manifest) const;
+        const CookManifest& manifest, const std::string& changed_source) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

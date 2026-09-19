@@ -643,6 +643,39 @@ CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry&
     return preflight;
 }
 
+CookHashPreflight preflight_mesh_import_hash(const MeshImportDesc& desc) {
+    CookHashPreflight preflight;
+    if (desc.input_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (desc.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+    return preflight_file_content_hash(desc.input_path);
+
+CookHashPreflight preflight_texture_import_hash(const TextureImportDesc& desc) {
+
+CookHashPreflight preflight_audio_import_hash(const AudioImportDesc& desc) {
+
+CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry) {
+    if (entry.source_path.empty()) {
+    if (entry.output_path.empty()) {
+    return preflight_file_content_hash(entry.source_path);
+
+CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry& entry,
+                                                         const CookManifest& manifest) {
+    CookHashPreflight preflight = preflight_manifest_entry_hash(entry);
+    if (!preflight.can_hash) {
+
+    bool has_non_empty_dependency = false;
+    for (const std::string& dependency_output : entry.dependencies) {
+        if (!dependency_output.empty()) {
+            has_non_empty_dependency = true;
+            break;
+    if (!has_non_empty_dependency) {
+
+    return preflight_upstream_dependencies_hash(entry.dependencies, manifest);
+
 CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
                                                      const CookManifest& manifest) {
     bool has_non_empty = false;

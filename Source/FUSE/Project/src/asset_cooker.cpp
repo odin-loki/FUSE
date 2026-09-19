@@ -4,6 +4,7 @@
 #include <fuse/log/logger.hpp>
 
 #include <sstream>
+#include <vector>
 
 #include <filesystem>
 
@@ -882,6 +883,12 @@ CookUpstreamReconcileEstimate AssetCooker::estimate_upstream_invalidation(const 
 u32 AssetCooker::count_prune_reconcile() const {
     return estimate_prune_reconcile().total();
 
+CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(
+    CookCacheReconcileEstimate estimate = estimate_reconcile_invalidation(manifest);
+    if (is_valid_cook_cache_path(changed_source)) {
+        estimate.upstream_invalidation_entries = count_upstream_invalidation(manifest, changed_source);
+
+
 
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
@@ -1004,6 +1011,19 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(const 
 
 bool AssetCooker::would_stale_dependency_invalidate(const CookManifest& manifest) const {
     return count_stale_dependency_invalidation(manifest) != 0;
+    const auto append_unique = [&](const std::string& source_path) {
+        if (!is_valid_cook_cache_path(source_path)) {
+            return;
+        }
+        for (const std::string& recorded : sources) {
+            if (recorded == source_path) {
+        sources.push_back(source_path);
+
+
+
+        for (const std::string& downstream_source :
+            append_unique(downstream_source);
+
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

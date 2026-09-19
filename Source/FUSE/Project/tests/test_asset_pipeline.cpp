@@ -3369,6 +3369,7 @@ void testCookerUpstreamReconcileEstimateProbes() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_upstream_est_a.obj", "# upstream est a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_upstream_est_b.obj", "# upstream est b\n");
 void testCookerWouldInvalidateProbes() {
+void testCookerReconcileWouldAndUpstreamProbes() {
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
@@ -3737,6 +3738,22 @@ void testCookCacheDownstreamWouldInvalidateProbe() {
                "would_stale_dependency true after upstream hash change");
                "would_reconcile true after upstream hash change");
     expectTrue(cooker.count_prune_reconcile() >= 1u, "count_prune_reconcile non-zero after source change");
+
+    const fuse::project::CookCacheReconcileEstimate fresh_with_source =
+        cooker.estimate_reconcile_invalidation(manifest, source_a);
+    expectTrue(fresh_with_source.upstream_invalidation_entries >= 2u,
+               "fresh upstream reconcile estimate counts chain entries");
+    expectTrue(fresh_with_source.total() >= fresh_with_source.upstream_invalidation_entries,
+               "upstream reconcile total includes upstream count");
+
+    expectTrue(probed[0] == source_a || probed[1] == source_a, "upstream probe includes changed source");
+
+
+    const fuse::project::CookCacheReconcileEstimate stale_with_source =
+    expectTrue(stale_with_source.stale_dependency_entries >= 1u,
+               "stale upstream reconcile estimate includes dependency count");
+    expectTrue(stale_with_source.upstream_invalidation_entries >= 2u,
+               "stale upstream reconcile estimate includes upstream count");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -4010,6 +4027,7 @@ int main() {
     testCookerUpstreamEstimateProbes();
     testCookerWouldReconcileInvalidation();
     testCookerUpstreamReconcileEstimateProbes();
+    testCookerReconcileWouldAndUpstreamProbes();
     testCookCacheDownstreamSourceProbe();
     testCookCachePreflightAndReconcileEstimators();
     testCookCacheReconcileEstimators();

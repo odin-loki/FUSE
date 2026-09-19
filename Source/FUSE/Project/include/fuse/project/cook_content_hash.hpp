@@ -313,6 +313,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
                                                               const CookManifest& manifest);
 /// Dependency path readability preflight — skips empty dependency strings (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry& entry);
+/// Manifest entry plus dependency-list preflight when non-empty deps are present (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry& entry,
 [[nodiscard]] CookHashPreflight preflight_upstream_dependencies_hash(
     const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
 /// Resolve each non-empty manifest dependency output to a readable source (B7.9 deepen).
