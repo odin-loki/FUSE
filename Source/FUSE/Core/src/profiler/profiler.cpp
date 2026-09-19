@@ -24,6 +24,7 @@ std::array<ProfileEvent, kRingCapacity> g_events{};
 std::atomic<u32> g_writeHead{0};
 std::atomic<u32> g_eventCount{0};
 std::atomic<u32> g_droppedEventCount{0};
+std::atomic<u32> g_totalEventsWritten{0};
 std::atomic<u32> g_maxNestingDepth{0};
 std::atomic<u32> g_maxFlowNestingDepth{0};
 std::atomic<u32> g_openAsyncFlowCount{0};
@@ -206,6 +207,7 @@ void recordEvent(const char* name,
     };
 
     g_totalRecordedEvents.fetch_add(1u, std::memory_order_acq_rel);
+    g_totalEventsWritten.fetch_add(1u, std::memory_order_acq_rel);
 
     const u32 count = g_eventCount.load(std::memory_order_acquire);
     if (count < kRingCapacity) {
@@ -340,6 +342,16 @@ u32 exportableEventCount() {
     return exportable;
 
 
+u32 totalEventsWritten() {
+    return g_totalEventsWritten.load(std::memory_order_acquire);
+}
+
+    const u32 written = totalEventsWritten();
+    const u32 retained = eventCount();
+    return written > retained ? written - retained : 0u;
+
+bool isRingSaturated() {
+    return eventCount() >= kRingCapacity;
 
 u32 maxNestingDepth() {
     return g_maxNestingDepth.load(std::memory_order_acquire);
@@ -933,6 +945,16 @@ u32 countEventsWithPhase(EventPhase phase) {
 u32 findFirstEventIndexWithPhase(EventPhase phase) {
             return i;
     return kInvalidEventIndex;
+u32 exportableFirstEventIndex() {
+    const u32 count = eventCount();
+    for (u32 i = 0u; i < count; ++i) {
+        if (isEventExportable(i)) {
+
+u32 exportableLastEventIndex() {
+    for (u32 i = count; i > 0u; --i) {
+        const u32 index = i - 1u;
+        if (isEventExportable(index)) {
+            return index;
 
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
@@ -1031,6 +1053,16 @@ bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
     }
 
     outPhase = event.phase;
+    return true;
+}
+
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventExportable(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
     return true;
 }
 
@@ -1207,6 +1239,23 @@ bool tryLastEvent(ProfileEvent& outEvent) {
 }
 
 bool hasExportableEvents() {
+bool tryFirstExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = exportableFirstEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+
+bool tryLastExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = exportableLastEventIndex();
+
+
+u32 firstEventIndex() {
+    return hasEvents() ? 0u : kInvalidEventIndex;
+
+u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = 0; i < count; ++i) {
         if (isValidProfileEvent(eventAt(i))) {
@@ -1232,6 +1281,8 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.profilerDisabled = !enabled();
     preflight.eventCount = eventCount();
     preflight.exportableEventCount = exportableEventCount();
+    preflight.totalEventsWritten = totalEventsWritten();
+    preflight.droppedEventCount = droppedEventCount();
     preflight.frameIndex = frameIndex();
     preflight.openAsyncFlowCount = openAsyncFlowCount();
     preflight.activeScopeNestingDepth = scopeNestingDepth();
@@ -1243,6 +1294,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
             ++preflight.exportableEventCount;
         }
     preflight.bufferEmpty = isBufferEmpty();
+    preflight.ringSaturated = isRingSaturated();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
@@ -1410,6 +1462,7 @@ void reset() {
     g_writeHead.store(0u, std::memory_order_release);
     g_eventCount.store(0u, std::memory_order_release);
     g_droppedEventCount.store(0u, std::memory_order_release);
+    g_totalEventsWritten.store(0u, std::memory_order_release);
     g_frameIndex.store(0u, std::memory_order_release);
     g_nextScopeId.store(1u, std::memory_order_release);
     g_nextFlowId.store(1u, std::memory_order_release);

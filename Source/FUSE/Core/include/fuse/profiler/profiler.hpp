@@ -90,6 +90,8 @@ struct ProfileEvent {
 struct ChromeTraceExportPreflight {
     u32 eventCount = 0;
     u32 exportableEventCount = 0;
+    u32 totalEventsWritten = 0;
+    u32 droppedEventCount = 0;
     u32 frameIndex = 0;
     u32 openAsyncFlowCount = 0;
     u32 activeScopeNestingDepth = 0;
@@ -98,6 +100,7 @@ struct ChromeTraceExportPreflight {
     u32 maxFlowNestingDepth = 0;
     bool profilerDisabled = false;
     bool bufferEmpty = false;
+    bool ringSaturated = false;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
@@ -338,7 +341,7 @@ struct ExportPreflight {
         return asyncFlowStartEventCount == asyncFlowFinishEventCount;
     bool isBufferStructurallyBalanced() const {
         return hasBalancedScopeEventsInBuffer() && hasBalancedAsyncFlowEventsInBuffer();
-    }
+    bool hasNestingWarnings() const { return hasUnbalancedNesting() || flowDepthDetached; }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -383,6 +386,8 @@ u32 ringCapacity();
 u32 droppedEventCount();
 u32 ringBufferCapacity();
 u32 exportableEventCount();
+u32 totalEventsWritten();
+bool isRingSaturated();
 u32 maxNestingDepth();
 u32 nestingDepth();
 u32 maxFlowNestingDepth();
@@ -515,6 +520,8 @@ u32 exportableEventCount();
 bool isEventExportable(u32 index);
 u32 countEventsWithPhase(EventPhase phase);
 u32 findFirstEventIndexWithPhase(EventPhase phase);
+u32 exportableFirstEventIndex();
+u32 exportableLastEventIndex();
 u32 firstEventIndex();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
@@ -581,6 +588,8 @@ bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent);
 bool tryEventAt(u32 index, ProfileEvent& out);
 /// Safe ring-buffer lookup — returns false and clears `outEvent` when the index is invalid.
 bool isLastEventIndexValid();
+bool tryFirstExportableEvent(ProfileEvent& outEvent);
+bool tryLastExportableEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
