@@ -3409,3 +3409,21 @@ bool wouldSkipCacheLookup(const DDGIDesc& desc,
 
 // --- deepen additive from deepen-ddgi-b56-guards-7ff8 ---
     return preflightTrilinearProbeSampleAtCoords(desc, coords, cache, cache_count, reason);
+
+// --- deepen additive from deepen-ddgi-b56-guards-49ff ---
+const char* probeCacheSourceRejectReasonLabel(ProbeCacheSourceRejectReason reason) {
+    case ProbeCacheSourceRejectReason::None:
+    case ProbeCacheSourceRejectReason::EmptyGrid:
+    case ProbeCacheSourceRejectReason::NullCache:
+    case ProbeCacheSourceRejectReason::UndersizedCache:
+    case ProbeCacheSourceRejectReason::CacheCountMismatch:
+bool probeCacheSourceRejectReasonIsBlocking(ProbeCacheSourceRejectReason reason) {
+    return reason != ProbeCacheSourceRejectReason::None;
+bool tryValidateProbeCache(const DDGIDesc& desc,
+                           ProbeCacheSourceRejectReason& outReason) {
+        outReason = ProbeCacheSourceRejectReason::None;
+        outReason = ProbeCacheSourceRejectReason::NullCache;
+        outReason = ProbeCacheSourceRejectReason::UndersizedCache;
+        outReason = ProbeCacheSourceRejectReason::CacheCountMismatch;
+    ProbeCacheSourceRejectReason reason = ProbeCacheSourceRejectReason::None;
+    return tryValidateProbeCache(desc, cache, cache_count, reason);

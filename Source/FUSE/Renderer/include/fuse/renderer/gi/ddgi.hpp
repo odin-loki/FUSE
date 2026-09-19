@@ -1102,3 +1102,10 @@ ProbeTrilinearSampleRejectReason classifyTrilinearSampleRejectAtWorld(const DDGI
 // --- deepen additive from deepen-ddgi-guards-6d20 ---
 bool preflightCacheLookup(const DDGIDesc& desc,
 bool wouldSkipCacheLookup(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-b56-guards-49ff ---
+enum class ProbeCacheSourceRejectReason : u8 {
+const char* probeCacheSourceRejectReasonLabel(ProbeCacheSourceRejectReason reason);
+bool probeCacheSourceRejectReasonIsBlocking(ProbeCacheSourceRejectReason reason);
+bool tryValidateProbeCache(const DDGIDesc& desc,
+                           ProbeCacheSourceRejectReason& outReason);

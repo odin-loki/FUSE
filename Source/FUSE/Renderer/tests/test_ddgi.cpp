@@ -4910,3 +4910,16 @@ void testTrilinearCachePreflightDeepenGuards() {
                "tryLaunch_probe_kernels reports no reject reason on success");
     expectTrue(!fuse::renderer::gi::tryLaunch_probe_kernels(nullIndices, nullptr, kernelReason),
                "tryLaunch_probe_kernels null indices reports null_probe_indices");
+
+// --- deepen additive from deepen-ddgi-b56-guards-49ff ---
+    fuse::renderer::ProbeCacheSourceRejectReason cacheSourceReason =
+        fuse::renderer::ProbeCacheSourceRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryValidateProbeCache(desc, cache.data(), 8u, cacheSourceReason),
+               "tryValidateProbeCache succeeds for sized cache");
+    expectTrue(cacheSourceReason == fuse::renderer::ProbeCacheSourceRejectReason::None,
+    expectTrue(std::strcmp(fuse::renderer::probeCacheSourceRejectReasonLabel(cacheSourceReason), "none") == 0,
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeCache(desc, nullptr, 8u, cacheSourceReason),
+               "tryValidateProbeCache rejects null cache");
+    expectTrue(cacheSourceReason == fuse::renderer::ProbeCacheSourceRejectReason::NullCache,
+    expectTrue(fuse::renderer::probeCacheSourceRejectReasonIsBlocking(cacheSourceReason),
+               "zero probes_per_frame reported by tryScheduleProbeUpdatesAtRate");
