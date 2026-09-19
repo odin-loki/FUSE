@@ -461,6 +461,9 @@ public:
     /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
     /// True when prune reconcile can be skipped — mirrors `estimate_prune_reconcile().should_skip()` (B7.9 deepen).
     /// True when reconcile invalidation can be skipped — mirrors `estimate_reconcile_invalidation` (B7.9 deepen).
+    /// True when `count_upstream_invalidation` is zero — guarded on empty `changed_source` (B7.9 deepen).
+    /// True when `count_stale_dependency_invalidation` is zero (B7.9 deepen).
+    /// True when `estimate_reconcile_invalidation` would remove nothing (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
