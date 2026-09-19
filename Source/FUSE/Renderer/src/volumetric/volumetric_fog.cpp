@@ -1719,3 +1719,7 @@ bool FroxelGridLayout::canPreflightTileCoords(u32 tileX, u32 tileY, u32 sliceZ, 
 
 // --- deepen additive from deepen-b511-froxel-guards-c46a ---
     return trySampleDensityAtScreen(grid, desc, camera, screenX, screenY, viewDepth, outDensity, mapReason,
+
+// --- deepen additive from deepen-froxel-preflight-guards-4be4 ---
+bool wouldClampCoordLookup(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc) {
+    if (!tryCanLookupAtCoord(grid, desc, coords.tileX0, coords.tileY0, coords.sliceZ0, lookupReason)) {

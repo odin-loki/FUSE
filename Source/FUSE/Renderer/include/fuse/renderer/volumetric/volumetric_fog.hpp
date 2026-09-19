@@ -680,3 +680,6 @@ bool tryCanSampleAtCoordsStrict(const FroxelDensityGrid& grid,
     static bool wouldClampTileCoords(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
     static bool tryPreflightTileCoords(u32 tileX,
     static bool canPreflightTileCoords(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
+
+// --- deepen additive from deepen-froxel-preflight-guards-4be4 ---
+bool wouldClampCoordLookup(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);

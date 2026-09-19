@@ -2442,3 +2442,11 @@ void testFroxelCoordLookupPopulateAndScreenGuards() {
     expectNear(clampedCoordSample, 2.f, 1e-5f, "trySampleDensityAtCoord clamps OOB coords to last cell");
     expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtCoord(grid, desc, 1u, 1u, 1u, 3.25f, lookupReason),
                "tryWriteDensityAtCoord with reason succeeds in range");
+
+// --- deepen additive from deepen-froxel-preflight-guards-4be4 ---
+void testFroxelCoordLookupDescPopulationAndDiagnosticGuards() {
+    expectTrue(fuse::renderer::froxel_util::tryCanLookupAtCoord(grid, desc, 99u, 0u, 0u, lookupReason),
+               "tryCanLookupAtCoord warns but succeeds for clampable OOB tileX");
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtCoord(grid, desc, 1u, 0u, 0u, 2.5f, lookupReason),
+               "tryPopulate with reason rejects invalid camera");
+               "tryPopulate with reason reports invalid_camera populate reject reason");
