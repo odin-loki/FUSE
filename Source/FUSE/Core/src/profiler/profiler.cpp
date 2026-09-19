@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace fuse::profiler {
@@ -25,6 +26,7 @@ std::atomic<u32> g_eventCount{0};
 std::atomic<u32> g_maxNestingDepth{0};
 std::atomic<u32> g_maxFlowNestingDepth{0};
 std::atomic<u32> g_openAsyncFlowCount{0};
+std::atomic<u32> g_droppedEventCount{0};
 
 std::mutex g_exportMutex;
 
@@ -187,6 +189,8 @@ void recordEvent(const char* name,
     const u32 count = g_eventCount.load(std::memory_order_acquire);
     if (count < kRingCapacity) {
         g_eventCount.fetch_add(1u, std::memory_order_acq_rel);
+    } else {
+        g_droppedEventCount.fetch_add(1u, std::memory_order_acq_rel);
     }
 }
 
@@ -221,10 +225,15 @@ const char* chromeCategory(EventPhase phase) {
 } // namespace
 
 bool isValidEventName(const char* name);
+bool isWhitespaceOnlyEventName(const char* name);
+
+bool shouldRecordEventName(const char* name) {
+    return isValidEventName(name) && !isWhitespaceOnlyEventName(name);
+}
 
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
-      m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
+      m_active(g_enabled.load(std::memory_order_acquire) && shouldRecordEventName(name)) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -315,6 +324,18 @@ bool isCrossThreadFlowHandoffPending() {
     return isFlowDepthDetached() && flowNestingDepth() > 0u;
 }
 
+bool hasActiveScopeNesting() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveFlowNesting() {
+    return flowNestingDepth() > 0u;
+}
+
+bool hasActiveProfilingNesting() {
+    return hasActiveScopeNesting() || hasActiveFlowNesting();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -335,8 +356,22 @@ bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
 
+bool isWhitespaceOnlyEventName(const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    }
+
+    for (const char* cursor = name; *cursor != '\0'; ++cursor) {
+        const char ch = *cursor;
+        if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return isValidEventName(event.name);
+    return shouldRecordEventName(event.name);
 }
 
 bool isProfileEventSentinel(const ProfileEvent& event) {
@@ -358,15 +393,23 @@ u32 exportableEventCount() {
     u32 count = 0u;
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
-        if (isValidEventName(eventAt(i).name)) {
+        if (shouldRecordEventName(eventAt(i).name)) {
             ++count;
         }
     }
     return count;
 }
 
+u32 droppedEventCount() {
+    return g_droppedEventCount.load(std::memory_order_acquire);
+}
+
+bool hasDroppedEvents() {
+    return droppedEventCount() > 0u;
+}
+
 bool isEventExportable(u32 index) {
-    return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
+    return isEventIndexValid(index) && shouldRecordEventName(eventAt(index).name);
 }
 
 const ProfileEvent& emptyProfileEvent() {
@@ -426,15 +469,55 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 }
 
+bool tryFirstExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = firstExportableEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryLastExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = lastExportableEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
+}
+
+u32 firstExportableEventIndex() {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (isEventExportable(i)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 lastExportableEventIndex() {
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        if (isEventExportable(i - 1u)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
 }
 
 u32 findFirstEventIndexByPhase(EventPhase phase) {
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.phase == phase && isValidEventName(event.name)) {
+        if (event.phase == phase && shouldRecordEventName(event.name)) {
             return i;
         }
     }
@@ -445,7 +528,7 @@ u32 findLastEventIndexByPhase(EventPhase phase) {
     const u32 total = eventCount();
     for (u32 i = total; i > 0u; --i) {
         const ProfileEvent& event = eventAt(i - 1u);
-        if (event.phase == phase && isValidEventName(event.name)) {
+        if (event.phase == phase && shouldRecordEventName(event.name)) {
             return i - 1u;
         }
     }
@@ -457,7 +540,56 @@ u32 countEventsByPhase(EventPhase phase) {
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.phase == phase && isValidEventName(event.name)) {
+        if (event.phase == phase && shouldRecordEventName(event.name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 findFirstEventIndexByName(const char* name) {
+    if (!shouldRecordEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (shouldRecordEventName(event.name) && event.name != nullptr
+            && std::strcmp(event.name, name) == 0) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByName(const char* name) {
+    if (!shouldRecordEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (shouldRecordEventName(event.name) && event.name != nullptr
+            && std::strcmp(event.name, name) == 0) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByName(const char* name) {
+    if (!shouldRecordEventName(name)) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (shouldRecordEventName(event.name) && event.name != nullptr
+            && std::strcmp(event.name, name) == 0) {
             ++count;
         }
     }
@@ -497,6 +629,8 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.ringBufferFull = isBufferFull();
     preflight.hasInvalidNameEvents = hasInvalidNameEvents();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+    preflight.hasActiveProfilingNesting = hasActiveProfilingNesting();
+    preflight.droppedEventCount = droppedEventCount();
     return preflight;
 }
 
@@ -510,6 +644,7 @@ void reset() {
     g_maxNestingDepth.store(0u, std::memory_order_release);
     g_maxFlowNestingDepth.store(0u, std::memory_order_release);
     g_openAsyncFlowCount.store(0u, std::memory_order_release);
+    g_droppedEventCount.store(0u, std::memory_order_release);
     threadLocalNestingDepth() = 0u;
     threadLocalFlowNestingDepth() = 0u;
 }
@@ -519,7 +654,7 @@ u32 nextFlowId() {
 }
 
 void beginAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !shouldRecordEventName(name)) {
         return;
     }
 
@@ -533,7 +668,7 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 }
 
 void endAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !shouldRecordEventName(name)) {
         return;
     }
 
@@ -553,7 +688,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
 }
 
 void sampleCounter(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !shouldRecordEventName(track)) {
         return;
     }
 
@@ -569,7 +704,7 @@ void sampleCounter(const char* track, s64 value) {
 }
 
 void sampleCounterFloat(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !shouldRecordEventName(track)) {
         return;
     }
 
@@ -585,7 +720,7 @@ void sampleCounterFloat(const char* track, f64 value) {
 }
 
 void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !shouldRecordEventName(track)) {
         return;
     }
 
@@ -601,7 +736,7 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
 }
 
 void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !shouldRecordEventName(track)) {
         return;
     }
 
@@ -632,7 +767,7 @@ std::string exportChromeTraceJson() {
 
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (!isValidEventName(event.name)) {
+        if (!shouldRecordEventName(event.name)) {
             continue;
         }
 
