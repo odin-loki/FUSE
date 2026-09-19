@@ -2288,4 +2288,21 @@ bool should_skip_narrowphase_pair_slot(
     return !preflight_narrowphase_pair_slot(slot, pair, bodies, shapes).can_dispatch();
 }
 
+ContactPairDispatchPreflight preflight_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairDispatchPreflight preflight{};
+    preflight.deepen = preflight_contact_pair_deepen(pair, bodies, shapes);
+    preflight.rejected = preflight.deepen.rejected;
+    return preflight;
+}
+
+bool should_skip_contact_pair_dispatch_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !preflight_contact_pair_dispatch(pair, bodies, shapes).can_dispatch();
+}
+
 } // namespace fuse::physics::narrowphase

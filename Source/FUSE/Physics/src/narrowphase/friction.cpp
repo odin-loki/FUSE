@@ -1343,5 +1343,32 @@ bool friction_basis_is_stale_but_rebuildable(const ContactManifold& manifold, f3
 
 bool rebuild_friction_basis_after_normalize_with_preflight(ContactManifold& manifold, f32 epsilon) {
     return rebuild_friction_basis_with_preflight(manifold, epsilon);
+const char* contact_normal_normalize_reject_reason_name(ContactNormalNormalizeRejectReason reason) {
+    case ContactNormalNormalizeRejectReason::None:
+    case ContactNormalNormalizeRejectReason::EmptyManifold:
+    case ContactNormalNormalizeRejectReason::InvalidNormal:
+    case ContactNormalNormalizeRejectReason::AlreadyUnit:
+        return "AlreadyUnit";
+
+ContactNormalNormalizeRejectReason contact_normal_normalize_reject_reason(
+    f32 lengthEpsilon) {
+        return ContactNormalNormalizeRejectReason::EmptyManifold;
+        return ContactNormalNormalizeRejectReason::InvalidNormal;
+        return ContactNormalNormalizeRejectReason::AlreadyUnit;
+    return ContactNormalNormalizeRejectReason::None;
+
+bool contact_normal_normalize_rejects_for_reason(
+    ContactNormalNormalizeRejectReason expected,
+    return contact_normal_normalize_reject_reason(manifold, lengthEpsilon) == expected;
+
+ContactNormalNormalizePreflight preflight_contact_normal_normalize(
+    ContactNormalNormalizePreflight preflight{};
+    preflight.reason = contact_normal_normalize_reject_reason(manifold, lengthEpsilon);
+    if (preflight.reason != ContactNormalNormalizeRejectReason::None) {
+        preflight.skipped = true;
+    preflight.needsNormalize = contact_normal_needs_normalize(manifold, lengthEpsilon);
+
+bool normalize_contact_normal_with_preflight(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (!preflight_contact_normal_normalize(manifold, lengthEpsilon).can_normalize()) {
 
 } // namespace fuse::physics::narrowphase

@@ -236,11 +236,9 @@ void runNarrowphaseIntoBufferWithDeepenPreflight(
     preflight.allPairsDeepenRejected = preflight.dispatchablePairCount == 0u;
 
 bool should_skip_narrowphase_pair_slot(
-    const RigidBodySoA& bodies,
     return should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
     if (can_skip_narrowphase(pairs, bodies, shapes)) {
         return;
-    }
 
         if (generate_contact_manifold(manifold)) {
 
@@ -251,12 +249,10 @@ bool should_skip_narrowphase_pair_slot(
 
 
 std::vector<ContactManifold> runNarrowphaseDeepen(
-    const std::vector<broadphase::CandidatePair>& pairs,
         if (finalize_contact_manifold_with_preflight(manifold)) {
             buffer.writeSlotIfValid(pairIndex, manifold);
 
 
-    const CollisionShapeSoA& shapes) {
     ContactBufferSoA buffer;
     buffer.reserve(static_cast<u32>(pairs.size()));
     runNarrowphaseIntoBufferDeepen(pairs, bodies, shapes, buffer);
@@ -271,6 +267,11 @@ std::vector<ContactManifold> runNarrowphaseWithDeepenPreflight(
 
     runNarrowphaseIntoBufferWithDeepenPreflight(pairs, bodies, shapes, buffer);
     return buffer.toVector();
+NarrowphaseDispatchPreflight preflight_run_narrowphase_into_buffer(
+    preflight.skipped = preflight.batch.can_skip();
+
+bool should_skip_narrowphase_dispatch(
+    return preflight_run_narrowphase_into_buffer(pairs, bodies, shapes).can_skip();
 }
 
 } // namespace fuse::physics::narrowphase

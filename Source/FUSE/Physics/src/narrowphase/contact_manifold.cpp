@@ -2278,6 +2278,20 @@ bool should_skip_contact_manifold_buffer_write(const ContactManifold& manifold) 
     return !preflight_contact_manifold_buffer_write(manifold).can_write();
 bool finalize_manifold_after_prune_with_preflight(
 
+    case ManifoldShallowPruneRejectReason::NoShallowPenetrations:
+        return "NoShallowPenetrations";
+
+        return ManifoldShallowPruneRejectReason::NoShallowPenetrations;
+
+
+ManifoldShallowPrunePreflight preflight_manifold_shallow_prune(
+    ManifoldShallowPrunePreflight preflight{};
+    preflight.reason = manifold_shallow_prune_reject_reason(manifold, minDepth);
+    if (preflight.reason != ManifoldShallowPruneRejectReason::None) {
+        preflight.skipped = true;
+    preflight.hasShallow = manifold.hasShallowPenetrations(minDepth);
+
+    if (!preflight_manifold_shallow_prune(manifold, minDepth).can_prune()) {
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

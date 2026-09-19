@@ -354,5 +354,14 @@ std::vector<ContactManifold> runNarrowphaseWithDeepenPreflight(
 /// Job-safe narrowphase with extended deepen preflight rejects (B4.6 deepen pass).
 
 /// CPU stub with extended deepen preflight rejects (B4.6 deepen pass).
+/// Const preflight for narrowphase buffer dispatch (B4.6 deepen pass).
+
+    bool can_skip() const { return skipped || batch.can_skip(); }
+
+/// Populate narrowphase dispatch preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphaseDispatchPreflight preflight_run_narrowphase_into_buffer(
+
+/// Returns true when narrowphase dispatch preflight reports no dispatchable pairs (B4.6 deepen pass).
+bool should_skip_narrowphase_dispatch(
 
 } // namespace fuse::physics::narrowphase

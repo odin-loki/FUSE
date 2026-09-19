@@ -698,5 +698,31 @@ void normalize_contact_normal_for_friction(ContactManifold& manifold, f32 length
 /// Rebuild friction tangents with normalize-then-build preflight (B4.6 deepen pass).
 bool rebuild_friction_basis_with_normalize_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 /// Normalize contact normal then rebuild friction basis only when preflight allows (B4.6 deepen pass).
+/// Why contact-normal normalization would early-out (B4.6 deepen pass).
+enum class ContactNormalNormalizeRejectReason : u8 {
+    AlreadyUnit,
+
+/// Human-readable label for contact-normal normalize reject reasons (B4.6 deepen pass).
+const char* contact_normal_normalize_reject_reason_name(ContactNormalNormalizeRejectReason reason);
+
+/// Diagnose why contact-normal normalization would skip; vacuously succeeds when normalize may proceed (B4.6 deepen pass).
+ContactNormalNormalizeRejectReason contact_normal_normalize_reject_reason(
+    f32 lengthEpsilon = 1e-4f);
+
+/// Returns true when `contact_normal_normalize_reject_reason` matches `expected` (B4.6 deepen pass).
+bool contact_normal_normalize_rejects_for_reason(
+    ContactNormalNormalizeRejectReason expected,
+
+/// Const preflight for contact-normal normalization dispatch (B4.6 deepen pass).
+struct ContactNormalNormalizePreflight {
+    ContactNormalNormalizeRejectReason reason = ContactNormalNormalizeRejectReason::None;
+
+    bool can_normalize() const { return !skipped && reason == ContactNormalNormalizeRejectReason::None; }
+
+/// Populate contact-normal normalize preflight without mutating the manifold (B4.6 deepen pass).
+ContactNormalNormalizePreflight preflight_contact_normal_normalize(
+
+/// Normalize contact normal only when preflight allows; returns false when skipped (B4.6 deepen pass).
+bool normalize_contact_normal_with_preflight(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

@@ -70,22 +70,13 @@ bool ContactBufferSoA::canSkipCompaction() const {
 u32 ContactBufferSoA::remainingCapacity() const {
     if (maxCapacity == 0u) {
         return UINT32_MAX;
-    }
     return activeCount < maxCapacity ? maxCapacity - activeCount : 0u;
 
 bool ContactBufferSoA::canAcceptContacts(u32 additionalCount) const {
     if (additionalCount == 0u) {
-        return true;
     return activeCount + additionalCount <= maxCapacity;
-bool ContactBufferSoA::canSkipCompaction() const {
-    if (canSkipSoAIteration()) {
 
-    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
-    if (scanCount == 0u) {
 
-    for (u32 slot = 0u; slot < scanCount; ++slot) {
-        if (validFlags[slot] == 0u) {
-            return false;
 
 bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
     return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
@@ -93,16 +84,18 @@ bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
     if (pairSlotCount == 0u) {
     return countValidSlots() == pairSlotCount;
 
-u32 ContactBufferSoA::countValidSlots() const {
-    u32 validCount = 0u;
     for (u32 slot = 0u; slot < pairSlotCount; ++slot) {
-        if (validFlags[slot] != 0u) {
-            ++validCount;
-    return validCount;
     if (activeCount >= maxCapacity) {
-        return 0u;
-    }
     return maxCapacity - activeCount;
+
+
+bool slotHasValidFrictionTangent(
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    f32 epsilon) {
+    if (slot >= buffer.validFlags.size() || buffer.validFlags[slot] == 0u) {
+    const TangentBasis basis{buffer.tangent1[slot], buffer.tangent2[slot]};
+    return isOrthonormalTangentBasis(buffer.contactNormals[slot], basis, epsilon);
 
 
 bool ContactBufferSoA::slotIsValid(u32 slot) const {
@@ -409,6 +402,19 @@ bool canSkipContactBufferFrictionBuild(const ContactBufferSoA& buffer) {
 
     if (pairSlotCount == 0u) {
 
+
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+
+    for (u32 slot = 0u; slot < scanCount; ++slot) {
+
+bool ContactBufferSoA::canApplyMaxCapacityClamp() const {
+    return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
+
+bool ContactBufferSoA::canSkipFrictionTangentBuild(f32 epsilon) const {
+
+
+        if (!slotHasValidFrictionTangent(*this, slot, epsilon)) {
 
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
@@ -1296,6 +1302,7 @@ ContactBufferWriteRejectReason contactBufferWriteRejectReason(
 
 
 
+
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold) {
@@ -1328,6 +1335,8 @@ ContactBufferWritePreflight preflightContactBufferWrite(
     u32 slot,
 
     const ContactManifold& manifold) {
+
+
 
 
     preflight.outOfRangeSlot = preflight.reason == ContactBufferWriteRejectReason::OutOfRangeSlot;
@@ -1420,6 +1429,12 @@ ContactBufferCompactionRejectReason contact_buffer_compaction_reject_reason(
 
 bool should_skip_contact_buffer_write(
     return !preflight_contact_buffer_write(buffer, slot, manifold).can_write();
+
+
+
+
+void write_contact_buffer_slot_with_preflight(
+        return;
 
 
 
@@ -1775,6 +1790,27 @@ ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp
 
 
 
+}
+
+
+
+    switch (reason) {
+        return "None";
+        return "EmptyBuffer";
+    return "Unknown";
+
+    if (buffer.canSkipSoAIteration()) {
+
+    const ContactBufferSoA& buffer,
+
+
+
+
+        return "NoWork";
+
+    const ContactBufferSoA& buffer) {
+
+
     ContactBufferCompactAndClampPreflight preflight{};
     preflight.reason = contact_buffer_compact_and_clamp_reject_reason(buffer);
     preflight.emptyBuffer = preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer;
@@ -1847,6 +1883,43 @@ bool shouldRunContactBufferCompactAndClamp(const ContactBufferSoA& buffer) {
     return preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp();
 
 
+    return preflight;
+}
+
+
+
+const char* contact_buffer_friction_tangent_reject_reason_name(
+    ContactBufferFrictionTangentRejectReason reason) {
+    switch (reason) {
+    case ContactBufferFrictionTangentRejectReason::None:
+        return "None";
+    case ContactBufferFrictionTangentRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferFrictionTangentRejectReason::AllValid:
+        return "AllValid";
+    return "Unknown";
+
+ContactBufferFrictionTangentRejectReason contact_buffer_friction_tangent_reject_reason(
+    const ContactBufferSoA& buffer,
+    f32 epsilon) {
+    if (buffer.canSkipSoAIteration()) {
+        return ContactBufferFrictionTangentRejectReason::EmptyBuffer;
+    if (buffer.canSkipFrictionTangentBuild(epsilon)) {
+        return ContactBufferFrictionTangentRejectReason::AllValid;
+    return ContactBufferFrictionTangentRejectReason::None;
+
+bool contact_buffer_friction_tangent_rejects_for_reason(
+    ContactBufferFrictionTangentRejectReason expected,
+    return contact_buffer_friction_tangent_reject_reason(buffer, epsilon) == expected;
+
+ContactBufferFrictionTangentPreflight preflight_contact_buffer_friction_tangents(
+    ContactBufferFrictionTangentPreflight preflight{};
+    preflight.reason = contact_buffer_friction_tangent_reject_reason(buffer, epsilon);
+    preflight.emptyBuffer = preflight.reason == ContactBufferFrictionTangentRejectReason::EmptyBuffer;
+    preflight.allValid = preflight.reason == ContactBufferFrictionTangentRejectReason::AllValid;
+
+bool can_skip_contact_buffer_friction_tangent_build(
+    return !preflight_contact_buffer_friction_tangents(buffer, epsilon).needsFrictionTangentBuild();
 
 u32 compact_contact_buffer_with_preflight(ContactBufferSoA& buffer) {
     const ContactBufferCompactionPreflight preflight = preflight_contact_buffer_compaction(buffer);
@@ -1925,6 +1998,22 @@ bool shouldRunContactBufferFrictionBases(const ContactBufferSoA& buffer) {
 bool buildContactBufferFrictionBasesWithPreflight(ContactBufferSoA& buffer) {
     const ContactBufferFrictionBasesPreflight preflight = preflightContactBufferFrictionBases(buffer);
     if (!preflight.needsRebuild()) {
+        buffer.pairSlotCount = 0u;
+    }
+        if (preflight.reason == ContactBufferCompactionRejectReason::AllValid) {
+            buffer.activeCount = buffer.pairSlotCount > 0u ? buffer.countValidSlots() : buffer.activeCount;
+
+u32 apply_contact_buffer_max_capacity_clamp_with_preflight(ContactBufferSoA& buffer) {
+    if (!preflight_contact_buffer_clamp(buffer).needsClamp()) {
+    return buffer.applyMaxCapacityClamp();
+
+    if (!preflight_contact_buffer_compact_and_clamp(buffer).needsCompactAndClamp()) {
+
+void build_contact_buffer_friction_tangents_with_preflight(
+    ContactBufferSoA& buffer,
+    f32 epsilon) {
+    if (!preflight_contact_buffer_friction_tangents(buffer, epsilon).needsFrictionTangentBuild()) {
+        return;
     buffer.buildFrictionTangentBases();
 }
 
