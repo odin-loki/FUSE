@@ -74,6 +74,18 @@ const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason
     return "Unknown";
 }
 
+const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason) {
+    switch (reason) {
+    case BroadphaseMergeRejectReason::None:
+        return "None";
+    case BroadphaseMergeRejectReason::EmptyPlaneBodies:
+        return "EmptyPlaneBodies";
+    case BroadphaseMergeRejectReason::EmptyDynamicBodies:
+        return "EmptyDynamicBodies";
+    }
+    return "Unknown";
+}
+
 namespace {
 
 constexpr u32 kBuildGrainSize = 8u;
@@ -211,7 +223,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (!preflightCellOccupancy(range, maxOccupancy).canIterate()) {
+        if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -231,7 +243,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (!preflightCellOccupancy(range, maxOccupancy).canIterate()) {
+    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -351,8 +363,7 @@ void runBroadphaseIntoBufferInternal(
         }
     }
 
-    const BroadphaseMergePreflight mergePreflight = preflightBroadphaseMerge(bodies, shapes);
-    if (mergePreflight.canMerge()) {
+    if (!canSkipBroadphaseMerge(bodies, shapes)) {
         std::unordered_set<u64> existing;
         existing.reserve(buffer.activeCount * 2 + 1);
         for (u32 i = 0; i < buffer.activeCount; ++i) {
@@ -490,6 +501,48 @@ bool canSkipDedupeBroadphase(const PairBufferSoA& buffer) {
     return !shouldRunDedupeBroadphase(buffer);
 }
 
+bool shouldRunRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    return !canSkipRefineBroadphase(bodies, shapes, buffer);
+}
+
+BroadphaseMergeRejectReason broadphaseMergeRejectReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    bool hasPlaneBodies = false;
+    bool hasDynamicBodies = false;
+
+    for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
+        const u32 bodyIndex = shapes.bodyIndices[shapeIndex];
+        if (bodyIndex >= bodies.count()) {
+            continue;
+        }
+        const CollisionShapeType type = static_cast<CollisionShapeType>(shapes.types[shapeIndex]);
+        if (type == CollisionShapeType::Plane) {
+            hasPlaneBodies = true;
+        } else if ((bodies.flags[bodyIndex] & RB_STATIC) == 0) {
+            hasDynamicBodies = true;
+        }
+        if (hasPlaneBodies && hasDynamicBodies) {
+            return BroadphaseMergeRejectReason::None;
+        }
+    }
+
+    if (!hasPlaneBodies) {
+        return BroadphaseMergeRejectReason::EmptyPlaneBodies;
+    }
+    return BroadphaseMergeRejectReason::EmptyDynamicBodies;
+}
+
+bool broadphaseMergeRejectsForReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason expected) {
+    return broadphaseMergeRejectReason(bodies, shapes) == expected;
+}
+
 BroadphaseMergePreflight preflightBroadphaseMerge(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
@@ -508,14 +561,18 @@ BroadphaseMergePreflight preflightBroadphaseMerge(
         } else if ((bodies.flags[bodyIndex] & RB_STATIC) == 0) {
             hasDynamicBodies = true;
         }
-        if (hasPlaneBodies && hasDynamicBodies) {
-            break;
-        }
     }
 
     preflight.emptyPlaneBodies = !hasPlaneBodies;
     preflight.emptyDynamicBodies = !hasDynamicBodies;
+    preflight.reason = broadphaseMergeRejectReason(bodies, shapes);
     return preflight;
+}
+
+bool canSkipBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !preflightBroadphaseMerge(bodies, shapes).canMerge();
 }
 
 void refineBroadphasePairsParallel(
