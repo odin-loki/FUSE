@@ -78,6 +78,8 @@ struct RetargetMap {
     /// No-ops and clears `out_pose` when `can_apply_pose_soa` is false.
 
     /// No-ops and clears `out_pose` when `can_apply_pose` is false.
+    /// No-ops and clears `out_pose` when the map is invalid, the source pose is empty or incompatible,
+    /// or the target skeleton is empty.
     void apply_pose(const Pose& source_pose, const Skeleton& target_skel, Pose& out_pose) const;
 };
 

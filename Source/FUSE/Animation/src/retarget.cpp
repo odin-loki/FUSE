@@ -185,6 +185,7 @@ void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
                                  const Skeleton& target_skel,
                                  PoseSoA& out_pose) const {
     if (!can_apply_pose_soa(source_pose, target_skel)) {
+    if (target_skel.bones.empty() || !is_source_pose_compatible(source_pose) || !is_valid()) {
         out_pose.clear();
         return;
     }
@@ -214,6 +215,7 @@ void RetargetMap::apply_pose(const Pose& source_pose,
                              const Skeleton& target_skel,
                              Pose& out_pose) const {
     if (!can_apply_pose(source_pose, target_skel)) {
+    if (target_skel.bones.empty() || !is_source_pose_compatible(source_pose) || !is_valid()) {
         out_pose.bone_count = 0;
         out_pose.bone_world_transforms.clear();
         return;
