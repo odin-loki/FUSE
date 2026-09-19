@@ -584,5 +584,15 @@ FrictionBasisNormalizePreflight preflight_friction_basis_normalize_rebuild(
 
 /// Non-mutating skip predicate for combined normalize/rebuild (B4.4 deepen pass).
 bool should_skip_friction_basis_normalize_rebuild(
+/// Diagnose why rebuild would skip; vacuously succeeds when rebuild may proceed.
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+
+/// Non-mutating rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 deepen pass).
+bool should_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Non-mutating rebuild skip predicate — mirrors `should_skip_friction_basis_preflight` (B4.4 deepen pass).
+bool can_skip_friction_basis_rebuild_dispatch(const ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
