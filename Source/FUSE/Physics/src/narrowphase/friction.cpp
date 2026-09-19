@@ -222,11 +222,21 @@ void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon)
     }
 
     invalidate_friction_basis(manifold);
-    const f32 normalLength = manifold.contactNormal.length();
-    if (std::fabs(normalLength - 1.f) > 1e-4f) {
-        manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
-    }
+    normalize_contact_normal_if_needed(manifold, epsilon);
     manifold.buildFrictionBasis();
+}
+
+void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        invalidate_friction_basis(manifold);
+        return;
+    }
+
+    if (should_skip_friction_basis_preflight(manifold, epsilon)) {
+        return;
+    }
+
+    rebuild_friction_basis_with_preflight(manifold, epsilon);
 }
 
 const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason) {
@@ -278,6 +288,10 @@ bool should_skip_friction_basis_preflight(
     const ContactManifold& manifold,
     f32 epsilon) {
     return preflight_friction_basis_rebuild(manifold, epsilon).can_skip_rebuild();
+}
+
+bool should_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
+    return !should_skip_friction_basis_preflight(manifold, epsilon);
 }
 
 bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon) {
