@@ -803,6 +803,15 @@ public:
     /// Early-out when resolve-frame preflight would skip or reject blend weights (B5.9 deepen).
     /// Classify why resolve would skip (B5.9 deepen).
     TaaResolveSkipReason classifyResolveSkip(const TaaResolveDesc& desc) const;
+    /// History resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& reason) const;
+    /// Compute resolve blend weights with mandatory reject-reason output (B5.9 deepen).
+    /// Classify why resolve blend weights would be rejected (B5.9 deepen).
+    TaaResolveBlendRejectReason classifyResolveBlendReject(const TaaResolveDesc& desc) const;
+    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
+    /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
+    bool preflightJitterAdvance(TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Classify why pass jitter sync would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterSyncReject() const;
     /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
@@ -820,6 +829,8 @@ public:
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
     /// Compute expected resolve blend weights with reject-reason diagnostics (B5.9 deepen).
     /// Classify why resolve would skip for the pass history state (B5.9 deepen).
+    /// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
+    bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
