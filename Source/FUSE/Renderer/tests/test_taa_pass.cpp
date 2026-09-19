@@ -4661,3 +4661,8 @@ void testTaaPassTryAndClassifyGuardWrappers() {
                "pass classifyJitterSyncReject passes for default sequence");
                "pass classifyJitterNdcReject passes for valid viewport");
                "pass classifyJitterAdvanceReject passes for default sequence");
+
+// --- deepen additive from deepen-taa-pass-guards-6509 ---
+void testTaaPassTryClassifyGuardWrappers() {
+               "pass tryPreflightResolve passes before first resolve");
+               "pass tryPreflightResolve skip reason is None before first resolve");
