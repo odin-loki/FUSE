@@ -2091,7 +2091,6 @@ bool manifold_prune_rejects_for_reason(
     ManifoldPruneRejectReason expected,
     return manifold_prune_reject_reason(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth) == expected;
 
-bool should_run_manifold_prune(
     return !should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
     return preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)
         .can_skip_prune(shallowMinDepth);
@@ -2442,9 +2441,15 @@ bool can_skip_manifold_prune_after_normalize(
         normalized, separationEpsilon, duplicateEpsilon, shallowMinDepth);
 }
 
-    const ContactManifold& manifold,
-    f32 separationEpsilon,
-    f32 duplicateEpsilon,
+
+    if (prunePreflight.reason == ManifoldPruneRejectReason::AllSeparated) {
+        return false;
+    if (prunePreflight.reason == ManifoldPruneRejectReason::EmptyManifold) {
+
+    if (!prunePreflight.can_skip_prune(shallowMinDepth)) {
+
+    if (!normalize_contact_normal_if_needed(manifold, frictionEpsilon)) {
+
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};

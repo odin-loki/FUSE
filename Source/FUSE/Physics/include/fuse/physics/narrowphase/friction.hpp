@@ -802,5 +802,6 @@ void compute_friction_tangents_beyond_preflight(ContactManifold& manifold, f32 e
 bool can_skip_friction_basis_rebuild_after_normalize(
 /// Non-mutating friction-basis predicate — inverse of `should_skip_friction_basis_preflight` (B4.6 deepen pass).
 
+/// Build friction tangents only when preflight allows; returns false when skipped (B4.6 deepen follow-up pass).
 
 } // namespace fuse::physics::narrowphase

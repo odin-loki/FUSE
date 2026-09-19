@@ -1387,6 +1387,9 @@ bool can_skip_manifold_prune_after_normalize(
 /// Normalize `contactNormal` when non-unit; returns false when the normal is invalid (B4.6 deepen pass).
 
 
+/// Normalize contact normal to unit length when needed; returns false when normal is invalid (B4.6 deepen follow-up pass).
+
+/// Chain prune then finalize only when both preflights allow (B4.6 deepen follow-up pass).
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

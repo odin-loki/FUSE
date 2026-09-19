@@ -1473,4 +1473,6 @@ bool can_skip_friction_basis_rebuild_after_normalize(
 
     if (!manifold.hasFrictionBasis()) {
 
+
+
 } // namespace fuse::physics::narrowphase

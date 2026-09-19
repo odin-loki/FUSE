@@ -1510,6 +1510,17 @@ NarrowphaseBeyondBatchPreflight preflight_narrowphase_beyond_batch(
 
 /// Returns true when beyond batch preflight reports no dispatchable pairs (B4.6 deepen pass).
 bool narrowphase_beyond_batch_rejects_all(
+/// Returns true when `bodyA` is greater than `bodyB` (non-canonical broadphase ordering) (B4.6 deepen follow-up pass).
+bool is_swapped_contact_pair(const broadphase::CandidatePair& pair);
+
+/// Returns true when `bodyA` is less than or equal to `bodyB` (B4.6 deepen follow-up pass).
+bool is_canonical_contact_pair(const broadphase::CandidatePair& pair);
+
+/// Returns a pair with the lower body index first (B4.6 deepen follow-up pass).
+broadphase::CandidatePair canonicalize_contact_pair(const broadphase::CandidatePair& pair);
+
+/// Count pairs rejected by extended deepen preflight (B4.6 deepen follow-up pass).
+u32 count_rejected_contact_pairs(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1533,6 +1544,9 @@ ContactPairRejectReason contact_pair_deepen_pass_reject_reason(
 struct ContactPairDeepenPassPreflight {
     ContactPairRejectReason reason = ContactPairRejectReason::None;
     bool rejected = false;
+/// Const preflight for `detect_contacts_pair` guarded dispatch (B4.6 deepen follow-up pass).
+struct ContactPairDispatchPreflight {
+    bool usesDeepenReject = false;
 
     bool can_dispatch() const { return !rejected; }
 };
@@ -1574,5 +1588,15 @@ bool should_run_narrowphase_batch(
 /// Non-mutating batch predicate — inverse of `narrowphase_batch_rejects_all` (B4.6 deepen pass).
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+/// Populate detect dispatch preflight without running shape dispatch (B4.6 deepen follow-up pass).
+ContactPairDispatchPreflight preflight_detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes,
+    bool useDeepenReject = false);
+
+/// Returns true when `detect_contacts_pair` should early-out (B4.6 deepen follow-up pass).
+bool should_skip_detect_contacts_pair(
+
+/// Run shape dispatch only when preflight allows; returns invalid manifold otherwise (B4.6 deepen follow-up pass).
 
 } // namespace fuse::physics::narrowphase
