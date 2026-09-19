@@ -319,3 +319,6 @@ bool wouldInvalidateHistoryIfStale(const TaaHistoryBuffer& history, u32 observed
 
 // --- deepen additive from deepen-taa-b59-guards-fd0d ---
 bool preflightTaaResolveHistoryReuse(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+
+// --- deepen additive from deepen-b59-taa-guards-0400 ---
+bool preflightTaaResolveTemporal(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,

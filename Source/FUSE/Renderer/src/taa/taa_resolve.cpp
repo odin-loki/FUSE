@@ -591,3 +591,11 @@ bool preflightTaaResolveTemporalAccumulation(const TaaResolveDesc& desc, const T
 // --- deepen additive from deepen-taa-b59-guards-fd0d ---
     const bool resolvePasses = preflightTaaResolve(desc, history, skipReason);
 bool preflightTaaResolveHistoryReuse(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+
+// --- deepen additive from deepen-b59-taa-guards-0400 ---
+    return preflightTaaHistoryReuse(history, effectiveObservedHistoryGeneration(desc, history), reason);
+    return preflightTaaResolveHistoryReuse(desc, history, nullptr);
+bool preflightTaaResolveTemporal(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+    if (!preflightTaaResolveBlendWeights(desc, history, blendReason)) {
+        return preflightTaaResolveHistoryReuse(desc, history, reuseReason);
+    if (!preflightTaaResolveBlendWeights(desc, history, nullptr)) {

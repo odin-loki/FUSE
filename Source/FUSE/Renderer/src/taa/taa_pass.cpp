@@ -495,3 +495,7 @@ bool TaaPass::tryPreflightHistoryReuseForResolve(const TaaResolveDesc& desc,
     return m_jitter.preflightSyncToFrameIndex(frameIndex, m_desc.width, m_desc.height, reason);
 bool TaaPass::preflightResolveHistoryReuse(const TaaResolveDesc& desc,
     return preflightTaaResolveHistoryReuse(desc, m_history, reason);
+
+// --- deepen additive from deepen-b59-taa-guards-0400 ---
+bool TaaPass::preflightResolveTemporal(const TaaResolveDesc& desc,
+    return preflightTaaResolveTemporal(desc, m_history, reuseReason, blendReason);

@@ -3417,3 +3417,21 @@ void testTaaPassWarmupAndSyncPreflightHelpers() {
     expectTrue(pass->preflightResolveHistoryReuse(resolveDesc, &reuseReason),
     testPreflightTaaResolveHistoryReuse();
     testTaaPassWarmupAndSyncPreflightHelpers();
+
+// --- deepen additive from deepen-b59-taa-guards-0400 ---
+void testPreflightTaaResolveTemporal() {
+    expectTrue(fuse::renderer::preflightTaaResolveTemporal(desc, history, &reuseReason, &blendReason),
+    expectTrue(!fuse::renderer::preflightTaaResolveTemporal(desc, history, &reuseReason, &blendReason),
+    expectTrue(fuse::renderer::tryComputeTaaResolveBlendWeights(desc, history, &weights),
+               "tryCompute succeeds on warmup frame");
+    expectNear(weights.current, 1.f, 1e-5f, "tryCompute warmup current weight");
+    expectNear(weights.history, 0.f, 1e-5f, "tryCompute warmup history weight");
+    expectTrue(!fuse::renderer::tryComputeTaaResolveBlendWeights(desc, history, nullptr),
+               "tryCompute rejects null output");
+               "tryCompute succeeds after warmup");
+void testJitterSyncIfMisalignedGuards() {
+void testTaaPassWarmupAndTemporalPreflight() {
+    expectTrue(pass->preflightResolveTemporal(resolveDesc, &reuseReason), "pass temporal preflight passes on warmup");
+    expectTrue(pass->preflightResolveTemporal(resolveDesc), "pass temporal preflight passes after warmup");
+    testPreflightTaaResolveTemporal();
+    testTaaPassWarmupAndTemporalPreflight();
