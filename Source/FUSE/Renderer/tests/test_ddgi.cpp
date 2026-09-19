@@ -4102,3 +4102,7 @@ void testKernelPreflightDeepenGuards() {
                "valid kernel tryPreflight reports no reject reason");
                "tryPreflightProbeKernelLaunch rejects zero rays_per_probe");
                "zero rays_per_probe tryPreflight reports zero_rays_per_probe reason");
+
+// --- deepen additive from deepen-ddgi-b56-guards-3cf8 ---
+    expectTrue(fuse::renderer::ddgi_util::classifyTrilinearSampleReject(desc, invalid, cache.data(), 8u) ==
+               "classifyTrilinearSampleReject invalid_sample_coords");
