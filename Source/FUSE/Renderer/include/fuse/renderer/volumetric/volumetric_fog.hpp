@@ -719,3 +719,8 @@ bool wouldRejectDensityLookupAtIndex(const FroxelDensityGrid& grid, const Froxel
 bool wouldRejectDensityLookupAtCoord(const FroxelDensityGrid& grid,
 bool wouldClampTrilinearSample(const FroxelDensityGrid& grid,
 bool tryShouldSkipFroxelPopulate(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-8b99 ---
+bool tryPreflightDensityLookupAtIndex(const FroxelDensityGrid& grid,
+bool tryPreflightDensityLookupAtCoord(const FroxelDensityGrid& grid,
+                                      FroxelPopulateRejectReason* outReason = nullptr);

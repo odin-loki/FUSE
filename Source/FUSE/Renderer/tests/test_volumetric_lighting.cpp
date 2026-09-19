@@ -2659,3 +2659,28 @@ void testFroxelTrilinearAndStrictLookupGuards() {
                "tryShouldSkipFroxelPopulate true for zero density");
     expectTrue(fuse::renderer::froxel_util::tryShouldSkipFroxelPopulate(zeroDesc, camera, params, populateReason),
                "tryShouldSkipFroxelPopulate true for empty desc");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-8b99 ---
+void testFroxelTrilinearSampleAndPopulatePreflightGuards() {
+               "tryPreflightTrilinearSample succeeds on accessible grid");
+               "tryCanTrilinearSampleAtCoords rejects empty desc");
+    expectTrue(std::strcmp(fuse::renderer::froxelTrilinearSampleRejectReasonLabel(trilinearReason), "empty_grid") == 0,
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::HardOutOfBounds,
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityTrilinear(emptyGrid, desc, inBounds, rejectedTrilinear, trilinearReason),
+               "tryValidateSampleCoords succeeds for in-bounds coords");
+    expectTrue(fuse::renderer::froxel_util::tryPreflightDensityLookupAtIndex(grid, desc, 0u, lookupReason),
+               "tryPreflightDensityLookupAtIndex succeeds on accessible grid");
+    expectTrue(fuse::renderer::froxel_util::tryPreflightDensityLookupAtCoord(grid, desc, 1u, 1u, 2u, lookupReason),
+               "tryPreflightDensityLookupAtCoord succeeds on accessible grid");
+    expectTrue(!fuse::renderer::froxel_util::wouldRejectDensityLookupAtCoord(grid, desc, 1u, 1u, 2u),
+    expectTrue(fuse::renderer::froxel_util::wouldRejectDensityLookupAtIndex(emptyGrid, desc, 0u),
+    expectTrue(fuse::renderer::froxel_util::wouldRejectDensityLookupAtCoord(emptyGrid, desc, 0u, 0u, 0u),
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightDensityLookupAtIndex(emptyGrid, desc, 0u, lookupReason),
+               "tryPreflightDensityLookupAtIndex rejects empty storage");
+    expectTrue(fuse::renderer::froxel_util::preflightPopulateFromAnalyticFog(desc, camera, params, &populateReason),
+               "preflightPopulateFromAnalyticFog succeeds for valid inputs");
+    expectTrue(!fuse::renderer::froxel_util::preflightPopulateFromAnalyticFog(desc, camera, zeroDensity, &populateReason),
+               "preflightPopulateFromAnalyticFog rejects zero density");
+    expectTrue(fuse::renderer::froxel_util::preflightPopulateFromAnalyticFog(desc, camera, params),
+               "preflightPopulateFromAnalyticFog without reason output succeeds for valid inputs");
+    testFroxelTrilinearSampleAndPopulatePreflightGuards();

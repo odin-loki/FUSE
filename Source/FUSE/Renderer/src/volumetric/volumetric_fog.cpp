@@ -1823,3 +1823,12 @@ bool wouldRejectDensityLookupAtCoord(const FroxelDensityGrid& grid,
         outReason = FroxelTrilinearSampleRejectReason::ClampRequired;
 bool wouldClampTrilinearSample(const FroxelDensityGrid& grid,
 bool tryShouldSkipFroxelPopulate(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-8b99 ---
+    case FroxelTrilinearSampleRejectReason::HardOutOfBounds:
+bool tryPreflightDensityLookupAtIndex(const FroxelDensityGrid& grid,
+bool tryPreflightDensityLookupAtCoord(const FroxelDensityGrid& grid,
+    return tryCanLookupAtCoord(grid, desc, tileX, tileY, sliceZ, outReason);
+        outReason = FroxelTrilinearSampleRejectReason::HardOutOfBounds;
+    return tryCanTrilinearSampleAtCoords(grid, desc, coords, outReason);
+                                      FroxelPopulateRejectReason* outReason) {
