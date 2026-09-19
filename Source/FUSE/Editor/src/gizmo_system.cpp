@@ -2836,3 +2836,8 @@ SnapDeltaPreflight preflightSnapDelta(f32 delta, GizmoMode mode, const GizmoSnap
     return preflightSnapDelta(delta, mode, settings).canApply();
 SnapDeltaPreflight GizmoSystem::preflightSnapDelta(f32 delta) const {
     return fuse::editor::preflightSnapDelta(delta, m_mode, m_snap);
+
+// --- deepen additive from deepen-gizmo-interaction-preflights-fe30 ---
+RayPreflight preflightRay(const GizmoRay& ray) {
+    RayPreflight preflight{};
+    return preflightRay(ray).canUse();

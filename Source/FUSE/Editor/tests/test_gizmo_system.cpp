@@ -4003,3 +4003,23 @@ void testSnapDeltaPreflight() {
     expectTrue(nanUpdatePreflight.nonFiniteHit, "update preflight marks non-finite screen hit");
     expectTrue(beginPreflight.nonFiniteRay, "begin preflight marks non-finite ray");
     expectTrue(!beginPreflight.canBegin, "begin preflight rejects non-finite ray");
+
+// --- deepen additive from deepen-gizmo-interaction-preflights-fe30 ---
+void testRayPreflightGuards() {
+    const fuse::editor::RayPreflight emptyPreflight = fuse::editor::preflightRay(emptyRay);
+    expectTrue(emptyPreflight.emptyRay, "ray preflight marks empty ray");
+    expectTrue(!emptyPreflight.canUse(), "ray preflight rejects empty ray");
+    const fuse::editor::RayPreflight unitPreflight = fuse::editor::preflightRay(unitRay);
+    expectTrue(unitPreflight.canUse(), "ray preflight accepts unit ray");
+    expectTrue(!unitPreflight.unnormalized, "unit ray is not unnormalized");
+    const fuse::editor::RayPreflight scaledPreflight = fuse::editor::preflightRay(scaledRay);
+    expectTrue(scaledPreflight.canUse(), "unnormalized ray remains usable for pick");
+    expectTrue(scaledPreflight.unnormalized, "ray preflight marks unnormalized direction");
+void testInteractionPreflightPhaseRouting() {
+    const fuse::editor::InteractionPreflight emptyHitInteraction = fuse::editor::preflightInteraction(
+    const fuse::editor::PickSnapPreflight pickSnap =
+    const fuse::editor::BeginInteractionPreflight beginInteraction =
+    const fuse::editor::InteractionPreflight validSnapInteraction = fuse::editor::preflightInteraction(
+    expectTrue(gizmo.preflightInteraction(hit).snapWillApplyOnPhase(),
+    testRayPreflightGuards();
+    testInteractionPreflightPhaseRouting();

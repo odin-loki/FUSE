@@ -1215,3 +1215,7 @@ SnapInteractionPreflight preflightSnapInteraction(GizmoInteractionPhase phase, G
 struct SnapDeltaPreflight {
 SnapDeltaPreflight preflightSnapDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
     [[nodiscard]] SnapDeltaPreflight preflightSnapDelta(f32 delta) const;
+
+// --- deepen additive from deepen-gizmo-interaction-preflights-fe30 ---
+struct RayPreflight {
+RayPreflight preflightRay(const GizmoRay& ray);
