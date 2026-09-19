@@ -67,6 +67,51 @@ struct ChromeTraceExportPreflight {
     }
 };
 
+/// Read-only scope recording diagnostics — safe to call before `FUSE_PROFILE_SCOPE`.
+struct ScopeRecordingPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    u32 activeNestingDepth = 0;
+    u32 maxNestingDepth = 0;
+
+    bool wouldSkip() const { return profilerDisabled || invalidName; }
+    bool wouldRecord() const { return !wouldSkip(); }
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `FUSE_PROFILE_ASYNC_FLOW_BEGIN`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    u32 activeFlowNestingDepth = 0;
+    u32 openAsyncFlowCount = 0;
+
+    bool wouldSkip() const { return profilerDisabled || invalidName; }
+    bool wouldRecord() const { return !wouldSkip(); }
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `FUSE_PROFILE_ASYNC_FLOW_END`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool noOpenFlows = false;
+    u32 activeFlowNestingDepth = 0;
+    u32 openAsyncFlowCount = 0;
+
+    bool wouldSkip() const { return profilerDisabled || invalidName || noOpenFlows; }
+    bool wouldRecord() const { return !wouldSkip(); }
+};
+
+/// Read-only counter sample diagnostics — safe to call before `FUSE_PROFILE_COUNTER`.
+struct CounterRecordingPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    u32 activeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+
+    bool wouldSkip() const { return profilerDisabled || invalidName; }
+    bool wouldRecord() const { return !wouldSkip(); }
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -121,14 +166,34 @@ u32 lastEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 countEventsByName(const char* name);
+u32 findFirstEventIndexByFlowId(u32 flowId);
+u32 findLastEventIndexByFlowId(u32 flowId);
+u32 countEventsByFlowId(u32 flowId);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
+bool tryFirstEventByName(const char* name, ProfileEvent& outEvent);
+bool tryLastEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
+
+bool wouldSkipScopeRecording(const char* name);
+bool wouldSkipAsyncFlowBegin(const char* name);
+bool wouldSkipAsyncFlowEnd(const char* name);
+bool wouldSkipCounterRecording(const char* track);
+
+ScopeRecordingPreflight preflightScopeRecording(const char* name);
+AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name);
+AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name);
+CounterRecordingPreflight preflightCounterRecording(const char* track);
 
 ChromeTraceExportPreflight preflightChromeTraceExport();
 
