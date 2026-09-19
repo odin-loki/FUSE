@@ -2323,6 +2323,30 @@ bool CookCache::should_skip_prune_all() const {
     return !would_prune_all();
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) != 0;
+}
+
+bool CookCache::would_invalidate_stale_upstream_hashes(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    return count_stale_upstream_hashes(source_upstream_by_path) != 0;
+}
+
+bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
+                                               const std::vector<CookJobDependencyEdge>& edges,
+                                               const std::vector<CookJob>& jobs) const {
+    return count_downstream_of(output_path, edges, jobs) != 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
 
@@ -4447,22 +4471,13 @@ CookHashPreflight CookCache::preflight_store_entry(const CookCacheEntry& entry) 
         preflight.reason = CookHashRejectReason::ZeroSourceHash;
         return preflight;
     }
-CookHashPreflight CookCache::preflight_store_entry(const CookCacheEntry& entry) const {
     if (!is_valid_cook_cache_path(entry.source_path)) {
         preflight.reason = CookHashRejectReason::EmptyInputPath;
-        return preflight;
-    }
     if (!is_valid_cook_cache_path(entry.output_path)) {
         preflight.reason = CookHashRejectReason::EmptyOutputPath;
-        return preflight;
-    }
 
     preflight.can_hash = true;
     preflight.reason = CookHashRejectReason::None;
-    return preflight;
-    if (!is_valid_cook_cache_key(entry.content_hash)) {
-        preflight.reason = CookHashRejectReason::ZeroSourceHash;
-    }
     if (entry.kind == CookAssetKind::Shader) {
     return preflight_file_content_hash(entry.source_path);
     switch (entry.kind) {
@@ -4479,13 +4494,12 @@ CookHashPreflight CookCache::preflight_store_entry(const CookCacheEntry& entry) 
         return preflight_audio_import_hash(desc);
     case CookAssetKind::Shader:
         preflight.reason = CookHashRejectReason::SourceUnreadable;
-        return preflight;
     default:
-    }
-        desc.input_path = entry.source_path;
-        desc.output_path = entry.output_path;
-        preflight.can_hash = true;
-        preflight.reason = CookHashRejectReason::None;
+bool CookCache::should_skip_lookup(u64 content_hash) const {
+    return !is_valid_cook_cache_key(content_hash);
+
+bool CookCache::should_skip_store(const CookCacheEntry& entry) const {
+    return !is_valid_cook_cache_entry(entry);
 }
 
 void CookCache::clear() {

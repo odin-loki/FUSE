@@ -521,9 +521,6 @@ public:
                                                             const std::vector<CookJob>& jobs) const;
     /// True when `store` would reject the entry — mirrors `is_valid_cook_cache_entry` negation (B7.9 deepen).
     [[nodiscard]] static bool should_skip_store(const CookCacheEntry& entry);
-    [[nodiscard]] bool should_skip_store(const CookCacheEntry& entry) const;
-    [[nodiscard]] bool should_skip_lookup(u64 content_hash) const;
-    [[nodiscard]] bool should_skip_prune_all() const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
@@ -890,6 +887,10 @@ public:
 
     /// Structural + source readability preflight for cache records (B7.9 deepen).
     [[nodiscard]] CookHashPreflight preflight_store_entry(const CookCacheEntry& entry) const;
+    /// Read-only cache lookup preflight — mirrors `lookup` zero-key guard without touching stats (B7.9 deepen).
+    [[nodiscard]] bool should_skip_lookup(u64 content_hash) const;
+    /// Read-only cache store preflight — mirrors `store` entry validation without mutating (B7.9 deepen).
+    [[nodiscard]] bool should_skip_store(const CookCacheEntry& entry) const;
 
     bool save(const std::string& path) const;
     bool load(const std::string& path);

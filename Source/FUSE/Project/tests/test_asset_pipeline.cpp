@@ -4430,17 +4430,13 @@ void testCookerStaleDependencyReconcileEstimate() {
     const std::vector<std::string> reconcile_sources = cooker.probe_reconcile_sources(manifest);
     expectTrue(!reconcile_sources.empty(), "reconcile source probe non-empty after upstream change");
                "would_upstream true for changed upstream source");
-    entry_b.output_path = "/tmp/fuse_b79_skip_reconcile_b.fusemesh";
 
     expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for should_skip probes ok");
 
     expectTrue(cooker.should_skip_upstream_invalidation(manifest, source_a) == false,
                "fresh cache should not skip upstream invalidation for seeded source");
-    expectTrue(cooker.should_skip_upstream_invalidation(manifest, ""),
                "empty changed source skips upstream invalidation");
-    expectTrue(cooker.should_skip_stale_dependency_invalidation(manifest),
                "fresh cache skips stale dependency invalidation");
-    expectTrue(cooker.should_skip_reconcile_invalidation(manifest),
                "fresh cache skips combined reconcile invalidation");
 
     const fuse::project::CookCacheReconcileEstimate fresh =
@@ -4448,10 +4444,7 @@ void testCookerStaleDependencyReconcileEstimate() {
     expectTrue(fresh.should_skip(), "fresh reconcile estimate should_skip is true");
     expectTrue(!fresh.would_reconcile(), "fresh reconcile estimate would_reconcile is false");
 
-    writeTempFile(source_a, "# skip reconcile a revised\n");
-    expectTrue(!cooker.should_skip_stale_dependency_invalidation(manifest),
                "stale upstream change does not skip stale dependency invalidation");
-    expectTrue(!cooker.should_skip_reconcile_invalidation(manifest),
                "stale upstream change does not skip combined reconcile invalidation");
 
     const fuse::project::CookCacheReconcileEstimate stale =
@@ -4466,7 +4459,6 @@ void testCookerStaleDependencyReconcileEstimate() {
 
                "fresh cache should_skip reconcile invalidation");
     expectTrue(cooker.should_skip_prune_reconcile(), "fresh cache should_skip prune reconcile");
-    expectTrue(cooker.estimate_reconcile_invalidation(manifest).should_skip(),
                "fresh reconcile estimate should_skip is true");
 
                "would_invalidate_upstream true for seeded chain source");
@@ -4485,10 +4477,8 @@ void testCookerStaleDependencyReconcileEstimate() {
     expectTrue(!cooker.should_skip_prune_reconcile(),
                "prune reconcile should not skip after upstream content change");
 
-    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for should_skip reconcile ok");
                "empty changed source should_skip upstream invalidation");
                "fresh cache should_skip stale dependency invalidation");
-    expectTrue(!cooker.should_skip_upstream_invalidation(manifest, source_a),
                "seeded upstream should not skip invalidation probe");
 
     const fuse::project::CookCacheReconcileEstimate estimate =
@@ -4506,6 +4496,21 @@ void testCookerStaleDependencyReconcileEstimate() {
 
     expectTrue(removed >= stale_count, "stale invalidation removes at least estimated count");
                "should_skip_stale_dependency true after stale invalidation");
+
+               "fresh seeded cache would invalidate upstream source");
+               "would_invalidate_upstream true when chain entries exist");
+
+               "stale upstream makes should_skip reconcile false");
+               "would_invalidate_upstream true for changed source");
+               "should_skip_upstream false when invalidation would occur");
+
+    expectTrue(removed >= 1u, "stale dependency invalidation runs after should_skip probes");
+
+    const fuse::u32 upstream_removed = cooker.invalidate_upstream_dependency(manifest, source_a);
+    expectTrue(upstream_removed >= 1u, "upstream invalidation clears remaining chain entries");
+    expectTrue(cooker.should_skip_upstream_invalidation(manifest, source_a),
+               "post-invalidation should_skip upstream returns true");
+               "post-invalidation should_skip reconcile returns true");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {

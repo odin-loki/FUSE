@@ -484,6 +484,17 @@ public:
     /// True when `estimate_reconcile_invalidation(manifest).total()` is zero (B7.9 deepen).
     [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
 
+    /// Read-only upstream invalidation predicate — mirrors `count_upstream_invalidation` (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_upstream_dependency(const CookManifest& manifest,
+                                                              const std::string& changed_source) const;
+    /// Read-only stale dependency-hash invalidation predicate (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_stale_dependency_hashes(const CookManifest& manifest) const;
+    /// True when `estimate_reconcile_invalidation(manifest).total()` is zero (B7.9 deepen).
+    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
+    /// True when `count_upstream_invalidation` is zero — guarded on empty `changed_source` (B7.9 deepen).
+    [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
+                                                         const std::string& changed_source) const;
+
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
 
