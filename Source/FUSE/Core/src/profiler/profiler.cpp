@@ -1417,3 +1417,7 @@ bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
     if (wouldSkipFlowIdLookup(flowId)) {
 bool wouldSkipNameLookup(const char* name) {
 bool wouldSkipFlowIdLookup(u32 flowId) {
+
+// --- deepen additive from b16-profiler-deepen-guards-891a ---
+bool tryFindFirstEventByFlow(u32 flowId, ProfileEvent& outEvent) {
+bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {

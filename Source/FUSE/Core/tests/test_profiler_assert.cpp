@@ -4324,3 +4324,18 @@ void testFlowIdOpenAndUnpairedGuards() {
     expectTrue(!closedPreflight.hasUnpairedAsyncFlowEvents,
     expectTrue(closedPreflight.unpairedAsyncFlowIdCount == 0u,
     expectTrue(!closedPreflight.hasFlowEventImbalances(),
+
+// --- deepen additive from b16-profiler-deepen-guards-891a ---
+void testFindEventIndexByFlowGuard() {
+void testTryFindEventByFlowGuard() {
+    expectTrue(!fuse::profiler::tryFindFirstEventByFlow(0u, outEvent),
+               "tryFindFirstEventByFlow false for zero flow id");
+               "tryFindFirstEventByFlow clears output for zero flow id");
+    expectTrue(fuse::profiler::tryFindFirstEventByFlow(flowId, outEvent),
+               "tryFindFirstEventByFlow true for open flow start");
+               "tryFindFirstEventByFlow copies flow start phase");
+    expectTrue(outEvent.scopeId == flowId, "tryFindFirstEventByFlow copies flow id");
+    expectTrue(fuse::profiler::tryFindLastEventByFlow(flowId, outEvent),
+               "tryFindLastEventByFlow true for flow finish");
+               "tryFindLastEventByFlow copies flow finish phase");
+void testFlowIdBalanceAndOrphanEndGuards() {
