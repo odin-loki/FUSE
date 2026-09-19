@@ -4712,3 +4712,14 @@ void testPreflightIslandSolveDispatchGuards() {
                "should_skip sleep-dispatch true when all constrained islands sleep");
 void testDispatchSolveIslandGuarded() {
     testPreflightIslandSolveDispatchGuards();
+
+// --- deepen additive from deepen-pbd-island-sleep-wake-dispatch-db11 ---
+void testPreflightIslandSleepWakeDispatch() {
+    const IslandSleepWakeDispatchPreflight preflight = preflight_island_sleep_wake_dispatch(graph, bodies, dt);
+    expectTrue(!should_skip_island_sleep_wake_dispatch(graph, bodies, dt),
+               "should_skip false for mixed sleep/wake graph");
+    expectTrue(should_skip_island_sleep_wake_dispatch(emptyGraph, bodies, dt),
+               "should_skip true for empty graph");
+void testDispatchSolveIslandWithSleepWakeGuards() {
+void testDispatchAllIslandsWithSleepWakeGuards() {
+    testPreflightIslandSleepWakeDispatch();

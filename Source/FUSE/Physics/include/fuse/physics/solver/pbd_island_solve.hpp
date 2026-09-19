@@ -1609,3 +1609,7 @@ IslandSolveDispatchPreflight preflight_island_solve_dispatch(
 IslandSolveDispatchPreflight preflight_island_solve_dispatch_by_index(
 bool should_skip_island_solve_dispatch(const ContactIslandGraph::Island& island,
 IslandSleepSolveDispatchPreflight preflight_island_sleep_dispatch(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-sleep-wake-dispatch-db11 ---
+IslandSleepWakeDispatchPreflight preflight_island_sleep_wake_dispatch(const ContactIslandGraph& graph,
+bool should_skip_island_sleep_wake_dispatch(const ContactIslandGraph& graph,
