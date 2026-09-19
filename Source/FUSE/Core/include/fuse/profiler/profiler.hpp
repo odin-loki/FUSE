@@ -199,6 +199,8 @@ struct ChromeTraceExportPreflight {
     u32 flowFinishCount = 0;
     bool scopePairImbalancedInBuffer = false;
     bool flowPairImbalancedInBuffer = false;
+    u32 ignoredAsyncFlowEndCount = 0;
+    bool hasIgnoredAsyncFlowEnds = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -558,6 +560,10 @@ bool canEndAsyncFlow();
 void reconcileDetachedFlowNestingDepth();
 bool isScopePairBalancedInBuffer();
 bool isFlowPairBalancedInBuffer();
+/// True when scope/flow nesting is balanced and no async flows remain open.
+bool isProfilerGuardStateBalanced();
+u32 ignoredAsyncFlowEndCount();
+bool hasIgnoredAsyncFlowEnds();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();
@@ -606,9 +612,6 @@ u32 ringBufferCapacity();
 bool wouldRecordEventName(const char* name);
 bool isNullOrEmptyEventName(const char* name);
 bool wouldRecordWithName(const char* name);
-bool isNullEventName(const char* name);
-bool isEmptyEventName(const char* name);
-bool isBlankEventName(const char* name);
 bool tryValidateEventName(const char* name, EventNameRejectReason& outReason);
 EventNameRejectReason eventNameRejectReason(const char* name);
 u32 rejectedInvalidNameCount();
@@ -624,8 +627,6 @@ bool isExportableProfileEvent(const ProfileEvent& event);
 u32 invalidNameEventCount();
 u32 nonExportableEventCount();
 bool isEventExportable(u32 index);
-bool isFirstEventIndex(u32 index);
-bool isLastEventIndex(u32 index);
 bool tryEventPhaseAt(u32 index, EventPhase& outPhase);
 u32 totalEventsWritten();
 bool hasRingWrapped();
@@ -749,7 +750,6 @@ u32 totalWriteCount();
 u32 droppedEventCount();
 bool isEventIndexValid(u32 index);
 /// True for null, empty, or whitespace-only names — diagnostic only; does not affect recording guards.
-bool isValidEventName(const char* name);
 bool isValidFlowId(u32 flowId);
 bool isFlowPhaseEvent(const ProfileEvent& event);
 bool eventNameMatches(const ProfileEvent& event, const char* name);
@@ -814,6 +814,9 @@ u32 firstExportableEventIndex();
 u32 lastExportableEventIndex();
 EventLookupRejectReason eventLookupRejectReason(u32 index);
 EventLookupRejectReason exportableEventLookupRejectReason(u32 index);
+bool tryFindEventIndexByName(const char* name, u32& outIndex);
+u32 findFirstEventIndexByScopeId(u32 scopeId);
+u32 countEventsByScopeId(u32 scopeId);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);

@@ -32,6 +32,7 @@ std::atomic<u32> g_openAsyncFlowCount{0};
 std::atomic<u32> g_orphanAsyncFlowEndCount{0};
 std::atomic<u32> g_rejectedInvalidNameCount{0};
 std::atomic<u32> g_droppedEventCount{0};
+std::atomic<u32> g_ignoredAsyncFlowEndCount{0};
 
 std::mutex g_exportMutex;
 
@@ -370,6 +371,8 @@ bool canRecordScope(const char* name) {
 }
 
 bool canBeginAsyncFlow(const char* name) {
+    return enabled() && isValidEventName(name);
+}
 
 bool canEndAsyncFlow(const char* name) {
     return enabled() && isValidEventName(name)
@@ -377,6 +380,8 @@ bool canEndAsyncFlow(const char* name) {
 
 bool canSampleCounter(const char* track) {
     return enabled() && isValidEventName(track);
+
+}
 
 
 void beginFrame() {
@@ -919,6 +924,18 @@ bool hasActiveScope() {
 
 bool hasActiveAsyncFlowNesting() {
     return flowNestingDepth() > 0u;
+}
+
+bool isProfilerGuardStateBalanced() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
+}
+
+u32 ignoredAsyncFlowEndCount() {
+    return g_ignoredAsyncFlowEndCount.load(std::memory_order_acquire);
+}
+
+bool hasIgnoredAsyncFlowEnds() {
+    return ignoredAsyncFlowEndCount() > 0u;
 }
 
 bool hasEvents() {
@@ -2168,6 +2185,9 @@ u32 findLastEventIndexByName(const char* name) {
 
 
 
+
+
+
             return i - 1u;
         }
     }
@@ -2191,6 +2211,45 @@ u32 countEventsByName(const char* name) {
 u32 droppedEventCount() {
     return g_droppedEventCount.load(std::memory_order_acquire);
         }
+
+bool tryFindEventIndexByName(const char* name, u32& outIndex) {
+    const u32 index = findFirstEventIndexByName(name);
+    if (index == kInvalidEventIndex) {
+        outIndex = kInvalidEventIndex;
+        return false;
+
+    outIndex = index;
+    return true;
+
+u32 findFirstEventIndexByScopeId(u32 scopeId) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.scopeId == scopeId && isValidEventName(event.name)) {
+            return i;
+    return kInvalidEventIndex;
+
+u32 countEventsByScopeId(u32 scopeId) {
+    u32 count = 0u;
+            ++count;
+
+u32 firstExportableEventIndex() {
+        if (isEventExportable(i)) {
+
+u32 lastExportableEventIndex() {
+    for (u32 i = total; i > 0u; --i) {
+        if (isEventExportable(i - 1u)) {
+            return i - 1u;
+
+bool tryFirstExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = firstExportableEventIndex();
+        outEvent = ProfileEvent{};
+
+    return tryExportableEventAt(index, outEvent);
+
+bool tryLastExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = lastExportableEventIndex();
+
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -2505,6 +2564,8 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.scopePairImbalancedInBuffer = !isScopePairBalancedInBuffer();
     preflight.flowPairImbalancedInBuffer = !isFlowPairBalancedInBuffer();
     preflight.hasDroppedEvents = preflight.droppedEventCount > 0u;
+    preflight.ignoredAsyncFlowEndCount = ignoredAsyncFlowEndCount();
+    preflight.hasIgnoredAsyncFlowEnds = hasIgnoredAsyncFlowEnds();
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
@@ -2792,6 +2853,7 @@ void reset() {
     g_totalRecordedEvents.store(0u, std::memory_order_release);
     g_rejectedInvalidNameCount.store(0u, std::memory_order_release);
     g_orphanFlowEndCount.store(0u, std::memory_order_release);
+    g_ignoredAsyncFlowEndCount.store(0u, std::memory_order_release);
     threadLocalNestingDepth() = 0u;
     threadLocalFlowNestingDepth() = 0u;
 }
@@ -2987,6 +3049,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
         g_orphanAsyncFlowEndCount.fetch_add(1u, std::memory_order_acq_rel);
         recordOrphanAsyncFlowEnd();
         g_orphanFlowEndCount.fetch_add(1u, std::memory_order_acq_rel);
+        g_ignoredAsyncFlowEndCount.fetch_add(1u, std::memory_order_acq_rel);
         return;
     }
 
