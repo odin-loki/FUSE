@@ -1987,3 +1987,13 @@ void testCookCachePruneReconcileShouldSkipGuards() {
                "combine cache key should_skip allows zero upstream");
                "null bytes should_skip fnv1a64 preflight");
                "empty dependency list should_skip upstream hash preflight");
+
+// --- deepen additive from b79-cooker-hash-deepen-guards-17d1 ---
+    expectTrue(empty.should_skip(), "empty cache prune estimate should_skip is true");
+    expectTrue(!estimate.should_skip(), "shader stale entry makes estimate should_skip false");
+    expectTrue(mesh_preflight.should_skip() == fuse::project::should_skip_mesh_import_hash(desc),
+               "should_skip allows zero upstream on valid source");
+    expectTrue(!cache.would_invalidate_all(), "would_invalidate_all false on empty cache");
+               "would_invalidate_stale_content guarded on empty cache");
+               "would_invalidate_stale_upstream guarded on empty cache");
+    expectTrue(!cooker.cache().estimate_prune_removals().should_skip(),

@@ -2349,3 +2349,8 @@ void testCookerReconcileShouldSkipGuards() {
 // --- deepen additive from deepen-b79-cooker-hash-should-skip-95c8 ---
                "should_skip_upstream_invalidation mirrors empty changed source");
                "would_invalidate_downstream mirrors count_downstream_of");
+
+// --- deepen additive from b79-cooker-hash-deepen-guards-17d1 ---
+               "fresh prune reconcile estimate should_skip is true");
+               "would_invalidate_upstream guarded on empty source");
+               "would_invalidate_stale_dependencies false on fresh cache");
