@@ -1306,6 +1306,15 @@ bool tryTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
 /// Non-mutating coord-based trilinear preflight — returns true when sampling would proceed.
 /// Classify why trilinear probe sampling would reject — same ordering as `tryCanSampleAtProbeCoords`.
 ProbeTrilinearSampleRejectReason classifyTrilinearSampleReject(const DDGIDesc& desc,
+                                                               const ProbeSampleCoords& coords,
+                                                               const IrradianceCacheEntry* cache,
+                                                               u32 cache_count);
+/// Non-mutating trilinear sample preflight — returns true when sampling would proceed.
+bool preflightTrilinearProbeSample(const DDGIDesc& desc,
+                                   u32 cache_count,
+                                   ProbeTrilinearSampleRejectReason* reason = nullptr);
+/// Early-out when trilinear probe sampling would be rejected — same ordering as `tryCanSampleAtProbeCoords`.
+bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,

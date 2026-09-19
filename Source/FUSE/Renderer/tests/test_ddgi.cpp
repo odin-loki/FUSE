@@ -7505,6 +7505,35 @@ void testTrilinearSamplePreflightDeepen() {
                "preflightTrilinearProbeSample rejects null cache");
     expectTrue(reason == fuse::renderer::ProbeTrilinearSampleRejectReason::NullCache,
                "null cache trilinear preflight reports null_cache reason");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, coords, cache.data(), 8u),
+               "wouldSkipTrilinearProbeSample false for valid sample");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, coords, nullptr, 8u),
+               "wouldSkipTrilinearProbeSample true for null cache");
+
+    fuse::renderer::ProbeSampleCoords oobWeights = coords;
+    oobWeights.tx = 2.f;
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(desc, coords),
+               "wouldSkipProbeSampleCoordPreflight false for valid coords");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(desc, oobWeights),
+               "wouldSkipProbeSampleCoordPreflight false for clampable weights");
+
+    fuse::renderer::ProbeSampleCoords oobIndices = coords;
+    oobIndices.x0 = 9u;
+    oobIndices.x1 = 9u;
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(desc, oobIndices),
+               "wouldSkipProbeSampleCoordPreflight true for hard OOB indices");
+
+    const fuse::renderer::ProbeGridCoord validCoord{1u, 0u, 1u};
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(
+                   desc, cache.data(), validCoord, 8u),
+               "wouldSkipCacheIndexLookupAtCoord false for valid coord");
+    const fuse::renderer::ProbeGridCoord invalidCoord{9u, 0u, 0u};
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(
+                   desc, cache.data(), invalidCoord, 8u),
+               "wouldSkipCacheIndexLookupAtCoord true for invalid coord");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(
+                   desc, nullptr, validCoord, 8u),
+               "wouldSkipCacheIndexLookupAtCoord true for null cache");
 }
 
 void testScheduleAtRateDeepen() {
