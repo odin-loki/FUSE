@@ -2543,3 +2543,9 @@ bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelReject
     const bool skip = !tryCanLaunchProbeTraceKernel(params, local);
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason) {
     const bool skip = !tryCanLaunchProbeBlendKernel(params, local);
+
+// --- deepen additive from deepen-b56-ddgi-classify-preflights-a6d0 ---
+bool wouldSkipCanSampleAtProbeCoords(const DDGIDesc& desc,
+    if (outReason == ProbeScheduleRejectReason::NullOutIndices && out_count != nullptr) {
+    } else if (outReason == ProbeScheduleRejectReason::ZeroProbeCount ||
+               outReason == ProbeScheduleRejectReason::ZeroMaxIndices) {

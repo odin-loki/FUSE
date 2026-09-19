@@ -828,3 +828,6 @@ bool wouldClampCacheIndex(u32 probe_index, const DDGIDesc& desc);
 
 // --- deepen additive from deepen-ddgi-b56-guards-c107 ---
 bool wouldSkipProbeTrilinearSample(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-b56-ddgi-classify-preflights-a6d0 ---
+bool wouldSkipCanSampleAtProbeCoords(const DDGIDesc& desc,

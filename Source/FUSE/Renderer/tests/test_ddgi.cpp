@@ -3006,3 +3006,25 @@ void testProbeKernelWouldSkipGuards() {
     expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(0u, 64u, indices, &count, &reason),
                "wouldSkip with reason true for zero probe count");
                "zero probe count wouldSkip reports zero_probe_count");
+
+// --- deepen additive from deepen-b56-ddgi-classify-preflights-a6d0 ---
+void testClassifyProbeGuardRejectReasons() {
+    expectTrue(fuse::renderer::classifyProbeSampleCoordsReject(desc, built) ==
+    expectTrue(fuse::renderer::classifyProbeSampleCoordsReject(empty, built) ==
+    expectTrue(fuse::renderer::classifyCacheIndexReject(desc, 3u, 8u) ==
+    expectTrue(fuse::renderer::classifyCacheIndexReject(desc, 99u, 8u) ==
+    expectTrue(fuse::renderer::classifyCacheIndexReject(desc, nullptr, 3u, 8u) ==
+    expectTrue(fuse::renderer::classifyProbeTrilinearSampleReject(desc, built, cache.data(), 8u) ==
+    expectTrue(fuse::renderer::classifyProbeTrilinearSampleReject(desc, built, nullptr, 8u) ==
+    expectTrue(fuse::renderer::classifyProbeTrilinearSampleReject(desc, reversed, cache.data(), 8u) ==
+    expectTrue(fuse::renderer::classifyProbeScheduleReject(2048u, 64u, indices, &count) ==
+    expectTrue(fuse::renderer::classifyProbeScheduleReject(0u, 64u, indices, &count) ==
+    expectTrue(fuse::renderer::classifyProbeScheduleReject(2048u, 64u, nullptr, &count) ==
+    expectTrue(fuse::renderer::classifyProbeUpdateLaunchReject(desc, validLaunch, 2u) ==
+    expectTrue(fuse::renderer::classifyProbeUpdateLaunchReject(desc, oobLaunch, 2u) ==
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCanSampleAtProbeCoords(desc, built, cache.data(), 8u),
+               "wouldSkipCanSampleAtProbeCoords false for valid sample");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCanSampleAtProbeCoords(desc, built, nullptr, 8u),
+               "wouldSkipCanSampleAtProbeCoords true for null cache");
+    expectTrue(fuse::renderer::gi::wouldSkipProbeTraceKernel(kernelParams),
+    testClassifyProbeGuardRejectReasons();
