@@ -220,6 +220,11 @@ inline bool isRigid(const Mat4& matrix, f32 epsilon = 1e-4f) {
     return isAffine(matrix, epsilon) && isRigidUpper3x3(matrix, epsilon);
 }
 
+/// True when the matrix is a pure rotation + translation (unit-length orthogonal upper 3×3).
+inline bool isPureRotation(const Mat4& matrix, f32 epsilon = 1e-4f) {
+    return isAffine(matrix, epsilon) && isOrthogonalUpper3x3(matrix, epsilon);
+}
+
 /// Translation column of an affine matrix; returns zero when the matrix is not affine.
 inline Vec3 extractTranslation(const Mat4& matrix, f32 epsilon = 1e-5f) {
     if (!isAffine(matrix, epsilon)) {
@@ -420,6 +425,16 @@ inline bool tryTransformPointRigid(const Mat4& matrix, const Vec3& point, Vec3& 
         return false;
     }
     out = transformPoint(matrix, point);
+    return true;
+}
+
+/// Writes `transformDirection(matrix, direction)` when the matrix is a rigid affine transform.
+inline bool tryTransformDirectionRigid(const Mat4& matrix, const Vec3& direction, Vec3& out,
+                                       f32 epsilon = 1e-4f) {
+    if (!isRigid(matrix, epsilon)) {
+        return false;
+    }
+    out = transformDirection(matrix, direction);
     return true;
 }
 
