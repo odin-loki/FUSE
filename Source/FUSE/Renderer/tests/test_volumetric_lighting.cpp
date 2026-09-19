@@ -4205,3 +4205,7 @@ void testFroxelGuardClassifyPreflightAndIsBlocking() {
     expectTrue(fuse::renderer::froxel_util::preflightGridDensityReady(grid, zeroDesc),
                "preflightGridDensityReady succeeds for empty desc");
     expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulateReady(desc, badCamera, params),
+
+// --- deepen additive from deepen-froxel-isblocking-preflight-c683 ---
+               "preflightSampleCoords succeeds when weights would clamp");
+               "preflightSampleCoords reports invalid_weights reject reason");
