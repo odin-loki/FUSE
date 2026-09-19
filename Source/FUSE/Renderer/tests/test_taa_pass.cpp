@@ -4700,3 +4700,16 @@ void testTaaPassTryClassifyGuardWrappers() {
                "pass preflightResolve passes for valid desc after init");
                "pass tryPreflightResolveBlendWeights reject reason is None");
                "zero-width pass classifyJitterSyncReject still valid for sequence");
+
+// --- deepen additive from b59-taa-pass-try-classify-guards-b93d ---
+    expectTrue(pass->tryPreflightJitterSync(5u, jitterReject), "pass tryPreflightJitterSync passes before init");
+               "zero-width pass classifyJitterNdcReject reports InvalidViewport");
+                   fuse::renderer::classifyTaaJitterNdcReject(passDesc.width, passDesc.height,
+               "pass classifyJitterNdcReject matches free helper");
+                   fuse::renderer::classifyTaaJitterAdvanceReject(pass->jitter().sequenceLength()),
+               "pass classifyJitterAdvanceReject matches free helper");
+                   fuse::renderer::classifyTaaResolveBlendReject(resolveDesc, pass->history()),
+               "pass classifyResolveBlendReject matches free helper");
+               "pass tryPreflightJitterSync succeeds after init");
+    expectTrue(fuse::renderer::tryPreflightTaaJitterSync(3u, pass->jitter().sequenceLength(), jitterReject),
+               "free tryPreflightJitterSync matches pass sequence length");
