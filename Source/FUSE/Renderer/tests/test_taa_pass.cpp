@@ -4020,3 +4020,37 @@ void testTaaPassWarmupAndCompositePreflightWrappers() {
     testJitterAlignmentPreflight();
     testResolveWithBlendPreflight();
     testTaaPassWarmupAndCompositePreflightWrappers();
+
+// --- deepen additive from deepen-b59-taa-guards-2031 ---
+void testJitterSlotSyncAdvanceTryGuards() {
+    expectTrue(fuse::renderer::classifyTaaJitterSlotReject(3u, 8u) ==
+    expectTrue(fuse::renderer::classifyTaaJitterSlotReject(8u, 8u) ==
+    expectTrue(fuse::renderer::classifyTaaJitterSlotReject(0u, 0u) ==
+    expectTrue(fuse::renderer::preflightTaaJitterSlot(4u, 8u, &rejectReason),
+               "preflightTaaJitterSlot passes for in-range slot");
+    expectTrue(fuse::renderer::tryPreflightTaaJitterSlot(4u, 8u, rejectReason),
+               "tryPreflightTaaJitterSlot passes for in-range slot");
+    expectTrue(fuse::renderer::trySyncTaaJitter(jitter, 5u, rejectReason),
+               "trySyncTaaJitter succeeds for valid sequence");
+    expectTrue(jitter.isAlignedToFrameIndex(5u), "jitter aligned after trySyncTaaJitter");
+    expectTrue(fuse::renderer::tryAdvanceTaaJitter(jitter, rejectReason),
+               "tryAdvanceTaaJitter succeeds for valid sequence");
+    expectTrue(jitter.index() != indexBefore, "tryAdvanceTaaJitter advances jitter");
+    expectTrue(!fuse::renderer::preflightTaaResolveFrame(desc, emptyHistory, &skipReason, &blendReject),
+    expectTrue(fuse::renderer::tryPreflightTaaResolveFrame(desc, history, skipReason, blendReject),
+               "tryPreflightTaaResolveFrame passes for valid warmup resolve");
+    expectTrue(!fuse::renderer::preflightTaaResolveFrame(desc, history, &skipReason, &blendReject),
+void testTaaPassDeepenTryAndFrameGuards() {
+    expectTrue(pass->trySyncJitterToFrameIndex(6u, jitterReject),
+               "pass trySyncJitterToFrameIndex succeeds before init");
+    expectTrue(pass->jitterAlignedToFrameIndex(6u), "pass jitter aligned after trySync");
+    expectTrue(!pass->jitterNeedsResync(6u), "pass jitter does not need resync after trySync");
+    expectTrue(pass->tryAdvanceJitterIfReady(jitterReject),
+               "pass tryAdvanceJitterIfReady succeeds before init");
+    expectTrue(pass->preflightJitterSlot(6u, &jitterReject),
+               "pass preflightJitterSlot passes for in-range slot");
+    expectTrue(pass->preflightResolveFrame(resolveDesc, &skipReason, &blendReject),
+    expectTrue(pass->tryPreflightResolveFrame(resolveDesc, skipReason, blendReject),
+               "pass tryPreflightResolveFrame passes before first resolve");
+    expectTrue(pass->trySyncJitterToFrameIndex(4u, jitterReject),
+               "pass trySyncJitterToFrameIndex succeeds after init");

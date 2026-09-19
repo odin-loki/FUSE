@@ -585,3 +585,16 @@ bool TaaPass::preflightResolveFrameGuards(const TaaResolveDesc& desc, TaaResolve
     return preflightTaaResolveWithBlend(desc, m_history, reason);
 bool TaaPass::preflightJitterAlignment(u32 frameIndex, TaaJitterGuardRejectReason* reason) const {
     return preflightTaaJitterAlignment(m_jitter, frameIndex, reason);
+
+// --- deepen additive from deepen-b59-taa-guards-2031 ---
+bool TaaPass::trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason) {
+    if (!trySyncTaaJitter(m_jitter, frameIndex, reason)) {
+bool TaaPass::tryAdvanceJitterIfReady(TaaJitterGuardRejectReason& reason) {
+    if (!tryAdvanceTaaJitter(m_jitter, reason)) {
+bool TaaPass::preflightJitterSlot(u32 slot, TaaJitterGuardRejectReason* reason) const {
+    return preflightTaaJitterSlot(slot, m_jitter.sequenceLength(), reason);
+                                    TaaResolveBlendRejectReason* blendReject) const {
+    return preflightTaaResolveFrame(desc, m_history, skipReason, blendReject);
+bool TaaPass::tryPreflightResolveFrame(const TaaResolveDesc& desc, TaaResolveSkipReason& skipReason,
+                                       TaaResolveBlendRejectReason& blendReject) const {
+    return tryPreflightTaaResolveFrame(desc, m_history, skipReason, blendReject);
