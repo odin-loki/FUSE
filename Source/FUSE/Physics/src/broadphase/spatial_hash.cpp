@@ -235,7 +235,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        if (canSkipShapeCellInsertion(range, maxSpan, maxOccupancy)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -255,7 +255,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+    if (canSkipShapeCellInsertion(range, maxSpan, maxOccupancy)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -268,17 +268,20 @@ void populateShapeCells(
     }
 }
 
-void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
+u32 mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
     if (!shouldRunMergePairsIntoBuffer(pairs, buffer)) {
-        return;
+        return 0u;
     }
 
+    u32 pushedCount = 0u;
     for (const CandidatePair& pair : pairs) {
         if (!preflightPairBufferPush(buffer, pair.bodyA, pair.bodyB).canPush()) {
             break;
         }
         buffer.push(pair.bodyA, pair.bodyB);
+        ++pushedCount;
     }
+    return pushedCount;
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
@@ -607,6 +610,30 @@ bool mergePairsIntoBufferRejectsForReason(
     return mergePairsIntoBufferRejectReason(pairs, buffer) == expected;
 }
 
+namespace {
+
+u32 countPairsThatFit(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
+    if (pairs.empty() || buffer.isFull()) {
+        return 0u;
+    }
+
+    u32 fitCount = 0u;
+    u32 simulatedCount = buffer.activeCount;
+    for (const CandidatePair& pair : pairs) {
+        if (!isValidCandidatePair(pair.bodyA, pair.bodyB)) {
+            continue;
+        }
+        if (buffer.maxCapacity > 0u && simulatedCount >= buffer.maxCapacity) {
+            break;
+        }
+        ++fitCount;
+        ++simulatedCount;
+    }
+    return fitCount;
+}
+
+} // namespace
+
 MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     const std::vector<CandidatePair>& pairs,
     const PairBufferSoA& buffer) {
@@ -614,6 +641,10 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     preflight.reason = mergePairsIntoBufferRejectReason(pairs, buffer);
     preflight.emptyPairs = preflight.reason == MergePairsIntoBufferRejectReason::EmptyPairs;
     preflight.bufferFull = preflight.reason == MergePairsIntoBufferRejectReason::BufferFull;
+    preflight.pairsThatFit = countPairsThatFit(pairs, buffer);
+    preflight.insufficientCapacity =
+        preflight.reason == MergePairsIntoBufferRejectReason::None &&
+        preflight.pairsThatFit < static_cast<u32>(pairs.size());
     return preflight;
 }
 
@@ -643,12 +674,157 @@ bool refineBroadphasePairsParallelWithPreflight(
     return true;
 }
 
-void dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer) {
+bool dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer) {
+    if (!shouldRunDedupeBroadphase(buffer)) {
+        return false;
+    }
     dedupeBuffer(buffer);
+    return true;
 }
 
-void mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
-    mergePairsIntoBuffer(pairs, buffer);
+u32 mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
+    return mergePairsIntoBuffer(pairs, buffer);
+}
+
+const char* shapeCellInsertionRejectReasonName(ShapeCellInsertionRejectReason reason) {
+    switch (reason) {
+    case ShapeCellInsertionRejectReason::None:
+        return "None";
+    case ShapeCellInsertionRejectReason::EmptyRange:
+        return "EmptyRange";
+    case ShapeCellInsertionRejectReason::ExceedsSpan:
+        return "ExceedsSpan";
+    case ShapeCellInsertionRejectReason::ExceedsBudget:
+        return "ExceedsBudget";
+    }
+    return "Unknown";
+}
+
+ShapeCellInsertionRejectReason shapeCellInsertionRejectReason(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy) {
+    if (isEmptyCellRange(range)) {
+        return ShapeCellInsertionRejectReason::EmptyRange;
+    }
+    if (exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
+        return ShapeCellInsertionRejectReason::ExceedsSpan;
+    }
+    if (exceedsCellOccupancyBudget(range, maxOccupancy)) {
+        return ShapeCellInsertionRejectReason::ExceedsBudget;
+    }
+    return ShapeCellInsertionRejectReason::None;
+}
+
+ShapeCellInsertionRejectReason shapeCellInsertionRejectReason(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy) {
+    if (isEmptyCellRange(range)) {
+        return ShapeCellInsertionRejectReason::EmptyRange;
+    }
+    if (exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
+        return ShapeCellInsertionRejectReason::ExceedsSpan;
+    }
+    if (exceedsCellOccupancyBudget(range, maxOccupancy)) {
+        return ShapeCellInsertionRejectReason::ExceedsBudget;
+    }
+    return ShapeCellInsertionRejectReason::None;
+}
+
+bool shapeCellInsertionRejectsForReason(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy,
+    ShapeCellInsertionRejectReason expected) {
+    return shapeCellInsertionRejectReason(range, maxSpanPerAxis, maxOccupancy) == expected;
+}
+
+bool shapeCellInsertionRejectsForReason(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy,
+    ShapeCellInsertionRejectReason expected) {
+    return shapeCellInsertionRejectReason(range, maxSpanPerAxis, maxOccupancy) == expected;
+}
+
+ShapeCellInsertionPreflight preflightShapeCellInsertion(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy) {
+    ShapeCellInsertionPreflight preflight{};
+    preflight.reason = shapeCellInsertionRejectReason(range, maxSpanPerAxis, maxOccupancy);
+    preflight.emptyRange = preflight.reason == ShapeCellInsertionRejectReason::EmptyRange;
+    preflight.exceedsSpan = preflight.reason == ShapeCellInsertionRejectReason::ExceedsSpan;
+    preflight.exceedsBudget = preflight.reason == ShapeCellInsertionRejectReason::ExceedsBudget;
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    return preflight;
+}
+
+ShapeCellInsertionPreflight preflightShapeCellInsertion(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy) {
+    ShapeCellInsertionPreflight preflight{};
+    preflight.reason = shapeCellInsertionRejectReason(range, maxSpanPerAxis, maxOccupancy);
+    preflight.emptyRange = preflight.reason == ShapeCellInsertionRejectReason::EmptyRange;
+    preflight.exceedsSpan = preflight.reason == ShapeCellInsertionRejectReason::ExceedsSpan;
+    preflight.exceedsBudget = preflight.reason == ShapeCellInsertionRejectReason::ExceedsBudget;
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    return preflight;
+}
+
+bool canSkipShapeCellInsertion(const CellRange3& range, u32 maxSpanPerAxis, u32 maxOccupancy) {
+    return !preflightShapeCellInsertion(range, maxSpanPerAxis, maxOccupancy).canInsert();
+}
+
+bool canSkipShapeCellInsertion(const CellRange2& range, u32 maxSpanPerAxis, u32 maxOccupancy) {
+    return !preflightShapeCellInsertion(range, maxSpanPerAxis, maxOccupancy).canInsert();
+}
+
+bool shouldRunShapeCellInsertion(const CellRange3& range, u32 maxSpanPerAxis, u32 maxOccupancy) {
+    return preflightShapeCellInsertion(range, maxSpanPerAxis, maxOccupancy).canInsert();
+}
+
+bool shouldRunShapeCellInsertion(const CellRange2& range, u32 maxSpanPerAxis, u32 maxOccupancy) {
+    return preflightShapeCellInsertion(range, maxSpanPerAxis, maxOccupancy).canInsert();
+}
+
+BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer) {
+    BroadphaseMergeIntoBufferPreflight preflight{};
+
+    const BroadphaseMergePreflight scenePreflight = preflightBroadphaseMerge(bodies, shapes);
+    preflight.sceneReason = scenePreflight.reason;
+    preflight.emptyPlaneBodies = scenePreflight.emptyPlaneBodies;
+    preflight.emptyDynamicBodies = scenePreflight.emptyDynamicBodies;
+
+    const MergePairsIntoBufferPreflight bufferPreflight = preflightMergePairsIntoBuffer(pairs, buffer);
+    preflight.bufferReason = bufferPreflight.reason;
+    preflight.emptyPairs = bufferPreflight.emptyPairs;
+    preflight.bufferFull = bufferPreflight.bufferFull;
+    preflight.insufficientCapacity = bufferPreflight.insufficientCapacity;
+
+    return preflight;
+}
+
+bool canSkipBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer) {
+    return !preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer).canMerge();
+}
+
+bool shouldRunBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer) {
+    return preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer).canMerge();
 }
 
 void runBroadphaseIntoBuffer(
