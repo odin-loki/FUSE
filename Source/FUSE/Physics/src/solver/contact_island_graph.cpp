@@ -336,6 +336,7 @@ IslandBuildStats compute_island_build_input_stats(
         return "Unknown";
     }
 
+
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints) {
@@ -351,6 +352,13 @@ IslandBuildStats compute_island_build_input_stats(
 
 IslandBuildRejectReason island_build_reject_reason(
     if (bodyCount == 0u) {
+        }
+    stats.constraintEdgeCount = stats.validContactCount + stats.distanceConstraintCount;
+
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+        return IslandBuildRejectReason::ZeroBodies;
 
     const IslandBuildStats stats = compute_island_build_input_stats(bodyCount, contacts, distanceConstraints);
     if (stats.constraintEdgeCount == 0u) {
@@ -424,6 +432,16 @@ IslandBuildPreflight preflight_island_build(
 bool should_skip_island_build(
     return preflight_island_build(bodyCount, contacts, distanceConstraints).skipped;
 
+}
+
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    preflight.stats = compute_island_build_input_stats(bodyCount, contacts, distanceConstraints);
+    preflight.zeroBodies = preflight.reason == IslandBuildRejectReason::ZeroBodies;
+    preflight.noConstraints = preflight.reason == IslandBuildRejectReason::NoConstraints;
+
+
+bool build_island_graph_guarded(ContactIslandGraph& graph,
                                 u32 bodyCount,
                                 const std::vector<narrowphase::ContactManifold>& contacts,
                                 const std::vector<DistanceConstraint>& distanceConstraints) {

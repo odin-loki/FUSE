@@ -196,6 +196,27 @@ struct IslandBuildPreflight {
 
     const std::vector<DistanceConstraint>& distanceConstraints,
 
+    u32 constraintEdgeCount = 0;
+
+/// Read-only island graph build diagnostics — no mutation (B4.4 deepen follow-up).
+    IslandBuildRejectReason reason = IslandBuildRejectReason::None;
+    bool noConstraints = false;
+
+
+/// Summarize island build inputs without mutating the graph (B4.4 deepen follow-up).
+IslandBuildStats compute_island_build_input_stats(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Diagnose why island graph build would skip; vacuously succeeds on populated constrained scenes.
+IslandBuildRejectReason island_build_reject_reason(
+
+/// Returns true when `island_build_reject_reason` matches `expected` (B4.4 deepen follow-up).
+bool island_build_rejects_for_reason(
+    IslandBuildRejectReason expected);
+
+/// Const preflight for island graph build (B4.4 deepen follow-up).
 IslandBuildPreflight preflight_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
