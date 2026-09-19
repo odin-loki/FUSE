@@ -238,6 +238,8 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
 
 
 
+
+
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -907,6 +909,7 @@ struct ContactIslandGraph {
     /// Guarded build; returns false and clears when preflight rejects unsafe or empty inputs.
     /// Guarded build; clears and returns false when preflight rejects unsafe or empty inputs (B4.4 deepen follow-up pass).
     /// Build only when `island_graph_build_reject_reason` is `None`; clears and returns false otherwise.
+    /// Build only when `island_graph_build_reject_reason` is `None`; clears and returns false otherwise (B4.4 deepen follow-up pass).
 
     void clear();
 
