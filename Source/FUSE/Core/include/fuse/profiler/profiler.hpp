@@ -67,6 +67,27 @@ struct ChromeTraceExportPreflight {
     }
 };
 
+/// Read-only nesting/async-flow diagnostics — safe to call before recording more events.
+struct NestingAsyncFlowPreflight {
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+    u32 openAsyncFlowCount = 0;
+    u32 maxScopeNestingDepth = 0;
+    u32 maxFlowNestingDepth = 0;
+    bool scopeNestingBalanced = true;
+    bool flowNestingBalanced = true;
+    bool hasOpenAsyncFlows = false;
+    bool flowDepthDetached = false;
+    bool crossThreadFlowHandoffPending = false;
+
+    bool canBeginScope() const { return true; }
+    bool canBeginAsyncFlow() const { return !crossThreadFlowHandoffPending; }
+    bool canEndAsyncFlow() const { return openAsyncFlowCount > 0u; }
+    bool isNestingHealthy() const {
+        return !flowDepthDetached && !crossThreadFlowHandoffPending;
+    }
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -104,12 +125,17 @@ bool isFlowNestingBalanced();
 bool hasUnbalancedNesting();
 bool isFlowDepthDetached();
 bool isCrossThreadFlowHandoffPending();
+NestingAsyncFlowPreflight preflightNestingAndAsyncFlow();
 
 bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidEventName(const char* name);
+bool isValidFlowId(u32 flowId);
+bool isFlowPhaseEvent(const ProfileEvent& event);
+bool eventNameMatches(const ProfileEvent& event, const char* name);
+bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
@@ -121,12 +147,24 @@ u32 lastEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 countEventsByName(const char* name);
+bool hasEventsWithName(const char* name);
+u32 findFirstEventIndexByFlowId(u32 flowId);
+u32 findLastEventIndexByFlowId(u32 flowId);
+u32 countEventsByFlowId(u32 flowId);
+bool hasEventsWithFlowId(u32 flowId);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
+bool tryFirstEventByName(const char* name, ProfileEvent& outEvent);
+bool tryLastEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFirstFlowEvent(u32 flowId, ProfileEvent& outEvent);
+bool tryLastFlowEvent(u32 flowId, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
