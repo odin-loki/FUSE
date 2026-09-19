@@ -333,3 +333,8 @@ struct EventLookupPreflight {
 [[nodiscard]] ChromeTraceExportPreflight preflightChromeTraceExport();
 [[nodiscard]] EventLookupPreflight preflightEventLookup(u32 index);
 [[nodiscard]] bool tryEventAt(u32 index, const ProfileEvent*& event_out);
+
+// --- deepen additive from deepen-b16-profiler-preflights-8f4e ---
+bool tryEventAt(u32 index, const ProfileEvent*& outEvent);
+struct ProfilerGuardPreflight {
+[[nodiscard]] ProfilerGuardPreflight preflightGuardState();

@@ -1146,3 +1146,8 @@ EventLookupPreflight preflightEventLookup(u32 index) {
     return preflightEventLookup(index).can_lookup();
 bool tryEventAt(u32 index, const ProfileEvent*& event_out) {
     const EventLookupPreflight preflight = preflightEventLookup(index);
+
+// --- deepen additive from deepen-b16-profiler-preflights-8f4e ---
+bool tryEventAt(u32 index, const ProfileEvent*& outEvent) {
+ProfilerGuardPreflight preflightGuardState() {
+    ProfilerGuardPreflight preflight{};

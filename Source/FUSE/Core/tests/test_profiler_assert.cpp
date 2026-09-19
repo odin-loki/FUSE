@@ -2773,3 +2773,53 @@ void testEventLookupPreflightAndTryEventAt() {
     testScopePreflight();
     testCounterSamplePreflight();
     testEventLookupPreflightAndTryEventAt();
+
+// --- deepen additive from deepen-b16-profiler-preflights-8f4e ---
+void testIsValidProfileNameGuard() {
+    expectTrue(!fuse::profiler::tryEventAt(0u, outEvent), "tryEventAt fails on empty buffer");
+    expectTrue(outEvent != nullptr, "tryEventAt sets out pointer on failure");
+    expectTrue(outEvent->name == nullptr, "tryEventAt failure returns empty sentinel");
+               "tryEventAt sentinel is not a valid profile event");
+    expectTrue(outEvent != nullptr && outEvent->name != nullptr, "tryEventAt returns recorded event");
+    expectTrue(outEvent->phase == fuse::profiler::EventPhase::Begin, "tryEventAt preserves event phase");
+    expectTrue(std::string(outEvent->name) == "lookup_scope", "tryEventAt preserves event name");
+    expectTrue(fuse::profiler::tryEventAt(1u, outEvent), "tryEventAt succeeds for last event");
+    expectTrue(outEvent->phase == fuse::profiler::EventPhase::End, "tryEventAt returns scope end");
+    expectTrue(!fuse::profiler::tryEventAt(2u, outEvent), "tryEventAt fails past event count");
+    expectTrue(outEvent->name == nullptr, "tryEventAt past count returns sentinel");
+void testPreflightGuardState() {
+    const fuse::profiler::ProfilerGuardPreflight resetPreflight = fuse::profiler::preflightGuardState();
+    expectTrue(!resetPreflight.hasOpenScopes, "reset preflight has no open scopes");
+    expectTrue(!resetPreflight.hasOpenAsyncFlows, "reset preflight has no open async flows");
+    expectTrue(!resetPreflight.canEndAsyncFlow, "reset preflight cannot end async flow");
+    expectTrue(resetPreflight.scopeDepth == 0u, "reset preflight scope depth is zero");
+    expectTrue(resetPreflight.flowDepth == 0u, "reset preflight flow depth is zero");
+        const fuse::profiler::ProfilerGuardPreflight scopedPreflight = fuse::profiler::preflightGuardState();
+        expectTrue(scopedPreflight.hasOpenScopes, "scoped preflight marks open scopes");
+        expectTrue(scopedPreflight.scopeDepth == 1u, "scoped preflight reports scope depth");
+        const fuse::profiler::ProfilerGuardPreflight flowPreflight = fuse::profiler::preflightGuardState();
+        expectTrue(flowPreflight.hasOpenAsyncFlows, "flow preflight marks open async flows");
+        expectTrue(flowPreflight.canEndAsyncFlow, "flow preflight allows async finish");
+        expectTrue(flowPreflight.openAsyncFlows == 1u, "flow preflight tracks open count");
+        expectTrue(flowPreflight.flowDepth == 1u, "flow preflight reports flow depth");
+        expectTrue(flowPreflight.hasUnmatchedAsyncFlows(), "flow preflight marks unmatched flows");
+    const fuse::profiler::ProfilerGuardPreflight clearedPreflight = fuse::profiler::preflightGuardState();
+    expectTrue(!clearedPreflight.hasOpenScopes, "post-scope preflight clears open scopes");
+    expectTrue(!clearedPreflight.hasOpenAsyncFlows, "post-flow preflight clears open async flows");
+    expectTrue(clearedPreflight.maxScopeDepth >= 1u, "preflight retains max scope depth");
+    expectTrue(clearedPreflight.maxFlowDepth >= 1u, "preflight retains max flow depth");
+    expectTrue(emptyPreflight.canExport, "empty export preflight allows export");
+    expectTrue(emptyPreflight.bufferEmpty, "empty export preflight marks empty buffer");
+    expectTrue(!emptyPreflight.hasEventsToExport(), "empty export preflight has no events");
+    expectTrue(emptyPreflight.frameIndex == 0u, "empty export preflight reports frame index");
+    expectTrue(!emptyPreflight.hasOpenScopes, "empty export preflight has no open scopes");
+    expectTrue(!emptyPreflight.hasUnmatchedAsyncFlows, "empty export preflight has no unmatched flows");
+    fuse::profiler::ChromeTraceExportPreflight unmatchedPreflight{};
+        unmatchedPreflight = fuse::profiler::preflightChromeTraceExport();
+        expectTrue(unmatchedPreflight.hasOpenScopes, "unmatched export preflight sees open scope");
+    expectTrue(unmatchedPreflight.canExport, "unmatched-flow export preflight still allows export");
+    expectTrue(!unmatchedPreflight.bufferEmpty, "unmatched export preflight sees recorded events");
+    expectTrue(unmatchedPreflight.hasEventsToExport(), "unmatched export preflight has events");
+    expectTrue(unmatchedPreflight.hasOpenAsyncFlows, "unmatched export preflight sees open flow");
+    expectTrue(unmatchedPreflight.hasUnmatchedAsyncFlows,
+    testPreflightGuardState();
