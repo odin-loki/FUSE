@@ -31,6 +31,9 @@ public:
                                                   const std::string& changed_source) const;
     /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
     [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
+    /// Read-only stale dependency reconcile breakdown via cook job graph (B7.9 deepen).
+    [[nodiscard]] CookCacheStaleUpstreamEstimate estimate_stale_dependency_reconciliation(
+        const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
