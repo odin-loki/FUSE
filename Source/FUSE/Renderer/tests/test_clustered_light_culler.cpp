@@ -1434,3 +1434,13 @@ void testClusterLookupFromScreenGuards() {
                "tryValidateForDesc rejects desc mismatch");
     expectTrue(fuse::renderer::cluster_util::tryValidateGridPopulationForDesc(grid, zeroDesc, reason),
                "tryValidateForDesc vacuously accepts empty desc");
+
+// --- deepen additive from deepen-b5-clustered-lights-1804 ---
+void testClusterLightGridAccessAndCoordLookupGuards() {
+    expectTrue(tryCoordCount == 2u, "tryLookup at coord reports cluster light count");
+    expectTrue(tryCoordLights.size() == 2u && tryCoordLights[0] == 0u && tryCoordLights[1] == 1u,
+               "tryLookup at coord copies assigned lights");
+    expectTrue(rejectedCoordCount == 0u, "tryLookup at coord zeroes count on guard failure");
+    expectTrue(rejectedCoordLights.empty(), "tryLookup at coord clears output on guard failure");
+    expectTrue(!fuse::renderer::cluster_util::tryValidateGridPopulationForDesc(undersized, desc, reason),
+               "tryValidateGridPopulationForDesc rejects undersized grid");
