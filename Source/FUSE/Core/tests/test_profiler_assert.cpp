@@ -2665,3 +2665,21 @@ void testAsyncFlowPreflights() {
     testEmptyNamePreflightGuards();
     testScopeNestingPreflight();
     testAsyncFlowPreflights();
+
+// --- deepen additive from deepen-b16-profiler-guards-a7f2 ---
+    expectTrue(emptyPreflight.canExport(), "preflight allows export when profiler is enabled");
+    expectTrue(emptyPreflight.profilerEnabled, "preflight reports profiler enabled");
+    expectTrue(emptyPreflight.bufferEmpty, "preflight reports empty buffer on reset");
+    expectTrue(!emptyPreflight.hasExportableEvents, "preflight reports no exportable events on reset");
+    expectTrue(emptyPreflight.exportableEventCount == 0u, "preflight exportable count is zero on reset");
+    expectTrue(emptyPreflight.scopeNestingBalanced, "preflight reports balanced scope nesting on reset");
+    expectTrue(emptyPreflight.flowNestingBalanced, "preflight reports balanced flow nesting on reset");
+    expectTrue(!emptyPreflight.hasOpenAsyncFlows, "preflight reports no open flows on reset");
+    expectTrue(activePreflight.canExport(), "preflight allows export with recorded events");
+    expectTrue(!activePreflight.bufferEmpty, "preflight reports non-empty buffer");
+    expectTrue(activePreflight.hasExportableEvents, "preflight reports exportable events");
+    expectTrue(activePreflight.exportableEventCount == activePreflight.eventCount,
+    expectTrue(activePreflight.frameIndex == 1u, "preflight reports current frame index");
+    expectTrue(activePreflight.hasOpenAsyncFlows, "preflight reports open async flows");
+    expectTrue(!disabledPreflight.canExport(), "preflight blocks export when profiler is disabled");
+    expectTrue(!disabledPreflight.profilerEnabled, "preflight reports profiler disabled");
