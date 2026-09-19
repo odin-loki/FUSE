@@ -83,6 +83,9 @@ public:
     /// Sync jitter with reject-reason diagnostics (B5.9 deepen).
     bool trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason);
     /// Sync jitter with mandatory reject-reason output; returns false when blocked (B5.9 deepen).
+    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
+    /// Sync jitter with mandatory reject-reason output when preflight rejects (B5.9 deepen).
     bool trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason);
     /// True when pass jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
     bool jitterAlignedToFrameIndex(u32 frameIndex) const;
@@ -240,6 +243,9 @@ public:
     bool tryAdvanceJitter(TaaJitterGuardRejectReason& reason);
     /// Early-out when jitter advance preflight would reject (B5.9 deepen).
     bool shouldSkipJitterAdvance() const;
+    /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
+    /// Advance jitter with mandatory reject-reason output when preflight rejects (B5.9 deepen).
     /// Expected blend weights for the next resolve (B5.9 deepen).
     TaaBlendWeights expectedResolveBlendWeights(const TaaResolveDesc& desc) const;
     /// True when resolve would sample warmed history this frame (B5.9 deepen).
@@ -293,7 +299,6 @@ public:
     /// History reuse preflight with mandatory block-reason output (B5.9 deepen).
     /// History resolve-readiness preflight with mandatory block-reason output (B5.9 deepen).
     /// Compute resolve blend weights with mandatory reject-reason output (B5.9 deepen).
-    TaaResolveBlendRejectReason classifyResolveBlendReject(const TaaResolveDesc& desc) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// Early-out when resolve preflight would bail (B5.9 deepen).
