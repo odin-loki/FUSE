@@ -4156,3 +4156,12 @@ void testFroxelDeepenGuardPredicates() {
     expectTrue(mapped.sliceZ0 < desc.slicesZ, "preflightScreenMapping returns mapped coords");
     expectTrue(!fuse::renderer::froxel_util::preflightTrilinearSample(emptyGrid, desc, inBounds),
                "preflightTrilinearSample rejects empty storage");
+
+// --- deepen additive from deepen-froxel-volumetric-guards-b511-4019 ---
+               "preflightScreenMapping returns mapped sample coords");
+    expectTrue(froxelIndex < desc.froxelCount(), "preflightScreenDepthToFroxelIndex returns in-range index");
+               "classifyFroxelSampleReject none for valid coords");
+               "preflightFroxelSample succeeds for valid coords");
+               "classifyFroxelSampleReject invalid_weights for clampable weights");
+               "classifyFroxelSampleReject out_of_bounds for hard OOB tile coord");
+               "preflightFroxelSample rejects hard OOB tile coord");

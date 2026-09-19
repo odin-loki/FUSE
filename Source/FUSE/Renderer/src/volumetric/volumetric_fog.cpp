@@ -2415,3 +2415,6 @@ bool preflightSampleCoordsReady(const FroxelSampleCoords& coords,
 
 // --- deepen additive from deepen-froxel-volumetric-guards-3b64 ---
     const bool ok = !screenMappingRejectReasonIsBlocking(reject);
+
+// --- deepen additive from deepen-froxel-volumetric-guards-b511-4019 ---
+    if (!preflightScreenMapping(screenX, screenY, viewDepth, desc, camera, &coords, reason)) {
