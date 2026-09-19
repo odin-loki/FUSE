@@ -2179,3 +2179,13 @@ IslandWakePreflight preflight_island_wake(const RigidBodySoA& bodies, const Cont
         if (sleepPreflight.all_dynamic_sleeping()) {
         const IslandWakePreflight wakePreflight = preflight_island_wake(bodies, island);
         if (wakePreflight.should_wake()) {
+
+// --- deepen additive from pbd-island-guards-f0a5 ---
+bool should_skip_island_solve_sleeping(const ContactIslandGraph::Island& island,
+IslandSolveJobSleepPreflight preflight_solve_island_job_with_sleep(const IslandSolveJob& job,
+    IslandSolveJobSleepPreflight preflight{};
+bool should_skip_solve_island_job_with_sleep(const IslandSolveJob& job,
+IslandSleepDispatchPreflight preflight_island_dispatch_with_sleep(const ContactIslandGraph& graph,
+    IslandSleepDispatchPreflight preflight{};
+bool should_skip_island_dispatch_with_sleep(const ContactIslandGraph& graph,
+    if (should_skip_island_solve_sleeping(island, bodies)) {
