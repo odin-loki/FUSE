@@ -149,6 +149,7 @@ struct PairBufferSoA {
 /// Why pair-buffer push would reject (B4.2 deepen pass).
 /// Why a pair-buffer push would be rejected (B4.2 deepen pass).
 /// Why pair-buffer push would reject a candidate pair (B4.2 deepen follow-up pass).
+/// Why a pair-buffer push would be rejected (B4.2 deepen follow-up pass).
 enum class PairBufferPushRejectReason : u8 {
     None = 0,
     InvalidPair,
@@ -163,6 +164,8 @@ const char* pairBufferPushRejectReasonName(PairBufferPushRejectReason reason);
 PairBufferPushRejectReason pairBufferPushRejectReason(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
 
 /// Returns true when `pairBufferPushRejectReason` matches `expected` (B4.2 deepen pass).
+
+/// Diagnose why push would reject; vacuously succeeds on valid pairs under capacity.
 
 /// Returns true when `pairBufferPushRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 bool pairBufferPushRejectsForReason(
@@ -657,6 +660,17 @@ bool should_skip_pair_buffer_compaction(const PairBufferSoA& buffer);
 
 
 
+
+
+/// Non-mutating sort skip predicate — inverse of `preflightPairBufferSort::needsSort` (B4.2 deepen follow-up pass).
+
+/// Non-mutating compaction skip predicate — inverse of `preflightPairBufferCompaction::needsCompaction` (B4.2 deepen follow-up pass).
+bool canSkipPairBufferCompaction(const PairBufferSoA& buffer);
+
+/// Read-only compact-and-clamp diagnostics — no mutation (B4.2 deepen follow-up pass).
+    bool needsCompaction = false;
+
+    bool canSkip() const { return emptyBuffer || (!needsCompaction && !needsClamp); }
 
 
 } // namespace fuse::physics::broadphase
