@@ -213,6 +213,7 @@ struct ChromeTraceExportPreflight {
             && !ringBufferFull && !hasInvalidNameEvents;
     bool hasBufferPairImbalance() const { return scopePairImbalancedInBuffer || flowPairImbalancedInBuffer; }
             && !hasBufferPairImbalance() && !hasDroppedEvents && !hasInvalidNameEvents;
+            && !ringBufferFull;
     }
 };
 
@@ -564,6 +565,7 @@ bool isFlowPairBalancedInBuffer();
 bool isProfilerGuardStateBalanced();
 u32 ignoredAsyncFlowEndCount();
 bool hasIgnoredAsyncFlowEnds();
+u32 orphanAsyncFlowEndCount();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();
@@ -820,6 +822,7 @@ u32 countEventsByScopeId(u32 scopeId);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
+bool peekEventAt(u32 index, ProfileEvent& outEvent);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 bool tryEventPhaseAt(u32 index, EventPhase& outPhase);

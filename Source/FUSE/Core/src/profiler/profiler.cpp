@@ -4,6 +4,7 @@
 
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cctype>
 #include <cstdio>
@@ -938,6 +939,10 @@ bool hasIgnoredAsyncFlowEnds() {
     return ignoredAsyncFlowEndCount() > 0u;
 }
 
+u32 orphanAsyncFlowEndCount() {
+    return g_orphanAsyncFlowEndCount.load(std::memory_order_acquire);
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -1030,6 +1035,13 @@ bool isInvalidEventIndex(u32 index) {
 bool isValidEventName(const char* name) {
 
         if (*cursor != ' ' && *cursor != '\t' && *cursor != '\n' && *cursor != '\r') {
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    }
+
+    for (const char* cursor = name; *cursor != '\0'; ++cursor) {
+        if (!std::isspace(static_cast<unsigned char>(*cursor))) {
+            return true;
 }
 
 bool isFirstEventIndex(u32 index) {
@@ -1603,6 +1615,12 @@ const char* eventNameAt(u32 index) {
     if (!isEventExportable(index)) {
         return nullptr;
     return eventAt(index).name;
+
+bool peekEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventIndexValid(index)) {
+        outEvent = ProfileEvent{};
+
+    outEvent = eventAt(index);
 
 bool tryEventAt(u32 index, ProfileEvent& outEvent) {
 bool tryRecordedEventAt(u32 index, ProfileEvent& outEvent) {
@@ -2188,6 +2206,9 @@ u32 findLastEventIndexByName(const char* name) {
 
 
 
+
+
+
             return i - 1u;
         }
     }
@@ -2250,6 +2271,18 @@ bool tryFirstExportableEvent(ProfileEvent& outEvent) {
 bool tryLastExportableEvent(ProfileEvent& outEvent) {
     const u32 index = lastExportableEventIndex();
 
+
+u32 findFirstEventIndexByFlowId(u32 flowId) {
+    if (flowId == 0u) {
+
+        if (!isValidEventName(event.name)) {
+            continue;
+        if ((event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)
+            && event.scopeId == flowId) {
+
+u32 findLastEventIndexByFlowId(u32 flowId) {
+
+        const ProfileEvent& event = eventAt(i - 1u);
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
