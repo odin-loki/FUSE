@@ -162,3 +162,7 @@ float blend_reverb_sample(float dry, float wet, const Vec3& listener, const Reve
     return should_skip_reverb_wet_mix(blend);
 bool should_skip_reverb_wet_mix(const ReverbZoneBlend& blend) {
     if (should_skip_reverb_wet_mix(blend)) {
+
+// --- deepen additive from deepen-b72-audio-occlusion-blocker-wet-mix-guards-4627 ---
+bool should_skip_reverb_wet_mix(const Vec3& listener, const ReverbZoneParams* zones,
+    return should_skip_reverb_wet_mix(blend_reverb_zones(listener, zones, zone_count));

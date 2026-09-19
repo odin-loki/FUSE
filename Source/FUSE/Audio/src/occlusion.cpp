@@ -239,3 +239,8 @@ bool should_skip_occlusion_blocker_eval(const Vec3& listener, const Vec3& source
 
 // --- deepen additive from deepen-b72-occlusion-reverb-guards-4674 ---
         || should_skip_blocker_evaluation(listener, source)) {
+
+// --- deepen additive from deepen-b72-audio-occlusion-blocker-wet-mix-guards-4627 ---
+    if (should_skip_blocker_evaluation(listener, source)) {
+bool should_skip_occlusion_blocker_evaluation(const AABB* blockers, u32 blocker_count,
+    if (should_skip_occlusion_blocker_evaluation(blockers, blocker_count, listener, source, 1.f)) {

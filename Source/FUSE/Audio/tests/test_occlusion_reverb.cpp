@@ -305,3 +305,13 @@ int main() {
     std::fprintf(stderr, "test_occlusion_reverb: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b72-audio-occlusion-blocker-wet-mix-guards-4627 ---
+    expectTrue(fuse::audio::should_skip_occlusion_blocker_evaluation(nullptr, 0,
+    expectTrue(!fuse::audio::should_skip_occlusion_blocker_evaluation(
+void testBlockerEvaluationGuardsPreserveVisibility() {
+    expectTrue(fuse::audio::should_skip_reverb_wet_mix(dry),
+    expectTrue(!fuse::audio::should_skip_reverb_wet_mix(wet),
+    expectTrue(fuse::audio::should_skip_reverb_wet_mix(tiny),
+    expectTrue(fuse::audio::should_skip_reverb_wet_mix(fuse::audio::Vec3{0.f, 0.f, 0.f}, nullptr, 0),
+    expectTrue(!fuse::audio::should_skip_reverb_wet_mix(fuse::audio::Vec3{0.f, 0.f, 0.f}, zones, 1),
