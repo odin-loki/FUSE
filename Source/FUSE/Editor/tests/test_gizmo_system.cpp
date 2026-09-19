@@ -3994,3 +3994,12 @@ void testSnapDeltaPreflight() {
     expectTrue(nanUpdatePreflight.nonFinite, "update preflight marks non-finite screen hit");
     expectTrue(!nanUpdatePreflight.canUpdate(), "update preflight rejects non-finite screen hit");
     expectTrue(!gizmo.preflightPickInteraction(nanHit).canPick(),
+
+// --- deepen additive from deepen-gizmo-preflights-e44d ---
+    const fuse::editor::InteractionPreflight blockedUpdateInteraction =
+    expectTrue(beginPreflight.nonFiniteHit, "begin preflight marks non-finite viewport height");
+    expectTrue(updatePreflight.canUpdate(), "valid hit clears update non-finite guard");
+    const fuse::editor::UpdateDragPreflight nanUpdatePreflight = fuse::editor::preflightUpdateDrag(
+    expectTrue(nanUpdatePreflight.nonFiniteHit, "update preflight marks non-finite screen hit");
+    expectTrue(beginPreflight.nonFiniteRay, "begin preflight marks non-finite ray");
+    expectTrue(!beginPreflight.canBegin, "begin preflight rejects non-finite ray");
