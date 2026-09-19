@@ -1389,3 +1389,7 @@ bool tryFindEventIndexByName(const char* name, u32& outIndex) {
 
 // --- deepen additive from deepen-b16-profiler-guards-512e ---
         if (tryExportableEventAt(i, outEvent)) {
+
+// --- deepen additive from deepen-profiler-b16-guards-eb78 ---
+bool tryFirstFlowStartById(u32 flowId, ProfileEvent& outEvent) {
+bool tryLastFlowFinishById(u32 flowId, ProfileEvent& outEvent) {

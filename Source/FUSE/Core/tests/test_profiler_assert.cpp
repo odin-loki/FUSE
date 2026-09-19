@@ -4063,3 +4063,27 @@ void testHasActiveScopesAndFlowNestingConsistencyGuards() {
     expectTrue(fuse::profiler::tryFirstExportableEvent(beginEvent),
                "tryFirstExportableEvent succeeds after empty-name attempts");
                "tryFirstExportableEvent copies valid scope after empty-name attempts");
+
+// --- deepen additive from deepen-profiler-b16-guards-eb78 ---
+               "tryLastEventByName clears output for empty name");
+void testTryFlowLookupByIdGuard() {
+    expectTrue(!fuse::profiler::tryFirstFlowStartById(0u, outEvent),
+               "tryFirstFlowStartById false for zero flow id");
+    expectTrue(!fuse::profiler::tryLastFlowFinishById(0u, outEvent),
+               "tryLastFlowFinishById false for zero flow id");
+    expectTrue(fuse::profiler::tryFirstFlowStartById(flowId, outEvent),
+               "tryFirstFlowStartById true for recorded flow start");
+               "tryFirstFlowStartById copies flow start phase");
+    expectTrue(outEvent.scopeId == flowId, "tryFirstFlowStartById copies flow id");
+    expectTrue(fuse::profiler::tryLastFlowFinishById(flowId, outEvent),
+               "tryLastFlowFinishById true for recorded flow finish");
+               "tryLastFlowFinishById copies flow finish phase");
+    expectTrue(outEvent.scopeId == flowId, "tryLastFlowFinishById copies flow id");
+void testFlowPairingConsistencyGuards() {
+void testNestingStateConsistencyGuard() {
+void testChromeTraceExportPreflightUnpairedFlows() {
+    expectTrue(!closedPreflight.hasUnpairedFlowEvents,
+    expectTrue(closedPreflight.isNestingStateConsistent(),
+    expectTrue(fuse::profiler::tryFirstEventByName("valid_lookup_counter", counterEvent),
+               "tryFirstEventByName succeeds after empty-name attempts");
+    testChromeTraceExportPreflightUnpairedFlows();
