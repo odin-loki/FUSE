@@ -167,6 +167,7 @@ struct CookUpstreamInvalidateEstimate {
     /// True when reconcile invalidation would be a no-op — mirrors `total() == 0` (B7.9 deepen).
 
     /// True when no reconcile invalidation is needed — `total()` is zero (B7.9 deepen).
+    /// True when reconcile invalidation can be skipped — all breakdown counts are zero (B7.9 deepen).
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -491,6 +492,9 @@ public:
     /// Convenience guard — `estimate_prune_reconcile().should_skip()` (B7.9 deepen).
     /// Convenience guard — `count_upstream_invalidation(...) == 0` (B7.9 deepen).
     /// Convenience guard — `count_stale_dependency_invalidation(...) == 0` (B7.9 deepen).
+    /// True when upstream invalidation can be skipped — guarded on empty `changed_source` (B7.9 deepen).
+    /// True when stale dependency-hash reconcile can be skipped (B7.9 deepen).
+    /// True when combined reconcile invalidation can be skipped (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
