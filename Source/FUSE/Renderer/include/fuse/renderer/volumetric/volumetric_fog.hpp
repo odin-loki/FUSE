@@ -608,3 +608,6 @@ bool tryValidateGridDensityStrict(const FroxelDensityGrid& grid,
 bool trySampleDensityAtIndexBounds(const FroxelDensityGrid& grid,
 bool trySampleDensityBilinearAtCoords(const FroxelDensityGrid& grid,
 bool trySampleDensityTrilinearAtCoords(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-b511-froxel-guards-0e8b ---
+bool tryValidateSampleCoords(const FroxelSampleCoords& coords,

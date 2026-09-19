@@ -1500,3 +1500,8 @@ bool trySampleDensityAtIndexBounds(const FroxelDensityGrid& grid,
 bool trySampleDensityBilinearAtCoords(const FroxelDensityGrid& grid,
     if (!tryCanLookupAtSampleCoords(grid, desc, coords, outReason)) {
 bool trySampleDensityTrilinearAtCoords(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-b511-froxel-guards-0e8b ---
+    case GridDensityRejectReason::EmptyGrid:
+        outReason = GridDensityRejectReason::EmptyGrid;
+bool tryValidateSampleCoords(const FroxelSampleCoords& coords,

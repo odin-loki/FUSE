@@ -1952,3 +1952,25 @@ void testFroxelDensityLookupBoundsAndPreflightGuards() {
     expectTrue(!disabledPreflight.params_enabled, "populate preflight rejects zero density");
     expectTrue(!disabledPreflight.can_populate(), "populate preflight blocks disabled params");
     testFroxelDensityLookupBoundsAndPreflightGuards();
+
+// --- deepen additive from deepen-b511-froxel-guards-0e8b ---
+void testFroxelDensityValidationAndSampleGuardDeepen() {
+    expectTrue(fuse::renderer::froxel_util::tryValidateGridDensityForDesc(emptyGrid, zeroDesc, densityReason),
+               "tryValidateGridDensityForDesc vacuously succeeds on empty desc");
+    expectTrue(fuse::renderer::froxel_util::tryValidateSampleCoords(inBounds, desc, coordReason),
+               "tryValidateSampleCoords accepts in-bounds coords");
+    expectTrue(!fuse::renderer::froxel_util::tryValidateSampleCoords(outOfRange, desc, coordReason),
+               "tryValidateSampleCoords rejects OOB interpolation weight");
+    expectTrue(!fuse::renderer::froxel_util::tryValidateSampleCoords(inBounds, zeroDesc, coordReason),
+               "tryValidateSampleCoords rejects empty froxel desc");
+    expectTrue(fuse::renderer::froxel_util::tryValidateSampleCoords(normalized, desc, coordReason),
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 0u, reasonSample, lookupReason),
+               "trySample at index with reason succeeds on accessible grid");
+    expectNear(reasonSample, 1.f, 1e-5f, "trySample with reason returns written density");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtIndex(emptyGrid, desc, 0u, rejectedReasonSample,
+    expectNear(rejectedReasonSample, 0.f, 1e-6f, "trySample with reason zeroes output on failure");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, desc, 0u, 0u, 0u, coordReasonSample,
+               "trySample at coord with reason succeeds on accessible grid");
+    expectNear(coordReasonSample, 1.f, 1e-5f, "trySample at coord with reason returns origin density");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityBilinear(grid, desc, inBounds, bilinearReasonSample,
+               "trySampleDensityAtScreen with reason matches unguarded screen sample");
