@@ -32,6 +32,23 @@ public:
     /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
     [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
 
+    /// Direct vs downstream breakdown for upstream invalidation planning (B7.9 deepen).
+    struct CookUpstreamInvalidationEstimate {
+        u32 direct = 0;
+        u32 downstream = 0;
+        u32 total = 0;
+    };
+    /// Direct vs downstream breakdown for dependency-hash reconcile planning (B7.9 deepen).
+    struct CookDependencyReconcileEstimate {
+        u32 direct_stale = 0;
+        u32 downstream_stale = 0;
+        u32 total = 0;
+    };
+    [[nodiscard]] CookUpstreamInvalidationEstimate estimate_upstream_invalidation(
+        const CookManifest& manifest, const std::string& changed_source) const;
+    [[nodiscard]] CookDependencyReconcileEstimate estimate_stale_dependency_reconcile(
+        const CookManifest& manifest) const;
+
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
 
