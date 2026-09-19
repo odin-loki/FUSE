@@ -1518,3 +1518,12 @@ void testHrtfPreflightRejectReasonLabels() {
                                                              fuse::audio::HrtfPanPathRejectReason::Disabled),
     expectTrue(co_located_preflight.reject_reason == fuse::audio::HrtfPanPathRejectReason::CoLocated,
     expectTrue(stub.reject_reason == fuse::audio::HrtfPanPathRejectReason::None,
+
+// --- deepen additive from b72-hrtf-preflight-guards-2202 ---
+    expectTrue(empty.should_skip_convolution(), "empty IR preflight skips convolution");
+    const fuse::audio::HrtfIrPreflight null_nonzero_preflight =
+    expectTrue(null_nonzero_preflight.should_skip_convolution(),
+    expectTrue(disabled.should_skip_spatial_pan(), "disabled HRTF skips spatial pan");
+    expectTrue(bypass.should_skip_coupling(), "bypass path skips coupling");
+    expectTrue(unity.should_skip_coupling(), "unity attenuation skips coupling");
+               "preflight can_apply_coupling inverts should_skip_hrtf_spatial_blend");

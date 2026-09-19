@@ -685,3 +685,8 @@ HrtfBinauralPanPreflight preflight_hrtf_binaural_pan(bool hrtf_enabled, const Hr
 
 // --- deepen additive from deepen-hrtf-preflights-bb6d ---
     bool can_convolve() const { return reason == HrtfIrRejectReason::None; }
+
+// --- deepen additive from b72-hrtf-preflight-guards-2202 ---
+    [[nodiscard]] bool should_skip_convolution() const { return !can_convolve(); }
+    [[nodiscard]] bool should_skip_spatial_pan() const { return !can_apply_spatial_pan(); }
+    [[nodiscard]] bool should_skip_coupling() const { return !can_apply_coupling(); }
