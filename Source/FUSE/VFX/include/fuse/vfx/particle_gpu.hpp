@@ -290,3 +290,15 @@ namespace particle_gpu_util {
 } // namespace particle_gpu_util
 
 } // namespace fuse::vfx
+
+// --- deepen additive from deepen-vfx-gpu-dispatch-mirror-guards-96c0 ---
+    [[nodiscard]] static ParticleGpuDispatchPreflight preflightSimulate(u32 capacity);
+    [[nodiscard]] static ParticleGpuDispatchPreflight preflightEmit(u32 emit_count);
+    [[nodiscard]] ParticleGpuDispatchPreflight simPreflight(u32 slot_count) const;
+    [[nodiscard]] ParticleGpuDispatchPreflight emitPreflight(u32 emit_count) const;
+struct ParticleGpuMirrorSyncPreflight {
+    [[nodiscard]] ParticleGpuMirrorSyncPreflight preflightSyncFromCpu(const ParticleSoA& cpu) const;
+    [[nodiscard]] ParticleGpuMirrorSyncPreflight preflightWriteToCpu(const ParticleSoA& cpu) const;
+struct ParticleGpuFramePlanPreflight {
+    [[nodiscard]] static ParticleGpuFramePlanPreflight preflightStub(u32 particle_capacity, u32 emit_count,
+    [[nodiscard]] ParticleGpuFramePlanPreflight preflight() const;

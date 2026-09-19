@@ -2238,3 +2238,55 @@ int main() {
     std::fprintf(stdout, "fuse_vfx_tests: all passed\n");
     return EXIT_SUCCESS;
 }
+
+// --- deepen additive from deepen-vfx-gpu-dispatch-mirror-guards-96c0 ---
+    const ParticleGpuDispatchPreflight zero_sim = ParticleGpuDispatch::preflightSimulate(0u);
+    expectTrue(zero_sim.skipped, "preflightSimulate skips zero capacity");
+    expectTrue(!zero_sim.coversElements(), "preflightSimulate zero capacity does not cover elements");
+    expectEq(zero_sim.padding_threads, 0u, "preflightSimulate zero capacity has no padding");
+    const ParticleGpuDispatchPreflight partial = ParticleGpuDispatch::preflightSimulate(100u);
+    expectTrue(!partial.skipped, "preflightSimulate runs for non-zero capacity");
+    expectTrue(partial.coversElements(), "preflightSimulate covers slot count");
+    expectEq(partial.padding_threads, 156u, "preflightSimulate reports sim padding threads");
+    expectTrue(partial.hasPadding(), "preflightSimulate marks padding when grid overshoots");
+    const ParticleGpuDispatchPreflight exact =
+        ParticleGpuDispatch::preflightSimulate(ParticleGpuBufferLayout::kSimBlockSize);
+    expectTrue(exact.coversElements(), "preflightSimulate exact block covers capacity");
+    expectTrue(!exact.hasPadding(), "preflightSimulate exact block has no padding");
+    const ParticleGpuDispatchPreflight zero_emit = ParticleGpuDispatch::preflightEmit(0u);
+    expectTrue(zero_emit.skipped, "preflightEmit skips zero emit count");
+    expectEq(zero_emit.block_count, 0u, "preflightEmit zero emit has no blocks");
+    const ParticleGpuDispatchPreflight emit = ParticleGpuDispatch::preflightEmit(200u);
+    expectTrue(!emit.skipped, "preflightEmit runs for non-zero emit count");
+    expectTrue(emit.coversElements(), "preflightEmit covers emit count");
+    expectEq(emit.padding_threads, 56u, "preflightEmit reports emit padding threads");
+    const ParticleGpuDispatchPreflight sim_from_dispatch = dispatch.simPreflight(100u);
+             "simPreflight matches static preflightSimulate padding");
+    const ParticleGpuDispatchPreflight emit_from_dispatch = dispatch.emitPreflight(200u);
+             "emitPreflight matches static preflightEmit padding");
+void testParticleGpuMirrorSyncPreflight() {
+    const fuse::vfx::ParticleGpuMirrorSyncPreflight uninitialized = mirror.preflightSyncFromCpu(cpu);
+             "preflightSyncFromCpu reports mirror guard");
+    expectTrue(uninitialized.needs_resize, "preflightSyncFromCpu marks resize for uninitialized mirror");
+    expectTrue(uninitialized.can_sync, "preflightSyncFromCpu allows resize-sync");
+    expectTrue(!uninitialized.ready(), "preflightSyncFromCpu not ready before sync");
+    expectTrue(!uninitialized.can_write, "preflightSyncFromCpu does not grant write");
+    const fuse::vfx::ParticleGpuMirrorSyncPreflight ready = mirror.preflightSyncFromCpu(cpu);
+    expectTrue(ready.ready(), "preflightSyncFromCpu ready after reserve");
+    expectTrue(ready.can_sync, "preflightSyncFromCpu can_sync when capacities match");
+    expectTrue(!ready.needs_resize, "preflightSyncFromCpu no resize when initialized");
+    const fuse::vfx::ParticleGpuMirrorSyncPreflight write_ready = mirror.preflightWriteToCpu(cpu);
+    expectTrue(write_ready.ready(), "preflightWriteToCpu ready on matching capacity");
+    expectTrue(write_ready.can_write, "preflightWriteToCpu grants write");
+    expectTrue(!write_ready.can_sync, "preflightWriteToCpu does not grant sync");
+    const fuse::vfx::ParticleGpuMirrorSyncPreflight mismatch = mirror.preflightWriteToCpu(smaller);
+             "preflightWriteToCpu reports capacity mismatch");
+    expectTrue(!mismatch.can_write, "preflightWriteToCpu rejects write on mismatch");
+void testParticleGpuSlotOffsetGuards() {
+    const fuse::vfx::ParticleGpuFramePlanPreflight active =
+        fuse::vfx::ParticleGpuFramePlan::preflightStub(100u, 200u, 48u);
+    const fuse::vfx::ParticleGpuFramePlanPreflight sim_only = plan.preflight();
+    const fuse::vfx::ParticleGpuFramePlanPreflight idle =
+        fuse::vfx::ParticleGpuFramePlan::preflightStub(0u, 0u, 0u);
+    const fuse::vfx::ParticleGpuFramePlanPreflight broken_preflight = broken.preflight();
+    testParticleGpuMirrorSyncPreflight();

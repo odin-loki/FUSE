@@ -960,3 +960,15 @@ bool should_skip_empty_buffer(const ParticleGpuBuffers& buffers) {
 }
 
 } // namespace fuse::vfx
+
+// --- deepen additive from deepen-vfx-gpu-dispatch-mirror-guards-96c0 ---
+ParticleGpuDispatchPreflight ParticleGpuDispatch::preflightSimulate(u32 capacity) {
+ParticleGpuDispatchPreflight ParticleGpuDispatch::preflightEmit(u32 emit_count) {
+ParticleGpuDispatchPreflight ParticleGpuDispatch::simPreflight(u32 slot_count) const {
+ParticleGpuDispatchPreflight ParticleGpuDispatch::emitPreflight(u32 emit_count) const {
+ParticleGpuMirrorSyncPreflight ParticleGpuMirror::preflightSyncFromCpu(const ParticleSoA& cpu) const {
+    ParticleGpuMirrorSyncPreflight preflight{};
+ParticleGpuMirrorSyncPreflight ParticleGpuMirror::preflightWriteToCpu(const ParticleSoA& cpu) const {
+ParticleGpuFramePlanPreflight ParticleGpuFramePlan::preflightStub(u32 particle_capacity, u32 frame_emit_count,
+ParticleGpuFramePlanPreflight ParticleGpuFramePlan::preflight() const {
+    ParticleGpuFramePlanPreflight preflight{};
