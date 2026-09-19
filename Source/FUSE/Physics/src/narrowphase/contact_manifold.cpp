@@ -527,6 +527,9 @@ ManifoldPruneRejectReason manifold_prune_reject_reason(
     if (manifold.pointCount > kMaxContactPointsPerManifold) {
         return ManifoldPruneRejectReason::ExceedsMaxPoints;
     }
+    if (manifold.pointCount > kMaxContactPointsPerManifold) {
+        return ManifoldPruneRejectReason::ExceedsMaxPoints;
+    }
     return ManifoldPruneRejectReason::None;
 }
 
@@ -537,6 +540,11 @@ bool manifold_prune_rejects_for_reason(
     f32 duplicateEpsilon,
     f32 shallowMinDepth) {
     return manifold_prune_reject_reason(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth) == expected;
+    f32 duplicateEpsilon) {
+    if (expected == ManifoldPruneRejectReason::ExceedsMaxPoints) {
+        return manifold.pointCount > kMaxContactPointsPerManifold;
+    }
+    return manifold_prune_reject_reason(manifold, separationEpsilon, duplicateEpsilon) == expected;
 }
 
 bool should_run_manifold_prune(
@@ -856,6 +864,8 @@ bool prune_contact_manifold_if_needed(
 
     case ManifoldFinalizeRejectReason::MissingFrictionBasis:
         return "MissingFrictionBasis";
+    case ManifoldFinalizeRejectReason::NeedsNormalNormalize:
+        return "NeedsNormalNormalize";
     }
     return "Unknown";
 }
@@ -884,6 +894,9 @@ bool manifold_finalize_rejects_for_reason(
     ManifoldFinalizeRejectReason expected,
     f32 separationEpsilon,
     f32 duplicateEpsilon) {
+    if (expected == ManifoldFinalizeRejectReason::NeedsNormalNormalize) {
+        return manifold.needsNormalNormalization();
+    }
     return manifold_finalize_reject_reason(manifold, separationEpsilon, duplicateEpsilon) == expected;
 }
 
@@ -2311,7 +2324,11 @@ bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEps
     if (manifold.empty() || !manifold.hasValidNormal()) {
 
     return manifold.hasValidNormal();
-}
+
+
+
+
+    if (manifold.valid && manifold.hasFrictionBasis()) {
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};

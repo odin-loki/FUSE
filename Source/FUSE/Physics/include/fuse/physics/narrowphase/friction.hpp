@@ -738,5 +738,9 @@ bool normalize_contact_normal_before_friction_if_needed(
 
 /// Normalize contact normal then rebuild friction basis when preflight allows (B4.3 deepen pass).
 bool normalize_and_rebuild_friction_basis_with_preflight(
+/// Normalize contact normal before friction-basis rebuild when needed (B4.6 deepen pass).
+bool normalize_contact_normal_for_friction(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Build friction tangents only when preflight allows; returns false when skipped (B4.6 deepen pass).
 
 } // namespace fuse::physics::narrowphase

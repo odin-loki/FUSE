@@ -265,6 +265,8 @@ void runNarrowphaseIntoBuffer(
 
 /// Narrowphase dispatch with batch and buffer preflight guards (B4.6 deepen pass).
 void runNarrowphaseIntoBufferWithPreflight(
+/// Early-out when batch preflight rejects all pairs; otherwise delegates to `runNarrowphaseIntoBuffer` (B4.6 deepen pass).
+void runNarrowphaseIntoBufferIfDispatchable(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
