@@ -2412,3 +2412,6 @@ bool preflightPopulateReady(const FroxelGridDesc& desc,
 // --- deepen additive from froxel-volumetric-b511-deepen-8c6b ---
 SampleCoordRejectReason classifySampleCoordReject(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
 bool preflightSampleCoordsReady(const FroxelSampleCoords& coords,
+
+// --- deepen additive from deepen-froxel-volumetric-guards-3b64 ---
+    const bool ok = !screenMappingRejectReasonIsBlocking(reject);

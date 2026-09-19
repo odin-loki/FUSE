@@ -4149,3 +4149,10 @@ void testFroxelDeepenGuardPredicates() {
                "preflightFroxelPopulateReady agrees with canPopulateFromAnalyticFog");
     expectTrue(fuse::renderer::preflightScreenMappingReady(0.5f, 0.5f, 0.01f, desc, camera) ==
                "preflightScreenMappingReady agrees with mapScreenDepthToSampleCoords rejection");
+
+// --- deepen additive from deepen-froxel-volumetric-guards-3b64 ---
+               "classifyScreenMappingReject none for in-range mapping");
+               "preflightScreenMapping succeeds for in-range mapping");
+    expectTrue(mapped.sliceZ0 < desc.slicesZ, "preflightScreenMapping returns mapped coords");
+    expectTrue(!fuse::renderer::froxel_util::preflightTrilinearSample(emptyGrid, desc, inBounds),
+               "preflightTrilinearSample rejects empty storage");
