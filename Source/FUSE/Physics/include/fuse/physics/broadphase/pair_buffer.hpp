@@ -101,6 +101,8 @@ struct PairBufferSoA {
     /// True when at most one valid canonical pair is present (dedupe is a no-op).
     /// True when post-pass max-capacity clamp would drop pairs.
     bool needsMaxCapacityClamp() const { return canApplyMaxCapacityClamp(); }
+    /// True when compact+clamp would leave the buffer unchanged (B4.2 deepen follow-up pass).
+    bool canSkipCompactAndClamp() const;
     /// Count valid flags in prepared slot storage before compaction.
     u32 countValidSlots() const;
     /// True when canonical sort is a no-op (empty or single pair).
@@ -578,6 +580,9 @@ bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
 /// Why pair-buffer canonical sort would early-out (B4.2 deepen pass).
 /// Why canonical sort would early-out at the SoA layer (B4.2 deepen follow-up pass).
 /// Why canonical sort would early-out (B4.2 deepen pass).
+/// Non-mutating dedupe predicate — mirrors `preflightPairBufferDedupe` (B4.2 deepen follow-up pass).
+
+/// Why pair-buffer canonical sort would early-out (B4.2 deepen follow-up pass).
 enum class PairBufferSortRejectReason : u8 {
     None = 0,
     EmptyBuffer,
@@ -609,6 +614,9 @@ enum class PairBufferSortRejectReason : u8 {
     SinglePair,
     bool emptyBuffer = false;
     bool singlePair = false;
+
+/// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+
 
 };
 
@@ -658,6 +666,14 @@ PairSlotPreflight preflightPairSlots(u32 slotCount, const PairBufferSoA& buffer)
     NoWorkNeeded,
 
 /// Human-readable label for compact+clamp reject reasons (logging / tests).
+/// Non-mutating sort skip predicate — inverse of `needsSort` (B4.2 deepen follow-up pass).
+
+/// Non-mutating sort predicate — mirrors `preflightPairBufferSort` (B4.2 deepen follow-up pass).
+
+/// Why pair-buffer compact+clamp would early-out (B4.2 deepen follow-up pass).
+    AlreadyCompactAndWithinCapacity,
+
+/// Human-readable label for pair-buffer compact+clamp reject reasons (logging / tests).
 
 /// Diagnose why compact+clamp would skip; vacuously succeeds when work may proceed.
 PairBufferCompactAndClampRejectReason pairBufferCompactAndClampRejectReason(const PairBufferSoA& buffer);
@@ -987,5 +1003,16 @@ bool canSkipPairBufferClamp(const PairBufferSoA& buffer);
 /// Non-mutating compact+clamp skip predicate — inverse of `needsCompactAndClamp` (B4.2 deepen pass).
 
 /// Non-mutating compact+clamp launch predicate — mirrors `preflightPairBufferCompactAndClamp` (B4.2 deepen pass).
+
+/// Returns true when `pairBufferCompactAndClampRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+
+/// Read-only compact+clamp diagnostics — no mutation (B4.2 deepen follow-up pass).
+    bool alreadyCompactAndWithinCapacity = false;
+
+
+
+/// Non-mutating compact+clamp skip predicate — inverse of `needsCompactAndClamp` (B4.2 deepen follow-up pass).
+
+/// Non-mutating compact+clamp predicate — mirrors `preflightPairBufferCompactAndClamp` (B4.2 deepen follow-up pass).
 
 } // namespace fuse::physics::broadphase
