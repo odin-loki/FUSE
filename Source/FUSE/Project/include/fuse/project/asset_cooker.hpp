@@ -174,6 +174,7 @@ struct CookUpstreamInvalidateEstimate {
     /// True when reconcile invalidation can be skipped — no stale/prune/upstream work (B7.9 deepen).
 
 
+
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
