@@ -265,6 +265,21 @@ u32 eventCount() {
     return g_eventCount.load(std::memory_order_acquire);
 }
 
+u32 ringCapacity() {
+    return kRingCapacity;
+}
+
+u32 exportableEventCount() {
+    const u32 count = eventCount();
+    u32 exportable = 0u;
+    for (u32 i = 0u; i < count; ++i) {
+        if (isValidProfileEvent(eventAt(i))) {
+            ++exportable;
+        }
+    }
+    return exportable;
+}
+
 u32 maxNestingDepth() {
     return g_maxNestingDepth.load(std::memory_order_acquire);
 }
@@ -305,6 +320,10 @@ bool hasEvents() {
     return eventCount() > 0u;
 }
 
+bool hasExportableEvents() {
+    return exportableEventCount() > 0u;
+}
+
 bool isBufferEmpty() {
     return eventCount() == 0u;
 }
@@ -317,16 +336,25 @@ bool isEventIndexValid(u32 index) {
     return index < eventCount();
 }
 
+bool isValidProfilerName(const char* name) {
+    return isValidEventName(name);
+}
+
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return event.name != nullptr;
+    return isValidEventName(event.name);
+}
+
+const ProfileEvent& emptyProfileEvent() {
+    static const ProfileEvent kEmpty{};
+    return kEmpty;
 }
 
 const ProfileEvent& eventAt(u32 index) {
-    static const ProfileEvent kEmpty{};
-    const u32 count = eventCount();
-    if (count == 0u || index >= count) {
-        return kEmpty;
+    if (!isEventIndexValid(index)) {
+        return emptyProfileEvent();
     }
+
+    const u32 count = eventCount();
 
     const u32 head = g_writeHead.load(std::memory_order_acquire);
     const u32 start = head >= count ? head - count : 0u;
@@ -352,9 +380,19 @@ u32 lastEventIndex() {
 const ProfileEvent& lastEvent() {
     const u32 index = lastEventIndex();
     if (index == kInvalidEventIndex) {
-        return eventAt(0);
+        return emptyProfileEvent();
     }
     return eventAt(index);
+}
+
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
 }
 
 void reset() {
@@ -406,7 +444,9 @@ void endAsyncFlow(const char* name, u32 flowId) {
                 flowId,
                 currentNestingDepth(),
                 flowDepth);
-    popFlowNestingDepth();
+    if (flowDepth > 0u) {
+        popFlowNestingDepth();
+    }
 }
 
 void sampleCounter(const char* track, s64 value) {
@@ -473,7 +513,23 @@ void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
                 frameIndex());
 }
 
+bool isValidChromeTraceExport(const std::string& json) {
+    if (json.empty() || json.front() != '{' || json.back() != '}') {
+        return false;
+    }
+
+    return json.find("\"displayTimeUnit\":\"ns\"") != std::string::npos &&
+           json.find("\"metadata\":{\"name\":\"FUSE CPU profiler\"") != std::string::npos &&
+           json.find("\"traceEvents\":[") != std::string::npos;
+}
+
 std::string exportChromeTraceJson() {
+    std::string json;
+    tryExportChromeTraceJson(json);
+    return json;
+}
+
+bool tryExportChromeTraceJson(std::string& outJson) {
     const std::lock_guard<std::mutex> lock(g_exportMutex);
 
     char header[192];
@@ -486,10 +542,11 @@ std::string exportChromeTraceJson() {
     std::string json = header;
     const u32 count = eventCount();
     bool first = true;
+    bool exportedAny = false;
 
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.name == nullptr) {
+        if (!isValidProfileEvent(event)) {
             continue;
         }
 
@@ -641,15 +698,18 @@ std::string exportChromeTraceJson() {
             json += formatCounterArgsJson(event);
             json += '}';
             first = false;
+            exportedAny = true;
             continue;
         }
         }
         json += buffer;
         first = false;
+        exportedAny = true;
     }
 
     json += "]}";
-    return json;
+    outJson = std::move(json);
+    return exportedAny;
 }
 
 } // namespace fuse::profiler
