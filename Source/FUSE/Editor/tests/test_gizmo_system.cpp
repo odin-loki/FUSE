@@ -3145,3 +3145,16 @@ void testSnapPreflightNoChange() {
     expectTrue(!validPreflight.notDragging, "valid end preflight clears notDragging");
     expectTrue(!validPreflight.invalidActiveAxis, "valid end preflight clears invalidActiveAxis");
     expectTrue(!inactive.changed, "endDrag no-op when inactive via tryEndDrag guard");
+
+// --- deepen additive from deepen-b6-gizmo-end-drag-preflights-9b4a ---
+    expectTrue(!gizmo.preflightPick(deadZone).canPick(),
+    expectTrue(outOfBoundsPreflight.outOfBounds, "update preflight marks out-of-bounds coords");
+    expectTrue(!outOfBoundsPreflight.canUpdate(), "update preflight rejects out-of-bounds coords");
+    expectTrue(!noAxisPreflight.canEnd(), "end preflight rejects missing active axis");
+    expectTrue(activePreflight.canEnd(), "end preflight accepts active drag with axis");
+    expectTrue(!activePreflight.invalidActiveAxis, "active end preflight clears invalidActiveAxis");
+    expectTrue(!gizmo.transformDirty(), "inactive tryEndDrag does not mark dirty");
+    expectTrue(result.axis == fuse::editor::GizmoAxis::X, "tryEndDrag records axis");
+    expectTrue(gizmo.transformDirty(), "tryEndDrag marks transform dirty");
+    expectTrue(!gizmo.tryEndDrag(result), "tryEndDrag rejects after drag ended");
+    expectTrue(ended.changed, "endDrag commits via tryEndDrag on active drag");
