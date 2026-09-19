@@ -1814,6 +1814,17 @@ FUSE_PHYSICS_INLINE bool try_finalize_contact_manifold_with_preflight(
 
 /// Finalize only when preflight allows; no-op otherwise (B4.6 deepen follow-up pass).
 
+
+
+
+/// Non-mutating manifold prune skip predicate (B4.6 deepen pass).
+
+/// Non-mutating manifold finalize skip predicate (B4.6 deepen pass).
+
+/// Guarded manifold prune — returns false when preflight rejects (B4.6 deepen pass).
+
+/// Guarded manifold finalize — returns false when preflight rejects (B4.6 deepen pass).
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
@@ -1914,6 +1925,131 @@ FUSE_PHYSICS_INLINE bool try_finalize_contact_manifold(
     f32 frictionEpsilon) {
     return finalize_contact_manifold_with_preflight(
         manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
+} // namespace fuse::physics::narrowphase
+
+#include <fuse/physics/config.hpp>
+
+namespace fuse::physics::narrowphase {
+
+FUSE_PHYSICS_INLINE bool should_run_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    return !should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+FUSE_PHYSICS_INLINE bool should_run_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    return !can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
+FUSE_PHYSICS_INLINE bool should_run_prune_contact_manifold_with_preflight(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    const ManifoldPrunePreflight preflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    return preflight.reason == ManifoldPruneRejectReason::None &&
+           preflight.can_prune_in_place();
+}
+
+FUSE_PHYSICS_INLINE bool should_run_finalize_contact_manifold_with_preflight(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    return preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)
+        .can_finalize();
+}
+
+FUSE_PHYSICS_INLINE bool would_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    return should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+FUSE_PHYSICS_INLINE bool would_skip_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    return can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
+FUSE_PHYSICS_INLINE bool try_prune_contact_manifold(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    if (would_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+        return manifold.pointCount > 0u;
+    }
+    return prune_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+FUSE_PHYSICS_INLINE bool try_finalize_contact_manifold(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    if (would_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)) {
+        return false;
+    }
+    return finalize_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
+FUSE_PHYSICS_INLINE bool should_run_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    return !should_skip_friction_basis_preflight(manifold, epsilon);
+}
+
+FUSE_PHYSICS_INLINE bool should_run_rebuild_friction_basis_if_needed(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return false;
+    }
+    return needs_friction_basis_refresh(manifold, epsilon);
+}
+
+FUSE_PHYSICS_INLINE bool should_run_rebuild_friction_basis_with_preflight(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
+    return preflight.reason == FrictionBasisRejectReason::None && preflight.needsRebuild;
+}
+
+FUSE_PHYSICS_INLINE bool would_skip_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    return should_skip_friction_basis_preflight(manifold, epsilon);
+}
+
+FUSE_PHYSICS_INLINE bool try_rebuild_friction_basis(ContactManifold& manifold, f32 epsilon) {
+    if (would_skip_friction_basis_rebuild(manifold, epsilon)) {
+        return manifold.hasFrictionBasis();
+    }
+    return rebuild_friction_basis_with_preflight(manifold, epsilon);
+}
+
+FUSE_PHYSICS_INLINE bool try_compute_friction_tangents(ContactManifold& manifold, f32 epsilon) {
+    if (would_skip_friction_basis_rebuild(manifold, epsilon)) {
+        return manifold.hasFrictionBasis();
+    }
+    compute_friction_tangents_if_needed(manifold, epsilon);
+    return manifold.hasFrictionBasis();
 }
 
 } // namespace fuse::physics::narrowphase

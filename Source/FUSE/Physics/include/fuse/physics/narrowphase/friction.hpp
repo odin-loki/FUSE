@@ -1127,4 +1127,13 @@ inline bool would_skip_friction_tangents_build(const ContactManifold& manifold) 
 
         return preflight.canReuse;
 
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Non-mutating friction-basis rebuild skip predicate (B4.6 deepen pass).
+
+/// Guarded friction-basis rebuild — returns false when preflight rejects (B4.6 deepen pass).
+
+/// Guarded friction tangent build — returns false when preflight rejects (B4.6 deepen pass).
+
 } // namespace fuse::physics::narrowphase
