@@ -119,11 +119,14 @@ bool isHitTestOutOfBounds(const GizmoHitTest& hit);
 /// True when viewport width/height are negative (B6.4 deepen pass).
 bool isHitTestDimensionsInvalid(const GizmoHitTest& hit);
 
+/// True when screen or viewport coordinates contain NaN (B6.4 deepen pass).
+bool isHitTestNonFinite(const GizmoHitTest& hit);
+
+/// True when ray origin or direction contain NaN or Inf (B6.4 deepen pass).
+bool isRayNonFinite(const GizmoRay& ray);
+
 /// Current drag lifecycle phase (B6.4 deepen pass).
 GizmoInteractionPhase interactionPhase(bool dragging);
-
-/// Snap enabled but mode step unusable — begin/update/end still apply (B6.4 deepen pass).
-bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings);
 
 /// Convenience inverse of `isRayEmpty` / `isHitTestEmpty` (B6.4 deepen follow-up).
 bool isRayValid(const GizmoRay& ray);
@@ -150,14 +153,16 @@ struct PickPreflight {
     bool emptyHit = false;
     bool invalidPickConfig = false;
     bool invalidDimensions = false;
+    bool nonFiniteHit = false;
+    bool nonFiniteRay = false;
     bool outOfBounds = false;
     bool screenMiss = false;
     bool pickMiss = false;
     GizmoAxis axis = GizmoAxis::None;
 
     bool canPick() const {
-        return !emptyRay && !emptyHit && !invalidPickConfig && !invalidDimensions && !outOfBounds &&
-               !screenMiss && !pickMiss;
+        return !emptyRay && !emptyHit && !invalidPickConfig && !invalidDimensions && !nonFiniteHit &&
+               !nonFiniteRay && !outOfBounds && !screenMiss && !pickMiss;
     }
 };
 
@@ -199,6 +204,8 @@ struct BeginDragPreflight {
     bool emptyRay = false;
     bool invalidPickConfig = false;
     bool invalidDimensions = false;
+    bool nonFiniteHit = false;
+    bool nonFiniteRay = false;
     bool outOfBounds = false;
     bool screenMiss = false;
     bool pickMiss = false;
@@ -214,13 +221,15 @@ struct UpdateDragPreflight {
     bool notDragging = false;
     bool emptyHit = false;
     bool invalidDimensions = false;
+    bool nonFiniteHit = false;
     bool outOfBounds = false;
     bool invalidActiveAxis = false;
     /// Snap is enabled but the mode step is unusable — update still applies (B6.4 deepen pass).
     bool snapDegraded = false;
 
     bool canUpdate() const {
-        return !notDragging && !emptyHit && !invalidDimensions && !outOfBounds && !invalidActiveAxis;
+        return !notDragging && !emptyHit && !invalidDimensions && !nonFiniteHit && !outOfBounds &&
+               !invalidActiveAxis;
     }
 };
 
@@ -400,12 +409,13 @@ struct InteractionPreflight {
     bool canEnd() const { return dragging && end.canEnd(); }
 
     /// Primary action allowed for the active lifecycle phase (B6.4 deepen pass).
+    /// While dragging, end remains routable when update is blocked (B6.4 deepen pass).
     bool canActOnPhase() const {
         switch (phase()) {
         case GizmoInteractionPhase::Idle:
             return canBegin();
         case GizmoInteractionPhase::Dragging:
-            return canUpdate();
+            return canUpdate() || canEnd();
         }
         return false;
     }
