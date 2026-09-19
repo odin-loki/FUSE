@@ -30,6 +30,9 @@ public:
     void clearFlags(u32 agentIndex);
     void clearScalars(u32 agentIndex);
 
+    [[nodiscard]] bool isFlagSlotValid(u32 flagIndex) const { return isValidFlag(flagIndex); }
+    [[nodiscard]] bool isScalarSlotValid(u32 slotIndex) const { return isValidScalar(slotIndex); }
+
 private:
     bool isValidAgent(u32 agentIndex) const { return agentIndex < m_agentCount; }
     bool isValidFlag(u32 flagIndex) const { return flagIndex < kMaxFlags; }
@@ -54,6 +57,8 @@ public:
     bool isScalarSet(u32 agentIndex, u32 slotIndex) const;
     bool isFlagEmpty(u32 agentIndex, u32 flagIndex) const;
     bool isFlagSet(u32 agentIndex, u32 flagIndex) const;
+    bool isFlagSlotValid(u32 flagIndex) const;
+    bool isScalarSlotValid(u32 slotIndex) const;
 
     bool getFlag(u32 agentIndex, u32 flagIndex) const { return flag(agentIndex, flagIndex); }
     bool tryGetFlag(u32 agentIndex, u32 flagIndex, bool& outValue) const;

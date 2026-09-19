@@ -243,6 +243,28 @@ void testEffectiveMinCount() {
                "effective_min_count preserves positive minCount");
 }
 
+void testIsFiniteAllyRadius() {
+    expectTrue(fuse::ai::is_finite_ally_radius(3.f), "positive radius is finite");
+    expectTrue(!fuse::ai::is_finite_ally_radius(0.f), "zero radius is not finite");
+    expectTrue(!fuse::ai::is_finite_ally_radius(-2.f), "negative radius is not finite");
+}
+
+void testIsUnlimitedRadius() {
+    expectTrue(fuse::ai::is_unlimited_radius(0.f), "zero radius is unlimited sentinel");
+    expectTrue(fuse::ai::is_unlimited_radius(-1.f), "negative radius is unlimited sentinel");
+    expectTrue(!fuse::ai::is_unlimited_radius(1.f), "positive radius is not unlimited");
+}
+
+void testRadiusFilterPolicyIsValid() {
+    fuse::ai::RadiusFilterPolicy policy;
+    policy.radius = 5.f;
+    expectTrue(fuse::ai::radius_filter_policy_is_valid(policy),
+               "radius filter policy succeeds with positive radius");
+    policy.radius = 0.f;
+    expectTrue(!fuse::ai::radius_filter_policy_is_valid(policy),
+               "radius filter policy fails with zero radius");
+}
+
 } // namespace
 
 int run_spatial_query_tests() {
@@ -266,5 +288,8 @@ int run_spatial_query_tests() {
     testCountAlliesOutsideRadius();
     testHasNoAlliesInRadius();
     testEffectiveMinCount();
+    testIsFiniteAllyRadius();
+    testIsUnlimitedRadius();
+    testRadiusFilterPolicyIsValid();
     return g_failures;
 }

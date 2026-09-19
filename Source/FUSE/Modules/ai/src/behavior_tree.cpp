@@ -75,7 +75,29 @@ u32 waitTicksForNode(const BehaviorNode& node) {
     return node.threshold > 0.f ? static_cast<u32>(node.threshold) : 1u;
 }
 
+bool parallelRadiusGuardPasses(const BehaviorNode& node, const ParallelPolicy& policy) {
+    if (!policy.requireValidRadius) {
+        return true;
+    }
+    return is_finite_ally_radius(node.threshold);
+}
+
 } // namespace
+
+bool parallel_policy_has_guards(const ParallelPolicy& policy) {
+    return policy.requireBoundBlackboard || policy.requireAllyContext || policy.requireValidAgent ||
+           policy.requireNonEmptyBoard || policy.requireValidRadius;
+}
+
+bool parallel_policy_is_valid(const ParallelPolicy& policy, u32 childCount) {
+    if (childCount == 0) {
+        return false;
+    }
+    if (policy.successThreshold > childCount) {
+        return false;
+    }
+    return true;
+}
 
 void BehaviorTree::addNode(BehaviorNode node) {
     m_nodes.push_back(std::move(node));
@@ -122,6 +144,9 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
             return {};
         }
         if (policy.requireAllyContext && !ally_context_available(ctx.allies)) {
+            return {};
+        }
+        if (!parallelRadiusGuardPasses(node, policy)) {
             return {};
         }
 
@@ -258,6 +283,10 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
             result.status = BehaviorStatus::Failure;
             return result;
         }
+        if (!is_finite_ally_radius(node.threshold)) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
 
         RadiusFilterPolicy policy;
         policy.radius = node.threshold;
@@ -278,6 +307,10 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
             result.status = BehaviorStatus::Failure;
             return result;
         }
+        if (!is_finite_ally_radius(node.threshold)) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
 
         const bool found = has_any_ally_in_radius(agentIndex,
                                                   agent.teamId,
@@ -294,6 +327,10 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
             result.status = BehaviorStatus::Failure;
             return result;
         }
+        if (!is_finite_ally_radius(node.threshold)) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
 
         const bool clear = has_no_allies_in_radius(agentIndex,
                                                    agent.teamId,
@@ -307,6 +344,10 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
     case NodeKind::ActionAlliesCount: {
         BehaviorTickResult result;
         if (!ally_context_available(ctx.allies)) {
+            result.status = BehaviorStatus::Failure;
+            return result;
+        }
+        if (!is_finite_ally_radius(node.threshold)) {
             result.status = BehaviorStatus::Failure;
             return result;
         }
@@ -441,6 +482,11 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
     case NodeKind::GuardBlackboardEmpty: {
         BehaviorTickResult result;
         result.status = board.isBoardEmpty() ? BehaviorStatus::Success : BehaviorStatus::Failure;
+        return result;
+    }
+    case NodeKind::GuardBlackboardNonempty: {
+        BehaviorTickResult result;
+        result.status = board.isBoardEmpty() ? BehaviorStatus::Failure : BehaviorStatus::Success;
         return result;
     }
     case NodeKind::GuardBlackboardAgentValid: {

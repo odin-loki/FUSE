@@ -31,6 +31,7 @@ BehaviorNode makeSelector(const NodeLoadSpec& spec) {
 BehaviorNode makeParallel(const NodeLoadSpec& spec) {
     BehaviorNode node;
     node.kind = NodeKind::Parallel;
+    node.threshold = spec.threshold;
     node.childA = firstChild(spec);
     node.childB = secondChild(spec);
     node.parallelPolicy.successThreshold = spec.successThreshold;
@@ -41,6 +42,7 @@ BehaviorNode makeParallel(const NodeLoadSpec& spec) {
     node.parallelPolicy.requireAllyContext = spec.requireAllyContext;
     node.parallelPolicy.requireValidAgent = spec.requireValidAgent;
     node.parallelPolicy.requireNonEmptyBoard = spec.requireNonEmptyBoard;
+    node.parallelPolicy.requireValidRadius = spec.requireValidRadius;
     return node;
 }
 
@@ -228,6 +230,13 @@ BehaviorNode makeGuardBlackboardEmpty(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeGuardBlackboardNonempty(const NodeLoadSpec& spec) {
+    (void)spec;
+    BehaviorNode node;
+    node.kind = NodeKind::GuardBlackboardNonempty;
+    return node;
+}
+
 BehaviorNode makeGuardBlackboardAgentValid(const NodeLoadSpec& spec) {
     (void)spec;
     BehaviorNode node;
@@ -317,6 +326,7 @@ void NodeRegistry::registerBuiltins() {
     registerFactory("bb.guard.blackboard_flag_empty", makeGuardBlackboardFlagEmpty);
     registerFactory("bb.guard.blackboard_flag_set", makeGuardBlackboardFlagSet);
     registerFactory("bb.guard.blackboard_empty", makeGuardBlackboardEmpty);
+    registerFactory("bb.guard.blackboard_nonempty", makeGuardBlackboardNonempty);
     registerFactory("bb.guard.blackboard_agent_valid", makeGuardBlackboardAgentValid);
     registerFactory("bb.guard.ally_context", makeGuardAllyContext);
     registerFactory("bb.guard.valid_ally_radius", makeGuardValidAllyRadius);
