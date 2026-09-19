@@ -2588,6 +2588,7 @@ bool finalize_contact_manifold_if_not_finalized(
 
 
 
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {

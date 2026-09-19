@@ -1479,6 +1479,10 @@ bool finalize_contact_manifold_if_not_finalized(
 
 /// Normalize the contact normal when non-unit; returns true when normalization ran (B4.6 deepen pass).
 
+/// Inverse of `should_skip_manifold_prune` (B4.5 deepen follow-up pass).
+
+/// Inverse of `can_skip_manifold_finalize` (B4.5 deepen follow-up pass).
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

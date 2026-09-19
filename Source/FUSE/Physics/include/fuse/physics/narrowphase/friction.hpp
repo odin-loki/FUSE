@@ -865,5 +865,6 @@ bool invalidate_friction_basis_if_stale(ContactManifold& manifold, f32 epsilon =
 
 /// Build friction tangents only when preflight allows; alias for buffer/finalize deepen path (B4.6 deepen pass).
 
+/// Inverse of `should_skip_friction_basis_preflight` (B4.5 deepen follow-up pass).
 
 } // namespace fuse::physics::narrowphase

@@ -261,6 +261,7 @@ bool can_skip_narrowphase_buffer_dispatch_deepen(
 
     const RigidBodySoA& /*bodies*/,
     const CollisionShapeSoA& /*shapes*/) {
+    return should_run_narrowphase(pairs, bodies, shapes);
 
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
