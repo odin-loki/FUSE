@@ -435,6 +435,10 @@ bool probeIndexRejectReasonIsBlocking(ProbeIndexRejectReason reason);
 
 
 /// True when a probe-grid source reject reason would block sampling (B5.6 deepen pass).
+/// Why probe grid source preflight rejected the request (B5.6 deepen pass).
+    InvalidProbeSpacing,
+
+
 
 /// Classify why probe-grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
 ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc);
@@ -482,6 +486,10 @@ ProbeGridRejectReason classifyProbeGridReject(const DDGIDesc& desc);
 bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridRejectReason* reason = nullptr);
 
 /// Early-out when probe grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
+/// Diagnose why probe-grid source preflight would reject; vacuously succeeds on sampleable grids.
+
+/// Non-mutating probe-grid source preflight — returns true when sampling would proceed.
+
 
 /// Why probe sample coord validation rejected the request (B5.6 deepen).
 enum class ProbeSampleCoordsRejectReason : u8 {
@@ -2002,6 +2010,8 @@ bool preflightProbeTrilinearSample(const ProbeGridSource& source,
 /// Early-out when trilinear sampling would be rejected via bundled probe-grid source.
 bool wouldSkipProbeTrilinearSample(const ProbeGridSource& source, const ProbeSampleCoords& coords);
 /// Early-out when coord-based trilinear sampling would be rejected (B5.6 deepen pass).
+/// Early-out when spatial trilinear irradiance lookup would be rejected.
+/// Early-out when directional trilinear irradiance lookup would be rejected.
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -2684,9 +2694,6 @@ bool tryPreflightProbeScheduleAtRate(u32 probe_count,
 u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Schedule preflight with mandatory reject-reason output.
 /// Rate-aware schedule preflight with mandatory reject-reason output.
-                                  u32 probes_per_frame,
-                                  u32 max_indices,
-                                  const u32* out_indices,
 /// True when output capacity would cap scheduled probes below `probes_per_frame`.
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Early-out when probe scheduling would be rejected — same ordering as `tryScheduleProbeUpdates`.
