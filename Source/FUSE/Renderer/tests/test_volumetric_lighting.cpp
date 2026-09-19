@@ -3943,3 +3943,17 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "preflightSampleCoordsReady mirrors canPreflightSampleCoords on valid path");
     expectTrue(fuse::renderer::froxel_util::preflightDensityLookupReady(grid, desc, 0u) ==
                "preflightDensityLookupReady mirrors canLookupAtIndex on valid path");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-ff11 ---
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightScreenMapping(0.5f, 0.5f, 10.f, desc, camera, nullptr,
+               "preflightScreenMapping reports no reject reason");
+               "preflightScreenMapping rejects empty desc");
+    expectTrue(!fuse::renderer::sampleCoordRejectReasonIsBlocking(fuse::renderer::SampleCoordRejectReason::InvalidWeights),
+               "preflightSampleCoords soft-succeeds for clampable weights");
+               "preflightDensityLookup soft-succeeds for OOB index");
+               "preflightDensityLookupAtCoord soft-succeeds for OOB coords");
+               "preflightTrilinearSample soft-succeeds for clampable weights");
+               "preflightTrilinearSample rejects hard OOB tile");
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightScreenMapping(0.25f, 0.25f, 3.16f, desc, camera, &mapped),
+               "preflightScreenMapping returns built sample coords");
+               "preflightScreenMapping mapped coords in range");
