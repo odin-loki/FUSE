@@ -24,6 +24,9 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaJitter` honours `TaaJitterDesc::sequence_length` (default 8) when advancing and wrapping
 - `TaaJitter::syncToFrameIndex(frame)` — align jitter state to a wrapped monotonic frame counter
 - `TaaJitter::monotonicFrameIndex()` — monotonic frame counter incremented by `advance`, set by `syncToFrameIndex`
+- `shouldSkipTaaJitterSync` / `taaJitterSyncReady` — early-out and ready helpers for jitter sync preflight
+- `tryPreflightTaaJitterNdc` / `shouldSkipTaaJitterNdc` / `taaJitterNdcReady` — NDC jitter preflight deepening
+- `TaaJitter::shouldSkipSync` / `shouldSkipNdc` — instance-level jitter guard early-outs
 
 ## History validity (B5.9 deepen)
 
@@ -59,6 +62,9 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::historyInvalidateGeneration()` — current history invalidate epoch
 - `TaaPass::stampObservedHistoryGeneration(desc)` — stamp observed generation from pass history
 - `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter
+- `TaaPass::shouldSkipJitterSync` / `preflightJitterNdc` / `shouldSkipJitterNdc` — pass-level jitter guard wrappers
+- `TaaPass::tryPreflightHistoryReuse` / `tryPreflightResolveBlendWeights` / `resolveBlendReady` — pass-level preflight deepening
+- `taaResolveBlendReady` — inverse of `shouldSkipTaaResolveBlend` for resolve blend preflight
 
 ## Pipeline (stub)
 
