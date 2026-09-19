@@ -2964,3 +2964,18 @@ void testSnapGuardValid() {
 void testTryBeginDragRejectsWhileDragging() {
     expectTrue(gizmo.tryBeginDrag(hit, transform, result), "first begin-drag succeeds");
                "tryBeginDrag rejects re-entrant begin while dragging");
+
+// --- deepen additive from deepen-b6-gizmo-pick-snap-preflight-2b84 ---
+    const fuse::editor::PickPreflight emptyPick = fuse::editor::preflightPick(
+    const fuse::editor::UpdateDragPreflight inactivePreflight = fuse::editor::preflightUpdateDrag(
+    expectTrue(!inactivePreflight.canUpdate(), "snap-degraded preflight rejects inactive drag");
+    expectTrue(!inactivePreflight.snapDegraded,
+    const fuse::editor::UpdateDragPreflight healthyPreflight = fuse::editor::preflightUpdateDrag(
+    expectTrue(healthyPreflight.canUpdate(), "healthy snap preflight allows update");
+    expectTrue(!healthyPreflight.snapDegraded, "healthy snap preflight clears snapDegraded");
+    const fuse::editor::UpdateDragPreflight gizmoPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(gizmoPreflight.canUpdate(), "gizmo preflight allows update with degraded snap");
+    expectTrue(gizmoPreflight.snapDegraded, "gizmo preflight marks degraded snap settings");
+    expectTrue(gizmo.tryUpdateDrag(hit, result), "tryUpdateDrag accepts active drag");
+    expectTrue(result.axis == fuse::editor::GizmoAxis::X, "tryUpdateDrag preserves active axis");
+    expectTrue(result.transform.posX != 1.f, "tryUpdateDrag applies drag delta");

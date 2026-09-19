@@ -2241,3 +2241,12 @@ GizmoBeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mo
 GizmoBeginDragPreflight GizmoSystem::preflightBeginDrag(const GizmoHitTest& hit,
     return fuse::editor::preflightBeginDrag(hit, m_mode, m_dragging, m_snap);
 GizmoBeginDragPreflight GizmoSystem::preflightBeginDrag(const GizmoRay& ray,
+
+// --- deepen additive from deepen-b6-gizmo-pick-snap-preflight-2b84 ---
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging) {
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode,
+    UpdateDragPreflight preflight = preflightUpdateDrag(hit, dragging);
+    return preflightUpdateDrag(hit, dragging).canUpdate();
+    return preflightUpdateDrag(hit, dragging, mode, settings).canUpdate();
+    return fuse::editor::preflightBeginDrag(hit, m_mode, m_dragging);
+    return fuse::editor::preflightUpdateDrag(hit, m_dragging, m_mode, m_snap);

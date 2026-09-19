@@ -977,3 +977,7 @@ GizmoBeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTrans
 GizmoBeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
     GizmoBeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit,
     GizmoBeginDragPreflight preflightBeginDrag(const GizmoRay& ray,
+
+// --- deepen additive from deepen-b6-gizmo-pick-snap-preflight-2b84 ---
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging);
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode,
