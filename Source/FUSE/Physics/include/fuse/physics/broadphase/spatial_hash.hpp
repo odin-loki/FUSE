@@ -3856,6 +3856,11 @@ const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason);
 /// Diagnose why shape→cell insertion would skip; vacuously succeeds when insertion may proceed.
 ShapeCellInsertRejectReason shapeCellInsertRejectReason(
     u32 shapeIndex,
+/// Why shape cell insertion would skip hash occupancy iteration (B4.2 deepen follow-up pass).
+
+/// Human-readable label for shape cell-insert reject reasons (logging / tests).
+
+/// Diagnose why shape cell insertion would skip; vacuously succeeds when insertion may proceed.
     const SpatialHashParams& params,
     bool use2D);
 
@@ -4114,17 +4119,12 @@ bool cellCapacityInsertRejectsForReason(
 
 
 
-    bool singletonOccupant = false;
 
 
 FUSE_PHYSICS_INLINE CellPairGenPreflight preflightCellPairGeneration(u32 occupantCount) {
-    CellPairGenPreflight preflight{};
     preflight.reason = cellPairGenRejectReason(occupantCount);
-    preflight.emptyOccupants = preflight.reason == CellPairGenRejectReason::EmptyOccupants;
-    preflight.singletonOccupant = preflight.reason == CellPairGenRejectReason::SingletonOccupant;
     if (preflight.canGenerate()) {
         preflight.pairCount = estimatePairCountForUniqueBodies(occupantCount);
-    return preflight;
 
 FUSE_PHYSICS_INLINE CellPairGenPreflight preflightCellPairGeneration(const std::vector<u32>& occupants) {
     return preflightCellPairGeneration(static_cast<u32>(occupants.size()));
@@ -4244,13 +4244,8 @@ FUSE_PHYSICS_INLINE u32 estimatePairsForUniqueOccupants(u32 uniqueOccupantCount)
 
 
 
-FUSE_PHYSICS_INLINE CellPairGenRejectReason cellPairGenRejectReason(u32 uniqueOccupantCount) {
-    if (uniqueOccupantCount == 0u) {
-    if (uniqueOccupantCount < 2u) {
         return CellPairGenRejectReason::InsufficientOccupants;
 
-FUSE_PHYSICS_INLINE bool cellPairGenRejectsForReason(u32 uniqueOccupantCount, CellPairGenRejectReason expected) {
-    return cellPairGenRejectReason(uniqueOccupantCount) == expected;
 
     u32 uniqueOccupantCount = 0;
 
@@ -4262,6 +4257,14 @@ FUSE_PHYSICS_INLINE bool cellPairGenRejectsForReason(u32 uniqueOccupantCount, Ce
     EmptyCellRange,
 
 /// Human-readable label for shape-cell insert reject reasons (logging / tests).
+
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+
+/// Read-only shape cell-insert diagnostics — no mutation (B4.2 deepen follow-up pass).
+
 
     u32 shapeIndex,
     const RigidBodySoA& bodies,
@@ -4357,19 +4360,50 @@ bool canSkipShapeCellInsert(
 /// Non-mutating shape→cell insert predicate — mirrors `preflightShapeCellInsert` (B4.2 deepen pass).
 bool shouldRunShapeCellInsert(
     preflight.occupancyCount = occupancy.occupancyCount;
-}
 
-    const CellOccupancyPreflight occupancy = preflightCellOccupancy(range, maxCells);
-    CellCapacityInsertPreflight preflight{};
-    preflight.reason = cellCapacityInsertRejectReason(range, maxCells);
-    preflight.emptyRange = preflight.reason == CellCapacityInsertRejectReason::EmptyRange;
-    preflight.exceedsBudget = preflight.reason == CellCapacityInsertRejectReason::ExceedsBudget;
 
 /// Non-mutating cell-capacity insert skip predicate — inverse of `canInsert` (B4.2 deepen follow-up pass).
 
 
 /// Non-mutating cell-capacity insert predicate — mirrors `preflightCellCapacityInsert` (B4.2 deepen follow-up pass).
 
+/// Non-mutating shape cell-insert skip predicate — inverse of `canInsert` (B4.2 deepen follow-up pass).
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D);
+
+/// Non-mutating shape cell-insert predicate — mirrors `preflightShapeCellInsert` (B4.2 deepen follow-up pass).
+
+/// Why a single merge push would reject (B4.2 deepen follow-up pass).
+enum class MergePairPushRejectReason : u8 {
+    None = 0,
+    InvalidPair,
+    AtCapacity,
+
+/// Human-readable label for merge-pair push reject reasons (logging / tests).
+const char* mergePairPushRejectReasonName(MergePairPushRejectReason reason);
+
+/// Diagnose why one merge push would reject; vacuously succeeds when push may proceed.
+MergePairPushRejectReason mergePairPushRejectReason(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+
+/// Returns true when `mergePairPushRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool mergePairPushRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 idxA,
+    u32 idxB,
+    MergePairPushRejectReason expected);
+
+/// Read-only merge-pair push diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct MergePairPushPreflight {
+    MergePairPushRejectReason reason = MergePairPushRejectReason::None;
+    bool invalidPair = false;
+    bool atCapacity = false;
+
+    bool canPush() const { return reason == MergePairPushRejectReason::None; }
+
+MergePairPushPreflight preflightMergePairPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
