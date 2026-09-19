@@ -1188,6 +1188,11 @@ bool manifold_finalize_preflight_skips(
 
 /// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.6 deepen pass).
 
+/// Non-mutating prune skip predicate — mirrors `should_skip_manifold_prune` (B4.6 deepen pass).
+
+/// Non-mutating prune predicate — inverse of `can_skip_manifold_prune` (B4.6 deepen pass).
+
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

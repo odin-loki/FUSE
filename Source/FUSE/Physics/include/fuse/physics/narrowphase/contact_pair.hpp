@@ -1161,6 +1161,26 @@ ContactManifold detect_contacts_pair_deepen(
 
 /// Copy pairs that pass extended deepen preflight (B4.4 deepen pass follow-up).
 std::vector<broadphase::CandidatePair> filter_dispatchable_contact_pairs(
+/// Why narrowphase batch dispatch would early-out (B4.6 deepen pass).
+enum class NarrowphaseBatchRejectReason : u8 {
+    None = 0,
+    EmptyPairList,
+    AllRejected,
+};
+
+/// Const preflight for narrowphase batch dispatch (B4.5 deepen follow-up pass).
+struct NarrowphaseBatchPreflight {
+    NarrowphaseBatchRejectReason reason = NarrowphaseBatchRejectReason::None;
+    u32 pairCount = 0u;
+    u32 dispatchableCount = 0u;
+    u32 rejectedCount = 0u;
+
+    bool can_dispatch() const { return dispatchableCount > 0u; }
+    bool can_skip() const { return reason != NarrowphaseBatchRejectReason::None; }
+    bool can_run() const { return reason == NarrowphaseBatchRejectReason::None && can_dispatch(); }
+
+/// Populate batch preflight without running shape dispatch (B4.5 deepen follow-up pass).
+NarrowphaseBatchPreflight preflight_narrowphase_batch(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1244,6 +1264,46 @@ bool is_box_plane_contact_pair(
 
 /// First deepen reject reason in a pair list, or `None` when at least one pair may dispatch (B4.6 deepen pass).
 ContactPairRejectReason first_contact_pair_deepen_reject_in_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating deepen-dispatch skip predicate — mirrors `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
+bool can_skip_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating deepen-dispatch predicate — inverse of `can_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Human-readable label for narrowphase batch reject reasons (B4.6 deepen pass).
+const char* narrowphase_batch_reject_reason_name(NarrowphaseBatchRejectReason reason);
+
+/// Diagnose why batch dispatch would skip; vacuously succeeds when dispatch may proceed (B4.6 deepen pass).
+NarrowphaseBatchRejectReason narrowphase_batch_reject_reason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `narrowphase_batch_reject_reason` matches `expected` (B4.6 deepen pass).
+bool narrowphase_batch_rejects_for_reason(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    NarrowphaseBatchRejectReason expected);
+
+/// Non-mutating batch skip predicate — mirrors `can_skip_narrowphase` (B4.6 deepen pass).
+bool can_skip_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating batch predicate — inverse of `can_skip_narrowphase_batch` (B4.6 deepen pass).
+bool should_run_narrowphase_batch(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);

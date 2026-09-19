@@ -95,6 +95,8 @@ void runNarrowphaseIntoBufferWithDeepenPreflight(
     for (u32 pairIndex = 0; pairIndex < pairCount; ++pairIndex) {
         ContactManifold manifold = detect_contacts_pair_deepen(pairs[pairIndex], bodies, shapes);
         if (generate_contact_manifold(manifold)) {
+        ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
+        if (finalize_contact_manifold_with_preflight(manifold)) {
             buffer.writeSlot(pairIndex, manifold);
         }
     }
