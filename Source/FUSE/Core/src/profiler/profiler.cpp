@@ -1658,6 +1658,15 @@ bool isAsyncFlowPhase(EventPhase phase) {
 
 
 
+
+    return isValidEventName(event.name) && isValidEventName(name) && std::strcmp(event.name, name) == 0;
+
+bool isAsyncFlowEvent(const ProfileEvent& event) {
+
+bool flowEventMatchesId(const ProfileEvent& event, u32 flowId) {
+    return isValidEventName(event.name) && isAsyncFlowEvent(event) && event.scopeId == flowId;
+
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
 
@@ -2843,6 +2852,12 @@ bool tryFindFirstEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByFlow(flowId);
+
+
+
+
+
+
 
 
 
@@ -4175,6 +4190,21 @@ bool isFlowIdOpen(u32 flowId) {
 
 
 
+
+
+
+
+
+        if (flowEventMatchesId(event, flowId)) {
+
+
+
+        if (!flowEventMatchesId(event, flowId)) {
+
+            if (openStarts > 0u) {
+                --openStarts;
+    return openStarts > 0u;
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -4326,7 +4356,6 @@ ProfileScopePreflight preflightProfileScope(const char* name) {
 
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name) {
     AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
     preflight.emptyName = isEmptyEventName(name);
 
 AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name) {
@@ -4435,26 +4464,27 @@ const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason rea
 
 NestingAsyncFlowPreflight preflightNestingAndAsyncFlow() {
     NestingAsyncFlowPreflight preflight{};
-    preflight.activeScopeNestingDepth = scopeNestingDepth();
-    preflight.activeFlowNestingDepth = flowNestingDepth();
-    preflight.openAsyncFlowCount = openAsyncFlowCount();
-    preflight.maxScopeNestingDepth = maxNestingDepth();
-    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
     preflight.scopeNestingBalanced = isScopeNestingBalanced();
     preflight.flowNestingBalanced = isFlowNestingBalanced();
-    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
-    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
-    preflight.flowDepthDetached = isFlowDepthDetached();
     preflight.emptyName = !isValidEventName(name);
-    return preflight;
-}
 
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
 
 AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 flowId) {
     preflight.orphanFinish = openAsyncFlowCount() == 0u;
     (void)flowId;
+ScopeNestingPreflight preflightScopeNesting() {
+    ScopeNestingPreflight preflight{};
+    preflight.activeDepth = scopeNestingDepth();
+    preflight.maxDepth = maxNestingDepth();
+    preflight.balanced = isScopeNestingBalanced();
+
+AsyncFlowPreflight preflightAsyncFlow() {
+    preflight.openCount = openAsyncFlowCount();
+    preflight.activeFlowDepth = flowNestingDepth();
+    preflight.balanced = isFlowNestingBalanced();
+    preflight.depthDetached = isFlowDepthDetached();
+    preflight.crossThreadHandoffPending = isCrossThreadFlowHandoffPending();
+    preflight.hasOpenFlows = hasOpenAsyncFlows();
     return preflight;
 }
 

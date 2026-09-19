@@ -148,6 +148,22 @@ struct AsyncFlowEndPreflight {
     bool orphanEnd = false;
 
     bool canEnd() const { return !profilerDisabled && !emptyName && !orphanEnd; }
+/// Read-only scope nesting diagnostics — safe to call before entering nested scopes.
+struct ScopeNestingPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    bool balanced = true;
+
+    bool isBalanced() const { return balanced; }
+
+/// Read-only async-flow diagnostics — safe to call before cross-thread handoff or export.
+    u32 openCount = 0;
+    u32 activeFlowDepth = 0;
+    u32 maxFlowDepth = 0;
+    bool depthDetached = false;
+    bool crossThreadHandoffPending = false;
+    bool hasOpenFlows = false;
+
 };
 
 /// Read-only chrome export diagnostics — safe to call before `exportChromeTraceJson()`.
@@ -1232,6 +1248,8 @@ const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason);
 ChromeTraceExportRejectReason chromeTraceExportRejectReason();
 const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason);
 NestingAsyncFlowPreflight preflightNestingAndAsyncFlow();
+ScopeNestingPreflight preflightScopeNesting();
+AsyncFlowPreflight preflightAsyncFlow();
 ChromeTraceExportPreflight preflightChromeTraceExport();
 ProfileScopePreflight preflightProfileScope(const char* name);
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);
