@@ -256,6 +256,90 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Combined prune+finalize preflight without mutating the manifold (B4.6 deepen pass).
+struct ManifoldPruneAndFinalizePreflight {
+    ManifoldPrunePreflight prune{};
+    ManifoldFinalizePreflight finalize{};
+    bool skipped = false;
+
+    bool can_prune_and_finalize() const {
+        return !skipped && finalize.can_finalize() && prune.reason == ManifoldPruneRejectReason::None;
+    }
+
+    bool can_skip() const { return !can_prune_and_finalize(); }
+};
+
+ManifoldPruneAndFinalizePreflight preflight_manifold_prune_and_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f,
+    f32 frictionEpsilon = 1e-4f);
+
+bool can_skip_manifold_prune_and_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f,
+    f32 frictionEpsilon = 1e-4f);
+
+bool prune_and_finalize_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f,
+    f32 frictionEpsilon = 1e-4f);
+
+inline ManifoldPruneAndFinalizePreflight preflight_manifold_prune_and_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth,
+    f32 frictionEpsilon) {
+    ManifoldPruneAndFinalizePreflight preflight{};
+    preflight.prune = preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    preflight.finalize = preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    preflight.skipped = preflight.prune.skipped || preflight.finalize.skipped;
+    return preflight;
+}
+
+inline bool can_skip_manifold_prune_and_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth,
+    f32 frictionEpsilon) {
+    return preflight_manifold_prune_and_finalize(
+               manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth, frictionEpsilon)
+        .can_skip();
+}
+
+inline bool prune_and_finalize_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth,
+    f32 frictionEpsilon) {
+    const ManifoldPruneAndFinalizePreflight preflight = preflight_manifold_prune_and_finalize(
+        manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth, frictionEpsilon);
+    if (!preflight.can_prune_and_finalize()) {
+        if (preflight.finalize.reason == ManifoldFinalizeRejectReason::AllSeparatedAfterPrune ||
+            preflight.prune.reason == ManifoldPruneRejectReason::AllSeparated) {
+            manifold.clear();
+        }
+        return false;
+    }
+    if (preflight.prune.needs_pruning() || preflight.prune.needs_shallow_pruning(shallowMinDepth)) {
+        if (!prune_contact_manifold_with_preflight(
+                manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+            manifold.clear();
+            return false;
+        }
+    }
+    return finalize_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
