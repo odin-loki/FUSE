@@ -416,6 +416,62 @@ void testCookCacheLoadCorruptPreservesEntries() {
     expectTrue(!cache.load(corruptPath), "corrupt cache JSON load fails");
     expectTrue(cache.entry_count() == 1u, "corrupt load preserves existing entries");
     expectTrue(cache.contains(601u), "seeded entry remains after corrupt load");
+void testCookContentHashNullAndReadableGuards() {
+    expectTrue(fuse::project::is_zero_cook_hash(0), "zero cook hash is reserved");
+    expectTrue(!fuse::project::is_zero_cook_hash(42u), "non-zero hash is not zero");
+
+    expectTrue(fuse::project::fnv1a64_bytes(nullptr, 0) != 0, "null empty-byte hash is defined");
+    expectTrue(fuse::project::fnv1a64_bytes(nullptr, 4) == 0, "null non-empty byte hash is rejected");
+
+    expectTrue(!fuse::project::is_readable_cook_source_path(""), "empty path is not readable");
+    expectTrue(!fuse::project::is_readable_cook_source_path("/tmp/fuse_b79_missing_readable.obj"),
+               "missing path is not readable");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_readable.obj", "# readable source\n");
+    expectTrue(fuse::project::is_readable_cook_source_path(source), "existing source path is readable");
+
+void testCookCacheInvalidAndStaleEntryHelpers() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_helper_valid.obj", "# helper valid\n");
+    desc.output_path = "/tmp/fuse_b79_helper_valid.fusemesh";
+
+    expectTrue(cooked.ok, "seed cook for helper entry validation ok");
+
+    valid.content_hash = cooked.content_hash;
+    valid.source_path = source;
+    valid.output_path = desc.output_path;
+    valid.kind = fuse::project::CookAssetKind::Mesh;
+    expectTrue(!fuse::project::is_invalid_cook_cache_entry(valid), "valid entry is not invalid");
+    expectTrue(!fuse::project::is_stale_cook_cache_entry(valid), "fresh entry is not stale");
+
+    fuse::project::CookCacheEntry invalid = valid;
+    expectTrue(fuse::project::is_invalid_cook_cache_entry(invalid), "zero hash entry is invalid");
+    expectTrue(!fuse::project::is_stale_cook_cache_entry(invalid), "invalid entry is not classified as stale");
+
+    invalid = valid;
+    invalid.source_path = "";
+    expectTrue(fuse::project::is_invalid_cook_cache_entry(invalid), "empty source entry is invalid");
+
+    fuse::project::CookCacheEntry stale_entry = valid;
+    stale_entry.content_hash = cooked.content_hash + 1u;
+    expectTrue(fuse::project::is_stale_cook_cache_entry(stale_entry),
+               "mismatched stored hash is stale for readable source");
+
+void testCookCacheHasInvalidAndStaleEntryGuards() {
+    expectTrue(!cache.has_invalid_entries(), "empty cache has no invalid entries");
+    expectTrue(!cache.has_stale_entries(), "empty cache has no stale entries");
+    expectTrue(!cache.has_prunable_entries(), "empty cache has no prunable entries");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_has_stale.obj", "# has stale v1\n");
+    desc.output_path = "/tmp/fuse_b79_has_stale.fusemesh";
+
+    expectTrue(cooked.ok, "seed cook for has_stale guard ok");
+
+    writeTempFile(source, "# has stale v2\n");
+    expectTrue(!cooker.cache().has_invalid_entries(), "content change does not create invalid entries");
+    expectTrue(cooker.cache().has_stale_entries(), "content change marks cache stale");
+
+    expectTrue(cooker.cache().prune_invalid_entries() == 0u, "prune_invalid skips stale-only cache");
+    expectTrue(cooker.cache().prune_stale_entries() == 1u, "prune_stale removes stale-only entry");
 
 void testCookCachePruneInvalidEntriesOnLoad() {
     const std::string cachePath = "/tmp/fuse_b79_prune_invalid_load.json";
@@ -813,6 +869,9 @@ int main() {
     testFnv1a64BytesEmptyGuard();
     testHashUpstreamDependenciesEmptyPathGuards();
     testHashManifestEntryEmptyDependencyGuards();
+    testCookContentHashNullAndReadableGuards();
+    testCookCacheInvalidAndStaleEntryHelpers();
+    testCookCacheHasInvalidAndStaleEntryGuards();
     testCookCacheEmptyPathRejection();
     testCookCacheEmptyPathTextureAudioGuards();
     testCookCacheEmptyGuards();

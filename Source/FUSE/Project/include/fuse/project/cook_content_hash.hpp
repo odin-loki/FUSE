@@ -45,6 +45,13 @@ struct CookHashPreflight {
     return size == 0 || data != nullptr;
 }
 
+/// Zero is reserved for unreadable paths and rejected cache keys (B7.9 deepen).
+[[nodiscard]] inline bool is_zero_cook_hash(u64 hash) {
+    return hash == 0;
+
+/// True when `path` is non-empty and yields a non-zero content hash (B7.9 deepen).
+[[nodiscard]] bool is_readable_cook_source_path(const std::string& path);
+
 /// Last-write-time in nanoseconds; returns 0 when the path is missing or unreadable.
 [[nodiscard]] u64 file_mtime_ns(const std::string& path);
 

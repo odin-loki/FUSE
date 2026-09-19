@@ -51,18 +51,16 @@ bool is_invalid_cache_entry_(const CookCacheEntry& entry) {
 bool is_stale_cache_entry_(const CookCacheEntry& entry) {
     if (!is_valid_cook_cache_entry(entry)) {
         return false;
-    }
 
     if (entry.kind == CookAssetKind::Shader) {
         return true;
-    }
 
     if (!source_exists_for_entry_(entry)) {
-        return false;
-    }
 
     const u64 current_key = recompute_cache_key_for_entry_(entry);
     return !is_valid_cook_cache_key(current_key) || entry.content_hash != current_key;
+bool is_prunable_cache_entry_(const CookCacheEntry& entry) {
+    return is_invalid_cook_cache_entry(entry) || is_stale_cook_cache_entry(entry);
 }
 
 bool is_prunable_cache_entry_(const CookCacheEntry& entry) {
@@ -83,6 +81,15 @@ std::string escapeJson(const std::string& text) {
 }
 
 } // namespace
+
+bool is_stale_cook_cache_entry(const CookCacheEntry& entry) {
+    if (!is_valid_cook_cache_entry(entry)) {
+        return false;
+    }
+
+    const u64 current_key = recompute_cache_key_for_entry_(entry);
+    return !is_valid_cook_cache_key(current_key) || entry.content_hash != current_key;
+}
 
 CookCacheEntry* CookCache::find_entry_(u64 content_hash) {
     for (CookCacheEntry& entry : m_entries) {
@@ -296,6 +303,7 @@ u32 CookCache::prune_stale_entries() {
     u32 removed = 0;
     for (auto it = m_entries.begin(); it != m_entries.end();) {
         if (is_stale_cache_entry_(*it)) {
+        if (is_stale_cook_cache_entry(*it)) {
             it = m_entries.erase(it);
             ++removed;
             ++m_stats.invalidations;
@@ -314,6 +322,7 @@ u32 CookCache::prune_invalid_entries() {
     u32 removed = 0;
     for (auto it = m_entries.begin(); it != m_entries.end();) {
         if (is_invalid_cache_entry_(*it)) {
+        if (is_invalid_cook_cache_entry(*it)) {
             it = m_entries.erase(it);
             ++removed;
             ++m_stats.invalidations;
@@ -515,17 +524,28 @@ std::vector<std::string> CookCache::probe_downstream_sources(
 }
 
 bool CookCache::has_stale_entries() const {
+bool CookCache::has_invalid_entries() const {
     if (m_entries.empty()) {
         return false;
     }
 
     for (const CookCacheEntry& entry : m_entries) {
         if (is_stale_cache_entry_(entry)) {
+        if (is_invalid_cook_cache_entry(entry)) {
             return true;
         }
     }
     return false;
 }
+
+bool CookCache::has_stale_entries() const {
+    if (m_entries.empty()) {
+        return false;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_stale_cook_cache_entry(entry)) {
+            return true;
 
 bool CookCache::has_prunable_entries() const {
     return has_invalid_entries() || has_stale_entries();

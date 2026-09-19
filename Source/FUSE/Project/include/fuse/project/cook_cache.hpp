@@ -61,6 +61,14 @@ struct CookCachePruneEstimate {
     return is_valid_cook_cache_key(combine_cook_cache_key(source_hash, upstream_hash));
 }
 
+/// Structural invalidity — zero keys or empty paths (B7.9 deepen).
+[[nodiscard]] inline bool is_invalid_cook_cache_entry(const CookCacheEntry& entry) {
+    return !is_valid_cook_cache_entry(entry);
+}
+
+/// Valid entry whose stored key no longer matches recomputed source content (B7.9 deepen).
+[[nodiscard]] bool is_stale_cook_cache_entry(const CookCacheEntry& entry);
+
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
 public:
@@ -95,6 +103,10 @@ public:
     [[nodiscard]] bool has_stale_entries() const;
     /// True when invalid or stale records are present — `prune_*` would remove at least one (B7.9 deepen).
     [[nodiscard]] bool has_prunable_entries() const;
+    /// True when structurally invalid records are present — `prune_invalid_entries` would remove at least one (B7.9 deepen).
+    [[nodiscard]] bool has_invalid_entries() const;
+    /// True when valid-but-stale records are present — `prune_stale_entries` would remove at least one (B7.9 deepen).
+    [[nodiscard]] bool has_stale_entries() const;
 
     /// Read-only invalidation probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] bool would_invalidate(u64 content_hash) const;
