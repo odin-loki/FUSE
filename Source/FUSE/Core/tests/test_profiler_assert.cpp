@@ -2526,3 +2526,7 @@ int main() {
     std::fprintf(stdout, "fuse_core_profiler_assert: all tests passed\n");
     return EXIT_SUCCESS;
 }
+
+// --- deepen additive from deepen-b16-profiler-guards-77ef ---
+void testRingCapacityAndBufferFullGuards() {
+void testNullNameScopeGuard() {
