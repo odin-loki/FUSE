@@ -4099,3 +4099,19 @@ void testDragLifecycleSnapPreflight() {
     const fuse::editor::DragLifecycleSnapPreflight degradedLifecycle =
     const fuse::editor::DragLifecycleSnapPreflight gizmoLifecycle = gizmo.preflightDragLifecycleSnap();
     testDragLifecycleSnapPreflight();
+
+// --- deepen additive from gizmo-interaction-preflights-d149 ---
+void testGizmoTargetPreflightGuards() {
+    const fuse::editor::BeginDragPreflight beginWithoutTarget = fuse::editor::preflightBeginDrag(
+    const fuse::editor::BeginDragPreflight beginWithTarget = fuse::editor::preflightBeginDrag(
+    const fuse::editor::UpdateDragPreflight updateWithoutTarget = fuse::editor::preflightUpdateDrag(
+    const fuse::editor::EndDragPreflight endWithoutTarget = fuse::editor::preflightEndDrag(
+    expectTrue(!gizmo.tryBeginDrag(hit, transform, rejected),
+               "gizmo tryBeginDrag rejects drag without target");
+    expectTrue(gizmo.tryBeginDrag(hit, transform, result), "gizmo tryBeginDrag accepts bound target");
+void testNonUnitRayPickPreflight() {
+    const fuse::editor::PickPreflight pick = fuse::editor::preflightPick(
+    expectTrue(fuse::editor::tryPickAxis(ray, transform, fuse::editor::GizmoMode::Translate,
+               "tryPickAxis still succeeds on non-unit ray");
+    testGizmoTargetPreflightGuards();
+    testNonUnitRayPickPreflight();

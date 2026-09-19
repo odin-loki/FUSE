@@ -2899,3 +2899,28 @@ DragLifecycleSnapPreflight preflightDragLifecycleSnap(GizmoMode mode,
     DragLifecycleSnapPreflight preflight{};
 DragLifecycleSnapPreflight GizmoSystem::preflightDragLifecycleSnap() const {
     return fuse::editor::preflightDragLifecycleSnap(m_mode, m_snap);
+
+// --- deepen additive from gizmo-interaction-preflights-d149 ---
+void applyNoTargetGuard(Handle<Object> target, BeginDragPreflight& preflight) {
+void applyNoTargetGuard(Handle<Object> target, UpdateDragPreflight& preflight) {
+void applyNoTargetGuard(Handle<Object> target, EndDragPreflight& preflight) {
+    UpdateDragPreflight preflight = preflightUpdateDrag(hit, dragging, activeAxis, mode, settings);
+    preflight.begin = preflightBeginDrag(hit, mode, settings, target, alreadyDragging);
+    preflight.drag = preflightUpdateDrag(hit, dragging, activeAxis, mode, settings, target);
+    preflight.end = preflightEndDrag(dragging, activeAxis, mode, settings, target);
+    preflight.update = preflightUpdateDragInteraction(hit, dragging, activeAxis, mode, settings,
+    preflight.end = preflightEndDragInteraction(dragging, activeAxis, mode, settings, target);
+    preflight.update = preflightUpdateDrag(hit, dragging, activeAxis, mode, settings, target);
+    preflight.begin = preflightBeginInteraction(hit, mode, settings, target, dragging);
+    preflight.update = preflightUpdateInteraction(hit, dragging, activeAxis, mode, settings, target);
+    preflight.end = preflightEndInteraction(dragging, activeAxis, mode, settings, target);
+    return fuse::editor::preflightEndDrag(m_dragging, m_activeAxis, m_mode, m_snap, m_target);
+    return fuse::editor::preflightEndDragInteraction(m_dragging, m_activeAxis, m_mode, m_snap,
+    return fuse::editor::preflightDragInteraction(hit, m_dragging, m_activeAxis, m_mode, m_snap,
+    return fuse::editor::preflightBeginDrag(hit, m_mode, m_snap, m_target, m_dragging);
+    return fuse::editor::preflightBeginDragInteraction(hit, m_mode, m_snap, m_target, m_dragging);
+    return fuse::editor::preflightUpdateDrag(hit, m_dragging, m_activeAxis, m_mode, m_snap,
+    return fuse::editor::preflightBeginInteraction(hit, m_mode, m_snap, m_target, m_dragging);
+    return fuse::editor::preflightUpdateInteraction(hit, m_dragging, m_activeAxis, m_mode, m_snap,
+    return fuse::editor::preflightEndInteraction(m_dragging, m_activeAxis, m_mode, m_snap,
+    return fuse::editor::preflightInteraction(hit, m_dragging, m_activeAxis, m_mode, m_snap,
