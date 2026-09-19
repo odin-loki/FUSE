@@ -204,9 +204,9 @@ struct ChromeTraceExportPreflight {
     bool hasIgnoredAsyncFlowEnds = false;
     bool hasUnpairedScopeEvents = false;
     bool hasUnpairedAsyncFlowEvents = false;
-    u32 droppedEventCount = 0;
     bool scopeBeginEndMismatch = false;
     bool flowStartFinishMismatch = false;
+    bool hasActiveProfilingNesting = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -445,7 +445,6 @@ struct ExportPreflight {
         return hasBalancedScopeEventsInBuffer() && hasBalancedAsyncFlowEventsInBuffer();
     bool hasNestingWarnings() const { return hasUnbalancedNesting() || flowDepthDetached; }
     bool hasDroppedEvents() const { return droppedEventCount > 0u; }
-    bool hasExportWarnings() const {
         return hasUnbalancedNesting() || hasOpenAsyncFlows || flowDepthDetached || hasDroppedEvents()
                || nonExportableEventCount > 0u;
     bool hasNonExportableEvents() const { return nonExportableEventCount > 0; }
@@ -495,28 +494,10 @@ struct NestingStatePreflight {
         return firstEventIndex != kInvalidEventIndex && lastEventIndex != kInvalidEventIndex;
     bool canExportStrict() const {
         return !profilerDisabled && exportableEventCount > 0 && rejectReason == ChromeTraceExportRejectReason::None;
-};
 
-/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
-struct ProfileScopePreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool canEnter = false;
-};
 
-/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
-struct AsyncFlowBeginPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool canBegin = false;
-};
 
-/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
-struct AsyncFlowEndPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool wouldUnderflowOpenCount = false;
-    bool canEnd = false;
+        return canExportSafely() && !hasInvalidNameEvents && !ringBufferFull && droppedEventCount == 0u;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -607,6 +588,9 @@ bool hasUnpairedAsyncFlowEventsInBuffer();
 u32 scopeBeginEndEventDelta();
 u32 asyncFlowStartFinishEventDelta();
 void reconcilePendingFlowHandoff();
+bool hasActiveScopeNesting();
+bool hasActiveFlowNesting();
+bool hasActiveProfilingNesting();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();
@@ -864,11 +848,10 @@ EventLookupRejectReason exportableEventLookupRejectReason(u32 index);
 bool tryFindEventIndexByName(const char* name, u32& outIndex);
 u32 findFirstEventIndexByScopeId(u32 scopeId);
 u32 countEventsByScopeId(u32 scopeId);
-u32 exportableFirstEventIndex();
-u32 exportableLastEventIndex();
 bool hasScopeBeginEndMismatch();
 bool hasFlowStartFinishMismatch();
 bool hasEventsByPhase(EventPhase phase);
+bool hasDroppedEvents();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);

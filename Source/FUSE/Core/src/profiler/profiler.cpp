@@ -309,7 +309,6 @@ EventNameRejectReason diagnoseEventNameRejectReason(const char* name) {
 bool tryValidateEventName(const char* name, EventNameRejectReason& outReason) {
     outReason = diagnoseEventNameRejectReason(name);
     return outReason == EventNameRejectReason::None;
-}
 
 const char* eventNameRejectReasonLabel(EventNameRejectReason reason) {
     switch (reason) {
@@ -320,14 +319,16 @@ const char* eventNameRejectReasonLabel(EventNameRejectReason reason) {
     case EventNameRejectReason::Empty:
         return "empty";
     return "unknown";
-    }
 
 void recordRejectedInvalidName() {
     g_rejectedInvalidNameCount.fetch_add(1u, std::memory_order_acq_rel);
-}
 
 void recordOrphanAsyncFlowEnd() {
     g_orphanAsyncFlowEndCount.fetch_add(1u, std::memory_order_acq_rel);
+bool isWhitespaceOnlyEventName(const char* name);
+
+bool shouldRecordEventName(const char* name) {
+    return isValidEventName(name) && !isWhitespaceOnlyEventName(name);
 }
 
 ProfileScope::ProfileScope(const char* name)
@@ -344,6 +345,7 @@ ProfileScope::ProfileScope(const char* name)
     }
       m_active(g_enabled.load(std::memory_order_acquire) && !shouldRejectEventName(name)) {
       m_active(wouldRecordWithName(name)) {
+      m_active(g_enabled.load(std::memory_order_acquire) && shouldRecordEventName(name)) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -964,6 +966,18 @@ void reconcilePendingFlowHandoff() {
     popFlowNestingDepth();
 }
 
+bool hasActiveScopeNesting() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveFlowNesting() {
+    return flowNestingDepth() > 0u;
+}
+
+bool hasActiveProfilingNesting() {
+    return hasActiveScopeNesting() || hasActiveFlowNesting();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -1162,8 +1176,10 @@ bool isLookupNameValid(const char* name) {
         if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
 
 bool isValidProfileEvent(const ProfileEvent& event) {
-    EventNameRejectReason reason = EventNameRejectReason::None;
     return tryValidateEventName(event.name, reason);
+
+
+    return shouldRecordEventName(event.name);
 }
 
 bool isLastEventIndex(u32 index) {
@@ -1177,6 +1193,7 @@ u32 countEventsWithPhase(EventPhase phase) {
     for (u32 i = 0u; i < total; ++i) {
         if (eventAt(i).phase == phase) {
         if (isEventExportable(i)) {
+        if (shouldRecordEventName(eventAt(i).name)) {
             ++count;
         }
     }
@@ -1291,17 +1308,11 @@ u32 invalidEventCount() {
 
 
 u32 nonExportableEventCount() {
-    const u32 total = eventCount();
-    const u32 exportable = exportableEventCount();
-    return total >= exportable ? total - exportable : 0u;
-}
 
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
     return isRecordableName(event.name);
     if (!isEventIndexValid(index)) {
-        return false;
-    }
 
     EventNameRejectReason reason = EventNameRejectReason::None;
     return tryValidateEventName(eventAt(index).name, reason);
@@ -1337,6 +1348,13 @@ bool tryFirstExportableEvent(ProfileEvent& outEvent) {
 bool tryLastExportableEvent(ProfileEvent& outEvent) {
     const u32 index = lastEventIndex();
 
+u32 droppedEventCount() {
+    return g_droppedEventCount.load(std::memory_order_acquire);
+
+bool hasDroppedEvents() {
+    return droppedEventCount() > 0u;
+
+    return isEventIndexValid(index) && shouldRecordEventName(eventAt(index).name);
 }
 
 bool tryValidateEventName(const char* name, EventNameRejectReason& outReason) {
@@ -2140,14 +2158,36 @@ bool tryExportableLastEvent(ProfileEvent& outEvent) {
 
 
 
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
+
+u32 firstExportableEventIndex() {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (isEventExportable(i)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 lastExportableEventIndex() {
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        if (isEventExportable(i - 1u)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
 
 u32 findFirstEventIndexByPhase(EventPhase phase) {
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.phase == phase && isValidEventName(event.name)) {
+        if (event.phase == phase && shouldRecordEventName(event.name)) {
             return i;
     }
 bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex) {
@@ -2188,6 +2228,10 @@ u32 findEventIndex(EventPhase phase, u32 startIndex) {
     for (u32 i = startIndex; i < count; ++i) {
         if (eventAt(i).phase == phase) {
             return i;
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (event.phase == phase && shouldRecordEventName(event.name)) {
+            return i - 1u;
+        }
     return kInvalidEventIndex;
 
 u32 countEventsByPhase(EventPhase phase) {
@@ -2254,20 +2298,37 @@ u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = 0; i < count; ++i) {
         if (isValidProfileEvent(eventAt(i))) {
-            return true;
-        }
-    return false;
 
 bool canExportChromeTrace() {
-    }
 
-    return true;
 
 u32 countEventsByPhase(EventPhase phase) {
     u32 count = 0u;
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
         if (eventAt(i).phase == phase) {
+        if (event.phase == phase && shouldRecordEventName(event.name)) {
+            ++count;
+    return count;
+
+u32 findFirstEventIndexByName(const char* name) {
+    if (!shouldRecordEventName(name)) {
+        return kInvalidEventIndex;
+
+        const ProfileEvent& event = eventAt(i);
+        if (shouldRecordEventName(event.name) && event.name != nullptr
+            && std::strcmp(event.name, name) == 0) {
+            return i;
+
+u32 findLastEventIndexByName(const char* name) {
+
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+            return i - 1u;
+
+u32 countEventsByName(const char* name) {
+        return 0u;
+
             ++count;
         }
     }
@@ -2746,7 +2807,6 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.hasIgnoredAsyncFlowEnds = hasIgnoredAsyncFlowEnds();
     preflight.hasUnpairedScopeEvents = hasUnpairedScopeEventsInBuffer();
     preflight.hasUnpairedAsyncFlowEvents = hasUnpairedAsyncFlowEventsInBuffer();
-    preflight.droppedEventCount = droppedEventCount();
     preflight.scopeBeginEndMismatch = hasScopeBeginEndMismatch();
     preflight.flowStartFinishMismatch = hasFlowStartFinishMismatch();
     return preflight;
@@ -2845,7 +2905,6 @@ AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name) {
 
 ChromeExportPreflight preflightChromeExport() {
     ChromeExportPreflight preflight{};
-    preflight.droppedEventCount = droppedEventCount();
 
     for (u32 i = 0; i < preflight.eventCount; ++i) {
         const ProfileEvent& event = eventAt(i);
@@ -2893,7 +2952,6 @@ bool isChromeTraceExportEmpty() {
 
 
 
-bool canExportChromeTrace() {
     return diagnoseChromeTraceExportRejectReason() == ChromeTraceExportRejectReason::None;
 }
 
@@ -2901,9 +2959,7 @@ bool preflightChromeTraceNesting(ChromeTraceExportRejectReason* reason) {
     const ChromeTraceExportRejectReason rejectReason = diagnoseChromeTraceExportRejectReason();
     if (reason != nullptr) {
         *reason = rejectReason;
-    }
     return rejectReason == ChromeTraceExportRejectReason::None;
-}
 
 const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason) {
     switch (reason) {
@@ -2921,127 +2977,54 @@ const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason rea
         return "open_async_flows";
     case ChromeTraceExportRejectReason::FlowDepthDetached:
         return "flow_depth_detached";
-    }
     return "unknown";
-}
 
-bool canExportChromeTrace() {
-    return diagnoseChromeTraceExportRejectReason() == ChromeTraceExportRejectReason::None;
-}
 
-bool preflightChromeTraceNesting(ChromeTraceExportRejectReason* reason) {
-    const ChromeTraceExportRejectReason rejectReason = diagnoseChromeTraceExportRejectReason();
-    if (reason != nullptr) {
-        *reason = rejectReason;
-    }
-    return rejectReason == ChromeTraceExportRejectReason::None;
-}
 
-const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason) {
-    switch (reason) {
-    case ChromeTraceExportRejectReason::None:
-        return "none";
-    case ChromeTraceExportRejectReason::ProfilerDisabled:
-        return "profiler_disabled";
-    case ChromeTraceExportRejectReason::NoExportableEvents:
-        return "no_exportable_events";
-    case ChromeTraceExportRejectReason::UnbalancedScopeNesting:
-        return "unbalanced_scope_nesting";
-    case ChromeTraceExportRejectReason::UnbalancedFlowNesting:
-        return "unbalanced_flow_nesting";
-    case ChromeTraceExportRejectReason::OpenAsyncFlows:
-        return "open_async_flows";
-    case ChromeTraceExportRejectReason::FlowDepthDetached:
-        return "flow_depth_detached";
-    }
-    return "unknown";
-}
 
-bool canExportChromeTrace() {
     return preflightChromeTraceExport().canExportTrace();
-}
 
 void reconcileDetachedFlowDepth() {
     if (isFlowDepthDetached() && openAsyncFlowCount() == 0u) {
         threadLocalFlowNestingDepth() = 0u;
-    }
-}
 
 bool canEndAsyncFlow() {
     return openAsyncFlowCount() > 0u;
-}
 
 bool wouldIgnoreOrphanAsyncFlowEnd() {
     return openAsyncFlowCount() == 0u;
-}
 
 ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
     if (!enabled()) {
         return ChromeTraceExportRejectReason::ProfilerDisabled;
-    }
     if (exportableEventCount() == 0u) {
         return ChromeTraceExportRejectReason::NoExportableEvents;
-    }
     if (hasDroppedEvents()) {
         return ChromeTraceExportRejectReason::BufferOverflow;
-    }
     if (!isScopeNestingBalanced()) {
         return ChromeTraceExportRejectReason::UnbalancedScopeNesting;
-    }
     if (!isFlowNestingBalanced()) {
         return ChromeTraceExportRejectReason::UnbalancedFlowNesting;
-    }
     if (hasOpenAsyncFlows()) {
         return ChromeTraceExportRejectReason::OpenAsyncFlows;
-    }
     if (isFlowDepthDetached()) {
         return ChromeTraceExportRejectReason::FlowDepthDetached;
-    }
     return ChromeTraceExportRejectReason::None;
-}
 
-bool canExportChromeTrace() {
     return chromeTraceExportRejectReason() == ChromeTraceExportRejectReason::None;
-}
 
 bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason) {
     const ChromeTraceExportRejectReason rejectReason = chromeTraceExportRejectReason();
-    if (reason != nullptr) {
-        *reason = rejectReason;
-    }
 
     if (rejectReason != ChromeTraceExportRejectReason::None) {
         outJson.clear();
-        return false;
-    }
 
     outJson = exportChromeTraceJson();
-    return true;
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
     preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
+    preflight.hasActiveProfilingNesting = hasActiveProfilingNesting();
     return preflight;
 }
 
@@ -3227,6 +3210,7 @@ void beginAsyncFlow(const char* name, u32 flowId) {
         recordRejectedInvalidName();
     if (!g_enabled.load(std::memory_order_acquire) || shouldRejectEventName(name)) {
     if (!wouldRecordWithName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !shouldRecordEventName(name)) {
         return;
     }
 
@@ -3254,6 +3238,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
         recordRejectedInvalidName();
     if (!g_enabled.load(std::memory_order_acquire) || shouldRejectEventName(name)) {
     if (!wouldRecordWithName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !shouldRecordEventName(name)) {
         return;
     }
 
@@ -3299,6 +3284,7 @@ void sampleCounter(const char* track, s64 value) {
         recordRejectedInvalidName();
     if (!g_enabled.load(std::memory_order_acquire) || shouldRejectEventName(track)) {
     if (!wouldRecordWithName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !shouldRecordEventName(track)) {
         return;
     }
 
@@ -3326,6 +3312,7 @@ void sampleCounterFloat(const char* track, f64 value) {
         recordRejectedInvalidName();
     if (!g_enabled.load(std::memory_order_acquire) || shouldRejectEventName(track)) {
     if (!wouldRecordWithName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !shouldRecordEventName(track)) {
         return;
     }
 
@@ -3353,6 +3340,7 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
         recordRejectedInvalidName();
     if (!g_enabled.load(std::memory_order_acquire) || shouldRejectEventName(track)) {
     if (!wouldRecordWithName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !shouldRecordEventName(track)) {
         return;
     }
 
@@ -3380,6 +3368,7 @@ void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
         recordRejectedInvalidName();
     if (!g_enabled.load(std::memory_order_acquire) || shouldRejectEventName(track)) {
     if (!wouldRecordWithName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire) || !shouldRecordEventName(track)) {
         return;
     }
 
@@ -3479,6 +3468,7 @@ bool tryExportChromeTraceJson(std::string& outJson) {
         if (!isValidEventName(event.name)) {
         if (!isRecordableName(event.name)) {
         if (!isValidProfileEvent(event)) {
+        if (!shouldRecordEventName(event.name)) {
             continue;
         }
 
