@@ -4441,3 +4441,6 @@ void testEndDragInteractionRejectReasonGuards() {
 
 // --- deepen additive from deepen-gizmo-b6-guards-eb15 ---
     expectTrue(!fuse::editor::tryPreflightBeginDrag(nanRay, transform, fuse::editor::GizmoMode::Translate,
+
+// --- deepen additive from deepen-gizmo-b6-guards-8ebd ---
+               "tryPreflightSnapDrag accepts valid delta and snap after step reset");
