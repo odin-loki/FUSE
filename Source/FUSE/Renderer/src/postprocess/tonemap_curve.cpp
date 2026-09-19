@@ -135,6 +135,12 @@ bool tonemap_curve_ready_to_apply(const TonemapCurveParams& params, f32 white_in
     }
     if (!params.enabled) {
         return true;
+    if (params.kind == TonemapCurveKind::ACES) {
+        if (params.aces.contrast < 0.f || params.aces.shoulder < 0.f) {
+            return false;
+        }
+    if (params.kind == TonemapCurveKind::Filmic) {
+        if (params.toe_length < 0.f || params.shoulder_length < 0.f || params.shoulder_angle <= 0.f) {
     }
     return tonemap_curve_has_valid_endpoints(params, white_input, epsilon);
 }
@@ -235,6 +241,9 @@ fuse::math::Vec3 apply_tonemap_curve(const fuse::math::Vec3& hdr, const TonemapC
         return hdr;
     }
     if (!params.enabled) {
+        return hdr;
+    }
+    if (!tonemap_curve_params_valid(params)) {
         return hdr;
     }
     return {evaluate_tonemap_curve_channel(hdr.x, params), evaluate_tonemap_curve_channel(hdr.y, params),

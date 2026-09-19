@@ -49,6 +49,8 @@ void reset_auto_exposure_state_to(AutoExposureState& state, f32 ev = 0.f);
 void reset_auto_exposure_state_to_clamped(AutoExposureState& state, f32 ev, const AutoExposureParams& params);
 /// Reset temporal state only when EV anchor is within params range; returns false when rejected (B5.10 deepen).
 bool reset_auto_exposure_state_to_if_valid(AutoExposureState& state, f32 ev, const AutoExposureParams& params);
+/// Clear measured/smoothed luminance while preserving the current EV anchor (B5.10 deepen).
+void reset_auto_exposure_measurements(AutoExposureState& state);
 f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params);
 bool is_brightening_luminance(f32 measured_luminance, f32 reference_luminance);
 f32 ema_blend(f32 previous, f32 measured, f32 alpha);
@@ -130,6 +132,8 @@ f32 meterFromHistogram(const LuminanceHistogram& histogram, f32 percentile);
 bool canMeterDefaultPercentile(const LuminanceHistogram& histogram);
 /// Percentile metering using the histogram's configured metering percentile (B5.10 deepen).
 f32 meterDefaultPercentile(const LuminanceHistogram& histogram);
+/// True when histogram params and accumulated samples can contribute metering (B5.10 deepen).
+bool canMeterHistogram(const LuminanceHistogram& histogram);
 } // namespace histogram_util
 
 /// CPU histogram-free exposure meter stub (CUDA reduction deferred).
@@ -165,10 +169,13 @@ f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count);
 /// Reset histogram and average meter together (B5.10 deepen).
 void reset_metering(LuminanceHistogram& histogram, ExposureMeter& meter);
 
-/// True when an exposure meter has accumulated samples (B5.10 deepen).
 bool exposure_meter_has_samples(const ExposureMeter& meter);
 /// True when an exposure meter can report a luminance average (B5.10 deepen).
 bool exposure_meter_can_measure(const ExposureMeter& meter);
+
+/// Batch exposure-meter helpers mirroring histogram_util (B5.10 deepen).
+/// Average luminance from meter; returns 0 when empty (B5.10 deepen).
+/// Average luminance from samples; returns 0 when empty (B5.10 deepen).
 
 /// Host-side auto-exposure pass stub (CUDA histogram deferred).
 class AutoExposure {
