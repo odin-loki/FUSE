@@ -3668,3 +3668,17 @@ void testFroxelClassifyPreflightAndBilinearGuards() {
 // --- deepen additive from deepen-froxel-volumetrics-b511-be15 ---
     expectTrue(fuse::renderer::froxel_util::preflightDensityLookupCoord(grid, desc, 1u, 1u, 2u),
                "preflightDensityLookupCoord succeeds for in-range coords");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-2137 ---
+void testFroxelRejectClassifyAndPreflightGuards() {
+    expectTrue(fuse::renderer::froxel_util::classifyDensityLookupReject(grid, desc, 5u) ==
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookup(grid, desc, 5u),
+    expectTrue(fuse::renderer::froxel_util::classifyDensityLookupAtCoordReject(grid, desc, 1u, 1u, 2u) ==
+               "classifyDensityLookupAtCoordReject none for valid coord");
+               "preflightDensityLookupAtCoord succeeds for valid coord");
+               "classifyDensityLookupAtCoordReject index_out_of_range for OOB coord");
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelPopulateReject(desc, camera, zeroMarch) ==
+               "classifyFroxelPopulateReject zero_march_steps for zero march");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulate(desc, camera, zeroMarch),
+               "preflightFroxelPopulate rejects zero march steps");
+    testFroxelRejectClassifyAndPreflightGuards();
