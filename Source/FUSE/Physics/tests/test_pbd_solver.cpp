@@ -5335,3 +5335,49 @@ void testIslandRejectReasonMirrorsExistingPreflights() {
     testIslandGraphBuildRejectReasonName();
     testIslandSolveRejectReasonGuards();
     testIslandRejectReasonMirrorsExistingPreflights();
+
+// --- deepen additive from deepen-pbd-island-guards-53c1 ---
+    expectEq(static_cast<fuse::u32>(validPreflight.reason),
+             static_cast<fuse::u32>(IslandDispatchRejectReason::None),
+    expectEq(static_cast<fuse::u32>(invalidPreflight.reason),
+             static_cast<fuse::u32>(IslandDispatchRejectReason::InvalidDt),
+    const IslandDispatchPreflight nonFinitePreflight =
+    expectEq(static_cast<fuse::u32>(nonFinitePreflight.reason),
+             static_cast<fuse::u32>(IslandDispatchRejectReason::NonFiniteDt),
+    expectEq(static_cast<fuse::u32>(emptySolvePreflight.reason),
+             static_cast<fuse::u32>(IslandDispatchRejectReason::NoDispatchableIslands),
+             static_cast<fuse::u32>(IslandGraphBuildRejectReason::OutOfRangeContactRefs),
+                                                     IslandGraphBuildRejectReason::OutOfRangeContactRefs),
+             static_cast<fuse::u32>(IslandGraphBuildRejectReason::None),
+             static_cast<fuse::u32>(IslandGraphBuildRejectReason::EmptyInput),
+                               IslandGraphBuildRejectReason::OutOfRangeDistanceRefs),
+    expectEq(static_cast<fuse::u32>(emptyPreflight.reason),
+void testIslandPipelineRejectReasonPreflights() {
+    const IslandSolveJobPreflight jobPreflight = preflight_solve_island_job(job, dt);
+    expectEq(static_cast<fuse::u32>(jobPreflight.reason),
+             static_cast<fuse::u32>(IslandSolveJobRejectReason::None),
+    const IslandSolveJobPreflight emptyJobPreflight = preflight_solve_island_job(emptyJob, dt);
+    expectEq(static_cast<fuse::u32>(emptyJobPreflight.reason),
+             static_cast<fuse::u32>(IslandSolveJobRejectReason::EmptyJob),
+             static_cast<fuse::u32>(IslandSolveJobRejectReason::InvalidDt),
+    const IslandConstraintSolvePreflight mixedSolvePreflight = preflight_island_constraint_solve(
+    expectEq(static_cast<fuse::u32>(mixedSolvePreflight.reason),
+    const IslandConstraintSolvePreflight sleepingSolvePreflight = preflight_island_constraint_solve(
+    expectEq(static_cast<fuse::u32>(sleepingSolvePreflight.reason),
+             static_cast<fuse::u32>(IslandConstraintSolveRejectReason::NoMovableBodies),
+             static_cast<fuse::u32>(IslandSleepRejectReason::None),
+             static_cast<fuse::u32>(IslandSleepRejectReason::AllSleeping),
+             static_cast<fuse::u32>(IslandWakeRejectReason::None),
+             static_cast<fuse::u32>(IslandWakeRejectReason::NoMixedSleepState),
+             static_cast<fuse::u32>(IslandSleepGraphRejectReason::None),
+             static_cast<fuse::u32>(IslandWakeGraphRejectReason::None),
+    const IslandSleepPreflight outOfRangeSleep =
+             static_cast<fuse::u32>(IslandSleepRejectReason::OutOfRangeIsland),
+             static_cast<fuse::u32>(IslandWakeRejectReason::OutOfRangeIsland),
+    expectTrue(std::strcmp(island_wake_reject_reason_name(IslandWakeRejectReason::OutOfRangeIsland),
+    const IslandSleepGraphPreflight allSleepingGraphPreflight =
+    expectEq(static_cast<fuse::u32>(allSleepingGraphPreflight.reason),
+             static_cast<fuse::u32>(IslandSleepGraphRejectReason::NoSolveableIslands),
+    const IslandWakeGraphPreflight noWakeGraph =
+             static_cast<fuse::u32>(IslandWakeGraphRejectReason::NoWakeableIslands),
+    testIslandPipelineRejectReasonPreflights();

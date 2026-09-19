@@ -3059,3 +3059,11 @@ IslandSolveRejectReason islandSolveJobRejectReason(const IslandSolveJob& job, f3
         return IslandSolveRejectReason::NoInRangeRefs;
         return IslandSleepRejectReason::NoSolveableIslands;
         return IslandWakeRejectReason::NoWakeableIslands;
+
+// --- deepen additive from deepen-pbd-island-guards-53c1 ---
+        preflight.reason = IslandSolveJobRejectReason::NonFiniteDt;
+        preflight.reason = IslandSolveJobRejectReason::InvalidDt;
+        preflight.reason = IslandSolveJobRejectReason::EmptyJob;
+        preflight.reason = IslandDispatchRejectReason::NoDispatchableIslands;
+        preflight.reason = IslandSleepGraphRejectReason::NoSolveableIslands;
+        preflight.reason = IslandWakeGraphRejectReason::NoWakeableIslands;

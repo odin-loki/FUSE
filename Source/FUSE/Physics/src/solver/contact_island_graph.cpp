@@ -493,3 +493,9 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
 // --- deepen additive from deepen-pbd-island-guards-9446 ---
     case IslandGraphBuildRejectReason::UnsafeRefs:
         return IslandGraphBuildRejectReason::UnsafeRefs;
+
+// --- deepen additive from deepen-pbd-island-guards-53c1 ---
+    case IslandGraphBuildRejectReason::OutOfRangeContactRefs:
+    case IslandGraphBuildRejectReason::OutOfRangeDistanceRefs:
+        return IslandGraphBuildRejectReason::OutOfRangeContactRefs;
+        return IslandGraphBuildRejectReason::OutOfRangeDistanceRefs;
