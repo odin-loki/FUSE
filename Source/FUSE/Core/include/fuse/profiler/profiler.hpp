@@ -226,10 +226,8 @@ struct ChromeTraceExportPreflight {
     bool hasUnpairedRecordedScopes = false;
     bool hasUnpairedRecordedFlows = false;
 
-    bool exportWouldTrimEvents = false;
-    bool hasOnlyExportableEvents = false;
-    u32 orphanAsyncFlowEndCount = 0;
-    bool hasOrphanAsyncFlowEnds = false;
+    bool scopeEventsUnbalanced = false;
+    bool flowEventsUnbalanced = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -249,8 +247,10 @@ struct ChromeTraceExportPreflight {
     bool hasActiveNesting() const {
         return activeScopeNestingDepth > 0u || activeFlowNestingDepth > 0u;
     bool hasOnlyExportableEvents() const { return eventCount == exportableEventCount; }
+    bool hasUnbalancedRecordedEvents() const { return scopeEventsUnbalanced || flowEventsUnbalanced; }
     bool canExportSafely() const {
-        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
+        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending
+            && !hasUnbalancedRecordedEvents();
     }
 
     bool canExportSafely() const {
