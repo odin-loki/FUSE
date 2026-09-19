@@ -1062,6 +1062,14 @@ bool constraint_pair_is_degenerate(u32 bodyA, u32 bodyB) {
     return bodyA == bodyB;
 }
 
+namespace {
+
+bool isInRangeBodyPair(u32 bodyA, u32 bodyB, u32 bodyCount) {
+    return bodyA < bodyCount && bodyB < bodyCount;
+}
+
+} // namespace
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
@@ -1153,6 +1161,9 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!bodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
             continue;
         }
+        if (!isInRangeBodyPair(contact.bodyA, contact.bodyB, bodyCount)) {
+            continue;
+        }
         unionBodies(contact.bodyA, contact.bodyB);
     }
 
@@ -1164,6 +1175,7 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!bodiesInRange(constraint.bodyA, constraint.bodyB, bodyCount)) {
         if (!isDistanceConstraintInRange(constraint, bodyCount)) {
         if (!bodyIndexInRange(constraint.bodyA) || !bodyIndexInRange(constraint.bodyB)) {
+        if (!isInRangeBodyPair(constraint.bodyA, constraint.bodyB, bodyCount)) {
             continue;
         }
         unionBodies(constraint.bodyA, constraint.bodyB);
@@ -1208,6 +1220,9 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!bodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
             continue;
         }
+        if (!isInRangeBodyPair(contact.bodyA, contact.bodyB, bodyCount)) {
+            continue;
+        }
         const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
         if (islandIndex != invalidIsland) {
             islands_[islandIndex].contactIndices.push_back(contactIndex);
@@ -1224,6 +1239,7 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!bodiesInRange(constraint.bodyA, constraint.bodyB, bodyCount)) {
         if (!isDistanceConstraintInRange(constraint, bodyCount)) {
         if (!bodyIndexInRange(constraint.bodyA) || !bodyIndexInRange(constraint.bodyB)) {
+        if (!isInRangeBodyPair(constraint.bodyA, constraint.bodyB, bodyCount)) {
             continue;
         }
         const u32 islandIndex = rootToIsland[findRoot(constraint.bodyA)];
