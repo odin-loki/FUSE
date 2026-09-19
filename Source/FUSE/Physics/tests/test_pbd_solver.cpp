@@ -4994,3 +4994,27 @@ void testIslandSleepWakeDeepenRejectReasons() {
                "should_skip_island_sleep_solve_deepen false for mixed island");
     testIslandBuildDeepenRejectReasons();
     testIslandSleepWakeDeepenRejectReasons();
+
+// --- deepen additive from deepen-pbd-island-pipeline-guards-d3bc ---
+void testPreflightPipelineDispatchGuards() {
+    const IslandPipelineSolvePreflight mixedPreflight = preflight_pipeline_solve_island(
+    expectTrue(!mixedPreflight.skipped, "pipeline preflight does not skip mixed island");
+    expectTrue(mixedPreflight.can_solve(), "mixed island passes pipeline solve preflight");
+    expectTrue(!should_skip_pipeline_solve_island(
+               "should_skip pipeline solve false for mixed island");
+    const IslandPipelineSolvePreflight sleepingPreflight = preflight_pipeline_solve_island(
+    expectTrue(!sleepingPreflight.can_solve(), "all-sleeping island fails pipeline solve preflight");
+    expectTrue(sleepingPreflight.sleep.can_skip_solve(), "pipeline preflight sees all-sleeping island");
+    expectTrue(should_skip_pipeline_solve_island(
+               "should_skip pipeline solve true for all-sleeping island");
+    const IslandPipelineSolvePreflight outOfRange =
+    const IslandPipelineDispatchPreflight graphPreflight =
+    expectTrue(!graphPreflight.skipped, "pipeline graph preflight has dispatchable islands");
+    expectTrue(graphPreflight.can_dispatch(), "pipeline graph preflight can dispatch");
+    expectTrue(!should_skip_pipeline_dispatch(graph, bodies, work.contactManifolds(), constraints, dt),
+               "should_skip pipeline dispatch false for mixed graph");
+    const IslandPipelineDispatchPreflight invalidDt =
+    expectTrue(should_skip_pipeline_dispatch(graph, bodies, work.contactManifolds(), constraints, 0.f),
+               "should_skip pipeline dispatch on invalid dt");
+void testDispatchPipelineSolveIslandGuards() {
+    testPreflightPipelineDispatchGuards();

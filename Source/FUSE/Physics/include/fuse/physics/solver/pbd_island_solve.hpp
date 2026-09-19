@@ -1706,3 +1706,11 @@ bool should_skip_island_constraint_solve_deepen(const ContactIslandGraph::Island
     IslandWakeDeepenPreflight wake{};
     IslandConstraintSolveDeepenPreflight solve{};
     IslandSleepSolveDeepenPreflight sleep{};
+
+// --- deepen additive from deepen-pbd-island-pipeline-guards-d3bc ---
+struct IslandPipelineSolvePreflight {
+IslandPipelineSolvePreflight preflight_pipeline_solve_island(
+IslandPipelineSolvePreflight preflight_pipeline_solve_island_by_index(
+bool should_skip_pipeline_solve_island(const ContactIslandGraph::Island& island,
+IslandPipelineDispatchPreflight preflight_pipeline_dispatch(
+bool should_skip_pipeline_dispatch(const ContactIslandGraph& graph,

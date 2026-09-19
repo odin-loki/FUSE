@@ -2806,3 +2806,21 @@ bool should_skip_island_constraint_solve_deepen(const ContactIslandGraph::Island
         pipeline.solve.reason = IslandConstraintSolveRejectReason::EmptyIsland;
     const IslandSolvePipelinePreflight pipeline = preflight_island_solve_pipeline(
     if (should_skip_island_sleep_solve_deepen(island, bodies) ||
+
+// --- deepen additive from deepen-pbd-island-pipeline-guards-d3bc ---
+IslandPipelineSolvePreflight preflight_pipeline_solve_island(
+    IslandPipelineSolvePreflight preflight{};
+IslandPipelineSolvePreflight preflight_pipeline_solve_island_by_index(
+bool should_skip_pipeline_solve_island(const ContactIslandGraph::Island& island,
+        const IslandPipelineSolvePreflight pipelinePreflight =
+        if (pipelinePreflight.skipped) {
+        if (wakePreflight.should_wake_sleepers()) {
+        if (pipelinePreflight.sleep.can_skip_solve()) {
+        if (!pipelinePreflight.constraint.refs.can_solve()) {
+        if (!pipelinePreflight.constraint.bodies.can_solve()) {
+        if (pipelinePreflight.can_solve()) {
+IslandPipelineDispatchPreflight preflight_pipeline_dispatch(
+bool should_skip_pipeline_dispatch(const ContactIslandGraph& graph,
+        const IslandPipelineSolvePreflight preflight = preflight_pipeline_solve_island(
+    const IslandPipelineSolvePreflight preflight =
+    const IslandPipelineDispatchPreflight preflight = preflight_pipeline_dispatch(
