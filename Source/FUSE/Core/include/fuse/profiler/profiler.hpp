@@ -965,6 +965,25 @@ struct ProfilerNestingPreflight {
     }
 };
 
+/// Read-only nesting/async-flow diagnostics — safe to call before recording scopes or flows.
+struct ProfilerNestingPreflight {
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+    u32 maxScopeNestingDepth = 0;
+    u32 maxFlowNestingDepth = 0;
+    u32 openAsyncFlowCount = 0;
+    bool scopeNestingBalanced = true;
+    bool flowNestingBalanced = true;
+    bool hasOpenAsyncFlows = false;
+    bool flowDepthDetached = false;
+    bool crossThreadFlowHandoffPending = false;
+
+    bool hasUnbalancedNesting() const { return !scopeNestingBalanced || !flowNestingBalanced; }
+    bool isHealthy() const {
+        return !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
+    }
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
