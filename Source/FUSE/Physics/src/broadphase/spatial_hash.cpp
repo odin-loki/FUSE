@@ -1649,9 +1649,6 @@ void dedupeBuffer(PairBufferSoA& buffer) {
     }
         return;
     }
-    if (!shouldRunPairBufferDedupe(buffer)) {
-        return;
-    }
 
     std::vector<CandidatePair> pairs = buffer.toVector();
     dedupePairs(pairs);
@@ -1904,9 +1901,6 @@ void refineBroadphasePairsParallelImpl(
             }
             return;
         if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
-            if (shouldRunPairBufferInvalidateSlot(buffer, pairIndex)) {
-                buffer.invalidateSlot(pairIndex);
-            }
         }
     });
 
@@ -3152,6 +3146,9 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     preflight.wouldTruncate = mergePairsIntoBufferWouldTruncate(pairs, buffer);
     preflight.invalidPairCount = countInvalidMergePairs(pairs);
     preflight.pairCount = static_cast<u32>(pairs.size());
+    const u32 pairCount = static_cast<u32>(pairs.size());
+    preflight.insufficientCapacity =
+        preflight.canMerge() && pairCount > 0u && !buffer.canAcceptPairs(pairCount);
     return preflight;
 }
 
