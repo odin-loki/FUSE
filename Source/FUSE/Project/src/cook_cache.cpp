@@ -1660,7 +1660,6 @@ u32 CookCache::estimate_invalidation_by_output(const std::string& output_path) c
         if (entry.output_path == output_path) {
 
 u32 CookCache::estimate_stale_content_invalidation(const std::string& source_path,
-                                                   u64 current_content_hash) const {
     if (!is_valid_cook_cache_path(source_path) || !is_valid_cook_cache_key(current_content_hash) ||
         m_entries.empty()) {
 
@@ -1710,7 +1709,6 @@ bool CookCache::probe_would_invalidate_hash(u64 content_hash) const {
 bool CookCache::probe_would_invalidate_source(const std::string& source_path) const {
     return estimate_invalidation_by_source(source_path) > 0;
 
-u32 CookCache::estimate_prune_invalid_entries() const {
 
         if (!is_valid_cook_cache_entry(entry)) {
 
@@ -1765,14 +1763,8 @@ u32 CookCache::probe_stale_upstream_invalidation_count(
 u32 CookCache::probe_invalidate_downstream_of(const std::string& output_path,
 
         if (entry.source_path == output_path) {
-bool CookCache::would_invalidate_source(const std::string& source_path) const {
-    return count_by_source(source_path) > 0;
 
-bool CookCache::would_invalidate_output(const std::string& output_path) const {
-    return count_by_output(output_path) > 0;
 
-bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
-    return count_stale_content_for_source(source_path, current_content_hash) > 0;
 
 bool CookCache::would_invalidate_stale_upstream_hashes(
     return count_stale_upstream_hashes(source_upstream_by_path) > 0;
@@ -1803,7 +1795,6 @@ void collect_downstream_sources_(const CookCache& cache,
 
 
 
-    if (m_entries.empty() || !has_prunable_entries()) {
     return estimate_prune_invalid_entries() + estimate_prune_stale_entries();
 
 
@@ -1878,8 +1869,25 @@ std::vector<std::string> CookCache::probe_downstream_sources(
     collect_downstream_sources_(*this, output_path, edges, jobs, sources);
     return sources;
 u32 CookCache::count_prune_all() const {
-    return count_prunable_entries();
-}
+
+
+u32 CookCache::estimate_prune_removals() const {
+
+std::vector<std::string> CookCache::probe_stale_content_sources() const {
+    if (m_entries.empty()) {
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (!is_valid_cook_cache_entry(entry) || !is_stale_cache_entry_(entry)) {
+
+        bool already_recorded = false;
+        for (const std::string& recorded : stale_sources) {
+            if (recorded == entry.source_path) {
+                already_recorded = true;
+                break;
+        if (!already_recorded) {
+            stale_sources.push_back(entry.source_path);
+
+
 
 bool CookCache::contains(u64 content_hash) const {
     if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {

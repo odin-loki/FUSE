@@ -297,5 +297,7 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 /// Null-pointer guard for non-zero-length FNV input — mirrors `is_valid_fnv1a64_input` (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_input(const u8* data, usize size);
 [[nodiscard]] CookHashPreflight preflight_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash);
+[[nodiscard]] CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry& entry,
+                                                                       const CookManifest& manifest);
 
 } // namespace fuse::project

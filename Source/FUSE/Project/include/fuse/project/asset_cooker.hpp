@@ -27,6 +27,12 @@ struct CookCacheUpstreamReconcileEstimate {
     u32 downstream_entries = 0;
 
     [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
+/// Read-only cache reconcile planner — mirrors prune/invalidate estimators (B7.9 deepen).
+    u32 stale_dependency_invalidations = 0;
+    u32 upstream_invalidation = 0;
+    u32 prunable_entries = 0;
+    u32 invalid_entries = 0;
+    u32 stale_entries = 0;
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -125,6 +131,10 @@ public:
     [[nodiscard]] u32 estimate_prune_all() const;
     /// Combined reconcile estimate — stale dependency invalidation plus prunable entries (B7.9 deepen).
     [[nodiscard]] u32 estimate_reconcile_invalidation(const CookManifest& manifest) const;
+    /// Combined prune + stale-dependency reconcile estimate for a manifest (B7.9 deepen).
+    [[nodiscard]] CookCacheReconcileEstimate estimate_cache_reconcile(const CookManifest& manifest) const;
+    /// Upstream-change reconcile estimate — upstream cascade plus prunable entry counts (B7.9 deepen).
+    [[nodiscard]] CookCacheReconcileEstimate estimate_upstream_change_reconcile(
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

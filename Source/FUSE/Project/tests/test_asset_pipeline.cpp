@@ -2074,6 +2074,8 @@ void testCookerStaleDependencyReconcileEstimator() {
     const std::string sourceA = writeTempFile("/tmp/fuse_b79_reconcile_a.obj", "# reconcile a\n");
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_reconcile_b.obj", "# reconcile b\n");
 
+void testCookerCacheReconcileEstimators() {
+
     entryA.output_path = "/tmp/fuse_b79_reconcile_a.fusemesh";
     manifest.assets.push_back(entryA);
 
@@ -2168,6 +2170,30 @@ void testCookerPruneReconcileEstimator() {
     expectTrue(cooker.count_prune_invalidation() == cooker.cache().prune_all(),
                "prune estimate matches prune_all removal count");
     expectTrue(cooker.count_prune_invalidation() == 0u, "prune estimate zero after reconcile");
+    expectTrue(cooked.ok, "manifest cook for reconcile estimators ok");
+
+    const fuse::project::CookCacheReconcileEstimate fresh = cooker.estimate_cache_reconcile(manifest);
+    expectTrue(fresh.stale_dependency_invalidations == 0u,
+               "fresh cache stale dependency reconcile estimate is zero");
+    expectTrue(fresh.prunable_entries == 0u, "fresh cache prune estimate is zero");
+    expectTrue(fresh.invalid_entries == 0u, "fresh cache invalid entry estimate is zero");
+    expectTrue(fresh.stale_entries == 0u, "fresh cache stale entry estimate is zero");
+
+    const fuse::project::CookCacheReconcileEstimate upstream =
+        cooker.estimate_upstream_change_reconcile(manifest, sourceA);
+    expectTrue(upstream.upstream_invalidation >= 2u,
+               "upstream change reconcile estimates chain invalidation");
+    expectTrue(upstream.upstream_invalidation == cooker.count_upstream_invalidation(manifest, sourceA),
+               "upstream reconcile mirrors count_upstream_invalidation");
+
+    const fuse::project::CookCacheReconcileEstimate after_change = cooker.estimate_cache_reconcile(manifest);
+    expectTrue(after_change.stale_dependency_invalidations >= 1u,
+               "revised upstream marks stale dependency invalidations");
+    expectTrue(after_change.stale_entries >= 1u || after_change.prunable_entries >= 1u,
+               "revised upstream marks stale or prunable entries");
+
+    expectTrue(removed >= after_change.stale_dependency_invalidations,
+               "stale dependency invalidation removes at least estimated count");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -2379,6 +2405,7 @@ int main() {
     testCookerStaleDependencyReconcileEstimator();
     testCookerPruneReconcileEstimator();
     testCookerStaleDependencyEstimateParity();
+    testCookerCacheReconcileEstimators();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

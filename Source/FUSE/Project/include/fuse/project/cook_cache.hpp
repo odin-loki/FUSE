@@ -454,14 +454,14 @@ public:
     /// Structurally valid entries whose recomputed key differs — excludes invalid records (B7.9 deepen).
 
     /// Read-only `invalidate_*` presence probes — guarded like `would_invalidate` (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
-    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
-    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
     [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
     [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
     /// Source paths that `invalidate_downstream_of` would touch — one push per matching entry (B7.9 deepen).
     /// Entries `prune_all` would remove — zero when cache is empty or clean (B7.9 deepen).
     [[nodiscard]] u32 count_prune_all() const;
+    /// Entries `prune_all` would remove — zero when cache is empty or nothing is prunable (B7.9 deepen).
+    [[nodiscard]] u32 estimate_prune_removals() const;
+    /// Source paths whose stored content keys differ from a fresh recompute (B7.9 deepen).
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
