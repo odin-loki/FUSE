@@ -2614,3 +2614,54 @@ void testChromeExportPreflight() {
     expectTrue(!activePreflight.flowNestingBalanced, "unmatched flow leaves flow nesting unbalanced in preflight");
     expectTrue(activePreflight.hasOpenAsyncFlows, "unmatched flow reports open async flows in preflight");
     testChromeExportPreflight();
+
+// --- deepen additive from profiler-b16-preflight-deepen-6ec7 ---
+void testEmptyNamePreflightGuards() {
+    const fuse::profiler::ProfileNamePreflight nullPreflight = fuse::profiler::preflightProfileName(nullptr);
+    expectTrue(nullPreflight.null_name, "preflight flags null name");
+    expectTrue(!nullPreflight.empty_name, "preflight does not flag empty on null");
+    expectTrue(!nullPreflight.canRecord(), "null name cannot record");
+    expectTrue(nullPreflight.shouldSkip(), "null name should skip");
+    const fuse::profiler::ProfileNamePreflight emptyPreflight = fuse::profiler::preflightProfileName("");
+    expectTrue(!emptyPreflight.null_name, "preflight does not flag null on empty string");
+    expectTrue(emptyPreflight.empty_name, "preflight flags empty string name");
+    expectTrue(!emptyPreflight.canRecord(), "empty string name cannot record");
+    expectTrue(emptyPreflight.shouldSkip(), "empty string name should skip");
+    const fuse::profiler::ProfileNamePreflight validPreflight = fuse::profiler::preflightProfileName("scope");
+    expectTrue(!validPreflight.null_name && !validPreflight.empty_name, "valid name passes preflight flags");
+    expectTrue(validPreflight.canRecord(), "valid name can record");
+    expectTrue(!validPreflight.shouldSkip(), "valid name should not skip");
+void testScopeNestingPreflight() {
+    const fuse::profiler::ScopeNestingPreflight initial = fuse::profiler::preflightScopeNesting();
+        const fuse::profiler::ScopeNestingPreflight nested = fuse::profiler::preflightScopeNesting();
+    const fuse::profiler::ScopeNestingPreflight disabled = fuse::profiler::preflightScopeNesting();
+void testAsyncFlowPreflights() {
+    const fuse::profiler::AsyncFlowEndPreflight orphanPreflight = fuse::profiler::preflightAsyncFlowEnd("flow");
+    expectTrue(orphanPreflight.orphan_end, "preflight flags orphan end with no open flows");
+    expectTrue(!orphanPreflight.canEnd(), "orphan end cannot proceed");
+    expectTrue(orphanPreflight.shouldSkip(), "orphan end should skip");
+    const fuse::profiler::AsyncFlowBeginPreflight beginPreflight =
+        fuse::profiler::preflightAsyncFlowBegin("vfs_load");
+    expectTrue(beginPreflight.canBegin(), "valid begin preflight passes");
+    expectTrue(!beginPreflight.shouldSkip(), "valid begin should not skip");
+    const fuse::profiler::AsyncFlowEndPreflight matchedPreflight = fuse::profiler::preflightAsyncFlowEnd("vfs_load");
+    expectTrue(!matchedPreflight.orphan_end, "preflight clears orphan flag after begin");
+    expectTrue(matchedPreflight.canEnd(), "matched end preflight passes");
+    const fuse::profiler::AsyncFlowBeginPreflight nullBegin = fuse::profiler::preflightAsyncFlowBegin(nullptr);
+    const fuse::profiler::ChromeTraceExportPreflight emptyPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(emptyPreflight.would_emit_empty_trace, "empty buffer would emit empty trace");
+    expectTrue(!emptyPreflight.has_events, "empty buffer has no events");
+    expectTrue(emptyPreflight.shouldSkip(), "empty export should skip");
+    expectTrue(emptyPreflight.canExport(), "export preflight always allows export");
+    const fuse::profiler::ChromeTraceExportPreflight withEvents = fuse::profiler::preflightChromeTraceExport();
+    const fuse::profiler::ChromeTraceExportPreflight unmatched = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(!fuse::profiler::tryEventAt(0u, out), "tryEventAt false on empty buffer");
+    expectTrue(fuse::profiler::tryEventAt(0u, out), "tryEventAt true for first event");
+               "tryEventAt copies scope begin name");
+    expectTrue(out.phase == fuse::profiler::EventPhase::Begin, "tryEventAt copies begin phase");
+    expectTrue(fuse::profiler::tryEventAt(1u, out), "tryEventAt true for second event");
+    expectTrue(out.phase == fuse::profiler::EventPhase::End, "tryEventAt copies end phase");
+    expectTrue(!fuse::profiler::tryEventAt(2u, out), "tryEventAt false past event count");
+    testEmptyNamePreflightGuards();
+    testScopeNestingPreflight();
+    testAsyncFlowPreflights();

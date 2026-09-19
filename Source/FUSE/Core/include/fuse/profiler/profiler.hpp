@@ -304,3 +304,12 @@ bool tryEventAt(u32 index, ProfileEvent& out);
 // --- deepen additive from deepen-b16-profiler-guards-0c1a ---
 struct ChromeExportPreflight {
 ChromeExportPreflight preflightChromeExport();
+
+// --- deepen additive from profiler-b16-preflight-deepen-6ec7 ---
+struct ProfileNamePreflight {
+struct ScopeNestingPreflight {
+    bool would_emit_empty_trace = false;
+ProfileNamePreflight preflightProfileName(const char* name);
+ScopeNestingPreflight preflightScopeNesting();
+AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name);
+AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name);

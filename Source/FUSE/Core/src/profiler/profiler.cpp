@@ -1118,3 +1118,15 @@ bool tryEventAt(u32 index, ProfileEvent& out) {
 // --- deepen additive from deepen-b16-profiler-guards-0c1a ---
 ChromeExportPreflight preflightChromeExport() {
     ChromeExportPreflight preflight{};
+
+// --- deepen additive from profiler-b16-preflight-deepen-6ec7 ---
+ProfileNamePreflight preflightProfileName(const char* name) {
+    ProfileNamePreflight preflight{};
+ScopeNestingPreflight preflightScopeNesting() {
+    ScopeNestingPreflight preflight{};
+AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name) {
+AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name) {
+    return preflightProfileName(name).shouldSkip() || !g_enabled.load(std::memory_order_acquire);
+    return preflightAsyncFlowBegin(name).shouldSkip();
+    return preflightAsyncFlowEnd(name).shouldSkip();
+    return preflightProfileName(track).shouldSkip() || !g_enabled.load(std::memory_order_acquire);
