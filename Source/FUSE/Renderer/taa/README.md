@@ -150,3 +150,12 @@ Part of `fuse_rhi`. Built with `FUSE_BUILD_CORE=ON`. Tests run when `FUSE_BUILD_
 - `classifyTaaHistoryWarmupBlock` / `tryPreflightTaaHistoryWarmup` / `shouldSkipTaaHistoryWarmup` — warm-up preflight guards
 - `preflightTaaResolveFrame` / `tryPreflightTaaResolveFrame` / `shouldSkipTaaResolveFrame` — combined resolve + blend preflight
 - `TaaPass::preflightResolveFrame` / `shouldSkipResolveFrame` — pass-level composite preflight
+
+// --- deepen additive from deepen-b59-taa-guards-61ca ---
+- `TaaJitterLayout::tryComputeNdcOffsetForFrameIndex` — NDC jitter for a frame counter with reject-reason diagnostics
+- `TaaJitter::tryCurrentNdcOffsetIfReady` — NDC offset with mandatory reject-reason diagnostics
+- `shouldSkipTaaHistoryWarmup` / `tryPreflightTaaHistoryWarmup` — warm-up completion preflight with reject-reason diagnostics
+- `tryPreflightTaaResolve` / `shouldSkipTaaResolve` — resolve preflight with mandatory skip-reason output
+- `TaaPass::tryPreflightJitterNdc` / `shouldSkipJitterNdc` / `shouldSkipJitterSync` — pass-level jitter guard wrappers
+- `TaaPass::tryPreflightHistoryWarmup` / `shouldSkipHistoryWarmup` — pass-level warm-up guard wrappers
+- `TaaPass::tryPreflightResolve` / `shouldSkipResolve` — pass-level resolve skip guard wrappers

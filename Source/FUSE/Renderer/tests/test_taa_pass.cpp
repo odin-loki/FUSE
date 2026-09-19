@@ -3797,3 +3797,18 @@ void testTaaPassWarmupAndCompositeGuards() {
     expectTrue(pass->tryPreflightJitterSync(0u, jitterReject), "pass tryPreflightJitterSync passes");
     expectTrue(pass->preflightResolveFrame(resolveDesc), "pass preflightResolveFrame passes");
     testResolveFrameCompositePreflight();
+
+// --- deepen additive from deepen-b59-taa-guards-61ca ---
+    expectTrue(TaaJitterLayout::tryComputeNdcOffsetForFrameIndex(3u, 128u, 128u, 8u, ndcOut, rejectReason),
+               "tryComputeNdcOffsetForFrameIndex passes for valid inputs");
+    expectNear(ndcOut.x, expected.x, 1e-6f, "tryComputeNdcOffsetForFrameIndex matches ndcOffsetForFrameIndex X");
+    expectNear(ndcOut.y, expected.y, 1e-6f, "tryComputeNdcOffsetForFrameIndex matches ndcOffsetForFrameIndex Y");
+    expectTrue(!TaaJitterLayout::tryComputeNdcOffsetForFrameIndex(3u, 0u, 128u, 8u, ndcOut, rejectReason),
+               "tryComputeNdcOffsetForFrameIndex rejects zero width");
+               "tryComputeNdcOffsetForFrameIndex reject reason is InvalidViewport");
+    expectNear(ndcOut.x, directNdc.x, 1e-6f, "tryCurrentNdcOffsetIfReady matches currentNdcOffset X");
+               "tryCurrentNdcOffsetIfReady rejects zero width");
+    expectTrue(pass->tryPreflightJitterNdc(jitterReject), "pass tryPreflightJitterNdc passes before init");
+               "pass tryPreflightHistoryWarmup fails before init");
+               "pass tryPreflightHistoryWarmup reason is NotReady before init");
+               "pass tryPreflightHistoryWarmup passes after resolve");

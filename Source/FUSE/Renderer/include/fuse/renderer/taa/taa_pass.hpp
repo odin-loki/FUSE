@@ -299,3 +299,6 @@ void addTaaPassToGraph(RenderGraph& graph);
 // --- deepen additive from deepen-b59-taa-guards-6172 ---
     bool preflightTemporalResolve(const TaaResolveDesc& desc,
                                   TaaTemporalGuardRejectReason* reason = nullptr) const;
+
+// --- deepen additive from deepen-b59-taa-guards-61ca ---
+    bool tryPreflightHistoryWarmup(TaaHistoryReuseBlockReason& reason) const;
