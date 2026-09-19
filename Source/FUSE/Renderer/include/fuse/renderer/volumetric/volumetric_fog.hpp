@@ -867,3 +867,11 @@ bool preflightFroxelSample(const FroxelDensityGrid& grid,
 
 // --- deepen additive from deepen-b511-froxel-guards-7b26 ---
 SampleCoordRejectReason classifyDensitySampleReject(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-b511-froxel-classify-guards-10ab ---
+    static bool preflightSampleCoordsReady(const FroxelSampleCoords& coords,
+bool preflightScreenMappingReady(f32 screenX,
+bool preflightDensityLookupReady(const FroxelDensityGrid& grid,
+bool preflightDensityLookupAtCoordReady(const FroxelDensityGrid& grid,
+bool preflightFroxelTrilinearSampleReady(const FroxelDensityGrid& grid,
+bool preflightFroxelPopulateReady(const FroxelGridDesc& desc,

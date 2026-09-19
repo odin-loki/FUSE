@@ -3564,3 +3564,52 @@ void testFroxelRejectClassificationAndPreflightGuards() {
                "preflightFroxelPopulate with reason succeeds for valid inputs");
                "preflightFroxelPopulate reports no reject reason on success");
     testFroxelRejectClassificationAndPreflightGuards();
+
+// --- deepen additive from deepen-b511-froxel-classify-guards-10ab ---
+void testFroxelClassifyRejectAndPreflightReadyGuards() {
+    expectTrue(fuse::renderer::preflightScreenMappingReady(0.5f, 0.5f, 10.f, desc, camera),
+               "preflightScreenMappingReady succeeds for valid mapping");
+    expectTrue(!fuse::renderer::preflightScreenMappingReady(0.5f, 0.5f, 10.f, zeroDesc, camera, &mapReason),
+               "preflightScreenMappingReady rejects empty grid");
+               "preflightScreenMappingReady reports empty_grid reject reason");
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightSampleCoordsReady(inBounds, desc),
+               "preflightSampleCoordsReady succeeds for in-bounds coords");
+        fuse::renderer::FroxelGridLayout::classifySampleCoordReject(warnWeights, desc);
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightSampleCoordsReady(warnWeights, desc, &sampleReason),
+               "preflightSampleCoordsReady succeeds for clampable weights");
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightSampleCoordsReady(hardOob, desc, &sampleReason),
+               "preflightSampleCoordsReady rejects hard OOB coords");
+               "preflightSampleCoordsReady reports out_of_bounds reject reason");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupReady(grid, desc, 0u),
+               "preflightDensityLookupReady succeeds for accessible grid");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupReady(grid, desc, 999u, &lookupReason),
+               "preflightDensityLookupReady succeeds for clampable OOB index");
+               "preflightDensityLookupReady reports index_out_of_range for OOB index");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupAtCoordReady(grid, desc, 99u, 99u, 99u),
+               "preflightDensityLookupAtCoordReady succeeds for clampable OOB coords");
+    expectTrue(!fuse::renderer::froxel_util::preflightDensityLookupReady(emptyGrid, desc, 0u, &lookupReason),
+               "preflightDensityLookupReady rejects empty storage");
+               "preflightDensityLookupReady reports empty_storage reject reason");
+    expectTrue(fuse::renderer::froxel_util::preflightFroxelTrilinearSampleReady(grid, desc, inBounds),
+               "preflightFroxelTrilinearSampleReady succeeds for in-bounds coords");
+    expectTrue(fuse::renderer::froxel_util::preflightFroxelTrilinearSampleReady(grid, desc, warnWeights, &trilinearReason),
+               "preflightFroxelTrilinearSampleReady succeeds for clampable weights");
+               "preflightFroxelTrilinearSampleReady reports clampable_weights reject reason");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelTrilinearSampleReady(grid, desc, hardOob, &trilinearReason),
+               "preflightFroxelTrilinearSampleReady rejects hard OOB coords");
+               "preflightFroxelTrilinearSampleReady reports invalid_sample_coords reject reason");
+                   fuse::renderer::froxel_util::classifyGridDensityReject(emptyGrid, zeroDesc)),
+    expectTrue(fuse::renderer::froxel_util::preflightFroxelPopulateReady(desc, camera, params),
+               "preflightFroxelPopulateReady succeeds for valid populate inputs");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulateReady(desc, camera, zeroDensity, &populateReason),
+               "preflightFroxelPopulateReady rejects zero density");
+               "preflightFroxelPopulateReady reports zero_density reject reason");
+               "classifyFroxelPopulateReject empty_desc for empty grid");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulateReady(zeroDesc, camera, params, &populateReason),
+               "preflightFroxelPopulateReady rejects empty desc");
+               "preflightFroxelPopulateReady reports empty_desc reject reason");
+               "classifyFroxelPopulateReject invalid_camera for bad camera");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulateReady(desc, badCamera, params, &populateReason),
+               "preflightFroxelPopulateReady rejects invalid camera");
+               "preflightFroxelPopulateReady reports invalid_camera reject reason");
+    testFroxelClassifyRejectAndPreflightReadyGuards();
