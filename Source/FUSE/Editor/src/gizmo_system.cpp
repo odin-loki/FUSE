@@ -19,6 +19,7 @@ bool isFinite(f32 value) {
 bool isVec3Finite(const math::Vec3& v) {
     return isFinite(v.x) && isFinite(v.y) && isFinite(v.z);
 
+
 bool isFiniteVec3(const math::Vec3& v) {
     return isFiniteComponent(v.x) && isFiniteComponent(v.y) && isFiniteComponent(v.z);
 }
@@ -1234,6 +1235,8 @@ bool shouldSkipEndDragInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode
 
     return isFiniteVec3(ray.origin) && isFiniteVec3(ray.direction);
 
+
+bool isHitTestScreenFinite(const GizmoHitTest& hit) {
     return isFiniteComponent(hit.screenX) && isFiniteComponent(hit.screenY) &&
            isFiniteComponent(hit.viewportWidth) && isFiniteComponent(hit.viewportHeight);
 }
@@ -1274,6 +1277,11 @@ PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform
         return preflight;
     }
 
+    if (!isRayFinite(ray)) {
+        preflight.nonFiniteRay = true;
+        return preflight;
+    }
+
     if (!isPickConfigValid(axisLength, pickRadius)) {
         preflight.invalidPickConfig = true;
 
@@ -1301,6 +1309,8 @@ PickPreflight preflightPick(const GizmoHitTest& hit, GizmoMode mode) {
         preflight.invalidDimensions = true;
     if (isHitTestNonFinite(hit)) {
         preflight.nonFiniteInput = true;
+    if (!isHitTestScreenFinite(hit)) {
+        preflight.nonFiniteScreen = true;
         return preflight;
     }
 
@@ -2213,6 +2223,8 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
         preflight.invalidDimensions = true;
     } else if (isHitTestNonFinite(hit)) {
         preflight.nonFiniteInput = true;
+    } else if (!isHitTestScreenFinite(hit)) {
+        preflight.nonFiniteScreen = true;
     } else if (isHitTestEmpty(hit)) {
         preflight.emptyHit = true;
     } else if (isHitTestCoordinatesInvalid(hit)) {
@@ -2808,6 +2820,7 @@ BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform&
     preflight.nonFiniteHit = pick.nonFiniteHit;
     preflight.invalidDimensions = pick.invalidDimensions;
     preflight.invalidCoordinates = pick.invalidCoordinates;
+    preflight.nonFiniteScreen = pick.nonFiniteScreen;
     preflight.outOfBounds = pick.outOfBounds;
     preflight.nonFiniteInput = pick.nonFiniteInput;
     preflight.screenMiss = pick.screenMiss;
