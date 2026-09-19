@@ -181,6 +181,7 @@ struct CookUpstreamInvalidateEstimate {
     /// True when reconcile invalidation can be skipped — no stale deps or prunable records (B7.9 deepen).
 
     /// True when reconcile invalidation would be a no-op — `total()` is zero (B7.9 deepen).
+    /// True when reconcile invalidation can be skipped — all estimate buckets zero (B7.9 deepen).
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -527,6 +528,7 @@ public:
 
 
     /// Read-only reconcile skip guards — mirror count/estimate probes without mutating cache (B7.9 deepen).
+    /// Read-only reconcile skip probes — mirror estimate/count guards (B7.9 deepen).
     [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
                                                          const std::string& changed_source) const;
     [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
