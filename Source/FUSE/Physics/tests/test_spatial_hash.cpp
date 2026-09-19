@@ -3834,3 +3834,37 @@ void testMergePairIntoBufferPreflightGuards() {
              static_cast<fuse::u32>(fuse::physics::broadphase::MergePairIntoBufferRejectReason::BufferFull),
     testShapeCellOccupancyParamsPreflightGuards();
     testMergePairIntoBufferPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-dc4d ---
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteRejectReason::NoSlotStorage),
+                 fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 3u, 0u, 1u)),
+                 fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 1u, 2u, 2u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateRejectReason::NoSlotStorage),
+                 fuse::physics::broadphase::pairBufferInvalidateRejectReason(buffer, 5u)),
+void testShapeCellCapacityPreflightGuards() {
+    const fuse::physics::broadphase::ShapeCellCapacityPreflight withinBudget =
+        fuse::physics::broadphase::preflightShapeCellCapacity(validRange, 8u, 8u);
+    const fuse::physics::broadphase::ShapeCellCapacityPreflight overBudget =
+        fuse::physics::broadphase::preflightShapeCellCapacity(validRange, 8u, 7u);
+    const fuse::physics::broadphase::ShapeCellCapacityPreflight planePreflight =
+        fuse::physics::broadphase::preflightShapeCellCapacity(planeRange, 8u, 4u);
+    expectTrue(!planePreflight.canInsert(), "2D shape cell capacity preflight rejects over budget");
+    expectEq(planePreflight.occupancyCount, 8u, "2D shape cell capacity reports occupancy count");
+    const fuse::physics::broadphase::ShapeCellCapacityPreflight clampedPreflight =
+        fuse::physics::broadphase::preflightShapeCellCapacity(wideRange, 4u, 0u);
+    expectTrue(clampedPreflight.canInsert(), "clamped wide range fits unlimited occupancy budget");
+    expectTrue(clampedPreflight.occupancyCount <= 125u, "span clamp limits occupancy before budget check");
+void testRefineDedupePreflightPairCountGuards() {
+    const fuse::physics::broadphase::DedupeBroadphasePreflight emptyDedupe =
+    expectEq(refinePreflight.pairCount, 2u, "refine preflight reports active pair count");
+    expectEq(dedupePreflight.pairCount, 2u, "dedupe preflight reports active pair count");
+    expectTrue(dedupePreflight.canDedupe(), "dedupe preflight accepts multiple pairs");
+void testBroadphaseMergePreflightBodyCountGuards() {
+    expectEq(emptyPreflight.planeBodyCount, 0u, "empty scene has zero plane bodies");
+    expectEq(emptyPreflight.dynamicBodyCount, 0u, "empty scene has zero dynamic bodies");
+void testMergePairsIntoBufferInsufficientCapacityPreflight() {
+                               fuse::physics::broadphase::MergePairsIntoBufferRejectReason::InsufficientCapacity),
+    testShapeCellCapacityPreflightGuards();
+    testRefineDedupePreflightPairCountGuards();
+    testBroadphaseMergePreflightBodyCountGuards();
+    testMergePairsIntoBufferInsufficientCapacityPreflight();

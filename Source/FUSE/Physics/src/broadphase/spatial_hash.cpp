@@ -1569,3 +1569,8 @@ MergePairIntoBufferPreflight preflightMergePairIntoBuffer(
     preflight.bufferFull = preflight.reason == MergePairIntoBufferRejectReason::BufferFull;
     return !preflightMergePairIntoBuffer(buffer, bodyA, bodyB).canMerge();
     return preflightMergePairIntoBuffer(buffer, bodyA, bodyB).canMerge();
+
+// --- deepen additive from deepen-b4-broadphase-guards-dc4d ---
+    case MergePairsIntoBufferRejectReason::InsufficientCapacity:
+        return MergePairsIntoBufferRejectReason::InsufficientCapacity;
+    preflight.insufficientCapacity = preflight.reason == MergePairsIntoBufferRejectReason::InsufficientCapacity ||

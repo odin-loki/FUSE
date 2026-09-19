@@ -1566,3 +1566,12 @@ struct MergePairIntoBufferPreflight {
     MergePairIntoBufferRejectReason reason = MergePairIntoBufferRejectReason::None;
     bool canMerge() const { return reason == MergePairIntoBufferRejectReason::None; }
 MergePairIntoBufferPreflight preflightMergePairIntoBuffer(
+
+// --- deepen additive from deepen-b4-broadphase-guards-dc4d ---
+struct ShapeCellCapacityPreflight {
+    bool canInsert() const { return reason == CellOccupancyRejectReason::None; }
+FUSE_PHYSICS_INLINE ShapeCellCapacityPreflight preflightShapeCellCapacity(
+    const CellOccupancyPreflight occupancy = preflightCellOccupancy(clamped, maxOccupancy);
+    ShapeCellCapacityPreflight preflight{};
+    return !preflightShapeCellCapacity(range, maxSpanPerAxis, maxOccupancy).canInsert();
+    return preflightShapeCellCapacity(range, maxSpanPerAxis, maxOccupancy).canInsert();

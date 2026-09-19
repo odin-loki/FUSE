@@ -1159,3 +1159,11 @@ PairBufferWritePreflight preflightPairBufferWrite(const PairBufferSoA& buffer, u
     case PairBufferInvalidateRejectReason::NoPreparedSlots:
         return PairBufferInvalidateRejectReason::NoPreparedSlots;
     preflight.noPreparedSlots = preflight.reason == PairBufferInvalidateRejectReason::NoPreparedSlots;
+
+// --- deepen additive from deepen-b4-broadphase-guards-dc4d ---
+    case PairBufferWriteRejectReason::NoSlotStorage:
+        return PairBufferWriteRejectReason::NoSlotStorage;
+    preflight.noSlotStorage = preflight.reason == PairBufferWriteRejectReason::NoSlotStorage;
+    case PairBufferInvalidateRejectReason::NoSlotStorage:
+        return PairBufferInvalidateRejectReason::NoSlotStorage;
+    preflight.noSlotStorage = preflight.reason == PairBufferInvalidateRejectReason::NoSlotStorage;
