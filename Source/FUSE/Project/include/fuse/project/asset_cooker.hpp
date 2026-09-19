@@ -133,6 +133,14 @@ struct CookStaleDependencyEstimate {
     [[nodiscard]] bool would_reconcile() const { return total() != 0; }
 };
 
+/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
+struct CookCacheUpstreamInvalidationEstimate {
+    u32 direct_source_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
+};
+
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
 class AssetCooker {
 public:
@@ -179,12 +187,8 @@ public:
     /// Upstream invalidation breakdown — mirrors `count_upstream_invalidation` (B7.9 deepen).
     /// Source paths `invalidate_upstream_dependency` would touch — deduplicated (B7.9 deepen).
     /// Upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-    [[nodiscard]] CookUpstreamInvalidationEstimate estimate_upstream_invalidation(
-        const CookManifest& manifest, const std::string& changed_source) const;
     /// True when `estimate_reconcile_invalidation(manifest).total()` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_reconcile_invalidation(const CookManifest& manifest) const;
-    /// Deduplicated source paths `invalidate_upstream_dependency` would touch (B7.9 deepen).
-    [[nodiscard]] std::vector<std::string> probe_upstream_invalidation_sources(
     /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
     [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
     /// True when `invalidate_stale_dependency_hashes` would remove at least one entry (B7.9 deepen).
@@ -201,6 +205,8 @@ public:
         const CookManifest& manifest) const;
     /// True when `count_stale_dependency_invalidation` would remove at least one entry (B7.9 deepen).
     /// Deduplicated source paths `invalidate_stale_dependency_hashes` would touch (B7.9 deepen).
+    /// Upstream invalidation breakdown without mutating cache stats (B7.9 deepen).
+    /// True when stale dependency hashes would invalidate cache entries (B7.9 deepen).
     /// Read-only prune reconcile probe — mirrors `CookCache::estimate_prune_removals` (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_reconcile() const;
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).

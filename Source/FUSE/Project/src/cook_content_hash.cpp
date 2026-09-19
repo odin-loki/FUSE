@@ -1536,6 +1536,54 @@ CookHashPreflight preflight_manifest_cook_key(const CookManifestEntry& entry, co
     return preflight_combine_cook_cache_key(source_hash, upstream_hash);
 }
 
+CookHashPreflight preflight_mesh_import_cache_key(const MeshImportDesc& desc, u64 upstream_hash) {
+    const CookHashPreflight import_preflight = preflight_mesh_import_hash(desc);
+    if (!import_preflight.can_hash) {
+        return import_preflight;
+    }
+
+    const u64 source_hash = hash_mesh_import(desc);
+    if (source_hash == 0) {
+        CookHashPreflight preflight;
+        preflight.reason = CookHashRejectReason::SourceUnreadable;
+        return preflight;
+    }
+
+    return preflight_combine_cook_cache_key(source_hash, upstream_hash);
+}
+
+CookHashPreflight preflight_texture_import_cache_key(const TextureImportDesc& desc, u64 upstream_hash) {
+    const CookHashPreflight import_preflight = preflight_texture_import_hash(desc);
+    if (!import_preflight.can_hash) {
+        return import_preflight;
+    }
+
+    const u64 source_hash = hash_texture_import(desc);
+    if (source_hash == 0) {
+        CookHashPreflight preflight;
+        preflight.reason = CookHashRejectReason::SourceUnreadable;
+        return preflight;
+    }
+
+    return preflight_combine_cook_cache_key(source_hash, upstream_hash);
+}
+
+CookHashPreflight preflight_audio_import_cache_key(const AudioImportDesc& desc, u64 upstream_hash) {
+    const CookHashPreflight import_preflight = preflight_audio_import_hash(desc);
+    if (!import_preflight.can_hash) {
+        return import_preflight;
+    }
+
+    const u64 source_hash = hash_audio_import(desc);
+    if (source_hash == 0) {
+        CookHashPreflight preflight;
+        preflight.reason = CookHashRejectReason::SourceUnreadable;
+        return preflight;
+    }
+
+    return preflight_combine_cook_cache_key(source_hash, upstream_hash);
+}
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;

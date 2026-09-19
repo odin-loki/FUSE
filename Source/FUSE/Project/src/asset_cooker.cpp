@@ -427,13 +427,8 @@ bool AssetCooker::would_reconcile_invalidation(const CookManifest& manifest) con
     return estimate_reconcile_invalidation(manifest).total() != 0;
 
 std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
-    const CookManifest& manifest, const std::string& changed_source) const {
-    if (!is_valid_cook_cache_path(changed_source)) {
         return {};
-    }
 
-    CookJobGraph graph;
-    graph.build_from_manifest(manifest);
 
     std::vector<std::string> sources;
     if (m_cache.count_by_source(changed_source) != 0) {
@@ -443,9 +438,7 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
             continue;
     append_unique_upstream_source_(sources, changed_source);
 
-    }
 
-    for (const CookJob& job : graph.jobs()) {
 
         const std::vector<std::string> downstream =
             m_cache.probe_downstream_sources(job.output_path, graph.edges(), graph.jobs());
@@ -465,7 +458,6 @@ bool AssetCooker::would_stale_dependency_invalidate(const CookManifest& manifest
     return count_stale_dependency_invalidation(manifest) != 0;
 
 bool AssetCooker::would_reconcile_invalidate(const CookManifest& manifest) const {
-    return estimate_reconcile_invalidation(manifest).total() != 0;
     auto append_unique = [&](const std::string& source_path) {
         if (!is_valid_cook_cache_path(source_path)) {
             return;
@@ -481,13 +473,10 @@ bool AssetCooker::would_reconcile_invalidate(const CookManifest& manifest) const
 u32 AssetCooker::count_upstream_invalidation(const CookManifest& manifest,
     return estimate_upstream_invalidation(manifest, changed_source).total();
 
-    return m_cache.count_downstream_of(changed_output, graph.edges(), graph.jobs());
-
-CookUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
-    CookUpstreamInvalidationEstimate estimate;
 
 
-                }
+
+
 }
 
 bool AssetCooker::would_upstream_invalidate(const CookManifest& manifest,
@@ -896,6 +885,10 @@ std::vector<std::string> AssetCooker::probe_stale_dependency_sources(
         }
     }
     return sources;
+}
+
+bool AssetCooker::would_stale_dependency_invalidate(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) != 0;
 }
 
 CookCachePruneEstimate AssetCooker::estimate_prune_reconcile() const {

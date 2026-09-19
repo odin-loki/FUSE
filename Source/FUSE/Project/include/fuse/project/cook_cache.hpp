@@ -164,6 +164,14 @@ struct CookCacheEntryPreflight {
     [[nodiscard]] bool ok() const { return can_store; }
 };
 
+/// Read-only store preflight — mirrors `store` guards without mutating the cache (B7.9 deepen).
+struct CookCacheEntryPreflight {
+    bool can_store = false;
+    CookHashRejectReason reason = CookHashRejectReason::None;
+
+    [[nodiscard]] bool ok() const { return can_store; }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -396,6 +404,8 @@ struct CookCacheInvalidationEstimate {
     if (entry.kind == CookAssetKind::Shader) {
     return preflight_file_content_hash(entry.source_path);
 
+/// Structural store preflight — mirrors `is_valid_cook_cache_entry` with reject reasons (B7.9 deepen).
+
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
 public:
@@ -526,6 +536,7 @@ public:
     /// True when `invalidate_stale_upstream_hashes` would touch entries — guarded on empty inputs (B7.9 deepen).
     [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
     /// True when `invalidate_downstream_of` would remove entries — guarded on empty output path (B7.9 deepen).
+    /// Deduplicated source paths from `probe_stale_upstream_sources` (B7.9 deepen).
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;

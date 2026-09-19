@@ -119,6 +119,11 @@ struct CookCacheKeyPreflight {
     [[nodiscard]] bool should_skip() const { return !can_combine(); }
 };
 
+/// True when hash preflight succeeded — mirrors `CookHashPreflight::ok()` (B7.9 deepen).
+[[nodiscard]] inline bool is_valid_cook_hash_preflight(const CookHashPreflight& preflight) {
+    return preflight.ok();
+}
+
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
 [[nodiscard]] u64 fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
@@ -402,5 +407,10 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_mesh_import_cook_key(const MeshImportDesc& desc, u64 upstream_hash = 0);
 [[nodiscard]] CookHashPreflight preflight_texture_import_cook_key(const TextureImportDesc& desc, u64 upstream_hash = 0);
 [[nodiscard]] CookHashPreflight preflight_audio_import_cook_key(const AudioImportDesc& desc, u64 upstream_hash = 0);
+/// Import descriptor preflight chained with cache-key fold — mirrors `hash_*_import` guards (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_mesh_import_cache_key(const MeshImportDesc& desc, u64 upstream_hash = 0);
+[[nodiscard]] CookHashPreflight preflight_texture_import_cache_key(const TextureImportDesc& desc,
+                                                                   u64 upstream_hash = 0);
+[[nodiscard]] CookHashPreflight preflight_audio_import_cache_key(const AudioImportDesc& desc, u64 upstream_hash = 0);
 
 } // namespace fuse::project
