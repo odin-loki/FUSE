@@ -152,6 +152,32 @@ const char* gridRebuildRejectReasonLabel(GridRebuildRejectReason reason) {
     return "unknown";
 }
 
+const char* clusterScreenMappingRejectReasonLabel(ClusterScreenMappingRejectReason reason) {
+    switch (reason) {
+    case ClusterScreenMappingRejectReason::None:
+        return "none";
+    case ClusterScreenMappingRejectReason::EmptyGrid:
+        return "empty_grid";
+    case ClusterScreenMappingRejectReason::InvalidCamera:
+        return "invalid_camera";
+    case ClusterScreenMappingRejectReason::DepthOutOfRange:
+        return "depth_out_of_range";
+    }
+    return "unknown";
+}
+
+const char* gridRebuildRejectReasonLabel(GridRebuildRejectReason reason) {
+    switch (reason) {
+    case GridRebuildRejectReason::None:
+        return "none";
+    case GridRebuildRejectReason::EmptyGrid:
+        return "empty_grid";
+    case GridRebuildRejectReason::CountMismatch:
+        return "count_mismatch";
+    }
+    return "unknown";
+}
+
 bool cluster_util::gridMatchesDesc(const ClusterGridSoA& grid, const ClusterDesc& desc) {
     const u32 clusterCount = ClusterDesc::clampCounts(desc).clusterCount();
     if (clusterCount == 0u) {
@@ -234,8 +260,19 @@ bool cluster_util::shouldSkipClusterPopulation(const ClusterGridSoA& grid, const
     if (clusterCount == 0u) {
     return !isGridAccessible(grid, desc);
 
+bool cluster_util::shouldSkipClusterGrid(const ClusterDesc& desc) {
+    return shouldSkipClusterCull(desc);
+
 bool cluster_util::canLookupAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 /*index*/) {
     return isGridAccessible(grid, desc);
+}
+
+bool cluster_util::canLookupAtCoord(const ClusterGridSoA& grid,
+                                      const ClusterDesc& desc,
+                                      u32 /*tileX*/,
+                                      u32 /*tileY*/,
+                                      u32 /*sliceZ*/) {
+    return canLookupAtIndex(grid, desc, 0u);
 }
 
 bool cluster_util::tryCanLookupAtIndex(const ClusterGridSoA& grid,
@@ -994,6 +1031,7 @@ bool ClusterLightGridLayout::shouldSkipRebuildLightGrid(const ClusterDesc& desc,
         outReason = GridRebuildRejectReason::ClusterCountMismatch;
 
         outReason = GridRebuildRejectReason::DescMismatch;
+
         return false;
     }
 
@@ -1173,6 +1211,37 @@ bool ClusterGridLayout::tryMapScreenDepthToClusterIndex(f32 screenX,
     const u32 tileY = static_cast<u32>(clamp01(screenY) * static_cast<f32>(desc.tilesY));
     const u32 sliceZ = ClusterSliceLayout::computeSliceZFromDepth(viewDepth, desc, camera);
     outClusterIndex = clusterIndexClamped(tileX, tileY, sliceZ, desc);
+    return true;
+}
+
+bool ClusterGridLayout::tryMapScreenDepthToClusterIndex(f32 screenX,
+                                                        f32 screenY,
+                                                        f32 viewDepth,
+                                                        const ClusterDesc& desc,
+                                                        const ClusterCameraDesc& camera,
+                                                        u32& outClusterIndex,
+                                                        ClusterScreenMappingRejectReason& outReason) {
+    if (isEmptyGrid(desc)) {
+        outReason = ClusterScreenMappingRejectReason::EmptyGrid;
+        outClusterIndex = 0u;
+        return false;
+    }
+    if (camera.nearPlane <= 0.f || camera.farPlane <= camera.nearPlane) {
+        outReason = ClusterScreenMappingRejectReason::InvalidCamera;
+        outClusterIndex = 0u;
+        return false;
+    }
+    if (viewDepth < camera.nearPlane || viewDepth > camera.farPlane) {
+        outReason = ClusterScreenMappingRejectReason::DepthOutOfRange;
+        outClusterIndex = 0u;
+        return false;
+    }
+
+    const u32 tileX = static_cast<u32>(clamp01(screenX) * static_cast<f32>(desc.tilesX));
+    const u32 tileY = static_cast<u32>(clamp01(screenY) * static_cast<f32>(desc.tilesY));
+    const u32 sliceZ = ClusterSliceLayout::computeSliceZFromDepth(viewDepth, desc, camera);
+    outClusterIndex = clusterIndexClamped(tileX, tileY, sliceZ, desc);
+    outReason = ClusterScreenMappingRejectReason::None;
     return true;
 }
 

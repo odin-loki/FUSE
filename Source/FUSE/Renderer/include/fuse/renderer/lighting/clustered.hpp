@@ -85,6 +85,8 @@ struct ClusterSliceLayout {
     static u32 computeSliceZFromDepth(f32 viewDepth, const ClusterDesc& desc, const ClusterCameraDesc& camera);
 };
 
+enum class ClusterScreenMappingRejectReason : u8;
+
 /// Tile/cluster indexing helpers — mirrors froxel layout (B5.4 CPU path).
 struct ClusterGridLayout {
     /// Early-out when cluster grid populate/lookup should be skipped for an empty desc.
@@ -121,6 +123,7 @@ struct ClusterGridLayout {
                                              u32& outClusterIndex);
     /// Screen-depth mapping with empty-grid preflight; returns false without writing `outClusterIndex`.
     /// Screen-depth mapping with guard preflight; returns false when the grid is empty or depth is out of range.
+    /// Screen-depth → cluster index with reject-reason diagnostics (B5.4 deepen).
     static bool tryMapScreenDepthToClusterIndex(f32 screenX,
                                                 f32 screenY,
                                                 f32 viewDepth,
@@ -143,6 +146,17 @@ enum class ClusterRebuildRejectReason : u8 {
                                              f32 viewDepth);
 
     DescMismatch,
+                                                u32& outClusterIndex,
+                                                ClusterScreenMappingRejectReason& outReason);
+
+/// Why screen-depth → cluster mapping was rejected (B5.4 deepen).
+enum class ClusterScreenMappingRejectReason : u8 {
+    InvalidCamera,
+    DepthOutOfRange,
+
+/// Human-readable label for cluster screen-mapping reject reasons (logging / tests).
+const char* clusterScreenMappingRejectReasonLabel(ClusterScreenMappingRejectReason reason);
+
 };
 
 /// Human-readable label for rebuild reject reasons (logging / tests).
@@ -337,6 +351,9 @@ bool shouldSkipClusterPopulation(const ClusterGridSoA& grid, const ClusterDesc& 
 /// Preflight guard before index-based cluster lookup; false on empty grid or desc mismatch.
 bool canLookupAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 index);
 /// Preflight guard before tile/slice coord lookup; false on empty grid or desc mismatch.
+/// Early-out when cluster grid populate/rebuild should be skipped for an empty desc.
+bool shouldSkipClusterGrid(const ClusterDesc& desc);
+/// Preflight guard before coord-based cluster lookup; false on empty grid or desc mismatch.
 bool canLookupAtCoord(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 tileX, u32 tileY, u32 sliceZ);
 /// Diagnose why lookup preflight would reject; vacuously succeeds on accessible grids.
 /// Early-out when the grid is inaccessible (empty desc, empty storage, or desc mismatch).
