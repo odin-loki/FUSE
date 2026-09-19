@@ -644,3 +644,6 @@ bool can_finalize_with_preflight(const ManifoldFinalizePreflight& preflight) {
 // --- deepen additive from deepen-b4-narrowphase-guards-72f5 ---
         preflight.reason = ManifoldPruneRejectReason::EmptyManifold;
     return should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-c9f2 ---
+    if (should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon)) {

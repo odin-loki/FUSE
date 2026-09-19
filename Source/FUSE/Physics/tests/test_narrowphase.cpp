@@ -2188,3 +2188,23 @@ void testNarrowphaseBatchPreflightGuards() {
             fuse::physics::narrowphase::FrictionBasisRejectReason::BasisCurrent,
                 fuse::physics::narrowphase::FrictionBasisRejectReason::BasisCurrent),
     testNarrowphaseBatchPreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-c9f2 ---
+void testZeroFrictionAndBatchPreflightGuards() {
+    expectTrue(batchPreflight.totalPairs == 2u, "batch preflight counts total pairs");
+    expectTrue(batchPreflight.can_dispatch(), "batch preflight can dispatch with mixed list");
+    expectTrue(!batchPreflight.can_skip(), "batch preflight cannot skip mixed list");
+void testManifoldPruneAndFinalizePreflightHelpers() {
+    const auto cleanPrunePreflight = fuse::physics::narrowphase::preflight_manifold_prune(clean);
+    expectTrue(cleanPrunePreflight.can_skip_prune(), "clean manifold prune preflight can skip");
+    const auto readyFinalizePreflight = fuse::physics::narrowphase::preflight_manifold_finalize(ready);
+    expectTrue(!readyFinalizePreflight.can_skip_finalize(), "ready manifold finalize preflight cannot skip");
+    const auto separatedFinalizePreflight =
+    expectTrue(separatedFinalizePreflight.can_skip_finalize(), "separated manifold finalize preflight can skip");
+void testFrictionBasisPreflightRebuildHelpers() {
+    expectTrue(needsPreflight.needs_work(), "friction preflight needs work without cached basis");
+    expectTrue(!reusePreflight.needs_work(), "friction preflight has no work after build");
+    expectTrue(stalePreflight.needs_work(), "friction preflight needs work for stale basis");
+    testZeroFrictionAndBatchPreflightGuards();
+    testManifoldPruneAndFinalizePreflightHelpers();
+    testFrictionBasisPreflightRebuildHelpers();
