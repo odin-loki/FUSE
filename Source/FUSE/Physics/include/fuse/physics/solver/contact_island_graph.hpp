@@ -37,6 +37,15 @@ struct ContactIslandGraph {
 
     static constexpr u32 invalidIsland = ~0u;
 
+    /// True when both body indices are in `[0, bodyCount)`.
+    static bool isBodyPairInRange(u32 bodyA, u32 bodyB, u32 bodyCount);
+
+    /// True when a contact references in-range bodies.
+    static bool isContactInRange(const narrowphase::ContactManifold& contact, u32 bodyCount);
+
+    /// True when a distance constraint references in-range bodies.
+    static bool isDistanceConstraintInRange(const DistanceConstraint& constraint, u32 bodyCount);
+
 private:
     void unionBodies(u32 a, u32 b);
     u32 findRoot(u32 index) const;
