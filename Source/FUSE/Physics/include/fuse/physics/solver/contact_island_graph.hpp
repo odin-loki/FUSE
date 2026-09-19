@@ -73,6 +73,43 @@ u32 count_valid_island_build_distance_constraints(
     const std::vector<DistanceConstraint>& distanceConstraints,
 
 /// Summarize build inputs; sets `skipped` when `bodyCount` is zero.
+/// Why island graph build would reject inputs (B4.4 deepen follow-up).
+enum class IslandBuildRejectReason : u8 {
+    EmptyBodyCount,
+    InvalidContactBodyIndex,
+    InvalidDistanceBodyIndex,
+
+/// Human-readable label for island build reject reasons (logging / tests).
+const char* island_build_reject_reason_name(IslandBuildRejectReason reason);
+
+/// Returns true when `island_build_reject_reason` matches `expected`.
+bool island_build_rejects_for_reason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    IslandBuildRejectReason expected);
+
+/// True when `bodyIndex` is in range for island graph construction.
+
+/// True when a contact references in-range body indices.
+bool contact_references_valid_bodies(const narrowphase::ContactManifold& contact, u32 bodyCount);
+
+/// True when a distance constraint references in-range body indices.
+bool distance_constraint_references_valid_bodies(const DistanceConstraint& constraint, u32 bodyCount);
+
+/// Count valid vs invalid contacts and distance constraints for build diagnostics.
+    u32 invalidContactCount = 0;
+    u32 invalidDistanceCount = 0;
+
+/// Read-only island graph build diagnostics — no mutation (B4.4 deepen follow-up).
+    IslandBuildRejectReason reason = IslandBuildRejectReason::None;
+
+    bool can_build() const { return !skipped && reason == IslandBuildRejectReason::None; }
+
+/// Diagnose why island graph build would reject inputs.
+IslandBuildRejectReason island_build_reject_reason(
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Populate island build preflight without mutating a graph.
 IslandBuildPreflight preflight_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -194,6 +231,14 @@ struct IslandBuildRejectCounts {
 
 /// Early-out guard for island graph build when `bodyCount` is zero.
 bool should_skip_island_build(u32 bodyCount);
+/// Early-out guard for island graph build when inputs are rejected.
+bool should_skip_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Build only when preflight passes; clears graph and returns false on reject.
+bool build_island_graph_guarded(u32 bodyCount,
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -219,6 +264,8 @@ struct ContactIslandGraph {
     /// Build only when preflight passes; clears the graph when build is skipped (B4.4 deepen follow-up).
     void build_guarded(u32 bodyCount,
     /// Guarded build that skips invalid contact/distance body indices before union-find.
+    /// Guarded build wrapper; returns false when preflight rejects inputs.
+    bool build_guarded(u32 bodyCount,
 
     void clear();
 

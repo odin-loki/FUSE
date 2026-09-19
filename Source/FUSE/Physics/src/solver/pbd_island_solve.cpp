@@ -822,6 +822,218 @@ bool is_valid_warm_start_dt(f32 dt) {
     return dt > 0.f;
 }
 
+bool is_body_sleeping(u32 flags) {
+    return (flags & RB_SLEEPING) != 0u;
+}
+
+bool is_body_static_or_kinematic(u32 flags) {
+    return (flags & RB_STATIC) != 0u || (flags & RB_KINEMATIC) != 0u;
+}
+
+IslandSleepStats compute_island_sleep_stats(const RigidBodySoA& bodies,
+                                            const ContactIslandGraph::Island& island) {
+    IslandSleepStats stats{};
+    stats.totalBodies = static_cast<u32>(island.bodyIndices.size());
+
+    for (u32 bodyIndex : island.bodyIndices) {
+        if (bodyIndex >= bodies.count()) {
+            continue;
+        }
+        const u32 flags = bodies.flags[bodyIndex];
+        if (is_body_static_or_kinematic(flags)) {
+            ++stats.staticCount;
+            continue;
+        }
+        if (is_body_sleeping(flags)) {
+            ++stats.sleepingCount;
+        } else {
+            ++stats.activeCount;
+        }
+    }
+    return stats;
+}
+
+bool is_island_fully_sleeping(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island) {
+    if (!island_has_constraints(island)) {
+        return false;
+    }
+
+    const IslandSleepStats stats = compute_island_sleep_stats(bodies, island);
+    return stats.activeCount == 0u && stats.sleepingCount > 0u;
+}
+
+IslandSleepPreflight preflight_island_sleep(const RigidBodySoA& bodies,
+                                            const ContactIslandGraph::Island& island) {
+    IslandSleepPreflight preflight{};
+    if (!island_has_constraints(island)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.stats = compute_island_sleep_stats(bodies, island);
+    preflight.fullySleeping = is_island_fully_sleeping(bodies, island);
+    return preflight;
+}
+
+IslandSleepPreflight preflight_island_sleep_by_index(const RigidBodySoA& bodies,
+                                                    const ContactIslandGraph& graph,
+                                                    u32 islandIndex) {
+    IslandSleepPreflight preflight{};
+    if (!island_index_valid(graph, islandIndex)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    return preflight_island_sleep(bodies, graph.island(islandIndex));
+}
+
+bool should_skip_solve_sleeping_island(const RigidBodySoA& bodies,
+                                       const ContactIslandGraph::Island& island) {
+    return !preflight_island_sleep(bodies, island).can_solve();
+}
+
+bool should_skip_solve_sleeping_island_index(const RigidBodySoA& bodies,
+                                             const ContactIslandGraph& graph,
+                                             u32 islandIndex) {
+    if (!island_index_valid(graph, islandIndex)) {
+        return true;
+    }
+    return should_skip_solve_sleeping_island(bodies, graph.island(islandIndex));
+}
+
+IslandWakePreflight preflight_island_wake(const RigidBodySoA& bodies,
+                                          const ContactIslandGraph::Island& island,
+                                          f32 linearWakeThreshold,
+                                          f32 angularWakeThreshold) {
+    IslandWakePreflight preflight{};
+    if (!island_has_constraints(island)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    for (u32 bodyIndex : island.bodyIndices) {
+        if (bodyIndex >= bodies.count()) {
+            continue;
+        }
+        if (is_body_static_or_kinematic(bodies.flags[bodyIndex])) {
+            continue;
+        }
+
+        if (!is_body_sleeping(bodies.flags[bodyIndex])) {
+            continue;
+        }
+
+        const vec3 force = bodies.forces[bodyIndex];
+        const vec3 torque = bodies.torques[bodyIndex];
+        if (force.dot(force) > 0.f || torque.dot(torque) > 0.f) {
+            preflight.hasExternalForce = true;
+        }
+
+        const f32 linearSpeed = bodies.linearVelocities[bodyIndex].length();
+        const f32 angularSpeed = bodies.angularVelocities[bodyIndex].length();
+        if (linearSpeed >= linearWakeThreshold || angularSpeed >= angularWakeThreshold) {
+            preflight.hasVelocityWake = true;
+        }
+    }
+    return preflight;
+}
+
+IslandWakePreflight preflight_island_wake_by_index(const RigidBodySoA& bodies,
+                                                   const ContactIslandGraph& graph,
+                                                   u32 islandIndex,
+                                                   f32 linearWakeThreshold,
+                                                   f32 angularWakeThreshold) {
+    IslandWakePreflight preflight{};
+    if (!island_index_valid(graph, islandIndex)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    return preflight_island_wake(bodies,
+                               graph.island(islandIndex),
+                               linearWakeThreshold,
+                               angularWakeThreshold);
+}
+
+bool should_wake_island(const RigidBodySoA& bodies,
+                        const ContactIslandGraph::Island& island,
+                        f32 linearWakeThreshold,
+                        f32 angularWakeThreshold) {
+    return preflight_island_wake(bodies, island, linearWakeThreshold, angularWakeThreshold).can_wake();
+}
+
+IslandConstraintSolvePreflight preflight_island_constraint_solve(const RigidBodySoA& bodies,
+                                                                 const ContactIslandGraph::Island& island,
+                                                                 f32 dt) {
+    IslandConstraintSolvePreflight preflight{};
+    preflight.invalidDt = !is_valid_island_solve_dt(dt);
+    preflight.emptyIsland = !island_has_constraints(island);
+    preflight.constraintCount = island_constraint_count(island);
+    preflight.sleep = preflight_island_sleep(bodies, island);
+    preflight.skipped = preflight.emptyIsland || preflight.sleep.skipped;
+    return preflight;
+}
+
+IslandConstraintSolvePreflight preflight_island_constraint_solve_by_index(const RigidBodySoA& bodies,
+                                                                            const ContactIslandGraph& graph,
+                                                                            u32 islandIndex,
+                                                                            f32 dt) {
+    IslandConstraintSolvePreflight preflight{};
+    if (!island_index_valid(graph, islandIndex)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    return preflight_island_constraint_solve(bodies, graph.island(islandIndex), dt);
+}
+
+bool should_skip_island_constraint_solve(const RigidBodySoA& bodies,
+                                         const ContactIslandGraph::Island& island,
+                                         f32 dt) {
+    return !preflight_island_constraint_solve(bodies, island, dt).can_solve();
+}
+
+IslandSleepGraphPreflight preflight_island_sleep_graph(const RigidBodySoA& bodies,
+                                                       const ContactIslandGraph& graph) {
+    IslandSleepGraphPreflight preflight{};
+    preflight.totalIslands = graph.islandCount();
+
+    for (u32 islandIndex = 0; islandIndex < preflight.totalIslands; ++islandIndex) {
+        const ContactIslandGraph::Island& island = graph.island(islandIndex);
+        if (!island_has_constraints(island)) {
+            continue;
+        }
+
+        const IslandSleepPreflight islandPreflight = preflight_island_sleep(bodies, island);
+        if (islandPreflight.fullySleeping) {
+            ++preflight.fullySleepingIslandCount;
+        } else if (islandPreflight.can_solve()) {
+            ++preflight.activeIslandCount;
+        }
+    }
+
+    preflight.skipped = preflight.activeIslandCount == 0u;
+    return preflight;
+}
+
+bool should_skip_island_sleep_dispatch(const RigidBodySoA& bodies, const ContactIslandGraph& graph) {
+    return !preflight_island_sleep_graph(bodies, graph).has_active_islands();
+}
+
+std::vector<u32> collect_awake_island_indices(const RigidBodySoA& bodies,
+                                              const ContactIslandGraph& graph) {
+    std::vector<u32> indices;
+    const u32 count = graph.islandCount();
+    indices.reserve(count);
+    for (u32 islandIndex = 0; islandIndex < count; ++islandIndex) {
+        const ContactIslandGraph::Island& island = graph.island(islandIndex);
+        if (!island_has_constraints(island)) {
+            continue;
+        }
+        if (!should_skip_solve_sleeping_island(bodies, island)) {
+            indices.push_back(islandIndex);
+        }
+    }
+    return indices;
+}
+
 IslandSolvePreflight preflight_island_solve(const ContactIslandGraph& graph) {
     IslandSolvePreflight preflight{};
     preflight.stats = compute_island_solve_stats(graph);
@@ -1206,6 +1418,57 @@ IslandDispatchResult dispatch_solve_island_result(RigidBodySoA& bodies,
     result.solved = dispatch_solve_island(bodies,
                                           graph,
                                           islandIndex,
+
+bool dispatch_solve_awake_island(RigidBodySoA& bodies,
+                                 const ContactIslandGraph& graph,
+                                 u32 islandIndex,
+                                 SolverWorkBuffers& workBuffers,
+                                 const std::vector<DistanceConstraint>& distanceConstraints,
+                                 f32 dt,
+                                 f32 contactCompliance,
+                                 const std::function<f32(const RigidBodySoA&, u32)>& invMassFn) {
+    return dispatch_solve_awake_island_result(bodies,
+                                              graph,
+                                              islandIndex,
+                                              workBuffers,
+                                              distanceConstraints,
+                                              dt,
+                                              contactCompliance,
+                                              invMassFn)
+        .solved;
+}
+
+IslandDispatchResult dispatch_solve_awake_island_result(RigidBodySoA& bodies,
+                                                          const ContactIslandGraph& graph,
+                                                          u32 islandIndex,
+                                                          SolverWorkBuffers& workBuffers,
+                                                          const std::vector<DistanceConstraint>& distanceConstraints,
+                                                          f32 dt,
+                                                          f32 contactCompliance,
+                                                          const std::function<f32(const RigidBodySoA&, u32)>& invMassFn) {
+    IslandDispatchResult result{};
+    result.islandIndex = islandIndex;
+    if (!island_index_valid(graph, islandIndex)) {
+        result.skipped = true;
+        return result;
+    }
+
+    const ContactIslandGraph::Island& island = graph.island(islandIndex);
+    const IslandConstraintSolvePreflight preflight = preflight_island_constraint_solve(bodies, island, dt);
+    if (!preflight.can_solve()) {
+        result.skipped = true;
+        return result;
+    }
+
+    return dispatch_solve_island_result(bodies,
+                                          graph,
+                                          islandIndex,
+                                          workBuffers,
+                                          distanceConstraints,
+                                          dt,
+                                          contactCompliance,
+                                          invMassFn);
+}
 
 u32 dispatch_all_islands(RigidBodySoA& bodies,
     return dispatch_all_islands_result(bodies,
