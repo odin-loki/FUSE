@@ -1330,3 +1330,9 @@ BroadphaseCellPairBuildPreflight preflightBroadphaseCellPairBuild(u32 totalCellS
     preflight.noCellSlots = preflight.reason == BroadphaseCellPairBuildRejectReason::NoCellSlots;
     return !preflightBroadphaseCellPairBuild(totalCellSlots).canBuild();
     return preflightBroadphaseCellPairBuild(totalCellSlots).canBuild();
+
+// --- deepen additive from deepen-b4-broadphase-guards-39a9 ---
+    case ShapeCellInsertRejectReason::OccupancyRejected:
+            return ShapeCellInsertRejectReason::OccupancyRejected;
+    preflight.reason = shapeCellInsertRejectReason(shapeIndex, bodies, shapes, params, use2D);
+    preflight.occupancyRejected = preflight.reason == ShapeCellInsertRejectReason::OccupancyRejected;

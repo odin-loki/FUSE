@@ -3465,3 +3465,16 @@ void testBroadphaseCellPairBuildPreflightGuards() {
         fuse::physics::broadphase::preflightCellSpanClamp2D(planeRange, 8u);
     expectTrue(planePreflight.needsClamp(), "2D wide-range preflight needs clamp");
     expectEq(planePreflight.spanPerAxis.x, 16, "2D preflight reports x span");
+
+// --- deepen additive from deepen-b4-broadphase-guards-39a9 ---
+    const fuse::physics::broadphase::ShapeCellInsertPreflight orphanPreflight =
+    expectTrue(orphanPreflight.outOfRangeBody, "orphan shape marks out-of-range body");
+    expectTrue(!orphanPreflight.canInsert(), "orphan shape cannot insert into cells");
+    const fuse::physics::broadphase::ShapeCellInsertPreflight budgetPreflight =
+    expectTrue(budgetPreflight.occupancyRejected, "huge shape marks occupancy rejected");
+    expectEq(static_cast<fuse::u32>(budgetPreflight.reason),
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertRejectReason::OccupancyRejected),
+void testBroadphaseCellPairGenPreflightGuards() {
+    const fuse::physics::broadphase::BroadphaseCellPairGenPreflight preflight =
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseCellPairGenRejectReason::None),
+    testBroadphaseCellPairGenPreflightGuards();
