@@ -5053,6 +5053,107 @@ void testRejectReasonDiagnostics() {
     expectTrue(invalidStepSnap.rejectReason() ==
                    fuse::editor::GizmoInteractionRejectReason::InvalidSnapStep,
                "invalid snap step reject reason");
+void testNonFiniteInputGuards() {
+    fuse::editor::GizmoHitTest nanHit{};
+    nanHit.viewportWidth = 100.f;
+    nanHit.viewportHeight = 100.f;
+    nanHit.screenX = std::numeric_limits<fuse::f32>::quiet_NaN();
+    nanHit.screenY = 50.f;
+    expectTrue(fuse::editor::isHitTestCoordinatesInvalid(nanHit),
+               "NaN screen X is invalid coordinates");
+    expectTrue(!fuse::editor::isHitTestOutOfBounds(nanHit),
+               "NaN coordinates are not classified as out of bounds");
+
+    const fuse::editor::PickPreflight nanPick =
+        fuse::editor::preflightPick(nanHit, fuse::editor::GizmoMode::Translate);
+    expectTrue(nanPick.invalidCoordinates, "pick preflight marks NaN screen coordinates");
+    expectTrue(!nanPick.canPick(), "pick preflight rejects NaN screen coordinates");
+
+    fuse::editor::GizmoAxis axis = fuse::editor::GizmoAxis::X;
+    expectTrue(!fuse::editor::tryPickAxis(nanHit, fuse::editor::GizmoMode::Translate, axis),
+               "tryPickAxis rejects NaN screen coordinates");
+    expectTrue(axis == fuse::editor::GizmoAxis::None,
+               "NaN screen pick leaves axis unset");
+
+    const fuse::editor::BeginDragPreflight nanBegin =
+        fuse::editor::preflightBeginDrag(nanHit, fuse::editor::GizmoMode::Translate);
+    expectTrue(nanBegin.invalidCoordinates, "begin preflight marks NaN screen coordinates");
+    expectTrue(!nanBegin.canBegin, "begin preflight rejects NaN screen coordinates");
+
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoTransform transform{};
+    fuse::editor::GizmoHitTest validHit{};
+    validHit.viewportWidth = 100.f;
+    validHit.viewportHeight = 100.f;
+    validHit.screenX = 10.f;
+    validHit.screenY = 50.f;
+    gizmo.beginDrag(validHit, transform);
+
+    const fuse::editor::UpdateDragPreflight nanUpdate =
+        fuse::editor::preflightUpdateDrag(nanHit, true, fuse::editor::GizmoAxis::X);
+    expectTrue(nanUpdate.invalidCoordinates, "update preflight marks NaN screen coordinates");
+    expectTrue(!nanUpdate.canUpdate(), "update preflight rejects NaN screen coordinates");
+    expectTrue(gizmo.isDragging(), "NaN update reject keeps drag active");
+    gizmo.endDrag();
+
+    fuse::editor::GizmoRay nanRay{};
+    nanRay.origin = {0.f, 0.f, 0.f};
+    nanRay.direction = {std::numeric_limits<fuse::f32>::quiet_NaN(), 0.f, 0.f};
+    expectTrue(fuse::editor::isRayNonFinite(nanRay), "NaN ray direction is non-finite");
+    expectTrue(!fuse::editor::isRayEmpty(nanRay), "NaN direction is not classified as empty");
+
+    const fuse::editor::PickPreflight nanRayPick = fuse::editor::preflightPick(
+        nanRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(nanRayPick.nonFiniteRay, "pick preflight marks non-finite ray");
+    expectTrue(!nanRayPick.canPick(), "pick preflight rejects non-finite ray");
+
+    const fuse::editor::BeginDragPreflight nanRayBegin = fuse::editor::preflightBeginDrag(
+    expectTrue(nanRayBegin.nonFiniteRay, "begin preflight marks non-finite ray");
+    expectTrue(!nanRayBegin.canBegin, "begin preflight rejects non-finite ray");
+    expectTrue(!gizmo.canBeginDrag(nanRay, transform), "gizmo canBeginDrag rejects non-finite ray");
+}
+
+void testCanActOnPhaseRouting() {
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    expectTrue(fuse::editor::canActOnPhase(hit, false, fuse::editor::GizmoAxis::None,
+                                           fuse::editor::GizmoMode::Translate, snap),
+               "idle phase can act via begin path");
+    expectTrue(fuse::editor::canActOnPhase(hit, true, fuse::editor::GizmoAxis::X,
+               "dragging phase can act via update path on valid hit");
+    expectTrue(!fuse::editor::preflightInteraction(hit, false, fuse::editor::GizmoAxis::None,
+                                                   fuse::editor::GizmoMode::Translate, snap)
+                    .canUpdate(),
+               "idle phase rejects update action");
+
+    expectTrue(fuse::editor::canActOnPhase(xRay, transform, false, fuse::editor::GizmoAxis::None,
+                                           fuse::editor::GizmoMode::Translate,
+                                           fuse::editor::GizmoSpace::World,
+                                           fuse::editor::GizmoSystem::kAxisLength,
+                                           fuse::editor::GizmoSystem::kPickRadius, snap),
+               "ray idle phase can act via begin path");
+
+    gizmo.setSnapSettings(snap);
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo idle phase can act on valid screen hit");
+    expectTrue(gizmo.canActOnPhase(xRay, transform),
+               "gizmo idle phase can act on valid ray pick");
+
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo dragging phase can act on valid update hit");
+    expectTrue(!gizmo.preflightInteraction(hit).canBegin(),
+               "dragging phase rejects begin via interaction preflight");
+
+    hit.viewportWidth = 0.f;
+    expectTrue(!gizmo.canActOnPhase(hit),
+               "dragging phase rejects update on empty viewport but end remains available");
+    expectTrue(gizmo.canEndInteraction(), "end path remains available on empty viewport update");
 
 void testCanInteractionPredicates() {
     fuse::editor::GizmoSnapSettings snap{};
@@ -6230,6 +6331,8 @@ int main() {
     testShouldSkipInteractionPredicates();
     testRejectReasonDiagnostics();
     testRejectReasonPreflights();
+    testNonFiniteInputGuards();
+    testCanActOnPhaseRouting();
     testCanInteractionPredicates();
     testPickRejectReasonGuards();
     testSnapRejectReasonGuards();

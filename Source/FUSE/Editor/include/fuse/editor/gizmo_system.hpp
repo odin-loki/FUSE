@@ -273,22 +273,12 @@ bool isRayFinite(const GizmoRay& ray);
 bool isHitTestFinite(const GizmoHitTest& hit);
 /// Why snap preflight rejected the request (B6.4 deepen pass).
 enum class GizmoSnapRejectReason : u8 {
-    None = 0,
     SnapDisabled,
     InvalidStep,
-};
 
 /// Why begin-drag preflight rejected the request (B6.4 deepen pass).
 enum class GizmoBeginDragRejectReason : u8 {
     AlreadyDragging,
-    EmptyRay,
-    EmptyHit,
-    InvalidPickConfig,
-    InvalidDimensions,
-    OutOfBounds,
-    NonFiniteInput,
-    ScreenMiss,
-    PickMiss,
 
 /// Why update-drag preflight rejected the request (B6.4 deepen pass).
 enum class GizmoUpdateDragRejectReason : u8 {
@@ -303,11 +293,17 @@ const char* gizmoSnapRejectReasonLabel(GizmoSnapRejectReason reason);
 const char* gizmoBeginDragRejectReasonLabel(GizmoBeginDragRejectReason reason);
 const char* gizmoUpdateDragRejectReasonLabel(GizmoUpdateDragRejectReason reason);
 const char* gizmoEndDragRejectReasonLabel(GizmoEndDragRejectReason reason);
+/// True when screen coordinates are non-finite (B6.4 deepen pass).
+bool isHitTestCoordinatesInvalid(const GizmoHitTest& hit);
+
+/// True when ray origin or direction contains non-finite values (B6.4 deepen pass).
+bool isRayNonFinite(const GizmoRay& ray);
 
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
 struct PickPreflight {
     PickRejectReason reason = PickRejectReason::None;
     bool emptyRay = false;
+    bool nonFiniteRay = false;
     bool emptyHit = false;
     bool nonFiniteRay = false;
     bool nonFiniteHit = false;
@@ -315,6 +311,7 @@ struct PickPreflight {
     bool nonFiniteInput = false;
     bool invalidPickConfig = false;
     bool invalidDimensions = false;
+    bool invalidCoordinates = false;
     bool outOfBounds = false;
     bool screenOutOfBounds = false;
     bool nonFiniteInput = false;
@@ -340,6 +337,8 @@ struct PickPreflight {
                !pickMiss && !invalidTransform && !nonFiniteRay && !nonFiniteHit;
         return !emptyRay && !emptyHit && !invalidPickConfig && !invalidDimensions && !outOfBounds &&
                !nonFiniteInput && !screenMiss && !pickMiss;
+        return !emptyRay && !nonFiniteRay && !emptyHit && !invalidPickConfig && !invalidDimensions &&
+               !invalidCoordinates && !outOfBounds && !screenMiss && !pickMiss;
     }
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up).
     bool canPick = false;
@@ -644,6 +643,9 @@ struct BeginDragPreflight {
     bool emptyRay = false;
     bool nonFiniteInput = false;
     bool invalidPickConfig = false;
+    bool nonFiniteRay = false;
+    bool invalidDimensions = false;
+    bool invalidCoordinates = false;
     bool outOfBounds = false;
     bool nonFiniteInput = false;
     bool screenMiss = false;
@@ -725,6 +727,8 @@ struct BeginDragPreflight {
     bool alreadyDragging = false;
     /// Resolved axis from pick preflight when `canBegin` (B6.4 deepen pass).
     /// Snap is enabled but the mode step is unusable — begin still applies (B6.4 deepen pass).
+    bool invalidDimensions = false;
+    bool invalidCoordinates = false;
     bool outOfBounds = false;
     bool nonFiniteInput = false;
     bool invalidActiveAxis = false;
@@ -799,6 +803,8 @@ struct UpdateDragPreflight {
         return !notDragging && !emptyHit && !outOfBounds && !screenMiss && !invalidActiveAxis;
         return !notDragging && !emptyHit && !outOfBounds && !nonFiniteHit && !invalidActiveAxis;
         return !notDragging && !emptyHit && !invalidDimensions && !outOfBounds && !nonFiniteInput &&
+        return !notDragging && !emptyHit && !invalidDimensions && !invalidCoordinates &&
+               !outOfBounds && !invalidActiveAxis;
     }
     bool canUpdate() const { return reason == UpdateDragRejectReason::None; }
         return !notDragging && !emptyHit && !nonFiniteInput && !invalidDimensions && !outOfBounds &&
@@ -1390,6 +1396,24 @@ struct InteractionPreflight {
     bool canUpdate() const { return dragging && update.canUpdate(); }
     bool canEnd() const { return dragging && end.canEnd(); }
 
+    /// Primary action allowed for the active lifecycle phase (B6.4 deepen pass).
+    bool canActOnPhase() const {
+        switch (phase()) {
+        case GizmoInteractionPhase::Idle:
+            return canBegin();
+        case GizmoInteractionPhase::Dragging:
+            return canUpdate();
+        }
+        return false;
+};
+
+/// Non-mutating phase-routing predicate — same guards as `InteractionPreflight::canActOnPhase`.
+bool canActOnPhase(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                   const GizmoSnapSettings& settings);
+bool canActOnPhase(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
+                   GizmoAxis activeAxis, GizmoMode mode, GizmoSpace space, f32 axisLength,
+                   f32 pickRadius, const GizmoSnapSettings& settings);
+
 PickSnapPreflight preflightPickSnap(const GizmoRay& ray, const GizmoTransform& transform,
                                     GizmoMode mode, GizmoSpace space, f32 axisLength,
                                     f32 pickRadius, const GizmoSnapSettings& settings);
@@ -1928,6 +1952,9 @@ public:
                                           const GizmoTransform& transform) const;
     /// Non-mutating update-interaction predicate — same guards as `preflightUpdateInteraction` (B6.4 deepen pass).
     /// Non-mutating end-interaction predicate — same guards as `preflightEndInteraction` (B6.4 deepen pass).
+    /// Primary action allowed for the active lifecycle phase (B6.4 deepen pass).
+    [[nodiscard]] bool canActOnPhase(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canActOnPhase(const GizmoRay& ray, const GizmoTransform& transform) const;
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
