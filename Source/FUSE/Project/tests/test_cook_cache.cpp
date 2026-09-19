@@ -1463,3 +1463,14 @@ void testCookHashWouldAndTryPreflightGuards() {
     expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source probe");
     expectTrue(cooker.cache().would_invalidate_output(desc.output_path), "would_invalidate_output probe");
     testCookHashWouldAndTryPreflightGuards();
+
+// --- deepen additive from deepen-b79-cooker-hash-f600 ---
+void testCookHashPreflightDependencyGuards() {
+    const fuse::project::CookHashPreflight missing_dep =
+    expectTrue(missing_dep.reason == fuse::project::CookHashRejectReason::SourceUnreadable,
+    const fuse::project::CookHashPreflight unknown_output =
+    expectTrue(unknown_output.reason == fuse::project::CookHashRejectReason::UnknownDependencyOutput,
+    expectTrue(cooker.cook_mesh(desc).ok, "seed cook for would_invalidate probes");
+    expectTrue(!cooker.cache().would_invalidate_source(""), "empty source guarded in would_invalidate_source");
+    expectTrue(!cooker.cache().would_invalidate_output(""), "empty output guarded in would_invalidate_output");
+    testCookHashPreflightDependencyGuards();
