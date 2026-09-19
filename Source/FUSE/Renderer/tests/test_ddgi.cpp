@@ -4548,3 +4548,8 @@ void testDdgiScheduleAtRatePreflight() {
                                fuse::renderer::ProbeGridSourceRejectReason::UndersizedVolume),
     expectTrue(fuse::renderer::ddgi_util::preflightTrilinearProbeSampleAtCoords(desc, built, cache.data(), 8u),
                "preflightTrilinearProbeSampleAtCoords succeeds for valid sample");
+
+// --- deepen additive from deepen-b56-ddgi-guards-650e ---
+void testDdgiDeepenPassTwoGuards() {
+               "wouldSkipProbeLookupAtIndex false for valid index");
+               "wouldSkipProbeLookupAtIndex true for OOB probe index");

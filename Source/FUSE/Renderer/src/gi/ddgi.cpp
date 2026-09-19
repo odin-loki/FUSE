@@ -3270,3 +3270,7 @@ bool wouldSkipProbeGridSource(const ProbeData& data, const DDGIDesc& desc) {
     return !preflightProbeGridSource(data, desc);
 bool wouldSkipProbeGridSource(const ProbeVolume& volume, const DDGIDesc& desc) {
     return !preflightProbeGridSource(volume, desc);
+
+// --- deepen additive from deepen-b56-ddgi-guards-650e ---
+    outReason = classifyProbeGridSourceReject(desc);
+    return !probeGridSourceRejectReasonIsBlocking(outReason);
