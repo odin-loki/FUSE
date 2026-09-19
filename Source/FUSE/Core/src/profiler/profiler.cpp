@@ -273,6 +273,7 @@ EventNameRejectReason diagnoseEventNameRejectReason(const char* name) {
 bool tryValidateEventName(const char* name, EventNameRejectReason& outReason) {
     outReason = diagnoseEventNameRejectReason(name);
     return outReason == EventNameRejectReason::None;
+}
 
 const char* eventNameRejectReasonLabel(EventNameRejectReason reason) {
     switch (reason) {
@@ -283,6 +284,7 @@ const char* eventNameRejectReasonLabel(EventNameRejectReason reason) {
     case EventNameRejectReason::Empty:
         return "empty";
     return "unknown";
+    }
 
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
@@ -878,7 +880,6 @@ bool isValidEventName(const char* name) {
 
 bool isValidProfilerName(const char* name) {
     return isValidEventName(name);
-}
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return isValidEventName(event.name);
@@ -936,6 +937,7 @@ NestingStateRejectReason diagnoseNestingStateRejectReason() {
     if (!isFlowNestingBalanced()) {
         return NestingStateRejectReason::UnbalancedFlowNesting;
     return NestingStateRejectReason::None;
+    }
 
 ChromeTraceExportRejectReason diagnoseChromeTraceExportRejectReason() {
     if (!enabled()) {
@@ -950,6 +952,15 @@ ChromeTraceExportRejectReason diagnoseChromeTraceExportRejectReason() {
 
 } // namespace
 
+    }
+    if (!isScopeNestingBalanced()) {
+    if (isFlowDepthDetached()) {
+    if (hasOpenAsyncFlows()) {
+    if (!isFlowNestingBalanced()) {
+
+
+bool isProfilerStateBalanced() {
+    return diagnoseNestingStateRejectReason() == NestingStateRejectReason::None;
 
 bool preflightProfilerState(NestingStateRejectReason* reason) {
     const NestingStateRejectReason rejectReason = diagnoseNestingStateRejectReason();
@@ -962,6 +973,7 @@ const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason) {
     }
 
     switch (reason) {
+
         return "none";
     case NestingStateRejectReason::UnbalancedScopeNesting:
         return "unbalanced_scope_nesting";
@@ -1143,6 +1155,7 @@ bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason) {
     return true;
         return false;
     }
+
 
 
 const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason) {
@@ -1631,6 +1644,38 @@ bool isChromeTraceExportEmpty() {
 
 
 
+
+bool canExportChromeTrace() {
+    return diagnoseChromeTraceExportRejectReason() == ChromeTraceExportRejectReason::None;
+}
+
+bool preflightChromeTraceNesting(ChromeTraceExportRejectReason* reason) {
+    const ChromeTraceExportRejectReason rejectReason = diagnoseChromeTraceExportRejectReason();
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    }
+    return rejectReason == ChromeTraceExportRejectReason::None;
+}
+
+const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason) {
+    switch (reason) {
+    case ChromeTraceExportRejectReason::None:
+        return "none";
+    case ChromeTraceExportRejectReason::ProfilerDisabled:
+        return "profiler_disabled";
+    case ChromeTraceExportRejectReason::NoExportableEvents:
+        return "no_exportable_events";
+    case ChromeTraceExportRejectReason::UnbalancedScopeNesting:
+        return "unbalanced_scope_nesting";
+    case ChromeTraceExportRejectReason::UnbalancedFlowNesting:
+        return "unbalanced_flow_nesting";
+    case ChromeTraceExportRejectReason::OpenAsyncFlows:
+        return "open_async_flows";
+    case ChromeTraceExportRejectReason::FlowDepthDetached:
+        return "flow_depth_detached";
+    }
+    return "unknown";
+}
 
 bool canExportChromeTrace() {
     return diagnoseChromeTraceExportRejectReason() == ChromeTraceExportRejectReason::None;
@@ -2230,6 +2275,16 @@ bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReaso
 
 bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason) {
     if (!preflightChromeTraceExport(reason)) {
+        outJson.clear();
+        return false;
+    }
+
+    outJson = exportChromeTraceJson();
+    return true;
+}
+
+bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason) {
+    if (!preflightChromeTraceNesting(reason)) {
         outJson.clear();
         return false;
     }

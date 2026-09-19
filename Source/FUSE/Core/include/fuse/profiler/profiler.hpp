@@ -59,6 +59,11 @@ enum class NestingStateRejectReason : u8 {
 /// Why chrome trace export preflight rejected the request (B1.6 deepen).
 enum class ChromeTraceExportRejectReason : u8 {
     None = 0,
+    FlowDepthDetached,
+
+/// Why a guarded chrome trace export preflight rejected the request (B1.6 deepen).
+    ProfilerDisabled,
+    NoExportableEvents,
     UnbalancedScopeNesting,
     UnbalancedFlowNesting,
     OpenAsyncFlows,
