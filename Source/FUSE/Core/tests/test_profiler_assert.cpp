@@ -5237,3 +5237,55 @@ void testRecordingPreflightGuards() {
                "empty counter records nothing when wouldSkip predicted skip");
                "valid scope records when wouldSkip predicted record");
     testRecordingPreflightGuards();
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-0f61 ---
+    expectTrue(fuse::profiler::preflightProfileScope("valid_scope").canRecord(),
+               "wouldSkipProfileScope reports InvalidName for empty");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowBegin("flow_begin", &beginReason),
+               "wouldSkipAsyncFlowBegin leaves reason None for valid name");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("flow_end", 1u, &endReason),
+               "wouldSkipAsyncFlowEnd true for orphan end");
+               "wouldSkipAsyncFlowEnd reports OrphanEnd");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowEnd("paired_flow", flowId, &endReason),
+               "wouldSkipAsyncFlowEnd false for matched begin");
+               "wouldSkipAsyncFlowEnd clears reason for matched begin");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("", &beginReason),
+               "wouldSkipAsyncFlowBegin reports InvalidName for empty");
+void testWouldSkipCounterSampleGuard() {
+    expectTrue(!fuse::profiler::wouldSkipCounterSample("budget_track", &reason),
+    expectTrue(fuse::profiler::preflightCounterSample("budget_track").canSample(),
+               "preflightCounterSample allows valid track");
+    expectTrue(fuse::profiler::wouldSkipCounterSample(nullptr, &reason),
+               "wouldSkipCounterSample reports InvalidName for null");
+    expectTrue(!fuse::profiler::wouldSkipChromeTraceExport(&reason),
+    expectTrue(!fuse::profiler::wouldSkipChromeTraceExportSafely(&reason),
+               "wouldSkipChromeTraceExportSafely false on balanced empty buffer");
+                   "wouldSkipChromeTraceExportSafely true inside active scope");
+                   "wouldSkipChromeTraceExportSafely reports UnbalancedNesting");
+               "wouldSkipChromeTraceExport true when profiler disabled");
+               "wouldSkipChromeTraceExport reports ProfilerDisabled");
+    expectTrue(resetPreflight.canNestSafely(), "preflightNestingState canNestSafely on reset");
+    expectTrue(resetPreflight.openAsyncFlowCount == 0u, "preflightNestingState open count zero on reset");
+        expectTrue(!activePreflight.canNestSafely(), "preflightNestingState blocks safe nesting with open scope");
+        expectTrue(activePreflight.openAsyncFlowCount == 1u, "preflightNestingState reports open flow count");
+    expectTrue(closedPreflight.canNestSafely(), "preflightNestingState canNestSafely after teardown");
+    expectTrue(fuse::profiler::tryFindFirstEventByName("lookup_inner", byName),
+               "tryFindFirstEventByName copies inner begin phase");
+    expectTrue(fuse::profiler::tryFindLastEventByName("lookup_counter", byName),
+               "tryFindLastEventByName succeeds for counter");
+    expectTrue(!fuse::profiler::tryFindFirstEventByName("", byName),
+               "tryFindFirstEventByName false for empty query");
+    expectTrue(fuse::profiler::tryFindFirstEventByFlowId(innerFlowId, byFlow),
+               "tryFindFirstEventByFlowId copies inner flow name");
+    expectTrue(fuse::profiler::tryFindLastEventByFlowId(outerFlowId, byFlow),
+               "tryFindLastEventByFlowId succeeds for outer flow finish");
+    expectTrue(!fuse::profiler::tryFindFirstEventByFlowId(9999u, byFlow),
+               "tryFindFirstEventByFlowId false for unknown flow id");
+void testWouldSkipMatchesRecordingGuards() {
+               "wouldSkipProfileScope agrees with null scope guard");
+               "wouldSkipAsyncFlowBegin agrees with empty-name guard");
+               "wouldSkipCounterSample agrees with null counter guard");
+    expectTrue(fuse::profiler::enabled(), "profiler enabled before valid scope after wouldSkip probes");
+    expectTrue(fuse::profiler::eventCount() == 0u, "buffer empty before valid scope after wouldSkip probes");
+        FUSE_PROFILE_SCOPE("valid_after_would_skip");
+    expectTrue(fuse::profiler::eventCount() == 2u, "valid scope still records after wouldSkip probes");

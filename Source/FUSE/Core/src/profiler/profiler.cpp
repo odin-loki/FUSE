@@ -1505,3 +1505,16 @@ ScopeRecordingPreflight preflightScopeRecording(const char* name) {
     ScopeRecordingPreflight preflight{};
 CounterRecordingPreflight preflightCounterRecording(const char* track) {
     CounterRecordingPreflight preflight{};
+
+// --- deepen additive from deepen-b16-profiler-wouldskip-0f61 ---
+AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name, u32 /*flowId*/) {
+bool wouldSkipProfileScope(const char* name, ProfileScopeSkipReason* reason) {
+    const ProfileScopePreflight preflight = preflightProfileScope(name);
+bool wouldSkipAsyncFlowBegin(const char* name, AsyncFlowBeginSkipReason* reason) {
+    const AsyncFlowBeginPreflight preflight = preflightAsyncFlowBegin(name);
+bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId, AsyncFlowEndSkipReason* reason) {
+    const AsyncFlowEndPreflight preflight = preflightAsyncFlowEnd(name, flowId);
+bool wouldSkipCounterSample(const char* track, CounterSampleSkipReason* reason) {
+    const CounterSamplePreflight preflight = preflightCounterSample(track);
+bool wouldSkipChromeTraceExport(ChromeTraceExportSkipReason* reason) {
+bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason) {
