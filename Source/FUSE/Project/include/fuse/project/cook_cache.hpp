@@ -386,7 +386,6 @@ public:
     [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
     [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
     [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
-                                                                 u64 current_content_hash) const;
 
     /// Reconcile estimators — non-mutating mirrors of `prune_*` (B7.9 deepen).
     [[nodiscard]] u32 estimate_prune_stale_entries() const;
@@ -481,28 +480,13 @@ public:
     /// Entries whose recomputed key differs from stored hash — excludes structurally invalid rows (B7.9 deepen).
 
     /// Read-only would-invalidate probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
-    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
-    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
-                                                               u64 current_content_hash) const;
     /// Source paths whose stored content keys differ from on-disk recompute — one push per matching entry (B7.9 deepen).
-    [[nodiscard]] std::vector<std::string> probe_stale_content_sources() const;
 
-    /// Count entries that `invalidate_source` would remove — no mutation (B7.9 deepen).
-    [[nodiscard]] u32 probe_invalidate_source(const std::string& source_path) const;
-    /// Count entries that `invalidate_stale_content_for_source` would remove — no mutation (B7.9 deepen).
-    [[nodiscard]] u32 probe_stale_content_for_source(const std::string& source_path,
     /// Unique source paths with stale upstream hashes — no mutation (B7.9 deepen).
-    [[nodiscard]] std::vector<std::string> probe_stale_upstream_hashes(
-    /// Count entries that `invalidate_stale_upstream_hashes` would drop — no mutation (B7.9 deepen).
-    [[nodiscard]] u32 probe_stale_upstream_hash_entries(
-    /// Count entries that `invalidate_downstream_of` would remove — no mutation (B7.9 deepen).
-    [[nodiscard]] u32 probe_downstream_of(const std::string& output_path,
-    /// Aggregate probe for upstream invalidation plus downstream cascade — no mutation (B7.9 deepen).
-    [[nodiscard]] CookCacheInvalidationProbe probe_upstream_invalidation(
-        const std::string& changed_source,
     /// Split invalid vs stale prune counts — no mutation (B7.9 deepen).
-    [[nodiscard]] CookCachePruneEstimate estimate_prune_removals() const;
+    /// Estimate `prune_all` removal count without mutating stats (B7.9 deepen).
+
+    /// Source paths with stale content keys — one entry per matching cache record (B7.9 deepen).
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

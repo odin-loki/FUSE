@@ -22,6 +22,7 @@ enum class CookHashRejectReason : u8 {
     ZeroSourceHash,
     ZeroContentHash,
     NonCacheableKey,
+    NonCacheableCombinedKey,
 };
 
 /// Read-only hash preflight — mirrors empty-input guards without computing keys (B7.9 deepen).
@@ -308,5 +309,7 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash);
 [[nodiscard]] CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry& entry,
                                                                        const CookManifest& manifest);
+/// Validates source hash plus combined fold cacheability — additive guard beyond `preflight_cook_cache_key` (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_cacheable_cook_key(u64 source_hash, u64 upstream_hash);
 
 } // namespace fuse::project

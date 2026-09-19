@@ -157,6 +157,7 @@ public:
 
                                                                        const std::string& changed_source) const;
 
+    /// Source paths that `invalidate_upstream_dependency` would touch — guarded on empty `changed_source` (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
