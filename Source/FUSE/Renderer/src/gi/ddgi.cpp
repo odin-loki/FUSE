@@ -3158,3 +3158,10 @@ bool tryPreflightTrilinearProbeIrradiance(const DDGIDesc& desc,
     return tryTrilinearProbeIrradiance(desc, world_position, cache, cache_count, ignored, outReason);
     const bool ok = tryTrilinearDirectionalProbeIrradiance(
 bool tryPreflightTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-06af ---
+    return classifyCacheIndexReject(desc, cache, index, cache_count);
+bool preflightCacheIndexLookupAtCoord(const DDGIDesc& desc,
+    const CacheIndexRejectReason reject = classifyCacheIndexRejectAtCoord(desc, cache, coord, cache_count);
+    return !preflightCacheIndexLookupAtCoord(desc, cache, coord, cache_count);
+bool wouldClampCacheIndexCoordForLookup(const DDGIDesc& desc, const ProbeGridCoord& coord) {

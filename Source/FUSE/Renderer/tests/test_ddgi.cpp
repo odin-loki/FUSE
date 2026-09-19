@@ -4376,3 +4376,10 @@ void testDdgiKernelUpdatePreflightGuards() {
     expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(zeroDepth, reason),
     expectTrue(reason == fuse::renderer::ProbeGridSourceRejectReason::ZeroDepthRes,
                "tryScheduleProbeUpdatesAtRate zero probe count reports zero_probe_count reason");
+
+// --- deepen additive from deepen-ddgi-guards-06af ---
+    expectTrue(fuse::renderer::ddgi_util::classifyCacheIndexRejectAtCoord(desc, cache.data(), validCoord, 8u) ==
+    expectTrue(fuse::renderer::ddgi_util::preflightCacheIndexLookupAtCoord(desc, cache.data(), validCoord, 8u),
+               "preflightCacheIndexLookupAtCoord succeeds for valid coord");
+    expectTrue(fuse::renderer::ddgi_util::classifyCacheIndexRejectAtCoord(desc, cache.data(), invalidCoord, 8u) ==
+               "classifyCacheIndexRejectAtCoord out_of_range_probe_index");

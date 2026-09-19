@@ -1028,3 +1028,7 @@ bool wouldSkipProbeSample(const DDGIDesc& desc,
 // --- deepen additive from deepen-ddgi-guards-e593 ---
 bool tryPreflightTrilinearProbeIrradiance(const DDGIDesc& desc,
 bool tryPreflightTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-06af ---
+bool preflightCacheIndexLookupAtCoord(const DDGIDesc& desc,
+bool wouldClampCacheIndexCoordForLookup(const DDGIDesc& desc, const ProbeGridCoord& coord);
