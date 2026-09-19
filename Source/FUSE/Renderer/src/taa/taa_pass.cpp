@@ -359,3 +359,6 @@ void addTaaPassToGraph(RenderGraph& graph) {
 }
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-b59-taa-history-resolve-skip-b406 ---
+    if (m_resolve.wouldSkip(working, m_history, &skipReason)) {

@@ -2832,3 +2832,12 @@ int main() {
     std::fprintf(stderr, "fuse_taa_pass: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b59-taa-history-resolve-skip-b406 ---
+void testRejectionSurfaceHelpers() {
+    expectTrue(!fuse::renderer::taaResolveRequiresRejectionSurfaces(params),
+    expectTrue(fuse::renderer::taaResolveRequiresRejectionSurfaces(params),
+void testPreflightAndCanProceedHelpers() {
+    expectTrue(fuse::renderer::preflightTaaResolve(desc, history) == fuse::renderer::TaaResolveSkipReason::None,
+    expectTrue(fuse::renderer::preflightTaaResolve(desc, history) ==
+    testPreflightAndCanProceedHelpers();

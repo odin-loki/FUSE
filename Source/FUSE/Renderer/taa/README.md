@@ -80,3 +80,7 @@ ctest --test-dir build --output-on-failure -R fuse_taa_pass
 ## Build
 
 Part of `fuse_rhi`. Built with `FUSE_BUILD_CORE=ON`. Tests run when `FUSE_BUILD_CORE_TESTS=ON`.
+
+// --- deepen additive from deepen-b59-taa-history-resolve-skip-b406 ---
+- `preflightTaaResolve(desc, history)` — stamp observed generation then classify
+- `taaResolveCanProceed(desc, history, &reason)` — inverse of `wouldSkip`

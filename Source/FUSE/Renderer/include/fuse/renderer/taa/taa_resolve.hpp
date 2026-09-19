@@ -50,3 +50,6 @@ private:
 };
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-b59-taa-history-resolve-skip-b406 ---
+TaaResolveSkipReason preflightTaaResolve(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
