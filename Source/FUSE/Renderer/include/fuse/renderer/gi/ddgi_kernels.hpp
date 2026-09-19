@@ -89,3 +89,11 @@ bool tryLaunch_probe_kernels(const DDGIKernelParams& params,
                              ProbeKernelRejectReason& outReason);
 
 } // namespace fuse::renderer::gi
+
+// --- deepen additive from deepen-ddgi-b56-guards-5dea ---
+enum class DdgiKernelRejectReason : u8 {
+const char* ddgiKernelRejectReasonLabel(DdgiKernelRejectReason reason);
+bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason);
+bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason);
+bool tryCanLaunchDdgiKernels(const ::fuse::renderer::DDGIDesc& desc,
+                             DdgiKernelRejectReason& outReason);

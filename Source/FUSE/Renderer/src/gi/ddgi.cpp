@@ -2099,3 +2099,31 @@ const char* ddgiLaunchRejectReasonLabel(DdgiLaunchRejectReason reason) {
             out_reason = DdgiLaunchRejectReason::OutOfRangeIndex;
     out_reason = DdgiLaunchRejectReason::None;
     DdgiLaunchRejectReason reason = DdgiLaunchRejectReason::None;
+
+// --- deepen additive from deepen-ddgi-b56-guards-5dea ---
+    case CacheIndexRejectReason::OutOfRangeIndex:
+bool tryIsCacheIndexValid(const DDGIDesc& desc,
+        outReason = CacheIndexRejectReason::OutOfRangeIndex;
+                                 DdgiLaunchRejectReason& outReason) {
+        outReason = DdgiLaunchRejectReason::EmptyGrid;
+        outReason = DdgiLaunchRejectReason::NullIndices;
+        outReason = DdgiLaunchRejectReason::ZeroCount;
+            outReason = DdgiLaunchRejectReason::OutOfRangeIndex;
+    outReason = DdgiLaunchRejectReason::None;
+const char* ddgiKernelRejectReasonLabel(DdgiKernelRejectReason reason) {
+    case DdgiKernelRejectReason::None:
+    case DdgiKernelRejectReason::NullIndices:
+    case DdgiKernelRejectReason::ZeroCount:
+    case DdgiKernelRejectReason::InvalidRaysPerProbe:
+    case DdgiKernelRejectReason::OutOfRangeIndex:
+    DdgiKernelRejectReason reason = DdgiKernelRejectReason::None;
+bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason) {
+        outReason = DdgiKernelRejectReason::ZeroCount;
+        outReason = DdgiKernelRejectReason::NullIndices;
+        outReason = DdgiKernelRejectReason::InvalidRaysPerProbe;
+    outReason = DdgiKernelRejectReason::None;
+bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason) {
+    return tryCanLaunchDdgiKernels(desc, params, reason);
+bool tryCanLaunchDdgiKernels(const DDGIDesc& desc,
+                             DdgiKernelRejectReason& outReason) {
+            outReason = DdgiKernelRejectReason::OutOfRangeIndex;

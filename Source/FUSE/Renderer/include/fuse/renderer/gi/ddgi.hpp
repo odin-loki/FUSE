@@ -738,3 +738,7 @@ bool probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason reason);
 enum class DdgiLaunchRejectReason : u8 {
 const char* ddgiLaunchRejectReasonLabel(DdgiLaunchRejectReason reason);
                                  DdgiLaunchRejectReason& out_reason);
+
+// --- deepen additive from deepen-ddgi-b56-guards-5dea ---
+bool tryIsCacheIndexValid(const DDGIDesc& desc,
+                                 DdgiLaunchRejectReason& outReason);
