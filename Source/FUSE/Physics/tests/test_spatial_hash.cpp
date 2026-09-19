@@ -303,8 +303,14 @@ void testPairBufferSlotCompact() {
 void testPairBufferMaxCapacityClamp() {
     fuse::physics::broadphase::PairBufferSoA buffer;
     buffer.setMaxCapacity(2u);
+    expectTrue(!buffer.isFull(), "buffer under capacity is not full");
+    expectEq(buffer.remainingCapacity(), 2u, "remainingCapacity reports headroom");
+    expectTrue(!buffer.wouldRejectPush(0u, 1u), "wouldRejectPush accepts valid pair under capacity");
     expectTrue(buffer.push(0u, 1u), "push accepts pair under capacity");
     expectTrue(buffer.push(2u, 3u), "push accepts second pair at capacity");
+    expectTrue(buffer.isFull(), "buffer at max capacity reports full");
+    expectEq(buffer.remainingCapacity(), 0u, "remainingCapacity is zero when full");
+    expectTrue(buffer.wouldRejectPush(4u, 5u), "wouldRejectPush rejects when full");
     expectTrue(!buffer.push(4u, 5u), "push rejects pair beyond max capacity");
     expectEq(buffer.droppedCount, 1u, "dropped count tracks clamped pushes");
     expectEq(buffer.activeCount, 2u, "active count stops at max capacity");
@@ -544,6 +550,15 @@ void testEmptyPairGuards() {
 void testCellClampHelpers() {
     expectEq(fuse::physics::broadphase::clampTableSize(0u), 1u, "clampTableSize minimum is one");
     expectEq(fuse::physics::broadphase::clampHashKey(17u, 0u), 0u, "clampHashKey wraps with clamped table size");
+    expectEq(fuse::physics::broadphase::clampMaxCellSpanPerAxis(8u), 8u, "clampMaxCellSpanPerAxis preserves positive span");
+
+    fuse::physics::broadphase::SpatialHashParams rawParams;
+    rawParams.cellSize = 0.f;
+    rawParams.tableSize = 0u;
+    const fuse::physics::broadphase::SpatialHashParams safeParams =
+        fuse::physics::broadphase::sanitizeSpatialHashParams(rawParams);
+    expectEq(safeParams.cellSize, 1.f, "sanitizeSpatialHashParams clamps cell size");
+    expectEq(safeParams.tableSize, 1u, "sanitizeSpatialHashParams clamps table size");
 
     expectEq(fuse::physics::broadphase::clampCellCoord(5, 0, 3), 3, "clampCellCoord clamps high bound");
     expectEq(fuse::physics::broadphase::clampCellCoord(-2, 0, 3), 0, "clampCellCoord clamps low bound");
@@ -561,6 +576,14 @@ void testCellClampHelpers() {
     const fuse::physics::broadphase::CellRange3 sphereRange =
         fuse::physics::broadphase::cellRangeFromSphere({0.f, 0.f, 0.f}, 512.f, 1.f, 4u);
     expectTrue(sphereRange.maxCell.x - sphereRange.minCell.x <= 4, "cellRangeFromSphere applies span clamp");
+
+    expectEq(fuse::physics::broadphase::cellOccupancyCount(sphereRange), 125u,
+             "cellOccupancyCount counts clamped 5x5x5 span");
+    expectTrue(!fuse::physics::broadphase::exceedsCellOccupancyBudget(
+                   sphereRange, fuse::physics::broadphase::cellOccupancyBudgetFromSpan(4u)),
+               "clamped range fits occupancy budget derived from span");
+    expectTrue(fuse::physics::broadphase::exceedsCellOccupancyBudget(wideRange, 64u),
+               "unclamped wide range exceeds occupancy budget");
 }
 
 void testBroadphaseCellSpanClampIntegration() {
@@ -625,6 +648,13 @@ void testCandidatePairRejectReasonName() {
                                fuse::physics::broadphase::CandidatePairRejectReason::OutOfRangeBody),
                            "OutOfRangeBody") == 0,
                "OutOfRangeBody reject reason has stable label");
+    expectTrue(std::strcmp(fuse::physics::broadphase::candidate_pair_reject_reason_name(
+               "reject reason name for SelfPair");
+    expectTrue(fuse::physics::broadphase::isOutOfRangeCandidatePair(0u, 2u, 2u),
+               "isOutOfRangeCandidatePair detects OOB indices");
+    expectTrue(!fuse::physics::broadphase::isOutOfRangeCandidatePair(0u, 1u, 2u),
+               "isOutOfRangeCandidatePair accepts in-range pair");
+}
 
 void testCellRangeFromAabbHelpers() {
     expectEq(fuse::physics::broadphase::clampCellSize(0.f), 1.f, "clampCellSize falls back to one");
@@ -1026,6 +1056,32 @@ void testPairBufferPreflightGuards() {
     const fuse::physics::broadphase::PairBufferClampPreflight withinPreflight =
         fuse::physics::broadphase::preflightPairBufferClamp(withinBuffer);
     expectTrue(!withinPreflight.needsClamp(), "clamp preflight skips when within capacity");
+
+void testPairBufferInvalidateInvalidPairs() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.preparePairSlots(3u);
+    buffer.bodyA[0u] = 0u;
+    buffer.bodyB[0u] = 1u;
+    buffer.validFlags[0u] = 1u;
+    buffer.bodyA[1u] = 0u;
+    buffer.bodyB[1u] = 0u;
+    buffer.validFlags[1u] = 1u;
+    buffer.bodyA[2u] = 0u;
+    buffer.bodyB[2u] = 2u;
+    buffer.validFlags[2u] = 1u;
+    expectEq(buffer.invalidateInvalidPairs(2u), 2u, "invalidateInvalidPairs removes self and OOB slots");
+    expectEq(buffer.compact(), 1u, "compact after invalidation keeps valid pair");
+    expectTrue(buffer.containsCanonicalPair(0u, 1u), "valid pair survives invalidation sweep");
+}
+
+void testPairBufferWriteSlotBodyCountGuard() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+    buffer.writeSlot(0u, 0u, 1u, 2u);
+    buffer.writeSlot(1u, 0u, 2u, 2u);
+    expectEq(buffer.compact(), 1u, "writeSlot rejects out-of-range pair when bodyCount provided");
+    expectTrue(buffer.containsCanonicalPair(0u, 1u), "writeSlot keeps in-range pair");
+}
 
 void testBroadphaseBoxShapeCellRange() {
 
@@ -1947,6 +2003,8 @@ int main() {
     testRefineBroadphasePreflightGuards();
     testDedupeBroadphasePreflightGuards();
     testPairBufferPreflightGuards();
+    testPairBufferInvalidateInvalidPairs();
+    testPairBufferWriteSlotBodyCountGuard();
     testBroadphaseBoxShapeCellRange();
     testBroadphaseSingletonEarlyOut();
     testBroadphaseCellOccupancyBudgetIntegration();

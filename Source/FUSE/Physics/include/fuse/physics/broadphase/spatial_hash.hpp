@@ -41,6 +41,8 @@ enum class CandidatePairRejectReason : u8 {
 
 /// Human-readable label for diagnostics and test assertions (B4.2 deepen).
 const char* candidatePairRejectReasonName(CandidatePairRejectReason reason);
+/// Human-readable label for diagnostics and test assertions (B4.2 deepen pass).
+const char* candidate_pair_reject_reason_name(CandidatePairRejectReason reason);
 
 /// Returns the first reject reason for a candidate pair, or `None` when valid.
 FUSE_PHYSICS_INLINE CandidatePairRejectReason candidatePairRejectReason(
@@ -67,6 +69,12 @@ const char* candidateRejectReasonLabel(CandidateRejectReason reason);
 /// Empty-pair guard: true when both indices refer to the same body.
 FUSE_PHYSICS_INLINE bool isEmptyCandidatePair(u32 bodyA, u32 bodyB) {
     return candidatePairRejectReason(bodyA, bodyB) == CandidatePairRejectReason::SelfPair;
+}
+
+/// Out-of-range guard: true when either index is at or beyond `bodyCount`.
+FUSE_PHYSICS_INLINE bool isOutOfRangeCandidatePair(u32 bodyA, u32 bodyB, u32 bodyCount) {
+    return bodyCount > 0u &&
+           candidatePairRejectReason(bodyA, bodyB, bodyCount) == CandidatePairRejectReason::OutOfRangeBody;
 }
 
 /// Candidate-pair validity stub: rejects self-pairs and optional out-of-range indices.
@@ -196,6 +204,19 @@ FUSE_PHYSICS_INLINE CandidatePairRejectReason candidatePairRejectReason(const Ca
 /// Clamp hash table size to at least one bucket (broadphase stub guard).
 FUSE_PHYSICS_INLINE u32 clampTableSize(u32 tableSize) {
     return tableSize > 0u ? tableSize : 1u;
+}
+
+/// Clamp per-axis cell span budget (0 = unlimited stub).
+FUSE_PHYSICS_INLINE u32 clampMaxCellSpanPerAxis(u32 maxSpanPerAxis) {
+    return maxSpanPerAxis;
+}
+
+/// Sanitize broadphase params before occupancy iteration (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE SpatialHashParams sanitizeSpatialHashParams(SpatialHashParams params) {
+    params.cellSize = clampCellSize(params.cellSize);
+    params.tableSize = clampTableSize(params.tableSize);
+    params.maxCellSpanPerAxis = clampMaxCellSpanPerAxis(params.maxCellSpanPerAxis);
+    return params;
 }
 
 /// Clamp hash key into `[0, tableSize)`.
@@ -556,6 +577,33 @@ FUSE_PHYSICS_INLINE u32 cellRangeVolume2(const CellRange2& range) {
 /// True when a hash cell cannot emit candidate pairs (single occupant or empty).
 FUSE_PHYSICS_INLINE bool shouldSkipCellPairGeneration(u32 occupantCount) {
     return occupantCount < 2u;
+/// Total cell slots covered by a range (0 when empty).
+FUSE_PHYSICS_INLINE u32 cellOccupancyCount(const CellRange3& range) {
+    if (isEmptyCellRange(range)) {
+        return 0u;
+    }
+    const ivec3 span = cellSpanPerAxis(range);
+    return static_cast<u32>(span.x) * static_cast<u32>(span.y) * static_cast<u32>(span.z);
+
+FUSE_PHYSICS_INLINE u32 cellOccupancyCount(const CellRange2& range) {
+    const ivec2 span = cellSpanPerAxis(range);
+    return static_cast<u32>(span.x) * static_cast<u32>(span.y);
+
+/// True when occupancy exceeds a stub budget (0 = unlimited).
+FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange3& range, u32 maxCells) {
+    return maxCells > 0u && cellOccupancyCount(range) > maxCells;
+
+FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange2& range, u32 maxCells) {
+
+/// Derive a per-shape occupancy budget from span clamp (0 = unlimited).
+FUSE_PHYSICS_INLINE u32 cellOccupancyBudgetFromSpan(u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u) {
+    const u32 halfSpan = maxSpanPerAxis / 2u;
+    const u32 effectiveSpan = halfSpan * 2u + 1u;
+    return effectiveSpan * effectiveSpan * effectiveSpan;
+
+FUSE_PHYSICS_INLINE u32 cellOccupancyBudgetFromSpan2D(u32 maxSpanPerAxis) {
+    return effectiveSpan * effectiveSpan;
 
 /// Limit per-axis cell span from the range center (CUDA occupancy iteration guard stub).
 FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerAxis) {

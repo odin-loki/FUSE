@@ -13,6 +13,7 @@
 namespace fuse::physics::broadphase {
 
 const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
+const char* candidate_pair_reject_reason_name(CandidatePairRejectReason reason) {
     switch (reason) {
     case CandidatePairRejectReason::None:
         return "None";
@@ -209,6 +210,7 @@ void generatePairsForCell(const std::vector<u32>& occupants, std::vector<Candida
 void writePairsForCellSlots(
     const std::vector<u32>& occupants,
     u32 slotStart,
+    u32 bodyCount,
     PairBufferSoA& buffer) {
     if (!preflightCellPairGenerationImpl(occupants).canGenerate()) {
     if (shouldSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
@@ -218,7 +220,7 @@ void writePairsForCellSlots(
     u32 slot = slotStart;
     for (usize i = 0; i < uniqueBodies.size(); ++i) {
         for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
-            buffer.writeSlot(slot++, uniqueBodies[i], uniqueBodies[j]);
+            buffer.writeSlot(slot++, uniqueBodies[i], uniqueBodies[j], bodyCount);
         }
     }
 }
@@ -333,6 +335,7 @@ void populateShapeCells(
     const f32 cellSize = clampCellSize(params.cellSize);
     const u32 tableSize = clampTableSize(params.tableSize);
     const u32 maxSpan = params.maxCellSpanPerAxis;
+    const u32 occupancyBudget = use2D ? cellOccupancyBudgetFromSpan2D(maxSpan) : cellOccupancyBudgetFromSpan(maxSpan);
     const CollisionShapeType type = shapeType(shapes, shapeIndex);
 
     if (use2D) {
@@ -344,6 +347,9 @@ void populateShapeCells(
         } else {
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
+        }
+        if (isEmptyCellRange(range) || exceedsCellOccupancyBudget(range, occupancyBudget)) {
+            return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
@@ -361,6 +367,9 @@ void populateShapeCells(
     } else {
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
+    }
+    if (isEmptyCellRange(range) || exceedsCellOccupancyBudget(range, occupancyBudget)) {
+        return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -449,11 +458,15 @@ void runBroadphaseIntoBufferInternal(
 
     const SpatialHashParams normalizedParams = normalizeSpatialHashParams(params);
     const u32 tableSize = normalizedParams.tableSize;
+    const SpatialHashParams safeParams = sanitizeSpatialHashParams(params);
+    const u32 tableSize = clampTableSize(safeParams.tableSize);
+    const u32 bodyCount = bodies.count();
     CellBuckets cells(tableSize);
 
     const u32 shapeCount = shapes.count();
     fuse::jobs::parallel_for(0u, shapeCount, kBuildGrainSize, [&](u32 shapeIndex) {
         populateShapeCells(shapeIndex, bodies, shapes, normalizedParams, use2D, cells);
+        populateShapeCells(shapeIndex, bodies, shapes, safeParams, use2D, cells);
     });
 
     std::vector<u32> cellSlotOffsets(tableSize, 0u);
@@ -472,7 +485,7 @@ void runBroadphaseIntoBufferInternal(
         if (cells.buckets[cellIndex].empty()) {
             return;
         }
-        writePairsForCellSlots(cells.buckets[cellIndex], cellSlotOffsets[cellIndex], buffer);
+        writePairsForCellSlots(cells.buckets[cellIndex], cellSlotOffsets[cellIndex], bodyCount, buffer);
     });
     buffer.compact();
     dedupeBuffer(buffer);
