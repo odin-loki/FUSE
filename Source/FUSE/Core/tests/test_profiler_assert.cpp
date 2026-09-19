@@ -4734,3 +4734,34 @@ void testHasNestingCleanupPendingGuard() {
     expectTrue(fuse::profiler::tryFindExportableEventByName("valid_lookup_name", counterEvent),
                "tryFindExportableEventByName succeeds after empty-name attempts");
     testOrphanFlowEventPreflightGuard();
+
+// --- deepen additive from deepen-b16-profiler-name-flow-046b ---
+    expectTrue(!fuse::profiler::tryLastEventByName(nullptr, outEvent),
+               "tryLastEventByName false for null name");
+    expectTrue(!fuse::profiler::tryFirstFlowEvent(flowId, outEvent),
+               "tryFirstFlowEvent false before recording");
+    expectTrue(!fuse::profiler::tryLastFlowEvent(flowId, outEvent),
+               "tryLastFlowEvent false before recording");
+               "tryFirstFlowEvent true for recorded flow");
+               "tryLastFlowEvent true for recorded flow");
+void testEmptyNameLookupGuardsDoNotMatchValidEvents() {
+               "tryFirstEventByName rejects empty name with valid buffer");
+    expectTrue(resetPreflight.activeDepth == 0u, "reset scope nesting active depth is zero");
+    expectTrue(resetPreflight.maxDepth == 0u, "reset scope nesting max depth is zero");
+        const fuse::profiler::ScopeNestingPreflight activePreflight = fuse::profiler::preflightScopeNesting();
+        expectTrue(!activePreflight.isBalanced(), "active scope reports unbalanced nesting preflight");
+        expectTrue(activePreflight.activeDepth == 1u, "active scope preflight reports depth 1");
+        expectTrue(activePreflight.maxDepth == 1u, "active scope preflight tracks max depth");
+            const fuse::profiler::ScopeNestingPreflight nestedPreflight = fuse::profiler::preflightScopeNesting();
+            expectTrue(nestedPreflight.activeDepth == 2u, "nested scope preflight reports depth 2");
+            expectTrue(nestedPreflight.maxDepth == 2u, "nested scope preflight tracks max depth");
+    expectTrue(closedPreflight.isBalanced(), "closed scope nesting preflight is balanced");
+    expectTrue(closedPreflight.maxDepth == 2u, "closed scope nesting preflight retains max depth");
+    expectTrue(resetPreflight.isBalanced(), "reset async-flow preflight is balanced");
+    expectTrue(!resetPreflight.hasOpenFlows, "reset async-flow preflight has no open flows");
+    expectTrue(!resetPreflight.depthDetached, "reset async-flow preflight depth attached");
+    expectTrue(openPreflight.hasOpenFlows, "open flow preflight marks open flows");
+    expectTrue(openPreflight.openCount == 1u, "open flow preflight tracks open count");
+    expectTrue(openPreflight.activeFlowDepth == 1u, "open flow preflight tracks active depth");
+    expectTrue(!closedPreflight.hasOpenFlows, "closed flow preflight clears open flows");
+    const fuse::profiler::AsyncFlowPreflight preflight = fuse::profiler::preflightAsyncFlow();
