@@ -1091,5 +1091,17 @@ FUSE_PHYSICS_INLINE bool would_skip_friction_basis_rebuild(
 
 FUSE_PHYSICS_INLINE bool try_ensure_friction_basis(ContactManifold& manifold) {
     return ensure_friction_basis(manifold);
+/// Non-mutating friction-basis skip predicate — mirrors `should_skip_friction_basis_preflight` (B4.3 deepen follow-up pass).
+inline bool would_skip_friction_basis_rebuild(
+
+/// Friction-basis preflight with optional reject-reason output (B4.3 deepen follow-up pass).
+inline bool friction_basis_preflight_ready(
+        *reason = preflight.reason;
+    return !preflight.can_skip_rebuild();
+
+/// Friction-basis preflight with reject-reason output (B4.3 deepen follow-up pass).
+inline bool try_preflight_friction_basis_rebuild(
+    FrictionBasisRejectReason& reason,
+    reason = preflight.reason;
 
 } // namespace fuse::physics::narrowphase

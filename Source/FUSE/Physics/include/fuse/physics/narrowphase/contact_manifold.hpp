@@ -1762,6 +1762,31 @@ bool try_finalize_contact_manifold(
 /// Guarded manifold prune — same guards as `prune_contact_manifold_with_preflight` (B4.6 deepen pass).
 
 /// Guarded manifold finalize — same guards as `finalize_contact_manifold_with_preflight` (B4.6 deepen pass).
+/// Non-mutating manifold-prune skip predicate — mirrors `should_skip_manifold_prune` (B4.3 deepen follow-up pass).
+
+/// Non-mutating manifold-finalize skip predicate — mirrors `can_skip_manifold_finalize` (B4.3 deepen follow-up pass).
+
+/// Manifold prune preflight with optional reject-reason output (B4.3 deepen follow-up pass).
+inline bool manifold_prune_preflight_ready(
+    const ManifoldPrunePreflight preflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+        *reason = preflight.reason;
+    return !preflight.can_skip_prune(shallowMinDepth);
+
+/// Manifold prune preflight with reject-reason output (B4.3 deepen follow-up pass).
+inline bool try_preflight_manifold_prune(
+    ManifoldPruneRejectReason& reason,
+    reason = preflight.reason;
+
+/// Manifold finalize preflight with optional reject-reason output (B4.3 deepen follow-up pass).
+inline bool manifold_finalize_preflight_ready(
+    const ManifoldFinalizePreflight preflight =
+        preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    return preflight.can_finalize();
+
+/// Manifold finalize preflight with reject-reason output (B4.3 deepen follow-up pass).
+inline bool try_preflight_manifold_finalize(
+    ManifoldFinalizeRejectReason& reason,
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
