@@ -854,6 +854,23 @@ void testCacheIndexRejectReasons() {
     expectTrue(std::strcmp(fuse::renderer::cacheIndexRejectReasonLabel(reason), "undersized_cache") == 0,
                "undersized_cache reject reason label");
 
+    std::vector<fuse::renderer::IrradianceCacheEntry> cache(8);
+    expectTrue(fuse::renderer::ddgi_util::tryValidateCacheIndex(desc, cache.data(), 3u, 8u, reason),
+               "cache-pointer overload passes for valid index");
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::None,
+               "cache-pointer overload reports no reject reason on success");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateCacheIndex(desc, nullptr, 3u, 8u, reason),
+               "null cache fails cache-pointer tryValidate");
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::NullCache,
+               "null cache reports null_cache reason");
+    expectTrue(std::strcmp(fuse::renderer::cacheIndexRejectReasonLabel(reason), "null_cache") == 0,
+               "null_cache reject reason label");
+
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, 3u, 8u),
+               "wouldSkip false for valid cache-index lookup");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookup(desc, nullptr, 3u, 8u),
+               "wouldSkip true for null cache lookup");
+
     fuse::renderer::DDGIDesc empty{};
     empty.grid_dims = {0, 2, 2};
     expectTrue(!fuse::renderer::ddgi_util::tryValidateCacheIndex(empty, 0u, 8u, reason),
@@ -1145,6 +1162,108 @@ void testTryLaunchDdgiProbeUpdate() {
                "tryLaunch OOB reports out_of_range_probe_index reason");
 }
 
+void testProbeScheduleRejectReasons() {
+    fuse::u32 indices[64]{};
+    fuse::u32 count = 0u;
+
+    fuse::renderer::ProbeScheduleRejectReason reason = fuse::renderer::ProbeScheduleRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 64u, indices, &count, reason),
+               "tryCanSchedule succeeds for valid schedule inputs");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::None,
+               "valid schedule reports no reject reason");
+    expectTrue(std::strcmp(fuse::renderer::probeScheduleRejectReasonLabel(reason), "none") == 0,
+               "none schedule reject reason label");
+
+    expectTrue(fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 2048u, 64u, indices, 64u, &count, reason),
+               "tryScheduleProbeUpdates succeeds for valid inputs");
+    expectTrue(count == 64u, "trySchedule schedules 64 probes");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(0u, 64u, indices, &count, reason),
+               "zero probe count fails schedule preflight");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::ZeroProbeCount,
+               "zero probe count reports zero_probe_count reason");
+    expectTrue(std::strcmp(fuse::renderer::probeScheduleRejectReasonLabel(reason), "zero_probe_count") == 0,
+               "zero_probe_count schedule reject reason label");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 0u, indices, &count, reason),
+               "zero max indices fails schedule preflight");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::ZeroMaxIndices,
+               "zero max indices reports zero_max_indices reason");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 64u, nullptr, &count, reason),
+               "null out indices fails schedule preflight");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::NullOutIndices,
+               "null out indices reports null_out_indices reason");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryCanScheduleProbeUpdates(2048u, 64u, indices, nullptr, reason),
+               "null out count fails schedule preflight");
+    expectTrue(reason == fuse::renderer::ProbeScheduleRejectReason::NullOutCount,
+               "null out count reports null_out_count reason");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 0u, 64u, indices, 64u, &count, reason),
+               "trySchedule rejects zero probe count");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(0u, 64u, indices, &count),
+               "wouldSkip true for zero probe count");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(2048u, 64u, indices, &count),
+               "wouldSkip false for valid schedule inputs");
+}
+
+void testTryClampProbeSampleCoordsRejectReason() {
+    fuse::renderer::DDGIDesc desc{};
+    desc.grid_dims = {2, 2, 2};
+
+    fuse::renderer::ProbeSampleCoords coords{};
+    coords.x0 = 9u;
+    coords.x1 = 9u;
+    coords.tx = 2.f;
+
+    fuse::renderer::ProbeSampleCoordsRejectReason reason =
+        fuse::renderer::ProbeSampleCoordsRejectReason::None;
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeSampleCoords(desc, coords, reason),
+               "tryClamp with reason succeeds on non-empty grid");
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::None,
+               "successful clamp reports no reject reason");
+    expectTrue(fuse::renderer::ProbeGridLayout::isValidProbeSampleCoords(desc, coords),
+               "tryClamp with reason yields valid coords");
+
+    fuse::renderer::DDGIDesc empty{};
+    empty.grid_dims = {0, 2, 2};
+    const fuse::u32 originalX0 = coords.x0;
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryClampProbeSampleCoords(empty, coords, reason),
+               "tryClamp with reason rejects empty grid");
+    expectTrue(reason == fuse::renderer::ProbeSampleCoordsRejectReason::EmptyGrid,
+               "empty grid clamp reports empty_grid reason");
+    expectTrue(coords.x0 == originalX0, "empty grid tryClamp leaves coords unchanged");
+}
+
+void testTryLaunchProbeKernels() {
+    fuse::u32 indices[2] = {0u, 1u};
+    fuse::renderer::gi::DDGIKernelParams validParams{};
+    validParams.probe_indices_to_update = indices;
+    validParams.probe_update_count = 2u;
+
+    fuse::renderer::gi::ProbeKernelRejectReason reason = fuse::renderer::gi::ProbeKernelRejectReason::None;
+    expectTrue(fuse::renderer::gi::tryLaunch_probe_trace_kernel(validParams, nullptr, reason),
+               "tryLaunch trace succeeds for valid params");
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::None,
+               "successful trace tryLaunch reports no reject reason");
+    expectTrue(fuse::renderer::gi::tryLaunch_probe_blend_kernel(validParams, nullptr, reason),
+               "tryLaunch blend succeeds for valid params");
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::None,
+               "successful blend tryLaunch reports no reject reason");
+
+    fuse::renderer::gi::DDGIKernelParams zeroCount = validParams;
+    zeroCount.probe_update_count = 0u;
+    expectTrue(!fuse::renderer::gi::tryLaunch_probe_trace_kernel(zeroCount, nullptr, reason),
+               "tryLaunch trace rejects zero update count");
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::ZeroUpdateCount,
+               "tryLaunch trace zero count reports zero_update_count reason");
+    expectTrue(!fuse::renderer::gi::tryLaunch_probe_blend_kernel(zeroCount, nullptr, reason),
+               "tryLaunch blend rejects zero update count");
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::ZeroUpdateCount,
+               "tryLaunch blend zero count reports zero_update_count reason");
+}
+
 void testProbeKernelLaunchGuards() {
     fuse::u32 indices[2] = {0u, 1u};
     fuse::renderer::gi::DDGIKernelParams validParams{};
@@ -1418,8 +1537,11 @@ int main() {
     testTryLaunchDdgiProbeUpdate();
     testCacheIndexGuards();
     testCacheIndexRejectReasons();
+    testProbeScheduleRejectReasons();
+    testTryClampProbeSampleCoordsRejectReason();
     testLaunchProbeUpdateGuards();
     testLaunchProbeUpdateRejectReasons();
+    testTryLaunchProbeKernels();
     testProbeKernelLaunchGuards();
     testSampleGuards();
     testProbeWorldPositionClamped();
