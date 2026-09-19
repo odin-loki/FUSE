@@ -1595,6 +1595,150 @@ void testChromeTraceExportPreflightDetachedFlow() {
     expectTrue(preflight.openAsyncFlowCount == 0u, "preflight open flow count cleared by worker end");
 }
 
+void testIsEmptyEventNameGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::isEmptyEventName(nullptr), "null name is empty");
+    expectTrue(fuse::profiler::isEmptyEventName(""), "empty string name is empty");
+    expectTrue(!fuse::profiler::isEmptyEventName("scope"), "non-empty name is not empty");
+    expectTrue(!fuse::profiler::isValidEventName(nullptr), "null name is invalid");
+    expectTrue(!fuse::profiler::isValidEventName(""), "empty string name is invalid");
+    expectTrue(fuse::profiler::isValidEventName("valid"), "non-empty name is valid");
+}
+
+void testAsyncFlowBeginEndPreflights() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::AsyncFlowBeginPreflight disabledBegin =
+        fuse::profiler::preflightBeginAsyncFlow("flow");
+    fuse::profiler::setEnabled(false);
+    expectTrue(disabledBegin.profilerDisabled == false, "preflightBegin captures state before disable");
+    const fuse::profiler::AsyncFlowBeginPreflight disabledAfter =
+        fuse::profiler::preflightBeginAsyncFlow("flow");
+    expectTrue(disabledAfter.profilerDisabled, "preflightBegin marks disabled profiler");
+    expectTrue(!disabledAfter.canBegin(), "preflightBegin rejects disabled profiler");
+
+    fuse::profiler::setEnabled(true);
+    const fuse::profiler::AsyncFlowBeginPreflight emptyBegin = fuse::profiler::preflightBeginAsyncFlow("");
+    expectTrue(emptyBegin.emptyName, "preflightBegin marks empty name");
+    expectTrue(!emptyBegin.canBegin(), "preflightBegin rejects empty name");
+
+    const fuse::profiler::AsyncFlowEndPreflight orphanEnd = fuse::profiler::preflightEndAsyncFlow("flow");
+    expectTrue(orphanEnd.orphanEnd, "preflightEnd marks orphan finish");
+    expectTrue(!orphanEnd.canEnd(), "preflightEnd rejects orphan finish");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("paired_preflight", flowId);
+    const fuse::profiler::AsyncFlowEndPreflight pairedEnd =
+        fuse::profiler::preflightEndAsyncFlow("paired_preflight");
+    expectTrue(pairedEnd.canEnd(), "preflightEnd accepts paired finish");
+    expectTrue(!pairedEnd.orphanEnd, "preflightEnd clears orphan flag for paired finish");
+}
+
+void testNestingStatePreflight() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::NestingStatePreflight resetPreflight = fuse::profiler::preflightNestingState();
+    expectTrue(resetPreflight.isClean(), "reset nesting preflight is clean");
+    expectTrue(resetPreflight.scopeBalanced, "reset scope nesting balanced");
+    expectTrue(resetPreflight.flowBalanced, "reset flow nesting balanced");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("nesting_outer");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("nesting_flow", flowId);
+        const fuse::profiler::NestingStatePreflight activePreflight = fuse::profiler::preflightNestingState();
+        expectTrue(!activePreflight.isClean(), "active scope/flow preflight is not clean");
+        expectTrue(activePreflight.scopeDepth == 1u, "nesting preflight reports scope depth");
+        expectTrue(activePreflight.flowDepth == 1u, "nesting preflight reports flow depth");
+        expectTrue(activePreflight.openAsyncFlows == 1u, "nesting preflight reports open flows");
+        expectTrue(activePreflight.hasOpenAsyncFlows, "nesting preflight marks open async flows");
+        FUSE_PROFILE_ASYNC_FLOW_END("nesting_flow", flowId);
+    }
+
+    const fuse::profiler::NestingStatePreflight closedPreflight = fuse::profiler::preflightNestingState();
+    expectTrue(closedPreflight.isClean(), "nesting preflight clean after teardown");
+}
+
+void testEventIndexLookupGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::isFirstEventIndex(0u), "isFirstEventIndex false on empty buffer");
+    expectTrue(!fuse::profiler::isLastEventIndex(0u), "isLastEventIndex false on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("lookup_scope");
+    }
+
+    expectTrue(fuse::profiler::isFirstEventIndex(0u), "isFirstEventIndex true for first event");
+    expectTrue(fuse::profiler::isLastEventIndex(1u), "isLastEventIndex true for last event");
+    expectTrue(!fuse::profiler::isFirstEventIndex(1u), "isFirstEventIndex false for non-first index");
+    expectTrue(!fuse::profiler::isLastEventIndex(0u), "isLastEventIndex false for non-last index");
+
+    fuse::profiler::ProfileEvent outEvent{};
+    expectTrue(fuse::profiler::tryExportableEventAt(0u, outEvent),
+               "tryExportableEventAt true for exportable begin");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Begin, "tryExportableEventAt copies begin phase");
+    expectTrue(fuse::profiler::tryExportableEventAt(1u, outEvent),
+               "tryExportableEventAt true for exportable end");
+    expectTrue(!fuse::profiler::tryExportableEventAt(2u, outEvent),
+               "tryExportableEventAt false past event count");
+    expectTrue(outEvent.name == nullptr, "tryExportableEventAt clears output when out of range");
+}
+
+void testChromeTraceExportPreflightExtendedFields() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::ChromeTraceExportPreflight emptyPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(emptyPreflight.firstEventIndex == fuse::profiler::kInvalidEventIndex,
+               "preflight firstEventIndex invalid on empty buffer");
+    expectTrue(emptyPreflight.lastEventIndex == fuse::profiler::kInvalidEventIndex,
+               "preflight lastEventIndex invalid on empty buffer");
+    expectTrue(emptyPreflight.ringCapacity == fuse::profiler::ringCapacity(),
+               "preflight ringCapacity matches ringCapacity()");
+    expectTrue(emptyPreflight.droppedEventCount == 0u, "preflight dropped count zero on reset");
+    expectTrue(!emptyPreflight.isBufferFull, "preflight buffer not full on reset");
+    expectTrue(!emptyPreflight.canExportTrace(), "preflight canExportTrace false on empty buffer");
+    expectTrue(!emptyPreflight.hasExportWarnings(), "preflight hasExportWarnings false on reset");
+
+    {
+        FUSE_PROFILE_SCOPE("extended_preflight_scope");
+    }
+
+    const fuse::profiler::ChromeTraceExportPreflight filledPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(filledPreflight.firstEventIndex == 0u, "preflight firstEventIndex zero after recording");
+    expectTrue(filledPreflight.lastEventIndex == 1u, "preflight lastEventIndex points at scope end");
+    expectTrue(filledPreflight.canExportTrace(), "preflight canExportTrace true with exportable events");
+    expectTrue(!filledPreflight.hasExportWarnings(), "preflight hasExportWarnings false after balanced scope");
+    expectTrue(fuse::profiler::canExportChromeTrace(), "canExportChromeTrace true with exportable events");
+}
+
+void testDroppedEventCountGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::droppedEventCount() == 0u, "droppedEventCount zero on reset");
+
+    for (int i = 0; i < 4098; ++i) {
+        FUSE_PROFILE_COUNTER("overflow_counter", i);
+    }
+
+    expectTrue(fuse::profiler::eventCount() == fuse::profiler::ringCapacity(),
+               "event count caps at ring capacity");
+    expectTrue(fuse::profiler::isBufferFull(), "buffer full after overflow writes");
+    expectTrue(fuse::profiler::droppedEventCount() == 2u, "droppedEventCount tracks overwritten events");
+
+    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(preflight.isBufferFull, "preflight marks buffer full after overflow");
+    expectTrue(preflight.droppedEventCount == 2u, "preflight dropped count matches droppedEventCount()");
+    expectTrue(preflight.canExportTrace(), "preflight canExportTrace true when buffer full but exportable");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -1687,6 +1831,12 @@ int main() {
     testChromeTraceExportPreflightActiveScope();
     testChromeTraceExportPreflightNestingDepths();
     testChromeTraceExportPreflightDetachedFlow();
+    testIsEmptyEventNameGuard();
+    testAsyncFlowBeginEndPreflights();
+    testNestingStatePreflight();
+    testEventIndexLookupGuards();
+    testChromeTraceExportPreflightExtendedFields();
+    testDroppedEventCountGuard();
     testFatalHandlerHook();
     testVerifyMacro();
 
