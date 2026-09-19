@@ -2987,6 +2987,8 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const 
     if (buffer.canSkipSoAIteration()) {
         return PairBufferInvalidateSlotRejectReason::EmptyBuffer;
 
+    if (buffer.pairSlotCount == 0u || slot >= buffer.pairSlotCount || slot >= buffer.validFlags.size()) {
+
 bool pairBufferInvalidateSlotRejectsForReason(
     const PairBufferSoA& buffer,
     u32 slot,
@@ -3070,6 +3072,9 @@ bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer,
 
 
         *reason = reject;
+
+
+
 
 
 
