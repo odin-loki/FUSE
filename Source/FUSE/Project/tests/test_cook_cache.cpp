@@ -1889,3 +1889,10 @@ void testCookCachePruneReconcileShouldSkipGuards() {
     expectTrue(cache.should_skip_prune_reconcile(), "empty cache should_skip_prune_reconcile is true");
     expectTrue(!estimate.should_skip(), "shader stale prune estimate should_skip is false");
     expectTrue(!cache.should_skip_prune_reconcile(), "shader stale entry skips prune reconcile false");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-2a58 ---
+               "preflight should_skip agrees with mesh import helper");
+               "should_skip allows valid source-only cache key fold");
+               "would_invalidate_stale_content true when stored hash differs from revised key");
+               "prune estimate should_skip false when stale entry present");
+               "prune estimate should_skip true after prune");
