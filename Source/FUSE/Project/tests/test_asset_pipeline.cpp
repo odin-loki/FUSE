@@ -1951,3 +1951,7 @@ void testCookCachePreflightAndReconcileEstimators() {
 // --- deepen additive from deepen-b79-cooker-hash-0896 ---
     entryA.output_path = "/tmp/fuse_b79_est_chain_a.fusemesh";
     entryB.output_path = "/tmp/fuse_b79_est_chain_b.fusemesh";
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-709d ---
+    entryA.output_path = "/tmp/fuse_b79_reconcile_a.fusemesh";
+    entryB.output_path = "/tmp/fuse_b79_reconcile_b.fusemesh";

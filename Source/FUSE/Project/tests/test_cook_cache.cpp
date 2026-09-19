@@ -974,3 +974,7 @@ void testCookHashPreflightFnvAndCacheEntryGuards() {
     expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_would_out.fusemesh", {}, {}),
                "would_invalidate_stale_content with mismatched hash is true");
     testCookHashPreflightFnvAndCacheEntryGuards();
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-709d ---
+    const fuse::project::CookHashPreflight null_fnv =
+    expectTrue(null_fnv.reason == fuse::project::CookHashRejectReason::NullData,
