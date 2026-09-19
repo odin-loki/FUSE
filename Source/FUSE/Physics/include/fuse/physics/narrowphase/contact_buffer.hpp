@@ -746,3 +746,13 @@ FUSE_PHYSICS_INLINE bool writeContactBufferSlotWithPreflight(
     preflight.noValidSlots = preflight.reason == ContactBufferFrictionBasesRejectReason::NoValidSlots;
     return !preflightContactBufferFrictionBases(buffer).needsRebuild();
     return preflightContactBufferFrictionBases(buffer).needsRebuild();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-a927 ---
+    return !preflightContactBufferFrictionBasis(buffer).canBuild();
+    return preflightContactBufferFrictionBasis(buffer).canBuild();
+FUSE_PHYSICS_INLINE u32 ContactBufferSoA::compactWithPreflight() {
+    const ContactBufferCompactionPreflight preflight = preflightContactBufferCompaction(*this);
+FUSE_PHYSICS_INLINE u32 ContactBufferSoA::compactAndClampWithPreflight() {
+    const ContactBufferCompactAndClampPreflight preflight = preflightContactBufferCompactAndClamp(*this);
+FUSE_PHYSICS_INLINE bool ContactBufferSoA::buildFrictionTangentBasesWithPreflight() {
+    if (!preflightContactBufferFrictionBasis(*this).canBuild()) {

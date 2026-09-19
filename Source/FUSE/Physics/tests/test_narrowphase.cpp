@@ -3862,3 +3862,27 @@ void testWouldSkipAndTryWrapperGuards() {
         !fuse::physics::narrowphase::would_skip_manifold_finalize(finalizeReady),
         "would_skip finalize false for penetrating manifold");
         "would_skip friction rebuild true after valid basis built");
+
+// --- deepen additive from deepen-b4-narrowphase-guards-a927 ---
+        !buffer.tryWriteSlot(0u, selfPair),
+        "tryWriteSlot rejects self pair");
+    expectTrue(compactionPreflight.needsCompaction(), "compaction preflight allows compact with invalid tail");
+    expectTrue(buffer.compactWithPreflight() == 2u, "compactWithPreflight keeps valid slots");
+    expectTrue(buffer.compactAndClampWithPreflight() == 2u, "compactAndClampWithPreflight truncates to max");
+    expectTrue(exportPreflight.canExport(), "toVector preflight allows export after clamp");
+        "buildFrictionTangentBasesWithPreflight stores orthonormal basis");
+        !emptyFriction.buildFrictionTangentBasesWithPreflight(),
+        "into-buffer WithPreflight skips empty pair list");
+    expectTrue(rejectedPreflight.noDispatchablePairs, "into-buffer preflight flags all-rejected pairs");
+    expectTrue(!rejectedPreflight.canRun(), "into-buffer preflight cannot run all-rejected pairs");
+    expectTrue(validPreflight.canRun(), "into-buffer preflight allows dispatchable pair");
+        "into-buffer WithPreflight runs valid pair");
+    expectTrue(buffer.activeCount == 1u, "into-buffer WithPreflight produces contact");
+void testContactPairManifoldFrictionTryGuards() {
+        "would_skip_manifold_prune false when separated slot present");
+        !fuse::physics::narrowphase::would_skip_manifold_finalize(ready),
+        "would_skip_manifold_finalize false for penetrating manifold");
+        fuse::physics::narrowphase::would_skip_friction_basis_rebuild(noNormal),
+        "would_skip_friction_basis_rebuild on invalid normal");
+        !fuse::physics::narrowphase::would_skip_friction_tangents(needsBasis),
+        "would_skip_friction_tangents false for valid manifold");

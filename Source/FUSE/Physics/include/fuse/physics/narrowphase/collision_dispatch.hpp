@@ -402,3 +402,7 @@ FUSE_PHYSICS_INLINE bool try_preflight_narrowphase_into_buffer(
     case NarrowphaseIntoBufferRejectReason::BatchRejectsAll:
         return NarrowphaseIntoBufferRejectReason::BatchRejectsAll;
     preflight.batchRejectsAll = preflight.reason == NarrowphaseIntoBufferRejectReason::BatchRejectsAll;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-a927 ---
+    return !preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).canRun();
+    return preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).canRun();

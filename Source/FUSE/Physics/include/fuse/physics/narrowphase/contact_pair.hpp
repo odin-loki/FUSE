@@ -539,3 +539,7 @@ inline bool try_preflight_contact_pair_deepen(
     const NarrowphaseBatchPreflight preflight = preflight_narrowphase_batch(pairs, bodies, shapes);
 inline bool try_preflight_narrowphase_batch(
     NarrowphaseBatchPreflight& out) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-a927 ---
+inline bool try_compute_friction_tangents(ContactManifold& manifold) {
+    if (should_skip_friction_tangents(manifold)) {
