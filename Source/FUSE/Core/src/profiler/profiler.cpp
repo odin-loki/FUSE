@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace fuse::profiler {
@@ -311,6 +312,12 @@ bool isFlowDepthDetached() {
     return flowNestingDepth() != openAsyncFlowCount();
 }
 
+u32 flowDepthMismatch() {
+    const u32 localDepth = flowNestingDepth();
+    const u32 openCount = openAsyncFlowCount();
+    return localDepth > openCount ? localDepth - openCount : openCount - localDepth;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -331,6 +338,14 @@ bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
 
+bool isNullOrEmptyEventName(const char* name) {
+    return !isValidEventName(name);
+}
+
+bool wouldRecordWithName(const char* name) {
+    return enabled() && isValidEventName(name);
+}
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return isValidEventName(event.name);
 }
@@ -348,6 +363,52 @@ u32 exportableEventCount() {
 
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
+}
+
+u32 countEventsByPhase(EventPhase phase) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 findFirstEventIndexByPhase(EventPhase phase) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByPhase(EventPhase phase) {
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        if (eventAt(i - 1u).phase == phase) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findFirstEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.name != nullptr && std::strcmp(event.name, name) == 0) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
 }
 
 const ProfileEvent& emptyProfileEvent() {
@@ -377,6 +438,22 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     return isValidProfileEvent(outEvent);
 }
 
+bool tryEventAtPhase(u32 index, EventPhase phase, ProfileEvent& outEvent) {
+    if (!isEventIndexValid(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    const ProfileEvent& event = eventAt(index);
+    if (event.phase != phase || !isValidProfileEvent(event)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = event;
+    return true;
+}
+
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
     if (index == kInvalidEventIndex) {
@@ -389,6 +466,26 @@ bool tryFirstEvent(ProfileEvent& outEvent) {
 
 bool tryLastEvent(ProfileEvent& outEvent) {
     const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
+bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByPhase(phase);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByName(name);
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
         return false;
@@ -426,6 +523,11 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.maxScopeNestingDepth = maxNestingDepth();
     preflight.maxFlowNestingDepth = maxFlowNestingDepth();
     preflight.bufferEmpty = isBufferEmpty();
+    preflight.bufferFull = isBufferFull();
+    preflight.nonExportableEventCount =
+        preflight.eventCount > preflight.exportableEventCount
+            ? preflight.eventCount - preflight.exportableEventCount
+            : 0u;
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
