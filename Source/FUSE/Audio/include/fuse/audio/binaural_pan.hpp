@@ -1409,3 +1409,16 @@ bool try_preflight_hrtf_binaural_narrow(const HrtfBinauralPreflight& preflight,
 // --- deepen additive from b72-hrtf-reject-reason-wrappers-dacb ---
 bool try_preflight_hrtf_pan_path_spatial(bool hrtf_enabled, const HrtfIrStub& ir,
 bool try_preflight_hrtf_pan_path_spatial(bool hrtf_enabled, const Vec3& rel_listener,
+
+// --- deepen additive from b7-2-hrtf-reject-reason-wrappers-9f2e ---
+bool can_convolve_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason* reason);
+HrtfBinauralRejectReason hrtf_binaural_spatial_reject_reason(const HrtfBinauralPreflight& preflight);
+HrtfBinauralRejectReason hrtf_binaural_attenuation_coupling_reject_reason(
+bool hrtf_binaural_rejects_for_spatial_reason(const HrtfBinauralPreflight& preflight,
+bool hrtf_binaural_rejects_for_attenuation_coupling_reason(const HrtfBinauralPreflight& preflight,
+    HrtfBinauralRejectReason spatial_reject_reason() const;
+    HrtfBinauralRejectReason convolution_reject_reason() const;
+    HrtfBinauralRejectReason attenuation_coupling_reject_reason() const;
+bool can_apply_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight,
+bool can_convolve_hrtf_binaural(const HrtfBinauralPreflight& preflight,
+bool can_narrow_hrtf_binaural_spatial_image(const HrtfBinauralPreflight& preflight,
