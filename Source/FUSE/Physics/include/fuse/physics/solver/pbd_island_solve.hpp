@@ -1228,3 +1228,16 @@ struct IslandDispatchIndexPreflight {
 IslandSolveJobPreflight preflight_solve_island_job_by_index(const ContactIslandGraph& graph,
 bool should_skip_solve_island_job_stale(const IslandSolveJob& job,
 IslandDispatchIndexPreflight preflight_dispatch_island_by_index(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-faad ---
+struct SleepPassPreflight {
+struct WakePreflight {
+struct IslandSolveWorkPreflight {
+struct IslandConstraintIndexPreflight {
+SleepPassPreflight preflight_sleep_pass(const RigidBodySoA& bodies,
+bool should_skip_sleep_pass(const RigidBodySoA& bodies,
+WakePreflight preflight_wake_candidates(const RigidBodySoA& bodies,
+bool should_skip_island_solve_all_inactive(const RigidBodySoA& bodies,
+IslandSolveWorkPreflight preflight_island_solve_work(const RigidBodySoA& bodies,
+IslandConstraintIndexPreflight preflight_island_constraint_indices(
+IslandConstraintIndexPreflight preflight_island_constraint_indices_by_index(

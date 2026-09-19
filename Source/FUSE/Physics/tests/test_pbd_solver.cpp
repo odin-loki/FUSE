@@ -3327,3 +3327,38 @@ void testPreflightWarmStartCombinedGraphGuards() {
     testPreflightSolveIslandJobStaleIndices();
     testPreflightDispatchIslandByIndex();
     testPreflightWarmStartCombinedGraphGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-faad ---
+    const IslandBuildPreflight preflight = preflight_island_build(3, contacts, constraints);
+    expectTrue(contactBuildRejectReason(contacts[0], 3) == IslandBuildRejectReason::None,
+    expectTrue(contactBuildRejectReason(contacts[1], 3) == IslandBuildRejectReason::InvalidContact,
+    expectTrue(contactBuildRejectReason(contacts[2], 3) == IslandBuildRejectReason::SelfPair,
+    expectTrue(contactBuildRejectReason(contacts[3], 3) == IslandBuildRejectReason::OutOfRangeBody,
+    expectTrue(emptyPreflight.skipped, "build preflight skips empty inputs");
+void testValidateIslandIndicesGuard() {
+void testPreflightSleepPassGuards() {
+    const SleepPassPreflight preflight = preflight_sleep_pass(bodies, linearThreshold, angularThreshold);
+    const SleepPassPreflight inactivePreflight =
+    expectTrue(inactivePreflight.skipped, "sleep preflight skips when no active dynamic bodies");
+    expectTrue(should_skip_sleep_pass(inactive, linearThreshold, angularThreshold),
+               "should_skip_sleep_pass on inactive scene");
+void testPreflightWakeCandidatesGuards() {
+    const WakePreflight preflight = preflight_wake_candidates(bodies, linearThreshold, angularThreshold);
+    const WakePreflight none = preflight_wake_candidates(bodies, linearThreshold, angularThreshold);
+void testIslandInactiveAndConstraintPreflights() {
+    expectTrue(should_skip_island_solve_all_inactive(bodies, island),
+               "should_skip_island_solve_all_inactive on sleeping island");
+    expectTrue(!should_skip_island_solve_all_inactive(bodies, island),
+    const IslandSolveWorkPreflight workPreflight = preflight_island_solve_work(bodies, work);
+    expectTrue(workPreflight.insufficientBufferCapacity, "work preflight flags insufficient buffer");
+    expectTrue(!workPreflight.can_solve(), "work preflight cannot solve with undersized buffer");
+    const IslandSolveWorkPreflight sufficient = preflight_island_solve_work(bodies, work);
+    const IslandConstraintIndexPreflight indexPreflight =
+    expectTrue(!indexPreflight.skipped, "constraint index preflight does not skip constrained island");
+    expectTrue(indexPreflight.indices_valid(), "constraint indices valid for consistent graph");
+    expectTrue(indexPreflight.ownedDistanceCount == 1u, "constraint index preflight counts distance slots");
+    const IslandConstraintIndexPreflight oobPreflight =
+    expectTrue(oobPreflight.skipped, "constraint index preflight skips out-of-range island");
+    testPreflightSleepPassGuards();
+    testPreflightWakeCandidatesGuards();
+    testIslandInactiveAndConstraintPreflights();

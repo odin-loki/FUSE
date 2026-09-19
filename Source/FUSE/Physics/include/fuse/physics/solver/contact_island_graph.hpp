@@ -113,3 +113,16 @@ private:
 };
 
 } // namespace fuse::physics
+
+// --- deepen additive from deepen-pbd-island-guards-faad ---
+enum class IslandBuildRejectReason : u8 {
+const char* islandBuildRejectReasonName(IslandBuildRejectReason reason);
+FUSE_PHYSICS_INLINE IslandBuildRejectReason contactBuildRejectReason(
+        return IslandBuildRejectReason::InvalidContact;
+        return IslandBuildRejectReason::SelfPair;
+        return IslandBuildRejectReason::OutOfRangeBody;
+    return IslandBuildRejectReason::None;
+FUSE_PHYSICS_INLINE IslandBuildRejectReason distanceBuildRejectReason(
+struct IslandBuildPreflight {
+IslandBuildPreflight preflight_island_build(u32 bodyCount,
+bool should_skip_island_build(u32 bodyCount,

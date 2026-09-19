@@ -281,3 +281,15 @@ u32 ContactIslandGraph::bodyIsland(u32 bodyIndex) const {
 }
 
 } // namespace fuse::physics
+
+// --- deepen additive from deepen-pbd-island-guards-faad ---
+const char* islandBuildRejectReasonName(IslandBuildRejectReason reason) {
+    case IslandBuildRejectReason::None:
+    case IslandBuildRejectReason::SelfPair:
+    case IslandBuildRejectReason::OutOfRangeBody:
+    case IslandBuildRejectReason::InvalidContact:
+IslandBuildPreflight preflight_island_build(u32 bodyCount,
+    IslandBuildPreflight preflight{};
+        const IslandBuildRejectReason reason = contactBuildRejectReason(contact, bodyCount);
+        const IslandBuildRejectReason reason = distanceBuildRejectReason(constraint, bodyCount);
+bool should_skip_island_build(u32 bodyCount,

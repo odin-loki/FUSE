@@ -2018,3 +2018,15 @@ bool should_skip_solve_island_job_stale(const IslandSolveJob& job,
     const IslandSolveJobPreflight preflight = preflight_solve_island_job(job, contacts, distanceConstraints);
 IslandDispatchIndexPreflight preflight_dispatch_island_by_index(const ContactIslandGraph& graph,
     IslandDispatchIndexPreflight preflight{};
+
+// --- deepen additive from deepen-pbd-island-guards-faad ---
+SleepPassPreflight preflight_sleep_pass(const RigidBodySoA& bodies,
+    SleepPassPreflight preflight{};
+bool should_skip_sleep_pass(const RigidBodySoA& bodies,
+WakePreflight preflight_wake_candidates(const RigidBodySoA& bodies,
+bool should_skip_island_solve_all_inactive(const RigidBodySoA& bodies,
+IslandSolveWorkPreflight preflight_island_solve_work(const RigidBodySoA& bodies,
+    IslandSolveWorkPreflight preflight{};
+IslandConstraintIndexPreflight preflight_island_constraint_indices(
+    IslandConstraintIndexPreflight preflight{};
+IslandConstraintIndexPreflight preflight_island_constraint_indices_by_index(
