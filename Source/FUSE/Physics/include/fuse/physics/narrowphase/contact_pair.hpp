@@ -351,5 +351,23 @@ bool generate_contact_manifold_guarded(ContactManifold& manifold);
 
 /// Guarded pair detect: preflight then `detect_contacts_pair` (B4.4 deepen pass).
 ContactManifold detect_contacts_pair_guarded(
+/// Body-index overload mirroring broadphase reject diagnostics (B4.5 deepen pass).
+ContactPairRejectReason contact_pair_reject_reason(
+    u32 bodyA,
+    u32 bodyB,
+
+/// Returns true when narrowphase may dispatch this pair (B4.5 deepen pass).
+bool is_contact_pair_dispatchable(
+
+/// Explicit reject guard; inverse of `is_contact_pair_dispatchable` (B4.5 deepen pass).
+bool should_reject_contact_pair(
+
+/// Returns true when `preflight.reason` matches `expected` (B4.5 deepen pass).
+bool contact_pair_preflight_matches_reason(
+
+/// Count pairs rejected before narrowphase dispatch (B4.5 deepen pass).
+u32 count_rejected_contact_pairs(
+
+/// Count pairs that pass contact-pair preflight (B4.5 deepen pass).
 
 } // namespace fuse::physics::narrowphase

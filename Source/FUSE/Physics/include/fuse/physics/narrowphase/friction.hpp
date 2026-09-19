@@ -268,5 +268,23 @@ bool should_skip_friction_basis_rebuild_preflight(
 
 /// Guarded rebuild: preflight then `compute_friction_tangents_if_needed` (B4.4 deepen pass).
 void rebuild_friction_basis_guarded(ContactManifold& manifold, f32 epsilon = 1e-4f);
+    bool needsNormalization = false;
+
+
+/// Populate friction-basis rebuild preflight without mutating the manifold (B4.5 deepen pass).
+
+/// Early-out guard before friction-basis rebuild (B4.5 deepen pass).
+bool should_skip_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Returns true when `contactNormal` length deviates from unit length (B4.5 deepen pass).
+bool contact_normal_needs_normalization(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Outcome for guarded friction-basis rebuild (B4.5 deepen pass).
+struct FrictionBasisRebuildResult {
+    bool rebuilt = false;
+
+/// Rebuild friction basis only when preflight requires it (B4.5 deepen pass).
+FrictionBasisRebuildResult rebuild_friction_basis_guarded(
+    ContactManifold& manifold,
 
 } // namespace fuse::physics::narrowphase
