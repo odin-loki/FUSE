@@ -1622,3 +1622,6 @@ int main() {
     std::fprintf(stderr, "fuse_ai_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-u5-ai-bt-blackboard-0ba1 ---
+void testParallelRequireAgentGuard() {
