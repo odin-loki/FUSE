@@ -114,4 +114,27 @@ struct PairBufferSortPreflight {
 
 PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer);
 
+/// Read-only compact+clamp diagnostics — no mutation (B4.2 deepen pass).
+struct PairBufferCompactAndClampPreflight {
+    bool emptyBuffer = false;
+    bool needsCompaction = false;
+    bool needsClamp = false;
+
+    bool needsWork() const { return !emptyBuffer && (needsCompaction || needsClamp); }
+};
+
+PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer);
+
+/// Non-mutating compact+clamp skip predicate — true only when the buffer is empty (B4.2 deepen pass).
+bool canSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer);
+
+/// Non-mutating compaction skip predicate — mirrors `PairBufferSoA::canSkipCompaction` (B4.2 deepen pass).
+bool canSkipPairBufferCompaction(const PairBufferSoA& buffer);
+
+/// Non-mutating clamp skip predicate — mirrors `PairBufferSoA::canSkipMaxCapacityClamp` (B4.2 deepen pass).
+bool canSkipPairBufferClamp(const PairBufferSoA& buffer);
+
+/// Non-mutating sort skip predicate — inverse of `preflightPairBufferSort::needsSort` (B4.2 deepen pass).
+bool canSkipPairBufferSort(const PairBufferSoA& buffer);
+
 } // namespace fuse::physics::broadphase

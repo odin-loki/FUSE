@@ -112,7 +112,7 @@ u32 PairBufferSoA::compact() {
         return activeCount;
     }
 
-    if (canSkipCompaction()) {
+    if (canSkipPairBufferCompaction(*this)) {
         activeCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
         pairSlotCount = activeCount;
         bodyA.resize(activeCount);
@@ -145,7 +145,7 @@ u32 PairBufferSoA::compact() {
 }
 
 void PairBufferSoA::sortCanonical() {
-    if (!preflightPairBufferSort(*this).needsSort()) {
+    if (canSkipPairBufferSort(*this)) {
         return;
     }
 
@@ -177,7 +177,7 @@ void PairBufferSoA::sortCanonical() {
 }
 
 u32 PairBufferSoA::applyMaxCapacityClamp() {
-    if (!canApplyMaxCapacityClamp()) {
+    if (canSkipPairBufferClamp(*this)) {
         return activeCount;
     }
 
@@ -195,6 +195,10 @@ u32 PairBufferSoA::applyMaxCapacityClamp() {
 }
 
 u32 PairBufferSoA::compactAndClamp() {
+    if (canSkipPairBufferCompactAndClamp(*this)) {
+        return activeCount;
+    }
+
     compact();
     return applyMaxCapacityClamp();
 }
@@ -342,6 +346,32 @@ PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer) {
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.singlePair = !preflight.emptyBuffer && buffer.activeCount <= 1u;
     return preflight;
+}
+
+PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
+    const PairBufferCompactionPreflight compactionPreflight = preflightPairBufferCompaction(buffer);
+    const PairBufferClampPreflight clampPreflight = preflightPairBufferClamp(buffer);
+    PairBufferCompactAndClampPreflight preflight{};
+    preflight.emptyBuffer = compactionPreflight.emptyBuffer;
+    preflight.needsCompaction = compactionPreflight.needsCompaction();
+    preflight.needsClamp = clampPreflight.needsClamp();
+    return preflight;
+}
+
+bool canSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
+    return preflightPairBufferCompactAndClamp(buffer).emptyBuffer;
+}
+
+bool canSkipPairBufferCompaction(const PairBufferSoA& buffer) {
+    return buffer.canSkipCompaction();
+}
+
+bool canSkipPairBufferClamp(const PairBufferSoA& buffer) {
+    return buffer.canSkipMaxCapacityClamp();
+}
+
+bool canSkipPairBufferSort(const PairBufferSoA& buffer) {
+    return !preflightPairBufferSort(buffer).needsSort();
 }
 
 } // namespace fuse::physics::broadphase
