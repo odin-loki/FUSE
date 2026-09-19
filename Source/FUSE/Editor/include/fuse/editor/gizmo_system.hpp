@@ -1269,6 +1269,9 @@ bool gizmoTransformEquals(const GizmoTransform& a, const GizmoTransform& b);
 
 /// Combined pick / snap / drag preflight for one interaction frame (B6.4 deepen follow-up).
 struct GizmoInteractionPreflight {
+
+/// Combined pick / snap / drag interaction diagnostics — no mutation (B6.4 deepen pass).
+struct InteractionPreflight {
     PickPreflight pick{};
     SnapPreflight snap{};
     BeginDragPreflight begin{};
@@ -1312,6 +1315,15 @@ BeginInteractionPreflight preflightBeginInteraction(const GizmoRay& ray,
                                                     const GizmoTransform& transform, GizmoMode mode,
                                                     GizmoSpace space, f32 axisLength,
 BeginInteractionPreflight preflightBeginInteraction(const GizmoHitTest& hit, GizmoMode mode,
+    bool canUpdate() const { return update.canUpdate(); }
+    bool canEnd() const { return end.canEnd(); }
+};
+
+InteractionPreflight preflightInteraction(const GizmoRay& ray, const GizmoTransform& transform,
+                                          GizmoMode mode, GizmoSpace space, f32 axisLength,
+                                          const GizmoSnapSettings& settings);
+InteractionPreflight preflightInteraction(const GizmoHitTest& hit, GizmoMode mode, bool dragging,
+                                          GizmoAxis activeAxis, const GizmoSnapSettings& settings);
 
 /// Pick axis with empty-hit guards — returns false when pick misses (B6.4 deepen follow-up).
 bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -1623,6 +1635,8 @@ public:
         const EndDragPreflight& preflight) const;
     [[nodiscard]] bool canSnapDragDelta() const;
     [[nodiscard]] f32 trySnapDragDelta(f32 delta) const;
+    /// Combined pick / snap / drag interaction diagnostics (B6.4 deepen pass).
+    [[nodiscard]] InteractionPreflight preflightInteraction(const GizmoRay& ray,
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
