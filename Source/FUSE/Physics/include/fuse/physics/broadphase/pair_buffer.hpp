@@ -2180,6 +2180,7 @@ PairBufferWriteRejectReason pairBufferWriteRejectReason(
 
 
 
+
     const PairBufferSoA& buffer,
     u32 slot,
     u32 idxA,
@@ -2293,6 +2294,9 @@ struct PairBufferWritePreflight {
 
 
 PairBufferWritePreflight preflightPairBufferWrite(
+
+
+
 
 
 
@@ -2422,9 +2426,7 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(
     u32 slot);
 
 /// Returns true when `pairBufferInvalidateSlotRejectReason` matches `expected` (B4.2 deepen follow-up pass).
-/// Diagnose why invalidateSlot would skip; vacuously succeeds when invalidate may proceed.
 
-    const PairBufferSoA& buffer,
     u32 slot,
     PairBufferInvalidateSlotRejectReason expected);
 
@@ -2440,7 +2442,6 @@ struct PairBufferInvalidateSlotPreflight {
 
 
 
-};
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
 
@@ -2571,9 +2572,12 @@ enum class PairBufferInvalidateRejectReason : u8 {
 /// Non-mutating slot-write predicate — mirrors `preflightPairBufferWrite` (B4.2 deepen follow-up pass).
 
 
+
+
 /// Human-readable label for pair-buffer invalidate reject reasons (logging / tests).
 const char* pairBufferInvalidateRejectReasonName(PairBufferInvalidateRejectReason reason);
 
+/// Diagnose why slot invalidate would skip; vacuously succeeds when invalidate may proceed.
 PairBufferInvalidateRejectReason pairBufferInvalidateRejectReason(const PairBufferSoA& buffer, u32 slot);
 
 /// Returns true when `pairBufferInvalidateRejectReason` matches `expected` (B4.2 deepen pass).
@@ -2610,6 +2614,14 @@ bool canSkipPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot);
 
 
 /// Non-mutating slot-invalidate predicate — mirrors `preflightPairBufferInvalidate` (B4.2 deepen follow-up pass).
+
+/// Read-only slot-invalidate diagnostics — no mutation (B4.2 deepen pass).
+    bool alreadyInvalid = false;
+
+
+
+/// Non-mutating slot-invalidate skip predicate — inverse of `canInvalidate` (B4.2 deepen pass).
+
 bool shouldRunPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot);
 
 } // namespace fuse::physics::broadphase

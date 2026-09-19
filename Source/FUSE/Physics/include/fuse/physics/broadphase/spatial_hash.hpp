@@ -3927,7 +3927,6 @@ struct CellPairGenPreflight {
     bool emptyOccupants = false;
     u32 pairSlotCount = 0;
 
-};
 
 CellPairGenPreflight preflightCellPairGeneration(const std::vector<u32>& occupants);
 
@@ -3981,7 +3980,6 @@ bool shouldRunCellShapeInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& ra
 
 bool shouldRunCellShapeInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxCells);
     bool insufficientOccupants = false;
-    u32 pairCount = 0;
 
 
 
@@ -4007,8 +4005,6 @@ u32 countCellPairSlots(const std::vector<u32>& occupants);
 
 /// Why shape→cell insertion would skip (B4.2 deepen pass).
 enum class CellCapacityInsertRejectReason : u8 {
-    None = 0,
-    OutOfRangeBody,
     EmptyRange,
 /// Read-only per-cell pair-generation diagnostics — no mutation (B4.2 deepen pass).
 
@@ -4016,7 +4012,6 @@ enum class CellCapacityInsertRejectReason : u8 {
 
 
 
-    OccupancyRejected,
     bool singletonOccupants = false;
 
 
@@ -4029,7 +4024,6 @@ bool shouldRunCellPairGeneration(u32 occupantCount, u32 uniqueOccupantCount);
 /// Estimate canonical pair count for a cell with `uniqueOccupantCount` bodies (0 when < 2).
 FUSE_PHYSICS_INLINE u32 estimateCellPairCount(u32 uniqueOccupantCount) {
     return estimatePairCountForUniqueBodies(uniqueOccupantCount);
-}
 
 /// Why shape cell-capacity insertion would early-out (B4.2 deepen pass).
 
@@ -4048,7 +4042,6 @@ bool cellCapacityInsertRejectsForReason(
 
 
 
-/// Diagnose why shape→cell insertion would skip; vacuously succeeds when insertion may proceed.
     bool singletonOccupant = false;
 
 
@@ -4076,20 +4069,13 @@ FUSE_PHYSICS_INLINE bool shouldRunCellPairGeneration(u32 occupantCount) {
 FUSE_PHYSICS_INLINE bool shouldRunCellPairGeneration(const std::vector<u32>& occupants) {
     return preflightCellPairGeneration(occupants).canGenerate();
 
-enum class ShapeCellInsertRejectReason : u8 {
     ExceedsOccupancy,
 
 /// Human-readable label for shape cell-insert reject reasons (logging / tests).
-const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason);
 
 /// Diagnose why shape cell insertion would skip; vacuously succeeds when insertion may proceed.
-ShapeCellInsertRejectReason shapeCellInsertRejectReason(
-    u32 bodyIndex,
-    u32 bodyCount,
-    const CellRange3& range,
     u32 maxOccupancy);
 
-    const CellRange2& range,
 
     u32 maxOccupancy,
 
@@ -4097,7 +4083,6 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReason(
 /// Read-only shape→cell insertion diagnostics — no mutation (B4.2 deepen pass).
 struct CellCapacityInsertPreflight {
     CellCapacityInsertRejectReason reason = CellCapacityInsertRejectReason::None;
-    bool outOfRangeBody = false;
     bool emptyRange = false;
     u32 occupancyCount = 0;
 
@@ -4126,45 +4111,30 @@ u32 countPairsForCell(const std::vector<u32>& occupants);
 
 
 
-enum class ShapeCellInsertRejectReason : u8 {
     ExceedsOccupancyBudget,
 
-/// Human-readable label for shape cell-insert reject reasons (logging / tests).
-const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason);
 
 ShapeCellInsertRejectReason shapeCellInsertRejectReason(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy);
 
 ShapeCellInsertRejectReason shapeCellInsertRejectReason(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy);
 
 /// Returns true when `shapeCellInsertRejectReason` matches `expected` (B4.2 deepen pass).
-bool shapeCellInsertRejectsForReason(
-    ShapeCellInsertRejectReason expected);
 
 
-struct ShapeCellInsertPreflight {
-    ShapeCellInsertRejectReason reason = ShapeCellInsertRejectReason::None;
     bool exceedsOccupancyBudget = false;
 
-    bool canInsert() const { return reason == ShapeCellInsertRejectReason::None; }
 
 ShapeCellInsertPreflight preflightShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy);
 
 ShapeCellInsertPreflight preflightShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy);
 
-ShapeCellInsertRejectReason shapeCellInsertRejectReason(
-    u32 bodyIndex,
-    u32 bodyCount,
-    u32 maxOccupancy);
 
-    const CellRange3& range,
 
 
 /// Read-only shape cell-insert diagnostics — no mutation (B4.2 deepen pass).
     bool exceedsOccupancy = false;
 
-};
 
-ShapeCellInsertPreflight preflightShapeCellInsert(
 
 
 /// Non-mutating shape cell-insert skip predicate — inverse of `canInsert` (B4.2 deepen pass).
@@ -4176,9 +4146,7 @@ bool canSkipShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& rang
 bool shouldRunShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy);
 
 bool shouldRunShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy);
-    bool exceedsBudget = false;
 
-};
 
 
 
@@ -4189,6 +4157,30 @@ bool canSkipCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& r
 bool shouldRunCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy);
 
 bool shouldRunCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy);
+/// Pair count for `uniqueOccupantCount` bodies in one hash cell (0 when n < 2).
+FUSE_PHYSICS_INLINE u32 estimatePairsForUniqueOccupants(u32 uniqueOccupantCount) {
+
+
+
+FUSE_PHYSICS_INLINE CellPairGenRejectReason cellPairGenRejectReason(u32 uniqueOccupantCount) {
+    if (uniqueOccupantCount == 0u) {
+    if (uniqueOccupantCount < 2u) {
+        return CellPairGenRejectReason::InsufficientOccupants;
+
+FUSE_PHYSICS_INLINE bool cellPairGenRejectsForReason(u32 uniqueOccupantCount, CellPairGenRejectReason expected) {
+    return cellPairGenRejectReason(uniqueOccupantCount) == expected;
+
+    u32 uniqueOccupantCount = 0;
+
+
+
+
+
+/// Why shape→cell insertion would skip occupancy iteration (B4.2 deepen pass).
+    EmptyCellRange,
+
+/// Human-readable label for shape-cell insert reject reasons (logging / tests).
+
     u32 shapeIndex,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
@@ -4247,6 +4239,32 @@ FUSE_PHYSICS_INLINE bool shouldRunCellCapacityInsert(const CellRange3& range, u3
 FUSE_PHYSICS_INLINE bool shouldRunCellCapacityInsert(const CellRange2& range, u32 maxCells) {
 /// Non-mutating shape cell-insert predicate — mirrors `preflightShapeCellInsert` (B4.2 deepen pass).
 
+/// Returns true when `shapeCellInsertRejectReason` matches `expected` (B4.2 deepen pass).
+bool shapeCellInsertRejectsForReason(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    ShapeCellInsertRejectReason expected);
+
+struct ShapeCellInsertPreflight {
+    ShapeCellInsertRejectReason reason = ShapeCellInsertRejectReason::None;
+    bool outOfRangeBody = false;
+    bool emptyCellRange = false;
+    bool exceedsOccupancyBudget = false;
+    u32 occupancyCount = 0;
+
+    bool canInsert() const { return reason == ShapeCellInsertRejectReason::None; }
+};
+
+ShapeCellInsertPreflight preflightShapeCellInsert(
+    bool use2D);
+
+/// Non-mutating shape→cell insert skip predicate — inverse of `canInsert` (B4.2 deepen pass).
+bool canSkipShapeCellInsert(
+
+/// Non-mutating shape→cell insert predicate — mirrors `preflightShapeCellInsert` (B4.2 deepen pass).
+bool shouldRunShapeCellInsert(
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
