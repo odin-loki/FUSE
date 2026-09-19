@@ -214,3 +214,7 @@ struct CookCacheEntryPreflight {
 // --- deepen additive from deepen-b79-cooker-hash-preflight-6a72 ---
     [[nodiscard]] bool would_invalidate() const { return total_entries() > 0; }
     [[nodiscard]] bool would_prune() const { return total_entries() > 0; }
+
+// --- deepen additive from deepen-b79-cooker-hash-a61f ---
+    [[nodiscard]] bool would_invalidate_stale_content(const std::string& source_path,
+    [[nodiscard]] bool would_invalidate_stale_upstream(

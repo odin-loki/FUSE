@@ -1093,3 +1093,15 @@ void testCookHashPreflightFnvAndManifestCook() {
     const fuse::project::CookHashPreflight combine_preflight =
     expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, current_hash),
                "would_invalidate_stale_content with stale hash is true");
+
+// --- deepen additive from deepen-b79-cooker-hash-a61f ---
+    const fuse::project::CookHashPreflight empty_fnv = fuse::project::preflight_fnv1a64_bytes(nullptr, 0);
+                   fuse::project::CookHashRejectReason::UnresolvedDependency)) == "unresolved_dependency",
+    const fuse::project::CookHashPreflight unresolved_upstream =
+    expectTrue(unresolved_upstream.reason == fuse::project::CookHashRejectReason::UnresolvedDependency,
+    expectTrue(!cooker.cache().would_invalidate_stale_content(source, seeded.content_hash),
+    expectTrue(cooker.cache().would_invalidate_stale_content(source, seeded.content_hash + 1u),
+    expectTrue(!cooker.cache().would_invalidate_stale_upstream({{source, 0u}}),
+               "would_invalidate_stale_upstream false when upstream hash matches");
+    expectTrue(cooker.cache().would_invalidate_stale_upstream({{source, 42u}}),
+               "would_invalidate_stale_upstream true when upstream hash mismatches");

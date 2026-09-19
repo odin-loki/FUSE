@@ -857,3 +857,7 @@ CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
         preflight.reason = CookHashRejectReason::EmptyInputPath;
         preflight.reason = CookHashRejectReason::EmptyOutputPath;
         preflight.reason = CookHashRejectReason::None;
+
+// --- deepen additive from deepen-b79-cooker-hash-a61f ---
+bool CookCache::would_invalidate_stale_content(const std::string& source_path, u64 current_content_hash) const {
+bool CookCache::would_invalidate_stale_upstream(
