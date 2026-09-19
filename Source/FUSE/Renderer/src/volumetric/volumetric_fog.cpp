@@ -2401,3 +2401,6 @@ bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReas
 bool gridDensityRejectReasonIsBlocking(GridDensityRejectReason reason);
 bool densityLookupRejectReasonIsBlocking(DensityLookupRejectReason reason);
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-f48a ---
+        tryMapScreenDepthToFroxelIndex(screenX, screenY, viewDepth, desc, camera, index, mapReason);

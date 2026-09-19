@@ -4073,3 +4073,10 @@ void testFroxelDeepenIsBlockingAndPreflightGuards() {
                "classifyDensityLookupRejectAtCoord reports none for in-range coords");
                "preflightTrilinearSample still succeeds for clampable weights");
                "classifyFroxelTrilinearSampleReject reports invalid_sample_coords for hard OOB");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-f48a ---
+               "preflightScreenMapping coords lie in grid");
+    expectTrue(froxelIndex < desc.froxelCount(), "preflightScreenDepthToFroxelIndex returns in-bounds index");
+                   0.5f, 0.5f, 10.f, zeroDesc, camera) == fuse::renderer::ScreenMappingRejectReason::EmptyGrid,
+               "preflightFroxelTrilinearSample reports clampable_weights");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulate(desc, badCamera, params, &populateReason),
