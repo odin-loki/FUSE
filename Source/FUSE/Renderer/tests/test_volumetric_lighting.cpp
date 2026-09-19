@@ -3384,3 +3384,16 @@ void testFroxelClassifyAndIsBlockingGuards() {
                "preflightScreenMapping writes reject reason on failure");
                "preflightScreenMapping reports depth_out_of_range on failure");
     testFroxelClassifyAndIsBlockingGuards();
+
+// --- deepen additive from froxel-volumetric-b511-guards-5ae7 ---
+                   fuse::renderer::SampleCoordRejectReason::EmptyGrid),
+    expectTrue(fuse::renderer::FroxelGridLayout::classifySampleCoordReject(inBounds, zeroDesc) ==
+               "classifySampleCoordReject empty_grid for empty desc");
+               "preflightScreenMapping succeeds for valid mapping");
+               "classifyScreenMappingReject depth_out_of_range for below-near depth");
+    expectTrue(fuse::renderer::froxel_util::classifyDensityLookupRejectAtCoord(grid, desc, 1u, 1u, 2u) ==
+               "classifyDensityLookupRejectAtCoord none for in-range coords");
+    expectTrue(fuse::renderer::froxel_util::classifyDensityLookupRejectAtCoord(grid, desc, 99u, 99u, 99u) ==
+               "classifyDensityLookupRejectAtCoord index_out_of_range for OOB coords");
+               "classifyFroxelTrilinearSampleReject invalid_sample_coords for hard OOB coords");
+               "classifyFroxelPopulateReject invalid_camera for inverted camera");
