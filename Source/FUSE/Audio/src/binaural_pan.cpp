@@ -990,3 +990,8 @@ bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
         preflight.reject = HrtfAttenuationCouplingPreflightReject::UnityAttenuation;
     preflight.reject = HrtfAttenuationCouplingPreflightReject::None;
                                              HrtfAttenuationCouplingPreflightReject* reject,
+
+// --- deepen additive from deepen-b72-hrtf-preflights-bc2e ---
+HrtfIrPreflight preflight_hrtf_ir_stub(const HrtfIrStub& ir) {
+HrtfPanPathPreflight preflight_hrtf_pan_path_guarded(bool hrtf_enabled, const HrtfIrStub& ir,
+HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling_for_path(

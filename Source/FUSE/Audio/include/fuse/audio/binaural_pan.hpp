@@ -665,3 +665,11 @@ bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const 
 enum class HrtfAttenuationCouplingPreflightReject : u8 {
     HrtfAttenuationCouplingPreflightReject reject = HrtfAttenuationCouplingPreflightReject::None;
                                              HrtfAttenuationCouplingPreflightReject* reject = nullptr,
+
+// --- deepen additive from deepen-b72-hrtf-preflights-bc2e ---
+enum class HrtfIrSkipReason : u8 {
+HrtfIrPreflight preflight_hrtf_ir_stub(const HrtfIrStub& ir);
+enum class HrtfPanPathSkipReason : u8 {
+HrtfPanPathPreflight preflight_hrtf_pan_path_guarded(bool hrtf_enabled, const HrtfIrStub& ir,
+enum class HrtfAttenuationCouplingSkipReason : u8 {
+HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling_for_path(
