@@ -2224,6 +2224,7 @@ struct CellPairGenPreflight {
     u32 pairCount = 0;
 
 
+
 };
 
 /// Count unique body indices in a hash-cell occupant list (cell-pair gen budgeting stub).
@@ -2376,6 +2377,8 @@ bool shouldRunCellCapacityInsert(
 
 };
 
+
+
     u32 shapeIndex,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
@@ -2418,6 +2421,11 @@ bool canSkipShapeCellInsert(
 
 /// Non-mutating shape→cell insert predicate — mirrors `preflightShapeCellInsert` (B4.2 deepen pass).
 bool shouldRunShapeCellInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D);
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
