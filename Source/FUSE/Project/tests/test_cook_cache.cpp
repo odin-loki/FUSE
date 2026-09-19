@@ -1242,3 +1242,7 @@ void testCookHashShaderAndManifestUpstreamPreflights() {
 
 // --- deepen additive from deepen-b79-cooker-hash-3f9b ---
     expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash),
+
+// --- deepen additive from deepen-b79-cooker-hash-3c16 ---
+    expectTrue(cooker.cache().would_invalidate_all(), "would_invalidate_all true on populated cache");
+    expectTrue(!cooker.cache().would_invalidate_all(), "would_invalidate_all false after source invalidation");
