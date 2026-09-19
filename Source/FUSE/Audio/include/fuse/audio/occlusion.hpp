@@ -36,11 +36,9 @@ bool should_evaluate_occlusion_blockers(const Vec3& listener, const Vec3& source
 
 /// True when blocker visibility/factor evaluation can be skipped (empty list or co-located).
 bool should_skip_blockers_visibility(const Vec3& listener, const Vec3& source,
-                                     const AABB* blockers, u32 blocker_count);
 
 /// True when the blocker attenuation pipeline can be bypassed (no geometry to evaluate).
 bool should_skip_occlusion_blocker_attenuation(const Vec3& listener, const Vec3& source,
-                                               const AABB* blockers, u32 blocker_count);
 
 /// True when segment-vs-AABB blocker ray evaluation can be skipped (empty list or fully occluded source).
 bool should_skip_occlusion_blocker_raycast(float source_occlusion, const AABB* blockers,
@@ -51,6 +49,10 @@ bool should_skip_combine_occlusion_visibility(float source_occlusion, float bloc
 
 /// True when visibility is fully clear — attenuation mapping can be skipped.
 bool should_skip_occlusion_attenuation(float visibility);
+/// True when blocker geometry evaluation should be skipped (no blockers, fully occluded source, or co-located).
+bool should_skip_occlusion_blocker_eval(const Vec3& listener, const Vec3& source,
+                                        const AABB* blockers, u32 blocker_count,
+                                        float source_occlusion);
 
 /// Map visibility [0, 1] to a gain multiplier. Fully occluded sources retain `min_gain`.
 float evaluate_occlusion_gain(float visibility, const OcclusionParams& params = {});
@@ -63,6 +65,15 @@ struct OcclusionAttenuation {
     float gain = 1.f;
     float hf_gain = 1.f;
 };
+
+/// Product of LF and HF occlusion gains for mixer attenuation.
+float compute_occlusion_combined_gain(const OcclusionAttenuation& attenuation);
+
+/// True when both LF and HF gains are at unity (no occlusion attenuation).
+bool is_unity_occlusion_attenuation(const OcclusionAttenuation& attenuation);
+
+/// Unity LF/HF occlusion attenuation — passthrough stub.
+OcclusionAttenuation make_unity_occlusion_attenuation();
 
 OcclusionAttenuation evaluate_occlusion_attenuation(float visibility,
                                                   const OcclusionParams& params = {});

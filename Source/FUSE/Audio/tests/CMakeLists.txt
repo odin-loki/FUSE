@@ -21,6 +21,7 @@ add_test(NAME fuse_audio_binaural_hrtf COMMAND fuse_audio_binaural_hrtf_tests)
 
 add_executable(fuse_audio_occlusion_reverb_tests
     test_occlusion_reverb.cpp
+    test_audio_occlusion_reverb.cpp
 )
 
 target_link_libraries(fuse_audio_occlusion_reverb_tests PRIVATE fuse_audio fuse_core)
