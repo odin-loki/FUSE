@@ -313,3 +313,23 @@ ProfileNamePreflight preflightProfileName(const char* name);
 ScopeNestingPreflight preflightScopeNesting();
 AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name);
 AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name);
+
+// --- deepen additive from deepen-b16-profiler-preflights-4b82 ---
+    [[nodiscard]] bool should_skip() const { return !can_record(); }
+struct ScopePreflight {
+    [[nodiscard]] bool should_skip() const { return !can_enter(); }
+    [[nodiscard]] bool should_skip() const { return !can_begin(); }
+    [[nodiscard]] bool would_orphan() const { return no_open_flows; }
+    [[nodiscard]] bool should_skip() const { return !can_end(); }
+struct CounterSamplePreflight {
+    [[nodiscard]] bool should_skip() const { return !can_sample(); }
+struct EventLookupPreflight {
+[[nodiscard]] ProfileNamePreflight preflightProfileName(const char* name);
+[[nodiscard]] ScopePreflight preflightScope(const char* name);
+[[nodiscard]] ScopeNestingPreflight preflightScopeNesting();
+[[nodiscard]] AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name);
+[[nodiscard]] AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name);
+[[nodiscard]] CounterSamplePreflight preflightCounterSample(const char* track);
+[[nodiscard]] ChromeTraceExportPreflight preflightChromeTraceExport();
+[[nodiscard]] EventLookupPreflight preflightEventLookup(u32 index);
+[[nodiscard]] bool tryEventAt(u32 index, const ProfileEvent*& event_out);

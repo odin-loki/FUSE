@@ -1130,3 +1130,19 @@ AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name) {
     return preflightAsyncFlowBegin(name).shouldSkip();
     return preflightAsyncFlowEnd(name).shouldSkip();
     return preflightProfileName(track).shouldSkip() || !g_enabled.load(std::memory_order_acquire);
+
+// --- deepen additive from deepen-b16-profiler-preflights-4b82 ---
+ScopePreflight preflightScope(const char* name) {
+    const ProfileNamePreflight namePreflight = preflightProfileName(name);
+    preflight.null_name = namePreflight.null_name;
+    preflight.empty_name = namePreflight.empty_name;
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name) {
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name) {
+CounterSamplePreflight preflightCounterSample(const char* track) {
+    CounterSamplePreflight preflight{};
+    const ProfileNamePreflight namePreflight = preflightProfileName(track);
+EventLookupPreflight preflightEventLookup(u32 index) {
+    EventLookupPreflight preflight{};
+    return preflightEventLookup(index).can_lookup();
+bool tryEventAt(u32 index, const ProfileEvent*& event_out) {
+    const EventLookupPreflight preflight = preflightEventLookup(index);
