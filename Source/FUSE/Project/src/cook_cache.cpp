@@ -589,6 +589,20 @@ bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
     return count_downstream_of(output_path, edges, jobs) > 0;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) > 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) > 0;
+}
+
+bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
+                                               const std::vector<CookJobDependencyEdge>& edges,
+                                               const std::vector<CookJob>& jobs) const {
+    return count_downstream_of(output_path, edges, jobs) > 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
 
@@ -1740,7 +1754,6 @@ CookCacheReconcileEstimate CookCache::estimate_reconcile() const {
     estimate.invalid_entries = estimate_prune_invalid_entries();
     estimate.stale_entries = estimate_prune_stale_entries();
     estimate.prunable_entries = estimate_prune_all();
-    return estimate;
 
 u32 CookCache::estimate_invalidation_by_hash(u64 content_hash) const {
     if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {
@@ -2018,7 +2031,6 @@ CookCacheInvalidationProbe CookCache::probe_upstream_invalidation(
             probe.downstream_entries += probe_downstream_of(job.output_path, edges, jobs);
 
 CookCachePruneEstimate CookCache::estimate_prune_removals() const {
-    CookCachePruneEstimate estimate;
 
             ++estimate.invalid_entries;
         } else if (is_stale_cache_entry_(entry)) {
@@ -2033,7 +2045,6 @@ CookCachePruneEstimate CookCache::estimate_prune_removals() const {
 
 
 
-}
 
 std::vector<std::string> CookCache::probe_unique_stale_upstream_sources(
     const std::vector<std::string> stale_sources = probe_stale_upstream_sources(source_upstream_by_path);
@@ -2048,6 +2059,8 @@ std::vector<std::string> CookCache::probe_unique_stale_upstream_sources(
         if (!already_seen) {
             unique_sources.push_back(source_path);
     return unique_sources;
+
+        return 0;
 }
 
 bool CookCache::contains(u64 content_hash) const {

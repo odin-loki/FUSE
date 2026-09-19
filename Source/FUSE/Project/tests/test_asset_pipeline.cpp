@@ -1659,6 +1659,7 @@ void testCookerStaleDependencyEstimateParity() {
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_chain_b.obj", "# est chain b\n");
 void testCookerStaleDependencyReconcileEstimatorParity() {
 void testCookerStaleDependencyReconcileEstimator() {
+void testCookerReconcileEstimatorProbes() {
     const std::string sourceA = writeTempFile("/tmp/fuse_b79_reconcile_a.obj", "# reconcile a\n");
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_reconcile_b.obj", "# reconcile b\n");
 
@@ -1782,6 +1783,31 @@ void testCookerUpstreamInvalidationSourceProbe() {
     const std::vector<std::string> probed = cooker.probe_upstream_invalidation_sources(manifest, sourceA);
     expectTrue(probed.size() >= 2u, "upstream probe lists changed source and downstream dependents");
     expectTrue(probed[0] == sourceA, "upstream probe includes changed source first");
+    expectTrue(cooker.cache().entry_count() == 2u, "two entries seeded for reconcile estimators");
+
+    expectTrue(cooker.would_upstream_invalidation(manifest, sourceA),
+               "would_upstream_invalidation true before upstream change");
+    expectTrue(!cooker.would_upstream_invalidation(manifest, ""),
+               "empty changed source would_upstream guarded");
+    expectTrue(!cooker.would_stale_dependency_invalidation(manifest),
+               "fresh cache would_stale_dependency is false");
+    expectTrue(cooker.estimate_cache_prune() == 0u, "fresh cache estimate_cache_prune is zero");
+
+    expectTrue(cooker.would_stale_dependency_invalidation(manifest),
+               "upstream change makes would_stale_dependency true");
+    expectTrue(stale_estimate >= 1u, "stale dependency count estimate is non-zero after upstream change");
+
+    expectTrue(removed >= stale_estimate, "stale reconcile removes at least estimated count");
+               "would_stale_dependency false after reconcile");
+
+    cooker.cook_manifest(manifest);
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entryA.output_path, graph.edges(), graph.jobs()),
+               "would_invalidate_downstream_of true on repopulated chain cache");
+    expectTrue(!cooker.cache().would_invalidate_downstream_of("", graph.edges(), graph.jobs()),
+               "empty output path downstream probe guarded");
 }
 
 void testCookerInvalidationCountProbes() {
@@ -2643,6 +2669,7 @@ int main() {
     testCookerStaleDependencyReconcileEstimate();
     testCookerReconcileEstimatorGuards();
     testCookerStaleDependencyReconcileProbes();
+    testCookerReconcileEstimatorProbes();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

@@ -521,6 +521,7 @@ public:
 
     /// Deduplicated stale upstream sources — one entry per distinct source path (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_unique_stale_upstream_sources(
+    /// Entries `prune_all` would remove — mirrors early-exit guards without mutating stats (B7.9 deepen).
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

@@ -629,6 +629,19 @@ CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry, 
     return preflight_upstream_dependencies_hash(entry.dependencies, manifest);
 }
 
+CookHashPreflight preflight_manifest_cook_hash(const CookManifestEntry& entry, const CookManifest& manifest) {
+    CookHashPreflight preflight = preflight_manifest_entry_hash(entry);
+    if (!preflight.can_hash) {
+        return preflight;
+    }
+
+    if (entry.dependencies.empty()) {
+        return preflight;
+    }
+
+    return preflight_upstream_dependencies_hash(entry.dependencies, manifest);
+}
+
 CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
                                                      const CookManifest& manifest) {
     bool has_non_empty = false;
@@ -784,6 +797,7 @@ CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
         preflight.reason = CookHashRejectReason::EmptyInputPath;
     if (!is_valid_cook_cache_path(entry.output_path)) {
         preflight.reason = CookHashRejectReason::EmptyOutputPath;
+
 
 
 
