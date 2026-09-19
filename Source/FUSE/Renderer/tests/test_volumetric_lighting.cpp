@@ -4242,3 +4242,14 @@ void testFroxelDeepenGuardPredicatesAndPreflights() {
                "preflightFroxelPopulateReady mirrors canPopulateFromAnalyticFog");
                "preflightFroxelPopulateReady reports invalid_camera for bad camera");
     testFroxelDeepenGuardPredicatesAndPreflights();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-c943 ---
+void testFroxelGuardClassifyAndPreflightHelpers() {
+               "preflightDensityLookupAtIndex still succeeds when index clamps");
+               "preflightDensityLookupAtCoord reports empty_storage reject reason");
+               "classifyScreenMappingReject none in range");
+               "preflightScreenDepthMapping reports depth_out_of_range reject reason");
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelSampleAtCoordsReject(grid, desc, inBounds) ==
+               "classifyFroxelSampleAtCoordsReject none for accessible grid");
+               "preflightFroxelSampleAtCoords succeeds for accessible grid");
+    testFroxelGuardClassifyAndPreflightHelpers();
