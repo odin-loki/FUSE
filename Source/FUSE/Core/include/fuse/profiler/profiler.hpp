@@ -389,3 +389,6 @@ bool tryEventPhaseAt(u32 index, EventPhase& outPhase);
 // --- deepen additive from deepen-b16-profiler-guards-fb79 ---
 bool tryFirstExportableEvent(ProfileEvent& outEvent);
 bool tryLastExportableEvent(ProfileEvent& outEvent);
+
+// --- deepen additive from deepen-b16-profiler-guards-5e82 ---
+bool tryFindEventByName(const char* name, u32 startIndex, u32& outIndex, ProfileEvent& outEvent);

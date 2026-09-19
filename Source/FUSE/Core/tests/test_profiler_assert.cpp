@@ -3252,3 +3252,32 @@ void testChromeTraceExportPreflightExportWarnings() {
         const fuse::profiler::ChromeTraceExportPreflight activeScope = fuse::profiler::preflightChromeTraceExport();
     const fuse::profiler::ChromeTraceExportPreflight closed = fuse::profiler::preflightChromeTraceExport();
     testChromeTraceExportPreflightExportWarnings();
+
+// --- deepen additive from deepen-b16-profiler-guards-5e82 ---
+void testCountEventsWithPhaseGuard() {
+    expectTrue(!fuse::profiler::tryFindEventByName(nullptr, 0u, outIndex, outEvent),
+               "tryFindEventByName rejects null name");
+               "tryFindEventByName clears index for null name");
+    expectTrue(!fuse::profiler::tryFindEventByName("", 0u, outIndex, outEvent),
+               "tryFindEventByName rejects empty name");
+    expectTrue(!fuse::profiler::tryFindEventByName("missing", 0u, outIndex, outEvent),
+               "tryFindEventByName false on empty buffer");
+    expectTrue(fuse::profiler::tryFindEventByName("lookup_scope", 0u, outIndex, outEvent),
+               "tryFindEventByName locates scope begin");
+    expectTrue(outIndex == 0u, "tryFindEventByName returns first matching index");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Begin, "tryFindEventByName copies begin phase");
+    expectTrue(fuse::profiler::tryFindEventByName("lookup_counter", 0u, outIndex, outEvent),
+               "tryFindEventByName locates counter sample");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Counter, "tryFindEventByName copies counter phase");
+    expectTrue(fuse::profiler::tryFindEventByName("lookup_scope", 1u, outIndex, outEvent),
+               "tryFindEventByName finds second occurrence from start index");
+    expectTrue(outIndex == 2u, "tryFindEventByName skips earlier matches with start index");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryFindEventByName finds scope end");
+               "tryFindEventByName false when name not present");
+    expectTrue(!fuse::profiler::tryFindEventByName("lookup_scope", 99u, outIndex, outEvent),
+               "tryFindEventByName false when start index out of range");
+void testReconcileDetachedFlowDepthGuard() {
+void testChromeTraceExportPreflightExtendedFields() {
+    expectTrue(!disabledPreflight.isExportReady(), "preflight isExportReady false when disabled");
+    expectTrue(!disabledPreflight.canExport(), "preflight canExport false when disabled");
+    testChromeTraceExportPreflightExtendedFields();
