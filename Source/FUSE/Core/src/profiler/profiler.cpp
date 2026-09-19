@@ -327,8 +327,12 @@ bool isEventIndexValid(u32 index) {
     return index < eventCount();
 }
 
+bool isEmptyEventName(const char* name) {
+    return name == nullptr || name[0] == '\0';
+}
+
 bool isValidEventName(const char* name) {
-    return name != nullptr && name[0] != '\0';
+    return !isEmptyEventName(name);
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
@@ -348,6 +352,20 @@ u32 exportableEventCount() {
 
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
+}
+
+u32 droppedEventCount() {
+    const u32 head = g_writeHead.load(std::memory_order_acquire);
+    return head > kRingCapacity ? head - kRingCapacity : 0u;
+}
+
+bool isFirstEventIndex(u32 index) {
+    return hasEvents() && index == 0u;
+}
+
+bool isLastEventIndex(u32 index) {
+    const u32 last = lastEventIndex();
+    return last != kInvalidEventIndex && index == last;
 }
 
 const ProfileEvent& emptyProfileEvent() {
@@ -375,6 +393,16 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
 
     outEvent = eventAt(index);
     return isValidProfileEvent(outEvent);
+}
+
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventExportable(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return true;
 }
 
 bool tryFirstEvent(ProfileEvent& outEvent) {
@@ -414,6 +442,35 @@ const ProfileEvent& lastEvent() {
     return eventAt(index);
 }
 
+NestingStatePreflight preflightNestingState() {
+    NestingStatePreflight preflight{};
+    preflight.scopeDepth = scopeNestingDepth();
+    preflight.flowDepth = flowNestingDepth();
+    preflight.openAsyncFlows = openAsyncFlowCount();
+    preflight.maxScopeDepth = maxNestingDepth();
+    preflight.maxFlowDepth = maxFlowNestingDepth();
+    preflight.scopeBalanced = isScopeNestingBalanced();
+    preflight.flowBalanced = isFlowNestingBalanced();
+    preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.emptyName = isEmptyEventName(name);
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.emptyName = isEmptyEventName(name);
+    preflight.orphanEnd = openAsyncFlowCount() == 0u;
+    return preflight;
+}
+
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
     preflight.profilerDisabled = !enabled();
@@ -430,7 +487,16 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.firstEventIndex = firstEventIndex();
+    preflight.lastEventIndex = lastEventIndex();
+    preflight.ringCapacity = ringCapacity();
+    preflight.droppedEventCount = droppedEventCount();
+    preflight.isBufferFull = isBufferFull();
     return preflight;
+}
+
+bool canExportChromeTrace() {
+    return preflightChromeTraceExport().canExportTrace();
 }
 
 void reset() {
