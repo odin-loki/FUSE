@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace fuse::profiler {
@@ -224,7 +225,7 @@ bool isValidEventName(const char* name);
 
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
-      m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
+      m_active(wouldRecordWithName(name)) {
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -315,6 +316,16 @@ bool isCrossThreadFlowHandoffPending() {
     return isFlowDepthDetached() && flowNestingDepth() > 0u;
 }
 
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+u32 flowDepthMismatch() {
+    const u32 flowDepth = flowNestingDepth();
+    const u32 openCount = openAsyncFlowCount();
+    return flowDepth >= openCount ? flowDepth - openCount : openCount - flowDepth;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -331,8 +342,35 @@ bool isEventIndexValid(u32 index) {
     return index < eventCount();
 }
 
+bool isNullOrEmptyEventName(const char* name) {
+    return name == nullptr || name[0] == '\0';
+}
+
+bool isBlankEventName(const char* name) {
+    if (isNullOrEmptyEventName(name)) {
+        return true;
+    }
+
+    for (const char* cursor = name; *cursor != '\0'; ++cursor) {
+        switch (*cursor) {
+        case ' ':
+        case '\t':
+        case '\n':
+        case '\r':
+            break;
+        default:
+            return false;
+        }
+    }
+    return true;
+}
+
 bool isValidEventName(const char* name) {
-    return name != nullptr && name[0] != '\0';
+    return !isNullOrEmptyEventName(name);
+}
+
+bool wouldRecordWithName(const char* name) {
+    return g_enabled.load(std::memory_order_acquire) && isValidEventName(name) && !isBlankEventName(name);
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
@@ -396,6 +434,14 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     return isValidProfileEvent(outEvent);
 }
 
+bool tryEventAtPhase(u32 index, EventPhase phase, ProfileEvent& outEvent) {
+    if (!tryEventAt(index, outEvent)) {
+        return false;
+    }
+
+    return outEvent.phase == phase;
+}
+
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
     if (!isEventExportable(index)) {
         outEvent = ProfileEvent{};
@@ -418,6 +464,66 @@ bool tryFirstEvent(ProfileEvent& outEvent) {
 
 bool tryLastEvent(ProfileEvent& outEvent) {
     const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
+bool tryFirstExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = exportableFirstEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryLastExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = exportableLastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByPhase(phase);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
+bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByPhase(phase);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByName(name);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByName(name);
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
         return false;
@@ -464,6 +570,73 @@ u32 countEventsByPhase(EventPhase phase) {
     return count;
 }
 
+u32 findFirstEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.name != nullptr && std::strcmp(event.name, name) == 0) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (event.name != nullptr && std::strcmp(event.name, name) == 0) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.name != nullptr && std::strcmp(event.name, name) == 0) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 exportableFirstEventIndex() {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (isEventExportable(i)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 exportableLastEventIndex() {
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const u32 index = i - 1u;
+        if (isEventExportable(index)) {
+            return index;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -494,6 +667,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
     preflight.invalidNameEventCount = invalidNameEventCount();
+    preflight.nonExportableEventCount = preflight.invalidNameEventCount;
     preflight.ringBufferFull = isBufferFull();
     preflight.hasInvalidNameEvents = hasInvalidNameEvents();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
@@ -519,7 +693,7 @@ u32 nextFlowId() {
 }
 
 void beginAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
+    if (!wouldRecordWithName(name)) {
         return;
     }
 
@@ -533,7 +707,7 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 }
 
 void endAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
+    if (!wouldRecordWithName(name)) {
         return;
     }
 
@@ -553,7 +727,7 @@ void endAsyncFlow(const char* name, u32 flowId) {
 }
 
 void sampleCounter(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!wouldRecordWithName(track)) {
         return;
     }
 
@@ -569,7 +743,7 @@ void sampleCounter(const char* track, s64 value) {
 }
 
 void sampleCounterFloat(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!wouldRecordWithName(track)) {
         return;
     }
 
@@ -585,7 +759,7 @@ void sampleCounterFloat(const char* track, f64 value) {
 }
 
 void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!wouldRecordWithName(track)) {
         return;
     }
 
@@ -601,7 +775,7 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
 }
 
 void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!wouldRecordWithName(track)) {
         return;
     }
 
