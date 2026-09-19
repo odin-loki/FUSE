@@ -2179,6 +2179,7 @@ PairBufferWriteRejectReason pairBufferWriteRejectReason(
 /// Diagnose why write would skip; vacuously succeeds when write may proceed.
 
 
+
     const PairBufferSoA& buffer,
     u32 slot,
     u32 idxA,
@@ -2299,6 +2300,7 @@ PairBufferWritePreflight preflightPairBufferWrite(
 
 
 
+
     const PairBufferSoA& buffer,
     u32 slot,
     u32 idxA,
@@ -2393,6 +2395,8 @@ enum class PairBufferInvalidateSlotRejectReason : u8 {
 
 
 /// Why pair-buffer slot invalidation would reject (B4.2 deepen follow-up pass).
+
+
 
 
 
