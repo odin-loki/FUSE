@@ -951,11 +951,24 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
     const CookManifest& manifest, const std::string& changed_source) const {
     if (!is_valid_cook_cache_path(changed_source)) {
         return {};
+    estimate.direct_source_entries = m_cache.count_by_source(changed_source);
+
+    return estimate_reconcile_invalidation(manifest).total() != 0;
+
+    if (!is_valid_cook_cache_path(changed_source) || m_cache.empty()) {
 
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
 
 
+    std::vector<std::string> sources;
+    if (m_cache.count_by_source(changed_source) != 0) {
+        sources.push_back(changed_source);
+    }
+
+    for (const CookJob& job : graph.jobs()) {
+        if (job.source_path != changed_source) {
+            continue;
 
         const std::vector<std::string> downstream =
             m_cache.probe_downstream_sources(job.output_path, graph.edges(), graph.jobs());
