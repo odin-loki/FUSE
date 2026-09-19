@@ -2150,3 +2150,8 @@ void testCookerShouldSkipReconcileGuards() {
                "should_skip_reconcile_invalidation matches estimate should_skip");
                "upstream change makes stale dependency would_invalidate true");
                "upstream would_invalidate remains true while entries exist");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-f9a1 ---
+    expectTrue(!cooker.estimate_reconcile_invalidation(manifest).should_skip(),
+    expectTrue(removed >= 1u, "stale dependency invalidation runs after should_skip probe");
+               "should_skip stale dependency after invalidation");
