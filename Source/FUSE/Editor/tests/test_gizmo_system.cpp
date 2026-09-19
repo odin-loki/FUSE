@@ -4320,3 +4320,13 @@ void testInvalidDimensionsRejectReasonGuards() {
     expectTrue(updateReason == fuse::editor::GizmoUpdateDragRejectReason::InvalidDimensions,
     expectTrue(gizmo.preflightSnapDragReady(0.37f) ==
     testInvalidDimensionsRejectReasonGuards();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-0e76 ---
+void testNonFinitePickRejectReasonGuards() {
+void testNonFiniteBeginDragRejectReasonGuards() {
+    const fuse::editor::BeginDragPreflight nanPreflight = fuse::editor::preflightBeginDrag(
+void testNonFiniteUpdateDragRejectReasonGuards() {
+               "shouldSkipSnapDrag mirrors preflightSnapDragReady");
+    testNonFinitePickRejectReasonGuards();
+    testNonFiniteBeginDragRejectReasonGuards();
+    testNonFiniteUpdateDragRejectReasonGuards();
