@@ -2509,9 +2509,7 @@ enum class GizmoUpdateDragRejectReason : u8 {
     NotDragging,
     NonFiniteHit,
     EmptyHit,
-    NonFiniteHit,
     InvalidDimensions,
-    EmptyHit,
     OutOfBounds,
     InvalidActiveAxis,
 

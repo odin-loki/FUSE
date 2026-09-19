@@ -4273,12 +4273,8 @@ const char* gizmoUpdateDragRejectReasonLabel(GizmoUpdateDragRejectReason reason)
         return "NonFiniteHit";
     case GizmoUpdateDragRejectReason::EmptyHit:
         return "EmptyHit";
-    case GizmoUpdateDragRejectReason::NonFiniteHit:
-        return "NonFiniteHit";
     case GizmoUpdateDragRejectReason::InvalidDimensions:
         return "InvalidDimensions";
-    case GizmoUpdateDragRejectReason::EmptyHit:
-        return "EmptyHit";
     case GizmoUpdateDragRejectReason::OutOfBounds:
         return "OutOfBounds";
     case GizmoUpdateDragRejectReason::InvalidActiveAxis:
@@ -4293,6 +4289,7 @@ const char* gizmoUpdateDragRejectReasonLabel(GizmoUpdateDragRejectReason reason)
         return "OutOfBounds";
     }
     return "Unknown";
+}
 
 const char* gizmoSnapDragRejectReasonLabel(GizmoSnapDragRejectReason reason) {
     switch (reason) {
@@ -4580,11 +4577,27 @@ GizmoUpdateDragRejectReason classifyUpdateDragReject(const UpdateDragPreflight& 
     if (preflight.nonFiniteHit) {
         return GizmoUpdateDragRejectReason::NonFiniteHit;
     }
+    if (preflight.nonFiniteHit) {
+        return GizmoUpdateDragRejectReason::NonFiniteHit;
+    }
     if (preflight.invalidDimensions) {
         return GizmoUpdateDragRejectReason::InvalidDimensions;
         return GizmoUpdateDragRejectReason::EmptyHit;
         return GizmoUpdateDragRejectReason::OutOfBounds;
     return GizmoUpdateDragRejectReason::None;
+
+GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& preflight) {
+    if (preflight.deltaNonFinite) {
+        return GizmoSnapDragRejectReason::DeltaNonFinite;
+    }
+    if (preflight.snapDisabled) {
+        return GizmoSnapDragRejectReason::SnapDisabled;
+    }
+    if (preflight.invalidStep) {
+        return GizmoSnapDragRejectReason::InvalidStep;
+    }
+    return GizmoSnapDragRejectReason::None;
+}
 
 GizmoEndDragRejectReason classifyEndDragReject(const EndDragPreflight& preflight) {
         return GizmoEndDragRejectReason::NotDragging;
@@ -4932,6 +4945,24 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
         return GizmoSnapDragRejectReason::InvalidStep;
     }
     return GizmoSnapDragRejectReason::None;
+}
+
+bool preflightSnapDragReady(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings,
+                            GizmoSnapDragRejectReason* reason) {
+    const SnapDragPreflight preflight = preflightSnapDrag(delta, mode, settings);
+    if (reason != nullptr) {
+        *reason = classifySnapDragReject(preflight);
+    }
+    return preflight.canApply();
+}
+
+bool tryPreflightSnapDrag(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings,
+                          GizmoSnapDragRejectReason& reason) {
+    return preflightSnapDragReady(delta, mode, settings, &reason);
+}
+
+bool shouldSkipSnapDrag(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings) {
+    return !preflightSnapDragReady(delta, mode, settings);
 }
 
 bool preflightSnapDragReady(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings,
