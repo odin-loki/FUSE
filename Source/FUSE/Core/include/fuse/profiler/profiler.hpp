@@ -972,6 +972,26 @@ struct ProfilerNestingPreflight {
     bool hasActiveAsyncFlowNesting() const { return activeFlowNestingDepth > 0u; }
 };
 
+/// Read-only scope nesting diagnostics — safe before entering or ending scopes.
+struct ScopeNestingPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    bool balanced = true;
+    bool hasActiveScopes = false;
+};
+
+/// Read-only async-flow nesting diagnostics — safe before flow begin/end.
+struct AsyncFlowPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    u32 openFlowCount = 0;
+    bool balanced = true;
+    bool consistent = true;
+    bool depthDetached = false;
+    bool crossThreadHandoffPending = false;
+    bool hasOpenFlows = false;
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -1436,6 +1456,12 @@ bool isFlowIdTracked(u32 flowId);
 bool eventNameMatches(const char* eventName, const char* queryName);
 bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 countEventsByName(const char* name);
+u32 findFirstEventIndexByFlowId(u32 flowId);
+u32 findLastEventIndexByFlowId(u32 flowId);
+u32 countEventsByFlowId(u32 flowId);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);

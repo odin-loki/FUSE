@@ -427,6 +427,7 @@ void assignSkipReason(ProfilerSkipReason* reason, ProfilerSkipReason value) {
         && isValidEventName(event.name);
 
 
+
 } // namespace
 
 bool isBlankEventName(const char* name);
@@ -1744,6 +1745,35 @@ bool hasActiveAsyncFlowNesting() {
     return flowNestingDepth() > 0u;
 }
 
+bool hasActiveScopes() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool isFlowNestingConsistent() {
+    return flowNestingDepth() == openAsyncFlowCount();
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)
+        || g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(track);
+}
+
+bool wouldSkipChromeTraceExport() {
+    return !enabled() || exportableEventCount() == 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -2913,6 +2943,9 @@ bool tryFindExportableEventByName(const char* name, ProfileEvent& outEvent) {
 
 
 bool tryFindExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+
+
 
 
 
@@ -5370,6 +5403,18 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -5794,7 +5839,6 @@ const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason rea
     case ChromeTraceExportRejectReason::CrossThreadFlowHandoffPending:
 
 NestingAsyncFlowPreflight preflightNestingAndAsyncFlow() {
-    NestingAsyncFlowPreflight preflight{};
     preflight.scopeNestingBalanced = isScopeNestingBalanced();
     preflight.flowNestingBalanced = isFlowNestingBalanced();
     preflight.emptyName = !isValidEventName(name);
@@ -6057,6 +6101,10 @@ bool wouldSkipCounter(const char* track, ProfilerRecordSkipReason* reason) {
 
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
+
+    return preflight;
+
+    AsyncFlowPreflight preflight{};
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
