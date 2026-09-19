@@ -3685,3 +3685,22 @@ void testCellShapeInsertRejectReasonGuards() {
     expectTrue(!budgetPreflight.canInsert(), "oversized shape insert preflight rejects occupancy");
     expectTrue(budgetPreflight.occupancyRejected, "oversized shape insert preflight marks occupancyRejected");
     testCellShapeInsertRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-0d2e ---
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 0u, 0u, 1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteRejectReason::UnpreparedBuffer),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 2u, 0u, 1u)),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 0u, 1u, 1u)),
+    const fuse::physics::broadphase::PairBufferWritePreflight validWrite =
+        fuse::physics::broadphase::preflightPairBufferWrite(buffer, 0u, 0u, 1u);
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferInvalidateRejectReason(buffer, 0u)),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellPairGenRejectReason(duplicateOccupants)),
+                 fuse::physics::broadphase::cellCapacityInsertRejectReason(0u, 2u, validRange, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellCapacityInsertRejectReason::None),
+                 fuse::physics::broadphase::cellCapacityInsertRejectReason(2u, 2u, validRange, 8u)),
+                 fuse::physics::broadphase::cellCapacityInsertRejectReason(0u, 2u, inverted, 8u)),
+                 fuse::physics::broadphase::cellCapacityInsertRejectReason(0u, 2u, validRange, 7u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellCapacityInsertRejectReason::ExceedsBudget),
+        fuse::physics::broadphase::preflightCellCapacityInsert(0u, 2u, planeRange, 4u);
+    expectTrue(!planePreflight.canInsert(), "2D cell-capacity insert preflight rejects over budget");
+    expectTrue(planePreflight.exceedsBudget, "2D cell-capacity insert preflight marks exceedsBudget");

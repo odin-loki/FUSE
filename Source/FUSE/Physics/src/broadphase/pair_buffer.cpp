@@ -1136,3 +1136,8 @@ PairBufferInvalidatePreflight preflightPairBufferInvalidate(const PairBufferSoA&
 
 // --- deepen additive from b4-broadphase-deepen-guards-7a6f ---
 PairBufferWritePreflight preflightPairBufferWrite(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-0d2e ---
+    case PairBufferWriteRejectReason::UnpreparedBuffer:
+        return PairBufferWriteRejectReason::UnpreparedBuffer;
+    preflight.unpreparedBuffer = preflight.reason == PairBufferWriteRejectReason::UnpreparedBuffer;

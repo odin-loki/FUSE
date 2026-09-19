@@ -1457,3 +1457,6 @@ CellCapacityInsertPreflight preflightCellCapacityInsert(
 CellShapeInsertPreflight preflightShapeCellInsert(
     preflight.reason = cellShapeInsertRejectReason(shapeIndex, bodies, shapes, params, use2D);
     preflight.occupancyRejected = preflight.reason == CellShapeInsertRejectReason::OccupancyRejected;
+
+// --- deepen additive from deepen-b4-broadphase-guards-0d2e ---
+    return preflightCellPairGeneration(occupants).pairSlotCount;
