@@ -1699,3 +1699,7 @@ bool FroxelGridLayout::tryPreflightTileCoords(u32 tileX,
 bool FroxelGridLayout::canPreflightTileCoords(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc) {
     return tryPreflightTileCoords(tileX, tileY, sliceZ, desc, reason);
     if (!tryCanSampleAtCoords(grid, desc, coords, sampleReason)) {
+
+// --- deepen additive from deepen-froxel-b511-guards-e86c ---
+    if (!tryCanLookupAtIndex(grid, desc, FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc),
+        if (lookupReason == DensityLookupRejectReason::EmptyGrid) {

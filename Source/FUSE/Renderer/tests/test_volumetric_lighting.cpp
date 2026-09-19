@@ -2378,3 +2378,16 @@ void testFroxelDeepenDensitySamplePopulateGuards() {
     expectTrue(skippedPopulate.matchesDesc(desc), "tryPopulateFromAnalyticFog still allocates on rejected fill");
     expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(tileReason), "out_of_bounds") == 0,
                    fuse::renderer::DensityLookupRejectReason::SampleCoordRejected),
+
+// --- deepen additive from deepen-froxel-b511-guards-e86c ---
+void testFroxelCoordLookupAndGuardDiagnostics() {
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, desc, 0u, 0u, 0u, sampled, lookupReason),
+    expectNear(sampled, 1.f, 1e-5f, "trySampleDensityAtCoord with reason returns origin density");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, desc, 99u, 99u, 99u, oobSample, lookupReason),
+    expectNear(oobSample, 2.f, 1e-5f, "trySampleDensityAtCoord with reason clamps OOB coords to last cell");
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, desc, 1u, 1u, 2u, written, lookupReason),
+    expectNear(written, 3.75f, 1e-5f, "tryWriteDensityAtCoord with reason persists density");
+    expectTrue(!fuse::renderer::froxel_util::tryWriteDensityAtCoord(emptyGrid, desc, 0u, 0u, 0u, 1.f, lookupReason),
+               "tryWriteDensityAtCoord with reason rejects empty storage");
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtIndex(grid, desc, 5u, 4.5f, lookupReason),
+               "trySampleDensityAtScreen with reason rejects empty froxel desc");
