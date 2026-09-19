@@ -3060,3 +3060,8 @@ void testTaaPassSyncWarmupAndBlendPreflight() {
     expectTrue(!pass->preflightResolveBlend(desc), "pass blend preflight rejects unwarmed history");
     expectTrue(pass->preflightHistoryReuse(0u), "pass reuse preflight passes warmed history");
     expectTrue(pass->preflightResolveBlend(resolveDesc), "pass blend preflight passes warmed history");
+
+// --- deepen additive from deepen-b59-taa-guards-95f2 ---
+void testPreflightTaaResolveBlend() {
+    expectTrue(!fuse::renderer::preflightTaaResolveBlend(desc, history, &weights),
+    testPreflightTaaResolveBlend();
