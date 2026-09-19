@@ -342,6 +342,7 @@ struct CellOccupancyPreflight {
     bool emptyRange = false;
     bool exceedsBudget = false;
     u32 occupancyCount = 0;
+    u32 budgetRemaining = 0;
 
     bool canIterate() const { return reason == CellOccupancyRejectReason::None; }
 };
@@ -352,6 +353,7 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRang
     preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
     preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
     return preflight;
 }
 
@@ -361,6 +363,7 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRang
     preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
     preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
     return preflight;
 }
 
@@ -638,6 +641,33 @@ bool shouldRunDedupeBroadphase(const PairBufferSoA& buffer);
 /// Non-mutating dedupe skip predicate — inverse of `shouldRunDedupeBroadphase` (B4.2 deepen follow-up pass).
 bool canSkipDedupeBroadphase(const PairBufferSoA& buffer);
 
+/// Combined refine/dedupe diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct RefineAndDedupeBroadphasePreflight {
+    RefineBroadphasePreflight refine{};
+    DedupeBroadphasePreflight dedupe{};
+
+    bool canRefine() const { return refine.canRefine(); }
+    bool canDedupe() const { return dedupe.canDedupe(); }
+    bool canRunEither() const { return canRefine() || canDedupe(); }
+};
+
+RefineAndDedupeBroadphasePreflight preflightRefineAndDedupeBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Non-mutating refine/dedupe skip predicate — true when both passes are no-ops (B4.2 deepen follow-up pass).
+bool canSkipRefineAndDedupeBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Non-mutating refine/dedupe predicate — true when at least one pass may proceed (B4.2 deepen follow-up pass).
+bool shouldRunRefineAndDedupeBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
 /// Why plane/dynamic merge would early-out (B4.2 deepen pass).
 enum class BroadphaseMergeRejectReason : u8 {
     None = 0,
@@ -664,6 +694,8 @@ struct BroadphaseMergePreflight {
     BroadphaseMergeRejectReason reason = BroadphaseMergeRejectReason::None;
     bool emptyPlaneBodies = false;
     bool emptyDynamicBodies = false;
+    u32 planeBodyCount = 0;
+    u32 dynamicBodyCount = 0;
 
     bool canMerge() const { return reason == BroadphaseMergeRejectReason::None; }
 };
@@ -704,8 +736,13 @@ struct MergePairsIntoBufferPreflight {
     MergePairsIntoBufferRejectReason reason = MergePairsIntoBufferRejectReason::None;
     bool emptyPairs = false;
     bool bufferFull = false;
+    u32 mergeablePairCount = 0;
+    u32 remainingCapacity = 0;
 
     bool canMerge() const { return reason == MergePairsIntoBufferRejectReason::None; }
+    bool hasPartialCapacity() const {
+        return !emptyPairs && !bufferFull && mergeablePairCount > remainingCapacity;
+    }
 };
 
 MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
