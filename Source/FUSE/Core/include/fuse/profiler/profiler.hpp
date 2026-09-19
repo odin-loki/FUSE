@@ -230,6 +230,11 @@ struct ChromeTraceExportPreflight {
     bool hasActiveFlowNesting = false;
     bool hasNestedAsyncFlowContext = false;
 
+    u32 scopeBeginEventCount = 0;
+    u32 counterEventCount = 0;
+    u32 flowStartEventCount = 0;
+    bool hasActiveScopes = false;
+
             && !hasInvalidNameEvents;
     }
     bool canExportNonEmpty() const { return canExport() && hasExportableEvents(); }
@@ -600,6 +605,8 @@ bool hasActiveScopeNesting();
 bool hasActiveFlowNesting();
 bool hasActiveProfilingNesting();
 bool hasNestedAsyncFlowContext();
+bool hasActiveScopes();
+bool isFlowNestingConsistent();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();
@@ -874,6 +881,8 @@ bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
 bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent);
 bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFirstExportableEvent(ProfileEvent& outEvent);
+bool tryLastExportableEvent(ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
 bool tryFirstEventByName(const char* name, ProfileEvent& outEvent);

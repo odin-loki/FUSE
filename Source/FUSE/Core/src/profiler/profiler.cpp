@@ -999,6 +999,14 @@ bool hasNestedAsyncFlowContext() {
     return hasActiveScopeNesting() && hasActiveFlowNesting();
 }
 
+bool hasActiveScopes() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool isFlowNestingConsistent() {
+    return flowNestingDepth() == openAsyncFlowCount();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -1816,6 +1824,14 @@ bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
 bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByName(name);
 
+bool tryFirstExportableEvent(ProfileEvent& outEvent) {
+        if (tryExportableEventAt(i, outEvent)) {
+
+
+bool tryLastExportableEvent(ProfileEvent& outEvent) {
+    for (u32 i = total; i > 0u; --i) {
+        if (tryExportableEventAt(i - 1u, outEvent)) {
+
 
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
@@ -2466,12 +2482,7 @@ bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex) {
 
 bool tryFindFirstEventIndexByName(const char* name, u32& outIndex) {
     const u32 index = findFirstEventIndexByName(name);
-    if (index == kInvalidEventIndex) {
-        outIndex = kInvalidEventIndex;
-        return false;
 
-    outIndex = index;
-    return true;
 
 u32 findFirstEventIndexByScopeId(u32 scopeId) {
         if (event.scopeId == scopeId && isValidEventName(event.name)) {
@@ -2518,11 +2529,9 @@ bool hasEventsByPhase(EventPhase phase) {
     return findFirstEventIndexByPhase(phase) != kInvalidEventIndex;
 
 bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
-    const u32 index = findFirstEventIndexByPhase(phase);
 
 
 bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
-    const u32 index = findLastEventIndexByPhase(phase);
 
 
         if (isValidEventName(event.name) && std::string(event.name) == name) {
@@ -2547,7 +2556,6 @@ bool namesMatch(const char* lhs, const char* rhs) {
 
 
 
-    }
 
 
 u32 orphanAsyncFlowEndCount() {
@@ -2555,6 +2563,23 @@ u32 orphanAsyncFlowEndCount() {
 
 bool hasOrphanAsyncFlowEnds() {
     return orphanAsyncFlowEndCount() > 0u;
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    return event.name != nullptr && std::strcmp(event.name, name) == 0;
+
+bool isFlowPhaseEvent(const ProfileEvent& event) {
+    return event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish;
+
+
+        if (isValidEventName(event.name) && eventNameMatches(event, name)) {
+
+
+
+
+
+        if (isValidEventName(event.name) && isFlowPhaseEvent(event) && event.scopeId == flowId) {
+
+
+u32 countEventsByFlowId(u32 flowId) {
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -3096,6 +3121,7 @@ bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReaso
     preflight.hasActiveScopeNesting = hasActiveScopeNesting();
     preflight.hasActiveFlowNesting = hasActiveFlowNesting();
     preflight.hasNestedAsyncFlowContext = hasNestedAsyncFlowContext();
+    preflight.hasActiveScopes = hasActiveScopes();
     return preflight;
 }
 
