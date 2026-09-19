@@ -1832,3 +1832,23 @@ void testHrtfBinauralRejectReasons() {
                    true, malformed, offset, fuse::audio::HrtfBinauralRejectReason::MalformedIr),
     expectTrue(!stub_preflight.should_skip(), "EmptyIr composite preflight is not bypassed");
     fuse::audio::HrtfBinauralPreflight out{};
+
+// --- deepen additive from b72-hrtf-reject-reason-preflights-d934 ---
+void testHrtfIrRejectReasonPreflights() {
+    expectTrue(std::strcmp(fuse::audio::hrtfIrRejectReasonLabel(
+void testHrtfPanPathRejectReasonPreflights() {
+    expectTrue(std::strcmp(fuse::audio::hrtfPanPathRejectReasonLabel(
+    expectTrue(stub_preflight.reason == fuse::audio::HrtfPanPathRejectReason::EmptyIr,
+    expectTrue(no_ir_preflight.reason == fuse::audio::HrtfPanPathRejectReason::EmptyIr,
+void testHrtfAttenuationCouplingRejectReasonPreflights() {
+    expectTrue(std::strcmp(fuse::audio::hrtfAttenuationCouplingRejectReasonLabel(
+void testHrtfBinauralRejectReasonPreflights() {
+                   stub_preflight, fuse::audio::HrtfBinauralRejectReason::EmptyIr),
+    expectTrue(std::strcmp(fuse::audio::hrtfBinauralRejectReasonLabel(
+    const fuse::audio::HrtfBinauralPreflight valid_preflight =
+    expectTrue(valid_preflight.reason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(try_preflight.reason == fuse::audio::HrtfBinauralRejectReason::HrtfDisabled,
+    testHrtfIrRejectReasonPreflights();
+    testHrtfPanPathRejectReasonPreflights();
+    testHrtfAttenuationCouplingRejectReasonPreflights();
+    testHrtfBinauralRejectReasonPreflights();

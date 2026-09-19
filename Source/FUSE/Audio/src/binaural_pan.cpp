@@ -1236,3 +1236,11 @@ bool hrtf_binaural_reject_reason_blocks_convolution(HrtfBinauralRejectReason rea
         || reason == HrtfBinauralRejectReason::MalformedIr;
                                  HrtfBinauralPreflight& out, HrtfBinauralRejectReason& reason,
     return !out.should_skip();
+
+// --- deepen additive from b72-hrtf-reject-reason-preflights-d934 ---
+const char* hrtfIrRejectReasonLabel(HrtfIrRejectReason reason) {
+const char* hrtfPanPathRejectReasonLabel(HrtfPanPathRejectReason reason) {
+HrtfPanPathRejectReason classify_hrtf_pan_path_reject(bool hrtf_enabled, const HrtfIrStub& ir,
+                                      const Vec3& rel_listener, HrtfPanPathRejectReason expected) {
+const char* hrtfAttenuationCouplingRejectReasonLabel(HrtfAttenuationCouplingRejectReason reason) {
+const char* hrtfBinauralRejectReasonLabel(HrtfBinauralRejectReason reason) {

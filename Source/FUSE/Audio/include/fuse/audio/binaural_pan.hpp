@@ -834,3 +834,13 @@ bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrPreflight& out, HrtfIrRej
 bool hrtf_binaural_reject_reason_is_bypass(HrtfBinauralRejectReason reason);
 bool hrtf_binaural_reject_reason_blocks_convolution(HrtfBinauralRejectReason reason);
                                  HrtfBinauralPreflight& out, HrtfBinauralRejectReason& reason,
+
+// --- deepen additive from b72-hrtf-reject-reason-preflights-d934 ---
+const char* hrtfIrRejectReasonLabel(HrtfIrRejectReason reason);
+    bool rejected() const { return reason != HrtfIrRejectReason::None; }
+const char* hrtfPanPathRejectReasonLabel(HrtfPanPathRejectReason reason);
+HrtfPanPathRejectReason classify_hrtf_pan_path_reject(bool hrtf_enabled, const HrtfIrStub& ir,
+                                      const Vec3& rel_listener, HrtfPanPathRejectReason expected);
+const char* hrtfAttenuationCouplingRejectReasonLabel(HrtfAttenuationCouplingRejectReason reason);
+const char* hrtfBinauralRejectReasonLabel(HrtfBinauralRejectReason reason);
+    bool rejected() const { return reason != HrtfBinauralRejectReason::None; }
