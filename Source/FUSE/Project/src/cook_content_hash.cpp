@@ -434,3 +434,17 @@ bool preflight_hash_file_content(const std::string& path, u64* out_hash, CookHas
             *reason = CookHashRejectReason::Unreadable;
         *reason = CookHashRejectReason::None;
 bool preflight_mesh_import_hash(const MeshImportDesc& desc, u64* out_hash, CookHashRejectReason* reason) {
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-0c1f ---
+CookHashPreflight preflight_hash_file_content(const std::string& path) {
+    CookHashPreflight result;
+        result.reject = CookHashPreflightReject::EmptyPath;
+        result.reject = CookHashPreflightReject::MissingFile;
+    result.reject = CookHashPreflightReject::None;
+CookHashPreflight preflight_mesh_import(const MeshImportDesc& desc) {
+        return {false, CookHashPreflightReject::EmptyPath};
+CookHashPreflight preflight_texture_import(const TextureImportDesc& desc) {
+CookHashPreflight preflight_audio_import(const AudioImportDesc& desc) {
+CookHashPreflight preflight_manifest_entry(const CookManifestEntry& entry) {
+    CookHashPreflight result = preflight_hash_file_content(entry.source_path);
+        const CookHashPreflight dependency_preflight = preflight_hash_file_content(dependency);
