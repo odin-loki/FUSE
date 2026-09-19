@@ -138,6 +138,10 @@ bool hrtf_pan_path_rejects_for_reason(bool hrtf_enabled, const Vec3& rel_listene
                                       HrtfPanPathRejectReason expected) {
     return hrtf_pan_path_reject_reason(hrtf_enabled, rel_listener) == expected;
 
+bool should_skip_hrtf_ir_convolution(const HrtfIrPreflight& preflight) {
+    return preflight.should_skip_convolution();
+}
+
 HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
                                              const Vec3& rel_listener) {
     HrtfPanPathPreflight preflight{};
@@ -828,6 +832,10 @@ HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub
         preflight.reject_reason = HrtfPanPathRejectReason::CoLocated;
     }
     return preflight;
+    if (can_convolve_hrtf_ir(preflight_hrtf_ir(ir))) {
+        return HrtfPanPath::Convolution;
+    }
+    return HrtfPanPath::IldItdStub;
 }
 
 HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener) {
@@ -1729,6 +1737,8 @@ BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const Vec
     return compute_binaural_pan_gains_for_path(
         resolve_hrtf_pan_path(hrtf_enabled, make_empty_hrtf_ir(), rel_listener), rel_listener,
         params);
+    return compute_binaural_pan_gains_from_pan_path_preflight(
+        preflight_hrtf_pan_path(hrtf_enabled, rel_listener), rel_listener, params);
 }
 
 BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const HrtfIrStub& ir,
@@ -1740,6 +1750,8 @@ BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const Hrt
     return compute_binaural_pan_gains_for_path(
         preflight_hrtf_pan_path(hrtf_enabled, preflight_hrtf_ir(ir), rel_listener), rel_listener,
         params);
+    return compute_binaural_pan_gains_from_pan_path_preflight(
+        preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener), rel_listener, params);
 }
 
 BinauralPanGains compute_binaural_pan_gains_for_path(HrtfPanPath path, const Vec3& rel_listener,
@@ -1751,6 +1763,12 @@ BinauralPanGains compute_binaural_pan_gains_for_path(HrtfPanPath path, const Vec
     }
     // Convolution path deferred — ILD/ITD stub until delay-line / IR wiring lands.
     return compute_binaural_pan_gains(rel_listener, params);
+}
+
+BinauralPanGains compute_binaural_pan_gains_from_pan_path_preflight(
+    const HrtfPanPathPreflight& preflight, const Vec3& rel_listener,
+    const BinauralPanParams& params) {
+    return compute_binaural_pan_gains_for_path(preflight.path, rel_listener, params);
 }
 
 BinauralPanGains lerp_binaural_pan_gains(const BinauralPanGains& from, const BinauralPanGains& to,
@@ -2957,10 +2975,6 @@ BinauralPanGains compute_binaural_pan_gains_from_preflight(const HrtfBinauralPre
     if (!should_skip_hrtf_pan_path(path)
         && !should_skip_hrtf_attenuation_coupling(distance_attenuation, occlusion_gain, coupling,
                                                   params)) {
-        apply_hrtf_attenuation_coupling(pan, distance_attenuation, occlusion_gain, coupling, params);
-    }
-    return pan;
-}
 
 void apply_binaural_pan_to_sample_from_preflight(float mono, const HrtfBinauralPreflight& preflight,
                                                  const Vec3& rel_listener, float attenuation,
@@ -2970,10 +2984,13 @@ void apply_binaural_pan_to_sample_from_preflight(float mono, const HrtfBinauralP
     if (preflight.should_skip()) {
         apply_centre_binaural_pan_to_sample(mono, attenuation, left, right);
         return;
-    }
     const BinauralPanGains pan =
         compute_binaural_pan_gains_from_preflight(preflight, rel_listener, coupling, params);
     apply_binaural_pan_to_sample(mono, pan, attenuation, left, right);
+    preflight.panPath.path = path;
+    preflight.panPath.skipped = should_skip_hrtf_pan_path(path);
+        path, distance_attenuation, occlusion_gain, coupling, params);
+    return compute_binaural_pan_gains_from_preflight(preflight, rel_listener, coupling, params);
 }
 
 HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir,
@@ -3003,6 +3020,37 @@ bool can_apply_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight) {
 
 bool should_skip_hrtf_binaural(const HrtfBinauralPreflight& preflight) {
     return preflight.is_bypass();
+}
+
+bool is_consistent_hrtf_binaural_preflight(const HrtfBinauralPreflight& preflight) {
+    if (preflight.panPath.path == HrtfPanPath::Convolution) {
+        return preflight.ir.can_convolve();
+    }
+    return true;
+}
+
+bool can_convolve_hrtf_binaural(const HrtfBinauralPreflight& preflight) {
+    return preflight.can_convolve();
+}
+
+bool should_skip_hrtf_binaural_convolution(const HrtfBinauralPreflight& preflight) {
+    return preflight.should_skip_convolution();
+}
+
+bool has_empty_hrtf_ir(const HrtfBinauralPreflight& preflight) {
+    return preflight.has_empty_ir();
+}
+
+bool should_apply_hrtf_attenuation_coupling(const HrtfBinauralPreflight& preflight) {
+    return preflight.can_narrow_spatial_image();
+}
+
+bool should_skip_hrtf_attenuation_coupling(const HrtfBinauralPreflight& preflight) {
+    return !preflight.can_narrow_spatial_image();
+}
+
+bool can_narrow_hrtf_binaural_spatial_image(const HrtfBinauralPreflight& preflight) {
+    return preflight.can_narrow_spatial_image();
 }
 
 BinauralPanGains compute_binaural_pan_gains_from_preflight(const HrtfBinauralPreflight& preflight,
