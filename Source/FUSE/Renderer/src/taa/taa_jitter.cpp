@@ -99,6 +99,58 @@ bool shouldSkipTaaJitterAdvance(u32 sequenceLength) {
     return !preflightTaaJitterAdvance(sequenceLength);
 }
 
+TaaJitterGuardRejectReason classifyTaaJitterSlotReject(u32 slot, u32 sequenceLength) {
+    const TaaJitterGuardRejectReason syncReject = classifyTaaJitterSyncReject(sequenceLength);
+    if (syncReject != TaaJitterGuardRejectReason::None) {
+        return syncReject;
+    }
+    if (!TaaJitterLayout::jitterIndexInRange(slot, sequenceLength)) {
+        return TaaJitterGuardRejectReason::InvalidSequence;
+    }
+    return TaaJitterGuardRejectReason::None;
+}
+
+bool preflightTaaJitterSlot(u32 slot, u32 sequenceLength, TaaJitterGuardRejectReason* reason) {
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterSlotReject(slot, sequenceLength);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaJitterGuardRejectReason::None;
+}
+
+bool tryPreflightTaaJitterSlot(u32 slot, u32 sequenceLength, TaaJitterGuardRejectReason& reason) {
+    return preflightTaaJitterSlot(slot, sequenceLength, &reason);
+}
+
+bool shouldSkipTaaJitterSlot(u32 slot, u32 sequenceLength) {
+    return !preflightTaaJitterSlot(slot, sequenceLength);
+}
+
+bool trySyncTaaJitter(TaaJitter& jitter, u32 frameIndex, TaaJitterGuardRejectReason& reason) {
+    if (!tryPreflightTaaJitterSync(frameIndex, jitter.sequenceLength(), reason)) {
+        return false;
+    }
+    return jitter.syncToFrameIndexIfReady(frameIndex);
+}
+
+bool tryAdvanceTaaJitter(TaaJitter& jitter, TaaJitterGuardRejectReason& reason) {
+    if (!preflightTaaJitterAdvance(jitter.sequenceLength(), &reason)) {
+        return false;
+    }
+    return jitter.advanceIfReady();
+}
+
+bool taaJitterNeedsResync(u32 frameIndex, const TaaJitter& jitter) {
+    if (!jitter.canSyncToFrameIndex(frameIndex)) {
+        return false;
+    }
+    return !jitter.isAlignedToFrameIndex(frameIndex);
+}
+
+bool shouldResyncTaaJitter(u32 frameIndex, const TaaJitter& jitter) {
+    return taaJitterNeedsResync(frameIndex, jitter);
+}
+
 bool TaaJitterLayout::validateSequenceLength(u32 length) {
     return length > 0u && length <= kTaaMaxJitterSequenceLength;
 }
@@ -206,6 +258,14 @@ fuse::math::Vec2 TaaJitter::haltonNdcOffset(u32 index, u32 width, u32 height) {
 
 fuse::math::Vec2 TaaJitter::currentPixelOffset() const {
     return TaaJitterLayout::haltonPixelOffset(m_index, m_sequenceLength);
+}
+
+bool TaaJitter::currentPixelOffsetIfReady(fuse::math::Vec2& out) const {
+    if (!canAdvance()) {
+        return false;
+    }
+    out = currentPixelOffset();
+    return true;
 }
 
 fuse::math::Vec2 TaaJitter::currentNdcOffset(u32 width, u32 height) const {
