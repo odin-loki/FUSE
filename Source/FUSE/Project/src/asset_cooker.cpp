@@ -255,6 +255,23 @@ CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(const Co
     return estimate;
 }
 
+bool AssetCooker::should_skip_reconcile_invalidation(const CookManifest& manifest) const {
+    return estimate_reconcile_invalidation(manifest).should_skip();
+}
+
+bool AssetCooker::should_skip_prune_reconcile() const {
+    return estimate_prune_reconcile().should_skip();
+}
+
+bool AssetCooker::would_invalidate_upstream_dependency(const CookManifest& manifest,
+                                                       const std::string& changed_source) const {
+    return count_upstream_invalidation(manifest, changed_source) != 0;
+}
+
+bool AssetCooker::would_invalidate_stale_dependency_hashes(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) != 0;
+}
+
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);

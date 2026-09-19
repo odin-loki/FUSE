@@ -503,6 +503,7 @@ void testCookCachePruneReconcileEstimateGuards() {
     fuse::project::CookCache cache;
     const fuse::project::CookCachePruneEstimate empty = cache.estimate_prune_removals();
     expectTrue(empty.total() == 0u, "empty cache prune estimate is zero");
+    expectTrue(empty.should_skip(), "empty cache prune estimate should_skip is true");
     expectTrue(!cache.would_prune_all(), "empty cache would_prune_all is false");
     expectTrue(cache.count_stale_entries() == 0u, "empty cache stale count is zero");
     expectTrue(cache.probe_stale_content_sources().empty(), "empty cache stale source probe is empty");
@@ -525,6 +526,7 @@ void testCookCachePruneReconcileEstimateGuards() {
     const fuse::project::CookCachePruneEstimate estimate = cache.estimate_prune_removals();
     expectTrue(estimate.stale_entries == 1u, "shader entry counted as stale in estimate");
     expectTrue(estimate.invalid_entries == 0u, "shader entry is structurally valid");
+    expectTrue(!estimate.should_skip(), "shader stale entry makes estimate should_skip false");
     expectTrue(cache.would_prune_all(), "shader stale entry makes would_prune_all true");
     expectTrue(cache.count_stale_entries() == 1u, "count_stale_entries matches estimate");
     expectTrue(cache.count_prunable_entries() == estimate.total(), "count_prunable matches estimate total");
@@ -558,6 +560,83 @@ void testCookCacheProbeStaleContentSources() {
     expectTrue(stale_sources.size() == 2u, "two unique stale sources probed");
     expectTrue(stale_sources[0] == source_a || stale_sources[1] == source_a, "source a in stale probe");
     expectTrue(stale_sources[0] == source_b || stale_sources[1] == source_b, "source b in stale probe");
+}
+
+void testCookHashPreflightShouldSkipHelpers() {
+    expectTrue(fuse::project::should_skip_file_content_hash(""),
+               "should_skip rejects empty file path");
+    expectTrue(fuse::project::should_skip_file_content_hash("/tmp/fuse_b79_missing_should_skip.obj"),
+               "should_skip rejects missing file");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_should_skip_mesh.obj", "# should skip mesh\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_should_skip_mesh.fusemesh";
+    expectTrue(!fuse::project::should_skip_mesh_import_hash(desc),
+               "should_skip allows readable mesh import");
+
+    const fuse::project::CookHashPreflight mesh_preflight = fuse::project::preflight_mesh_import_hash(desc);
+    expectTrue(mesh_preflight.should_skip() == fuse::project::should_skip_mesh_import_hash(desc),
+               "preflight should_skip matches mesh helper");
+
+    desc.input_path = "";
+    expectTrue(fuse::project::should_skip_mesh_import_hash(desc),
+               "should_skip rejects empty mesh input path");
+
+    expectTrue(fuse::project::should_skip_cook_cache_key(0, 42u),
+               "should_skip rejects zero source cache key");
+    expectTrue(!fuse::project::should_skip_combine_cook_cache_key(99u, 0),
+               "should_skip allows zero upstream on valid source");
+    expectTrue(fuse::project::should_skip_fnv1a64_bytes(nullptr, 4u),
+               "should_skip rejects null bytes with non-zero size");
+    expectTrue(!fuse::project::should_skip_fnv1a64_bytes(nullptr, 0),
+               "should_skip allows zero-size null bytes");
+
+    fuse::project::CookManifest manifest;
+    expectTrue(fuse::project::should_skip_upstream_dependencies_hash({}, manifest),
+               "should_skip rejects empty dependency list");
+}
+
+void testCookCacheWouldInvalidateProbes() {
+    fuse::project::CookCache cache;
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_would_inv.obj"),
+               "would_invalidate_source false on empty cache");
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_would_inv.fusemesh"),
+               "would_invalidate_output false on empty cache");
+    expectTrue(!cache.would_invalidate_all(), "would_invalidate_all false on empty cache");
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_inv.obj", 42u),
+               "would_invalidate_stale_content guarded on empty cache");
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_would_inv.obj", 1u}}),
+               "would_invalidate_stale_upstream guarded on empty cache");
+    expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_would_inv.fusemesh", {}, {}),
+               "would_invalidate_downstream guarded on empty cache");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_would_inv_mesh.obj", "# would inv\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_would_inv_mesh.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for would_invalidate probes ok");
+
+    expectTrue(cooker.cache().would_invalidate(seeded.content_hash),
+               "would_invalidate true for seeded hash");
+    expectTrue(cooker.cache().would_invalidate_source(source),
+               "would_invalidate_source true for seeded entry");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path),
+               "would_invalidate_output true for seeded entry");
+    expectTrue(cooker.cache().would_invalidate_all(),
+               "would_invalidate_all true when cache populated");
+    expectTrue(!cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash),
+               "would_invalidate_stale_content false when hash matches");
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash + 1u),
+               "would_invalidate_stale_content true when hash mismatches");
+
+    writeTempFile(source, "# would inv updated\n");
+    expectTrue(cooker.cache().would_prune_all(), "would_prune_all true for stale entry");
+    expectTrue(!cooker.cache().estimate_prune_removals().should_skip(),
+               "prune estimate should_skip false when stale entry present");
 }
 
 void testCookHashPreflightFnvAndCombineGuards() {
@@ -659,8 +738,10 @@ int main() {
     testCookCacheLoadPreservesEntriesWithoutOnDiskSource();
     testCookCachePruneAllMixedInvalidAndStale();
     testCookHashPreflightGuards();
+    testCookHashPreflightShouldSkipHelpers();
     testCookHashPreflightFnvAndCombineGuards();
     testCookCacheInvalidationProbes();
+    testCookCacheWouldInvalidateProbes();
     testCookCachePruneReconcileEstimateGuards();
     testCookCacheProbeStaleContentSources();
     testCookCachePruneInvalidEntriesOnLoad();
