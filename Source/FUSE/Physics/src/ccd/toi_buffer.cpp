@@ -62,6 +62,8 @@ bool ToiBufferSoA::slotIsValid(u32 slot) const {
 
 void ToiBufferSoA::invalidateSlot(u32 slot) {
     if (slot >= validFlags.size()) {
+void ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
+    if (slot >= pairSlotCount || !result.valid || !isToiInWindow(result.toi)) {
         return;
     }
     validFlags[slot] = 0u;
@@ -207,6 +209,7 @@ void ToiBufferSoA::sortIfNeeded() {
 void ToiBufferSoA::sortByToi() {
     if (canSkipSort()) {
     if (canSkipSoAIteration() || activeCount <= 1u || isSortedByToi()) {
+    if (canSkipSort() || isSortedByToi()) {
         return;
     }
 
@@ -252,6 +255,15 @@ u32 ToiBufferSoA::compact() {
         return 0u;
     }
     if (pairSlotCount == 0u) {
+        return activeCount;
+    }
+
+    if (canSkipCompaction()) {
+        const u32 validCount = countValidSlots();
+        activeCount = validCount;
+        for (u32 i = activeCount; i < pairSlotCount; ++i) {
+            validFlags[i] = 0u;
+        }
         return activeCount;
     }
 
@@ -430,6 +442,7 @@ u32 ToiBufferSoA::countValidSlots() const {
 bool ToiBufferSoA::isSortedByToi() const {
     if (canSkipSoAIteration()) {
     if (canSkipSoAIteration() || activeCount <= 1u) {
+    if (canSkipSort()) {
         return true;
     }
 
@@ -501,6 +514,7 @@ TOIResult ToiBufferSoA::resultAt(u32 index) const {
 TOIResult ToiBufferSoA::resultAtSlot(u32 slot) const {
     TOIResult result{};
     if (!slotIsValid(slot)) {
+    if (canSkipSoAIteration() || slot >= pairSlotCount || !slotIsValid(slot)) {
         return result;
     }
 
@@ -529,6 +543,39 @@ std::vector<TOIResult> ToiBufferSoA::toVector() const {
         results.push_back(resultAt(i));
     }
     return results;
+}
+
+u32 ToiBufferSoA::countValidSlots() const {
+    if (canSkipSoAIteration()) {
+        return 0u;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    u32 validCount = 0u;
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] != 0u) {
+            ++validCount;
+        }
+    }
+    return validCount;
+}
+
+bool ToiBufferSoA::canSkipCompaction() const {
+    if (canSkipSoAIteration()) {
+        return true;
+    }
+
+    const u32 scanCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    if (scanCount == 0u) {
+        return true;
+    }
+
+    for (u32 slot = 0; slot < scanCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace fuse::physics

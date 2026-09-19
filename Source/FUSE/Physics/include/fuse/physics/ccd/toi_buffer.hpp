@@ -31,6 +31,7 @@ struct ToiBufferSoA {
     bool canSkipCompaction() const;
     /// True when compact+sort+clamp would leave the buffer unchanged.
     bool canSkipCompactAndSort() const;
+    bool canSkipSort() const { return canSkipSoAIteration() || activeCount <= 1u; }
     /// Count valid flags in prepared slot storage before compaction.
     u32 countValidSlots() const;
     bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
@@ -66,6 +67,7 @@ struct ToiBufferSoA {
     bool isSortedByToi() const;
     TOIResult earliestToi() const;
     TOIResult resultAt(u32 index) const;
+    /// Read a TOI directly from prepared pair-slot storage (pre-compact job path).
     TOIResult resultAtSlot(u32 slot) const;
     std::vector<TOIResult> toVector() const;
 };
