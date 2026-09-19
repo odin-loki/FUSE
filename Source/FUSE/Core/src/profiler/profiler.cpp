@@ -405,6 +405,8 @@ bool hasUsableName(const char* name) {
 
 bool wouldSkipRecording(const char* name) {
     return !g_enabled.load(std::memory_order_acquire) || !hasUsableName(name);
+    return event.name != nullptr && std::strcmp(event.name, name) == 0;
+
 }
 
 } // namespace
@@ -1664,6 +1666,35 @@ bool wouldSkipChromeTraceExportSafely() {
     return !preflightChromeTraceExport().canExportSafely();
 }
 
+bool hasActiveScopes() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool isFlowNestingConsistent() {
+    return flowNestingDepth() == openAsyncFlowCount();
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)
+        || g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(track);
+}
+
+bool wouldSkipChromeTraceExport() {
+    return !enabled() || exportableEventCount() == 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -2710,6 +2741,9 @@ bool tryFindExportableEventByName(const char* name, ProfileEvent& outEvent) {
 
 
 bool tryFindExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+
+
 
 
 bool tryFirstEvent(ProfileEvent& outEvent) {
@@ -4813,6 +4847,19 @@ bool isFlowIdTracked(u32 flowId) {
     const u32 index = findFirstFlowEventIndex(flowId);
 
 
+
+
+
+
+
+
+
+
+
+    return tryEventAt(index, outEvent);
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -5284,6 +5331,9 @@ bool wouldSkipChromeTraceExport(ChromeTraceExportSkipReason* reason) {
 
 bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason) {
     const ChromeTraceExportSkipReason skipReason = chromeTraceExportSafeSkipReason();
+    preflight.hasActiveScopes = hasActiveScopes();
+
+    preflight.consistent = isFlowNestingConsistent();
     return preflight;
 }
 
@@ -5388,6 +5438,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.scopeBeginEndMismatch = hasScopeBeginEndMismatch();
     preflight.flowStartFinishMismatch = hasFlowStartFinishMismatch();
     preflight.firstExportableEventIndex = firstExportableEventIndex();
+    preflight.hasActiveScopes = hasActiveScopes();
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {

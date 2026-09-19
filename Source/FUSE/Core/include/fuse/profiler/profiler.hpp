@@ -367,10 +367,7 @@ struct ChromeTraceExportPreflight {
     u32 orphanFlowFinishCount = 0;
     bool hasOrphanFlowEvents = false;
 
-    u32 orphanAsyncFlowEndCount = 0;
-    bool hasOrphanAsyncFlowEnds = false;
-    bool exportWouldTrimEvents = false;
-    bool hasOnlyExportableEvents = false;
+    bool hasActiveScopes = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -917,6 +914,26 @@ struct ProfilerNestingPreflight {
     bool canRecord() const { return !profilerDisabled; }
 };
 
+/// Read-only scope nesting diagnostics — safe before entering or ending scopes.
+struct ScopeNestingPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    bool balanced = true;
+    bool hasActiveScopes = false;
+};
+
+/// Read-only async-flow nesting diagnostics — safe before flow begin/end.
+struct AsyncFlowPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    u32 openFlowCount = 0;
+    bool balanced = true;
+    bool consistent = true;
+    bool depthDetached = false;
+    bool crossThreadHandoffPending = false;
+    bool hasOpenFlows = false;
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -1023,6 +1040,7 @@ u32 orphanFlowFinishCount();
 bool hasOrphanFlowEvents();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
+
 bool wouldSkipProfileScope(const char* name);
 bool wouldSkipAsyncFlowBegin(const char* name);
 bool wouldSkipAsyncFlowEnd(const char* name);
