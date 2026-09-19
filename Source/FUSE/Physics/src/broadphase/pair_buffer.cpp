@@ -293,6 +293,7 @@ bool PairBufferSoA::push(u32 idxA, u32 idxB, u32 bodyCount) {
     const PairBufferPushPreflight pushPreflight = preflightPairBufferPush(*this, idxA, idxB);
     if (!pushPreflight.canPush()) {
         if (pushPreflight.atCapacity) {
+        if (pushPreflight.reason == PairBufferPushRejectReason::AtCapacity) {
         }
         return false;
     }
@@ -884,6 +885,7 @@ bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortR
 
 
 
+
 PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
     PairBufferPushPreflight preflight{};
     preflight.reason = pairBufferPushRejectReason(buffer, idxA, idxB);
@@ -971,6 +973,34 @@ bool pairBufferCompactionRejectsForReason(const PairBufferSoA& buffer, PairBuffe
     return pairBufferCompactionRejectReason(buffer) == expected;
 }
 
+const char* pairBufferCompactionRejectReasonName(PairBufferCompactionRejectReason reason) {
+    switch (reason) {
+    case PairBufferCompactionRejectReason::None:
+        return "None";
+    case PairBufferCompactionRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case PairBufferCompactionRejectReason::AllValid:
+        return "AllValid";
+    }
+    return "Unknown";
+}
+
+PairBufferCompactionRejectReason pairBufferCompactionRejectReason(const PairBufferSoA& buffer) {
+    if (buffer.canSkipSoAIteration()) {
+        return PairBufferCompactionRejectReason::EmptyBuffer;
+    }
+    if (buffer.canSkipCompaction()) {
+        return PairBufferCompactionRejectReason::AllValid;
+    }
+    return PairBufferCompactionRejectReason::None;
+}
+
+bool pairBufferCompactionRejectsForReason(
+    const PairBufferSoA& buffer,
+    PairBufferCompactionRejectReason expected) {
+    return pairBufferCompactionRejectReason(buffer) == expected;
+}
+
 PairBufferCompactionPreflight preflightPairBufferCompaction(const PairBufferSoA& buffer) {
     PairBufferCompactionPreflight preflight{};
     preflight.reason = pairBufferCompactionRejectReason(buffer);
@@ -988,6 +1018,7 @@ bool shouldRunPairBufferCompaction(const PairBufferSoA& buffer) {
 
 
     return !shouldRunPairBufferCompaction(buffer);
+
 
 
 
@@ -1101,6 +1132,10 @@ bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortR
 
 bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer) {
     return preflightPairBufferDedupe(buffer).canDedupe();
+}
+
+bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer) {
+    return !canSkipPairBufferDedupe(buffer);
 }
 
 PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer) {
