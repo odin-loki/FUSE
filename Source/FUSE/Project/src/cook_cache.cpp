@@ -329,16 +329,141 @@ u32 CookCache::prune_all() {
 }
 
 bool CookCache::has_prunable_entries() const {
+    return count_prunable_entries() > 0;
+}
+
+u32 CookCache::count_prunable_entries() const {
     if (m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_prunable_cache_entry_(entry)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 CookCache::count_stale_content_for_source(const std::string& source_path, u64 current_content_hash) const {
+    if (!is_valid_cook_cache_path(source_path) || !is_valid_cook_cache_key(current_content_hash) ||
+        m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.source_path == source_path && entry.content_hash != current_content_hash) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 CookCache::count_source_entries(const std::string& source_path) const {
+    if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.source_path == source_path) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 CookCache::count_downstream_of(const std::string& output_path,
+                                   const std::vector<CookJobDependencyEdge>& edges,
+                                   const std::vector<CookJob>& jobs) const {
+    if (!is_valid_cook_cache_path(output_path) || m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = count_source_entries(output_path);
+
+    for (const CookJobDependencyEdge& edge : edges) {
+        const CookJob* from_job = find_job_by_id(jobs, edge.from_job_id);
+        if (!from_job || from_job->output_path != output_path) {
+            continue;
+        }
+
+        const CookJob* to_job = find_job_by_id(jobs, edge.to_job_id);
+        if (!to_job) {
+            continue;
+        }
+
+        count += count_source_entries(to_job->source_path);
+        count += count_downstream_of(to_job->output_path, edges, jobs);
+    }
+
+    return count;
+}
+
+u32 CookCache::count_stale_upstream_entries(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    if (m_entries.empty() || source_upstream_by_path.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const auto& pair : source_upstream_by_path) {
+        const std::string& source_path = pair.first;
+        if (!is_valid_cook_cache_path(source_path)) {
+            continue;
+        }
+        const u64 current_upstream = pair.second;
+
+        for (const CookCacheEntry& entry : m_entries) {
+            if (entry.source_path == source_path && entry.upstream_hash != current_upstream) {
+                ++count;
+            }
+        }
+    }
+    return count;
+}
+
+CookCacheLookup CookCache::preflight_lookup(u64 content_hash, LookupRejectReason* reason) const {
+    if (!is_valid_cook_cache_key(content_hash)) {
+        if (reason) {
+            *reason = LookupRejectReason::ZeroKey;
+        }
+        return CookCacheLookup::Miss;
+    }
+    if (m_entries.empty()) {
+        if (reason) {
+            *reason = LookupRejectReason::EmptyCache;
+        }
+        return CookCacheLookup::Miss;
+    }
+
+    if (find_entry_(content_hash) == nullptr) {
+        if (reason) {
+            *reason = LookupRejectReason::NotFound;
+        }
+        return CookCacheLookup::Miss;
+    }
+
+    if (reason) {
+        *reason = LookupRejectReason::None;
+    }
+    return CookCacheLookup::Hit;
+}
+
+bool CookCache::preflight_store(const CookCacheEntry& entry, StoreRejectReason* reason) const {
+    if (!is_valid_cook_cache_entry(entry)) {
+        if (reason) {
+            *reason = StoreRejectReason::InvalidEntry;
+        }
         return false;
     }
 
-    for (const CookCacheEntry& entry : m_entries) {
-        if (is_prunable_cache_entry_(entry)) {
-            return true;
-        }
+    if (reason) {
+        *reason = StoreRejectReason::None;
     }
-    return false;
+    return true;
 }
 
 bool CookCache::contains(u64 content_hash) const {

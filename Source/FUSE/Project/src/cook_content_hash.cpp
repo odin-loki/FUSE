@@ -102,6 +102,102 @@ u64 combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     return fnv1a64_combine(source_hash, upstream_hash);
 }
 
+const char* cookCacheKeyRejectReasonLabel(CookCacheKeyRejectReason reason) {
+    switch (reason) {
+    case CookCacheKeyRejectReason::None:
+        return "none";
+    case CookCacheKeyRejectReason::ZeroSource:
+        return "zero_source";
+    case CookCacheKeyRejectReason::ZeroFold:
+        return "zero_fold";
+    }
+    return "unknown";
+}
+
+bool preflight_cook_cache_key(u64 source_hash, u64 upstream_hash, CookCacheKeyRejectReason* reason) {
+    if (source_hash == 0) {
+        if (reason) {
+            *reason = CookCacheKeyRejectReason::ZeroSource;
+        }
+        return false;
+    }
+
+    const u64 folded = combine_cook_cache_key(source_hash, upstream_hash);
+    if (folded == 0) {
+        if (reason) {
+            *reason = CookCacheKeyRejectReason::ZeroFold;
+        }
+        return false;
+    }
+
+    if (reason) {
+        *reason = CookCacheKeyRejectReason::None;
+    }
+    return true;
+}
+
+const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
+    switch (reason) {
+    case CookHashRejectReason::None:
+        return "none";
+    case CookHashRejectReason::EmptyPath:
+        return "empty_path";
+    case CookHashRejectReason::Unreadable:
+        return "unreadable";
+    }
+    return "unknown";
+}
+
+bool preflight_hash_file_content(const std::string& path, u64* out_hash, CookHashRejectReason* reason) {
+    if (path.empty()) {
+        if (reason) {
+            *reason = CookHashRejectReason::EmptyPath;
+        }
+        return false;
+    }
+
+    const u64 hash = hash_file_content(path);
+    if (hash == 0) {
+        if (reason) {
+            *reason = CookHashRejectReason::Unreadable;
+        }
+        return false;
+    }
+
+    if (out_hash) {
+        *out_hash = hash;
+    }
+    if (reason) {
+        *reason = CookHashRejectReason::None;
+    }
+    return true;
+}
+
+bool preflight_mesh_import_hash(const MeshImportDesc& desc, u64* out_hash, CookHashRejectReason* reason) {
+    if (desc.input_path.empty() || desc.output_path.empty()) {
+        if (reason) {
+            *reason = CookHashRejectReason::EmptyPath;
+        }
+        return false;
+    }
+
+    const u64 hash = hash_mesh_import(desc);
+    if (hash == 0) {
+        if (reason) {
+            *reason = CookHashRejectReason::Unreadable;
+        }
+        return false;
+    }
+
+    if (out_hash) {
+        *out_hash = hash;
+    }
+    if (reason) {
+        *reason = CookHashRejectReason::None;
+    }
+    return true;
+}
+
 u64 hash_mesh_import(const MeshImportDesc& desc) {
     if (desc.input_path.empty() || desc.output_path.empty()) {
         return 0;

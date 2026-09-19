@@ -1567,6 +1567,79 @@ void testCookCachePruneInvalidEntries() {
     expectTrue(invalidOnly.prune_invalid_entries() == 0u, "prune on empty cache after rejected load");
 }
 
+void testCookCacheReconcileEstimators() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_a.obj", "# est a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_b.obj", "# est b\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_est_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_est_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "reconcile estimator test seeds cache");
+    expectTrue(!cooker.cache_needs_dependency_reconcile(manifest),
+               "fresh cache does not need dependency reconcile");
+    expectTrue(cooker.estimate_stale_dependency_entries(manifest) == 0u,
+               "fresh cache reports zero stale dependency entries");
+
+    writeTempFile(sourceA, "# est a revised\n");
+    expectTrue(cooker.cache_needs_dependency_reconcile(manifest),
+               "upstream change flags dependency reconcile needed");
+    const fuse::u32 estimated = cooker.estimate_stale_dependency_entries(manifest);
+    expectTrue(estimated >= 1u, "upstream change estimates at least one stale dependency entry");
+
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= estimated, "reconcile removal meets or exceeds estimate");
+    expectTrue(!cooker.cache_needs_dependency_reconcile(manifest),
+               "cache clean after reconcile");
+    expectTrue(cooker.estimate_stale_dependency_entries(manifest) == 0u,
+               "estimate zero after reconcile");
+}
+
+void testCookCacheUpstreamInvalidationEstimate() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_up_a.obj", "# est up a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_up_b.obj", "# est up b\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_est_up_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_est_up_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "upstream estimate test seeds cache");
+
+    const fuse::u32 estimated = cooker.estimate_upstream_invalidation(manifest, sourceA);
+    expectTrue(estimated >= 2u, "upstream estimate covers changed source and downstream");
+
+    const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
+    expectTrue(removed == estimated, "upstream invalidation matches estimate");
+    expectTrue(cooker.estimate_upstream_invalidation(manifest, sourceA) == 0u,
+               "estimate zero after upstream invalidation");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 
@@ -1644,6 +1717,8 @@ int main() {
     testCookManifestCacheHitsOnSecondRun();
     testCookCacheInvalidateChain();
     testCookCacheStaleDependencyHashInvalidation();
+    testCookCacheReconcileEstimators();
+    testCookCacheUpstreamInvalidationEstimate();
     testCookCacheUpstreamInvalidation();
     testCookCacheRoundTrip();
     testCookCacheEmptyKeyPaths();
