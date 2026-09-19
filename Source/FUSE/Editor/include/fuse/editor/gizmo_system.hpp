@@ -1013,3 +1013,39 @@ GizmoInteractionPreflight preflightInteraction(const GizmoRay& ray, const GizmoT
 GizmoInteractionPreflight preflightInteraction(const GizmoHitTest& hit, GizmoMode mode,
     [[nodiscard]] GizmoInteractionPreflight preflightInteraction(const GizmoHitTest& hit) const;
     [[nodiscard]] GizmoInteractionPreflight preflightInteraction(
+
+// --- deepen additive from deepen-b6-gizmo-preflight-guards-1907 ---
+enum class PickRejectReason : u8 {
+const char* pickRejectReasonName(PickRejectReason reason);
+PickRejectReason pickRejectReason(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+PickRejectReason pickRejectReason(const GizmoHitTest& hit, GizmoMode mode);
+                          PickRejectReason expected);
+bool pickRejectsForReason(const GizmoHitTest& hit, GizmoMode mode, PickRejectReason expected);
+    PickRejectReason reason = PickRejectReason::None;
+    bool canPick() const { return reason == PickRejectReason::None; }
+enum class SnapRejectReason : u8 {
+const char* snapRejectReasonName(SnapRejectReason reason);
+SnapRejectReason snapRejectReason(GizmoMode mode, const GizmoSnapSettings& settings);
+bool snapRejectsForReason(GizmoMode mode, const GizmoSnapSettings& settings, SnapRejectReason expected);
+    SnapRejectReason reason = SnapRejectReason::None;
+    bool canApply() const { return reason == SnapRejectReason::None; }
+enum class BeginDragRejectReason : u8 {
+const char* beginDragRejectReasonName(BeginDragRejectReason reason);
+BeginDragRejectReason beginDragRejectReason(const GizmoRay& ray, const GizmoTransform& transform,
+BeginDragRejectReason beginDragRejectReason(const GizmoHitTest& hit, GizmoMode mode,
+                               BeginDragRejectReason expected, bool alreadyDragging = false);
+bool beginDragRejectsForReason(const GizmoHitTest& hit, GizmoMode mode, BeginDragRejectReason expected,
+    BeginDragRejectReason reason = BeginDragRejectReason::None;
+enum class UpdateDragRejectReason : u8 {
+const char* updateDragRejectReasonName(UpdateDragRejectReason reason);
+UpdateDragRejectReason updateDragRejectReason(const GizmoHitTest& hit, bool dragging,
+                                UpdateDragRejectReason expected);
+    UpdateDragRejectReason reason = UpdateDragRejectReason::None;
+    bool canUpdate() const { return reason == UpdateDragRejectReason::None; }
+enum class EndDragRejectReason : u8 {
+const char* endDragRejectReasonName(EndDragRejectReason reason);
+EndDragRejectReason endDragRejectReason(bool dragging);
+bool endDragRejectsForReason(bool dragging, EndDragRejectReason expected);
+    EndDragRejectReason reason = EndDragRejectReason::None;
+    bool canEnd() const { return reason == EndDragRejectReason::None; }
+    [[nodiscard]] UpdateDragPreflight preflightUpdateDragWithSnap(const GizmoHitTest& hit) const;

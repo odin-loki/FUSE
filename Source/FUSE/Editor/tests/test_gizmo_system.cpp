@@ -3267,3 +3267,46 @@ void testGizmoUpdatePreflightSnapDegraded() {
 // --- deepen additive from deepen-gizmo-guards-3c9f ---
     const fuse::editor::UpdateDragPreflight updatePreflight = gizmo.preflightUpdateDrag(hit);
     expectTrue(updatePreflight.snapDegraded,
+
+// --- deepen additive from deepen-b6-gizmo-preflight-guards-1907 ---
+    expectTrue(fuse::editor::pickRejectsForReason(
+                   fuse::editor::GizmoSystem::kPickRadius, fuse::editor::PickRejectReason::EmptyRay),
+    expectTrue(fuse::editor::pickRejectReason(xRay, transform, fuse::editor::GizmoMode::Translate,
+                   fuse::editor::PickRejectReason::None,
+    expectTrue(std::strcmp(fuse::editor::pickRejectReasonName(fuse::editor::PickRejectReason::None),
+    expectTrue(fuse::editor::pickRejectsForReason(emptyHit, fuse::editor::GizmoMode::Translate,
+                                                  fuse::editor::PickRejectReason::EmptyHit),
+                   fuse::editor::PickRejectReason::ScreenOutOfBounds),
+        fuse::editor::preflightPick(outOfBounds, fuse::editor::GizmoMode::Translate);
+    expectTrue(outOfBoundsPick.reason == fuse::editor::PickRejectReason::ScreenOutOfBounds,
+    expectTrue(fuse::editor::snapRejectsForReason(fuse::editor::GizmoMode::Translate, snap,
+                                                  fuse::editor::SnapRejectReason::Disabled),
+                   fuse::editor::snapRejectReasonName(fuse::editor::SnapRejectReason::Disabled),
+                                                  fuse::editor::SnapRejectReason::InvalidStep),
+    expectTrue(fuse::editor::snapRejectReason(fuse::editor::GizmoMode::Translate, snap) ==
+                   fuse::editor::SnapRejectReason::None,
+void testBeginDragRejectReasonAndAxis() {
+    expectTrue(fuse::editor::beginDragRejectReason(
+                   fuse::editor::GizmoSystem::kPickRadius) == fuse::editor::BeginDragRejectReason::None,
+    expectTrue(validPreflight.canBegin, "begin-drag preflight accepts valid ray");
+    expectTrue(fuse::editor::beginDragRejectsForReason(
+                   fuse::editor::BeginDragRejectReason::ScreenOutOfBounds),
+    const fuse::editor::BeginDragPreflight outOfBoundsPreflight =
+        fuse::editor::preflightBeginDrag(outOfBounds, fuse::editor::GizmoMode::Translate);
+    expectTrue(outOfBoundsPreflight.screenOutOfBounds,
+    expectTrue(!outOfBoundsPreflight.canBegin, "begin-drag preflight rejects out-of-bounds hit");
+    expectTrue(fuse::editor::updateDragRejectsForReason(
+                   fuse::editor::UpdateDragRejectReason::NotDragging),
+                   fuse::editor::UpdateDragRejectReason::ScreenOutOfBounds),
+    expectTrue(!gizmo.tryUpdateDrag(hit, result), "tryUpdateDrag rejects out-of-bounds viewport");
+void testGizmoPreflightUpdateDragWithSnap() {
+        gizmo.preflightUpdateDragWithSnap(hit);
+               "preflightUpdateDragWithSnap allows update with invalid snap step");
+               "preflightUpdateDragWithSnap marks snap degraded");
+               "preflightUpdateDragWithSnap clears snap degraded with valid step");
+    expectTrue(fuse::editor::endDragRejectsForReason(false, fuse::editor::EndDragRejectReason::NotDragging),
+    expectTrue(fuse::editor::endDragRejectReason(true) == fuse::editor::EndDragRejectReason::None,
+                   fuse::editor::endDragRejectReasonName(fuse::editor::EndDragRejectReason::NotDragging),
+    expectTrue(inactivePreflight.reason == fuse::editor::EndDragRejectReason::NotDragging,
+    testBeginDragRejectReasonAndAxis();
+    testGizmoPreflightUpdateDragWithSnap();

@@ -2332,3 +2332,112 @@ GizmoInteractionPreflight GizmoSystem::preflightInteraction(const GizmoHitTest& 
     return fuse::editor::preflightInteraction(hit, m_mode, m_dragging, m_activeAxis, m_snap);
 GizmoInteractionPreflight GizmoSystem::preflightInteraction(
     return fuse::editor::preflightInteraction(ray, transform, m_mode, m_space, kAxisLength,
+
+// --- deepen additive from deepen-b6-gizmo-preflight-guards-1907 ---
+const char* pickRejectReasonName(PickRejectReason reason) {
+    case PickRejectReason::None:
+    case PickRejectReason::EmptyRay:
+    case PickRejectReason::EmptyHit:
+    case PickRejectReason::InvalidPickConfig:
+    case PickRejectReason::ScreenOutOfBounds:
+    case PickRejectReason::ScreenMiss:
+    case PickRejectReason::PickMiss:
+PickRejectReason pickRejectReason(const GizmoRay& ray, const GizmoTransform& transform,
+        return PickRejectReason::EmptyRay;
+        return PickRejectReason::InvalidPickConfig;
+        return PickRejectReason::PickMiss;
+    return PickRejectReason::None;
+PickRejectReason pickRejectReason(const GizmoHitTest& hit, GizmoMode mode) {
+        return PickRejectReason::EmptyHit;
+        return PickRejectReason::ScreenOutOfBounds;
+        return PickRejectReason::ScreenMiss;
+                          PickRejectReason expected) {
+    return pickRejectReason(ray, transform, mode, space, axisLength, pickRadius) == expected;
+bool pickRejectsForReason(const GizmoHitTest& hit, GizmoMode mode, PickRejectReason expected) {
+    return pickRejectReason(hit, mode) == expected;
+    preflight.reason = pickRejectReason(ray, transform, mode, space, axisLength, pickRadius);
+    preflight.emptyRay = preflight.reason == PickRejectReason::EmptyRay;
+    preflight.invalidPickConfig = preflight.reason == PickRejectReason::InvalidPickConfig;
+    preflight.pickMiss = preflight.reason == PickRejectReason::PickMiss;
+    preflight.reason = pickRejectReason(hit, mode);
+    preflight.emptyHit = preflight.reason == PickRejectReason::EmptyHit;
+    preflight.screenOutOfBounds = preflight.reason == PickRejectReason::ScreenOutOfBounds;
+    preflight.screenMiss = preflight.reason == PickRejectReason::ScreenMiss;
+const char* snapRejectReasonName(SnapRejectReason reason) {
+    case SnapRejectReason::None:
+    case SnapRejectReason::Disabled:
+    case SnapRejectReason::InvalidStep:
+SnapRejectReason snapRejectReason(GizmoMode mode, const GizmoSnapSettings& settings) {
+        return SnapRejectReason::Disabled;
+        return SnapRejectReason::InvalidStep;
+    return SnapRejectReason::None;
+                          SnapRejectReason expected) {
+    return snapRejectReason(mode, settings) == expected;
+    preflight.reason = snapRejectReason(mode, settings);
+    preflight.snapDisabled = preflight.reason == SnapRejectReason::Disabled;
+    preflight.invalidStep = preflight.reason == SnapRejectReason::InvalidStep;
+const char* updateDragRejectReasonName(UpdateDragRejectReason reason) {
+    case UpdateDragRejectReason::None:
+    case UpdateDragRejectReason::NotDragging:
+    case UpdateDragRejectReason::EmptyHit:
+    case UpdateDragRejectReason::ScreenOutOfBounds:
+    case UpdateDragRejectReason::InvalidActiveAxis:
+UpdateDragRejectReason updateDragRejectReason(const GizmoHitTest& hit, bool dragging,
+        return UpdateDragRejectReason::NotDragging;
+        return UpdateDragRejectReason::InvalidActiveAxis;
+        return UpdateDragRejectReason::EmptyHit;
+        return UpdateDragRejectReason::ScreenOutOfBounds;
+    return UpdateDragRejectReason::None;
+                                UpdateDragRejectReason expected) {
+    return updateDragRejectReason(hit, dragging, activeAxis) == expected;
+    preflight.reason = updateDragRejectReason(hit, dragging, activeAxis);
+    preflight.notDragging = preflight.reason == UpdateDragRejectReason::NotDragging;
+    preflight.invalidActiveAxis = preflight.reason == UpdateDragRejectReason::InvalidActiveAxis;
+    preflight.emptyHit = preflight.reason == UpdateDragRejectReason::EmptyHit;
+    preflight.screenOutOfBounds = preflight.reason == UpdateDragRejectReason::ScreenOutOfBounds;
+const char* endDragRejectReasonName(EndDragRejectReason reason) {
+    case EndDragRejectReason::None:
+    case EndDragRejectReason::NotDragging:
+EndDragRejectReason endDragRejectReason(bool dragging) {
+        return EndDragRejectReason::NotDragging;
+    return EndDragRejectReason::None;
+bool endDragRejectsForReason(bool dragging, EndDragRejectReason expected) {
+    return endDragRejectReason(dragging) == expected;
+    preflight.reason = endDragRejectReason(dragging);
+    preflight.notDragging = preflight.reason == EndDragRejectReason::NotDragging;
+const char* beginDragRejectReasonName(BeginDragRejectReason reason) {
+    case BeginDragRejectReason::None:
+    case BeginDragRejectReason::AlreadyDragging:
+    case BeginDragRejectReason::EmptyRay:
+    case BeginDragRejectReason::EmptyHit:
+    case BeginDragRejectReason::InvalidPickConfig:
+    case BeginDragRejectReason::ScreenOutOfBounds:
+    case BeginDragRejectReason::ScreenMiss:
+    case BeginDragRejectReason::PickMiss:
+BeginDragRejectReason beginDragRejectReason(const GizmoRay& ray, const GizmoTransform& transform,
+        return BeginDragRejectReason::AlreadyDragging;
+    const PickRejectReason pickReason =
+        pickRejectReason(ray, transform, mode, space, axisLength, pickRadius);
+        return BeginDragRejectReason::EmptyRay;
+        return BeginDragRejectReason::InvalidPickConfig;
+        return BeginDragRejectReason::PickMiss;
+        return BeginDragRejectReason::None;
+BeginDragRejectReason beginDragRejectReason(const GizmoHitTest& hit, GizmoMode mode,
+    const PickRejectReason pickReason = pickRejectReason(hit, mode);
+        return BeginDragRejectReason::EmptyHit;
+        return BeginDragRejectReason::ScreenOutOfBounds;
+        return BeginDragRejectReason::ScreenMiss;
+                               BeginDragRejectReason expected, bool alreadyDragging) {
+    return beginDragRejectReason(ray, transform, mode, space, axisLength, pickRadius,
+    return beginDragRejectReason(hit, mode, alreadyDragging) == expected;
+        beginDragRejectReason(ray, transform, mode, space, axisLength, pickRadius, alreadyDragging);
+    preflight.alreadyDragging = preflight.reason == BeginDragRejectReason::AlreadyDragging;
+    preflight.emptyRay = preflight.reason == BeginDragRejectReason::EmptyRay;
+    preflight.invalidPickConfig = preflight.reason == BeginDragRejectReason::InvalidPickConfig;
+    preflight.pickMiss = preflight.reason == BeginDragRejectReason::PickMiss;
+    if (preflight.reason != BeginDragRejectReason::None) {
+    preflight.reason = beginDragRejectReason(hit, mode, alreadyDragging);
+    preflight.emptyHit = preflight.reason == BeginDragRejectReason::EmptyHit;
+    preflight.screenOutOfBounds = preflight.reason == BeginDragRejectReason::ScreenOutOfBounds;
+    preflight.screenMiss = preflight.reason == BeginDragRejectReason::ScreenMiss;
+UpdateDragPreflight GizmoSystem::preflightUpdateDragWithSnap(const GizmoHitTest& hit) const {
