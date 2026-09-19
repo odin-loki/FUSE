@@ -3538,3 +3538,36 @@ void testChromeTraceExportPreflightCanSafelyExport() {
     expectTrue(!balancedPreflight.hasRingWrapped, "preflight hasRingWrapped false with few events");
     expectTrue(!openFlowPreflight.canSafelyExport(),
     testChromeTraceExportPreflightCanSafelyExport();
+
+// --- deepen additive from deepen-b16-profiler-guards-cad0 ---
+void testBlankNameScopeAndFlowGuards() {
+void testFindLastEventIndexByPhaseGuard() {
+void testLastExportableEventIndexGuard() {
+void testTryEventAtPhaseGuard() {
+    expectTrue(!fuse::profiler::tryEventAtPhase(0u, fuse::profiler::EventPhase::Begin, outEvent),
+               "tryEventAtPhase false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryEventAtPhase clears output on empty buffer");
+    expectTrue(fuse::profiler::tryEventAtPhase(0u, fuse::profiler::EventPhase::Begin, outEvent),
+               "tryEventAtPhase true for matching begin phase");
+               "tryEventAtPhase copies begin event name");
+    expectTrue(!fuse::profiler::tryEventAtPhase(0u, fuse::profiler::EventPhase::End, outEvent),
+               "tryEventAtPhase false for mismatched phase");
+    expectTrue(outEvent.name == nullptr, "tryEventAtPhase clears output on phase mismatch");
+    expectTrue(fuse::profiler::tryEventAtPhase(1u, fuse::profiler::EventPhase::End, outEvent),
+               "tryEventAtPhase true for matching end phase");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryEventAtPhase copies end phase");
+    expectTrue(emptyPreflight.canExportCleanly(), "preflight export cleanly on reset state");
+    expectTrue(!emptyPreflight.ringBufferFull, "preflight ringBufferFull false on empty buffer");
+    expectTrue(emptyPreflight.nonExportableEventCount == 0u, "preflight nonExportableEventCount zero on reset");
+    expectTrue(emptyPreflight.lastExportableEventIndex == fuse::profiler::kInvalidEventIndex,
+void testChromeTraceExportPreflightUncleanNesting() {
+        const fuse::profiler::ChromeTraceExportPreflight activePreflight = fuse::profiler::preflightChromeTraceExport();
+        expectTrue(!activePreflight.canExportCleanly(),
+        expectTrue(activePreflight.hasUnbalancedNesting(), "preflight marks unbalanced nesting");
+        expectTrue(activePreflight.hasOpenAsyncFlows, "preflight marks open async flows");
+    const fuse::profiler::ChromeTraceExportPreflight balancedPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(balancedPreflight.canExportCleanly(), "preflight export cleanly after balanced teardown");
+    expectTrue(!openPreflight.canExportCleanly(), "preflight blocks clean export with unmatched flow begin");
+    expectTrue(openPreflight.flowNestingUnbalanced, "preflight marks unmatched flow as unbalanced");
+void testMixedBlankAndValidNameGuards() {
+    testChromeTraceExportPreflightUncleanNesting();

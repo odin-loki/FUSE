@@ -1305,3 +1305,7 @@ EventNamePreflight preflightEventName(const char* name) {
 AsyncFlowPreflight preflightAsyncFlowBegin(const char* name) {
 AsyncFlowPreflight preflightAsyncFlowEnd(const char* name) {
     AsyncFlowPreflight preflight = preflightAsyncFlowBegin(name);
+
+// --- deepen additive from deepen-b16-profiler-guards-cad0 ---
+bool tryEventAtPhase(u32 index, EventPhase expectedPhase, ProfileEvent& outEvent) {
+    if (!tryEventAt(index, outEvent)) {
