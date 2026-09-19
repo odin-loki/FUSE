@@ -1193,3 +1193,9 @@ HrtfPanConvolutionRejectReason classify_hrtf_pan_convolution_reject(
     const HrtfPanPathPreflight& preflight, const HrtfIrPreflight& ir);
                                           HrtfPanConvolutionRejectReason* reason = nullptr);
                                         HrtfPanConvolutionRejectReason& reason);
+
+// --- deepen additive from deepen-b72-hrtf-reject-enums-0847 ---
+bool try_preflight_hrtf_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+bool try_preflight_hrtf_pan_path_convolution(bool hrtf_enabled, const HrtfIrStub& ir,
+                                             const Vec3& rel_listener, HrtfIrRejectReason& reason);
+HrtfPanPathRejectReason classify_hrtf_binaural_spatial_reject(const HrtfBinauralPreflight& preflight);

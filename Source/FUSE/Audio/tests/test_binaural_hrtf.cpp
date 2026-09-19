@@ -2352,3 +2352,14 @@ void testHrtfRejectReasonMirrorsExistingPreflights() {
         fuse::audio::HrtfPanConvolutionRejectReason::None;
     expectTrue(convReason == fuse::audio::HrtfPanConvolutionRejectReason::EmptyIr,
     expectTrue(convReason == fuse::audio::HrtfPanConvolutionRejectReason::None,
+
+// --- deepen additive from deepen-b72-hrtf-reject-enums-0847 ---
+    fuse::audio::HrtfIrRejectReason conv_reason = fuse::audio::HrtfIrRejectReason::None;
+    expectTrue(conv_reason == fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(conv_reason == fuse::audio::HrtfIrRejectReason::NullSamples,
+    fuse::audio::HrtfPanPathRejectReason spatial_reason =
+    expectTrue(spatial_reason == fuse::audio::HrtfPanPathRejectReason::None,
+    expectTrue(spatial_reason == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
+    fuse::audio::HrtfAttenuationCouplingRejectReason narrow_reason =
+    expectTrue(narrow_reason == fuse::audio::HrtfAttenuationCouplingRejectReason::UnityAttenuation,
+    expectTrue(narrow_reason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
