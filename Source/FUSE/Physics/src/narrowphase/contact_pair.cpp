@@ -933,3 +933,7 @@ NarrowphaseBatchSecondPreflight preflight_narrowphase_batch_second(
 // --- deepen additive from b4-narrowphase-deepen-guards-9857 ---
 NarrowphasePairDispatchPreflight preflight_narrowphase_pair_dispatch(
     NarrowphasePairDispatchPreflight preflight{};
+
+// --- deepen additive from deepen-narrowphase-b4-guards-3d95 ---
+    case ContactPairRejectReason::NoDispatchPath:
+        return ContactPairRejectReason::NoDispatchPath;

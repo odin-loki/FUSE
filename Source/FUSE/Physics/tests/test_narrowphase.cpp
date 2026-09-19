@@ -3247,3 +3247,20 @@ void testContactBufferFrictionBuildPreflightGuards() {
 void testRunNarrowphaseWithDeepenGuards() {
     testNarrowphasePairDispatchPreflightGuards();
     testContactBufferFrictionBuildPreflightGuards();
+
+// --- deepen additive from deepen-narrowphase-b4-guards-3d95 ---
+void testContactPairNoDispatchPathGuards() {
+            fuse::physics::narrowphase::ContactPairRejectReason::NoDispatchPath,
+                fuse::physics::narrowphase::ContactPairRejectReason::NoDispatchPath),
+void testNarrowphaseSlotPreflightGuards() {
+    expectTrue(validPreflight.can_dispatch(), "slot preflight allows valid pair");
+        !fuse::physics::narrowphase::should_skip_narrowphase_slot_dispatch({dynamicA, dynamicB}, bodies, shapes),
+    const auto undispatchedPreflight =
+    expectTrue(!undispatchedPreflight.can_dispatch(), "slot preflight rejects undispatched pair");
+        undispatchedPreflight.reason == fuse::physics::narrowphase::ContactPairRejectReason::NoDispatchPath,
+        fuse::physics::narrowphase::should_skip_narrowphase_slot_dispatch({boxBody, planeBody}, bodies, shapes),
+void testManifoldNormalizeAndIfNeededGuards() {
+    const auto stalePreflight = fuse::physics::narrowphase::preflight_contact_buffer_friction_rebuild(buffer);
+    expectTrue(stalePreflight.needs_rebuild(), "buffer friction preflight needs rebuild for stale slot");
+    expectTrue(stalePreflight.staleCount == 1u, "buffer friction preflight counts one stale slot");
+    testNarrowphaseSlotPreflightGuards();

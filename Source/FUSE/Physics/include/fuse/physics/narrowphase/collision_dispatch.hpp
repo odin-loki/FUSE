@@ -250,3 +250,9 @@ NarrowphaseBufferFinalizePreflight preflight_narrowphase_buffer_finalize(const C
 
 // --- deepen additive from b4-narrowphase-deepen-pass-6859 ---
     ContactPairSlotPreflight pair{};
+
+// --- deepen additive from deepen-narrowphase-b4-guards-3d95 ---
+struct NarrowphaseSlotPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+NarrowphaseSlotPreflight preflight_narrowphase_slot(
+bool should_skip_narrowphase_slot_dispatch(
