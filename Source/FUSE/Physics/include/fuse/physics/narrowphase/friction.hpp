@@ -148,4 +148,15 @@ bool should_normalize_contact_normal_before_friction(
 /// Rebuild friction tangents only when preflight allows; returns false when skipped (B4.5 deepen follow-up pass).
 bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
+/// Returns true when a cached basis is stale but rebuild may proceed (B4.6 deepen pass).
+bool friction_basis_is_stale_but_rebuildable(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Normalize the contact normal when preflight reports it is needed (B4.6 deepen pass).
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Normalize then rebuild friction basis only when preflight allows (B4.6 deepen pass).
+bool rebuild_friction_basis_after_normalize_with_preflight(
+    ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
 } // namespace fuse::physics::narrowphase
