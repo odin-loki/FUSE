@@ -1229,3 +1229,13 @@ int main() {
 
 // --- deepen additive from deepen-b72-hrtf-pan-guards-6bae ---
     expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling(fuse::audio::HrtfPanPath::Bypass),
+
+// --- deepen additive from deepen-hrtf-pan-empty-ir-guards-91f9 ---
+void testShouldSkipHrtfPanGuards() {
+    expectTrue(fuse::audio::should_skip_hrtf_pan(true, fuse::audio::Vec3{}),
+               "should_apply is inverse of should_skip");
+void testEmptyIrConvolutionSkipGuards() {
+    expectTrue(fuse::audio::should_skip_hrtf_convolution(zero_length),
+               "should_apply coupling is inverse of should_skip");
+void testSpatialBlendSkipGuards() {
+    expectTrue(!fuse::audio::should_skip_hrtf_spatial_blend(0.f, 0.f),
