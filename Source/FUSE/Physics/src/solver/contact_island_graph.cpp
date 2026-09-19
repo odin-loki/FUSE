@@ -4,6 +4,43 @@
 
 namespace fuse::physics {
 
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildPreflight preflight{};
+    preflight.bodyCount = bodyCount;
+    preflight.contactCount = static_cast<u32>(contacts.size());
+    preflight.distanceConstraintCount = static_cast<u32>(distanceConstraints.size());
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (contact.bodyA >= bodyCount || contact.bodyB >= bodyCount) {
+            ++preflight.outOfRangeContactCount;
+            continue;
+        }
+        if (contact.valid) {
+            ++preflight.validContactCount;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (constraint.bodyA >= bodyCount || constraint.bodyB >= bodyCount) {
+            ++preflight.outOfRangeDistanceCount;
+        }
+    }
+
+    preflight.skipped = bodyCount == 0u &&
+                        (preflight.contactCount > 0u || preflight.distanceConstraintCount > 0u);
+    return preflight;
+}
+
+bool should_skip_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    return !preflight_island_build(bodyCount, contacts, distanceConstraints).can_build();
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
