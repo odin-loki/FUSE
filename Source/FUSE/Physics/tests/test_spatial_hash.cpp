@@ -4633,3 +4633,43 @@ void testWouldSkipBroadphaseGuardParity() {
                "tryPreflightDedupeBroadphase fails on empty buffer");
     expectTrue(fuse::physics::broadphase::tryPreflightRefineBroadphase(bodies, shapes, buffer, refineReason),
                "tryPreflightRefineBroadphase succeeds for valid scene");
+
+// --- deepen additive from deepen-b4-broadphase-preflight-223d ---
+    expectTrue(fuse::physics::broadphase::tryPreflightPairBufferInvalidateSlot(buffer, 0u, reason),
+               "tryPreflightPairBufferInvalidateSlot accepts valid slot");
+             "tryPreflight invalidate-slot carries None reason");
+    expectTrue(!fuse::physics::broadphase::tryPreflightPairBufferInvalidateSlot(buffer, 0u, reason),
+               "tryPreflightPairBufferInvalidateSlot rejects already-invalid slot");
+             "tryPreflight invalidate-slot carries AlreadyInvalid reason");
+void testPairBufferWriteSlotTryPreflightGuards() {
+    expectTrue(fuse::physics::broadphase::tryPreflightPairBufferWriteSlot(buffer, 0u, 0u, 1u, reason),
+               "tryPreflightPairBufferWriteSlot accepts valid write");
+    expectTrue(!fuse::physics::broadphase::tryPreflightPairBufferWriteSlot(buffer, 0u, 1u, 1u, reason),
+               "tryPreflightPairBufferWriteSlot rejects self-pair");
+             "tryPreflight write-slot carries InvalidPair reason");
+void testCellOccupancyTryPreflightGuards() {
+               "tryPreflightCellOccupancy accepts range within budget");
+               "tryPreflightCellOccupancy rejects range over budget");
+             "tryPreflight cell occupancy carries ExceedsBudget reason");
+    expectTrue(!fuse::physics::broadphase::tryPreflightCellOccupancy(planeRange, 4u, reason),
+               "2D tryPreflightCellOccupancy rejects over-budget range");
+void testRefineDedupeMergeTryPreflightGuards() {
+    expectTrue(!fuse::physics::broadphase::tryPreflightRefineBroadphase(bodies, shapes, buffer, refineReason),
+               "tryPreflightRefineBroadphase rejects empty scene");
+               "tryPreflightRefineBroadphase accepts valid scene");
+               "tryPreflightDedupeBroadphase rejects single pair");
+    expectTrue(fuse::physics::broadphase::tryPreflightDedupeBroadphase(buffer, dedupeReason),
+               "tryPreflightDedupeBroadphase accepts multiple pairs");
+    expectTrue(!fuse::physics::broadphase::tryPreflightBroadphaseMerge(bodies, shapes, mergeReason),
+               "tryPreflightBroadphaseMerge rejects scene without plane");
+               "wouldSkipBroadphaseMerge true without plane");
+    expectTrue(fuse::physics::broadphase::tryPreflightBroadphaseMerge(bodies, shapes, mergeReason),
+               "tryPreflightBroadphaseMerge accepts plane plus dynamic scene");
+    expectTrue(fuse::physics::broadphase::tryPreflightMergePairsIntoBuffer(pairs, mergeBuffer, mergeIntoReason),
+               "tryPreflightMergePairsIntoBuffer accepts non-empty list into empty buffer");
+    expectTrue(!fuse::physics::broadphase::tryPreflightMergePairsIntoBuffer(pairs, mergeBuffer, mergeIntoReason),
+               "tryPreflightMergePairsIntoBuffer rejects full buffer");
+    expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(pairs, mergeBuffer),
+    testPairBufferWriteSlotTryPreflightGuards();
+    testCellOccupancyTryPreflightGuards();
+    testRefineDedupeMergeTryPreflightGuards();
