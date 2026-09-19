@@ -62,6 +62,8 @@ void endFrame();
 
 u32 frameIndex();
 u32 eventCount();
+u32 ringCapacity();
+u32 exportableEventCount();
 u32 maxNestingDepth();
 u32 nestingDepth();
 u32 maxFlowNestingDepth();
@@ -73,14 +75,19 @@ bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
 
 bool hasEvents();
+bool hasExportableEvents();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
+bool isValidProfilerName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
+bool isValidChromeTraceExport(const std::string& json);
 u32 lastEventIndex();
+const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
+bool tryLastEvent(ProfileEvent& outEvent);
 void reset();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
@@ -120,6 +127,8 @@ inline void sampleCounterSnapshotAtFrameDispatch(const char* track, T value) {
 
 /// Stub export for chrome://tracing offline analysis (not hot path).
 std::string exportChromeTraceJson();
+/// Export preflight — writes chrome JSON and reports whether any trace events were emitted.
+bool tryExportChromeTraceJson(std::string& outJson);
 
 } // namespace fuse::profiler
 

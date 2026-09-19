@@ -565,11 +565,15 @@ void testHasEventsAndEmptyBufferGuards() {
                "isValidProfileEvent false for empty-buffer sentinel");
     expectTrue(emptyEvent.phase == fuse::profiler::EventPhase::Begin,
                "eventAt sentinel keeps default begin phase");
+    expectTrue(&emptyEvent == &fuse::profiler::emptyProfileEvent(),
+               "eventAt sentinel matches emptyProfileEvent()");
 
     const fuse::profiler::ProfileEvent& oobEvent = fuse::profiler::eventAt(99);
     expectTrue(oobEvent.name == nullptr, "eventAt out-of-range returns sentinel with null name");
     expectTrue(!fuse::profiler::isValidProfileEvent(oobEvent),
                "isValidProfileEvent false for out-of-range sentinel");
+    expectTrue(&oobEvent == &fuse::profiler::emptyProfileEvent(),
+               "out-of-range eventAt returns emptyProfileEvent()");
 
     {
         FUSE_PROFILE_SCOPE("guard_scope");
@@ -1206,6 +1210,180 @@ void testResetRestoresNestingBalance() {
     expectTrue(fuse::profiler::isBufferEmpty(), "reset clears buffer after unmatched nesting");
 }
 
+void testIsValidProfilerNamePreflight() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::isValidProfilerName(nullptr), "null name fails preflight");
+    expectTrue(!fuse::profiler::isValidProfilerName(""), "empty name fails preflight");
+    expectTrue(fuse::profiler::isValidProfilerName("valid_scope"), "non-empty name passes preflight");
+
+    {
+        fuse::profiler::ProfileScope emptyScope("");
+    }
+    expectTrue(fuse::profiler::eventCount() == 0u, "empty scope name guarded by preflight");
+    expectTrue(fuse::profiler::isScopeNestingBalanced(), "empty scope does not unbalance nesting");
+}
+
+void testRingCapacityAndExportableEventCount() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::ringCapacity() == 4096u, "ringCapacity exposes compile-time buffer size");
+    expectTrue(fuse::profiler::exportableEventCount() == 0u, "exportable count zero on empty buffer");
+    expectTrue(!fuse::profiler::hasExportableEvents(), "hasExportableEvents false on empty buffer");
+    expectTrue(fuse::profiler::eventCount() < fuse::profiler::ringCapacity(),
+               "event count stays below ring capacity on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("exportable_scope");
+    }
+
+    expectTrue(fuse::profiler::exportableEventCount() == fuse::profiler::eventCount(),
+               "recorded events are all exportable");
+    expectTrue(fuse::profiler::hasExportableEvents(), "hasExportableEvents true after recording");
+    expectTrue(!fuse::profiler::isBufferFull(), "small trace does not saturate ring buffer");
+}
+
+void testTryLastEventPreflight() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::ProfileEvent outEvent{};
+    expectTrue(!fuse::profiler::tryLastEvent(outEvent), "tryLastEvent false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryLastEvent clears output on empty buffer");
+    expectTrue(!fuse::profiler::isValidProfileEvent(outEvent),
+               "tryLastEvent output invalid on empty buffer");
+    expectTrue(fuse::profiler::lastEventIndex() == fuse::profiler::kInvalidEventIndex,
+               "lastEventIndex invalid on empty buffer");
+    expectTrue(&fuse::profiler::lastEvent() == &fuse::profiler::emptyProfileEvent(),
+               "lastEvent returns emptyProfileEvent on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("last_event_scope");
+    }
+
+    expectTrue(fuse::profiler::tryLastEvent(outEvent), "tryLastEvent true after recording");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastEvent copies last end phase");
+    expectTrue(outEvent.name != nullptr && std::string(outEvent.name) == "last_event_scope",
+               "tryLastEvent copies last event name");
+    expectTrue(fuse::profiler::isValidProfileEvent(outEvent), "tryLastEvent output is valid");
+}
+
+void testExportPreflights() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    std::string json;
+    expectTrue(!fuse::profiler::tryExportChromeTraceJson(json),
+               "tryExportChromeTraceJson false when buffer is empty");
+    expectTrue(fuse::profiler::isValidChromeTraceExport(json),
+               "empty export still passes structural preflight");
+    expectTrue(json.find("\"traceEvents\":[]") != std::string::npos,
+               "empty tryExport emits zero trace events");
+    expectTrue(fuse::profiler::isValidChromeTraceExport(fuse::profiler::exportChromeTraceJson()),
+               "exportChromeTraceJson passes structural preflight on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("export_preflight_scope");
+        FUSE_PROFILE_COUNTER("export_preflight_counter", 9);
+    }
+
+    expectTrue(fuse::profiler::tryExportChromeTraceJson(json), "tryExportChromeTraceJson true with events");
+    expectTrue(fuse::profiler::isValidChromeTraceExport(json),
+               "populated export passes structural preflight");
+    expectTrue(json.find("\"name\":\"export_preflight_scope\"") != std::string::npos,
+               "tryExport includes scope name");
+    expectTrue(json.find("\"name\":\"export_preflight_counter\"") != std::string::npos,
+               "tryExport includes counter track name");
+    expectTrue(json.find("\"traceEvents\":[]") == std::string::npos,
+               "populated tryExport emits trace events");
+}
+
+void testEmptyProfileEventSentinel() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::isValidProfileEvent(fuse::profiler::emptyProfileEvent()),
+               "emptyProfileEvent is not a valid recorded event");
+    expectTrue(fuse::profiler::emptyProfileEvent().name == nullptr,
+               "emptyProfileEvent keeps null name sentinel");
+
+    const fuse::profiler::ProfileEvent& emptyAt = fuse::profiler::eventAt(0);
+    const fuse::profiler::ProfileEvent& oobAt = fuse::profiler::eventAt(99);
+    const fuse::profiler::ProfileEvent& lastOnEmpty = fuse::profiler::lastEvent();
+    expectTrue(&emptyAt == &fuse::profiler::emptyProfileEvent(),
+               "eventAt on empty buffer returns emptyProfileEvent sentinel");
+    expectTrue(&oobAt == &fuse::profiler::emptyProfileEvent(),
+               "eventAt out-of-range returns emptyProfileEvent sentinel");
+    expectTrue(&lastOnEmpty == &fuse::profiler::emptyProfileEvent(),
+               "lastEvent on empty buffer returns emptyProfileEvent sentinel");
+}
+
+void testDisabledAsyncFlowEndPreservesOpenCount() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("disabled_end_flow", flowId);
+    expectTrue(fuse::profiler::openAsyncFlowCount() == 1u, "flow begin establishes open count");
+    expectTrue(fuse::profiler::hasOpenAsyncFlows(), "flow begin marks async flow open");
+
+    fuse::profiler::setEnabled(false);
+    FUSE_PROFILE_ASYNC_FLOW_END("disabled_end_flow", flowId);
+    expectTrue(fuse::profiler::openAsyncFlowCount() == 1u,
+               "disabled flow finish preserves open async flow count");
+    expectTrue(fuse::profiler::hasOpenAsyncFlows(),
+               "disabled flow finish preserves hasOpenAsyncFlows");
+    expectTrue(fuse::profiler::flowNestingDepth() == 1u,
+               "disabled flow finish preserves thread-local flow depth");
+    expectTrue(fuse::profiler::eventCount() == 1u, "disabled flow finish does not emit finish event");
+
+    fuse::profiler::setEnabled(true);
+    FUSE_PROFILE_ASYNC_FLOW_END("disabled_end_flow", flowId);
+    expectTrue(fuse::profiler::openAsyncFlowCount() == 0u,
+               "re-enabled flow finish clears open async flow count");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(),
+               "re-enabled flow finish clears hasOpenAsyncFlows");
+    expectTrue(fuse::profiler::flowNestingDepth() == 0u,
+               "re-enabled flow finish restores thread-local flow depth");
+    expectTrue(fuse::profiler::eventCount() == 2u, "paired flow events recorded after disable guard");
+}
+
+void testCrossThreadFlowFinishSkipsWorkerFlowDepthPop() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("cross_thread_flow", flowId);
+    expectTrue(fuse::profiler::flowNestingDepth() == 1u, "begin thread records flow depth");
+    expectTrue(fuse::profiler::hasOpenAsyncFlows(), "cross-thread flow begin marks flow open");
+
+    std::atomic<bool> workerDone{false};
+    std::thread worker([&]() {
+        expectTrue(fuse::profiler::flowNestingDepth() == 0u,
+                   "worker thread starts with zero flow depth");
+        FUSE_PROFILE_ASYNC_FLOW_END("cross_thread_flow", flowId);
+        expectTrue(fuse::profiler::flowNestingDepth() == 0u,
+                   "cross-thread flow finish does not underflow worker flow depth");
+        workerDone.store(true, std::memory_order_release);
+    });
+    worker.join();
+    expectTrue(workerDone.load(std::memory_order_acquire), "worker thread completed");
+
+    expectTrue(fuse::profiler::openAsyncFlowCount() == 0u,
+               "cross-thread flow finish clears global open count");
+    expectTrue(!fuse::profiler::hasOpenAsyncFlows(),
+               "cross-thread flow finish clears hasOpenAsyncFlows");
+    expectTrue(fuse::profiler::flowNestingDepth() == 1u,
+               "begin-thread flow depth remains after cross-thread finish stub");
+
+    fuse::profiler::reset();
+    expectTrue(fuse::profiler::flowNestingDepth() == 0u,
+               "reset clears begin-thread flow depth after cross-thread handoff");
+    expectTrue(fuse::profiler::isBufferEmpty(), "reset clears buffer after cross-thread handoff");
+}
+
 void testCrossThreadFlowPreservesOpenCountGuard() {
     resetState();
     fuse::platform::registerMainThread();
@@ -1308,6 +1486,13 @@ int main() {
     testNestingBalanceIntrospection();
     testTryEventAtGuard();
     testResetRestoresNestingBalance();
+    testIsValidProfilerNamePreflight();
+    testRingCapacityAndExportableEventCount();
+    testTryLastEventPreflight();
+    testExportPreflights();
+    testEmptyProfileEventSentinel();
+    testDisabledAsyncFlowEndPreservesOpenCount();
+    testCrossThreadFlowFinishSkipsWorkerFlowDepthPop();
     testCrossThreadFlowPreservesOpenCountGuard();
     testFatalHandlerHook();
     testVerifyMacro();
