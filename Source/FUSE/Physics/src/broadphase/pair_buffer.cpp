@@ -27,6 +27,12 @@ void PairBufferSoA::reserveForUniqueBodies(u32 uniqueBodyCount) {
 
 void PairBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
+    if (maxCapacity > 0u && activeCount > maxCapacity) {
+        if (!isSortedCanonical()) {
+            sortCanonical();
+        }
+        applyMaxCapacityClamp();
+    }
 }
 
 void PairBufferSoA::clear() {
@@ -120,6 +126,7 @@ bool PairBufferSoA::push(u32 idxA, u32 idxB) {
             ++droppedCount;
     if (maxCapacity > 0u && activeCount >= maxCapacity) {
         lastRejectReason = CandidateRejectReason::BufferFull;
+    if (isFull()) {
         return false;
     }
 
@@ -143,6 +150,29 @@ u32 PairBufferSoA::compact() {
 
     if (compactionPreflight.reason == PairBufferCompactionRejectReason::AllValid) {
         activeCount = pairSlotCount > 0u ? pairSlotCount : activeCount;
+    u32 validCount = 0u;
+    for (u32 i = 0u; i < scanCount; ++i) {
+        if (validFlags[i] != 0u) {
+            ++validCount;
+        }
+
+    if (validCount == 0u) {
+        activeCount = 0u;
+        pairSlotCount = 0u;
+        bodyA.resize(0);
+        bodyB.resize(0);
+        validFlags.resize(0);
+        return activeCount;
+
+    bool alreadyPacked = true;
+    for (u32 i = 0u; i < validCount; ++i) {
+        if (validFlags[i] == 0u) {
+            alreadyPacked = false;
+            break;
+    if (alreadyPacked) {
+        for (u32 i = validCount; i < scanCount; ++i) {
+
+        activeCount = validCount;
         pairSlotCount = activeCount;
         bodyA.resize(activeCount);
         bodyB.resize(activeCount);
@@ -181,6 +211,7 @@ u32 PairBufferSoA::compact() {
 void PairBufferSoA::sortCanonical() {
     if (!shouldRunPairBufferSort(*this)) {
     if (canSkipSort()) {
+    if (canSkipSoAIteration() || activeCount <= 1u || isSortedCanonical()) {
         return;
     }
 
@@ -216,7 +247,9 @@ u32 PairBufferSoA::applyMaxCapacityClamp() {
         return activeCount;
     }
 
-    sortCanonical();
+    if (!isSortedCanonical()) {
+        sortCanonical();
+    }
 
     const u32 excess = activeCount - maxCapacity;
     droppedCount += excess;
@@ -237,10 +270,18 @@ u32 PairBufferSoA::compactAndClamp() {
         return activeCount;
     }
     if (preflight.reason == PairBufferCompactAndClampRejectReason::NoWork) {
-        return activeCount;
+    if (canSkipSoAIteration()) {
+        return 0u;
     }
 
     compact();
+    if (isEmpty()) {
+        return 0u;
+    }
+
+    if (!isSortedCanonical()) {
+        sortCanonical();
+    }
     return applyMaxCapacityClamp();
 }
 

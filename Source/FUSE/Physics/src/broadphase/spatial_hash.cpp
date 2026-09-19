@@ -168,6 +168,8 @@ std::vector<u32> uniqueOccupants(const std::vector<u32>& occupants) {
 
 u32 countUniqueCellOccupantsImpl(const std::vector<u32>& occupants) {
     if (occupants.empty()) {
+u32 countPairsForCell(const std::vector<u32>& occupants) {
+    if (shouldSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
         return 0u;
     }
     return static_cast<u32>(uniqueOccupants(occupants).size());
@@ -193,6 +195,7 @@ u32 countPairsForCell(const std::vector<u32>& occupants) {
 
 void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
     if (!preflightCellPairGenerationImpl(occupants).canGenerate()) {
+    if (shouldSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -208,6 +211,7 @@ void writePairsForCellSlots(
     u32 slotStart,
     PairBufferSoA& buffer) {
     if (!preflightCellPairGenerationImpl(occupants).canGenerate()) {
+    if (shouldSkipCellPairGeneration(static_cast<u32>(occupants.size()))) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -439,6 +443,7 @@ void runBroadphaseIntoBufferInternal(
     PairBufferSoA& buffer) {
     buffer.clear();
     if (!preflightBroadphase(bodies, shapes).canRun()) {
+    if (shouldSkipBroadphaseInput(bodies.count(), shapes.count())) {
         return;
     }
 
@@ -527,6 +532,7 @@ void refineBroadphasePairsParallelImpl(
     PairBufferSoA& buffer) {
     if (!shouldRunRefineBroadphase(bodies, shapes, buffer)) {
     if (buffer.canSkipRefine() || bodies.count() == 0 || shapes.count() == 0) {
+    if (shouldSkipBroadphaseRefine(buffer.activeCount, buffer.pairSlotCount, bodies.count(), shapes.count())) {
         return;
     }
 

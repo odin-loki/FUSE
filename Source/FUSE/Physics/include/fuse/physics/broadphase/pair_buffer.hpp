@@ -20,6 +20,7 @@ struct PairBufferSoA {
     CandidateRejectReason lastRejectReason = CandidateRejectReason::None;
 
     bool isEmpty() const { return activeCount == 0u; }
+    bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
     bool hasValidPairs() const { return activeCount > 0u; }
     /// True when clamping dropped one or more candidate pairs.
     bool hasDroppedPairs() const { return droppedCount > 0u; }
