@@ -697,3 +697,11 @@ EmptyHrtfIrPreflight preflightEmptyHrtfIr(const HrtfIrStub& ir);
 HrtfPanPathPreflight preflightHrtfPanPath(bool hrtf_enabled, const HrtfIrStub& ir,
 HrtfPanPathPreflight preflightHrtfPanPath(bool hrtf_enabled, const Vec3& rel_listener);
 HrtfAttenuationCouplingPreflight preflightHrtfAttenuationCoupling(
+
+// --- deepen additive from deepen-b72-hrtf-preflight-guards-f1c9 ---
+    [[nodiscard]] bool can_apply_spatial_pan() const { return !should_skip(); }
+    [[nodiscard]] bool should_skip() const { return is_hrtf_pan_path_bypass(path); }
+struct HrtfGuardedPanPreflight {
+    HrtfPanPathPreflight pan_path{};
+    [[nodiscard]] bool should_skip_coupling() const { return coupling.should_skip(); }
+HrtfGuardedPanPreflight preflight_hrtf_guarded_pan(bool hrtf_enabled, const HrtfIrStub& ir,

@@ -1547,3 +1547,17 @@ void testEmptyHrtfIrPreflight() {
         fuse::audio::preflightHrtfAttenuationCoupling(fuse::audio::HrtfPanPath::Convolution, 1.f,
         fuse::audio::preflightHrtfAttenuationCoupling(fuse::audio::HrtfPanPath::IldItdStub, 0.2f,
     testEmptyHrtfIrPreflight();
+
+// --- deepen additive from deepen-b72-hrtf-preflight-guards-f1c9 ---
+    expectTrue(empty_preflight.should_skip(), "empty IR preflight skips convolution");
+    expectTrue(malformed_preflight.should_skip(), "malformed IR skips convolution");
+    expectTrue(disabled_preflight.should_skip(), "disabled HRTF bypasses pan");
+    expectTrue(co_located_preflight.should_skip(), "co-located source bypasses pan");
+    expectTrue(!narrowed.should_skip(), "reduced attenuation does not skip coupling");
+void testHrtfGuardedPanPreflight() {
+    const fuse::audio::HrtfGuardedPanPreflight stub =
+    expectTrue(!stub.should_skip_coupling(), "non-unity attenuation does not skip coupling");
+    const fuse::audio::HrtfGuardedPanPreflight bypass =
+    const fuse::audio::HrtfGuardedPanPreflight unity =
+    expectTrue(unity.should_skip_coupling(), "unity attenuation skips bundled coupling");
+    testHrtfGuardedPanPreflight();

@@ -1026,3 +1026,7 @@ HrtfPanPathPreflight preflightHrtfPanPath(bool hrtf_enabled, const HrtfIrStub& i
 HrtfPanPathPreflight preflightHrtfPanPath(bool hrtf_enabled, const Vec3& rel_listener) {
     return preflightHrtfPanPath(hrtf_enabled, make_empty_hrtf_ir(), rel_listener);
 HrtfAttenuationCouplingPreflight preflightHrtfAttenuationCoupling(
+
+// --- deepen additive from deepen-b72-hrtf-preflight-guards-f1c9 ---
+HrtfGuardedPanPreflight preflight_hrtf_guarded_pan(bool hrtf_enabled, const HrtfIrStub& ir,
+    HrtfGuardedPanPreflight preflight;
