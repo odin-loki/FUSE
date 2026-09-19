@@ -31,6 +31,13 @@ struct VariableTickPreflight {
     bool skipped = false;
 };
 
+/// Read-only variable-tick guard diagnostics (B6.12 deepen — inactive-tick guard).
+struct VariableTickPreflight {
+    bool skipped = false;
+    bool wouldSimulate = false;
+    bool wouldAdvanceAccumulator = false;
+};
+
 /// Captured dirty-flag metadata for PIE restore (B6.12 deepen follow-up).
 struct DirtySnapshotInfo {
     bool captured = false;
@@ -148,6 +155,10 @@ public:
     WorldSnapshotPreflight preflightWorldSnapshot() const;
     bool canDrainWorldSnapshot() const { return preflightWorldSnapshot().canDrain(); }
                               u32 maxSteps = 0) const;
+    VariableTickPreflight preflightTick(f32 dt, const PlayModePhysicsState& physics) const;
+    bool hasPendingFixedSteps(f32 fixedDt) const { return pendingFixedStepCount(fixedDt) > 0u; }
+    /// Sub-fixed remainder in `tickAccumulator()` after draining `fixedDt` slices.
+    f32 tickAccumulatorRemainder(f32 fixedDt) const;
     u32 dirtySnapshotEntityCount() const {
         return m_hasDirtySnapshot ? static_cast<u32>(m_dirtySnapshot.transformDirty.size()) : 0u;
     }
@@ -169,6 +180,10 @@ public:
     DirtySnapshotPreflight preflightDirtySnapshotRestore() const;
     /// True when `drainDirtySnapshot` would be guarded with no captured snapshot.
     bool shouldSkipDirtySnapshotDrain() const { return !m_hasDirtySnapshot; }
+    bool dirtySnapshotContains(ecs::EntityID entity) const;
+    /// Pre-play dirty flag for `entity`; only valid when `dirtySnapshotContains(entity)`.
+    bool transformDirtyFor(ecs::EntityID entity) const;
+    bool canDrainDirtySnapshot() const { return m_hasDirtySnapshot; }
     bool hasWorldSnapshot() const { return m_hasWorldSnapshot; }
     bool hasDirtySnapshot() const { return m_hasDirtySnapshot; }
 
