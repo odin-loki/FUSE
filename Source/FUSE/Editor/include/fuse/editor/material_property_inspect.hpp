@@ -135,5 +135,10 @@ struct MaterialInspectorRefreshInfo {
 
 /// Count set property bits in a dirty mask (B6.7 deepen follow-up).
 [[nodiscard]] u32 countMaterialPropertyDirtyBits(u32 dirtyMask);
+/// Early-out — skip inspector bind/sync when the catalog is empty (B6.7 deepen).
+[[nodiscard]] bool shouldSkipMaterialInspectorBind(u32 catalogCount);
+
+
+
 
 } // namespace fuse::editor

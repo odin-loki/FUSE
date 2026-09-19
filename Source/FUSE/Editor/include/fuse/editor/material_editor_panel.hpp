@@ -67,6 +67,9 @@ public:
     /// True when `refreshPanel` would be a no-op (B6.7 deepen follow-up).
     [[nodiscard]] bool shouldSkipPanelRefresh() const { return m_binding.shouldSkipPanelRefresh(); }
 
+    /// Panel refresh guard — binding reports pending refresh (B6.7 deepen).
+    [[nodiscard]] bool canRefreshPanel() const { return needsPanelRefresh(); }
+
     /// Early-out when catalog empty, unselected, or binding cannot post (B6.7 deepen follow-up).
     [[nodiscard]] bool shouldSkipPropertyEdit() const;
 

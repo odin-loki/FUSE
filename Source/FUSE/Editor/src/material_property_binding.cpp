@@ -337,6 +337,14 @@ void MaterialPropertyBinding::refreshFromEditState(const MaterialEditState& stat
     markPanelRefreshed();
 }
 
+bool MaterialPropertyBinding::tryRefreshFromEditState(const MaterialEditState& state) {
+    if (!canRefreshFromEditState()) {
+        return false;
+    }
+    refreshFromEditState(state);
+    return true;
+}
+
 bool MaterialPropertyBinding::canTryGetPropertyScalar(MaterialPropertyId id) const {
     return canPostProperty() && canTryMaterialPropertyScalar(id);
 }

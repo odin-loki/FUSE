@@ -103,6 +103,7 @@ public:
 
     /// Refresh guard — bound with a live edit-state pointer (B6.7 deepen).
     [[nodiscard]] bool canRefreshFromEditState() const { return canPostProperty(); }
+
     /// Panel-refresh guard — dirty mask or pending refresh flag set (B6.7 deepen).
     [[nodiscard]] bool canMarkPanelRefreshed() const {
         return needsPanelRefresh() || hasAnyPropertyDirty();
@@ -121,6 +122,8 @@ public:
     void clearAllPropertyDirty();
     void markPanelRefreshed();
     /// Guarded panel refresh — no-op when unbound (B6.7 deepen).
+
+    /// Guarded panel refresh — no-op when nothing is dirty (B6.7 deepen).
     bool tryMarkPanelRefreshed();
 
     /// Guarded refresh/dirty helpers — no-op when unbound or property id invalid (B6.7 deepen follow-up).
