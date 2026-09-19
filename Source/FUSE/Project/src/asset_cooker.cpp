@@ -218,6 +218,62 @@ u32 AssetCooker::count_upstream_invalidation(const CookManifest& manifest,
     return count;
 }
 
+u32 AssetCooker::count_prune_removals() const {
+    return m_cache.count_prunable_entries();
+}
+
+bool AssetCooker::would_reconcile_stale_dependencies(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) > 0;
+}
+
+u32 AssetCooker::count_stale_content_invalidation(const CookManifest& manifest) const {
+    if (m_cache.empty() || manifest.assets.empty()) {
+        return 0;
+    }
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    u32 count = 0;
+    for (const CookJob& job : graph.jobs()) {
+        if (!is_valid_cook_cache_path(job.source_path)) {
+            continue;
+        }
+
+        u64 current_hash = 0;
+        switch (job.kind) {
+        case CookAssetKind::Mesh: {
+            MeshImportDesc desc;
+            desc.input_path = job.source_path;
+            desc.output_path = job.output_path;
+            current_hash = combine_cook_cache_key(hash_mesh_import(desc), hash_upstream_from_jobs(job, graph.jobs()));
+            break;
+        }
+        case CookAssetKind::Texture: {
+            TextureImportDesc desc;
+            desc.input_path = job.source_path;
+            desc.output_path = job.output_path;
+            current_hash =
+                combine_cook_cache_key(hash_texture_import(desc), hash_upstream_from_jobs(job, graph.jobs()));
+            break;
+        }
+        case CookAssetKind::Audio: {
+            AudioImportDesc desc;
+            desc.input_path = job.source_path;
+            desc.output_path = job.output_path;
+            current_hash =
+                combine_cook_cache_key(hash_audio_import(desc), hash_upstream_from_jobs(job, graph.jobs()));
+            break;
+        }
+        case CookAssetKind::Shader:
+            continue;
+        }
+
+        count += m_cache.count_stale_content_for_source(job.source_path, current_hash);
+    }
+    return count;
+}
+
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);

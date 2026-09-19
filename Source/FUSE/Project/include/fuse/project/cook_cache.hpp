@@ -51,6 +51,27 @@ struct CookCacheStats {
     return is_valid_cook_cache_key(combine_cook_cache_key(source_hash, upstream_hash));
 }
 
+/// Read-only store preflight — mirrors `is_valid_cook_cache_entry` with reject reasons (B7.9 deepen).
+[[nodiscard]] inline CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+    if (!is_valid_cook_cache_path(entry.source_path)) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (!is_valid_cook_cache_path(entry.output_path)) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
 public:
@@ -98,6 +119,23 @@ public:
                                           const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;
+    /// Structurally valid entries whose recomputed key differs — excludes invalid records (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_entries() const;
+
+    /// Read-only `invalidate_*` presence probes — guarded like `would_invalidate` (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                      const std::vector<CookJobDependencyEdge>& edges,
+                                                      const std::vector<CookJob>& jobs) const;
+    /// Source paths that `invalidate_downstream_of` would touch — one push per matching entry (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_downstream_sources(
+        const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
+        const std::vector<CookJob>& jobs) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
