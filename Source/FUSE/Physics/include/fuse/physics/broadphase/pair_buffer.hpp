@@ -2021,6 +2021,11 @@ struct PairBufferInvalidateSlotPreflight {
 
 
 
+
+
+    bool outOfRangeSlot = false;
+    bool alreadyInvalid = false;
+
 };
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
@@ -2064,6 +2069,8 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
 
 
 /// Preflight invalidate-slot without mutation — returns true when invalidate would skip (B4.2 deepen pass).
+
+
 bool wouldSkipPairBufferInvalidateSlot(
     const PairBufferSoA& buffer,
     u32 slot,
@@ -2071,6 +2078,7 @@ bool wouldSkipPairBufferInvalidateSlot(
 
 /// Early-out when push preflight would reject — same ordering as `pairBufferPushRejectReason` (B4.2 deepen pass).
 bool wouldSkipPairBufferPush(
+    const PairBufferSoA& buffer,
     u32 idxA,
     u32 idxB,
     PairBufferPushRejectReason* reason = nullptr);
