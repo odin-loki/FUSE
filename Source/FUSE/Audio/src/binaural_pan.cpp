@@ -1517,3 +1517,6 @@ bool tryPreflight_hrtf_attenuation_coupling(
 bool tryPreflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
 bool tryPreflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
     return tryPreflight_hrtf_binaural(hrtf_enabled, make_empty_hrtf_ir(), rel_listener,
+
+// --- deepen additive from b72-hrtf-reject-reasons-b804 ---
+    const HrtfPanPathRejectReason pan_reason = classify_hrtf_pan_path_reject(preflight.panPath);

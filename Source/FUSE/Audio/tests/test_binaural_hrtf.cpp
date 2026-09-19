@@ -2074,3 +2074,6 @@ void testHrtfBinauralRejectReasonEnums() {
 void testRejectReasonMirrorsExistingPreflights() {
     const fuse::audio::HrtfIrPreflight ir_preflight = fuse::audio::preflight_hrtf_ir(empty);
     testRejectReasonMirrorsExistingPreflights();
+
+// --- deepen additive from b72-hrtf-reject-reasons-b804 ---
+    reason = fuse::audio::HrtfAttenuationCouplingRejectReason::None;
