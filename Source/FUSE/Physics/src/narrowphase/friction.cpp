@@ -723,6 +723,8 @@ FrictionBasisPreflight preflight_friction_basis(const ContactManifold& manifold,
         preflight.reason = FrictionBasisRejectReason::EmptyManifold;
     if (!manifold.hasValidNormal()) {
         preflight.reason = FrictionBasisRejectReason::InvalidNormal;
+    if (preflight.reason != FrictionBasisRejectReason::None &&
+        preflight.reason != FrictionBasisRejectReason::StaleBasis) {
         preflight.skipped = true;
         return preflight;
     }
@@ -1124,30 +1126,16 @@ bool should_run_friction_basis_rebuild(
 
     if (preflight.reason == FrictionBasisRejectReason::EmptyManifold ||
         preflight.reason == FrictionBasisRejectReason::InvalidNormal) {
-        invalidate_friction_basis(manifold);
-        return false;
-    }
-    if (preflight.can_skip_rebuild()) {
-        return true;
-    }
     return rebuild_friction_basis_with_normalize_preflight(manifold, epsilon);
-}
 
 void normalize_contact_normal_for_friction(ContactManifold& manifold, f32 lengthEpsilon) {
     if (!should_normalize_contact_normal_before_friction(manifold, lengthEpsilon)) {
-        return;
-    }
 
-    const f32 normalLength = manifold.contactNormal.length();
     if (normalLength > 1e-8f) {
-        manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
-    }
-}
 
 bool rebuild_friction_basis_with_normalize_preflight(ContactManifold& manifold, f32 epsilon) {
-    const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
-    if (preflight.reason == FrictionBasisRejectReason::EmptyManifold ||
-        preflight.reason == FrictionBasisRejectReason::InvalidNormal) {
+    if (preflight.reason != FrictionBasisRejectReason::None &&
+        preflight.reason != FrictionBasisRejectReason::StaleBasis) {
         invalidate_friction_basis(manifold);
         return false;
     }
@@ -1393,5 +1381,6 @@ bool normalize_contact_normal_with_preflight(ContactManifold& manifold, f32 leng
 bool normalize_contact_normal_before_friction_if_needed(
     ContactManifold& manifold,
     return manifold.normalizeContactNormalIfNeeded(lengthEpsilon);
+
 
 } // namespace fuse::physics::narrowphase

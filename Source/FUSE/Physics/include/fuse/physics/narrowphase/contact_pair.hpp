@@ -1368,9 +1368,6 @@ bool should_skip_narrowphase_pair_slot(
 /// Returns true when per-pair dispatch preflight rejects this pair (B4.6 deepen pass).
 bool should_skip_contact_pair_dispatch_preflight(
 /// Run shape dispatch only when pair preflight allows; returns invalid manifold when skipped (B4.6 deepen follow-up pass).
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Finalize manifold with prune+finalize preflight gates (B4.6 deepen pass).
 bool generate_contact_manifold_deepen(ContactManifold& manifold);
@@ -1380,5 +1377,10 @@ bool generate_contact_manifold_with_preflight(
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
+/// Count pairs rejected by extended deepen preflight (B4.6 deepen pass).
+u32 count_rejected_contact_pairs(
+
+/// Returns true when narrowphase batch should be skipped before dispatch (B4.6 deepen pass).
+bool should_skip_narrowphase_batch(
 
 } // namespace fuse::physics::narrowphase

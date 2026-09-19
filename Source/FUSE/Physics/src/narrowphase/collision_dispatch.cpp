@@ -147,47 +147,27 @@ void runNarrowphaseIntoBufferWithDeepenPreflight(
         if (generate_contact_manifold(manifold)) {
         ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
         if (finalize_contact_manifold_with_preflight(manifold)) {
-            buffer.writeSlot(pairIndex, manifold);
             write_contact_buffer_slot_with_preflight(buffer, pairIndex, manifold);
-        }
-    }
 
     compact_and_clamp_contact_buffer_with_preflight(buffer);
-}
 
 bool runNarrowphaseIntoBufferIfNeeded(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    ContactBufferSoA& buffer) {
     if (can_skip_narrowphase(pairs, bodies, shapes)) {
         buffer.clear();
         return false;
-    }
     runNarrowphaseIntoBufferWithDeepenPreflight(pairs, bodies, shapes, buffer);
     return buffer.hasValidContacts();
-}
 
 void runNarrowphaseIntoBufferWithPreflight(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    ContactBufferSoA& buffer) {
     if (narrowphase_batch_rejects_all(pairs, bodies, shapes)) {
-        buffer.clear();
         return;
-    }
 
     const u32 pairCount = static_cast<u32>(pairs.size());
-    buffer.preparePairSlots(pairCount);
 
-    for (u32 pairIndex = 0; pairIndex < pairCount; ++pairIndex) {
         ContactManifold manifold =
             detect_contacts_pair_with_deepen_preflight(pairs[pairIndex], bodies, shapes);
-        if (generate_contact_manifold(manifold)) {
             buffer.writeSlotWithPreflight(pairIndex, manifold);
-        }
-    }
+
 
     buffer.compactAndClampWithPreflight();
 }

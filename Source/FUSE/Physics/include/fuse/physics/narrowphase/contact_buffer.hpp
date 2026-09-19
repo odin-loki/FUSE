@@ -92,6 +92,7 @@ struct ContactBufferSoA {
     void preparePairSlots(u32 pairCount);
     void writeSlot(u32 slot, const ContactManifold& manifold);
     void invalidateSlot(u32 slot);
+    bool writeSlotWithPreflight(u32 slot, const ContactManifold& manifold);
     void applyWarmStartStub(u32 slot, ContactManifold& manifold) const;
     void buildFrictionTangentBases();
     void buildFrictionTangentBasesIfNeeded(f32 epsilon = 1e-4f);
@@ -206,6 +207,7 @@ ContactBufferWriteSlotRejectReason contact_buffer_write_slot_reject_reason(
 /// Human-readable label for contact-buffer write reject reasons (logging / tests).
 
 /// Diagnose why write would reject; vacuously succeeds when write may proceed.
+
 
 
 
@@ -388,11 +390,17 @@ bool shouldSkipContactBufferWrite(
 
 
 /// Diagnose why compaction would skip its scan loop; vacuously succeeds when compaction may proceed.
+
+
+
+
+
 ContactBufferCompactionRejectReason contactBufferCompactionRejectReason(const ContactBufferSoA& buffer);
 
 /// Returns true when `contactBufferCompactionRejectReason` matches `expected` (B4.6 deepen pass).
 bool contactBufferCompactionRejectsForReason(
 
+    const ContactBufferSoA& buffer,
     ContactBufferCompactionRejectReason expected);
 
 /// Read-only compaction diagnostics — no mutation (B4.6 deepen pass).
@@ -554,7 +562,6 @@ enum class ContactBufferCompactRejectReason : u8 {
 /// Read-only compaction diagnostics — no mutation (B4.5 deepen pass).
 
 
-ContactBufferCompactionPreflight preflightContactBufferCompaction(const ContactBufferSoA& buffer);
 
 /// Non-mutating compaction skip predicate — inverse of `needsCompaction` (B4.4 deepen pass).
 
@@ -1105,6 +1112,15 @@ bool write_contact_buffer_slot_with_preflight(
 
 
 
+
+
+
+
+
+
+
+
+
 struct ContactBufferClampPreflight {
     ContactBufferClampRejectReason reason = ContactBufferClampRejectReason::None;
     bool emptyBuffer = false;
@@ -1171,11 +1187,19 @@ struct ContactBufferCompactAndClampPreflight {
 /// Read-only compact-and-clamp diagnostics — no mutation (B4.6 deepen pass).
 
     bool needsCompactAndClamp() const { return reason == ContactBufferCompactAndClampRejectReason::None; }
-    bool noWork = false;
 
     bool needsCompactAndClamp() const {
         return reason == ContactBufferCompactAndClampRejectReason::None;
     }
+
+
+
+/// Human-readable label for compact-and-clamp reject reasons (B4.6 deepen pass).
+
+/// Diagnose why compact-and-clamp would skip; vacuously succeeds when work may proceed (B4.6 deepen pass).
+
+
+
 };
 
 ContactBufferCompactAndClampPreflight preflightContactBufferCompactAndClamp(const ContactBufferSoA& buffer);
@@ -1521,5 +1545,6 @@ ContactBufferFrictionRebuildPreflight preflightContactBufferFrictionRebuild(
 bool canSkipContactBufferFrictionRebuild(const ContactBufferSoA& buffer, f32 epsilon = 1e-4f);
 
 bool shouldRunContactBufferFrictionRebuild(const ContactBufferSoA& buffer, f32 epsilon = 1e-4f);
+
 
 } // namespace fuse::physics::narrowphase

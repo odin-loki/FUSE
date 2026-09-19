@@ -1275,6 +1275,7 @@ bool generate_contact_manifold_with_preflight(ContactManifold& manifold);
 /// Finalize only when skip-guard allows; no-op otherwise (B4.6 deepen pass).
 
 
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

@@ -763,6 +763,10 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
     }
 
     const ContactPairRejectReason baseReason = contact_pair_reject_reason(pair, bodies, shapes);
+    if (baseReason == ContactPairRejectReason::UnsupportedShapePair &&
+        is_plane_plane_contact_pair(pair, shapes)) {
+        return ContactPairRejectReason::PlanePlane;
+    }
     if (baseReason != ContactPairRejectReason::None) {
         return baseReason;
     if (isDeepenDegenerateShapePair(pair, shapes)) {
@@ -775,6 +779,9 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
         return ContactPairRejectReason::AnyTrigger;
     if (is_massless_contact_pair(pair, bodies)) {
         return ContactPairRejectReason::BothMassless;
+    }
+    if (is_plane_plane_contact_pair(pair, shapes)) {
+        return ContactPairRejectReason::PlanePlane;
     return ContactPairRejectReason::None;
 
 bool contact_pair_deepen_rejects_for_reason(
@@ -2366,6 +2373,20 @@ bool generate_contact_manifold_with_preflight(
     f32 frictionEpsilon) {
     return finalize_contact_manifold_with_preflight(
         manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
+u32 count_rejected_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflight_narrowphase_batch(pairs, bodies, shapes).rejectedCount;
+}
+
+bool should_skip_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return narrowphase_batch_rejects_all(pairs, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase
