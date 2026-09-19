@@ -893,3 +893,6 @@ bool HrtfPanPathPreflight::should_skip_pan() const {
 bool HrtfAttenuationCouplingPreflight::can_couple() const {
 bool HrtfAttenuationCouplingPreflight::should_skip_coupling() const {
     preflight.bypassPath = should_skip_hrtf_attenuation_coupling(path);
+
+// --- deepen additive from deepen-b72-hrtf-preflights-201d ---
+    preflight.bypassed = should_skip_hrtf_pan_path(preflight.path);

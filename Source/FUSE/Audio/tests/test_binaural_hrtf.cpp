@@ -1379,3 +1379,13 @@ void testPreflightHrtfAttenuationCouplingGuards() {
     expectTrue(bypass.should_skip_pan(), "disabled preflight skips pan");
     expectTrue(unity.should_skip_coupling(), "unity coupling preflight skips coupling");
     expectTrue(bypass.should_skip_coupling(), "bypass coupling preflight skips coupling");
+
+// --- deepen additive from deepen-b72-hrtf-preflights-201d ---
+void testPreflightHrtfIr() {
+    const fuse::audio::HrtfIrPreflight malformed_preflight = fuse::audio::preflight_hrtf_ir(malformed);
+void testPreflightHrtfPanPath() {
+    const fuse::audio::HrtfPanPathPreflight stub =
+void testPreflightHrtfAttenuationCoupling() {
+    testPreflightHrtfIr();
+    testPreflightHrtfPanPath();
+    testPreflightHrtfAttenuationCoupling();
