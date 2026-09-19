@@ -386,3 +386,7 @@ bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc, TaaResolveBlendP
 
 // --- deepen additive from deepen-b59-taa-guards-f9b0 ---
     return preflightTaaResolveBlend(desc, m_history);
+
+// --- deepen additive from deepen-b59-taa-guards-2b1e ---
+bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc, TaaBlendWeights* weights) const {
+    return preflightTaaResolveBlend(desc, m_history, weights);

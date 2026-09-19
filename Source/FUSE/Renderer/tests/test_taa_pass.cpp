@@ -3001,3 +3001,11 @@ void testHistoryWarmupGuardHelpers() {
     expectTrue(fuse::renderer::taaResolveBlendPreflightValid(passPreflight),
                "pass preflightResolveBlend is valid for warmed history");
     expectTrue(passPreflight.history_reuse, "pass preflight allows history reuse");
+
+// --- deepen additive from deepen-b59-taa-guards-2b1e ---
+    expectTrue(fuse::renderer::preflightTaaResolveBlend(desc, history, &computed),
+    expectTrue(!fuse::renderer::preflightTaaResolveBlend(desc, history, &computed),
+void testTaaPassJitterSyncAndBlendPreflight() {
+    expectTrue(pass->preflightResolveBlend(resolveDesc, &weights),
+    expectTrue(!pass->preflightResolveBlend(resolveDesc, &weights),
+    testTaaPassJitterSyncAndBlendPreflight();
