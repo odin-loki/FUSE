@@ -192,6 +192,11 @@ bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, KernelLaunchRe
 /// Diagnose extended kernel-parameter invariants (rays-per-probe, etc.) beyond launch guards.
 bool preflightProbeKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
+/// Early-out when probe trace kernel launch would be rejected.
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
+/// Early-out when probe blend kernel launch would be rejected.
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
+
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
 /// Launch probe trace kernel with reject-reason diagnostics; false when preflight rejects.
