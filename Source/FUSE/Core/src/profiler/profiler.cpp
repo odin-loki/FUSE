@@ -1598,3 +1598,15 @@ bool tryFindAsyncFlowStartIndex(u32 flowId, u32& outIndex) {
 bool tryFindAsyncFlowFinishIndex(u32 flowId, u32& outIndex) {
 ProfileNestingPreflight preflightNesting() {
     ProfileNestingPreflight preflight{};
+
+// --- deepen additive from deepen-b16-profiler-guards-0062 ---
+bool wouldSkipInvalidEventName(const char* name) {
+    if (!tryFindFirstEventIndexByName(name, index)) {
+    if (!tryFindLastEventIndexByName(name, index)) {
+bool tryFindFirstFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex) {
+bool tryFindLastFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex) {
+    return !g_enabled.load(std::memory_order_acquire) || wouldSkipInvalidEventName(name);
+    if (!g_enabled.load(std::memory_order_acquire) || wouldSkipInvalidEventName(name)) {
+    return !g_enabled.load(std::memory_order_acquire) || wouldSkipInvalidEventName(track);
+bool wouldSkipChromeTraceExportCleanly() {
+    return !preflightChromeTraceExport().canExportCleanly();

@@ -627,3 +627,9 @@ bool wouldSkipSafeChromeTraceExport(ChromeTraceExportSkipReason* reason = nullpt
 bool tryFindAsyncFlowStartIndex(u32 flowId, u32& outIndex);
 bool tryFindAsyncFlowFinishIndex(u32 flowId, u32& outIndex);
 ProfileNestingPreflight preflightNesting();
+
+// --- deepen additive from deepen-b16-profiler-guards-0062 ---
+bool wouldSkipInvalidEventName(const char* name);
+bool tryFindFirstFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex);
+bool tryFindLastFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex);
+bool wouldSkipChromeTraceExportCleanly();

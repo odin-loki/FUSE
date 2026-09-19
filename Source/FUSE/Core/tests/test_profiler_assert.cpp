@@ -5839,3 +5839,57 @@ void testChromeTraceExportPreflightExtensions() {
     expectTrue(fuse::profiler::tryFindFirstEventIndexByName("index_scope", outIndex),
                "tryFindFirstEventIndexByName true for scope name");
     expectTrue(outIndex == 0u, "tryFindFirstEventIndexByName returns scope begin index");
+
+// --- deepen additive from deepen-b16-profiler-guards-0062 ---
+    expectTrue(!fuse::profiler::wouldSkipInvalidEventName("scope"),
+               "wouldSkipInvalidEventName false for valid name");
+    expectTrue(fuse::profiler::wouldSkipInvalidEventName(nullptr),
+               "wouldSkipInvalidEventName true for null");
+    expectTrue(fuse::profiler::wouldSkipInvalidEventName(""),
+               "wouldSkipInvalidEventName true for empty string");
+void testTryFindEventIndexByNameGuard() {
+    expectTrue(!fuse::profiler::tryFindLastEventIndexByName("missing", outIndex),
+               "tryFindFirstEventIndexByName false for null lookup name");
+               "tryFindFirstEventIndexByName false for empty lookup name");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByName("lookup_scope", outIndex),
+               "tryFindFirstEventIndexByName finds scope begin");
+    expectTrue(fuse::profiler::tryFindLastEventIndexByName("lookup_scope", outIndex),
+               "tryFindLastEventIndexByName finds scope end");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByName("lookup_counter", outIndex),
+               "tryFindFirstEventIndexByName finds counter sample");
+               "tryFindFirstEventIndexByPhase finds flow start");
+void testTryFindFlowEventIndexGuard() {
+    expectTrue(fuse::profiler::tryFindFirstFlowEventIndex(flowId, fuse::profiler::EventPhase::FlowStart, outIndex),
+               "tryFindFirstFlowEventIndex finds flow start");
+    expectTrue(fuse::profiler::tryFindLastFlowEventIndex(flowId, fuse::profiler::EventPhase::FlowFinish, outIndex),
+               "tryFindLastFlowEventIndex finds flow finish");
+    expectTrue(!fuse::profiler::tryFindFirstFlowEventIndex(flowId + 1u,
+               "tryFindFirstFlowEventIndex false for unknown flow id");
+    expectTrue(fuse::profiler::tryFirstEventByName("name_lookup", outEvent),
+               "tryFirstEventByName finds first matching event");
+               "tryFirstEventByName returns scope begin first");
+    expectTrue(fuse::profiler::tryLastEventByName("name_lookup", outEvent),
+               "tryLastEventByName finds last matching event");
+               "tryLastEventByName returns scope end last");
+    expectTrue(resetPreflight.canEndAsyncFlowSafely() == false,
+        expectTrue(!activePreflight.scopeNestingBalanced, "active scope marks nesting unbalanced");
+        expectTrue(flowPreflight.hasOpenAsyncFlows, "nesting preflight marks open async flows");
+        expectTrue(flowPreflight.activeFlowNestingDepth == 1u, "nesting preflight reports flow depth");
+        expectTrue(flowPreflight.canEndAsyncFlowSafely(), "open flow allows safe end preflight");
+    expectTrue(!closedPreflight.hasOpenAsyncFlows, "nesting preflight clears open flows");
+               "wouldSkipProfileScope false when enabled with valid name");
+               "wouldSkipAsyncFlowBegin false when enabled with valid name");
+               "wouldSkipCounterSample false when enabled with valid track");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowBegin("valid_flow"),
+    expectTrue(fuse::profiler::wouldSkipCounterSample("valid_counter"),
+    expectTrue(!fuse::profiler::wouldSkipChromeTraceExportCleanly(),
+               "wouldSkipChromeTraceExportCleanly false on clean empty buffer");
+    expectTrue(fuse::profiler::wouldSkipChromeTraceExportCleanly(),
+               "wouldSkipChromeTraceExportCleanly true when disabled");
+                   "wouldSkipChromeTraceExport false with open scope and flow");
+                   "wouldSkipChromeTraceExportSafely true with unbalanced nesting");
+                   "wouldSkipChromeTraceExportCleanly true with unbalanced nesting");
+void testChromeTraceExportPreflightRingOverflowExtensions() {
+               "wouldSkipChromeTraceExportCleanly true after ring overflow");
+               "wouldSkipChromeTraceExportSafely false when nesting remains balanced");
+    testChromeTraceExportPreflightRingOverflowExtensions();
