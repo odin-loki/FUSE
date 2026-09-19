@@ -21,6 +21,7 @@ enum class ContactPairRejectReason : u8 {
     DegenerateShape,
     BothSleeping,
     BothKinematic,
+    ZeroInvMass,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -83,6 +84,12 @@ bool is_sleeping_contact_pair(
 bool is_kinematic_contact_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies);
+
+/// Returns true when both bodies have negligible inverse mass (B4.4 deepen follow-up pass).
+bool is_zero_inv_mass_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    f32 invMassEpsilon = 1e-8f);
 
 /// Returns true when either shape has zero or negative extent (B4.3 deepen pass).
 bool is_degenerate_shape_pair(
@@ -163,6 +170,46 @@ bool should_skip_contact_pair_deepen_dispatch(
 
 /// True when all pairs are rejected by extended preflight or the pair list is empty (B4.4 deepen follow-up).
 bool can_skip_narrowphase(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Aggregate dispatch counts for narrowphase batch guards (B4.4 deepen follow-up pass).
+struct NarrowphaseBatchStats {
+    u32 totalPairs = 0;
+    u32 dispatchableCount = 0;
+    u32 rejectedCount = 0;
+};
+
+/// Const preflight for narrowphase batch dispatch (B4.4 deepen follow-up pass).
+struct NarrowphaseBatchPreflight {
+    NarrowphaseBatchStats stats{};
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && stats.dispatchableCount > 0u; }
+};
+
+/// Populate batch preflight without running shape dispatch (B4.4 deepen follow-up pass).
+NarrowphaseBatchPreflight preflight_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Count pairs that pass extended deepen preflight (B4.4 deepen follow-up pass).
+u32 count_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// True when at least one pair passes extended deepen preflight (B4.4 deepen follow-up pass).
+bool has_dispatchable_contact_pairs(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);

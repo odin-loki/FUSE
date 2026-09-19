@@ -230,6 +230,8 @@ const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
         return "BothSleeping";
     case ContactPairRejectReason::BothKinematic:
         return "BothKinematic";
+    case ContactPairRejectReason::ZeroInvMass:
+        return "ZeroInvMass";
     }
     return "Unknown";
 }
@@ -276,6 +278,17 @@ bool is_kinematic_contact_pair(
     const bool kinematicA = (bodies.flags[pair.bodyA] & RB_KINEMATIC) != 0u;
     const bool kinematicB = (bodies.flags[pair.bodyB] & RB_KINEMATIC) != 0u;
     return kinematicA && kinematicB;
+}
+
+bool is_zero_inv_mass_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    f32 invMassEpsilon) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    return bodies.invMasses[pair.bodyA] <= invMassEpsilon &&
+           bodies.invMasses[pair.bodyB] <= invMassEpsilon;
 }
 
 bool is_degenerate_shape_pair(
@@ -487,6 +500,9 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
     if (is_kinematic_contact_pair(pair, bodies)) {
         return ContactPairRejectReason::BothKinematic;
     }
+    if (is_zero_inv_mass_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::ZeroInvMass;
+    }
     return ContactPairRejectReason::None;
 }
 
@@ -521,6 +537,53 @@ bool can_skip_narrowphase(
         }
     }
     return true;
+}
+
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected) {
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
+}
+
+NarrowphaseBatchPreflight preflight_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphaseBatchPreflight preflight{};
+    preflight.stats.totalPairs = static_cast<u32>(pairs.size());
+    if (pairs.empty()) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    for (const broadphase::CandidatePair& pair : pairs) {
+        if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+            ++preflight.stats.rejectedCount;
+        } else {
+            ++preflight.stats.dispatchableCount;
+        }
+    }
+
+    if (preflight.stats.dispatchableCount == 0u) {
+        preflight.skipped = true;
+    }
+    return preflight;
+}
+
+u32 count_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflight_narrowphase_batch(pairs, bodies, shapes).stats.dispatchableCount;
+}
+
+bool has_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return count_dispatchable_contact_pairs(pairs, bodies, shapes) > 0u;
 }
 
 } // namespace fuse::physics::narrowphase
