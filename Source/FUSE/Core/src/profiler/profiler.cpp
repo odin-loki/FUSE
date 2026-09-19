@@ -1285,3 +1285,6 @@ bool preflightChromeTraceNesting(ChromeTraceExportRejectReason* reason) {
 bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent) {
     return tryEventAt(count - 1u - reverseIndex, outEvent);
 bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent) {
+
+// --- deepen additive from deepen-b16-profiler-guards-2ba8 ---
+bool tryFindFirstEventWithPhase(EventPhase phase, ProfileEvent& outEvent) {

@@ -3361,3 +3361,27 @@ void testTryEventAtReverseGuard() {
 void testChromeTraceExportPreflightGuardDiagnostics() {
     expectTrue(preflight.hasRejectedInvalidNames, "preflight marks rejected invalid names");
     testChromeTraceExportPreflightGuardDiagnostics();
+
+// --- deepen additive from deepen-b16-profiler-guards-2ba8 ---
+void testBlankWhitespaceNameGuards() {
+void testPhaseLookupGuards() {
+    expectTrue(!fuse::profiler::tryFindFirstEventWithPhase(fuse::profiler::EventPhase::Begin, outEvent),
+               "tryFindFirstEventWithPhase false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryFindFirstEventWithPhase clears output on empty buffer");
+    expectTrue(fuse::profiler::tryFindFirstEventWithPhase(fuse::profiler::EventPhase::FlowStart, outEvent),
+               "tryFindFirstEventWithPhase true for flow start");
+void testHasResidualFlowNestingDepthGuard() {
+void testChromeTraceExportPreflightCleanTrace() {
+    const fuse::profiler::ChromeTraceExportPreflight openPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(!openPreflight.canExportCleanTrace(), "open flow fails clean export preflight");
+    expectTrue(openPreflight.hasUnbalancedNesting(), "open flow marks unbalanced nesting");
+    expectTrue(openPreflight.wouldExportEmptyTrace() == false, "open flow still has exportable events");
+void testChromeTraceExportPreflightWouldExportEmpty() {
+    expectTrue(emptyPreflight.wouldExportEmptyTrace(), "empty buffer would export empty trace");
+    expectTrue(emptyPreflight.canExportCleanTrace(), "empty balanced buffer is clean export");
+    expectTrue(!emptyPreflight.bufferFull, "empty preflight is not buffer full");
+    const fuse::profiler::ChromeTraceExportPreflight blankPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(blankPreflight.wouldExportEmptyTrace(), "blank-name attempts still export empty trace");
+    expectTrue(blankPreflight.eventCount == 0u, "blank-name attempts do not change event count");
+    testChromeTraceExportPreflightCleanTrace();
+    testChromeTraceExportPreflightWouldExportEmpty();
