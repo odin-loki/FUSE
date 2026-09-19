@@ -497,6 +497,28 @@ struct NestingStatePreflight {
         return !profilerDisabled && exportableEventCount > 0 && rejectReason == ChromeTraceExportRejectReason::None;
 };
 
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canBegin = false;
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -781,6 +803,7 @@ bool canSampleCounter(const char* track);
 bool isWhitespaceOnlyEventName(const char* name);
 bool isBlankEventName(const char* name);
 bool isEmptyEventName(const char* name);
+/// True for null, empty, or whitespace-only names — does not affect recording guards.
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
@@ -880,6 +903,8 @@ bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex);
 bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex);
 bool tryFindFirstEventIndexByName(const char* name, u32& outIndex);
 bool tryFindLastEventIndexByName(const char* name, u32& outIndex);
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 ProfilerRecordPreflight preflightRecord(const char* name);
 ProfilerExportPreflight preflightChromeTraceExport();

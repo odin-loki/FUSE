@@ -1158,6 +1158,9 @@ bool isLookupNameValid(const char* name) {
 
     return name == nullptr || name[0] == '\0';
 
+        const char ch = *cursor;
+        if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     EventNameRejectReason reason = EventNameRejectReason::None;
     return tryValidateEventName(event.name, reason);
@@ -2090,6 +2093,7 @@ bool tryFirstEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
     const u32 index = firstEventIndexOfPhase(phase);
 bool tryLastExportableEvent(ProfileEvent& outEvent) {
     const u32 index = lastEventIndex();
+bool tryExportableFirstEvent(ProfileEvent& outEvent) {
         outEvent = ProfileEvent{};
         return false;
     }
@@ -2123,6 +2127,16 @@ bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
 
 bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByName(name);
+
+
+
+bool tryExportableLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+
+
+
+    outEvent = eventAt(index);
+    return isValidProfileEvent(outEvent);
 
 
 
@@ -2406,6 +2420,12 @@ bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
 
 bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByPhase(phase);
+
+
+        if (isValidEventName(event.name) && std::string(event.name) == name) {
+
+
+
 
 
 u32 lastEventIndex() {
@@ -2997,6 +3017,32 @@ bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReaso
 
     outJson = exportChromeTraceJson();
     return true;
+}
+
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
+    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
+        && !preflight.wouldUnderflowOpenCount;
+    return preflight;
 }
 
 void reset() {
