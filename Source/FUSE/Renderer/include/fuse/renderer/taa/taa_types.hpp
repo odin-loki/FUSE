@@ -199,6 +199,7 @@ bool taaHistoryBlendAllowed(bool firstFrame, const TaaHistoryBuffer& history);
 /// True when history still needs warm-up before temporal reuse (B5.9 deepen).
 bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history);
 /// True when history is allocated and warmed for temporal reuse (B5.9 deepen).
+/// True when history warm-up is complete and temporal reuse may proceed (B5.9 deepen).
 bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
 /// Blend weights for a resolve frame considering warm-up and reuse guards (B5.9 deepen).
 TaaBlendWeights computeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
@@ -671,6 +672,8 @@ bool wouldRejectTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHist
 /// True when resolve blend weights pass validation and reuse policy (B5.9 deepen).
 /// True when computed resolve blend weights pass validation and reuse policy (B5.9 deepen).
 bool taaResolveBlendReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Early-out when resolve skip or blend-weight preflight would reject (B5.9 deepen).
+bool shouldSkipTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

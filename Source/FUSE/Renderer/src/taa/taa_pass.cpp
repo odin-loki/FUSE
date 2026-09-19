@@ -832,6 +832,21 @@ bool TaaPass::shouldSkipJitterNdc() const {
 
 bool TaaPass::tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const {
     return tryPreflightTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength(), reason);
+bool TaaPass::tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const {
+    return preflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), &reason);
+}
+
+    return preflightTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength(), &reason);
+
+bool TaaPass::preflightResolveFrame(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason,
+                                    TaaResolveBlendRejectReason* blendReason) const {
+    return preflightTaaResolveFrame(desc, m_history, skipReason, blendReason);
+
+bool TaaPass::shouldSkipResolveFrame(const TaaResolveDesc& desc) const {
+    return shouldSkipTaaResolveFrame(desc, m_history);
+
+bool TaaPass::historyWarmupComplete() const {
+    return taaHistoryWarmupComplete(m_history);
 }
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {

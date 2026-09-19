@@ -42,6 +42,7 @@ bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history) {
 
 bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
     return history.isReady() && !taaHistoryNeedsWarmup(history);
+    return !taaHistoryNeedsWarmup(history);
 }
 
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history) {
@@ -751,6 +752,10 @@ bool TaaHistoryBuffer::preflightReuse(u32 observedGeneration) const {
 
 bool TaaHistoryBuffer::warmupComplete() const {
     return taaHistoryWarmupComplete(*this);
+}
+
+bool TaaHistoryBuffer::shouldSkipReuse(u32 observedGeneration) const {
+    return shouldSkipTaaHistoryReuse(*this, observedGeneration);
 }
 
 bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDesc& desc) {

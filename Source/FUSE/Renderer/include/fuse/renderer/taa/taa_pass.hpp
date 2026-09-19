@@ -389,6 +389,11 @@ public:
     /// True when resolve blend weights pass validation and reuse policy (B5.9 deepen).
     /// True when pass jitter can produce NDC offsets (B5.9 deepen).
     /// NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
+    /// Early-out when resolve skip or blend-weight preflight would reject (B5.9 deepen).
+    bool shouldSkipResolveFrame(const TaaResolveDesc& desc) const;
+    /// True when history warm-up is complete (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
