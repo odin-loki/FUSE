@@ -297,6 +297,8 @@ bool canRecordScope(const char* name) {
 }
 
 bool canBeginAsyncFlow(const char* name) {
+    return enabled() && isValidEventName(name);
+}
 
 bool canEndAsyncFlow(const char* name) {
     return enabled() && isValidEventName(name)
@@ -304,6 +306,8 @@ bool canEndAsyncFlow(const char* name) {
 
 bool canSampleCounter(const char* track) {
     return enabled() && isValidEventName(track);
+}
+
 
 void beginFrame() {
     g_frameIndex.fetch_add(1u, std::memory_order_acq_rel);
@@ -562,6 +566,10 @@ bool isProfilerGuardStateBalanced() {
 
 bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
+}
+
+bool isProfilerGuardStateBalanced() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
 }
 
 bool hasEvents() {
@@ -1014,6 +1022,9 @@ bool hasExportableEvents() {
     return false;
 
 bool canExportChromeTrace() {
+    }
+
+    return true;
 
 const ProfileEvent& lastEvent() {
     const u32 index = lastEventIndex();
