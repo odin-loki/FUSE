@@ -718,6 +718,126 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 /// Non-mutating merge-into-buffer predicate — mirrors `preflightMergePairsIntoBuffer` (B4.2 deepen pass).
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
 
+/// Why per-cell pair generation would early-out (B4.2 deepen pass).
+enum class CellPairGenRejectReason : u8 {
+    None = 0,
+    InsufficientOccupants,
+};
+
+/// Human-readable label for cell-pair generation reject reasons (logging / tests).
+const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason);
+
+/// Diagnose why cell pair generation would skip; vacuously succeeds when generation may proceed.
+CellPairGenRejectReason cellPairGenRejectReason(u32 occupantCount);
+
+CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants);
+
+/// Returns true when `cellPairGenRejectReason` matches `expected` (B4.2 deepen pass).
+bool cellPairGenRejectsForReason(u32 occupantCount, CellPairGenRejectReason expected);
+
+bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenRejectReason expected);
+
+/// Read-only cell-pair generation diagnostics — no mutation (B4.2 deepen pass).
+struct CellPairGenPreflight {
+    CellPairGenRejectReason reason = CellPairGenRejectReason::None;
+    bool insufficientOccupants = false;
+    u32 uniqueBodyCount = 0;
+    u32 pairCount = 0;
+
+    bool canGenerate() const { return reason == CellPairGenRejectReason::None; }
+};
+
+CellPairGenPreflight preflightCellPairGen(u32 occupantCount);
+
+CellPairGenPreflight preflightCellPairGen(const std::vector<u32>& occupants);
+
+/// Non-mutating cell-pair generation skip predicate — inverse of `canGenerate` (B4.2 deepen pass).
+bool canSkipCellPairGen(u32 occupantCount);
+
+bool canSkipCellPairGen(const std::vector<u32>& occupants);
+
+/// Non-mutating cell-pair generation predicate — mirrors `preflightCellPairGen` (B4.2 deepen pass).
+bool shouldRunCellPairGen(u32 occupantCount);
+
+bool shouldRunCellPairGen(const std::vector<u32>& occupants);
+
+/// Pair count for a cell with `uniqueBodyCount` bodies (0 when insufficient occupants).
+u32 estimateCellPairCount(u32 uniqueBodyCount);
+
+u32 estimateCellPairCount(const std::vector<u32>& occupants);
+
+/// Why shape→cell insertion would early-out (B4.2 deepen pass).
+enum class CellCapacityInsertRejectReason : u8 {
+    None = 0,
+    OutOfRangeBody,
+    EmptyRange,
+    ExceedsBudget,
+};
+
+/// Human-readable label for cell-capacity insert reject reasons (logging / tests).
+const char* cellCapacityInsertRejectReasonName(CellCapacityInsertRejectReason reason);
+
+/// Diagnose why shape→cell insertion would reject; vacuously succeeds when insertion may proceed.
+CellCapacityInsertRejectReason cellCapacityInsertRejectReason(
+    const CellRange3& range,
+    u32 maxCells,
+    u32 bodyIndex,
+    u32 bodyCount);
+
+CellCapacityInsertRejectReason cellCapacityInsertRejectReason(
+    const CellRange2& range,
+    u32 maxCells,
+    u32 bodyIndex,
+    u32 bodyCount);
+
+/// Returns true when `cellCapacityInsertRejectReason` matches `expected` (B4.2 deepen pass).
+bool cellCapacityInsertRejectsForReason(
+    const CellRange3& range,
+    u32 maxCells,
+    u32 bodyIndex,
+    u32 bodyCount,
+    CellCapacityInsertRejectReason expected);
+
+bool cellCapacityInsertRejectsForReason(
+    const CellRange2& range,
+    u32 maxCells,
+    u32 bodyIndex,
+    u32 bodyCount,
+    CellCapacityInsertRejectReason expected);
+
+/// Read-only shape→cell insertion diagnostics — no mutation (B4.2 deepen pass).
+struct CellCapacityInsertPreflight {
+    CellCapacityInsertRejectReason reason = CellCapacityInsertRejectReason::None;
+    bool outOfRangeBody = false;
+    bool emptyRange = false;
+    bool exceedsBudget = false;
+    u32 occupancyCount = 0;
+
+    bool canInsert() const { return reason == CellCapacityInsertRejectReason::None; }
+};
+
+CellCapacityInsertPreflight preflightCellCapacityInsert(
+    const CellRange3& range,
+    u32 maxCells,
+    u32 bodyIndex,
+    u32 bodyCount);
+
+CellCapacityInsertPreflight preflightCellCapacityInsert(
+    const CellRange2& range,
+    u32 maxCells,
+    u32 bodyIndex,
+    u32 bodyCount);
+
+/// Non-mutating cell-capacity insert skip predicate — inverse of `canInsert` (B4.2 deepen pass).
+bool canSkipCellCapacityInsert(const CellRange3& range, u32 maxCells, u32 bodyIndex, u32 bodyCount);
+
+bool canSkipCellCapacityInsert(const CellRange2& range, u32 maxCells, u32 bodyIndex, u32 bodyCount);
+
+/// Non-mutating cell-capacity insert predicate — mirrors `preflightCellCapacityInsert` (B4.2 deepen pass).
+bool shouldRunCellCapacityInsert(const CellRange3& range, u32 maxCells, u32 bodyIndex, u32 bodyCount);
+
+bool shouldRunCellCapacityInsert(const CellRange2& range, u32 maxCells, u32 bodyIndex, u32 bodyCount);
+
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
     const RigidBodySoA& bodies,
