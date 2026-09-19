@@ -1591,3 +1591,13 @@ struct IslandWakeThenSolvePreflight {
 IslandWakeThenSolvePreflight preflight_wake_then_solve_island(
 IslandWakeThenSolvePreflight preflight_wake_then_solve_island_by_index(
 bool should_skip_wake_then_solve_island(const ContactIslandGraph::Island& island,
+
+// --- deepen additive from deepen-pbd-island-guards-79a3 ---
+struct IslandSleepWakeDispatchPreflight {
+    IslandSleepPreflight islandSleep{};
+    IslandWakePreflight islandWake{};
+struct IslandActiveSolveGraphPreflight {
+IslandSleepWakeDispatchPreflight preflight_dispatch_island_sleep_wake(
+IslandSleepWakeDispatchPreflight preflight_dispatch_island_sleep_wake_by_index(
+bool should_skip_dispatch_island_sleep_wake(const ContactIslandGraph::Island& island,
+IslandActiveSolveGraphPreflight preflight_island_active_solve_graph(

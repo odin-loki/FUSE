@@ -395,3 +395,8 @@ bool should_skip_island_graph_integrity(const ContactIslandGraph& graph,
 // --- deepen additive from deepen-pbd-island-guards-a022 ---
 IslandGraphBuildPreflight preflightIslandGraphBuild(
     return !preflightIslandGraphBuild(bodyCount, contacts, distanceConstraints).can_build();
+
+// --- deepen additive from deepen-pbd-island-guards-79a3 ---
+IslandGraphBuildPreflight preflight_graph_build(
+bool should_skip_graph_build(u32 bodyCount,
+    const IslandGraphBuildPreflight preflight = preflight_graph_build(bodyCount, contacts, distanceConstraints);
