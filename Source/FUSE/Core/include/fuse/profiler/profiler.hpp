@@ -163,6 +163,8 @@ struct ChromeTraceExportPreflight {
     bool flowDepthDetached = false;
     u32 invalidNameEventCount = 0;
     u32 nonExportableEventCount = 0;
+    u32 firstExportableEventIndex = kInvalidEventIndex;
+    u32 lastExportableEventIndex = kInvalidEventIndex;
     bool ringBufferFull = false;
     bool hasInvalidNameEvents = false;
     bool crossThreadFlowHandoffPending = false;
@@ -837,6 +839,7 @@ bool hasUnpairedAsyncFlowsInBuffer();
 u32 unpairedAsyncFlowIdCount();
 bool isScopeNameBalancedInBuffer(const char* name);
 bool isNestingPreflightClean();
+bool isFlowIdOpen(u32 flowId);
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();

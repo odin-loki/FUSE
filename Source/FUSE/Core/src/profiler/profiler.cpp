@@ -334,6 +334,12 @@ bool isValidFlowLookupId(u32 flowId) {
 
     return isValidEventName(event.name) && isFlowEventPhase(event.phase) && event.scopeId == flowId;
 bool isFlowPhase(EventPhase phase) {
+bool isFlowPhaseEvent(const ProfileEvent& event) {
+    return event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish;
+
+bool eventNameMatches(const char* lhs, const char* rhs) {
+    if (lhs == nullptr || rhs == nullptr) {
+    return std::strcmp(lhs, rhs) == 0;
 }
 
 } // namespace
@@ -1215,6 +1221,34 @@ bool hasActiveScope() {
 
 bool hasActiveAsyncFlowNesting() {
     return flowNestingDepth() > 0u;
+}
+
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
+}
+
+bool isFlowIdOpen(u32 flowId) {
+    u32 openStarts = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (!isValidEventName(event.name) || !isFlowPhaseEvent(event) || event.scopeId != flowId) {
+            continue;
+        }
+
+        if (event.phase == EventPhase::FlowStart) {
+            ++openStarts;
+        } else {
+            if (openStarts > 0u) {
+                --openStarts;
+            }
+        }
+    }
+    return openStarts > 0u;
 }
 
 bool hasEvents() {
@@ -2669,16 +2703,19 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
-            return true;
-        }
 
-    outEvent = ProfileEvent{};
-    return false;
 
-    if (flowId == 0u) {
 
-    const u32 total = eventCount();
-            outEvent = event;
+
+
+
+
+
+
+
+
+
+
 
 
 u32 firstEventIndex() {
@@ -2726,6 +2763,22 @@ u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 
 u32 firstExportableEventIndex() {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (isEventExportable(i)) {
+            return i;
+        }
+    return kInvalidEventIndex;
+
+u32 lastExportableEventIndex() {
+    if (total == 0u) {
+
+    for (u32 i = total; i > 0u; --i) {
+        const u32 index = i - 1u;
+        if (isEventExportable(index)) {
+            return index;
+
+u32 findFirstEventIndexByPhase(EventPhase phase) {
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
         if (isEventExportable(i)) {
@@ -3702,6 +3755,14 @@ bool tryExportableLastEvent(ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -4009,6 +4070,8 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.flowDepthDetached = isFlowDepthDetached();
     preflight.invalidNameEventCount = invalidNameEventCount();
     preflight.nonExportableEventCount = preflight.invalidNameEventCount;
+    preflight.firstExportableEventIndex = firstExportableEventIndex();
+    preflight.lastExportableEventIndex = lastExportableEventIndex();
     preflight.ringBufferFull = isBufferFull();
     preflight.hasInvalidNameEvents = hasInvalidNameEvents();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
