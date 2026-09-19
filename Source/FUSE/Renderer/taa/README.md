@@ -222,6 +222,19 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::tryPreflightHistoryReuse` / `tryPreflightResolveBlendWeights` / `resolveBlendReady` — pass-level preflight deepening
 - `taaResolveBlendReady` — inverse of `shouldSkipTaaResolveBlend` for resolve blend preflight
 
+## Combined guard preflights (B5.9 deepen)
+
+- `tryPreflightTaaJitterNdc(w, h, length, reason)` — NDC jitter preflight with mandatory reject-reason output
+- `shouldSkipTaaJitterSync(length)` / `shouldSkipTaaJitterNdc(w, h, length)` — early-out jitter guard helpers
+- `TaaJitterFramePreflight` / `preflightTaaJitterFrame(frame, w, h, length)` — combined sync + NDC diagnostics
+- `isTaaHistoryWarmupComplete(history)` / `shouldSkipTaaHistoryWarmup(history)` — warm-up completion helpers
+- `TaaHistoryWarmupPreflight` / `preflightTaaHistoryWarmup(history, observedGeneration)` — combined warm-up + reuse diagnostics
+- `isHistoryBlendDegraded(desc, history)` / `canApplyTaaResolveBlendWeights(desc, history)` — resolve blend guard helpers
+- `TaaResolveBlendPreflight` / `preflightTaaResolveBlendFrame(desc, history)` — combined blend-weight diagnostics
+- `TaaFrameGuardPreflight` / `preflightTaaFrameGuards(desc, history, observedGeneration)` — combined history + blend guard bundle
+- `TaaPass::preflightJitterFrame(frame)` / `preflightHistoryWarmup(observedGeneration)` / `preflightResolveBlendFrame(desc)` / `preflightFrameGuards(desc, observedGeneration)` — pass-level combined preflights
+- `TaaPass::isHistoryWarmupComplete()` / `shouldSkipHistoryWarmup()` — pass-level warm-up completion helpers
+
 ## Pipeline (stub)
 
 `jitter → gbuffer (velocity) → resolve → history swap`

@@ -249,6 +249,14 @@ bool tryComputeTaaJitterNdcOffset(u32 frameIndex, u32 width, u32 height, u32 seq
     return shouldSkipTaaJitterSync(0u, sequenceLength);
 
 
+TaaJitterFramePreflight preflightTaaJitterFrame(u32 frameIndex, u32 width, u32 height, u32 sequenceLength) {
+    TaaJitterFramePreflight preflight{};
+    preflight.syncReject = classifyTaaJitterSyncReject(sequenceLength);
+    preflight.ndcReject = classifyTaaJitterNdcReject(width, height, sequenceLength);
+    if (preflight.canSync()) {
+        preflight.slot = TaaJitterLayout::frameIndexInSequence(frameIndex, sequenceLength);
+    return preflight;
+
 bool TaaJitterLayout::validateSequenceLength(u32 length) {
     return length > 0u && length <= kTaaMaxJitterSequenceLength;
 }

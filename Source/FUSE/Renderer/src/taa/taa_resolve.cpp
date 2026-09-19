@@ -1515,6 +1515,39 @@ bool shouldSkipTaaTemporalResolveGuards(const TaaResolveDesc& desc, const TaaHis
     return !preflightTaaTemporalResolveGuards(desc, history, observedGeneration);
 }
 
+bool isHistoryBlendDegraded(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    if (!history.hasValidHistory()) {
+        return false;
+    }
+    const bool historyBlendAllowed =
+        taaHistoryBlendAllowed(false, history) && taaResolveCanReuseHistory(desc, history);
+    return !historyBlendAllowed;
+}
+
+bool canApplyTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolveBlendWeights(desc, history);
+}
+
+TaaResolveBlendPreflight preflightTaaResolveBlendFrame(const TaaResolveDesc& desc,
+                                                       const TaaHistoryBuffer& history) {
+    TaaResolveBlendPreflight preflight{};
+    preflight.weights = computeTaaResolveBlendWeights(desc, history);
+    preflight.rejectReason = classifyTaaResolveBlendReject(desc, history);
+    const bool firstFrame = !history.hasValidHistory();
+    preflight.historyBlendAllowed =
+        taaHistoryBlendAllowed(firstFrame, history) && taaResolveCanReuseHistory(desc, history);
+    preflight.historyDegraded = !preflight.historyBlendAllowed && history.hasValidHistory();
+    return preflight;
+}
+
+TaaFrameGuardPreflight preflightTaaFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                               u32 observedGeneration) {
+    TaaFrameGuardPreflight preflight{};
+    preflight.history = preflightTaaHistoryWarmup(history, observedGeneration);
+    preflight.blend = preflightTaaResolveBlendFrame(desc, history);
+    return preflight;
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
     if (taaResolveBypassesHistoryGenerationGuard(desc)) {

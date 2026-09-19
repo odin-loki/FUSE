@@ -162,6 +162,21 @@ bool shouldSkipTaaJitterSync(u32 sequenceLength = kTaaDefaultJitterSequenceLengt
 /// True when jitter can advance for the given sequence (B5.9 deepen follow-up).
 /// Early-out when jitter advance would be rejected (B5.9 deepen follow-up).
 
+/// Combined jitter sync + NDC diagnostics for one frame counter (B5.9 deepen).
+struct TaaJitterFramePreflight {
+    TaaJitterGuardRejectReason syncReject = TaaJitterGuardRejectReason::None;
+    TaaJitterGuardRejectReason ndcReject = TaaJitterGuardRejectReason::None;
+    u32 slot = 0;
+
+    bool canSync() const { return syncReject == TaaJitterGuardRejectReason::None; }
+    bool canProduceNdc() const { return ndcReject == TaaJitterGuardRejectReason::None; }
+    bool passes() const { return canSync() && canProduceNdc(); }
+};
+
+/// Combined jitter sync + NDC preflight for a monotonic frame counter (B5.9 deepen).
+TaaJitterFramePreflight preflightTaaJitterFrame(u32 frameIndex, u32 width, u32 height,
+                                                u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
     static f32 halton(u32 index, u32 base);
