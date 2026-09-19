@@ -38,6 +38,26 @@ struct ProfileEvent {
     u32 counterSnapshotFrame = 0;
 };
 
+/// Read-only empty-name diagnostics — no mutation (B1.6 deepen).
+struct EventNamePreflight {
+    bool profilerDisabled = false;
+    bool nullName = false;
+    bool emptyName = false;
+
+    bool canRecord() const { return !profilerDisabled && !nullName && !emptyName; }
+};
+
+/// Read-only async-flow diagnostics — no mutation (B1.6 deepen).
+struct AsyncFlowPreflight {
+    bool profilerDisabled = false;
+    bool nullName = false;
+    bool emptyName = false;
+    bool noOpenFlows = false;
+
+    bool canBegin() const { return !profilerDisabled && !nullName && !emptyName; }
+    bool canEnd() const { return canBegin() && !noOpenFlows; }
+};
+
 /// Read-only chrome export diagnostics — safe to call before `exportChromeTraceJson()`.
 struct ChromeTraceExportPreflight {
     u32 eventCount = 0;
@@ -50,6 +70,7 @@ struct ChromeTraceExportPreflight {
     u32 maxFlowNestingDepth = 0;
     bool profilerDisabled = false;
     bool bufferEmpty = false;
+    bool bufferFull = false;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
@@ -58,6 +79,9 @@ struct ChromeTraceExportPreflight {
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+    bool hasExportWarnings() const {
+        return hasUnbalancedNesting() || hasOpenAsyncFlows || flowDepthDetached || bufferFull;
+    }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -103,18 +127,27 @@ bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
+bool canRecordEvent(const char* name);
+bool canBeginAsyncFlow(const char* name);
+bool canEndAsyncFlow(const char* name);
 u32 exportableEventCount();
 bool isEventExportable(u32 index);
 u32 firstEventIndex();
 u32 lastEventIndex();
+u32 countEventsByPhase(EventPhase phase);
+u32 findFirstEventIndexOfPhase(EventPhase phase);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
+EventNamePreflight preflightEventName(const char* name);
+AsyncFlowPreflight preflightAsyncFlowBegin(const char* name);
+AsyncFlowPreflight preflightAsyncFlowEnd(const char* name);
 ChromeTraceExportPreflight preflightChromeTraceExport();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
