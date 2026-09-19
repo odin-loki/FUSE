@@ -132,4 +132,54 @@ u32 ContactIslandGraph::bodyIsland(u32 bodyIndex) const {
     return invalidIsland;
 }
 
+bool island_graph_build_inputs_valid(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    if (bodyCount == 0u) {
+        bool hasInRangeContact = false;
+        for (const narrowphase::ContactManifold& contact : contacts) {
+            if (contact.bodyA < bodyCount && contact.bodyB < bodyCount) {
+                hasInRangeContact = true;
+                break;
+            }
+        }
+        bool hasInRangeDistance = false;
+        for (const DistanceConstraint& constraint : distanceConstraints) {
+            if (constraint.bodyA < bodyCount && constraint.bodyB < bodyCount) {
+                hasInRangeDistance = true;
+                break;
+            }
+        }
+        if (!hasInRangeContact && !hasInRangeDistance) {
+            return false;
+        }
+    }
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (contact.valid && (contact.bodyA >= bodyCount || contact.bodyB >= bodyCount)) {
+            return false;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (constraint.bodyA >= bodyCount || constraint.bodyB >= bodyCount) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool ContactIslandGraph::buildGuarded(u32 bodyCount,
+                                       const std::vector<narrowphase::ContactManifold>& contacts,
+                                       const std::vector<DistanceConstraint>& distanceConstraints) {
+    if (!island_graph_build_inputs_valid(bodyCount, contacts, distanceConstraints)) {
+        clear();
+        return false;
+    }
+    build(bodyCount, contacts, distanceConstraints);
+    return true;
+}
+
 } // namespace fuse::physics
