@@ -1649,6 +1649,60 @@ void testCookerReconcileEstimateProbes() {
                "changed upstream entry remains stale for prune reconcile");
 }
 
+void testCookerReconcilePreflightGuards() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_preflight_reconcile.obj", "# preflight reconcile\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_preflight_reconcile.fusemesh";
+    manifest.assets.push_back(entry);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for reconcile preflight ok");
+
+    const fuse::project::CookCacheReconcileEstimate fresh =
+        cooker.preflight_reconcile_invalidation(manifest);
+    expectTrue(fresh.should_skip(), "fresh cache reconcile preflight should skip");
+    expectTrue(!fresh.can_reconcile(), "fresh cache cannot reconcile");
+    expectTrue(cooker.should_skip_reconcile_invalidation(manifest),
+               "should_skip_reconcile true on fresh cache");
+    expectTrue(!cooker.would_reconcile_invalidation(manifest),
+               "would_reconcile false on fresh cache");
+
+    writeTempFile(source, "# preflight reconcile revised\n");
+    const fuse::project::CookCacheReconcileEstimate stale =
+        cooker.preflight_reconcile_invalidation(manifest);
+    expectTrue(stale.can_reconcile(), "stale cache reconcile preflight can reconcile");
+    expectTrue(cooker.would_reconcile_invalidation(manifest),
+               "would_reconcile true after upstream content change");
+    expectTrue(stale.total() == cooker.estimate_reconcile_invalidation(manifest).total(),
+               "preflight reconcile matches estimate total");
+}
+
+void testCookCacheUniqueStaleUpstreamProbe() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_unique_upstream.obj", "# unique upstream\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_unique_upstream.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for unique upstream probe ok");
+
+    const std::vector<std::pair<std::string, fuse::u64>> stale_pairs = {{source, seeded.content_hash + 1u},
+                                                                         {source, seeded.content_hash + 2u}};
+    const std::vector<std::string> raw = cooker.cache().probe_stale_upstream_sources(stale_pairs);
+    expectTrue(raw.size() >= 2u, "raw stale upstream probe may list duplicate sources");
+
+    const std::vector<std::string> unique = cooker.cache().probe_unique_stale_upstream_sources(stale_pairs);
+    expectTrue(unique.size() == 1u, "unique stale upstream probe deduplicates source paths");
+    expectTrue(unique[0] == source, "unique stale upstream probe retains source path");
+    expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes(stale_pairs),
+               "would_invalidate_stale_upstream true when upstream hash mismatches");
+}
+
 void testCookCacheDownstreamSourceProbe() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_downstream_a.obj", "# downstream a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_downstream_b.obj", "# downstream b\n");
@@ -1789,6 +1843,8 @@ int main() {
     testCookDirtyInvalidatesCache();
     testCookerInvalidationCountProbes();
     testCookerReconcileEstimateProbes();
+    testCookerReconcilePreflightGuards();
+    testCookCacheUniqueStaleUpstreamProbe();
     testCookCacheDownstreamSourceProbe();
 
     fuse::core::shutdown();

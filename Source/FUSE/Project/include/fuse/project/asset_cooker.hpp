@@ -17,6 +17,9 @@ struct CookCacheReconcileEstimate {
     [[nodiscard]] u32 total() const {
         return stale_dependency_entries + prune_invalid_entries + prune_stale_entries;
     }
+
+    [[nodiscard]] bool can_reconcile() const { return total() > 0; }
+    [[nodiscard]] bool should_skip() const { return !can_reconcile(); }
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -47,6 +50,15 @@ public:
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
     [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile_invalidation(
         const CookManifest& manifest) const;
+    /// Read-only reconcile preflight — alias of `estimate_reconcile_invalidation` (B7.9 deepen).
+    [[nodiscard]] CookCacheReconcileEstimate preflight_reconcile_invalidation(
+        const CookManifest& manifest) const {
+        return estimate_reconcile_invalidation(manifest);
+    }
+    /// True when reconcile invalidation would remove or prune at least one cache entry (B7.9 deepen).
+    [[nodiscard]] bool would_reconcile_invalidation(const CookManifest& manifest) const;
+    /// True when reconcile invalidation can be skipped — mirrors `CookCacheReconcileEstimate::should_skip` (B7.9 deepen).
+    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
