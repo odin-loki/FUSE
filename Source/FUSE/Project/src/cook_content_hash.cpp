@@ -185,6 +185,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "empty_dependency_list";
     case CookHashRejectReason::ZeroSourceHash:
         return "zero_source_hash";
+    case CookHashRejectReason::InvalidCacheKey:
+        return "invalid_cache_key";
     }
     return "unknown";
 }
