@@ -2895,3 +2895,14 @@ void testCacheIndexNullCacheGuards() {
                "wouldSkip blend false for valid params");
                "wouldSkip trace true for zero update count");
                "wouldSkip blend true for null probe indices");
+
+// --- deepen additive from deepen-ddgi-guards-088a ---
+               "tryScheduleProbeUpdates succeeds with valid buffers");
+    expectTrue(count == 8u, "trySchedule clamps to max_indices");
+               "tryScheduleProbeUpdates rejects null output");
+    expectTrue(std::strcmp(fuse::renderer::probeScheduleRejectReasonLabel(reason), "null_output") == 0,
+               "tryScheduleProbeUpdates rejects null count pointer");
+               "tryScheduleProbeUpdates rejects zero max_indices");
+void testCacheIndexNullCacheGuard() {
+               "cache-aware tryValidate succeeds for in-range index");
+               "cache-aware tryValidate rejects null cache");

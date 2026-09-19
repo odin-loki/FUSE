@@ -2452,3 +2452,11 @@ bool wouldSkipProbeSchedule(u32 probe_count, u32* out_indices, u32 max_indices, 
 // --- deepen additive from deepen-b56-ddgi-guards-7081 ---
     return tryValidateProbeSampleCoords(desc, coords, outReason);
     return tryValidateCacheIndex(desc, cache, cache_count, probe_index, reason);
+
+// --- deepen additive from deepen-ddgi-guards-088a ---
+    return !tryValidateProbeSampleCoords(desc, coords, reason);
+    return preflightProbeSchedule(probe_count, max_indices, out_indices, out_count, reason);
+    if (!preflightProbeSchedule(probe_count, max_indices, out_indices, out_count, outReason)) {
+            (outReason == ProbeScheduleRejectReason::NullOutput ||
+             outReason == ProbeScheduleRejectReason::ZeroProbeCount ||
+             outReason == ProbeScheduleRejectReason::ZeroMaxIndices)) {
