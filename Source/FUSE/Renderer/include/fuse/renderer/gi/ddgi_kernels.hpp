@@ -139,7 +139,7 @@ ProbeKernelRejectReason classifyProbeKernelRejectWithGrid(const DDGIDesc& desc, 
 
 /// Classify why probe blend launch would reject — same ordering as `tryCanLaunchProbeBlendKernel`.
 
-/// Early-out when either probe kernel launch would be rejected.
+/// Early-out when either probe trace or blend kernel launch would be rejected.
 bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
 /// Early-out when grid-aware probe kernel launch would be rejected.
 bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params, const DDGIDesc& desc);
