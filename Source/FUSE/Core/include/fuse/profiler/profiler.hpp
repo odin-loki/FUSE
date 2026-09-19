@@ -62,9 +62,50 @@ struct ChromeTraceExportPreflight {
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+    bool canExportWithEvents() const { return canExport() && hasExportableEvents(); }
     bool canExportSafely() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
     }
+};
+
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canBegin = false;
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
+};
+
+/// Read-only scope nesting diagnostics — safe to call before entering nested scopes.
+struct ScopeNestingPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    bool balanced = true;
+};
+
+/// Read-only async-flow nesting diagnostics — safe to call before flow begin/end.
+struct AsyncFlowNestingPreflight {
+    u32 activeFlowDepth = 0;
+    u32 maxFlowDepth = 0;
+    u32 openFlowCount = 0;
+    bool balanced = true;
+    bool flowDepthDetached = false;
+    bool crossThreadHandoffPending = false;
+    bool hasOpenAsyncFlows = false;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -110,6 +151,8 @@ bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidEventName(const char* name);
+/// True for null, empty, or whitespace-only names — does not affect recording guards.
+bool isBlankEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
@@ -121,16 +164,40 @@ u32 lastEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 countEventsByName(const char* name);
+u32 findFirstEventIndexByFlowId(u32 flowId);
+u32 findLastEventIndexByFlowId(u32 flowId);
+u32 countEventsByFlowId(u32 flowId);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
+bool tryExportableFirstEvent(ProfileEvent& outEvent);
+bool tryExportableLastEvent(ProfileEvent& outEvent);
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
 ChromeTraceExportPreflight preflightChromeTraceExport();
+ProfileScopePreflight preflightProfileScope(const char* name);
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 flowId);
+ScopeNestingPreflight preflightScopeNesting();
+AsyncFlowNestingPreflight preflightAsyncFlowNesting();
+
+/// Non-mutating recording predicates — same guards as scope/flow/counter entry points.
+bool wouldSkipProfileScope(const char* name);
+bool wouldSkipBeginAsyncFlow(const char* name);
+bool wouldSkipEndAsyncFlow(const char* name);
+bool wouldSkipCounter(const char* track);
+bool wouldSkipCounterSnapshotAtFrame(const char* track);
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
