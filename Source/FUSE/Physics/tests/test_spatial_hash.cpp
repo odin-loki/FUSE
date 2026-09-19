@@ -2954,3 +2954,26 @@ void testBroadphaseMergeBufferPreflightGuards() {
     expectTrue(!fullPreflight.canMergeIntoBuffer(), "full buffer cannot accept merge pairs");
 void testRefinableBroadphasePairCountGuards() {
     testBroadphaseMergeBufferPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-1f79 ---
+void testPairBufferShouldRunDedupeAndSortGuards() {
+void testCellOccupancyPreflightBudgetRemaining() {
+    const fuse::physics::broadphase::CellOccupancyPreflight headroom =
+        fuse::physics::broadphase::preflightCellOccupancy(validRange, 12u);
+        fuse::physics::broadphase::preflightCellOccupancy(planeRange, 6u);
+    expectEq(planePreflight.budgetRemaining, 4u, "2D preflight reports budget remaining");
+void testRefineBroadphasePreflightValidPairCount() {
+    expectEq(emptyPreflight.validPairCount, 0u, "empty refine preflight reports zero valid pairs");
+    expectEq(validPreflight.validPairCount, 1u, "valid refine preflight reports active pair count");
+    expectTrue(validPreflight.canRefine(), "valid refine preflight can refine");
+void testBroadphaseMergePreflightBodyCounts() {
+    expectEq(emptyPreflight.planeBodyCount, 0u, "empty scene reports zero plane bodies");
+    expectEq(emptyPreflight.dynamicBodyCount, 0u, "empty scene reports zero dynamic bodies");
+    expectEq(planeOnlyPreflight.planeBodyCount, 1u, "plane-only scene reports one plane body");
+    expectEq(planeOnlyPreflight.dynamicBodyCount, 0u, "plane-only scene reports zero dynamic bodies");
+    expectEq(mergePreflight.planeBodyCount, 1u, "merge scene reports plane body count");
+    expectEq(mergePreflight.dynamicBodyCount, 1u, "merge scene reports dynamic body count");
+    expectTrue(mergePreflight.canMerge(), "merge scene can merge with populated counts");
+    testCellOccupancyPreflightBudgetRemaining();
+    testRefineBroadphasePreflightValidPairCount();
+    testBroadphaseMergePreflightBodyCounts();
