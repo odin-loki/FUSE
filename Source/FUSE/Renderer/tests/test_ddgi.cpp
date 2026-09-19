@@ -4484,3 +4484,32 @@ void testCacheIndexAtCoordGuards() {
                "wouldSkipProbeLookupAtIndex true for null cache");
                "tryCanTrilinearSampleAtProbeCoords succeeds for valid coords");
                "wouldSkipProbeTrilinearSample true for hard OOB coords");
+
+// --- deepen additive from deepen-ddgi-guards-a008 ---
+                   fuse::renderer::ProbeGridSourceRejectReason::ZeroSpacing),
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(desc, 8u) ==
+               "classifyProbeGridSourceReject none for matching probe count");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(desc, 4u) ==
+                   fuse::renderer::ProbeGridSourceRejectReason::MismatchedProbeCount,
+               "classifyProbeGridSourceReject mismatched_probe_count");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeGridSource(desc, 4u),
+               "wouldSkipProbeGridSource true for mismatched probe count");
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeGridSource(probeData),
+               "preflightProbeGridSource succeeds for ProbeData");
+                   fuse::renderer::ProbeGridSourceRejectReason::ZeroSpacing,
+               "classifyProbeGridSourceReject zero_spacing");
+               "wouldSkipTrilinearProbeIrradiance false for interior sample");
+               "preflightCacheIndexLookup index-only rejects OOB index");
+    expectTrue(fuse::renderer::preflightDdgiProbeUpdatePipeline(desc, validIndices, 2u, kernelParams),
+               "preflightDdgiProbeUpdatePipeline succeeds for valid host + kernel params");
+    expectTrue(!fuse::renderer::wouldSkipDdgiProbeUpdatePipeline(desc, validIndices, 2u, kernelParams),
+               "wouldSkipDdgiProbeUpdatePipeline false for valid pipeline");
+    expectTrue(fuse::renderer::wouldSkipDdgiProbeUpdatePipeline(desc, oobIndices, 2u, kernelParams),
+               "wouldSkipDdgiProbeUpdatePipeline true for OOB host indices");
+    expectTrue(fuse::renderer::wouldSkipDdgiProbeUpdatePipeline(desc, validIndices, 2u, zeroRays),
+               "wouldSkipDdgiProbeUpdatePipeline true for zero rays kernel params");
+               "preflightDDGIKernelParams succeeds for valid schedule");
+    expectTrue(populated.frame_seed == 7u, "preflightDDGIKernelParams sets frame_seed");
+    expectTrue(!fuse::renderer::gi::preflightDDGIKernelParams(rejected, desc, validIndices, 0u),
+               "preflightDDGIKernelParams rejects zero update count");
+        fuse::renderer::ProbeSampleCoordsRejectReason::NotSampleableGrid;

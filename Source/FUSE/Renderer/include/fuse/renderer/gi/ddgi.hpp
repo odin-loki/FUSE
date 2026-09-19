@@ -1048,3 +1048,16 @@ bool wouldClampCacheIndexLookupAtCoord(const ProbeGridCoord& coord, const DDGIDe
 
 // --- deepen additive from deepen-b56-ddgi-guards-f5fe ---
 bool tryCanSampleProbeGrid(const DDGIDesc& desc, ProbeGridRejectReason& outReason);
+
+// --- deepen additive from deepen-ddgi-guards-a008 ---
+enum class ProbeKernelRejectReason : u8;
+bool preflightDdgiProbeUpdatePipeline(const DDGIDesc& desc,
+                                        ProbeUpdateLaunchRejectReason* host_reason = nullptr,
+                                        gi::ProbeKernelRejectReason* kernel_reason = nullptr);
+bool wouldSkipDdgiProbeUpdatePipeline(const DDGIDesc& desc,
+bool tryValidateProbeGridSource(const ProbeData& data, ProbeGridSourceRejectReason& outReason);
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc, u32 probe_count);
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const ProbeData& data);
+bool preflightProbeGridSource(const ProbeData& data, ProbeGridSourceRejectReason* reason = nullptr);
+bool wouldSkipProbeGridSource(const DDGIDesc& desc, u32 probe_count);
+bool wouldSkipProbeGridSource(const ProbeData& data);

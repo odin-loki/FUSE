@@ -3213,3 +3213,31 @@ bool tryCanSampleProbeGrid(const DDGIDesc& desc, ProbeGridRejectReason& outReaso
         outReason = ProbeGridRejectReason::ZeroIrradianceRes;
         outReason = ProbeGridRejectReason::InvalidSpacing;
     tryCanSampleProbeGrid(desc, reason);
+
+// --- deepen additive from deepen-ddgi-guards-a008 ---
+    case ProbeGridSourceRejectReason::ZeroSpacing:
+    case ProbeGridSourceRejectReason::MismatchedProbeCount:
+bool preflightDdgiProbeUpdatePipeline(const DDGIDesc& desc,
+                                      ProbeUpdateLaunchRejectReason* host_reason,
+                                      gi::ProbeKernelRejectReason* kernel_reason) {
+    const bool host_ok = preflightDdgiProbeUpdate(desc, probe_indices, probe_count, host_reason);
+    const bool kernel_ok = gi::preflightProbeKernelLaunch(kernel_params, kernel_reason);
+bool wouldSkipDdgiProbeUpdatePipeline(const DDGIDesc& desc,
+    return !preflightDdgiProbeUpdatePipeline(desc, probe_indices, probe_count, kernel_params);
+        outReason = ProbeGridSourceRejectReason::ZeroSpacing;
+    if (!tryValidateProbeGridSource(desc, outReason)) {
+        outReason = ProbeGridSourceRejectReason::MismatchedProbeCount;
+bool tryValidateProbeGridSource(const ProbeData& data, ProbeGridSourceRejectReason& outReason) {
+    return tryValidateProbeGridSource(data.desc, outReason);
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc, u32 probe_count) {
+    tryValidateProbeGridSource(desc, probe_count, reason);
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const ProbeData& data) {
+    tryValidateProbeGridSource(data, reason);
+    const ProbeGridSourceRejectReason reject = classifyProbeGridSourceReject(desc, probe_count);
+bool preflightProbeGridSource(const ProbeData& data, ProbeGridSourceRejectReason* reason) {
+    const ProbeGridSourceRejectReason reject = classifyProbeGridSourceReject(data);
+bool wouldSkipProbeGridSource(const DDGIDesc& desc, u32 probe_count) {
+    return !preflightProbeGridSource(desc, probe_count);
+bool wouldSkipProbeGridSource(const ProbeData& data) {
+    return !preflightProbeGridSource(data);
+bool preflightDDGIKernelParams(DDGIKernelParams& params,
