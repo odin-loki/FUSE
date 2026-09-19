@@ -30,6 +30,14 @@ u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history) {
     return taaHistoryNeedsWarmup(history) ? 1u : 0u;
 }
 
+bool taaHistoryReuseBlockReasonIsBlocking(TaaHistoryReuseBlockReason reason) {
+    return reason != TaaHistoryReuseBlockReason::None;
+}
+
+bool taaHistoryWarmupSatisfied(const TaaHistoryBuffer& history) {
+    return history.isReady() && history.hasValidHistory();
+}
+
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
                               TaaHistoryReuseBlockReason* reason) {
     const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlock(history, observedGeneration);
@@ -37,6 +45,29 @@ bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGener
         *reason = block;
     }
     return block == TaaHistoryReuseBlockReason::None;
+}
+
+bool preflightTaaHistoryReuseForDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                     TaaHistoryReuseBlockReason* reason) {
+    if (desc.observed_history_generation == kTaaResolveNoHistoryGeneration) {
+        if (!history.isReady()) {
+            if (reason != nullptr) {
+                *reason = TaaHistoryReuseBlockReason::NotReady;
+            }
+            return false;
+        }
+        if (!history.hasValidHistory()) {
+            if (reason != nullptr) {
+                *reason = TaaHistoryReuseBlockReason::NotWarm;
+            }
+            return false;
+        }
+        if (reason != nullptr) {
+            *reason = TaaHistoryReuseBlockReason::None;
+        }
+        return true;
+    }
+    return preflightTaaHistoryReuse(history, desc.observed_history_generation, reason);
 }
 
 bool TaaHistoryBuffer::canReuseHistory() const {

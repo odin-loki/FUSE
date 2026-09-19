@@ -237,6 +237,10 @@ TaaResolveBlendRejectReason classifyTaaResolveBlendReject(const TaaResolveDesc& 
     return TaaResolveBlendRejectReason::None;
 }
 
+bool taaResolveBlendRejectReasonIsBlocking(TaaResolveBlendRejectReason reason) {
+    return reason != TaaResolveBlendRejectReason::None;
+}
+
 bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                      TaaResolveBlendRejectReason* reason) {
     const TaaResolveBlendRejectReason reject = classifyTaaResolveBlendReject(desc, history);
@@ -244,6 +248,18 @@ bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistor
         *reason = reject;
     }
     return reject == TaaResolveBlendRejectReason::None;
+}
+
+bool preflightTaaResolveGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                               TaaResolveSkipReason* skipReason,
+                               TaaResolveBlendRejectReason* blendRejectReason) {
+    if (!preflightTaaResolve(desc, history, skipReason)) {
+        if (blendRejectReason != nullptr) {
+            *blendRejectReason = TaaResolveBlendRejectReason::None;
+        }
+        return false;
+    }
+    return preflightTaaResolveBlendWeights(desc, history, blendRejectReason);
 }
 
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
