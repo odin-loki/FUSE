@@ -292,4 +292,9 @@ void runNarrowphaseIntoBufferDeepen(
 /// CPU stub using deepen pair preflight (B4.5 deepen pass).
 std::vector<ContactManifold> runNarrowphaseDeepen(
 
+/// Narrowphase dispatch with extended deepen pair-reject preflight (B4.4 deepen pass follow-up).
+/// Does not alter `runNarrowphaseIntoBuffer`; valid base-path pairs are unchanged on that entry.
+
+/// Vector-return deepen dispatch stub mirroring `runNarrowphase` (B4.4 deepen pass follow-up).
+
 } // namespace fuse::physics::narrowphase

@@ -1167,6 +1167,14 @@ struct ManifoldProcessPreflight {
 /// Populate combined prune/finalize preflight without mutating the manifold (B4.5 deepen pass).
 ManifoldProcessPreflight preflight_manifold_process(
 
+/// Normalize `contactNormal` in place when `needsNormalNormalization` (B4.4 deepen pass follow-up).
+void normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Prune using `preflight_manifold_prune` / `should_skip_manifold_prune`; returns true when points remain (B4.4 deepen pass follow-up).
+
+/// Finalize using `preflight_manifold_finalize` / `generate_contact_manifold_if_needed` (B4.4 deepen pass follow-up).
+bool finalize_contact_manifold_with_preflight(
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

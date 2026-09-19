@@ -107,6 +107,7 @@ struct ContactBufferSoA {
     static bool canWriteSlot(u32 slot, u32 pairSlotCount, const ContactManifold& manifold);
 
     /// Write slot only when buffer preflight passes (B4.5 deepen pass).
+    /// Write only when `preflight_contact_buffer_write` allows (B4.4 deepen pass follow-up).
     bool writeSlotIfValid(u32 slot, const ContactManifold& manifold);
 
 private:
@@ -187,8 +188,6 @@ bool contactBufferWriteRejectsForReason(
 
 /// Read-only write diagnostics — no mutation (B4.5 deepen pass).
 /// Returns true when `contactBufferWriteRejectReason` matches `expected` (B4.4 guard pass).
-    const ContactBufferSoA& buffer,
-    u32 slot,
 
 /// Read-only write diagnostics — no mutation (B4.4 guard pass).
     bool invalidManifold = false;
@@ -501,16 +500,9 @@ ContactBufferFrictionPreflight preflight_contact_buffer_friction_tangents(const 
 /// Returns true when friction-tangent SoA rebuild should be skipped (B4.4 deepen follow-up pass).
 bool should_skip_contact_buffer_friction_rebuild(const ContactBufferSoA& buffer);
 
-};
 
-    const ContactBufferSoA& buffer,
-    u32 slot,
-    const ContactManifold& manifold);
 
 /// Why contact-buffer compaction would early-out (B4.4 guard pass).
-enum class ContactBufferCompactionRejectReason : u8 {
-    None = 0,
-    EmptyBuffer,
 
 /// Human-readable label for contact-buffer compaction reject reasons (B4.4 guard pass).
 
@@ -541,5 +533,13 @@ enum class ContactBufferCompactionRejectReason : u8 {
 /// Non-mutating clamp skip predicate — inverse of `needsClamp` (B4.4 guard pass).
 
 /// Non-mutating clamp predicate — mirrors `preflightContactBufferClamp` (B4.4 guard pass).
+/// Const preflight for contact-buffer slot write (B4.4 deepen pass follow-up).
+
+    bool can_write() const { return !skipped && !outOfRangeSlot && !invalidManifold && !selfPair; }
+
+/// Populate write preflight without mutating buffer slots (B4.4 deepen pass follow-up).
+
+/// Returns true when `writeSlot` / `writeSlotIfValid` would reject (B4.4 deepen pass follow-up).
+bool should_skip_contact_buffer_write(
 
 } // namespace fuse::physics::narrowphase

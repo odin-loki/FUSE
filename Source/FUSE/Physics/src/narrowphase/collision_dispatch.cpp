@@ -1,5 +1,6 @@
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
+#include <fuse/physics/narrowphase/contact_manifold.hpp>
 #include <fuse/physics/narrowphase/contact_pair.hpp>
 
 namespace fuse::physics::narrowphase {
@@ -157,6 +158,10 @@ bool should_skip_narrowphase_pair_slot(
 
 std::vector<ContactManifold> runNarrowphaseDeepen(
     const std::vector<broadphase::CandidatePair>& pairs,
+        if (finalize_contact_manifold_with_preflight(manifold)) {
+            buffer.writeSlotIfValid(pairIndex, manifold);
+
+
     const CollisionShapeSoA& shapes) {
     ContactBufferSoA buffer;
     buffer.reserve(static_cast<u32>(pairs.size()));

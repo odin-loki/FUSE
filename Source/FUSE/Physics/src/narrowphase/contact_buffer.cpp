@@ -352,6 +352,20 @@ ContactBufferWritePreflight preflightContactBufferWrite(
 
 bool ContactBufferSoA::canSkipWrite(u32 slot, const ContactManifold& manifold) const {
     return !preflightContactBufferWrite(*this, slot, manifold).canWrite();
+ContactBufferWritePreflight preflight_contact_buffer_write(
+        preflight.skipped = true;
+        preflight.outOfRangeSlot = true;
+        preflight.invalidManifold = true;
+        preflight.selfPair = true;
+
+bool should_skip_contact_buffer_write(
+    return !preflight_contact_buffer_write(slot, buffer, manifold).can_write();
+
+bool ContactBufferSoA::writeSlotIfValid(u32 slot, const ContactManifold& manifold) {
+    if (!preflight_contact_buffer_write(slot, *this, manifold).can_write()) {
+        return false;
+    writeSlot(slot, manifold);
+    return true;
 
 void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
     if (slot >= pairSlotCount || !manifold.valid || manifold.bodyA == manifold.bodyB ||

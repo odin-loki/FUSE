@@ -1106,8 +1106,8 @@ struct NarrowphaseBatchPreflight {
 NarrowphaseBatchPreflight preflight_narrowphase_batch(
 
 /// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen guard pass).
-/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.5 deepen pass).
 /// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 guard pass).
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen pass follow-up).
 bool contact_pair_deepen_rejects_for_reason(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
@@ -1150,6 +1150,17 @@ struct ContactPairBatchDeepenPreflight {
 
 /// Populate batch deepen preflight without running shape dispatch (B4.5 deepen pass).
 ContactPairBatchDeepenPreflight preflight_contact_pair_batch_deepen(
+/// Inverse of `should_skip_contact_pair_deepen_dispatch` (B4.4 deepen pass follow-up).
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Run shape dispatch with extended deepen preflight reject checks (B4.4 deepen pass follow-up).
+/// Does not alter `detect_contacts_pair`; base path may still dispatch sleeping/trigger pairs.
+ContactManifold detect_contacts_pair_deepen(
+
+/// Copy pairs that pass extended deepen preflight (B4.4 deepen pass follow-up).
+std::vector<broadphase::CandidatePair> filter_dispatchable_contact_pairs(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
