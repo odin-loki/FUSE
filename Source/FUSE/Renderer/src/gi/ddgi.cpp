@@ -74,6 +74,10 @@ const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason)
 
 bool probeGridSourceRejectReasonIsBlocking(ProbeGridSourceRejectReason reason) {
     return reason != ProbeGridSourceRejectReason::None;
+    case ProbeSampleCoordsRejectReason::InvalidSpacing:
+        return "invalid_spacing";
+    case ProbeSampleCoordsRejectReason::InvalidWeights:
+        return "invalid_weights";
 }
 
 const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason) {
@@ -135,6 +139,10 @@ const char* ddgiLaunchRejectReasonLabel(DdgiLaunchRejectReason reason) {
     case DdgiLaunchRejectReason::EmptyGrid:
     case DdgiLaunchRejectReason::NullIndices:
     case DdgiLaunchRejectReason::ZeroCount:
+    case DdgiLaunchRejectReason::NullIndexBuffer:
+        return "null_index_buffer";
+    case DdgiLaunchRejectReason::ZeroProbeCount:
+        return "zero_probe_count";
     case DdgiLaunchRejectReason::OutOfRangeIndex:
         return "out_of_range_index";
     }
@@ -634,7 +642,6 @@ bool ProbeGridLayout::isProbeSampleAtGridBorder(const DDGIDesc& desc, const Prob
                                      {coords.x1, coords.y1, coords.z1}};
     for (const ProbeGridCoord& corner : corners) {
         if (isBorderProbeCoord(desc, corner)) {
-            return true;
 
 bool ProbeGridLayout::hasFullTrilinearNeighbourhood(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
 
@@ -662,7 +669,6 @@ void ProbeGridLayout::sanitizeProbeSampleCoords(const DDGIDesc& desc, ProbeSampl
     coords.tx = std::clamp(coords.tx, 0.f, 1.f);
     coords.ty = std::clamp(coords.ty, 0.f, 1.f);
     coords.tz = std::clamp(coords.tz, 0.f, 1.f);
-}
 
     if (coords.tx < 0.f || coords.tx > 1.f || coords.ty < 0.f || coords.ty > 1.f || coords.tz < 0.f ||
         coords.tz > 1.f) {
@@ -677,16 +683,12 @@ void ProbeGridLayout::sanitizeProbeSampleCoords(const DDGIDesc& desc, ProbeSampl
     if (coords.x0 > max_x || coords.y0 > max_y || coords.z0 > max_z || coords.x1 > max_x || coords.y1 > max_y ||
         coords.z1 > max_z) {
 
-bool ProbeGridLayout::tryClampProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords) {
 
-    clampProbeSampleCoords(desc, coords);
 bool ProbeGridLayout::tryBuildProbeSampleCoords(const DDGIDesc& desc,
                                               const fuse::math::Vec3& world_position,
                                               ProbeSampleCoords& out_coords,
                                               ProbeSampleCoordsRejectReason& outReason) {
         outReason = ProbeSampleCoordsRejectReason::EmptyGrid;
-    if (isEmptyGrid(desc)) {
-        return false;
 
     const bool built = buildProbeSampleCoords(desc, world_position, out_coords);
     outReason = built ? ProbeSampleCoordsRejectReason::None : ProbeSampleCoordsRejectReason::EmptyGrid;
@@ -698,6 +700,8 @@ bool ProbeGridLayout::tryBuildProbeSampleCoords(const DDGIDesc& desc,
 
 bool ProbeGridLayout::isProbeSampleCoordsOutOfRange(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
     return !areProbeSampleCoordsInBounds(desc, coords);
+bool ProbeGridLayout::canBuildProbeSampleCoords(const DDGIDesc& desc) {
+    return ddgi_util::canSampleProbeGrid(desc);
 }
 
 bool ProbeGridLayout::buildProbeSampleCoords(const DDGIDesc& desc,
@@ -742,6 +746,21 @@ bool ProbeGridLayout::tryBuildProbeSampleCoords(const DDGIDesc& desc,
 
 bool ProbeGridLayout::isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
     if (isEmptyGrid(desc)) {
+bool ProbeGridLayout::tryBuildProbeSampleCoords(const DDGIDesc& desc,
+                                                const fuse::math::Vec3& world_position,
+                                                ProbeSampleCoords& out_coords,
+                                                ProbeSampleCoordsRejectReason& outReason) {
+    outReason = ProbeSampleCoordsRejectReason::None;
+        outReason = ProbeSampleCoordsRejectReason::EmptyGrid;
+        return false;
+    }
+    if (!canBuildProbeSampleCoords(desc)) {
+        outReason = ProbeSampleCoordsRejectReason::InvalidSpacing;
+    if (!buildProbeSampleCoords(desc, world_position, out_coords)) {
+    return true;
+
+bool ProbeGridLayout::tryValidateProbeSampleCoords(const DDGIDesc& desc,
+                                                   const ProbeSampleCoords& coords,
         return false;
     }
 
@@ -779,6 +798,12 @@ bool ProbeGridLayout::buildAndClampProbeSampleCoords(const DDGIDesc& desc,
     clampProbeSampleCoords(desc, out_coords);
         return false;
     }
+    const auto inRange = [](u32 value, u32 max_value) { return value <= max_value; };
+    if (!inRange(coords.x0, max_x) || !inRange(coords.x1, max_x) || !inRange(coords.y0, max_y) ||
+        !inRange(coords.y1, max_y) || !inRange(coords.z0, max_z) || !inRange(coords.z1, max_z)) {
+        outReason = ProbeSampleCoordsRejectReason::OutOfRangeIndices;
+        outReason = ProbeSampleCoordsRejectReason::UnorderedCorners;
+        outReason = ProbeSampleCoordsRejectReason::InvalidWeights;
 }
 
 fuse::math::Vec2 DdgiIrradianceEncoding::clampEncodedUV(const fuse::math::Vec2& encoded) {
@@ -1618,6 +1643,41 @@ bool isCacheIndexValidForClampedIndex(const DDGIDesc& desc, u32 probe_index, u32
     return clamped < cache_count;
 }
 
+bool tryIsCacheIndexValid(const DDGIDesc& desc,
+                          u32 probe_index,
+                          u32 cache_count,
+                          CacheIndexRejectReason& outReason) {
+    outReason = CacheIndexRejectReason::None;
+    if (ProbeGridLayout::isEmptyGrid(desc)) {
+        outReason = CacheIndexRejectReason::EmptyGrid;
+        return false;
+    }
+    if (!ProbeGridLayout::isValidProbeIndex(desc, probe_index)) {
+        outReason = CacheIndexRejectReason::ProbeIndexOutOfRange;
+        return false;
+    }
+    if (probe_index >= cache_count) {
+        outReason = CacheIndexRejectReason::CacheUndersized;
+        return false;
+    }
+    return true;
+}
+
+bool tryValidateCacheSizedForGrid(const DDGIDesc& desc,
+                                  u32 cache_count,
+                                  CacheIndexRejectReason& outReason) {
+    outReason = CacheIndexRejectReason::None;
+    if (ProbeGridLayout::isEmptyGrid(desc)) {
+        outReason = CacheIndexRejectReason::EmptyGrid;
+        return false;
+    }
+    if (!isCacheSizedForGrid(desc, cache_count)) {
+        outReason = CacheIndexRejectReason::CacheUndersized;
+        return false;
+    }
+    return true;
+}
+
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& /*request*/,
                           u32 cache_count) {
@@ -2234,24 +2294,17 @@ const char* ddgiLaunchRejectReasonLabel(DdgiLaunchRejectReason reason) {
     DdgiLaunchRejectReason reason = DdgiLaunchRejectReason::None;
     return tryCanLaunchDdgiProbeUpdate(desc, probe_indices, probe_count, reason);
     ProbeUpdateLaunchRejectReason reason = ProbeUpdateLaunchRejectReason::None;
-}
 
 bool tryCanLaunchDdgiProbeUpdate(const DDGIDesc& desc,
                                  const u32* probe_indices,
                                  u32 probe_count,
                                  DdgiLaunchRejectReason& outReason) {
-    if (ProbeGridLayout::isEmptyGrid(desc)) {
         outReason = DdgiLaunchRejectReason::EmptyGrid;
-        return false;
-    if (probe_indices == nullptr) {
         outReason = DdgiLaunchRejectReason::NullIndices;
-    }
         outReason = DdgiLaunchRejectReason::ZeroCount;
-                                 ProbeUpdateLaunchRejectReason& outReason) {
-        outReason = ProbeUpdateLaunchRejectReason::EmptyGrid;
-    if (probe_count == 0u) {
-        outReason = ProbeUpdateLaunchRejectReason::ZeroCount;
-        outReason = ProbeUpdateLaunchRejectReason::NullIndices;
+    outReason = DdgiLaunchRejectReason::None;
+        outReason = DdgiLaunchRejectReason::ZeroProbeCount;
+        outReason = DdgiLaunchRejectReason::NullIndexBuffer;
         return false;
     }
 
@@ -2259,6 +2312,7 @@ bool tryCanLaunchDdgiProbeUpdate(const DDGIDesc& desc,
         if (ProbeGridLayout::isProbeIndexOutOfRange(probe_indices[i], desc)) {
             outReason = ProbeUpdateLaunchRejectReason::OutOfRangeProbeIndex;
             outReason = ProbeUpdateLaunchRejectReason::OutOfRangeIndex;
+            outReason = DdgiLaunchRejectReason::OutOfRangeIndex;
             return false;
         }
 
@@ -2321,6 +2375,11 @@ bool canLaunchDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u3
 
 bool canLaunchDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count) {
     ProbeUpdateLaunchRejectReason reason = ProbeUpdateLaunchRejectReason::None;
+    return tryCanLaunchDdgiProbeUpdate(desc, probe_indices, probe_count, reason);
+}
+
+bool canLaunchDdgiProbeUpdate(const DDGIDesc& desc, const u32* probe_indices, u32 probe_count) {
+    DdgiLaunchRejectReason reason = DdgiLaunchRejectReason::None;
     return tryCanLaunchDdgiProbeUpdate(desc, probe_indices, probe_count, reason);
 }
 
@@ -2462,7 +2521,6 @@ const char* probeKernelLaunchRejectReasonLabel(ProbeKernelLaunchRejectReason rea
     case ProbeKernelLaunchRejectReason::None:
     case ProbeKernelLaunchRejectReason::NullProbeIndices:
     case ProbeKernelLaunchRejectReason::ZeroProbeCount:
-        return "zero_probe_count";
     case ProbeKernelLaunchRejectReason::ZeroRaysPerProbe:
 
 bool tryCanLaunchProbeKernels(const DDGIKernelParams& params, ProbeKernelLaunchRejectReason& outReason) {
@@ -2504,8 +2562,6 @@ bool preflightProbeBlendKernel(const DDGIKernelParams& params, DdgiKernelLaunchR
 
     if (params.hysteresis < 0.f || params.hysteresis > 1.f) {
 
-const char* ddgiKernelRejectReasonLabel(DdgiKernelRejectReason reason) {
-    case DdgiKernelRejectReason::None:
     case DdgiKernelRejectReason::NullIndices:
     case DdgiKernelRejectReason::ZeroCount:
         return "zero_count";
@@ -2514,13 +2570,11 @@ const char* ddgiKernelRejectReasonLabel(DdgiKernelRejectReason reason) {
     case DdgiKernelRejectReason::OutOfRangeIndex:
         return "out_of_range_index";
 
-    DdgiKernelRejectReason reason = DdgiKernelRejectReason::None;
 
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason) {
         outReason = DdgiKernelRejectReason::ZeroCount;
         outReason = DdgiKernelRejectReason::NullIndices;
         outReason = DdgiKernelRejectReason::InvalidRaysPerProbe;
-    outReason = DdgiKernelRejectReason::None;
 
 
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason) {
@@ -2536,9 +2590,7 @@ bool tryCanLaunchDdgiKernels(const DDGIDesc& desc,
         if (ProbeGridLayout::isProbeIndexOutOfRange(params.probe_indices_to_update[i], desc)) {
             outReason = DdgiKernelRejectReason::OutOfRangeIndex;
 
-    case DdgiKernelRejectReason::ZeroRaysPerProbe:
 
-        outReason = DdgiKernelRejectReason::ZeroRaysPerProbe;
 
 
 
@@ -2568,7 +2620,18 @@ bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, DdgiKernelLaun
 
 
     if (!canLaunchDdgiKernelParams(params)) {
+    case DdgiKernelRejectReason::ZeroUpdateCount:
+
+bool preflightDdgiKernelParams(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason) {
+        outReason = DdgiKernelRejectReason::ZeroUpdateCount;
+
+    return preflightDdgiKernelParams(params, reason);
+
+
     (void)cuda_stream;
+    if (!canLaunchProbeTraceKernel(params)) {
+        return false;
+    }
 #if defined(FUSE_HAS_CUDA)
     // Full probe_trace_kernel lands in ddgi_kernels.cu — stub succeeds on CI.
     return true;
@@ -2605,6 +2668,9 @@ bool launch_probe_blend_kernel(const DDGIKernelParams& params, void* cuda_stream
 
     if (!canLaunchDdgiKernelParams(params)) {
     (void)cuda_stream;
+    if (!canLaunchProbeBlendKernel(params)) {
+        return false;
+    }
 #if defined(FUSE_HAS_CUDA)
     return true;
 #else

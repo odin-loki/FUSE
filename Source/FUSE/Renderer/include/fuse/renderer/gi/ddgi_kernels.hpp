@@ -160,6 +160,13 @@ bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, DdgiKernelLaun
 bool preflightDDGIKernelParams(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason);
 
 
+/// Why DDGI kernel launch preflight rejected the request (B5.6 deepen).
+
+
+/// Preflight guard before probe trace kernel launch (B5.6 deepen).
+/// Preflight guard before probe blend kernel launch (B5.6 deepen).
+/// Diagnose why kernel launch preflight would reject (B5.6 deepen).
+bool preflightDdgiKernelParams(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
