@@ -447,6 +447,11 @@ struct ChromeTraceExportPreflight {
     u32 beginEventCount = 0;
     u32 endEventCount = 0;
 
+    bool exportWouldTrimEvents = false;
+    bool hasOnlyExportableEvents = false;
+    u32 orphanAsyncFlowEndCount = 0;
+    bool hasOrphanAsyncFlowEnds = false;
+
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasNonExportableEvents() const { return nonExportableEventCount > 0; }
@@ -1316,6 +1321,28 @@ struct AsyncFlowNestingPreflight {
     bool flowDepthDetached = false;
     bool crossThreadHandoffPending = false;
     bool hasOpenAsyncFlows = false;
+};
+
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canBegin = false;
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
 };
 
 /// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
