@@ -2450,3 +2450,46 @@ void testFroxelCoordLookupDescPopulationAndDiagnosticGuards() {
     expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtCoord(grid, desc, 1u, 0u, 0u, 2.5f, lookupReason),
                "tryPopulate with reason rejects invalid camera");
                "tryPopulate with reason reports invalid_camera populate reject reason");
+
+// --- deepen additive from deepen-froxel-b511-guards-9ea0 ---
+void testFroxelValidateCoordsDensitySizingAndTrilinearGuards() {
+    fuse::renderer::FroxelSampleCoordsRejectReason validateReason =
+        fuse::renderer::FroxelSampleCoordsRejectReason::None;
+    expectTrue(fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(valid, desc, validateReason),
+    expectTrue(validateReason == fuse::renderer::FroxelSampleCoordsRejectReason::None,
+    expectTrue(std::strcmp(fuse::renderer::froxelSampleCoordsRejectReasonLabel(validateReason), "none") == 0,
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(reversed, desc, validateReason),
+               "unordered corners fail tryValidateSampleCoords");
+    expectTrue(validateReason == fuse::renderer::FroxelSampleCoordsRejectReason::UnorderedCorners,
+    expectTrue(std::strcmp(fuse::renderer::froxelSampleCoordsRejectReasonLabel(validateReason), "unordered_corners") ==
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(oobIndices, desc, validateReason),
+               "OOB indices fail tryValidateSampleCoords");
+    expectTrue(validateReason == fuse::renderer::FroxelSampleCoordsRejectReason::OutOfRangeIndices,
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(oobWeights, desc, validateReason),
+               "OOB weights fail tryValidateSampleCoords");
+    expectTrue(validateReason == fuse::renderer::FroxelSampleCoordsRejectReason::OutOfRangeWeights,
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryValidateSampleCoords(valid, emptyDesc, validateReason),
+               "empty desc fails tryValidateSampleCoords");
+    expectTrue(validateReason == fuse::renderer::FroxelSampleCoordsRejectReason::EmptyGrid,
+    expectTrue(fuse::renderer::froxel_util::tryValidateDensityLookupIndex(grid, desc, 5u, lookupReason),
+               "in-range index passes tryValidateDensityLookupIndex");
+    expectTrue(!fuse::renderer::froxel_util::tryValidateDensityLookupIndex(grid, desc, 999u, lookupReason),
+               "OOB index fails tryValidateDensityLookupIndex");
+    expectTrue(!fuse::renderer::froxel_util::tryValidateDensityLookupIndex(undersized, desc, 0u, lookupReason),
+               "undersized storage fails tryValidateDensityLookupIndex");
+    expectTrue(!fuse::renderer::froxel_util::tryValidateDensityLookupIndex(emptyGrid, desc, 0u, lookupReason),
+               "empty storage fails tryValidateDensityLookupIndex");
+    expectTrue(fuse::renderer::froxel_util::tryCanSampleAtCoords(grid, desc, valid, trilinearReason),
+               "tryCanSampleAtCoords with trilinear reason succeeds on accessible grid");
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleAtCoords(emptyGrid, desc, valid, trilinearReason),
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::EmptyStorage,
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleAtCoords(undersized, desc, valid, trilinearReason),
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::UndersizedStorage,
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleAtCoords(oversized, desc, valid, trilinearReason),
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::DescMismatch,
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleAtCoords(grid, desc, oobIndices, trilinearReason),
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleAtCoords(grid, emptyDesc, valid, trilinearReason),
+               "wouldSkipFroxelPopulate false for valid populate inputs");
+               "wouldSkipFroxelPopulate true for zero density");
+               "wouldSkipFroxelPopulate mirrors !canPopulateFromAnalyticFog");
+               "wouldSkipFroxelPopulate true for invalid camera");

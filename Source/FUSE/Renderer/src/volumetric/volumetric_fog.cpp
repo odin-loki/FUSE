@@ -1723,3 +1723,26 @@ bool FroxelGridLayout::canPreflightTileCoords(u32 tileX, u32 tileY, u32 sliceZ, 
 // --- deepen additive from deepen-froxel-preflight-guards-4be4 ---
 bool wouldClampCoordLookup(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc) {
     if (!tryCanLookupAtCoord(grid, desc, coords.tileX0, coords.tileY0, coords.sliceZ0, lookupReason)) {
+
+// --- deepen additive from deepen-froxel-b511-guards-9ea0 ---
+                                               FroxelSampleCoordsRejectReason& outReason) {
+        outReason = FroxelSampleCoordsRejectReason::EmptyGrid;
+        outReason = indicesInRange ? FroxelSampleCoordsRejectReason::OutOfRangeWeights
+                                   : FroxelSampleCoordsRejectReason::OutOfRangeIndices;
+        outReason = FroxelSampleCoordsRejectReason::UnorderedCorners;
+    outReason = FroxelSampleCoordsRejectReason::None;
+const char* froxelSampleCoordsRejectReasonLabel(FroxelSampleCoordsRejectReason reason) {
+    case FroxelSampleCoordsRejectReason::None:
+    case FroxelSampleCoordsRejectReason::EmptyGrid:
+    case FroxelSampleCoordsRejectReason::OutOfRangeIndices:
+    case FroxelSampleCoordsRejectReason::OutOfRangeWeights:
+    case FroxelSampleCoordsRejectReason::UnorderedCorners:
+    case FroxelTrilinearSampleRejectReason::NotSampleable:
+    case FroxelTrilinearSampleRejectReason::EmptyStorage:
+    case FroxelTrilinearSampleRejectReason::UndersizedStorage:
+    case FroxelTrilinearSampleRejectReason::DescMismatch:
+bool tryValidateDensityLookupIndex(const FroxelDensityGrid& grid,
+        outReason = FroxelTrilinearSampleRejectReason::NotSampleable;
+        outReason = FroxelTrilinearSampleRejectReason::EmptyStorage;
+        outReason = FroxelTrilinearSampleRejectReason::UndersizedStorage;
+        outReason = FroxelTrilinearSampleRejectReason::DescMismatch;

@@ -683,3 +683,9 @@ bool tryCanSampleAtCoordsStrict(const FroxelDensityGrid& grid,
 
 // --- deepen additive from deepen-froxel-preflight-guards-4be4 ---
 bool wouldClampCoordLookup(u32 tileX, u32 tileY, u32 sliceZ, const FroxelGridDesc& desc);
+
+// --- deepen additive from deepen-froxel-b511-guards-9ea0 ---
+enum class FroxelSampleCoordsRejectReason : u8 {
+const char* froxelSampleCoordsRejectReasonLabel(FroxelSampleCoordsRejectReason reason);
+                                        FroxelSampleCoordsRejectReason& outReason);
+bool tryValidateDensityLookupIndex(const FroxelDensityGrid& grid,
