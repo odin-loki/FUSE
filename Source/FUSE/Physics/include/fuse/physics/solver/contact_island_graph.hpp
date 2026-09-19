@@ -673,6 +673,26 @@ const char* islandBuildRejectReasonName(IslandBuildRejectReason reason);
 /// Diagnose island build inputs without mutating a graph.
 /// Preflight island graph build inputs; sets `skipped` when nothing can partition.
 IslandGraphBuildPreflight preflight_island_graph_build(
+/// Post-build integrity counts for island graph consistency checks (B4.4 deepen).
+struct IslandGraphIntegrityStats {
+    u32 islandCount = 0;
+    u32 constrainedIslandCount = 0;
+    u32 orphanedContactRefCount = 0;
+    u32 orphanedDistanceRefCount = 0;
+    u32 outOfRangeBodyIndexCount = 0;
+
+/// Preflight diagnostics for built island graph consistency (B4.4 deepen).
+struct IslandGraphIntegrityPreflight {
+    IslandGraphIntegrityStats stats{};
+
+    bool is_consistent() const {
+        return !skipped && stats.orphanedContactRefCount == 0u && stats.orphanedDistanceRefCount == 0u &&
+               stats.outOfRangeBodyIndexCount == 0u;
+    }
+
+/// Validate a built graph against body/constraint slot coverage; sets `skipped` for empty graphs.
+IslandGraphIntegrityPreflight preflight_island_graph_integrity(
+    const ContactIslandGraph& graph,
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -722,5 +742,6 @@ IslandGraphIntegrityPreflight preflight_island_graph_integrity(const ContactIsla
 
 /// Early-out guard when a built graph carries out-of-range body or constraint refs.
 bool should_skip_island_graph_integrity(const ContactIslandGraph& graph,
+/// Early-out guard when a built graph fails integrity preflight.
 
 } // namespace fuse::physics
