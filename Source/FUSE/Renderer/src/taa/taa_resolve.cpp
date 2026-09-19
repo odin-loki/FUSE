@@ -405,3 +405,6 @@ TaaResolveSkipReason preflightTaaResolve(TaaResolveDesc& desc, const TaaHistoryB
 
 // --- deepen additive from deepen-b59-taa-history-resolve-skip-guards-1865 ---
     if (!taaResolveSkipReasonIsBlocking(reason)) {
+
+// --- deepen additive from deepen-b59-taa-history-resolve-guards-1523 ---
+    return !taaResolveSkipReasonIsBlocking(classifyTaaResolveSkip(desc, history));
