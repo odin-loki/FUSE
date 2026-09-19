@@ -168,6 +168,7 @@ struct CookCacheInvalidationSurface {
 
 
     /// True when `prune_*` would be a no-op — mirrors `total() == 0` (B7.9 deepen).
+
 };
 
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
@@ -527,7 +528,6 @@ public:
     [[nodiscard]] static bool should_skip_store(const CookCacheEntry& entry);
     /// Read-only mirror of `invalidate_stale_content_for_source` (B7.9 deepen).
     /// Read-only mirror of `invalidate_stale_upstream_hashes` (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_all() const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
