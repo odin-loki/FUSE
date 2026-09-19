@@ -397,6 +397,37 @@ FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     return cellOccupancyRejectReason(range, maxCells) == expected;
 }
 
+/// Cell-capacity preflight using `SpatialHashParams::maxCellOccupancy` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightShapeCellOccupancy(
+    const CellRange3& range,
+    const SpatialHashParams& params) {
+    return preflightCellOccupancy(range, params.maxCellOccupancy);
+}
+
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightShapeCellOccupancy(
+    const CellRange2& range,
+    const SpatialHashParams& params) {
+    return preflightCellOccupancy(range, params.maxCellOccupancy);
+}
+
+/// Non-mutating shape cell-insertion skip predicate — params wrapper (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange3& range, const SpatialHashParams& params) {
+    return canSkipCellOccupancyIteration(range, params.maxCellOccupancy);
+}
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange2& range, const SpatialHashParams& params) {
+    return canSkipCellOccupancyIteration(range, params.maxCellOccupancy);
+}
+
+/// Non-mutating shape cell-insertion predicate — inverse of `canSkipShapeCellInsertion` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange3& range, const SpatialHashParams& params) {
+    return !canSkipShapeCellInsertion(range, params);
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange2& range, const SpatialHashParams& params) {
+    return !canSkipShapeCellInsertion(range, params);
+}
+
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
@@ -717,6 +748,49 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 
 /// Non-mutating merge-into-buffer predicate — mirrors `preflightMergePairsIntoBuffer` (B4.2 deepen pass).
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
+
+/// Why a single pair merge-into-buffer would reject (B4.2 deepen pass).
+enum class MergePairIntoBufferRejectReason : u8 {
+    None = 0,
+    InvalidPair,
+    BufferFull,
+};
+
+/// Human-readable label for single-pair merge reject reasons (logging / tests).
+const char* mergePairIntoBufferRejectReasonName(MergePairIntoBufferRejectReason reason);
+
+/// Diagnose why a single pair merge would reject; vacuously succeeds when merge may proceed.
+MergePairIntoBufferRejectReason mergePairIntoBufferRejectReason(
+    const PairBufferSoA& buffer,
+    u32 bodyA,
+    u32 bodyB);
+
+/// Returns true when `mergePairIntoBufferRejectReason` matches `expected` (B4.2 deepen pass).
+bool mergePairIntoBufferRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 bodyA,
+    u32 bodyB,
+    MergePairIntoBufferRejectReason expected);
+
+/// Read-only single-pair merge diagnostics — no mutation (B4.2 deepen pass).
+struct MergePairIntoBufferPreflight {
+    MergePairIntoBufferRejectReason reason = MergePairIntoBufferRejectReason::None;
+    bool invalidPair = false;
+    bool bufferFull = false;
+
+    bool canMerge() const { return reason == MergePairIntoBufferRejectReason::None; }
+};
+
+MergePairIntoBufferPreflight preflightMergePairIntoBuffer(
+    const PairBufferSoA& buffer,
+    u32 bodyA,
+    u32 bodyB);
+
+/// Non-mutating single-pair merge skip predicate — inverse of `canMerge` (B4.2 deepen pass).
+bool canSkipMergePairIntoBuffer(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB);
+
+/// Non-mutating single-pair merge predicate — mirrors `preflightMergePairIntoBuffer` (B4.2 deepen pass).
+bool shouldRunMergePairIntoBuffer(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
