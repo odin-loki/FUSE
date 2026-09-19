@@ -31,6 +31,27 @@ bool tryPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterGuar
 /// True when NDC jitter can be produced for viewport and sequence (B5.9 deepen).
 bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
                             TaaJitterGuardRejectReason* reason = nullptr);
+/// NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter sync preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterSync(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Early-out when NDC jitter preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+
+/// Combined jitter sync + NDC diagnostics for one frame counter (B5.9 deepen).
+struct TaaJitterFramePreflight {
+    TaaJitterGuardRejectReason syncReject = TaaJitterGuardRejectReason::None;
+    TaaJitterGuardRejectReason ndcReject = TaaJitterGuardRejectReason::None;
+    u32 slot = 0;
+
+    bool canSync() const { return syncReject == TaaJitterGuardRejectReason::None; }
+    bool canProduceNdc() const { return ndcReject == TaaJitterGuardRejectReason::None; }
+    bool passes() const { return canSync() && canProduceNdc(); }
+};
+
+/// Combined jitter sync + NDC preflight for a monotonic frame counter (B5.9 deepen).
+TaaJitterFramePreflight preflightTaaJitterFrame(u32 frameIndex, u32 width, u32 height,
+                                                u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
