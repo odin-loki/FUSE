@@ -133,6 +133,7 @@ void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon 
 bool contact_normal_needs_normalize(const ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
 
 /// Why friction-basis rebuild would early-out (B4.5 deepen follow-up pass).
+/// Why friction-basis rebuild would early-out (B4.4 deepen follow-up pass).
 enum class FrictionBasisRejectReason : u8 {
     None = 0,
     EmptyManifold,
@@ -165,6 +166,12 @@ FrictionBasisRejectReason friction_basis_reject_reason(
 
 /// Human-readable label for friction-basis reject reasons (B4.4 deepen follow-up pass).
 
+
+    MissingBasis,
+    StaleBasis,
+
+
+/// Diagnose why friction-basis rebuild would skip (B4.4 deepen follow-up pass).
 
 
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
@@ -433,5 +440,7 @@ WarmStartFrictionPreflight preflight_warm_start_friction(
 
 /// Returns true when warm-start friction restore should be skipped (B4.4 deepen follow-up pass).
 bool should_skip_warm_start_friction(
+/// Rebuild friction basis using preflight dispatch; no-op when skip is indicated (B4.4 deepen follow-up pass).
+bool rebuild_friction_basis_preflight_dispatch(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

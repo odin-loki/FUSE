@@ -385,6 +385,8 @@ const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason) 
         return "NoPruningNeeded";
     }
     return "Unknown";
+    case ManifoldPruneRejectReason::AllSeparated:
+        return "AllSeparated";
 
 ManifoldPruneRejectReason manifold_prune_reject_reason(
     const ContactManifold& manifold,
@@ -411,6 +413,12 @@ bool prune_contact_manifold_if_needed(
     if (can_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon)) {
         return !manifold.empty();
     return manifold.pruneContactPointsIfNeeded(separationEpsilon, duplicateEpsilon);
+    }
+        return ManifoldPruneRejectReason::AllSeparated;
+
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
 
 ManifoldPrunePreflight preflight_manifold_prune(
     const ContactManifold& manifold,
@@ -427,6 +435,7 @@ ManifoldPrunePreflight preflight_manifold_prune(
     f32 duplicateEpsilon,
     f32 shallowMinDepth) {
     ManifoldPrunePreflight preflight{};
+    preflight.reason = manifold_prune_reject_reason(manifold, separationEpsilon, duplicateEpsilon);
     if (manifold.empty()) {
         return ManifoldPruneRejectReason::EmptyManifold;
     if (manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon)) {
@@ -523,6 +532,15 @@ const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason) 
     return "Unknown";
 
 ManifoldPruneRejectReason manifold_prune_reject_reason(
+const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason) {
+    case ManifoldFinalizeRejectReason::None:
+    case ManifoldFinalizeRejectReason::EmptyManifold:
+    case ManifoldFinalizeRejectReason::InvalidNormal:
+        return "InvalidNormal";
+    case ManifoldFinalizeRejectReason::WouldBeEmptyAfterPrune:
+    case ManifoldFinalizeRejectReason::NoPenetratingPoints:
+        return "NoPenetratingPoints";
+
     const ContactManifold& manifold,
     f32 separationEpsilon,
     f32 duplicateEpsilon) {
@@ -563,6 +581,11 @@ const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason re
 bool manifold_finalize_rejects_for_reason(
     ManifoldFinalizeRejectReason expected,
     return manifold_finalize_reject_reason(manifold, separationEpsilon, duplicateEpsilon) == expected;
+    }
+
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
 
 ManifoldFinalizePreflight preflight_manifold_finalize(
     const ContactManifold& manifold,
@@ -1180,6 +1203,15 @@ bool generate_contact_manifold_deepen(
 
     return finalize_contact_manifold_if_needed(
         manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+bool prune_manifold_if_needed(
+    f32 duplicateEpsilon) {
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon);
+    if (preflight.skipped || preflight.reason != ManifoldPruneRejectReason::None) {
+        if (preflight.reason == ManifoldPruneRejectReason::AllSeparated) {
+    return manifold.pruneContactPointsIfNeeded(separationEpsilon, duplicateEpsilon);
+
+bool finalize_contact_manifold_if_needed(ContactManifold& manifold) {
+    if (!preflight_manifold_finalize(manifold).can_finalize()) {
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

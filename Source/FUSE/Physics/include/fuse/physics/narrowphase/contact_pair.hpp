@@ -748,6 +748,14 @@ bool is_plane_plane_pair(
 
 /// Returns true when at least one pair passes extended preflight (B4.4 deepen follow-up pass).
 bool has_dispatchable_contact_pairs(
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+bool contact_pair_deepen_rejects_for_reason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Inverse of `can_skip_narrowphase` (B4.4 deepen follow-up pass).
+bool can_run_narrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -755,6 +763,9 @@ bool has_dispatchable_contact_pairs(
 /// Const batch preflight for narrowphase pair dispatch (B4.4 deepen follow-up pass).
 struct ContactPairBatchPreflight {
     u32 totalPairs = 0u;
+/// Const preflight for narrowphase batch dispatch (B4.4 deepen follow-up pass).
+struct NarrowphaseBatchPreflight {
+    u32 pairCount = 0u;
     u32 rejectedCount = 0u;
     u32 dispatchableCount = 0u;
     bool skipped = false;
@@ -764,12 +775,22 @@ struct ContactPairBatchPreflight {
 
 /// Populate batch preflight without running shape dispatch (B4.4 deepen follow-up pass).
 ContactPairBatchPreflight preflight_contact_pair_batch(
+    bool can_run() const { return !skipped && dispatchableCount > 0u; }
+
+NarrowphaseBatchPreflight preflight_narrowphase_batch(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
 /// Run shape dispatch with extended deepen reject guards (B4.4 deepen follow-up pass).
 /// Does not alter `detect_contacts_pair`; use for additive preflight dispatch only.
+/// Run shape dispatch only when base preflight allows; invalid manifold otherwise (B4.4 deepen follow-up pass).
+ContactManifold detect_contacts_pair_if_valid(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Run shape dispatch only when extended deepen preflight allows (B4.4 deepen follow-up pass).
 ContactManifold detect_contacts_pair_deepen(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,

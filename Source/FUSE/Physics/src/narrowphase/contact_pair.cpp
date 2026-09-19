@@ -1331,47 +1331,50 @@ bool is_plane_plane_pair(
     const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
     if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
         return false;
-    }
 
     const CollisionShapeType typeA = shapeType(shapes, shapeA);
     const CollisionShapeType typeB = shapeType(shapes, shapeB);
     return typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Plane;
-}
 
 bool has_dispatchable_contact_pairs(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     for (const broadphase::CandidatePair& pair : pairs) {
         if (!should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
             return true;
-        }
-    }
-    return false;
-}
 
 ContactPairBatchPreflight preflight_contact_pair_batch(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     ContactPairBatchPreflight preflight{};
     preflight.totalPairs = static_cast<u32>(pairs.size());
     if (pairs.empty()) {
         preflight.skipped = true;
         return preflight;
-    }
 
-    for (const broadphase::CandidatePair& pair : pairs) {
         if (!should_skip_contact_pair_deepen2_dispatch(pair, bodies, shapes)) {
-            return false;
         if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
             ++preflight.rejectedCount;
         } else {
             ++preflight.dispatchableCount;
-        }
-    }
-    return preflight;
-}
+
+    return !can_run_narrowphase(pairs, bodies, shapes);
+
+bool contact_pair_deepen_rejects_for_reason(
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected) {
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
+
+bool can_run_narrowphase(
+
+
+NarrowphaseBatchPreflight preflight_narrowphase_batch(
+    NarrowphaseBatchPreflight preflight{};
+    preflight.pairCount = static_cast<u32>(pairs.size());
+
+
+ContactManifold detect_contacts_pair_if_valid(
+    if (should_skip_contact_pair_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    return dispatchShapePair(pair, bodies, shapes);
 
 ContactManifold detect_contacts_pair_deepen(
     const broadphase::CandidatePair& pair,
