@@ -3059,3 +3059,15 @@ void testSnapPreflightNoChange() {
     expectTrue(result.axis == fuse::editor::GizmoAxis::X, "valid tryEndDrag preserves axis");
     expectTrue(!gizmo.tryEndDrag(result), "tryEndDrag rejects after drag already ended");
     expectTrue(!result.changed, "post-end tryEndDrag leaves result unchanged");
+
+// --- deepen additive from deepen-gizmo-end-drag-preflights-fffd ---
+    expectTrue(!disabledPreflight.wouldSnap(), "snap preflight wouldSnap false when disabled");
+    expectTrue(!invalidStepPreflight.wouldSnap(), "snap preflight wouldSnap false when step invalid");
+    expectTrue(validPreflight.wouldSnap(), "snap preflight wouldSnap when snap can apply");
+    const fuse::editor::SnapPreflight noChangePreflight =
+    expectTrue(noChangePreflight.canApply(), "transform snap preflight accepts valid settings");
+    expectTrue(noChangePreflight.noChange, "transform snap preflight marks already-snapped transform");
+    expectTrue(!noChangePreflight.wouldSnap(), "transform snap preflight wouldSnap false when no change");
+    const fuse::editor::SnapPreflight wouldChangePreflight =
+    expectTrue(!wouldChangePreflight.noChange, "transform snap preflight clears noChange when snap would move");
+    expectTrue(wouldChangePreflight.wouldSnap(), "transform snap preflight wouldSnap when transform off grid");
