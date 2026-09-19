@@ -2478,3 +2478,7 @@ void testHrtfPanPathRejectReasonNoIrOverload() {
     expectTrue(narrow_reason == fuse::audio::HrtfBinauralNarrowingRejectReason::UnityAttenuation,
     expectTrue(fuse::audio::should_skip_hrtf_binaural_preflight(false, offset, 0.1f, 0.1f),
                "should_skip_hrtf_binaural_preflight true when disabled");
+
+// --- deepen additive from b72-hrtf-reject-reasons-9289 ---
+               "should_skip_hrtf_pan_path_preflight false for spatial stub path");
+    expectTrue(reason == fuse::audio::HrtfBinauralRejectReason::NullSamples,
