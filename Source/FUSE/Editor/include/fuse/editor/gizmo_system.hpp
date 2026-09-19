@@ -1263,3 +1263,6 @@ bool tryPreflightSnap(GizmoMode mode, const GizmoSnapSettings& settings, GizmoSn
 // --- deepen additive from deepen-gizmo-preflight-guards-0cc5 ---
 const char* gizmoSnapDragRejectReasonLabel(GizmoSnapDragRejectReason reason);
 GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& preflight);
+
+// --- deepen additive from deepen-gizmo-preflight-guards-6643 ---
+    GizmoBeginDragRejectReason* reason = nullptr, bool alreadyDragging = false);

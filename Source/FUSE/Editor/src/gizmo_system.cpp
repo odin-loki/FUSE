@@ -2950,3 +2950,13 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
     case GizmoSnapDragRejectReason::NonFiniteStep:
         return GizmoSnapRejectReason::NonFiniteStep;
         return GizmoSnapDragRejectReason::NonFiniteStep;
+
+// --- deepen additive from deepen-gizmo-preflight-guards-6643 ---
+    return preflightPickReady(ray, transform, mode, space, axisLength, pickRadius, reason);
+    return preflightPickReady(hit, mode, reason);
+    return preflightBeginDragReady(ray, transform, mode, space, axisLength, pickRadius, reason,
+    return preflightBeginDragReady(hit, mode, reason, alreadyDragging);
+    return preflightUpdateDragReady(hit, dragging, activeAxis, reason);
+            *reason = GizmoEndDragRejectReason::NotDragging;
+        *reason = GizmoEndDragRejectReason::None;
+bool GizmoSystem::preflightBeginDragInteractionReady(const GizmoRay& ray,

@@ -4262,3 +4262,13 @@ void testUpdateDragNonFiniteRejectReasonGuards() {
 
 // --- deepen additive from deepen-gizmo-preflights-cff7 ---
     expectTrue(!gizmo.tryPreflightUpdateDrag(hit, updateReason),
+
+// --- deepen additive from deepen-gizmo-preflight-guards-6643 ---
+    expectTrue(!fuse::editor::preflightSnapDragReady(std::numeric_limits<fuse::f32>::quiet_NaN(),
+               "preflightSnapDragReady rejects non-finite delta");
+    expectTrue(!fuse::editor::tryPreflightBeginDrag(nanRay, transform,
+void testInteractionPreflightReadyHelpers() {
+    expectTrue(!fuse::editor::preflightBeginDragInteractionReady(hit,
+    expectTrue(!fuse::editor::preflightUpdateDragInteractionReady(
+    expectTrue(gizmo.preflightUpdateDragInteractionReady(hit),
+    testInteractionPreflightReadyHelpers();
