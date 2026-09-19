@@ -1363,6 +1363,9 @@ bool AssetCooker::should_skip_reconcile_invalidation(const CookManifest& manifes
 
     return m_cache.should_skip_prune();
 
+
+
+
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
