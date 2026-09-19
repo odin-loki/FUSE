@@ -875,6 +875,19 @@ public:
     [[nodiscard]] CookCacheUpstreamInvalidationEstimate estimate_upstream_invalidation(
         const std::string& changed_source, const std::vector<CookJobDependencyEdge>& edges,
 
+    /// True when the matching `invalidate_*` call would be a no-op — mirrors `would_invalidate_*` (B7.9 deepen).
+    [[nodiscard]] bool should_skip_invalidate(u64 content_hash) const;
+    [[nodiscard]] bool should_skip_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool should_skip_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool should_skip_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                       u64 current_content_hash) const;
+    [[nodiscard]] bool should_skip_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] bool should_skip_invalidate_downstream_of(const std::string& output_path,
+                                                            const std::vector<CookJobDependencyEdge>& edges,
+                                                            const std::vector<CookJob>& jobs) const;
+    [[nodiscard]] bool should_skip_prune_all() const;
+
     [[nodiscard]] bool contains(u64 content_hash) const;
 
     /// Read-only store preflight — mirrors `store` guards without mutating stats (B7.9 deepen).

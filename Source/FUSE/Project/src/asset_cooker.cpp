@@ -1340,6 +1340,9 @@ bool AssetCooker::would_invalidate_stale_dependency_hashes(const CookManifest& m
 
 
 
+
+
+
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

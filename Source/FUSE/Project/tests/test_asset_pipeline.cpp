@@ -3661,6 +3661,7 @@ void testCookerShouldSkipAndWouldInvalidateProbes() {
     const std::string source_b = writeTempFile("/tmp/fuse_b79_skip_probe_b.obj", "# skip probe b\n");
 void testCookerShouldSkipReconcileHelpers() {
 void testCookerShouldSkipReconcileGuards() {
+void testCookerReconcileShouldSkipEstimators() {
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
@@ -4350,6 +4351,15 @@ void testCookerStaleDependencyReconcileEstimate() {
 
     expectTrue(removed >= 1u, "stale dependency invalidation runs after should_skip probe");
                "stale dependency should_skip true after invalidation");
+
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for reconcile should_skip ok");
+
+               "reconcile should_skip false when stale dependency entries exist");
+    expectTrue(!cooker.estimate_reconcile_invalidation(manifest).should_skip(),
+               "stale reconcile estimate should_skip is false");
+
+    expectTrue(upstream_count >= 1u, "upstream count non-zero before should_skip check");
+               "upstream should_skip false when entries would be removed");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -4712,6 +4722,7 @@ int main() {
     testCookerShouldSkipReconcileHelpers();
     testCookerShouldSkipWouldInvalidateProbes();
     testCookerReconcileShouldSkipGuards();
+    testCookerReconcileShouldSkipEstimators();
     testCookCacheDownstreamSourceProbe();
     testCookCachePreflightAndReconcileEstimators();
     testCookCacheReconcileEstimators();
