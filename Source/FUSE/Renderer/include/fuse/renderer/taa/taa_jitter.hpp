@@ -6,6 +6,29 @@
 
 namespace fuse::renderer {
 
+/// Why jitter sync to a frame index is blocked (B5.9 deepen).
+enum class TaaJitterSyncBlockReason : u8 {
+    None = 0,
+    InvalidSequence,
+    InvalidViewport,
+};
+/// Human-readable label for jitter sync block reasons (B5.9 deepen).
+const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason);
+/// Classify why jitter sync is blocked for the active sequence (B5.9 deepen).
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(u32 sequenceLength);
+/// Classify why jitter sync is blocked for viewport + sequence (B5.9 deepen).
+TaaJitterSyncBlockReason classifyTaaJitterSyncViewportBlock(u32 width, u32 height, u32 sequenceLength);
+/// Why jitter advance is blocked (B5.9 deepen).
+enum class TaaJitterAdvanceBlockReason : u8 {
+    None = 0,
+    InvalidSequence,
+    InvalidViewport,
+};
+/// Human-readable label for jitter advance block reasons (B5.9 deepen).
+const char* taaJitterAdvanceBlockReasonLabel(TaaJitterAdvanceBlockReason reason);
+/// Classify why jitter advance is blocked for viewport + sequence (B5.9 deepen).
+TaaJitterAdvanceBlockReason classifyTaaJitterAdvanceBlock(u32 width, u32 height, u32 sequenceLength);
+
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
 
@@ -50,11 +73,24 @@ public:
     void advance();
     /// Advance only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool advanceIfReady();
+    /// Advance only when sequence and viewport are valid; returns false when blocked (B5.9 deepen).
+    bool advanceIfViewportReady(u32 width, u32 height);
+    /// Diagnose jitter advance; false when advance is blocked (B5.9 deepen).
+    bool tryAdvanceIfReady(TaaJitterAdvanceBlockReason& outReason);
+    /// Diagnose viewport-aware jitter advance; false when advance is blocked (B5.9 deepen).
+    bool tryAdvanceIfViewportReady(u32 width, u32 height, TaaJitterAdvanceBlockReason& outReason);
     void reset();
     /// Align jitter state to a monotonic frame counter (wraps with sequence period).
     void syncToFrameIndex(u32 frameIndex);
     /// Sync only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool syncToFrameIndexIfReady(u32 frameIndex);
+    /// Sync only when sequence and viewport are valid; returns false when blocked (B5.9 deepen).
+    bool syncToFrameIndexIfViewportReady(u32 frameIndex, u32 width, u32 height);
+    /// Diagnose jitter sync; false when sync is blocked (B5.9 deepen).
+    bool trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncBlockReason& outReason);
+    /// Diagnose viewport-aware jitter sync; false when sync is blocked (B5.9 deepen).
+    bool trySyncToFrameIndexIfViewportReady(u32 frameIndex, u32 width, u32 height,
+                                            TaaJitterSyncBlockReason& outReason);
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
 
