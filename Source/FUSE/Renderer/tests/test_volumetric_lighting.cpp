@@ -3813,3 +3813,15 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "classifyFroxelGridDensityReject undersized_storage for short buffer");
     expectTrue(!fuse::renderer::froxel_util::preflightFroxelGridDensity(undersized, desc),
                "preflightFroxelGridDensity rejects undersized storage");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-128a ---
+               "preflightScreenMapping reports no reject reason on success");
+               "preflightScreenMapping reports depth_out_of_range on rejection");
+               "preflightSampleCoords reports out_of_bounds on hard OOB rejection");
+               "classifyTrilinearSampleReject clampable_weights for clampable weights");
+               "classifyTrilinearSampleReject invalid_sample_coords for hard OOB coords");
+               "preflightTrilinearSample reports no reject reason on success");
+               "preflightTrilinearSample reports clampable_weights for clampable weights");
+               "preflightTrilinearSample reports invalid_sample_coords on hard OOB rejection");
+               "classifyGridDensityReject undersized_storage for undersized grid");
+               "preflightGridDensity reports undersized_storage on rejection");
