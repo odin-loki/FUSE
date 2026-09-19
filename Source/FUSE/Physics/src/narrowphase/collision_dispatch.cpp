@@ -25,6 +25,37 @@ void runNarrowphaseIntoBuffer(
     buffer.compactAndClamp();
 }
 
+void runNarrowphaseIntoBufferWithDeepenPreflight(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer) {
+    const u32 pairCount = static_cast<u32>(pairs.size());
+    buffer.preparePairSlots(pairCount);
+
+    for (u32 pairIndex = 0; pairIndex < pairCount; ++pairIndex) {
+        ContactManifold manifold = detect_contacts_pair_deepen(pairs[pairIndex], bodies, shapes);
+        if (generate_contact_manifold(manifold)) {
+            buffer.writeSlot(pairIndex, manifold);
+        }
+    }
+
+    buffer.compactAndClamp();
+}
+
+bool runNarrowphaseIntoBufferIfNeeded(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer) {
+    if (can_skip_narrowphase(pairs, bodies, shapes)) {
+        buffer.clear();
+        return false;
+    }
+    runNarrowphaseIntoBufferWithDeepenPreflight(pairs, bodies, shapes, buffer);
+    return buffer.hasValidContacts();
+}
+
 std::vector<ContactManifold> runNarrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
