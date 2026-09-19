@@ -19,6 +19,43 @@ u32 pruneInvalidCandidatePairs(std::vector<CandidatePair>& pairs, u32 bodyCount)
     const u32 before = static_cast<u32>(pairs.size());
     pairs.erase(std::remove_if(pairs.begin(), pairs.end(), isInvalid), pairs.end());
     return before - static_cast<u32>(pairs.size());
+bool PairBufferPreflight::can_push(u32 additionalCount) const {
+    if (additionalCount == 0u) {
+        return true;
+    }
+    if (full) {
+        return false;
+    return remaining >= additionalCount;
+
+BroadphaseInputPreflight preflight_broadphase_input(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    BroadphaseInputPreflight preflight{};
+    preflight.emptyBodies = bodies.count() == 0u;
+    preflight.emptyShapes = shapes.count() == 0u;
+    preflight.skipped = isEmptyBroadphaseInput(bodies, shapes);
+    return preflight;
+
+PairBufferPreflight preflight_pair_buffer(const PairBufferSoA& buffer) {
+    PairBufferPreflight preflight{};
+    preflight.activeCount = buffer.activeCount;
+    preflight.remaining = buffer.remainingCapacity();
+    preflight.empty = buffer.isEmpty();
+    preflight.full = buffer.isFull();
+    preflight.hasDropped = buffer.hasDroppedPairs();
+
+BroadphaseRefinePreflight preflight_broadphase_refine(
+    const PairBufferSoA& buffer,
+    BroadphaseRefinePreflight preflight{};
+    preflight.emptyBuffer = buffer.canSkipRefine();
+    preflight.emptyInput = isEmptyBroadphaseInput(bodies, shapes);
+    preflight.pairCount = buffer.activeCount;
+    preflight.skipped = preflight.emptyBuffer || preflight.emptyInput;
+
+BroadphaseDedupePreflight preflight_broadphase_dedupe(const PairBufferSoA& buffer) {
+    BroadphaseDedupePreflight preflight{};
+    preflight.skipped = buffer.canSkipSoAIteration();
+    preflight.noOp = buffer.canSkipDedupe();
 }
 
 const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
@@ -585,6 +622,7 @@ void dedupeBuffer(PairBufferSoA& buffer) {
     if (!preflight.needs_dedupe()) {
     if (should_skip_dedupe_pair_buffer(buffer)) {
     if (canSkipDedupeBuffer(buffer)) {
+    const BroadphaseDedupePreflight preflight = preflight_broadphase_dedupe(buffer);
         return;
     }
 
@@ -658,6 +696,8 @@ void runBroadphaseIntoBufferInternal(
     const BroadphasePreflight preflight = preflight_broadphase(bodies, shapes);
     if (!preflight.can_run()) {
     if (should_skip_broadphase(bodies, shapes)) {
+    const BroadphaseInputPreflight inputPreflight = preflight_broadphase_input(bodies, shapes);
+    if (!inputPreflight.can_run()) {
         return;
     }
 
@@ -763,6 +803,8 @@ void refineBroadphasePairsParallelImpl(
     if (!preflight.can_refine()) {
     if (should_skip_refine_broadphase(bodies, shapes, buffer)) {
     if (canSkipRefineBroadphasePairs(buffer, bodies, shapes)) {
+    const BroadphaseRefinePreflight refinePreflight = preflight_broadphase_refine(buffer, bodies, shapes);
+    if (!refinePreflight.can_refine()) {
         return;
     }
 

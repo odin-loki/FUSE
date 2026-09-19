@@ -75,13 +75,13 @@ struct PairBufferSoA {
     /// True when compact has no invalidated slots to gather.
     bool hasInvalidSlots() const;
     /// True when at most one valid pair is present (dedupe is a no-op).
-    bool canSkipDedupe() const;
     /// True when compact+clamp would leave the buffer unchanged (B4.2 deepen pass).
-    bool canSkipCompactAndClamp() const;
     /// True when refine dispatch has no valid pairs to scan (B4.2 deepen pass).
     bool canSkipRefineIteration() const;
     /// True when dedupe followed by clamp would be a no-op (B4.2 deepen pass).
     bool canSkipDedupeAndClamp() const;
+    /// True when AABB refine can be skipped (no pairs to test).
+    /// True when compact has invalidated slots to gather.
     /// Count valid flags in prepared slot storage before compaction.
     u32 countValidSlots() const;
     /// True when canonical sort is a no-op (empty or single pair).
