@@ -51,6 +51,14 @@ void ContactBufferSoA::preparePairSlots(u32 pairCount) {
     tangent2.assign(pairCount, {});
 }
 
+bool ContactBufferSoA::writeSlotWithPreflight(u32 slot, const ContactManifold& manifold) {
+    if (!preflight_contact_buffer_write(slot, manifold, *this).can_write()) {
+        return false;
+    }
+    writeSlot(slot, manifold);
+    return true;
+}
+
 void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
     if (slot >= pairSlotCount || !manifold.valid || manifold.bodyA == manifold.bodyB) {
         return;
@@ -94,7 +102,26 @@ void ContactBufferSoA::applyWarmStartStub(u32 slot, ContactManifold& manifold) c
     manifold.frictionBasis = tangentBasisAt(slot);
 }
 
+bool ContactBufferSoA::canSkipBuildFrictionTangentBases() const {
+    return can_skip_contact_buffer_friction_build(*this);
+}
+
+bool ContactBufferSoA::shouldRunBuildFrictionTangentBases() const {
+    return should_run_contact_buffer_friction_build(*this);
+}
+
+void ContactBufferSoA::buildFrictionTangentBasesIfNeeded() {
+    if (!shouldRunBuildFrictionTangentBases()) {
+        return;
+    }
+    buildFrictionTangentBases();
+}
+
 void ContactBufferSoA::buildFrictionTangentBases() {
+    if (!shouldRunBuildFrictionTangentBases()) {
+        return;
+    }
+
     for (u32 slot = 0u; slot < activeCount; ++slot) {
         if (validFlags[slot] == 0u) {
             continue;
@@ -273,6 +300,116 @@ std::vector<ContactManifold> ContactBufferSoA::toVector() const {
         }
     }
     return manifolds;
+}
+
+const char* contact_buffer_write_reject_reason_name(ContactBufferWriteRejectReason reason) {
+    switch (reason) {
+    case ContactBufferWriteRejectReason::None:
+        return "None";
+    case ContactBufferWriteRejectReason::InvalidSlot:
+        return "InvalidSlot";
+    case ContactBufferWriteRejectReason::SelfPair:
+        return "SelfPair";
+    case ContactBufferWriteRejectReason::InvalidManifold:
+        return "InvalidManifold";
+    }
+    return "Unknown";
+}
+
+ContactBufferWriteRejectReason contact_buffer_write_reject_reason(
+    u32 slot,
+    const ContactManifold& manifold,
+    const ContactBufferSoA& buffer) {
+    if (slot >= buffer.pairSlotCount) {
+        return ContactBufferWriteRejectReason::InvalidSlot;
+    }
+    if (manifold.bodyA == manifold.bodyB) {
+        return ContactBufferWriteRejectReason::SelfPair;
+    }
+    if (!manifold.valid) {
+        return ContactBufferWriteRejectReason::InvalidManifold;
+    }
+    return ContactBufferWriteRejectReason::None;
+}
+
+bool contact_buffer_write_rejects_for_reason(
+    u32 slot,
+    const ContactManifold& manifold,
+    const ContactBufferSoA& buffer,
+    ContactBufferWriteRejectReason expected) {
+    return contact_buffer_write_reject_reason(slot, manifold, buffer) == expected;
+}
+
+ContactBufferWritePreflight preflight_contact_buffer_write(
+    u32 slot,
+    const ContactManifold& manifold,
+    const ContactBufferSoA& buffer) {
+    ContactBufferWritePreflight preflight{};
+    preflight.reason = contact_buffer_write_reject_reason(slot, manifold, buffer);
+    preflight.rejected = preflight.reason != ContactBufferWriteRejectReason::None;
+    return preflight;
+}
+
+const char* contact_buffer_friction_build_reject_reason_name(ContactBufferFrictionBuildRejectReason reason) {
+    switch (reason) {
+    case ContactBufferFrictionBuildRejectReason::None:
+        return "None";
+    case ContactBufferFrictionBuildRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferFrictionBuildRejectReason::AllBasesValid:
+        return "AllBasesValid";
+    }
+    return "Unknown";
+}
+
+ContactBufferFrictionBuildRejectReason contact_buffer_friction_build_reject_reason(
+    const ContactBufferSoA& buffer) {
+    if (buffer.activeCount == 0u) {
+        return ContactBufferFrictionBuildRejectReason::EmptyBuffer;
+    }
+
+    bool hasValidSlot = false;
+    for (u32 slot = 0u; slot < buffer.activeCount; ++slot) {
+        if (buffer.validFlags[slot] == 0u) {
+            continue;
+        }
+        hasValidSlot = true;
+        if (!isOrthonormalTangentBasis(
+                buffer.contactNormals[slot],
+                {buffer.tangent1[slot], buffer.tangent2[slot]})) {
+            return ContactBufferFrictionBuildRejectReason::None;
+        }
+    }
+
+    if (!hasValidSlot) {
+        return ContactBufferFrictionBuildRejectReason::EmptyBuffer;
+    }
+
+    return ContactBufferFrictionBuildRejectReason::AllBasesValid;
+}
+
+bool contact_buffer_friction_build_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferFrictionBuildRejectReason expected) {
+    return contact_buffer_friction_build_reject_reason(buffer) == expected;
+}
+
+ContactBufferFrictionBuildPreflight preflight_contact_buffer_friction_build(const ContactBufferSoA& buffer) {
+    ContactBufferFrictionBuildPreflight preflight{};
+    preflight.reason = contact_buffer_friction_build_reject_reason(buffer);
+    preflight.emptyBuffer =
+        preflight.reason == ContactBufferFrictionBuildRejectReason::EmptyBuffer;
+    preflight.allBasesValid =
+        preflight.reason == ContactBufferFrictionBuildRejectReason::AllBasesValid;
+    return preflight;
+}
+
+bool can_skip_contact_buffer_friction_build(const ContactBufferSoA& buffer) {
+    return !preflight_contact_buffer_friction_build(buffer).needs_build();
+}
+
+bool should_run_contact_buffer_friction_build(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_friction_build(buffer).needs_build();
 }
 
 } // namespace fuse::physics::narrowphase

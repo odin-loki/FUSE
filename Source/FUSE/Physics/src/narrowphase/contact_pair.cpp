@@ -468,15 +468,11 @@ void compute_friction_tangents(ContactManifold& manifold) {
         return;
     }
 
-    if (has_cached_friction_basis(manifold)) {
+    if (can_skip_friction_basis_rebuild(manifold)) {
         return;
     }
 
-    const f32 normalLength = manifold.contactNormal.length();
-    if (std::fabs(normalLength - 1.f) > 1e-4f) {
-        manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
-    }
-    manifold.buildFrictionBasis();
+    rebuild_friction_basis_with_preflight(manifold);
 }
 
 ContactPairPreflight preflight_contact_pair(
@@ -607,6 +603,40 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return preflight_narrowphase_batch(pairs, bodies, shapes).can_skip();
+}
+
+NarrowphasePairDispatchPreflight preflight_narrowphase_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphasePairDispatchPreflight preflight{};
+    preflight.reason = contact_pair_deepen_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+    return preflight;
+}
+
+bool can_skip_narrowphase_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !preflight_narrowphase_pair_dispatch(pair, bodies, shapes).can_dispatch();
+}
+
+bool should_run_narrowphase_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflight_narrowphase_pair_dispatch(pair, bodies, shapes).can_dispatch();
+}
+
+ContactManifold detect_contacts_pair_with_deepen_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (can_skip_narrowphase_pair_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return dispatchShapePair(pair, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase
