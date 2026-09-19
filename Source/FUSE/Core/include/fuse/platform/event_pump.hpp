@@ -44,6 +44,7 @@ struct EventPumpStats {
     u32 pendingEventCount = 0;
     u32 droppedEventCount = 0;
     u32 coalescedResizeCount = 0;
+    u32 pendingResizeEventCount = 0;
     bool quitRequested = false;
     bool hasPendingQuitEvent = false;
     bool hasPendingResizeEvent = false;
@@ -86,11 +87,9 @@ public:
                                PlatformEvent& outEvent) const;
 
     /// Poll the front event only when its type matches `type`. Returns false when empty or
-    /// the front event is a different type (outEvent is reset to None).
     bool tryPollEventOfType(PlatformEventType type, PlatformEvent& outEvent);
 
     /// Poll the front event only when its type and `window` match. Returns false when empty or
-    /// the front event does not match (outEvent is reset to None).
     bool tryPollEventOfTypeFor(const Window& window, PlatformEventType type,
                                PlatformEvent& outEvent);
 
@@ -99,6 +98,8 @@ public:
 
     /// True when the front queued event matches both `window` and `type` (false when empty).
     bool frontEventIsFor(const Window& window, PlatformEventType type) const;
+    /// True when the front queued event matches `expected` (false when empty).
+    bool peekEventTypeMatches(PlatformEventType expected) const;
 
     /// True when the synthetic queue holds at least one event.
     bool hasPendingEvents() const;
@@ -132,6 +133,11 @@ public:
 
     /// True when `pushWindowResized(window)` would coalesce instead of enqueueing.
     bool wouldCoalesceResizeFor(const Window& window) const;
+
+    /// True when a queued event matches both `type` and `window`.
+
+
+    /// Number of queued events matching `type`.
 
     /// Pending resize dimensions for `window`, or `pending == false` when none queued.
     ///
@@ -184,6 +190,7 @@ public:
     void resetEventStats();
 
 private:
+    static bool isValidResizeExtent_(u32 width, u32 height);
     bool tryCoalescePendingResize_(const PlatformEvent& event);
     void enqueueSyntheticEvent_(const PlatformEvent& event);
     bool m_quitRequested = false;
