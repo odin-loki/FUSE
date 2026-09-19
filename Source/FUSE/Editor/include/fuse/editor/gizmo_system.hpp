@@ -305,6 +305,9 @@ bool isHitTestCoordinatesInvalid(const GizmoHitTest& hit);
 
 /// True when ray origin or direction contains non-finite values (B6.4 deepen pass).
 bool isRayNonFinite(const GizmoRay& ray);
+/// True when ray origin/direction contain non-finite values (B6.4 deepen pass — pick guard).
+
+/// True when screen coordinates and viewport dimensions are finite (B6.4 deepen pass — pick guard).
 
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
 struct PickPreflight {
@@ -711,12 +714,26 @@ PickSnapPreflight preflightPickSnap(const GizmoRay& ray, const GizmoTransform& t
 PickSnapPreflight preflightPickSnap(const GizmoHitTest& hit, GizmoMode mode,
                                     const GizmoSnapSettings& settings);
 
+/// Read-only drag-delta snap diagnostics — same guards as `trySnapDragDelta` (B6.4 deepen pass).
+struct SnapDragPreflight {
+    bool snapDisabled = false;
+    bool invalidStep = false;
+
+    bool canApply() const { return !snapDisabled && !invalidStep; }
+    /// Enabled snap with unusable step — drag delta still applies without grid rounding (B6.4 deepen pass).
+    bool isDegraded() const { return !snapDisabled && invalidStep; }
+};
+
+SnapDragPreflight preflightSnapDragDelta(GizmoMode mode, const GizmoSnapSettings& settings);
+
 /// Read-only begin-drag diagnostics — no mutation (B6.4 deepen pass).
 struct BeginDragPreflight {
     bool canBegin = false;
     bool emptyHit = false;
     bool emptyRay = false;
     bool nonFiniteInput = false;
+    bool nonFiniteRay = false;
+    bool nonFiniteHit = false;
     bool invalidPickConfig = false;
     bool nonFiniteRay = false;
     bool invalidDimensions = false;
@@ -802,6 +819,7 @@ struct BeginDragPreflight {
     bool alreadyDragging = false;
     /// Resolved axis from pick preflight when `canBegin` (B6.4 deepen pass).
     /// Snap is enabled but the mode step is unusable — begin still applies (B6.4 deepen pass).
+    bool nonFiniteHit = false;
     bool invalidDimensions = false;
     bool invalidCoordinates = false;
     bool outOfBounds = false;
@@ -1688,6 +1706,13 @@ bool shouldSkipEndDragInteraction(const EndDragInteractionPreflight& preflight);
 /// True when combined interaction preflight blocks the active phase action (B6.4 deepen pass).
 bool shouldSkipInteraction(const InteractionPreflight& preflight);
 
+/// Non-mutating phase-routed action predicate — same guards as `InteractionPreflight::canActOnPhase` (B6.4 deepen pass).
+bool canActOnInteractionPhase(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+                              GizmoMode mode, const GizmoSnapSettings& settings);
+bool canActOnInteractionPhase(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
+                              GizmoAxis activeAxis, GizmoMode mode, GizmoSpace space,
+                              f32 axisLength, f32 pickRadius, const GizmoSnapSettings& settings);
+
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       f32 pickRadius, bool alreadyDragging = false);
                                       f32 pickRadius, const GizmoSnapSettings& settings,
@@ -2102,6 +2127,10 @@ public:
     [[nodiscard]] SnapDragPreflight preflightSnapDragDelta() const;
     [[nodiscard]] GizmoSnapRejectReason classifySnapReject() const;
     [[nodiscard]] bool shouldSkipSnap() const;
+    [[nodiscard]] GizmoInteractionPhase interactionPhase() const;
+    [[nodiscard]] bool canActOnPhase(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canActOnPhase(const GizmoRay& ray,
+                                     const GizmoTransform& transform) const;
     [[nodiscard]] bool canApplySnapNow() const;
     [[nodiscard]] bool canSnapDragDeltaNow() const;
     [[nodiscard]] bool trySnapTransform(const GizmoTransform& transform,
