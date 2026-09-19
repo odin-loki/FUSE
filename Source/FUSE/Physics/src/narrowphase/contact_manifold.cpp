@@ -414,6 +414,30 @@ bool can_skip_manifold_finalize(
                 .can_finalize();
 }
 
+ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth,
+    f32 frictionEpsilon) {
+    ManifoldPruneFinalizePreflight preflight{};
+    preflight.prune = preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    preflight.finalize =
+        preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    return preflight;
+}
+
+bool should_skip_manifold_prune_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth,
+    f32 frictionEpsilon) {
+    return preflight_manifold_prune_finalize(
+               manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth, frictionEpsilon)
+        .can_skip_all(shallowMinDepth);
+}
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {

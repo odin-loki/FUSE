@@ -191,6 +191,34 @@ bool can_skip_manifold_finalize(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Combined prune + finalize diagnostics — no mutation (B4.4 deepen pass).
+struct ManifoldPruneFinalizePreflight {
+    ManifoldPrunePreflight prune{};
+    ManifoldFinalizePreflight finalize{};
+
+    bool can_skip_prune(f32 shallowMinDepth = 0.f) const { return prune.can_skip_prune(shallowMinDepth); }
+    bool can_finalize() const { return finalize.can_finalize(); }
+    bool can_skip_all(f32 shallowMinDepth = 0.f) const {
+        return can_skip_prune(shallowMinDepth) && !finalize.can_finalize();
+    }
+};
+
+/// Populate combined prune/finalize preflight without mutating the manifold (B4.4 deepen pass).
+ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Non-mutating skip predicate for combined prune/finalize (B4.4 deepen pass).
+bool should_skip_manifold_prune_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f,
+    f32 frictionEpsilon = 1e-4f);
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
