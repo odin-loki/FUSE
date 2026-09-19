@@ -440,6 +440,10 @@ bool isAsyncFlowPhase(EventPhase phase) {
 
 bool isValidProfileName(const char* name) {
     return isNonEmptyProfileName(name);
+    const u32 count = eventCount();
+    return count > 0u && index < count;
+}
+
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
@@ -501,6 +505,7 @@ const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
     return kEmpty;
     return isNonEmptyProfileName(event.name);
+
 }
 
 const ProfileEvent& eventAt(u32 index) {
@@ -518,6 +523,7 @@ const ProfileEvent& eventAt(u32 index) {
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
     return kEmpty;
+
 
 
 
@@ -665,6 +671,16 @@ bool tryEventAt(u32 index, ProfileEvent& out) {
     out = eventAt(index);
 
     return isValidProfileEvent(out);
+}
+
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
 }
 
 u32 lastEventIndex() {
@@ -1149,6 +1165,13 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
             ++preflight.exportableEventCount;
         }
     preflight.hasExportableEvents = preflight.exportableEventCount > 0u;
+bool canExportChromeTrace() {
+    return hasEvents();
+
+ChromeExportPreflight preflightChromeTraceExport() {
+    preflight.profilerDisabled = !enabled();
+    preflight.unbalancedScopeNesting = !isScopeNestingBalanced();
+    preflight.openAsyncFlows = hasOpenAsyncFlows();
     return preflight;
 }
 
