@@ -8,6 +8,19 @@
 
 namespace fuse::physics {
 
+/// Build-time counts for in-range-only partition (B4.4 deepen follow-up).
+struct ContactIslandGraphBuildStats {
+    u32 bodyCount = 0;
+    u32 processedValidContactCount = 0;
+    u32 skippedOutOfRangeContactCount = 0;
+    u32 processedDistanceCount = 0;
+    u32 skippedOutOfRangeDistanceCount = 0;
+
+    bool any_skipped() const {
+        return skippedOutOfRangeContactCount > 0u || skippedOutOfRangeDistanceCount > 0u;
+    }
+};
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
@@ -24,6 +37,12 @@ struct ContactIslandGraph {
     void build(u32 bodyCount,
                const std::vector<narrowphase::ContactManifold>& contacts,
                const std::vector<DistanceConstraint>& distanceConstraints);
+
+    /// Build partition using only in-range body refs; skips out-of-range constraints (B4.4 deepen).
+    void buildInRange(u32 bodyCount,
+                      const std::vector<narrowphase::ContactManifold>& contacts,
+                      const std::vector<DistanceConstraint>& distanceConstraints,
+                      ContactIslandGraphBuildStats* outStats = nullptr);
 
     void clear();
 
