@@ -3128,3 +3128,15 @@ bool wouldSkipScheduledCacheIndices(const DDGIDesc& desc,
 bool ProbeGridLayout::wouldSkipProbeSampleCoordsPreflight(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
     return tryPreflightProbeGridSource(desc, reason);
     tryPreflightProbeGridSource(desc, reason);
+
+// --- deepen additive from deepen-ddgi-guards-0e44 ---
+bool tryValidateProbeGridSource(const ProbeGridSource& source, ProbeGridSourceRejectReason& outReason) {
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const ProbeGridSource& source) {
+    tryValidateProbeGridSource(source, reason);
+bool preflightProbeGridSource(const ProbeGridSource& source, ProbeGridSourceRejectReason* reason) {
+    const ProbeGridSourceRejectReason reject = classifyProbeGridSourceReject(source);
+bool wouldSkipProbeGridSource(const ProbeGridSource& source) {
+    return !preflightProbeGridSource(source);
+bool preflightDdgiKernelUpdate(const DDGIDesc& desc,
+bool wouldSkipDdgiKernelUpdate(const DDGIDesc& desc,
+    return !preflightDdgiKernelUpdate(desc, probe_indices, probe_count, frame_seed);

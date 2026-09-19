@@ -4283,3 +4283,36 @@ void testProbeScheduleAtRatePreflight() {
                "wouldSkipProbeSampleCoordsPreflight true for hard OOB indices");
     expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordsPreflight(desc, oobWeights),
                "wouldSkipProbeSampleCoordsPreflight false for clampable weights");
+
+// --- deepen additive from deepen-ddgi-guards-0e44 ---
+    expectTrue(fuse::renderer::ddgi_util::tryValidateProbeGridSource(source, reason),
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeGridSource(source),
+               "preflightProbeGridSource succeeds for accessible source");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeGridSource(source),
+               "wouldSkipProbeGridSource false for accessible source");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(source) ==
+               "classifyProbeGridSourceReject none for accessible source");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(nullCache, reason),
+    expectTrue(reason == fuse::renderer::ProbeGridSourceRejectReason::NullCache,
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeGridSource(nullCache),
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(undersized, reason),
+    expectTrue(reason == fuse::renderer::ProbeGridSourceRejectReason::UndersizedCache,
+    expectTrue(std::strcmp(fuse::renderer::probeGridSourceRejectReasonLabel(reason), "undersized_cache") == 0,
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(emptySource, reason),
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeGridSource(notSampleable, reason),
+               "preflightTrilinearProbeSampleAtCoords succeeds for valid inputs");
+               "wouldSkipTrilinearProbeSample false for valid world position");
+               "wouldSkipTrilinearProbeSampleAtCoords true for null cache");
+               "wouldSkipTrilinearProbeSampleAtCoords true for unordered corners");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(desc, invalid),
+               "wouldSkipProbeSampleCoordPreflight false for non-blocking unordered corners");
+void testDdgiKernelUpdatePreflightGuards() {
+    expectTrue(fuse::renderer::gi::preflightDdgiKernelUpdate(desc, validIndices, 2u, 42u, &reason),
+               "preflightDdgiKernelUpdate succeeds for valid indices");
+    expectTrue(!fuse::renderer::gi::wouldSkipDdgiKernelUpdate(desc, validIndices, 2u, 42u),
+               "wouldSkipDdgiKernelUpdate false for valid indices");
+    expectTrue(fuse::renderer::gi::wouldSkipDdgiKernelUpdate(desc, nullptr, 2u),
+               "wouldSkipDdgiKernelUpdate true for null indices");
+    expectTrue(fuse::renderer::gi::wouldSkipDdgiKernelUpdate(desc, validIndices, 0u),
+               "wouldSkipDdgiKernelUpdate true for zero count");
+    testDdgiKernelUpdatePreflightGuards();
