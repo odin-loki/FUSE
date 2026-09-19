@@ -11648,6 +11648,189 @@ void testSleepAwareDispatchAndWakeBatch() {
                "sleep-aware guarded count matches batch result");
 }
 
+void testIslandDeepenRejectReasonGuards() {
+    std::vector<narrowphase::ContactManifold> contacts;
+    narrowphase::ContactManifold validContact{};
+    validContact.valid = true;
+    validContact.bodyA = 0;
+    validContact.bodyB = 1;
+    contacts.push_back(validContact);
+
+    narrowphase::ContactManifold outOfRangeContact = validContact;
+    outOfRangeContact.bodyA = 0;
+    outOfRangeContact.bodyB = 99;
+    contacts.push_back(outOfRangeContact);
+
+    const std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 2, .bodyB = 99, .restLength = 2.f},
+    };
+
+    expectTrue(
+        island_build_reject_reason(4, contacts, constraints) == IslandBuildRejectReason::OutOfRangeContactBodies,
+        "build deepen reject reason flags out-of-range contact bodies");
+    expectTrue(
+        island_build_rejects_for_reason(4, contacts, constraints, IslandBuildRejectReason::OutOfRangeContactBodies),
+        "build deepen rejects_for_reason matches out-of-range contacts");
+    expectTrue(
+        island_build_reject_reason(0, {}, {}) == IslandBuildRejectReason::EmptyInputs,
+        "build deepen reject reason flags empty inputs");
+    expectTrue(
+        std::strcmp(islandBuildRejectReasonName(IslandBuildRejectReason::OutOfRangeContactBodies),
+                    "OutOfRangeContactBodies") == 0,
+        "build deepen reject reason name");
+
+    const IslandBuildDeepenPreflight buildDeepen = preflight_island_build_deepen(4, contacts, constraints);
+    expectTrue(buildDeepen.rejected, "build deepen preflight rejects unsafe refs");
+    expectTrue(!buildDeepen.can_build(), "build deepen preflight cannot build unsafe refs");
+    expectTrue(should_skip_island_build_deepen(4, contacts, constraints),
+               "should_skip_island_build_deepen on unsafe refs");
+    expectTrue(!should_run_island_build(4, contacts, constraints),
+               "should_run_island_build false on unsafe refs");
+
+    std::vector<narrowphase::ContactManifold> safeContacts = {validContact};
+    const std::vector<DistanceConstraint> safeConstraints = {constraints[0]};
+    expectTrue(
+        island_build_reject_reason(4, safeContacts, safeConstraints) == IslandBuildRejectReason::None,
+        "build deepen reject reason none for safe inputs");
+    expectTrue(should_run_island_build(4, safeContacts, safeConstraints),
+               "should_run_island_build true for safe inputs");
+
+    ContactIslandGraph graph;
+    graph.build(4, safeContacts, safeConstraints);
+    expectTrue(graph.islandIndexInRange(0u), "graph islandIndexInRange true for valid index");
+    expectTrue(!graph.islandIndexInRange(graph.islandCount() + 1u),
+               "graph islandIndexInRange false for out-of-range index");
+
+    RigidBodySoA bodies;
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
+    bodies.addBody({2.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({20.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+    bodies.addBody({22.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
+
+    std::vector<DistanceConstraint> twoIslands = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
+    };
+    graph.build(4, {}, twoIslands);
+
+    const u32 mixedIsland = graph.bodyIsland(0);
+    const u32 sleepingIsland = graph.bodyIsland(2);
+    SolverWorkBuffers work;
+    work.init(4, 0, 2);
+
+    expectTrue(
+        island_constraint_solve_reject_reason(graph.island(mixedIsland), bodies, work.contactManifolds(), twoIslands) ==
+            IslandConstraintSolveRejectReason::None,
+        "constraint solve deepen reject none for mixed movable island");
+    expectTrue(
+        island_constraint_solve_rejects_for_reason(
+            graph.island(mixedIsland), bodies, work.contactManifolds(), twoIslands, IslandConstraintSolveRejectReason::None),
+        "constraint solve deepen rejects_for_reason none for mixed island");
+
+    bodies.flags[2] |= RB_SLEEPING;
+    bodies.flags[3] |= RB_SLEEPING;
+    expectTrue(
+        island_constraint_solve_reject_reason(graph.island(sleepingIsland), bodies, work.contactManifolds(), twoIslands) ==
+            IslandConstraintSolveRejectReason::NoMovableBodies,
+        "constraint solve deepen reject no movable bodies for all-sleeping island");
+    expectTrue(should_skip_island_constraint_solve_deepen(
+                   graph.island(sleepingIsland), bodies, work.contactManifolds(), twoIslands),
+               "should_skip_island_constraint_solve_deepen on all-sleeping island");
+    expectTrue(!should_run_island_constraint_solve(
+                   graph.island(sleepingIsland), bodies, work.contactManifolds(), twoIslands),
+               "should_run_island_constraint_solve false on all-sleeping island");
+
+    const IslandConstraintSolveDeepenPreflight solveDeepen = preflight_island_constraint_solve_deepen(
+        graph.island(sleepingIsland), bodies, work.contactManifolds(), twoIslands);
+    expectTrue(solveDeepen.rejected, "constraint solve deepen preflight rejects all-sleeping island");
+    expectTrue(solveDeepen.reason == IslandConstraintSolveRejectReason::NoMovableBodies,
+               "constraint solve deepen preflight reason no movable bodies");
+
+    const IslandSolveJob constrainedJob = extract_island(graph, mixedIsland);
+    expectTrue(
+        island_solve_job_reject_reason(constrainedJob, 1.f / 60.f) == IslandSolveJobRejectReason::None,
+        "solve job deepen reject none for constrained job");
+    expectTrue(should_run_solve_island_job(constrainedJob, 1.f / 60.f),
+               "should_run_solve_island_job true for constrained job");
+    expectTrue(
+        island_solve_job_reject_reason(constrainedJob, 0.f) == IslandSolveJobRejectReason::InvalidDt,
+        "solve job deepen reject invalid dt");
+    expectTrue(should_skip_solve_island_job_deepen(constrainedJob, 0.f),
+               "should_skip_solve_island_job_deepen on invalid dt");
+
+    IslandSolveJob invalidJob{};
+    expectTrue(
+        island_solve_job_reject_reason(invalidJob, 1.f / 60.f) == IslandSolveJobRejectReason::OutOfRangeIndex,
+        "solve job deepen reject out-of-range for null island job");
+    expectTrue(
+        island_solve_job_rejects_for_reason(invalidJob, 1.f / 60.f, IslandSolveJobRejectReason::OutOfRangeIndex),
+        "solve job deepen rejects_for_reason out-of-range for null island job");
+
+    expectTrue(
+        island_dispatch_reject_reason(graph, 1.f / 60.f) == IslandDispatchRejectReason::None,
+        "dispatch deepen reject none for dispatchable graph");
+    expectTrue(should_run_island_dispatch(graph, 1.f / 60.f),
+               "should_run_island_dispatch true for dispatchable graph");
+    expectTrue(
+        island_dispatch_rejects_for_reason(graph, 0.f, IslandDispatchRejectReason::InvalidDt),
+        "dispatch deepen rejects_for_reason invalid dt");
+    expectTrue(should_skip_island_dispatch_deepen(graph, 0.f),
+               "should_skip_island_dispatch_deepen on invalid dt");
+
+    ContactIslandGraph emptyGraph;
+    expectTrue(
+        island_dispatch_reject_reason(emptyGraph, 1.f / 60.f) == IslandDispatchRejectReason::NoDispatchableIslands,
+        "dispatch deepen reject no dispatchable islands on empty graph");
+
+    bodies.flags[1] &= ~RB_SLEEPING;
+    expectTrue(
+        island_sleep_solve_reject_reason(graph.island(mixedIsland), bodies) == IslandSleepSolveRejectReason::None,
+        "sleep solve deepen reject none for mixed island");
+    expectTrue(should_run_island_sleep_solve(graph.island(mixedIsland), bodies),
+               "should_run_island_sleep_solve true for mixed island");
+
+    bodies.flags[0] |= RB_SLEEPING;
+    bodies.flags[1] |= RB_SLEEPING;
+    expectTrue(
+        island_sleep_solve_reject_reason(graph.island(mixedIsland), bodies) ==
+            IslandSleepSolveRejectReason::AllSleeping,
+        "sleep solve deepen reject all sleeping");
+    expectTrue(should_skip_island_sleep_solve_deepen(graph.island(mixedIsland), bodies),
+               "should_skip_island_sleep_solve_deepen on all-sleeping island");
+    expectTrue(
+        island_sleep_solve_reject_reason_by_index(graph, graph.islandCount() + 1u, bodies) ==
+            IslandSleepSolveRejectReason::OutOfRangeIndex,
+        "sleep solve deepen reject out-of-range index");
+
+    const IslandSleepSolveDeepenPreflight sleepDeepen =
+        preflight_island_sleep_solve_deepen_by_index(graph, mixedIsland, bodies);
+    expectTrue(sleepDeepen.rejected, "sleep solve deepen preflight rejects all-sleeping island");
+    expectTrue(sleepDeepen.reason == IslandSleepSolveRejectReason::AllSleeping,
+               "sleep solve deepen preflight reason all sleeping");
+
+    bodies.flags[0] &= ~RB_SLEEPING;
+    bodies.flags[1] |= RB_SLEEPING;
+    expectTrue(
+        island_wake_reject_reason(graph.island(mixedIsland), bodies) == IslandWakeRejectReason::None,
+        "wake deepen reject none for mixed island");
+    expectTrue(should_run_island_wake(graph.island(mixedIsland), bodies),
+               "should_run_island_wake true for mixed island");
+    expectTrue(
+        island_wake_reject_reason(graph.island(sleepingIsland), bodies) == IslandWakeRejectReason::NoMixedSleepState,
+        "wake deepen reject no mixed sleep state for all-sleeping island");
+    expectTrue(should_skip_island_wake_deepen(graph.island(sleepingIsland), bodies),
+               "should_skip_island_wake_deepen on all-sleeping island");
+    expectTrue(
+        island_wake_reject_reason_by_index(graph, graph.islandCount() + 1u, bodies) ==
+            IslandWakeRejectReason::OutOfRangeIndex,
+        "wake deepen reject out-of-range index");
+
+    const IslandWakeDeepenPreflight wakeDeepen = preflight_island_wake_deepen(graph.island(mixedIsland), bodies);
+    expectTrue(!wakeDeepen.rejected, "wake deepen preflight accepts mixed island");
+    expectTrue(wakeDeepen.can_wake(), "wake deepen preflight can wake mixed island");
+}
+
 void testEarlyExitWhenResidualBelowTolerance() {
     CollisionShapeSoA shapes;
     RigidBodySoA bodies;
@@ -12872,6 +13055,7 @@ int main() {
     testIslandConstraintSolveRejectReasonGuards();
     testIslandSleepWakeRejectReasonGuards();
     testIslandPipelineDispatchRejectReasonGuards();
+    testIslandDeepenRejectReasonGuards();
     testBodyFlagHelpers();
     testShouldSkipIslandSolveGuards();
     testCollectDispatchableIslandIndices();

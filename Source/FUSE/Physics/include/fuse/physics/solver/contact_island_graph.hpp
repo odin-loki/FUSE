@@ -605,6 +605,8 @@ struct ContactIslandGraph {
                        const std::vector<DistanceConstraint>& distanceConstraints);
     /// Guarded build; returns false when preflight skips build.
     bool buildGuarded(u32 bodyCount,
+    /// True when `islandIndex` is in range for graph accessors (B4.4 deepen follow-up).
+    bool islandIndexInRange(u32 islandIndex) const { return islandIndex < islandCount(); }
 
 private:
     void unionBodies(u32 a, u32 b);
