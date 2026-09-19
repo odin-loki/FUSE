@@ -627,6 +627,7 @@ PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
 
 
 
+
 enum class PairBufferSortRejectReason : u8 {
     None = 0,
     EmptyBuffer,
@@ -642,6 +643,7 @@ const char* pairBufferSortRejectReasonName(PairBufferSortRejectReason reason);
 /// Diagnose why SoA sort would skip; vacuously succeeds when sort may proceed.
 
 /// Diagnose why canonical sort would skip; vacuously succeeds when sort may proceed.
+
 
 
 
@@ -669,6 +671,7 @@ enum class PairBufferSortRejectReason : u8 {
     bool singlePair = false;
 
 /// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+
 
 
 
@@ -815,14 +818,11 @@ enum class PairBufferCompactAndClampRejectReason : u8 {
     None = 0,
     EmptyBuffer,
     NoWorkNeeded,
-};
 
 const char* pairBufferCompactAndClampRejectReasonName(PairBufferCompactAndClampRejectReason reason);
 
 
-/// Human-readable label for compact+clamp reject reasons (logging / tests).
 
-/// Diagnose why compact+clamp would skip; vacuously succeeds when work may proceed.
 PairBufferCompactAndClampRejectReason pairBufferCompactAndClampRejectReason(const PairBufferSoA& buffer);
 
 /// Returns true when `pairBufferCompactAndClampRejectReason` matches `expected` (B4.2 deepen pass).
@@ -836,6 +836,9 @@ struct PairBufferCompactAndClampPreflight {
     bool noWork = false;
 
     bool needsCompactAndClamp() const { return reason == PairBufferCompactAndClampRejectReason::None; }
+    bool emptyBuffer = false;
+
+};
 
 PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer);
 

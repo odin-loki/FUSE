@@ -2546,6 +2546,9 @@ bool mergePairsIntoBufferRejectsForReason(
 
 
 /// Read-only merge-into-buffer diagnostics — no mutation (B4.2 deepen follow-up pass).
+
+    const std::vector<CandidatePair>& pairs,
+
 struct MergePairsIntoBufferPreflight {
     MergePairsIntoBufferRejectReason reason = MergePairsIntoBufferRejectReason::None;
     bool emptyPairs = false;
@@ -2554,6 +2557,10 @@ struct MergePairsIntoBufferPreflight {
     bool canMerge() const { return reason == MergePairsIntoBufferRejectReason::None; }
 
 MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
+};
+
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer);
 
 /// Non-mutating merge-into-buffer skip predicate — inverse of `canMerge` (B4.2 deepen pass).
 bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
