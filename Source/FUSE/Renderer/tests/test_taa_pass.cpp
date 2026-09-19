@@ -4820,3 +4820,6 @@ void testTaaPassTryClassifyGuardWrappers() {
     expectTrue(!pass->tryPreflightHistoryWarmup(historyReason), "pass tryPreflightHistoryWarmup fails before init");
                "pass tryPreflightHistoryWarmup reason is NotWarm before first resolve");
                "zero-width pass classifyJitterSyncReject still passes");
+
+// --- deepen additive from taa-pass-try-classify-wrappers-d015 ---
+    expectTrue(fallbackPass->tryPreflightJitterSync(3u, jitterReject),
