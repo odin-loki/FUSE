@@ -639,3 +639,11 @@ ContactBufferWarmStartPreflight preflight_contact_buffer_warm_start(const Contac
 
 // --- deepen additive from b4-narrowphase-deepen-guards-c120 ---
     bool canRebuild() const { return reason == ContactBufferFrictionBasisRejectReason::None; }
+
+// --- deepen additive from b4-narrowphase-deeper-guards-3864 ---
+inline bool ContactBufferSoA::writeSlotWithPreflight(u32 slot, const ContactManifold& manifold) {
+    case ContactBufferFrictionBasisRejectReason::NoValidContacts:
+        return ContactBufferFrictionBasisRejectReason::NoValidContacts;
+    ContactBufferFrictionBasisRejectReason expected) {
+inline ContactBufferFrictionBasisPreflight preflight_contact_buffer_friction_basis(
+    preflight.noValidContacts = preflight.reason == ContactBufferFrictionBasisRejectReason::NoValidContacts;

@@ -479,3 +479,9 @@ inline ContactPairDeepenPassPreflight preflight_contact_pair_deepen_pass(
 inline bool should_skip_contact_pair_deepen_pass_dispatch(
     return contact_pair_deepen_pass_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
         if (!should_skip_contact_pair_deepen_pass_dispatch(pair, bodies, shapes)) {
+
+// --- deepen additive from b4-narrowphase-deeper-guards-3864 ---
+inline bool should_skip_detect_contacts_pair(
+    return should_skip_detect_contacts_pair(pair, bodies, shapes);
+    if (should_skip_detect_contacts_pair(pair, bodies, shapes)) {
+           ContactPairRejectReason::UnsupportedShapePair &&

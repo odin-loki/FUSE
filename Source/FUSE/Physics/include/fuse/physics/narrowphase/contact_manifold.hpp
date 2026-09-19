@@ -431,3 +431,6 @@ inline ManifoldNormalizePreflight preflight_manifold_normalize(
 inline ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
     ManifoldPruneFinalizePreflight preflight{};
     if (preflight.prune.reason != ManifoldPruneRejectReason::None) {
+
+// --- deepen additive from b4-narrowphase-deeper-guards-3864 ---
+    return should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);

@@ -3564,3 +3564,13 @@ void testContactBufferPreflightWrappers() {
 void testNarrowphaseDispatchDeepenPassGuards() {
 void testManifoldFrictionDeepenPassSkipGuards() {
     testContactBufferPreflightWrappers();
+
+// --- deepen additive from b4-narrowphase-deeper-guards-3864 ---
+        "writeSlotWithPreflight skips invalid manifold");
+        "writeSlotWithPreflight writes valid manifold");
+void testNarrowphaseDispatchAndDetectPreflightGuards() {
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight allows valid pair batch");
+    const auto detectPreflight =
+    expectTrue(!detectPreflight.can_detect(), "detect preflight rejects self pair");
+void testManifoldAndFrictionAliasGuardHelpers() {
+    testNarrowphaseDispatchAndDetectPreflightGuards();
