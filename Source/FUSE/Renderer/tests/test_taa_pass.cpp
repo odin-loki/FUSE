@@ -4815,3 +4815,8 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 // --- deepen additive from deepen-taa-pass-try-classify-71d9 ---
                "pass classifyResolveBlendReject matches free helper after invalidate");
+
+// --- deepen additive from deepen-b59-taa-pass-guards-8383 ---
+    expectTrue(!pass->tryPreflightHistoryWarmup(historyReason), "pass tryPreflightHistoryWarmup fails before init");
+               "pass tryPreflightHistoryWarmup reason is NotWarm before first resolve");
+               "zero-width pass classifyJitterSyncReject still passes");
