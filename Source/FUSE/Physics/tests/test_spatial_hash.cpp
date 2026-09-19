@@ -3481,3 +3481,25 @@ void testBroadphaseCellPairGenPreflightGuards() {
 
 // --- deepen additive from b4-broadphase-deepen-guards-6980 ---
     expectTrue(validPreflight.canWrite(), "write-slot preflight accepts valid pair");
+
+// --- deepen additive from b4-broadphase-deepen-guards-d5f8 ---
+                 fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(buffer, 99u)),
+void testCellPairGenPreflightGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellPairGenRejectReason(emptyOccupants)),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellPairGenRejectReason(singleOccupant)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellPairGenRejectReason::SingleOccupant),
+                   singleOccupant, fuse::physics::broadphase::CellPairGenRejectReason::SingleOccupant),
+    const fuse::physics::broadphase::CellPairGenPreflight preflight =
+void testCellShapeInsertPreflightGuards() {
+                 fuse::physics::broadphase::cellShapeInsertRejectReason(99u, 4u, validRange, 8u)),
+                 fuse::physics::broadphase::CellShapeInsertRejectReason::OutOfRangeBody),
+                 fuse::physics::broadphase::cellShapeInsertRejectReason(0u, 4u, emptyRange, 8u)),
+                 fuse::physics::broadphase::CellShapeInsertRejectReason::EmptyOccupancyRange),
+                 fuse::physics::broadphase::cellShapeInsertRejectReason(0u, 4u, validRange, 7u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellShapeInsertRejectReason::ExceedsBudget),
+    const fuse::physics::broadphase::CellShapeInsertPreflight preflight =
+        fuse::physics::broadphase::preflightCellShapeInsert(0u, 4u, validRange, 8u);
+    expectTrue(fuse::physics::broadphase::cellShapeInsertRejectsForReason(
+                   fuse::physics::broadphase::CellShapeInsertRejectReason::ExceedsBudget),
+    testCellPairGenPreflightGuards();
+    testCellShapeInsertPreflightGuards();

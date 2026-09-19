@@ -1336,3 +1336,37 @@ BroadphaseCellPairBuildPreflight preflightBroadphaseCellPairBuild(u32 totalCellS
             return ShapeCellInsertRejectReason::OccupancyRejected;
     preflight.reason = shapeCellInsertRejectReason(shapeIndex, bodies, shapes, params, use2D);
     preflight.occupancyRejected = preflight.reason == ShapeCellInsertRejectReason::OccupancyRejected;
+
+// --- deepen additive from b4-broadphase-deepen-guards-d5f8 ---
+    case CellPairGenRejectReason::SingleOccupant:
+CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants) {
+        return CellPairGenRejectReason::EmptyCell;
+        return CellPairGenRejectReason::SingleOccupant;
+    return CellPairGenRejectReason::None;
+bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenRejectReason expected) {
+    return cellPairGenRejectReason(occupants) == expected;
+    const CellPairGenPreflight preflight = preflightCellPairGeneration(occupants);
+    preflight.reason = cellPairGenRejectReason(occupants);
+    preflight.singleOccupant = preflight.reason == CellPairGenRejectReason::SingleOccupant;
+const char* cellShapeInsertRejectReasonName(CellShapeInsertRejectReason reason) {
+    case CellShapeInsertRejectReason::None:
+    case CellShapeInsertRejectReason::OutOfRangeBody:
+    case CellShapeInsertRejectReason::EmptyOccupancyRange:
+    case CellShapeInsertRejectReason::ExceedsBudget:
+CellShapeInsertRejectReason cellShapeInsertRejectReasonImpl(
+        return CellShapeInsertRejectReason::OutOfRangeBody;
+        return CellShapeInsertRejectReason::EmptyOccupancyRange;
+        return CellShapeInsertRejectReason::ExceedsBudget;
+    return CellShapeInsertRejectReason::None;
+CellShapeInsertRejectReason cellShapeInsertRejectReason(
+    return cellShapeInsertRejectReasonImpl(bodyIndex, bodyCount, range, maxCells);
+    CellShapeInsertRejectReason expected) {
+    return cellShapeInsertRejectReason(bodyIndex, bodyCount, range, maxCells) == expected;
+CellShapeInsertPreflight preflightCellShapeInsert(
+    CellShapeInsertPreflight preflight{};
+    preflight.reason = cellShapeInsertRejectReason(bodyIndex, bodyCount, range, maxCells);
+    preflight.outOfRangeBody = preflight.reason == CellShapeInsertRejectReason::OutOfRangeBody;
+    preflight.emptyOccupancyRange = preflight.reason == CellShapeInsertRejectReason::EmptyOccupancyRange;
+    preflight.exceedsBudget = preflight.reason == CellShapeInsertRejectReason::ExceedsBudget;
+    return !preflightCellShapeInsert(bodyIndex, bodyCount, range, maxCells).canInsert();
+    return preflightCellShapeInsert(bodyIndex, bodyCount, range, maxCells).canInsert();

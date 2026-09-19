@@ -1453,3 +1453,15 @@ BroadphaseCellPairBuildPreflight preflightBroadphaseCellPairBuild(u32 totalCellS
     bool canClamp() const { return reason != CellSpanClampRejectReason::EmptyRange; }
     bool needsClamp() const { return reason == CellSpanClampRejectReason::ExceedsSpanPerAxis; }
 FUSE_PHYSICS_INLINE CellSpanClampPreflight preflightCellSpanClamp2D(const CellRange2& range, u32 maxSpanPerAxis) {
+
+// --- deepen additive from b4-broadphase-deepen-guards-d5f8 ---
+CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants);
+bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenRejectReason expected);
+enum class CellShapeInsertRejectReason : u8 {
+const char* cellShapeInsertRejectReasonName(CellShapeInsertRejectReason reason);
+CellShapeInsertRejectReason cellShapeInsertRejectReason(
+    CellShapeInsertRejectReason expected);
+struct CellShapeInsertPreflight {
+    CellShapeInsertRejectReason reason = CellShapeInsertRejectReason::None;
+    bool canInsert() const { return reason == CellShapeInsertRejectReason::None; }
+CellShapeInsertPreflight preflightCellShapeInsert(
