@@ -222,6 +222,22 @@ struct CookCacheReconcileEstimate {
 /// Read-only cache-entry preflight — mirrors `is_valid_cook_cache_entry` guards (B7.9 deepen).
 /// Read-only cache-entry hash preflight — mirrors `is_valid_cook_cache_entry` guards (B7.9 deepen).
 /// Read-only cache-entry hash preflight — mirrors `store` guards without mutating (B7.9 deepen).
+/// Read-only store preflight — structural guards plus kind-specific source hash checks (B7.9 deepen).
+    switch (entry.kind) {
+    case CookAssetKind::Mesh: {
+        MeshImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_mesh_import_hash(desc);
+    case CookAssetKind::Texture: {
+        TextureImportDesc desc;
+        return preflight_texture_import_hash(desc);
+    case CookAssetKind::Audio: {
+        AudioImportDesc desc;
+        return preflight_audio_import_hash(desc);
+    case CookAssetKind::Shader: {
+        preflight.reason = CookHashRejectReason::SourceUnreadable;
+    return {};
 
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
@@ -401,6 +417,7 @@ public:
     [[nodiscard]] bool would_invalidate_downstream_of(
         const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
     /// True when `invalidate_stale_content_for_source` would remove at least one entry (B7.9 deepen).
+    /// True when `invalidate_stale_upstream_hashes` would remove at least one entry (B7.9 deepen).
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,

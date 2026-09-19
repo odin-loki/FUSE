@@ -334,6 +334,8 @@ public:
     [[nodiscard]] std::vector<std::string> probe_reconcile_stale_sources(
     [[nodiscard]] CookCacheInvalidationEstimate estimate_upstream_invalidation(
     [[nodiscard]] std::vector<std::string> probe_upstream_invalidation_closure(
+    /// True when `invalidate_stale_dependency_hashes` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_stale_dependencies(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
