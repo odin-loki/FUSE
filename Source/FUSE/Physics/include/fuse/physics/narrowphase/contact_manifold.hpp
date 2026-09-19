@@ -446,3 +446,12 @@ inline bool would_skip_manifold_prune(
 inline bool would_skip_manifold_finalize(
 inline bool try_prune_contact_manifold(
 inline bool try_finalize_contact_manifold(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-27c6 ---
+    ManifoldPruneRejectReason* reason = nullptr,
+    if (should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+        *reason = ManifoldPruneRejectReason::None;
+    ManifoldFinalizeRejectReason* reason = nullptr,
+    const ManifoldFinalizeRejectReason rejectReason =
+    if (wouldSkipManifoldPrune(manifold, nullptr, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+    if (wouldSkipManifoldFinalize(manifold, nullptr, separationEpsilon, duplicateEpsilon, frictionEpsilon)) {

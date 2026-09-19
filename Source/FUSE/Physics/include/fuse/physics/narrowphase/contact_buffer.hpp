@@ -686,3 +686,8 @@ FUSE_PHYSICS_INLINE u32 ContactBufferSoA::tryApplyMaxCapacityClamp() {
 FUSE_PHYSICS_INLINE u32 ContactBufferSoA::tryCompactAndClamp() {
 FUSE_PHYSICS_INLINE std::vector<ContactManifold> ContactBufferSoA::tryToVector() const {
 FUSE_PHYSICS_INLINE bool ContactBufferSoA::tryBuildFrictionTangentBases(f32 epsilon) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-27c6 ---
+inline const char* contactBufferCompactAndClampRejectReasonName(ContactBufferCompactAndClampRejectReason reason) {
+inline ContactBufferCompactAndClampPreflight preflightContactBufferCompactAndClamp(const ContactBufferSoA& buffer) {
+inline bool tryContactBufferWriteSlot(

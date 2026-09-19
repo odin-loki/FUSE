@@ -314,3 +314,9 @@ inline bool try_rebuild_friction_basis(ContactManifold& manifold, f32 epsilon = 
 inline bool try_compute_friction_tangents(ContactManifold& manifold, f32 epsilon = 1e-4f) {
     if (would_skip_friction_basis_rebuild(manifold, epsilon)) {
     return would_skip_friction_basis_rebuild(manifold, epsilon);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-27c6 ---
+    FrictionBasisRejectReason* reason = nullptr,
+    const FrictionBasisRejectReason rejectReason = friction_basis_reject_reason(manifold);
+    if (wouldSkipFrictionBasisRebuild(manifold, nullptr, epsilon)) {
+inline bool tryComputeFrictionTangents(ContactManifold& manifold, f32 epsilon = 1e-4f) {

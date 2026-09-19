@@ -3661,3 +3661,90 @@ void testFrictionComputeWithPreflightGuards() {
         "would_skip manifold prune after prune");
         fuse::physics::narrowphase::would_skip_friction_basis_rebuild(frictionTarget),
         "would_skip friction rebuild after valid basis");
+
+// --- deepen additive from b4-narrowphase-deepen-guards-27c6 ---
+    expectTrue(!emptyCompactionPreflight.needsCompaction(), "compaction preflight rejects empty buffer");
+        fuse::physics::narrowphase::contactBufferWriteSlotRejectReason(buffer, 0u, valid) ==
+        fuse::physics::narrowphase::contactBufferWriteSlotRejectReason(buffer, 4u, valid) ==
+        fuse::physics::narrowphase::contactBufferWriteSlotRejectReason(buffer, 1u, selfPair) ==
+        fuse::physics::narrowphase::contactBufferWriteSlotRejectReason(buffer, 0u, invalid) ==
+        fuse::physics::narrowphase::tryContactBufferWriteSlot(buffer, 0u, valid),
+        "tryContactBufferWriteSlot succeeds for valid manifold");
+    expectTrue(!fuse::physics::narrowphase::tryContactBufferWriteSlot(buffer, 1u, selfPair),
+               "tryContactBufferWriteSlot rejects self pair");
+        "wouldSkipNarrowphaseIntoBuffer on empty pair list");
+    fuse::physics::narrowphase::NarrowphaseIntoBufferRejectReason reason =
+        fuse::physics::narrowphase::NarrowphaseIntoBufferRejectReason::None;
+        fuse::physics::narrowphase::wouldSkipNarrowphaseIntoBuffer(emptyPairs, bodies, shapes, &reason),
+        "wouldSkip writes reject reason for empty pair list");
+        reason == fuse::physics::narrowphase::NarrowphaseIntoBufferRejectReason::EmptyPairs,
+        !fuse::physics::narrowphase::runNarrowphaseIntoBufferWithPreflight(
+        "runNarrowphaseIntoBufferWithPreflight returns false when skipped");
+        "runNarrowphaseIntoBufferWithPreflight runs valid dispatch");
+    fuse::physics::narrowphase::ContactPairRejectReason reason =
+        fuse::physics::narrowphase::ContactPairRejectReason::None;
+        fuse::physics::narrowphase::wouldSkipContactPairDispatch({bodyA, bodyA}, bodies, shapes, &reason),
+        "wouldSkipContactPairDispatch flags self pair");
+        "wouldSkipContactPairDispatch writes SelfPair reason");
+        fuse::physics::narrowphase::wouldSkipContactPairDeepenDispatch(
+        "wouldSkipContactPairDeepenDispatch flags both-sleeping pair");
+        "wouldSkipContactPairDeepenDispatch writes BothSleeping reason");
+        !fuse::physics::narrowphase::tryDetectContactsPair({bodyA, bodyA}, bodies, shapes, skipped),
+        "tryDetectContactsPair rejects self pair");
+    expectTrue(skipped.empty(), "tryDetectContactsPair clears manifold on skip");
+        fuse::physics::narrowphase::tryDetectContactsPair({bodyA, bodyB}, bodies, shapes, detected),
+        "tryDetectContactsPair succeeds for valid pair");
+    expectTrue(detected.valid, "tryDetectContactsPair returns valid manifold");
+        !fuse::physics::narrowphase::tryDetectContactsPairDeepen(
+        "tryDetectContactsPairDeepen rejects deepen-rejected pair");
+    expectTrue(!fuse::physics::narrowphase::tryGenerateContactManifold(empty),
+               "tryGenerateContactManifold rejects empty manifold");
+    expectTrue(fuse::physics::narrowphase::tryGenerateContactManifold(manifold),
+    expectTrue(manifold.hasFrictionBasis(), "tryGenerateContactManifold builds friction basis");
+    expectTrue(fuse::physics::narrowphase::tryGenerateContactManifoldIfNeeded(ifNeeded),
+               "tryGenerateContactManifoldIfNeeded finalizes valid manifold");
+    fuse::physics::narrowphase::ManifoldPruneRejectReason pruneReason =
+        fuse::physics::narrowphase::ManifoldPruneRejectReason::None;
+        fuse::physics::narrowphase::wouldSkipManifoldPrune(empty, &pruneReason),
+        "wouldSkipManifoldPrune flags empty manifold");
+        pruneReason == fuse::physics::narrowphase::ManifoldPruneRejectReason::EmptyManifold,
+        "wouldSkipManifoldPrune writes EmptyManifold reason");
+        fuse::physics::narrowphase::wouldSkipManifoldPrune(clean),
+        "wouldSkipManifoldPrune true for clean manifold");
+    expectTrue(!fuse::physics::narrowphase::tryPruneContactManifold(allSeparated),
+               "tryPruneContactManifold returns false when prune would be skipped");
+    expectTrue(allSeparated.pointCount == 1u, "tryPruneContactManifold leaves manifold unchanged on skip");
+    expectTrue(fuse::physics::narrowphase::tryPruneContactManifold(pruneable),
+    expectTrue(pruneable.pointCount == 1u, "tryPruneContactManifold removes separated slot");
+    fuse::physics::narrowphase::ManifoldFinalizeRejectReason finalizeReason =
+        fuse::physics::narrowphase::ManifoldFinalizeRejectReason::None;
+        fuse::physics::narrowphase::wouldSkipManifoldFinalize(noNormal, &finalizeReason),
+        "wouldSkipManifoldFinalize flags invalid normal");
+        finalizeReason == fuse::physics::narrowphase::ManifoldFinalizeRejectReason::InvalidNormal,
+        "wouldSkipManifoldFinalize writes InvalidNormal reason");
+    expectTrue(!fuse::physics::narrowphase::tryFinalizeContactManifold(noNormal),
+               "tryFinalizeContactManifold rejects invalid normal");
+    expectTrue(fuse::physics::narrowphase::tryFinalizeContactManifold(ready),
+               "tryFinalizeContactManifold finalizes valid manifold");
+               "tryFinalizeContactManifold sets validity and friction basis");
+    fuse::physics::narrowphase::FrictionBasisRejectReason reason =
+        fuse::physics::narrowphase::FrictionBasisRejectReason::None;
+        fuse::physics::narrowphase::wouldSkipFrictionBasisRebuild(empty, &reason),
+        "wouldSkipFrictionBasisRebuild flags empty manifold");
+        reason == fuse::physics::narrowphase::FrictionBasisRejectReason::EmptyManifold,
+        "wouldSkipFrictionBasisRebuild writes EmptyManifold reason");
+    expectTrue(!fuse::physics::narrowphase::tryRebuildFrictionBasis(empty),
+               "tryRebuildFrictionBasis rejects empty manifold");
+        !fuse::physics::narrowphase::wouldSkipFrictionBasisRebuild(needsBuild),
+        fuse::physics::narrowphase::tryRebuildFrictionBasis(needsBuild),
+    expectTrue(needsBuild.hasFrictionBasis(), "tryRebuildFrictionBasis stores orthonormal basis");
+        fuse::physics::narrowphase::wouldSkipFrictionBasisRebuild(needsBuild),
+        "wouldSkipFrictionBasisRebuild true for valid cached basis");
+        !fuse::physics::narrowphase::tryRebuildFrictionBasis(needsBuild),
+        "tryRebuildFrictionBasis returns false when basis can be reused");
+        "tryRebuildFrictionBasis leaves cached tangent1 untouched on skip");
+        fuse::physics::narrowphase::tryComputeFrictionTangents(computeTarget),
+        "tryComputeFrictionTangents builds missing basis");
+    expectTrue(computeTarget.hasFrictionBasis(), "tryComputeFrictionTangents stores basis");
+    expectTrue(!fuse::physics::narrowphase::tryComputeFrictionTangents(noNormal),
+               "tryComputeFrictionTangents rejects invalid normal");

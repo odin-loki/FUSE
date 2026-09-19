@@ -504,3 +504,13 @@ inline bool try_detect_contacts_pair(
 inline bool try_detect_contacts_pair_deepen(
     if (would_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
 inline bool try_generate_contact_manifold(ContactManifold& manifold) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-27c6 ---
+    ContactPairRejectReason* reason = nullptr) {
+    const ContactPairRejectReason rejectReason = contact_pair_reject_reason(pair, bodies, shapes);
+    return rejectReason != ContactPairRejectReason::None;
+    const ContactPairRejectReason rejectReason =
+inline bool tryDetectContactsPair(
+inline bool tryDetectContactsPairDeepen(
+    if (wouldSkipContactPairDeepenDispatch(pair, bodies, shapes)) {
+inline bool tryGenerateContactManifoldIfNeeded(ContactManifold& manifold) {
