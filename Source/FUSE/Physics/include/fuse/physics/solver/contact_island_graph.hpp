@@ -51,7 +51,6 @@ struct IslandBuildPreflight {
 /// Summarize contact/constraint validity before union-find island build.
 IslandBuildStats compute_island_build_stats(
 /// Input diagnostics for island graph build (B4.4 deepen follow-up).
-    u32 validContactCount = 0;
     u32 skippedInvalidContactCount = 0;
     u32 validDistanceCount = 0;
     u32 skippedInvalidDistanceCount = 0;
@@ -204,12 +203,7 @@ bool has_island_build_constraints(
 
 
 
-/// Preflight diagnostics for island graph build inputs (B4.4 deepen).
     u32 skippedContactCount = 0;
-    u32 inRangeContactCount = 0;
-    u32 outOfRangeContactCount = 0;
-    u32 inRangeDistanceCount = 0;
-    u32 outOfRangeDistanceCount = 0;
     u32 unionCandidateCount = 0;
 
 
@@ -404,7 +398,6 @@ bool should_skip_island_graph_build(
 bool has_usable_island_build_constraints(
     bool has_in_range_constraints() const {
         return inRangeContactCount > 0u || inRangeDistanceCount > 0u;
-};
 
 /// True when both contact body indices are in range for `bodyCount`.
 bool contact_bodies_in_range(u32 bodyCount, u32 bodyA, u32 bodyB);
@@ -415,9 +408,31 @@ bool distance_constraint_bodies_in_range(u32 bodyCount, const DistanceConstraint
 /// Read-only preflight for island graph build inputs; flags out-of-range constraint body refs.
 
 /// Early-out guard when build inputs have no bodies to partition.
+/// Build input preflight for island graph construction (B4.4 deepen follow-up).
+
+
+/// Post-build island partition summary (B4.4 deepen follow-up).
+    u32 totalIslands = 0;
+    u32 constrainedCount = 0;
+    u32 emptyCount = 0;
+
+bool is_island_build_body_index_valid(u32 bodyIndex, u32 bodyCount);
+
+/// True when a contact references in-range bodies for island build.
+bool is_contact_valid_for_island_build(const narrowphase::ContactManifold& contact, u32 bodyCount);
+
+/// True when a distance constraint references in-range bodies for island build.
+bool is_distance_constraint_valid_for_island_build(const DistanceConstraint& constraint, u32 bodyCount);
+
+/// Preflight island build inputs; sets `skipped` for empty no-op builds.
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Early-out guard when build inputs are an empty no-op.
+bool should_skip_island_build(u32 bodyCount,
+                              const std::vector<narrowphase::ContactManifold>& contacts,
+                              const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -448,6 +463,7 @@ struct ContactIslandGraph {
     /// Build only when `preflight_island_build` passes; clears and returns false otherwise.
     /// Guarded build entry: returns false when preflight rejects zero-body input.
     /// Guarded build: returns false when preflight skips; otherwise identical to `build`.
+    /// Guarded build — returns false when preflight skips the empty no-op path.
 
     void clear();
 
@@ -554,5 +570,7 @@ bool should_skip_island_build(u32 bodyCount,
 
 /// Guarded build entry: returns false without mutating when body count is zero.
 /// Build only when preflight passes; returns false without mutating on reject.
+/// Summarize constrained vs empty islands after build.
+IslandBuildStats compute_island_build_stats(const ContactIslandGraph& graph);
 
 } // namespace fuse::physics
