@@ -630,3 +630,12 @@ ContactBufferFrictionBuildPreflight preflightContactBufferFrictionBuild(const Co
     buildContactBufferFrictionTangentBasesWithPreflight(*this);
 void buildContactBufferFrictionTangentBasesWithPreflight(ContactBufferSoA& buffer) {
     if (!preflightContactBufferFrictionBuild(buffer).canBuild()) {
+
+// --- deepen additive from b4-narrowphase-deepen-pass6-949f ---
+bool ContactBufferSoA::buildFrictionTangentBasesWithPreflight() {
+u32 ContactBufferSoA::compactWithPreflight() {
+    if (preflight.reason == ContactBufferCompactionRejectReason::AllValid) {
+u32 ContactBufferSoA::compactAndClampWithPreflight() {
+    case ContactBufferFrictionBasisRejectReason::NoValidContacts:
+        return ContactBufferFrictionBasisRejectReason::NoValidContacts;
+    preflight.noValidContacts = preflight.reason == ContactBufferFrictionBasisRejectReason::NoValidContacts;

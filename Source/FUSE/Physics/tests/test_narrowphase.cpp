@@ -2802,3 +2802,21 @@ void testContactManifoldBufferWritePreflightGuards() {
             noNormal, fuse::physics::narrowphase::ContactManifoldWriteRejectReason::InvalidNormal),
             notFinalized, fuse::physics::narrowphase::ContactManifoldWriteRejectReason::NotFinalized),
     testContactManifoldBufferWritePreflightGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-pass6-949f ---
+void testContactPairDeepenPass6Guards() {
+void testManifoldPruneFinalizePass6Guards() {
+void testFrictionBasisPass6Preflights() {
+    expectTrue(!invalidSlotPreflight.can_write(), "write preflight rejects invalid slot");
+    expectTrue(buffer.writeSlotWithPreflight(0u, valid), "write_with_preflight accepts valid manifold");
+    expectTrue(compactionPreflight.needs_compaction(), "compaction preflight needs work with invalid slot");
+    expectTrue(buffer.compactWithPreflight() == 1u, "compact_with_preflight keeps valid slot");
+    buffer.writeSlotWithPreflight(0u, valid);
+    buffer.writeSlotWithPreflight(1u, deeper);
+    expectTrue(buffer.compactWithPreflight() == 2u, "compact before clamp gathers both slots");
+    expectTrue(clampPreflight.needs_clamp(), "clamp preflight needs overflow truncation");
+    expectTrue(buffer.compactAndClampWithPreflight() == 1u, "compact_and_clamp_with_preflight truncates");
+    const auto frictionPreflight = fuse::physics::narrowphase::preflight_contact_buffer_friction_basis(empty);
+    expectTrue(!frictionPreflight.can_rebuild(), "friction preflight rejects empty buffer");
+        buffer.buildFrictionTangentBasesWithPreflight(),
+    testFrictionBasisPass6Preflights();

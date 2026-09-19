@@ -220,3 +220,12 @@ ContactBufferFrictionBuildRejectReason contactBufferFrictionBuildRejectReason(co
     bool canBuild() const { return reason == ContactBufferFrictionBuildRejectReason::None; }
 ContactBufferFrictionBuildPreflight preflightContactBufferFrictionBuild(const ContactBufferSoA& buffer);
 void buildContactBufferFrictionTangentBasesWithPreflight(ContactBufferSoA& buffer);
+
+// --- deepen additive from b4-narrowphase-deepen-pass6-949f ---
+    bool buildFrictionTangentBasesWithPreflight();
+    u32 compactWithPreflight();
+    u32 compactAndClampWithPreflight();
+    bool can_write() const { return reason == ContactBufferWriteRejectReason::None; }
+    bool needs_compaction() const { return reason == ContactBufferCompactionRejectReason::None; }
+    bool needs_clamp() const { return reason == ContactBufferClampRejectReason::None; }
+    bool can_rebuild() const { return reason == ContactBufferFrictionBasisRejectReason::None; }

@@ -228,3 +228,6 @@ std::vector<ContactManifold> runNarrowphaseWithDeepenPreflight(
 
 // --- deepen additive from b4-narrowphase-deepen-guards-68c9 ---
 NarrowphaseRunPreflight preflightNarrowphaseRun(
+
+// --- deepen additive from b4-narrowphase-deepen-pass6-949f ---
+void runNarrowphaseIntoBufferWithPreflight(

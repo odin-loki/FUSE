@@ -85,3 +85,8 @@ NarrowphaseRunPreflight preflightNarrowphaseRun(
     const NarrowphaseRunPreflight runPreflight = preflight_run_narrowphase(pairs, bodies, shapes);
     if (runPreflight.canSkip) {
     const u32 pairCount = runPreflight.pairCount;
+
+// --- deepen additive from b4-narrowphase-deepen-pass6-949f ---
+void runNarrowphaseIntoBufferWithPreflight(
+            buffer.writeSlotWithPreflight(pairIndex, manifold);
+    buffer.compactAndClampWithPreflight();
