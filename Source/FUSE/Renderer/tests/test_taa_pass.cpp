@@ -4812,3 +4812,6 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 // --- deepen additive from deepen-taa-pass-b59-guards-5226 ---
                "pass tryPreflightResolveBlendWeights passes after init");
+
+// --- deepen additive from deepen-taa-pass-try-classify-71d9 ---
+               "pass classifyResolveBlendReject matches free helper after invalidate");
