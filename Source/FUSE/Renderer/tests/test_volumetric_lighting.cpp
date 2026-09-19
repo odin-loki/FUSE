@@ -3880,3 +3880,17 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "preflightTrilinearSample reports clampable_weights reject reason");
                "preflightTrilinearSample reports invalid_sample_coords for hard OOB");
                "wouldSkipFroxelPopulate agrees with preflightFroxelPopulate for zero density");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-6328 ---
+    expectTrue(fuse::renderer::preflightDensityLookup(grid, desc, 999u),
+    expectTrue(!fuse::renderer::preflightDensityLookup(emptyGrid, desc, 0u),
+    expectTrue(fuse::renderer::classifyDensityLookupReject(grid, desc, 1u, 1u, 2u) ==
+    expectTrue(fuse::renderer::classifyDensityLookupReject(grid, desc, 99u, 99u, 99u) ==
+    expectTrue(fuse::renderer::preflightDensityLookup(grid, desc, 1u, 1u, 2u),
+               "preflightDensityLookup succeeds for valid coords");
+               "classifySampleCoordsReject invalid_weights for OOB weights");
+    expectTrue(fuse::renderer::preflightScreenDepthMapping(0.5f, 0.5f, 10.f, desc, camera),
+    expectTrue(fuse::renderer::preflightGridDensity(grid, desc),
+    expectTrue(fuse::renderer::classifyGridDensityReject(undersized, desc) ==
+    expectTrue(!fuse::renderer::preflightGridDensity(undersized, desc),
+    expectTrue(!fuse::renderer::preflightFroxelPopulate(desc, camera, zeroDensity),

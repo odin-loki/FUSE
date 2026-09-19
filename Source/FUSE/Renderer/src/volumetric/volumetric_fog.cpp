@@ -2359,3 +2359,6 @@ bool preflightScreenDepthToFroxelIndex(f32 screenX,
 // --- deepen additive from b511-froxel-classify-preflight-a761 ---
     return !preflightSampleCoords(coords, desc);
     return !preflightFroxelPopulate(desc, camera, params);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-6328 ---
+    const ScreenMappingRejectReason reject = classifyScreenMappingReject(screenX, screenY, viewDepth, desc, camera);
