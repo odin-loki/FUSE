@@ -936,3 +936,7 @@ bool probeGridRejectReasonIsBlocking(ProbeGridRejectReason reason);
                                     ProbeGridRejectReason* reason = nullptr);
     static bool preflightProbeCoord(const DDGIDesc& desc,
     static bool wouldSkipProbeGridAccess(const DDGIDesc& desc);
+
+// --- deepen additive from deepen-ddgi-guards-4831 ---
+    static bool tryClampProbeGridCoord(const DDGIDesc& desc,
+    static bool wouldSkipProbeCoordPreflight(const DDGIDesc& desc, const ProbeGridCoord& coord);

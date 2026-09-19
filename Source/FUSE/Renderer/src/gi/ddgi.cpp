@@ -2901,3 +2901,7 @@ bool ProbeGridLayout::preflightProbeCoord(const DDGIDesc& desc,
 bool ProbeGridLayout::wouldSkipProbeGridAccess(const DDGIDesc& desc) {
     return !preflightProbeGrid(desc);
     return !preflightProbeTrilinearSample(desc, world_position, cache, cache_count);
+
+// --- deepen additive from deepen-ddgi-guards-4831 ---
+bool ProbeGridLayout::tryClampProbeGridCoord(const DDGIDesc& desc,
+bool ProbeGridLayout::wouldSkipProbeCoordPreflight(const DDGIDesc& desc, const ProbeGridCoord& coord) {

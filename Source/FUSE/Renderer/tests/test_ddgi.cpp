@@ -3836,3 +3836,20 @@ void testProbeKernelPreflightGuards() {
     testProbeGridPreflightGuards();
     testProbeTrilinearPreflightGuards();
     testProbeKernelPreflightGuards();
+
+// --- deepen additive from deepen-ddgi-guards-4831 ---
+void testDdgiTrilinearAndGridPreflightGuards() {
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeCoordPreflight(desc, inRange),
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeCoordPreflight(desc, oobCoord),
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeGridCoord(desc, oobCoord, clampedCoord),
+               "tryClampProbeGridCoord succeeds on non-empty grid");
+               "tryClampProbeGridCoord clamps OOB coord per axis");
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryClampProbeGridCoord(empty, oobCoord, clampedCoord),
+               "tryClampProbeGridCoord rejects empty grid");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipSampleCoordPreflight(desc, hardOob),
+               "preflightTrilinearProbeSample succeeds for world position");
+               "classifyProbeTrilinearSampleReject undersized_cache");
+               "classifyCacheIndexReject OOB without cache pointer");
+    expectTrue(!fuse::renderer::gi::preflightProbeBlendKernelLaunch(zeroRays),
+               "preflightProbeBlendKernelLaunch rejects zero rays");
+    testDdgiTrilinearAndGridPreflightGuards();
