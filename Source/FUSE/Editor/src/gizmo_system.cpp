@@ -2924,3 +2924,14 @@ void applyNoTargetGuard(Handle<Object> target, EndDragPreflight& preflight) {
     return fuse::editor::preflightUpdateInteraction(hit, m_dragging, m_activeAxis, m_mode, m_snap,
     return fuse::editor::preflightEndInteraction(m_dragging, m_activeAxis, m_mode, m_snap,
     return fuse::editor::preflightInteraction(hit, m_dragging, m_activeAxis, m_mode, m_snap,
+
+// --- deepen additive from deepen-gizmo-b6-preflights-b7f3 ---
+                           const GizmoSnapSettings& settings, GizmoBeginDragRejectReason& reason,
+                         const GizmoSnapSettings& settings, GizmoEndDragRejectReason& reason) {
+    return !preflightSnap(mode, settings).canApply();
+    return !preflightBeginDrag(ray, transform, mode, space, axisLength, pickRadius, settings,
+    return !preflightBeginDrag(hit, mode, settings, alreadyDragging).canBegin;
+    return !preflightUpdateDrag(hit, dragging, activeAxis).canUpdate();
+    return !preflightUpdateDrag(hit, dragging, activeAxis, mode, settings).canUpdate();
+    return !preflightEndDrag(dragging, activeAxis, GizmoMode::Translate, {}).canEnd();
+    return !preflightEndDrag(dragging, activeAxis, mode, settings).canEnd();

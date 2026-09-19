@@ -4115,3 +4115,57 @@ void testNonUnitRayPickPreflight() {
                "tryPickAxis still succeeds on non-unit ray");
     testGizmoTargetPreflightGuards();
     testNonUnitRayPickPreflight();
+
+// --- deepen additive from deepen-gizmo-b6-preflights-b7f3 ---
+                               fuse::editor::GizmoUpdateDragRejectReason::NotDragging),
+void testClassifyPickReject() {
+               "classifyPickReject returns EmptyRay");
+    fuse::editor::PickPreflight screenMissPick{};
+    expectTrue(fuse::editor::classifyPickReject(screenMissPick) ==
+               "classifyPickReject returns ScreenMiss");
+void testTryPreflightPickRejectReason() {
+    fuse::editor::GizmoPickRejectReason reason = fuse::editor::GizmoPickRejectReason::PickMiss;
+               "tryPreflightPick reports EmptyRay reason");
+               "tryPreflightPick reports None on valid ray");
+    expectTrue(!fuse::editor::tryPreflightPick(deadZone, fuse::editor::GizmoMode::Translate, reason),
+    expectTrue(reason == fuse::editor::GizmoPickRejectReason::ScreenMiss,
+               "tryPreflightPick reports ScreenMiss for dead zone");
+    expectTrue(gizmo.tryPreflightPick(xRay, transform, reason),
+               "gizmo tryPreflightPick accepts valid ray");
+               "gizmo tryPreflightPick reports None on valid ray");
+void testTryPreflightSnapRejectReason() {
+    fuse::editor::GizmoSnapRejectReason reason = fuse::editor::GizmoSnapRejectReason::InvalidStep;
+               "tryPreflightSnap reports SnapDisabled");
+               "tryPreflightSnap reports InvalidStep");
+               "tryPreflightSnap reports None on valid snap");
+               "gizmo tryPreflightSnap reports None on valid snap");
+void testTryPreflightBeginDragRejectReason() {
+        fuse::editor::GizmoBeginDragRejectReason::PickMiss;
+               "tryPreflightBeginDrag reports EmptyHit");
+               "tryPreflightBeginDrag reports None on valid hit");
+    expectTrue(!fuse::editor::tryPreflightBeginDrag(hit, fuse::editor::GizmoMode::Translate, reason,
+               "tryPreflightBeginDrag reports AlreadyDragging");
+    expectTrue(!gizmo.tryPreflightBeginDrag(hit, reason),
+               "gizmo tryPreflightBeginDrag reports AlreadyDragging");
+void testTryPreflightUpdateDragRejectReason() {
+        fuse::editor::GizmoUpdateDragRejectReason::EmptyHit;
+               "tryPreflightUpdateDrag reports NotDragging");
+               "tryPreflightUpdateDrag reports InvalidActiveAxis");
+    expectTrue(gizmo.tryPreflightUpdateDrag(hit, reason),
+               "gizmo tryPreflightUpdateDrag reports None on valid update");
+    expectTrue(!gizmo.tryPreflightUpdateDrag(hit, reason),
+               "gizmo tryPreflightUpdateDrag rejects empty viewport");
+               "gizmo tryPreflightUpdateDrag reports EmptyHit");
+void testTryPreflightEndDragRejectReason() {
+        fuse::editor::GizmoEndDragRejectReason::NotDragging;
+               "tryPreflightEndDrag reports NotDragging");
+               "tryPreflightEndDrag reports None on valid end");
+    expectTrue(!gizmo.tryPreflightEndDrag(reason),
+               "gizmo tryPreflightEndDrag rejects inactive drag");
+               "gizmo tryPreflightEndDrag reports NotDragging");
+               "gizmo tryPreflightEndDrag reports None on valid end");
+    testTryPreflightPickRejectReason();
+    testTryPreflightSnapRejectReason();
+    testTryPreflightBeginDragRejectReason();
+    testTryPreflightUpdateDragRejectReason();
+    testTryPreflightEndDragRejectReason();

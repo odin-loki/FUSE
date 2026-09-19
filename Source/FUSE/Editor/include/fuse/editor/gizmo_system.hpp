@@ -1253,3 +1253,9 @@ struct DragLifecycleSnapPreflight {
 DragLifecycleSnapPreflight preflightDragLifecycleSnap(GizmoMode mode,
 bool canActOnInteraction(const InteractionPreflight& preflight, GizmoInteractionAction action);
     [[nodiscard]] DragLifecycleSnapPreflight preflightDragLifecycleSnap() const;
+
+// --- deepen additive from deepen-gizmo-b6-preflights-b7f3 ---
+                      GizmoSpace space, f32 axisLength, f32 pickRadius, GizmoPickRejectReason& reason);
+bool tryPreflightSnap(GizmoMode mode, const GizmoSnapSettings& settings, GizmoSnapRejectReason& reason);
+                           const GizmoSnapSettings& settings, GizmoBeginDragRejectReason& reason,
+                         const GizmoSnapSettings& settings, GizmoEndDragRejectReason& reason);
