@@ -14,6 +14,7 @@ enum class TaaJitterGuardRejectReason : u8 {
     None = 0,
     InvalidSequence,
     InvalidViewport,
+    MisalignedFrame,
 };
 
 /// Human-readable label for jitter guard reject reasons (B5.9 deepen).
@@ -46,6 +47,32 @@ bool preflightTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLen
 bool tryPreflightTaaJitterAdvance(u32 sequenceLength, TaaJitterGuardRejectReason& reason);
 /// Early-out when jitter advance preflight would reject (B5.9 deepen).
 bool shouldSkipTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Classify why jitter state is not aligned to a monotonic frame counter (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(u32 frameIndex, u32 monotonicFrame, u32 slot,
+                                                            u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// True when jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
+bool preflightTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot,
+                                 u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                                 TaaJitterGuardRejectReason* reason = nullptr);
+/// Jitter alignment preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot, u32 sequenceLength,
+                                    TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter alignment preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot,
+                                    u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Classify why combined jitter sync + NDC production would be rejected (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterSyncAndNdcReject(u32 width, u32 height,
+                                                             u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// True when jitter can sync and produce NDC offsets for viewport and sequence (B5.9 deepen).
+bool preflightTaaJitterSyncAndNdc(u32 /*frameIndex*/, u32 width, u32 height,
+                                    u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                                    TaaJitterGuardRejectReason* reason = nullptr);
+/// Combined jitter sync + NDC preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterSyncAndNdc(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
+                                     TaaJitterGuardRejectReason& reason);
+/// Early-out when combined jitter sync + NDC preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterSyncAndNdc(u32 frameIndex, u32 width, u32 height,
+                                   u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -59,6 +86,8 @@ struct TaaJitterLayout {
     static bool canProduceNdcOffset(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// True when jitter can align to a monotonic frame counter (B5.9 deepen).
     static bool canSyncToFrameIndex(u32 /*frameIndex*/, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// True when jitter can sync and produce NDC offsets for viewport and sequence (B5.9 deepen).
+    static bool canSyncAndProduceNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// True when `slot` is the active Halton index for `frameIndex` (B5.9 deepen).
     static bool jitterSlotMatchesFrameIndex(u32 frameIndex, u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Returns the jitter cycle length after validation (0 when invalid).
@@ -100,8 +129,14 @@ public:
     void syncToFrameIndex(u32 frameIndex);
     /// Sync only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool syncToFrameIndexIfReady(u32 frameIndex);
+    /// Sync with mandatory reject-reason output; returns false when blocked (B5.9 deepen).
+    bool trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason);
+    /// Sync and produce NDC offset only when viewport and sequence are valid (B5.9 deepen).
+    bool syncToFrameIndexAndProduceNdcIfReady(u32 frameIndex, u32 width, u32 height, fuse::math::Vec2& out);
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
+    /// True when jitter state is aligned to `frameIndex` for the active sequence (B5.9 deepen).
+    bool preflightAlignmentToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
 
     u32 index() const { return m_index; }
     /// True when the jitter sequence can advance (B5.9 deepen).
