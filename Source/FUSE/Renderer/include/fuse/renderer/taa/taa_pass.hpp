@@ -409,8 +409,6 @@ public:
     bool tryAdvanceJitterIfReady(TaaJitterGuardRejectReason& reason);
     /// Sync jitter with reject-reason diagnostics; returns false when blocked (B5.9 deepen).
     bool trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason);
-    /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
-    TaaJitterGuardRejectReason classifyJitterNdcReject() const;
     /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
     /// Classify why pass NDC jitter would be rejected (B5.9 deepen).
     /// True when pass jitter sequence can advance (B5.9 deepen).
