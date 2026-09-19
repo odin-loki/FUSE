@@ -4377,3 +4377,13 @@ void testTaaPassTryPreflightGuards() {
     expectNear(weights.history, 0.6f, 1e-5f, "pass tryCompute steady history weight");
                "zero-width pass tryPreflightJitterNdc rejects");
     testTaaPassTryPreflightGuards();
+
+// --- deepen additive from deepen-taa-pass-guards-9b1a ---
+void testTaaPassTryPreflightAndClassifyGuards() {
+               "pass classifyJitterSyncReject is None before init");
+               "pass classifyJitterNdcReject is None before init");
+               "pass classifyJitterAdvanceReject is None before init");
+    expectTrue(pass->tryPreflightJitterSync(6u, jitterReason),
+               "pass tryPreflightJitterSync reason is None before init");
+    expectTrue(pass->preflightJitterAdvance(), "pass preflightJitterAdvance passes before init");
+    testTaaPassTryPreflightAndClassifyGuards();
