@@ -718,6 +718,118 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 /// Non-mutating merge-into-buffer predicate — mirrors `preflightMergePairsIntoBuffer` (B4.2 deepen pass).
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
 
+/// Pair count for `uniqueOccupantCount` bodies in one hash cell (0 when n < 2).
+FUSE_PHYSICS_INLINE u32 estimatePairsForUniqueOccupants(u32 uniqueOccupantCount) {
+    return estimatePairCountForUniqueBodies(uniqueOccupantCount);
+}
+
+/// Why per-cell pair generation would early-out (B4.2 deepen pass).
+enum class CellPairGenRejectReason : u8 {
+    None = 0,
+    EmptyOccupants,
+    InsufficientOccupants,
+};
+
+/// Human-readable label for cell-pair generation reject reasons (logging / tests).
+const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason);
+
+/// Diagnose why cell-pair generation would skip; vacuously succeeds when generation may proceed.
+FUSE_PHYSICS_INLINE CellPairGenRejectReason cellPairGenRejectReason(u32 uniqueOccupantCount) {
+    if (uniqueOccupantCount == 0u) {
+        return CellPairGenRejectReason::EmptyOccupants;
+    }
+    if (uniqueOccupantCount < 2u) {
+        return CellPairGenRejectReason::InsufficientOccupants;
+    }
+    return CellPairGenRejectReason::None;
+}
+
+/// Returns true when `cellPairGenRejectReason` matches `expected` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool cellPairGenRejectsForReason(u32 uniqueOccupantCount, CellPairGenRejectReason expected) {
+    return cellPairGenRejectReason(uniqueOccupantCount) == expected;
+}
+
+/// Read-only per-cell pair-generation diagnostics — no mutation (B4.2 deepen pass).
+struct CellPairGenPreflight {
+    CellPairGenRejectReason reason = CellPairGenRejectReason::None;
+    bool emptyOccupants = false;
+    bool insufficientOccupants = false;
+    u32 uniqueOccupantCount = 0;
+    u32 pairCount = 0;
+
+    bool canGenerate() const { return reason == CellPairGenRejectReason::None; }
+};
+
+CellPairGenPreflight preflightCellPairGen(const std::vector<u32>& occupants);
+
+/// Non-mutating cell-pair generation skip predicate — inverse of `canGenerate` (B4.2 deepen pass).
+bool canSkipCellPairGen(const std::vector<u32>& occupants);
+
+/// Non-mutating cell-pair generation predicate — mirrors `preflightCellPairGen` (B4.2 deepen pass).
+bool shouldRunCellPairGen(const std::vector<u32>& occupants);
+
+/// Why shape→cell insertion would skip occupancy iteration (B4.2 deepen pass).
+enum class ShapeCellInsertRejectReason : u8 {
+    None = 0,
+    OutOfRangeBody,
+    EmptyCellRange,
+    ExceedsOccupancyBudget,
+};
+
+/// Human-readable label for shape-cell insert reject reasons (logging / tests).
+const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason);
+
+/// Diagnose why shape→cell insertion would skip; vacuously succeeds when insertion may proceed.
+ShapeCellInsertRejectReason shapeCellInsertRejectReason(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D);
+
+/// Returns true when `shapeCellInsertRejectReason` matches `expected` (B4.2 deepen pass).
+bool shapeCellInsertRejectsForReason(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D,
+    ShapeCellInsertRejectReason expected);
+
+/// Read-only shape→cell insert diagnostics — no mutation (B4.2 deepen pass).
+struct ShapeCellInsertPreflight {
+    ShapeCellInsertRejectReason reason = ShapeCellInsertRejectReason::None;
+    bool outOfRangeBody = false;
+    bool emptyCellRange = false;
+    bool exceedsOccupancyBudget = false;
+    u32 occupancyCount = 0;
+
+    bool canInsert() const { return reason == ShapeCellInsertRejectReason::None; }
+};
+
+ShapeCellInsertPreflight preflightShapeCellInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D);
+
+/// Non-mutating shape→cell insert skip predicate — inverse of `canInsert` (B4.2 deepen pass).
+bool canSkipShapeCellInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D);
+
+/// Non-mutating shape→cell insert predicate — mirrors `preflightShapeCellInsert` (B4.2 deepen pass).
+bool shouldRunShapeCellInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D);
+
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
     const RigidBodySoA& bodies,
