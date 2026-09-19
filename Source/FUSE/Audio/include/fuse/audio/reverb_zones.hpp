@@ -120,6 +120,11 @@ bool should_skip_reverb_wet_convolution(const ReverbZoneBlend& blend);
 /// True when zone blending yields no active zones (empty list or listener outside all zones).
 bool should_skip_reverb_zone_blend(const Vec3& listener, const ReverbZoneParams* zones,
 
+
+/// One-shot wet-mix skip from listener position and zone list (empty/outside → skip).
+
+bool should_skip_listener_reverb_zone_blend(const Vec3& listener, const ReverbZoneParams* zones,
+
 /// Effective wet mix scalar [0, 1] from a zone blend result.
 float compute_effective_wet_mix(const ReverbZoneBlend& blend);
 
@@ -143,5 +148,8 @@ float blend_dry_wet_from_reverb_blend(const ReverbZoneBlend& blend, float dry, f
 
 /// Dry/wet sample blend from a precomputed zone blend (dry when inactive or zero wet mix).
 float blend_reverb_from_blend(float dry, float wet, const ReverbZoneBlend& blend);
+
+/// Dry/wet sample blend from a precomputed zone blend (dry when inactive or zero wet mix).
+float blend_dry_wet_from_reverb_blend(const ReverbZoneBlend& blend, float dry, float wet);
 
 } // namespace fuse::audio
