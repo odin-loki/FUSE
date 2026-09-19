@@ -1507,3 +1507,13 @@ HrtfConvolutionRejectReason hrtf_convolution_reject_reason(bool hrtf_enabled, co
                                          HrtfConvolutionRejectReason expected) {
 HrtfConvolutionRejectReason hrtf_binaural_convolution_reject_reason(
 bool hrtf_binaural_convolution_rejects_for_reason(const HrtfBinauralPreflight& preflight,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-0e3e ---
+bool tryPreflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason& reason) {
+bool tryPreflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+bool tryPreflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
+    return tryPreflight_hrtf_pan_path(hrtf_enabled, make_empty_hrtf_ir(), rel_listener, reason);
+bool tryPreflight_hrtf_attenuation_coupling(
+bool tryPreflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+bool tryPreflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
+    return tryPreflight_hrtf_binaural(hrtf_enabled, make_empty_hrtf_ir(), rel_listener,

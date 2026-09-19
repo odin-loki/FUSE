@@ -2053,3 +2053,24 @@ void testHrtfBinauralRejectReasonEnums() {
     expectTrue(bypass_preflight.reason == fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath,
                    stub_preflight, fuse::audio::HrtfConvolutionRejectReason::NullSamples),
                    conv_preflight, fuse::audio::HrtfConvolutionRejectReason::None),
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-0e3e ---
+    expectTrue(!fuse::audio::tryPreflight_hrtf_ir(empty, reason),
+               "tryPreflight_hrtf_ir rejects empty IR");
+    expectTrue(fuse::audio::tryPreflight_hrtf_ir(valid, reason),
+               "tryPreflight_hrtf_ir accepts valid IR");
+    expectTrue(fuse::audio::tryPreflight_hrtf_pan_path(true, valid, offset, reason),
+               "tryPreflight_hrtf_pan_path accepts enabled offset source");
+    expectTrue(!fuse::audio::tryPreflight_hrtf_pan_path(false, valid, offset, reason),
+               "tryPreflight_hrtf_pan_path rejects disabled HRTF");
+    expectTrue(fuse::audio::tryPreflight_hrtf_attenuation_coupling(
+               "tryPreflight_hrtf_attenuation_coupling accepts reduced attenuation");
+    expectTrue(!fuse::audio::tryPreflight_hrtf_attenuation_coupling(
+               "tryPreflight_hrtf_attenuation_coupling rejects bypass path");
+    expectTrue(fuse::audio::tryPreflight_hrtf_binaural(true, valid, offset, 0.2f, 0.3f, reason),
+               "tryPreflight_hrtf_binaural accepts enabled offset source");
+    expectTrue(!fuse::audio::tryPreflight_hrtf_binaural(false, valid, offset, 0.1f, 0.1f, reason),
+               "tryPreflight_hrtf_binaural rejects disabled HRTF");
+void testRejectReasonMirrorsExistingPreflights() {
+    const fuse::audio::HrtfIrPreflight ir_preflight = fuse::audio::preflight_hrtf_ir(empty);
+    testRejectReasonMirrorsExistingPreflights();
