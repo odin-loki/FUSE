@@ -526,3 +526,6 @@ bool TaaPass::tryPreflightHistoryWarmup(TaaHistoryWarmupBlockReason& reason) con
 // --- deepen additive from deepen-b59-taa-guards-bd40 ---
 bool TaaPass::wouldSkipResolveBlend(const TaaResolveDesc& desc) const {
     return wouldSkipTaaResolveBlend(desc, m_history);
+
+// --- deepen additive from deepen-b59-taa-guards-aa69 ---
+    return preflightTaaResolveTemporal(desc, m_history, reason);

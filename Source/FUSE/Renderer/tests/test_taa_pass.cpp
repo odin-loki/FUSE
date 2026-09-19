@@ -3585,3 +3585,19 @@ void testResolveHistoryBlendPreflightGuards() {
                "tryPreflight history blend passes after warmup");
     expectTrue(pass->preflightJitterAdvance(&jitterReject), "pass preflightJitterAdvance passes");
     testResolveHistoryBlendPreflightGuards();
+
+// --- deepen additive from deepen-b59-taa-guards-aa69 ---
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryWarmup(history, warmupState),
+               "tryPreflightTaaHistoryWarmup state is NeedsWarmup");
+    expectTrue(fuse::renderer::tryPreflightTaaHistoryWarmup(history, warmupState),
+               "tryPreflightTaaHistoryWarmup passes after warmup");
+               "tryPreflightTaaHistoryWarmup state is Ready");
+    expectTrue(pass->preflightJitterNdc(&rejectReason), "pass preflightJitterNdc passes");
+void testResolveTemporalPreflightGuards() {
+                               fuse::renderer::TaaResolveTemporalRejectReason::BlendWeightsRejected),
+    expectTrue(fuse::renderer::preflightTaaResolveTemporal(desc, history, &temporalReason),
+    expectTrue(temporalReason == fuse::renderer::TaaResolveTemporalRejectReason::None,
+    expectTrue(fuse::renderer::tryPreflightTaaResolveTemporal(desc, history, temporalReason),
+    expectTrue(pass->preflightResolveTemporal(resolveDesc, &temporalReason),
+    expectTrue(pass->preflightHistoryWarmup(), "pass preflightHistoryWarmup passes after resolve");
+    testResolveTemporalPreflightGuards();

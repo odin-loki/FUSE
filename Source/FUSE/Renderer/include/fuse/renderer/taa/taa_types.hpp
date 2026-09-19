@@ -342,3 +342,8 @@ bool wouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer
 
 // --- deepen additive from deepen-b59-taa-guards-8e7a ---
 bool tryPreflightTaaResolveHistoryBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+
+// --- deepen additive from deepen-b59-taa-guards-aa69 ---
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupState& state);
+bool tryPreflightTaaResolveTemporal(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                    TaaResolveTemporalRejectReason& reason);
