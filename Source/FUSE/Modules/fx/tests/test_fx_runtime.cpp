@@ -7,6 +7,7 @@
 #include <fuse/fx/particle_pool.hpp>
 #include <fuse/fx/particle_pool_gpu.hpp>
 #include <fuse/fx/afx_mission_hooks.hpp>
+#include <fuse/fx/afx_mission_script_vm.hpp>
 #include <fuse/fx/socket_constraint.hpp>
 #include <fuse/fx/fx_defs.hpp>
 #include <fuse/fx/parameter_bind.hpp>
@@ -340,6 +341,27 @@ void testAfxMissionHooks() {
     expectTrue(composer.findSpell("fireball") != nullptr, "fireball spell registered by mission hook");
 }
 
+void testAfxMissionScriptVm() {
+    fuse::fx::FxComposer composer;
+    fuse::fx::AfxMissionScriptVm vm;
+    expectTrue(fuse::fx::registerAfxTemplateMissionVm(composer, vm), "mission VM registers hooks");
+    expectTrue(vm.hookCount() == 2u, "mission VM hook table populated");
+    expectTrue(vm.dispatch("on_spell_cast", composer), "spell cast hook dispatched");
+    expectTrue(vm.dispatchCount() == 1u, "mission VM dispatch counted");
+}
+
+void testParticlePoolCudaSkip() {
+    fuse::fx::ParticlePool pool(4);
+    pool.spawn({0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.5f);
+
+    fuse::fx::ParticlePoolGpuBackend gpuBackend(4);
+    gpuBackend.syncFromCpu(pool);
+
+    fuse::frame::FrameCtx ctx;
+    gpuBackend.cudaDispatchOrSkip(ctx);
+    expectTrue(gpuBackend.cudaSkipCount() == 1u, "cuda dispatch skipped without toolkit");
+}
+
 void testParticlePoolTick() {
     fuse::fx::ParticlePool pool(4);
     expectTrue(pool.spawn({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.5f), "particle spawns");
@@ -370,6 +392,8 @@ int main() {
     testComposerParticlePoolTick();
     testParticlePoolGpuBackend();
     testAfxMissionHooks();
+    testAfxMissionScriptVm();
+    testParticlePoolCudaSkip();
     testParticlePoolTick();
     fuse::core::shutdown();
 

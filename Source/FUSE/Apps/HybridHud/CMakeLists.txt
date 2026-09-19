@@ -12,6 +12,9 @@ target_link_libraries(demo_hybrid_hud PRIVATE
     fuse_adventure
     fuse_core
 )
+if(FUSE_BUILD_SCRIPT)
+    target_link_libraries(demo_hybrid_hud PRIVATE fuse_script)
+endif()
 target_compile_features(demo_hybrid_hud PRIVATE cxx_std_17)
 
 if(FUSE_BUILD_CORE_TESTS)
@@ -28,6 +31,9 @@ if(FUSE_BUILD_CORE_TESTS)
         fuse_adventure
         fuse_core
     )
+    if(FUSE_BUILD_SCRIPT)
+        target_link_libraries(fuse_hybrid_module_gates_tests PRIVATE fuse_script)
+    endif()
     target_compile_features(fuse_hybrid_module_gates_tests PRIVATE cxx_std_17)
     add_test(NAME fuse_hybrid_module_gates_tests COMMAND fuse_hybrid_module_gates_tests)
 endif()

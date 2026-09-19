@@ -1,18 +1,22 @@
 #pragma once
 
-#include <fuse/adventure/conversation_interactable.hpp>
 #include <fuse/adventure/hud_prompt_interactable.hpp>
 #include <fuse/adventure/interaction.hpp>
 #include <fuse/adventure/outpost_loader.hpp>
+#include <fuse/adventure/outpost_spawn.hpp>
 #include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/cinematics/timeline.hpp>
 #include <fuse/dimension/world_handle.hpp>
 #include <fuse/frame/frame_ctx.hpp>
+#include <fuse/fx/afx_mission_script_vm.hpp>
 #include <fuse/fx/fx_composer.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
+#include <fuse/mechanics/broadphase_trigger_sync.hpp>
 #include <fuse/mechanics/console_method_component.hpp>
+#include <fuse/mechanics/counter_component.hpp>
 #include <fuse/mechanics/delay_component.hpp>
 #include <fuse/mechanics/interactable.hpp>
+#include <fuse/mechanics/message_component.hpp>
 #include <fuse/mechanics/physics_trigger_bridge.hpp>
 #include <fuse/mechanics/polyhedron_trigger.hpp>
 #include <fuse/mechanics/registry.hpp>
@@ -26,6 +30,14 @@
 
 #include <memory>
 #include <string>
+
+#if __has_include(<fuse/script/script_host.hpp>)
+#include <fuse/ai/uaisk_script_host_bridge.hpp>
+#include <fuse/script/script_host.hpp>
+#define FUSE_HYBRID_GATES_SCRIPT 1
+#else
+#define FUSE_HYBRID_GATES_SCRIPT 0
+#endif
 
 namespace fuse::hybrid::gates {
 
@@ -44,8 +56,13 @@ struct State {
     fuse::SceneObject3D lever3D{"lever_3d"};
 
     fuse::ai::BehaviorRuntime aiRuntime;
+#if FUSE_HYBRID_GATES_SCRIPT
+    fuse::script::ScriptHost scriptHost;
+    fuse::ai::uaisk::ScriptHostBridge scriptHostBridge{scriptHost, aiRuntime};
+#endif
     fuse::cinematics::Timeline timeline;
     fuse::fx::FxComposer fxComposer;
+    fuse::fx::AfxMissionScriptVm missionScriptVm;
 
     fuse::mechanics::MechanicsRegistry mechanicsRegistry;
     fuse::mechanics::InteractableComponent leverInteractable{"lever_interactable"};
@@ -53,13 +70,16 @@ struct State {
     fuse::mechanics::ConsoleMethodComponent leverConsole{"lever_console"};
     fuse::mechanics::DelayComponent leverDelay{"lever_delay", 100};
     fuse::mechanics::RotateComponent leverRotate{"lever_rotate", 45.f};
+    fuse::mechanics::CounterComponent leverCounter{"lever_counter", 0, 1};
+    fuse::mechanics::MessageComponent leverMessage{"lever_message", "Lever activated"};
     fuse::mechanics::PolyhedronTriggerZone leverTrigger;
     fuse::mechanics::PhysicsTriggerBridge physicsTriggerBridge;
+    fuse::mechanics::BroadphaseTriggerSync broadphaseTriggerSync;
 
     fuse::adventure::InteractionSystem adventureSystem;
     fuse::adventure::HudPromptInteractable hudPrompt{"Press E to activate lever"};
-    std::unique_ptr<fuse::adventure::ConversationInteractable> guardConversation;
     fuse::adventure::OutpostStubContent outpostContent;
+    fuse::adventure::OutpostSpawnBundle outpostSpawn;
 
     fuse::cinematics::VActorBridge vactorBridge;
     fuse::cinematics::TimelineMs lastTimelineMs = 0;
@@ -68,6 +88,7 @@ struct State {
     std::string guardLineText;
     bool agentInsideTrigger = false;
     bool loadedOutpostStub = false;
+    bool spawnedOutpostInteractables = false;
     float initialClearR = 0.f;
     float initialClearG = 0.f;
     float initialClearB = 0.f;

@@ -14,6 +14,7 @@ add_library(fuse_adventure STATIC
     src/mechanics_bridge.cpp
     src/puzzle_gate.cpp
     src/outpost_loader.cpp
+    src/outpost_spawn.cpp
     include/fuse/adventure/item_id.hpp
     include/fuse/adventure/inventory.hpp
     include/fuse/adventure/inventory_component.hpp
@@ -30,6 +31,7 @@ add_library(fuse_adventure STATIC
     include/fuse/adventure/mechanics_bridge.hpp
     include/fuse/adventure/puzzle_gate.hpp
     include/fuse/adventure/outpost_loader.hpp
+    include/fuse/adventure/outpost_spawn.hpp
 )
 
 add_library(fuse::adventure ALIAS fuse_adventure)

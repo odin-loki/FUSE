@@ -25,6 +25,9 @@ public:
 
     /// Advance one conversation line (3DAAK NPC scripts).
     std::string converse(InteractContext& ctx, ConversationInteractable& target);
+
+    /// Select a conversation branch then advance one line.
+    std::string converseBranch(InteractContext& ctx, ConversationInteractable& target, const std::string& branchId);
 };
 
 } // namespace fuse::adventure

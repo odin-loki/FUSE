@@ -50,4 +50,13 @@ std::string InteractionSystem::converse(InteractContext& ctx, ConversationIntera
     return target.currentLine();
 }
 
+std::string InteractionSystem::converseBranch(InteractContext& ctx,
+                                               ConversationInteractable& target,
+                                               const std::string& branchId) {
+    if (target.chooseBranch(ctx, branchId) != InteractResult::Examined) {
+        return {};
+    }
+    return target.currentLine();
+}
+
 } // namespace fuse::adventure

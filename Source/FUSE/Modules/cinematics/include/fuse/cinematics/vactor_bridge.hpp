@@ -34,14 +34,24 @@ public:
     u32 mountCount() const { return m_mountCount; }
     u32 unmountCount() const { return m_unmountCount; }
     u32 shapebaseAttachCount() const { return m_shapebaseAttachCount; }
+    u32 syncCount() const { return m_syncCount; }
 
 private:
-    std::unordered_map<std::string, fuse::SceneObject3D*> m_objects;
+    struct BoundActorState {
+        fuse::SceneObject3D* object = nullptr;
+        float baseX = 0.f;
+        float baseY = 0.f;
+        float baseZ = 0.f;
+        ShapeBaseMountOffset offset{};
+        bool mounted = false;
+    };
+
+    std::unordered_map<std::string, BoundActorState> m_actors;
     std::unordered_map<std::string, std::string> m_mountPoints;
-    std::unordered_map<std::string, ShapeBaseMountOffset> m_actorOffsets;
     u32 m_mountCount = 0;
     u32 m_unmountCount = 0;
     u32 m_shapebaseAttachCount = 0;
+    u32 m_syncCount = 0;
 };
 
 /// Drain actor mount/unmount cues crossed since `since_ms` up to the playhead time.

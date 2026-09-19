@@ -40,6 +40,8 @@ public:
     const PlaySession& playSession() const { return m_playSession; }
 
     const std::string& loadedProject() const { return m_loadedProject; }
+    u32 selectedAiTreeProfileId() const { return m_selectedAiTreeProfileId; }
+    const std::string& loadedCinematicsSeqAsset() const { return m_loadedCinematicsSeqAsset; }
     u32 gameTickCount() const { return m_gameTickCount; }
     u32 commandsAppliedLastTick() const { return m_commandsAppliedLastTick; }
 
@@ -49,6 +51,8 @@ public:
     void postFromUi(EditorCommand command);
     void gameTick();
     void setLoadedProject(std::string project);
+    void setSelectedAiTreeProfileId(u32 profileId);
+    void setLoadedCinematicsSeqAsset(std::string assetText);
 
 private:
     friend class RuntimeViewportHook;
@@ -65,6 +69,8 @@ private:
     PlayModePhysicsState m_physics;
     RuntimeViewportHook m_runtimeViewport;
     std::string m_loadedProject;
+    std::string m_loadedCinematicsSeqAsset;
+    u32 m_selectedAiTreeProfileId = 0;
     u32 m_gameTickCount = 0;
     u32 m_commandsAppliedLastTick = 0;
     bool m_initialized = false;

@@ -22,7 +22,15 @@
       "lines": [
         "Halt. State your business.",
         "The reactor is unstable — keep moving."
-      ]
+      ],
+      "branches": {
+        "aggressive": {
+          "lines": ["Stand down or be fired upon."]
+        },
+        "polite": {
+          "lines": ["Thank you, traveler. Proceed with caution."]
+        }
+      }
     }
   }
 }

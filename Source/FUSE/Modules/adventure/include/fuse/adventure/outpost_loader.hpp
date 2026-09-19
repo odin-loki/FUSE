@@ -22,8 +22,14 @@ struct OutpostWeaponPickupSpec {
     u32 ammoCount = 0;
 };
 
+struct ConversationBranch {
+    std::string id;
+    std::vector<std::string> lines;
+};
+
 struct OutpostConversationSpec {
     std::vector<std::string> lines;
+    std::vector<ConversationBranch> branches;
 };
 
 struct OutpostStubContent {

@@ -4,4 +4,7 @@ add_executable(fuse_ai_tests
 )
 
 target_link_libraries(fuse_ai_tests PRIVATE fuse_ai fuse_core)
+if(FUSE_BUILD_SCRIPT)
+    target_link_libraries(fuse_ai_tests PRIVATE fuse_script)
+endif()
 add_test(NAME fuse_ai_behavior_tree COMMAND fuse_ai_tests)

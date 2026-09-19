@@ -7,6 +7,7 @@ add_library(fuse_ai STATIC
     src/spatial_query.cpp
     src/tree_loader.cpp
     src/uaisk_script_import.cpp
+    src/uaisk_script_host_bridge.cpp
     include/fuse/ai/agent_snapshot.hpp
     include/fuse/ai/blackboard.hpp
     include/fuse/ai/behavior_tree.hpp
@@ -16,6 +17,7 @@ add_library(fuse_ai STATIC
     include/fuse/ai/tree_loader.hpp
     include/fuse/ai/uaisk_template_hooks.hpp
     include/fuse/ai/uaisk_script_import.hpp
+    include/fuse/ai/uaisk_script_host_bridge.hpp
 )
 
 add_library(fuse::ai ALIAS fuse_ai)
@@ -26,6 +28,9 @@ target_include_directories(fuse_ai
 )
 
 target_link_libraries(fuse_ai PUBLIC fuse_core fuse_world2d)
+if(FUSE_BUILD_SCRIPT)
+    target_link_libraries(fuse_ai PUBLIC fuse_script)
+endif()
 target_compile_features(fuse_ai PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_CORE_TESTS)

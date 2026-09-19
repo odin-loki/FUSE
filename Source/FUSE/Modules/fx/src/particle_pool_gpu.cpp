@@ -9,11 +9,18 @@ namespace {
 
 constexpr usize kBytesPerSlot = 40u; // pos(12) + vel(12) + lifetime(4) + age(4) + blend(4) + alive(4)
 
+#if defined(FUSE_HAS_CUDA) && FUSE_HAS_CUDA
+constexpr bool kCudaCompiled = true;
+#else
+constexpr bool kCudaCompiled = false;
+#endif
+
 } // namespace
 
 ParticlePoolGpuBackend::ParticlePoolGpuBackend(u32 capacity)
     : m_capacity(capacity)
-    , m_packed(capacity * kBytesPerSlot, 0) {}
+    , m_packed(capacity * kBytesPerSlot, 0)
+    , m_cudaEnabled(kCudaCompiled) {}
 
 void ParticlePoolGpuBackend::syncFromCpu(const ParticlePool& pool) {
     m_activeCount = pool.activeCount();
@@ -44,7 +51,18 @@ void ParticlePoolGpuBackend::syncFromCpu(const ParticlePool& pool) {
 }
 
 void ParticlePoolGpuBackend::tick(const frame::FrameCtx& ctx) {
+    cudaDispatchOrSkip(ctx);
+}
+
+void ParticlePoolGpuBackend::cudaDispatchOrSkip(const frame::FrameCtx& ctx) {
     (void)ctx;
+    if (!m_cudaEnabled || m_activeCount == 0u || m_packed.empty()) {
+        ++m_cudaSkipCount;
+        return;
+    }
+
+    // CUDA afxParticlePool kernel dispatch lands in B7.7 — CPU packed mirror is ready.
+    ++m_cudaDispatchCount;
 }
 
 } // namespace fuse::fx

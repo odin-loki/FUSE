@@ -23,7 +23,13 @@ const ActorTrack* find_first_actor_track(const Timeline& timeline) {
 } // namespace
 
 void VActorBridge::bind(const std::string& actor_id, fuse::SceneObject3D* object) {
-    m_objects[actor_id] = object;
+    BoundActorState& state = m_actors[actor_id];
+    state.object = object;
+    if (object != nullptr) {
+        state.baseX = object->x();
+        state.baseY = object->y();
+        state.baseZ = object->z();
+    }
 }
 
 void VActorBridge::apply_mount(const std::string& actor_id, const std::string& mount_point) {
@@ -33,6 +39,16 @@ void VActorBridge::apply_mount(const std::string& actor_id, const std::string& m
 
 void VActorBridge::apply_unmount(const std::string& actor_id) {
     m_mountPoints.erase(actor_id);
+    const auto actorIt = m_actors.find(actor_id);
+    if (actorIt != m_actors.end()) {
+        actorIt->second.mounted = false;
+        actorIt->second.offset = {};
+        if (actorIt->second.object != nullptr) {
+            actorIt->second.object->setPosition(actorIt->second.baseX,
+                                                actorIt->second.baseY);
+            actorIt->second.object->setZ(actorIt->second.baseZ);
+        }
+    }
     ++m_unmountCount;
 }
 
@@ -60,24 +76,31 @@ ShapeBaseMountOffset VActorBridge::mount_offset_for(const std::string& mount_poi
 
 void VActorBridge::apply_shapebase_attach(const std::string& actor_id, const std::string& mount_point) {
     apply_mount(actor_id, mount_point);
-    m_actorOffsets[actor_id] = mount_offset_for(mount_point);
-    ++m_shapebaseAttachCount;
 
-    const auto objectIt = m_objects.find(actor_id);
-    if (objectIt != m_objects.end() && objectIt->second != nullptr) {
-        const ShapeBaseMountOffset offset = m_actorOffsets[actor_id];
-        objectIt->second->setZ(objectIt->second->z() + offset.z);
+    BoundActorState& state = m_actors[actor_id];
+    if (state.object != nullptr) {
+        state.baseX = state.object->x();
+        state.baseY = state.object->y();
+        state.baseZ = state.object->z();
     }
+
+    state.offset = mount_offset_for(mount_point);
+    state.mounted = true;
+    ++m_shapebaseAttachCount;
+    sync_bound_objects();
 }
 
 void VActorBridge::sync_bound_objects() {
-    for (const auto& entry : m_actorOffsets) {
-        const auto objectIt = m_objects.find(entry.first);
-        if (objectIt == m_objects.end() || objectIt->second == nullptr) {
+    for (auto& entry : m_actors) {
+        BoundActorState& state = entry.second;
+        if (state.object == nullptr || !state.mounted) {
             continue;
         }
-        objectIt->second->setZ(entry.second.z);
+
+        state.object->setPosition(state.baseX + state.offset.x, state.baseY + state.offset.y);
+        state.object->setZ(state.baseZ + state.offset.z);
     }
+    ++m_syncCount;
 }
 
 void drain_actor_cues(const Timeline& timeline, VActorBridge& bridge, TimelineMs since_ms) {

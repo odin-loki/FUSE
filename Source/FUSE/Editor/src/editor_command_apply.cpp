@@ -88,6 +88,17 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         return true;
     }
 
+    if (command.propertyName == "ai.tree_profile_id") {
+        host.setSelectedAiTreeProfileId(
+            static_cast<u32>(std::strtoul(command.propertyValue.c_str(), nullptr, 10)));
+        return true;
+    }
+
+    if (command.propertyName == "cinematics.seq_asset") {
+        host.setLoadedCinematicsSeqAsset(command.propertyValue);
+        return true;
+    }
+
     const ecs::EntityID entity = handleToEntity(command.target);
     if (!entity.valid() || !host.editorScene().registry().alive(entity)) {
         return false;
@@ -183,6 +194,14 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
 
 void EditorHost::setLoadedProject(std::string project) {
     m_loadedProject = std::move(project);
+}
+
+void EditorHost::setSelectedAiTreeProfileId(u32 profileId) {
+    m_selectedAiTreeProfileId = profileId;
+}
+
+void EditorHost::setLoadedCinematicsSeqAsset(std::string assetText) {
+    m_loadedCinematicsSeqAsset = std::move(assetText);
 }
 
 void EditorHost::applyCommand_(const EditorCommand& command) {

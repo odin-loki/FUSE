@@ -213,6 +213,20 @@ bool loadOutpostStubFromJson(const std::string& jsonText, OutpostStubContent& ou
         } else if (type == "conversation") {
             OutpostConversationSpec conversation;
             conversation.lines = findStringArray(entry.second, "lines");
+
+            const std::string branchesBody = findObjectBody(entry.second, "branches");
+            if (!branchesBody.empty()) {
+                const auto branchObjects = findNamedObjects(branchesBody);
+                for (const auto& branchEntry : branchObjects) {
+                    ConversationBranch branch;
+                    branch.id = branchEntry.first;
+                    branch.lines = findStringArray(branchEntry.second, "lines");
+                    if (!branch.lines.empty()) {
+                        conversation.branches.push_back(std::move(branch));
+                    }
+                }
+            }
+
             outContent.conversations[entry.first] = std::move(conversation);
         }
     }
@@ -253,7 +267,15 @@ bool loadEmbeddedOutpostStub(OutpostStubContent& outContent, std::string* errorO
         "      \"lines\": [\n"
         "        \"Halt. State your business.\",\n"
         "        \"The reactor is unstable — keep moving.\"\n"
-        "      ]\n"
+        "      ],\n"
+        "      \"branches\": {\n"
+        "        \"aggressive\": {\n"
+        "          \"lines\": [\"Stand down or be fired upon.\"]\n"
+        "        },\n"
+        "        \"polite\": {\n"
+        "          \"lines\": [\"Thank you, traveler. Proceed with caution.\"]\n"
+        "        }\n"
+        "      }\n"
         "    }\n"
         "  }\n"
         "}\n";

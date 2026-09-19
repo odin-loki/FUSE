@@ -8,6 +8,8 @@ set(FUSE_EDITOR_API_SOURCES
     src/editor_host.cpp
     src/editor_command_apply.cpp
     src/feature_pane_bridge.cpp
+    src/ai_tree_profile_picker.cpp
+    src/cinematics_seq_import.cpp
     src/runtime_viewport.cpp
     src/runtime_embed_session.cpp
     src/gizmo_system.cpp
@@ -36,6 +38,8 @@ set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/runtime_embed_session.hpp
     include/fuse/editor/editor_state.hpp
     include/fuse/editor/feature_pane_bridge.hpp
+    include/fuse/editor/ai_tree_profile_picker.hpp
+    include/fuse/editor/cinematics_seq_import.hpp
     include/fuse/editor/gizmo_system.hpp
     include/fuse/editor/hierarchy_model.hpp
     include/fuse/editor/material_editor_panel.hpp

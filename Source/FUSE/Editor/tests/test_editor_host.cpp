@@ -1,6 +1,8 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/ai_tree_profile_picker.hpp>
+#include <fuse/editor/cinematics_seq_import.hpp>
 #include <fuse/editor/feature_pane_bridge.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
@@ -360,6 +362,29 @@ void testRuntimeViewportHookTicksWithProject() {
     expectTrue(host.runtimeScene().name() == "demo_viewport", "runtime scene label synced from project");
 }
 
+void testAiTreeProfilePickerPostsCommand() {
+    fuse::editor::EditorHost host;
+    fuse::editor::AiTreeProfilePicker picker(host);
+
+    expectTrue(picker.options().size() >= 2u, "tree profile options listed");
+    picker.postSelectProfile(1u);
+    host.gameTick();
+    expectTrue(host.selectedAiTreeProfileId() == 1u, "tree profile applied on game thread");
+    expectTrue(picker.postCount() == 1u, "picker post counted");
+}
+
+void testCinematicsSeqImportPostsAsset() {
+    fuse::editor::EditorHost host;
+    fuse::editor::CinematicsSeqImport importer(host);
+
+    expectTrue(importer.postImportEmbeddedOutpostIntro(), "seq import posts embedded asset");
+    host.gameTick();
+    expectTrue(!host.loadedCinematicsSeqAsset().empty(), "seq asset stored on game thread");
+    expectTrue(host.loadedCinematicsSeqAsset().find("agent_3d mount") != std::string::npos,
+               "seq asset contains actor mount line");
+    expectTrue(importer.importCount() == 1u, "seq import counted");
+}
+
 } // namespace
 
 int main() {
@@ -380,6 +405,8 @@ int main() {
     testHostUndoDeleteViaQueue();
     testRuntimeViewportLoadsProjectRoot();
     testRuntimeViewportHookTicksWithProject();
+    testAiTreeProfilePickerPostsCommand();
+    testCinematicsSeqImportPostsAsset();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

@@ -1,6 +1,13 @@
 #include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/ai/behavior_tree.hpp>
 #include <fuse/ai/uaisk_script_import.hpp>
+#if __has_include(<fuse/ai/uaisk_script_host_bridge.hpp>)
+#include <fuse/ai/uaisk_script_host_bridge.hpp>
+#include <fuse/script/script_host.hpp>
+#define FUSE_AI_TEST_SCRIPT_HOST 1
+#else
+#define FUSE_AI_TEST_SCRIPT_HOST 0
+#endif
 #include <fuse/ai/node_registry.hpp>
 #include <fuse/ai/spatial_query.hpp>
 #include <fuse/ai/tree_loader.hpp>
@@ -299,6 +306,20 @@ void testPerAgentTreeSelection() {
     expectTrue(runtime.bindings()[0].x > 0.f, "profile 0 agent moves toward target");
     expectTrue(runtime.blackboard().flag(1, 1), "profile 1 patrol agent sets squad flag");
     expectTrue(runtime.treeProfileCount() == 2u, "two tree profiles registered");
+}
+
+void testUaiskScriptHostBridge() {
+#if FUSE_AI_TEST_SCRIPT_HOST
+    fuse::script::ScriptHost host;
+    fuse::ai::BehaviorRuntime runtime;
+    runtime.registerTreeProfile(0, fuse::ai::BehaviorTree::makeMoveTowardDemoTree(0.2f));
+
+    fuse::ai::uaisk::ScriptHostBridge bridge(host, runtime);
+    expectTrue(bridge.attach(), "ScriptHost bridge attaches");
+    expectTrue(bridge.loadPatrolSquadViaHost(), "patrol squad imports via ScriptHost");
+    expectTrue(bridge.importCount() >= 1u, "ScriptHost import count tracked");
+    expectTrue(runtime.treeProfileCount() >= 2u, "ScriptHost import registers profile");
+#endif
 }
 
 void testUaiskScriptImportProfile() {
@@ -1896,6 +1917,7 @@ int main() {
     testMoveTowardDemoTreeFactory();
     testPatrolWithAllySupportDemoTree();
     testPerAgentTreeSelection();
+    testUaiskScriptHostBridge();
     testUaiskScriptImportProfile();
     testUaiskPatrolSquadTemplateLoad();
     testGuideBotMoveTowardLeaf();

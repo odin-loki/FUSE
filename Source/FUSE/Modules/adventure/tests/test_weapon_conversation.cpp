@@ -40,12 +40,19 @@ int main() {
     expectTrue(inventory.hasInventory(fuse::adventure::ItemId("energy_cell")), "ammo granted");
     expectTrue(rifle.consumed(), "weapon pickup consumed");
 
+    fuse::adventure::ConversationBranch polite;
+    polite.id = "polite";
+    polite.lines = {"Thank you, traveler. Proceed with caution."};
     fuse::adventure::ConversationInteractable guard(
-        {"Halt. State your business.", "The reactor is unstable — keep moving."});
+        {"Halt. State your business.", "The reactor is unstable — keep moving."}, {polite});
     fuse::adventure::InteractionSystem system;
     const std::string line0 = system.converse(ctx, guard);
     expectTrue(line0 == "The reactor is unstable — keep moving.", "conversation advances line");
     expectTrue(guard.converseCount() == 1u, "converse count tracked");
+
+    const std::string branchLine = system.converseBranch(ctx, guard, "polite");
+    expectTrue(branchLine == "Thank you, traveler. Proceed with caution.", "conversation branch selected");
+    expectTrue(guard.activeBranchId() == "polite", "active branch tracked");
 
     fuse::core::shutdown();
 

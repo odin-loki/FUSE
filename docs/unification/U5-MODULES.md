@@ -222,13 +222,15 @@ Headless proof: `fuse_hybrid_module_gates_tests` (shared `hybrid_module_gates.cp
 
 ### Remaining U5 backlog (post-gate)
 
-| Module | Next ore / work |
-|--------|-----------------|
-| `fuse_ai` | Full UAISK `.cs` runtime via `ScriptHost`; editor tree profile picker |
-| `fuse_cinematics` | Runtime Torque `ShapeBase` attach; editor `.seq` import + cue preview |
-| `fuse_fx` | CUDA `afxParticlePool` kernel dispatch; full AFX-Template mission script VM |
-| `fuse_mechanics` | Bullet broadphase trigger sync; remaining GMK `SimComponent` leaves |
-| `fuse_adventure` | Door/weapon spawn from loaded JSON; conversation branching + script VM |
+| Module | Status | Next ore / work |
+|--------|--------|-----------------|
+| `fuse_ai` | 🚧 | `ScriptHostBridge` + UAISK `.cs` import via `load_string`; editor `AiTreeProfilePicker` stub posts `ai.tree_profile_id` |
+| `fuse_cinematics` | 🚧 | `VActorBridge` ShapeBase mount offset sync (X/Y/Z); editor `CinematicsSeqImport` stub posts `cinematics.seq_asset` |
+| `fuse_fx` | 🚧 | `ParticlePoolGpuBackend::cudaDispatchOrSkip` skip-clean; `AfxMissionScriptVm` dispatches `on_spell_cast` / `on_ambient_fx` |
+| `fuse_mechanics` | 🚧 | `BroadphaseTriggerSync` spatial-hash stub; GMK `CounterComponent` + `MessageComponent` leaves |
+| `fuse_adventure` | 🚧 | `spawnOutpostInteractables` door/weapon/conversation from JSON; `ConversationInteractable` branch selection |
+
+Hybrid proof extended: `fuse_hybrid_module_gates_tests` covers ScriptHost import, broadphase trigger sync, mission VM dispatch, JSON spawn, and polite conversation branch.
 
 ---
 
