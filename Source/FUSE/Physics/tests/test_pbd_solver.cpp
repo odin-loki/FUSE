@@ -5546,3 +5546,11 @@ void testIslandSleepWakeRejectReasons() {
     testIslandGraphBuildRejectReasons();
     testIslandDispatchSolveRejectReasons();
     testIslandSleepWakeRejectReasons();
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-11c0 ---
+               "should_skip_island_build true for unsafe refs");
+               "should_skip_island_build true for out-of-range distance refs");
+    const IslandDispatchRejectPreflight preflight = preflight_island_dispatch_reject(graph, 1.f / 60.f);
+    const IslandSolveJobRejectPreflight preflight = preflight_island_solve_job_reject(job, dt);
+    const IslandSleepGraphRejectPreflight sleepGraph = preflight_island_sleep_graph_reject(graph, bodies);
+    const IslandWakeGraphRejectPreflight wakeGraph = preflight_island_wake_graph_reject(graph, bodies);

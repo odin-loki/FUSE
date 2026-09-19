@@ -1876,3 +1876,8 @@ bool try_preflight_island_sleep(const ContactIslandGraph::Island& island,
                                  IslandWakeRejectReason* reason = nullptr);
 bool try_preflight_island_wake(const ContactIslandGraph::Island& island,
                                IslandWakeRejectReason& reason);
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-11c0 ---
+IslandDispatchRejectPreflight preflight_island_dispatch_reject(const ContactIslandGraph& graph, f32 dt);
+IslandSolveJobRejectPreflight preflight_island_solve_job_reject(const IslandSolveJob& job, f32 dt);
+IslandSleepSolveRejectPreflight preflight_island_sleep_solve_reject(const ContactIslandGraph::Island& island,

@@ -3176,3 +3176,11 @@ bool try_preflight_island_wake(const ContactIslandGraph::Island& island,
         preflight.reason = job.constraintCount == 0u ? IslandSolveRejectReason::NoConstraints
         preflight.reason = IslandSolveRejectReason::StaleConstraintRefs;
         preflight.reason = IslandWakeRejectReason::UniformSleepState;
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-11c0 ---
+IslandDispatchRejectPreflight preflight_island_dispatch_reject(const ContactIslandGraph& graph, f32 dt) {
+    const IslandDispatchRejectPreflight preflight = preflight_island_dispatch_reject(graph, dt);
+IslandSolveJobRejectPreflight preflight_island_solve_job_reject(const IslandSolveJob& job, f32 dt) {
+IslandSleepSolveRejectPreflight preflight_island_sleep_solve_reject(const ContactIslandGraph::Island& island,
+    const IslandDispatchRejectReason dispatchReason = island_dispatch_reject_reason(graph, dt);
+    if (island_sleep_graph_reject_reason(graph, bodies) != IslandSleepGraphRejectReason::None) {
