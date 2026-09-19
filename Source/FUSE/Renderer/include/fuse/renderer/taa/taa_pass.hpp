@@ -48,6 +48,12 @@ public:
     void syncJitterToFrameIndex(u32 frameIndex);
     /// Sync jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool syncJitterToFrameIndexIfReady(u32 frameIndex);
+    /// True when pass jitter can align to `frameIndex` (B5.9 deepen).
+    bool canSyncJitterToFrameIndex(u32 frameIndex) const;
+    /// Classify why pass jitter sync would be rejected (B5.9 deepen).
+    TaaJitterSyncRejectReason classifyJitterSyncReject(u32 frameIndex) const;
+    /// Preflight pass jitter sync without mutating state (B5.9 deepen).
+    bool preflightJitterSync(u32 frameIndex, TaaJitterSyncRejectReason* reason = nullptr) const;
     /// True when pass jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
     bool jitterAlignedToFrameIndex(u32 frameIndex) const;
     void invalidateHistory();
@@ -70,9 +76,29 @@ public:
     TaaHistoryReuseBlockReason classifyHistoryReuseBlock(u32 observedGeneration) const;
     /// True when pass history temporal reuse is allowed (B5.9 deepen).
     bool preflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason* reason = nullptr) const;
+    /// Convenience wrapper — true when pass history reuse preflight would pass (B5.9 deepen).
+    bool canPreflightHistoryReuse(u32 observedGeneration) const;
+    /// Classify why pass history warm-up blocks temporal reuse (B5.9 deepen).
+    TaaHistoryWarmupBlockReason classifyHistoryWarmupBlock() const;
+    /// True when pass history is warmed for temporal reuse (B5.9 deepen).
+    bool preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason = nullptr) const;
+    /// Convenience wrapper — true when pass history warm-up preflight would pass (B5.9 deepen).
+    bool canPreflightHistoryWarmup() const;
+    /// True when resolve may apply a non-zero history blend this frame (B5.9 deepen).
+    bool temporalBlendReady(const TaaResolveDesc& desc) const;
     /// True when expected resolve blend weights pass validation and reuse policy (B5.9 deepen).
     bool preflightResolveBlendWeights(const TaaResolveDesc& desc,
                                       TaaResolveBlendRejectReason* reason = nullptr) const;
+    /// Convenience wrapper — true when pass blend-weight preflight would pass (B5.9 deepen).
+    bool canPreflightResolveBlendWeights(const TaaResolveDesc& desc) const;
+    /// Fill `out` only when blend-weight preflight passes (B5.9 deepen).
+    bool tryExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& out,
+                                        TaaResolveBlendRejectReason* reason = nullptr) const;
+    /// True when history reuse and blend-weight preflights both pass (B5.9 deepen).
+    bool preflightResolveTemporalBlend(const TaaResolveDesc& desc,
+                                       TaaResolveTemporalRejectReason* reason = nullptr) const;
+    /// Convenience wrapper — true when pass temporal-blend preflight would pass (B5.9 deepen).
+    bool canPreflightResolveTemporalBlend(const TaaResolveDesc& desc) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
