@@ -914,3 +914,6 @@ bool preflightTrilinearSampleAtCoords(const FroxelDensityGrid& grid,
 // --- deepen additive from b511-froxel-volumetrics-deepen-6169 ---
 bool preflightTrilinearSampleReady(const FroxelDensityGrid& grid,
 bool preflightPopulateReady(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-froxel-volumetric-guards-83db ---
+bool preflightDensityLookupCoordReady(const FroxelDensityGrid& grid,
