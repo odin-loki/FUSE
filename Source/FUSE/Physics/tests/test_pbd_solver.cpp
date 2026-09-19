@@ -5130,3 +5130,42 @@ void testContactIslandGraphHasIslandGuards() {
     expectTrue(mixedResult.constraintReason == IslandConstraintSolveRejectReason::None,
     expectTrue(sleepingResult.constraintReason == IslandConstraintSolveRejectReason::NoMovableBodies,
     expectTrue(should_skip_island_pipeline_dispatch(emptyGraph, bodies, 1.f / 60.f),
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-8973 ---
+    expectTrue(island_graph_build_rejects_for_reason(0, {}, {}, IslandGraphBuildRejectReason::EmptyInput),
+    const IslandGraphBuildPreflight graphPreflight = preflight_island_graph_build(4, contacts, constraints);
+    expectTrue(!graphPreflight.can_build(), "graph build preflight rejects unsafe contacts");
+    expectTrue(graphPreflight.reason == IslandGraphBuildRejectReason::OutOfRangeContactBody,
+    expectTrue(buildPreflight.reason == IslandGraphBuildRejectReason::OutOfRangeContactBody,
+    expectTrue(!buildPreflight.can_build(), "island build preflight rejects unsafe contacts");
+    expectTrue(std::strcmp(island_graph_build_reject_reason_name(IslandGraphBuildRejectReason::None), "None") == 0,
+    expectTrue(island_dispatch_rejects_for_reason(graph, dt, IslandDispatchRejectReason::None),
+    expectTrue(island_dispatch_rejects_for_reason(emptyGraph, dt, IslandDispatchRejectReason::NoDispatchableIslands),
+    const IslandDispatchPreflight preflight = preflight_island_dispatch(graph, dt);
+    expectTrue(preflight.reason == IslandDispatchRejectReason::None, "dispatch preflight records None for valid graph");
+    expectTrue(std::strcmp(island_dispatch_reject_reason_name(IslandDispatchRejectReason::InvalidDt), "InvalidDt") == 0,
+void testIslandJobDispatchRejectReasonGuards() {
+    expectTrue(island_job_dispatch_rejects_for_reason(invalid, dt, IslandJobDispatchRejectReason::OutOfRangeIndex),
+    expectTrue(island_job_dispatch_rejects_for_reason(constrained, dt, IslandJobDispatchRejectReason::None),
+    expectTrue(island_job_dispatch_rejects_for_reason(constrained, 0.f, IslandJobDispatchRejectReason::InvalidDt),
+        foundEmptyReject = island_job_dispatch_rejects_for_reason(job, dt, IslandJobDispatchRejectReason::EmptyIsland);
+    expectTrue(foundEmptyReject, "job dispatch reject reason flags empty island");
+    const IslandSolveJobPreflight jobPreflight = preflight_solve_island_job(constrained, dt);
+    expectTrue(jobPreflight.reason == IslandJobDispatchRejectReason::None,
+    expectTrue(jobPreflight.can_dispatch(), "job preflight can dispatch constrained island");
+                   sleeping, bodies, {}, constraints, IslandConstraintSolveRejectReason::NoMovableBodies),
+                   staleIsland, bodies, {}, constraints, IslandConstraintSolveRejectReason::StaleRefs),
+    expectTrue(island_sleep_rejects_for_reason(graph.island(mixedIsland), bodies, IslandSleepRejectReason::None),
+                                              IslandWakeRejectReason::NoMixedSleep),
+    expectTrue(sleepPreflight.can_skip_solve(), "sleep preflight can skip all-sleeping island");
+    expectTrue(wakePreflight.reason == IslandWakeRejectReason::None, "wake preflight records None for mixed island");
+    expectTrue(wakePreflight.should_wake_sleepers(), "wake preflight activates mixed island");
+void testIslandSolvePipelineDispatchGuards() {
+    const IslandSolvePipelinePreflight preflight = preflight_island_solve_pipeline(graph, bodies, dt);
+    expectTrue(preflight.reason == IslandDispatchRejectReason::None, "pipeline preflight records None reason");
+    expectTrue(!should_skip_island_solve_pipeline(graph, bodies, dt),
+               "should_skip pipeline false for constrained graph");
+    expectTrue(should_skip_island_solve_pipeline(emptyGraph, bodies, dt),
+               "should_skip pipeline true for empty graph");
+    expectTrue(emptyPipeline.reason == IslandDispatchRejectReason::NoDispatchableIslands,
+    testIslandJobDispatchRejectReasonGuards();

@@ -2910,3 +2910,29 @@ IslandPipelineDispatchPreflight preflight_island_pipeline_dispatch(const Contact
     if (result.wakeReason == IslandWakeRejectReason::None) {
     if (diagnose_island_sleep_reject(island, bodies) == IslandSleepRejectReason::AllSleeping) {
     const IslandPipelineDispatchPreflight preflight = preflight_island_pipeline_dispatch(graph, bodies, dt);
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-8973 ---
+    preflight.invalidDt = preflight.reason == IslandJobDispatchRejectReason::InvalidDt;
+    preflight.skipped = preflight.reason != IslandJobDispatchRejectReason::None;
+    preflight.invalidDt = preflight.reason == IslandDispatchRejectReason::InvalidDt;
+    preflight.skipped = preflight.reason == IslandGraphBuildRejectReason::EmptyInput;
+        preflight.reason = IslandSleepRejectReason::AllSleeping;
+    if (preflight.reason == IslandSleepRejectReason::OutOfRangeIndex) {
+        preflight.reason = IslandWakeRejectReason::NoMixedSleep;
+    if (preflight.reason == IslandWakeRejectReason::OutOfRangeIndex) {
+const char* island_job_dispatch_reject_reason_name(IslandJobDispatchRejectReason reason) {
+    case IslandJobDispatchRejectReason::None:
+    case IslandJobDispatchRejectReason::InvalidDt:
+    case IslandJobDispatchRejectReason::EmptyIsland:
+    case IslandJobDispatchRejectReason::OutOfRangeIndex:
+    case IslandWakeRejectReason::NoMixedSleep:
+IslandJobDispatchRejectReason island_job_dispatch_reject_reason(const IslandSolveJob& job, f32 dt) {
+        return IslandJobDispatchRejectReason::InvalidDt;
+        return IslandJobDispatchRejectReason::OutOfRangeIndex;
+        return IslandJobDispatchRejectReason::EmptyIsland;
+    return IslandJobDispatchRejectReason::None;
+        return IslandSleepRejectReason::OutOfRangeIndex;
+        return IslandWakeRejectReason::NoMixedSleep;
+                                            IslandJobDispatchRejectReason expected) {
+bool should_skip_island_solve_pipeline(const ContactIslandGraph& graph,
+    const IslandSolvePipelinePreflight preflight = preflight_island_solve_pipeline(graph, bodies, dt);

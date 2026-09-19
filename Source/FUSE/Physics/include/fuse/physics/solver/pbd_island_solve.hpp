@@ -1760,3 +1760,14 @@ const char* island_solve_job_reject_reason_name(IslandSolveJobRejectReason reaso
     IslandDispatchPreflight solve{};
     bool can_dispatch() const { return !skipped && dispatchReason == IslandDispatchRejectReason::None; }
 IslandPipelineDispatchPreflight preflight_island_pipeline_dispatch(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-8973 ---
+enum class IslandJobDispatchRejectReason : u8 {
+    bool can_dispatch() const { return !skipped && reason == IslandDispatchRejectReason::None; }
+    IslandJobDispatchRejectReason reason = IslandJobDispatchRejectReason::None;
+    bool can_dispatch() const { return !skipped && reason == IslandJobDispatchRejectReason::None; }
+    bool can_build() const { return !skipped && reason == IslandGraphBuildRejectReason::None; }
+const char* island_job_dispatch_reject_reason_name(IslandJobDispatchRejectReason reason);
+IslandJobDispatchRejectReason island_job_dispatch_reject_reason(const IslandSolveJob& job, f32 dt);
+                                            IslandJobDispatchRejectReason expected);
+bool should_skip_island_solve_pipeline(const ContactIslandGraph& graph,
