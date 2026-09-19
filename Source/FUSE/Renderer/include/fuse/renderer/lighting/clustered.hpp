@@ -121,12 +121,28 @@ struct ClusterGridLayout {
                                              u32& outClusterIndex);
 };
 
+/// Why a light-grid rebuild preflight rejected the request (B5.4 deepen).
+enum class GridRebuildRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    ClusterCountMismatch,
+};
+
+/// Human-readable label for rebuild reject reasons (logging / tests).
+const char* gridRebuildRejectReasonLabel(GridRebuildRejectReason reason);
+
 /// CPU light-grid packing helpers — mirrors the GPU offset rebuild pass.
 struct ClusterLightGridLayout {
     /// True when `clusterCount` is zero or matches the clamped cluster count for `desc`.
     static bool canRebuildLightGrid(const ClusterDesc& desc, u32 clusterCount);
     /// True when rebuild preflight passes for the clamped cluster count derived from `desc`.
     static bool canRebuildLightGridForDesc(const ClusterDesc& desc);
+    /// Diagnose why rebuild preflight would reject; vacuously succeeds when `clusterCount` is zero.
+    static bool tryCanRebuildLightGrid(const ClusterDesc& desc,
+                                       u32 clusterCount,
+                                       GridRebuildRejectReason& outReason);
+    /// Early-out when rebuild should be skipped for an empty desc with non-zero cluster count.
+    static bool shouldSkipLightGridRebuild(const ClusterDesc& desc, u32 clusterCount);
     static u32 rebuildLightGrid(ClusterGridSoA& grid,
                                 u32 clusterCount,
                                 const std::vector<std::vector<u32>>& perClusterLights,
@@ -191,6 +207,8 @@ bool hasAssignedLights(const ClusterGridSoA& grid, const ClusterDesc& desc);
 bool shouldSkipClusterLightLookup(const ClusterGridSoA& grid, const ClusterDesc& desc);
 /// True when at least one cluster has assigned lights; false when storage is empty.
 bool shouldSkipClusterLighting(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// Early-out when light-grid lookup should be skipped (inaccessible or no assigned lights).
+bool shouldSkipLightGridLookup(const ClusterGridSoA& grid, const ClusterDesc& desc);
 /// Preflight guard before index-based cluster lookup; false on empty grid or desc mismatch.
 bool canLookupAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 index);
 /// Preflight guard before tile/slice coord lookup; false on empty grid or desc mismatch.
@@ -207,6 +225,9 @@ bool tryCanLookupAtCoord(const ClusterGridSoA& grid,
                          u32 tileX,
                          u32 tileY,
                          u32 sliceZ,
+/// Diagnose coord-based lookup preflight; vacuously succeeds on accessible grids.
+                         const ClusterDesc& desc,
+                         ClusterLookupRejectReason& outReason);
 /// Per-cluster light count at a clamped flat index; returns 0 when grid/desc mismatch or empty.
 u32 clusterLightCountAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 index);
 /// Per-cluster light count at clamped tile/slice coords; returns 0 when grid/desc mismatch or empty.
@@ -391,6 +412,9 @@ bool validateGridPopulationWithDesc(const ClusterGridSoA& grid, const ClusterDes
 /// Diagnose population validation against the clamped cluster count derived from `desc`.
                                         GridPopulationRejectReason& outReason);
 /// Diagnose population validation against `desc`; vacuously succeeds when `desc` is empty.
+/// True when at least one cluster holds assigned lights for `desc`; false on mismatch or empty storage.
+bool hasAssignedLightsForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// Empty cluster count using the clamped cluster count derived from `desc`; returns 0 on mismatch.
 } // namespace cluster_util
 
 /// Renderer-side point light input (decoupled from ECS).

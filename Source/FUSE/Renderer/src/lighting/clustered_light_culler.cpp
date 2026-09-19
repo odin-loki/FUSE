@@ -60,6 +60,18 @@ ClusterDesc ClusterDesc::clampCounts(const ClusterDesc& raw) {
     return out;
 }
 
+const char* gridRebuildRejectReasonLabel(GridRebuildRejectReason reason) {
+    switch (reason) {
+    case GridRebuildRejectReason::None:
+        return "none";
+    case GridRebuildRejectReason::EmptyGrid:
+        return "empty_grid";
+    case GridRebuildRejectReason::ClusterCountMismatch:
+        return "cluster_count_mismatch";
+    }
+    return "unknown";
+}
+
 const char* gridPopulationRejectReasonLabel(GridPopulationRejectReason reason) {
     switch (reason) {
     case GridPopulationRejectReason::None:
@@ -162,6 +174,12 @@ bool cluster_util::canLookupAtCoord(const ClusterGridSoA& grid,
                                      u32 /*tileX*/,
                                      u32 /*tileY*/,
                                      u32 /*sliceZ*/) {
+bool cluster_util::shouldSkipLightGridLookup(const ClusterGridSoA& grid, const ClusterDesc& desc) {
+    if (!isLightGridAccessible(grid, desc)) {
+        return true;
+    return !hasAssignedLights(grid, ClusterDesc::clampCounts(desc).clusterCount());
+
+bool cluster_util::canLookupAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 /*index*/) {
     return isGridAccessible(grid, desc);
 }
 
@@ -191,6 +209,15 @@ bool cluster_util::tryCanLookupAtCoord(const ClusterGridSoA& grid,
     if (grid.isEmpty()) {
         return false;
 
+}
+
+bool cluster_util::tryCanLookupAtCoord(const ClusterGridSoA& grid,
+                                        const ClusterDesc& desc,
+                                        u32 /*tileX*/,
+                                        u32 /*tileY*/,
+                                        u32 /*sliceZ*/,
+                                        ClusterLookupRejectReason& outReason) {
+    return tryCanLookupAtIndex(grid, desc, 0u, outReason);
 }
 
 u32 cluster_util::clusterLightCountAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 index) {
@@ -428,12 +455,26 @@ bool cluster_util::tryLookupClusterLightsAtCoord(const ClusterGridSoA& grid,
                                                   std::vector<u32>& outLights,
                                                   u32& outCount) {
     if (!canLookupAtCoord(grid, desc, tileX, tileY, sliceZ)) {
+    ClusterLookupRejectReason reason = ClusterLookupRejectReason::None;
+    return tryLookupClusterLightsAtCoord(grid, desc, tileX, tileY, sliceZ, outLights, outCount, reason);
+}
+
+bool cluster_util::tryLookupClusterLightsAtCoord(const ClusterGridSoA& grid,
+                                                  const ClusterDesc& desc,
+                                                  u32 tileX,
+                                                  u32 tileY,
+                                                  u32 sliceZ,
+                                                  std::vector<u32>& outLights,
+                                                  u32& outCount,
+                                                  ClusterLookupRejectReason& outReason) {
+    if (!tryCanLookupAtCoord(grid, desc, tileX, tileY, sliceZ, outReason)) {
         outLights.clear();
         outCount = 0u;
         return false;
     }
 
     outCount = lookupClusterLightsAtCoord(grid, desc, tileX, tileY, sliceZ, outLights);
+    outReason = ClusterLookupRejectReason::None;
     return true;
 }
 
@@ -752,6 +793,51 @@ bool cluster_util::hasAssignedLights(const ClusterGridSoA& grid, u32 clusterCoun
 
 bool ClusterGridLayout::shouldSkipClusterGrid(const ClusterDesc& desc) {
     return isEmptyGrid(desc);
+bool cluster_util::hasAssignedLightsForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc) {
+    if (!gridMatchesDesc(grid, desc)) {
+        return false;
+    }
+    return hasAssignedLights(grid, ClusterDesc::clampCounts(desc).clusterCount());
+
+u32 cluster_util::countNonEmptyClustersForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc) {
+        return 0u;
+    return countNonEmptyClusters(grid, ClusterDesc::clampCounts(desc).clusterCount());
+
+u32 cluster_util::countEmptyClustersForDesc(const ClusterGridSoA& grid, const ClusterDesc& desc) {
+    return countEmptyClusters(grid, ClusterDesc::clampCounts(desc).clusterCount());
+
+bool ClusterLightGridLayout::canRebuildLightGrid(const ClusterDesc& desc, u32 clusterCount) {
+    const u32 expectedCount = ClusterDesc::clampCounts(desc).clusterCount();
+    if (clusterCount == 0u) {
+        return true;
+    if (ClusterGridLayout::isEmptyGrid(desc)) {
+    return clusterCount == expectedCount;
+}
+
+bool ClusterLightGridLayout::tryCanRebuildLightGrid(const ClusterDesc& desc,
+                                                   u32 clusterCount,
+                                                   GridRebuildRejectReason& outReason) {
+    if (clusterCount == 0u) {
+        outReason = GridRebuildRejectReason::None;
+        return true;
+    }
+    if (ClusterGridLayout::isEmptyGrid(desc)) {
+        outReason = GridRebuildRejectReason::EmptyGrid;
+        return false;
+    }
+
+    const u32 expectedCount = ClusterDesc::clampCounts(desc).clusterCount();
+    if (clusterCount != expectedCount) {
+        outReason = GridRebuildRejectReason::ClusterCountMismatch;
+        return false;
+    }
+
+    outReason = GridRebuildRejectReason::None;
+    return true;
+}
+
+bool ClusterLightGridLayout::shouldSkipLightGridRebuild(const ClusterDesc& desc, u32 clusterCount) {
+    return !canRebuildLightGrid(desc, clusterCount);
 }
 
 bool ClusterGridLayout::isEmptyGrid(const ClusterDesc& desc) {
