@@ -2571,3 +2571,16 @@ void testHrtfPanConvolveRejectReasonGuards() {
                "should_skip_hrtf_attenuation_narrowing_preflight true on bypass");
     expectTrue(!fuse::audio::should_skip_hrtf_binaural_spatial_preflight(true, empty, offset, 0.2f,
                "should_skip_hrtf_binaural_spatial_preflight false on stub path");
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-a4b4 ---
+    expectTrue(fuse::audio::should_skip_hrtf_spatial_pan_preflight(false, valid, offset),
+               "should_skip_hrtf_spatial_pan_preflight true when disabled");
+    fuse::audio::HrtfPanPathConvolutionRejectReason convReason =
+        fuse::audio::HrtfPanPathConvolutionRejectReason::None;
+    expectTrue(convReason == fuse::audio::HrtfPanPathConvolutionRejectReason::None,
+    expectTrue(convReason == fuse::audio::HrtfPanPathConvolutionRejectReason::NullSamples,
+    expectTrue(convReason == fuse::audio::HrtfPanPathConvolutionRejectReason::HrtfDisabled,
+               "should_skip_hrtf_binaural_preflight false on spatial stub path");
+    fuse::audio::HrtfAttenuationCouplingRejectReason narrowReason =
+    expectTrue(narrowReason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+    expectTrue(narrowReason == fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath,

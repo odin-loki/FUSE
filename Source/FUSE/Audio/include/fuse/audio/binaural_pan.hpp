@@ -1309,3 +1309,12 @@ bool try_preflight_spatial_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener,
 bool should_skip_spatial_hrtf_pan_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
 bool should_skip_spatial_hrtf_pan_preflight(bool hrtf_enabled, const Vec3& rel_listener);
 bool should_skip_hrtf_attenuation_narrowing_preflight(HrtfPanPath path, float distance_attenuation,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-a4b4 ---
+    const HrtfPanPathPreflight& panPath, const HrtfIrPreflight& ir);
+                                               HrtfPanPathConvolutionRejectReason* reason = nullptr);
+                                             HrtfPanPathConvolutionRejectReason& reason);
+bool should_skip_hrtf_pan_path_convolution_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool try_preflight_hrtf_binaural_spatial_pan(bool hrtf_enabled, const Vec3& rel_listener,
+bool should_skip_hrtf_binaural_spatial_pan_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_binaural_spatial_pan_preflight(bool hrtf_enabled, const Vec3& rel_listener);
