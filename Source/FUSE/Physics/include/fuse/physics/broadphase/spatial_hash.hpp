@@ -2101,7 +2101,6 @@ FUSE_PHYSICS_INLINE CellPairGenRejectReason cellPairGenRejectReason(u32 uniqueOc
 /// Returns true when `cellPairGenRejectReason` matches `expected` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool cellPairGenRejectsForReason(u32 uniqueOccupantCount, CellPairGenRejectReason expected) {
     return cellPairGenRejectReason(uniqueOccupantCount) == expected;
-}
 
 /// Read-only per-cell pair-generation diagnostics — no mutation (B4.2 deepen pass).
 struct CellPairGenPreflight {
@@ -2117,6 +2116,17 @@ struct CellPairGenPreflight {
 
 /// Count unique body indices in a hash-cell occupant list (cell-pair gen budgeting stub).
 u32 countUniqueCellOccupants(const std::vector<u32>& occupants);
+
+/// Diagnose why cell pair generation would skip; vacuously succeeds when generation may proceed.
+CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants);
+
+bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenRejectReason expected);
+
+/// Read-only cell-pair generation diagnostics — no mutation (B4.2 deepen pass).
+    bool emptyOccupants = false;
+    bool singleOccupant = false;
+    u32 uniqueBodyCount = 0;
+
 
 CellPairGenPreflight preflightCellPairGeneration(const std::vector<u32>& occupants);
 
@@ -2146,10 +2156,6 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReason(
 
 /// Returns true when `shapeCellInsertRejectReason` matches `expected` (B4.2 deepen pass).
 bool shapeCellInsertRejectsForReason(
-    u32 shapeIndex,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const SpatialHashParams& params,
     bool use2D,
     ShapeCellInsertRejectReason expected);
 
@@ -2181,7 +2187,6 @@ bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenR
     u32 uniqueBodyCount = 0;
     u32 pairCount = 0;
 
-};
 
 CellPairGenPreflight preflightCellPairGen(const std::vector<u32>& occupants);
 
@@ -2206,14 +2211,17 @@ bool shouldRunCellPairGeneration(const std::vector<u32>& occupants);
 
 /// Why shape→cell insertion would early-out before hash bucket writes (B4.2 deepen follow-up pass).
 enum class CellCapacityInsertRejectReason : u8 {
-    None = 0,
-    OutOfRangeBody,
     ExceedsOccupancy,
+/// Estimate canonical pair count for a cell occupant list (0 when generation would skip).
+u32 estimatePairCountForCell(const std::vector<u32>& occupants);
+
+    ExceedsOccupancyBudget,
 
 /// Human-readable label for cell-capacity insert reject reasons (logging / tests).
 const char* cellCapacityInsertRejectReasonName(CellCapacityInsertRejectReason reason);
 
 /// Diagnose why shape→cell insertion would skip; vacuously succeeds when insertion may proceed.
+/// Diagnose why shape→cell insertion would skip; vacuously succeeds when insert may proceed.
 CellCapacityInsertRejectReason cellCapacityInsertRejectReason(
     u32 bodyIndex,
     u32 bodyCount,
@@ -2256,6 +2264,31 @@ bool shouldRunCellCapacityInsert(
     bool use2D);
 
 
+CellCapacityInsertRejectReason cellCapacityInsertRejectReason(
+    u32 bodyIndex,
+    u32 bodyCount,
+    u32 maxOccupancy);
+
+/// Returns true when `cellCapacityInsertRejectReason` matches `expected` (B4.2 deepen pass).
+    const CellRange3& range,
+
+
+/// Read-only shape→cell insert diagnostics — no mutation (B4.2 deepen pass).
+    bool exceedsOccupancyBudget = false;
+
+};
+
+
+
+/// Non-mutating cell-capacity insert skip predicate — inverse of `canInsert` (B4.2 deepen pass).
+bool canSkipCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy);
+
+bool canSkipCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy);
+
+/// Non-mutating cell-capacity insert predicate — mirrors `preflightCellCapacityInsert` (B4.2 deepen pass).
+bool shouldRunCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy);
+
+bool shouldRunCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy);
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
