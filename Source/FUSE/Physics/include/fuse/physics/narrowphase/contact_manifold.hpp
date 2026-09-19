@@ -236,6 +236,24 @@ struct ManifoldPrunePreflight {
         f32 duplicateEpsilon = 1e-4f);
 };
 
+/// Const preflight for manifold prune dispatch (B4.4 deepen pass).
+struct ManifoldPrunePreflight {
+    bool hasSeparated = false;
+    bool hasDuplicates = false;
+    bool exceedsMaxPoints = false;
+    bool hasShallow = false;
+    bool wouldBeEmpty = false;
+    bool skipped = false;
+
+    bool needs_pruning() const {
+        return !skipped && (hasSeparated || hasDuplicates || exceedsMaxPoints || hasShallow);
+    }
+
+    bool can_prune_in_place() const { return needs_pruning() && !wouldBeEmpty; }
+
+    bool can_skip_prune() const { return !needs_pruning(); }
+};
+
 /// Populate prune preflight from a manifold without mutating slots (B4.4 deepen pass).
 ManifoldPrunePreflight preflight_manifold_prune(
     f32 duplicateEpsilon = 1e-4f,
@@ -316,6 +334,11 @@ ManifoldPrunePreflight preflight_manifold_prune_ex(
 
 /// True when preflight reports no pruning work (B4.5 deepen pass).
 bool can_skip_manifold_prune(const ManifoldPrunePreflight& preflight);
+/// Returns true when `pruneContactPointsIfNeeded` would be a no-op (B4.5 deepen pass).
+bool can_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

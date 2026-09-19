@@ -191,6 +191,11 @@ bool should_skip_contact_pair_dispatch(
 /// Extended reject reason including sleeping/kinematic pairs (B4.4 deepen follow-up).
 /// Does not alter `contact_pair_reject_reason`; use for additive preflight only.
 ContactPairRejectReason contact_pair_deepen_reject_reason(
+/// Returns true when both shapes are planes (no narrowphase dispatch path, B4.5 deepen pass).
+bool is_plane_plane_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
 /// Inverse of `should_skip_contact_pair_dispatch` (B4.5 deepen pass).
 bool can_dispatch_contact_pair(
     const broadphase::CandidatePair& pair,
@@ -223,15 +228,9 @@ struct ContactPairDispatchResult {
 
 /// Preflight then detect; rejected pairs leave `detected` false (B4.5 deepen pass).
 ContactPairDispatchResult dispatch_contact_pair_if_valid(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Returns true when extended preflight rejects this pair (B4.4 deepen follow-up).
 bool should_skip_contact_pair_deepen_dispatch(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// True when all pairs are rejected by extended preflight or the pair list is empty (B4.4 deepen follow-up).
 bool can_skip_narrowphase(
@@ -259,7 +258,6 @@ struct NarrowphaseBatchPreflight {
 
     bool can_dispatch() const { return dispatchableCount > 0u; }
     bool can_skip() const { return pairCount == 0u || dispatchableCount == 0u; }
-};
 
 /// Populate batch preflight without running shape dispatch (B4.5 deepen follow-up pass).
 NarrowphaseBatchPreflight preflight_narrowphase_batch(
@@ -280,5 +278,29 @@ const char* contact_pair_preflight_reason_name(const ContactPairPreflight& prefl
 
 /// Guarded finalize using `can_finalize_contact_manifold` preflight (B4.5 deepen pass).
 bool generate_contact_manifold_if_valid(ContactManifold& manifold);
+/// Returns true when `preflight_contact_pair` reports `expected` (B4.5 deepen pass).
+bool contact_pair_preflight_matches(
+    const ContactPairPreflight& preflight,
+
+/// Const preflight for manifold finalize dispatch (B4.5 deepen pass).
+struct ManifoldFinalizePreflight {
+    bool empty = false;
+    bool invalidNormal = false;
+    bool noPenetratingPoints = false;
+    bool wouldBeEmptyAfterPrune = false;
+    bool skipped = false;
+
+    bool can_finalize() const {
+        return !skipped && !empty && !invalidNormal && !noPenetratingPoints && !wouldBeEmptyAfterPrune;
+    }
+
+/// Populate finalize preflight without mutating manifold slots (B4.5 deepen pass).
+ManifoldFinalizePreflight preflight_finalize_contact_manifold(const ContactManifold& manifold);
+
+/// Returns true when the manifold is already finalized and valid (B4.5 deepen pass).
+bool can_skip_finalize_contact_manifold(const ContactManifold& manifold);
+
+/// Finalize only when preflight passes and the manifold is not yet valid (B4.5 deepen pass).
+bool generate_contact_manifold_if_needed(ContactManifold& manifold);
 
 } // namespace fuse::physics::narrowphase

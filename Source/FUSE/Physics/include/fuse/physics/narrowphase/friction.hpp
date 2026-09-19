@@ -223,5 +223,18 @@ void invalidate_friction_basis_if_stale(ContactManifold& manifold, f32 epsilon =
 
 /// Rebuild from preflight; returns false when tangents should be skipped (B4.5 deepen pass).
 bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, const FrictionBasisPreflight& preflight);
+/// Const preflight for friction-basis rebuild dispatch (B4.5 deepen pass).
+    bool missing = false;
+
+    bool can_reuse() const { return !skipped && !missing && !stale; }
+
+    bool needs_rebuild() const { return !skipped && (missing || stale); }
+
+
+/// Returns true when friction tangents can be skipped without rebuild (B4.5 deepen pass).
+bool can_skip_friction_tangents_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Rebuild or reuse friction basis only when preflight reports `needs_rebuild` (B4.5 deepen pass).
+bool ensure_friction_basis_if_needed(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
