@@ -1087,3 +1087,10 @@ BroadphaseMergeRejectReason broadphaseMergeRejectReason(
 // --- deepen additive from deepen-b4-broadphase-guards-f2c7 ---
         if (!preflightCellOccupancy(range, maxOccupancy).canIterate()) {
     const BroadphaseMergePreflight preflight = preflightBroadphaseMerge(bodies, shapes);
+
+// --- deepen additive from deepen-b4-broadphase-guards-c0a6 ---
+CellOccupancyPreflight preflightCellOccupancy(const CellRange3& range, u32 maxCells) {
+    preflight.reason = cellOccupancyRejectReason(range, maxCells);
+    preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
+    preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+CellOccupancyPreflight preflightCellOccupancy(const CellRange2& range, u32 maxCells) {

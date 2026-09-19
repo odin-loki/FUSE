@@ -2706,3 +2706,18 @@ void testPairBufferRejectReasonGuards() {
 // --- deepen additive from deepen-b4-broadphase-guards-bd20 ---
 void testPairBufferSoADedupePassGuards() {
                    overflowBuffer, fuse::physics::broadphase::PairBufferClampRejectReason::None),
+
+// --- deepen additive from deepen-b4-broadphase-guards-c0a6 ---
+             "preflightBroadphaseMerge carries merge reject reason");
+void testCellOccupancyCanSkipIterationGuards() {
+             "preflightCellOccupancy carries occupancy reject reason");
+    expectTrue(!pushPreflight.canPush(), "push preflight rejects at-capacity pair");
+    expectTrue(fuse::physics::broadphase::preflightPairBufferCompaction(slotBuffer).needsCompaction(),
+    expectTrue(fuse::physics::broadphase::preflightPairBufferClamp(clampBuffer).needsClamp(),
+                   buffer, fuse::physics::broadphase::PairBufferDedupeRejectReason::SinglePair),
+                 fuse::physics::broadphase::pairBufferDedupeRejectReason(dedupeBuffer)),
+    const fuse::physics::broadphase::PairBufferCompactAndClampPreflight emptyPreflight =
+        fuse::physics::broadphase::preflightPairBufferCompactAndClamp(buffer);
+    expectTrue(emptyPreflight.canSkipAll(), "empty buffer skips compact-and-clamp");
+    const fuse::physics::broadphase::PairBufferCompactAndClampPreflight compactionOnly =
+    const fuse::physics::broadphase::PairBufferCompactAndClampPreflight bothNeeded =
