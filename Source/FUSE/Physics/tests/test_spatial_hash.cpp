@@ -3068,3 +3068,7 @@ void testPerShapeCellBudgetGuards() {
         fuse::physics::broadphase::preflightCellSpan(wideRange, 8u);
     expectTrue(clampPreflight.needsClamp(), "span preflight requests clamp for wide range");
     expectTrue(clampPreflight.exceedsMaxSpan, "span preflight marks exceedsMaxSpan");
+
+// --- deepen additive from b4-broadphase-deepen-guards-c4fe ---
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferCompactAndClampRejectReason::EmptyBuffer),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferCompactAndClampRejectReason::NoWorkNeeded),
