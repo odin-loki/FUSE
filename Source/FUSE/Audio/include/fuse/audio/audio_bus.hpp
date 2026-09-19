@@ -53,6 +53,8 @@ bool is_listener_master_audible(float volume);
 /// True when listener master volume is near-zero — skip final mix multiply.
 bool should_skip_listener_master_mix(float volume);
 
+/// True when listener master would silence all bus mix output (near-zero stub).
+
 /// Per-bus gain stub — effective output walks the parent chain to Master.
 class AudioBusMixer {
 public:
@@ -91,6 +93,8 @@ public:
 
     /// Clear mute and solo flags without resetting gains or parent routing.
     void reset_mute_and_solo();
+
+    /// Clear explicit mute flag for \p bus (no-op for Master).
 
     /// Stub solo — when any category bus is soloed, non-solo buses are silenced.
     void set_bus_solo(AudioBus bus, bool solo);
@@ -139,6 +143,13 @@ public:
     bool is_parent_chain_muted(AudioBus bus) const;
 
     /// True when any ancestor of \p bus (excluding \p bus) is soloed.
+    /// Readable alias — true when any ancestor (excluding \p bus) is explicitly muted.
+    bool is_any_ancestor_bus_muted(AudioBus bus) const;
+
+    /// True when \p bus or any ancestor in its parent chain is explicitly muted.
+    bool is_bus_parent_chain_muted(AudioBus bus) const;
+
+    /// True when any ancestor in the parent chain (excluding \p bus) is soloed.
     bool is_any_ancestor_bus_soloed(AudioBus bus) const;
 
     /// True when \p bus or any ancestor is soloed (audible under solo mode).
@@ -181,6 +192,8 @@ bool is_master_bus_muted(const AudioBusMixer& mixer);
 
 /// True when \p bus or any ancestor carries an explicit mute flag.
 bool is_bus_parent_chain_muted(const AudioBusMixer& mixer, AudioBus bus);
+/// True when \p bus or any ancestor in its parent chain is explicitly muted.
+
 /// Product of ancestor gains from \p bus parent up to (but excluding) Master.
 float parent_chain_gain(const AudioBusMixer& mixer, AudioBus bus);
 
