@@ -238,8 +238,38 @@ bool pairBufferCompactionRejectsForReason(
     const PairBufferSoA& buffer,
     PairBufferCompactionRejectReason expected);
 
-/// Returns true when `pairBufferCompactionRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 bool pairBufferCompactionRejectsForReason(const PairBufferSoA& buffer, PairBufferCompactionRejectReason expected);
+/// Read-only push diagnostics with optional body-count bounds check (B4.2 deepen follow-up pass).
+PairBufferPushPreflight preflightPairBufferPush(
+    u32 idxA,
+    u32 idxB,
+    u32 bodyCount);
+
+/// Read-only slot-write diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferWriteSlotPreflight {
+    bool invalidSlot = false;
+    bool invalidPair = false;
+
+    bool canWrite() const { return !invalidSlot && !invalidPair; }
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    u32 slot,
+    u32 idxB);
+
+/// Read-only slot-write diagnostics with optional body-count bounds check (B4.2 deepen follow-up pass).
+
+/// Read-only merge-into-buffer diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferMergePreflight {
+    bool emptyIncoming = false;
+    bool bufferAtCapacity = false;
+    bool wouldTruncate = false;
+    u32 incomingCount = 0;
+    u32 remainingCapacity = 0;
+
+    bool canMergeAll() const { return !emptyIncoming && !bufferAtCapacity && !wouldTruncate; }
+    bool canMergeAny() const { return !emptyIncoming && remainingCapacity > 0u; }
+
+PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingPairCount);
 
 /// Read-only compaction diagnostics — no mutation (B4.2 deepen follow-up).
 /// Why pair-buffer compaction would early-out (B4.2 deepen follow-up pass).

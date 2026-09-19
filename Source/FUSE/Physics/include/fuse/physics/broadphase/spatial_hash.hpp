@@ -704,6 +704,15 @@ FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellOccupancyPrefli
     return preflight;
 }
 
+/// Non-mutating cell-occupancy skip predicate — inverse of `preflightCellOccupancy().canIterate()`.
+FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
+    return !preflightCellOccupancy(range, maxCells).canIterate();
+}
+
+FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
+    return !preflightCellOccupancy(range, maxCells).canIterate();
+}
+
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     const CellRange3& range,
@@ -1870,6 +1879,10 @@ bool canSkipRefineDedupeBroadphase(
 
 
 
+
+
+/// Diagnose why plane/dynamic merge would skip; vacuously succeeds when merge may proceed.
+
     const CollisionShapeSoA& shapes,
     BroadphaseMergeRejectReason expected);
 
@@ -1965,6 +1978,7 @@ bool canSkipBroadphaseMerge(
 /// Non-mutating merge skip predicate — inverse of `preflightBroadphaseMerge` (B4.2 deepen pass).
 /// Non-mutating merge skip predicate — inverse of `preflightBroadphaseMerge::canMerge` (B4.2 deepen follow-up pass).
 /// Non-mutating merge skip predicate — inverse of `BroadphaseMergePreflight::canMerge` (B4.2 deepen pass).
+/// Non-mutating merge skip predicate — inverse of `preflightBroadphaseMerge().canMerge()`.
 bool canSkipBroadphaseMerge(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);

@@ -890,10 +890,20 @@ bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortR
 
 
 PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
+    return preflightPairBufferPush(buffer, idxA, idxB, 0u);
+}
+
+PairBufferPushPreflight preflightPairBufferPush(
+    const PairBufferSoA& buffer,
+    u32 idxA,
+    u32 idxB,
+    u32 bodyCount) {
     PairBufferPushPreflight preflight{};
     preflight.reason = pairBufferPushRejectReason(buffer, idxA, idxB);
     preflight.invalidPair = preflight.reason == PairBufferPushRejectReason::InvalidPair;
     preflight.atCapacity = preflight.reason == PairBufferPushRejectReason::AtCapacity;
+    preflight.invalidPair = !isValidCandidatePair(idxA, idxB, bodyCount);
+    preflight.atCapacity = buffer.isFull();
     return preflight;
 
 const char* pairBufferCompactionRejectReasonName(PairBufferCompactionRejectReason reason) {
@@ -1030,6 +1040,37 @@ bool pairBufferCompactionRejectsForReason(
     const PairBufferSoA& buffer,
     PairBufferCompactionRejectReason expected) {
     return pairBufferCompactionRejectReason(buffer) == expected;
+}
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB) {
+    return preflightPairBufferWriteSlot(buffer, slot, idxA, idxB, 0u);
+}
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB,
+    u32 bodyCount) {
+    PairBufferWriteSlotPreflight preflight{};
+    preflight.invalidSlot = slot >= buffer.pairSlotCount;
+    preflight.invalidPair = !isValidCandidatePair(idxA, idxB, bodyCount);
+    return preflight;
+}
+
+PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingPairCount) {
+    PairBufferMergePreflight preflight{};
+    preflight.incomingCount = incomingPairCount;
+    preflight.emptyIncoming = incomingPairCount == 0u;
+    preflight.remainingCapacity = buffer.remainingCapacity();
+    preflight.bufferAtCapacity = !preflight.emptyIncoming && preflight.remainingCapacity == 0u;
+    preflight.wouldTruncate =
+        !preflight.emptyIncoming && incomingPairCount > preflight.remainingCapacity;
+    return preflight;
 }
 
 PairBufferCompactionPreflight preflightPairBufferCompaction(const PairBufferSoA& buffer) {
