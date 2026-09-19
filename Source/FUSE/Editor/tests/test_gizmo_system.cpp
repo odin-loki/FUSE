@@ -5127,6 +5127,7 @@ void testHitTestNonFiniteGuards() {
     expectTrue(degraded.snapDragDegraded(),
                "update interaction snapDragDegraded marks invalid step");
     expectTrue(degraded.snapDegraded(), "update interaction marks snap degraded");
+    expectTrue(degraded.snapDegraded(), "update interaction marks combined snap degraded");
     gizmo.endDrag();
 }
 
