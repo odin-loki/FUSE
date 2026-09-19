@@ -75,6 +75,13 @@ target_include_directories(fuse_mechanics
 target_link_libraries(fuse_mechanics PUBLIC fuse_core)
 target_compile_features(fuse_mechanics PUBLIC cxx_std_17)
 
+option(FUSE_BUILD_BULLET "Enable Bullet broadphase deepen stubs in fuse_mechanics" OFF)
+if(FUSE_BUILD_BULLET)
+    target_compile_definitions(fuse_mechanics PUBLIC FUSE_HAS_BULLET=1)
+else()
+    target_compile_definitions(fuse_mechanics PUBLIC FUSE_HAS_BULLET=0)
+endif()
+
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
 endif()

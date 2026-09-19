@@ -56,6 +56,17 @@ bool load_conversation_hooks_from_text(const std::string& convText,
             continue;
         }
 
+        if (line.rfind("elif requires ", 0) == 0) {
+            std::string item;
+            u32 count = 0;
+            std::istringstream reqStream(line.substr(14));
+            reqStream >> item >> count;
+            if (!item.empty()) {
+                current.elifRequiredItems.push_back({item, count});
+            }
+            continue;
+        }
+
         if (line.rfind("grant ", 0) == 0) {
             std::istringstream grantStream(line.substr(6));
             grantStream >> current.grantItem >> current.grantAmount;

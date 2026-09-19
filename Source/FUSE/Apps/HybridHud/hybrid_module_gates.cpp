@@ -128,6 +128,7 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     });
 
     state.vactorBridge.bind("agent_3d", &state.agent3D);
+    state.vactorBridge.apply_shapebase_bone_attach("agent_3d", "weapon_shoulder");
 
     setupTimelineFromAsset(state.timeline);
     setupFx(state);
@@ -146,7 +147,7 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     state.mechanicsRegistry.registerInteractable(&state.leverInteractable, &state.leverInteractable);
 
     const fuse::mechanics::ConvexPolyhedron triggerVolume =
-        fuse::mechanics::ConvexPolyhedron::axis_aligned_box(-5.f, -1.f, -1.f, 4.5f, 1.f, 1.f);
+        fuse::mechanics::ConvexPolyhedron::axis_aligned_box(-5.f, -1.f, -1.f, 4.5f, 1.f, 2.f);
     state.leverTrigger.setPolyhedron(triggerVolume);
     state.leverConsole.registerMethod("toggleLever", [&state]() {
         state.leverToggle.toggle();
@@ -195,6 +196,19 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     });
     state.physicsBroadphaseBridge.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
 
+    state.patrolPath.addWaypoint(-4.f, 0.f, 0.f);
+    state.patrolPath.addWaypoint(4.f, 0.f, 0.f);
+    state.patrolPath.setPosition(state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
+    state.patrolTimer.setActive(true);
+
+    fuse::mechanics::BroadphaseWorldBody agentBody{};
+    agentBody.objectId = kAgentObjectId;
+    agentBody.proxy = fuse::mechanics::makeBroadphaseProxyDesc(fuse::mechanics::BroadphaseProxyFilter::Character);
+    agentBody.x = state.agent3D.x();
+    agentBody.y = state.agent3D.y();
+    agentBody.z = state.agent3D.z();
+    state.broadphaseWorld.addBody(agentBody);
+
     state.broadphaseTriggerSync.bindTrigger(&state.leverTrigger);
     state.broadphaseTriggerSync.setPositionProvider([&state](fuse::u32 objectId) -> fuse::mechanics::PhysicsBodyPosition {
         if (objectId == kAgentObjectId) {
@@ -218,6 +232,7 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
     fuse::cinematics::drain_actor_cues(state.timeline, state.vactorBridge, timelineBefore);
     state.vactorBridge.sync_bound_objects();
     state.vactorBridge.sync_motion_from_timeline(state.timeline);
+    state.vactorBridge.sync_bone_attach_from_timeline(state.timeline);
     state.lastTimelineMs = state.timeline.playhead().time_ms();
 
     const fuse::cinematics::HybridTimelineSample drive =
@@ -242,6 +257,9 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
 
     state.physicsBroadphaseBridge.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
     state.physicsBroadphaseBridge.syncBody(kAgentObjectId);
+    state.broadphaseWorld.setBodyPosition(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
+    state.patrolPath.advanceAlongPath(0.12f, ctx.dt);
+    state.patrolTimer.tick(ctx.dt);
     state.physicsTriggerBridge.syncObject(kAgentObjectId);
     state.broadphaseTriggerSync.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
     state.broadphaseTriggerSync.syncAll();
@@ -342,6 +360,20 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     if (state.physicsBroadphaseBridge.syncCount() == 0u) {
         return {false, "fuse_mechanics physics broadphase pipeline synced"};
     }
+#if FUSE_HYBRID_GATES_WAVE16
+    if (state.patrolPath.tickCount() == 0u) {
+        return {false, "fuse_mechanics PathComponent advanced in hybrid demo"};
+    }
+    if (state.patrolTimer.fireCount() == 0u) {
+        return {false, "fuse_mechanics TimerComponent fired in hybrid demo"};
+    }
+    if (state.broadphaseWorld.bodyCount() == 0u) {
+        return {false, "fuse_mechanics BroadphaseWorldStub tracked agent body"};
+    }
+    if (state.vactorBridge.boneMotionSyncCount() == 0u) {
+        return {false, "fuse_cinematics bone attach motion sync applied"};
+    }
+#endif
     if (state.leverInteractable.interactionCount() == 0u) {
         return {false, "fuse_mechanics 3D interactable fired on trigger enter"};
     }

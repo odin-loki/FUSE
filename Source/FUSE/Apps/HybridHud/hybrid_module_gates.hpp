@@ -13,12 +13,15 @@
 #include <fuse/fx/fx_composer.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/mechanics/broadphase_trigger_sync.hpp>
+#include <fuse/mechanics/broadphase_world_stub.hpp>
 #include <fuse/mechanics/console_method_component.hpp>
 #include <fuse/mechanics/counter_component.hpp>
 #include <fuse/mechanics/delay_component.hpp>
 #include <fuse/mechanics/interactable.hpp>
 #include <fuse/mechanics/message_component.hpp>
+#include <fuse/mechanics/path_component.hpp>
 #include <fuse/mechanics/physics_broadphase_bridge.hpp>
+#include <fuse/mechanics/timer_component.hpp>
 #include <fuse/mechanics/physics_trigger_bridge.hpp>
 #include <fuse/mechanics/polyhedron_trigger.hpp>
 #include <fuse/mechanics/registry.hpp>
@@ -41,6 +44,10 @@
 #define FUSE_HYBRID_GATES_SCRIPT 1
 #else
 #define FUSE_HYBRID_GATES_SCRIPT 0
+#endif
+
+#ifndef FUSE_HYBRID_GATES_WAVE16
+#define FUSE_HYBRID_GATES_WAVE16 1
 #endif
 
 namespace fuse::hybrid::gates {
@@ -81,6 +88,9 @@ struct State {
     fuse::mechanics::PhysicsTriggerBridge physicsTriggerBridge;
     fuse::mechanics::BroadphaseTriggerSync broadphaseTriggerSync;
     fuse::mechanics::PhysicsBroadphaseBridge physicsBroadphaseBridge;
+    fuse::mechanics::PathComponent patrolPath{"outpost_patrol"};
+    fuse::mechanics::TimerComponent patrolTimer{"outpost_patrol_timer", 0.25f};
+    fuse::mechanics::BroadphaseWorldStub broadphaseWorld;
 
     fuse::adventure::InteractionSystem adventureSystem;
     fuse::adventure::ConversationScriptVm conversationScriptVm;

@@ -2020,7 +2020,7 @@ void testUaiskInotifyFileWatchProgress() {
 void testUaiskFSEventsBackendStub() {
 #if defined(__APPLE__)
     namespace fs = std::filesystem;
-    const fs::path tempPath = fs::temp_directory_path() / "fuse_fsevents_wave15.bt";
+    const fs::path tempPath = fs::temp_directory_path() / "fuse_fsevents_wave16.bt";
     {
         std::ofstream out(tempPath);
         out << "bb.action.set_flag flag=1\nroot=0\n";
@@ -2030,6 +2030,10 @@ void testUaiskFSEventsBackendStub() {
                "FSEvents watch handle created on macOS");
     expectTrue(handle.backend == fuse::ai::uaisk::OsFileWatchBackend::FSEvents,
                "FSEvents backend selected on macOS");
+    expectTrue(handle.fsevents.latencyMs >= 16u, "FSEvents latency stub seeded");
+    fuse::ai::uaisk::OsFileWatchStatus status;
+    expectTrue(!fuse::ai::uaisk::pollOsFileWatch(handle, status), "FSEvents poll unchanged");
+    expectTrue(status.fsevents.latencyMs >= 16u, "FSEvents poll reports latency stub");
     fuse::ai::uaisk::closeOsFileWatch(handle);
     fs::remove(tempPath);
 #else
@@ -2037,6 +2041,29 @@ void testUaiskFSEventsBackendStub() {
     expectTrue(handle.backend == fuse::ai::uaisk::OsFileWatchBackend::StatPoll,
                "non-macOS builds use stat poll backend by default");
 #endif
+}
+
+void testUaiskInotifyHotReloadRegistry() {
+    namespace fs = std::filesystem;
+    const fs::path tempPath = fs::temp_directory_path() / "fuse_inotify_wave16.bt";
+    {
+        std::ofstream out(tempPath);
+        out << "bb.action.set_flag flag=1\nroot=0\n";
+    }
+
+    fuse::ai::BehaviorRuntime runtime;
+    fuse::ai::uaisk::TreeFileWatchRegistry registry;
+    registry.watchProfileFromDisk(tempPath.string(), 6u);
+    expectTrue(registry.inotifyPollCount() >= 0u, "inotify poll counter available");
+    expectTrue(registry.pollInotifyFileChanges(runtime) == 0u, "inotify hot reload unchanged");
+
+    {
+        std::ofstream out(tempPath, std::ios::trunc);
+        out << "bb.action.set_flag flag=0\nroot=0\n";
+    }
+    expectTrue(registry.pollInotifyFileChanges(runtime) >= 0u, "inotify hot reload poll executes");
+
+    fs::remove(tempPath);
 }
 
 void testUaiskCodegenSyntaxTreePath() {
@@ -2236,6 +2263,7 @@ int main() {
     testUaiskTreeOsFileWatchProgress();
     testUaiskInotifyFileWatchProgress();
     testUaiskFSEventsBackendStub();
+    testUaiskInotifyHotReloadRegistry();
     testUaiskCodegenSyntaxTreePath();
     testReloadCodegenProfile();
     testRuntimeTreeReloadPreservesBlackboard();

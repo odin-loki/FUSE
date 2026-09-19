@@ -104,6 +104,45 @@ void ParticlePoolGpuBackend::syncPositionsToCpu(ParticlePool& pool) {
     ++m_writebackCount;
 }
 
+u32 ParticlePoolGpuBackend::syncSelectivePositionsToCpu(ParticlePool& pool) {
+    if (!m_syncedFromCpu || m_packed.empty()) {
+        return 0;
+    }
+
+    u32 written = 0;
+    const u32 count = std::min(m_capacity, static_cast<u32>(pool.slots().size()));
+    usize offset = 0;
+    for (u32 slotIndex = 0; slotIndex < count; ++slotIndex) {
+        float position[3];
+        std::memcpy(position, m_packed.data() + offset, sizeof(float) * 3);
+        offset += sizeof(float) * 3;
+        float velocity[3];
+        std::memcpy(velocity, m_packed.data() + offset, sizeof(float) * 3);
+        offset += sizeof(float) * 3;
+        const float lifetime = *reinterpret_cast<const float*>(m_packed.data() + offset);
+        offset += sizeof(float);
+        const float age = *reinterpret_cast<const float*>(m_packed.data() + offset);
+        offset += sizeof(float);
+        offset += sizeof(float);
+        const u32 aliveFlag = *reinterpret_cast<const u32*>(m_packed.data() + offset);
+        offset += sizeof(u32);
+
+        if (aliveFlag == 0u || age <= 0.f) {
+            continue;
+        }
+
+        pool.setSlotMotion(slotIndex, position[0], position[1], position[2], velocity[0], velocity[1],
+                           velocity[2]);
+        ++written;
+    }
+
+    if (written > 0u) {
+        ++m_selectiveWritebackCount;
+        ++m_writebackCount;
+    }
+    return written;
+}
+
 void ParticlePoolGpuBackend::tick(const frame::FrameCtx& ctx) {
     cudaDispatchOrSkip(ctx);
 }

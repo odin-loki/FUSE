@@ -59,7 +59,9 @@ public:
     u32 selectedAiAgentIndex() const { return m_selectedAiAgentIndex; }
     u32 aiCodegenReloadCount() const { return m_aiCodegenReloadCount; }
     u32 aiTreeFileReloadCount() const { return m_aiTreeFileReloadCount; }
+    u32 aiTreeInotifyHotReloadCount() const { return m_aiTreeInotifyHotReloadCount; }
     u32 aiTreeOsPollCount() const { return m_aiTreeFileWatch.osPollCount(); }
+    u32 aiTreeInotifyPollCount() const { return m_aiTreeFileWatch.inotifyPollCount(); }
     const std::vector<AiAgentEntityBinding>& aiAgentEntityBindings() const { return m_aiAgentEntityBindings; }
     fuse::ai::BehaviorRuntime& pieBehaviorRuntime() { return m_pieBehaviorRuntime; }
     const fuse::ai::BehaviorRuntime& pieBehaviorRuntime() const { return m_pieBehaviorRuntime; }
@@ -83,6 +85,7 @@ public:
     void setAiAgentEntityBinding(u32 agentIndex, Handle<Object> entity);
     bool reloadAiCodegenProfile(u32 profileId, const std::string& uaiskModule, const std::string& csText);
     bool reloadAiTreeFromDisk(u32 profileId, const std::string& watchPath);
+    bool reloadAiTreeViaInotify(u32 profileId, const std::string& watchPath);
     void setLoadedCinematicsSeqAsset(std::string assetText);
     void setCinematicsSeqScrubPreview(fuse::cinematics::TimelineMs timeMs,
                                       const fuse::cinematics::SeqScrubPreview& preview);
@@ -118,6 +121,7 @@ private:
     u32 m_selectedAiAgentIndex = 0;
     u32 m_aiCodegenReloadCount = 0;
     u32 m_aiTreeFileReloadCount = 0;
+    u32 m_aiTreeInotifyHotReloadCount = 0;
     std::vector<AiAgentEntityBinding> m_aiAgentEntityBindings;
     fuse::ai::uaisk::TreeFileWatchRegistry m_aiTreeFileWatch;
     fuse::ai::BehaviorRuntime m_pieBehaviorRuntime;

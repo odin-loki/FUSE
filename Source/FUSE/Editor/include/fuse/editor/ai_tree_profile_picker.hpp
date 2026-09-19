@@ -42,6 +42,8 @@ public:
     bool postCodegenReload(std::string_view uaiskModule, std::string_view csText, u32 profileId);
     /// Register a disk-backed tree watch and reload on the game thread.
     bool postTreeFileWatchReload(std::string_view watchPath, u32 profileId);
+    /// Hot-reload via inotify/FSEvents poll path (picker → game-thread inotify poll).
+    bool postInotifyTreeHotReload(std::string_view watchPath, u32 profileId);
 
 private:
     EditorHost& m_host;

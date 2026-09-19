@@ -1,8 +1,40 @@
+#include <fuse/mechanics/broadphase_proxy_filter.hpp>
 #include <fuse/mechanics/broadphase_world_stub.hpp>
 
 #include <cmath>
 
 namespace fuse::mechanics {
+
+namespace {
+
+#if defined(FUSE_HAS_BULLET) && FUSE_HAS_BULLET
+constexpr BroadphaseProxyGroupMask kBulletStaticGroup = 1u;
+constexpr BroadphaseProxyGroupMask kBulletCharacterGroup = 2u;
+constexpr BroadphaseProxyGroupMask kBulletTriggerGroup = 4u;
+
+BroadphaseProxyDesc bulletProxyForFilter(BroadphaseProxyFilter filter) {
+    BroadphaseProxyDesc desc = makeBroadphaseProxyDesc(filter);
+    switch (filter) {
+    case BroadphaseProxyFilter::StaticRigid:
+        desc.group = kBulletStaticGroup;
+        desc.mask = kBulletCharacterGroup | kBulletTriggerGroup;
+        break;
+    case BroadphaseProxyFilter::Character:
+        desc.group = kBulletCharacterGroup;
+        desc.mask = kBulletStaticGroup | kBulletTriggerGroup;
+        break;
+    case BroadphaseProxyFilter::Trigger:
+        desc.group = kBulletTriggerGroup;
+        desc.mask = kBulletCharacterGroup;
+        break;
+    default:
+        break;
+    }
+    return desc;
+}
+#endif
+
+} // namespace
 
 void BroadphaseWorldStub::addBody(const BroadphaseWorldBody& body) {
     m_bodies.push_back(body);
@@ -37,6 +69,14 @@ void BroadphaseWorldStub::clear() {
 u32 BroadphaseWorldStub::queryOverlaps(BroadphaseProxyFilter filterA, BroadphaseProxyFilter filterB) {
     ++m_overlapQueryCount;
     m_lastOverlapCount = 0;
+
+#if defined(FUSE_HAS_BULLET) && FUSE_HAS_BULLET
+    const BroadphaseProxyDesc proxyA = bulletProxyForFilter(filterA);
+    const BroadphaseProxyDesc proxyB = bulletProxyForFilter(filterB);
+    if (!broadphaseProxyDescsCollide(proxyA, proxyB)) {
+        return 0;
+    }
+#endif
 
     for (usize i = 0; i < m_bodies.size(); ++i) {
         for (usize j = i + 1; j < m_bodies.size(); ++j) {

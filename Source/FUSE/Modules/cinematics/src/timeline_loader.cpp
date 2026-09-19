@@ -207,6 +207,10 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
                 std::string yawToken;
                 if (lineStream >> yawToken) {
                     parseFloat(yawToken, event.mount_yaw_deg);
+                    std::string boneToken;
+                    if (lineStream >> boneToken) {
+                        event.bone_name = boneToken;
+                    }
                 }
             } else if (eventKind == "unmount") {
                 if (!parseTimelineMs(timeOrMount, event.time_ms)) {

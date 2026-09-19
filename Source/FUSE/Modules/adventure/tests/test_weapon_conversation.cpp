@@ -1,12 +1,14 @@
 #include <fuse/adventure/conversation_interactable.hpp>
 #include <fuse/adventure/conversation_script_loader.hpp>
 #include <fuse/adventure/skeletal_mount_stub.hpp>
+#include <fuse/adventure/animation_bind_pose_bridge.hpp>
 #include <fuse/adventure/weapon_mount_animation.hpp>
 #include <fuse/adventure/interaction.hpp>
 #include <fuse/adventure/inventory.hpp>
 #include <fuse/adventure/weapon_grant_pipeline.hpp>
 #include <fuse/adventure/weapon_pickup_interactable.hpp>
 #include <fuse/adventure/weapon_runtime.hpp>
+#include <fuse/animation/skeleton.hpp>
 #include <fuse/core/init.hpp>
 
 #include <cstdio>
@@ -186,6 +188,39 @@ int main() {
                "TorqueScript conversation loader registers hooks");
     expectTrue(tsVm.branchLineCount("outpost_guard", "welcome") == 1u,
                "TorqueScript conversation branch line parsed");
+
+    static const char* kElifConvText =
+        "branch outpost_guard veteran\n"
+        "requires service_medal 1\n"
+        "elif requires security_badge 1\n"
+        "line Alternate clearance accepted.\n";
+    fuse::adventure::ConversationScriptVm elifVm;
+    expectTrue(fuse::adventure::register_conversation_hooks_from_text(kElifConvText, elifVm),
+               "elif inventory branch loaded");
+    inventory.decInventory(fuse::adventure::ItemId("service_medal"), 1);
+    inventory.incInventory(fuse::adventure::ItemId("security_badge"), 1);
+    expectTrue(elifVm.canDispatchBranch("outpost_guard", "veteran", ctx),
+               "elif inventory branch allowed via alternate item");
+
+    fuse::animation::Skeleton bindSkeleton;
+    bindSkeleton.bone_count = 16;
+    bindSkeleton.bones.resize(16);
+    fuse::animation::PoseSoA bindPose = fuse::animation::PoseSoA::from_bind_pose(bindSkeleton);
+    fuse::adventure::AnimationBindPoseBridge bindBridge;
+    fuse::adventure::SkeletalMountStub bindSkeletalMount;
+    fuse::adventure::SkeletalBoneMount bindBone{};
+    bindBone.boneName = "weapon_shoulder";
+    bindBone.offsetX = 0.1f;
+    bindSkeletalMount.setBoneMount(bindBone);
+    fuse::adventure::WeaponMountAnimationStub bindMountAnim;
+    fuse::adventure::WeaponMountPose bindMountPose{};
+    bindMountPose.mountPoint = "weapon_shoulder";
+    bindMountPose.shoulderOffset = 0.05f;
+    bindMountAnim.setPose(bindMountPose);
+    expectTrue(bindBridge.applyMountToBindPose(bindSkeletalMount, bindMountAnim, bindSkeleton, bindPose),
+               "animation bind pose bridge applies mount offset");
+    expectTrue(bindBridge.applyCount() == 1u, "animation bind pose bridge counted");
+    expectTrue(bindBridge.lastBoneIndex() == 12u, "animation bind pose bridge resolves bone index");
 
     fuse::core::shutdown();
 

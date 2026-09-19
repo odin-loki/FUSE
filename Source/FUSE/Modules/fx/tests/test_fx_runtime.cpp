@@ -526,6 +526,34 @@ void testParticlePoolTick() {
     expectTrue(pool.activeCount() == 0u, "particle expires after lifetime");
 }
 
+void testParticlePoolCudaSelectiveWriteback() {
+    fuse::fx::ParticlePool pool(4);
+    pool.spawn({0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.5f);
+    pool.spawn({1.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 0.f);
+
+    fuse::fx::ParticlePoolGpuBackend gpuBackend(4);
+    gpuBackend.syncFromCpu(pool);
+    fuse::frame::FrameCtx ctx;
+    gpuBackend.cudaDispatchOrSkip(ctx);
+    const fuse::u32 written = gpuBackend.syncSelectivePositionsToCpu(pool);
+    expectTrue(written <= 1u, "selective writeback skips zero-age slots");
+    expectTrue(gpuBackend.selectiveWritebackCount() <= 1u, "selective writeback counted");
+}
+
+void testAfxMissionNestedSimObjectParse() {
+    static const char* kMisText =
+        "new SimObject(FireballGroup) {\n"
+        "  new SimObject(SparkEmitter) { effectName = \"spark\"; }\n"
+        "  new SimObject(MuzzleFlashEmitter) { effectName = \"muzzle\"; }\n"
+        "}\n";
+
+    fuse::fx::AfxMissionBody body;
+    std::string error;
+    expectTrue(fuse::fx::parse_afx_mission_body_from_mis(kMisText, body, &error), "nested .mis body parse");
+    expectTrue(body.nestedSimObjectBodies.size() >= 2u, "nested simobjects captured");
+    expectTrue(!body.simObjectNames.empty(), "nested simobject names registered");
+}
+
 } // namespace
 
 int main() {
@@ -558,6 +586,8 @@ int main() {
     testParticlePoolCudaSkip();
     testAfxChoreographerBridge();
     testParticlePoolTick();
+    testParticlePoolCudaSelectiveWriteback();
+    testAfxMissionNestedSimObjectParse();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

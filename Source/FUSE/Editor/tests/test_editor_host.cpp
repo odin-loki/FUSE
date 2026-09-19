@@ -720,6 +720,26 @@ void testAiTreeFileReloadFromPicker() {
     fs::remove(tempPath);
 }
 
+void testAiInotifyHotReloadFromPicker() {
+    namespace fs = std::filesystem;
+    const fs::path tempPath = fs::temp_directory_path() / "fuse_picker_inotify_wave16.bt";
+    {
+        std::ofstream out(tempPath);
+        out << "bb.action.set_flag flag=1\nroot=0\n";
+    }
+
+    fuse::editor::EditorHost host;
+    fuse::editor::AiTreeProfilePicker picker(host);
+
+    expectTrue(picker.postInotifyTreeHotReload(tempPath.string(), 2u),
+               "picker posts inotify hot reload command");
+    host.gameTick();
+    expectTrue(host.aiTreeInotifyHotReloadCount() == 1u, "inotify hot reload applied on game thread");
+    expectTrue(host.aiTreeInotifyPollCount() >= 1u, "inotify poll counted on game thread");
+
+    fs::remove(tempPath);
+}
+
 void testCinematicsSeqScrubPreviewPostsSample() {
     fuse::editor::EditorHost host;
     fuse::editor::CinematicsSeqImport importer(host);
@@ -801,6 +821,7 @@ int main() {
     testAiCodegenReloadPostsCommand();
     testAiAgentSelectionDeepen();
     testAiTreeFileReloadFromPicker();
+    testAiInotifyHotReloadFromPicker();
     testCinematicsSeqScrubPreviewPostsSample();
     testCinematicsSeqPreviewPaneWire();
     testCinematicsSeqImportPostsAsset();

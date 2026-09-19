@@ -21,6 +21,17 @@ const ActorTrack* find_first_actor_track(const Timeline& timeline) {
     return nullptr;
 }
 
+const MotionTrack* find_first_motion_track(const Timeline& timeline) {
+    for (const TrackGroup& group : timeline.groups()) {
+        for (const std::unique_ptr<Track>& track : group.tracks()) {
+            if (track != nullptr && track->enabled() && track->kind() == TrackKind::Motion) {
+                return static_cast<const MotionTrack*>(track.get());
+            }
+        }
+    }
+    return nullptr;
+}
+
 } // namespace
 
 void VActorBridge::bind(const std::string& actor_id, fuse::SceneObject3D* object) {
@@ -60,6 +71,15 @@ const std::string& VActorBridge::mount_point_for(const std::string& actor_id) co
     const auto it = m_mountPoints.find(actor_id);
     if (it != m_mountPoints.end()) {
         return it->second;
+    }
+    static const std::string kEmpty;
+    return kEmpty;
+}
+
+const std::string& VActorBridge::bone_name_for(const std::string& actor_id) const {
+    const auto it = m_actors.find(actor_id);
+    if (it != m_actors.end()) {
+        return it->second.boneName;
     }
     static const std::string kEmpty;
     return kEmpty;
@@ -156,6 +176,40 @@ void VActorBridge::apply_shapebase_bone_attach(const std::string& actor_id, cons
     sync_bound_objects();
 }
 
+void VActorBridge::sync_bone_attach_from_timeline(const Timeline& timeline) {
+    const ActorTrack* actorTrack = find_first_actor_track(timeline);
+    const TimelineMs time_ms = timeline.playhead().time_ms();
+    if (actorTrack != nullptr) {
+        for (const ActorEvent& event : actorTrack->actor_events()) {
+            if (event.time_ms > time_ms || event.kind != ActorEventKind::Mount) {
+                continue;
+            }
+            if (!event.bone_name.empty()) {
+                apply_shapebase_bone_attach(event.actor_id, event.bone_name);
+            }
+        }
+    }
+
+    const MotionTrack* motionTrack = find_first_motion_track(timeline);
+    if (motionTrack == nullptr) {
+        return;
+    }
+
+    const MotionSample sample = motionTrack->sample_at(time_ms);
+    for (auto& entry : m_actors) {
+        BoundActorState& state = entry.second;
+        if (state.object == nullptr || state.boneName.empty()) {
+            continue;
+        }
+        const ShapeBaseBoneAttach boneAttach = bone_attach_for(state.boneName);
+        state.offset.yaw_deg = combine_mount_yaw_deg(boneAttach.yaw_deg, sample.position.x * 0.05f);
+        state.offset.pitch_deg = boneAttach.pitch_deg + sample.position.y * 0.02f;
+    }
+
+    sync_bound_objects();
+    ++m_boneMotionSyncCount;
+}
+
 bool VActorBridge::is_runtime_attached(const std::string& actor_id) const {
     const auto it = m_actors.find(actor_id);
     return it != m_actors.end() && it->second.runtimeAttached;
@@ -176,17 +230,6 @@ void VActorBridge::sync_bound_objects() {
         state.object->setRollDeg(state.offset.roll_deg);
     }
     ++m_syncCount;
-}
-
-const MotionTrack* find_first_motion_track(const Timeline& timeline) {
-    for (const TrackGroup& group : timeline.groups()) {
-        for (const std::unique_ptr<Track>& track : group.tracks()) {
-            if (track != nullptr && track->enabled() && track->kind() == TrackKind::Motion) {
-                return static_cast<const MotionTrack*>(track.get());
-            }
-        }
-    }
-    return nullptr;
 }
 
 void VActorBridge::sync_motion_from_timeline(const Timeline& timeline) {

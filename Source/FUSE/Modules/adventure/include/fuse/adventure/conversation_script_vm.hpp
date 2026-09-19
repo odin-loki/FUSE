@@ -16,6 +16,7 @@ struct ConversationScriptHook {
     std::vector<std::string> lines;
     std::string requiredItem;
     u32 minInventoryCount = 0;
+    std::vector<std::pair<std::string, u32>> elifRequiredItems;
     std::string grantItem;
     u32 grantAmount = 0;
     u32 priority = 0;
@@ -34,6 +35,9 @@ public:
     [[nodiscard]] bool canDispatchBranch(const std::string& npcId,
                                          const std::string& branchId,
                                          const InteractContext& ctx) const;
+
+    [[nodiscard]] bool inventoryMeetsRequirements(const ConversationScriptHook& hook,
+                                                  const InteractContext& ctx) const;
 
     [[nodiscard]] u32 branchLineCount(const std::string& npcId, const std::string& branchId) const;
     [[nodiscard]] std::string peekBranchLine(const std::string& npcId,

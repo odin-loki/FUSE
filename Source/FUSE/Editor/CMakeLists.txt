@@ -121,6 +121,8 @@ if(FUSE_BUILD_EDITOR)
                 src/qt/viewport_placeholder_widget.hpp
                 src/qt/viewport_qt_vulkan_surface.cpp
                 src/qt/viewport_qt_vulkan_surface.hpp
+                src/qt/seq_preview_pane_widget.cpp
+                src/qt/seq_preview_pane_widget.hpp
                 src/qt/game_loop_thread.cpp
                 src/qt/game_loop_thread.hpp
             )

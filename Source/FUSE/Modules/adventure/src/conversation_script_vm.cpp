@@ -31,6 +31,29 @@ std::string ConversationScriptVm::peekBranchLine(const std::string& npcId,
     return it->second.lines[lineIndex];
 }
 
+bool ConversationScriptVm::inventoryMeetsRequirements(const ConversationScriptHook& hook,
+                                                       const InteractContext& ctx) const {
+    if (ctx.inventory == nullptr) {
+        return hook.requiredItem.empty() && hook.elifRequiredItems.empty();
+    }
+
+    if (!hook.requiredItem.empty()) {
+        if (ctx.inventory->getInventory(ItemId(hook.requiredItem)) >= hook.minInventoryCount) {
+            return true;
+        }
+    } else if (hook.elifRequiredItems.empty()) {
+        return true;
+    }
+
+    for (const auto& elifReq : hook.elifRequiredItems) {
+        if (ctx.inventory->getInventory(ItemId(elifReq.first)) >= elifReq.second) {
+            return true;
+        }
+    }
+
+    return hook.requiredItem.empty() && hook.elifRequiredItems.empty();
+}
+
 bool ConversationScriptVm::canDispatchBranch(const std::string& npcId,
                                               const std::string& branchId,
                                               const InteractContext& ctx) const {
@@ -39,14 +62,7 @@ bool ConversationScriptVm::canDispatchBranch(const std::string& npcId,
         return false;
     }
 
-    if (!it->second.requiredItem.empty()) {
-        if (ctx.inventory == nullptr) {
-            return false;
-        }
-        return ctx.inventory->getInventory(ItemId(it->second.requiredItem)) >= it->second.minInventoryCount;
-    }
-
-    return true;
+    return inventoryMeetsRequirements(it->second, ctx);
 }
 
 bool ConversationScriptVm::dispatchBranch(const std::string& npcId,

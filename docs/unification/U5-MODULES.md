@@ -312,6 +312,17 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_mechanics` | GMK `PathComponent` + `TimerComponent` leaves; `BroadphaseWorldStub::queryRaycastStub()` Bullet-style ray deepen |
 | `fuse_adventure` | `SkeletalMountStub` bone-index resolve + offset deepen; conversation VM multi-line dispatch + priority branch selection |
 
+#### Landed wave 16 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | `postInotifyTreeHotReload()` picker command; PIE `pollInotifyFileChanges()` first; FSEvents coalesce/latency stub deepen |
+| `fuse_cinematics` | `VActorBridge::sync_bone_attach_from_timeline()` bone motion sync; `ActorEvent::bone_name`; Qt `SeqPreviewPaneWidget` stub |
+| `fuse_fx` | `syncSelectivePositionsToCpu()` selective CUDA D→H writeback; nested `.mis` SimObject body parse |
+| `fuse_mechanics` | `PathComponent`/`TimerComponent` in hybrid gates; `FUSE_HAS_BULLET` proxy group/mask deepen |
+| `fuse_adventure` | `AnimationBindPoseBridge` weapon mount → bind pose; conversation VM `elif requires` inventory branch |
+| **Hybrid gates** | Optional `FUSE_HYBRID_GATES_WAVE16` assertions for Path/Timer/bone-motion stubs |
+
 ---
 
 ## 8. Related docs

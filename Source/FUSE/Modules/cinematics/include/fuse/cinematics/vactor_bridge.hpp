@@ -46,6 +46,7 @@ public:
                               float mount_yaw_deg = 0.f);
     /// Apply ShapeBase bone attach offset (VActor bone slot ore without DTS skeleton).
     void apply_shapebase_bone_attach(const std::string& actor_id, const std::string& bone_name);
+    void sync_bone_attach_from_timeline(const Timeline& timeline);
     void sync_bound_objects();
     void sync_motion_from_timeline(const Timeline& timeline);
 
@@ -56,6 +57,8 @@ public:
     u32 unmountCount() const { return m_unmountCount; }
     u32 shapebaseAttachCount() const { return m_shapebaseAttachCount; }
     u32 shapebaseBoneAttachCount() const { return m_shapebaseBoneAttachCount; }
+    u32 boneMotionSyncCount() const { return m_boneMotionSyncCount; }
+    const std::string& bone_name_for(const std::string& actor_id) const;
     u32 runtimeAttachCount() const { return m_runtimeAttachCount; }
     bool is_runtime_attached(const std::string& actor_id) const;
     u32 syncCount() const { return m_syncCount; }
@@ -82,6 +85,7 @@ private:
     u32 m_unmountCount = 0;
     u32 m_shapebaseAttachCount = 0;
     u32 m_shapebaseBoneAttachCount = 0;
+    u32 m_boneMotionSyncCount = 0;
     u32 m_runtimeAttachCount = 0;
     u32 m_syncCount = 0;
     u32 m_motionSyncCount = 0;

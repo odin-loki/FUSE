@@ -1,5 +1,6 @@
 #include <fuse/ai/uaisk_file_watch_os.hpp>
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 
@@ -9,6 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #elif defined(__APPLE__)
+#include <chrono>
 #include <sys/stat.h>
 #else
 #include <sys/stat.h>
@@ -125,11 +127,13 @@ bool createOsFileWatch(std::string_view path, OsFileWatchHandle& outHandle) {
         outHandle.inotifyFd = -1;
     }
 #elif defined(__APPLE__)
-    // FSEvents stub — stat poll with backend marker (CoreServices not linked in umbrella build).
+    // FSEvents stub — stat poll with backend marker + coalesce/latency tracking.
     outHandle.backend = OsFileWatchBackend::FSEvents;
     u64 fileSize = 0;
     outHandle.lastModifiedNs = statModifiedNs(outHandle.path, fileSize);
     outHandle.lastSize = fileSize;
+    outHandle.lastPollNs = outHandle.lastModifiedNs;
+    outHandle.fsevents.latencyMs = 16;
     outHandle.active = true;
     return true;
 #endif
@@ -165,6 +169,15 @@ bool pollOsFileWatch(OsFileWatchHandle& handle, OsFileWatchStatus& outStatus) {
 #elif defined(__APPLE__)
     if (handle.backend == OsFileWatchBackend::FSEvents) {
         outStatus.backend = OsFileWatchBackend::FSEvents;
+        const auto now = std::chrono::steady_clock::now();
+        const u64 nowNs = static_cast<u64>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count());
+        if (handle.lastPollNs != 0 && nowNs > handle.lastPollNs) {
+            const u64 deltaMs = (nowNs - handle.lastPollNs) / 1'000'000ull;
+            handle.fsevents.latencyMs = static_cast<u32>(std::min<u64>(deltaMs, 250ull));
+        }
+        handle.lastPollNs = nowNs;
+        outStatus.fsevents = handle.fsevents;
     }
 #endif
 
@@ -175,6 +188,12 @@ bool pollOsFileWatch(OsFileWatchHandle& handle, OsFileWatchStatus& outStatus) {
         outStatus.lastModifiedNs = mtimeNs;
         if (mtimeNs != handle.lastModifiedNs || fileSize != handle.lastSize) {
             changed = true;
+#if defined(__APPLE__)
+            if (handle.backend == OsFileWatchBackend::FSEvents) {
+                ++handle.fsevents.coalescedEventCount;
+                outStatus.fsevents = handle.fsevents;
+            }
+#endif
         }
     }
 

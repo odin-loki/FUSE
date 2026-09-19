@@ -14,6 +14,12 @@ enum class OsFileWatchBackend : u8 {
     FSEvents,
 };
 
+/// macOS FSEvents coalesce/latency stub (CoreServices not linked in umbrella build).
+struct FSEventsWatchStats {
+    u32 coalescedEventCount = 0;
+    u32 latencyMs = 0;
+};
+
 /// OS file-watch status (inotify/FSEvents when portable; stat mtime + content-hash fallback).
 struct OsFileWatchStatus {
     bool exists = false;
@@ -21,6 +27,7 @@ struct OsFileWatchStatus {
     bool changed = false;
     u64 lastModifiedNs = 0;
     OsFileWatchBackend backend = OsFileWatchBackend::StatPoll;
+    FSEventsWatchStats fsevents{};
     std::string content;
     std::string error;
 };
@@ -33,6 +40,8 @@ struct OsFileWatchHandle {
     OsFileWatchBackend backend = OsFileWatchBackend::StatPoll;
     u64 lastModifiedNs = 0;
     u64 lastSize = 0;
+    u64 lastPollNs = 0;
+    FSEventsWatchStats fsevents{};
     bool active = false;
 };
 

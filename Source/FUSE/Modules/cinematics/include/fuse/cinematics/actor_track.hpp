@@ -20,6 +20,7 @@ struct ActorEvent {
     ActorEventKind kind = ActorEventKind::Mount;
     std::string actor_id;
     std::string mount_point;
+    std::string bone_name;
     float mount_yaw_deg = 0.f;
 };
 

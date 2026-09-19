@@ -107,6 +107,22 @@ bool AiTreeProfilePicker::postTreeFileWatchReload(std::string_view watchPath, u3
     return true;
 }
 
+bool AiTreeProfilePicker::postInotifyTreeHotReload(std::string_view watchPath, u32 profileId) {
+    if (watchPath.empty()) {
+        return false;
+    }
+
+    ++m_postCount;
+    m_selectedProfileId = profileId;
+
+    EditorCommand command;
+    command.kind = CommandKind::SetProperty;
+    command.propertyName = "ai.tree_inotify_hot_reload";
+    command.propertyValue = "profile=" + std::to_string(profileId) + ";path=" + std::string(watchPath);
+    m_host.postFromUi(std::move(command));
+    return true;
+}
+
 bool AiTreeProfilePicker::postCodegenReload(std::string_view uaiskModule, std::string_view csText, u32 profileId) {
     if (uaiskModule.empty() || csText.empty()) {
         return false;

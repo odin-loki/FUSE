@@ -14,6 +14,7 @@ struct AfxMissionBody {
     std::vector<std::string> simObjectNames;
     std::vector<std::string> missionInfoKeys;
     std::vector<std::pair<std::string, std::string>> simObjectBodies;
+    std::vector<std::pair<std::string, std::string>> nestedSimObjectBodies;
 };
 
 struct AfxMissionBodyEffect {
@@ -21,7 +22,7 @@ struct AfxMissionBodyEffect {
     std::string effectId;
 };
 
-/// Parse TorqueScript `.mis` body blocks (missionInfo, SimObject declarations).
+/// Parse TorqueScript `.mis` body blocks (missionInfo, SimObject declarations, nested SimObjects).
 [[nodiscard]] bool parse_afx_mission_body_from_mis(const std::string& misText, AfxMissionBody& outBody,
                                                    std::string* errorOut = nullptr);
 

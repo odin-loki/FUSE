@@ -78,6 +78,39 @@ bool appendSimObjectBody(AfxMissionBody& body, const std::string& name, const st
     return true;
 }
 
+u32 parseNestedSimObjectsFromBodyImpl(const std::string& parentName,
+                                      const std::string& bodyText,
+                                      AfxMissionBody& outBody) {
+    u32 nestedCount = 0;
+    std::size_t searchPos = 0;
+    while (searchPos < bodyText.size()) {
+        const std::size_t simPos = bodyText.find("new SimObject(", searchPos);
+        if (simPos == std::string::npos) {
+            break;
+        }
+
+        const std::size_t paren = bodyText.find('(', simPos);
+        const std::size_t close = bodyText.find(')', paren);
+        if (paren == std::string::npos || close == std::string::npos) {
+            break;
+        }
+
+        const std::string nestedName = trim(bodyText.substr(paren + 1, close - paren - 1));
+        const std::size_t braceOpen = bodyText.find('{', close);
+        const std::size_t braceClose = bodyText.find('}', braceOpen);
+        if (braceOpen != std::string::npos && braceClose > braceOpen) {
+            const std::string nestedBody = trim(bodyText.substr(braceOpen, braceClose - braceOpen + 1));
+            outBody.nestedSimObjectBodies.push_back({parentName + "::" + nestedName, nestedBody});
+            appendSimObjectName(outBody, nestedName);
+            appendSimObjectBody(outBody, nestedName, nestedBody);
+            ++nestedCount;
+        }
+
+        searchPos = close + 1;
+    }
+    return nestedCount;
+}
+
 bool appendHook(std::vector<AfxMissionHook>& hooks, const std::string& functionName) {
     if (functionName == "onSpellCast") {
         hooks.push_back({"AFXDemo_Minimal", "on_spell_cast", "fireball"});
@@ -149,10 +182,27 @@ bool parse_afx_mission_body_from_mis(const std::string& misText, AfxMissionBody&
                 appendSimObjectName(outBody, simName);
                 const std::size_t braceOpen = line.find('{', close);
                 if (braceOpen != std::string::npos) {
-                    const std::size_t braceClose = line.rfind('}');
-                    if (braceClose > braceOpen) {
-                        appendSimObjectBody(outBody, simName, trim(line.substr(braceOpen, braceClose - braceOpen + 1)));
+                    std::string blockText = line.substr(braceOpen);
+                    auto countDepth = [](std::string_view text) {
+                        std::size_t depth = 0;
+                        for (char ch : text) {
+                            if (ch == '{') {
+                                ++depth;
+                            } else if (ch == '}' && depth > 0) {
+                                --depth;
+                            }
+                        }
+                        return depth;
+                    };
+                    std::size_t depth = countDepth(blockText);
+                    while (depth > 0 && std::getline(stream, line)) {
+                        blockText.push_back('\n');
+                        blockText += line;
+                        depth = countDepth(blockText);
                     }
+                    const std::string trimmedBlock = trim(blockText);
+                    appendSimObjectBody(outBody, simName, trimmedBlock);
+                    parseNestedSimObjectsFromBodyImpl(simName, trimmedBlock, outBody);
                 }
             }
             continue;
