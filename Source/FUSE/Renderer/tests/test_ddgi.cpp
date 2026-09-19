@@ -3087,3 +3087,24 @@ void testTryReadIrradianceAtIndexRejectReason() {
     testClassifyRejectReasons();
     testPreflightHelpers();
     testTryReadIrradianceAtIndexRejectReason();
+
+// --- deepen additive from deepen-ddgi-b56-guards-87a1 ---
+void testWouldSkipGuards() {
+               "wouldSkip true for unordered sample coords");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(empty, coords),
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipReadIrradianceAtIndex(desc, cache.data(), 8u, 3u),
+               "wouldSkip false for readable cache index");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipReadIrradianceAtIndex(desc, nullptr, 8u, 3u),
+               "wouldSkip true for null cache read");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipReadIrradianceAtIndex(desc, cache.data(), 4u, 3u),
+               "wouldSkip true when cache undersized for full grid read");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSampleAtCoords(desc, coords, cache.data(), 8u),
+               "wouldSkip false for valid trilinear sample preflight");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSampleAtCoords(desc, coords, nullptr, 8u),
+               "wouldSkip true for null cache trilinear preflight");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSampleAtCoords(desc, reversed, cache.data(), 8u),
+               "wouldSkip true for invalid coords trilinear preflight");
+               "wouldSkip true for zero trace update count");
+               "wouldSkip true for zero blend update count");
+               "wouldSkip true for null trace probe indices");
+               "wouldSkip true for null blend probe indices");

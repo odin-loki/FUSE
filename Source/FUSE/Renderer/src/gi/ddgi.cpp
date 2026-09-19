@@ -2579,3 +2579,7 @@ bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelReject
 ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params) {
 bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason) {
     const bool ok = tryCanLaunchProbeBlendKernel(params, local);
+
+// --- deepen additive from deepen-ddgi-b56-guards-87a1 ---
+bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
+    return !tryReadIrradianceAtIndex(desc, cache, cache_count, probe_index, irradiance);

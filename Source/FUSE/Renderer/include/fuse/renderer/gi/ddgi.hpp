@@ -839,3 +839,6 @@ bool tryCanScheduleProbeUpdates(u32 frame_index,
 
 // --- deepen additive from deepen-b56-ddgi-guards-9944 ---
     static bool preflightBuildProbeSampleCoords(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-b56-guards-87a1 ---
+bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
