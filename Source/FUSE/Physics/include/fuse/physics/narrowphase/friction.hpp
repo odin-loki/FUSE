@@ -198,3 +198,7 @@ bool should_skip_friction_basis_deepen_preflight(
 struct WarmStartFrictionPreflight {
 WarmStartFrictionPreflight preflight_warm_start_friction(
 bool should_skip_warm_start_friction(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-6e88 ---
+struct FrictionBasisEnsurePreflight {
+FrictionBasisEnsurePreflight preflight_friction_basis_ensure(

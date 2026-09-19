@@ -2319,3 +2319,39 @@ void testWarmStartFrictionPreflightGuards() {
     const fuse::physics::narrowphase::NarrowphasePreflight preflight =
             clean, fuse::physics::narrowphase::ManifoldPruneRejectReason::None),
             fresh, fuse::physics::narrowphase::FrictionBasisRejectReason::None),
+
+// --- deepen additive from b4-narrowphase-deepen-guards-6e88 ---
+void testContactPairZeroInvMassDeepenGuards() {
+            fuse::physics::narrowphase::ContactPairRejectReason::ZeroInvMass,
+            fuse::physics::narrowphase::ContactPairRejectReason::ZeroInvMass),
+    expectTrue(emptyPreflight.skipped, "batch preflight skips empty pair list");
+    expectTrue(!emptyPreflight.can_dispatch(), "batch preflight cannot dispatch empty list");
+    expectTrue(rejectedPreflight.skipped, "batch preflight skips all-rejected pairs");
+    expectTrue(rejectedPreflight.stats.rejectedCount == 1u, "batch preflight counts rejected pair");
+    expectTrue(!mixedPreflight.skipped, "batch preflight does not skip mixed batch");
+    expectTrue(mixedPreflight.can_dispatch(), "batch preflight can dispatch mixed batch");
+    expectTrue(mixedPreflight.stats.dispatchableCount == 1u, "batch preflight counts dispatchable pair");
+void testManifoldGeneratePreflightGuards() {
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_generate_contact_manifold(empty);
+    expectTrue(emptyPreflight.skipped, "generate preflight skips empty manifold");
+    expectTrue(!emptyPreflight.can_generate(), "generate preflight cannot generate empty manifold");
+    const auto readyPreflight = fuse::physics::narrowphase::preflight_generate_contact_manifold(ready);
+    expectTrue(!readyPreflight.skipped, "generate preflight does not skip ready manifold");
+    expectTrue(readyPreflight.can_generate(), "generate preflight can generate penetrating manifold");
+    expectTrue(readyPreflight.needsFrictionBasis, "generate preflight needs friction basis");
+    expectTrue(!readyPreflight.needsPruning, "generate preflight reports no pruning for clean manifold");
+void testManifoldPruneChainPreflightGuards() {
+void testManifoldFinalizeChainGuards() {
+    const auto chainPreflight =
+    expectTrue(!chainPreflight.skipped, "finalize chain preflight does not skip detected manifold");
+    expectTrue(chainPreflight.can_finalize(), "finalize chain preflight can finalize detected manifold");
+void testFrictionBasisEnsurePreflightGuards() {
+    const auto needsPreflight = fuse::physics::narrowphase::preflight_friction_basis_ensure(needsBuild);
+    expectTrue(!needsPreflight.skipped, "ensure preflight does not skip valid manifold");
+    expectTrue(needsPreflight.needsEnsure, "ensure preflight needs build without cached basis");
+    const auto stalePreflight = fuse::physics::narrowphase::preflight_friction_basis_ensure(needsBuild);
+    expectTrue(stalePreflight.stale, "ensure preflight flags stale basis");
+    expectTrue(!stalePreflight.can_skip_ensure(), "ensure preflight cannot skip stale basis");
+    testManifoldGeneratePreflightGuards();
+    testManifoldPruneChainPreflightGuards();
+    testFrictionBasisEnsurePreflightGuards();

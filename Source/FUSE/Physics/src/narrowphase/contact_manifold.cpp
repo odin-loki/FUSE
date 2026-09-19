@@ -667,3 +667,11 @@ ManifoldFinalizeDeepenPreflight preflight_manifold_finalize_deepen(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-1764 ---
     if (preflight.skipped || preflight.reason != ManifoldPruneRejectReason::None) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-6e88 ---
+ManifoldGeneratePreflight preflight_generate_contact_manifold(
+    ManifoldGeneratePreflight preflight{};
+ManifoldPruneChainPreflight preflight_manifold_prune_chain(
+    ManifoldPruneChainPreflight preflight{};
+ManifoldFinalizeChainPreflight preflight_manifold_finalize_chain(
+    ManifoldFinalizeChainPreflight preflight{};

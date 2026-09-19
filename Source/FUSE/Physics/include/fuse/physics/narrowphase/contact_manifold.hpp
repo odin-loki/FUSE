@@ -315,3 +315,13 @@ bool can_finalize_with_preflight(const ManifoldFinalizePreflight& preflight);
 // --- deepen additive from deepen-b4-narrowphase-guards-1468 ---
 struct ManifoldFinalizeDeepenPreflight {
 ManifoldFinalizeDeepenPreflight preflight_manifold_finalize_deepen(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-6e88 ---
+struct ManifoldGeneratePreflight {
+ManifoldGeneratePreflight preflight_generate_contact_manifold(
+struct ManifoldPruneChainPreflight {
+ManifoldPruneChainPreflight preflight_manifold_prune_chain(
+struct ManifoldFinalizeChainPreflight {
+    ManifoldPruneChainPreflight prune{};
+    ManifoldGeneratePreflight generate{};
+ManifoldFinalizeChainPreflight preflight_manifold_finalize_chain(

@@ -369,3 +369,8 @@ bool should_skip_warm_start_friction(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-ae90 ---
     return should_skip_friction_basis_preflight(manifold, epsilon);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-6e88 ---
+FrictionBasisEnsurePreflight preflight_friction_basis_ensure(
+    FrictionBasisEnsurePreflight preflight{};
+        return !should_skip_friction_tangents(manifold);

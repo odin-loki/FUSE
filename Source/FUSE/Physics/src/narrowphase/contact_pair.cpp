@@ -747,3 +747,7 @@ bool should_skip_contact_pair_deepen2_dispatch(
 // --- deepen additive from deepen-b4-narrowphase-guards-b463 ---
 ContactPairBatchPreflight preflight_contact_pair_batch(
     ContactPairBatchPreflight preflight{};
+
+// --- deepen additive from b4-narrowphase-deepen-guards-6e88 ---
+    case ContactPairRejectReason::ZeroInvMass:
+        return ContactPairRejectReason::ZeroInvMass;
