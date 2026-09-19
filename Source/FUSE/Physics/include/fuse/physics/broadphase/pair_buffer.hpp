@@ -496,3 +496,6 @@ struct PairBufferSlotReservationPreflight {
     PairBufferSlotReservationRejectReason reason = PairBufferSlotReservationRejectReason::None;
     bool canReserve() const { return reason == PairBufferSlotReservationRejectReason::None; }
 PairBufferSlotReservationPreflight preflightPairBufferSlotReservation(
+
+// --- deepen additive from deepen-b4-broadphase-guards-c372 ---
+    bool needsWork() const { return reason == PairBufferCompactAndClampRejectReason::None; }

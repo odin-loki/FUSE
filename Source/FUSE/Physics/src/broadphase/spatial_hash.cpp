@@ -1137,3 +1137,13 @@ RefineDedupeBroadphasePreflight preflightRefineDedupeBroadphase(
 
 // --- deepen additive from deepen-b4-broadphase-guards-b64e ---
     case CellSpanRejectReason::ExceedsMaxSpan:
+
+// --- deepen additive from deepen-b4-broadphase-guards-c372 ---
+BroadphaseMergeBufferPreflight preflightBroadphaseMergeIntoBuffer(
+    BroadphaseMergeBufferPreflight preflight{};
+    const BroadphaseMergePreflight scenePreflight = preflightBroadphaseMerge(bodies, shapes);
+    preflight.sceneReason = scenePreflight.reason;
+    preflight.emptyPlaneBodies = scenePreflight.emptyPlaneBodies;
+    preflight.emptyDynamicBodies = scenePreflight.emptyDynamicBodies;
+    return !preflightBroadphaseMergeIntoBuffer(bodies, shapes, buffer).canMergeIntoBuffer();
+    return preflightBroadphaseMergeIntoBuffer(bodies, shapes, buffer).canMergeIntoBuffer();

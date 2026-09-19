@@ -910,3 +910,9 @@ PairBufferSlotReservationPreflight preflightPairBufferSlotReservation(
     preflight.exceedsCapacity = preflight.reason == PairBufferSlotReservationRejectReason::ExceedsCapacity;
     return !preflightPairBufferSlotReservation(buffer, slotCount).canReserve();
     return preflightPairBufferSlotReservation(buffer, slotCount).canReserve();
+
+// --- deepen additive from deepen-b4-broadphase-guards-c372 ---
+    if (!preflightPairBufferCompactAndClamp(*this).needsWork()) {
+    if (!preflightPairBufferCompaction(buffer).needsCompaction() &&
+        !preflightPairBufferClamp(buffer).needsClamp()) {
+    return preflightPairBufferCompactAndClamp(buffer).needsWork();

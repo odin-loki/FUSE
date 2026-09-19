@@ -1239,3 +1239,9 @@ FUSE_PHYSICS_INLINE CellSpanPreflight2D preflightCellSpan(const CellRange2& rang
     CellSpanPreflight2D preflight{};
     return cellSpanRejectReason(range, maxSpanPerAxis) != CellSpanRejectReason::ExceedsMaxSpan;
     return maxSpanPerAxis > 0u && cellSpanRejectReason(range, maxSpanPerAxis) == CellSpanRejectReason::ExceedsMaxSpan;
+
+// --- deepen additive from deepen-b4-broadphase-guards-c372 ---
+struct BroadphaseMergeBufferPreflight {
+    BroadphaseMergeRejectReason sceneReason = BroadphaseMergeRejectReason::None;
+        return sceneReason == BroadphaseMergeRejectReason::None && !bufferFull;
+BroadphaseMergeBufferPreflight preflightBroadphaseMergeIntoBuffer(

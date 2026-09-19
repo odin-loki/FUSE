@@ -2940,3 +2940,17 @@ void testRefineDedupeMergePreflightCounts() {
     testPairBufferSlotReservationPreflightGuards();
     testCellSpanPreflightGuards();
     testRefineDedupeMergePreflightCounts();
+
+// --- deepen additive from deepen-b4-broadphase-guards-c372 ---
+        fuse::physics::broadphase::preflightPairBufferWriteSlot(buffer, 0u, 1u, 1u);
+void testBroadphaseMergeBufferPreflightGuards() {
+    const fuse::physics::broadphase::BroadphaseMergeBufferPreflight emptyPreflight =
+        fuse::physics::broadphase::preflightBroadphaseMergeIntoBuffer(bodies, shapes, buffer);
+    expectTrue(!emptyPreflight.canMergeIntoBuffer(), "empty scene cannot merge into buffer");
+    const fuse::physics::broadphase::BroadphaseMergeBufferPreflight mergeablePreflight =
+    expectTrue(mergeablePreflight.canMergeIntoBuffer(), "mergeable scene can merge into open buffer");
+    const fuse::physics::broadphase::BroadphaseMergeBufferPreflight fullPreflight =
+    expectTrue(fullPreflight.bufferFull, "full buffer marks bufferFull in merge preflight");
+    expectTrue(!fullPreflight.canMergeIntoBuffer(), "full buffer cannot accept merge pairs");
+void testRefinableBroadphasePairCountGuards() {
+    testBroadphaseMergeBufferPreflightGuards();
