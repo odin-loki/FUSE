@@ -616,26 +616,99 @@ const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason) {
         return "SingleOccupant";
 
 const char* cellCapacityInsertRejectReasonName(CellCapacityInsertRejectReason reason) {
-    switch (reason) {
     case CellCapacityInsertRejectReason::None:
-        return "None";
     case CellCapacityInsertRejectReason::OutOfRangeBody:
         return "OutOfRangeBody";
     case CellCapacityInsertRejectReason::ExceedsOccupancy:
         return "ExceedsOccupancy";
-    }
-    return "Unknown";
-const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason) {
-    case CellPairGenRejectReason::None:
     case CellPairGenRejectReason::SingletonOccupant:
         return "SingletonOccupant";
     case CellCapacityInsertRejectReason::EmptyRange:
-        return "EmptyRange";
     case CellCapacityInsertRejectReason::ExceedsBudget:
-        return "ExceedsBudget";
 
-    switch (reason) {
-        return "None";
+    case CellPairGenRejectReason::TooFewOccupants:
+        return "TooFewOccupants";
+    case CellPairGenRejectReason::SingleUniqueBody:
+        return "SingleUniqueBody";
+
+    case ShapeCellInsertRejectReason::OutOfRangeBody:
+    case ShapeCellInsertRejectReason::OccupancyRejected:
+        return "OccupancyRejected";
+
+u32 countUniqueCellOccupants(const std::vector<u32>& occupants) {
+    if (occupants.empty()) {
+        return 0u;
+    std::vector<u32> uniqueBodies = occupants;
+    std::sort(uniqueBodies.begin(), uniqueBodies.end());
+    uniqueBodies.erase(std::unique(uniqueBodies.begin(), uniqueBodies.end()), uniqueBodies.end());
+    return static_cast<u32>(uniqueBodies.size());
+
+u32 countPairsForCellOccupants(const std::vector<u32>& occupants) {
+    if (cellPairGenRejectReason(occupants) != CellPairGenRejectReason::None) {
+    return estimatePairCountForUniqueBodies(countUniqueCellOccupants(occupants));
+
+CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants) {
+    if (occupants.size() < 2u) {
+        return CellPairGenRejectReason::TooFewOccupants;
+    if (countUniqueCellOccupants(occupants) < 2u) {
+        return CellPairGenRejectReason::SingleUniqueBody;
+    return CellPairGenRejectReason::None;
+
+bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenRejectReason expected) {
+    return cellPairGenRejectReason(occupants) == expected;
+
+CellPairGenPreflight preflightCellPairGeneration(const std::vector<u32>& occupants) {
+    CellPairGenPreflight preflight{};
+    preflight.reason = cellPairGenRejectReason(occupants);
+    preflight.tooFewOccupants = preflight.reason == CellPairGenRejectReason::TooFewOccupants;
+    preflight.singleUniqueBody = preflight.reason == CellPairGenRejectReason::SingleUniqueBody;
+    preflight.uniqueBodyCount = countUniqueCellOccupants(occupants);
+    preflight.pairCount = preflight.canGenerate()
+        ? estimatePairCountForUniqueBodies(preflight.uniqueBodyCount)
+        : 0u;
+    return preflight;
+
+bool canSkipCellPairGeneration(const std::vector<u32>& occupants) {
+    return !preflightCellPairGeneration(occupants).canGenerate();
+
+bool shouldRunCellPairGeneration(const std::vector<u32>& occupants) {
+    return preflightCellPairGeneration(occupants).canGenerate();
+
+ShapeCellInsertRejectReason shapeCellInsertRejectReason(
+    u32 bodyIndex,
+    u32 bodyCount,
+    const CellRange3& range,
+    u32 maxOccupancy) {
+    if (bodyCount > 0u && bodyIndex >= bodyCount) {
+        return ShapeCellInsertRejectReason::OutOfRangeBody;
+    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        return ShapeCellInsertRejectReason::OccupancyRejected;
+    return ShapeCellInsertRejectReason::None;
+
+    const CellRange2& range,
+
+bool shapeCellInsertRejectsForReason(
+    u32 maxOccupancy,
+    ShapeCellInsertRejectReason expected) {
+    return shapeCellInsertRejectReason(bodyIndex, bodyCount, range, maxOccupancy) == expected;
+
+
+ShapeCellInsertPreflight preflightShapeCellInsert(
+    ShapeCellInsertPreflight preflight{};
+    preflight.reason = shapeCellInsertRejectReason(bodyIndex, bodyCount, range, maxOccupancy);
+    preflight.outOfRangeBody = preflight.reason == ShapeCellInsertRejectReason::OutOfRangeBody;
+    preflight.occupancyRejected = preflight.reason == ShapeCellInsertRejectReason::OccupancyRejected;
+
+
+bool canSkipShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy) {
+    return !preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
+
+bool canSkipShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy) {
+
+bool shouldRunShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy) {
+    return preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
+
+bool shouldRunShapeCellInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy) {
 
 const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
     switch (reason) {
@@ -1042,9 +1115,9 @@ u32 countPairsForCell(const std::vector<u32>& occupants) {
     if (!shouldRunCellPairGeneration(occupantCount, uniqueCount)) {
     return estimateCellPairCount(uniqueCount);
 
-}
 
-        return 0u;
+
+    return countPairsForCellOccupants(occupants);
 
         return;
     }
@@ -1178,6 +1251,7 @@ void populateShapeCells(
         if (!shouldRunCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy)) {
         if (canSkipCellCapacityInsert(range, maxOccupancy)) {
         if (!shouldRunCellCapacityInsert(range, maxOccupancy)) {
+        if (!preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert()) {
             return;
         return ShapeCellInsertRejectReason::None;
 
@@ -1346,6 +1420,7 @@ void populateShapeCells(
     if (!shouldRunCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy)) {
     if (canSkipCellCapacityInsert(range, maxOccupancy)) {
     if (!shouldRunCellCapacityInsert(range, maxOccupancy)) {
+    if (!preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert()) {
         return;
     if (isEmptyCellRange(range)) {
     if (params.maxCellOccupancyPerShape > 0u) {
