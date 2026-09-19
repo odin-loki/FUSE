@@ -3605,3 +3605,24 @@ void testDdgiMandatoryPreflightGuards() {
                "tryPreflightProbeKernelLaunch rejects zero rays per probe");
     testDdgiTrilinearPreflightGuards();
     testDdgiMandatoryPreflightGuards();
+
+// --- deepen additive from deepen-ddgi-guards-1537 ---
+void testDdgiDeepenGuardPass() {
+    fuse::renderer::ProbeScheduleRejectReason scheduleReason = fuse::renderer::ProbeScheduleRejectReason::None;
+               "index-only preflightCacheIndexLookup succeeds for valid index");
+               "index-only classifyCacheIndexReject out_of_range_probe_index");
+               "index-only preflightCacheIndexLookup rejects OOB index");
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearProbeSample(desc, built, cache.data(), 8u),
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, built, cache.data(), 8u),
+               "wouldSkipTrilinearProbeSample false for valid coords");
+                   desc, {0.5f, 0.5f, 0.5f}, cache.data(), 8u, &preflightCoords),
+               "preflightTrilinearProbeIrradiance succeeds for interior sample");
+               "preflightTrilinearProbeIrradiance returns built coords");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(desc, built, nullptr, 8u),
+    expectTrue(!fuse::renderer::ddgi_util::preflightTrilinearProbeSample(desc, built, cache.data(), 4u),
+               "preflightTrilinearProbeSample rejects undersized cache");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(empty, built, cache.data(), 8u) ==
+               "preflightTrilinearProbeIrradiance rejects empty grid");
+    expectTrue(!fuse::renderer::gi::preflightProbeBlendKernelLaunch(nullIndices),
+               "preflightProbeBlendKernelLaunch rejects null indices");
+                   fuse::renderer::ProbeSampleCoordsRejectReason::NotSampleableGrid),
