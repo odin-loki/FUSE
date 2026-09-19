@@ -98,6 +98,29 @@ void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon 
 /// Returns true when the contact normal is valid but not unit length (B4.4 deepen pass).
 bool contact_normal_needs_normalize(const ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
 
+/// Why friction-basis rebuild would early-out (B4.4 deepen guard pass).
+enum class FrictionBasisRebuildRejectReason : u8 {
+    None = 0,
+    EmptyManifold,
+    NoValidNormal,
+    CanReuseBasis,
+};
+
+const char* friction_basis_rebuild_reject_reason_name(FrictionBasisRebuildRejectReason reason);
+
+FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+bool friction_basis_rebuild_rejects_for_reason(
+    const ContactManifold& manifold,
+    FrictionBasisRebuildRejectReason expected,
+    f32 epsilon = 1e-4f);
+
+bool should_run_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
 struct FrictionBasisPreflight {
     bool skipped = false;
