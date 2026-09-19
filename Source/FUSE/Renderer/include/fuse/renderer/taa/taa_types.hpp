@@ -431,3 +431,9 @@ bool preflightTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 ob
 bool tryPreflightTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration,
 bool preflightTaaResolveWithBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
 bool tryPreflightTaaResolveWithBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+
+// --- deepen additive from deepen-b59-taa-guards-2589 ---
+bool preflightTaaResolveBlendPolicy(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+bool tryPreflightTaaResolveBlendPolicy(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+bool tryPreflightTaaResolveCombined(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                    TaaResolveSkipReason& skipReason, TaaResolveBlendRejectReason& blendReason);

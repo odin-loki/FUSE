@@ -770,3 +770,11 @@ bool preflightTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistoryBuf
     return preflightTaaResolveWithBlendWeights(desc, history, skipReason, blendReason);
 bool tryPreflightTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
     return tryPreflightTaaResolveWithBlendWeights(desc, history, skipReason, blendReason);
+
+// --- deepen additive from deepen-b59-taa-guards-2589 ---
+bool preflightTaaResolveBlendPolicy(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+bool tryPreflightTaaResolveBlendPolicy(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+    return !preflightTaaResolveBlendPolicy(desc, history);
+bool tryPreflightTaaResolveCombined(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+    if (taaResolveSkipReasonIsBlocking(skipReason)) {
+    return tryPreflightTaaResolveBlendPolicy(desc, history, blendReason);

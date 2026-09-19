@@ -496,3 +496,13 @@ bool preflightTaaJitterAlignment(u32 frameIndex, u32 slot, u32 monotonicFrame, u
 bool tryPreflightTaaJitterAlignment(u32 frameIndex, u32 slot, u32 monotonicFrame, u32 sequenceLength,
     return preflightTaaJitterAlignment(frameIndex, slot, monotonicFrame, sequenceLength, &reason);
     return !preflightTaaJitterAlignment(frameIndex, slot, monotonicFrame, sequenceLength);
+
+// --- deepen additive from deepen-b59-taa-guards-2589 ---
+    case TaaJitterGuardRejectReason::MisalignedSlot:
+TaaJitterGuardRejectReason classifyTaaJitterSyncAlignmentReject(u32 frameIndex, u32 slot, u32 sequenceLength) {
+        return TaaJitterGuardRejectReason::MisalignedSlot;
+bool preflightTaaJitterSyncAlignment(u32 frameIndex, u32 slot, u32 sequenceLength,
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterSyncAlignmentReject(frameIndex, slot, sequenceLength);
+bool tryPreflightTaaJitterSyncAlignment(u32 frameIndex, u32 slot, u32 sequenceLength,
+    return preflightTaaJitterSyncAlignment(frameIndex, slot, sequenceLength, &reason);
+    return !preflightTaaJitterSyncAlignment(frameIndex, slot, sequenceLength);

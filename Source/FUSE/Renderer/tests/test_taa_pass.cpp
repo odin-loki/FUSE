@@ -4195,3 +4195,41 @@ void testResolvePipelineBlendPreflights() {
                "tryPreflightTaaResolvePipeline passes for valid desc");
     expectTrue(pass->preflightResolveWithBlendWeights(desc, &skipReason, &blendReason),
     testResolvePipelineBlendPreflights();
+
+// --- deepen additive from deepen-b59-taa-guards-2589 ---
+void testJitterSyncAlignmentGuards() {
+    expectTrue(fuse::renderer::classifyTaaJitterSyncAlignmentReject(5u, 5u, 8u) ==
+    expectTrue(fuse::renderer::classifyTaaJitterSyncAlignmentReject(13u, 5u, 8u) ==
+    expectTrue(fuse::renderer::classifyTaaJitterSyncAlignmentReject(5u, 6u, 8u) ==
+                   fuse::renderer::TaaJitterGuardRejectReason::MisalignedSlot,
+    expectTrue(fuse::renderer::classifyTaaJitterSyncAlignmentReject(0u, 0u, 0u) ==
+    expectTrue(fuse::renderer::preflightTaaJitterSyncAlignment(5u, 5u, 8u, &rejectReason),
+               "preflightTaaJitterSyncAlignment passes for matching slot");
+    expectTrue(fuse::renderer::tryPreflightTaaJitterSyncAlignment(5u, 5u, 8u, rejectReason),
+               "tryPreflightTaaJitterSyncAlignment passes for matching slot");
+    expectTrue(!fuse::renderer::preflightTaaJitterSyncAlignment(5u, 6u, 8u, &rejectReason),
+               "preflightTaaJitterSyncAlignment rejects mismatched slot");
+    expectTrue(rejectReason == fuse::renderer::TaaJitterGuardRejectReason::MisalignedSlot,
+                               fuse::renderer::TaaJitterGuardRejectReason::MisalignedSlot),
+    expectTrue(pass->preflightJitterSyncAlignment(7u, &rejectReason),
+               "pass preflightJitterSyncAlignment passes after sync");
+    expectTrue(pass->tryPreflightJitterSync(7u, rejectReason), "pass tryPreflightJitterSync passes");
+    expectTrue(pass->tryPreflightJitterAdvance(rejectReason), "pass tryPreflightJitterAdvance passes");
+               "empty history warmup tryPreflight reason is NotReady");
+    expectTrue(!pass->tryPreflightHistoryWarmup(reason), "pass tryPreflightHistoryWarmup fails before resolve");
+               "pass warmup tryPreflight reason is NotWarm before resolve");
+    expectTrue(pass->tryPreflightHistoryWarmup(reason), "pass tryPreflightHistoryWarmup passes after resolve");
+void testResolveBlendPolicyAndCombinedPreflight() {
+    expectTrue(fuse::renderer::preflightTaaResolveBlendPolicy(desc, history, &blendReason),
+    expectTrue(fuse::renderer::tryPreflightTaaResolveBlendPolicy(desc, history, blendReason),
+               "tryPreflightTaaResolveBlendPolicy passes for warmup");
+    expectTrue(fuse::renderer::tryPreflightTaaResolveCombined(desc, history, skipReason, blendReason),
+               "tryPreflightTaaResolveCombined passes for valid warmup resolve");
+    expectTrue(fuse::renderer::preflightTaaResolveBlendPolicy(desc, history),
+    expectTrue(pass->tryPreflightResolveBlendPolicy(desc, blendReason),
+               "pass tryPreflightResolveBlendPolicy passes before resolve");
+    expectTrue(pass->tryPreflightResolveCombined(desc, skipReason, blendReason),
+               "pass tryPreflightResolveCombined passes before resolve");
+    expectTrue(pass->tryPreflightResolveBlendWeights(desc, blendReason),
+               "pass tryPreflightResolveBlendWeights passes before resolve");
+    testResolveBlendPolicyAndCombinedPreflight();
