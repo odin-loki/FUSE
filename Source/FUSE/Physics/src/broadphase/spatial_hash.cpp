@@ -508,12 +508,36 @@ bool canSkipDedupeBroadphase(const PairBufferSoA& buffer) {
     return !shouldRunDedupeBroadphase(buffer);
 }
 
+RefineAndDedupeBroadphasePreflight preflightRefineAndDedupeBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    RefineAndDedupeBroadphasePreflight preflight{};
+    preflight.refine = preflightRefineBroadphase(bodies, shapes, buffer);
+    preflight.dedupe = preflightDedupeBroadphase(buffer);
+    return preflight;
+}
+
+bool canSkipRefineAndDedupeBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    return !preflightRefineAndDedupeBroadphase(bodies, shapes, buffer).canRunEither();
+}
+
+bool shouldRunRefineAndDedupeBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    return preflightRefineAndDedupeBroadphase(bodies, shapes, buffer).canRunEither();
+}
+
 BroadphaseMergePreflight preflightBroadphaseMerge(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     BroadphaseMergePreflight preflight{};
-    bool hasPlaneBodies = false;
-    bool hasDynamicBodies = false;
+    u32 planeBodyCount = 0u;
+    u32 dynamicBodyCount = 0u;
 
     for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
         const u32 bodyIndex = shapes.bodyIndices[shapeIndex];
@@ -522,17 +546,16 @@ BroadphaseMergePreflight preflightBroadphaseMerge(
         }
         const CollisionShapeType type = static_cast<CollisionShapeType>(shapes.types[shapeIndex]);
         if (type == CollisionShapeType::Plane) {
-            hasPlaneBodies = true;
+            ++planeBodyCount;
         } else if ((bodies.flags[bodyIndex] & RB_STATIC) == 0) {
-            hasDynamicBodies = true;
-        }
-        if (hasPlaneBodies && hasDynamicBodies) {
-            break;
+            ++dynamicBodyCount;
         }
     }
 
-    preflight.emptyPlaneBodies = !hasPlaneBodies;
-    preflight.emptyDynamicBodies = !hasDynamicBodies;
+    preflight.planeBodyCount = planeBodyCount;
+    preflight.dynamicBodyCount = dynamicBodyCount;
+    preflight.emptyPlaneBodies = planeBodyCount == 0u;
+    preflight.emptyDynamicBodies = dynamicBodyCount == 0u;
     if (preflight.emptyPlaneBodies) {
         preflight.reason = BroadphaseMergeRejectReason::EmptyPlaneBodies;
     } else if (preflight.emptyDynamicBodies) {
@@ -602,6 +625,12 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     preflight.reason = mergePairsIntoBufferRejectReason(pairs, buffer);
     preflight.emptyPairs = preflight.reason == MergePairsIntoBufferRejectReason::EmptyPairs;
     preflight.bufferFull = preflight.reason == MergePairsIntoBufferRejectReason::BufferFull;
+    preflight.remainingCapacity = buffer.remainingCapacity();
+    for (const CandidatePair& pair : pairs) {
+        if (preflightPairBufferPush(buffer, pair.bodyA, pair.bodyB).canPush()) {
+            ++preflight.mergeablePairCount;
+        }
+    }
     return preflight;
 }
 
