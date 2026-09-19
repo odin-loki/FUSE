@@ -1989,6 +1989,72 @@ bool FroxelGridLayout::preflightScreenMappingReady(f32 screenX,
     return !screenMappingRejectReasonIsBlocking(reject);
 }
 
+SampleCoordRejectReason FroxelGridLayout::classifySampleCoordReject(const FroxelSampleCoords& coords,
+                                                                  const FroxelGridDesc& desc) {
+    SampleCoordRejectReason reason = SampleCoordRejectReason::None;
+    tryPreflightSampleCoords(coords, desc, reason);
+    return reason;
+}
+
+ScreenMappingRejectReason FroxelGridLayout::classifyScreenMappingReject(f32 screenX,
+                                                                      f32 screenY,
+                                                                      f32 viewDepth,
+                                                                      const FroxelGridDesc& desc,
+                                                                      const FroxelCameraDesc& camera) {
+    ScreenMappingRejectReason reason = ScreenMappingRejectReason::None;
+    FroxelSampleCoords coords{};
+    tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, reason);
+    return reason;
+}
+
+bool FroxelGridLayout::preflightSampleCoords(const FroxelSampleCoords& coords,
+                                            const FroxelGridDesc& desc,
+                                            SampleCoordRejectReason* reason) {
+    const SampleCoordRejectReason reject = classifySampleCoordReject(coords, desc);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return !sampleCoordRejectReasonIsBlocking(reject);
+}
+
+bool FroxelGridLayout::preflightScreenDepthMapping(f32 screenX,
+                                                   f32 screenY,
+                                                   f32 viewDepth,
+                                                   const FroxelGridDesc& desc,
+                                                   const FroxelCameraDesc& camera,
+                                                   FroxelSampleCoords* outCoords,
+                                                   ScreenMappingRejectReason* reason) {
+    FroxelSampleCoords coords{};
+    ScreenMappingRejectReason rejectReason = ScreenMappingRejectReason::None;
+    tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, rejectReason);
+    if (outCoords != nullptr) {
+        *outCoords = coords;
+    }
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    }
+    return !screenMappingRejectReasonIsBlocking(rejectReason);
+}
+
+bool FroxelGridLayout::preflightScreenDepthToFroxelIndex(f32 screenX,
+                                                         f32 screenY,
+                                                         f32 viewDepth,
+                                                         const FroxelGridDesc& desc,
+                                                         const FroxelCameraDesc& camera,
+                                                         u32* outFroxelIndex,
+                                                         ScreenMappingRejectReason* reason) {
+    u32 froxelIndex = 0u;
+    ScreenMappingRejectReason rejectReason = ScreenMappingRejectReason::None;
+    tryMapScreenDepthToFroxelIndex(screenX, screenY, viewDepth, desc, camera, froxelIndex, rejectReason);
+    if (outFroxelIndex != nullptr) {
+        *outFroxelIndex = froxelIndex;
+    }
+    if (reason != nullptr) {
+        *reason = rejectReason;
+    }
+    return !screenMappingRejectReasonIsBlocking(rejectReason);
+}
+
 const char* screenMappingRejectReasonLabel(ScreenMappingRejectReason reason) {
     switch (reason) {
     case ScreenMappingRejectReason::None:
@@ -2256,6 +2322,18 @@ bool froxelBilinearSampleRejectReasonIsBlocking(FroxelBilinearSampleRejectReason
     case FroxelBilinearSampleRejectReason::EmptyGrid:
     case FroxelBilinearSampleRejectReason::InaccessibleGrid:
     case FroxelBilinearSampleRejectReason::InvalidSampleCoords:
+        return true;
+    }
+    return true;
+}
+
+bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason) {
+    switch (reason) {
+    case SampleCoordRejectReason::None:
+    case SampleCoordRejectReason::InvalidWeights:
+        return false;
+    case SampleCoordRejectReason::EmptyGrid:
+    case SampleCoordRejectReason::OutOfBounds:
         return true;
     }
     return true;
@@ -3204,6 +3282,8 @@ bool densityLookupRejectReasonIsBlocking(DensityLookupRejectReason reason) {
     case DensityLookupRejectReason::EmptyGrid:
     case DensityLookupRejectReason::DescMismatch:
     case DensityLookupRejectReason::EmptyStorage:
+    }
+    return true;
 
 const char* densityLookupRejectReasonLabel(DensityLookupRejectReason reason) {
     switch (reason) {
@@ -4974,6 +5054,48 @@ bool wouldSkipDensityLookupAtCoord(const FroxelDensityGrid& grid,
     return !preflightDensityLookupAtCoord(grid, desc, tileX, tileY, sliceZ);
 }
 
+DensityLookupRejectReason classifyDensityLookupReject(const FroxelDensityGrid& grid,
+                                                      const FroxelGridDesc& desc,
+                                                      u32 index) {
+    DensityLookupRejectReason reason = DensityLookupRejectReason::None;
+    tryCanLookupAtIndex(grid, desc, index, reason);
+    return reason;
+}
+
+DensityLookupRejectReason classifyDensityLookupAtCoordReject(const FroxelDensityGrid& grid,
+                                                               const FroxelGridDesc& desc,
+                                                               u32 tileX,
+                                                               u32 tileY,
+                                                               u32 sliceZ) {
+    DensityLookupRejectReason reason = DensityLookupRejectReason::None;
+    tryCanLookupAtCoord(grid, desc, tileX, tileY, sliceZ, reason);
+    return reason;
+}
+
+bool preflightDensityLookup(const FroxelDensityGrid& grid,
+                            const FroxelGridDesc& desc,
+                            u32 index,
+                            DensityLookupRejectReason* reason) {
+    const DensityLookupRejectReason reject = classifyDensityLookupReject(grid, desc, index);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return !densityLookupRejectReasonIsBlocking(reject);
+}
+
+bool preflightDensityLookupAtCoord(const FroxelDensityGrid& grid,
+                                   const FroxelGridDesc& desc,
+                                   u32 tileX,
+                                   u32 tileY,
+                                   u32 sliceZ,
+                                   DensityLookupRejectReason* reason) {
+    const DensityLookupRejectReason reject = classifyDensityLookupAtCoordReject(grid, desc, tileX, tileY, sliceZ);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return !densityLookupRejectReasonIsBlocking(reject);
+}
+
 bool canSampleAtCoords(const FroxelDensityGrid& grid,
                        const FroxelGridDesc& desc,
                        const FroxelSampleCoords& coords) {
@@ -6061,6 +6183,25 @@ bool preflightTrilinearSample(const FroxelDensityGrid& grid,
     return !preflightFroxelTrilinearSample(grid, desc, coords);
 }
 
+FroxelTrilinearSampleRejectReason classifyFroxelTrilinearSampleReject(const FroxelDensityGrid& grid,
+                                                                      const FroxelGridDesc& desc,
+                                                                      const FroxelSampleCoords& coords) {
+    FroxelTrilinearSampleRejectReason reason = FroxelTrilinearSampleRejectReason::None;
+    tryCanTrilinearSampleAtCoords(grid, desc, coords, reason);
+    return reason;
+}
+
+bool preflightFroxelTrilinearSample(const FroxelDensityGrid& grid,
+                                      const FroxelGridDesc& desc,
+                                      const FroxelSampleCoords& coords,
+                                      FroxelTrilinearSampleRejectReason* reason) {
+    const FroxelTrilinearSampleRejectReason reject = classifyFroxelTrilinearSampleReject(grid, desc, coords);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return !froxelTrilinearSampleRejectReasonIsBlocking(reject);
+}
+
 u32 countNonZeroFroxels(const FroxelDensityGrid& grid, f32 epsilon) {
     if (grid.isEmpty()) {
         return 0u;
@@ -6681,6 +6822,25 @@ bool preflightGridDensityReady(const FroxelDensityGrid& grid,
                                const FroxelGridDesc& desc,
                                GridDensityRejectReason* reason,
                                f32 epsilon) {
+    const GridDensityRejectReason reject = classifyGridDensityReject(grid, desc, epsilon);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return !gridDensityRejectReasonIsBlocking(reject);
+}
+
+GridDensityRejectReason classifyGridDensityReject(const FroxelDensityGrid& grid,
+                                                  const FroxelGridDesc& desc,
+                                                  f32 epsilon) {
+    GridDensityRejectReason reason = GridDensityRejectReason::None;
+    tryValidateGridDensity(grid, desc, reason, epsilon);
+    return reason;
+}
+
+bool preflightGridDensity(const FroxelDensityGrid& grid,
+                          const FroxelGridDesc& desc,
+                          GridDensityRejectReason* reason,
+                          f32 epsilon) {
     const GridDensityRejectReason reject = classifyGridDensityReject(grid, desc, epsilon);
     if (reason != nullptr) {
         *reason = reject;
@@ -8675,17 +8835,12 @@ bool preflightFroxelPopulate(const FroxelGridDesc& desc,
     return !froxelPopulateRejectReasonIsBlocking(reject);
 }
 
-bool preflightFroxelPopulate(const FroxelGridDesc& desc,
-    const FroxelPopulateRejectReason reject = classifyFroxelPopulateReject(desc, camera, params);
-        *reason = reject;
-    return !froxelPopulateRejectReasonIsBlocking(reject);
 
 bool wouldSkipFroxelPopulate(const FroxelGridDesc& desc,
     FroxelPopulateRejectReason reason = FroxelPopulateRejectReason::None;
     tryCanPopulateFromAnalyticFog(desc, camera, params, reason);
     return reason;
     return froxelPopulateRejectReasonIsBlocking(classifyFroxelPopulateReject(desc, camera, params));
-}
 
                              const FroxelCameraDesc& camera,
                              const VolumetricFogParams& params,
