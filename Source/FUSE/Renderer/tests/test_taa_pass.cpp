@@ -2458,6 +2458,218 @@ void testTaaPassShouldSkipGuardWrappers() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testJitterSyncAlignmentGuards() {
+    using fuse::renderer::TaaJitterLayout;
+
+    expectTrue(fuse::renderer::classifyTaaJitterSyncAlignmentReject(5u, 5u, 8u) ==
+                   fuse::renderer::TaaJitterGuardRejectReason::None,
+               "matching slot passes sync alignment classify");
+    expectTrue(fuse::renderer::classifyTaaJitterSyncAlignmentReject(13u, 5u, 8u) ==
+                   fuse::renderer::TaaJitterGuardRejectReason::None,
+               "wrapped frame slot passes sync alignment classify");
+    expectTrue(fuse::renderer::classifyTaaJitterSyncAlignmentReject(5u, 6u, 8u) ==
+                   fuse::renderer::TaaJitterGuardRejectReason::MisalignedSlot,
+               "mismatched slot fails sync alignment classify");
+    expectTrue(fuse::renderer::classifyTaaJitterSyncAlignmentReject(0u, 0u, 0u) ==
+                   fuse::renderer::TaaJitterGuardRejectReason::InvalidSequence,
+               "invalid sequence fails sync alignment classify before slot check");
+
+    fuse::renderer::TaaJitterGuardRejectReason rejectReason =
+        fuse::renderer::TaaJitterGuardRejectReason::None;
+    expectTrue(fuse::renderer::preflightTaaJitterSyncAlignment(5u, 5u, 8u, &rejectReason),
+               "preflightTaaJitterSyncAlignment passes for matching slot");
+    expectTrue(rejectReason == fuse::renderer::TaaJitterGuardRejectReason::None,
+               "sync alignment preflight reject reason is None");
+    expectTrue(fuse::renderer::tryPreflightTaaJitterSyncAlignment(5u, 5u, 8u, rejectReason),
+               "tryPreflightTaaJitterSyncAlignment passes for matching slot");
+    expectTrue(!fuse::renderer::preflightTaaJitterSyncAlignment(5u, 6u, 8u, &rejectReason),
+               "preflightTaaJitterSyncAlignment rejects mismatched slot");
+    expectTrue(rejectReason == fuse::renderer::TaaJitterGuardRejectReason::MisalignedSlot,
+               "sync alignment preflight reject reason is MisalignedSlot");
+    expectTrue(fuse::renderer::shouldSkipTaaJitterSyncAlignment(5u, 6u, 8u),
+               "shouldSkipTaaJitterSyncAlignment for mismatched slot");
+    expectTrue(!fuse::renderer::shouldSkipTaaJitterSyncAlignment(5u, 5u, 8u),
+               "should not skip sync alignment for matching slot");
+
+    expectTrue(std::strcmp(fuse::renderer::taaJitterGuardRejectReasonLabel(
+                               fuse::renderer::TaaJitterGuardRejectReason::MisalignedSlot),
+                           "misaligned_slot") == 0,
+               "MisalignedSlot reject label");
+
+    fuse::renderer::TaaJitter jitter;
+    jitter.syncToFrameIndex(5u);
+    expectTrue(jitter.slotAlignedToFrameIndex(5u), "jitter slot aligned after sync");
+    expectTrue(!jitter.slotAlignedToFrameIndex(6u), "jitter slot not aligned to different frame");
+
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 128;
+    passDesc.height = 128;
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    pass->syncJitterToFrameIndex(7u);
+    expectTrue(pass->jitterSlotAlignedToFrameIndex(7u), "pass jitter slot aligned after sync");
+    expectTrue(!pass->shouldSkipJitterSyncAlignment(7u), "pass should not skip sync alignment after sync");
+    expectTrue(pass->preflightJitterSyncAlignment(7u, &rejectReason),
+               "pass preflightJitterSyncAlignment passes after sync");
+    expectTrue(!pass->shouldSkipJitterAdvance(), "pass should not skip jitter advance");
+    expectTrue(pass->tryPreflightJitterSync(7u, rejectReason), "pass tryPreflightJitterSync passes");
+    expectTrue(pass->tryPreflightJitterAdvance(rejectReason), "pass tryPreflightJitterAdvance passes");
+}
+
+void testHistoryWarmupPreflightGuards() {
+    fuse::renderer::TaaHistoryBuffer emptyHistory;
+    expectTrue(fuse::renderer::classifyTaaHistoryWarmupBlock(emptyHistory) ==
+                   fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
+               "empty history warmup block is NotReady");
+    expectTrue(!fuse::renderer::taaHistoryWarmupComplete(emptyHistory),
+               "empty history warmup is not complete");
+    expectTrue(fuse::renderer::shouldSkipTaaHistoryWarmup(emptyHistory),
+               "empty history should skip warmup (needs warmup)");
+
+    fuse::renderer::TaaHistoryReuseBlockReason reason = fuse::renderer::TaaHistoryReuseBlockReason::None;
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryWarmup(emptyHistory, reason),
+               "tryPreflightTaaHistoryWarmup fails for empty history");
+    expectTrue(reason == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
+               "empty history warmup tryPreflight reason is NotReady");
+
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for warmup preflight test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for warmup preflight test");
+    expectTrue(!history.warmupComplete(), "allocated history warmup is not complete");
+    expectTrue(fuse::renderer::classifyTaaHistoryWarmupBlock(history) ==
+                   fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
+               "unwarmed history warmup block is NotWarm");
+    expectTrue(!fuse::renderer::preflightTaaHistoryWarmup(history, &reason),
+               "unwarmed history fails warmup preflight");
+    expectTrue(reason == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
+               "unwarmed history warmup preflight reason is NotWarm");
+
+    history.markResolved();
+    expectTrue(history.warmupComplete(), "warmed history buffer warmup is complete");
+    expectTrue(fuse::renderer::taaHistoryWarmupComplete(history),
+               "taaHistoryWarmupComplete passes after markResolved");
+    expectTrue(fuse::renderer::preflightTaaHistoryWarmup(history, &reason),
+               "warmed history passes warmup preflight");
+    expectTrue(reason == fuse::renderer::TaaHistoryReuseBlockReason::None,
+               "warmed history warmup preflight reason is None");
+    expectTrue(!fuse::renderer::shouldSkipTaaHistoryWarmup(history),
+               "warmed history should not skip warmup");
+
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 64;
+    passDesc.height = 64;
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    expectTrue(pass->init(resources), "TaaPass initialized for warmup preflight test");
+    expectTrue(!pass->historyWarmupComplete(), "pass history warmup not complete before resolve");
+    expectTrue(!pass->tryPreflightHistoryWarmup(reason), "pass tryPreflightHistoryWarmup fails before resolve");
+    expectTrue(reason == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
+               "pass warmup tryPreflight reason is NotWarm before resolve");
+
+    fuse::renderer::TaaResolveDesc resolveDesc{};
+    resolveDesc.width = 64;
+    resolveDesc.height = 64;
+    resolveDesc.surfaces.current_frame = reinterpret_cast<void*>(0x10);
+    resolveDesc.surfaces.output = reinterpret_cast<void*>(0x20);
+    expectTrue(pass->resolveFrame(resolveDesc), "initial resolve completes pass warmup");
+    expectTrue(pass->historyWarmupComplete(), "pass history warmup complete after resolve");
+    expectTrue(pass->tryPreflightHistoryWarmup(reason), "pass tryPreflightHistoryWarmup passes after resolve");
+
+    history.destroy();
+    pass->destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testResolveBlendPolicyAndCombinedPreflight() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for blend policy preflight test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for blend policy preflight test");
+
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x10);
+    desc.surfaces.output = reinterpret_cast<void*>(0x20);
+    desc.params.blend_factor = 0.2f;
+
+    fuse::renderer::TaaResolveBlendRejectReason blendReason =
+        fuse::renderer::TaaResolveBlendRejectReason::None;
+    expectTrue(fuse::renderer::preflightTaaResolveBlendPolicy(desc, history, &blendReason),
+               "warmup blend policy preflight passes");
+    expectTrue(fuse::renderer::tryPreflightTaaResolveBlendPolicy(desc, history, blendReason),
+               "tryPreflightTaaResolveBlendPolicy passes for warmup");
+    expectTrue(!fuse::renderer::shouldSkipTaaResolveBlendPolicy(desc, history),
+               "warmup blend policy should not be skipped");
+
+    fuse::renderer::TaaResolveSkipReason skipReason = fuse::renderer::TaaResolveSkipReason::None;
+    expectTrue(fuse::renderer::tryPreflightTaaResolveCombined(desc, history, skipReason, blendReason),
+               "tryPreflightTaaResolveCombined passes for valid warmup resolve");
+    expectTrue(skipReason == fuse::renderer::TaaResolveSkipReason::None,
+               "combined preflight skip reason is None");
+    expectTrue(blendReason == fuse::renderer::TaaResolveBlendRejectReason::None,
+               "combined preflight blend reason is None");
+    expectTrue(!fuse::renderer::shouldSkipTaaResolveCombined(desc, history),
+               "combined preflight should not skip valid warmup resolve");
+
+    history.markResolved();
+    expectTrue(fuse::renderer::preflightTaaResolveBlendPolicy(desc, history),
+               "steady blend policy preflight passes after warmup");
+    expectTrue(fuse::renderer::tryPreflightTaaResolveCombined(desc, history, skipReason, blendReason),
+               "combined preflight passes after warmup");
+
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 64;
+    passDesc.height = 64;
+    passDesc.params = desc.params;
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    expectTrue(pass->init(resources), "TaaPass initialized for blend policy preflight test");
+    expectTrue(pass->tryPreflightResolveBlendPolicy(desc, blendReason),
+               "pass tryPreflightResolveBlendPolicy passes before resolve");
+    expectTrue(pass->tryPreflightResolveCombined(desc, skipReason, blendReason),
+               "pass tryPreflightResolveCombined passes before resolve");
+    expectTrue(!pass->shouldSkipResolveBlendPolicy(desc),
+               "pass should not skip blend policy before resolve");
+    expectTrue(!pass->shouldSkipResolveCombined(desc),
+               "pass should not skip combined preflight before resolve");
+
+    fuse::renderer::TaaHistoryReuseBlockReason reuseReason =
+        fuse::renderer::TaaHistoryReuseBlockReason::None;
+    expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
+               "pass tryPreflightHistoryReuse fails before warmup");
+    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotWarm,
+               "pass tryPreflightHistoryReuse reason is NotWarm before warmup");
+    expectTrue(pass->tryPreflightResolveBlendWeights(desc, blendReason),
+               "pass tryPreflightResolveBlendWeights passes before resolve");
+
+    history.destroy();
+    pass->destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 } // namespace
 
 int main() {
@@ -2528,6 +2740,9 @@ int main() {
     testJitterShouldSkipAndAdvancePreflight();
     testResolveShouldSkipAndTryPreflight();
     testTaaPassShouldSkipGuardWrappers();
+    testJitterSyncAlignmentGuards();
+    testHistoryWarmupPreflightGuards();
+    testResolveBlendPolicyAndCombinedPreflight();
 
     fuse::core::shutdown();
 
