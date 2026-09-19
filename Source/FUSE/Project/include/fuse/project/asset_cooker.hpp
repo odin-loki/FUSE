@@ -176,6 +176,7 @@ struct CookUpstreamInvalidateEstimate {
 
 
 
+    /// True when reconcile invalidation planning would be a no-op — mirrors `total() == 0` (B7.9 deepen).
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -518,6 +519,7 @@ public:
     /// Non-mutating skip predicates — mirror reconcile estimators (B7.9 deepen).
     /// True when `estimate_reconcile_invalidation(manifest).should_skip()` (B7.9 deepen).
     /// True when `estimate_prune_reconcile().should_skip()` (B7.9 deepen).
+    /// True when prune reconcile would be a no-op — mirrors `estimate_prune_reconcile().should_skip()` (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
