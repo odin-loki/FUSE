@@ -122,6 +122,43 @@ bool preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash, CookHa
     return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
 }
 
+bool preflight_hash_upstream_dependencies(const std::vector<std::string>& dependency_output_paths,
+                                          const CookManifest& manifest,
+                                          CookHashPreflightRejectReason* reason) {
+    if (dependency_output_paths.empty()) {
+        return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
+    }
+
+    bool saw_non_empty = false;
+    for (const std::string& dependency_output : dependency_output_paths) {
+        if (dependency_output.empty()) {
+            continue;
+        }
+        saw_non_empty = true;
+
+        bool found_manifest_entry = false;
+        for (const CookManifestEntry& asset : manifest.assets) {
+            if (asset.output_path != dependency_output) {
+                continue;
+            }
+            found_manifest_entry = true;
+            if (!preflight_hash_file_content(asset.source_path, reason)) {
+                return false;
+            }
+            break;
+        }
+
+        if (!found_manifest_entry) {
+            return set_preflight_reason(reason, CookHashPreflightRejectReason::MissingFile);
+        }
+    }
+
+    if (!saw_non_empty) {
+        return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
+    }
+    return set_preflight_reason(reason, CookHashPreflightRejectReason::None);
+}
+
 u64 fnv1a64_bytes(const u8* data, usize size) {
     if (size == 0) {
         return kFnvOffset;
