@@ -284,24 +284,14 @@ HrtfIrStub preflight_hrtf_ir(const HrtfIrStub& ir) {
     return make_hrtf_ir_stub(ir.samples, ir.length);
 }
 
-bool should_skip_hrtf_ir_convolution(const HrtfIrStub& ir) {
     return !should_use_hrtf_ir(ir);
-}
 
-bool should_fallback_to_ild_itd_stub(const HrtfIrStub& ir) {
     return is_empty_hrtf_ir(ir);
-HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
-                                             const Vec3& rel_listener) {
     HrtfPanPathPreflight result;
     result.hrtf_disabled = !hrtf_enabled;
     result.co_located = is_co_located_hrtf_source(rel_listener);
-    result.empty_ir = is_empty_hrtf_ir(ir);
     result.path = resolve_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
-    return result;
-}
 
-HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener) {
-    return preflight_hrtf_pan_path(hrtf_enabled, make_empty_hrtf_ir(), rel_listener);
 
 bool is_spatial_hrtf_pan_path(HrtfPanPath path) {
     return path != HrtfPanPath::Bypass;
@@ -319,6 +309,10 @@ bool is_bypass_hrtf_pan_path(HrtfPanPath path) {
     return is_hrtf_pan_path_bypass(path);
 
 bool should_skip_hrtf_spatial_pan(HrtfPanPath path) {
+
+    return should_skip_hrtf_convolution(ir);
+
+    preflight.canConvolution = !should_skip_hrtf_convolution(ir);
 }
 
 bool is_co_located_hrtf_source(const Vec3& rel_listener) {
@@ -340,6 +334,16 @@ bool should_bypass_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener) {
 bool is_hrtf_pan_bypassed(HrtfPanPath path) {
     return is_hrtf_pan_path_bypass(path);
     return path == HrtfPanPath::Bypass;
+bool is_hrtf_pan_path_bypass(HrtfPanPath path) {
+}
+
+bool is_bypass_hrtf_pan_path(HrtfPanPath path) {
+
+bool should_skip_hrtf_spatial_pan(HrtfPanPath path) {
+
+bool should_apply_hrtf_spatial_pan(HrtfPanPath path) {
+    return !should_skip_hrtf_spatial_pan(path);
+
 }
 
 bool should_skip_hrtf_pan_path(HrtfPanPath path) {
@@ -365,6 +369,33 @@ HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub
     preflight.ild_itd_stub = hrtf_pan_path_uses_ild_itd_stub(preflight.path);
     preflight.convolution = hrtf_pan_path_uses_convolution(preflight.path);
     result.has_valid_ir = has_hrtf_ir(ir);
+}
+
+HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+    if (should_skip_hrtf_pan(hrtf_enabled, rel_listener)) {
+        return HrtfPanPath::Bypass;
+    if (!should_skip_hrtf_convolution(ir)) {
+        return HrtfPanPath::Convolution;
+    return HrtfPanPath::IldItdStub;
+
+HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener) {
+    return resolve_hrtf_pan_path(hrtf_enabled, make_empty_hrtf_ir(), rel_listener);
+
+bool should_fallback_hrtf_to_ild_itd_stub(bool hrtf_enabled, const HrtfIrStub& ir,
+    return resolve_hrtf_pan_path(hrtf_enabled, ir, rel_listener) == HrtfPanPath::IldItdStub;
+
+bool should_use_hrtf_convolution_path(bool hrtf_enabled, const HrtfIrStub& ir,
+    return resolve_hrtf_pan_path(hrtf_enabled, ir, rel_listener) == HrtfPanPath::Convolution;
+
+bool HrtfPanPathPreflight::can_spatial_pan() const {
+    return should_apply_hrtf_spatial_pan(path);
+
+bool HrtfPanPathPreflight::should_skip_pan() const {
+    return should_skip_hrtf_pan_path(path);
+
+    preflight.hrtfDisabled = !hrtf_enabled;
+    preflight.coLocated = is_co_located_hrtf_source(rel_listener);
+    preflight.emptyIr = is_empty_hrtf_ir(ir);
 }
 
 HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener) {
@@ -422,14 +453,9 @@ HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub
 
 HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener) {
     return preflight_hrtf_pan_path(hrtf_enabled, make_empty_hrtf_ir(), rel_listener);
-}
 
-bool should_apply_hrtf_spatial_pan(HrtfPanPath path) {
-    return !should_skip_hrtf_spatial_pan(path);
-}
 
 HrtfPanPath preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
-                                    const Vec3& rel_listener) {
     if (should_skip_hrtf_pan(hrtf_enabled, rel_listener)) {
         return HrtfPanPath::Bypass;
     if (should_fallback_to_ild_itd_stub(preflight_hrtf_ir(ir))) {
@@ -443,12 +469,8 @@ bool should_apply_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener) {
 bool should_bypass_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener) {
     return should_skip_hrtf_pan(hrtf_enabled, rel_listener);
 bool hrtf_pan_path_uses_ild_stub(HrtfPanPath path) {
-    return path == HrtfPanPath::IldItdStub;
 
-bool is_bypass_hrtf_pan_path(HrtfPanPath path) {
-    return path == HrtfPanPath::Bypass;
 
-HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
     HrtfPanPathPreflight result;
     result.hrtf_disabled = !hrtf_enabled;
     result.co_located = is_co_located_hrtf_source(rel_listener);
@@ -460,8 +482,6 @@ HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub
     result.uses_ild_itd_stub = hrtf_pan_path_uses_ild_itd_stub(result.path);
     return result;
 
-HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener) {
-    return preflight_hrtf_pan_path(hrtf_enabled, make_empty_hrtf_ir(), rel_listener);
 
 bool can_apply_hrtf_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener) {
     return preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener).can_apply_spatial_pan();
@@ -483,6 +503,10 @@ bool should_use_hrtf_convolution_path(bool hrtf_enabled, const HrtfIrStub& ir,
     return preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener) == HrtfPanPath::Convolution;
 bool can_apply_hrtf_spatial_pan(HrtfPanPath path) {
     return is_spatial_hrtf_pan_path(path);
+
+
+
+
 }
 
 namespace {
@@ -691,6 +715,7 @@ BinauralPanGains compute_binaural_pan_gains_for_path(HrtfPanPath path, const Vec
                                                     const BinauralPanParams& params) {
     if (is_bypass_hrtf_pan_path(path)) {
     if (is_hrtf_pan_path_bypass(path)) {
+    if (is_hrtf_pan_bypassed(path)) {
         return make_centre_binaural_pan_gains();
     }
     // Convolution path deferred — ILD/ITD stub until delay-line / IR wiring lands.
@@ -759,6 +784,14 @@ bool preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenu
 
 bool should_skip_hrtf_attenuation_coupling_for_inputs(HrtfPanPath path, float distance_attenuation,
     return !preflight_hrtf_attenuation_coupling(path, distance_attenuation, occlusion_gain);
+}
+
+
+bool HrtfAttenuationCouplingPreflight::can_couple() const {
+    return !bypassPath && !unitySpatialBlend;
+
+bool HrtfAttenuationCouplingPreflight::should_skip_coupling() const {
+    return !can_couple();
 }
 
 bool should_apply_hrtf_attenuation_coupling(HrtfPanPath path) {
@@ -1080,6 +1113,13 @@ HrtfSpatialPanPreflight preflight_hrtf_spatial_pan(bool hrtf_enabled, const Hrtf
     preflight.pan = preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
     preflight.coupling = preflight_hrtf_attenuation_coupling(
         preflight.pan.path, distance_attenuation, occlusion_gain, coupling, params);
+    HrtfAttenuationCouplingPreflight preflight;
+    preflight.bypassPath = should_skip_hrtf_attenuation_coupling(path);
+    preflight.unityAttenuation =
+        is_unity_hrtf_attenuation(distance_attenuation, occlusion_gain);
+    preflight.spatialBlend =
+        compute_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params);
+    preflight.unitySpatialBlend = is_unity_hrtf_spatial_blend(preflight.spatialBlend);
 }
 
 void apply_hrtf_attenuation_coupling(BinauralPanGains& gains, float distance_attenuation,
