@@ -246,6 +246,10 @@ bool pose_soa_has_valid_layout(const PoseSoA& pose, const Skeleton& skel) {
     return skel.bone_count > 0 && pose.bone_count == skel.bone_count;
 }
 
+bool pose_soa_has_valid_layout(const PoseSoA& pose, const Skeleton& skel) {
+    return skel.bone_count > 0 && pose.bone_count == skel.bone_count;
+}
+
 void ensure_pose_soa_bind_fallback(PoseSoA& pose, const Skeleton& skel) {
     if (needs_pose_soa_bind_fallback(pose, skel)) {
         pose = PoseSoA::from_bind_pose(skel);

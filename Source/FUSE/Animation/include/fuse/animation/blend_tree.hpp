@@ -258,6 +258,11 @@ struct AnimStateMachine : BlendNode {
     /// Global transition index of the first passing outgoing edge from `from_state`, or -1.
 
     /// True when any outgoing transition from `from_state` passes its condition.
+    bool outgoing_transition_condition_passes(u32 from_state, u32 edge_index) const;
+
+    s32 find_first_passing_outgoing_transition(u32 from_state) const;
+
+    bool has_passing_outgoing_transition(u32 from_state) const;
 };
 
 } // namespace fuse::animation

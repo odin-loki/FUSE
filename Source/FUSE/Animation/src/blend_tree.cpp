@@ -661,11 +661,13 @@ s32 AnimStateMachine::find_named_transition_index(const char* from, const char* 
     if (fromIndex < 0 || toIndex < 0) {
         return -1;
     return find_transition_index(static_cast<u32>(fromIndex), static_cast<u32>(toIndex));
+    }
 
 bool AnimStateMachine::outgoing_transition_condition_passes(u32 from_state, u32 edge_index) const {
     const s32 toState = outgoing_transition_to(from_state, edge_index);
     if (toState < 0) {
         return false;
+    }
     return transition_condition_passes(from_state, static_cast<u32>(toState));
 }
 
