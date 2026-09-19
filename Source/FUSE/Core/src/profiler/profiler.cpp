@@ -808,6 +808,10 @@ u32 orphanAsyncFlowEndCount() {
     return g_orphanAsyncFlowEndCount.load(std::memory_order_acquire);
 }
 
+bool hasResidualFlowNestingDepth() {
+    return flowNestingDepth() > 0u && openAsyncFlowCount() == 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -907,8 +911,27 @@ bool isValidProfilerName(const char* name) {
     return isValidEventName(name);
 }
 
+bool isBlankEventName(const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        return true;
+    }
+
+    for (const char* cursor = name; *cursor != '\0'; ++cursor) {
+        switch (*cursor) {
+        case ' ':
+        case '\t':
+        case '\n':
+        case '\r':
+            break;
+        default:
+            return false;
+        }
+    }
+    return true;
+}
+
 bool isValidEventName(const char* name) {
-    return name != nullptr && name[0] != '\0';
+    return !isBlankEventName(name);
 }
 
 bool isValidProfilerName(const char* name) {
@@ -970,7 +993,6 @@ NestingStateRejectReason diagnoseNestingStateRejectReason() {
     if (!isFlowNestingBalanced()) {
         return NestingStateRejectReason::UnbalancedFlowNesting;
     return NestingStateRejectReason::None;
-    }
 
 ChromeTraceExportRejectReason diagnoseChromeTraceExportRejectReason() {
     if (!enabled()) {
@@ -985,15 +1007,8 @@ ChromeTraceExportRejectReason diagnoseChromeTraceExportRejectReason() {
 
 } // namespace
 
-    }
-    if (!isScopeNestingBalanced()) {
-    if (isFlowDepthDetached()) {
-    if (hasOpenAsyncFlows()) {
-    if (!isFlowNestingBalanced()) {
 
 
-bool isProfilerStateBalanced() {
-    return diagnoseNestingStateRejectReason() == NestingStateRejectReason::None;
 
 bool preflightProfilerState(NestingStateRejectReason* reason) {
     const NestingStateRejectReason rejectReason = diagnoseNestingStateRejectReason();
@@ -1003,11 +1018,8 @@ bool preflightProfilerState(NestingStateRejectReason* reason) {
 
 const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason) {
     case NestingStateRejectReason::None:
-    }
 
-    switch (reason) {
 
-        return "none";
     case NestingStateRejectReason::UnbalancedScopeNesting:
         return "unbalanced_scope_nesting";
     case NestingStateRejectReason::UnbalancedFlowNesting:
@@ -1031,7 +1043,6 @@ const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason rea
 bool canLookupEventAt(u32 index) {
     EventLookupRejectReason reason = EventLookupRejectReason::None;
     return tryCanLookupEventAt(index, reason);
-}
 
 bool isEventLookupPreflightOk(u32 index) {
     if (!isEventIndexValid(index)) {
@@ -1077,6 +1088,21 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.has_open_async_flows = hasOpenAsyncFlows();
     preflight.can_export = preflight.scope_nesting_balanced && preflight.flow_nesting_balanced;
     return preflight;
+u32 nonExportableEventCount() {
+    const u32 total = eventCount();
+    const u32 exportable = exportableEventCount();
+    return total >= exportable ? total - exportable : 0u;
+
+bool hasNonExportableEvents() {
+    return nonExportableEventCount() > 0u;
+
+bool isFirstEventIndex(u32 index) {
+    const u32 first = firstEventIndex();
+    return first != kInvalidEventIndex && index == first;
+
+bool isLastEventIndex(u32 index) {
+    const u32 last = lastEventIndex();
+    return last != kInvalidEventIndex && index == last;
 
 u32 countEventsWithPhase(EventPhase phase) {
     u32 count = 0u;
@@ -1125,6 +1151,18 @@ bool tryFindEventByName(const char* name, u32 startIndex, u32& outIndex, Profile
     case NestingStateRejectReason::FlowDepthDetached:
         return "flow_depth_detached";
     return "unknown";
+        }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+
+bool tryFindFirstEventWithPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexWithPhase(phase);
+    if (index == kInvalidEventIndex) {
+        return false;
+
+    return tryEventAt(index, outEvent);
 
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
@@ -1566,6 +1604,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
             ? preflight.eventCount - preflight.exportableEventCount
             : 0u;
     preflight.hasRejectedInvalidNames = hasRejectedInvalidNames();
+    preflight.nonExportableEventCount = nonExportableEventCount();
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {

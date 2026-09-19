@@ -140,6 +140,7 @@ struct ChromeTraceExportPreflight {
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
+    bool hasNonExportableEvents() const { return nonExportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
     bool canExportWithEvents() const { return canExport() && hasExportableEvents(); }
     bool canExportSafely() const {
@@ -367,6 +368,8 @@ struct ExportPreflight {
                || nonExportableEventCount > 0u;
     bool hasNonExportableEvents() const { return nonExportableEventCount > 0; }
     bool isExportReady() const { return canExport() && hasExportableEvents(); }
+    bool canExportCleanTrace() const { return canExport() && !hasUnbalancedNesting() && !flowDepthDetached; }
+    bool wouldExportEmptyTrace() const { return canExport() && exportableEventCount == 0; }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -529,6 +532,7 @@ bool hasActiveScopes();
 bool hasActiveFlows();
 void reconcileDetachedFlowDepth();
 u32 orphanAsyncFlowEndCount();
+bool hasResidualFlowNestingDepth();
 
 bool hasEvents();
 bool hasExportableEvents();
@@ -558,6 +562,8 @@ bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
 bool hasInvalidNameEvents();
 u32 exportableEventCount();
+u32 nonExportableEventCount();
+bool hasNonExportableEvents();
 bool isEventExportable(u32 index);
 u32 countEventsWithPhase(EventPhase phase);
 u32 findFirstEventIndexWithPhase(EventPhase phase);
@@ -574,6 +580,8 @@ const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason);
 bool canLookupEventAt(u32 index);
 bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason);
 const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
+bool isFirstEventIndex(u32 index);
+bool isLastEventIndex(u32 index);
 u32 firstEventIndex();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
@@ -619,6 +627,9 @@ u32 orphanAsyncFlowEndCount();
 bool hasOrphanAsyncFlowEnds();
 bool isValidProfilerName(const char* name);
 bool isValidChromeTraceExport(const std::string& json);
+u32 countEventsWithPhase(EventPhase phase);
+u32 findFirstEventIndexWithPhase(EventPhase phase);
+bool tryFindFirstEventWithPhase(EventPhase phase, ProfileEvent& outEvent);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
