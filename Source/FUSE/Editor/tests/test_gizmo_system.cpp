@@ -4305,3 +4305,6 @@ void testNonFiniteRejectReasonClassification() {
     expectTrue(!fuse::editor::preflightUpdateDragReady(nanHit, true, fuse::editor::GizmoAxis::X,
                "preflightUpdateDragReady rejects non-finite hit");
                "preflightSnapDragReady mirrors canSnapDragDelta on valid settings");
+
+// --- deepen additive from deepen-gizmo-preflights-a361 ---
+               "tryPreflightSnapDrag rejects invalid snap step");
