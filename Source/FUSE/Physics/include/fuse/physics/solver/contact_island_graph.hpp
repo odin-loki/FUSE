@@ -219,6 +219,9 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
 
 
 /// Returns the first reject reason for island graph build inputs, or `None` when valid.
+/// Why island graph build would reject partition inputs (B4.4 deepen follow-up).
+
+
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -881,6 +884,7 @@ struct ContactIslandGraph {
     /// Guarded build; returns false and clears on reject without partitioning unsafe refs.
     /// Build only when `preflight_island_graph_build` allows; returns false when skipped (B4.4 deepen follow-up pass).
     /// Guarded build entry: clears and returns false when preflight rejects inputs.
+    /// Guarded build — clears and returns false when preflight rejects partition inputs.
 
     void clear();
 

@@ -2190,6 +2190,243 @@ IslandWakeGraphRejectReason islandWakeGraphRejectReason(const IslandWakeGraphPre
     return IslandWakeGraphRejectReason::None;
 }
 
+const char* island_dispatch_reject_reason_name(IslandDispatchRejectReason reason) {
+    switch (reason) {
+    case IslandDispatchRejectReason::None:
+        return "None";
+    case IslandDispatchRejectReason::NoDispatchableIslands:
+        return "NoDispatchableIslands";
+    case IslandDispatchRejectReason::InvalidDt:
+        return "InvalidDt";
+    }
+    return "Unknown";
+}
+
+const char* island_solve_reject_reason_name(IslandSolveRejectReason reason) {
+    switch (reason) {
+    case IslandSolveRejectReason::None:
+        return "None";
+    case IslandSolveRejectReason::OutOfRangeIndex:
+        return "OutOfRangeIndex";
+    case IslandSolveRejectReason::EmptyIsland:
+        return "EmptyIsland";
+    case IslandSolveRejectReason::NoConstraints:
+        return "NoConstraints";
+    case IslandSolveRejectReason::InvalidDt:
+        return "InvalidDt";
+    case IslandSolveRejectReason::StaleConstraintRefs:
+        return "StaleConstraintRefs";
+    case IslandSolveRejectReason::NoMovableBodies:
+        return "NoMovableBodies";
+    }
+    return "Unknown";
+}
+
+const char* island_sleep_reject_reason_name(IslandSleepRejectReason reason) {
+    switch (reason) {
+    case IslandSleepRejectReason::None:
+        return "None";
+    case IslandSleepRejectReason::OutOfRangeIndex:
+        return "OutOfRangeIndex";
+    case IslandSleepRejectReason::EmptyIsland:
+        return "EmptyIsland";
+    case IslandSleepRejectReason::NotAllSleeping:
+        return "NotAllSleeping";
+    }
+    return "Unknown";
+}
+
+const char* island_wake_reject_reason_name(IslandWakeRejectReason reason) {
+    switch (reason) {
+    case IslandWakeRejectReason::None:
+        return "None";
+    case IslandWakeRejectReason::OutOfRangeIndex:
+        return "OutOfRangeIndex";
+    case IslandWakeRejectReason::EmptyIsland:
+        return "EmptyIsland";
+    case IslandWakeRejectReason::UniformSleepState:
+        return "UniformSleepState";
+    }
+    return "Unknown";
+}
+
+IslandGraphBuildRejectReason classify_island_build_reject(const IslandBuildPreflight& preflight) {
+    return preflight.reason;
+}
+
+IslandDispatchRejectReason classify_island_dispatch_reject(const IslandDispatchPreflight& preflight) {
+    if (preflight.reason != IslandDispatchRejectReason::None) {
+        return preflight.reason;
+    }
+    if (preflight.invalidDt) {
+        return IslandDispatchRejectReason::InvalidDt;
+    }
+    if (preflight.solve.skipped) {
+        return IslandDispatchRejectReason::NoDispatchableIslands;
+    }
+    return IslandDispatchRejectReason::None;
+}
+
+IslandSolveRejectReason classify_island_solve_job_reject(const IslandSolveJobPreflight& preflight) {
+    if (preflight.reason != IslandSolveRejectReason::None) {
+        return preflight.reason;
+    }
+    if (preflight.invalidDt) {
+        return IslandSolveRejectReason::InvalidDt;
+    }
+    if (preflight.skipped) {
+        return preflight.constraintCount == 0u ? IslandSolveRejectReason::NoConstraints
+                                             : IslandSolveRejectReason::EmptyIsland;
+    }
+    return IslandSolveRejectReason::None;
+}
+
+IslandSolveRejectReason classify_island_constraint_solve_reject(const IslandConstraintSolvePreflight& preflight) {
+    if (preflight.reason != IslandSolveRejectReason::None) {
+        return preflight.reason;
+    }
+    if (preflight.skipped) {
+        return IslandSolveRejectReason::EmptyIsland;
+    }
+    if (!preflight.refs.can_solve()) {
+        return IslandSolveRejectReason::StaleConstraintRefs;
+    }
+    if (!preflight.bodies.can_solve()) {
+        return IslandSolveRejectReason::NoMovableBodies;
+    }
+    return IslandSolveRejectReason::None;
+}
+
+IslandSleepRejectReason classify_island_sleep_reject(const IslandSleepPreflight& preflight) {
+    if (preflight.reason != IslandSleepRejectReason::None) {
+        return preflight.reason;
+    }
+    if (preflight.skipped) {
+        return IslandSleepRejectReason::EmptyIsland;
+    }
+    if (!preflight.can_skip_solve()) {
+        return IslandSleepRejectReason::NotAllSleeping;
+    }
+    return IslandSleepRejectReason::None;
+}
+
+IslandSleepRejectReason classify_island_sleep_graph_reject(const IslandSleepGraphPreflight& preflight) {
+    if (preflight.reason != IslandSleepRejectReason::None) {
+        return preflight.reason;
+    }
+    if (preflight.skipped) {
+        return IslandSleepRejectReason::NotAllSleeping;
+    }
+    return IslandSleepRejectReason::None;
+}
+
+IslandWakeRejectReason classify_island_wake_reject(const IslandWakePreflight& preflight) {
+    if (preflight.reason != IslandWakeRejectReason::None) {
+        return preflight.reason;
+    }
+    if (preflight.skipped) {
+        return IslandWakeRejectReason::EmptyIsland;
+    }
+    if (!preflight.should_wake_sleepers()) {
+        return IslandWakeRejectReason::UniformSleepState;
+    }
+    return IslandWakeRejectReason::None;
+}
+
+IslandWakeRejectReason classify_island_wake_graph_reject(const IslandWakeGraphPreflight& preflight) {
+    if (preflight.reason != IslandWakeRejectReason::None) {
+        return preflight.reason;
+    }
+    if (preflight.skipped) {
+        return IslandWakeRejectReason::UniformSleepState;
+    }
+    return IslandWakeRejectReason::None;
+}
+
+bool preflight_island_build_ready(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    IslandGraphBuildRejectReason* reason) {
+    const IslandBuildPreflight preflight = preflight_island_build(bodyCount, contacts, distanceConstraints);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return preflight.can_build();
+}
+
+bool try_preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    IslandGraphBuildRejectReason& reason) {
+    return preflight_island_build_ready(bodyCount, contacts, distanceConstraints, &reason);
+}
+
+bool preflight_island_dispatch_ready(const ContactIslandGraph& graph,
+                                     f32 dt,
+                                     IslandDispatchRejectReason* reason) {
+    const IslandDispatchPreflight preflight = preflight_island_dispatch(graph, dt);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return preflight.can_dispatch();
+}
+
+bool try_preflight_island_dispatch(const ContactIslandGraph& graph,
+                                   f32 dt,
+                                   IslandDispatchRejectReason& reason) {
+    return preflight_island_dispatch_ready(graph, dt, &reason);
+}
+
+bool preflight_solve_island_job_ready(const IslandSolveJob& job,
+                                      f32 dt,
+                                      IslandSolveRejectReason* reason) {
+    const IslandSolveJobPreflight preflight = preflight_solve_island_job(job, dt);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return preflight.can_dispatch();
+}
+
+bool try_preflight_solve_island_job(const IslandSolveJob& job,
+                                    f32 dt,
+                                    IslandSolveRejectReason& reason) {
+    return preflight_solve_island_job_ready(job, dt, &reason);
+}
+
+bool preflight_island_sleep_ready(const ContactIslandGraph::Island& island,
+                                  const RigidBodySoA& bodies,
+                                  IslandSleepRejectReason* reason) {
+    const IslandSleepPreflight preflight = preflight_island_sleep(island, bodies);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return preflight.can_skip_solve();
+}
+
+bool try_preflight_island_sleep(const ContactIslandGraph::Island& island,
+                                const RigidBodySoA& bodies,
+                                IslandSleepRejectReason& reason) {
+    return preflight_island_sleep_ready(island, bodies, &reason);
+}
+
+bool preflight_island_wake_ready(const ContactIslandGraph::Island& island,
+                                 const RigidBodySoA& bodies,
+                                 IslandWakeRejectReason* reason) {
+    const IslandWakePreflight preflight = preflight_island_wake(island, bodies);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return preflight.should_wake_sleepers();
+}
+
+bool try_preflight_island_wake(const ContactIslandGraph::Island& island,
+                               const RigidBodySoA& bodies,
+                               IslandWakeRejectReason& reason) {
+    return preflight_island_wake_ready(island, bodies, &reason);
+}
+
 bool island_index_valid(const ContactIslandGraph& graph, u32 islandIndex) {
     return islandIndex < graph.islandCount();
 }
@@ -2935,6 +3172,10 @@ IslandSolveJobPreflight preflight_solve_island_job(const IslandSolveJob& job, f3
         preflight.reason = IslandSolveRejectReason::EmptyIsland;
         preflight.skipped = true;
     preflight.reason = islandSolveJobRejectReason(preflight);
+    if (preflight.invalidDt) {
+        preflight.reason = IslandSolveRejectReason::InvalidDt;
+        preflight.reason = job.constraintCount == 0u ? IslandSolveRejectReason::NoConstraints
+                                                     : IslandSolveRejectReason::EmptyIsland;
     return preflight;
 
 bool should_skip_solve_island_job(const IslandSolveJob& job, f32 dt) {
@@ -4204,6 +4445,11 @@ IslandDispatchPreflight preflight_island_dispatch(const ContactIslandGraph& grap
     if (preflight.reason == IslandDispatchRejectReason::None && preflight.solve.skipped) {
         preflight.skipped = true;
     preflight.reason = islandDispatchRejectReason(preflight);
+    if (preflight.invalidDt) {
+        preflight.reason = IslandDispatchRejectReason::InvalidDt;
+    } else if (preflight.solve.skipped) {
+        preflight.reason = IslandDispatchRejectReason::NoDispatchableIslands;
+    }
     return preflight;
 }
 
@@ -7609,6 +7855,7 @@ IslandBuildPreflight preflight_island_build(
     preflight.outOfRangeRefs = preflight.reason == IslandGraphBuildRejectReason::OutOfRangeRefs;
     preflight.skipped = preflight.emptyInput;
     preflight.reason = classifyIslandGraphBuildReject(preflight);
+    preflight.reason = island_graph_build_reject_reason(bodyCount, contacts, distanceConstraints);
     return preflight;
 
 const char* island_build_reject_reason_name(IslandBuildRejectReason reason) {
@@ -8209,6 +8456,7 @@ IslandConstraintSolvePreflight preflight_island_constraint_solve(
         preflight.emptyIsland = true;
         preflight.reason = IslandConstraintSolveRejectReason::EmptyIsland;
         preflight.reason = classifyIslandConstraintSolveReject(preflight);
+        preflight.reason = IslandSolveRejectReason::EmptyIsland;
         return preflight;
     }
 
@@ -8237,6 +8485,8 @@ IslandConstraintSolvePreflight preflight_island_constraint_solve(
     } else if (preflight.bodies.reason != IslandSolveRejectReason::None) {
         preflight.reason = preflight.bodies.reason;
     preflight.reason = islandConstraintSolveRejectReason(preflight);
+        preflight.reason = IslandSolveRejectReason::StaleConstraintRefs;
+        preflight.reason = IslandSolveRejectReason::NoMovableBodies;
     return preflight;
 
 const char* island_constraint_solve_reject_reason_name(IslandConstraintSolveRejectReason reason) {
@@ -9223,6 +9473,7 @@ IslandConstraintSolveGraphPreflight preflight_island_constraint_solve_graph(
     if (!preflight.allSleeping) {
         preflight.reason = IslandSleepRejectReason::NotAllSleeping;
     preflight.reason = islandSleepRejectReason(preflight);
+    if (!preflight.can_skip_solve()) {
     return preflight;
 }
 
@@ -9404,6 +9655,7 @@ IslandWakePreflight preflight_island_wake(const ContactIslandGraph::Island& isla
     if (preflight.reason == IslandWakeRejectReason::EmptyIsland) {
         preflight.emptyIsland = true;
         preflight.reason = classifyIslandWakeReject(preflight);
+        preflight.reason = IslandWakeRejectReason::EmptyIsland;
         return preflight;
     }
 
@@ -9434,6 +9686,7 @@ IslandWakePreflight preflight_island_wake(const ContactIslandGraph::Island& isla
     preflight.reason = classifyIslandWakeReject(preflight);
     if (!preflight.hasMixedSleepState || preflight.activeDynamicCount == 0u) {
     preflight.reason = islandWakeRejectReason(preflight);
+        preflight.reason = IslandWakeRejectReason::UniformSleepState;
     return preflight;
 }
 
@@ -9481,6 +9734,7 @@ IslandSleepWakePreflight preflight_island_sleep_wake(const ContactIslandGraph::I
     IslandSleepWakePreflight preflight{};
     if (!island_has_constraints(island)) {
         preflight.skipped = true;
+        preflight.reason = IslandWakeRejectReason::OutOfRangeIndex;
         return preflight;
     }
 
@@ -9590,6 +9844,7 @@ IslandSleepGraphPreflight preflight_island_sleep_graph(const ContactIslandGraph&
     if (preflight.stats.fullyActiveCount == 0u && preflight.stats.mixedSleepCount == 0u) {
         preflight.skipped = true;
     preflight.reason = islandSleepGraphRejectReason(preflight);
+        preflight.reason = IslandSleepRejectReason::NotAllSleeping;
     return preflight;
 }
 
@@ -9691,6 +9946,7 @@ IslandWakeGraphPreflight preflight_island_wake_graph(const ContactIslandGraph& g
     if (preflight.stats.wakeableCount == 0u) {
         preflight.skipped = true;
     preflight.reason = islandWakeGraphRejectReason(preflight);
+        preflight.reason = IslandWakeRejectReason::UniformSleepState;
     return preflight;
 }
 
