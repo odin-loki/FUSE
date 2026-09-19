@@ -4050,3 +4050,9 @@ void testFroxelDeepenIsBlockingClassifyAndPreflightGuards() {
                "preflightTrilinearSample reports invalid_sample_coords for hard OOB coords");
                "preflightFroxelPopulate reports zero_density populate reject reason");
     testFroxelDeepenIsBlockingClassifyAndPreflightGuards();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-034f ---
+void testFroxelDeepenIsBlockingAndPreflightGuards() {
+               "preflightScreenDepthToFroxelIndex succeeds for valid mapping");
+               "preflightDensityLookup still succeeds for OOB index that clamps");
+    testFroxelDeepenIsBlockingAndPreflightGuards();
