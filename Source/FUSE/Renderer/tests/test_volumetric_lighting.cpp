@@ -3961,3 +3961,8 @@ void testFroxelRejectClassifyAndPreflightGuards() {
 // --- deepen additive from deepen-froxel-volumetrics-b511-8e12 ---
     expectTrue(mapped.tileX0 <= desc.tilesX - 1u, "preflightScreenDepthMapping returns in-bounds tile X");
                "classifyGridDensityReject undersized_storage for short storage");
+
+// --- deepen additive from b511-froxel-volumetric-guards-3da9 ---
+void testFroxelIsBlockingClassifyAndPreflightGuards() {
+               "preflightDensityLookupAtCoord succeeds for accessible grid");
+    testFroxelIsBlockingClassifyAndPreflightGuards();
