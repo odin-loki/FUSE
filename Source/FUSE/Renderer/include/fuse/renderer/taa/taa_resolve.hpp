@@ -101,6 +101,10 @@ bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHisto
                                       TaaBlendWeights& out);
 /// True when resolve and history-blend reuse preflights both pass (B5.9 deepen).
 bool taaResolveHistoryBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when resolve skip + blend-weight preflights both pass (B5.9 deepen).
+bool preflightTaaResolveWithBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                 TaaResolveSkipReason* skipReason = nullptr,
+                                 TaaResolveBlendRejectReason* blendReason = nullptr);
 
 /// CPU/CUDA resolve facade — records resolve intent; kernel deferred (B5.9 stub).
 class TaaResolve {

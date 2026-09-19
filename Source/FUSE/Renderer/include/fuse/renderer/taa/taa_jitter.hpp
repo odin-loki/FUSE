@@ -63,6 +63,8 @@ struct TaaJitterLayout {
     static bool canProduceNdcOffset(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// True when jitter can align to a monotonic frame counter (B5.9 deepen).
     static bool canSyncToFrameIndex(u32 /*frameIndex*/, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// True when viewport and sequence are valid for sync + NDC production (B5.9 deepen).
+    static bool canSyncAndProduceNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// True when `slot` is the active Halton index for `frameIndex` (B5.9 deepen).
     static bool jitterSlotMatchesFrameIndex(u32 frameIndex, u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// True when NDC jitter can be computed for the viewport (B5.9 deepen).
@@ -186,6 +188,10 @@ public:
     /// True when the active sequence can accept `syncToFrameIndex` (B5.9 deepen).
     bool canSyncToFrameIndex() const;
     /// True when monotonic frame and slot align with `frameIndex` (B5.9 deepen).
+    /// Classify why this jitter cannot sync for the given viewport (B5.9 deepen).
+    TaaJitterSyncBlockReason classifySyncBlock(u32 width, u32 height) const;
+    /// True when jitter can sync to `frameIndex` for the given viewport (B5.9 deepen).
+    bool preflightSync(u32 frameIndex, u32 width, u32 height, TaaJitterSyncBlockReason* reason = nullptr) const;
     /// Monotonic frame counter — incremented by `advance`, set by `syncToFrameIndex`, cleared by `reset`.
     u32 monotonicFrameIndex() const { return m_monotonicFrame; }
     /// True when jitter state matches the expected monotonic frame counter (B5.9 deepen).
