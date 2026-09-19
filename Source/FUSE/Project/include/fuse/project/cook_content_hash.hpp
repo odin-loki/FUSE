@@ -2,6 +2,10 @@
 
 #include <fuse/project/cook_manifest.hpp>
 #include <fuse/project/import_desc.hpp>
+
+namespace fuse::project {
+struct CookCacheEntry;
+} // namespace fuse::project
 #include <fuse/types.hpp>
 
 #include <string>
@@ -18,6 +22,7 @@ enum class CookHashRejectReason : u8 {
     SourceUnreadable,
     EmptyDependencyList,
     ZeroSourceHash,
+    InvalidCacheKey,
 };
 
 /// Read-only hash preflight — mirrors empty-input guards without computing keys (B7.9 deepen).
@@ -70,5 +75,7 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 /// Fold source/upstream preflight — upstream zero is allowed on valid source keys (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+/// Structural cache-entry preflight — mirrors `is_valid_cook_cache_entry` without storing (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 
 } // namespace fuse::project
