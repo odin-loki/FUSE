@@ -265,3 +265,6 @@ const char* contact_buffer_friction_bases_reject_reason_name(ContactBufferFricti
 ContactBufferFrictionBasesRejectReason contact_buffer_friction_bases_reject_reason(
     bool needsBuild() const { return reason == ContactBufferFrictionBasesRejectReason::None; }
 ContactBufferFrictionBasesPreflight preflight_contact_buffer_friction_bases(const ContactBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-ef6e ---
+bool writeContactBufferSlotWithPreflight(

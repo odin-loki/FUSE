@@ -2944,3 +2944,17 @@ void testContactBufferCompactionClampPreflightGuards() {
         static_cast<fuse::u32>(fuse::physics::narrowphase::ContactBufferClampRejectReason::None),
             buffer, fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::NoWork),
             fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::None),
+
+// --- deepen additive from deepen-b4-narrowphase-guards-ef6e ---
+        fuse::physics::narrowphase::preflightContactBufferWrite(buffer, 0u, invalid);
+        fuse::physics::narrowphase::writeContactBufferSlotWithPreflight(buffer, 0u, valid),
+        !fuse::physics::narrowphase::writeContactBufferSlotWithPreflight(buffer, 1u, selfPair),
+        fuse::physics::narrowphase::preflightContactBufferClamp(clampBuffer);
+        fuse::physics::narrowphase::preflightContactBufferClamp(withinBuffer);
+    expectTrue(!withinPreflight.needsClamp(), "clamp preflight skips when within capacity");
+    const auto compactClampPreflight =
+        fuse::physics::narrowphase::preflightContactBufferCompactAndClamp(compactClampBuffer);
+    expectTrue(compactClampPreflight.needsCompactAndClamp(),
+    expectTrue(noWorkPreflight.noWork, "compact-and-clamp preflight skips when already compact");
+void testDeepenFollowUpPreflightWrappers() {
+    testDeepenFollowUpPreflightWrappers();

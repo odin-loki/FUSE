@@ -708,3 +708,6 @@ ContactBufferFrictionBasesPreflight preflight_contact_buffer_friction_bases(cons
 
 // --- deepen additive from deepen-narrowphase-b4-guards-61f0 ---
     const ContactBufferCompactAndClampPreflight preflight = preflight_contact_buffer_compact_and_clamp(buffer);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-ef6e ---
+bool writeContactBufferSlotWithPreflight(
