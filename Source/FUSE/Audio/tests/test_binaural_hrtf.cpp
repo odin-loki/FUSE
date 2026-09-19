@@ -656,6 +656,82 @@ void testBinauralPanGainSampleHelpers() {
     expectNear(right, 0.25f, 1e-5f, "centre pan applies equal attenuated mono to right");
 }
 
+void testHrtfBinauralPreflight() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    const fuse::audio::Vec3 co_located{};
+    const fuse::audio::HrtfIrStub empty{};
+    const float samples[] = {1.f};
+    const fuse::audio::HrtfIrStub valid{samples, 1};
+
+    const fuse::audio::HrtfBinauralPreflight stub_preflight =
+        fuse::audio::preflight_hrtf_binaural(true, empty, offset, 0.2f, 0.3f);
+    expectTrue(stub_preflight.ir.emptyIr, "composite preflight carries empty-IR diagnostics");
+    expectTrue(stub_preflight.panPath.path == fuse::audio::HrtfPanPath::IldItdStub,
+               "composite preflight selects ILD/ITD stub for empty IR");
+    expectTrue(stub_preflight.can_spatial_pan(), "composite preflight allows spatial pan on stub path");
+    expectTrue(!stub_preflight.can_convolve(), "composite preflight cannot convolve with empty IR");
+    expectTrue(stub_preflight.can_narrow_spatial_image(),
+               "reduced attenuation narrows via composite preflight");
+    expectTrue(!stub_preflight.is_bypass(), "enabled offset source is not bypassed");
+    expectTrue(fuse::audio::can_apply_hrtf_binaural_pan(stub_preflight),
+               "can_apply_hrtf_binaural_pan mirrors can_spatial_pan");
+    expectTrue(!fuse::audio::should_skip_hrtf_binaural(stub_preflight),
+               "should_skip_hrtf_binaural false on spatial stub path");
+
+    const fuse::audio::HrtfBinauralPreflight conv_preflight =
+        fuse::audio::preflight_hrtf_binaural(true, valid, offset, 1.f, 1.f);
+    expectTrue(conv_preflight.can_convolve(), "valid IR composite preflight can convolve");
+    expectTrue(!conv_preflight.can_narrow_spatial_image(),
+               "unity attenuation skips narrowing in composite preflight");
+    expectTrue(conv_preflight.attenuationCoupling.unityAttenuation,
+               "composite preflight marks unity attenuation");
+
+    const fuse::audio::HrtfBinauralPreflight bypass_preflight =
+        fuse::audio::preflight_hrtf_binaural(false, valid, offset, 0.1f, 0.1f);
+    expectTrue(bypass_preflight.is_bypass(), "disabled HRTF composite preflight is bypass");
+    expectTrue(fuse::audio::should_skip_hrtf_binaural(bypass_preflight),
+               "should_skip_hrtf_binaural true on bypass");
+    expectTrue(!fuse::audio::can_apply_hrtf_binaural_pan(bypass_preflight),
+               "bypass composite preflight cannot spatial-pan");
+
+    const fuse::audio::HrtfBinauralPreflight co_located_preflight =
+        fuse::audio::preflight_hrtf_binaural(true, valid, co_located, 0.1f, 0.1f);
+    expectTrue(co_located_preflight.panPath.coLocated,
+               "composite preflight marks co-located source");
+    expectTrue(co_located_preflight.is_bypass(), "co-located composite preflight bypasses");
+
+    const fuse::audio::HrtfBinauralPreflight no_ir_preflight =
+        fuse::audio::preflight_hrtf_binaural(true, offset, 0.25f, 0.35f);
+    expectTrue(no_ir_preflight.panPath.path == fuse::audio::HrtfPanPath::IldItdStub,
+               "no-IR composite overload selects ILD/ITD stub");
+    expectTrue(no_ir_preflight.path()
+                   == fuse::audio::resolve_hrtf_pan_path(true, offset),
+               "composite path matches resolve_hrtf_pan_path");
+
+    const fuse::audio::BinauralPanGains from_preflight =
+        fuse::audio::compute_binaural_pan_gains_from_preflight(stub_preflight, offset);
+    const fuse::audio::BinauralPanGains coupled =
+        fuse::audio::compute_binaural_pan_gains_coupled(true, empty, offset, 0.2f, 0.3f);
+    expectNear(from_preflight.left, coupled.left, 1e-5f,
+               "from_preflight matches coupled helper on stub path");
+    expectNear(from_preflight.right, coupled.right, 1e-5f,
+               "from_preflight matches coupled helper on stub path");
+
+    const fuse::audio::BinauralPanGains bypass_gains =
+        fuse::audio::compute_binaural_pan_gains_from_preflight(bypass_preflight, offset);
+    expectTrue(fuse::audio::is_centre_panned(bypass_gains),
+               "from_preflight returns centre pan on bypass");
+
+    const fuse::audio::BinauralPanGains unity_gains =
+        fuse::audio::compute_binaural_pan_gains_from_preflight(conv_preflight, offset);
+    const fuse::audio::BinauralPanGains wide =
+        fuse::audio::compute_binaural_pan_gains(offset);
+    expectNear(unity_gains.left, wide.left, 1e-5f,
+               "unity composite preflight preserves lateral gains");
+    expectNear(unity_gains.right, wide.right, 1e-5f,
+               "unity composite preflight preserves lateral gains");
+}
+
 } // namespace
 
 int main() {
@@ -688,6 +764,7 @@ int main() {
     testHrtfPanPathPreflight();
     testHrtfAttenuationCouplingPreflight();
     testBinauralPanGainSampleHelpers();
+    testHrtfBinauralPreflight();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

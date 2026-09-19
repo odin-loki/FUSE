@@ -476,4 +476,46 @@ BinauralPanGains compute_binaural_pan_gains_coupled_for_path(HrtfPanPath path,
     return pan;
 }
 
+HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir,
+                                              const Vec3& rel_listener, float distance_attenuation,
+                                              float occlusion_gain,
+                                              const HrtfAttenuationCoupling& coupling,
+                                              const BinauralPanParams& params) {
+    HrtfBinauralPreflight preflight{};
+    preflight.ir = preflight_hrtf_ir(ir);
+    preflight.panPath = preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
+    preflight.attenuationCoupling = preflight_hrtf_attenuation_coupling(
+        preflight.panPath.path, distance_attenuation, occlusion_gain, coupling, params);
+    return preflight;
+}
+
+HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
+                                              float distance_attenuation, float occlusion_gain,
+                                              const HrtfAttenuationCoupling& coupling,
+                                              const BinauralPanParams& params) {
+    return preflight_hrtf_binaural(hrtf_enabled, make_empty_hrtf_ir(), rel_listener,
+                                   distance_attenuation, occlusion_gain, coupling, params);
+}
+
+bool can_apply_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight) {
+    return preflight.can_spatial_pan();
+}
+
+bool should_skip_hrtf_binaural(const HrtfBinauralPreflight& preflight) {
+    return preflight.is_bypass();
+}
+
+BinauralPanGains compute_binaural_pan_gains_from_preflight(const HrtfBinauralPreflight& preflight,
+                                                           const Vec3& rel_listener,
+                                                           const HrtfAttenuationCoupling& coupling,
+                                                           const BinauralPanParams& params) {
+    (void)coupling;
+    BinauralPanGains pan =
+        compute_binaural_pan_gains_for_path(preflight.path(), rel_listener, params);
+    if (preflight.can_narrow_spatial_image()) {
+        apply_hrtf_spatial_blend_guarded(pan, preflight.attenuationCoupling.spatialBlend);
+    }
+    return pan;
+}
+
 } // namespace fuse::audio
