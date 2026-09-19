@@ -330,6 +330,11 @@ public:
     [[nodiscard]] bool would_invalidate_stale_upstream(
     /// True when `invalidate_all` would remove at least one entry (B7.9 deepen).
     [[nodiscard]] bool would_invalidate_all() const;
+    /// True when `invalidate_source` would remove at least one entry (B7.9 deepen).
+    /// True when `invalidate_output` would remove at least one entry (B7.9 deepen).
+    /// True when `invalidate_stale_content_for_source` would remove entries (B7.9 deepen).
+    /// True when `invalidate_stale_upstream_hashes` would touch at least one entry (B7.9 deepen).
+    /// True when `invalidate_downstream_of` would remove at least one entry (B7.9 deepen).
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
@@ -371,6 +376,7 @@ public:
     /// Source paths whose stored content keys differ from a fresh recompute — mirrors `prune_stale_entries` (B7.9 deepen).
     /// Deduplicated source paths with stale upstream hashes (B7.9 deepen).
     /// Deduplicated stale upstream sources — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources_dedup(
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
@@ -586,6 +592,9 @@ public:
     /// Source paths with stale content keys — read-only `prune_stale_entries` probe (B7.9 deepen).
 
     [[nodiscard]] bool contains(u64 content_hash) const;
+
+    /// Read-only store preflight — mirrors `store` guards without mutating stats (B7.9 deepen).
+    [[nodiscard]] CookHashPreflight preflight_cache_entry(const CookCacheEntry& entry) const;
 
     void clear();
     [[nodiscard]] bool empty() const { return m_entries.empty(); }

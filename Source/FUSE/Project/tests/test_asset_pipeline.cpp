@@ -2865,6 +2865,7 @@ void testCookerUpstreamInvalidationWouldAndProbe() {
 void testCookerUpstreamInvalidationEstimateProbes() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_up_est_a.obj", "# upstream est a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_up_est_b.obj", "# upstream est b\n");
+void testCookerWouldReconcileAndUpstreamProbes() {
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
@@ -2923,12 +2924,38 @@ void testCookerUpstreamInvalidationEstimateProbes() {
 void testCookCacheUniqueStaleUpstreamProbe() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_unique_up_a.obj", "# unique up a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_unique_up_b.obj", "# unique up b\n");
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would_reconcile probes ok");
+    expectTrue(cooker.would_upstream_invalidate(manifest, source_a),
+               "cached entries make would_upstream_invalidate true before invalidation");
+    expectTrue(cooker.probe_stale_dependency_sources(manifest).empty(),
+               "fresh cache stale dependency probe is empty");
+
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "stale upstream makes would_reconcile true");
+               "cached chain remains upstream-invalidatable after source change");
+
+    const std::vector<std::string> upstream_sources =
+        cooker.probe_upstream_invalidation_sources(manifest, source_a);
+    expectTrue(upstream_sources.size() >= 2u, "upstream probe lists changed source and dependents");
+
+    const std::vector<std::string> stale_sources = cooker.probe_stale_dependency_sources(manifest);
+    expectTrue(!stale_sources.empty(), "stale dependency probe lists stale upstream sources");
+    expectTrue(stale_sources.size() == 1u, "one unique stale dependency source probed");
+    expectTrue(stale_sources[0] == source_b, "downstream source has stale upstream hash");
+
+    expectTrue(removed >= 2u, "upstream invalidation clears cached chain");
+    expectTrue(!cooker.would_upstream_invalidate(manifest, source_a),
+               "would_upstream_invalidate false after upstream invalidation");
+
+void testCookCacheDownstreamWouldInvalidateProbe() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_would_down_a.obj", "# would down a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_would_down_b.obj", "# would down b\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
     entry_a.kind = fuse::project::CookAssetKind::Mesh;
     entry_a.source_path = source_a;
     entry_a.output_path = "/tmp/fuse_b79_unique_up_a.fusemesh";
+    entry_a.output_path = "/tmp/fuse_b79_would_down_a.fusemesh";
     manifest.assets.push_back(entry_a);
 
     fuse::project::CookManifestEntry entry_b;
@@ -3002,6 +3029,16 @@ void testCookerWouldReconcileInvalidationProbe() {
     expectTrue(cooker.would_reconcile_invalidation(manifest), "stale content makes would_reconcile true");
     expectTrue(cooker.estimate_reconcile_invalidation(manifest).prune_stale_entries >= 1u,
                "stale reconcile estimate includes prune stale count");
+    entry_b.output_path = "/tmp/fuse_b79_would_down_b.fusemesh";
+
+
+    expectTrue(cooker.cook_manifest(manifest).ok, "chain cook for downstream would_invalidate probe ok");
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()),
+               "would_invalidate_downstream_of true for producer with dependents");
+    expectTrue(!cooker.cache().would_invalidate_downstream_of(entry_b.output_path, graph.edges(), graph.jobs()),
+               "leaf output would_invalidate_downstream_of is false");
+    expectTrue(!cooker.cache().would_invalidate_downstream_of("", graph.edges(), graph.jobs()),
+               "empty output path would_invalidate_downstream_of is guarded");
 }
 
 void testCookCacheDownstreamSourceProbe() {
@@ -3358,6 +3395,8 @@ int main() {
     testCookCacheUniqueStaleUpstreamProbe();
     testCookerUpstreamInvalidationEstimateProbes();
     testCookerWouldReconcileInvalidationProbe();
+    testCookerWouldReconcileAndUpstreamProbes();
+    testCookCacheDownstreamWouldInvalidateProbe();
     testCookCacheDownstreamSourceProbe();
     testCookCachePreflightAndReconcileEstimators();
     testCookCacheReconcileEstimators();

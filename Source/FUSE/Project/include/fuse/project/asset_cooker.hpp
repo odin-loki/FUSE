@@ -245,6 +245,11 @@ public:
     [[nodiscard]] u32 estimate_full_cache_reconcile(const CookManifest& manifest) const;
     /// Bool reconcile probes — mirror count/estimate helpers without mutating cache (B7.9 deepen).
     /// True when `estimate_reconcile_invalidation(...).total()` is non-zero (B7.9 deepen).
+    /// True when `estimate_reconcile_invalidation` reports a non-zero total (B7.9 deepen).
+    [[nodiscard]] bool would_upstream_invalidate(const CookManifest& manifest,
+    /// Deduplicated sources with stale upstream dependency hashes (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_dependency_sources(
+        const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
