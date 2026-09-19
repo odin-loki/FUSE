@@ -1239,3 +1239,6 @@ void testEmptyIrConvolutionSkipGuards() {
                "should_apply coupling is inverse of should_skip");
 void testSpatialBlendSkipGuards() {
     expectTrue(!fuse::audio::should_skip_hrtf_spatial_blend(0.f, 0.f),
+
+// --- deepen additive from deepen-b72-hrtf-pan-empty-ir-guards-7a97 ---
+               "should_skip matches should_bypass");
