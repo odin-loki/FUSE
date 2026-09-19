@@ -26,6 +26,8 @@ struct CookHashPreflight {
     CookHashRejectReason reason = CookHashRejectReason::None;
 
     [[nodiscard]] bool ok() const { return can_hash; }
+    /// True when hashing should be skipped — mirrors `!ok()` (B7.9 deepen).
+    [[nodiscard]] bool should_skip() const { return !can_hash; }
 };
 
 /// FNV-1a 64-bit hash over raw bytes — shared by cook cache keys (B7.9 deepen stub).
