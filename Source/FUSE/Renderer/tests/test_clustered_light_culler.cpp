@@ -1406,3 +1406,15 @@ int main() {
     std::fprintf(stderr, "fuse_clustered_light_culler: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b5-clustered-lights-lookup-23c0 ---
+    expectTrue(fuse::renderer::ClusterGridLayout::tryClusterIndex(1u, 1u, 2u, desc, outIndex),
+               "tryClusterIndex succeeds for in-bounds coords");
+    expectTrue(outIndex == 17u, "tryClusterIndex encodes expected flat index");
+    expectTrue(!fuse::renderer::ClusterGridLayout::tryClusterIndex(99u, 99u, 99u, desc, outIndex),
+               "tryClusterIndex rejects OOB coords");
+    expectTrue(!fuse::renderer::ClusterGridLayout::tryClusterIndex(0u, 0u, 0u, zeroDesc, outIndex),
+               "tryClusterIndex rejects empty grid");
+    expectTrue(fuse::renderer::cluster_util::tryLookupClusterLights(grid, desc, 0u, strictLights),
+    expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLights(grid, desc, 99u, staleOutput),
+    expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLights(emptyGrid, desc, 0u, emptyLights),
