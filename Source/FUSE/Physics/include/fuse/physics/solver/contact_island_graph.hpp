@@ -46,4 +46,13 @@ private:
     std::vector<Island> islands_;
 };
 
+/// True when contact body indices are within `[0, bodyCount)`.
+bool contact_body_indices_in_range(const narrowphase::ContactManifold& contact, u32 bodyCount);
+
+/// True when distance constraint body indices are within `[0, bodyCount)`.
+bool distance_body_indices_in_range(const DistanceConstraint& constraint, u32 bodyCount);
+
+/// True when `bodyA` and `bodyB` refer to the same body index (degenerate pair).
+bool constraint_pair_is_degenerate(u32 bodyA, u32 bodyB);
+
 } // namespace fuse::physics
