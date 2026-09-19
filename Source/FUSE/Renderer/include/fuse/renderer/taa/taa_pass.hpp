@@ -136,6 +136,7 @@ public:
     bool shouldSkipJitterAdvance() const;
     /// NDC jitter for a monotonic frame counter only when viewport and sequence are valid (B5.9 deepen).
     bool ndcOffsetForFrameIndexIfReady(u32 frameIndex, fuse::math::Vec2& out) const;
+    /// Classify why pass jitter sync to a frame counter would be rejected (B5.9 deepen).
     void invalidateHistory();
     /// Invalidate when `observedGeneration` differs from pass history epoch (B5.9 deepen).
     /// Invalidate when `observedGeneration` differs from pass history epoch; returns true when invalidated.
@@ -349,6 +350,13 @@ public:
     /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
     /// Classify why resolve would skip for this pass (B5.9 deepen).
     /// Classify why pass history warm-up is blocked (B5.9 deepen).
+    /// Classify why expected resolve blend weights would be rejected (B5.9 deepen).
+    TaaResolveBlendRejectReason classifyResolveBlendReject(const TaaResolveDesc& desc) const;
+    /// Resolve blend preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
+    /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
+    bool tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
+                                       TaaResolveBlendRejectReason& reason) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// Early-out when resolve preflight would bail (B5.9 deepen).
