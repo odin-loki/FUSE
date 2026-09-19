@@ -4424,3 +4424,43 @@ void testUnpairedFlowLookupAndPreflight() {
     expectTrue(closedPreflight.flowFinishEventCount == 1u, "preflight counts flow finish after end");
     expectTrue(closedPreflight.canExportSafely(), "paired flow can export safely");
     testUnpairedFlowLookupAndPreflight();
+
+// --- deepen additive from deepen-b16-profiler-guards-35d2 ---
+    expectTrue(outEvent.name == nullptr, "tryFindFirstEventByName clears output on miss");
+    expectTrue(!fuse::profiler::tryFindFirstEventByFlowId(flowId, outEvent),
+    expectTrue(fuse::profiler::tryFindFirstEventByName("try_counter", outEvent),
+               "tryFindFirstEventByName true for counter track");
+               "tryFindFirstEventByName rejects null lookup name");
+               "tryFindFirstEventByName rejects empty lookup name");
+               "tryExportableLastEvent still returns last exportable event");
+               "tryExportableLastEvent skips invalid-name tail events");
+        fuse::profiler::preflightProfileScope("scope_probe");
+    expectTrue(!disabledPreflight.canEnter, "preflightProfileScope blocks when profiler disabled");
+    expectTrue(disabledPreflight.profilerDisabled, "preflightProfileScope marks profiler disabled");
+    const fuse::profiler::ProfileScopePreflight nullPreflight = fuse::profiler::preflightProfileScope(nullptr);
+    expectTrue(!nullPreflight.canEnter, "preflightProfileScope blocks null name");
+    expectTrue(nullPreflight.invalidName, "preflightProfileScope marks null name invalid");
+    const fuse::profiler::ProfileScopePreflight emptyPreflight = fuse::profiler::preflightProfileScope("");
+    expectTrue(!emptyPreflight.canEnter, "preflightProfileScope blocks empty name");
+    expectTrue(emptyPreflight.invalidName, "preflightProfileScope marks empty name invalid");
+    expectTrue(validPreflight.canEnter, "preflightProfileScope allows valid scope name");
+    expectTrue(!validPreflight.invalidName, "preflightProfileScope clears invalid flag for valid name");
+    expectTrue(!nullBegin.canBegin, "preflightBeginAsyncFlow blocks null name");
+    expectTrue(nullBegin.invalidName, "preflightBeginAsyncFlow marks null name invalid");
+    expectTrue(!orphanEnd.canEnd, "preflightEndAsyncFlow blocks orphan finish");
+               "preflightEndAsyncFlow marks orphan finish as open-count underflow");
+    expectTrue(validBegin.canBegin, "preflightBeginAsyncFlow allows valid begin");
+    expectTrue(validEnd.canEnd, "preflightEndAsyncFlow allows paired finish");
+               "preflightEndAsyncFlow clears underflow flag for paired finish");
+        fuse::profiler::preflightBeginAsyncFlow("disabled_flow", flowId);
+    expectTrue(!disabledBegin.canBegin, "preflightBeginAsyncFlow blocks when profiler disabled");
+void testChromeTraceExportPreflightExportableOnly() {
+    expectTrue(emptyPreflight.hasOnlyExportableEvents(),
+    expectTrue(validPreflight.hasOnlyExportableEvents(),
+    expectTrue(validPreflight.canExportWithEvents(),
+    expectTrue(validPreflight.canExportSafely(),
+    const fuse::profiler::ChromeTraceExportPreflight guardedPreflight =
+    expectTrue(guardedPreflight.hasOnlyExportableEvents(),
+    expectTrue(guardedPreflight.canExportWithEvents(),
+    expectTrue(guardedPreflight.eventCount == validPreflight.eventCount,
+    testChromeTraceExportPreflightExportableOnly();
