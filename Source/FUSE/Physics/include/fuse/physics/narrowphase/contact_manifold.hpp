@@ -328,3 +328,8 @@ ManifoldFinalizeChainPreflight preflight_manifold_finalize_chain(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-ddb5 ---
     ManifoldFinalizeRejectReason rejectReason = ManifoldFinalizeRejectReason::None;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-f4c2 ---
+        return reason == ManifoldFinalizeRejectReason::None && !skipped && canFinalize;
+struct ManifoldPruneDispatchPreflight {
+ManifoldPruneDispatchPreflight preflight_manifold_prune_dispatch(

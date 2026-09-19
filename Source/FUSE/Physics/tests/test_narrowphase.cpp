@@ -2374,3 +2374,22 @@ void testManifoldPruneDispatchGuards() {
             fuse::physics::narrowphase::FrictionBasisRejectReason::MissingNormal,
             fuse::physics::narrowphase::FrictionBasisRejectReason::StaleBasis,
         stalePreflight.rejectReason == fuse::physics::narrowphase::FrictionBasisRejectReason::StaleBasis,
+
+// --- deepen additive from deepen-b4-narrowphase-guards-f4c2 ---
+    const auto allRejectedPreflight = fuse::physics::narrowphase::preflight_narrowphase_batch(
+    expectTrue(!allRejectedPreflight.can_dispatch(), "batch preflight rejects all-sleeping list");
+        allRejectedPreflight.reason ==
+            fuse::physics::narrowphase::NarrowphaseRejectReason::AllPairsRejected,
+    const auto mixedPreflight = fuse::physics::narrowphase::preflight_narrowphase_batch(
+    expectTrue(mixedPreflight.can_dispatch(), "batch preflight allows mixed list");
+    expectTrue(mixedPreflight.dispatchableCount == 1u, "batch preflight counts one dispatchable pair");
+    expectTrue(mixedPreflight.rejectedCount == 1u, "batch preflight counts one rejected pair");
+void testDetectContactsPairIfNeededGuard() {
+                fuse::physics::narrowphase::ManifoldFinalizeRejectReason::NoPenetration),
+        separatedPreflight.reason ==
+    expectTrue(!separatedPreflight.can_finalize(), "finalize preflight cannot finalize separated manifold");
+    expectTrue(shallowPreflight.needsShallowPrune, "prune dispatch preflight flags shallow slot");
+void testFrictionBasisRejectAndPreflightDispatchGuards() {
+    const auto noNormalPreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(noNormal);
+            fuse::physics::narrowphase::FrictionBasisRejectReason::InvalidNormal,
+    testFrictionBasisRejectAndPreflightDispatchGuards();

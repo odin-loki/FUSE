@@ -384,3 +384,6 @@ FrictionBasisEnsurePreflight preflight_friction_basis_ensure(
     const FrictionBasisRejectReason reason = friction_basis_reject_reason(manifold, epsilon);
     return reason == FrictionBasisRejectReason::None ||
            reason == FrictionBasisRejectReason::StaleBasis;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-f4c2 ---
+        return preflight.reason == FrictionBasisRejectReason::None && preflight.canReuse;

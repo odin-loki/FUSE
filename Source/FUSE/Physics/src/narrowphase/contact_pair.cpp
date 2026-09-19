@@ -759,3 +759,6 @@ ContactPairBatchPreflight preflight_contact_pair_batch(
         return ContactPairRejectReason::NegativeInverseMass;
         return ContactPairRejectReason::BothZeroMass;
         return ContactPairRejectReason::SleepingKinematicMix;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-f4c2 ---
+    if (preflight.reason != NarrowphaseRejectReason::None) {

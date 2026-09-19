@@ -682,3 +682,13 @@ ManifoldFinalizeChainPreflight preflight_manifold_finalize_chain(
         return ManifoldFinalizeRejectReason::Empty;
         return ManifoldFinalizeRejectReason::EmptyAfterPrune;
     preflight.rejectReason = ManifoldFinalizeRejectReason::None;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-f4c2 ---
+    case ManifoldFinalizeRejectReason::NoPenetration:
+        return ManifoldFinalizeRejectReason::NoPenetration;
+ManifoldPruneDispatchPreflight preflight_manifold_prune_dispatch(
+    ManifoldPruneDispatchPreflight preflight{};
+    const ManifoldPrunePreflight regularPreflight =
+    preflight.needsRegularPrune = regularPreflight.needs_pruning();
+    preflight.wouldBeEmpty = regularPreflight.wouldBeEmpty;
+    const ManifoldPruneDispatchPreflight preflight =
