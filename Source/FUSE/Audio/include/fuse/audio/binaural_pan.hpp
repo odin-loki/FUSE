@@ -49,6 +49,18 @@ bool has_hrtf_ir(const HrtfIrStub& ir);
 /// True when an HRTF IR stub is null or zero-length — inverse of `has_hrtf_ir`.
 bool is_empty_hrtf_ir(const HrtfIrStub& ir);
 
+/// Read-only empty-IR diagnostics — no mutation (B7.2 deepen follow-up).
+struct HrtfIrPreflight {
+    bool null_samples = true;
+    bool zero_length = true;
+    bool empty_ir = true;
+
+    [[nodiscard]] bool can_use_convolution() const { return !empty_ir; }
+};
+
+/// Preflight an HRTF IR stub before selecting the convolution path.
+HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
+
 /// Alias for `has_hrtf_ir` — convolution path is available when true.
 bool should_use_hrtf_ir(const HrtfIrStub& ir);
 
@@ -271,6 +283,18 @@ bool is_hrtf_pan_bypassed(HrtfPanPath path);
 
 /// Alias for \c is_hrtf_pan_bypassed — skip pan/coupling when true.
 bool should_skip_hrtf_pan_path(HrtfPanPath path);
+
+/// Read-only pan-path diagnostics — no mutation (B7.2 deepen follow-up).
+    bool hrtf_disabled = false;
+    bool co_located = false;
+    bool empty_ir = true;
+
+    [[nodiscard]] bool can_apply_spatial_pan() const { return path != HrtfPanPath::Bypass; }
+    [[nodiscard]] bool uses_convolution() const { return path == HrtfPanPath::Convolution; }
+    [[nodiscard]] bool uses_ild_itd_stub() const { return path == HrtfPanPath::IldItdStub; }
+
+
+/// Preflight HRTF pan routing when no IR is wired (ILD/ITD stub or bypass).
 
 /// True when the resolved path produces a lateral spatial image (not centre bypass).
 bool is_spatial_hrtf_pan_path(HrtfPanPath path);
@@ -682,6 +706,15 @@ struct HrtfSpatialPanPreflight {
 [[nodiscard]] HrtfSpatialPanPreflight preflight_hrtf_spatial_pan(
     bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener, float distance_attenuation,
     float occlusion_gain, const HrtfAttenuationCoupling& coupling = {},
+
+/// Read-only attenuation-coupling diagnostics — no mutation (B7.2 deepen follow-up).
+    bool bypass_path = true;
+    bool spatial_path = false;
+
+    [[nodiscard]] bool can_apply_coupling() const { return spatial_path && !unity_attenuation; }
+    [[nodiscard]] bool should_narrow() const { return can_apply_coupling(); }
+
+/// Preflight distance/occlusion coupling before narrowing the binaural image.
 
 /// Combined spatial blend from distance attenuation and occlusion LF gain.
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
