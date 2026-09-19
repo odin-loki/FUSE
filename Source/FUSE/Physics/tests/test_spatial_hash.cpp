@@ -4460,3 +4460,16 @@ void testPairBufferWouldSkipGuards() {
                "wouldSkipPairBufferClamp agrees with canSkipPairBufferClamp");
     expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferCompactAndClamp(buffer),
                "wouldSkipPairBufferCompactAndClamp false when clamp work exists");
+
+// --- deepen additive from b4-broadphase-wouldskip-invalidate-7ac5 ---
+    expectTrue(fuse::physics::broadphase::wouldSkipBroadphase(bodies, shapes),
+    expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(emptyPairs, buffer),
+    expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(emptyPairs, buffer) ==
+    expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(overBudgetRange, 7u),
+    expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(overBudgetRange, 7u) ==
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(withinRange, 4u),
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(withinRange, 4u) ==
+    expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(writeBuffer, 0u, 0u, 1u),
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(writeBuffer, 0u, 1u, 1u),
+               "wouldSkipPairBufferWriteSlot true for invalid pair");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferWriteSlot(writeBuffer, 0u, 1u, 1u) ==
