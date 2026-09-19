@@ -3004,6 +3004,7 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const 
 
     if (buffer.canSkipSoAIteration() || slot >= pairBufferSlotBound(buffer)) {
 
+    }
 
 bool pairBufferInvalidateSlotRejectsForReason(
     const PairBufferSoA& buffer,
@@ -3088,6 +3089,9 @@ bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer,
 
 
         *reason = reject;
+
+
+
 
 
 
