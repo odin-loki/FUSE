@@ -39,3 +39,6 @@ std::vector<ContactManifold> runNarrowphase(
 }
 
 } // namespace fuse::physics::narrowphase
+
+// --- deepen additive from b4-narrowphase-guards-deepen-2074 ---
+        if (should_skip_contact_pair_dispatch(pair, bodies, shapes)) {

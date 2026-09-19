@@ -1904,3 +1904,38 @@ void testContactPairRejectBreakdownGuards() {
     const auto stalePreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(stale);
     expectTrue(stalePreflight.staleBasis, "friction preflight flags stale basis");
     expectTrue(stalePreflight.needs_rebuild(), "friction preflight needs rebuild for stale basis");
+
+// --- deepen additive from b4-narrowphase-guards-deepen-2074 ---
+    const auto overCapPreflight = fuse::physics::narrowphase::preflight_manifold_prune(overCap);
+    expectTrue(overCapPreflight.exceedsMaxPoints, "preflight flags point count above manifold cap");
+    expectTrue(overCapPreflight.needs_pruning(), "preflight needs pruning when over cap");
+    expectTrue(overCapPreflight.can_prune_in_place(), "preflight can prune over-cap manifold in place");
+    const auto staticPreflight =
+    expectTrue(!staticPreflight.can_dispatch(), "preflight rejects both-static pair");
+        staticPreflight.reason == fuse::physics::narrowphase::ContactPairRejectReason::BothStatic,
+    const auto triggerPreflight =
+    expectTrue(!triggerPreflight.can_dispatch(), "preflight rejects both-trigger pair");
+        triggerPreflight.reason == fuse::physics::narrowphase::ContactPairRejectReason::BothTriggers,
+    const auto degeneratePreflight =
+    expectTrue(!degeneratePreflight.can_dispatch(), "preflight rejects degenerate shape pair");
+        degeneratePreflight.reason == fuse::physics::narrowphase::ContactPairRejectReason::DegenerateShape,
+    const auto unsupportedPreflight =
+    expectTrue(!unsupportedPreflight.can_dispatch(), "preflight rejects unsupported plane-plane pair");
+        unsupportedPreflight.reason ==
+void testContactManifoldFinalizePreflightGuards() {
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_contact_manifold_finalize(empty);
+    expectTrue(emptyPreflight.empty, "finalize preflight flags empty manifold");
+        fuse::physics::narrowphase::should_skip_contact_manifold_finalize(empty),
+        "should_skip finalize true for empty manifold");
+    const auto noNormalPreflight = fuse::physics::narrowphase::preflight_contact_manifold_finalize(noNormal);
+    const auto separatedPreflight = fuse::physics::narrowphase::preflight_contact_manifold_finalize(separated);
+    expectTrue(separatedPreflight.noPenetratingPoints, "finalize preflight flags all-separated points");
+    expectTrue(separatedPreflight.pruneWouldEmpty, "finalize preflight flags prune-would-empty");
+        fuse::physics::narrowphase::should_skip_contact_manifold_finalize(separated),
+        "should_skip finalize true for separated manifold");
+    const auto readyPreflight = fuse::physics::narrowphase::preflight_contact_manifold_finalize(ready);
+        !fuse::physics::narrowphase::should_skip_contact_manifold_finalize(ready),
+        "should_skip finalize false for ready manifold");
+void testNarrowphaseDispatchPreflightWiring() {
+    testContactManifoldFinalizePreflightGuards();
+    testNarrowphaseDispatchPreflightWiring();

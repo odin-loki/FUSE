@@ -261,3 +261,8 @@ ManifoldFinalizePreflight preflight_finalize_contact_manifold(const ContactManif
 
 // --- deepen additive from b4-narrowphase-deepen-guards-e063 ---
     bool rejected() const { return reason != ContactPairRejectReason::None; }
+
+// --- deepen additive from b4-narrowphase-guards-deepen-2074 ---
+struct ContactManifoldFinalizePreflight {
+ContactManifoldFinalizePreflight preflight_contact_manifold_finalize(
+bool should_skip_contact_manifold_finalize(
