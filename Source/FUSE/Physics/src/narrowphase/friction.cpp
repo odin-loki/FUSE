@@ -387,3 +387,12 @@ FrictionBasisEnsurePreflight preflight_friction_basis_ensure(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-f4c2 ---
         return preflight.reason == FrictionBasisRejectReason::None && preflight.canReuse;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-0339 ---
+    case FrictionBasisRejectReason::EmptyOrInvalid:
+    case FrictionBasisRejectReason::BasisReusable:
+        return FrictionBasisRejectReason::EmptyOrInvalid;
+        return FrictionBasisRejectReason::BasisReusable;
+    if (preflight.reason == FrictionBasisRejectReason::EmptyOrInvalid) {
+    preflight.canReuse = preflight.reason == FrictionBasisRejectReason::BasisReusable;
+    preflight.needsRebuild = preflight.reason == FrictionBasisRejectReason::None;

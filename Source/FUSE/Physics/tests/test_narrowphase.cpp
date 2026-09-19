@@ -2393,3 +2393,25 @@ void testFrictionBasisRejectAndPreflightDispatchGuards() {
     const auto noNormalPreflight = fuse::physics::narrowphase::preflight_friction_basis_rebuild(noNormal);
             fuse::physics::narrowphase::FrictionBasisRejectReason::InvalidNormal,
     testFrictionBasisRejectAndPreflightDispatchGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-0339 ---
+void testContactPairDeepenPassShouldRunGuards() {
+        "should_run mirrors should_skip for base dispatch");
+void testManifoldPruneDeepenPassRejectReasonGuards() {
+        "should_skip_manifold_prune true for empty manifold");
+            fuse::physics::narrowphase::ManifoldPruneRejectReason::AlreadyClean,
+        dirtyPreflight.reason == fuse::physics::narrowphase::ManifoldPruneRejectReason::AlreadyClean,
+    expectTrue(dirtyPreflight.can_skip_prune(), "preflight can_skip_prune after conditional prune");
+                fuse::physics::narrowphase::ManifoldPruneRejectReason::AlreadyClean),
+void testManifoldFinalizeDeepenPassRejectReasonGuards() {
+            fuse::physics::narrowphase::ManifoldFinalizeRejectReason::WouldBeEmptyAfterPrune,
+void testFrictionBasisDeepenPassShouldRunGuards() {
+            fuse::physics::narrowphase::FrictionBasisRejectReason::EmptyOrInvalid,
+            empty, fuse::physics::narrowphase::FrictionBasisRejectReason::EmptyOrInvalid),
+        "should_skip mirrors should_run for empty manifold");
+            fuse::physics::narrowphase::FrictionBasisRejectReason::BasisReusable,
+    expectTrue(reusePreflight.can_skip_rebuild(), "preflight can_skip_rebuild for reusable basis");
+    expectTrue(!reusePreflight.can_rebuild(), "preflight cannot rebuild reusable basis");
+                fuse::physics::narrowphase::FrictionBasisRejectReason::BasisReusable),
+    testManifoldPruneDeepenPassRejectReasonGuards();
+    testManifoldFinalizeDeepenPassRejectReasonGuards();

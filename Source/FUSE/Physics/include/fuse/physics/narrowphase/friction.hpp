@@ -205,3 +205,7 @@ FrictionBasisEnsurePreflight preflight_friction_basis_ensure(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-ddb5 ---
     FrictionBasisRejectReason rejectReason = FrictionBasisRejectReason::None;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-0339 ---
+    bool can_skip_rebuild() const { return reason != FrictionBasisRejectReason::None; }
+    bool can_rebuild() const { return reason == FrictionBasisRejectReason::None; }

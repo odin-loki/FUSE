@@ -333,3 +333,8 @@ ManifoldFinalizeChainPreflight preflight_manifold_finalize_chain(
         return reason == ManifoldFinalizeRejectReason::None && !skipped && canFinalize;
 struct ManifoldPruneDispatchPreflight {
 ManifoldPruneDispatchPreflight preflight_manifold_prune_dispatch(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-0339 ---
+        return reason == ManifoldPruneRejectReason::Empty ||
+               reason == ManifoldPruneRejectReason::AlreadyClean;
+    bool can_prune() const { return reason == ManifoldPruneRejectReason::None; }

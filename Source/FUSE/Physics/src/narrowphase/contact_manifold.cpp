@@ -692,3 +692,11 @@ ManifoldPruneDispatchPreflight preflight_manifold_prune_dispatch(
     preflight.needsRegularPrune = regularPreflight.needs_pruning();
     preflight.wouldBeEmpty = regularPreflight.wouldBeEmpty;
     const ManifoldPruneDispatchPreflight preflight =
+
+// --- deepen additive from deepen-b4-narrowphase-guards-0339 ---
+    case ManifoldPruneRejectReason::AlreadyClean:
+        return ManifoldPruneRejectReason::AlreadyClean;
+    if (preflight.reason == ManifoldPruneRejectReason::Empty) {
+    if (should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+    if (prunePreflight.wouldBeEmpty) {
+    if (preflight.reason == ManifoldFinalizeRejectReason::Empty) {
