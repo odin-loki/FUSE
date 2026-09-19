@@ -73,6 +73,16 @@ enum class ProbeKernelRejectReason : u8 {
     InvalidHysteresis,
 };
 
+/// Why a CUDA probe-kernel resource preflight rejected the request (B5.6 deepen).
+enum class ProbeKernelResourceRejectReason : u8 {
+    None = 0,
+    NullProbeWorldPositions,
+    NullIrradianceAtlas,
+    NullDepthAtlas,
+    NullPrevIrradianceSurface,
+    NullOutRadianceSurface,
+};
+
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
 const char* probeKernelRejectReasonLabel(ProbeKernelRejectReason reason);
 
@@ -96,6 +106,8 @@ void populateDDGIKernelParams(DDGIKernelParams& params,
                               const u32* probe_indices,
                               u32 probe_count,
                               u64 frame_seed = 0);
+/// Human-readable label for probe-kernel resource reject reasons (logging / tests).
+const char* probeKernelResourceRejectReasonLabel(ProbeKernelResourceRejectReason reason);
 
 /// Preflight guard before probe trace kernel launch.
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
@@ -207,6 +219,22 @@ ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params
 /// Early-out when probe trace kernel launch preflight would reject.
 /// Early-out when probe blend kernel launch preflight would reject.
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
+
+/// True when all GPU resource pointers required for probe trace are populated.
+bool hasProbeTraceGpuResources(const DDGIKernelParams& params);
+/// True when all GPU resource pointers required for probe blend are populated.
+bool hasProbeBlendGpuResources(const DDGIKernelParams& params);
+/// Diagnose why probe-kernel resource preflight would reject.
+bool tryValidateProbeKernelResources(const DDGIKernelParams& params,
+                                     ProbeKernelResourceRejectReason& outReason);
+/// Combined launch + resource preflight for full CUDA probe trace.
+bool tryCanLaunchProbeTraceKernelWithResources(const DDGIKernelParams& params,
+                                               ProbeKernelRejectReason& outLaunchReason,
+                                               ProbeKernelResourceRejectReason& outResourceReason);
+/// Combined launch + resource preflight for full CUDA probe blend.
+bool tryCanLaunchProbeBlendKernelWithResources(const DDGIKernelParams& params,
+                                               ProbeKernelRejectReason& outLaunchReason,
+                                               ProbeKernelResourceRejectReason& outResourceReason);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);

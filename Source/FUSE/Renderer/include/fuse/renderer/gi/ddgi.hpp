@@ -389,6 +389,15 @@ enum class ProbeScheduleRejectReason : u8 {
 /// Human-readable label for probe schedule reject reasons (logging / tests).
 const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
 
+/// Why probe scheduling preflight rejected the request (B5.6 deepen).
+enum class ProbeScheduleRejectReason : u8 {
+    None = 0,
+    NullOutputIndices,
+    NullOutputCount,
+    ZeroProbeCount,
+    ZeroMaxIndices,
+};
+
 /// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
 enum class ProbeUpdateLaunchRejectReason : u8 {
     NullIndices,
@@ -398,6 +407,9 @@ enum class ProbeUpdateLaunchRejectReason : u8 {
     OutOfRangeProbeIndex,
     ZeroRaysPerProbe,
 };
+
+/// Human-readable label for probe schedule reject reasons (logging / tests).
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
 
 /// Human-readable label for probe-update launch reject reasons (logging / tests).
 const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason);
@@ -602,6 +614,14 @@ struct ProbeGridLayout {
                                                                          const ProbeSampleCoords& coords);
     /// Early-out when sample-coord validation would reject.
     static bool wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// True when corner indices or interpolation weights would be clamped before sampling.
+    static bool wouldClampProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Grid-only sample-coord preflight; false on empty grid or hard OOB corner indices.
+    static bool tryPreflightProbeSampleCoords(const DDGIDesc& desc,
+                                              const ProbeSampleCoords& coords,
+                                              ProbeSampleCoordsRejectReason& outReason);
+    /// Grid-only sample-coord preflight without reject-reason diagnostics.
+    static bool canPreflightProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -875,6 +895,9 @@ ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(
     const DDGIDesc& desc,
 /// Early-out when coord-based probe trilinear sampling preflight would reject.
 bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
+/// Cache-index preflight with null-cache detection; vacuously succeeds on valid indices.
+/// True when `probe_index` exceeds the grid or `cache_count` is undersized.
+bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -988,6 +1011,8 @@ bool preflightProbeSchedule(u32 probe_count,
                             ProbeScheduleRejectReason* reason = nullptr);
 /// True when output capacity would cap scheduled probes below `probes_per_frame`.
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
+/// Early-out when probe scheduling would be rejected — same ordering as `tryScheduleProbeUpdates`.
+bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
 fuse::math::Vec3 blendIrradiance(const fuse::math::Vec3& previous,
                                  const fuse::math::Vec3& incoming,
                                  f32 hysteresis);
