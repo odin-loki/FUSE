@@ -351,6 +351,12 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 bool eventNameEquals(const char* lhs, const char* rhs) {
     return lhs != nullptr && rhs != nullptr && std::strcmp(lhs, rhs) == 0;
 
+    return isValidEventName(event.name) && isValidEventName(name) && std::strcmp(event.name, name) == 0;
+
+bool eventFlowIdMatches(const ProfileEvent& event, u32 flowId) {
+    if (!isValidFlowId(flowId) || !isValidEventName(event.name)) {
+
+        && event.scopeId == flowId;
 }
 
 } // namespace
@@ -2857,6 +2863,12 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -4023,6 +4035,19 @@ bool isAsyncFlowOpen(u32 flowId) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+bool hasUnpairedFlowEvents() {
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -4728,32 +4753,9 @@ NestingConsistencyPreflight preflightNestingConsistency() {
     preflight.hasUnpairedScopeEvents =
         preflight.scopeBeginEventCount != preflight.scopeEndEventCount;
         preflight.flowStartEventCount != preflight.flowFinishEventCount;
-    return preflight;
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
     return preflight;
 }
 

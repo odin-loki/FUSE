@@ -1118,6 +1118,7 @@ bool tryFindFirstEventIndexByFlow(u32 flowId, u32& outIndex);
 bool tryFindLastEventIndexByName(const char* name, u32& outIndex);
 bool isAsyncFlowOpen(u32 flowId);
 u32 openAsyncFlowCountForId(u32 flowId);
+bool hasUnpairedFlowEvents();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
