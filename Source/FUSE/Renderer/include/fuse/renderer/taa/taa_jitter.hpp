@@ -28,9 +28,15 @@ bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitt
                              TaaJitterGuardRejectReason* reason = nullptr);
 /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
 bool tryPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter sync preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterSync(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// True when NDC jitter can be produced for viewport and sequence (B5.9 deepen).
 bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
                             TaaJitterGuardRejectReason* reason = nullptr);
+/// NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason& reason);
+/// Early-out when NDC jitter preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -82,6 +88,8 @@ public:
     bool syncToFrameIndexIfReady(u32 frameIndex);
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
+    /// True when jitter state must resync to `frameIndex` before projection (B5.9 deepen).
+    bool needsResyncToFrameIndex(u32 frameIndex) const;
 
     u32 index() const { return m_index; }
     /// True when the jitter sequence can advance (B5.9 deepen).
