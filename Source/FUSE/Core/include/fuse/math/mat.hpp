@@ -455,3 +455,6 @@ inline Mat4 operator*(const Mat4& a, const Mat4& b) { return multiply(a, b); }
 inline Mat3 operator*(const Mat3& a, const Mat3& b) { return multiply(a, b); }
 
 } // namespace fuse::math
+
+// --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-27ba ---
+inline bool tryExtractTranslation(const Mat4& matrix, Vec3& translation, f32 epsilon = 1e-5f) {

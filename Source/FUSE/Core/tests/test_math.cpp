@@ -1308,3 +1308,47 @@ int main() {
     std::fprintf(stdout, "fuse_core_math_tests: all tests passed.\n");
     return EXIT_SUCCESS;
 }
+
+// --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-27ba ---
+    expectNear(tEnter, 2.f, 1e-4f, "tryRayInterval entry");
+    expectNear(tExit, 4.f, 1e-4f, "tryRayInterval exit");
+    expectNear(t, 2.f, 1e-4f, "tryRayIntersect distance");
+               "tryRayIntervalClamped hits within clamp range");
+    expectNear(tEnter, 2.5f, 1e-4f, "tryRayIntervalClamped entry");
+    expectNear(tExit, 3.5f, 1e-4f, "tryRayIntervalClamped exit");
+    expectTrue(!fuse::math::tryRayInterval(box, {-3.f, 2.f, 0.f}, {1.f, 0.f, 0.f}, tEnter, tExit),
+               "tryRayInterval rejects separated ray");
+    expectTrue(!fuse::math::tryRayIntersect(box, {-3.f, 2.f, 0.f}, {1.f, 0.f, 0.f}, t),
+    expectTrue(!fuse::math::tryRayHits(box, {-3.f, 2.f, 0.f}, {1.f, 0.f, 0.f}, 0.f, 10.f),
+               "tryRayHits rejects separated segment");
+    expectTrue(fuse::math::tryTransformRigidAabb(rigid, local, world),
+               "tryTransformRigidAabb accepts rigid matrix");
+                   "tryTransformRigidAabb matches transformAabb");
+    expectTrue(!fuse::math::tryTransformRigidAabb(nonUniform, local, world),
+               "tryTransformRigidAabb rejects non-uniform scale");
+    expectTrue(!fuse::math::tryTransformRigidAabb(rigid, empty, world),
+               "tryTransformRigidAabb early-outs on empty box");
+    expectTrue(fuse::math::tryExtractTranslation(affine, translation), "tryExtractTranslation accepts affine");
+    expectVec3Near(translation, {-2.f, 4.f, 1.f}, 1e-5f, "tryExtractTranslation reads translation column");
+    expectTrue(!fuse::math::tryExtractTranslation(perspective, translation),
+               "tryExtractTranslation rejects non-affine matrix");
+    expectTrue(fuse::math::tryClassifyAabb(plane, above, side), "tryClassifyAabb succeeds for valid inputs");
+    expectTrue(side == fuse::math::PlaneSide::InFront, "tryClassifyAabb reports in front");
+    expectTrue(!fuse::math::tryClassifyAabb(plane, empty, side),
+               "tryClassifyAabb early-outs on empty box");
+    expectTrue(!fuse::math::tryClassifyAabb(degenerate, above, side),
+    expectTrue(fuse::math::tryExtractTranslation(rigid, scalarTranslation),
+               "scalar tryExtractTranslation succeeds");
+    expectTrue(fuse::math::simd::tryExtractTranslation(rigid, simdTranslation),
+               "simd tryExtractTranslation succeeds");
+    expectVec3Near(simdTranslation, scalarTranslation, 1e-5f, "simd tryExtractTranslation matches scalar");
+    expectTrue(!fuse::math::tryInverseAffine(rigid, scalarInverse),
+               "scalar tryInverseAffine rejects uniform scale");
+    expectTrue(fuse::math::tryInverseAffine(rotation, scalarInverse), "scalar tryInverseAffine accepts rotation");
+    expectTrue(fuse::math::simd::tryInverseAffine(rotation, simdInverse), "simd tryInverseAffine accepts rotation");
+    expectMat4Near(simdInverse, scalarInverse, 1e-4f, "simd tryInverseAffine matches scalar");
+    expectTrue(fuse::math::tryTransformRigidAabb(rigid, box, scalarWorld),
+               "scalar tryTransformRigidAabb succeeds");
+    expectTrue(fuse::math::simd::tryTransformRigidAabb(rigid, box, simdWorld),
+               "simd tryTransformRigidAabb succeeds");
+    expectAabbNear(simdWorld, scalarWorld, 1e-4f, "simd tryTransformRigidAabb matches scalar");

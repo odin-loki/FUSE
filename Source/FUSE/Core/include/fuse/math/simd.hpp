@@ -421,3 +421,11 @@ inline bool tryMakePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point
 }
 
 } // namespace fuse::math::simd
+
+// --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-27ba ---
+inline bool tryInverseAffine(const fuse::math::Mat4& matrix, fuse::math::Mat4& out) {
+    return fuse::math::tryInverseAffine(matrix, out);
+inline bool tryExtractTranslation(const fuse::math::Mat4& matrix, Vec3& translation, f32 epsilon = 1e-5f) {
+    return fuse::math::tryExtractTranslation(matrix, translation, epsilon);
+inline bool tryTransformRigidAabb(const fuse::math::Mat4& matrix, const AABB& box, AABB& out,
+    return fuse::math::tryTransformRigidAabb(matrix, box, out, epsilon);

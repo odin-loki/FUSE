@@ -262,3 +262,6 @@ inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
 }
 
 } // namespace fuse::math
+
+// --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-27ba ---
+inline bool tryTransformRigidAabb(const Mat4& matrix, const AABB& box, AABB& out, f32 epsilon = 1e-4f) {
