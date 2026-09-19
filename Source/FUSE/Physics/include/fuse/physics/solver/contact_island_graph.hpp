@@ -147,3 +147,6 @@ enum class IslandBuildRejectReason : u32 {
 
 // --- deepen additive from deepen-pbd-island-guards-a489 ---
     bool inputs_clean() const { return reason == IslandBuildRejectReason::None; }
+
+// --- deepen additive from deepen-pbd-island-sleep-build-guards-e836 ---
+                                            const IslandBuildPreflight& inputPreflight);

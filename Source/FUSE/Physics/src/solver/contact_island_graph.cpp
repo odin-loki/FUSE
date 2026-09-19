@@ -364,3 +364,8 @@ IslandBuildRejectReason island_build_reject_reason(
 // --- deepen additive from pbd-island-sleep-wake-preflights-1600 ---
         return IslandBuildRejectReason::OutOfRangeBodyRef;
     preflight.rejected = preflight.reason != IslandBuildRejectReason::None;
+
+// --- deepen additive from deepen-pbd-island-sleep-build-guards-e836 ---
+                                            const IslandBuildPreflight& inputPreflight) {
+    stats.orphanContactCount = inputPreflight.outOfRangeContactCount + inputPreflight.invalidContactCount;
+    stats.orphanDistanceCount = inputPreflight.outOfRangeDistanceCount;

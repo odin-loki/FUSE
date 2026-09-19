@@ -1439,3 +1439,6 @@ IslandConstraintRefsPreflight preflight_island_solvable_constraint_refs(
 bool should_skip_island_solvable_constraint_refs(const ContactIslandGraph::Island& island,
 IslandDispatchBodiesPreflight preflight_island_dispatch_with_bodies(const ContactIslandGraph& graph,
 bool should_skip_island_dispatch_with_bodies(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-sleep-build-guards-e836 ---
+bool should_skip_island_dispatch_for_sleep(const ContactIslandGraph& graph, const RigidBodySoA& bodies);

@@ -4270,3 +4270,31 @@ void testPreflightIslandDispatchWithBodiesGuards() {
                "should_skip false after wake");
     testPreflightIslandSolvableConstraintRefsGuards();
     testPreflightIslandDispatchWithBodiesGuards();
+
+// --- deepen additive from deepen-pbd-island-sleep-build-guards-e836 ---
+    expectTrue(emptyPreflight.skipped, "build preflight skips completely empty inputs");
+    expectTrue(should_skip_island_build(0, {}, {}), "should_skip build on empty inputs");
+    expectTrue(sleepingPreflight.allDynamicSleeping, "both-sleeping island flagged allDynamicSleeping");
+    expectTrue(sleepingPreflight.can_sleep(), "all-sleeping island can sleep");
+    expectTrue(graphPreflight.can_solve(), "graph sleep preflight can solve with awake island");
+    expectTrue(graphPreflight.stats.solvableCount >= 1u, "graph sleep preflight counts solvable islands");
+               "should_skip dispatch for sleep false with awake island");
+    expectTrue(solvableIndices.size() == graphPreflight.stats.solvableCount,
+    expectTrue(!sleepingPreflight.invalidDt, "constraint solve preflight accepts valid dt");
+    expectTrue(sleepingPreflight.refs.can_solve(), "sleeping island has in-range refs");
+    expectTrue(!sleepingPreflight.sleepWake.can_solve(), "sleeping island fails sleep/wake preflight");
+               "should_skip constraint solve for all-sleeping island");
+    const IslandConstraintSolvePreflight awakePreflight = preflight_island_constraint_solve(
+    expectTrue(awakePreflight.can_solve(), "awake island passes constraint solve preflight");
+               "should_skip false for awake island constraint solve");
+    expectTrue(invalidDtPreflight.invalidDt, "constraint solve preflight rejects zero dt");
+    expectTrue(!invalidDtPreflight.can_solve(), "invalid dt cannot constraint-solve");
+               "should_skip constraint solve on invalid dt");
+    const IslandConstraintSolvePreflight stalePreflight =
+    expectTrue(!stalePreflight.can_solve(), "stale refs fail combined constraint solve preflight");
+void testAllSleepingGraphDispatchPreflight() {
+    expectTrue(graphPreflight.skipped, "all-sleeping graph preflight is skipped");
+    expectTrue(!graphPreflight.can_solve(), "all-sleeping graph cannot solve");
+    expectTrue(should_skip_island_dispatch_for_sleep(graph, bodies),
+               "should_skip dispatch for sleep on all-sleeping graph");
+    testAllSleepingGraphDispatchPreflight();
