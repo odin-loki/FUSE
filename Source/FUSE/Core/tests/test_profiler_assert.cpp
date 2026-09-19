@@ -6093,3 +6093,12 @@ void testCounterSamplePreflightGuard() {
     expectTrue(!fuse::profiler::wouldSkipEndAsyncFlow("would_skip_flow"),
                "wouldSkipEndAsyncFlow false with matching open flow");
     expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow("disabled_flow"),
+
+// --- deepen additive from b16-profiler-deepen-guards-2dba ---
+    expectTrue(fuse::profiler::tryFindFirstEventByName("lookup_flow", outEvent),
+               "tryFindFirstEventIndexByFlowId true for recorded flow");
+    expectTrue(outIndex == 0u, "tryFindFirstEventIndexByFlowId copies flow start index");
+    expectTrue(filledPreflight.hasOnlyExportableEvents, "valid trace hasOnlyExportableEvents true");
+    expectTrue(!filledPreflight.exportWouldTrimEvents, "valid trace does not trim events");
+void testChromeTraceExportPreflightOrphanFlags() {
+    testChromeTraceExportPreflightOrphanFlags();
