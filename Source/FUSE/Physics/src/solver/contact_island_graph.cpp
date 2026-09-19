@@ -1277,6 +1277,18 @@ bool ContactIslandGraph::buildGuarded(u32 bodyCount,
     return true;
 }
 
+bool contact_body_indices_in_range(const narrowphase::ContactManifold& contact, u32 bodyCount) {
+    return contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+}
+
+bool distance_body_indices_in_range(const DistanceConstraint& constraint, u32 bodyCount) {
+    return constraint.bodyA < bodyCount && constraint.bodyB < bodyCount;
+}
+
+bool constraint_pair_is_degenerate(u32 bodyA, u32 bodyB) {
+    return bodyA == bodyB;
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
