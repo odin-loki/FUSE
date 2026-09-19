@@ -278,6 +278,8 @@ bool wouldSkipDdgiKernelUpdate(const DDGIDesc& desc,
 /// Populate kernel params from desc + scheduled indices, then run launch preflight.
 bool preflightPopulatedProbeKernelLaunch(DDGIKernelParams& params,
 
+
+
 /// Populate kernel params from desc + scheduled indices without changing launch guards.
 void populateDDGIKernelParams(DDGIKernelParams& params,
                               const DDGIDesc& desc,
