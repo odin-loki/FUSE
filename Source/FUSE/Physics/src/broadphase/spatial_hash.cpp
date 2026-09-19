@@ -2664,15 +2664,19 @@ MergeBroadphaseRejectReason mergeBroadphaseRejectReason(
 bool mergeBroadphaseRejectsForReason(
     MergeBroadphaseRejectReason expected) {
     return mergeBroadphaseRejectReason(bodies, shapes) == expected;
-}
 
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const PairBufferSoA& buffer) {
     return !preflightRefineDedupeBroadphase(bodies, shapes, buffer).canRefineDedupe();
 
 bool shouldRunRefineDedupeBroadphase(
     return preflightRefineDedupeBroadphase(bodies, shapes, buffer).canRefineDedupe();
+RefineAndDedupeBroadphasePreflight preflightRefineAndDedupeBroadphase(
+    RefineAndDedupeBroadphasePreflight preflight{};
+
+bool canSkipRefineAndDedupeBroadphase(
+    return !preflightRefineAndDedupeBroadphase(bodies, shapes, buffer).canRunEither();
+
+bool shouldRunRefineAndDedupeBroadphase(
+    return preflightRefineAndDedupeBroadphase(bodies, shapes, buffer).canRunEither();
 
 BroadphaseMergePreflight preflightBroadphaseMerge(
     const RigidBodySoA& bodies,
@@ -2767,6 +2771,7 @@ BroadphaseMergeScan scanBroadphaseMergeBodies(
     preflight.planeBodyCount = static_cast<u32>(uniquePlaneBodies.size());
     preflight.dynamicBodyCount = static_cast<u32>(uniqueDynamicBodies.size());
     preflight.estimatedMergePairs = preflight.planeBodyCount * preflight.dynamicBodyCount;
+
 
 
 
@@ -3149,6 +3154,8 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     const u32 pairCount = static_cast<u32>(pairs.size());
     preflight.insufficientCapacity =
         preflight.canMerge() && pairCount > 0u && !buffer.canAcceptPairs(pairCount);
+        if (preflightPairBufferPush(buffer, pair.bodyA, pair.bodyB).canPush()) {
+            ++preflight.mergeablePairCount;
     return preflight;
 }
 

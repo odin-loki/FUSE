@@ -12411,6 +12411,20 @@ void testPairBufferInvalidateRejectReasonGuards() {
              static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateRejectReason::OutOfRangeSlot),
              "empty buffer reports OutOfRangeSlot invalidate reject reason");
 
+
+             "valid slot write reports None write reject reason");
+
+             "self-pair slot write reports InvalidPair write reject reason");
+    expectTrue(fuse::physics::broadphase::canSkipPairBufferWrite(buffer, 0u, 1u, 1u),
+               "canSkipPairBufferWrite true for invalid pair");
+
+                 fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 4u, 0u, 1u)),
+             "out-of-range slot write reports OutOfRangeSlot write reject reason");
+
+        fuse::physics::broadphase::preflightPairBufferWrite(buffer, 0u, 2u, 3u);
+    expectTrue(preflight.canWrite(), "write preflight accepts valid slot write");
+
+
              static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateRejectReason::None),
              "valid slot reports None invalidate reject reason");
     expectTrue(fuse::physics::broadphase::shouldRunPairBufferInvalidate(buffer, 0u),
@@ -13364,10 +13378,7 @@ void testCellCapacityInsertPreflightGuards() {
     expectEq(singletonPreflight.uniqueOccupantCount, 1u, "cell-pair preflight counts unique occupants");
 
     const std::vector<fuse::u32> pairOccupants = {0u, 1u, 0u};
-    const fuse::physics::broadphase::CellPairGenPreflight pairPreflight =
-        fuse::physics::broadphase::preflightCellPairGen(pairOccupants);
     expectTrue(pairPreflight.canGenerate(), "cell-pair preflight accepts multi-body cell");
-    expectTrue(fuse::physics::broadphase::shouldRunCellPairGen(pairOccupants),
                "shouldRunCellPairGen true for pairable occupants");
     expectEq(pairPreflight.estimatedPairCount, 1u, "cell-pair preflight estimates one canonical pair");
     expectEq(fuse::physics::broadphase::estimateCellPairCount(pairOccupants), 1u,
@@ -13457,7 +13468,6 @@ void testRefinePairSlotRejectReasonGuards() {
                "shouldRunCellPairGen true for valid occupants");
     expectEq(fuse::physics::broadphase::countPairsForCell(validOccupants), 1u,
              "countPairsForCell returns one pair for two unique bodies");
-    expectTrue(std::strcmp(fuse::physics::broadphase::cellPairGenRejectReasonName(
                                fuse::physics::broadphase::CellPairGenRejectReason::InsufficientOccupants),
                            "InsufficientOccupants") == 0,
                "InsufficientOccupants pair-gen reject reason has stable label");
@@ -13579,14 +13589,17 @@ void testMergePairsIntoBufferExtendedPreflightGuards() {
     const fuse::physics::broadphase::MergePairsIntoBufferPreflight mixedPreflight =
         fuse::physics::broadphase::preflightMergePairsIntoBuffer(mixedPairs, buffer);
     expectEq(mixedPreflight.invalidPairCount, 1u, "merge preflight reports invalid pair count");
-             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateRejectReason::AlreadyInvalid),
-             "already-invalid slot reports AlreadyInvalid reject reason");
-    expectTrue(fuse::physics::broadphase::pairBufferInvalidateRejectsForReason(
-                   buffer, 0u, fuse::physics::broadphase::PairBufferInvalidateRejectReason::AlreadyInvalid),
 
     expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferInvalidateRejectReason(buffer, 4u)),
              static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateRejectReason::OutOfRangeSlot),
-             "out-of-range invalidate reports OutOfRangeSlot reject reason");
+             "already-invalid slot reports AlreadyInvalid invalidate reject reason");
+                   buffer,
+                   0u,
+                   fuse::physics::broadphase::PairBufferInvalidateRejectReason::AlreadyInvalid),
+               "canSkipPairBufferInvalidate true for already-invalid slot");
+
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferInvalidateRejectReason(buffer, 8u)),
+             "out-of-range slot reports OutOfRangeSlot invalidate reject reason");
     expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferInvalidateRejectReasonName(
                                fuse::physics::broadphase::PairBufferInvalidateRejectReason::AlreadyInvalid),
                            "AlreadyInvalid") == 0,
@@ -13702,6 +13715,77 @@ void testBroadphaseMergeIntoBufferPreflightGuards() {
     expectEq(static_cast<fuse::u32>(fullPreflight.bufferReason),
              static_cast<fuse::u32>(fuse::physics::broadphase::MergePairsIntoBufferRejectReason::BufferFull),
              "merge-into-buffer preflight carries buffer reject reason");
+    const fuse::physics::broadphase::PairBufferInvalidatePreflight preflight =
+        fuse::physics::broadphase::preflightPairBufferInvalidate(buffer, 8u);
+    expectTrue(!preflight.canInvalidate(), "invalidate preflight rejects out-of-range slot");
+    expectTrue(preflight.outOfRangeSlot, "invalidate preflight marks out-of-range slot");
+}
+
+void testCellOccupancyBudgetRemainingPreflight() {
+    const fuse::physics::broadphase::CellRange3 validRange = {{0, 0, 0}, {1, 1, 1}};
+    const fuse::physics::broadphase::CellOccupancyPreflight withinBudget =
+        fuse::physics::broadphase::preflightCellOccupancy(validRange, 12u);
+    expectEq(withinBudget.budgetRemaining, 4u, "preflight reports remaining occupancy budget");
+    expectEq(withinBudget.occupancyCount, 8u, "preflight occupancy count unchanged with budgetRemaining");
+
+    const fuse::physics::broadphase::CellOccupancyPreflight overBudget =
+        fuse::physics::broadphase::preflightCellOccupancy(validRange, 7u);
+    expectEq(overBudget.budgetRemaining, 0u, "over-budget preflight reports zero remaining budget");
+
+    const fuse::physics::broadphase::CellRange2 planeRange = {{0, 0}, {3, 1}};
+    const fuse::physics::broadphase::CellOccupancyPreflight planePreflight =
+        fuse::physics::broadphase::preflightCellOccupancy(planeRange, 10u);
+    expectEq(planePreflight.budgetRemaining, 2u, "2D preflight reports remaining occupancy budget");
+
+void testRefineAndDedupeBroadphasePreflightGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    fuse::physics::broadphase::PairBufferSoA buffer;
+
+    expectTrue(fuse::physics::broadphase::canSkipRefineAndDedupeBroadphase(bodies, shapes, buffer),
+               "canSkipRefineAndDedupeBroadphase on empty scene");
+    expectTrue(!fuse::physics::broadphase::shouldRunRefineAndDedupeBroadphase(bodies, shapes, buffer),
+               "shouldRunRefineAndDedupeBroadphase false on empty scene");
+
+    bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    bodies.addBody({0.5f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 0, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {1.f, 0.f, 0.f});
+    buffer.push(0u, 1u);
+
+    const fuse::physics::broadphase::RefineAndDedupeBroadphasePreflight preflight =
+        fuse::physics::broadphase::preflightRefineAndDedupeBroadphase(bodies, shapes, buffer);
+    expectTrue(preflight.canRefine(), "combined preflight can refine valid scene");
+    expectTrue(preflight.canDedupe(), "combined preflight can dedupe duplicate pairs");
+    expectTrue(preflight.canRunEither(), "combined preflight can run either pass");
+    expectTrue(fuse::physics::broadphase::shouldRunRefineAndDedupeBroadphase(bodies, shapes, buffer),
+               "shouldRunRefineAndDedupeBroadphase true when dedupe needed");
+
+void testBroadphaseMergeDeepenPreflightGuards() {
+
+    shapes.addShape(fuse::physics::CollisionShapeType::Plane, 0, {0.f, 1.f, 0.f});
+    const fuse::physics::broadphase::BroadphaseMergePreflight planeOnly =
+        fuse::physics::broadphase::preflightBroadphaseMerge(bodies, shapes);
+    expectEq(planeOnly.planeBodyCount, 1u, "merge preflight counts plane bodies");
+    expectEq(planeOnly.dynamicBodyCount, 0u, "merge preflight counts zero dynamic bodies on plane-only scene");
+
+    bodies.addBody({0.f, 1.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, 1, {0.5f, 0.f, 0.f});
+    const fuse::physics::broadphase::BroadphaseMergePreflight mergeable =
+    expectEq(mergeable.planeBodyCount, 1u, "mergeable scene reports plane body count");
+    expectEq(mergeable.dynamicBodyCount, 1u, "mergeable scene reports dynamic body count");
+    expectTrue(mergeable.canMerge(), "mergeable scene preflight can merge");
+
+void testMergePairsIntoBufferDeepenPreflightGuards() {
+
+        fuse::physics::broadphase::preflightMergePairsIntoBuffer(pairs, buffer);
+    expectEq(preflight.mergeablePairCount, 2u, "merge preflight counts mergeable pairs");
+    expectEq(preflight.remainingCapacity, 1u, "merge preflight reports remaining capacity");
+    expectTrue(preflight.canMerge(), "merge preflight can merge into non-full buffer");
+    expectTrue(preflight.hasPartialCapacity(), "merge preflight marks partial capacity when pairs exceed remaining slots");
+
+    expectTrue(fullPreflight.bufferFull, "full buffer merge preflight marks buffer full");
+    expectEq(fullPreflight.mergeablePairCount, 0u, "full buffer merge preflight counts zero mergeable pairs");
 }
 
 } // namespace
@@ -14015,6 +14099,10 @@ int main() {
     testMergePairsIntoBufferPreflightFields();
     testCellCapacityPreflightGuards();
     testCellOccupancyPreflightShapeInsertGuards();
+    testCellOccupancyBudgetRemainingPreflight();
+    testRefineAndDedupeBroadphasePreflightGuards();
+    testBroadphaseMergeDeepenPreflightGuards();
+    testMergePairsIntoBufferDeepenPreflightGuards();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");
