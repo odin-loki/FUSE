@@ -17,7 +17,7 @@ void runNarrowphaseIntoBuffer(
     // under core::initialize(); the slot layout matches the future parallel_for kernel path.
     for (u32 pairIndex = 0; pairIndex < pairCount; ++pairIndex) {
         ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
-        if (generate_contact_manifold(manifold)) {
+        if (finalize_contact_manifold_with_preflight(manifold)) {
             buffer.writeSlot(pairIndex, manifold);
         }
     }
