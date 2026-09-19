@@ -190,14 +190,40 @@ PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer)
 /// Non-mutating dedupe skip predicate — mirrors `PairBufferSoA::canSkipDedupe` (B4.2 deepen follow-up pass).
 bool canSkipPairBufferDedupe(const PairBufferSoA& buffer);
 
+/// Non-mutating dedupe predicate — mirrors `preflightPairBufferDedupe` (B4.2 deepen pass).
+bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
+
+/// Why pair-buffer canonical sort would early-out (B4.2 deepen pass).
+enum class PairBufferSortRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    SinglePair,
+};
+
+/// Human-readable label for pair-buffer sort reject reasons (logging / tests).
+const char* pairBufferSortRejectReasonName(PairBufferSortRejectReason reason);
+
+/// Diagnose why canonical sort would skip; vacuously succeeds when sort may proceed.
+PairBufferSortRejectReason pairBufferSortRejectReason(const PairBufferSoA& buffer);
+
+/// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferSortRejectsForReason(const PairBufferSoA& buffer, PairBufferSortRejectReason expected);
+
 /// Read-only canonical-sort diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct PairBufferSortPreflight {
+    PairBufferSortRejectReason reason = PairBufferSortRejectReason::None;
     bool emptyBuffer = false;
     bool singlePair = false;
 
-    bool needsSort() const { return !emptyBuffer && !singlePair; }
+    bool needsSort() const { return reason == PairBufferSortRejectReason::None; }
 };
 
 PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer);
+
+/// Non-mutating sort skip predicate — inverse of `needsSort` (B4.2 deepen pass).
+bool canSkipPairBufferSort(const PairBufferSoA& buffer);
+
+/// Non-mutating sort predicate — mirrors `preflightPairBufferSort` (B4.2 deepen pass).
+bool shouldRunPairBufferSort(const PairBufferSoA& buffer);
 
 } // namespace fuse::physics::broadphase
