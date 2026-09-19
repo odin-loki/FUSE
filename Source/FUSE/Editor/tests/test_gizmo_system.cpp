@@ -4259,3 +4259,6 @@ void testUpdateDragNonFiniteRejectReasonGuards() {
 // --- deepen additive from gizmo-reject-reasons-0321 ---
     const fuse::editor::PickPreflight nanPick = fuse::editor::preflightPick(nanHit, fuse::editor::GizmoMode::Translate);
                "tryPreflightSnapDrag accepts valid snap-drag");
+
+// --- deepen additive from deepen-gizmo-preflights-cff7 ---
+    expectTrue(!gizmo.tryPreflightUpdateDrag(hit, updateReason),
