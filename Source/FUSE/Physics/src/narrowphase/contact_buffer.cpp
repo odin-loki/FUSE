@@ -95,6 +95,10 @@ void ContactBufferSoA::applyWarmStartStub(u32 slot, ContactManifold& manifold) c
 }
 
 void ContactBufferSoA::buildFrictionTangentBases() {
+    if (!should_run_contact_buffer_friction_basis(*this)) {
+        return;
+    }
+
     for (u32 slot = 0u; slot < activeCount; ++slot) {
         if (validFlags[slot] == 0u) {
             continue;
@@ -232,6 +236,16 @@ u32 ContactBufferSoA::applyMaxCapacityClamp() {
 }
 
 u32 ContactBufferSoA::compactAndClamp() {
+    const ContactBufferCompactionPreflight preflight = preflight_contact_buffer_compaction(*this);
+    if (preflight.reason == ContactBufferCompactionRejectReason::EmptyBuffer) {
+        activeCount = 0u;
+        pairSlotCount = 0u;
+        return activeCount;
+    }
+    if (preflight.reason == ContactBufferCompactionRejectReason::NoWork) {
+        return activeCount;
+    }
+
     compact();
     return applyMaxCapacityClamp();
 }
@@ -273,6 +287,127 @@ std::vector<ContactManifold> ContactBufferSoA::toVector() const {
         }
     }
     return manifolds;
+}
+
+namespace {
+
+bool contactBufferHasCompactionGaps(const ContactBufferSoA& buffer) {
+    u32 writeIndex = 0u;
+    for (u32 readIndex = 0u; readIndex < buffer.pairSlotCount; ++readIndex) {
+        if (buffer.validFlags[readIndex] != 0u) {
+            if (writeIndex != readIndex) {
+                return true;
+            }
+            ++writeIndex;
+        }
+    }
+    return writeIndex != buffer.activeCount;
+}
+
+bool shouldRunContactBufferCompactionWork(const ContactBufferSoA& buffer) {
+    if (buffer.pairSlotCount == 0u) {
+        return false;
+    }
+    return contactBufferHasCompactionGaps(buffer);
+}
+
+bool shouldRunContactBufferClamp(const ContactBufferSoA& buffer) {
+    return buffer.maxCapacity > 0u && buffer.activeCount > buffer.maxCapacity;
+}
+
+} // namespace
+
+const char* contact_buffer_compaction_reject_reason_name(ContactBufferCompactionRejectReason reason) {
+    switch (reason) {
+    case ContactBufferCompactionRejectReason::None:
+        return "None";
+    case ContactBufferCompactionRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferCompactionRejectReason::NoWork:
+        return "NoWork";
+    }
+    return "Unknown";
+}
+
+ContactBufferCompactionRejectReason contact_buffer_compaction_reject_reason(const ContactBufferSoA& buffer) {
+    if (buffer.pairSlotCount == 0u) {
+        return ContactBufferCompactionRejectReason::EmptyBuffer;
+    }
+    if (!shouldRunContactBufferCompactionWork(buffer) && !shouldRunContactBufferClamp(buffer)) {
+        return ContactBufferCompactionRejectReason::NoWork;
+    }
+    return ContactBufferCompactionRejectReason::None;
+}
+
+bool contact_buffer_compaction_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferCompactionRejectReason expected) {
+    return contact_buffer_compaction_reject_reason(buffer) == expected;
+}
+
+ContactBufferCompactionPreflight preflight_contact_buffer_compaction(const ContactBufferSoA& buffer) {
+    ContactBufferCompactionPreflight preflight{};
+    preflight.reason = contact_buffer_compaction_reject_reason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferCompactionRejectReason::EmptyBuffer;
+    preflight.noWork = preflight.reason == ContactBufferCompactionRejectReason::NoWork;
+    return preflight;
+}
+
+bool can_skip_contact_buffer_compaction(const ContactBufferSoA& buffer) {
+    return !preflight_contact_buffer_compaction(buffer).needsCompaction();
+}
+
+bool should_run_contact_buffer_compaction(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_compaction(buffer).needsCompaction();
+}
+
+const char* contact_buffer_friction_basis_reject_reason_name(ContactBufferFrictionBasisRejectReason reason) {
+    switch (reason) {
+    case ContactBufferFrictionBasisRejectReason::None:
+        return "None";
+    case ContactBufferFrictionBasisRejectReason::EmptyBuffer:
+        return "EmptyBuffer";
+    case ContactBufferFrictionBasisRejectReason::NoValidManifolds:
+        return "NoValidManifolds";
+    }
+    return "Unknown";
+}
+
+ContactBufferFrictionBasisRejectReason contact_buffer_friction_basis_reject_reason(
+    const ContactBufferSoA& buffer) {
+    if (buffer.activeCount == 0u) {
+        return ContactBufferFrictionBasisRejectReason::EmptyBuffer;
+    }
+
+    for (u32 slot = 0u; slot < buffer.activeCount; ++slot) {
+        if (buffer.validFlags[slot] != 0u) {
+            return ContactBufferFrictionBasisRejectReason::None;
+        }
+    }
+
+    return ContactBufferFrictionBasisRejectReason::NoValidManifolds;
+}
+
+bool contact_buffer_friction_basis_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferFrictionBasisRejectReason expected) {
+    return contact_buffer_friction_basis_reject_reason(buffer) == expected;
+}
+
+ContactBufferFrictionBasisPreflight preflight_contact_buffer_friction_basis(const ContactBufferSoA& buffer) {
+    ContactBufferFrictionBasisPreflight preflight{};
+    preflight.reason = contact_buffer_friction_basis_reject_reason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferFrictionBasisRejectReason::EmptyBuffer;
+    preflight.noValidManifolds = preflight.reason == ContactBufferFrictionBasisRejectReason::NoValidManifolds;
+    return preflight;
+}
+
+bool can_skip_contact_buffer_friction_basis(const ContactBufferSoA& buffer) {
+    return !preflight_contact_buffer_friction_basis(buffer).needsRebuild();
+}
+
+bool should_run_contact_buffer_friction_basis(const ContactBufferSoA& buffer) {
+    return preflight_contact_buffer_friction_basis(buffer).needsRebuild();
 }
 
 } // namespace fuse::physics::narrowphase

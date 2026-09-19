@@ -468,15 +468,7 @@ void compute_friction_tangents(ContactManifold& manifold) {
         return;
     }
 
-    if (has_cached_friction_basis(manifold)) {
-        return;
-    }
-
-    const f32 normalLength = manifold.contactNormal.length();
-    if (std::fabs(normalLength - 1.f) > 1e-4f) {
-        manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
-    }
-    manifold.buildFrictionBasis();
+    rebuild_friction_basis_with_preflight(manifold);
 }
 
 ContactPairPreflight preflight_contact_pair(
@@ -607,6 +599,27 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return preflight_narrowphase_batch(pairs, bodies, shapes).can_skip();
+}
+
+bool should_run_contact_pair_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_dispatch(pair, bodies, shapes);
+}
+
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
+bool should_run_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !narrowphase_batch_rejects_all(pairs, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase

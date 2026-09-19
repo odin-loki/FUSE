@@ -1516,6 +1516,189 @@ void testManifoldPruneFinalizeFollowUpGuards() {
         "finalize reject reason name resolves NoPenetratingPoints");
 }
 
+void testContactPairDeepenPassDispatchGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 dynamicA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 dynamicB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 sleepingA = bodies.addBody({0.f, 2.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    const fuse::u32 sleepingB = bodies.addBody({0.f, 3.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingB, {1.f, 0.f, 0.f});
+
+    expectTrue(
+        fuse::physics::narrowphase::should_run_contact_pair_dispatch({dynamicA, dynamicB}, bodies, shapes),
+        "should_run_contact_pair_dispatch allows valid pair");
+    expectTrue(
+        !fuse::physics::narrowphase::should_run_contact_pair_dispatch({dynamicA, dynamicA}, bodies, shapes),
+        "should_run_contact_pair_dispatch rejects self pair");
+    expectTrue(
+        fuse::physics::narrowphase::should_run_contact_pair_deepen_dispatch({dynamicA, dynamicB}, bodies, shapes),
+        "should_run_contact_pair_deepen_dispatch allows valid pair");
+    expectTrue(
+        !fuse::physics::narrowphase::should_run_contact_pair_deepen_dispatch({sleepingA, sleepingB}, bodies, shapes),
+        "should_run_contact_pair_deepen_dispatch rejects both-sleeping pair");
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> mixedPairs = {
+        {sleepingA, sleepingB},
+        {dynamicA, dynamicB},
+    };
+    expectTrue(
+        fuse::physics::narrowphase::should_run_narrowphase_batch(mixedPairs, bodies, shapes),
+        "should_run_narrowphase_batch true when one pair dispatchable");
+    expectTrue(
+        !fuse::physics::narrowphase::should_run_narrowphase_batch({{sleepingA, sleepingB}}, bodies, shapes),
+        "should_run_narrowphase_batch false when all pairs deepen-rejected");
+}
+
+void testManifoldPruneFinalizeDeepenPassGuards() {
+    fuse::physics::narrowphase::ContactManifold clean{};
+    clean.contactNormal = {0.f, 1.f, 0.f};
+    clean.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    expectTrue(
+        !fuse::physics::narrowphase::should_run_manifold_prune(clean),
+        "should_run_manifold_prune false for clean manifold");
+    expectTrue(
+        fuse::physics::narrowphase::should_run_manifold_finalize(clean),
+        "should_run_manifold_finalize true for penetrating manifold");
+    expectTrue(
+        !fuse::physics::narrowphase::can_prune_manifold_in_place(clean),
+        "can_prune_manifold_in_place false when prune is no-op");
+
+    fuse::physics::narrowphase::ContactManifold dirty{};
+    dirty.contactNormal = {0.f, 1.f, 0.f};
+    dirty.addPoint({0.f, 0.f, 0.f}, 0.4f);
+    dirty.addPoint({1.f, 0.f, 0.f}, -0.2f);
+    expectTrue(
+        fuse::physics::narrowphase::should_run_manifold_prune(dirty),
+        "should_run_manifold_prune true when separated slots exist");
+    expectTrue(
+        fuse::physics::narrowphase::can_prune_manifold_in_place(dirty),
+        "can_prune_manifold_in_place true when prune keeps penetrating slots");
+
+    fuse::physics::narrowphase::ContactManifold empty{};
+    expectTrue(
+        !fuse::physics::narrowphase::should_run_manifold_finalize(empty),
+        "should_run_manifold_finalize false for empty manifold");
+}
+
+void testFrictionBasisDeepenPassGuards() {
+    fuse::physics::narrowphase::ContactManifold empty{};
+    expectTrue(
+        !fuse::physics::narrowphase::should_run_friction_basis_rebuild(empty),
+        "should_run_friction_basis_rebuild false for empty manifold");
+
+    fuse::physics::narrowphase::ContactManifold needsBuild{};
+    needsBuild.contactNormal = {0.f, 1.f, 0.f};
+    needsBuild.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    expectTrue(
+        fuse::physics::narrowphase::should_run_friction_basis_rebuild(needsBuild),
+        "should_run_friction_basis_rebuild true without cached basis");
+
+    fuse::physics::narrowphase::compute_friction_tangents(needsBuild);
+    expectTrue(
+        !fuse::physics::narrowphase::should_run_friction_basis_rebuild(needsBuild),
+        "should_run_friction_basis_rebuild false after valid basis built");
+}
+
+void testContactBufferDeepenPassGuards() {
+    fuse::physics::narrowphase::ContactBufferSoA empty{};
+    expectTrue(
+        fuse::physics::narrowphase::contact_buffer_compaction_rejects_for_reason(
+            empty, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::EmptyBuffer),
+        "compaction reject reason flags empty buffer");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_contact_buffer_compaction(empty),
+        "can_skip_contact_buffer_compaction on empty buffer");
+    expectTrue(
+        fuse::physics::narrowphase::contact_buffer_friction_basis_rejects_for_reason(
+            empty, fuse::physics::narrowphase::ContactBufferFrictionBasisRejectReason::EmptyBuffer),
+        "friction-basis reject reason flags empty buffer");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_contact_buffer_friction_basis(empty),
+        "can_skip_contact_buffer_friction_basis on empty buffer");
+
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+    fuse::physics::narrowphase::ContactManifold manifold{};
+    manifold.valid = true;
+    manifold.bodyA = 0u;
+    manifold.bodyB = 1u;
+    manifold.contactNormal = {0.f, 1.f, 0.f};
+    manifold.addPoint({0.f, 0.f, 0.f}, 0.25f);
+    manifold.buildFrictionBasis();
+    buffer.writeSlot(1u, manifold);
+    buffer.compact();
+
+    const auto compactionPreflight = fuse::physics::narrowphase::preflight_contact_buffer_compaction(buffer);
+    expectTrue(
+        compactionPreflight.reason == fuse::physics::narrowphase::ContactBufferCompactionRejectReason::NoWork,
+        "compaction preflight no-ops after compact");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_contact_buffer_compaction(buffer),
+        "can_skip_contact_buffer_compaction after compact");
+
+    const auto frictionPreflight = fuse::physics::narrowphase::preflight_contact_buffer_friction_basis(buffer);
+    expectTrue(frictionPreflight.needsRebuild(), "friction-basis preflight allows rebuild with valid slot");
+    expectTrue(
+        fuse::physics::narrowphase::should_run_contact_buffer_friction_basis(buffer),
+        "should_run_contact_buffer_friction_basis with valid manifold");
+    buffer.buildFrictionTangentBases();
+    const auto rebuiltBasis = buffer.tangentBasisAt(0u);
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis({0.f, 1.f, 0.f}, rebuiltBasis),
+        "buildFrictionTangentBases stores orthonormal basis through gate");
+
+    fuse::physics::narrowphase::ContactBufferSoA staleValidFlags;
+    staleValidFlags.preparePairSlots(2u);
+    staleValidFlags.activeCount = 1u;
+    expectTrue(
+        fuse::physics::narrowphase::contact_buffer_friction_basis_rejects_for_reason(
+            staleValidFlags,
+            fuse::physics::narrowphase::ContactBufferFrictionBasisRejectReason::NoValidManifolds),
+        "friction-basis reject reason flags active count without valid slots");
+
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_buffer_compaction_reject_reason_name(
+                fuse::physics::narrowphase::ContactBufferCompactionRejectReason::NoWork),
+            "NoWork") == 0,
+        "compaction reject reason name resolves NoWork");
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_buffer_friction_basis_reject_reason_name(
+                fuse::physics::narrowphase::ContactBufferFrictionBasisRejectReason::NoValidManifolds),
+            "NoValidManifolds") == 0,
+        "friction-basis reject reason name resolves NoValidManifolds");
+}
+
+void testRunNarrowphaseSkipsDeepenRejectedPairs() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 dynamicA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 dynamicB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 sleepingA = bodies.addBody({0.f, 2.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    const fuse::u32 sleepingB = bodies.addBody({0.f, 3.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingB, {1.f, 0.f, 0.f});
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> pairs = {
+        {sleepingA, sleepingB},
+        {dynamicA, dynamicB},
+    };
+
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    fuse::physics::narrowphase::runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
+    expectTrue(buffer.activeCount == 1u, "narrowphase skips deepen-rejected sleeping pair");
+    const auto restored = buffer.manifoldAt(0u);
+    expectTrue(restored.bodyA == dynamicA && restored.bodyB == dynamicB, "narrowphase keeps dispatchable pair");
+    expectTrue(restored.hasFrictionBasis(), "narrowphase finalizes friction basis for dispatchable pair");
+}
+
 void testFrictionBasisFollowUpRejectGuards() {
     fuse::physics::narrowphase::ContactManifold empty{};
     expectTrue(
@@ -1614,6 +1797,11 @@ int main() {
     testContactPairDeepenFollowUpRejectGuards();
     testManifoldPruneFinalizeFollowUpGuards();
     testFrictionBasisFollowUpRejectGuards();
+    testContactPairDeepenPassDispatchGuards();
+    testManifoldPruneFinalizeDeepenPassGuards();
+    testFrictionBasisDeepenPassGuards();
+    testContactBufferDeepenPassGuards();
+    testRunNarrowphaseSkipsDeepenRejectedPairs();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_narrowphase_tests: all checks passed\n");
