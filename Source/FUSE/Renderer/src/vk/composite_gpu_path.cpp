@@ -20,19 +20,6 @@ namespace {
 
 constexpr u32 kColorFormat = 37; // VK_FORMAT_R8G8B8A8_UNORM
 
-#if defined(FUSE_VULKAN_BACKEND)
-u32 findMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryPropertyFlags properties) {
-    VkPhysicalDeviceMemoryProperties memProperties{};
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-    for (u32 i = 0; i < memProperties.memoryTypeCount; ++i) {
-        if ((typeFilter & (1u << i)) &&
-            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
-        }
-    }
-    return 0;
-}
-
 GraphicsPipelineDesc makeCompositePipelineDesc(PipelineLayout* layout, ShaderModule* vert, ShaderModule* frag,
                                                RenderPass* renderPass, PipelineCache* cache,
                                                const char* debugName) {
@@ -45,6 +32,19 @@ GraphicsPipelineDesc makeCompositePipelineDesc(PipelineLayout* layout, ShaderMod
     pipelineDesc.colorFormat = kColorFormat;
     pipelineDesc.debugName = debugName;
     return pipelineDesc;
+}
+
+#if defined(FUSE_VULKAN_BACKEND)
+u32 findMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryPropertyFlags properties) {
+    VkPhysicalDeviceMemoryProperties memProperties{};
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+    for (u32 i = 0; i < memProperties.memoryTypeCount; ++i) {
+        if ((typeFilter & (1u << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+    return 0;
 }
 #endif
 
