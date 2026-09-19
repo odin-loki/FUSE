@@ -181,6 +181,10 @@ struct FrictionBasisPreflight {
     }
         return reason != FrictionBasisRejectReason::None;
         return reason != FrictionBasisRejectReason::None || skipped || canReuse;
+    bool can_skip_rebuild() const { return skipped || canReuse; }
+
+    /// True when a friction-basis rebuild pass has work to do (B4.5 deepen follow-up).
+    bool needs_work() const { return !skipped && needsRebuild; }
 };
 
 /// Populate friction-basis preflight without mutating the manifold (B4.4 deepen follow-up).
@@ -365,5 +369,11 @@ bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilo
 
 /// Compute friction tangents only when preflight needs rebuild (B4.4 deepen follow-up pass).
 void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Rebuild friction basis using preflight dispatch; no-op when skip is allowed (B4.5 deepen follow-up).
+bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Build or reuse friction basis using preflight dispatch (B4.5 deepen follow-up).
+bool ensure_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

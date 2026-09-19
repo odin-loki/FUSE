@@ -934,6 +934,30 @@ bool should_skip_manifold_finalize(
     f32 duplicateEpsilon,
     f32 frictionEpsilon) {
     return can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    return preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)
+        .can_skip_finalize();
+}
+
+bool should_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon) {
+    return preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon).can_skip_prune();
+
+bool prune_manifold_if_needed(
+    ContactManifold& manifold,
+    if (should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon)) {
+        return !manifold.empty();
+    return manifold.pruneIfEmpty(separationEpsilon, duplicateEpsilon);
+
+bool finalize_manifold_if_needed(
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    const ManifoldFinalizePreflight preflight =
+        preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    if (preflight.can_skip_finalize()) {
+        return false;
+    return generate_contact_manifold(manifold);
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

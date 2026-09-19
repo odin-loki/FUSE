@@ -317,6 +317,8 @@ struct ManifoldPrunePreflight {
     bool can_skip_prune() const { return !needs_pruning(); }
     bool can_skip_prune() const {
         return skipped || reason != ManifoldPruneRejectReason::None || !needs_pruning();
+    /// True when `pruneContactPoints` would be a no-op (B4.5 deepen follow-up).
+    bool can_skip_prune() const { return skipped || !needs_pruning(); }
 };
 
 /// Populate prune preflight from a manifold without mutating slots (B4.4 deepen pass).
@@ -382,6 +384,10 @@ struct ManifoldFinalizePreflight {
     bool can_finalize() const { return !skipped && canFinalize && reason == ManifoldFinalizeRejectReason::None; }
     bool can_finalize() const { return reason == ManifoldFinalizeRejectReason::None; }
     bool can_finalize() const { return reason == ManifoldFinalizeRejectReason::None && canFinalize; }
+    bool can_finalize() const { return !skipped && canFinalize; }
+
+    /// True when finalize should be skipped for this manifold (B4.5 deepen follow-up).
+    bool can_skip_finalize() const { return skipped || !canFinalize; }
 };
 
 /// Populate finalize preflight without mutating the manifold (B4.4 deepen follow-up).
@@ -601,6 +607,25 @@ ManifoldFinalizeResult generate_contact_manifold_result(ContactManifold& manifol
 /// Non-mutating finalize skip predicate — mirrors `can_skip_manifold_finalize` (B4.4 deepen follow-up pass).
 bool should_skip_manifold_finalize(
     const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Returns true when manifold prune would be a no-op (B4.5 deepen follow-up).
+bool should_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Prune only when preflight reports pruning is needed; returns true when points remain (B4.5 deepen follow-up).
+bool prune_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Finalize only when `preflight_manifold_finalize` passes; no-op otherwise (B4.5 deepen follow-up).
+bool finalize_manifold_if_needed(
+    ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
