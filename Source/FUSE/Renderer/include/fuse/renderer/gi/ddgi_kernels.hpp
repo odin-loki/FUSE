@@ -270,6 +270,11 @@ bool preflightProbeKernelLaunchWithGrid(const DDGIDesc& desc,
 /// Non-mutating probe trace launch preflight — returns true when trace would proceed.
 
 /// Non-mutating probe blend launch preflight — returns true when blend would proceed.
+/// Populate params from desc + indices, then preflight both probe kernels without launching.
+bool preflightDdgiKernelUpdate(const DDGIDesc& desc,
+/// Early-out when desc-populated probe kernel update would be rejected.
+bool wouldSkipDdgiKernelUpdate(const DDGIDesc& desc,
+                               u64 frame_seed = 0);
 
 /// Populate kernel params from desc + scheduled indices without changing launch guards.
 void populateDDGIKernelParams(DDGIKernelParams& params,
