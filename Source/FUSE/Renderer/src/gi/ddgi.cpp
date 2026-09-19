@@ -2796,3 +2796,8 @@ bool wouldSkipTrilinearDirectionalProbeSample(const DDGIDesc& desc,
 
 // --- deepen additive from deepen-ddgi-guards-1537 ---
     const bool ok = preflightTrilinearProbeSample(desc, coords, cache, cache_count, reason);
+
+// --- deepen additive from deepen-ddgi-guards-4d1d ---
+bool preflightTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
+    return preflightTrilinearProbeIrradiance(desc, world_position, cache, cache_count, reason);
+    return !preflightTrilinearDirectionalProbeIrradiance(

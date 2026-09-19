@@ -896,3 +896,6 @@ bool preflightTrilinearProbeSampleAtWorldPosition(const DDGIDesc& desc,
 bool preflightTrilinearDirectionalProbeSample(const DDGIDesc& desc,
 bool tryPreflightTrilinearDirectionalProbeSample(const DDGIDesc& desc,
 bool wouldSkipTrilinearDirectionalProbeSample(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-4d1d ---
+bool preflightTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,

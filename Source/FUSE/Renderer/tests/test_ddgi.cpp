@@ -3626,3 +3626,22 @@ void testDdgiDeepenGuardPass() {
     expectTrue(!fuse::renderer::gi::preflightProbeBlendKernelLaunch(nullIndices),
                "preflightProbeBlendKernelLaunch rejects null indices");
                    fuse::renderer::ProbeSampleCoordsRejectReason::NotSampleableGrid),
+
+// --- deepen additive from deepen-ddgi-guards-4d1d ---
+void testDdgiTrilinearPreflightDeepenGuards() {
+               "classifyProbeTrilinearSampleReject none for world position");
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearDirectionalProbeIrradiance(
+               "preflightTrilinearDirectionalProbeIrradiance succeeds for valid sample");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearDirectionalProbeIrradiance(
+               "wouldSkipTrilinearDirectionalProbeIrradiance false for valid sample");
+               "classifyProbeTrilinearSampleReject invalid sample coords");
+               "wouldSkipTrilinearProbeIrradiance true for empty grid");
+void testDdgiScheduleAtRatePreflightDeepenGuards() {
+void testDdgiKernelPreflightDeepenGuards() {
+    expectTrue(fuse::renderer::gi::classifyProbeTraceKernelReject(zeroCount) ==
+               "classifyProbeTraceKernelReject zero_update_count");
+    expectTrue(!fuse::renderer::gi::preflightProbeTraceKernel(zeroCount),
+               "preflightProbeTraceKernel rejects zero update count");
+    testDdgiTrilinearPreflightDeepenGuards();
+    testDdgiScheduleAtRatePreflightDeepenGuards();
+    testDdgiKernelPreflightDeepenGuards();
