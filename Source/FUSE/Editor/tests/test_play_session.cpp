@@ -612,12 +612,23 @@ void testPlaySessionVariableTickPreflightAndRemainder() {
     expectTrue(inactivePreflight.skipped, "variable preflight skips while session inactive");
     expectTrue(!inactivePreflight.wouldSimulate,
                "variable preflight does not simulate while inactive");
+    expectTrue(!inactivePreflight.wouldAdvanceAccumulator,
+               "variable preflight does not advance accumulator while inactive");
 
     session.start(editorScene, scene, state, physics);
     fuse::editor::VariableTickPreflight activePreflight =
         session.preflightVariableTick(0.016f, physics);
     expectTrue(!activePreflight.skipped, "variable preflight allows active playing session");
     expectTrue(activePreflight.wouldSimulate, "variable preflight marks wouldSimulate when active");
+    expectTrue(activePreflight.wouldAdvanceAccumulator,
+               "variable preflight marks wouldAdvanceAccumulator for positive dt");
+
+    fuse::editor::VariableTickPreflight zeroPreflight = session.preflightVariableTick(0.f, physics);
+    expectTrue(zeroPreflight.skipped, "variable preflight skips zero dt");
+    expectTrue(!zeroPreflight.wouldSimulate, "zero dt preflight does not simulate");
+    session.tick(0.f, editorScene, physics);
+    expectTrue(session.skippedInactiveTickCount() == 1u,
+               "zero dt increments inactive tick skip counter");
 
     session.tick(kFixedDt * 0.25f, editorScene, physics);
     expectNear(session.fixedAccumulatorRemainder(kFixedDt), kFixedDt * 0.25f, 1e-5f,

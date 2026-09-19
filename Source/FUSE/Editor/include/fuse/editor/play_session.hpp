@@ -38,6 +38,13 @@ struct VariableTickPreflight {
     bool wouldAdvanceAccumulator = false;
 };
 
+/// Read-only variable-tick guard diagnostics (B6.12 deepen follow-up — inactive tick).
+struct VariableTickPreflight {
+    bool skipped = false;
+    bool wouldSimulate = false;
+    bool wouldAdvanceAccumulator = false;
+};
+
 /// Captured dirty-flag metadata for PIE restore (B6.12 deepen follow-up).
 struct DirtySnapshotInfo {
     bool captured = false;
@@ -81,6 +88,7 @@ struct TickFixedStepPreflight {
 
     bool canRestore() const { return !skipped; }
 };
+
 
     bool captured = false;
     u32 entityCount = 0;
