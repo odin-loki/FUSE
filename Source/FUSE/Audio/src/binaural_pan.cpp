@@ -2184,3 +2184,6 @@ bool try_preflight_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight,
 // --- deepen additive from deepen-b72-hrtf-reject-reasons-d3d0 ---
     const HrtfBinauralRejectReason bypass = classify_hrtf_binaural_reject(preflight);
     if (bypass != HrtfBinauralRejectReason::None) {
+
+// --- deepen additive from binaural-hrtf-reject-reasons-c7a9 ---
+                                 HrtfPanPath* path, HrtfPanPathRejectReason* reason) {

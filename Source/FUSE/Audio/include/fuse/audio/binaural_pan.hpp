@@ -1322,3 +1322,6 @@ bool should_skip_hrtf_binaural_spatial_pan_preflight(bool hrtf_enabled, const Ve
 // --- deepen additive from deepen-b7-2-hrtf-guards-e3ef ---
 bool preflight_hrtf_binaural_pan_ready(const HrtfBinauralPreflight& preflight,
 bool try_preflight_hrtf_binaural_pan(const HrtfBinauralPreflight& preflight,
+
+// --- deepen additive from binaural-hrtf-reject-reasons-c7a9 ---
+                                 HrtfPanPath* path = nullptr, HrtfPanPathRejectReason* reason = nullptr);
