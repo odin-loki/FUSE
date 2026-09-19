@@ -7578,6 +7578,7 @@ void testSnapDragRejectReasonGuards() {
                                                    fuse::editor::GizmoMode::Translate, snap,
                "tryPreflightSnapDrag rejects non-finite delta");
                "shouldSkipSnapDrag true for NaN delta");
+               "shouldSkipSnapDrag true for non-finite delta");
 
     snap.translateSnap = false;
     expectTrue(!fuse::editor::preflightSnapDragReady(0.37f, fuse::editor::GizmoMode::Translate, snap,
