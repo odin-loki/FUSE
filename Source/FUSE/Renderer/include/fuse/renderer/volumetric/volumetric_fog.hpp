@@ -702,3 +702,11 @@ bool tryPreflightFroxelPopulate(const FroxelGridDesc& desc,
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-c280 ---
 bool tryCanSampleTrilinear(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-da24 ---
+DensityLookupRejectReason classifyFroxelDensityLookupReject(const FroxelDensityGrid& grid,
+SampleCoordRejectReason classifyFroxelSampleCoordReject(const FroxelSampleCoords& coords,
+ScreenMappingRejectReason classifyFroxelScreenMappingReject(f32 screenX,
+bool wouldSkipFroxelDensityLookup(const FroxelDensityGrid& grid,
+bool tryCanSampleTrilinearAtCoords(const FroxelDensityGrid& grid,
+bool wouldSkipFroxelTrilinearSample(const FroxelDensityGrid& grid,

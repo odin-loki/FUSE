@@ -1786,3 +1786,23 @@ bool tryCanSampleTrilinear(const FroxelDensityGrid& grid,
     return tryCanSampleDensityTrilinear(grid, desc, coords, reason);
     if (!FroxelGridLayout::tryPreflightSampleCoords(coords, desc, coordReason)) {
     if (!tryCanSampleDensityTrilinear(grid, desc, coords, outReason)) {
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-da24 ---
+    case FroxelTrilinearSampleRejectReason::NotAccessible:
+DensityLookupRejectReason classifyFroxelDensityLookupReject(const FroxelDensityGrid& grid,
+    froxel_util::tryCanLookupAtIndex(grid, desc, index, reason);
+SampleCoordRejectReason classifyFroxelSampleCoordReject(const FroxelSampleCoords& coords,
+    FroxelGridLayout::tryPreflightSampleCoords(coords, desc, reason);
+    froxel_util::tryCanPopulateFromAnalyticFog(desc, camera, params, reason);
+ScreenMappingRejectReason classifyFroxelScreenMappingReject(f32 screenX,
+    FroxelGridLayout::tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, reason);
+    froxel_util::tryCanSampleTrilinearAtCoords(grid, desc, coords, reason);
+bool wouldSkipFroxelDensityLookup(const FroxelDensityGrid& grid,
+    const DensityLookupRejectReason reject = classifyFroxelDensityLookupReject(grid, desc, 0u);
+    return reject != DensityLookupRejectReason::None;
+bool tryCanSampleTrilinearAtCoords(const FroxelDensityGrid& grid,
+        outReason = FroxelTrilinearSampleRejectReason::NotAccessible;
+bool wouldSkipFroxelTrilinearSample(const FroxelDensityGrid& grid,
+    return reject != FroxelTrilinearSampleRejectReason::None;
+    if (!tryCanSampleTrilinearAtCoords(grid, desc, coords, outReason)) {
+    return reject != FroxelPopulateRejectReason::None;
