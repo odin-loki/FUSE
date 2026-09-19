@@ -4120,3 +4120,32 @@ void testFroxelDeepenIsBlockingAndPreflightGuards() {
                "preflightScreenDepthToSampleCoords reports none in range");
                "preflightDensityLookup succeeds with OOB clamp warning");
     expectTrue(fuse::renderer::froxel_util::preflightDensityLookup(grid, desc, 1u, 1u, 2u, &lookupReason),
+
+// --- deepen additive from froxel-volumetric-b511-deepen-8c6b ---
+void testFroxelDeepenGuardPredicates() {
+               "preflightScreenMappingReady succeeds in range");
+    expectTrue(!fuse::renderer::preflightScreenMappingReady(0.5f, 0.5f, 0.01f, desc, camera, &mapReason),
+    expectTrue(fuse::renderer::preflightSampleCoordsReady(inBounds, desc),
+    expectTrue(fuse::renderer::classifySampleCoordReject(warnWeights, desc) ==
+    expectTrue(fuse::renderer::preflightSampleCoordsReady(warnWeights, desc, &sampleReason),
+    expectTrue(fuse::renderer::preflightDensityLookupReady(grid, desc, 0u),
+    expectTrue(fuse::renderer::preflightDensityLookupReady(grid, desc, 999u, &lookupReason),
+               "preflightDensityLookupReady succeeds for OOB index that clamps");
+    expectTrue(fuse::renderer::preflightDensityLookupAtCoordReady(grid, desc, 1u, 1u, 2u),
+               "preflightDensityLookupAtCoordReady succeeds for in-range coords");
+    expectTrue(!fuse::renderer::preflightDensityLookupReady(emptyGrid, desc, 0u, &lookupReason),
+    expectTrue(fuse::renderer::preflightFroxelTrilinearSampleReady(grid, desc, inBounds),
+    expectTrue(fuse::renderer::preflightFroxelTrilinearSampleReady(grid, desc, warnWeights, &trilinearReason),
+    expectTrue(fuse::renderer::classifyFroxelTrilinearSampleReject(grid, desc, warnWeights) ==
+    expectTrue(!fuse::renderer::preflightFroxelTrilinearSampleReady(grid, desc, hardOob, &trilinearReason),
+               "preflightFroxelTrilinearSampleReady reports invalid_sample_coords for hard OOB");
+    expectTrue(fuse::renderer::preflightGridDensityReady(grid, desc),
+    expectTrue(!fuse::renderer::preflightGridDensityReady(undersized, desc, &densityReason),
+    expectTrue(fuse::renderer::preflightFroxelPopulateReady(desc, camera, params),
+    expectTrue(!fuse::renderer::preflightFroxelPopulateReady(desc, camera, zeroDensity, &populateReason),
+    expectTrue(fuse::renderer::preflightSampleCoordsReady(inBounds, desc) ==
+               "preflightSampleCoordsReady agrees with canPreflightSampleCoords");
+    expectTrue(fuse::renderer::preflightFroxelPopulateReady(desc, camera, params) ==
+               "preflightFroxelPopulateReady agrees with canPopulateFromAnalyticFog");
+    expectTrue(fuse::renderer::preflightScreenMappingReady(0.5f, 0.5f, 0.01f, desc, camera) ==
+               "preflightScreenMappingReady agrees with mapScreenDepthToSampleCoords rejection");
