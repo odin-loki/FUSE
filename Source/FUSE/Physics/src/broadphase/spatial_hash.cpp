@@ -618,6 +618,18 @@ const char* shapeCellCapacityRejectReasonName(ShapeCellCapacityRejectReason reas
     return "Unknown";
 }
 
+const char* cellCapacityRejectReasonName(CellCapacityRejectReason reason) {
+    switch (reason) {
+    case CellCapacityRejectReason::None:
+        return "None";
+    case CellCapacityRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellCapacityRejectReason::ExceedsOccupancyBudget:
+        return "ExceedsOccupancyBudget";
+    }
+    return "Unknown";
+}
+
 const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     switch (reason) {
     case CellOccupancyRejectReason::None:
@@ -1640,6 +1652,7 @@ void populateShapeCells(
         if (canSkipShapeCellHashInsert(range, maxOccupancy)) {
         if (canSkipCellCapacityCheck(range, maxOccupancy, maxSpan)) {
         if (canSkipShapeCellInsertion(range, maxSpan, maxOccupancy)) {
+        if (wouldSkipCellCapacityInsertion(range, maxOccupancy, maxSpan)) {
             return;
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
@@ -1701,6 +1714,7 @@ void populateShapeCells(
     if (canSkipShapeCellCapacityIteration(range, maxSpan, maxOccupancy)) {
     if (canSkipShapeCellHashInsert(range, maxOccupancy)) {
     if (canSkipCellCapacityCheck(range, maxOccupancy, maxSpan)) {
+    if (wouldSkipCellCapacityInsertion(range, maxOccupancy, maxSpan)) {
         return;
     if (isEmptyCellRange(range)) {
     if (params.maxCellOccupancyPerShape > 0u) {
@@ -4617,6 +4631,48 @@ bool canSkipBroadphaseMergeIntoBuffer(
 
 bool shouldRunBroadphaseMergeIntoBuffer(
     return preflightBroadphaseMergeIntoBuffer(bodies, shapes, pairs, buffer).canMerge();
+}
+
+bool wouldSkipRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer,
+    RefineBroadphaseRejectReason* reason) {
+    const RefineBroadphaseRejectReason reject = refineBroadphaseRejectReason(bodies, shapes, buffer);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject != RefineBroadphaseRejectReason::None;
+}
+
+bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason* reason) {
+    const DedupeBroadphaseRejectReason reject = dedupeBroadphaseRejectReason(buffer);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject != DedupeBroadphaseRejectReason::None;
+}
+
+bool wouldSkipBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason* reason) {
+    const BroadphaseMergeRejectReason reject = mergeBroadphaseRejectReason(bodies, shapes);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject != BroadphaseMergeRejectReason::None;
+}
+
+bool wouldSkipMergePairsIntoBuffer(
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer,
+    MergePairsIntoBufferRejectReason* reason) {
+    const MergePairsIntoBufferRejectReason reject = mergePairsIntoBufferRejectReason(pairs, buffer);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject != MergePairsIntoBufferRejectReason::None;
 }
 
 void runBroadphaseIntoBuffer(

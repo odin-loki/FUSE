@@ -3375,6 +3375,7 @@ struct PairBufferInvalidateSlotPreflight {
 
 
 
+
 };
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
@@ -3584,5 +3585,15 @@ void dedupePairBufferSoAWithPreflight(PairBufferSoA& buffer);
 
 /// Invalidate only when `preflightPairBufferInvalidateSlot` allows; returns false when skipped (B4.2 deepen pass).
 bool invalidateSlotWithPreflight(PairBufferSoA& buffer, u32 slot);
+
+/// Predict whether invalidateSlot would no-op; optionally records reject reason (B4.2 deepen pass).
+bool wouldSkipPairBufferInvalidateSlot(
+    PairBufferInvalidateSlotRejectReason* reason = nullptr);
+
+/// Predict whether writeSlot would reject; optionally records reject reason (B4.2 deepen pass).
+bool wouldSkipPairBufferWriteSlot(
+    u32 idxA,
+    u32 idxB,
+    PairBufferWriteSlotRejectReason* reason = nullptr);
 
 } // namespace fuse::physics::broadphase
