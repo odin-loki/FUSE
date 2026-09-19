@@ -235,3 +235,6 @@ struct LodResidencyBudgetCounters {
 
 // --- deepen additive from deepen-b75-terrain-lod-budget-residency-guards-3ae1 ---
 [[nodiscard]] inline bool would_exceed_pending_submits(u32 in_flight, u32 completed, u32 max_pending) {
+
+// --- deepen additive from deepen-b75-terrain-lod-budget-residency-guards-3e1d ---
+[[nodiscard]] inline bool would_exceed_pending_submit_budget(u32 in_flight, u32 completed,

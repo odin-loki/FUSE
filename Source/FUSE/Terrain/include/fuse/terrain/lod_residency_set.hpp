@@ -321,3 +321,6 @@ template <typename ScoreFn>
 }
 
 } // namespace fuse::terrain
+
+// --- deepen additive from deepen-b75-terrain-lod-budget-residency-guards-3e1d ---
+[[nodiscard]] inline bool try_update_resident_focus(LodResidencySet& set, u32 chunk_index, f32 focus_distance) {

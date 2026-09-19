@@ -1414,3 +1414,7 @@ void testLodResidencyQueueDequeueEmptyGuard() {
 
 // --- deepen additive from deepen-b75-terrain-lod-budget-residency-guards-3ae1 ---
 void testPendingSubmitGuards() {
+
+// --- deepen additive from deepen-b75-terrain-lod-budget-residency-guards-3e1d ---
+void testPendingSubmitBudgetGuards() {
+void testFocusDistanceGuardedAndUpdateStub() {
