@@ -371,6 +371,15 @@ FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     return cellOccupancyRejectReason(range, maxCells) == expected;
 }
 
+/// Non-mutating cell-occupancy skip predicate — inverse of `preflightCellOccupancy` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
+    return !preflightCellOccupancy(range, maxCells).canIterate();
+}
+
+FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
+    return !preflightCellOccupancy(range, maxCells).canIterate();
+}
+
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
@@ -573,6 +582,12 @@ bool canSkipRefineBroadphase(
     const CollisionShapeSoA& shapes,
     const PairBufferSoA& buffer);
 
+/// Non-mutating refine dispatch predicate — inverse of `canSkipRefineBroadphase` (B4.2 deepen pass).
+bool shouldRunRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
 /// Why broadphase pair dedupe would early-out (B4.2 deepen follow-up pass).
 enum class DedupeBroadphaseRejectReason : u8 {
     None = 0,
@@ -606,8 +621,30 @@ bool shouldRunDedupeBroadphase(const PairBufferSoA& buffer);
 /// Non-mutating dedupe skip predicate — inverse of `shouldRunDedupeBroadphase` (B4.2 deepen follow-up pass).
 bool canSkipDedupeBroadphase(const PairBufferSoA& buffer);
 
+/// Why plane/dynamic merge would early-out (B4.2 deepen pass).
+enum class MergeBroadphaseRejectReason : u8 {
+    None = 0,
+    EmptyPlaneBodies,
+    EmptyDynamicBodies,
+};
+
+/// Human-readable label for merge reject reasons (logging / tests).
+const char* mergeBroadphaseRejectReasonName(MergeBroadphaseRejectReason reason);
+
+/// Diagnose why merge would skip; vacuously succeeds when merge may proceed.
+MergeBroadphaseRejectReason mergeBroadphaseRejectReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `mergeBroadphaseRejectReason` matches `expected` (B4.2 deepen pass).
+bool mergeBroadphaseRejectsForReason(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    MergeBroadphaseRejectReason expected);
+
 /// Read-only plane/dynamic merge diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct BroadphaseMergePreflight {
+    MergeBroadphaseRejectReason reason = MergeBroadphaseRejectReason::None;
     bool emptyPlaneBodies = false;
     bool emptyDynamicBodies = false;
 
@@ -615,6 +652,11 @@ struct BroadphaseMergePreflight {
 };
 
 BroadphaseMergePreflight preflightBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating merge skip predicate — inverse of `preflightBroadphaseMerge` (B4.2 deepen pass).
+bool canSkipBroadphaseMerge(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
