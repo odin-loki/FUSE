@@ -1666,6 +1666,10 @@ bool isAsyncFlowEvent(const ProfileEvent& event) {
 bool flowEventMatchesId(const ProfileEvent& event, u32 flowId) {
     return isValidEventName(event.name) && isAsyncFlowEvent(event) && event.scopeId == flowId;
 
+bool eventNameMatches(const char* eventName, const char* queryName) {
+    return isValidEventName(eventName) && isValidEventName(queryName)
+        && std::strcmp(eventName, queryName) == 0;
+
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
@@ -2983,6 +2987,18 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
+bool tryFindFirstFlowEvent(u32 flowId, ProfileEvent& outEvent) {
+
+
+bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -3336,6 +3352,19 @@ u32 findFirstEventIndexByFlowId(u32 flowId) {
 u32 findLastEventIndexByFlowId(u32 flowId) {
 
 u32 countEventsByFlowId(u32 flowId) {
+
+        if (eventNameMatches(event.name, name)) {
+
+
+
+
+
+
+        if (isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+
+
+
+
 
 bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex) {
     const u32 index = findFirstEventIndexByPhase(phase);
@@ -4204,6 +4233,21 @@ bool isFlowIdOpen(u32 flowId) {
             if (openStarts > 0u) {
                 --openStarts;
     return openStarts > 0u;
+    }
+
+
+    if (index == kInvalidEventIndex) {
+        outIndex = kInvalidEventIndex;
+        return false;
+
+
+
+
+
+
+
+
+
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -4931,6 +4975,17 @@ AsyncFlowPreflight preflightAsyncFlow() {
     preflight.orphanFlowStartCount = orphanFlowStartCount();
     preflight.orphanFlowFinishCount = orphanFlowFinishCount();
     preflight.hasOrphanFlowEvents = hasOrphanFlowEvents();
+
+
+
+
+    preflight.maxScopeNestingDepth = maxNestingDepth();
+    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
+    preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
+    preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
     return preflight;
 }
 
