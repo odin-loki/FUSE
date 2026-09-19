@@ -1165,3 +1165,18 @@ void testCookCachePreflightCacheEntry() {
     expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes(stale_upstream),
                "would_invalidate_stale_upstream_hashes true for stale upstream");
     testCookCachePreflightCacheEntry();
+
+// --- deepen additive from deepen-b79-cooker-hash-88c3 ---
+               "would_invalidate_source false on empty cache");
+               "would_invalidate_output false on empty cache");
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source true for seeded entry");
+               "would_invalidate_output true for seeded entry");
+    expectTrue(!cooker.cache().would_invalidate_stale_content_for_source(source, 0u),
+void testCookCachePreflightEntryAndManifestCoverage() {
+    const fuse::project::CookHashPreflight zero_key = fuse::project::preflight_cook_cache_entry(invalid);
+                       .reason == fuse::project::CookHashRejectReason::MissingManifestDependency,
+                   fuse::project::CookHashRejectReason::MissingManifestDependency)) == "missing_manifest_dependency",
+    expectTrue(cache.would_invalidate_stale_upstream_hashes(stale_upstream),
+               "would_invalidate_stale_upstream true when hashes mismatch");
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({}), "empty upstream list would_invalidate is false");
+    testCookCachePreflightEntryAndManifestCoverage();

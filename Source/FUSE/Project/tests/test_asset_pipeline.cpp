@@ -2031,3 +2031,6 @@ void testCookerReconcileEstimatorGuards() {
                "would_invalidate_downstream_of true for producer with dependents");
     expectTrue(!cooker.cache().would_invalidate_downstream_of(entry_b.output_path, graph.edges(), graph.jobs()),
                "leaf output would_invalidate_downstream_of is false");
+
+// --- deepen additive from deepen-b79-cooker-hash-88c3 ---
+               "would_invalidate_downstream true for chain producer");
