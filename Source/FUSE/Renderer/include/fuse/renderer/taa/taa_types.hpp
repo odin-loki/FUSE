@@ -138,6 +138,26 @@ bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
 u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history);
 
+/// Why history warm-up preflight rejected the request (B5.9 deepen).
+enum class TaaHistoryWarmupBlockReason : u8 {
+    None = 0,
+    NotReady,
+    NeedsWarmup,
+};
+/// Human-readable label for history warm-up block reasons (B5.9 deepen).
+const char* taaHistoryWarmupBlockReasonLabel(TaaHistoryWarmupBlockReason reason);
+/// Classify why history warm-up is incomplete (B5.9 deepen).
+TaaHistoryWarmupBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history);
+/// True when history is allocated and warmed for temporal reuse (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+/// True when history warm-up preflight passes (B5.9 deepen).
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history,
+                               TaaHistoryWarmupBlockReason* reason = nullptr);
+/// History warm-up preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason& reason);
+/// Early-out when history warm-up should be skipped (still needs first resolve) (B5.9 deepen).
+bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history);
+
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
     None = 0,
@@ -160,6 +180,8 @@ bool shouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffe
 /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
 bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                       TaaBlendWeights& outWeights, TaaResolveBlendRejectReason& reason);
+/// True when computed resolve blend weights pass validation and reuse policy (B5.9 deepen).
+bool taaResolveBlendReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
