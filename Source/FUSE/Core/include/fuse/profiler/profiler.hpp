@@ -223,6 +223,29 @@ struct EventLookupPreflight {
 
     bool canExport() const { return !bufferEmpty; }
 
+/// Why chrome export preflight would flag a non-ideal trace (B1.6 deepen — export guard).
+enum class ChromeTraceExportRejectReason : u8 {
+    None,
+    EmptyBuffer,
+    UnbalancedScopeNesting,
+    UnbalancedFlowNesting,
+    OpenAsyncFlows,
+    BufferFull,
+
+/// Read-only chrome export diagnostics — no mutation (B1.6 deepen — export preflight).
+    bool emptyBuffer = false;
+    bool bufferFull = false;
+    bool unbalancedFlowNesting = false;
+    u32 scopeNestingDepth = 0;
+    u32 flowNestingDepth = 0;
+    u32 openFlowCount = 0;
+
+    bool canExport() const { return !emptyBuffer; }
+    bool hasWarnings() const {
+        return bufferFull || unbalancedScopeNesting || unbalancedFlowNesting || openAsyncFlows;
+    bool isNestingClean() const {
+        return !unbalancedScopeNesting && !unbalancedFlowNesting && !openAsyncFlows;
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -297,10 +320,11 @@ ChromeExportPreflight preflightChromeExport();
 
 u32 ringBufferCapacity();
 
-bool isValidProfileName(const char* name);
 ChromeTraceExportPreflight preflightChromeTraceExport();
 bool canExportChromeTrace();
+bool isNestingBalanced();
 
+bool isValidEventName(const char* name);
 bool hasEvents();
 bool hasExportableEvents();
 bool hasOpenAsyncFlows();
@@ -554,6 +578,7 @@ bool canExportChromeTrace();
 
 /// Read-only chrome export preflight — diagnoses empty buffer and guard-state warnings.
 ChromeExportPreflight preflightChromeTraceExport();
+ChromeTraceExportRejectReason chromeTraceExportRejectReason();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();

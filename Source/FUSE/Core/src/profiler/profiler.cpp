@@ -106,6 +106,9 @@ u32 currentFlowNestingDepth() {
 bool isValidEventName(const char* name) {
 bool eventNameIsRecordable(const char* name) {
     return name != nullptr && name[0] != '\0';
+const ProfileEvent& emptyProfileEventStub() {
+    static const ProfileEvent kEmpty{};
+    return kEmpty;
 }
 
 std::string formatCounterArgsJson(const ProfileEvent& event) {
@@ -395,6 +398,14 @@ bool canExportChromeTrace() {
     return preflightChromeTraceExport().canExport();
 }
 
+bool isNestingBalanced() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced();
+}
+
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -525,15 +536,16 @@ const ProfileEvent& emptyProfileEvent() {
     return kEmpty;
     return isNonEmptyProfileName(event.name);
 
-}
 
 const ProfileEvent& eventAt(u32 index) {
     if (!isEventIndexValid(index)) {
         return emptyProfileEvent();
-}
 
     const u32 count = eventCount();
     if (count == 0u || index >= count) {
+
+    return emptyProfileEventStub();
+
 
     return count > 0u && index < count;
 
@@ -721,6 +733,7 @@ bool tryLastEvent(ProfileEvent& outEvent) {
         outEvent = ProfileEvent{};
         return false;
     }
+
     return tryEventAt(index, outEvent);
 }
 
@@ -1207,9 +1220,30 @@ bool canExportChromeTrace() {
 ChromeExportPreflight preflightChromeTraceExport() {
     preflight.profilerDisabled = !enabled();
     preflight.unbalancedScopeNesting = !isScopeNestingBalanced();
+    preflight.emptyBuffer = preflight.eventCount == 0u;
+    preflight.bufferFull = isBufferFull();
+    preflight.scopeNestingDepth = nestingDepth();
+    preflight.flowNestingDepth = flowNestingDepth();
+    preflight.openFlowCount = openAsyncFlowCount();
+    preflight.unbalancedFlowNesting = !isFlowNestingBalanced();
     preflight.openAsyncFlows = hasOpenAsyncFlows();
     return preflight;
 }
+
+ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
+    const ChromeTraceExportPreflight preflight = preflightChromeTraceExport();
+    if (preflight.emptyBuffer) {
+        return ChromeTraceExportRejectReason::EmptyBuffer;
+    }
+    if (preflight.unbalancedScopeNesting) {
+        return ChromeTraceExportRejectReason::UnbalancedScopeNesting;
+    if (preflight.openAsyncFlows) {
+        return ChromeTraceExportRejectReason::OpenAsyncFlows;
+    if (preflight.unbalancedFlowNesting) {
+        return ChromeTraceExportRejectReason::UnbalancedFlowNesting;
+    if (preflight.bufferFull) {
+        return ChromeTraceExportRejectReason::BufferFull;
+    return ChromeTraceExportRejectReason::None;
 
 std::string exportChromeTraceJson() {
     const std::lock_guard<std::mutex> lock(g_exportMutex);
