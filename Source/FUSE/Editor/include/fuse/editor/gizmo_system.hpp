@@ -317,6 +317,10 @@ struct UpdateDragInteractionPreflight {
     bool canUpdate() const { return drag.canUpdate(); }
     bool snapWillApply() const { return snap.canApply(); }
     bool snapDragWillApply() const { return snapDrag.canApply(); }
+    /// Enabled snap with unusable step — drag update still applies without delta rounding (B6.4 deepen pass).
+    bool snapDragDegraded() const { return snapDrag.isDegraded(); }
+    /// Snap is enabled but the mode step is unusable — update still applies (B6.4 deepen pass).
+    bool snapDegraded() const { return drag.snapDegraded; }
 };
 
 UpdateDragInteractionPreflight preflightUpdateDragInteraction(const GizmoHitTest& hit, bool dragging,
@@ -395,6 +399,8 @@ struct BeginInteractionPreflight {
 
     bool canBegin() const { return begin.canBegin; }
     bool snapReady() const { return snap.canApply(); }
+    /// Snap is enabled but the mode step is unusable — begin still applies (B6.4 deepen pass).
+    bool snapDegraded() const { return begin.snapDegraded; }
 };
 
 /// Combined update-drag + snap diagnostics — no mutation (B6.4 deepen pass).
@@ -535,8 +541,6 @@ enum class GizmoPickRejectReason : u8 {
     NonFiniteHit,
     EmptyRay,
     EmptyHit,
-    NonFiniteRay,
-    NonFiniteHit,
     InvalidPickConfig,
     InvalidDimensions,
     OutOfBounds,
@@ -558,8 +562,6 @@ enum class GizmoBeginDragRejectReason : u8 {
     NonFiniteHit,
     EmptyRay,
     EmptyHit,
-    NonFiniteRay,
-    NonFiniteHit,
     InvalidPickConfig,
     InvalidDimensions,
     OutOfBounds,
@@ -575,7 +577,6 @@ enum class GizmoUpdateDragRejectReason : u8 {
     NonFiniteHit,
     InvalidActiveAxis,
     EmptyHit,
-    NonFiniteHit,
     InvalidDimensions,
     OutOfBounds,
 };
@@ -594,21 +595,12 @@ enum class GizmoEndDragRejectReason : u8 {
     NotDragging,
 };
 
-/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
-enum class GizmoSnapDragRejectReason : u8 {
-    None = 0,
-    DeltaNonFinite,
-    SnapDisabled,
-    InvalidStep,
-};
-
 const char* gizmoPickRejectReasonLabel(GizmoPickRejectReason reason);
 const char* gizmoSnapRejectReasonLabel(GizmoSnapRejectReason reason);
 const char* gizmoSnapDragRejectReasonLabel(GizmoSnapDragRejectReason reason);
 const char* gizmoBeginDragRejectReasonLabel(GizmoBeginDragRejectReason reason);
 const char* gizmoUpdateDragRejectReasonLabel(GizmoUpdateDragRejectReason reason);
 const char* gizmoEndDragRejectReasonLabel(GizmoEndDragRejectReason reason);
-const char* gizmoSnapDragRejectReasonLabel(GizmoSnapDragRejectReason reason);
 
 GizmoPickRejectReason classifyPickReject(const PickPreflight& preflight);
 GizmoSnapRejectReason classifySnapReject(const SnapPreflight& preflight);
@@ -616,7 +608,6 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
 GizmoBeginDragRejectReason classifyBeginDragReject(const BeginDragPreflight& preflight);
 GizmoUpdateDragRejectReason classifyUpdateDragReject(const UpdateDragPreflight& preflight);
 GizmoEndDragRejectReason classifyEndDragReject(const EndDragPreflight& preflight);
-GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& preflight);
 
 /// Pick preflight with optional reject-reason output (B6.4 deepen pass).
 bool preflightPickReady(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
