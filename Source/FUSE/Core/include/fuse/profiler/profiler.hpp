@@ -38,6 +38,35 @@ struct ProfileEvent {
     u32 counterSnapshotFrame = 0;
 };
 
+bool isValidEventName(const char* name);
+
+/// Read-only scope nesting diagnostics — safe before entering profile scopes.
+struct ScopeNestingPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    bool profilerDisabled = false;
+    bool balanced = true;
+
+    bool canRecord() const { return !profilerDisabled; }
+    bool canEnterScope(const char* name) const { return canRecord() && isValidEventName(name); }
+};
+
+/// Read-only async flow diagnostics — safe before begin/end async flow calls.
+struct AsyncFlowPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    u32 openFlowCount = 0;
+    bool profilerDisabled = false;
+    bool balanced = true;
+    bool depthDetached = false;
+    bool crossThreadHandoffPending = false;
+    bool hasOpenFlows = false;
+
+    bool canRecord() const { return !profilerDisabled; }
+    bool canBeginFlow(const char* name) const { return canRecord() && isValidEventName(name); }
+    bool canEndFlow(const char* name) const { return canBeginFlow(name) && openFlowCount > 0u; }
+};
+
 /// Read-only chrome export diagnostics — safe to call before `exportChromeTraceJson()`.
 struct ChromeTraceExportPreflight {
     u32 eventCount = 0;
@@ -109,7 +138,6 @@ bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
-bool isValidEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
@@ -121,6 +149,16 @@ u32 lastEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 findFirstEventIndexByFlowId(u32 flowId);
+u32 findLastEventIndexByFlowId(u32 flowId);
+u32 countEventsByName(const char* name);
+u32 countEventsByFlowId(u32 flowId);
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent);
+bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
@@ -130,7 +168,17 @@ bool tryLastEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
+ScopeNestingPreflight preflightScopeNesting();
+AsyncFlowPreflight preflightAsyncFlow();
 ChromeTraceExportPreflight preflightChromeTraceExport();
+
+bool wouldSkipProfileScope(const char* name);
+bool wouldSkipAsyncFlowBegin(const char* name);
+bool wouldSkipAsyncFlowEnd(const char* name);
+bool wouldSkipCounterSample(const char* track);
+bool wouldSkipCounterFloatSample(const char* track);
+bool wouldSkipCounterSnapshotAtFrame(const char* track);
+bool wouldSkipCounterFloatSnapshotAtFrame(const char* track);
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();

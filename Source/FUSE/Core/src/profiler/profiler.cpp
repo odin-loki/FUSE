@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace fuse::profiler {
@@ -204,6 +205,18 @@ const char* chromePhaseToken(EventPhase phase) {
         return "C";
     }
     return "X";
+}
+
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    if (name == nullptr || name[0] == '\0' || event.name == nullptr || event.name[0] == '\0') {
+        return false;
+    }
+    return std::strcmp(event.name, name) == 0;
+}
+
+bool eventFlowIdMatches(const ProfileEvent& event, u32 flowId) {
+    return (event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)
+        && event.scopeId == flowId && event.name != nullptr && event.name[0] != '\0';
 }
 
 const char* chromeCategory(EventPhase phase) {
@@ -464,6 +477,100 @@ u32 countEventsByPhase(EventPhase phase) {
     return count;
 }
 
+u32 findFirstEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventNameMatches(eventAt(i), name)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        if (eventNameMatches(eventAt(i - 1u), name)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findFirstEventIndexByFlowId(u32 flowId) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventFlowIdMatches(eventAt(i), flowId)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByFlowId(u32 flowId) {
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        if (eventFlowIdMatches(eventAt(i - 1u), flowId)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventNameMatches(eventAt(i), name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 countEventsByFlowId(u32 flowId) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventFlowIdMatches(eventAt(i), flowId)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByName(name);
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByName(name);
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByFlowId(flowId);
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByFlowId(flowId);
+    return tryExportableEventAt(index, outEvent);
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -475,6 +582,57 @@ const ProfileEvent& lastEvent() {
         return emptyProfileEvent();
     }
     return eventAt(index);
+}
+
+ScopeNestingPreflight preflightScopeNesting() {
+    ScopeNestingPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.activeDepth = scopeNestingDepth();
+    preflight.maxDepth = maxNestingDepth();
+    preflight.balanced = isScopeNestingBalanced();
+    return preflight;
+}
+
+AsyncFlowPreflight preflightAsyncFlow() {
+    AsyncFlowPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.activeDepth = flowNestingDepth();
+    preflight.maxDepth = maxFlowNestingDepth();
+    preflight.openFlowCount = openAsyncFlowCount();
+    preflight.balanced = isFlowNestingBalanced();
+    preflight.depthDetached = isFlowDepthDetached();
+    preflight.crossThreadHandoffPending = isCrossThreadFlowHandoffPending();
+    preflight.hasOpenFlows = hasOpenAsyncFlows();
+    return preflight;
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+    return wouldSkipProfileScope(name);
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name) {
+    return wouldSkipProfileScope(name)
+        || g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return wouldSkipProfileScope(track);
+}
+
+bool wouldSkipCounterFloatSample(const char* track) {
+    return wouldSkipCounterSample(track);
+}
+
+bool wouldSkipCounterSnapshotAtFrame(const char* track) {
+    return wouldSkipCounterSample(track);
+}
+
+bool wouldSkipCounterFloatSnapshotAtFrame(const char* track) {
+    return wouldSkipCounterSample(track);
 }
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
