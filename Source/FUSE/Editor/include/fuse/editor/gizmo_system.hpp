@@ -203,6 +203,21 @@ bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings);
 bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings);
 /// True when screen coordinates lie within viewport bounds (B6.4 deepen follow-up).
 bool isScreenCoordInViewport(const GizmoHitTest& hit);
+/// Why pick preflight rejected the request (B6.4 deepen pass).
+enum class GizmoPickRejectReason : u8 {
+    None = 0,
+    EmptyRay,
+    EmptyHit,
+    InvalidPickConfig,
+    ScreenMiss,
+    PickMiss,
+};
+
+/// Human-readable label for pick reject reasons (B6.4 deepen pass).
+const char* gizmoPickRejectReasonLabel(GizmoPickRejectReason reason);
+
+/// Classify the first blocking pick reject reason from diagnostics (B6.4 deepen pass).
+GizmoPickRejectReason classifyPickReject(const struct PickPreflight& preflight);
 
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
 struct PickPreflight {
@@ -328,6 +343,23 @@ bool canSnapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settin
 /// Read-only snap diagnostics — no mutation (B6.4 deepen follow-up).
     bool canApply = false;
 
+/// Why begin-drag preflight rejected the request (B6.4 deepen pass).
+enum class GizmoBeginDragRejectReason : u8 {
+    None = 0,
+    AlreadyDragging,
+    EmptyRay,
+    EmptyHit,
+    InvalidPickConfig,
+    ScreenMiss,
+    PickMiss,
+};
+
+/// Human-readable label for begin-drag reject reasons (B6.4 deepen pass).
+const char* gizmoBeginDragRejectReasonLabel(GizmoBeginDragRejectReason reason);
+
+/// Classify the first blocking begin-drag reject reason from diagnostics (B6.4 deepen pass).
+GizmoBeginDragRejectReason classifyBeginDragReject(const struct BeginDragPreflight& preflight);
+
 /// Read-only begin-drag diagnostics — no mutation (B6.4 deepen pass).
 struct BeginDragPreflight {
     bool canBegin = false;
@@ -340,6 +372,22 @@ struct BeginDragPreflight {
     GizmoAxis axis = GizmoAxis::None;
 };
 
+    /// Resolved axis from pick preflight when `canBegin` (B6.4 deepen pass).
+    /// Snap is enabled but the mode step is unusable — begin still applies (B6.4 deepen pass).
+    bool snapDegraded = false;
+
+/// Why update-drag preflight rejected the request (B6.4 deepen pass).
+enum class GizmoUpdateDragRejectReason : u8 {
+    None = 0,
+    NotDragging,
+    InvalidActiveAxis,
+    EmptyHit,
+
+/// Human-readable label for update-drag reject reasons (B6.4 deepen pass).
+const char* gizmoUpdateDragRejectReasonLabel(GizmoUpdateDragRejectReason reason);
+
+/// Classify the first blocking update-drag reject reason from diagnostics (B6.4 deepen pass).
+GizmoUpdateDragRejectReason classifyUpdateDragReject(const struct UpdateDragPreflight& preflight);
 
 /// Read-only update-drag diagnostics — no mutation (B6.4 deepen follow-up).
 struct UpdateDragPreflight {
@@ -465,6 +513,8 @@ bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
 
 /// Why end-drag would fail before committing drag state (B6.4 deepen follow-up pass).
 enum class EndDragRejectReason : u8 {
+/// Why end-drag preflight rejected the request (B6.4 deepen pass).
+enum class GizmoEndDragRejectReason : u8 {
     None = 0,
     NotDragging,
 };
@@ -655,12 +705,10 @@ bool canUpdateInteraction(const GizmoHitTest& hit, bool dragging, GizmoAxis acti
 /// Non-mutating end-interaction predicate — same guards as `preflightEndInteraction` (B6.4 deepen pass).
 bool canEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
     GizmoAxis axis = GizmoAxis::None;
-};
 
 /// Read-only drag-update diagnostics — no mutation (B6.4 deepen pass).
     bool canUpdate = false;
     bool emptyHit = false;
-    bool snapDegraded = false;
     bool screenMiss = false;
     bool noActiveAxis = false;
 
@@ -673,7 +721,6 @@ bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode,
                    GizmoAxis activeAxis);
 
 /// Read-only end-drag diagnostics — no mutation (B6.4 deepen follow-up).
-    bool notDragging = false;
 
 
 EndDragPreflight preflightEndDrag(bool dragging);
@@ -703,19 +750,13 @@ bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis)
 UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode);
 
 /// Read-only end-drag diagnostics — no mutation (B6.4 deepen pass — end-drag guard).
-struct EndDragPreflight {
 
-    bool canEnd() const { return !notDragging; }
-};
 
 
 /// Non-mutating update-drag predicate — same guards as `preflightUpdateDrag` (B6.4 deepen pass).
 
-/// Read-only end-drag diagnostics — no mutation (B6.4 deepen pass).
-    bool notDragging = false;
 
 
-EndDragPreflight preflightEndDrag(bool dragging);
 
 /// Non-mutating end-drag predicate — rejects inactive drags (B6.4 deepen pass).
 bool canEndDrag(bool dragging);
@@ -734,34 +775,25 @@ bool canEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings
 
 bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode);
 
-    bool notDragging = false;
     bool snapDisabled = false;
     bool invalidSnapStep = false;
 
-    bool canEnd() const { return !notDragging; }
-};
 
-EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings);
 
-/// Non-mutating end-drag predicate — rejects inactive drags (B6.4 deepen pass).
-bool canEndDrag(bool dragging);
 
 /// Non-mutating update-drag predicate — empty-hit / inactive-drag early-outs (B6.4 deepen pass).
-bool canUpdateDrag(const GizmoHitTest& hit, bool dragging);
 
-/// Read-only end-drag diagnostics — no mutation (B6.4 deepen pass).
-struct EndDragPreflight {
-    bool notDragging = false;
     bool canEnd = false;
-};
 
-EndDragPreflight preflightEndDrag(bool dragging);
 
 EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode,
                                   const GizmoSnapSettings& settings);
 
-/// Non-mutating end-drag predicate — same guards as `preflightEndDrag` (B6.4 deepen pass).
-bool canEndDrag(bool dragging, GizmoMode mode, const GizmoSnapSettings& settings);
+/// Human-readable label for end-drag reject reasons (B6.4 deepen pass).
+const char* gizmoEndDragRejectReasonLabel(GizmoEndDragRejectReason reason);
+
+/// Classify the first blocking end-drag reject reason from diagnostics (B6.4 deepen pass).
+GizmoEndDragRejectReason classifyEndDragReject(const struct EndDragPreflight& preflight);
 
 /// Read-only end-drag diagnostics — no mutation (B6.4 deepen pass).
 struct EndDragPreflight {
@@ -1523,6 +1555,13 @@ public:
     [[nodiscard]] UpdateDragPreflight preflightUpdateDragWithSnap(const GizmoHitTest& hit) const;
     /// Combined pick/snap/drag frame diagnostics for the current drag state (B6.4 deepen pass).
     [[nodiscard]] DragInteractionPreflight preflightDragInteraction(const GizmoHitTest& hit) const;
+    [[nodiscard]] GizmoPickRejectReason classifyPickReject(const PickPreflight& preflight) const;
+    [[nodiscard]] GizmoBeginDragRejectReason classifyBeginDragReject(
+        const BeginDragPreflight& preflight) const;
+    [[nodiscard]] GizmoUpdateDragRejectReason classifyUpdateDragReject(
+        const UpdateDragPreflight& preflight) const;
+    [[nodiscard]] GizmoEndDragRejectReason classifyEndDragReject(
+        const EndDragPreflight& preflight) const;
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
