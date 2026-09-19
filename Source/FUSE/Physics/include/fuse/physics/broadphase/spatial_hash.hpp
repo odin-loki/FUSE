@@ -564,6 +564,7 @@ struct CellOccupancyPreflight {
     bool exceedsBudget = false;
     u32 occupancyCount = 0;
     u32 budgetRemaining = 0;
+    u32 remainingBudget = 0;
 
     bool canIterate() const { return reason == CellOccupancyRejectReason::None; }
     bool canSkip() const { return !canIterate(); }
@@ -576,6 +577,7 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRang
     preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
     preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
+    preflight.remainingBudget = occupancyBudgetRemaining(range, maxCells);
     return preflight;
 
 FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRange2& range, u32 maxCells) {
@@ -813,6 +815,7 @@ FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellOccupancyPrefli
 
 
     preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
+    preflight.remainingBudget = occupancyBudgetRemaining(range, maxCells);
     return preflight;
 }
 
@@ -3289,6 +3292,7 @@ struct DedupeBroadphasePreflight {
     bool singlePair = false;
     u32 pairCount = 0;
     bool alreadyUnique = false;
+    u32 activePairCount = 0;
 
     bool canDedupe() const { return reason == DedupeBroadphaseRejectReason::None; }
     bool canRefine() const { return !emptyBuffer && !emptyInput && !noValidPairs; }
@@ -3556,6 +3560,7 @@ struct MergePairsIntoBufferPreflight {
     bool allInvalidPairs = false;
     bool insufficientCapacity = false;
     u32 pairsToMerge = 0;
+    u32 incomingPairCount = 0;
     u32 remainingCapacity = 0;
 
     bool canMerge() const { return reason == MergePairsIntoBufferRejectReason::None; }

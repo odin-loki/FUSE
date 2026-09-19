@@ -1725,7 +1725,17 @@ bool pairBufferInvalidateSlotRejectsForReason(
 
 
 PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const PairBufferSoA& buffer, u32 slot) {
-    if (buffer.pairSlotCount > 0u && slot >= buffer.pairSlotCount) {
+
+
+
+
+
+
+
+    case PairBufferInvalidateSlotRejectReason::AlreadyInvalid:
+
+    if (buffer.validFlags.empty() || slot >= buffer.validFlags.size()) {
+        return PairBufferInvalidateSlotRejectReason::AlreadyInvalid;
 
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
@@ -1754,6 +1764,9 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
 
 
     preflight.noSlotStorage = preflight.reason == PairBufferInvalidateRejectReason::NoSlotStorage;
+
+
+    preflight.alreadyInvalid = preflight.reason == PairBufferInvalidateSlotRejectReason::AlreadyInvalid;
 
 
 

@@ -1524,6 +1524,7 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
         }
         if (canSkipShapeCellInsertion(range, params)) {
         if (canSkipShapeCellInsertion(range, maxSpan, maxOccupancy)) {
+        if (!preflightCellOccupancy(range, maxOccupancy).canIterate()) {
             return;
         }
             return;
@@ -1583,6 +1584,7 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
     if (canSkipShapeCellOccupancyIteration(range, params)) {
     if (canSkipShapeCellInsertion(range, params)) {
     if (canSkipShapeCellInsertion(range, maxSpan, maxOccupancy)) {
+    if (!preflightCellOccupancy(range, maxOccupancy).canIterate()) {
         return;
     if (isEmptyCellRange(range)) {
     if (params.maxCellOccupancyPerShape > 0u) {
@@ -2545,6 +2547,7 @@ DedupeBroadphasePreflight preflightDedupeBroadphase(const PairBufferSoA& buffer)
     DedupeBroadphasePreflight preflight{};
     preflight.singlePair = !preflight.emptyBuffer && buffer.activeCount <= 1u;
     preflight.pairCount = buffer.activeCount;
+    preflight.activePairCount = buffer.activeCount;
     preflight.reason = dedupeBroadphaseRejectReason(buffer);
     preflight.alreadyUnique = preflight.reason == DedupeBroadphaseRejectReason::AlreadyUnique;
     return preflight;
@@ -3128,6 +3131,7 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     preflight.insufficientCapacity = preflight.reason == MergePairsIntoBufferRejectReason::InsufficientCapacity ||
         (buffer.maxCapacity > 0u && pairs.size() > buffer.remainingCapacity());
     preflight.pairsToMerge = static_cast<u32>(pairs.size());
+    preflight.incomingPairCount = static_cast<u32>(pairs.size());
     preflight.remainingCapacity = buffer.remainingCapacity();
     return preflight;
 }
