@@ -1781,3 +1781,8 @@ bool tryCanSampleTrilinear(const FroxelDensityGrid& grid,
     if (!tryCanLookupAtCoord(grid, desc, tileX, tileY, sliceZ, lookupReason)) {
     if (!tryCanSampleTrilinear(grid, desc, coords, outReason)) {
         outReason = FroxelTrilinearSampleRejectReason::ScreenMappingFailed;
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-527f ---
+    return tryCanSampleDensityTrilinear(grid, desc, coords, reason);
+    if (!FroxelGridLayout::tryPreflightSampleCoords(coords, desc, coordReason)) {
+    if (!tryCanSampleDensityTrilinear(grid, desc, coords, outReason)) {

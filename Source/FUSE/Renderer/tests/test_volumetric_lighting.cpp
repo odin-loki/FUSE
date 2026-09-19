@@ -2566,3 +2566,21 @@ void testFroxelTrilinearAndCoordLookupDeepGuards() {
     expectTrue(!fuse::renderer::froxel_util::tryCanSampleTrilinear(grid, zeroDesc, inBounds, trilinearReason),
                "tryCanSampleTrilinear rejects empty desc");
     expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(invalidCameraGrid, desc, badCamera, params,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-527f ---
+void testFroxelTrilinearAndLookupDeepenGuards() {
+               "tryCanLookupAtCoord warns but succeeds for OOB tile/slice coords");
+               "tryPreflightSampleCoords warns but succeeds for unordered corners");
+    expectTrue(fuse::renderer::FroxelGridLayout::tryClampSampleCoords(clamped, desc, sampleReason),
+               "tryClampSampleCoords with reason succeeds on non-empty grid");
+               "tryClampSampleCoords produces valid sample coords");
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryClampSampleCoords(unchanged, zeroDesc, sampleReason),
+               "tryClampSampleCoords with reason rejects empty grid");
+               "tryCanSampleDensityTrilinear accepts accessible grid");
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleDensityTrilinear(grid, zeroDesc, inBounds, trilinearReason),
+               "tryCanSampleDensityTrilinear rejects empty desc");
+               "trySampleDensityTrilinear with trilinear reason rejects empty storage");
+               "trySampleDensityAtScreen with map reason succeeds in range");
+               "trySampleDensityAtScreen with map reason matches unguarded sample");
+               "trySampleDensityAtScreen with map reason rejects below-near depth");
+               "trySampleDensityAtScreen with trilinear reason rejects below-near depth");
