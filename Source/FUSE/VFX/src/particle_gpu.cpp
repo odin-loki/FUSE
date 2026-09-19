@@ -735,7 +735,6 @@ bool ParticleGpuBufferPreflight::can_allocate() const {
 
 bool ParticleGpuBufferPreflight::ready_for_stub() const {
     return can_allocate();
-}
 
 ParticleGpuBufferPreflight ParticleGpuBuffers::preflight() const {
     ParticleGpuBufferPreflight result{};
@@ -745,6 +744,19 @@ ParticleGpuBufferPreflight ParticleGpuBuffers::preflight() const {
     result.is_empty = isEmpty();
     result.has_binding = hasDeviceBinding();
     return result;
+bool ParticleGpuBuffers::bytesMatchLayout() const {
+    if (isEmpty()) {
+        return false;
+    return deviceBytes == ParticleGpuBufferLayout::packedDeviceBytes(capacity);
+
+    ParticleGpuBufferPreflight preflight{};
+    preflight.capacity = capacity;
+    preflight.device_bytes = deviceBytes;
+    preflight.bound = isBound();
+        preflight.layout_bytes_ok = false;
+        return preflight;
+    preflight.layout_bytes_ok =
+        ParticleGpuBufferLayout::validatePackedLayout(capacity) && bytesMatchLayout();
 }
 
 void ParticleGpuMirror::reserve(u32 particle_capacity) {
@@ -1284,8 +1296,30 @@ u32 ParticleGpuFramePlan::clampedEmitCount() const {
 bool ParticleGpuFramePlan::shouldSkipEmitOverflow() const {
     if (emit_count == 0u) {
         return false;
-    }
     return alive_count + emit_count > capacity;
+    return emit_count <= remaining ? emit_count : remaining;
+
+bool ParticleGpuFramePlan::shouldSkipGpuEmit() const {
+    return emit_count == 0u || remainingEmitSlots() == 0u;
+
+bool ParticleGpuFramePlan::shouldSkipGpuSimulate() const {
+    return capacity == 0u || (alive_count == 0u && emit_count == 0u);
+
+ParticleGpuEmitPreflight ParticleGpuFramePlan::preflightEmit() const {
+    ParticleGpuEmitPreflight preflight{};
+    preflight.requested = emit_count;
+    preflight.remaining_free = remainingEmitSlots();
+    preflight.allowed = clampedEmitCount();
+    preflight.would_clamp = preflight.allowed < preflight.requested;
+    preflight.skipped = shouldSkipGpuEmit();
+    return preflight;
+
+ParticleGpuSimPreflight ParticleGpuFramePlan::preflightSimulate() const {
+    ParticleGpuSimPreflight preflight{};
+    preflight.capacity = capacity;
+    preflight.alive_count = alive_count;
+    preflight.has_live_particles = alive_count > 0u;
+    preflight.skipped = shouldSkipGpuSimulate();
 }
 
 u32 ParticleGpuFramePlan::simPaddingThreadCount() const {
@@ -1313,6 +1347,11 @@ ParticleGpuFramePreflight ParticleGpuFramePlan::preflight() const {
     result.skip_sim_zero_alive = shouldSkipSimWithZeroAlive();
     result.skip_emit_at_capacity = shouldSkipEmitAtCapacity();
     result.dispatch_preflight_ok = dispatchPreflight().ready_for_stub();
+    result.skip_sim = skipSimLaunch() || shouldSkipGpuSimulate();
+    result.skip_emit = skipEmitLaunch() || shouldSkipGpuEmit();
+    result.emit_within_capacity = clampedEmitCount() == emit_count;
+    result.sim_has_work = capacity > 0u && !shouldSkipGpuSimulate();
+    result.buffers_empty = buffers.isEmpty();
     return result;
 }
 
@@ -1327,6 +1366,14 @@ bool ParticleGpuFramePreflight::can_simulate() const {
 
 bool ParticleGpuFramePreflight::can_emit() const {
     return emit_dispatch_ok && emit_padding_ok && emit_slots_ok && !skip_emit_at_capacity;
+}
+
+bool ParticleGpuFramePreflight::can_emit() const {
+    return !skip_emit && emit_within_capacity && emit_dispatch_ok;
+}
+
+bool ParticleGpuFramePreflight::can_simulate() const {
+    return !skip_sim && sim_has_work && sim_dispatch_ok;
 }
 
 ParticleSoAGPU ParticleGpuFramePlan::gpuPointers(u64 packed_device_address) const {
@@ -1441,6 +1488,27 @@ bool should_skip_sim_dispatch(u32 capacity) {
 
 bool should_skip_emit_dispatch(u32 emit_count) {
     return emit_count == 0u;
+}
+
+bool should_skip_empty_buffer(const ParticleGpuBuffers& buffers) {
+    return buffers.isEmpty() || !buffers.bytesMatchLayout();
+}
+
+bool should_skip_gpu_emit(u32 emit_count, u32 capacity, u32 alive_count) {
+    if (emit_count == 0u) {
+        return true;
+    }
+    if (capacity == 0u || alive_count >= capacity) {
+        return true;
+    }
+    return false;
+}
+
+bool should_skip_gpu_simulate(u32 capacity, u32 alive_count, u32 emit_count) {
+    if (capacity == 0u) {
+        return true;
+    }
+    return alive_count == 0u && emit_count == 0u;
 }
 
 bool should_skip_mirror_sync(const ParticleGpuMirror& mirror, const ParticleSoA& cpu) {
