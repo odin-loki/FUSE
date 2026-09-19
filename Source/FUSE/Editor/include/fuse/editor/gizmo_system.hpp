@@ -821,6 +821,17 @@ struct SnapDragPreflight {
 
 SnapDragPreflight preflightSnapDragDelta(GizmoMode mode, const GizmoSnapSettings& settings);
 
+/// Read-only drag-delta snap diagnostics — no mutation (B6.4 deepen pass).
+struct SnapDragDeltaPreflight {
+    bool snapDisabled = false;
+    bool invalidStep = false;
+
+    bool canApply() const { return !snapDisabled && !invalidStep; }
+    bool isDegraded() const { return !snapDisabled && invalidStep; }
+};
+
+SnapDragDeltaPreflight preflightSnapDragDelta(GizmoMode mode, const GizmoSnapSettings& settings);
+
 /// Read-only begin-drag diagnostics — no mutation (B6.4 deepen pass).
 struct BeginDragPreflight {
     bool canBegin = false;
@@ -1273,8 +1284,50 @@ struct DragInteractionPreflight {
     bool canUpdate() const { return !notDragging && update.canUpdate(); }
     bool canEnd() const { return !notDragging && end.canEnd(); }
     bool canInteract() const { return canUpdate() || canEnd(); }
+    /// Primary update action allowed while dragging (B6.4 deepen pass).
+    bool canActOnPhase() const { return canUpdate(); }
+};
 
 DragInteractionPreflight preflightDragInteraction(const GizmoHitTest& hit, bool dragging,
+
+/// Combined begin/update/end + snap diagnostics for drag lifecycle routing (B6.4 deepen pass).
+struct DragSessionPreflight {
+    bool dragging = false;
+    BeginDragPreflight begin{};
+    UpdateDragPreflight update{};
+    EndDragPreflight end{};
+    SnapPreflight snap{};
+
+    GizmoInteractionPhase phase() const {
+        return dragging ? GizmoInteractionPhase::Dragging : GizmoInteractionPhase::Idle;
+    }
+
+    bool canBegin() const { return !dragging && begin.canBegin; }
+    bool canUpdate() const { return dragging && update.canUpdate(); }
+    bool canEnd() const { return dragging && end.canEnd(); }
+    bool snapWillApply() const { return snap.canApply(); }
+
+    /// Primary drag action allowed for the active lifecycle phase (B6.4 deepen pass).
+    bool canActOnPhase() const {
+        switch (phase()) {
+        case GizmoInteractionPhase::Idle:
+            return canBegin();
+        case GizmoInteractionPhase::Dragging:
+            return canUpdate();
+        }
+        return false;
+    }
+};
+
+DragSessionPreflight preflightDragSession(const GizmoHitTest& hit, bool dragging,
+                                          GizmoAxis activeAxis, GizmoMode mode,
+                                          const GizmoSnapSettings& settings,
+                                          bool alreadyDragging = false);
+DragSessionPreflight preflightDragSession(const GizmoRay& ray, const GizmoTransform& transform,
+                                          bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                                          GizmoSpace space, f32 axisLength, f32 pickRadius,
+                                          const GizmoSnapSettings& settings,
+                                          bool alreadyDragging = false);
 
 /// Non-mutating combined interaction predicates (B6.4 deepen pass).
 bool canPickInteraction(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -1285,6 +1338,13 @@ bool canBeginDragInteraction(const GizmoHitTest& hit, GizmoMode mode,
 bool canUpdateDragInteraction(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
 bool canEndDragInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
 bool canDragInteraction(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+                        GizmoMode mode, const GizmoSnapSettings& settings);
+bool canDragSession(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                    const GizmoSnapSettings& settings, bool alreadyDragging = false);
+bool canDragSession(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
+                    GizmoAxis activeAxis, GizmoMode mode, GizmoSpace space, f32 axisLength,
+                    f32 pickRadius, const GizmoSnapSettings& settings,
+                    bool alreadyDragging = false);
 
 /// Non-mutating end-drag predicate — same guards as `preflightEndDrag` (B6.4 deepen pass).
 bool canEndDrag(bool dragging, GizmoAxis activeAxis = GizmoAxis::None);
@@ -2369,6 +2429,7 @@ public:
     [[nodiscard]] bool canActOnPhase(const GizmoHitTest& hit) const;
     [[nodiscard]] bool canActOnPhase(const GizmoRay& ray,
                                      const GizmoTransform& transform) const;
+    [[nodiscard]] SnapDragDeltaPreflight preflightSnapDragDelta() const;
     [[nodiscard]] bool canApplySnapNow() const;
     [[nodiscard]] bool canSnapDragDeltaNow() const;
     [[nodiscard]] SnapDeltaPreflight preflightSnapDelta(f32 delta) const;
@@ -2537,6 +2598,9 @@ public:
                                               GizmoUpdateDragRejectReason& reason) const;
     [[nodiscard]] bool tryPreflightEndDrag(EndDragPreflight& out,
                                            GizmoEndDragRejectReason& reason) const;
+    [[nodiscard]] DragSessionPreflight preflightDragSession(const GizmoHitTest& hit) const;
+    [[nodiscard]] DragSessionPreflight preflightDragSession(const GizmoRay& ray,
+                                                            const GizmoTransform& transform) const;
     /// Non-mutating end-drag predicate — rejects inactive drags (B6.4 deepen pass).
     [[nodiscard]] bool canPickInteraction(const GizmoRay& ray,
                                           const GizmoTransform& transform) const;
@@ -2574,6 +2638,9 @@ public:
     [[nodiscard]] bool shouldSkipInteraction(const GizmoHitTest& hit) const;
     /// Primary action allowed for the active lifecycle phase (B6.4 deepen pass).
     [[nodiscard]] bool canActOnPhase(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canDragSession(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canDragSession(const GizmoRay& ray,
+    [[nodiscard]] bool canActOnDragInteraction(const GizmoHitTest& hit) const;
     /// Guarded end-drag — returns false when preflight rejects (B6.4 deepen pass).
     bool tryEndDrag(GizmoResult& out);
     /// Guarded update-drag — returns false when preflight rejects the hit (B6.4 deepen follow-up).
