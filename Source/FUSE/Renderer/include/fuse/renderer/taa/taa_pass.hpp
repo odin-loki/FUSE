@@ -376,18 +376,9 @@ public:
     /// Classify why pass jitter sync to `frameIndex` would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterSyncReject(u32 frameIndex) const;
     /// Classify why jitter sync to a frame counter would be rejected (B5.9 deepen).
-    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
-    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
-    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// Classify why NDC jitter production would be rejected (B5.9 deepen).
-    TaaJitterGuardRejectReason classifyJitterNdcReject() const;
-    /// Classify why pass jitter sync would be rejected (B5.9 deepen).
-    /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
-    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
-    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
     /// True when pass jitter can sync to `frameIndex` (B5.9 deepen).
     bool preflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
-    /// Classify why jitter sync to a frame counter would be rejected (B5.9 deepen).
     /// True when history reuse and resolve blend-weight preflights both pass (B5.9 deepen).
     bool preflightTemporalBlend(const TaaResolveDesc& desc,
     /// Early-out when temporal blend preflight would reject reuse or blend weights (B5.9 deepen).
@@ -409,16 +400,8 @@ public:
     /// Pass NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
     /// Sync jitter when preflight passes; returns false when blocked (B5.9 deepen).
     bool trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason);
-    /// Classify why pass jitter sync to `frameIndex` would be rejected (B5.9 deepen).
-    /// Classify why pass jitter sync would be rejected (B5.9 deepen).
-    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
-    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
-    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
-    /// Classify why pass jitter sync to a frame counter would be rejected (B5.9 deepen).
-    /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
-    TaaJitterGuardRejectReason classifyJitterNdcReject() const;
-    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
-    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
+    /// Classify why pass history is not ready for resolve (B5.9 deepen).
+    TaaHistoryReuseBlockReason classifyHistoryResolveBlock() const;
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSync(u32 frameIndex) const;
     /// Sync jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
