@@ -58,6 +58,8 @@ const char* refineBroadphaseRejectReasonName(RefineBroadphaseRejectReason reason
         return "EmptyInput";
     case RefineBroadphaseRejectReason::NoValidPairs:
         return "NoValidPairs";
+    case RefineBroadphaseRejectReason::AllSlotsInvalid:
+        return "AllSlotsInvalid";
     }
     return "Unknown";
 }
@@ -70,6 +72,8 @@ const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason
         return "EmptyBuffer";
     case DedupeBroadphaseRejectReason::SinglePair:
         return "SinglePair";
+    case DedupeBroadphaseRejectReason::AlreadyUnique:
+        return "AlreadyUnique";
     }
     return "Unknown";
 }
@@ -201,10 +205,11 @@ void populateShapeCells(
     const SpatialHashParams& params,
     bool use2D,
     CellBuckets& cells) {
-    const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
-    if (bodyIndex >= bodies.count()) {
+    if (!shouldRunBroadphaseShapeInsert(shapeIndex, bodies, shapes, params, use2D)) {
         return;
     }
+
+    const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
 
     const vec3 position = bodies.positions[bodyIndex];
     const f32 cellSize = clampCellSize(params.cellSize);
@@ -428,6 +433,132 @@ void refineBroadphasePairsParallelImpl(
 
 } // namespace
 
+const char* cellSpanRejectReasonName(CellSpanRejectReason reason) {
+    switch (reason) {
+    case CellSpanRejectReason::None:
+        return "None";
+    case CellSpanRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellSpanRejectReason::ExceedsSpanBudget:
+        return "ExceedsSpanBudget";
+    }
+    return "Unknown";
+}
+
+const char* broadphaseShapeInsertRejectReasonName(BroadphaseShapeInsertRejectReason reason) {
+    switch (reason) {
+    case BroadphaseShapeInsertRejectReason::None:
+        return "None";
+    case BroadphaseShapeInsertRejectReason::OutOfRangeBody:
+        return "OutOfRangeBody";
+    case BroadphaseShapeInsertRejectReason::EmptyCellRange:
+        return "EmptyCellRange";
+    case BroadphaseShapeInsertRejectReason::ExceedsOccupancyBudget:
+        return "ExceedsOccupancyBudget";
+    }
+    return "Unknown";
+}
+
+BroadphaseShapeInsertRejectReason broadphaseShapeInsertRejectReason(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D) {
+    if (shapeIndex >= shapes.count()) {
+        return BroadphaseShapeInsertRejectReason::OutOfRangeBody;
+    }
+
+    const u32 bodyIndex = shapes.bodyIndices[shapeIndex];
+    if (bodyIndex >= bodies.count()) {
+        return BroadphaseShapeInsertRejectReason::OutOfRangeBody;
+    }
+
+    const vec3 position = bodies.positions[bodyIndex];
+    const f32 cellSize = clampCellSize(params.cellSize);
+    const u32 maxSpan = params.maxCellSpanPerAxis;
+    const u32 maxOccupancy = params.maxCellOccupancy;
+    const CollisionShapeType type = static_cast<CollisionShapeType>(shapes.types[shapeIndex]);
+
+    if (use2D) {
+        CellRange2 range = {};
+        if (type == CollisionShapeType::Box) {
+            const vec3 halfExtents = shapes.params[shapeIndex];
+            const aabb bounds = aabbFromBox(position, halfExtents);
+            range = cellRangeFromAabb2D(bounds, cellSize, maxSpan);
+        } else {
+            const f32 radius = shapes.params[shapeIndex].x;
+            range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
+        }
+        if (isEmptyCellRange(range)) {
+            return BroadphaseShapeInsertRejectReason::EmptyCellRange;
+        }
+        if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+            return BroadphaseShapeInsertRejectReason::ExceedsOccupancyBudget;
+        }
+        return BroadphaseShapeInsertRejectReason::None;
+    }
+
+    CellRange3 range = {};
+    if (type == CollisionShapeType::Box) {
+        const vec3 halfExtents = shapes.params[shapeIndex];
+        range = cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
+    } else {
+        const f32 radius = shapes.params[shapeIndex].x;
+        range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
+    }
+    if (isEmptyCellRange(range)) {
+        return BroadphaseShapeInsertRejectReason::EmptyCellRange;
+    }
+    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        return BroadphaseShapeInsertRejectReason::ExceedsOccupancyBudget;
+    }
+    return BroadphaseShapeInsertRejectReason::None;
+}
+
+bool broadphaseShapeInsertRejectsForReason(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D,
+    BroadphaseShapeInsertRejectReason expected) {
+    return broadphaseShapeInsertRejectReason(shapeIndex, bodies, shapes, params, use2D) == expected;
+}
+
+BroadphaseShapeInsertPreflight preflightBroadphaseShapeInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D) {
+    BroadphaseShapeInsertPreflight preflight{};
+    preflight.reason = broadphaseShapeInsertRejectReason(shapeIndex, bodies, shapes, params, use2D);
+    preflight.outOfRangeBody = preflight.reason == BroadphaseShapeInsertRejectReason::OutOfRangeBody;
+    preflight.emptyCellRange = preflight.reason == BroadphaseShapeInsertRejectReason::EmptyCellRange;
+    preflight.exceedsOccupancyBudget =
+        preflight.reason == BroadphaseShapeInsertRejectReason::ExceedsOccupancyBudget;
+    return preflight;
+}
+
+bool canSkipBroadphaseShapeInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D) {
+    return !preflightBroadphaseShapeInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
+}
+
+bool shouldRunBroadphaseShapeInsert(
+    u32 shapeIndex,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    bool use2D) {
+    return preflightBroadphaseShapeInsert(shapeIndex, bodies, shapes, params, use2D).canInsert();
+}
+
 RefineBroadphaseRejectReason refineBroadphaseRejectReason(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
@@ -437,6 +568,9 @@ RefineBroadphaseRejectReason refineBroadphaseRejectReason(
     }
     if (canSkipBroadphase(bodies, shapes)) {
         return RefineBroadphaseRejectReason::EmptyInput;
+    }
+    if (buffer.pairSlotCount > 0u && buffer.countValidSlots() == 0u) {
+        return RefineBroadphaseRejectReason::AllSlotsInvalid;
     }
     if (!buffer.hasValidPairs()) {
         return RefineBroadphaseRejectReason::NoValidPairs;
@@ -460,6 +594,7 @@ RefineBroadphasePreflight preflightRefineBroadphase(
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.noValidPairs = !buffer.hasValidPairs();
     preflight.emptyInput = canSkipBroadphase(bodies, shapes);
+    preflight.allSlotsInvalid = buffer.pairSlotCount > 0u && buffer.countValidSlots() == 0u;
     preflight.reason = refineBroadphaseRejectReason(bodies, shapes, buffer);
     return preflight;
 }
@@ -485,6 +620,9 @@ DedupeBroadphaseRejectReason dedupeBroadphaseRejectReason(const PairBufferSoA& b
     if (buffer.activeCount <= 1u) {
         return DedupeBroadphaseRejectReason::SinglePair;
     }
+    if (!buffer.hasDuplicateCanonicalPairs()) {
+        return DedupeBroadphaseRejectReason::AlreadyUnique;
+    }
     return DedupeBroadphaseRejectReason::None;
 }
 
@@ -497,6 +635,7 @@ DedupeBroadphasePreflight preflightDedupeBroadphase(const PairBufferSoA& buffer)
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.singlePair = !preflight.emptyBuffer && buffer.activeCount <= 1u;
     preflight.reason = dedupeBroadphaseRejectReason(buffer);
+    preflight.alreadyUnique = preflight.reason == DedupeBroadphaseRejectReason::AlreadyUnique;
     return preflight;
 }
 
@@ -572,6 +711,8 @@ const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReaso
         return "EmptyPairs";
     case MergePairsIntoBufferRejectReason::BufferFull:
         return "BufferFull";
+    case MergePairsIntoBufferRejectReason::AllInvalidPairs:
+        return "AllInvalidPairs";
     }
     return "Unknown";
 }
@@ -584,6 +725,17 @@ MergePairsIntoBufferRejectReason mergePairsIntoBufferRejectReason(
     }
     if (buffer.isFull()) {
         return MergePairsIntoBufferRejectReason::BufferFull;
+    }
+
+    bool hasValidPair = false;
+    for (const CandidatePair& pair : pairs) {
+        if (isValidCandidatePair(pair.bodyA, pair.bodyB)) {
+            hasValidPair = true;
+            break;
+        }
+    }
+    if (!hasValidPair) {
+        return MergePairsIntoBufferRejectReason::AllInvalidPairs;
     }
     return MergePairsIntoBufferRejectReason::None;
 }
@@ -602,6 +754,7 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     preflight.reason = mergePairsIntoBufferRejectReason(pairs, buffer);
     preflight.emptyPairs = preflight.reason == MergePairsIntoBufferRejectReason::EmptyPairs;
     preflight.bufferFull = preflight.reason == MergePairsIntoBufferRejectReason::BufferFull;
+    preflight.allInvalidPairs = preflight.reason == MergePairsIntoBufferRejectReason::AllInvalidPairs;
     return preflight;
 }
 

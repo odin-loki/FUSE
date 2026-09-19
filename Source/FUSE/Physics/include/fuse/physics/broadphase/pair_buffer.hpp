@@ -38,6 +38,8 @@ struct PairBufferSoA {
     bool canSkipDedupe() const { return canSkipSoAIteration() || activeCount <= 1u; }
     /// True when slot storage has no invalid flags (compact is a no-op).
     bool canSkipCompaction() const;
+    /// True when two or more active pairs share the same canonical body indices (B4.2 deepen pass).
+    bool hasDuplicateCanonicalPairs() const;
     /// Count valid flags in prepared slot storage before compaction.
     u32 countValidSlots() const;
     bool slotIsValid(u32 slot) const;
@@ -91,6 +93,52 @@ struct PairBufferPushPreflight {
 };
 
 PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+
+/// Why pair-buffer writeSlot would reject (B4.2 deepen pass).
+enum class PairBufferWriteSlotRejectReason : u8 {
+    None = 0,
+    OutOfRangeSlot,
+    InvalidPair,
+};
+
+/// Human-readable label for pair-buffer writeSlot reject reasons (logging / tests).
+const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason);
+
+/// Diagnose why writeSlot would reject; vacuously succeeds when writeSlot may proceed.
+PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Returns true when `pairBufferWriteSlotRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferWriteSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB,
+    PairBufferWriteSlotRejectReason expected);
+
+/// Read-only writeSlot diagnostics — no mutation (B4.2 deepen pass).
+struct PairBufferWriteSlotPreflight {
+    PairBufferWriteSlotRejectReason reason = PairBufferWriteSlotRejectReason::None;
+    bool outOfRangeSlot = false;
+    bool invalidPair = false;
+
+    bool canWrite() const { return reason == PairBufferWriteSlotRejectReason::None; }
+};
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Non-mutating writeSlot skip predicate — inverse of `canWrite` (B4.2 deepen pass).
+bool canSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
+
+/// Non-mutating writeSlot predicate — mirrors `preflightPairBufferWriteSlot` (B4.2 deepen pass).
+bool shouldRunPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
 
 /// Why pair-buffer compaction would early-out (B4.2 deepen pass).
 enum class PairBufferCompactionRejectReason : u8 {
@@ -165,6 +213,7 @@ enum class PairBufferDedupeRejectReason : u8 {
     None = 0,
     EmptyBuffer,
     SinglePair,
+    AlreadyUnique,
 };
 
 /// Human-readable label for pair-buffer dedupe reject reasons (logging / tests).
@@ -181,6 +230,7 @@ struct PairBufferDedupePreflight {
     PairBufferDedupeRejectReason reason = PairBufferDedupeRejectReason::None;
     bool emptyBuffer = false;
     bool singlePair = false;
+    bool alreadyUnique = false;
 
     bool canDedupe() const { return reason == PairBufferDedupeRejectReason::None; }
 };
@@ -198,6 +248,7 @@ enum class PairBufferSortRejectReason : u8 {
     None = 0,
     EmptyBuffer,
     SinglePair,
+    AlreadySorted,
 };
 
 /// Human-readable label for pair-buffer sort reject reasons (logging / tests).
@@ -214,6 +265,7 @@ struct PairBufferSortPreflight {
     PairBufferSortRejectReason reason = PairBufferSortRejectReason::None;
     bool emptyBuffer = false;
     bool singlePair = false;
+    bool alreadySorted = false;
 
     bool needsSort() const { return reason == PairBufferSortRejectReason::None; }
 };
