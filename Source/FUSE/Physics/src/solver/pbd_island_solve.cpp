@@ -2767,3 +2767,9 @@ IslandWakeGraphRejectPreflight preflight_island_wake_graph_reject(const ContactI
 
 // --- deepen additive from deepen-pbd-island-guards-6fff ---
     return ContactIslandGraph::preflightBuildInputs(bodyCount, contacts, distanceConstraints);
+
+// --- deepen additive from deepen-b4-pbd-island-guards-9fc4 ---
+    preflight.skipped = preflight.reason == IslandGraphBuildRejectReason::EmptyInputs ||
+    case IslandWakeRejectReason::UniformSleepState:
+        return IslandWakeRejectReason::UniformSleepState;
+    if (result.reason != IslandConstraintSolveRejectReason::None) {

@@ -1687,3 +1687,8 @@ IslandWakeGraphRejectPreflight preflight_island_wake_graph_reject(const ContactI
 
 // --- deepen additive from deepen-pbd-island-guards-6fff ---
 using IslandBuildPreflight = IslandGraphBuildPreflight;
+
+// --- deepen additive from deepen-b4-pbd-island-guards-9fc4 ---
+    IslandGraphBuildRejectReason reason = IslandGraphBuildRejectReason::None;
+        return !skipped && reason == IslandGraphBuildRejectReason::None && !has_unsafe_refs();
+        return !skipped && (reason == IslandSleepSolveRejectReason::AllSleeping || allSleeping);

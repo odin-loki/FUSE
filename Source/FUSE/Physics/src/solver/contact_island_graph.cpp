@@ -428,3 +428,15 @@ bool islandUnionRejectsForReason(u32 bodyCount, u32 bodyA, u32 bodyB, IslandUnio
 // --- deepen additive from deepen-pbd-island-guards-6fff ---
 IslandGraphBuildPreflight ContactIslandGraph::preflightBuildInputs(
     return !preflightBuildInputs(bodyCount, contacts, distanceConstraints).can_build();
+
+// --- deepen additive from deepen-b4-pbd-island-guards-9fc4 ---
+const char* island_graph_build_reject_reason_name(IslandGraphBuildRejectReason reason) {
+    case IslandGraphBuildRejectReason::None:
+    case IslandGraphBuildRejectReason::EmptyInputs:
+    case IslandGraphBuildRejectReason::OutOfRangeContactBody:
+    case IslandGraphBuildRejectReason::OutOfRangeDistanceBody:
+IslandGraphBuildRejectReason island_graph_build_reject_reason(
+        return IslandGraphBuildRejectReason::EmptyInputs;
+            return IslandGraphBuildRejectReason::OutOfRangeContactBody;
+            return IslandGraphBuildRejectReason::OutOfRangeDistanceBody;
+    return IslandGraphBuildRejectReason::None;

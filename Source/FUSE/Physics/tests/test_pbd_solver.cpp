@@ -4934,3 +4934,19 @@ void testContactIslandGraphBuildGuards() {
     expectTrue(!sleepingPreflight.can_solve(), "index constraint-solve preflight rejects all-sleeping island");
                "should_skip index true for all-sleeping island");
 void testIslandSleepDispatchAndWakeResultGuards() {
+
+// --- deepen additive from deepen-b4-pbd-island-guards-9fc4 ---
+void testIslandGraphBuildRejectReasonGuards() {
+                                                     IslandGraphBuildRejectReason::OutOfRangeContactBody),
+    expectTrue(std::strcmp(island_graph_build_reject_reason_name(IslandGraphBuildRejectReason::OutOfRangeContactBody),
+                                                     IslandGraphBuildRejectReason::OutOfRangeDistanceBody),
+    expectTrue(island_graph_build_rejects_for_reason(0, {}, {}, IslandGraphBuildRejectReason::EmptyInputs),
+    expectTrue(preflight.reason == IslandGraphBuildRejectReason::OutOfRangeContactBody,
+    expectTrue(combinedPreflight.reason == IslandConstraintSolveRejectReason::AllSleeping,
+    expectTrue(!combinedPreflight.can_solve(), "combined preflight cannot solve all-sleeping island");
+                                                     IslandSleepSolveRejectReason::None),
+    expectTrue(std::strcmp(island_sleep_solve_reject_reason_name(IslandSleepSolveRejectReason::AllSleeping),
+    expectTrue(std::strcmp(island_wake_reject_reason_name(IslandWakeRejectReason::UniformSleepState),
+    expectTrue(mixedSleep.reason == IslandSleepSolveRejectReason::None,
+    expectTrue(mixedWake.reason == IslandWakeRejectReason::None, "mixed wake preflight has no reject reason");
+    testIslandGraphBuildRejectReasonGuards();
