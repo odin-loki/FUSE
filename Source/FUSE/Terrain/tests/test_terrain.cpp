@@ -1411,3 +1411,6 @@ int main() {
 void testAsyncPendingBudgetGuards() {
 void testResidencyContainsClearGuards() {
 void testLodResidencyQueueDequeueEmptyGuard() {
+
+// --- deepen additive from deepen-b75-terrain-lod-budget-residency-guards-3ae1 ---
+void testPendingSubmitGuards() {
