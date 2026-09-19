@@ -2334,3 +2334,11 @@ void testFroxelCoordLookupAndScreenSampleGuards() {
                "tryPopulateFromAnalyticFog with reason fills all froxels on success");
                "tryPopulateFromAnalyticFog with reason returns false when preflight rejects fill");
     expectTrue(skipped.matchesDesc(desc), "tryPopulateFromAnalyticFog with reason still allocates on rejected fill");
+
+// --- deepen additive from deepen-b511-froxel-guards-c397 ---
+void testFroxelCoordLookupAndReasonOverloadGuards() {
+               "tryCanLookupAtCoord warns but succeeds for clampable coords");
+    expectNear(indexSample, 1.f, 1e-5f, "trySampleDensityAtIndex with reason returns written density");
+    expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(populateGrid, desc, badCamera, params,
+               "tryPopulateFromAnalyticFog with reason rejects invalid camera");
+    expectTrue(populateGrid.matchesDesc(desc), "tryPopulateFromAnalyticFog with reason still allocates on rejection");
