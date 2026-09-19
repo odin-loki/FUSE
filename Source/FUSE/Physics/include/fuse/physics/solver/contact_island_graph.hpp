@@ -78,6 +78,7 @@ enum class IslandBuildRejectReason : u8 {
     EmptyBodyCount,
     InvalidContactBodyIndex,
     InvalidDistanceBodyIndex,
+/// Why island graph build would early-out (B4.4 deepen follow-up).
 
 /// Human-readable label for island build reject reasons (logging / tests).
 const char* island_build_reject_reason_name(IslandBuildRejectReason reason);
@@ -110,6 +111,23 @@ IslandBuildRejectReason island_build_reject_reason(
     const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Populate island build preflight without mutating a graph.
+/// Count valid vs out-of-range contacts and distance constraints for build preflight.
+struct IslandBuildInput {
+    u32 bodyCount = 0;
+    u32 validContactCount = 0;
+    u32 distanceConstraintCount = 0;
+    u32 invalidConstraintCount = 0;
+};
+
+struct IslandBuildPreflight {
+    IslandBuildInput input{};
+    bool skipped = false;
+
+
+/// Summarize build inputs without mutating a graph (B4.4 deepen follow-up).
+IslandBuildInput count_island_build_input(
+
+/// Const preflight for island graph build dispatch (B4.4 deepen follow-up).
 IslandBuildPreflight preflight_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -232,6 +250,7 @@ struct IslandBuildRejectCounts {
 /// Early-out guard for island graph build when `bodyCount` is zero.
 bool should_skip_island_build(u32 bodyCount);
 /// Early-out guard for island graph build when inputs are rejected.
+/// Returns true when island graph build should be skipped (B4.4 deepen follow-up).
 bool should_skip_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -266,6 +285,7 @@ struct ContactIslandGraph {
     /// Guarded build that skips invalid contact/distance body indices before union-find.
     /// Guarded build wrapper; returns false when preflight rejects inputs.
     bool build_guarded(u32 bodyCount,
+    /// Build only when `preflight_island_build` passes; clears and returns false otherwise.
 
     void clear();
 
