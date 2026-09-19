@@ -447,6 +447,77 @@ FUSE_PHYSICS_INLINE CellRange2 clampCellRange2(CellRange2 range, u32 maxSpanPerA
     return range;
 }
 
+/// Combined cell-capacity preflight after span clamp + occupancy budget (B4.2 deepen follow-up pass).
+struct ShapeCellCapacityPreflight {
+    CellOccupancyRejectReason reason = CellOccupancyRejectReason::None;
+    bool emptyRange = false;
+    bool exceedsBudget = false;
+    u32 occupancyCount = 0;
+    u32 budgetRemaining = 0;
+
+    bool canInsert() const { return reason == CellOccupancyRejectReason::None; }
+};
+
+FUSE_PHYSICS_INLINE ShapeCellCapacityPreflight preflightShapeCellCapacity(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy) {
+    const CellRange3 clamped = clampCellRange3(range, maxSpanPerAxis);
+    const CellOccupancyPreflight occupancy = preflightCellOccupancy(clamped, maxOccupancy);
+    ShapeCellCapacityPreflight preflight{};
+    preflight.reason = occupancy.reason;
+    preflight.emptyRange = occupancy.emptyRange;
+    preflight.exceedsBudget = occupancy.exceedsBudget;
+    preflight.occupancyCount = occupancy.occupancyCount;
+    preflight.budgetRemaining = occupancyBudgetRemaining(clamped, maxOccupancy);
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE ShapeCellCapacityPreflight preflightShapeCellCapacity(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy) {
+    const CellRange2 clamped = clampCellRange2(range, maxSpanPerAxis);
+    const CellOccupancyPreflight occupancy = preflightCellOccupancy(clamped, maxOccupancy);
+    ShapeCellCapacityPreflight preflight{};
+    preflight.reason = occupancy.reason;
+    preflight.emptyRange = occupancy.emptyRange;
+    preflight.exceedsBudget = occupancy.exceedsBudget;
+    preflight.occupancyCount = occupancy.occupancyCount;
+    preflight.budgetRemaining = occupancyBudgetRemaining(clamped, maxOccupancy);
+    return preflight;
+}
+
+/// Non-mutating shape cell-insertion skip predicate — inverse of `canInsert` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy) {
+    return !preflightShapeCellCapacity(range, maxSpanPerAxis, maxOccupancy).canInsert();
+}
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy) {
+    return !preflightShapeCellCapacity(range, maxSpanPerAxis, maxOccupancy).canInsert();
+}
+
+/// Non-mutating shape cell-insertion predicate — mirrors `preflightShapeCellCapacity` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(
+    const CellRange3& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy) {
+    return preflightShapeCellCapacity(range, maxSpanPerAxis, maxOccupancy).canInsert();
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(
+    const CellRange2& range,
+    u32 maxSpanPerAxis,
+    u32 maxOccupancy) {
+    return preflightShapeCellCapacity(range, maxSpanPerAxis, maxOccupancy).canInsert();
+}
+
 FUSE_PHYSICS_INLINE u32 spatialHash(s32 cx, s32 cy, s32 cz, u32 tableSize) {
     constexpr u32 p1 = 73856093u;
     constexpr u32 p2 = 19349663u;
@@ -584,6 +655,7 @@ struct RefineBroadphasePreflight {
     bool emptyBuffer = false;
     bool emptyInput = false;
     bool noValidPairs = false;
+    u32 pairCount = 0;
 
     bool canRefine() const { return reason == RefineBroadphaseRejectReason::None; }
 };
@@ -626,6 +698,7 @@ struct DedupeBroadphasePreflight {
     DedupeBroadphaseRejectReason reason = DedupeBroadphaseRejectReason::None;
     bool emptyBuffer = false;
     bool singlePair = false;
+    u32 pairCount = 0;
 
     bool canDedupe() const { return reason == DedupeBroadphaseRejectReason::None; }
 };
@@ -664,6 +737,8 @@ struct BroadphaseMergePreflight {
     BroadphaseMergeRejectReason reason = BroadphaseMergeRejectReason::None;
     bool emptyPlaneBodies = false;
     bool emptyDynamicBodies = false;
+    u32 planeBodyCount = 0;
+    u32 dynamicBodyCount = 0;
 
     bool canMerge() const { return reason == BroadphaseMergeRejectReason::None; }
 };
@@ -683,6 +758,7 @@ enum class MergePairsIntoBufferRejectReason : u8 {
     None = 0,
     EmptyPairs,
     BufferFull,
+    InsufficientCapacity,
 };
 
 /// Human-readable label for merge-into-buffer reject reasons (logging / tests).
@@ -704,6 +780,9 @@ struct MergePairsIntoBufferPreflight {
     MergePairsIntoBufferRejectReason reason = MergePairsIntoBufferRejectReason::None;
     bool emptyPairs = false;
     bool bufferFull = false;
+    bool insufficientCapacity = false;
+    u32 pairsToMerge = 0;
+    u32 remainingCapacity = 0;
 
     bool canMerge() const { return reason == MergePairsIntoBufferRejectReason::None; }
 };
