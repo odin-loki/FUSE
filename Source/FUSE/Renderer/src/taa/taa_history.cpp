@@ -34,6 +34,33 @@ bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history) {
     return taaHistoryNeedsWarmup(history);
 }
 
+TaaHistoryReuseBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history) {
+    if (!history.isReady()) {
+        return TaaHistoryReuseBlockReason::NotReady;
+    }
+    if (!history.hasValidHistory()) {
+        return TaaHistoryReuseBlockReason::NotWarm;
+    }
+    return TaaHistoryReuseBlockReason::None;
+}
+
+bool preflightTaaHistoryWarmupSatisfied(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason* reason) {
+    const TaaHistoryReuseBlockReason block = classifyTaaHistoryWarmupBlock(history);
+    if (reason != nullptr) {
+        *reason = block;
+    }
+    return block == TaaHistoryReuseBlockReason::None;
+}
+
+bool tryPreflightTaaHistoryWarmupSatisfied(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason& reason) {
+    reason = classifyTaaHistoryWarmupBlock(history);
+    return reason == TaaHistoryReuseBlockReason::None;
+}
+
+bool taaHistoryWarmupSatisfied(const TaaHistoryBuffer& history) {
+    return preflightTaaHistoryWarmupSatisfied(history);
+}
+
 bool shouldSkipTaaHistoryResolve(const TaaHistoryBuffer& history) {
     return !taaHistoryReadyForResolve(history);
 }

@@ -273,6 +273,38 @@ bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHisto
     return reason == TaaResolveBlendRejectReason::None;
 }
 
+namespace {
+
+u32 observedGenerationForTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return taaResolveBypassesHistoryGenerationGuard(desc) ? history.invalidateGeneration()
+                                                          : desc.observed_history_generation;
+}
+
+} // namespace
+
+bool preflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                      TaaHistoryReuseBlockReason* reuseReason,
+                                      TaaResolveBlendRejectReason* blendReason) {
+    const u32 observedGeneration = observedGenerationForTemporalBlend(desc, history);
+    const bool reuseOk = preflightTaaHistoryReuse(history, observedGeneration, reuseReason);
+    const bool blendOk = preflightTaaResolveBlendWeights(desc, history, blendReason);
+    return reuseOk && blendOk && taaResolveAppliesHistoryBlend(desc, history);
+}
+
+bool tryPreflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                           TaaHistoryReuseBlockReason& reuseReason,
+                                           TaaResolveBlendRejectReason& blendReason) {
+    return preflightTaaResolveTemporalBlend(desc, history, &reuseReason, &blendReason);
+}
+
+bool shouldSkipTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !preflightTaaResolveTemporalBlend(desc, history);
+}
+
+bool taaResolveTemporalBlendReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolveTemporalBlend(desc, history);
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
         return false;
