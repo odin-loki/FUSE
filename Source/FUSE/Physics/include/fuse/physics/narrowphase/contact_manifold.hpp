@@ -1152,6 +1152,20 @@ bool should_skip_manifold_prune_finalize(
 
 
 /// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.4 guard pass).
+/// Prune only when preflight allows in-place prune; returns true when points remain (B4.5 deepen pass).
+bool prune_manifold_using_preflight(
+
+/// Finalize using `ManifoldFinalizePreflight`; no-op when preflight skips (B4.5 deepen pass).
+bool finalize_manifold_using_preflight(
+
+/// Combined const preflight for prune-then-finalize pipeline (B4.5 deepen pass).
+struct ManifoldProcessPreflight {
+
+    bool can_process() const { return finalize.can_finalize(); }
+    bool can_skip_all() const { return finalize.skipped || !finalize.can_finalize(); }
+
+/// Populate combined prune/finalize preflight without mutating the manifold (B4.5 deepen pass).
+ManifoldProcessPreflight preflight_manifold_process(
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

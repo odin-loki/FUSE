@@ -657,5 +657,8 @@ bool can_skip_friction_basis_rebuild_dispatch(const ContactManifold& manifold, f
 
 /// Normalize the contact normal when non-unit; returns true when normalization ran (B4.4 deepen follow-up pass).
 /// Non-mutating rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 guard pass).
+/// Normalize contact normal in-place when non-unit; returns true when modified (B4.5 deepen pass).
+
+bool rebuild_friction_basis_using_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

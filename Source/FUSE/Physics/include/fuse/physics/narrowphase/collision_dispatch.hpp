@@ -286,4 +286,10 @@ void runNarrowphaseDeepenIntoBuffer(
 /// Narrowphase with deepen pair preflight; skips dispatch when all pairs are deepen-rejected (B4.4 deepen follow-up pass).
 void runNarrowphaseIntoBufferDeepen(
 
+/// Narrowphase with deepen pair preflight before per-pair dispatch (B4.5 deepen pass).
+/// Skips pairs rejected by deepen preflight; does not alter `runNarrowphaseIntoBuffer` behavior.
+
+/// CPU stub using deepen pair preflight (B4.5 deepen pass).
+std::vector<ContactManifold> runNarrowphaseDeepen(
+
 } // namespace fuse::physics::narrowphase

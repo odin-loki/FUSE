@@ -149,6 +149,19 @@ bool should_skip_narrowphase_pair_slot(
 
         if (generate_contact_manifold(manifold)) {
 
+        if (should_skip_contact_pair_deepen_dispatch(pairs[pairIndex], bodies, shapes)) {
+            continue;
+
+        ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
+
+
+std::vector<ContactManifold> runNarrowphaseDeepen(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const CollisionShapeSoA& shapes) {
+    ContactBufferSoA buffer;
+    buffer.reserve(static_cast<u32>(pairs.size()));
+    runNarrowphaseIntoBufferDeepen(pairs, bodies, shapes, buffer);
+    return buffer.toVector();
 }
 
 } // namespace fuse::physics::narrowphase

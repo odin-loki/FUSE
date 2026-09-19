@@ -4,6 +4,8 @@
 #include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/narrowphase/friction.hpp>
 
+#include <fuse/physics/narrowphase/contact_pair.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -2659,6 +2661,63 @@ bool should_run_manifold_finalize(
     f32 duplicateEpsilon,
     f32 frictionEpsilon) {
     return !can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
+bool prune_manifold_using_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    const ManifoldPrunePreflight preflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    if (preflight.skipped || preflight.can_skip_prune(shallowMinDepth)) {
+        return !manifold.empty();
+    }
+
+    if (preflight.wouldBeEmpty) {
+        manifold.clear();
+        return false;
+    }
+
+    if (preflight.needs_pruning()) {
+        if (!manifold.pruneContactPointsIfNeeded(separationEpsilon, duplicateEpsilon)) {
+            return false;
+        }
+    }
+
+    if (shallowMinDepth > 0.f && preflight.hasShallow) {
+        if (!manifold.pruneShallowPenetrationsIfNeeded(shallowMinDepth)) {
+            return false;
+        }
+    }
+
+    return !manifold.empty();
+}
+
+bool finalize_manifold_using_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    const ManifoldFinalizePreflight preflight =
+        preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    if (!preflight.can_finalize()) {
+        return false;
+    }
+    return generate_contact_manifold(manifold);
+}
+
+ManifoldProcessPreflight preflight_manifold_process(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth,
+    f32 frictionEpsilon) {
+    ManifoldProcessPreflight process{};
+    process.prune = preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    process.finalize =
+        preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    return process;
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

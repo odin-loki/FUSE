@@ -1012,6 +1012,7 @@ ContactManifold detect_contacts_pair_if_needed(
 bool contact_pair_deepen_rejects_for_reason(
 /// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen pass).
 /// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.5 deepen pass).
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     ContactPairRejectReason expected);
@@ -1139,6 +1140,16 @@ bool is_dispatchable_contact_pair(
 
 /// Populate batch narrowphase preflight without running shape dispatch (B4.4 deepen follow-up pass).
 NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
+/// Count pairs rejected by extended deepen preflight (B4.5 deepen pass).
+u32 count_rejected_contact_pairs_deepen(
+
+/// Const batch preflight for deepen pair dispatch (B4.5 deepen pass).
+struct ContactPairBatchDeepenPreflight {
+
+    bool can_dispatch_any() const { return dispatchableCount > 0u; }
+
+/// Populate batch deepen preflight without running shape dispatch (B4.5 deepen pass).
+ContactPairBatchDeepenPreflight preflight_contact_pair_batch_deepen(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
