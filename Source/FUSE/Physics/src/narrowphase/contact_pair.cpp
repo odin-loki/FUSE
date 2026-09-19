@@ -1070,6 +1070,20 @@ ContactPairDispatchResult dispatch_contact_pair(
 
     result.manifold = dispatchShapePair(pair, bodies, shapes);
     result.dispatched = true;
+ContactPairRejectPreflight preflight_contact_pair_reject(
+    ContactPairRejectPreflight preflight{};
+    preflight.selfPair = preflight.reason == ContactPairRejectReason::SelfPair;
+    preflight.outOfRangeBody = preflight.reason == ContactPairRejectReason::OutOfRangeBody;
+    preflight.missingShape = preflight.reason == ContactPairRejectReason::MissingShape;
+    preflight.bothTriggers = preflight.reason == ContactPairRejectReason::BothTriggers;
+    preflight.unsupportedShapePair = preflight.reason == ContactPairRejectReason::UnsupportedShapePair;
+    preflight.bothStatic = preflight.reason == ContactPairRejectReason::BothStatic;
+    preflight.degenerateShape = preflight.reason == ContactPairRejectReason::DegenerateShape;
+
+    return should_skip_contact_pair_dispatch(pair, bodies, shapes);
+
+    preflight.reject = preflight_contact_pair_reject(pair, bodies, shapes);
+    preflight.skipped = preflight.reject.rejected;
 }
 
 } // namespace fuse::physics::narrowphase

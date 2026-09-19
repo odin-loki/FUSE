@@ -1,6 +1,7 @@
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 
 #include <fuse/physics/narrowphase/contact_pair.hpp>
+#include <fuse/physics/narrowphase/friction.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -696,6 +697,15 @@ bool can_skip_manifold_finalize(const ContactManifold& manifold) {
 
 bool generate_contact_manifold_guarded(ContactManifold& manifold) {
     const ManifoldFinalizePreflight preflight = preflight_manifold_finalize(manifold);
+
+    preflight.hasValidNormal = manifold.hasValidNormal();
+    preflight.hasPenetrating = manifold.hasPenetratingPoints(separationEpsilon);
+    preflight.needsFrictionBasis = needs_friction_basis_refresh(manifold);
+
+
+bool can_skip_manifold_finalize(
+
+bool generate_contact_manifold_if_valid(ContactManifold& manifold) {
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

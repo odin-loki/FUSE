@@ -323,4 +323,12 @@ bool compute_friction_tangents_guarded(ContactManifold& manifold, f32 epsilon = 
 /// Build or reuse friction basis via rebuild preflight (B4.5 deepen pass).
 bool ensure_friction_basis_guarded(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
+    bool needs_rebuild() const { return !skipped && !canReuse && (missing || stale); }
+
+/// Populate friction-basis rebuild preflight without mutation (B4.5 deepen pass).
+
+/// Returns true when friction-basis rebuild should be skipped (B4.5 deepen pass).
+
+/// Rebuild friction basis using preflight guards; returns false when skipped (B4.5 deepen pass).
+
 } // namespace fuse::physics::narrowphase

@@ -411,6 +411,15 @@ struct ManifoldFinalizePreflight {
 
 /// Populate finalize preflight without mutating slots (B4.5 deepen pass).
 ManifoldFinalizePreflight preflight_finalize_contact_manifold(
+    bool hasValidNormal = false;
+    bool hasPenetrating = false;
+    bool needsFrictionBasis = false;
+
+    bool can_finalize() const {
+        return !skipped && hasValidNormal && hasPenetrating && !prune.wouldBeEmpty;
+    }
+
+ManifoldFinalizePreflight preflight_manifold_finalize(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f);
@@ -450,6 +459,17 @@ bool can_skip_manifold_finalize(const ContactManifold& manifold);
 
 /// Finalize only when preflight allows; returns false without clearing on preflight failure (B4.5 deepen pass).
 bool generate_contact_manifold_guarded(ContactManifold& manifold);
+/// Returns true when finalize should be skipped (B4.5 deepen pass).
+bool should_skip_manifold_finalize(const ContactManifold& manifold);
+
+/// Returns true when `generate_contact_manifold` would be a no-op failure (B4.5 deepen pass).
+bool can_skip_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Finalize only when preflight allows; returns false otherwise (B4.5 deepen pass).
+bool generate_contact_manifold_if_valid(ContactManifold& manifold);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
