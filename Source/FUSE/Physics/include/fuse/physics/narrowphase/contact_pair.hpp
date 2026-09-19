@@ -485,3 +485,12 @@ inline bool should_skip_detect_contacts_pair(
     return should_skip_detect_contacts_pair(pair, bodies, shapes);
     if (should_skip_detect_contacts_pair(pair, bodies, shapes)) {
            ContactPairRejectReason::UnsupportedShapePair &&
+
+// --- deepen additive from deepen-b4-narrowphase-guards-5907 ---
+inline bool wouldSkipContactPairDispatch(
+inline bool wouldSkipContactPairDeepenDispatch(
+    return should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+inline bool wouldSkipNarrowphase(
+inline ContactManifold tryDetectContactsPair(
+    if (wouldSkipContactPairDispatch(pair, bodies, shapes)) {
+inline bool tryGenerateContactManifold(ContactManifold& manifold) {

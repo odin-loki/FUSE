@@ -3582,3 +3582,61 @@ void testManifoldAndFrictionAliasGuardHelpers() {
     expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight can run with one valid pair");
 void testFrictionComputeWithPreflightGuards() {
     testFrictionComputeWithPreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-5907 ---
+        fuse::physics::narrowphase::preflightContactBufferWriteSlot(buffer, 3u, valid);
+    expectTrue(outOfRangePreflight.outOfRangeSlot, "write-slot preflight marks out-of-range slot");
+    expectTrue(!outOfRangePreflight.canWrite(), "write-slot preflight rejects out-of-range slot");
+    const auto selfPairPreflight =
+    expectTrue(selfPairPreflight.selfPair, "write-slot preflight marks self pair");
+        fuse::physics::narrowphase::tryWriteContactBufferSlot(buffer, 0u, valid),
+        "tryWriteContactBufferSlot accepts valid manifold");
+        !fuse::physics::narrowphase::tryWriteContactBufferSlot(buffer, 1u, selfPair),
+        "tryWriteContactBufferSlot rejects self pair");
+    expectTrue(compactionPreflight.needsCompaction(), "compaction preflight requests invalid-slot work");
+    const auto clampPreflight = fuse::physics::narrowphase::preflightContactBufferClamp(clampBuffer);
+    const auto withinPreflight = fuse::physics::narrowphase::preflightContactBufferClamp(clampBuffer);
+        compactAndClampPreflight.noWork || !compactAndClampPreflight.needsCompactAndClamp(),
+    expectTrue(exportPreflight.canExport(), "toVector preflight allows export with valid slots");
+            fuse::physics::narrowphase::NarrowphaseIntoBufferRejectReason::EmptyPairs),
+        fuse::physics::narrowphase::wouldSkipNarrowphaseIntoBuffer(emptyPairs, bodies, shapes),
+        "wouldSkipNarrowphaseIntoBuffer true for empty pair list");
+    expectTrue(rejectedPreflight.noDispatchablePairs, "into-buffer preflight marks no dispatchable pairs");
+    expectTrue(!rejectedPreflight.canRun(), "into-buffer preflight rejects all-sleeping batch");
+    fuse::physics::narrowphase::runNarrowphaseIntoBufferWithPreflight(rejectedPairs, bodies, shapes, skippedBuffer);
+        !fuse::physics::narrowphase::tryRunNarrowphaseIntoBuffer(rejectedPairs, bodies, shapes, skippedBuffer),
+        "tryRunNarrowphaseIntoBuffer returns false on rejected batch");
+    expectTrue(validPreflight.canRun(), "into-buffer preflight accepts dispatchable pair");
+        fuse::physics::narrowphase::tryRunNarrowphaseIntoBuffer(validPairs, bodies, shapes, buffer),
+        "tryRunNarrowphaseIntoBuffer succeeds for valid pair");
+    expectTrue(buffer.activeCount == 1u, "tryRunNarrowphaseIntoBuffer produces one contact");
+        fuse::physics::narrowphase::wouldSkipContactPairDispatch({bodyA, bodyA}, bodies, shapes),
+        "wouldSkipContactPairDispatch true for self pair");
+    const auto skipped = fuse::physics::narrowphase::tryDetectContactsPair({bodyA, bodyA}, bodies, shapes);
+    expectTrue(!skipped.valid, "tryDetectContactsPair returns invalid manifold for self pair");
+        fuse::physics::narrowphase::tryDetectContactsPair({bodyA, bodyB}, bodies, shapes);
+    expectTrue(detected.valid, "tryDetectContactsPair returns valid manifold for overlapping pair");
+        !fuse::physics::narrowphase::tryGenerateContactManifold(noNormal),
+        "tryGenerateContactManifold rejects invalid normal");
+        fuse::physics::narrowphase::tryGenerateContactManifold(ready),
+        "tryGenerateContactManifold finalizes valid manifold");
+    expectTrue(ready.hasFrictionBasis(), "tryGenerateContactManifold builds friction basis");
+        fuse::physics::narrowphase::wouldSkipManifoldPrune(separated),
+        "wouldSkipManifoldPrune true for all-separated manifold");
+        !fuse::physics::narrowphase::tryPruneContactManifold(separated),
+        "tryPruneContactManifold clears all-separated manifold");
+        !fuse::physics::narrowphase::wouldSkipManifoldPrune(dirty),
+        "wouldSkipManifoldPrune false when separated slot exists");
+        fuse::physics::narrowphase::tryPruneContactManifold(dirty),
+        "tryPruneContactManifold keeps penetrating slots");
+        fuse::physics::narrowphase::wouldSkipManifoldFinalize(noNormal),
+        "wouldSkipManifoldFinalize true for invalid normal");
+        fuse::physics::narrowphase::tryFinalizeContactManifold(ready),
+        "tryFinalizeContactManifold succeeds for finalized manifold");
+        !fuse::physics::narrowphase::wouldSkipFrictionBasisRebuild(needsBasis),
+        "wouldSkipFrictionBasisRebuild false without cached basis");
+        fuse::physics::narrowphase::tryRebuildFrictionBasis(needsBasis),
+        "tryRebuildFrictionBasis builds missing basis");
+    expectTrue(needsBasis.hasFrictionBasis(), "tryRebuildFrictionBasis stores orthonormal basis");
+        fuse::physics::narrowphase::wouldSkipFrictionBasisRebuild(needsBasis),
+        "wouldSkipFrictionBasisRebuild true with valid cached basis");

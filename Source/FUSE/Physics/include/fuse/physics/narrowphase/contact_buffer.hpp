@@ -653,3 +653,7 @@ ContactBufferFrictionTangentPreflight preflight_contact_buffer_friction_tangent(
 inline ContactBufferFrictionTangentPreflight preflight_contact_buffer_friction_tangent(
     preflight.allOrthonormal = preflight.reason == ContactBufferFrictionTangentRejectReason::AllOrthonormal;
 inline const char* contact_buffer_warm_start_reject_reason_name(ContactBufferWarmStartRejectReason reason) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-5907 ---
+bool tryWriteContactBufferSlot(ContactBufferSoA& buffer, u32 slot, const ContactManifold& manifold);
+inline bool tryWriteContactBufferSlot(ContactBufferSoA& buffer, u32 slot, const ContactManifold& manifold) {

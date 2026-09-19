@@ -309,3 +309,32 @@ inline NarrowphaseBufferPreflight preflight_run_narrowphase_into_buffer(
 
 // --- deepen additive from b4-narrowphase-deepen-guards-c379 ---
 inline NarrowphaseIntoBufferPreflight preflight_run_narrowphase_into_buffer(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-5907 ---
+enum class NarrowphaseIntoBufferRejectReason : u8 {
+const char* narrowphase_into_buffer_reject_reason_name(NarrowphaseIntoBufferRejectReason reason);
+NarrowphaseIntoBufferRejectReason narrowphase_into_buffer_reject_reason(
+    NarrowphaseIntoBufferRejectReason expected);
+    NarrowphaseIntoBufferRejectReason reason = NarrowphaseIntoBufferRejectReason::None;
+    bool canRun() const { return reason == NarrowphaseIntoBufferRejectReason::None; }
+bool wouldSkipNarrowphaseIntoBuffer(
+bool tryRunNarrowphaseIntoBuffer(
+inline const char* narrowphase_into_buffer_reject_reason_name(NarrowphaseIntoBufferRejectReason reason) {
+    case NarrowphaseIntoBufferRejectReason::None:
+    case NarrowphaseIntoBufferRejectReason::EmptyPairs:
+    case NarrowphaseIntoBufferRejectReason::NoDispatchablePairs:
+inline NarrowphaseIntoBufferRejectReason narrowphase_into_buffer_reject_reason(
+        return NarrowphaseIntoBufferRejectReason::EmptyPairs;
+        return NarrowphaseIntoBufferRejectReason::NoDispatchablePairs;
+    return NarrowphaseIntoBufferRejectReason::None;
+    NarrowphaseIntoBufferRejectReason expected) {
+    const NarrowphaseBatchPreflight batchPreflight = preflight_narrowphase_batch(pairs, bodies, shapes);
+    preflight.pairCount = batchPreflight.pairCount;
+    preflight.dispatchableCount = batchPreflight.dispatchableCount;
+    if (batchPreflight.pairCount == 0u) {
+        preflight.reason = NarrowphaseIntoBufferRejectReason::EmptyPairs;
+    if (batchPreflight.dispatchableCount == 0u) {
+        preflight.reason = NarrowphaseIntoBufferRejectReason::NoDispatchablePairs;
+inline bool wouldSkipNarrowphaseIntoBuffer(
+inline bool tryRunNarrowphaseIntoBuffer(
+    if (wouldSkipNarrowphaseIntoBuffer(pairs, bodies, shapes)) {

@@ -434,3 +434,9 @@ inline ManifoldPruneFinalizePreflight preflight_manifold_prune_finalize(
 
 // --- deepen additive from b4-narrowphase-deeper-guards-3864 ---
     return should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-5907 ---
+inline bool wouldSkipManifoldPrune(
+inline bool wouldSkipManifoldFinalize(
+inline bool tryPruneContactManifold(
+inline bool tryFinalizeContactManifold(

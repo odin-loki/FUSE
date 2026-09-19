@@ -303,3 +303,7 @@ inline FrictionTangentComputePreflight preflight_friction_tangent_compute(
 
 // --- deepen additive from b4-narrowphase-deepen-guards-c379 ---
     return should_skip_friction_tangents(manifold) || can_skip_friction_basis_rebuild(manifold, epsilon);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-5907 ---
+inline bool wouldSkipFrictionBasisRebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f) {
+inline bool tryRebuildFrictionBasis(ContactManifold& manifold, f32 epsilon = 1e-4f) {
