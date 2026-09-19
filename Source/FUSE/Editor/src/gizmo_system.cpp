@@ -657,6 +657,17 @@ bool isRayNonFinite(const GizmoRay& ray) {
            isFloatNonFinite(ray.direction.y) || isFloatNonFinite(ray.direction.z);
 }
 
+bool isHitTestNonFinite(const GizmoHitTest& hit) {
+    return !std::isfinite(hit.screenX) || !std::isfinite(hit.screenY) ||
+           !std::isfinite(hit.viewportWidth) || !std::isfinite(hit.viewportHeight);
+}
+
+bool isRayNonFinite(const GizmoRay& ray) {
+    return !std::isfinite(ray.origin.x) || !std::isfinite(ray.origin.y) ||
+           !std::isfinite(ray.origin.z) || !std::isfinite(ray.direction.x) ||
+           !std::isfinite(ray.direction.y) || !std::isfinite(ray.direction.z);
+}
+
 GizmoInteractionPhase interactionPhase(bool dragging) {
     return dragging ? GizmoInteractionPhase::Dragging : GizmoInteractionPhase::Idle;
 
@@ -1328,7 +1339,6 @@ bool isRayNormalized(const GizmoRay& ray) {
     return std::fabs(len - 1.f) <= kEpsilon;
     return isSnapEnabled(mode, settings) &&
            (!isSnapStepValid(mode, settings) || isSnapSettingsNonFinite(settings));
-}
 
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
     PickPreflight preflight{};
@@ -1373,6 +1383,11 @@ PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform
         preflight.nonUnitRay = true;
     }
 
+    if (isRayNonFinite(ray)) {
+        preflight.nonFiniteRay = true;
+        return preflight;
+    }
+
     if (!isPickConfigValid(axisLength, pickRadius)) {
         preflight.invalidPickConfig = true;
 
@@ -1405,6 +1420,7 @@ PickPreflight preflightPick(const GizmoHitTest& hit, GizmoMode mode) {
         preflight.nonFiniteInput = true;
     if (!isHitTestScreenFinite(hit)) {
         preflight.nonFiniteScreen = true;
+        preflight.nonFiniteHit = true;
         return preflight;
     }
 
@@ -2359,6 +2375,7 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
         preflight.nonFiniteInput = true;
     } else if (!isHitTestScreenFinite(hit)) {
         preflight.nonFiniteScreen = true;
+        preflight.nonFiniteHit = true;
     } else if (isHitTestEmpty(hit)) {
         preflight.emptyHit = true;
     } else if (isHitTestCoordinatesInvalid(hit)) {
