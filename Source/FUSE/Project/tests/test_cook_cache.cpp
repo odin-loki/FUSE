@@ -596,6 +596,63 @@ void testCookHashPreflightFnvAndCombineGuards() {
                "combine cache key preflight ok for valid fold");
 }
 
+void testCookCacheWouldInvalidationProbes() {
+    fuse::project::CookCache cache;
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_would_src.obj"),
+               "would_invalidate_source on empty cache is false");
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_would_out.fusemesh"),
+               "would_invalidate_output on empty cache is false");
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_stale.obj", 42u),
+               "would_invalidate_stale_content on empty cache is false");
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_would_up.obj", 1u}}),
+               "would_invalidate_stale_upstream on empty cache is false");
+    expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_would_down.fusemesh", {}, {}),
+               "would_invalidate_downstream on empty cache is false");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_would_mesh.obj", "# would probe\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_would_mesh.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for would-invalidation probes ok");
+
+    expectTrue(cooker.cache().would_invalidate(seeded.content_hash), "would_invalidate reports seeded hash");
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source reports seeded entry");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path),
+               "would_invalidate_output reports seeded entry");
+    expectTrue(!cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash),
+               "would_invalidate_stale_content false when hash matches");
+    expectTrue(!cooker.cache().would_invalidate_stale_upstream_hashes({{source, 0u}}),
+               "would_invalidate_stale_upstream false when upstream matches");
+
+    writeTempFile(source, "# would probe updated\n");
+    const fuse::u64 revised_hash = fuse::project::hash_mesh_import(desc);
+    expectTrue(revised_hash != seeded.content_hash, "source change yields new content hash");
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, revised_hash),
+               "would_invalidate_stale_content true when current hash differs from stored key");
+    expectTrue(cooker.cache().would_prune_all(), "would_prune_all true when stale entry present");
+
+    fuse::project::CookCacheEntry invalid;
+    invalid.content_hash = 0;
+    invalid.source_path = "/tmp/fuse_b79_would_invalid.obj";
+    invalid.output_path = "/tmp/fuse_b79_would_invalid.fusemesh";
+    const fuse::project::CookHashPreflight invalid_preflight =
+        fuse::project::preflight_cook_cache_entry(invalid);
+    expectTrue(!invalid_preflight.ok(), "preflight_cook_cache_entry rejects zero hash");
+    expectTrue(invalid_preflight.reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+               "zero hash cache entry preflight reason");
+
+    fuse::project::CookCacheEntry valid;
+    valid.content_hash = seeded.content_hash;
+    valid.source_path = source;
+    valid.output_path = desc.output_path;
+    const fuse::project::CookHashPreflight valid_preflight =
+        fuse::project::preflight_cook_cache_entry(valid);
+    expectTrue(valid_preflight.ok(), "preflight_cook_cache_entry accepts valid entry");
+}
+
 void testCookCachePruneInvalidEntriesOnLoad() {
     const std::string source = writeTempFile("/tmp/fuse_b79_prune_load_valid.obj", "# prune load valid\n");
     fuse::project::MeshImportDesc desc;
@@ -663,6 +720,7 @@ int main() {
     testCookCacheInvalidationProbes();
     testCookCachePruneReconcileEstimateGuards();
     testCookCacheProbeStaleContentSources();
+    testCookCacheWouldInvalidationProbes();
     testCookCachePruneInvalidEntriesOnLoad();
 
     fuse::core::shutdown();
