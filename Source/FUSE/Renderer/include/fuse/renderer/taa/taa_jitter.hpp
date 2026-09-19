@@ -239,3 +239,12 @@ bool tryAdvanceTaaJitter(TaaJitter& jitter, TaaJitterGuardRejectReason& reason);
 
 // --- deepen additive from deepen-b59-taa-guards-985f ---
 bool taaJitterGuardRejectReasonIsBlocking(TaaJitterGuardRejectReason reason);
+
+// --- deepen additive from deepen-taa-b59-guards-ec2a ---
+enum class TaaJitterAlignmentRejectReason : u8 {
+const char* taaJitterAlignmentRejectReasonLabel(TaaJitterAlignmentRejectReason reason);
+TaaJitterAlignmentRejectReason classifyTaaJitterAlignmentReject(u32 frameIndex, const TaaJitter& jitter);
+bool preflightTaaJitterAligned(u32 frameIndex, const TaaJitter& jitter,
+                               TaaJitterAlignmentRejectReason* reason = nullptr);
+bool tryPreflightTaaJitterAligned(u32 frameIndex, const TaaJitter& jitter,
+                                  TaaJitterAlignmentRejectReason& reason);

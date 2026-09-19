@@ -4087,3 +4087,35 @@ void testTaaPassTryPreflightWrappers() {
     expectTrue(jitterReason == fuse::renderer::TaaJitterGuardRejectReason::MisalignedFrame,
     testRejectReasonIsBlockingHelpers();
     testTaaPassTryPreflightWrappers();
+
+// --- deepen additive from deepen-taa-b59-guards-ec2a ---
+                               fuse::renderer::TaaHistoryWarmupRejectReason::Incomplete),
+                   fuse::renderer::TaaHistoryWarmupRejectReason::Incomplete,
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryWarmupComplete(history, reason),
+               "tryPreflight warmup-complete fails for unwarmed history");
+    expectTrue(reason == fuse::renderer::TaaHistoryWarmupRejectReason::Incomplete,
+               "tryPreflight warmup-complete reason is Incomplete");
+    expectTrue(fuse::renderer::preflightTaaHistoryWarmupComplete(history, &reason),
+    expectTrue(std::strcmp(fuse::renderer::taaJitterAlignmentRejectReasonLabel(
+                               fuse::renderer::TaaJitterAlignmentRejectReason::SyncBlocked),
+                               fuse::renderer::TaaJitterAlignmentRejectReason::Misaligned),
+    expectTrue(fuse::renderer::classifyTaaJitterAlignmentReject(5u, jitter) ==
+                   fuse::renderer::TaaJitterAlignmentRejectReason::Misaligned,
+    expectTrue(fuse::renderer::preflightTaaJitterAligned(5u, jitter),
+    fuse::renderer::TaaJitterAlignmentRejectReason alignReason =
+        fuse::renderer::TaaJitterAlignmentRejectReason::None;
+    expectTrue(fuse::renderer::tryPreflightTaaJitterAligned(5u, jitter, alignReason),
+               "tryPreflight jitter alignment passes after sync");
+    expectTrue(alignReason == fuse::renderer::TaaJitterAlignmentRejectReason::None,
+               "tryPreflight jitter alignment reason is None");
+    expectTrue(fuse::renderer::preflightTaaJitterAligned(6u, jitter),
+    expectTrue(fuse::renderer::classifyTaaJitterAlignmentReject(0u, fallbackJitter) ==
+                   fuse::renderer::TaaJitterAlignmentRejectReason::None,
+    expectTrue(fuse::renderer::classifyTaaResolveTemporalReject(desc, emptyHistory, 0u) ==
+    expectTrue(!fuse::renderer::tryPreflightTaaResolveTemporal(desc, history, 0u, temporalReason),
+    expectTrue(fuse::renderer::preflightTaaResolveTemporal(desc, history, 0u, &temporalReason),
+    expectTrue(!pass->preflightJitterAligned(5u), "pass jitter misaligned before sync to frame 5");
+    expectTrue(pass->preflightJitterAdvance(), "pass preflightJitterAdvance passes after init");
+    expectTrue(pass->preflightJitterAligned(4u), "pass jitter aligned after sync");
+    expectTrue(pass->tryComputeExpectedResolveBlendWeights(resolveDesc, weights, blendReason),
+               "pass tryComputeExpectedResolveBlendWeights passes before warmup");

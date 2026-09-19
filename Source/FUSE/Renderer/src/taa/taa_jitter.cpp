@@ -462,3 +462,22 @@ bool tryAdvanceTaaJitter(TaaJitter& jitter, TaaJitterGuardRejectReason& reason) 
 bool taaJitterGuardRejectReasonIsBlocking(TaaJitterGuardRejectReason reason) {
     return reason != TaaJitterGuardRejectReason::None;
         return TaaJitterGuardRejectReason::MisalignedFrame;
+
+// --- deepen additive from deepen-taa-b59-guards-ec2a ---
+const char* taaJitterAlignmentRejectReasonLabel(TaaJitterAlignmentRejectReason reason) {
+    case TaaJitterAlignmentRejectReason::None:
+    case TaaJitterAlignmentRejectReason::SyncBlocked:
+    case TaaJitterAlignmentRejectReason::Misaligned:
+TaaJitterAlignmentRejectReason classifyTaaJitterAlignmentReject(u32 frameIndex, const TaaJitter& jitter) {
+        return TaaJitterAlignmentRejectReason::SyncBlocked;
+        return TaaJitterAlignmentRejectReason::Misaligned;
+    return TaaJitterAlignmentRejectReason::None;
+bool preflightTaaJitterAligned(u32 frameIndex, const TaaJitter& jitter,
+                               TaaJitterAlignmentRejectReason* reason) {
+    const TaaJitterAlignmentRejectReason reject = classifyTaaJitterAlignmentReject(frameIndex, jitter);
+    return reject == TaaJitterAlignmentRejectReason::None;
+bool tryPreflightTaaJitterAligned(u32 frameIndex, const TaaJitter& jitter,
+                                  TaaJitterAlignmentRejectReason& reason) {
+    reason = classifyTaaJitterAlignmentReject(frameIndex, jitter);
+    return reason == TaaJitterAlignmentRejectReason::None;
+    return !preflightTaaJitterAligned(frameIndex, jitter);

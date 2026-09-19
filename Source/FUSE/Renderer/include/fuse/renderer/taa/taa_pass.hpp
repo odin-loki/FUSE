@@ -334,3 +334,9 @@ void addTaaPassToGraph(RenderGraph& graph);
 
 // --- deepen additive from deepen-b59-taa-guards-985f ---
     bool tryPreflightJitterAlignment(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
+
+// --- deepen additive from deepen-taa-b59-guards-ec2a ---
+    bool tryComputeExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
+    bool preflightResolveTemporal(const TaaResolveDesc& desc, u32 observedGeneration,
+    bool preflightJitterAligned(u32 frameIndex, TaaJitterAlignmentRejectReason* reason = nullptr) const;
+    bool preflightHistoryWarmupComplete(TaaHistoryWarmupRejectReason* reason = nullptr) const;

@@ -340,3 +340,10 @@ TaaHistoryWarmupPreflight preflightTaaHistoryWarmup(const TaaHistoryBuffer& hist
 // --- deepen additive from deepen-taa-b59-guards-d5f5 ---
 bool preflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
     return !preflightTaaHistoryReuseForResolve(desc, history);
+
+// --- deepen additive from deepen-taa-b59-guards-ec2a ---
+    case TaaHistoryWarmupRejectReason::Incomplete:
+        return TaaHistoryWarmupRejectReason::Incomplete;
+bool preflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history,
+bool tryPreflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history,
+    return !preflightTaaHistoryWarmupComplete(history);

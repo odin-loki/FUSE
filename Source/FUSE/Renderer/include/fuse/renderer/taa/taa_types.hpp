@@ -415,3 +415,8 @@ bool tryComputeTaaResolveBlendWeightsIfResolveReady(const TaaResolveDesc& desc,
                                TaaResolveBlendRejectReason* blendReject = nullptr);
 bool tryPreflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                  TaaResolveSkipReason& skipReason, TaaResolveBlendRejectReason& blendReject);
+
+// --- deepen additive from deepen-taa-b59-guards-ec2a ---
+bool preflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history,
+bool tryPreflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history,
+                                    u32 observedGeneration, TaaResolveTemporalRejectReason& reason);

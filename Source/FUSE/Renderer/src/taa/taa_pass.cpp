@@ -602,3 +602,12 @@ bool TaaPass::tryPreflightResolveFrame(const TaaResolveDesc& desc, TaaResolveSki
 // --- deepen additive from deepen-b59-taa-guards-985f ---
 bool TaaPass::tryPreflightJitterAlignment(u32 frameIndex, TaaJitterGuardRejectReason& reason) const {
     return tryPreflightTaaJitterAlignment(m_jitter, frameIndex, reason);
+
+// --- deepen additive from deepen-taa-b59-guards-ec2a ---
+bool TaaPass::tryComputeExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
+bool TaaPass::preflightResolveTemporal(const TaaResolveDesc& desc, u32 observedGeneration,
+    return preflightTaaResolveTemporal(desc, m_history, observedGeneration, reason);
+bool TaaPass::preflightJitterAligned(u32 frameIndex, TaaJitterAlignmentRejectReason* reason) const {
+    return preflightTaaJitterAligned(frameIndex, m_jitter, reason);
+bool TaaPass::preflightHistoryWarmupComplete(TaaHistoryWarmupRejectReason* reason) const {
+    return preflightTaaHistoryWarmupComplete(m_history, reason);
