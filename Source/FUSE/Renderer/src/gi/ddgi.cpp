@@ -2583,3 +2583,10 @@ bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelReject
 // --- deepen additive from deepen-ddgi-b56-guards-87a1 ---
 bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
     return !tryReadIrradianceAtIndex(desc, cache, cache_count, probe_index, irradiance);
+
+// --- deepen additive from deepen-ddgi-guards-0aed ---
+    ddgi_util::tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
+    const bool ok = tryValidateProbeSampleCoords(desc, coords, local);
+    return wouldSkipDdgiProbeUpdate(desc, probe_indices, probe_count);
+    return wouldSkipProbeTraceKernel(params);
+    return wouldSkipProbeBlendKernel(params);

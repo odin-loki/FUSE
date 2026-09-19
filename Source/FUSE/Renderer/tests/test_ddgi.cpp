@@ -3108,3 +3108,34 @@ void testWouldSkipGuards() {
                "wouldSkip true for zero blend update count");
                "wouldSkip true for null trace probe indices");
                "wouldSkip true for null blend probe indices");
+
+// --- deepen additive from deepen-ddgi-guards-0aed ---
+void testDdgiGuardDeepenClassifyAndPreflight() {
+    expectTrue(fuse::renderer::ProbeGridLayout::preflightProbeSampleCoords(desc, built),
+               "preflightProbeSampleCoords passes for valid coords");
+    expectTrue(fuse::renderer::classifyProbeSampleCoordsReject(desc, oobWeights) ==
+    expectTrue(!fuse::renderer::ProbeGridLayout::preflightProbeSampleCoords(desc, oobWeights, &sampleReason),
+               "preflightProbeSampleCoords rejects OOB weights");
+               "preflightProbeSampleCoords reports OutOfRangeWeights");
+    expectTrue(fuse::renderer::ddgi_util::preflightCacheIndexLookup(desc, 3u, 8u),
+               "preflightCacheIndexLookup passes for valid index");
+    expectTrue(!fuse::renderer::ddgi_util::preflightCacheIndexLookup(desc, 99u, 8u),
+               "preflightCacheIndexLookup rejects null cache");
+               "preflightCacheIndexLookup reports NullCache");
+    expectTrue(fuse::renderer::ddgi_util::tryReadIrradianceAtIndex(desc, cache.data(), 8u, 3u, irradiance, cacheReason),
+    expectTrue(!fuse::renderer::ddgi_util::tryReadIrradianceAtIndex(desc, nullptr, 8u, 3u, irradiance, cacheReason),
+               "tryRead with reason reports NullCache");
+               "preflightProbeSchedule passes for valid inputs");
+               "preflightProbeSchedule reports ZeroProbeCount");
+               "preflightDdgiProbeUpdate passes for valid indices");
+    expectTrue(!fuse::renderer::preflightDdgiProbeUpdate(desc, oobIndices, 2u, &launchReason),
+               "preflightDdgiProbeUpdate rejects OOB indices");
+               "preflightDdgiProbeUpdate reports OutOfRangeProbeIndex");
+    expectTrue(fuse::renderer::gi::preflightProbeTraceKernel(validParams),
+               "preflightProbeTraceKernel passes for valid params");
+    expectTrue(fuse::renderer::gi::preflightProbeBlendKernel(validParams),
+               "preflightProbeBlendKernel passes for valid params");
+    expectTrue(!fuse::renderer::gi::preflightProbeTraceKernel(zeroRays, &kernelReason),
+               "preflightProbeTraceKernel rejects zero rays");
+               "preflightProbeTraceKernel reports ZeroRaysPerProbe");
+    testDdgiGuardDeepenClassifyAndPreflight();
