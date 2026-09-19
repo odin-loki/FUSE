@@ -11,6 +11,9 @@ void runNarrowphaseIntoBuffer(
     ContactBufferSoA& buffer) {
     const u32 pairCount = static_cast<u32>(pairs.size());
     buffer.preparePairSlots(pairCount);
+    if (pairCount == 0u) {
+        return;
+    }
 
     // Per-pair slots are job-safe (disjoint writes). Serial dispatch on the CPU stub avoids
     // scheduler reference-capture flakes seen when stacking parallel broadphase + narrowphase
@@ -18,11 +21,15 @@ void runNarrowphaseIntoBuffer(
     for (u32 pairIndex = 0; pairIndex < pairCount; ++pairIndex) {
         ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
         if (generate_contact_manifold(manifold)) {
-            buffer.writeSlot(pairIndex, manifold);
+            writeContactBufferSlotWithPreflight(buffer, pairIndex, manifold);
         }
     }
 
-    buffer.compactAndClamp();
+    compactAndClampContactBufferWithPreflight(buffer);
+}
+
+bool should_skip_narrowphase_buffer_pass(const ContactBufferSoA& buffer) {
+    return canSkipContactBufferCompactAndClamp(buffer);
 }
 
 std::vector<ContactManifold> runNarrowphase(
