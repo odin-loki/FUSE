@@ -82,6 +82,17 @@ bool canLaunchProbeKernels(const DDGIKernelParams& params);
 
 /// Diagnose why probe-kernel launch preflight would reject the request.
 bool tryCanLaunchProbeKernels(const DDGIKernelParams& params, ProbeKernelLaunchRejectReason& outReason);
+/// Why a kernel launch preflight rejected the params bundle (B5.6 deepen).
+enum class DdgiKernelLaunchRejectReason : u8 {
+    NullIndices,
+
+/// Human-readable label for kernel launch reject reasons (logging / tests).
+const char* ddgiKernelLaunchRejectReasonLabel(DdgiKernelLaunchRejectReason reason);
+
+/// Diagnose why probe trace launch would reject.
+bool preflightProbeTraceKernel(const DDGIKernelParams& params, DdgiKernelLaunchRejectReason& outReason);
+/// Diagnose why probe blend launch would reject.
+bool preflightProbeBlendKernel(const DDGIKernelParams& params, DdgiKernelLaunchRejectReason& outReason);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);

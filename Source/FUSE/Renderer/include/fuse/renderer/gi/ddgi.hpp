@@ -131,6 +131,29 @@ struct ProbeSampleCoords {
     f32 tz = 0.f;
 };
 
+/// Why probe-cache lookup preflight rejected the request (B5.6 deepen).
+enum class ProbeCacheLookupRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    NullCache,
+    UndersizedCache,
+};
+
+/// Human-readable label for cache lookup reject reasons (logging / tests).
+const char* probeCacheLookupRejectReasonLabel(ProbeCacheLookupRejectReason reason);
+
+/// Why DDGI probe-update launch preflight rejected the request (B5.6 deepen).
+enum class DdgiLaunchRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    NullIndices,
+    ZeroProbeCount,
+    InvalidRaysPerProbe,
+};
+
+/// Human-readable label for launch reject reasons (logging / tests).
+const char* ddgiLaunchRejectReasonLabel(DdgiLaunchRejectReason reason);
+
 /// Per-kind probe counts for border shell classification (B5.6 deepen).
 struct ProbeBorderCounts {
     u32 total = 0;
@@ -352,6 +375,7 @@ struct ProbeGridLayout {
     /// Clamp sample coords to grid bounds and restore trilinear neighbour ordering.
     static void sanitizeProbeSampleCoords(const DDGIDesc& desc, ProbeSampleCoords& coords);
     /// True when corner indices and blend weights are usable for trilinear lookup.
+    /// Clamp sample coords; returns false and clears coords on empty grid.
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -507,6 +531,21 @@ bool isProbeIndexCacheAccessible(u32 probe_index, u32 cache_count);
 bool isProbeIndexCacheOutOfRange(u32 probe_index, u32 cache_count);
 /// Clamp a flat probe index to [0, cache_count - 1]; returns 0 when the cache is empty.
 u32 clampProbeIndexForCache(u32 probe_index, u32 cache_count);
+/// Preflight guard before index-based cache lookup; false on empty grid or undersized cache.
+bool canLookupCacheAtIndex(const DDGIDesc& desc, u32 cache_count, u32 probe_index);
+/// Diagnose why cache lookup preflight would reject.
+bool tryCanLookupCacheAtIndex(const DDGIDesc& desc,
+                              u32 cache_count,
+                              u32 probe_index,
+                              ProbeCacheLookupRejectReason& outReason);
+/// Flat probe index for cache access after coord clamp; returns 0 on empty grid.
+u32 cacheIndexFromClampedCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
+/// Read irradiance at clamped probe index; returns false when preflight rejects.
+bool trySampleCacheAtIndex(const DDGIDesc& desc,
+                           const IrradianceCacheEntry* cache,
+                           fuse::math::Vec3& outIrradiance);
+/// Read irradiance at probe grid coord with guard preflight.
+bool trySampleCacheAtCoord(const DDGIDesc& desc,
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
@@ -706,6 +745,10 @@ bool tryCanLaunchDdgiProbeUpdate(const DDGIDesc& desc,
                                u32 probe_count,
                                ProbeUpdateLaunchRejectReason& outReason);
 
+/// Preflight guard before DDGI probe-update launch.
+/// Diagnose why probe-update launch would reject.
+bool preflightDdgiProbeUpdate(const DDGIDesc& desc,
+                              DdgiLaunchRejectReason& outReason);
 /// Host launcher for probe trace + blend kernels — stub until CUDA kernels land.
 bool launch_ddgi_probe_update(const DDGIDesc& desc,
                               const u32* probe_indices,
