@@ -425,6 +425,7 @@ void assignSkipReason(ProfilerSkipReason* reason, ProfilerSkipReason value) {
         && event.scopeId == flowId
         && isValidEventName(event.name);
 
+
 } // namespace
 
 bool isBlankEventName(const char* name);
@@ -1685,6 +1686,35 @@ bool hasActiveAsyncFlowNesting() {
     return flowNestingDepth() > 0u;
 }
 
+bool hasActiveScopes() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool isFlowNestingConsistent() {
+    return flowNestingDepth() == openAsyncFlowCount();
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)
+        || g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(track);
+}
+
+bool wouldSkipChromeTraceExport() {
+    return !enabled() || exportableEventCount() == 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -2794,6 +2824,9 @@ bool tryFindExportableEventByName(const char* name, ProfileEvent& outEvent) {
 
 
 bool tryFindExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+
+
 
 
 
@@ -4329,24 +4362,20 @@ u32 countOrphanEndsForPhases(EventPhase beginPhase, EventPhase endPhase) {
 
 } // namespace
 
-    if (wouldSkipNameLookup(name)) {
 
 
 
 
 
 
-    if (wouldSkipFlowIdLookup(flowId)) {
 
 
 
 
 
 
-bool wouldSkipNameLookup(const char* name) {
     return !isValidEventName(name) || isBufferEmpty();
 
-bool wouldSkipFlowIdLookup(u32 flowId) {
     return flowId == 0u || isBufferEmpty();
 
 bool isRecordedScopePairingConsistent() {
@@ -5172,7 +5201,6 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 
 
 
-        }
 
 
 
@@ -5183,9 +5211,18 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 
 
 
-    if (index == kInvalidEventIndex) {
-        outIndex = kInvalidEventIndex;
-        return false;
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -5764,6 +5801,10 @@ bool wouldSkipCounter(const char* track, ProfilerRecordSkipReason* reason) {
 
     preflight.wouldSkip = wouldSkipAsyncFlowEnd(name, &preflight.skipReason);
     preflight.orphanEnd = preflight.skipReason == ProfilerRecordSkipReason::NoOpenAsyncFlows;
+    return preflight;
+}
+
+    AsyncFlowPreflight preflight{};
 }
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
