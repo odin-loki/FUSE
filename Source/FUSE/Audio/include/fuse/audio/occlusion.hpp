@@ -34,6 +34,8 @@ bool is_clear_blocker_factor(float factor);
 
 /// True when a clamped blocker factor is at or above unity (fully blocked segment).
 bool is_fully_blocked_blocker_factor(float factor);
+/// True when the blocker list is null or empty — skips segment-vs-AABB evaluation.
+bool has_empty_occlusion_blockers(const AABB* blockers, u32 blocker_count);
 
 /// Co-located listener/source positions skip segment-vs-AABB blocker evaluation.
 bool should_skip_blocker_evaluation(const Vec3& listener, const Vec3& source);
@@ -75,6 +77,14 @@ bool should_evaluate_occlusion_blockers(const AABB* blockers, u32 blocker_count,
 
 /// True when blocker evaluation should be bypassed (empty list, co-located, or fully occluded source).
 bool should_skip_occlusion_blocker_evaluation(const AABB* blockers, u32 blocker_count,
+
+/// True when blocker-factor combination cannot change clamped source visibility.
+bool should_skip_combine_occlusion_visibility(float source_occlusion, float blocker_factor);
+
+/// True when blocker geometry cannot affect attenuation (empty list, fully occluded source, co-located).
+bool should_skip_occlusion_from_blockers(const Vec3& listener, const Vec3& source,
+                                         float source_occlusion, const AABB* blockers,
+                                         u32 blocker_count);
 
 /// Map visibility [0, 1] to a gain multiplier. Fully occluded sources retain `min_gain`.
 float evaluate_occlusion_gain(float visibility, const OcclusionParams& params = {});
