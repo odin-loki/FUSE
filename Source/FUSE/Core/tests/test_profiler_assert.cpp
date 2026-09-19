@@ -3935,3 +3935,32 @@ void testUnpairedBufferEventGuards() {
     expectTrue(openPreflight.flowFinishEventCount == 1u,
     expectTrue(openPreflight.hasExportWarnings(), "open flow adds export warnings");
     expectTrue(openPreflight.canExportNonEmpty(), "open flow still allows non-empty export");
+
+// --- deepen additive from deepen-b16-profiler-guards-93b3 ---
+void testBlankEventNameGuards() {
+void testTryFindEventLookupGuards() {
+    expectTrue(!fuse::profiler::tryFindFirstEventByName("scope", outEvent),
+               "tryFindFirstEventByName false on empty buffer");
+    expectTrue(!fuse::profiler::tryFindLastEventByName("scope", outEvent),
+               "tryFind* clears output on empty buffer");
+    expectTrue(fuse::profiler::tryFindFirstEventByName("lookup_scope", outEvent),
+               "tryFindFirstEventByName locates scope begin");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Begin, "tryFindFirstEventByName copies begin phase");
+    expectTrue(fuse::profiler::tryFindLastEventByName("lookup_scope", outEvent),
+               "tryFindLastEventByName locates scope end");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryFindLastEventByName copies end phase");
+               "tryFindFirstEventByPhase locates counter");
+               "tryFindFirstEventByPhase copies counter name");
+               "tryEventAtPhase true for matching phase");
+void testExportableEventIndexLookupGuards() {
+               "tryFirstExportableEvent copies first exportable begin");
+               "tryLastExportableEvent copies last exportable end");
+void testHasActiveScopeAndFlowDepthMismatchGuards() {
+void testChromeTraceExportPreflightNonExportableCount() {
+    expectTrue(emptyPreflight.nonExportableEventCount == emptyPreflight.invalidNameEventCount,
+    expectTrue(closedPreflight.nonExportableEventCount == 0u,
+    expectTrue(closedPreflight.canExportSafely(), "valid balanced trace can export safely");
+    expectTrue(closedPreflight.exportableEventCount + closedPreflight.nonExportableEventCount
+    expectTrue(fuse::profiler::tryFindFirstEventByName("valid_track", counterEvent),
+               "tryFindFirstEventByName succeeds after blank-name attempts");
+    testChromeTraceExportPreflightNonExportableCount();
