@@ -82,6 +82,9 @@ struct PairBufferSoA {
     /// True when no duplicate canonical pairs are present (B4.2 deepen follow-up pass).
     /// True when sort+unique dedupe pass would be a no-op (B4.2 deepen follow-up pass).
     bool canSkipDedupePass() const;
+    /// True when canonical sort would be a no-op (B4.2 deepen follow-up pass).
+    bool canSkipPairBufferSort() const;
+    /// True when at least two valid slots share the same canonical pair (B4.2 deepen follow-up pass).
     /// True when slot storage has no invalid flags (compact is a no-op).
     bool canSkipCompaction() const;
     /// True when compact has no invalidated slots to gather.
@@ -688,5 +691,42 @@ bool canSkipPairBufferCompaction(const PairBufferSoA& buffer);
 
 
 /// Non-mutating sort skip predicate — inverse of `PairBufferSortPreflight::needsSort` (B4.2 deepen pass).
+/// Read-only slot-write diagnostics — no mutation (B4.2 deepen follow-up pass).
+    bool invalidPair = false;
+
+    bool canWrite() const { return !outOfRangeSlot && !invalidPair; }
+
+    const PairBufferSoA& buffer,
+    u32 idxA,
+
+/// Read-only slot-prepare diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferPrepareSlotsPreflight {
+    bool zeroSlots = false;
+
+    bool canPrepare() const { return !zeroSlots; }
+
+PairBufferPrepareSlotsPreflight preflightPairBufferPrepareSlots(u32 slotCount);
+
+/// Read-only merge-into-buffer diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferMergePreflight {
+    bool emptyIncoming = false;
+    bool atCapacity = false;
+    u32 acceptedCount = 0;
+    u32 rejectedCount = 0;
+
+    bool canMergeAny() const { return !emptyIncoming && !atCapacity; }
+
+PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingCount);
+
+/// Merge preflight including pair-buffer capacity diagnostics (B4.2 deepen follow-up pass).
+struct BroadphaseMergeIntoBufferPreflight {
+    BroadphaseMergePreflight merge{};
+    PairBufferMergePreflight buffer{};
+    u32 incomingPairCount = 0;
+
+    bool canMergeAny() const { return merge.canMerge() && buffer.canMergeAny(); }
+
+BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
+    u32 incomingPairCount);
 
 } // namespace fuse::physics::broadphase

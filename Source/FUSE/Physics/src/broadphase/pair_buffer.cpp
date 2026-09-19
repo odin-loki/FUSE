@@ -142,6 +142,13 @@ bool PairBufferSoA::canSkipCompact() const {
 void PairBufferSoA::preparePairSlots(u32 slotCount) {
     if (slotCount == 0u) {
         clear();
+    if (!preflightPairBufferPrepareSlots(slotCount).canPrepare()) {
+        pairSlotCount = 0u;
+        activeCount = 0u;
+        droppedCount = 0u;
+        bodyA.clear();
+        bodyB.clear();
+        validFlags.clear();
         return;
     }
 
@@ -163,7 +170,6 @@ void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB, u32 bodyCount) {
     const CandidateRejectReason rejectReason = candidatePairRejectReason(idxA, idxB);
     if (rejectReason != CandidateRejectReason::None) {
         lastRejectReason = rejectReason;
-void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB, u32 bodyCount) {
     if (slot >= pairSlotCount || !isValidCandidatePair(idxA, idxB, bodyCount)) {
     const CandidatePairRejectReason rejectReason = candidatePairRejectReason(idxA, idxB, bodyCount);
     if (rejectReason != CandidatePairRejectReason::None) {
@@ -671,6 +677,12 @@ u32 PairBufferSoA::countValidSlots() const {
 
 bool PairBufferSoA::hasInvalidSlots() const {
     if (canSkipSoAIteration()) {
+bool PairBufferSoA::canSkipPairBufferSort() const {
+    return !preflightPairBufferSort(*this).needsSort();
+}
+
+bool PairBufferSoA::hasDuplicateCanonicalPairs() const {
+    if (canSkipDedupe()) {
         return false;
     }
 
@@ -678,6 +690,13 @@ bool PairBufferSoA::hasInvalidSlots() const {
     for (u32 slot = 0; slot < scanCount; ++slot) {
         if (validFlags[slot] == 0u) {
             return true;
+    for (u32 outer = 0; outer < scanCount; ++outer) {
+        if (!slotIsValid(outer)) {
+            continue;
+        }
+        for (u32 inner = outer + 1u; inner < scanCount; ++inner) {
+            if (!slotIsValid(inner)) {
+            if (bodyA[outer] == bodyA[inner] && bodyB[outer] == bodyB[inner]) {
         }
     }
     return false;
@@ -1362,6 +1381,39 @@ PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const Pair
     preflight.emptyBuffer = compactionPreflight.emptyBuffer;
     preflight.needsCompaction = compactionPreflight.needsCompaction();
     preflight.needsClamp = clampPreflight.needsClamp();
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    u32 slot,
+    u32 idxB) {
+    PairBufferWriteSlotPreflight preflight{};
+    preflight.outOfRangeSlot = slot >= buffer.pairSlotCount;
+    preflight.invalidPair = !isValidCandidatePair(idxA, idxB);
+
+PairBufferPrepareSlotsPreflight preflightPairBufferPrepareSlots(u32 slotCount) {
+    PairBufferPrepareSlotsPreflight preflight{};
+    preflight.zeroSlots = slotCount == 0u;
+
+PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingCount) {
+    PairBufferMergePreflight preflight{};
+    preflight.emptyIncoming = incomingCount == 0u;
+    preflight.atCapacity = buffer.isFull();
+    if (preflight.emptyIncoming || preflight.atCapacity) {
+        preflight.rejectedCount = incomingCount;
+
+    const u32 remaining = buffer.remainingCapacity();
+    if (remaining == UINT32_MAX) {
+        preflight.acceptedCount = incomingCount;
+
+    preflight.acceptedCount = incomingCount <= remaining ? incomingCount : remaining;
+    preflight.rejectedCount = incomingCount - preflight.acceptedCount;
+
+BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    u32 incomingPairCount) {
+    BroadphaseMergeIntoBufferPreflight preflight{};
+    preflight.merge = preflightBroadphaseMerge(bodies, shapes);
+    preflight.incomingPairCount = incomingPairCount;
+    preflight.buffer = preflightPairBufferMerge(buffer, incomingPairCount);
 }
 
 } // namespace fuse::physics::broadphase
