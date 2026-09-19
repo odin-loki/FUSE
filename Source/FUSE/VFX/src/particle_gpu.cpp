@@ -972,3 +972,14 @@ ParticleGpuMirrorSyncPreflight ParticleGpuMirror::preflightWriteToCpu(const Part
 ParticleGpuFramePlanPreflight ParticleGpuFramePlan::preflightStub(u32 particle_capacity, u32 frame_emit_count,
 ParticleGpuFramePlanPreflight ParticleGpuFramePlan::preflight() const {
     ParticleGpuFramePlanPreflight preflight{};
+
+// --- deepen additive from deepen-vfx-gpu-dispatch-mirror-guards-9e58 ---
+DispatchPreflight ParticleGpuDispatch::preflight(u32 capacity, u32 emit_count) const {
+    DispatchPreflight result{};
+MirrorPreflight ParticleGpuMirror::preflightSync(const ParticleSoA& cpu) const {
+    MirrorPreflight result{};
+    FramePlanPreflight result{};
+DispatchPreflight preflight_dispatch(u32 capacity, u32 emit_count) {
+FramePlanPreflight preflight_frame_plan(u32 capacity, u32 emit_count, u32 alive_count) {
+ParticleGpuSlotOffsetPreflight preflight_slot_offset(ParticleGpuColumn column, u32 capacity, u32 slot) {
+    ParticleGpuSlotOffsetPreflight result{};

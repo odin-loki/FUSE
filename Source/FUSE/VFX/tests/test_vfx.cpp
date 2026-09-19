@@ -2290,3 +2290,17 @@ void testParticleGpuSlotOffsetGuards() {
         fuse::vfx::ParticleGpuFramePlan::preflightStub(0u, 0u, 0u);
     const fuse::vfx::ParticleGpuFramePlanPreflight broken_preflight = broken.preflight();
     testParticleGpuMirrorSyncPreflight();
+
+// --- deepen additive from deepen-vfx-gpu-dispatch-mirror-guards-9e58 ---
+    const fuse::vfx::ParticleGpuSlotOffsetPreflight ok_preflight =
+    const fuse::vfx::ParticleGpuSlotOffsetPreflight oob_preflight =
+    const fuse::vfx::DispatchPreflight active = preflight_dispatch(100u, 200u);
+    const fuse::vfx::DispatchPreflight from_dispatch = dispatch.preflight(100u, 200u);
+    const fuse::vfx::DispatchPreflight idle = preflight_dispatch(0u, 0u);
+    const fuse::vfx::MirrorPreflight uninitialized = mirror.preflightSync(cpu);
+    expectTrue(mirror.trySyncFromCpuSoA(cpu), "mirror preflight resize sync succeeds");
+    const fuse::vfx::MirrorPreflight synced = mirror.preflightSync(cpu);
+    const fuse::vfx::MirrorPreflight mismatch = mirror.preflightSync(smaller);
+    const fuse::vfx::FramePlanPreflight active = preflight_frame_plan(100u, 200u, 48u);
+    const fuse::vfx::FramePlanPreflight from_plan = plan.preflight();
+    const fuse::vfx::FramePlanPreflight idle = preflight_frame_plan(0u, 0u, 0u);

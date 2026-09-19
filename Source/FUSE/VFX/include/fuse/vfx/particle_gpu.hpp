@@ -302,3 +302,17 @@ struct ParticleGpuMirrorSyncPreflight {
 struct ParticleGpuFramePlanPreflight {
     [[nodiscard]] static ParticleGpuFramePlanPreflight preflightStub(u32 particle_capacity, u32 emit_count,
     [[nodiscard]] ParticleGpuFramePlanPreflight preflight() const;
+
+// --- deepen additive from deepen-vfx-gpu-dispatch-mirror-guards-9e58 ---
+struct DispatchPreflight {
+struct MirrorPreflight {
+    bool would_resize = false;
+struct ParticleGpuSlotOffsetPreflight {
+struct FramePlanPreflight {
+    DispatchPreflight dispatch{};
+    [[nodiscard]] DispatchPreflight preflight(u32 capacity, u32 emit_count) const;
+    [[nodiscard]] MirrorPreflight preflightSync(const ParticleSoA& cpu) const;
+    [[nodiscard]] FramePlanPreflight preflight() const;
+[[nodiscard]] DispatchPreflight preflight_dispatch(u32 capacity, u32 emit_count);
+[[nodiscard]] FramePlanPreflight preflight_frame_plan(u32 capacity, u32 emit_count, u32 alive_count);
+[[nodiscard]] ParticleGpuSlotOffsetPreflight preflight_slot_offset(ParticleGpuColumn column, u32 capacity, u32 slot);
