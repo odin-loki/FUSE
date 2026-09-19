@@ -1706,6 +1706,59 @@ void testCookCacheDownstreamSourceProbe() {
                "empty output path downstream probe is guarded");
 }
 
+void testCookerReconcileShouldSkipProbes() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_skip_reconcile_a.obj", "# skip reconcile a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_skip_reconcile_b.obj", "# skip reconcile b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry_a;
+    entry_a.kind = fuse::project::CookAssetKind::Mesh;
+    entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_skip_reconcile_a.fusemesh";
+    manifest.assets.push_back(entry_a);
+
+    fuse::project::CookManifestEntry entry_b;
+    entry_b.kind = fuse::project::CookAssetKind::Mesh;
+    entry_b.source_path = source_b;
+    entry_b.output_path = "/tmp/fuse_b79_skip_reconcile_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for should_skip probes ok");
+
+    expectTrue(cooker.should_skip_upstream_invalidation(manifest, ""),
+               "should_skip_upstream true for empty changed source");
+    expectTrue(!cooker.should_skip_upstream_invalidation(manifest, source_a),
+               "should_skip_upstream false when chain would be invalidated");
+    expectTrue(cooker.should_skip_stale_dependency_invalidation(manifest),
+               "should_skip_stale_dependency true on fresh cache");
+    expectTrue(cooker.should_skip_prune_reconcile(),
+               "should_skip_prune_reconcile true on fresh cache");
+    expectTrue(cooker.should_skip_reconcile_invalidation(manifest),
+               "should_skip_reconcile_invalidation true on fresh cache");
+
+    const fuse::project::CookCacheReconcileEstimate fresh = cooker.estimate_reconcile_invalidation(manifest);
+    expectTrue(fresh.should_skip(), "reconcile estimate should_skip true on fresh cache");
+
+    writeTempFile(source_a, "# skip reconcile a revised\n");
+    expectTrue(!cooker.should_skip_stale_dependency_invalidation(manifest),
+               "should_skip_stale_dependency false after upstream change");
+    expectTrue(!cooker.should_skip_reconcile_invalidation(manifest),
+               "should_skip_reconcile_invalidation false after upstream change");
+
+    const fuse::u32 stale_count = cooker.count_stale_dependency_invalidation(manifest);
+    expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes(
+                   {{source_a, fuse::project::hash_file_content(source_a)}}) ||
+                   stale_count > 0u,
+               "would_invalidate_stale_upstream or stale count non-zero after change");
+
+    fuse::project::CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+    expectTrue(cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()),
+               "would_invalidate_downstream true for dependent chain");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 
@@ -1789,6 +1842,7 @@ int main() {
     testCookDirtyInvalidatesCache();
     testCookerInvalidationCountProbes();
     testCookerReconcileEstimateProbes();
+    testCookerReconcileShouldSkipProbes();
     testCookCacheDownstreamSourceProbe();
 
     fuse::core::shutdown();
