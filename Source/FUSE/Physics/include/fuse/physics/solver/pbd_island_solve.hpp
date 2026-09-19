@@ -1544,3 +1544,8 @@ const char* island_sleep_solve_reject_reason_name(IslandSleepSolveRejectReason r
     bool should_wake_sleepers() const { return !skipped && reason == IslandWakeRejectReason::None; }
     bool has_solveable_islands() const { return !skipped && reason == IslandSleepGraphRejectReason::None; }
     bool can_wake() const { return !skipped && reason == IslandWakeGraphRejectReason::None; }
+
+// --- deepen additive from deepen-pbd-island-preflights-573c ---
+struct IslandFullDispatchPreflight {
+    IslandConstraintSolveDeepenPreflight constraintSolve{};
+IslandFullDispatchPreflight preflight_dispatch_solve_island(

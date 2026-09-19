@@ -4533,3 +4533,26 @@ void testPreflightIslandSleepWakeRejectReasonGuards() {
     expectTrue(wakeGraph.reason == IslandWakeGraphRejectReason::None,
     expectTrue(island_sleep_graph_reject_reason(emptyGraph, bodies) == IslandSleepGraphRejectReason::EmptyGraph,
     expectTrue(island_wake_graph_reject_reason(emptyGraph, bodies) == IslandWakeGraphRejectReason::EmptyGraph,
+
+// --- deepen additive from deepen-pbd-island-preflights-573c ---
+void testPreflightIslandBuildDeepenGuards() {
+    expectTrue(island_build_rejects_for_reason(0, {}, {}, IslandBuildRejectReason::EmptyInputs),
+    expectTrue(std::strcmp(island_build_reject_reason_name(IslandBuildRejectReason::EmptyInputs), "EmptyInputs") ==
+    const IslandBuildDeepenPreflight deepenPreflight = preflight_island_build_deepen(4, contacts, constraints);
+    expectTrue(!deepenPreflight.can_build(), "build deepen preflight cannot build unsafe refs");
+    expectTrue(deepenPreflight.reason == IslandBuildRejectReason::OutOfRangeContactBodies,
+    const IslandConstraintSolveDeepenPreflight mixedDeepen = preflight_island_constraint_solve_deepen(
+    expectTrue(mixedDeepen.reason == IslandConstraintSolveRejectReason::None,
+    const IslandConstraintSolvePreflight byIndexPreflight = preflight_island_constraint_solve_by_index(
+    expectTrue(byIndexPreflight.can_solve(), "constraint-solve by-index preflight succeeds for mixed island");
+    const IslandConstraintSolvePreflight outOfRangePreflight = preflight_island_constraint_solve_by_index(
+    expectTrue(outOfRangePreflight.skipped, "constraint-solve by-index skips out-of-range island");
+               "should_skip constraint-solve by-index on out-of-range island");
+void testDispatchSolveIslandWithPreflightGuards() {
+    const IslandFullDispatchPreflight mixedDispatchPreflight = preflight_dispatch_solve_island(
+    expectTrue(mixedDispatchPreflight.can_dispatch(), "full dispatch preflight allows mixed island");
+    expectTrue(mixedDispatchPreflight.wake.should_wake_sleepers(),
+                   IslandSleepRejectReason::NotAllSleeping,
+    expectTrue(std::strcmp(island_wake_reject_reason_name(IslandWakeRejectReason::NoMixedSleepState),
+    testPreflightIslandBuildDeepenGuards();
+    testDispatchSolveIslandWithPreflightGuards();

@@ -2520,3 +2520,16 @@ const char* island_sleep_solve_reject_reason_name(IslandSleepSolveRejectReason r
     preflight.skipped = preflight.reason == IslandWakeRejectReason::EmptyIsland;
     return !should_skip_island_wake(island, bodies);
     return !should_skip_island_wake_graph(graph, bodies);
+
+// --- deepen additive from deepen-pbd-island-preflights-573c ---
+    IslandBuildDeepenPreflight preflight{};
+    preflight.skipped = preflight.reason != IslandBuildRejectReason::None;
+    const IslandBuildDeepenPreflight preflight =
+    IslandConstraintSolveDeepenPreflight preflight{};
+    case IslandSleepRejectReason::OutOfRangeIndex:
+    case IslandSleepRejectReason::NotAllSleeping:
+        return IslandSleepRejectReason::NotAllSleeping;
+    if (island_wake_reject_reason(island, bodies) != IslandWakeRejectReason::None) {
+IslandFullDispatchPreflight preflight_dispatch_solve_island(
+    IslandFullDispatchPreflight preflight{};
+    const IslandFullDispatchPreflight preflight = preflight_dispatch_solve_island(
