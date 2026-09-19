@@ -7,6 +7,29 @@
 
 namespace fuse::terrain {
 
+int compare_lod_residency_request_order(f32 priority_a, LodResidencyRequestKind kind_a, u64 sequence_a,
+                                        f32 priority_b, LodResidencyRequestKind kind_b, u64 sequence_b) {
+    if (priority_a != priority_b) {
+        return priority_a > priority_b ? 1 : -1;
+    }
+    if (kind_a != kind_b) {
+        return kind_a == LodResidencyRequestKind::Unload ? 1 : -1;
+    }
+    if (sequence_a != sequence_b) {
+        return sequence_a < sequence_b ? 1 : -1;
+    }
+    return 0;
+}
+
+void LodResidencyQueue::sort_pending_by_priority_() {
+    std::sort(m_pending.begin(), m_pending.end(),
+              [](const PendingLodResidencyRequest& a, const PendingLodResidencyRequest& b) {
+                  return compare_lod_residency_request_order(a.request.priority, a.request.kind,
+                                                             a.enqueue_sequence, b.request.priority,
+                                                             b.request.kind, b.enqueue_sequence) > 0;
+              });
+}
+
 f32 promote_residency_priority(f32 current, f32 incoming) {
     return std::max(current, incoming);
 }
@@ -80,6 +103,24 @@ bool LodResidencyQueue::dequeue(LodResidencyRequest& out) {
     sort_pending_by_priority_();
     out = std::move(m_pending.front().request);
     m_pending.erase(m_pending.begin());
+    return true;
+}
+
+bool LodResidencyQueue::has_pending_enqueue() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return !m_pending.empty();
+
+bool LodResidencyQueue::peek_pending(LodResidencyRequest& out) const {
+    if (m_pending.empty()) {
+        return false;
+
+    const PendingLodResidencyRequest& best = *std::max_element(
+        m_pending.begin(), m_pending.end(),
+        [](const PendingLodResidencyRequest& a, const PendingLodResidencyRequest& b) {
+            return compare_lod_residency_request_order(a.request.priority, a.request.kind, a.enqueue_sequence,
+                                                       b.request.priority, b.request.kind, b.enqueue_sequence) < 0;
+        });
+    out = best.request;
     return true;
 }
 
@@ -185,6 +226,8 @@ u32 LodResidencyQueue::drain_completed(std::vector<CompletedLodResidencyRequest>
               [](const CompletedLodResidencyRequest& a, const CompletedLodResidencyRequest& b) {
                   return compare_residency_request_order(a.priority, a.kind, a.submit_sequence, b.priority, b.kind,
                                                          b.submit_sequence) > 0;
+                  return compare_lod_residency_request_order(a.priority, a.kind, a.submit_sequence, b.priority,
+                                                             b.kind, b.submit_sequence) > 0;
               });
 
     out.insert(out.end(), batch.begin(), batch.end());
