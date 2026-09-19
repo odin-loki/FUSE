@@ -115,6 +115,14 @@ struct CookUpstreamInvalidationEstimate {
     [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
 };
 
+/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
+struct CookUpstreamInvalidationEstimate {
+    u32 direct_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
+};
+
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
 class AssetCooker {
 public:
@@ -142,6 +150,8 @@ public:
     [[nodiscard]] bool would_invalidate_upstream_dependency(const CookManifest& manifest,
     /// Upstream invalidation breakdown without mutating cache (B7.9 deepen).
     [[nodiscard]] CookCacheUpstreamInvalidationEstimate estimate_upstream_invalidation(
+    /// Structured upstream invalidation breakdown — mirrors `count_upstream_invalidation` (B7.9 deepen).
+    [[nodiscard]] CookUpstreamInvalidationEstimate estimate_upstream_invalidation(
         const CookManifest& manifest, const std::string& changed_source) const;
     /// True when `estimate_upstream_invalidation(...).total()` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_upstream_invalidation(const CookManifest& manifest,
@@ -160,6 +170,9 @@ public:
     [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
     /// True when `invalidate_stale_dependency_hashes` would remove at least one entry (B7.9 deepen).
     [[nodiscard]] bool would_invalidate_stale_dependency_hashes(const CookManifest& manifest) const;
+        const CookManifest& manifest, const std::string& changed_source) const;
+    /// True when `count_stale_dependency_invalidation` is non-zero (B7.9 deepen).
+    [[nodiscard]] bool would_stale_dependency_invalidation(const CookManifest& manifest) const;
     /// Read-only prune reconcile probe — mirrors `CookCache::estimate_prune_removals` (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_reconcile() const;
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
@@ -234,7 +247,6 @@ public:
     /// Upstream-change reconcile estimate — upstream cascade plus prunable entry counts (B7.9 deepen).
     [[nodiscard]] CookCacheReconcileEstimate estimate_upstream_change_reconcile(
     /// Read-only upstream invalidation breakdown — guarded on empty `changed_source` (B7.9 deepen).
-    [[nodiscard]] CookUpstreamInvalidationEstimate estimate_upstream_invalidation(
     /// Read-only stale dependency-hash reconcile breakdown (B7.9 deepen).
     [[nodiscard]] CookStaleDependencyReconcileEstimate estimate_stale_dependency_reconcile(
     /// True when `estimate_stale_dependency_reconcile` would remove at least one entry (B7.9 deepen).
@@ -322,7 +334,6 @@ public:
     [[nodiscard]] std::vector<std::string> probe_reconcile_stale_sources(
     [[nodiscard]] CookCacheInvalidationEstimate estimate_upstream_invalidation(
     [[nodiscard]] std::vector<std::string> probe_upstream_invalidation_closure(
-        const CookManifest& manifest, const std::string& changed_source) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

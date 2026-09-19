@@ -3362,6 +3362,7 @@ void testCookerUpstreamEstimateAndReconcileWouldProbes() {
                "would_reconcile agrees with reconcile estimate total");
     entry_b.output_path = "/tmp/fuse_b79_up_est_b.fusemesh";
 
+
     expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for upstream estimate ok");
 
     const fuse::project::CookUpstreamInvalidationEstimate empty =
@@ -3381,6 +3382,21 @@ void testCookerUpstreamEstimateAndReconcileWouldProbes() {
     expectTrue(probed[0] == source_a, "upstream probe starts at changed source");
 
 void testCookerWouldReconcileInvalidationProbe() {
+    expectTrue(!cooker.would_upstream_invalidation(manifest, ""), "empty changed source would_upstream is false");
+    expectTrue(cooker.probe_upstream_invalidation_sources(manifest, "").empty(),
+               "empty changed source upstream probe is empty");
+
+    expectTrue(estimate.direct_entries == 1u, "upstream estimate direct count is one");
+    expectTrue(estimate.downstream_entries == 1u, "upstream estimate downstream count is one");
+    expectTrue(estimate.total() == cooker.count_upstream_invalidation(manifest, source_a),
+               "upstream estimate total matches count probe");
+    expectTrue(cooker.would_upstream_invalidation(manifest, source_a),
+               "would_upstream true for seeded chain head");
+
+    expectTrue(probed.size() >= 2u, "upstream probe lists changed source and dependents");
+}
+
+void testCookerReconcileWouldProbes() {
     const std::string source = writeTempFile("/tmp/fuse_b79_would_reconcile.obj", "# would reconcile\n");
 
     fuse::project::CookManifest manifest;
@@ -3464,6 +3480,16 @@ void testCookCacheDownstreamWouldInvalidateProbe() {
     writeTempFile(source_a, "# upstream est a revised\n");
 
     expectTrue(reconcile.total() > 0u, "stale reconcile estimate is non-zero after upstream change");
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for reconcile would probes ok");
+    expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would_reconcile is false");
+    expectTrue(!cooker.would_stale_dependency_invalidation(manifest),
+               "fresh cache would_stale_dependency is false");
+
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "stale content makes would_reconcile true");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest).prune_stale_entries >= 1u,
+               "reconcile estimate prune stale count reflects content change");
+               "content-only change does not make would_stale_dependency true");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -3705,6 +3731,7 @@ int main() {
     testCookerWouldReconcileInvalidationProbe();
     testCookerUpstreamInvalidateEstimateProbes();
     testCookCacheDownstreamWouldInvalidateProbe();
+    testCookerReconcileWouldProbes();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
