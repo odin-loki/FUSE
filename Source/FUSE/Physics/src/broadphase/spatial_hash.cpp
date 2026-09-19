@@ -36,6 +36,18 @@ const char* cellSpanRejectReasonName(CellSpanRejectReason reason) {
     return "Unknown";
 }
 
+const char* shapeCellInsertionRejectReasonName(ShapeCellInsertionRejectReason reason) {
+    switch (reason) {
+    case ShapeCellInsertionRejectReason::None:
+        return "None";
+    case ShapeCellInsertionRejectReason::EmptyRange:
+        return "EmptyRange";
+    case ShapeCellInsertionRejectReason::ExceedsOccupancyBudget:
+        return "ExceedsOccupancyBudget";
+    }
+    return "Unknown";
+}
+
 const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     switch (reason) {
     case CellOccupancyRejectReason::None:
@@ -235,7 +247,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        if (canSkipShapeCellInsertion(range, maxOccupancy)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -255,7 +267,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+    if (canSkipShapeCellInsertion(range, maxOccupancy)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -427,11 +439,11 @@ void refineBroadphasePairsParallelImpl(
         const u32 bodyA = buffer.bodyA[pairIndex];
         const u32 bodyB = buffer.bodyB[pairIndex];
         if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
-            buffer.invalidateSlot(pairIndex);
+            buffer.invalidateSlotWithPreflight(pairIndex);
             return;
         }
         if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
-            buffer.invalidateSlot(pairIndex);
+            buffer.invalidateSlotWithPreflight(pairIndex);
         }
     });
 
@@ -614,6 +626,8 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
     preflight.reason = mergePairsIntoBufferRejectReason(pairs, buffer);
     preflight.emptyPairs = preflight.reason == MergePairsIntoBufferRejectReason::EmptyPairs;
     preflight.bufferFull = preflight.reason == MergePairsIntoBufferRejectReason::BufferFull;
+    preflight.incomingPairCount = static_cast<u32>(pairs.size());
+    preflight.remainingCapacity = buffer.remainingCapacity();
     return preflight;
 }
 
