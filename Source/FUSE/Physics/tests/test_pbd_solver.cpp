@@ -1145,6 +1145,29 @@ void testPreflightIslandSolveSkipsEmptyGraph() {
 }
 
 void testPreflightIslandSolveDispatchesConstrained() {
+void testShouldSkipIslandSolveGuards() {
+    IslandSolveJob invalid{};
+    expectTrue(should_skip_island_solve(invalid), "default job is skipped");
+    expectTrue(!should_solve_island(invalid), "should_skip mirrors should_solve");
+
+    ContactIslandGraph graph;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+    graph.build(3, contacts, constraints);
+
+    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
+        const IslandSolveJob job = extract_island(graph, islandIndex);
+        if (job.empty) {
+            expectTrue(should_skip_island_solve(job), "empty island job is skipped");
+        } else {
+            expectTrue(!should_skip_island_solve(job), "constrained island job is not skipped");
+
+    const IslandSolveJob outOfRange = extract_island(graph, graph.islandCount() + 2u);
+    expectTrue(should_skip_island_solve(outOfRange), "out-of-range island job is skipped");
+
+void testCollectDispatchableIslandIndices() {
     ContactIslandGraph graph;
     std::vector<narrowphase::ContactManifold> contacts;
     std::vector<DistanceConstraint> constraints = {
@@ -1168,9 +1191,55 @@ void testPreflightIslandSolveDispatchesConstrained() {
         const IslandSolveJob job = extract_island(graph, islandIndex);
         expectTrue(should_solve_island(job), "collected index passes should_solve_island");
     }
-}
 
 void testDispatchSolveIslandResultOutcomes() {
+               "dispatchable indices match constrained island count");
+
+        expectTrue(should_solve_island(job), "collected index is dispatchable");
+        expectTrue(!should_skip_island_solve(job), "collected index is not skipped");
+
+    const std::vector<IslandSolveJob> jobs = collect_dispatchable_island_jobs(graph);
+    expectTrue(jobs.size() == indices.size(), "dispatchable jobs match index collection");
+    for (const IslandSolveJob& job : jobs) {
+        expectTrue(should_solve_island(job), "collected job is dispatchable");
+        expectTrue(job.constraintCount > 0u, "dispatchable job carries constraints");
+
+void testAllIslandsEmptyFastPath() {
+    ContactIslandGraph emptyGraph;
+    emptyGraph.build(0, {}, {});
+    expectTrue(all_islands_empty(emptyGraph), "zero-body graph is all empty");
+
+    ContactIslandGraph loneBodies;
+    loneBodies.build(3, {}, {});
+    expectTrue(all_islands_empty(loneBodies), "lone bodies without constraints are all empty");
+    expectTrue(should_skip_all_island_solves(loneBodies),
+               "should_skip_all_island_solves for lone unconstrained bodies");
+
+    ContactIslandGraph constrained;
+    std::vector<narrowphase::ContactManifold> contacts;
+    std::vector<DistanceConstraint> constraints = {
+        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
+    };
+    constrained.build(3, contacts, constraints);
+    expectTrue(!all_islands_empty(constrained), "mixed graph is not all empty");
+    expectTrue(!should_skip_all_island_solves(constrained),
+               "constrained graph should not skip all solves");
+
+void testIslandSolveStatsHasWork() {
+    ContactIslandGraph graph;
+    graph.build(2, {}, {});
+    const IslandSolveStats emptyStats = compute_island_solve_stats(graph);
+    expectTrue(!island_solve_stats_has_work(emptyStats),
+               "stats without dispatchable islands report no work");
+    expectTrue(should_skip_all_island_solves(graph), "skip-all mirrors stats no-work");
+
+    graph.build(2, {}, constraints);
+    const IslandSolveStats stats = compute_island_solve_stats(graph);
+    expectTrue(island_solve_stats_has_work(stats), "stats with constrained island report work");
+    expectTrue(stats.dispatchableCount == collect_dispatchable_island_indices(graph).size(),
+               "stats dispatchable count matches collected indices");
+
+void testDispatchSolveIslandResult() {
     ContactIslandGraph graph;
     std::vector<narrowphase::ContactManifold> contacts;
     std::vector<DistanceConstraint> constraints = {
@@ -1198,6 +1267,9 @@ void testDispatchSolveIslandResultOutcomes() {
                                                                          invMassFn);
     expectTrue(outOfRange.skipped, "out-of-range dispatch result is skipped");
     expectTrue(!outOfRange.solved, "out-of-range dispatch result is not solved");
+    const IslandSolveDispatchResult outOfRange = dispatch_solve_island_result(bodies,
+                                                                              graph.islandCount() + 1u,
+    expectTrue(!outOfRange.solved, "out-of-range dispatch result does not solve");
 
     bool foundEmptySkip = false;
     for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
@@ -1222,17 +1294,10 @@ void testDispatchSolveIslandResultOutcomes() {
 
     const u32 constrainedIndex = graph.bodyIsland(0);
     const IslandDispatchResult solved = dispatch_solve_island_result(bodies,
-                                                                     graph,
                                                                      constrainedIndex,
-                                                                     work,
-                                                                     constraints,
-                                                                     1.f / 60.f,
-                                                                     0.f,
-                                                                     invMassFn);
     expectTrue(solved.solved, "constrained island dispatch result is solved");
     expectTrue(!solved.skipped, "constrained island dispatch result is not skipped");
     expectTrue(solved.islandIndex == constrainedIndex, "dispatch result records island index");
-}
 
 void testDispatchAllIslandsBatch() {
     ContactIslandGraph graph;
@@ -1255,12 +1320,6 @@ void testDispatchAllIslandsBatch() {
     const auto invMassFn = [](const RigidBodySoA&, u32) { return 1.f; };
 
     const u32 solvedCount = dispatch_all_islands(bodies,
-                                                 graph,
-                                                 work,
-                                                 constraints,
-                                                 1.f / 60.f,
-                                                 0.f,
-                                                 invMassFn);
     expectTrue(solvedCount == graph.constrainedIslandCount(),
                "dispatch_all_islands solves all constrained islands");
 
@@ -1268,26 +1327,15 @@ void testDispatchAllIslandsBatch() {
     emptyGraph.build(0, {}, {});
     expectTrue(dispatch_all_islands(bodies,
                                     emptyGraph,
-                                    work,
-                                    constraints,
-                                    1.f / 60.f,
-                                    0.f,
                                     invMassFn) == 0u,
                "dispatch_all_islands early-outs on empty graph");
-}
 
 void testPreflightWarmStartIslandGuards() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
     contacts.push_back(narrowphase::ContactManifold{});
     contacts.back().valid = true;
     contacts.back().bodyA = 0;
     contacts.back().bodyB = 1;
 
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
-    };
     graph.build(5, contacts, constraints);
 
     const std::vector<f32> priorDistance = {0.11f, 0.22f};
@@ -1298,14 +1346,11 @@ void testPreflightWarmStartIslandGuards() {
         const ContactIslandGraph::Island& island = graph.island(islandIndex);
         if (!island.isEmpty()) {
             continue;
-        }
-        foundEmptySkip = true;
         const IslandWarmStartPreflight preflight =
             preflight_warm_start_island(island, priorDistance, priorContact);
         expectTrue(preflight.skipped, "preflight skips empty island warm-start");
         expectTrue(!preflight.can_warm_start(), "empty island cannot warm-start");
         expectTrue(should_skip_warm_start_island(island), "should_skip_warm_start_island on empty island");
-    }
     expectTrue(foundEmptySkip, "graph exposes empty island for warm-start preflight");
 
     const u32 islandA = graph.bodyIsland(0);
@@ -1321,44 +1366,23 @@ void testPreflightWarmStartIslandGuards() {
     expectTrue(constrainedPreflight.priorContactCoverage == 1u,
                "preflight counts non-zero prior contact coverage");
     expectTrue(constrainedPreflight.can_warm_start(), "constrained island can warm-start");
-}
 
 void testWarmStartIslandLambdasGuarded() {
-    SolverWorkBuffers work;
     work.init(5, 2, 2);
     work.ensureLambdaCapacity(2, 2);
 
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
 
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
     graph.build(3, contacts, constraints);
 
     const std::vector<f32> priorDistance = {0.15f};
     const std::vector<f32> priorContact = {0.25f};
 
     work.clearLambdas();
-    bool foundEmptySkip = false;
-    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
-        const ContactIslandGraph::Island& island = graph.island(islandIndex);
-        if (!island.isEmpty()) {
-            continue;
-        }
         foundEmptySkip = !warm_start_island_lambdas_guarded(work, island, priorDistance, priorContact);
-        break;
-    }
     expectTrue(foundEmptySkip, "guarded warm-start skips empty island");
     expectNear(work.distanceLambdas()[0], 0.f, 1e-6f,
                "guarded skip leaves distance lambda untouched");
 
-    work.clearLambdas();
-    const u32 islandA = graph.bodyIsland(0);
     expectTrue(warm_start_island_lambdas_guarded(work,
                                                  graph.island(islandA),
                                                  priorDistance,
@@ -1369,61 +1393,34 @@ void testWarmStartIslandLambdasGuarded() {
     expectNear(work.contactLambdas()[0], 0.25f, 1e-6f,
                "guarded warm-start seeds owned contact slot");
 
-    work.clearLambdas();
     expectTrue(!warm_start_island_lambdas_guarded(work,
-                                                  graph.island(islandA),
                                                   {},
                                                   {}),
                "guarded warm-start skips when no prior data exists");
-}
 
 void testWarmStartIslandContactImpulsesGuarded() {
-    SolverWorkBuffers work;
     work.init(4, 2, 0);
     work.ensureLambdaCapacity(2, 0);
 
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
     contacts.back().warmNormalImpulse = 4.f;
 
-    ContactIslandGraph graph;
     graph.build(3, contacts, {});
 
     const f32 dt = 1.f / 60.f;
-    bool foundEmptySkip = false;
-    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
-        const ContactIslandGraph::Island& island = graph.island(islandIndex);
-        if (!island.isEmpty()) {
-            continue;
-        }
         foundEmptySkip = !warm_start_island_contact_impulses_guarded(work, island, contacts, dt);
-        break;
-    }
     expectTrue(foundEmptySkip, "guarded impulse warm-start skips empty island");
 
-    work.clearLambdas();
-    const u32 islandA = graph.bodyIsland(0);
     expectTrue(warm_start_island_contact_impulses_guarded(work, graph.island(islandA), contacts, dt),
                "guarded impulse warm-start succeeds for contact island");
     expectTrue(std::fabs(work.contactLambdas()[0]) > 1e-6f,
                "guarded impulse warm-start seeds contact lambda");
-}
 
 void testIsValidIslandSolveDtGuard() {
     expectTrue(is_valid_island_solve_dt(1.f / 60.f), "positive dt is valid for island solve");
     expectTrue(!is_valid_island_solve_dt(0.f), "zero dt is invalid for island solve");
     expectTrue(!is_valid_island_solve_dt(-1.f / 60.f), "negative dt is invalid for island solve");
-}
 
 void testPreflightIslandDispatchGuardsDt() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
     graph.build(2, contacts, constraints);
 
     const IslandDispatchPreflight validPreflight = preflight_island_dispatch(graph, 1.f / 60.f);
@@ -1436,73 +1433,25 @@ void testPreflightIslandDispatchGuardsDt() {
     expectTrue(should_skip_island_dispatch(graph, 0.f), "should_skip_island_dispatch on invalid dt");
     expectTrue(!should_skip_island_dispatch(graph, 1.f / 60.f),
                "should_skip false for constrained graph with valid dt");
-}
 
 void testDispatchSolveIslandResultSkipsInvalidDt() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
-    graph.build(2, contacts, constraints);
 
-    RigidBodySoA bodies;
-    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
-    bodies.addBody({2.1f, 0.f, 0.f}, 1.f, 0);
-    bodies.predictedPositions = bodies.positions;
 
-    SolverWorkBuffers work;
     work.init(2, 0, 1);
-    const auto invMassFn = [](const RigidBodySoA&, u32) { return 1.f; };
 
     const IslandDispatchResult invalidDt = dispatch_solve_island_result(bodies,
-                                                                        graph,
                                                                         0u,
-                                                                        work,
-                                                                        constraints,
-                                                                        0.f,
-                                                                        0.f,
-                                                                        invMassFn);
     expectTrue(invalidDt.skipped, "invalid dt dispatch result is skipped");
     expectTrue(!invalidDt.solved, "invalid dt dispatch result is not solved");
     expectTrue(!dispatch_solve_island(bodies,
-                                       graph,
-                                       0u,
-                                       work,
-                                       constraints,
-                                       0.f,
-                                       0.f,
                                        invMassFn),
                "dispatch_solve_island guards invalid dt");
-}
 
 void testDispatchAllIslandsResultBatch() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
-    };
-    graph.build(4, contacts, constraints);
 
-    RigidBodySoA bodies;
-    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
-    bodies.addBody({2.1f, 0.f, 0.f}, 1.f, 0);
-    bodies.addBody({20.f, 0.f, 0.f}, 1.f, 0);
-    bodies.addBody({22.1f, 0.f, 0.f}, 1.f, 0);
-    bodies.predictedPositions = bodies.positions;
 
-    SolverWorkBuffers work;
-    work.init(4, 0, 2);
-    const auto invMassFn = [](const RigidBodySoA&, u32) { return 1.f; };
 
     const IslandBatchDispatchResult batch = dispatch_all_islands_result(bodies,
-                                                                        graph,
-                                                                        work,
-                                                                        constraints,
-                                                                        1.f / 60.f,
-                                                                        0.f,
-                                                                        invMassFn);
     expectTrue(!batch.skipped, "batch dispatch does not skip constrained graph");
     expectTrue(batch.dispatchableCount == graph.constrainedIslandCount(),
                "batch dispatch records dispatchable count");
@@ -1510,33 +1459,16 @@ void testDispatchAllIslandsResultBatch() {
                "batch dispatch solves all constrained islands");
     expectTrue(batch.any_solved(), "batch dispatch reports solved islands");
 
-    ContactIslandGraph emptyGraph;
-    emptyGraph.build(0, {}, {});
     const IslandBatchDispatchResult emptyBatch = dispatch_all_islands_result(bodies,
-                                                                             emptyGraph,
-                                                                             work,
-                                                                             constraints,
-                                                                             1.f / 60.f,
-                                                                             0.f,
-                                                                             invMassFn);
     expectTrue(emptyBatch.skipped, "batch dispatch skips empty graph");
     expectTrue(!emptyBatch.any_solved(), "empty graph batch reports no solved islands");
 
     const IslandBatchDispatchResult invalidDtBatch = dispatch_all_islands_result(bodies,
-                                                                                 graph,
-                                                                                 work,
-                                                                                 constraints,
-                                                                                 0.f,
-                                                                                 0.f,
-                                                                                 invMassFn);
     expectTrue(invalidDtBatch.skipped, "batch dispatch skips invalid dt");
     expectTrue(invalidDtBatch.solvedCount == 0u, "invalid dt batch solves zero islands");
-}
 
 void testPreflightFrameWarmStartGuards() {
     const std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
     const std::vector<f32> priorDistance = {0.12f};
     const std::vector<f32> priorContact = {0.34f, 0.f};
 
@@ -1557,10 +1489,8 @@ void testPreflightFrameWarmStartGuards() {
     expectTrue(should_skip_frame_warm_start({}, {}), "should_skip_frame_warm_start on empty priors");
     expectTrue(!should_skip_frame_warm_start(priorDistance, priorContact),
                "should_skip false when prior data exists");
-}
 
 void testFrameLambdaWarmStartGuarded() {
-    SolverWorkBuffers work;
     work.init(2, 2, 1);
     work.ensureLambdaCapacity(2, 1);
     work.distanceLambda(0) = 0.42f;
@@ -1568,53 +1498,28 @@ void testFrameLambdaWarmStartGuarded() {
 
     const std::vector<f32> priorDistance = work.distanceLambdas();
     const std::vector<f32> priorContact = work.contactLambdas();
-    const std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
 
     work.distanceLambda(0) = 0.99f;
     work.contactLambda(0) = 0.99f;
     expectTrue(!frame_lambda_warm_start_guarded(work, constraints, {}, {}),
                "guarded frame warm-start skips when no prior data exists");
-    expectNear(work.distanceLambdas()[0], 0.f, 1e-6f,
                "guarded skip still clears distance lambda slots");
 
-    work.distanceLambda(0) = 0.99f;
-    work.contactLambda(0) = 0.99f;
     expectTrue(frame_lambda_warm_start_guarded(work, constraints, priorDistance, priorContact),
                "guarded frame warm-start succeeds with prior data");
     expectNear(work.distanceLambdas()[0], 0.42f, 1e-6f,
                "guarded frame warm-start reseeds distance slot");
     expectNear(work.contactLambdas()[0], 0.24f, 1e-6f,
                "guarded frame warm-start reseeds contact slot");
-}
 
 void testWarmStartGraphLambdasGuarded() {
-    SolverWorkBuffers work;
-    work.init(5, 2, 2);
-    work.ensureLambdaCapacity(2, 2);
 
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
     contacts.back().bodyA = 2;
     contacts.back().bodyB = 3;
 
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
-    };
-    graph.build(5, contacts, constraints);
 
-    const std::vector<f32> priorDistance = {0.11f, 0.22f};
     const std::vector<f32> priorContact = {0.33f, 0.44f};
 
-    work.clearLambdas();
     const u32 warmedCount =
         warm_start_graph_lambdas_guarded(work, graph, priorDistance, priorContact);
     expectTrue(warmedCount == graph.constrainedIslandCount(),
@@ -1628,71 +1533,38 @@ void testWarmStartGraphLambdasGuarded() {
     expectNear(work.contactLambdas()[1], 0.44f, 1e-6f,
                "graph warm-start seeds second contact slot");
 
-    work.clearLambdas();
     expectTrue(warm_start_graph_lambdas_guarded(work, graph, {}, {}) == 0u,
                "graph warm-start skips all islands when no prior data exists");
-}
 
 void testShouldSkipIslandSolveJobGuard() {
     IslandSolveJob invalid{};
     expectTrue(should_skip_island_solve_job(invalid), "default job is skipped");
     expectTrue(!should_solve_island(invalid), "should_skip mirrors should_solve inverse");
 
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
-    graph.build(3, contacts, constraints);
 
-    bool foundEmptySkip = false;
     bool foundConstrainedDispatch = false;
-    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
         const IslandSolveJob job = extract_island(graph, islandIndex);
         if (job.empty) {
             foundEmptySkip = should_skip_island_solve_job(job);
         } else {
             foundConstrainedDispatch = !should_skip_island_solve_job(job);
-        }
-    }
 
     expectTrue(foundEmptySkip, "should_skip_island_solve_job covers empty island");
     expectTrue(foundConstrainedDispatch, "should_skip_island_solve_job allows constrained island");
-}
 
 void testShouldDispatchIslandIndexGuard() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
-    graph.build(3, contacts, constraints);
 
     expectTrue(!should_dispatch_island_index(graph, graph.islandCount() + 1u),
                "should_dispatch_island_index guards out-of-range index");
 
-    bool foundEmptySkip = false;
-    bool foundConstrainedDispatch = false;
-    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
         if (extract_island(graph, islandIndex).empty) {
             foundEmptySkip = !should_dispatch_island_index(graph, islandIndex);
-        } else {
             foundConstrainedDispatch = should_dispatch_island_index(graph, islandIndex);
-        }
-    }
 
     expectTrue(foundEmptySkip, "should_dispatch_island_index skips empty island");
     expectTrue(foundConstrainedDispatch, "should_dispatch_island_index allows constrained island");
-}
 
 void testCollectDispatchableIslandJobs() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
-    };
-    graph.build(5, contacts, constraints);
 
     const std::vector<IslandSolveJob> allJobs = extract_island_jobs(graph);
     const std::vector<IslandSolveJob> filtered = filter_dispatchable_jobs(allJobs);
@@ -1705,25 +1577,10 @@ void testCollectDispatchableIslandJobs() {
     for (const IslandSolveJob& job : collected) {
         expectTrue(should_solve_island(job), "collected job passes should_solve_island");
         expectTrue(!should_skip_island_solve_job(job), "collected job is not skipped");
-    }
-}
 
 void testPreflightWarmStartGraphGuards() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
 
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
-    };
-    graph.build(5, contacts, constraints);
 
-    const std::vector<f32> priorDistance = {0.11f, 0.22f};
-    const std::vector<f32> priorContact = {0.33f, 0.f};
 
     const IslandWarmStartGraphPreflight preflight =
         preflight_warm_start_graph(graph, priorDistance, priorContact);
@@ -1750,18 +1607,9 @@ void testPreflightWarmStartGraphGuards() {
     expectTrue(should_skip_warm_start_graph(graph, {}, {}), "graph warm-start skipped without prior data");
     expectTrue(preflight_warm_start_graph(graph, {}, {}).skipped,
                "graph preflight skipped without prior data");
-}
 
 void testPreflightWarmStartIslandByIndex() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
-    graph.build(3, contacts, constraints);
 
-    const std::vector<f32> priorDistance = {0.15f};
-    const std::vector<f32> priorContact = {0.25f};
 
     const IslandWarmStartPreflight outOfRange =
         preflight_warm_start_island_by_index(graph, graph.islandCount() + 1u, priorDistance, priorContact);
@@ -1769,156 +1617,68 @@ void testPreflightWarmStartIslandByIndex() {
     expectTrue(should_skip_warm_start_island_index(graph, graph.islandCount() + 1u),
                "should_skip_warm_start_island_index on out-of-range index");
 
-    bool foundEmptySkip = false;
-    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
-        const ContactIslandGraph::Island& island = graph.island(islandIndex);
-        if (!island.isEmpty()) {
-            continue;
-        }
-        foundEmptySkip = true;
         const IslandWarmStartPreflight emptyPreflight =
             preflight_warm_start_island_by_index(graph, islandIndex, priorDistance, priorContact);
         expectTrue(emptyPreflight.skipped, "index preflight skips empty island");
         expectTrue(should_skip_warm_start_island_index(graph, islandIndex),
                    "should_skip_warm_start_island_index on empty island");
-    }
     expectTrue(foundEmptySkip, "graph exposes empty island for index warm-start preflight");
 
-    const u32 constrainedIndex = graph.bodyIsland(0);
-    const IslandWarmStartPreflight constrainedPreflight =
         preflight_warm_start_island_by_index(graph, constrainedIndex, priorDistance, priorContact);
     expectTrue(!constrainedPreflight.skipped, "index preflight does not skip constrained island");
     expectTrue(constrainedPreflight.can_warm_start(), "index preflight can warm-start constrained island");
-}
 
 void testWarmStartIslandLambdasResultAndBatch() {
-    SolverWorkBuffers work;
-    work.init(5, 2, 2);
-    work.ensureLambdaCapacity(2, 2);
 
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 2;
-    contacts.back().bodyB = 3;
 
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
-    };
-    graph.build(5, contacts, constraints);
 
-    const std::vector<f32> priorDistance = {0.11f, 0.22f};
-    const std::vector<f32> priorContact = {0.33f, 0.44f};
 
     const IslandWarmStartResult outOfRange =
         warm_start_island_lambdas_result(work, graph, graph.islandCount() + 3u, priorDistance, priorContact);
     expectTrue(outOfRange.skipped, "warm_start result skips out-of-range island");
     expectTrue(!outOfRange.warmed, "out-of-range warm_start result is not warmed");
 
-    work.clearLambdas();
     const u32 warmedCount = warm_start_all_islands_guarded(work, graph, priorDistance, priorContact);
-    expectTrue(warmedCount == graph.constrainedIslandCount(),
                "warm_start_all_islands_guarded seeds all constrained islands");
-    expectNear(work.distanceLambdas()[0], 0.11f, 1e-6f,
                "batch warm-start seeds first distance slot");
-    expectNear(work.contactLambdas()[1], 0.44f, 1e-6f,
                "batch warm-start seeds second contact slot");
 
-    work.clearLambdas();
-    const u32 constrainedIndex = graph.bodyIsland(0);
     expectTrue(warm_start_island_lambdas_by_index_guarded(work,
-                                                          graph,
-                                                          constrainedIndex,
-                                                          priorDistance,
-                                                          priorContact),
                "index guarded warm-start succeeds for constrained island");
-    expectNear(work.distanceLambdas()[0], 0.11f, 1e-6f,
                "index guarded warm-start seeds owned distance slot");
-}
 
 void testWarmStartIslandCombinedGuarded() {
-    SolverWorkBuffers work;
     work.init(4, 2, 1);
-    work.ensureLambdaCapacity(2, 1);
 
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
     contacts.back().warmNormalImpulse = 3.5f;
 
-    ContactIslandGraph graph;
-    graph.build(3, contacts, {});
 
-    const std::vector<f32> priorDistance = {0.12f};
     const std::vector<f32> priorContact = {0.24f};
-    const f32 dt = 1.f / 60.f;
 
-    bool foundEmptySkip = false;
-    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
-        const ContactIslandGraph::Island& island = graph.island(islandIndex);
-        if (!island.isEmpty()) {
-            continue;
-        }
         foundEmptySkip = !warm_start_island_combined_guarded(work,
                                                              island,
                                                              contacts,
                                                              dt,
-                                                             priorDistance,
                                                              priorContact);
-        break;
-    }
     expectTrue(foundEmptySkip, "combined warm-start skips empty island");
 
-    work.clearLambdas();
-    const u32 islandA = graph.bodyIsland(0);
     expectTrue(warm_start_island_combined_guarded(work,
-                                                  graph.island(islandA),
-                                                  contacts,
-                                                  dt,
-                                                  priorDistance,
-                                                  priorContact),
                "combined warm-start succeeds for contact island with prior data");
-    expectNear(work.contactLambdas()[0], 0.24f, 1e-6f,
                "combined warm-start seeds prior contact lambda");
-    expectTrue(std::fabs(work.contactLambdas()[0]) > 1e-6f,
                "combined warm-start retains non-zero contact lambda from impulse seed");
-}
 
 void testIsValidWarmStartDtGuard() {
     expectTrue(is_valid_warm_start_dt(1.f / 60.f), "positive dt is valid for warm-start");
     expectTrue(!is_valid_warm_start_dt(0.f), "zero dt is invalid for warm-start");
     expectTrue(is_valid_warm_start_dt(1.f / 60.f) == is_valid_island_solve_dt(1.f / 60.f),
                "warm-start dt guard matches island solve dt guard");
-}
 
 void testDispatchSolveIslandJobGuards() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
-    graph.build(3, contacts, constraints);
 
-    RigidBodySoA bodies;
-    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
-    bodies.addBody({2.1f, 0.f, 0.f}, 1.f, 0);
     bodies.addBody({10.f, 0.f, 0.f}, 1.f, 0);
-    bodies.predictedPositions = bodies.positions;
 
-    SolverWorkBuffers work;
     work.init(3, 0, 1);
-    const auto invMassFn = [](const RigidBodySoA&, u32) { return 1.f; };
-    const f32 dt = 1.f / 60.f;
 
-    IslandSolveJob invalid{};
     expectTrue(!dispatch_solve_island_job(bodies, invalid, work, constraints, dt, 0.f, invMassFn),
                "dispatch_solve_island_job skips default job");
 
@@ -1926,45 +1686,18 @@ void testDispatchSolveIslandJobGuards() {
         dispatch_solve_island_job_result(bodies, invalid, work, constraints, 0.f, 0.f, invMassFn);
     expectTrue(invalidJobResult.skipped, "job dispatch result skips invalid dt");
 
-    bool foundEmptySkip = false;
     bool foundConstrainedSolve = false;
     for (const IslandSolveJob& job : extract_island_jobs(graph)) {
-        if (job.empty) {
             foundEmptySkip = !dispatch_solve_island_job(bodies, job, work, constraints, dt, 0.f, invMassFn);
-        } else {
             foundConstrainedSolve = dispatch_solve_island_job(bodies, job, work, constraints, dt, 0.f, invMassFn);
-        }
-    }
     expectTrue(foundEmptySkip, "dispatch_solve_island_job skips empty island job");
     expectTrue(foundConstrainedSolve, "dispatch_solve_island_job solves constrained island job");
-}
 
 void testWarmStartAllIslandsResultBatch() {
-    SolverWorkBuffers work;
-    work.init(5, 2, 2);
-    work.ensureLambdaCapacity(2, 2);
 
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 2;
-    contacts.back().bodyB = 3;
 
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
-    };
-    graph.build(5, contacts, constraints);
 
-    const std::vector<f32> priorDistance = {0.11f, 0.22f};
-    const std::vector<f32> priorContact = {0.33f, 0.44f};
 
-    work.clearLambdas();
     const IslandBatchWarmStartResult batch =
         warm_start_all_islands_result(work, graph, priorDistance, priorContact);
     expectTrue(!batch.skipped, "batch warm-start does not skip constrained graph");
@@ -1974,31 +1707,17 @@ void testWarmStartAllIslandsResultBatch() {
                "batch warm-start seeds all constrained islands");
     expectTrue(batch.any_warmed(), "batch warm-start reports warmed islands");
 
-    work.clearLambdas();
     const IslandBatchWarmStartResult emptyPrior =
         warm_start_all_islands_result(work, graph, {}, {});
     expectTrue(emptyPrior.skipped, "batch warm-start skips when no prior data exists");
     expectTrue(!emptyPrior.any_warmed(), "empty prior batch reports no warmed islands");
-}
 
 void testPreflightWarmStartContactImpulsesGuards() {
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
     contacts.back().warmNormalImpulse = 2.5f;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 2;
-    contacts.back().bodyB = 3;
     contacts.back().warmNormalImpulse = 0.f;
 
-    ContactIslandGraph graph;
     graph.build(5, contacts, {});
-    const f32 dt = 1.f / 60.f;
 
-    const u32 islandA = graph.bodyIsland(0);
     const IslandContactImpulseWarmStartPreflight constrainedPreflight =
         preflight_warm_start_contact_impulses(graph.island(islandA), contacts, dt);
     expectTrue(!constrainedPreflight.skipped, "impulse preflight does not skip contact island");
@@ -2021,44 +1740,19 @@ void testPreflightWarmStartContactImpulsesGuards() {
     expectTrue(should_skip_warm_start_contact_impulses_index(graph, graph.islandCount() + 1u, dt),
                "should_skip_warm_start_contact_impulses_index on out-of-range index");
 
-    bool foundEmptySkip = false;
-    for (u32 islandIndex = 0; islandIndex < graph.islandCount(); ++islandIndex) {
-        const ContactIslandGraph::Island& island = graph.island(islandIndex);
-        if (!island.isEmpty()) {
-            continue;
-        }
-        foundEmptySkip = true;
         const IslandContactImpulseWarmStartPreflight emptyPreflight =
             preflight_warm_start_contact_impulses(island, contacts, dt);
         expectTrue(emptyPreflight.skipped, "impulse preflight skips empty island");
         expectTrue(should_skip_warm_start_contact_impulses(island, dt),
                    "should_skip_warm_start_contact_impulses on empty island");
-    }
     expectTrue(foundEmptySkip, "graph exposes empty island for impulse preflight");
-}
 
 void testWarmStartContactImpulsesResultAndBatch() {
-    SolverWorkBuffers work;
-    work.init(4, 2, 0);
-    work.ensureLambdaCapacity(2, 0);
 
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
     contacts.back().warmNormalImpulse = 3.f;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 2;
-    contacts.back().bodyB = 3;
-    contacts.back().warmNormalImpulse = 0.f;
 
-    ContactIslandGraph graph;
     graph.build(4, contacts, {});
-    const f32 dt = 1.f / 60.f;
 
-    const IslandWarmStartResult outOfRange =
         warm_start_island_contact_impulses_result(work, graph, graph.islandCount() + 2u, contacts, dt);
     expectTrue(outOfRange.skipped, "impulse result skips out-of-range island");
 
@@ -2068,33 +1762,36 @@ void testWarmStartContactImpulsesResultAndBatch() {
     expectTrue(!warm_start_island_contact_impulses_guarded(work, graph.island(graph.bodyIsland(0)), contacts, 0.f),
                "guarded impulse warm-start skips invalid dt");
 
-    work.clearLambdas();
-    const u32 islandA = graph.bodyIsland(0);
     expectTrue(warm_start_island_contact_impulses_by_index_guarded(work, graph, islandA, contacts, dt),
                "index guarded impulse warm-start succeeds for contact island");
-    expectTrue(std::fabs(work.contactLambdas()[0]) > 1e-6f,
                "index guarded impulse warm-start seeds contact lambda");
 
-    work.clearLambdas();
-    const IslandBatchWarmStartResult batch =
         warm_start_all_islands_contact_impulses_result(work, graph, contacts, dt);
     expectTrue(!batch.skipped, "impulse batch does not skip contact graph");
     expectTrue(batch.warmedCount == 1u, "impulse batch seeds only non-zero impulse island");
     expectTrue(batch.any_warmed(), "impulse batch reports warmed island");
 
-    work.clearLambdas();
     expectTrue(warm_start_all_islands_contact_impulses_guarded(work, graph, contacts, dt) == 1u,
                "impulse batch guarded count matches warmed islands");
 
     const IslandBatchWarmStartResult invalidDtBatch =
         warm_start_all_islands_contact_impulses_result(work, graph, contacts, 0.f);
     expectTrue(invalidDtBatch.skipped, "impulse batch skips invalid dt");
-}
 
 void testPreflightWarmStartCombinedIsland() {
-    SolverWorkBuffers work;
-    work.init(4, 2, 1);
-    work.ensureLambdaCapacity(2, 1);
+
+        const IslandSolveDispatchResult emptyResult = dispatch_solve_island_result(bodies,
+        foundEmptySkip = emptyResult.skipped && !emptyResult.solved;
+        expectTrue(emptyResult.islandIndex == islandIndex, "empty result records island index");
+    expectTrue(foundEmptySkip, "dispatch result skips empty islands");
+
+    const IslandSolveDispatchResult solved = dispatch_solve_island_result(bodies,
+    expectTrue(!solved.skipped, "constrained dispatch result is not skipped");
+    expectTrue(solved.solved, "constrained dispatch result solves island");
+    expectTrue(solved.islandIndex == constrainedIndex, "solved result records island index");
+
+void testPreflightWarmStartIsland() {
+    work.init(4, 2, 2);
 
     std::vector<narrowphase::ContactManifold> contacts;
     contacts.push_back(narrowphase::ContactManifold{});
@@ -2129,7 +1826,6 @@ void testPreflightWarmStartCombinedIsland() {
             preflight_warm_start_combined_island(island, contacts, dt, priorDistance, priorContact);
         expectTrue(emptyPreflight.skipped, "combined preflight skips empty island");
         expectTrue(!emptyPreflight.can_warm_start(), "empty island cannot combined warm-start");
-    }
     expectTrue(foundEmptySkip, "graph exposes empty island for combined preflight");
 
     work.clearLambdas();
@@ -2139,23 +1835,19 @@ void testPreflightWarmStartCombinedIsland() {
     expectNear(work.contactLambdas()[0], 0.24f, 1e-6f,
                "combined result seeds prior contact lambda");
 
-    work.clearLambdas();
     const u32 warmedCount =
         warm_start_all_islands_combined_guarded(work, graph, contacts, dt, priorDistance, priorContact);
     expectTrue(warmedCount == 1u, "combined graph batch warms contact island only");
     expectTrue(std::fabs(work.contactLambdas()[0]) > 1e-6f,
                "combined graph batch seeds contact island");
-}
 
 void testPreflightSolveIslandJobGuards() {
-    ContactIslandGraph graph;
     std::vector<narrowphase::ContactManifold> contacts;
     std::vector<DistanceConstraint> constraints = {
         DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
     };
     graph.build(3, contacts, constraints);
 
-    const f32 dt = 1.f / 60.f;
     IslandSolveJob invalid{};
     const IslandSolveJobPreflight invalidPreflight = preflight_solve_island_job(invalid, dt);
     expectTrue(invalidPreflight.skipped, "job preflight skips default job");
@@ -2166,7 +1858,6 @@ void testPreflightSolveIslandJobGuards() {
     expectTrue(invalidDtPreflight.invalidDt, "job preflight rejects zero dt");
     expectTrue(should_skip_solve_island_job(invalid, 0.f), "should_skip_solve_island_job on invalid dt");
 
-    bool foundEmptySkip = false;
     bool foundConstrainedDispatch = false;
     for (const IslandSolveJob& job : extract_island_jobs(graph)) {
         const IslandSolveJobPreflight preflight = preflight_solve_island_job(job, dt);
@@ -2174,18 +1865,10 @@ void testPreflightSolveIslandJobGuards() {
             foundEmptySkip = preflight.skipped && !preflight.can_dispatch();
         } else {
             foundConstrainedDispatch = preflight.can_dispatch() && !should_skip_solve_island_job(job, dt);
-        }
-    }
     expectTrue(foundEmptySkip, "job preflight skips empty island job");
     expectTrue(foundConstrainedDispatch, "job preflight allows constrained island job");
-}
 
 void testSolveIslandJobGuardsInvalidDt() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
     graph.build(2, contacts, constraints);
 
     RigidBodySoA bodies;
@@ -2202,7 +1885,6 @@ void testSolveIslandJobGuardsInvalidDt() {
                "solve_island_job guards zero dt");
     expectTrue(!solve_island_job(bodies, *job.island, work, constraints, -1.f / 60.f, 0.f, invMassFn),
                "solve_island_job guards negative dt");
-}
 
 void testIsFiniteIslandSolveDtGuard() {
     expectTrue(is_finite_island_solve_dt(1.f / 60.f), "finite positive dt is valid");
@@ -2212,26 +1894,18 @@ void testIsFiniteIslandSolveDtGuard() {
     expectTrue(!is_finite_island_solve_dt(std::numeric_limits<f32>::quiet_NaN()),
                "NaN dt is not finite-positive");
     expectTrue(is_finite_warm_start_dt(1.f / 60.f), "finite warm-start dt matches solve guard");
-}
 
 void testPreflightIslandConstraintRefsGuards() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
     contacts.push_back(narrowphase::ContactManifold{});
     contacts.back().valid = true;
     contacts.back().bodyA = 0;
     contacts.back().bodyB = 1;
-    contacts.push_back(narrowphase::ContactManifold{});
     contacts.back().valid = false;
     contacts.back().bodyA = 2;
     contacts.back().bodyB = 3;
 
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
     graph.build(4, contacts, constraints);
 
-    const u32 islandA = graph.bodyIsland(0);
     const ContactIslandGraph::Island& island = graph.island(islandA);
     const IslandConstraintRefsPreflight preflight =
         preflight_island_constraint_refs(island, contacts, constraints);
@@ -2253,11 +1927,6 @@ void testPreflightIslandConstraintRefsGuards() {
     expectTrue(should_skip_island_constraint_refs(staleIsland, contacts, constraints),
                "should_skip true when all refs are out of range");
 
-    RigidBodySoA bodies;
-    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
-    bodies.addBody({2.1f, 0.f, 0.f}, 1.f, 0);
-    bodies.predictedPositions = bodies.positions;
-    SolverWorkBuffers work;
     work.init(4, 2, 1);
     work.contactManifolds() = contacts;
     expectTrue(!solve_island_job(bodies,
@@ -2268,24 +1937,12 @@ void testPreflightIslandConstraintRefsGuards() {
                                  0.f,
                                  [](const RigidBodySoA&, u32) { return 1.f; }),
                "solve_island_job skips island with only stale constraint refs");
-}
 
 void testShouldSkipWarmStartContactImpulsesWithContacts() {
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
     contacts.back().warmNormalImpulse = 0.f;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 2;
-    contacts.back().bodyB = 3;
     contacts.back().warmNormalImpulse = 2.f;
 
-    ContactIslandGraph graph;
     graph.build(5, contacts, {});
-    const f32 dt = 1.f / 60.f;
 
     const u32 zeroImpulseIsland = graph.bodyIsland(0);
     const u32 nonZeroIsland = graph.bodyIsland(2);
@@ -2295,24 +1952,10 @@ void testShouldSkipWarmStartContactImpulsesWithContacts() {
                "three-arg skip rejects island with only zero impulses");
     expectTrue(!should_skip_warm_start_contact_impulses(graph.island(nonZeroIsland), contacts, dt),
                "three-arg skip allows island with non-zero impulses");
-}
 
 void testPreflightWarmStartContactImpulsesGraphGuards() {
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
     contacts.back().warmNormalImpulse = 2.5f;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 2;
-    contacts.back().bodyB = 3;
-    contacts.back().warmNormalImpulse = 0.f;
 
-    ContactIslandGraph graph;
-    graph.build(5, contacts, {});
-    const f32 dt = 1.f / 60.f;
 
     const IslandContactImpulseWarmStartGraphPreflight preflight =
         preflight_warm_start_contact_impulses_graph(graph, contacts, dt);
@@ -2344,28 +1987,14 @@ void testPreflightWarmStartContactImpulsesGraphGuards() {
         preflight_warm_start_contact_impulses_graph(graph, contacts, 0.f);
     expectTrue(invalidDt.invalidDt, "graph impulse preflight rejects zero dt");
     expectTrue(!invalidDt.can_warm_start(), "graph impulse preflight cannot warm-start with invalid dt");
-}
 
 void testWarmStartAllIslandsCombinedResultBatch() {
-    SolverWorkBuffers work;
-    work.init(4, 2, 1);
     work.ensureLambdaCapacity(2, 1);
 
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
     contacts.back().warmNormalImpulse = 3.f;
 
-    ContactIslandGraph graph;
-    graph.build(3, contacts, {});
 
-    const std::vector<f32> priorDistance = {0.12f};
-    const std::vector<f32> priorContact = {0.24f};
-    const f32 dt = 1.f / 60.f;
 
-    work.clearLambdas();
     const IslandBatchWarmStartResult batch =
         warm_start_all_islands_combined_result(work, graph, contacts, dt, priorDistance, priorContact);
     expectTrue(!batch.skipped, "combined batch does not skip contact graph");
@@ -2376,28 +2005,17 @@ void testWarmStartAllIslandsCombinedResultBatch() {
                    batch.warmedCount,
                "combined guarded count matches batch result");
 
-    work.clearLambdas();
     const IslandBatchWarmStartResult invalidDt =
         warm_start_all_islands_combined_result(work, graph, contacts, 0.f, priorDistance, priorContact);
     expectTrue(invalidDt.skipped, "combined batch skips invalid dt");
     expectTrue(!invalidDt.any_warmed(), "invalid dt combined batch reports no warmed islands");
-}
 
 void testPreflightIslandBuildGuards() {
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
     contacts.back().bodyA = 8;
     contacts.back().bodyB = 9;
 
     const std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
         DistanceConstraint{.bodyA = 4, .bodyB = 5, .restLength = 2.f},
-    };
 
     const IslandBuildPreflight preflight = preflight_island_build(4, contacts, constraints);
     expectTrue(!preflight.skipped, "build preflight does not skip valid partition inputs");
@@ -2418,7 +2036,6 @@ void testPreflightIslandBuildGuards() {
     expectTrue(emptyPreflight.skipped, "build preflight skips zero-body empty inputs");
     expectTrue(should_skip_island_build(0, {}, {}), "should_skip_island_build on empty inputs");
 
-    ContactIslandGraph graph;
     expectTrue(!build_island_graph_guarded(graph, 0, {}, {}), "guarded build skips empty inputs");
     expectTrue(graph.islandCount() == 0u, "skipped guarded build clears graph");
 
@@ -2432,19 +2049,10 @@ void testPreflightIslandBuildGuards() {
     expectTrue(build_island_graph_guarded(graph, 4, safeContacts, safeConstraints),
                "guarded build succeeds for in-range inputs");
     expectTrue(graph.constrainedIslandCount() == 1u, "guarded build forms constrained island");
-}
 
 void testPreflightIslandSolveBodiesGuards() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
         DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
-    };
-    graph.build(4, contacts, constraints);
 
-    RigidBodySoA bodies;
-    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
     bodies.addBody({2.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
     bodies.addBody({20.f, 0.f, 0.f}, 1.f, 0);
     bodies.addBody({22.f, 0.f, 0.f}, 1.f, 0);
@@ -2466,7 +2074,6 @@ void testPreflightIslandSolveBodiesGuards() {
     expectTrue(should_skip_island_solve_bodies(graph.island(activeIsland), bodies),
                "should_skip_island_solve_bodies on all-sleeping island");
 
-    SolverWorkBuffers work;
     work.init(4, 0, 2);
     work.contactManifolds().clear();
     const IslandConstraintSolvePreflight combinedPreflight = preflight_island_constraint_solve(
@@ -2475,20 +2082,9 @@ void testPreflightIslandSolveBodiesGuards() {
     expectTrue(should_skip_island_constraint_solve(
                    graph.island(activeIsland), bodies, work.contactManifolds(), constraints),
                "should_skip_island_constraint_solve on all-sleeping island");
-}
 
 void testPreflightIslandSleepWakeGuards() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
-    };
-    graph.build(4, contacts, constraints);
 
-    RigidBodySoA bodies;
-    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
-    bodies.addBody({2.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
     bodies.addBody({20.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
     bodies.addBody({22.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
 
@@ -2544,34 +2140,18 @@ void testPreflightIslandSleepWakeGuards() {
     expectTrue(outOfRange.skipped, "sleep index preflight skips out-of-range island");
     const IslandWakePreflight outOfRangeWake = preflight_island_wake_by_index(graph, graph.islandCount() + 1u, bodies);
     expectTrue(outOfRangeWake.skipped, "wake index preflight skips out-of-range island");
-}
 
 void testContactIslandGraphBuildRejectReasonGuards() {
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 8;
-    contacts.back().bodyB = 9;
 
-    const std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-        DistanceConstraint{.bodyA = 4, .bodyB = 5, .restLength = 2.f},
-    };
 
     expectTrue(contactIslandGraphBuildRejectReason(4, contacts, constraints) ==
                    ContactIslandGraphBuildRejectReason::OutOfRangeContactBodies,
                "graph build reject reason flags out-of-range contacts");
     expectTrue(contactIslandGraphBuildRejectsForReason(4,
                                                        contacts,
-                                                       constraints,
                                                        ContactIslandGraphBuildRejectReason::OutOfRangeContactBodies),
                "graph build rejectsForReason matches out-of-range contacts");
     expectTrue(std::strcmp(contactIslandGraphBuildRejectReasonName(
-                               ContactIslandGraphBuildRejectReason::OutOfRangeContactBodies),
                            "OutOfRangeContactBodies") == 0,
                "graph build reject reason name is stable");
 
@@ -2584,7 +2164,6 @@ void testContactIslandGraphBuildRejectReasonGuards() {
     expectTrue(!shouldRunContactIslandGraphBuild(4, contacts, constraints),
                "shouldRunContactIslandGraphBuild false for unsafe refs");
 
-    ContactIslandGraph graph;
     expectTrue(!graph.buildGuarded(4, contacts, constraints),
                "buildGuarded rejects unsafe out-of-range contacts");
     expectTrue(graph.islandCount() == 0u, "rejected buildGuarded clears graph");
@@ -2594,35 +2173,18 @@ void testContactIslandGraphBuildRejectReasonGuards() {
                "graph build reject reason flags empty input");
     expectTrue(!graph.buildGuarded(0, {}, {}), "buildGuarded skips empty zero-body input");
     expectTrue(graph.islandCount() == 0u, "skipped empty buildGuarded clears graph");
-}
 
 void testIslandBuildRejectReasonGuards() {
-    std::vector<narrowphase::ContactManifold> contacts;
-    contacts.push_back(narrowphase::ContactManifold{});
-    contacts.back().valid = true;
-    contacts.back().bodyA = 0;
-    contacts.back().bodyB = 1;
 
-    const std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 4, .bodyB = 5, .restLength = 2.f},
-    };
 
-    const IslandBuildPreflight preflight = preflight_island_build(4, contacts, constraints);
     expectTrue(preflight.reason == ContactIslandGraphBuildRejectReason::OutOfRangeDistanceBodies,
                "island build preflight surfaces distance reject reason");
     expectTrue(canSkipIslandBuild(4, contacts, constraints),
                "canSkipIslandBuild true for out-of-range distance refs");
     expectTrue(!shouldRunIslandBuild(4, contacts, constraints),
                "shouldRunIslandBuild false for out-of-range distance refs");
-}
 
 void testIslandDispatchRejectReasonGuards() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
-    graph.build(2, contacts, constraints);
 
     expectTrue(islandDispatchRejectReason(graph, 1.f / 60.f) == IslandDispatchRejectReason::None,
                "valid graph and dt pass dispatch reject reason");
@@ -2636,18 +2198,13 @@ void testIslandDispatchRejectReasonGuards() {
     expectTrue(shouldRunIslandDispatch(graph, 1.f / 60.f),
                "shouldRunIslandDispatch true for constrained graph");
 
-    ContactIslandGraph emptyGraph;
-    emptyGraph.build(0, {}, {});
     expectTrue(canSkipIslandDispatch(emptyGraph, 1.f / 60.f),
                "canSkipIslandDispatch true for empty graph");
     expectTrue(islandDispatchRejectReason(emptyGraph, 1.f / 60.f) ==
                    IslandDispatchRejectReason::NoDispatchableIslands,
                "empty graph dispatch reject reason is no dispatchable islands");
-}
 
 void testIslandSolveJobRejectReasonGuards() {
-    IslandSolveJob invalid{};
-    const f32 dt = 1.f / 60.f;
     expectTrue(islandSolveJobRejectReason(invalid, dt) == IslandSolveJobRejectReason::EmptyJob,
                "default job reject reason is empty job");
     expectTrue(islandSolveJobRejectsForReason(invalid, 0.f, IslandSolveJobRejectReason::InvalidDt),
@@ -2655,31 +2212,16 @@ void testIslandSolveJobRejectReasonGuards() {
     expectTrue(std::strcmp(islandSolveJobRejectReasonName(IslandSolveJobRejectReason::EmptyJob), "EmptyJob") == 0,
                "job reject reason name is stable");
 
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
-    graph.build(3, contacts, constraints);
 
     const IslandSolveJob job = extract_island(graph, graph.bodyIsland(0));
     const IslandSolveJobRejectPreflight preflight = preflightIslandSolveJobReject(job, dt);
     expectTrue(preflight.can_dispatch(), "constrained job reject preflight can dispatch");
     expectTrue(shouldRunIslandSolveJob(job, dt), "shouldRunIslandSolveJob true for constrained job");
     expectTrue(!canSkipIslandSolveJob(job, dt), "canSkipIslandSolveJob false for constrained job");
-}
 
 void testIslandConstraintSolveRejectReasonGuards() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-    };
-    graph.build(2, contacts, constraints);
 
-    RigidBodySoA bodies;
     bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
-    bodies.addBody({2.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
 
     const ContactIslandGraph::Island& island = graph.island(0);
     const IslandConstraintSolveRejectPreflight preflight =
@@ -2688,33 +2230,16 @@ void testIslandConstraintSolveRejectReasonGuards() {
                "constraint solve reject reason flags no movable bodies");
     expectTrue(islandConstraintSolveRejectsForReason(island,
                                                      bodies,
-                                                     contacts,
-                                                     constraints,
                                                      IslandConstraintSolveRejectReason::NoMovableBodies),
                "constraint solve rejectsForReason matches no movable bodies");
     expectTrue(canSkipIslandConstraintSolve(island, bodies, contacts, constraints),
                "canSkipIslandConstraintSolve true for all-sleeping island");
     expectTrue(!shouldRunIslandConstraintSolve(island, bodies, contacts, constraints),
                "shouldRunIslandConstraintSolve false for all-sleeping island");
-}
 
 void testIslandSleepWakeRejectReasonGuards() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
-    };
-    graph.build(4, contacts, constraints);
 
-    RigidBodySoA bodies;
-    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
-    bodies.addBody({2.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
-    bodies.addBody({20.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
-    bodies.addBody({22.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
 
-    const u32 mixedIsland = graph.bodyIsland(0);
-    const u32 sleepingIsland = graph.bodyIsland(2);
 
     expectTrue(islandWakeRejectReason(graph.island(mixedIsland), bodies) == IslandWakeRejectReason::None,
                "mixed island wake reject reason is none");
@@ -2738,28 +2263,10 @@ void testIslandSleepWakeRejectReasonGuards() {
     expectTrue(wakeGraph.can_wake(), "wake graph reject preflight can wake mixed island");
     expectTrue(shouldRunIslandWakeGraph(graph, bodies),
                "shouldRunIslandWakeGraph true when wakeable island exists");
-}
 
 void testIslandPipelineDispatchRejectReasonGuards() {
-    ContactIslandGraph graph;
-    std::vector<narrowphase::ContactManifold> contacts;
-    std::vector<DistanceConstraint> constraints = {
-        DistanceConstraint{.bodyA = 0, .bodyB = 1, .restLength = 2.f},
-        DistanceConstraint{.bodyA = 2, .bodyB = 3, .restLength = 2.f},
-    };
-    graph.build(4, contacts, constraints);
 
-    RigidBodySoA bodies;
-    bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
-    bodies.addBody({2.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
-    bodies.addBody({20.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
-    bodies.addBody({22.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
-    bodies.predictedPositions = bodies.positions;
 
-    SolverWorkBuffers work;
-    work.init(4, 0, 2);
-    const auto invMassFn = [](const RigidBodySoA&, u32) { return 1.f; };
-    const f32 dt = 1.f / 60.f;
 
     const IslandPipelineDispatchPreflight preflight = preflightIslandPipelineDispatch(graph, bodies, dt);
     expectTrue(preflight.can_dispatch(), "pipeline preflight allows mixed active island graph");
@@ -2770,13 +2277,11 @@ void testIslandPipelineDispatchRejectReasonGuards() {
                "pipeline reject reason is none for mixed graph");
 
     bodies.flags[0] |= RB_SLEEPING;
-    expectTrue(islandPipelineDispatchRejectReason(graph, bodies, dt) ==
                    IslandPipelineDispatchRejectReason::AllIslandsSleeping,
                "pipeline reject reason flags all-sleeping graph");
     expectTrue(canSkipIslandPipelineDispatch(graph, bodies, dt),
                "canSkipIslandPipelineDispatch true when all islands sleeping");
     expectTrue(islandPipelineDispatchRejectsForReason(graph,
-                                                      bodies,
                                                       dt,
                                                       IslandPipelineDispatchRejectReason::AllIslandsSleeping),
                "pipeline rejectsForReason matches all-sleeping graph");
@@ -2784,10 +2289,6 @@ void testIslandPipelineDispatchRejectReasonGuards() {
     bodies.flags[0] &= ~RB_SLEEPING;
     const IslandBatchDispatchResult pipelineBatch = dispatch_island_pipeline_guarded(bodies,
                                                                                    graph,
-                                                                                   work,
-                                                                                   constraints,
-                                                                                   dt,
-                                                                                   0.f,
                                                                                    invMassFn);
     expectTrue(!pipelineBatch.skipped, "pipeline guarded dispatch runs for mixed graph");
     expectTrue(pipelineBatch.solvedCount == graph.constrainedIslandCount(),
@@ -2796,28 +2297,15 @@ void testIslandPipelineDispatchRejectReasonGuards() {
                "pipeline guarded dispatch wakes mixed island sleepers");
 
     const IslandBatchDispatchResult preflightBatch = dispatch_all_islands_with_preflight(bodies,
-                                                                                         graph,
-                                                                                         work,
-                                                                                         constraints,
-                                                                                         dt,
-                                                                                         0.f,
-                                                                                         invMassFn);
     expectTrue(!preflightBatch.skipped, "dispatch_all_islands_with_preflight runs constrained graph");
     expectTrue(preflightBatch.solvedCount == graph.constrainedIslandCount(),
                "dispatch_all_islands_with_preflight solves all constrained islands");
 
-    ContactIslandGraph emptyGraph;
-    emptyGraph.build(0, {}, {});
     expectTrue(dispatch_all_islands_with_preflight(bodies,
                                                    emptyGraph,
-                                                   work,
-                                                   constraints,
-                                                   dt,
-                                                   0.f,
                                                    invMassFn)
                    .skipped,
                "dispatch_all_islands_with_preflight skips empty graph");
-}
 
 void testBodyFlagHelpers() {
     expectTrue(is_body_sleeping(RB_SLEEPING), "is_body_sleeping detects sleeping flag");
@@ -2826,7 +2314,6 @@ void testBodyFlagHelpers() {
     expectTrue(is_body_static_or_kinematic(RB_KINEMATIC), "kinematic flag detected");
     expectTrue(!is_body_static_or_kinematic(0u), "dynamic body is not static/kinematic");
 
-    RigidBodySoA bodies;
     const u32 dynamic = bodies.addBody({0.f, 0.f, 0.f}, 1.f, 0);
     const u32 sleeping = bodies.addBody({1.f, 0.f, 0.f}, 1.f, RB_SLEEPING);
     const u32 staticBody = bodies.addBody({2.f, 0.f, 0.f}, 0.f, RB_STATIC);
@@ -2834,6 +2321,51 @@ void testBodyFlagHelpers() {
     expectTrue(!is_body_movable(bodies, sleeping), "sleeping body is not movable");
     expectTrue(!is_body_movable(bodies, staticBody), "static body is not movable");
     expectTrue(!is_body_movable(bodies, 99u), "out-of-range body is not movable");
+
+
+
+    const std::vector<f32> priorDistance = {0.15f, 0.f};
+    const std::vector<f32> priorContact = {0.25f, 0.f};
+
+    IslandWarmStartPreflight emptyPreflight{};
+    expectTrue(!preflight_warm_start_island(graph.island(graph.bodyIsland(3)),
+                                            priorDistance,
+                                            priorContact,
+                                            emptyPreflight),
+               "empty island preflight returns false");
+
+    IslandWarmStartPreflight preflight{};
+    expectTrue(preflight_warm_start_island(graph.island(islandA),
+                                           preflight),
+               "constrained island preflight returns true");
+    expectTrue(preflight.hasDistanceLambdas, "preflight detects distance lambda seeds");
+    expectTrue(preflight.hasContactLambdas, "preflight detects contact lambda seeds");
+    expectTrue(preflight.hasContactImpulses, "preflight detects contact impulse seeds");
+    expectTrue(preflight.distanceSlotCount == 1u, "preflight counts owned distance slots");
+    expectTrue(preflight.contactSlotCount == 1u, "preflight counts owned contact slots");
+
+    warm_start_island_lambdas_guarded(work,
+                                      graph.island(islandA),
+                                      preflight);
+    warm_start_island_contact_impulses_guarded(work, graph.island(islandA), contacts, dt, preflight);
+    expectNear(work.distanceLambdas()[0], 0.15f, 1e-6f, "guarded lambda warm-start seeds distance slot");
+    expectNear(work.contactLambdas()[0], 0.25f, 1e-6f, "guarded lambda warm-start seeds contact slot");
+               "guarded impulse warm-start contributes to contact lambda");
+
+    IslandWarmStartPreflight zeroPreflight{};
+    zeroPreflight.hasDistanceLambdas = false;
+    zeroPreflight.hasContactLambdas = false;
+    zeroPreflight.hasContactImpulses = false;
+                                      zeroPreflight);
+    expectNear(work.distanceLambdas()[0], 0.f, 1e-6f, "zero preflight skips lambda warm-start");
+
+    expectTrue(preflight_and_warm_start_island(work,
+                                               dt),
+               "preflight_and_warm_start_island applies guarded seeds");
+    expectNear(work.distanceLambdas()[0], 0.15f, 1e-6f,
+               "preflight_and_warm_start_island seeds distance lambda");
+    expectNear(work.contactLambdas()[0], 0.25f, 1e-6f,
+               "preflight_and_warm_start_island seeds contact lambda");
 }
 
 void testEarlyExitWhenResidualBelowTolerance() {
@@ -2950,6 +2482,12 @@ int main() {
     testIslandSleepWakeRejectReasonGuards();
     testIslandPipelineDispatchRejectReasonGuards();
     testBodyFlagHelpers();
+    testShouldSkipIslandSolveGuards();
+    testCollectDispatchableIslandIndices();
+    testAllIslandsEmptyFastPath();
+    testIslandSolveStatsHasWork();
+    testDispatchSolveIslandResult();
+    testPreflightWarmStartIsland();
     testEarlyExitWhenResidualBelowTolerance();
     fuse::core::shutdown();
 
