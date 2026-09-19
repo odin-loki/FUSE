@@ -228,18 +228,6 @@ inline Vec3 extractTranslation(const Mat4& matrix, f32 epsilon = 1e-5f) {
     return {matrix.data[12], matrix.data[13], matrix.data[14]};
 }
 
-/// Writes the translation column when the matrix is affine; returns false otherwise.
-inline bool tryExtractTranslation(const Mat4& matrix, Vec3& translation, f32 epsilon = 1e-5f) {
-    if (!isAffine(matrix, epsilon)) {
-        return false;
-    }
-    translation = {matrix.data[12], matrix.data[13], matrix.data[14]};
-/// Writes the translation column when the matrix is affine; returns false on early-out.
-inline bool tryExtractTranslation(const Mat4& matrix, Vec3& out, f32 epsilon = 1e-5f) {
-    out = {matrix.data[12], matrix.data[13], matrix.data[14]};
-    return true;
-}
-
 /// Uniform column length of a rigid upper 3×3 block; returns `0` when the block is not rigid.
 inline f32 uniformScaleUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
     if (!isRigidUpper3x3(matrix, epsilon)) {
@@ -368,15 +356,6 @@ inline Mat3 transposeUpper3x3(const Mat4& matrix) {
         }
     }
     return result;
-}
-
-/// Writes the transposed upper 3×3 block when it is orthogonal (pure rotation).
-inline bool tryTransposeUpper3x3(const Mat4& matrix, Mat3& out, f32 epsilon = 1e-4f) {
-    if (!isOrthogonalUpper3x3(matrix, epsilon)) {
-        return false;
-    }
-    out = transposeUpper3x3(matrix);
-    return true;
 }
 
 /// Writes `a * b` to `out` when both operands are rigid affine transforms.

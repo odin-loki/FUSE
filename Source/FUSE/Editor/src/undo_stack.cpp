@@ -38,7 +38,7 @@ void UndoStack::syncBaselineDirty_() {
         return;
     }
 
-    if (isAtBaseline() && coalescedOpsSinceBaseline() == 0u) {
+    if (isAtBaseline()) {
         markClean();
         return;
     }
@@ -60,8 +60,6 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
     }
 
     if (canUndo() && !m_undo.empty() && m_undo.back()->merge(*command)) {
-    if (!m_undo.empty() && canUndo() && m_undo.back()->merge(*command)) {
-    if (canUndo() && m_undo.back()->merge(*command)) {
         m_undo.back()->execute();
         ++m_coalescedOps;
         markDirty_();
@@ -78,10 +76,7 @@ void UndoStack::execute(std::unique_ptr<UndoCommand> command) {
 void UndoStack::set_baseline_state() {
     if (m_baselineConfigured && isAtBaseline() && m_baselineRedoCount == redoCount() &&
         m_coalescedOpsAtBaseline == m_coalescedOps) {
-    if (m_baselineConfigured && isAtBaseline() && m_coalescedOpsAtBaseline == m_coalescedOps &&
-        m_baselineRedoCount == redoCount()) {
         markClean();
-        m_coalescedOpsAtBaseline == m_coalescedOps && !m_dirty) {
         return;
     }
 
@@ -93,24 +88,11 @@ void UndoStack::set_baseline_state() {
 }
 
 bool UndoStack::isAtBaseline() const {
-    if (!m_baselineConfigured) {
-        return undoCount() == 0u && redoCount() == 0u;
-        return false;
-    }
-
     return undoCount() == m_baselineUndoCount;
 }
 
-bool UndoStack::hasUnsavedChanges() const {
-    if (!m_baselineConfigured) {
-        return !isEmpty() || m_dirty;
-    }
-
-    return !isAtBaseline();
-}
-
 void UndoStack::undo() {
-    if (isEmpty()) {
+    if (m_undo.empty()) {
         return;
     }
 
@@ -122,7 +104,7 @@ void UndoStack::undo() {
 }
 
 void UndoStack::redo() {
-    if (isRedoEmpty()) {
+    if (m_redo.empty()) {
         return;
     }
 
@@ -149,8 +131,8 @@ std::string UndoStack::peekRedoDescription() const {
 }
 
 void UndoStack::clear() {
-    if (isEmpty() && m_redo.empty() && !m_baselineConfigured && m_coalescedOps == 0u &&
-        m_evictedCount == 0u && !m_dirty && m_dirtyRevision == 0u) {
+    if (isEmpty() && m_redo.empty() && !m_baselineConfigured && m_coalescedOps == 0u && !m_dirty &&
+        m_dirtyRevision == 0u) {
         return;
     }
 

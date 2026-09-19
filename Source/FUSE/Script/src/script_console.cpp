@@ -68,31 +68,9 @@ bool shouldRecordHistory(const std::string& command, const std::string& /*args*/
 
 bool hasNonWhitespaceArgs(const char* args) {
     return args != nullptr && trim(args).empty() == false;
-bool isMetaCommandName(const std::string& command) {
-    return command == "help" || command == "list" || command == "describe" || command == "complete" ||
-           command == "suggest" || command == "resolve" || command == "repeat" || command == "history";
+}
 
 } // namespace
-
-bool ScriptConsole::is_meta_command(const char* name) {
-    if (name == nullptr || name[0] == '\0') {
-        return false;
-    return isMetaCommandName(name);
-}
-
-bool ScriptConsole::would_record_history(const char* line) const {
-    if (line == nullptr) {
-        return false;
-    }
-
-    std::string command;
-    std::string args;
-    if (!splitCommandLine(line, command, args)) {
-        return false;
-    }
-
-    return !isMetaCommandName(command);
-}
 
 bool ScriptConsole::is_meta_command(const char* name) {
     if (name == nullptr || name[0] == '\0') {
@@ -104,41 +82,6 @@ bool ScriptConsole::is_meta_command(const char* name) {
            std::strcmp(name, "suggest") == 0 || std::strcmp(name, "resolve") == 0 ||
            std::strcmp(name, "repeat") == 0 || std::strcmp(name, "history") == 0;
 }
-
-bool ScriptConsole::is_meta_line(const char* line) {
-    if (line == nullptr) {
-        return false;
-    }
-
-    std::string command;
-    std::string args;
-    if (!splitCommandLine(line, command, args)) {
-
-    return is_meta_command(command.c_str());
-
-bool ScriptConsole::would_record_history(const char* line) const {
-    if (line == nullptr) {
-        return false;
-    }
-
-    std::string command;
-    std::string args;
-    if (!splitCommandLine(line, command, args)) {
-        return false;
-    }
-
-    return !is_meta_command(command.c_str());
-}
-
-std::string ScriptConsole::resolve_command_name(const char* partial) const {
-    if (partial == nullptr) {
-        return {};
-    }
-
-    const std::string trimmed = trim(partial);
-    if (trimmed.empty()) {
-
-    return m_commands.unique_prefix_match(trimmed.c_str());
 
 void ScriptConsole::attach(ScriptHost* host) {
     m_host = host;
@@ -158,62 +101,6 @@ void ScriptConsole::setHistoryCapacity(u32 capacity) {
 
 void ScriptConsole::clearOutput() {
     m_output.clear();
-}
-
-const std::string& ScriptConsole::peek_repeat_line() const {
-    static const std::string kEmpty;
-    return can_repeat() ? m_lastExecutedLine : kEmpty;
-}
-
-bool ScriptConsole::is_meta_command(const char* name) {
-    if (name == nullptr || name[0] == '\0') {
-        return false;
-    }
-
-    return isMetaCommand(std::string(name));
-}
-
-bool ScriptConsole::can_resolve(const char* partial) const {
-    if (partial == nullptr) {
-        return false;
-    }
-
-    const std::string trimmed = trim(partial);
-    if (trimmed.empty()) {
-        return false;
-    }
-
-    return !m_commands.unique_prefix_match(trimmed.c_str()).empty();
-}
-
-std::string ScriptConsole::try_resolve_command(const char* partial) const {
-    if (partial == nullptr) {
-        return {};
-    }
-
-    const std::string trimmed = trim(partial);
-    if (trimmed.empty()) {
-        return {};
-    }
-
-    return m_commands.unique_prefix_match(trimmed.c_str());
-}
-
-bool ScriptConsole::is_resolve_ambiguous(const char* partial) const {
-    if (partial == nullptr) {
-        return false;
-    }
-
-    const std::string trimmed = trim(partial);
-    if (trimmed.empty()) {
-        return false;
-    }
-
-    if (m_commands.has_command(trimmed.c_str())) {
-        return false;
-    }
-
-    return m_commands.commands_with_prefix(trimmed.c_str()).size() > 1;
 }
 
 void ScriptConsole::appendOutput_(const std::string& text) {
@@ -259,10 +146,9 @@ ScriptConsoleCommandResult ScriptConsole::executeLine_(const char* line, bool re
 
     if (result.ok()) {
         if (!is_meta_command(command.c_str())) {
-        if (!isMetaCommandName(command)) {
             m_lastExecutedLine = trimmed_line;
         }
-        if (record_history && !isMetaCommandName(command)) {
+        if (record_history && shouldRecordHistory(command, args)) {
             m_history.push(line);
             resetHistoryNavigation();
         }
@@ -272,23 +158,13 @@ ScriptConsoleCommandResult ScriptConsole::executeLine_(const char* line, bool re
 }
 
 void ScriptConsole::registerBuiltIns_() {
-    m_commands.register_built_in("repeat", [](ScriptConsole& console, const char* args) {
-        if (args != nullptr && !trim(args).empty()) {
-            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
-                                              "repeat does not accept arguments"};
-        }
+    m_commands.register_built_in("repeat", [](ScriptConsole& console, const char* /*args*/) {
         if (!console.can_repeat()) {
-    m_commands.register_built_in("repeat", [](ScriptConsole& console, const char* args) {
-        if (args != nullptr && !trim(args).empty()) {
-            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
-                                              "repeat does not accept arguments"};
-        }
-        if (console.m_lastExecutedLine.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
                                               "no command to repeat"};
         }
 
-        return console.executeLine_(console.m_lastExecutedLine.c_str(), false);
+        return console.executeLine_(console.m_lastExecutedLine.c_str(), true);
     });
 
     m_commands.register_built_in("help", [](ScriptConsole& console, const char* /*args*/) {
@@ -300,15 +176,14 @@ void ScriptConsole::registerBuiltIns_() {
     });
 
     m_commands.register_built_in("describe", [](ScriptConsole& console, const char* args) {
-        const std::string name = trim(args != nullptr ? std::string(args) : std::string());
-        if (name.empty()) {
+        if (args == nullptr || args[0] == '\0') {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
                                               "describe requires a command name"};
         }
 
-        const ScriptConsoleCommandKind kind = console.m_commands.lookup_kind(name.c_str());
+        const ScriptConsoleCommandKind kind = console.m_commands.lookup_kind(args);
         std::ostringstream out;
-        out << name << ": " << commandKindLabel(kind);
+        out << args << ": " << commandKindLabel(kind);
         return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, out.str()};
     });
 
@@ -338,16 +213,12 @@ void ScriptConsole::registerBuiltIns_() {
 
     m_commands.register_built_in("resolve", [](ScriptConsole& console, const char* args) {
         if (!hasNonWhitespaceArgs(args)) {
-        const std::string partial = trim(args != nullptr ? args : "");
-        const std::string partial = trim(args != nullptr ? std::string(args) : std::string());
-        if (partial.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
                                               "resolve requires a partial command name"};
         }
 
         const std::string partial = trim(args);
         const std::string resolved = console.m_commands.unique_prefix_match(partial.c_str());
-        const std::string resolved = console.try_resolve_command(partial.c_str());
         if (!resolved.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, resolved};
         }
@@ -398,40 +269,15 @@ void ScriptConsole::registerBuiltIns_() {
     });
 
     m_commands.register_built_in("history", [](ScriptConsole& console, const char* args) {
-        const std::string subcommand = trim(args != nullptr ? std::string(args) : std::string());
-        if (!subcommand.empty()) {
-            if (subcommand != "clear") {
-                return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
-                                                  "history subcommand must be clear"};
-            }
-
-        const std::string subcommand = trim(args != nullptr ? args : "");
-        if (subcommand == "clear") {
+        if (args != nullptr && std::strcmp(args, "clear") == 0) {
             if (console.is_history_empty()) {
                 return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok,
                                                   "history already empty"};
             }
 
-        const std::string subcommand = trim(args != nullptr ? args : "");
-        if (subcommand == "clear") {
             console.m_history.clear();
             console.resetHistoryNavigation();
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, "history cleared"};
-        }
-        if (subcommand == "last" || subcommand == "newest") {
-            if (console.is_history_empty()) {
-                return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, "history empty"};
-            }
-            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, console.historyNewest()};
-            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, console.history_newest()};
-        }
-        if (subcommand == "count") {
-            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok,
-                                              std::to_string(console.historyCount())};
-        }
-        if (!subcommand.empty()) {
-            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
-                                              std::string("unknown history subcommand: ") + subcommand};
         }
 
         if (console.is_history_empty()) {

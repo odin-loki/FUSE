@@ -39,12 +39,6 @@ public:
     [[nodiscard]] bool canSelectMaterial(u32 materialId) const {
         return canBindMaterialSlot(materialId, m_catalogCount);
     }
-    /// Early-out — skip property edits when catalog is empty or nothing is selected (B6.7 deepen follow-up).
-    [[nodiscard]] bool shouldSkipMaterialEdit() const {
-        return isCatalogEmpty() || !hasSelectedMaterial();
-    }
-    /// Refresh guard — panel can clear binding dirty flags when a material is selected (B6.7 deepen follow-up).
-    [[nodiscard]] bool canRefreshPanel() const { return hasSelectedMaterial() && m_binding.canPostProperty(); }
     [[nodiscard]] const MaterialEditState& editState() const { return m_editState; }
     [[nodiscard]] const MaterialPropertyBinding& propertyBinding() const { return m_binding; }
     [[nodiscard]] MaterialPropertyBinding& propertyBinding() { return m_binding; }
@@ -53,25 +47,7 @@ public:
     [[nodiscard]] bool needsPanelRefresh() const { return m_binding.needsPanelRefresh(); }
     [[nodiscard]] bool hasAnyPropertyDirty() const { return m_binding.hasAnyPropertyDirty(); }
     [[nodiscard]] u32 propertyDirtyMask() const { return m_binding.dirtyPropertyMask(); }
-    /// Panel refresh guard — selection must be active and refresh pending (B6.7 deepen follow-up).
-    [[nodiscard]] bool canRefreshPanel() const {
-        return hasSelectedMaterial() && needsPanelRefresh();
-    }
-    [[nodiscard]] bool hasPendingPropertyDirty() const { return m_binding.hasAnyPropertyDirty(); }
-    [[nodiscard]] u32 propertyDirtyMask() const { return m_binding.propertyDirtyMask(); }
     [[nodiscard]] u32 coalescedPropertyDirtyCount() const { return m_binding.coalescedDirtyCount(); }
-    /// Refresh guard — selection bound and property table live (B6.7 deepen follow-up).
-    [[nodiscard]] bool canRefreshPanel() const {
-        return hasSelectedMaterial() && m_binding.canPostProperty();
-    }
-    /// True when `refreshPanel` would be a no-op (B6.7 deepen follow-up).
-    [[nodiscard]] bool shouldSkipPanelRefresh() const { return m_binding.shouldSkipPanelRefresh(); }
-
-    /// Panel refresh guard — binding reports pending refresh (B6.7 deepen).
-    [[nodiscard]] bool canRefreshPanel() const { return needsPanelRefresh(); }
-
-    /// Panel refresh guard — binding reports pending refresh (B6.7 deepen).
-    [[nodiscard]] bool canRefreshPanel() const { return needsPanelRefresh(); }
 
     /// Early-out when catalog empty, unselected, or binding cannot post (B6.7 deepen follow-up).
     [[nodiscard]] bool shouldSkipPropertyEdit() const;
@@ -84,9 +60,6 @@ public:
 
     /// Panel refresh guard — selection active and refresh pending (B6.7 deepen).
     [[nodiscard]] bool canRefreshPanel() const;
-    [[nodiscard]] u32 propertyDirtyMask() const { return m_binding.propertyDirtyMask(); }
-    /// Panel refresh guard — binding reports pending refresh (B6.7 deepen).
-    [[nodiscard]] bool canRefreshPanel() const { return needsPanelRefresh(); }
 
     bool selectMaterial(u32 materialId);
     bool setRoughness(f32 roughness, CommandStack& cmds);
@@ -97,12 +70,7 @@ public:
 
     void refreshPanel();
     /// Guarded panel refresh — no-op when refresh not needed (B6.7 deepen).
-    /// Guarded refresh — no-op when panel cannot refresh (B6.7 deepen follow-up).
-    /// Guarded refresh — returns false when nothing pending or panel unbound (B6.7 deepen follow-up).
-    /// Guarded panel refresh — no-op when binding is clean (B6.7 deepen).
     bool tryRefreshPanel();
-    /// Guarded panel refresh — no-op when nothing is pending (B6.7 deepen follow-up).
-    bool refreshPanelIfNeeded();
     void clearPreviewDirty() { m_previewDirty = false; }
     void clearEditDirty() { m_editDirty = false; }
 

@@ -90,7 +90,6 @@ enum class CellResidencyState : u8 {
 }
 
 /// Guard: effective unload priority with negative component inputs clamped to zero.
-/// Guard: effective unload priority, clamping negative component inputs to zero.
 [[nodiscard]] inline f32 effective_unload_priority_guarded(f32 streaming_priority, f32 stored_priority) {
     return effective_unload_priority(std::max(0.f, streaming_priority), std::max(0.f, stored_priority));
 }
@@ -125,12 +124,7 @@ enum class CellResidencyState : u8 {
                                                              f32 focus_distance, f32 budget_score) {
     return rank_budget_unload_priority(std::max(0.f, streaming_priority), std::max(0.f, stored_priority),
                                        std::max(0.f, focus_distance), std::max(0.f, budget_score));
-/// Back-compat alias for earlier B7.6 unload-rank stubs.
-[[nodiscard]] inline f32 rank_budget_unload_priority_stub(f32 streaming_priority, f32 stored_priority,
-    return rank_budget_unload_priority(streaming_priority, stored_priority, focus_distance, budget_score);
-
-/// True when an unload rank can drive eviction queue ordering.
-[[nodiscard]] inline bool is_valid_unload_rank(f32 rank) { return rank > 0.f; }
+}
 
 /// One spatial cell in the world partition grid.
 struct WorldCell {

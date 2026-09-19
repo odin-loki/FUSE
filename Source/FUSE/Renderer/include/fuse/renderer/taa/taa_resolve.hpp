@@ -7,57 +7,10 @@
 
 namespace fuse::renderer {
 
-/// True when history is ready to accept resolve accumulation (B5.9 deepen).
-bool taaHistoryCanAccumulate(const TaaHistoryBuffer& history);
-/// True when history is warmed and ready for temporal reuse (B5.9 deepen).
-bool taaHistoryCanReuse(const TaaHistoryBuffer& history);
-/// True when history can be reused for the observed invalidate epoch (B5.9 deepen).
-bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observed_generation);
-/// True when observed epoch matches current invalidate generation (B5.9 deepen).
-bool taaHistoryIsGenerationCurrent(const TaaHistoryBuffer& history, u32 observed_generation);
-/// True when required colour surfaces are bound (B5.9 deepen).
-bool taaResolveSurfacesSatisfied(const TaaResolveDesc& desc);
-/// True when resolve request passes all preflight guards (inverse of blocking skip).
-bool canAttemptTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// Stamp observed generation and return whether request can proceed (B5.9 deepen).
-bool prepareTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// True when this resolve would sample prior history (B5.9 deepen).
-bool taaResolveWillReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// Preflight resolve blend weights without mutating history (B5.9 deepen).
-bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-                              TaaBlendWeights* weights = nullptr);
-/// True when resolve request passes all skip preflight guards (B5.9 deepen).
-/// Sanitize desc and return whether resolve can proceed (B5.9 deepen).
-/// True when resolve skip and blend-weight preflights both pass (B5.9 deepen).
-bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-                              TaaResolveSkipReason* skipReason = nullptr,
-                              TaaResolveBlendRejectReason* blendReason = nullptr);
 /// Classify why resolve would skip — same ordering as `TaaResolve::wouldSkip` (B5.9 deepen).
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// Stamp observed generation then classify — convenience preflight for resolve callers.
-TaaResolveSkipReason preflightTaaResolve(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// Boolean preflight — true when resolve would bail before history update.
-bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-                          TaaResolveSkipReason* reason = nullptr);
-/// True when required current/output surfaces are present.
-bool taaResolveSurfacesComplete(const TaaResolveDesc& desc);
-/// True when rejection surfaces are present when enforcement is enabled.
-bool taaResolveRejectionSurfacesComplete(const TaaResolveDesc& desc);
-/// True when required colour surfaces are bound (B5.9 deepen).
-bool taaResolveSurfacesSatisfied(const TaaResolveDesc& desc);
-/// True when rejection surfaces are present when `enforce_rejection_surfaces` is set (B5.9 deepen).
-bool taaResolveRejectionSurfacesSatisfied(const TaaResolveDesc& desc);
-/// True when resolve request passes all preflight guards (inverse of blocking skip).
-bool canAttemptTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// Stamp observed generation and return whether request can proceed (B5.9 deepen).
-bool prepareTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// Boolean preflight — true when resolve would bail before history update (B5.9 deepen).
-/// True when required current/output surfaces are present (B5.9 deepen).
-/// True when rejection surfaces are present when enforcement is enabled (B5.9 deepen).
 /// True when resolve dimensions match allocated history buffer size.
 bool taaResolveDimensionsMatch(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// True when pass viewport dimensions match the resolve request.
-bool taaViewportDimensionsMatchPass(u32 passWidth, u32 passHeight, const TaaResolveDesc& desc);
 /// True when `observed_history_generation` guard is disabled for this desc.
 bool taaResolveBypassesHistoryGenerationGuard(const TaaResolveDesc& desc);
 /// True when the history-generation guard is enabled and the observed epoch matches history.
@@ -68,8 +21,6 @@ bool taaResolveRejectionSurfacesRequired(const TaaResolveDesc& desc);
 bool taaResolveRejectionSurfacesSatisfied(const TaaResolveDesc& desc);
 /// Fill `observed_history_generation` from history when still at the no-guard sentinel.
 void stampObservedHistoryGeneration(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// True when history is ready, valid, and passes the generation guard (B5.9 deepen).
-bool taaHistoryIsReusable(const TaaHistoryBuffer& history, const TaaResolveDesc& desc);
 /// Clamp params and stamp observed generation — pre-resolve sanitization for callers.
 void sanitizeTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// Preflight resolve without mutating history — returns true when resolve would proceed.
@@ -80,62 +31,6 @@ bool tryPreflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& 
                             TaaResolveSkipReason& reason);
 /// Early-out when resolve preflight would skip (B5.9 deepen).
 bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// True when generation guard is bypassed or `observed_history_generation` is current.
-bool isObservedHistoryGenerationCurrent(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// Inverse of `TaaResolve::wouldSkip` — true when resolve would proceed.
-bool taaResolveCanProceed(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-/// Blend weight from history warm-up state and clamped params.
-f32 computeEffectiveBlendForHistory(const TaaHistoryBuffer& history, const TAAParams& params);
-/// True when history is ready, valid, and passes the generation guard (B5.9 deepen).
-bool taaHistoryIsReusable(const TaaHistoryBuffer& history, const TaaResolveDesc& desc);
-/// Preflight resolve blend weights for the next frame without mutating history (B5.9 deepen).
-bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-                                    TaaBlendWeights* outWeights = nullptr);
-/// Blend weights that would be applied for this resolve request (B5.9 deepen).
-TaaBlendWeights computeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// Preflight resolve plus blend-weight validation; optionally fills `weights` (B5.9 deepen).
-bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-                              TaaBlendWeights* weights = nullptr);
-/// True when resolve and blend-weight preflights pass (B5.9 deepen).
-bool taaResolveBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// Blend weights resolve would apply this frame — does not mutate history (B5.9 deepen).
-TaaBlendWeights computeTaaResolveBlendPreflight(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// True when resolve preflight passes and blend weights are valid (B5.9 deepen).
-/// Resolve + blend preflight — optionally fills projected blend weights (B5.9 deepen).
-/// Compute blend weights when resolve would proceed; returns false when resolve would skip (B5.9 deepen).
-bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-                                      TaaBlendWeights& out);
-/// True when resolve and history-blend reuse preflights both pass (B5.9 deepen).
-bool taaResolveHistoryBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// True when resolve skip + blend-weight preflights both pass (B5.9 deepen).
-bool preflightTaaResolveWithBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-                                 TaaResolveSkipReason* skipReason = nullptr,
-                                 TaaResolveBlendRejectReason* blendReason = nullptr);
-/// Combined resolve skip + blend-weight preflight — both must pass (B5.9 deepen).
-/// Early-out when resolve would bail before history update (B5.9 deepen).
-/// True when resolve preflight passes (B5.9 deepen).
-bool taaResolveReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// Combined resolve + blend-weight preflight — returns true when both guards pass (B5.9 deepen).
-bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-/// Combined resolve frame preflight with mandatory reject-reason outputs (B5.9 deepen).
-bool tryPreflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-                                 TaaResolveSkipReason& skipReason, TaaResolveBlendRejectReason& blendReason);
-/// Early-out when combined resolve frame preflight would reject (B5.9 deepen).
-/// True when resolve skip and blend-weight preflights both pass (B5.9 deepen).
-/// Combined resolve-frame preflight with mandatory reject outputs (B5.9 deepen).
-/// Early-out when combined resolve-frame preflight would reject (B5.9 deepen).
-bool shouldSkipTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// Early-out when resolve preflight would bail before history update (B5.9 deepen).
-/// Combined resolve-frame preflight with mandatory reject-reason outputs (B5.9 deepen).
-/// Early-out when resolve skip or blend-weight preflight would reject (B5.9 deepen).
-/// True when resolve and blend-weight preflights both pass (B5.9 deepen).
-bool preflightTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-/// Resolve pipeline preflight with mandatory reject-reason outputs (B5.9 deepen).
-bool tryPreflightTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-/// Early-out when resolve pipeline preflight would reject (B5.9 deepen).
-bool shouldSkipTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
-/// Resolve-frame preflight with mandatory skip/blend reject-reason output (B5.9 deepen).
-/// Early-out when resolve-frame preflight would skip or reject blend weights (B5.9 deepen).
 
 /// CPU/CUDA resolve facade — records resolve intent; kernel deferred (B5.9 stub).
 class TaaResolve {
@@ -144,9 +39,6 @@ public:
     /// Predict whether resolve would bail before history update (does not mutate history).
     bool wouldSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                    TaaResolveSkipReason* reason = nullptr) const;
-    /// Preflight resolve skip and blend-weight guards without mutating history (B5.9 deepen).
-    bool preflightDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
-                       TaaResolveDescPreflight* result = nullptr) const;
     void resetBookkeeping();
 
     const TaaResolveStats& lastStats() const { return m_stats; }

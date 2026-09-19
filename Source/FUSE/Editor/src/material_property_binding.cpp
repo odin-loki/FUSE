@@ -108,7 +108,7 @@ void MaterialPropertyBinding::markPropertyDirty_(MaterialPropertyId id) {
 bool MaterialPropertyBinding::postProperty_(MaterialPropertyId id,
                                             const std::string& propertyValue,
                                             CommandStack& cmds) {
-    if (!canPostProperty()) {
+    if (!isBound()) {
         return false;
     }
 
@@ -244,16 +244,6 @@ bool MaterialPropertyBinding::trySetPropertyVec3(MaterialPropertyId id, f32 x, f
     return setPropertyVec3(id, x, y, z, cmds);
 }
 
-u32 MaterialPropertyBinding::dirtyPropertyCount() const {
-    u32 count = 0u;
-    for (u32 i = 0u; i < materialPropertyCount(); ++i) {
-        if ((m_dirtyMask & propertyBit_(materialPropertyIdAt(i))) != 0u) {
-            ++count;
-        }
-    }
-    return count;
-}
-
 bool MaterialPropertyBinding::isPropertyDirty(MaterialPropertyId id) const {
     return (m_dirtyMask & propertyBit_(id)) != 0u;
 }
@@ -282,7 +272,6 @@ void MaterialPropertyBinding::clearPropertyDirty(MaterialPropertyId id) {
 
 bool MaterialPropertyBinding::tryClearPropertyDirty(MaterialPropertyId id) {
     if (!canClearPropertyDirty(id)) {
-    if (!isMaterialPropertyIdValid(id)) {
         return false;
     }
     clearPropertyDirty(id);
@@ -301,31 +290,11 @@ void MaterialPropertyBinding::markPanelRefreshed() {
 
 bool MaterialPropertyBinding::tryMarkPanelRefreshed() {
     if (!canPostProperty()) {
-bool MaterialPropertyBinding::tryRefreshFromEditState(const MaterialEditState& state) {
-    if (!canRefreshFromEditState()) {
-        return false;
-    }
-    refreshFromEditState(state);
-    return true;
-
-    if (!isBound()) {
-    if (shouldSkipPanelRefresh()) {
-    if (!canMarkPanelRefreshed()) {
         return false;
     }
     markPanelRefreshed();
     return true;
 }
-
-bool MaterialPropertyBinding::tryClearPropertyDirty(MaterialPropertyId id) {
-    if (!isBound() || !isMaterialPropertyIdValid(id)) {
-        return false;
-    }
-    clearPropertyDirty(id);
-    return true;
-
-bool MaterialPropertyBinding::tryIsPropertyDirty(MaterialPropertyId id) const {
-    return isPropertyDirty(id);
 
 void MaterialPropertyBinding::refreshFromEditState(const MaterialEditState& state) {
     if (!canRefreshFromEditState()) {
@@ -337,27 +306,25 @@ void MaterialPropertyBinding::refreshFromEditState(const MaterialEditState& stat
     markPanelRefreshed();
 }
 
-bool MaterialPropertyBinding::tryRefreshFromEditState(const MaterialEditState& state) {
-    if (!canRefreshFromEditState()) {
-        return false;
-    }
-    refreshFromEditState(state);
-    return true;
-}
-
 bool MaterialPropertyBinding::canTryGetPropertyScalar(MaterialPropertyId id) const {
     return canPostProperty() && canTryMaterialPropertyScalar(id);
 }
 
 bool MaterialPropertyBinding::canTrySetPropertyScalar(MaterialPropertyId id) const {
+    return canPostProperty() && canTryMaterialPropertyScalar(id);
+}
 
 bool MaterialPropertyBinding::canTryGetPropertyVec3(MaterialPropertyId id) const {
     return canPostProperty() && canTryMaterialPropertyVec3(id);
+}
 
 bool MaterialPropertyBinding::canTrySetPropertyVec3(MaterialPropertyId id) const {
+    return canPostProperty() && canTryMaterialPropertyVec3(id);
+}
 
 MaterialInspectorRefreshInfo MaterialPropertyBinding::refreshInfo() const {
     return {m_panelRefreshPending, m_dirtyMask, m_coalescedDirtyCount};
+}
 
 bool MaterialPropertyBinding::tryRefreshFromEditState(const MaterialEditState& state) {
     if (!canRefreshFromEditState()) {

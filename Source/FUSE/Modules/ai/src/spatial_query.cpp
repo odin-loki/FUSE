@@ -35,22 +35,6 @@ bool is_valid_ally_radius(float radius) {
     return radius > 0.f;
 }
 
-bool is_valid_radius_policy(const RadiusFilterPolicy& policy) {
-    return is_valid_ally_radius(policy.radius) && policy.minCount > 0;
-}
-
-u32 effective_min_count(const RadiusFilterPolicy& policy) {
-    return policy.minCount > 0 ? policy.minCount : 1u;
-bool is_finite_ally_radius(float radius) {
-    return radius > 0.f;
-
-bool is_unlimited_radius(float radius) {
-    return radius <= 0.f;
-
-bool radius_filter_policy_is_valid(const RadiusFilterPolicy& policy) {
-    return is_finite_ally_radius(policy.radius);
-}
-
 float effective_radius(const RadiusFilterPolicy& policy) {
     return clamp_radius_(policy.radius);
 }
@@ -216,42 +200,6 @@ float nearest_ally_distance_sq(u32 selfIndex,
 
 bool ally_context_available(const std::vector<AllyCandidate>* allies) {
     return allies != nullptr && !allies->empty();
-}
-
-bool is_radius_filter_policy_valid(const RadiusFilterPolicy& policy) {
-    return is_valid_ally_radius(policy.radius) && policy.minCount >= 1u;
-}
-
-RadiusFilterPolicy normalize_radius_filter_policy(const RadiusFilterPolicy& policy) {
-    RadiusFilterPolicy normalized;
-    normalized.radius = effective_radius(policy);
-    normalized.minCount = policy.minCount >= 1u ? policy.minCount : 1u;
-    return normalized;
-
-u32 count_allies_outside_radius(u32 selfIndex,
-                                u32 teamId,
-                                float x,
-                                float y,
-                                float radius,
-                                const std::vector<AllyCandidate>& allies) {
-    const float radiusSq = radius_sq_(radius);
-    u32 count = 0;
-
-    for (const AllyCandidate& candidate : allies) {
-        if (!is_ally_(selfIndex, teamId, candidate)) {
-            continue;
-        const float distSq = distance_sq_2d(x, y, candidate.x, candidate.y);
-        if (distSq > radiusSq) {
-            ++count;
-
-    return count;
-
-bool has_ally_outside_radius(u32 selfIndex,
-    return count_allies_outside_radius(selfIndex, teamId, x, y, radius, allies) > 0;
-bool is_radius_policy_valid(const RadiusFilterPolicy& policy) {
-
-bool ally_radius_query_valid(float radius, const std::vector<AllyCandidate>* allies) {
-    return is_valid_ally_radius(radius) && ally_context_available(allies);
 }
 
 } // namespace fuse::ai

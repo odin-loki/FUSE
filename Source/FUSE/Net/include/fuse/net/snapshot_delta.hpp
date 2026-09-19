@@ -79,22 +79,6 @@ struct DeltaApplyResult {
     bool target_frame_ok = true;
     /// True when every entity patch index is within the 64-bit mask stub range.
     bool trackable_indices_ok = true;
-    /// True when entity-mask popcount matches `entity_patches.size()` (EntityPatch only).
-    /// True when patch field masks only use known ECS/physics bits (EntityPatch only).
-    bool field_masks_ok = true;
-    /// True when `SnapshotDeltaKind::Full` carries at least one non-empty state blob.
-    /// True when the delta is a no-op `SnapshotDeltaKind::None` payload.
-    bool empty_delta = false;
-
-    [[nodiscard]] bool can_apply() const {
-        return base_checksum_ok && entity_mask_ok && base_frame_ok && payload_ok && mask_popcount_ok;
-    }
-
-    /// True when apply can be skipped because the delta carries no state changes.
-    [[nodiscard]] bool should_skip_apply() const { return empty_delta; }
-    /// True when the delta is a no-op `SnapshotDeltaKind::None` payload (B7.4 deepen follow-up).
-    /// True when `delta.kind` is a known `SnapshotDeltaKind` value.
-    bool kind_ok = true;
 };
 
 /// Preflight checks before applying a delta (baseline checksum + entity mask consistency).
@@ -117,59 +101,31 @@ struct SnapshotDeltaPreflight {
     bool full_payload_ok = true;
     /// True when `delta.target_frame` is not before `delta.base_frame`.
     bool target_frame_ok = true;
-    /// True when `delta.kind` is a known `SnapshotDeltaKind` value.
-    bool kind_ok = true;
     /// True when every entity patch index is within the 64-bit mask stub range.
     bool trackable_indices_ok = true;
 
     [[nodiscard]] bool can_apply() const {
         return base_checksum_ok && entity_mask_ok && base_frame_ok && payload_ok && mask_popcount_ok &&
                field_bits_ok && duplicate_index_ok && full_payload_ok && target_frame_ok && trackable_indices_ok;
-    /// True when `delta.target_frame` is not before `delta.base_frame` (B7.4 deepen follow-up).
-    /// True when patch field masks only use known ECS/physics bits (EntityPatch only).
-    bool field_masks_ok = true;
-    /// True when `SnapshotDeltaKind::Full` carries at least one non-empty state blob.
-
-               target_frame_ok && field_masks_ok && full_payload_ok;
-    /// True when no duplicate entity indices appear in `entity_patches` (EntityPatch only).
-    bool patch_indices_unique_ok = true;
-    /// True when `SnapshotDeltaKind::Full` carries non-empty full-state payload bytes.
-
-
-               field_masks_ok && patch_indices_unique_ok && full_payload_ok;
-               field_bits_ok && duplicate_index_ok && full_payload_ok && target_frame_ok && kind_ok &&
-               trackable_indices_ok;
     }
-
-    /// True when apply can be skipped because the delta carries no state changes.
-    [[nodiscard]] bool should_skip_apply() const { return empty_delta; }
-
-    /// True when a successful apply would reconstruct non-baseline state.
-    [[nodiscard]] bool would_mutate_state() const { return !empty_delta && can_apply(); }
 };
 
 /// Preflight for applying a delta against a retained history-ring baseline (B7.4 deepen follow-up).
 struct SnapshotHistoryPreflight {
     bool ring_empty = true;
     bool has_baseline = false;
-    /// True when `delta.base_frame` differs from the requested baseline frame.
-    bool base_frame_mismatch = false;
     /// True when the delta is empty and apply would be a no-op (B7.4 deepen follow-up).
     bool skipped = false;
-    /// True when `delta.target_frame` is already retained in the ring (B7.4 deepen follow-up).
-    bool target_already_stored = false;
     SnapshotDeltaPreflight delta_preflight{};
 
     [[nodiscard]] bool can_apply() const {
-        return !ring_empty && has_baseline && !base_frame_mismatch && delta_preflight.can_apply();
+        return !ring_empty && has_baseline && delta_preflight.can_apply();
     }
 
     /// True when apply can proceed normally or via the empty-delta fast path (B7.4 deepen follow-up).
     [[nodiscard]] bool can_apply_or_skip() const {
         return can_apply() || skipped;
     }
-    /// True when apply should be skipped (empty ring, missing baseline, or no-op delta).
-    [[nodiscard]] bool should_skip_apply() const { return ring_empty || !has_baseline || skipped; }
 };
 
 [[nodiscard]] bool snapshots_equivalent(const GameSnapshot& base, const GameSnapshot& target);
@@ -198,14 +154,8 @@ struct SnapshotHistoryPreflight {
 /// Bitwise union of two ECS field masks.
 [[nodiscard]] u8 ecs_field_mask_union(u8 a, u8 b);
 
-/// Bitwise intersection of two ECS field masks.
-[[nodiscard]] u8 ecs_field_mask_intersect(u8 a, u8 b);
-
 /// Bitwise union of two physics field masks.
 [[nodiscard]] u8 physics_field_mask_union(u8 a, u8 b);
-
-/// Bitwise intersection of two physics field masks.
-[[nodiscard]] u8 physics_field_mask_intersect(u8 a, u8 b);
 
 /// Popcount of set ECS field bits in `mask`.
 [[nodiscard]] u32 ecs_field_mask_count(u8 mask);
@@ -222,33 +172,8 @@ struct SnapshotHistoryPreflight {
 /// True when every patch index has a matching mask bit and no stray mask bits are set.
 [[nodiscard]] bool validate_changed_entity_mask(const SnapshotDelta& delta);
 
-/// Build `changed_entity_mask` from patch rows (indices >= 64 are ignored).
-[[nodiscard]] u64 build_changed_entity_mask_from_patches(const std::vector<SnapshotEntityPatch>& entity_patches);
-
-/// True when `mask` exactly covers every patch index and has no stray bits.
-[[nodiscard]] bool changed_entity_mask_matches_patches(u64 changed_entity_mask,
-                                                         const std::vector<SnapshotEntityPatch>& entity_patches);
-
 /// True when entity-mask popcount equals `entity_patches.size()` (EntityPatch only).
 [[nodiscard]] bool entity_mask_popcount_matches_patches(const SnapshotDelta& delta);
-
-/// True when `mask` only sets declared `SnapshotEcsField` bits.
-[[nodiscard]] bool ecs_field_mask_valid(u8 mask);
-
-/// True when `mask` only sets declared `SnapshotPhysicsField` bits.
-[[nodiscard]] bool physics_field_mask_valid(u8 mask);
-
-/// True when a patch row declares only valid ECS/physics field masks.
-[[nodiscard]] bool validate_entity_field_masks(const SnapshotEntityPatch& patch);
-
-/// True when no duplicate entity indices appear in `entity_patches` (EntityPatch only).
-[[nodiscard]] bool validate_entity_patch_indices_unique(const SnapshotDelta& delta);
-
-/// True for `SnapshotDeltaKind::Full` deltas.
-[[nodiscard]] bool is_full_snapshot_delta(const SnapshotDelta& delta);
-
-/// True when a full delta carries non-empty full-state payload bytes.
-[[nodiscard]] bool validate_full_delta_payload(const SnapshotDelta& delta);
 
 /// True when a patch row carries at least one field mask with matching payload bytes.
 [[nodiscard]] bool validate_entity_patch_masks(const SnapshotEntityPatch& patch);
@@ -270,24 +195,6 @@ struct SnapshotHistoryPreflight {
 
 /// True when no duplicate `(entity_index, generation)` rows appear in `entity_patches`.
 [[nodiscard]] bool validate_entity_patch_indices_unique(const SnapshotDelta& delta);
-
-/// True when `entity_index` is within the 64-bit changed-entity mask stub range.
-[[nodiscard]] bool entity_index_trackable(u32 entity_index);
-
-/// True when an entity patch row uses a trackable entity index.
-[[nodiscard]] bool validate_entity_patch_trackable(const SnapshotEntityPatch& patch);
-
-/// True when every entity patch index is trackable (EntityPatch only).
-[[nodiscard]] bool validate_entity_patch_indices_trackable(const SnapshotDelta& delta);
-
-/// True when `delta.target_frame` is not before `delta.base_frame`.
-[[nodiscard]] bool validate_delta_frame_order(const SnapshotDelta& delta);
-
-/// True when `kind` is a known `SnapshotDeltaKind` enumerator value.
-[[nodiscard]] bool is_valid_snapshot_delta_kind(SnapshotDeltaKind kind);
-
-/// True when `delta.kind` is a known `SnapshotDeltaKind` value.
-[[nodiscard]] bool validate_delta_kind(const SnapshotDelta& delta);
 
 /// True when `SnapshotDeltaKind::Full` carries non-empty ecs or physics bytes.
 [[nodiscard]] bool validate_full_delta_payload(const SnapshotDelta& delta);
@@ -316,27 +223,6 @@ struct SnapshotHistoryPreflight {
 /// True when at least one physics field bit is set in `mask`.
 [[nodiscard]] bool physics_field_mask_nonempty(u8 mask);
 
-/// True when `mask` only sets known `SnapshotEcsField` bits (B7.4 deepen follow-up).
-[[nodiscard]] bool ecs_field_mask_valid(u8 mask);
-
-/// True when `mask` only sets known `SnapshotPhysicsField` bits (B7.4 deepen follow-up).
-[[nodiscard]] bool physics_field_mask_valid(u8 mask);
-
-/// True when patch field masks use only known ECS/physics bits (B7.4 deepen follow-up).
-[[nodiscard]] bool validate_entity_patch_field_masks(const SnapshotEntityPatch& patch);
-
-/// True when `entity_index` fits the 64-bit changed-entity mask stub (B7.4 deepen follow-up).
-[[nodiscard]] bool entity_index_trackable(u32 entity_index);
-
-/// True when patch entity index fits the changed-entity mask stub (B7.4 deepen follow-up).
-[[nodiscard]] bool validate_entity_patch_trackable(const SnapshotEntityPatch& patch);
-
-/// True when `delta.target_frame` is not before `delta.base_frame` (B7.4 deepen follow-up).
-[[nodiscard]] bool target_frame_is_valid(const SnapshotDelta& delta);
-
-/// True when `SnapshotDeltaKind::Full` carries at least one non-empty state blob (B7.4 deepen follow-up).
-[[nodiscard]] bool validate_full_delta_payload(const SnapshotDelta& delta);
-
 /// True when delta kind, entity mask, and payload bytes are internally consistent.
 [[nodiscard]] bool validate_delta_payload(const SnapshotDelta& delta);
 
@@ -348,25 +234,12 @@ struct SnapshotHistoryPreflight {
 
 /// True for `SnapshotDeltaKind::EntityPatch` deltas.
 [[nodiscard]] bool is_entity_patch_snapshot_delta(const SnapshotDelta& delta);
-/// Inverse of `is_empty_snapshot_delta` — true for Full or EntityPatch deltas.
-[[nodiscard]] bool is_nontrivial_snapshot_delta(const SnapshotDelta& delta);
 
 /// True when apply can be skipped because the delta carries no state changes (B7.4 deepen follow-up).
 [[nodiscard]] bool should_skip_delta_apply(const SnapshotDelta& delta);
 
-/// True when an empty delta would not advance frame or checksum metadata (B7.4 deepen follow-up).
-[[nodiscard]] bool is_redundant_empty_delta(const GameSnapshot& base, const SnapshotDelta& delta);
-
-/// True when history apply can skip reconstruction for a redundant empty delta (B7.4 deepen follow-up).
-[[nodiscard]] bool should_skip_redundant_empty_apply(const GameSnapshot& base, const SnapshotDelta& delta);
-/// True when verified apply can be skipped (preflight passes and delta is empty).
-[[nodiscard]] bool can_skip_verified_delta_apply(const GameSnapshot& base, const SnapshotDelta& delta);
-
 /// Convenience guard — `preflight_snapshot_delta(base, delta).can_apply()` (B7.4 deepen follow-up).
 [[nodiscard]] bool can_apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
-
-/// Convenience guard — `!can_apply_snapshot_delta(base, delta)` (B7.4 deepen follow-up).
-[[nodiscard]] bool should_reject_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
 
 /// True when apply can proceed or the delta is a no-op skip payload (B7.4 deepen follow-up).
 [[nodiscard]] bool can_apply_or_skip_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
@@ -374,14 +247,6 @@ struct SnapshotHistoryPreflight {
 /// Builds a no-op `SnapshotDeltaKind::None` delta for bandwidth-friendly frame advance (B7.4 deepen follow-up).
 [[nodiscard]] SnapshotDelta make_empty_snapshot_delta(u32 base_frame, u32 target_frame, u64 base_checksum = 0,
                                                       u64 target_checksum = 0);
-/// Mask-only preflight — validates entity mask alignment without a baseline snapshot.
-[[nodiscard]] SnapshotDeltaPreflight preflight_delta_masks(const SnapshotDelta& delta);
-/// True when verified apply should be skipped because preflight guards fail (B7.4 deepen follow-up).
-[[nodiscard]] bool should_skip_verified_apply(const GameSnapshot& base, const SnapshotDelta& delta);
-
-/// Builds a `SnapshotDeltaKind::Full` delta from authoritative snapshot bytes (B7.4 deepen follow-up).
-[[nodiscard]] SnapshotDelta make_full_snapshot_delta(u32 base_frame, u32 target_frame, u64 base_checksum,
-                                                     u64 target_checksum, const GameSnapshot& target);
 
 [[nodiscard]] SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapshot& target);
 [[nodiscard]] GameSnapshot apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
@@ -413,8 +278,6 @@ public:
     [[nodiscard]] bool has_frame(u32 frame) const { return m_buffer.has_frame(frame); }
     /// Alias for `has_frame` — retained baseline lookup before delta apply (B7.4 deepen follow-up).
     [[nodiscard]] bool has_baseline(u32 base_frame) const { return has_frame(base_frame); }
-    /// Alias for `has_frame` — target snapshot lookup before delta apply (B7.4 deepen follow-up).
-    [[nodiscard]] bool has_target_frame(u32 target_frame) const { return has_frame(target_frame); }
 
     void push(GameSnapshot snapshot);
     /// Evicts the oldest retained snapshot (no-op when empty).

@@ -70,8 +70,6 @@ bool auto_exposure_params_valid(const AutoExposureParams& params) {
         return false;
     }
     if (params.ema_alpha_down < 0.f || params.ema_alpha_down > 1.f) {
-    if (params.ema_alpha_up < 0.f || params.ema_alpha_up > 1.f || params.ema_alpha_down < 0.f ||
-        params.ema_alpha_down > 1.f) {
         return false;
     }
     return true;
@@ -83,6 +81,7 @@ bool auto_exposure_can_adapt(const AutoExposureParams& params, f32 delta_seconds
 
 bool auto_exposure_can_update_from_luminance(f32 luminance, const AutoExposureParams& params, f32 delta_seconds) {
     return measured_luminance_valid(luminance) && auto_exposure_can_adapt(params, delta_seconds);
+}
 
 bool auto_exposure_ev_anchor_valid(f32 ev, const AutoExposureParams& params) {
     return ev >= params.min_ev && ev <= params.max_ev;
@@ -94,33 +93,6 @@ bool auto_exposure_can_update_from_samples(const fuse::math::Vec3* samples, u32 
 
 bool auto_exposure_can_update_from_histogram(const LuminanceHistogram& histogram) {
     return histogram_util::canMeterFromHistogram(histogram);
-}
-
-bool auto_exposure_params_valid(const AutoExposureParams& params) {
-    if (params.min_ev > params.max_ev) {
-        return false;
-    }
-    if (params.target_luminance <= 0.f) {
-    if (params.adaptation_speed_up < 0.f || params.adaptation_speed_down < 0.f) {
-    if (params.ema_alpha_up < 0.f || params.ema_alpha_up > 1.f) {
-    if (params.ema_alpha_down < 0.f || params.ema_alpha_down > 1.f) {
-    return true;
-
-bool auto_exposure_can_adapt(const AutoExposureParams& params) {
-    return params.enabled && auto_exposure_params_valid(params);
-
-bool auto_exposure_can_update_from_luminance(f32 measured_luminance, const AutoExposureParams& params) {
-    return measured_luminance > 0.f && auto_exposure_can_adapt(params);
-    return measured_luminance > 0.f && auto_exposure_params_valid(params) && params.enabled;
-bool auto_exposure_can_update_from_histogram_with_params(const LuminanceHistogram& histogram,
-                                                         const AutoExposureParams& params, f32 delta_seconds) {
-    return auto_exposure_can_update_from_histogram(histogram) && auto_exposure_can_adapt(params, delta_seconds);
-
-bool auto_exposure_can_update_from_samples_with_params(const fuse::math::Vec3* samples, u32 count,
-    return auto_exposure_can_update_from_samples(samples, count) && auto_exposure_can_adapt(params, delta_seconds);
-
-bool auto_exposure_is_ready(const AutoExposure& exposure) {
-    return exposure.isReady();
 }
 
 f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params) {
@@ -152,7 +124,6 @@ f32 update_auto_exposure(AutoExposureState& state, f32 measured_luminance, const
     state.measured_luminance = measured_luminance;
 
     if (!auto_exposure_can_adapt(params, delta_seconds)) {
-    if (!params.enabled || !auto_exposure_params_valid(params)) {
         return state.current_ev;
     }
 
@@ -195,17 +166,10 @@ bool reset_auto_exposure_state_to_if_valid(AutoExposureState& state, f32 ev, con
     }
     reset_auto_exposure_state_to(state, ev);
     return true;
-void reset_auto_exposure_measurements(AutoExposureState& state) {
-    state.measured_luminance = 0.f;
-    state.smoothed_luminance = 0.f;
+}
 
 bool metering_percentile_valid(f32 percentile) {
     return percentile >= 0.f && percentile <= 1.f;
-void reset_auto_exposure_measurements(AutoExposureState& state) {
-    const f32 preservedEv = state.current_ev;
-    state.measured_luminance = 0.f;
-    state.smoothed_luminance = 0.f;
-    state.current_ev = preservedEv;
 }
 
 bool luminance_histogram_params_valid(const LuminanceHistogramParams& params) {
@@ -216,15 +180,6 @@ bool luminance_histogram_params_valid(const LuminanceHistogramParams& params) {
         return false;
     }
     return metering_percentile_valid(params.metering_percentile);
-    return luminance_histogram_percentile_valid(params.metering_percentile);
-}
-
-bool luminance_histogram_percentile_valid(f32 percentile) {
-    return percentile >= 0.f && percentile <= 1.f;
-}
-
-bool luminance_histogram_bin_in_range(u32 bin, const LuminanceHistogramParams& params) {
-    return params.bin_count > 0 && bin < params.bin_count;
 }
 
 bool luminance_histogram_bin_in_range(u32 bin, const LuminanceHistogramParams& params) {
@@ -242,16 +197,6 @@ bool hasMeteringSamples(const fuse::math::Vec3* samples, u32 count) {
 }
 
 bool canAccumulateFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params) {
-bool canMeterPercentile(f32 percentile, const LuminanceHistogramParams& params) {
-    return luminance_histogram_percentile_valid(percentile) && luminance_histogram_params_valid(params);
-}
-
-bool canMeterPercentileFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
-                                   f32 percentile) {
-    return canMeterFromSamples(samples, count, params) && luminance_histogram_percentile_valid(percentile);
-}
-
-bool canMeterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params) {
     return hasMeteringSamples(samples, count) && luminance_histogram_params_valid(params);
 }
 
@@ -269,29 +214,15 @@ bool canMeterFromHistogram(const LuminanceHistogram& histogram) {
 
 bool canMeterPercentile(const LuminanceHistogram& histogram, f32 percentile) {
     return metering_percentile_valid(percentile) && canMeterFromHistogram(histogram);
+}
 
 bool canMeterPercentileFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                                    f32 percentile) {
     return metering_percentile_valid(percentile) && canMeterFromSamples(samples, count, params);
-    return luminance_histogram_params_valid(histogram.params()) && hasMeteringHistogram(histogram);
-}
-
-bool canMeterAverage(const LuminanceHistogram& histogram) {
-    return canMeterFromHistogram(histogram);
-}
-
-bool canMeterAverageFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params) {
-    return canMeterFromSamples(samples, count, params);
 }
 
 void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count) {
     if (!canAccumulateFromSamples(samples, count, histogram.params())) {
-        return;
-    }
-    if (!luminance_histogram_params_valid(histogram.params())) {
-        return;
-    }
-    if (!luminance_histogram_params_valid(histogram.params())) {
         return;
     }
     for (u32 i = 0; i < count; ++i) {
@@ -302,9 +233,6 @@ void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* sa
 f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                       f32 percentile) {
     if (!canMeterPercentileFromSamples(samples, count, params, percentile)) {
-        return 0.f;
-    }
-    if (!luminance_histogram_params_valid(params)) {
         return 0.f;
     }
     LuminanceHistogram histogram;
@@ -318,17 +246,11 @@ f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count, const Luminance
     if (!canMeterPercentileFromSamples(samples, count, params, percentile)) {
         return 0.f;
     }
-    if (!luminance_histogram_params_valid(params)) {
-    if (!canMeterFromSamples(samples, count, params) || !canMeterPercentile(percentile, params)) {
-        return 0.f;
-    }
     return measurePercentile(samples, count, params, percentile);
 }
 
 f32 meterFromHistogram(const LuminanceHistogram& histogram, f32 percentile) {
     if (!canMeterPercentile(histogram, percentile)) {
-    if (!canMeterHistogram(histogram)) {
-    if (!canMeterFromHistogram(histogram) || !canMeterPercentile(percentile, histogram.params())) {
         return 0.f;
     }
     return histogram.percentileLuminance(percentile);
@@ -341,18 +263,8 @@ bool canMeterDefaultPercentile(const LuminanceHistogram& histogram) {
 f32 meterDefaultPercentile(const LuminanceHistogram& histogram) {
     if (!canMeterDefaultPercentile(histogram)) {
         return 0.f;
+    }
     return histogram.meteringLuminance();
-bool canMeterHistogram(const LuminanceHistogram& histogram) {
-    return luminance_histogram_params_valid(histogram.params()) && hasMeteringHistogram(histogram);
-f32 meterAverageFromHistogram(const LuminanceHistogram& histogram) {
-    if (!canMeterAverage(histogram)) {
-    return histogram.averageLuminance();
-
-f32 meterAverageFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params) {
-    if (!canMeterAverageFromSamples(samples, count, params)) {
-    LuminanceHistogram histogram;
-    histogram.init(params);
-    accumulateSamples(histogram, samples, count);
 }
 
 } // namespace histogram_util
@@ -365,12 +277,10 @@ bool canMeasureFromSamples(const fuse::math::Vec3* samples, u32 count) {
 
 bool hasMeteringMeter(const ExposureMeter& meter) {
     return exposure_meter_has_samples(meter);
+}
 
 f32 meterFromMeter(const ExposureMeter& meter) {
     if (!exposure_meter_can_measure(meter)) {
-    return !meter.isEmpty();
-
-    if (!hasMeteringMeter(meter)) {
         return 0.f;
     }
     return meter.averageLuminance();
@@ -378,7 +288,6 @@ f32 meterFromMeter(const ExposureMeter& meter) {
 
 f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count) {
     if (!canMeasureFromSamples(samples, count)) {
-    if (!histogram_util::hasMeteringSamples(samples, count)) {
         return 0.f;
     }
     return ExposureMeter::measureAverage(samples, count);
@@ -478,12 +387,11 @@ f32 LuminanceHistogram::meteringLuminance() const {
 
 f32 LuminanceHistogram::measureFromSamples(const fuse::math::Vec3* samples, u32 count,
                                            const LuminanceHistogramParams& params) {
-    if (!histogram_util::hasMeteringSamples(samples, count) || !luminance_histogram_params_valid(params)) {
-    if (!histogram_util::canMeterFromSamples(samples, count, params)) {
-        return 0.f;
-    }
     LuminanceHistogram histogram;
     histogram.init(params);
+    if (samples == nullptr || count == 0) {
+        return 0.f;
+    }
     for (u32 i = 0; i < count; ++i) {
         histogram.accumulate(samples[i]);
     }
@@ -505,26 +413,7 @@ bool exposure_meter_has_samples(const ExposureMeter& meter) {
 
 bool exposure_meter_can_measure(const ExposureMeter& meter) {
     return exposure_meter_has_samples(meter);
-
-namespace meter_util {
-
-bool hasMeteringMeter(const ExposureMeter& meter) {
-
 }
-
-f32 meterFromMeter(const ExposureMeter& meter) {
-    if (!hasMeteringMeter(meter)) {
-        return 0.f;
-    return meter.averageLuminance();
-
-f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count) {
-    if (!histogram_util::hasMeteringSamples(samples, count)) {
-    return ExposureMeter::measureAverage(samples, count);
-    }
-
-        return 0.f;
-
-} // namespace meter_util
 
 void ExposureMeter::accumulate(const fuse::math::Vec3& rgb) {
     m_luminanceSum += static_cast<f64>(compute_rec709_luminance(rgb));
@@ -577,10 +466,6 @@ bool AutoExposure::resetToEvIfValid(f32 ev) {
 
 f32 AutoExposure::updateFromLuminance(f32 measured_luminance, f32 delta_seconds) {
     if (!measured_luminance_valid(measured_luminance)) {
-    if (!auto_exposure_can_update_from_luminance(measured_luminance, m_params)) {
-        if (measured_luminance > 0.f) {
-            m_state.measured_luminance = measured_luminance;
-        }
         return m_state.current_ev;
     }
     if (m_params.use_ema_adaptation) {
@@ -591,16 +476,13 @@ f32 AutoExposure::updateFromLuminance(f32 measured_luminance, f32 delta_seconds)
 
 f32 AutoExposure::updateFromHistogram(const LuminanceHistogram& histogram, f32 delta_seconds) {
     if (!auto_exposure_can_update_from_histogram(histogram)) {
-    if (!histogram_util::canMeterHistogram(histogram)) {
-    if (!histogram_util::canMeterFromHistogram(histogram)) {
-    if (!auto_exposure_can_update_from_histogram_with_params(histogram, m_params, delta_seconds)) {
         return m_state.current_ev;
     }
     return updateFromLuminance(histogram.meteringLuminance(), delta_seconds);
 }
 
 f32 AutoExposure::updateFromSamples(const fuse::math::Vec3* samples, u32 count, f32 delta_seconds) {
-    if (!auto_exposure_can_update_from_samples_with_params(samples, count, m_params, delta_seconds)) {
+    if (!auto_exposure_can_update_from_samples(samples, count)) {
         return m_state.current_ev;
     }
     const f32 average = meter_util::meterFromSamples(samples, count);

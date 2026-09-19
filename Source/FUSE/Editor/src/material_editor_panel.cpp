@@ -37,14 +37,6 @@ void MaterialEditorPanel::markEditDirty_() {
 }
 
 void MaterialEditorPanel::sync(const EditorState& /*state*/, u32 materialCount) {
-    if (shouldSkipMaterialInspectorBind(materialCount)) {
-        m_catalogCount = 0u;
-        m_selectedMatId = kInvalidMaterialId;
-        unbindSelectedMaterial_();
-        m_previewDirty = true;
-        return;
-    }
-
     m_catalogCount = materialCount;
     if (m_selectedMatId >= m_catalogCount) {
         m_selectedMatId = kInvalidMaterialId;
@@ -116,8 +108,6 @@ void MaterialEditorPanel::refreshPanel() {
 
 bool MaterialEditorPanel::tryRefreshPanel() {
     if (!canRefreshPanel()) {
-    if (!canRefreshPanel() || shouldSkipPanelRefresh()) {
-bool MaterialEditorPanel::refreshPanelIfNeeded() {
         return false;
     }
     refreshPanel();
@@ -126,7 +116,6 @@ bool MaterialEditorPanel::refreshPanelIfNeeded() {
 
 bool MaterialEditorPanel::setRoughness(f32 roughness, CommandStack& cmds) {
     if (shouldSkipPropertyEdit()) {
-    if (shouldSkipMaterialEdit() || !m_binding.canPostProperty()) {
         return false;
     }
 
@@ -136,7 +125,6 @@ bool MaterialEditorPanel::setRoughness(f32 roughness, CommandStack& cmds) {
 
 bool MaterialEditorPanel::setMetallic(f32 metallic, CommandStack& cmds) {
     if (shouldSkipPropertyEdit()) {
-    if (shouldSkipMaterialEdit() || !m_binding.canPostProperty()) {
         return false;
     }
 
@@ -146,7 +134,6 @@ bool MaterialEditorPanel::setMetallic(f32 metallic, CommandStack& cmds) {
 
 bool MaterialEditorPanel::setBaseColor(f32 r, f32 g, f32 b, CommandStack& cmds) {
     if (shouldSkipPropertyEdit()) {
-    if (shouldSkipMaterialEdit() || !m_binding.canPostProperty()) {
         return false;
     }
 
@@ -156,7 +143,6 @@ bool MaterialEditorPanel::setBaseColor(f32 r, f32 g, f32 b, CommandStack& cmds) 
 
 bool MaterialEditorPanel::setShadingModel(u8 shadingModel, CommandStack& cmds) {
     if (shouldSkipPropertyEdit()) {
-    if (shouldSkipMaterialEdit() || !m_binding.canPostProperty()) {
         return false;
     }
 

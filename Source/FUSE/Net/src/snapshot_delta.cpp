@@ -298,11 +298,11 @@ u32 popcount_u8(u8 value) {
     return count;
 }
 
-} // namespace
-
 bool entity_index_trackable(u32 entity_index) {
     return entity_index < 64;
 }
+
+} // namespace
 
 bool snapshots_equivalent(const GameSnapshot& base, const GameSnapshot& target) {
     return base.frame == target.frame && base.checksum == target.checksum && base.ecs_state == target.ecs_state &&
@@ -347,16 +347,8 @@ u8 ecs_field_mask_union(u8 a, u8 b) {
     return a | b;
 }
 
-u8 ecs_field_mask_intersect(u8 a, u8 b) {
-    return a & b;
-}
-
 u8 physics_field_mask_union(u8 a, u8 b) {
     return a | b;
-}
-
-u8 physics_field_mask_intersect(u8 a, u8 b) {
-    return a & b;
 }
 
 u32 ecs_field_mask_count(u8 mask) {
@@ -376,35 +368,22 @@ u32 count_changed_entities_in_mask(u64 changed_entity_mask) {
     return popcount_u64(changed_entity_mask);
 }
 
-u64 build_changed_entity_mask_from_patches(const std::vector<SnapshotEntityPatch>& entity_patches) {
-    u64 mask = 0;
-    for (const SnapshotEntityPatch& patch : entity_patches) {
-        const u64 bit = entity_mask_bit(patch.entity_index);
-        if (bit == 0) {
-            continue;
-        }
-        mask |= bit;
-    }
-    return mask;
-}
-
-bool changed_entity_mask_matches_patches(u64 changed_entity_mask,
-                                         const std::vector<SnapshotEntityPatch>& entity_patches) {
-    for (const SnapshotEntityPatch& patch : entity_patches) {
-        if (!entity_index_in_changed_mask(changed_entity_mask, patch.entity_index)) {
-            return false;
-        }
-    }
-    return changed_entity_mask == build_changed_entity_mask_from_patches(entity_patches);
-}
-
 bool validate_changed_entity_mask(const SnapshotDelta& delta) {
     switch (delta.kind) {
     case SnapshotDeltaKind::None:
     case SnapshotDeltaKind::Full:
         return delta.changed_entity_mask == 0;
-    case SnapshotDeltaKind::EntityPatch:
-        return changed_entity_mask_matches_patches(delta.changed_entity_mask, delta.entity_patches);
+    case SnapshotDeltaKind::EntityPatch: {
+        u64 expected_mask = 0;
+        for (const SnapshotEntityPatch& patch : delta.entity_patches) {
+            const u64 bit = entity_mask_bit(patch.entity_index);
+            if (bit == 0) {
+                return false;
+            }
+            expected_mask |= bit;
+        }
+        return delta.changed_entity_mask == expected_mask;
+    }
     }
 
     return true;
@@ -415,48 +394,6 @@ bool entity_mask_popcount_matches_patches(const SnapshotDelta& delta) {
         return true;
     }
     return count_changed_entities_in_mask(delta.changed_entity_mask) == delta.entity_patches.size();
-}
-
-bool ecs_field_mask_valid(u8 mask) {
-    return ecs_field_mask_subset(mask, static_cast<u8>(SnapshotEcsField::All));
-}
-
-bool physics_field_mask_valid(u8 mask) {
-    return physics_field_mask_subset(mask, static_cast<u8>(SnapshotPhysicsField::All));
-}
-
-bool validate_entity_field_masks(const SnapshotEntityPatch& patch) {
-    return ecs_field_mask_valid(patch.changed_ecs_fields) && physics_field_mask_valid(patch.changed_physics_fields);
-}
-
-bool validate_entity_patch_indices_unique(const SnapshotDelta& delta) {
-    if (delta.kind != SnapshotDeltaKind::EntityPatch) {
-        return true;
-    }
-
-    u64 seen_mask = 0;
-    for (const SnapshotEntityPatch& patch : delta.entity_patches) {
-        const u64 bit = entity_mask_bit(patch.entity_index);
-        if (bit == 0 || (seen_mask & bit) != 0) {
-            return false;
-        }
-        seen_mask |= bit;
-    }
-    return true;
-}
-
-bool is_full_snapshot_delta(const SnapshotDelta& delta) {
-    return delta.kind == SnapshotDeltaKind::Full;
-}
-
-bool validate_full_delta_payload(const SnapshotDelta& delta) {
-    if (delta.kind != SnapshotDeltaKind::Full) {
-        return true;
-    }
-    if (!delta.entity_patches.empty() || delta.changed_entity_mask != 0) {
-        return false;
-    }
-    return !delta.full_ecs_state.empty() || !delta.full_physics_state.empty();
 }
 
 u32 expected_ecs_patch_bytes(u8 changed_ecs_fields) {
@@ -532,41 +469,6 @@ bool validate_entity_patch_indices_unique(const SnapshotDelta& delta) {
     return true;
 }
 
-bool validate_entity_patch_trackable(const SnapshotEntityPatch& patch) {
-    return entity_index_trackable(patch.entity_index);
-}
-
-bool validate_entity_patch_indices_trackable(const SnapshotDelta& delta) {
-    if (delta.kind != SnapshotDeltaKind::EntityPatch) {
-        return true;
-    }
-
-    for (const SnapshotEntityPatch& patch : delta.entity_patches) {
-        if (!validate_entity_patch_trackable(patch)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool validate_delta_frame_order(const SnapshotDelta& delta) {
-    return delta.target_frame >= delta.base_frame;
-}
-
-bool is_valid_snapshot_delta_kind(SnapshotDeltaKind kind) {
-    switch (kind) {
-    case SnapshotDeltaKind::None:
-    case SnapshotDeltaKind::Full:
-    case SnapshotDeltaKind::EntityPatch:
-        return true;
-    }
-    return false;
-}
-
-bool validate_delta_kind(const SnapshotDelta& delta) {
-    return is_valid_snapshot_delta_kind(delta.kind);
-}
-
 bool validate_full_delta_payload(const SnapshotDelta& delta) {
     if (delta.kind != SnapshotDeltaKind::Full) {
         return true;
@@ -622,37 +524,7 @@ bool physics_field_mask_nonempty(u8 mask) {
     return mask != 0;
 }
 
-bool ecs_field_mask_valid(u8 mask) {
-    return (mask & ~static_cast<u8>(SnapshotEcsField::All)) == 0;
-}
-
-bool physics_field_mask_valid(u8 mask) {
-    return (mask & ~static_cast<u8>(SnapshotPhysicsField::All)) == 0;
-}
-
-bool validate_entity_patch_field_masks(const SnapshotEntityPatch& patch) {
-    return ecs_field_mask_valid(patch.changed_ecs_fields) && physics_field_mask_valid(patch.changed_physics_fields);
-}
-
-bool validate_entity_patch_trackable(const SnapshotEntityPatch& patch) {
-    return entity_index_trackable(patch.entity_index);
-}
-
-bool target_frame_is_valid(const SnapshotDelta& delta) {
-    return delta.target_frame >= delta.base_frame;
-}
-
-bool validate_full_delta_payload(const SnapshotDelta& delta) {
-    if (delta.kind != SnapshotDeltaKind::Full) {
-        return true;
-    }
-    return !delta.full_ecs_state.empty() || !delta.full_physics_state.empty();
-}
-
 bool validate_entity_patch_masks(const SnapshotEntityPatch& patch) {
-    if (!validate_entity_field_masks(patch)) {
-        return false;
-    }
     if (patch.changed_ecs_fields == 0 && patch.changed_physics_fields == 0) {
         return false;
     }
@@ -680,8 +552,7 @@ bool validate_delta_payload(const SnapshotDelta& delta) {
             return false;
         }
         for (const SnapshotEntityPatch& patch : delta.entity_patches) {
-            if (!validate_entity_patch_masks(patch) || !validate_entity_patch_field_masks(patch) ||
-                !validate_entity_patch_trackable(patch)) {
+            if (!validate_entity_patch_masks(patch)) {
                 return false;
             }
             if (!validate_entity_patch_index_in_mask(patch, delta.changed_entity_mask)) {
@@ -689,7 +560,7 @@ bool validate_delta_payload(const SnapshotDelta& delta) {
             }
         }
         return validate_changed_entity_mask(delta) && entity_mask_popcount_matches_patches(delta) &&
-               validate_entity_patch_indices_unique(delta) && validate_entity_patch_indices_trackable(delta);
+               validate_entity_patch_indices_unique(delta);
     }
 
     return false;
@@ -705,8 +576,6 @@ bool is_full_snapshot_delta(const SnapshotDelta& delta) {
 
 bool is_entity_patch_snapshot_delta(const SnapshotDelta& delta) {
     return delta.kind == SnapshotDeltaKind::EntityPatch;
-bool is_nontrivial_snapshot_delta(const SnapshotDelta& delta) {
-    return !is_empty_snapshot_delta(delta);
 }
 
 bool should_skip_delta_apply(const SnapshotDelta& delta) {
@@ -720,26 +589,6 @@ SnapshotDelta make_empty_snapshot_delta(u32 base_frame, u32 target_frame, u64 ba
     delta.base_checksum = base_checksum;
     delta.target_checksum = target_checksum;
     delta.kind = SnapshotDeltaKind::None;
-    return delta;
-bool is_redundant_empty_delta(const GameSnapshot& base, const SnapshotDelta& delta) {
-    return is_empty_snapshot_delta(delta) && delta.target_frame == base.frame &&
-           (delta.target_checksum == 0 || delta.target_checksum == base.checksum);
-}
-
-bool should_skip_redundant_empty_apply(const GameSnapshot& base, const SnapshotDelta& delta) {
-    return is_redundant_empty_delta(base, delta);
-}
-
-SnapshotDelta make_full_snapshot_delta(u32 base_frame, u32 target_frame, u64 base_checksum, u64 target_checksum,
-                                       const GameSnapshot& target) {
-    SnapshotDelta delta;
-    delta.base_frame = base_frame;
-    delta.target_frame = target_frame;
-    delta.base_checksum = base_checksum;
-    delta.target_checksum = target_checksum;
-    delta.kind = SnapshotDeltaKind::Full;
-    delta.full_ecs_state = target.ecs_state;
-    delta.full_physics_state = target.physics_state;
     return delta;
 }
 
@@ -913,34 +762,13 @@ u64 compute_delta_checksum(const SnapshotDelta& delta) {
     return fnv1a64_bytes(writer.buffer.data(), writer.buffer.size());
 }
 
-SnapshotDeltaPreflight preflight_delta_masks(const SnapshotDelta& delta) {
+SnapshotDeltaPreflight preflight_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta) {
     SnapshotDeltaPreflight result;
     result.empty_delta = is_empty_snapshot_delta(delta);
-    result.base_checksum_ok = true;
-    result.base_frame_ok = true;
-    result.kind_ok = validate_delta_kind(delta);
-    result.target_frame_ok = validate_delta_frame_order(delta);
-    result.trackable_indices_ok = validate_entity_patch_indices_trackable(delta);
     result.base_checksum_ok = verify_delta_base_checksum(base, delta);
     result.entity_mask_ok = validate_changed_entity_mask(delta);
     result.mask_popcount_ok = entity_mask_popcount_matches_patches(delta);
-    result.field_masks_ok = delta.kind != SnapshotDeltaKind::EntityPatch ||
-                            std::all_of(delta.entity_patches.begin(), delta.entity_patches.end(),
-                                        [](const SnapshotEntityPatch& patch) {
-                                            return validate_entity_field_masks(patch);
-                                        });
-    result.patch_indices_unique_ok = validate_entity_patch_indices_unique(delta);
-    result.full_payload_ok = validate_full_delta_payload(delta);
     result.base_frame_ok = delta.base_frame == base.frame;
-    result.target_frame_ok = target_frame_is_valid(delta);
-    result.field_masks_ok = true;
-    if (delta.kind == SnapshotDeltaKind::EntityPatch) {
-        for (const SnapshotEntityPatch& patch : delta.entity_patches) {
-            if (!validate_entity_patch_field_masks(patch)) {
-                result.field_masks_ok = false;
-                break;
-            }
-    result.full_payload_ok = validate_full_delta_payload(delta);
     result.payload_ok = validate_delta_payload(delta);
     result.full_payload_ok = validate_full_delta_payload(delta);
     result.target_frame_ok = validate_delta_target_frame(delta);
@@ -950,28 +778,12 @@ SnapshotDeltaPreflight preflight_delta_masks(const SnapshotDelta& delta) {
     return result;
 }
 
-SnapshotDeltaPreflight preflight_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta) {
-    SnapshotDeltaPreflight result = preflight_delta_masks(delta);
-    result.base_checksum_ok = verify_delta_base_checksum(base, delta);
-    result.base_frame_ok = delta.base_frame == base.frame;
-    return result;
-}
-
 bool can_apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta) {
     return preflight_snapshot_delta(base, delta).can_apply();
 }
 
-bool should_reject_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta) {
-    return !can_apply_snapshot_delta(base, delta);
-}
-
 bool can_apply_or_skip_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta) {
     return can_apply_snapshot_delta(base, delta) || should_skip_delta_apply(delta);
-bool can_skip_verified_delta_apply(const GameSnapshot& base, const SnapshotDelta& delta) {
-    const SnapshotDeltaPreflight preflight = preflight_snapshot_delta(base, delta);
-    return preflight.can_apply() && preflight.should_skip_apply();
-bool should_skip_verified_apply(const GameSnapshot& base, const SnapshotDelta& delta) {
-    return !can_apply_snapshot_delta(base, delta);
 }
 
 DeltaApplyResult apply_snapshot_delta_verified(const GameSnapshot& base, const SnapshotDelta& delta) {
@@ -987,9 +799,6 @@ DeltaApplyResult apply_snapshot_delta_verified(const GameSnapshot& base, const S
     result.full_payload_ok = preflight.full_payload_ok;
     result.target_frame_ok = preflight.target_frame_ok;
     result.trackable_indices_ok = preflight.trackable_indices_ok;
-    result.field_masks_ok = preflight.field_masks_ok;
-    result.empty_delta = preflight.empty_delta;
-    result.kind_ok = preflight.kind_ok;
     result.snapshot = apply_snapshot_delta(base, delta);
 
     if (delta.target_checksum != 0) {
@@ -1132,11 +941,6 @@ SnapshotHistoryPreflight SnapshotHistoryRing::preflight_apply_delta(u32 base_fra
         return result;
     }
 
-    if (delta.base_frame != base_frame) {
-        result.base_frame_mismatch = true;
-        return result;
-    }
-
     result.has_baseline = has_baseline(base_frame);
     if (!result.has_baseline) {
         return result;
@@ -1145,12 +949,12 @@ SnapshotHistoryPreflight SnapshotHistoryRing::preflight_apply_delta(u32 base_fra
     const GameSnapshot* base = m_buffer.snapshot(base_frame);
     result.delta_preflight = preflight_snapshot_delta(*base, delta);
     result.skipped = result.delta_preflight.empty_delta;
-    result.target_already_stored = has_target_frame(delta.target_frame);
     return result;
 }
 
 bool SnapshotHistoryRing::should_skip_apply_delta(u32 base_frame, const SnapshotDelta& delta) const {
-    return preflight_apply_delta(base_frame, delta).should_skip_apply();
+    const SnapshotHistoryPreflight preflight = preflight_apply_delta(base_frame, delta);
+    return preflight.ring_empty || !preflight.has_baseline || preflight.skipped;
 }
 
 bool SnapshotHistoryRing::can_apply_or_skip_delta(u32 base_frame, const SnapshotDelta& delta) const {

@@ -10,16 +10,10 @@
 
 namespace fuse::animation {
 
-/// True when `skel` has no bones (blend-tree evaluate early-out guard).
-[[nodiscard]] bool skeleton_is_empty(const Skeleton& skel);
-
 struct BlendNode {
     virtual ~BlendNode() = default;
     virtual void evaluate(f32 dt, const Skeleton& skel, Pose& out) = 0;
     virtual void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out);
-
-    /// True when the node has no evaluable content (no clip, no children, or no states).
-    [[nodiscard]] virtual bool is_empty() const { return false; }
 };
 
 struct ClipNode : BlendNode {
@@ -29,7 +23,6 @@ struct ClipNode : BlendNode {
     bool looping = true;
 
     [[nodiscard]] bool is_empty() const;
-    [[nodiscard]] bool is_empty() const override;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -40,7 +33,7 @@ struct BlendNode2 : BlendNode {
     std::unique_ptr<BlendNode> b;
     f32* blend_param = nullptr;
 
-    [[nodiscard]] bool is_empty() const override;
+    [[nodiscard]] bool is_empty() const;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -56,7 +49,7 @@ struct BlendSpace1D : BlendNode {
     std::vector<Entry> entries;
     f32* param = nullptr;
 
-    [[nodiscard]] bool is_empty() const override;
+    [[nodiscard]] bool is_empty() const;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -72,7 +65,7 @@ struct BlendSpace2D : BlendNode {
     std::vector<Entry> entries;
     vec2* param = nullptr;
 
-    [[nodiscard]] bool is_empty() const override;
+    [[nodiscard]] bool is_empty() const;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -100,7 +93,7 @@ struct LayeredBlendNode : BlendNode {
     std::vector<u32> masked_bones;
     f32 layer_weight = 1.f;
 
-    [[nodiscard]] bool is_empty() const override;
+    [[nodiscard]] bool is_empty() const;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -113,7 +106,7 @@ struct AdditiveBlendNode : BlendNode {
     std::vector<u32> masked_bones;
     f32 layer_weight = 1.f;
 
-    [[nodiscard]] bool is_empty() const override;
+    [[nodiscard]] bool is_empty() const;
 
     void evaluate(f32 dt, const Skeleton& skel, Pose& out) override;
     void evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) override;
@@ -150,7 +143,7 @@ struct AnimStateMachine : BlendNode {
     void add_state(std::string name, std::unique_ptr<BlendNode> node);
     void add_transition(const char* from, const char* to, f32 duration, std::function<bool()> condition);
 
-    [[nodiscard]] bool is_empty() const override;
+    [[nodiscard]] bool is_empty() const;
 
     /// Crossfade blend weight in [0, 1] while transitioning; 0 when idle.
     f32 crossfade_alpha() const;
@@ -215,19 +208,6 @@ struct AnimStateMachine : BlendNode {
     /// True when a named transition edge exists and its condition passes.
     bool can_transition(const char* from, const char* to) const;
 
-    /// True when both state indices are valid, distinct, and connected by a registered edge.
-    bool is_valid_transition(u32 from_state, u32 to_state) const;
-
-    /// True when `transition_index` is within the registered transition list.
-    bool is_transition_index_valid(u32 transition_index) const;
-    /// Index of the named transition edge, or -1 when missing.
-    s32 find_named_transition_index(const char* from, const char* to) const;
-
-    /// True when both states are registered, distinct, and an edge exists between them.
-
-    /// True when `is_valid_transition` passes and the edge condition passes (or is unset).
-    bool can_take_transition(u32 from_state, u32 to_state) const;
-
     /// Remaining crossfade time in seconds; 0 when idle or already complete.
     f32 remaining_crossfade_time() const;
 
@@ -266,56 +246,6 @@ struct AnimStateMachine : BlendNode {
 
     /// True when the `transition_index`-th registered edge's condition passes (or no condition).
     bool transition_condition_passes_at(u32 transition_index) const;
-    /// Index of the named transition edge, or -1 when missing.
-    s32 find_named_transition_index(const char* from, const char* to) const;
-
-    /// True when the `edge_index`-th outgoing transition from `from_state` passes its condition.
-
-    /// Global transition index of the first passing outgoing edge from `from_state`, or -1.
-
-    /// True when any outgoing transition from `from_state` passes its condition.
-    bool outgoing_transition_condition_passes(u32 from_state, u32 edge_index) const;
-
-    s32 find_first_passing_outgoing_transition(u32 from_state) const;
-
-    /// True when `index` is a registered transition list index.
-    bool is_valid_transition_index(u32 index) const;
-
-    /// Source state for the `index`-th registered transition, or -1 when invalid.
-    s32 transition_from_at(u32 index) const;
-
-    /// Destination state for the `index`-th registered transition, or -1 when invalid.
-    s32 transition_to_at(u32 index) const;
-
-    /// Blend duration for the `index`-th registered transition, or -1 when invalid.
-    f32 transition_blend_duration_at(u32 index) const;
-
-    /// True when both state indices are valid, distinct, and a transition edge exists.
-    bool is_valid_transition_edge(u32 from_state, u32 to_state) const;
-
-    /// True when both states are registered, distinct, and an edge exists between them.
-    bool is_valid_transition(u32 from_state, u32 to_state) const;
-
-    /// True when `is_valid_transition` passes and the edge condition passes (or is unset).
-    bool can_take_transition(u32 from_state, u32 to_state) const;
-
-    /// True when any outgoing edge from `from_state` has a passing condition.
-
-    /// Source state for the `transition_index`-th registered edge, or -1 when out of range.
-
-    /// Destination state for the `transition_index`-th registered edge, or -1 when out of range.
-
-    /// Blend duration for the `transition_index`-th registered edge, or -1 when out of range.
-
-    /// True when the `transition_index`-th registered edge has a passing condition.
-
-    /// Global index of the first outgoing edge from `from_state`, or -1 when none exist.
-    s32 first_outgoing_transition_index(u32 from_state) const;
-
-
-    /// True while crossfading and `pending_state` is a registered state index.
-
-    /// True when the `transition_index`-th registered edge condition passes (or has none).
 };
 
 } // namespace fuse::animation

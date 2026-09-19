@@ -30,13 +30,6 @@ struct RadiusFilterPolicy {
 [[nodiscard]] float distance_sq_2d(float ax, float ay, float bx, float by);
 [[nodiscard]] bool within_radius(float distanceSq, float radius);
 [[nodiscard]] bool is_valid_ally_radius(float radius);
-[[nodiscard]] bool is_valid_radius_policy(const RadiusFilterPolicy& policy);
-[[nodiscard]] u32 effective_min_count(const RadiusFilterPolicy& policy);
-/// True when `radius` is positive and finite — required for count/filter leaves.
-[[nodiscard]] bool is_finite_ally_radius(float radius);
-/// True when `radius` is zero or negative — nearest-ally max-radius unlimited sentinel.
-[[nodiscard]] bool is_unlimited_radius(float radius);
-[[nodiscard]] bool radius_filter_policy_is_valid(const RadiusFilterPolicy& policy);
 [[nodiscard]] float effective_radius(const RadiusFilterPolicy& policy);
 [[nodiscard]] u32 effective_min_count(const RadiusFilterPolicy& policy);
 [[nodiscard]] float radius_sq_from_policy(const RadiusFilterPolicy& policy);
@@ -115,26 +108,5 @@ struct RadiusFilterPolicy {
 
 /// True when `allies` is non-null and contains at least one entry.
 [[nodiscard]] bool ally_context_available(const std::vector<AllyCandidate>* allies);
-
-/// True when `policy.radius` is positive and `policy.minCount` is at least 1.
-[[nodiscard]] bool is_radius_filter_policy_valid(const RadiusFilterPolicy& policy);
-
-/// Clamp negative radius to zero and enforce `minCount >= 1`.
-[[nodiscard]] RadiusFilterPolicy normalize_radius_filter_policy(const RadiusFilterPolicy& policy);
-
-/// Count same-team allies strictly outside `radius` of (`x`, `y`), excluding `selfIndex`.
-[[nodiscard]] u32 count_allies_outside_radius(u32 selfIndex,
-                                              u32 teamId,
-                                              float x,
-                                              float y,
-                                              float radius,
-                                              const std::vector<AllyCandidate>& allies);
-
-/// True when at least one same-team ally lies outside `radius` (excludes self).
-[[nodiscard]] bool has_ally_outside_radius(u32 selfIndex,
-[[nodiscard]] bool is_radius_policy_valid(const RadiusFilterPolicy& policy);
-
-/// True when radius is positive and ally context is available.
-[[nodiscard]] bool ally_radius_query_valid(float radius, const std::vector<AllyCandidate>* allies);
 
 } // namespace fuse::ai

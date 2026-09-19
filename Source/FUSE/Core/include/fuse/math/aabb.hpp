@@ -153,45 +153,6 @@ struct AABB {
         f32 tExit = 0.f;
         return rayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
     }
-
-    /// Slab ray interval with early-out on empty bounds; returns false on miss.
-    bool tryRayInterval(const Vec3& origin, const Vec3& direction, f32& tEnter, f32& tExit) const {
-        if (isEmpty()) {
-            return false;
-        }
-        return rayInterval(origin, direction, tEnter, tExit);
-    }
-
-    /// Ray interval clamped with early-out on empty bounds or inverted `[tMin, tMax]`.
-    bool tryRayIntervalClamped(const Vec3& origin, const Vec3& direction, f32 tMin, f32 tMax, f32& tEnter,
-                               f32& tExit) const {
-        if (isEmpty() || tMin > tMax) {
-            return false;
-        }
-        return rayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
-    }
-
-    /// Ray hit test with early-out on empty bounds or inverted `[tMin, tMax]`.
-    bool tryRayHits(const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
-                    f32 tMax = std::numeric_limits<f32>::max()) const {
-        if (isEmpty() || tMin > tMax) {
-            return false;
-        }
-        return rayHits(origin, direction, tMin, tMax);
-    }
-
-    /// Ray intersection with early-out on empty bounds; writes parametric hit into `t` on success.
-    bool tryRayIntersect(const Vec3& origin, const Vec3& direction, f32& t) const {
-        if (isEmpty()) {
-            return false;
-        }
-        const f32 hit = rayIntersect(origin, direction);
-        if (hit < 0.f) {
-            return false;
-        }
-        t = hit;
-        return true;
-    }
 };
 
 /// Transforms an AABB through an affine matrix using the absolute linear-part envelope.
@@ -252,64 +213,48 @@ inline AABB mergeAabb(const AABB& a, const AABB& b) {
 }
 
 /// Slab ray interval with empty-box early-out; returns false when `box` is empty.
-/// Writes slab interval on hit; returns false for empty boxes or ray miss.
 inline bool tryRayInterval(const AABB& box, const Vec3& origin, const Vec3& direction, f32& tEnter,
                            f32& tExit) {
     if (box.isEmpty()) {
         return false;
     }
     return box.rayInterval(origin, direction, tEnter, tExit);
+}
 
 /// Clamped slab ray interval with empty-box early-out.
 inline bool tryRayIntervalClamped(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin,
                                   f32 tMax, f32& tEnter, f32& tExit) {
+    if (box.isEmpty()) {
+        return false;
+    }
     return box.rayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
-
-/// Segment ray hit test with empty-box early-out.
-/// Writes the nearest forward hit distance; returns false for empty boxes or ray miss.
-inline bool tryRayIntersect(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
-    t = box.rayIntersect(origin, direction);
-    return t >= 0.f;
-
-/// True when the ray hits the box within `[tMin, tMax]`; returns false for empty boxes.
-inline bool tryRayHits(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
-                       f32 tMax = std::numeric_limits<f32>::max()) {
-    return box.rayHits(origin, direction, tMin, tMax);
-
-/// Writes parametric hit distance to `t` when the box is non-empty and the ray hits; returns false on early-out.
-    const f32 hit = box.rayIntersect(origin, direction);
-    if (hit < 0.f) {
-    t = hit;
-    return true;
-
-/// Writes transformed bounds when `box` is non-empty; returns false on empty early-out.
-inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
-/// Ray interval clamped to `[tMin, tMax]`; returns false for empty boxes, inverted clamp, or miss.
-
-/// Transforms an AABB through a rigid affine matrix; returns false for empty boxes or non-rigid matrices.
-inline bool tryTransformRigidAabb(const Mat4& matrix, const AABB& box, AABB& out, f32 epsilon = 1e-4f) {
-    if (!isRigid(matrix, epsilon)) {
-
-/// Fast AABB transform when the matrix is rigid; returns false for non-rigid linear parts.
-inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out, f32 epsilon = 1e-4f) {
-        out = box;
-    out = transformAabb(matrix, box);
-    return true;
 }
 
-/// Slab ray intersection with empty-box early-out; writes parametric entry distance into `t`.
+/// Segment ray hit test with empty-box early-out.
+inline bool tryRayHits(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
+                       f32 tMax = std::numeric_limits<f32>::max()) {
+    if (box.isEmpty()) {
+        return false;
+    }
+    return box.rayHits(origin, direction, tMin, tMax);
+}
+
+/// Writes parametric hit distance to `t` when the box is non-empty and the ray hits; returns false on early-out.
 inline bool tryRayIntersect(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
     if (box.isEmpty()) {
         return false;
     }
-    t = box.rayIntersect(origin, direction);
-    return t >= 0.f;
+    const f32 hit = box.rayIntersect(origin, direction);
+    if (hit < 0.f) {
+        return false;
+    }
+    t = hit;
+    return true;
 }
 
-/// Transforms an AABB when the source bounds are valid; returns false on empty input.
+/// Writes transformed bounds when `box` is non-empty; returns false on empty early-out.
 inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
     if (box.isEmpty()) {
-        out = box;
         return false;
     }
     out = transformAabb(matrix, box);

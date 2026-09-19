@@ -2,7 +2,6 @@ add_library(fuse_ai STATIC
     src/agent_snapshot.cpp
     src/behavior_tree.cpp
     src/blackboard.cpp
-    src/parallel_policy.cpp
     src/behavior_runtime.cpp
     src/node_registry.cpp
     src/spatial_query.cpp
@@ -10,7 +9,6 @@ add_library(fuse_ai STATIC
     include/fuse/ai/agent_snapshot.hpp
     include/fuse/ai/blackboard.hpp
     include/fuse/ai/behavior_tree.hpp
-    include/fuse/ai/parallel_policy.hpp
     include/fuse/ai/behavior_runtime.hpp
     include/fuse/ai/node_registry.hpp
     include/fuse/ai/spatial_query.hpp

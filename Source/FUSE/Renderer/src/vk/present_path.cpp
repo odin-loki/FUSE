@@ -68,12 +68,6 @@ bool PresentPath::processPendingResize() {
         m_status.resizePending = false;
         ++m_status.resizeNoOpCount;
         m_status.message = "Resize no-op — pending extent matches current swapchain";
-    if (resizeExtentMatches(m_status.pendingResizeWidth, m_status.pendingResizeHeight, m_status.width,
-                            m_status.height)) {
-        if (m_status.state == PresentPathState::ResizePending) {
-            m_status.state = PresentPathState::Idle;
-        }
-        m_status.message = "Resize skipped — pending extent matches current swapchain";
         return true;
     }
 
@@ -157,10 +151,6 @@ u32 PresentPath::acquireImage() {
 
     u32 imageIndex = UINT32_MAX;
     if (!shouldSkipAcquireForEmptySwapchain(swapchain) && frameManager != nullptr && frameManager->isReady()) {
-    const bool earlyOutAcquire = shouldEarlyOutEmptySwapchainAcquire(swapchain, frameManager);
-    if (earlyOutAcquire) {
-        ++m_status.emptyAcquireEarlyOutCount;
-    } else {
         const FrameSyncData& slot = frameManager->current();
         imageIndex = swapchain->acquireNextImage(slot.imageAvailable);
     }
@@ -170,11 +160,8 @@ u32 PresentPath::acquireImage() {
     m_status.state = PresentPathState::ImageAcquired;
     if (isEmptyAcquireResult(imageIndex)) {
         ++m_status.emptyAcquireCount;
-        m_status.message = earlyOutAcquire
-                               ? (m_status.headless ? "Headless acquire early-out (empty swapchain)"
-                                                    : "Empty swapchain acquire early-out")
-                               : (m_status.headless ? "Headless acquire stub (no swapchain image)"
-                                                    : "Swapchain acquire returned no image");
+        m_status.message = m_status.headless ? "Headless acquire stub (no swapchain image)"
+                                             : "Swapchain acquire returned no image";
     } else {
         m_status.message = "Swapchain image acquired";
     }
@@ -291,14 +278,6 @@ void PresentPath::requestResize(u32 width, u32 height) {
 
     if (isResizeCoalesceRequest(m_status.resizePending, m_status.pendingResizeWidth, m_status.pendingResizeHeight,
                                 width, height)) {
-    if (!m_status.resizePending &&
-        resizeExtentMatches(width, height, m_status.width, m_status.height)) {
-        ++m_status.resizeNoOpCount;
-        m_status.message = "Resize ignored — extent matches current swapchain";
-
-    if (m_status.resizePending) {
-        if (resizeExtentMatches(width, height, m_status.pendingResizeWidth, m_status.pendingResizeHeight)) {
-            m_status.message = "Resize ignored — extent matches pending resize";
         ++m_status.resizeCoalesceCount;
     }
 
@@ -323,19 +302,6 @@ bool PresentPath::recreateSwapchain() {
         return true;
     }
     return processPendingResize();
-}
-
-PendingResizeExtent PresentPath::pendingResizeExtent() const {
-    PendingResizeExtent extent{};
-    if (!m_status.resizePending || !isValidSwapchainExtent(m_status.pendingResizeWidth,
-                                                           m_status.pendingResizeHeight)) {
-        return extent;
-    }
-
-    extent.pending = true;
-    extent.width = m_status.pendingResizeWidth;
-    extent.height = m_status.pendingResizeHeight;
-    return extent;
 }
 
 } // namespace fuse::renderer

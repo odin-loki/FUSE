@@ -93,35 +93,6 @@ struct LodResidencyBudgetCounters {
 
 [[nodiscard]] inline bool is_at_async_in_flight_cap(u32 in_flight, u32 max_async_in_flight) {
     return !can_submit_async_load(in_flight, max_async_in_flight);
-/// True when in-flight plus undrained completions would exceed the pending submit cap.
-[[nodiscard]] inline bool would_exceed_async_budget(u32 in_flight, u32 completed_undrained,
-                                                    u32 max_pending_submits) {
-    if (max_pending_submits == 0u) {
-        return false;
-    }
-    return in_flight + completed_undrained >= max_pending_submits;
-
-/// Guard: async submit allowed when both in-flight and pending-submit caps have headroom.
-[[nodiscard]] inline bool can_submit_async_load_guarded(u32 in_flight, u32 completed_undrained,
-                                                        u32 max_async_in_flight, u32 max_pending_submits) {
-    return can_submit_async_load(in_flight, max_async_in_flight) &&
-           !would_exceed_async_budget(in_flight, completed_undrained, max_pending_submits);
-
-[[nodiscard]] inline bool would_exceed_pending_submits(u32 in_flight, u32 completed, u32 max_pending) {
-    if (max_pending == 0u) {
-    return in_flight + completed >= max_pending;
-
-[[nodiscard]] inline bool can_submit_residency_request(u32 in_flight, u32 completed, u32 max_pending) {
-    return !would_exceed_pending_submits(in_flight, completed, max_pending);
-
-/// Merge load rank with stored priority and focus distance for unload ordering (B7.5 deepen).
-[[nodiscard]] inline f32 rank_unload_priority(f32 load_priority, f32 stored_priority, f32 focus_distance) {
-    return std::max({load_priority, stored_priority, focus_distance});
-
-/// Merge unload rank with a budget eviction score for queue ordering (B7.5 deepen).
-[[nodiscard]] inline f32 rank_budget_unload_priority(f32 load_priority, f32 stored_priority, f32 focus_distance,
-                                                     f32 budget_score) {
-    return std::max(rank_unload_priority(load_priority, stored_priority, focus_distance), budget_score);
 }
 
 [[nodiscard]] inline u32 async_in_flight_headroom(u32 max_async_in_flight, u32 in_flight) {
@@ -256,45 +227,5 @@ struct LodResidencyBudgetCounters {
 
 /// True when an eviction score is positive (eligible for budget eviction ordering).
 [[nodiscard]] inline bool is_positive_eviction_score(f32 score) { return score > 0.f; }
-/// Combine stream-out unload priority with any stored chunk priority (B7.5 stub).
-/// Merge streaming and stored unload priorities (B7.5 deepen — mirrors B7.6).
-[[nodiscard]] inline f32 effective_unload_priority(f32 streaming_priority, f32 stored_priority) {
-    return std::max(streaming_priority, stored_priority);
-}
-
-/// Rank unload pressure for eviction queue ordering (B7.5 deepen).
-[[nodiscard]] inline f32 rank_unload_priority(f32 streaming_priority, f32 stored_priority, f32 focus_distance) {
-    return std::max({streaming_priority, stored_priority, focus_distance});
-
-/// Merge unload rank with a budget eviction score for queue ordering (B7.5 deepen).
-[[nodiscard]] inline f32 rank_budget_unload_priority(f32 streaming_priority, f32 stored_priority,
-                                                     f32 focus_distance, f32 budget_score) {
-    return std::max(rank_unload_priority(streaming_priority, stored_priority, focus_distance), budget_score);
-/// Rank unload candidates by streaming, stored, and focus distance (B7.5 deepen).
-
-
-[[nodiscard]] inline bool is_at_async_in_flight_cap(u32 in_flight, u32 max_async_in_flight) {
-    return !can_submit_async_load(in_flight, max_async_in_flight);
-
-/// True when in-flight plus completed buffer would exceed the async pending-submit cap.
-[[nodiscard]] inline bool would_exceed_pending_submit_budget(u32 in_flight, u32 completed,
-                                                             u32 max_pending_submits) {
-    if (max_pending_submits == 0u) {
-        return false;
-    return in_flight + completed >= max_pending_submits;
-    }
-
-/// Guard: returns false when the pending-submit budget is already saturated.
-[[nodiscard]] inline bool can_submit_pending_request(u32 in_flight, u32 completed, u32 max_pending_submits) {
-    return !would_exceed_pending_submit_budget(in_flight, completed, max_pending_submits);
-}
-
-/// Guard: clamp how many async submits can be issued this tick given in-flight headroom.
-[[nodiscard]] inline u32 clamp_async_submits_per_tick(u32 requested, u32 in_flight, u32 max_async_in_flight) {
-    if (requested == 0u) {
-        return 0u;
-    const u32 headroom = async_in_flight_headroom(max_async_in_flight, in_flight);
-    return requested < headroom ? requested : headroom;
-    }
 
 } // namespace fuse::terrain

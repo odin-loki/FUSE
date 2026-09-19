@@ -28,8 +28,6 @@ struct NodeLoadSpec {
     bool requireAllyContext = false;
     bool requireValidAgent = false;
     bool requireNonEmptyBoard = false;
-    bool requireValidAllyRadius = false;
-    bool requireValidRadius = false;
 };
 
 /// Factory signature — builds a flat BehaviorNode from a load spec.

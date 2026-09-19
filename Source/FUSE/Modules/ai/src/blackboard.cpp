@@ -97,10 +97,6 @@ float BlackboardView::scalar(u32 agentIndex, u32 slotIndex) const {
     return m_board ? m_board->scalar(agentIndex, slotIndex) : 0.f;
 }
 
-bool BlackboardView::isEmpty() const {
-    return !m_board || m_board->isEmpty();
-}
-
 u32 BlackboardView::agentCount() const {
     return m_board ? m_board->agentCount() : 0u;
 }
@@ -137,19 +133,8 @@ bool BlackboardView::isFlagSet(u32 agentIndex, u32 flagIndex) const {
     bool value = false;
     if (!tryGetFlag(agentIndex, flagIndex, value)) {
         return false;
+    }
     return value;
-    return !isFlagEmpty(agentIndex, flagIndex);
-    return isBound() && isAgentValid(agentIndex) && !isScalarEmpty(agentIndex, slotIndex);
-
-    return isBound() && isAgentValid(agentIndex) && !isFlagEmpty(agentIndex, flagIndex);
-}
-
-bool BlackboardView::isFlagSlotValid(u32 flagIndex) const {
-    return m_board ? m_board->isFlagSlotValid(flagIndex) : false;
-}
-
-bool BlackboardView::isScalarSlotValid(u32 slotIndex) const {
-    return m_board ? m_board->isScalarSlotValid(slotIndex) : false;
 }
 
 } // namespace fuse::ai

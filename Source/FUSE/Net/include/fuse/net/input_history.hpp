@@ -8,9 +8,7 @@
 
 namespace fuse::net {
 
-struct ReconcileInputPreflight;
 struct ReconcileResult;
-struct InputReconcilePreflight;
 enum class ReconcileAction : u8;
 
 /// One frame of predicted and/or confirmed local input retained in the history ring.
@@ -29,7 +27,6 @@ public:
     void clear();
 
     [[nodiscard]] u32 capacity() const { return m_capacity; }
-    [[nodiscard]] bool has_capacity() const { return m_capacity > 0; }
     [[nodiscard]] u32 oldest_stored_frame() const { return m_oldest_frame; }
     [[nodiscard]] u32 newest_stored_frame() const { return m_newest_frame; }
     [[nodiscard]] u32 stored_frame_count() const;
@@ -55,20 +52,8 @@ public:
     /// True when both predicted and confirmed slots exist and `inputs_equal` returns true.
     [[nodiscard]] bool prediction_matches(u32 frame) const;
 
-    /// Preflight reconcile for `frame` without mutating the ring (B7.4 deepen follow-up).
-    [[nodiscard]] InputReconcilePreflight preflight_reconcile(u32 frame) const;
-
-    /// True when reconcile would be rejected before recording (B7.4 deepen follow-up).
-    [[nodiscard]] bool should_skip_reconcile(u32 frame) const;
-
     /// Record authoritative input and compare against the predicted local history entry.
     [[nodiscard]] ReconcileResult reconcile_authoritative(u32 frame, const PlayerInput& authoritative);
-
-    /// Preflight authoritative reconcile without mutating the ring (B7.4 deepen follow-up).
-    [[nodiscard]] ReconcileInputPreflight preflight_authoritative(u32 frame) const;
-
-    /// True when reconcile would return early without recording input (B7.4 deepen follow-up).
-    [[nodiscard]] bool should_skip_reconcile(u32 frame) const;
 
 private:
     struct InputSlot {

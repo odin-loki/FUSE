@@ -59,10 +59,11 @@ bool waitInFlightFencesBeforeRecreate(FrameManager& manager, bool waitAllSlots) 
     }
     if (waitAllSlots) {
         return waitAllInFlightFences(manager);
+    }
     return waitCurrentInFlightFence(manager);
+}
 
 bool waitInFlightFencesBeforeAcquire(FrameManager& manager) {
-bool waitCurrentInFlightFenceIfSignaled(FrameManager& manager) {
     if (!manager.isReady()) {
         return false;
     }

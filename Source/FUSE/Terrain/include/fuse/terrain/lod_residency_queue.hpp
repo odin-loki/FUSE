@@ -56,16 +56,8 @@ struct CompletedLodResidencyRequest {
 /// Apply a completion snapshot when LOD promotion/demotion finishes (stub sync helper).
 void sync_morph_after_residency(TerrainChunk& chunk, const LodResidencyMorphSnapshot& snapshot);
 
-/// Priority ordering: higher priority first, unload before load at equal priority, FIFO tie-break.
-[[nodiscard]] int compare_lod_residency_request_order(f32 priority_a, LodResidencyRequestKind kind_a, u64 sequence_a,
-                                                      f32 priority_b, LodResidencyRequestKind kind_b, u64 sequence_b);
-
 /// Worker-side mesh/heightfield I/O stub — production wiring reads chunk assets from disk.
 using LodResidencyWorkFn = std::function<bool(u32 chunk_index, LodResidencyRequestKind kind)>;
-
-/// Priority ordering: higher priority first, unload before load at equal priority, FIFO tie-break.
-[[nodiscard]] int compare_lod_residency_request_order(f32 priority_a, LodResidencyRequestKind kind_a, u64 sequence_a,
-                                                      f32 priority_b, LodResidencyRequestKind kind_b, u64 sequence_b);
 
 /// Async LOD residency queue backed by JobScheduler (mirrors B7.6 StreamingRequestQueue).
 class LodResidencyQueue {
@@ -75,12 +67,6 @@ public:
 
     /// Remove the highest-priority pending request into `out`. Returns false when the pending queue is empty.
     bool dequeue(LodResidencyRequest& out);
-
-    /// True when at least one request is waiting in the pending enqueue buffer.
-    [[nodiscard]] bool has_pending_enqueue() const;
-
-    /// Copy the highest-priority pending request into `out` without removing it. Returns false when empty.
-    [[nodiscard]] bool peek_pending(LodResidencyRequest& out) const;
 
     /// Lower priority for a pending request (returns false when not found).
     bool demote(u32 chunk_index, LodResidencyRequestKind kind, f32 scale);
@@ -144,9 +130,6 @@ private:
 [[nodiscard]] inline bool can_submit_residency_request(const LodResidencyQueue& queue) {
     return can_submit_async_load_guarded(queue.in_flight_count(), queue.pending_submit_count(),
                                          queue.max_pending_submits());
-/// Async-submit guard: true when pending/in-flight counts are below `max_pending_submits`.
-    return can_submit_residency_request(queue.in_flight_count(), queue.completed_count(),
-    return can_submit_pending_request(queue.in_flight_count(), queue.completed_count(),
 }
 
 /// Dequeue helper: removes highest-priority pending request when non-empty.
@@ -185,23 +168,25 @@ private:
 
 /// Guard: pending priority for chunk/kind, or -1 when chunk index is invalid or not enqueued.
 [[nodiscard]] inline f32 pending_priority_for_guarded(const LodResidencyQueue& queue, u32 chunk_index,
+                                                       LodResidencyRequestKind kind) {
     if (!is_valid_chunk_index(chunk_index)) {
         return -1.f;
-    return queue.pending_priority_for(chunk_index, kind);
-                                                       LodResidencyRequestKind kind) {
     }
+    return queue.pending_priority_for(chunk_index, kind);
+}
 
 /// Flush helper: submits pending batch only when the highest-priority request meets `min_priority`.
 [[nodiscard]] inline u32 try_flush_pending_if(LodResidencyQueue& queue, u32 budget, f32 min_priority,
                                                LodResidencyWorkFn work) {
     if (!queue.has_pending_enqueue() || work == nullptr || budget == 0u) {
         return 0u;
+    }
 
     LodResidencyRequest peeked{};
     if (!queue.peek_pending(peeked) || peeked.priority < min_priority) {
-    return queue.flush(budget, work);
-    }
-
         return 0u;
+    }
+    return queue.flush(budget, work);
+}
 
 } // namespace fuse::terrain

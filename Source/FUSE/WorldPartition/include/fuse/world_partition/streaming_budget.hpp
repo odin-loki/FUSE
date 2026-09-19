@@ -109,48 +109,6 @@ enum class EvictionPolicy : u8 {
     return pending < max_pending ? pending : max_pending;
 }
 
-[[nodiscard]] inline bool can_submit_async_request(u32 in_flight, u32 max_async_in_flight) {
-    return max_async_in_flight == 0u || in_flight < max_async_in_flight;
-}
-
-[[nodiscard]] inline u32 async_in_flight_headroom(u32 max_async_in_flight, u32 in_flight) {
-    if (max_async_in_flight == 0u) {
-        return ~0u;
-    }
-    return in_flight < max_async_in_flight ? max_async_in_flight - in_flight : 0u;
-}
-
-[[nodiscard]] inline bool pending_submit_cap_unlimited(u32 max_pending_submits) {
-    return max_pending_submits == 0u;
-}
-
-[[nodiscard]] inline u32 pending_submit_headroom(u32 max_pending_submits, u32 pending_submits) {
-    if (pending_submit_cap_unlimited(max_pending_submits)) {
-        return ~0u;
-    }
-    return pending_submits < max_pending_submits ? max_pending_submits - pending_submits : 0u;
-}
-
-[[nodiscard]] inline bool would_exceed_pending_submit_cap(u32 max_pending_submits, u32 pending_submits) {
-    if (pending_submit_cap_unlimited(max_pending_submits)) {
-        return false;
-    }
-    return pending_submits >= max_pending_submits;
-}
-
-/// True when in-flight plus undrained completions would exceed the pending submit cap.
-[[nodiscard]] inline bool would_exceed_async_budget(u32 in_flight, u32 completed_undrained,
-                                                    u32 max_pending_submits) {
-    return would_exceed_pending_submit_cap(max_pending_submits, in_flight + completed_undrained);
-}
-
-/// Guard async submit when in-flight or buffered completions would exceed the pending cap.
-[[nodiscard]] inline bool can_submit_async_request_guarded(u32 in_flight, u32 pending_submits,
-                                                            u32 max_async_in_flight) {
-    return can_submit_async_request(in_flight, max_async_in_flight) &&
-           !would_exceed_pending_submit_cap(max_async_in_flight, pending_submits);
-}
-
 /// Higher score evicts sooner. Distance policy uses unload distance priority; LRU uses age.
 [[nodiscard]] inline f32 eviction_score_for(f32 unload_distance_priority, u32 last_touch_tick, u32 current_tick,
                                           EvictionPolicy policy) {
@@ -164,36 +122,13 @@ enum class EvictionPolicy : u8 {
 }
 
 /// Guard: eviction score with negative unload priority clamped to zero.
-/// Guard: eviction score with negative unload distance priority clamped to zero.
 [[nodiscard]] inline f32 eviction_score_for_guarded(f32 unload_distance_priority, u32 last_touch_tick,
                                                     u32 current_tick, EvictionPolicy policy) {
     return eviction_score_for(std::max(0.f, unload_distance_priority), last_touch_tick, current_tick, policy);
 }
 
-/// Guard: eviction score, clamping negative unload distance priority to zero.
-
-/// Resident bytes that must be freed before `incoming_bytes` can fit under the byte cap (0 when unlimited or fits).
-[[nodiscard]] inline u64 eviction_byte_deficit(u64 max_resident_bytes, u64 resident_bytes, u64 incoming_bytes) {
-    if (byte_budget_unlimited(max_resident_bytes) || incoming_bytes == 0u) {
-        return 0u;
-    const u64 projected = resident_bytes + incoming_bytes;
-    return projected > max_resident_bytes ? projected - max_resident_bytes : 0u;
-
-/// Resident cells that must be evicted before `incoming_count` can fit under the cell cap.
-[[nodiscard]] inline u32 resident_cell_deficit(u32 max_loaded_cells, u32 resident_count, u32 incoming_count = 1u) {
-    if (incoming_count == 0u || can_accept_resident_cell(max_loaded_cells, resident_count + incoming_count - 1u)) {
-    return (resident_count + incoming_count) - max_loaded_cells;
-
 /// Guard: true when a budget eviction score is eligible for eviction (positive).
 [[nodiscard]] inline bool is_positive_eviction_score(f32 score) { return score > 0.f; }
-
-/// Guard: eviction score; returns -1 when unload distance priority is invalid for distance policy.
-[[nodiscard]] inline f32 eviction_score_for_guarded(f32 unload_distance_priority, u32 last_touch_tick,
-                                                    u32 current_tick, EvictionPolicy policy) {
-    if (policy == EvictionPolicy::DistanceFromFocus && unload_distance_priority < 0.f) {
-        return -1.f;
-    }
-    return eviction_score_for(unload_distance_priority, last_touch_tick, current_tick, policy);
 
 /// Resident bytes that must be freed before `incoming_bytes` can fit under the byte cap (0 when unlimited or fits).
 [[nodiscard]] inline u64 eviction_byte_deficit(u64 max_resident_bytes, u64 resident_bytes, u64 incoming_bytes) {
@@ -236,41 +171,25 @@ enum class EvictionPolicy : u8 {
     }
     return budget_eviction_score(focus_distance, unload_distance_priority, last_touch_tick, current_tick,
                                  policy);
+}
 
 /// Guard: budget eviction score with negative unload priority clamped before scoring.
 [[nodiscard]] inline f32 budget_eviction_score_for_guarded(f32 focus_distance, f32 unload_distance_priority,
+                                                            u32 last_touch_tick, u32 current_tick,
+                                                            EvictionPolicy policy) {
     return budget_eviction_score_guarded(focus_distance, std::max(0.f, unload_distance_priority),
                                          last_touch_tick, current_tick, policy);
+}
 
 /// True when an incoming load (higher `priority` = closer) should evict a resident at `resident_focus_distance`.
 [[nodiscard]] inline bool incoming_outranks_resident(f32 incoming_priority, f32 stream_in_radius,
                                                      f32 resident_focus_distance) {
     if (incoming_priority <= 0.f || stream_in_radius <= 0.f) {
         return false;
+    }
     const f32 incoming_distance = stream_in_radius - incoming_priority;
     return incoming_distance < resident_focus_distance;
-
-/// True when a computed eviction score qualifies a resident for budget-driven eviction.
-[[nodiscard]] inline bool is_valid_eviction_score(f32 score) { return score > 0.f; }
-
-/// Resident bytes that must be freed before `incoming_bytes` can fit under the byte cap (0 when unlimited or fits).
-[[nodiscard]] inline u64 eviction_byte_deficit(u64 max_resident_bytes, u64 resident_bytes, u64 incoming_bytes) {
-    if (byte_budget_unlimited(max_resident_bytes) || incoming_bytes == 0u) {
-        return 0u;
-    const u64 projected = resident_bytes + incoming_bytes;
-    return projected > max_resident_bytes ? projected - max_resident_bytes : 0u;
-
-/// Resident cells that must be evicted before `incoming_count` can fit under the cell cap.
-[[nodiscard]] inline u32 resident_cell_deficit(u32 max_loaded_cells, u32 resident_count, u32 incoming_count = 1u) {
-    if (incoming_count == 0u || can_accept_resident_cell(max_loaded_cells, resident_count + incoming_count - 1u)) {
-    return (resident_count + incoming_count) - max_loaded_cells;
-/// Back-compat alias for earlier B7.6 budget score stubs.
-[[nodiscard]] inline f32 budget_eviction_score_stub(f32 focus_distance, f32 unload_distance_priority,
-                                                     u32 last_touch_tick, u32 current_tick, EvictionPolicy policy) {
-    return budget_eviction_score(focus_distance, unload_distance_priority, last_touch_tick, current_tick, policy);
-
-/// True when a computed budget eviction score can evict a resident cell.
-[[nodiscard]] inline bool is_budget_eviction_score_eligible(f32 score) { return score > 0.f; }
+}
 
 /// True when an incoming load outranks a resident cell for budget eviction (closer wins).
 [[nodiscard]] inline bool incoming_outranks_eviction(f32 incoming_priority, f32 eviction_score) {
@@ -287,11 +206,6 @@ enum class EvictionPolicy : u8 {
 [[nodiscard]] inline bool incoming_outranks_eviction_guarded(f32 incoming_priority, f32 eviction_score) {
     return is_positive_eviction_score(eviction_score) &&
            incoming_outranks_eviction(incoming_priority, eviction_score);
-/// Guard: rejects non-positive eviction scores before outrank comparison.
-    if (!is_positive_eviction_score(eviction_score)) {
-        return false;
-    }
-    return incoming_outranks_eviction(incoming_priority, eviction_score);
 }
 
 /// True when a budget eviction candidate is eligible under distance policy pressure checks.
@@ -328,10 +242,6 @@ enum class EvictionPolicy : u8 {
                                                      u64 incoming_bytes, u32 incoming_count = 1u) {
     return resident_cell_deficit(max_loaded_cells, resident_count, incoming_count) > 0u ||
            eviction_byte_deficit(max_resident_bytes, resident_bytes, incoming_bytes) > 0u;
-/// Empty-residency guard: record `eviction_skipped` when pressure exists but no resident can evict.
-[[nodiscard]] inline bool should_record_eviction_skipped_on_empty_residency(bool budget_pressure,
-                                                                             bool has_eviction_candidate) {
-    return budget_pressure && !has_eviction_candidate;
 }
 
 } // namespace fuse::world_partition

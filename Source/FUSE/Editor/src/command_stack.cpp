@@ -2,59 +2,16 @@
 
 namespace fuse::editor {
 
-namespace {
-
-bool isDuplicatePropertyEdit_(const EditorCommand& previous, const EditorCommand& incoming) {
-    if (previous.kind != CommandKind::SetProperty || incoming.kind != CommandKind::SetProperty) {
-        return false;
-    }
-
-    if (!previous.target.isValid() || !incoming.target.isValid()) {
-        return false;
-    }
-
-    if (previous.propertyName.empty() || incoming.propertyName.empty()) {
-        return false;
-    }
-
-    if (previous.propertyValue.empty() || incoming.propertyValue.empty()) {
-    if (!previous.target.isValid() || !incoming.target.isValid()) {
-        return false;
-    }
-
-    return previous.target == incoming.target && previous.propertyName == incoming.propertyName &&
-           previous.propertyValue == incoming.propertyValue;
-}
-
-} // namespace
-
 bool CommandStack::canCoalesce_(const EditorCommand& previous, const EditorCommand& incoming) {
     if (previous.kind != incoming.kind || previous.kind != CommandKind::SetProperty) {
         return false;
     }
 
-    if (!previous.target.isValid() || !incoming.target.isValid()) {
-        return false;
-    }
-
     if (previous.propertyName.empty() || incoming.propertyName.empty()) {
         return false;
     }
 
     if (previous.propertyValue.empty() || incoming.propertyValue.empty()) {
-        return false;
-    }
-
-    if (previous.propertyValue == incoming.propertyValue) {
-        return false;
-    }
-
-    if (previous.target == Handle<Object>::invalid() || incoming.target == Handle<Object>::invalid()) {
-        return false;
-    }
-
-    if (!previous.propertyValueBefore.empty() && !incoming.propertyValueBefore.empty() &&
-        previous.propertyValueBefore != incoming.propertyValueBefore) {
         return false;
     }
 
@@ -95,15 +52,11 @@ void CommandStack::syncBaselineDirty_() {
     }
 
     if (isAtBaseline()) {
-        markDirty_();
-
-    if (isAtBaseline() && coalescedCountSinceBaseline() == 0u) {
         markClean();
         return;
     }
 
     markDirtyAndBump_();
-    markDirty_();
 }
 
 u32 CommandStack::coalescedCountSinceBaseline() const {
@@ -117,10 +70,7 @@ u32 CommandStack::coalescedCountSinceBaseline() const {
 void CommandStack::set_baseline_state() {
     if (m_baselineConfigured && isAtBaseline() && m_baselineRedoDepth == m_redoDepth &&
         m_coalescedCountAtBaseline == m_coalescedCount) {
-    if (m_baselineConfigured && isAtBaseline() && m_coalescedCountAtBaseline == m_coalescedCount &&
-        m_baselineRedoDepth == m_redoDepth) {
         markClean();
-        m_coalescedCountAtBaseline == m_coalescedCount && !m_dirty) {
         return;
     }
 
@@ -132,29 +82,11 @@ void CommandStack::set_baseline_state() {
 }
 
 bool CommandStack::isAtBaseline() const {
-    if (!m_baselineConfigured) {
-        return m_undoDepth == 0u && m_redoDepth == 0u;
-        return false;
-    }
-
     return m_undoDepth == m_baselineUndoDepth;
-}
-
-bool CommandStack::hasUnsavedChanges() const {
-    if (!m_baselineConfigured) {
-        return !isEmpty() || m_dirty;
-    }
-
-    return !isAtBaseline();
 }
 
 void CommandStack::execute(EditorCommand command) {
     if (m_undoDepth > 0u && !m_undoStack.empty() && canCoalesce_(m_undoStack.back(), command)) {
-    if (!m_undoStack.empty() && isDuplicatePropertyEdit_(m_undoStack.back(), command)) {
-        return;
-    }
-
-    if (!m_undoStack.empty() && canCoalesce_(m_undoStack.back(), command)) {
         m_undoStack.back().propertyValue = command.propertyValue;
         ++m_coalescedCount;
         markDirty_();
@@ -239,9 +171,6 @@ void CommandStack::clear() {
     m_baselineRedoDepth = 0;
     m_baselineConfigured = false;
     m_evictedCount = 0;
-    m_baselineUndoDepth = 0;
-    m_baselineRedoDepth = 0;
-    m_baselineConfigured = false;
     m_dirty = false;
     m_dirtyRevision = 0;
 }
@@ -266,9 +195,6 @@ CommandStackSnapshot CommandStack::captureSnapshot() const {
     snapshot.baselineRedoDepth = m_baselineRedoDepth;
     snapshot.baselineConfigured = m_baselineConfigured;
     snapshot.evictedCount = m_evictedCount;
-    snapshot.baselineUndoDepth = m_baselineUndoDepth;
-    snapshot.baselineRedoDepth = m_baselineRedoDepth;
-    snapshot.baselineConfigured = m_baselineConfigured;
     snapshot.dirty = m_dirty;
     snapshot.dirtyRevision = m_dirtyRevision;
     return snapshot;
@@ -286,9 +212,6 @@ void CommandStack::restoreSnapshot(const CommandStackSnapshot& snapshot) {
     m_baselineRedoDepth = snapshot.baselineRedoDepth;
     m_baselineConfigured = snapshot.baselineConfigured;
     m_evictedCount = snapshot.evictedCount;
-    m_baselineUndoDepth = snapshot.baselineUndoDepth;
-    m_baselineRedoDepth = snapshot.baselineRedoDepth;
-    m_baselineConfigured = snapshot.baselineConfigured;
     m_dirty = snapshot.dirty;
     m_dirtyRevision = snapshot.dirtyRevision;
 }

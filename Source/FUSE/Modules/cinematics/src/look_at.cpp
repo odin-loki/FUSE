@@ -18,29 +18,29 @@ bool LookAtResolver::has_target(const std::string& target_id) const {
 bool look_at_resolver_has_target(const LookAtResolver& resolver, const std::string& target_id) {
     if (target_id.empty() || !resolver.can_resolve()) {
         return false;
+    }
 
     Vec3 out{};
     return resolver.try_resolve(target_id, out);
+}
 
 bool look_at_resolver_available(const LookAtResolver* resolver) {
     return resolver != nullptr && resolver->can_resolve();
 }
 
 bool look_at_resolver_can_resolve_target(const LookAtResolver& resolver, const std::string& target_id) {
+    Vec3 out{};
+    return resolver.try_resolve(target_id, out);
+}
 
 Vec3 fallback_camera_look_at(const CameraKeyframe& keyframe,
                              const Vec3& camera_position,
                              float default_look_distance) {
     if (camera_look_distance(camera_position, keyframe.look_at) <= kLookAtCoincidentEpsilon) {
         return default_camera_look_at_for_position(camera_position, default_look_distance);
+    }
     return keyframe.look_at;
-
-Vec3 resolve_look_at_world_with_fallback(const CameraKeyframe& keyframe,
-                                         const LookAtResolver& resolver,
-    const Vec3 resolved = resolve_look_at_world(keyframe, resolver);
-    if (camera_look_distance(camera_position, resolved) <= kLookAtCoincidentEpsilon) {
-    return resolved;
-
+}
 
 Vec3 resolve_look_at_world(const CameraKeyframe& keyframe, const LookAtResolver& resolver) {
     if (keyframe.look_at_mode == CameraLookAtMode::TargetEntity && !keyframe.look_at_target_id.empty()
@@ -70,22 +70,29 @@ Vec3 resolve_look_at_world_or_default(const CameraKeyframe& keyframe,
                                       float default_distance) {
     if (keyframe.look_at_mode == CameraLookAtMode::TargetEntity && !keyframe.look_at_target_id.empty()
         && resolver.can_resolve()) {
-        return resolver.resolve_or(keyframe.look_at_target_id,
-                                   camera_keyframe_look_at_fallback(keyframe, default_distance));
+        const Vec3 fallback = camera_keyframe_look_at_unset(keyframe)
+                                  ? default_camera_look_at_for_position(keyframe.position, default_distance)
+                                  : keyframe.look_at;
+        return resolver.resolve_or(keyframe.look_at_target_id, fallback);
     }
 
     if (camera_keyframe_look_at_unset(keyframe)) {
         return default_camera_look_at_for_position(keyframe.position, default_distance);
+    }
 
     return keyframe.look_at;
+}
 
 Vec3 resolve_look_at_world_with_fallback(const CameraKeyframe& keyframe,
+                                         const LookAtResolver& resolver,
                                          const Vec3& camera_position,
                                          float default_look_distance) {
     const Vec3 resolved = resolve_look_at_world(keyframe, resolver);
     if (camera_look_distance(camera_position, resolved) <= kLookAtCoincidentEpsilon) {
         return default_camera_look_at_for_position(camera_position, default_look_distance);
+    }
     return resolved;
+}
 
 std::vector<std::string> collect_camera_look_at_target_ids(
     const std::vector<CameraKeyframe>& keyframes) {
@@ -100,22 +107,20 @@ std::vector<std::string> collect_camera_look_at_target_ids(
 
         if (seen.insert(keyframe.look_at_target_id).second) {
             ids.push_back(keyframe.look_at_target_id);
+        }
+    }
 
     return ids;
+}
 
 std::size_t camera_keyframe_entity_look_at_count(const std::vector<CameraKeyframe>& keyframes) {
     std::size_t count = 0;
+    for (const CameraKeyframe& keyframe : keyframes) {
         if (camera_keyframe_uses_entity_look_at(keyframe)) {
             ++count;
+        }
+    }
     return count;
-    return camera_keyframe_look_at_fallback(keyframe, default_distance);
-
-bool look_at_resolver_has_target(const LookAtResolver& resolver, const std::string& target_id) {
-    if (!resolver.can_resolve() || target_id.empty()) {
-        return false;
-
-    Vec3 out{};
-    return resolver.try_resolve(target_id, out);
 }
 
 } // namespace fuse::cinematics

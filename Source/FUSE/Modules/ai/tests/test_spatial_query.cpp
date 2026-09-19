@@ -197,67 +197,6 @@ void testRadiusSqFromPolicy() {
                "radius_sq_from_policy clamps negative radius to zero");
 }
 
-void testRadiusFilterPolicyValidation() {
-    fuse::ai::RadiusFilterPolicy policy;
-    policy.radius = 5.f;
-    policy.minCount = 2;
-    expectTrue(fuse::ai::is_radius_filter_policy_valid(policy),
-               "positive radius and minCount is valid");
-
-    policy.radius = 0.f;
-    expectTrue(!fuse::ai::is_radius_filter_policy_valid(policy),
-               "zero radius policy is invalid");
-
-    policy.minCount = 0;
-    const fuse::ai::RadiusFilterPolicy normalized =
-        fuse::ai::normalize_radius_filter_policy(policy);
-    expectTrue(normalized.minCount == 1u, "normalize enforces minCount >= 1");
-    expectTrue(fuse::ai::is_radius_filter_policy_valid(normalized),
-               "normalized policy is valid");
-}
-
-void testCountAlliesOutsideRadius() {
-    const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
-
-    const fuse::u32 outside =
-        fuse::ai::count_allies_outside_radius(0, 1, 0.f, 0.f, 6.f, allies);
-    expectTrue(outside == 2u, "two allies lie outside six-unit radius");
-
-    expectTrue(fuse::ai::has_ally_outside_radius(0, 1, 0.f, 0.f, 6.f, allies),
-               "has_ally_outside_radius true when allies are distant");
-    expectTrue(!fuse::ai::has_ally_outside_radius(0, 1, 0.f, 0.f, 100.f, allies),
-               "has_ally_outside_radius false when radius covers squad");
-    expectTrue(fuse::ai::count_allies_outside_radius(0, 1, 0.f, 0.f, 10.f, {}) == 0u,
-               "outside count is zero for empty ally list");
-void testIsValidRadiusPolicy() {
-    expectTrue(fuse::ai::is_valid_radius_policy(policy), "positive radius and minCount is valid");
-
-    expectTrue(!fuse::ai::is_valid_radius_policy(policy), "zero radius policy is invalid");
-
-    expectTrue(!fuse::ai::is_valid_radius_policy(policy), "zero minCount policy is invalid");
-
-void testEffectiveMinCount() {
-    policy.minCount = 3;
-    expectTrue(fuse::ai::effective_min_count(policy) == 3u, "effective_min_count preserves positive minCount");
-
-    expectTrue(fuse::ai::effective_min_count(policy) == 1u, "effective_min_count defaults zero to one");
-void testRadiusPolicyValid() {
-    policy.minCount = 1;
-    expectTrue(fuse::ai::is_radius_policy_valid(policy), "positive radius and minCount is valid");
-
-    expectTrue(!fuse::ai::is_radius_policy_valid(policy), "zero radius policy is invalid");
-
-    expectTrue(!fuse::ai::is_radius_policy_valid(policy), "zero minCount policy is invalid");
-
-void testAllyRadiusQueryValid() {
-    expectTrue(!fuse::ai::ally_radius_query_valid(0.f, &allies),
-               "ally radius query invalid for zero radius");
-    expectTrue(!fuse::ai::ally_radius_query_valid(5.f, nullptr),
-               "ally radius query invalid for null allies");
-    expectTrue(fuse::ai::ally_radius_query_valid(5.f, &allies),
-               "ally radius query valid for positive radius and allies");
-}
-
 void testNearestAllyDistanceSq() {
     const std::vector<fuse::ai::AllyCandidate> allies = makeSquad();
 
@@ -304,28 +243,6 @@ void testEffectiveMinCount() {
                "effective_min_count preserves positive minCount");
 }
 
-void testIsFiniteAllyRadius() {
-    expectTrue(fuse::ai::is_finite_ally_radius(3.f), "positive radius is finite");
-    expectTrue(!fuse::ai::is_finite_ally_radius(0.f), "zero radius is not finite");
-    expectTrue(!fuse::ai::is_finite_ally_radius(-2.f), "negative radius is not finite");
-}
-
-void testIsUnlimitedRadius() {
-    expectTrue(fuse::ai::is_unlimited_radius(0.f), "zero radius is unlimited sentinel");
-    expectTrue(fuse::ai::is_unlimited_radius(-1.f), "negative radius is unlimited sentinel");
-    expectTrue(!fuse::ai::is_unlimited_radius(1.f), "positive radius is not unlimited");
-}
-
-void testRadiusFilterPolicyIsValid() {
-    fuse::ai::RadiusFilterPolicy policy;
-    policy.radius = 5.f;
-    expectTrue(fuse::ai::radius_filter_policy_is_valid(policy),
-               "radius filter policy succeeds with positive radius");
-    policy.radius = 0.f;
-    expectTrue(!fuse::ai::radius_filter_policy_is_valid(policy),
-               "radius filter policy fails with zero radius");
-}
-
 } // namespace
 
 int run_spatial_query_tests() {
@@ -344,19 +261,10 @@ int run_spatial_query_tests() {
     testHasAnyAllyInRadius();
     testAllyContextAvailable();
     testIsValidAllyRadius();
-    testIsValidRadiusPolicy();
-    testEffectiveMinCount();
     testRadiusSqFromPolicy();
-    testRadiusFilterPolicyValidation();
-    testCountAlliesOutsideRadius();
-    testRadiusPolicyValid();
-    testAllyRadiusQueryValid();
     testNearestAllyDistanceSq();
     testCountAlliesOutsideRadius();
     testHasNoAlliesInRadius();
     testEffectiveMinCount();
-    testIsFiniteAllyRadius();
-    testIsUnlimitedRadius();
-    testRadiusFilterPolicyIsValid();
     return g_failures;
 }

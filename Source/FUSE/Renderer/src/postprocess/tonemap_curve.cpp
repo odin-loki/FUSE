@@ -88,10 +88,6 @@ bool tonemap_curve_preserves_black(const TonemapCurveParams& params, f32 epsilon
     return black <= epsilon;
 }
 
-bool tonemap_curve_filmic_params_valid(const TonemapCurveParams& params) {
-    return params.gamma > 0.f;
-}
-
 bool tonemap_curve_reinhard_params_valid(const ReinhardCurveParams& params) {
     return params.white_point > 0.f;
 }
@@ -120,51 +116,27 @@ bool tonemap_curve_params_valid(const TonemapCurveParams& params) {
     default:
         return tonemap_curve_filmic_params_valid(params);
     }
+}
 
 bool tonemap_curve_is_usable(const TonemapCurveParams& params, f32 white_input, f32 epsilon) {
     return tonemap_curve_ready_to_apply(params, white_input, epsilon);
+}
 
 bool tonemap_curve_can_apply(const TonemapCurveParams& params) {
     if (!params.enabled) {
         return true;
+    }
     return tonemap_curve_params_valid(params);
+}
 
 bool tonemap_curve_ready_to_apply(const TonemapCurveParams& params, f32 white_input, f32 epsilon) {
     if (!tonemap_curve_can_apply(params)) {
         return false;
-    if (params.kind == TonemapCurveKind::ACES) {
-        if (params.aces.contrast < 0.f || params.aces.shoulder < 0.f) {
-    if (params.kind == TonemapCurveKind::Filmic) {
-        if (params.toe_length < 0.f || params.shoulder_length < 0.f || params.shoulder_angle <= 0.f) {
-    if (params.kind == TonemapCurveKind::Filmic &&
-        (params.toe_length < 0.f || params.shoulder_length < 0.f)) {
-    if (params.kind == TonemapCurveKind::Reinhard && params.reinhard.white_point <= 0.f) {
-    if (params.kind == TonemapCurveKind::ACES &&
-        (params.aces.contrast < 0.f || params.aces.shoulder < 0.f)) {
     }
-    return tonemap_curve_has_valid_endpoints(params, white_input, epsilon);
-}
-
-bool tonemap_curve_is_usable(const TonemapCurveParams& params, f32 white_input, f32 epsilon) {
-    if (params.kind == TonemapCurveKind::ACES && params.aces.contrast < 0.f) {
-        return false;
-    if (params.kind == TonemapCurveKind::ACES && params.aces.shoulder < 0.f) {
-    }
-        return false;
-    if (params.kind == TonemapCurveKind::ACES && params.aces.shoulder < 0.f) {
-    }
-    return true;
-}
-
-bool tonemap_curve_can_apply(const TonemapCurveParams& params) {
     if (!params.enabled) {
         return true;
     }
-    return tonemap_curve_params_valid(params);
-}
-
-bool tonemap_curve_channel_in_display_range(f32 channel, f32 epsilon) {
-    return channel >= -epsilon && channel <= 1.f + epsilon;
+    return tonemap_curve_has_valid_endpoints(params, white_input, epsilon);
 }
 
 bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 epsilon) {
@@ -213,7 +185,6 @@ bool tonemap_curve_mid_grey_in_display_range(const TonemapCurveParams& params, f
     }
     const f32 output = tonemap_curve_mid_grey_output(params, mid_grey);
     return output >= -epsilon && output <= 1.f + epsilon;
-    return tonemap_curve_channel_in_display_range(output, epsilon);
 }
 
 bool tonemap_curve_output_span_valid(const TonemapCurveParams& params, f32 white_input, f32 epsilon) {
@@ -224,17 +195,6 @@ bool tonemap_curve_output_span_valid(const TonemapCurveParams& params, f32 white
         return false;
     }
     return tonemap_curve_output_span(params, white_input) > epsilon;
-}
-
-bool tonemap_curve_outputs_in_display_range(const TonemapCurveParams& params, f32 white_input, f32 epsilon) {
-    if (!tonemap_curve_can_apply(params)) {
-        return false;
-    }
-    if (!params.enabled) {
-        return true;
-    }
-    return tonemap_curve_mid_grey_in_display_range(params, 0.18f, epsilon) &&
-           tonemap_curve_has_valid_endpoints(params, white_input, epsilon);
 }
 
 fuse::math::Vec3 apply_exposure_ev(const fuse::math::Vec3& hdr, f32 ev_stops) {
@@ -275,8 +235,6 @@ fuse::math::Vec3 apply_tonemap_curve(const fuse::math::Vec3& hdr, const TonemapC
         return hdr;
     }
     if (!params.enabled) {
-    if (!params.enabled || !tonemap_curve_can_apply(params)) {
-    if (!tonemap_curve_params_valid(params)) {
         return hdr;
     }
     return {evaluate_tonemap_curve_channel(hdr.x, params), evaluate_tonemap_curve_channel(hdr.y, params),

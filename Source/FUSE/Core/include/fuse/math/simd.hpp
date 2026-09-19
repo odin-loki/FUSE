@@ -347,48 +347,6 @@ inline Vec3 extractTranslation(const fuse::math::Mat4& matrix, f32 epsilon = 1e-
     return fuse::math::extractTranslation(matrix, epsilon);
 }
 
-inline bool tryExtractTranslation(const fuse::math::Mat4& matrix, Vec3& out, f32 epsilon = 1e-5f) {
-    return fuse::math::tryExtractTranslation(matrix, out, epsilon);
-}
-
-inline bool tryTransformAabb(const fuse::math::Mat4& matrix, const AABB& box, AABB& out,
-                             f32 epsilon = 1e-4f) {
-    return fuse::math::tryTransformAabb(matrix, box, out, epsilon);
-}
-
-inline bool tryRayIntervalAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32& tEnter,
-                             f32& tExit) {
-    return box.tryRayInterval(origin, direction, tEnter, tExit);
-}
-
-inline bool tryRayIntervalClampedAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin,
-                                      f32 tMax, f32& tEnter, f32& tExit) {
-    return box.tryRayIntervalClamped(origin, direction, tMin, tMax, tEnter, tExit);
-}
-
-inline bool tryRayHitsAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
-                           f32 tMax = std::numeric_limits<f32>::max()) {
-    return box.tryRayHits(origin, direction, tMin, tMax);
-}
-
-inline bool tryRayIntersectAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
-    return box.tryRayIntersect(origin, direction, t);
-}
-
-inline bool tryClassifyAabb(const Vec4& plane, const AABB& box, PlaneSide& side, f32 epsilon = 1e-8f) {
-    return fuse::math::tryClassifyAabb(plane, box, side, epsilon);
-}
-
-inline bool tryClipSegmentAgainstPlane(const Vec4& plane, Vec3& a, Vec3& b, f32 epsilon = 1e-5f) {
-    return fuse::math::tryClipSegmentAgainstPlane(plane, a, b, epsilon);
-}
-
-inline bool tryClipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32 inputCount, Vec3* output,
-                                       u32 maxOutput, u32& outCount, f32 epsilon = 1e-5f) {
-    return fuse::math::tryClipPolygonAgainstPlane(plane, input, inputCount, output, maxOutput, outCount,
-                                                 epsilon);
-}
-
 inline Vec3 transformDirection(const Mat4& matrix, const Vec3& direction) {
     return fuse::math::transformDirection(matrix.toScalar(), direction);
 }
@@ -400,18 +358,10 @@ inline Mat3 transposeUpper3x3(const fuse::math::Mat4& matrix) {
 inline bool tryMultiplyRigid(const fuse::math::Mat4& a, const fuse::math::Mat4& b, fuse::math::Mat4& out,
                              f32 epsilon = 1e-4f) {
     return fuse::math::tryMultiplyRigid(a, b, out, epsilon);
+}
 
 inline bool tryToRotationQuat(const fuse::math::Mat4& matrix, Quat& out, f32 epsilon = 1e-4f) {
     return fuse::math::tryToRotationQuat(matrix, out, epsilon);
-inline bool tryInverseAffine(const fuse::math::Mat4& matrix, fuse::math::Mat4& out) {
-    return fuse::math::tryInverseAffine(matrix, out);
-
-inline bool isRigidUpper3x3(const fuse::math::Mat4& matrix, f32 epsilon = 1e-4f) {
-    return fuse::math::isRigidUpper3x3(matrix, epsilon);
-
-
-inline bool tryExtractTranslation(const fuse::math::Mat4& matrix, Vec3& translation, f32 epsilon = 1e-5f) {
-    return fuse::math::tryExtractTranslation(matrix, translation, epsilon);
 }
 
 inline bool tryRayInterval(const AABB& box, const Vec3& origin, const Vec3& direction, f32& tEnter,
@@ -422,23 +372,11 @@ inline bool tryRayInterval(const AABB& box, const Vec3& origin, const Vec3& dire
 inline bool tryRayIntervalClamped(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin,
                                   f32 tMax, f32& tEnter, f32& tExit) {
     return fuse::math::tryRayIntervalClamped(box, origin, direction, tMin, tMax, tEnter, tExit);
-inline bool tryRayIntersect(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
-    return fuse::math::tryRayIntersect(box, origin, direction, t);
 }
 
 inline bool tryRayHits(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin = 0.f,
                        f32 tMax = std::numeric_limits<f32>::max()) {
     return fuse::math::tryRayHits(box, origin, direction, tMin, tMax);
-}
-
-inline bool tryRayIntervalClamped(const AABB& box, const Vec3& origin, const Vec3& direction, f32 tMin,
-                                  f32 tMax, f32& tEnter, f32& tExit) {
-    return fuse::math::tryRayIntervalClamped(box, origin, direction, tMin, tMax, tEnter, tExit);
-}
-
-inline bool tryTransformRigidAabb(const fuse::math::Mat4& matrix, const AABB& box, AABB& out,
-                                  f32 epsilon = 1e-4f) {
-    return fuse::math::tryTransformRigidAabb(matrix, box, out, epsilon);
 }
 
 inline bool tryClassifyAabb(const Vec4& plane, const AABB& box, PlaneSide& side, f32 epsilon = 1e-8f) {
@@ -453,48 +391,33 @@ inline bool tryClipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32
                                        u32& outCount, u32 maxOutput, f32 epsilon = 1e-5f) {
     return fuse::math::tryClipPolygonAgainstPlane(plane, input, inputCount, output, outCount, maxOutput,
                                                   epsilon);
+}
 
 inline bool tryTransformPointRigid(const fuse::math::Mat4& matrix, const Vec3& point, Vec3& out,
                                    f32 epsilon = 1e-4f) {
     return fuse::math::tryTransformPointRigid(matrix, point, out, epsilon);
+}
 
 inline bool tryExtractRigid(const fuse::math::Mat4& matrix, Vec3& translation, Quat& rotation,
                             f32& uniformScale, f32 epsilon = 1e-4f) {
     return fuse::math::tryExtractRigid(matrix, translation, rotation, uniformScale, epsilon);
+}
 
 inline bool tryRayIntersect(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
     return fuse::math::tryRayIntersect(box, origin, direction, t);
+}
 
 inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
     if (box.isEmpty()) {
         return false;
+    }
     out = transformAabb(matrix, box);
     return true;
-
-inline bool tryMakePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point, Vec4& out,
-                                           f32 epsilon = 1e-8f) {
-    return fuse::math::tryMakePlaneFromNormalAndPoint(normal, point, out, epsilon);
-
-inline bool tryRayIntersect(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
-    return fuse::math::tryRayIntersect(box, origin, direction, t);
-}
-
-inline bool tryTransformAabb(const Mat4& matrix, const AABB& box, AABB& out) {
-    return fuse::math::tryTransformAabb(matrix.toScalar(), box, out);
-}
-
-inline bool tryTransposeUpper3x3(const fuse::math::Mat4& matrix, Mat3& out, f32 epsilon = 1e-4f) {
-    return fuse::math::tryTransposeUpper3x3(matrix, out, epsilon);
 }
 
 inline bool tryMakePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point, Vec4& out,
                                            f32 epsilon = 1e-8f) {
     return fuse::math::tryMakePlaneFromNormalAndPoint(normal, point, out, epsilon);
-}
-
-inline bool tryRayIntersectPlaneClamped(const Vec4& plane, const Vec3& origin, const Vec3& direction, f32 tMin,
-                                        f32 tMax, f32& t, f32 epsilon = 1e-8f) {
-    return fuse::math::tryRayIntersectPlaneClamped(plane, origin, direction, tMin, tMax, t, epsilon);
 }
 
 } // namespace fuse::math::simd

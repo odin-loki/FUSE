@@ -17,7 +17,7 @@ void SpatialMixer::configure(u32 sample_rate, u32 max_sources, bool hrtf_enabled
 
 void SpatialMixer::set_occlusion_blockers(const AABB* blockers, u32 blocker_count) {
     m_occlusionBlockers.clear();
-    if (!::fuse::audio::has_occlusion_blockers(blockers, blocker_count)) {
+    if (blockers == nullptr || blocker_count == 0) {
         return;
     }
     m_occlusionBlockers.assign(blockers, blockers + blocker_count);
@@ -27,42 +27,34 @@ void SpatialMixer::clear_occlusion_blockers() {
     m_occlusionBlockers.clear();
 }
 
-bool SpatialMixer::has_occlusion_blockers() const {
-    return !m_occlusionBlockers.empty();
-}
-
 float SpatialMixer::compute_source_visibility(const Vec3& listener, const Vec3& source,
                                               float source_occlusion) const {
-    if (!has_occlusion_blockers()) {
+    if (m_occlusionBlockers.empty()) {
         return std::clamp(source_occlusion, 0.f, 1.f);
-    const float visibility = clamp_occlusion_visibility(source_occlusion);
-        return visibility;
     }
-    return compute_effective_visibility(listener, source, visibility, m_occlusionBlockers.data(),
+    return compute_effective_visibility(listener, source, source_occlusion,
+                                        m_occlusionBlockers.data(),
                                         static_cast<u32>(m_occlusionBlockers.size()));
 }
 
 OcclusionAttenuation SpatialMixer::compute_source_occlusion_attenuation(
     const Vec3& listener, const Vec3& source, float source_occlusion) const {
-    const float visibility = std::clamp(source_occlusion, 0.f, 1.f);
-    if (!has_occlusion_blockers()) {
-        const OcclusionAttenuation attenuation = evaluate_occlusion_attenuation(visibility);
-        if (is_unity_occlusion_attenuation(attenuation)) {
-            return make_unity_occlusion_attenuation();
-        }
-        return attenuation;
-    const float visibility = clamp_occlusion_visibility(source_occlusion);
-        return evaluate_occlusion_attenuation(visibility);
+    if (m_occlusionBlockers.empty()) {
+        return evaluate_occlusion_attenuation(std::clamp(source_occlusion, 0.f, 1.f));
     }
-    return evaluate_occlusion_from_blockers(listener, source, visibility, m_occlusionBlockers.data(),
+    return evaluate_occlusion_from_blockers(listener, source, source_occlusion,
+                                            m_occlusionBlockers.data(),
                                             static_cast<u32>(m_occlusionBlockers.size()));
 }
 
 BinauralPanGains SpatialMixer::compute_source_binaural_pan_gains(const Vec3& rel_listener,
                                                                  float distance_attenuation,
                                                                  float occlusion_gain) const {
-    return compute_binaural_pan_gains_coupled(m_hrtfEnabled, rel_listener, distance_attenuation,
-                                              occlusion_gain);
+    BinauralPanGains pan = compute_binaural_pan_gains_guarded(m_hrtfEnabled, rel_listener);
+    if (should_apply_hrtf_pan(m_hrtfEnabled, rel_listener)) {
+        apply_hrtf_attenuation_coupling(pan, distance_attenuation, occlusion_gain);
+    }
+    return pan;
 }
 
 float SpatialMixer::sample_clip(const AudioClip& clip, float play_head, u32 channel) const {
@@ -82,11 +74,16 @@ float SpatialMixer::sample_clip(const AudioClip& clip, float play_head, u32 chan
 void SpatialMixer::apply_hrtf_pan(float mono_sample, const Vec3& rel, float distance_attenuation,
                                   float occlusion_gain, float output_attenuation, float& left,
                                   float& right) const {
+    if (!should_apply_hrtf_pan(m_hrtfEnabled, rel)) {
+        left += mono_sample * output_attenuation;
+        right += mono_sample * output_attenuation;
+        return;
+    }
+
     const BinauralPanGains pan =
         compute_source_binaural_pan_gains(rel, distance_attenuation, occlusion_gain);
-    accumulate_binaural_pan(mono_sample, pan, output_attenuation, left, right);
-    apply_guarded_binaural_pan_to_sample(m_hrtfEnabled, rel, mono_sample, pan, output_attenuation,
-                                         left, right);
+    left += mono_sample * output_attenuation * pan.left;
+    right += mono_sample * output_attenuation * pan.right;
 }
 
 void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>& clips, float dt,
@@ -132,7 +129,7 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
             compute_source_occlusion_attenuation(listener_pos, source->position,
                                                  source->desc.occlusion);
         const float effective_attenuation =
-            distance_attenuation * compute_occlusion_combined_gain(occlusion);
+            distance_attenuation * occlusion.gain * occlusion.hf_gain;
 
         const Vec3 world_rel = source->position - listener_pos;
         const Vec3 rel = listener != nullptr ? to_listener_space(world_rel, basis) : world_rel;

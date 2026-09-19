@@ -5,17 +5,11 @@
 
 namespace fuse::renderer {
 
-class FrameManager;
 class VulkanSwapchain;
 
 /// Returns true when width and height are both non-zero.
 inline bool isValidSwapchainExtent(u32 width, u32 height) {
     return width > 0 && height > 0;
-}
-
-/// True when pending resize dimensions match the current swapchain extent.
-inline bool resizeExtentMatches(u32 pendingWidth, u32 pendingHeight, u32 currentWidth, u32 currentHeight) {
-    return pendingWidth == currentWidth && pendingHeight == currentHeight;
 }
 
 /// UINT32_MAX is the sentinel for headless, OUT_OF_DATE, or failed acquire.
@@ -40,6 +34,7 @@ inline bool shouldEarlyOutEmptyPresent(const VulkanSwapchain* swapchain,
                                        const FrameManager* frameManager) {
     return swapchain == nullptr || isSwapchainEmpty(*swapchain) || isEmptyAcquireResult(imageIndex) ||
            frameManager == nullptr || !frameManager->isReady();
+}
 
 /// Returns true when a resize request matches already-queued pending dimensions.
 inline bool isDuplicatePendingResizeExtent(u32 pendingWidth,
@@ -47,6 +42,7 @@ inline bool isDuplicatePendingResizeExtent(u32 pendingWidth,
                                            u32 requestedWidth,
                                            u32 requestedHeight) {
     return pendingWidth == requestedWidth && pendingHeight == requestedHeight;
+}
 
 /// Returns true when pending resize matches current swapchain extent (recreate would be a no-op).
 inline bool pendingResizeMatchesCurrentExtent(u32 currentWidth,
@@ -55,12 +51,16 @@ inline bool pendingResizeMatchesCurrentExtent(u32 currentWidth,
                                               u32 pendingHeight) {
     return isValidSwapchainExtent(pendingWidth, pendingHeight) && currentWidth == pendingWidth &&
            currentHeight == pendingHeight;
+}
 
 /// Returns true when a new resize replaces an already-pending extent (coalesce candidate).
 inline bool isResizeCoalesceRequest(bool resizePending,
+                                    u32 pendingWidth,
+                                    u32 pendingHeight,
+                                    u32 requestedWidth,
+                                    u32 requestedHeight) {
     return resizePending &&
            !isDuplicatePendingResizeExtent(pendingWidth, pendingHeight, requestedWidth, requestedHeight);
-/// True when acquire should return UINT32_MAX without calling vkAcquireNextImageKHR.
-bool shouldEarlyOutEmptySwapchainAcquire(const VulkanSwapchain* swapchain, const FrameManager* frameManager);
+}
 
 } // namespace fuse::renderer

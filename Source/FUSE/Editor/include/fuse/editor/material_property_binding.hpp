@@ -54,12 +54,6 @@ public:
 
     /// Snapshot of refresh/dirty state for inspector wiring (B6.7 deepen follow-up).
     [[nodiscard]] MaterialInspectorRefreshInfo refreshInfo() const;
-    /// Refresh guard — bound binding can mirror external edit state (B6.7 deepen follow-up).
-
-    /// Early-out for panel refresh loops when nothing is dirty or binding is idle (B6.7 deepen follow-up).
-    [[nodiscard]] bool shouldSkipPanelRefresh() const {
-        return !isBound() || !m_panelRefreshPending;
-    }
 
     bool getRoughness(f32& out) const;
     bool getMetallic(f32& out) const;
@@ -88,21 +82,9 @@ public:
     [[nodiscard]] bool tryIsPropertyDirty(MaterialPropertyId id) const;
     /// Number of distinct dirty property bits currently set (B6.7 deepen).
     [[nodiscard]] u32 dirtyPropertyCount() const;
-    [[nodiscard]] bool hasAnyPropertyDirty() const { return m_dirtyMask != 0u; }
-    [[nodiscard]] u32 propertyDirtyMask() const { return m_dirtyMask; }
     [[nodiscard]] bool needsPanelRefresh() const { return m_panelRefreshPending; }
     [[nodiscard]] u32 dirtyPropertyMask() const { return m_dirtyMask; }
-    /// Raw dirty-bit mask for inspector diffing (B6.7 deepen follow-up).
-    /// True when any property bit is set in the dirty mask (B6.7 deepen follow-up).
-    /// Number of distinct dirty property bits currently set (B6.7 deepen follow-up).
-    /// Panel refresh guard — pending refresh only when bound (B6.7 deepen follow-up).
-    [[nodiscard]] bool needsPanelRefreshWhenBound() const {
-        return canPostProperty() && m_panelRefreshPending;
-    }
     [[nodiscard]] u32 coalescedDirtyCount() const { return m_coalescedDirtyCount; }
-
-    /// Refresh guard — bound with a live edit-state pointer (B6.7 deepen).
-    [[nodiscard]] bool canRefreshFromEditState() const { return canPostProperty(); }
 
     /// Panel-refresh guard — dirty mask or pending refresh flag set (B6.7 deepen).
     [[nodiscard]] bool canMarkPanelRefreshed() const {
@@ -110,11 +92,6 @@ public:
     }
     /// Dirty-clear guard — property id valid and currently dirty (B6.7 deepen).
     [[nodiscard]] bool canClearPropertyDirty(MaterialPropertyId id) const;
-    /// Refresh guard — bound with a live edit-state pointer (B6.7 deepen follow-up).
-    [[nodiscard]] bool canRefreshFromEditState() const { return canPostProperty(); }
-    /// True when panel refresh can be skipped safely (B6.7 deepen follow-up).
-    [[nodiscard]] bool shouldSkipPanelRefresh() const {
-        return !needsPanelRefresh() || !canPostProperty();
 
     void clearPropertyDirty(MaterialPropertyId id);
     /// Guarded dirty clear — rejects invalid or clean property ids (B6.7 deepen).
@@ -122,30 +99,10 @@ public:
     void clearAllPropertyDirty();
     void markPanelRefreshed();
     /// Guarded panel refresh — no-op when unbound (B6.7 deepen).
-
-    /// Guarded panel refresh — no-op when nothing is dirty (B6.7 deepen).
     bool tryMarkPanelRefreshed();
 
-    /// Guarded panel refresh — no-op when nothing is dirty (B6.7 deepen).
-    bool tryMarkPanelRefreshed();
-
-    /// Guarded refresh/dirty helpers — no-op when unbound or property id invalid (B6.7 deepen follow-up).
-    bool tryRefreshFromEditState(const MaterialEditState& state);
-    [[nodiscard]] bool tryIsPropertyDirty(MaterialPropertyId id) const;
-    /// Guarded dirty clear — rejects invalid property ids (B6.7 deepen follow-up).
-    /// Guarded panel refresh — no-op when unbound (B6.7 deepen follow-up).
-
-    /// Refresh guard — bound with a live edit-state pointer (B6.7 deepen follow-up).
-    [[nodiscard]] bool canRefreshFromEditState() const { return canPostProperty(); }
     void refreshFromEditState(const MaterialEditState& state);
     /// Guarded edit-state refresh — early-out when unbound (B6.7 deepen).
-    /// Guarded refresh — no-op and returns false when unbound (B6.7 deepen follow-up).
-
-    /// Guarded external refresh — clamps and clears dirty only when bound (B6.7 deepen follow-up).
-
-    /// Guarded panel refresh — no-op when nothing is dirty (B6.7 deepen).
-
-    /// Guarded refresh — clamps, copies, and clears dirty state when bound (B6.7 deepen follow-up).
     bool tryRefreshFromEditState(const MaterialEditState& state);
 
 private:

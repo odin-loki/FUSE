@@ -5,36 +5,7 @@
 
 namespace fuse::animation {
 
-bool skeleton_is_empty(const Skeleton& skel) {
-    return skel.bone_count == 0;
-}
-
 namespace {
-
-bool skeleton_has_bones(const Skeleton& skel) {
-    return skel.bone_count > 0 && !skel.bones.empty();
-void clear_pose_for_empty_skeleton(Pose& out) {
-    out.bone_world_transforms.clear();
-    out.bone_count = 0;
-}
-
-void clear_pose_soa_for_empty_skeleton(PoseSoA& out) {
-    out.clear();
-bool skeleton_is_empty(const Skeleton& skel) {
-    return skel.bones.empty();
-
-void output_bind_pose_soa(const Skeleton& skel, PoseSoA& out) {
-    if (skeleton_is_empty(skel)) {
-        return;
-    out = PoseSoA::from_bind_pose(skel);
-
-void output_bind_pose(const Skeleton& skel, Pose& out) {
-
-
-    out = Pose::make_bind_pose(skel);
-bool skeleton_has_no_bones(const Skeleton& skel) {
-    return skel.bone_count == 0 || skel.bones.empty();
-}
 
 void blend_poses(const Pose& a, const Pose& b, f32 weight, Pose& out) {
     const f32 clamped = std::clamp(weight, 0.f, 1.f);
@@ -61,12 +32,6 @@ void blend_poses(const Pose& a, const Pose& b, f32 weight, Pose& out) {
 
 void blend_poses_soa(const PoseSoA& a, const PoseSoA& b, f32 weight, PoseSoA& out) {
     blend_pose_soa(a, b, weight, out);
-}
-
-void capture_blend_from_pose_soa(PoseSoA& out, PoseSoA& blend_from, const Skeleton& skel) {
-    ensure_pose_soa_bind_fallback(out, skel);
-    blend_from = out;
-    ensure_pose_soa_bind_fallback(blend_from, skel);
 }
 
 PoseSoA pose_to_soa(const Pose& pose, const Skeleton& skel) {
@@ -132,13 +97,6 @@ void find_blend_space_1d_bracket(const BlendSpace1D& space,
 } // namespace
 
 void BlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
-    if (!skeleton_has_bones(skel)) {
-        out.clear();
-    if (skeleton_is_empty(skel)) {
-        clear_pose_soa_for_empty_skeleton(out);
-        return;
-    }
-
     Pose pose = Pose::make_bind_pose(skel);
     evaluate(dt, skel, pose);
     out = pose_to_soa(pose, skel);
@@ -183,17 +141,8 @@ bool ClipNode::is_empty() const {
 }
 
 void ClipNode::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
-    if (skeleton_is_empty(skel)) {
-        clear_pose_for_empty_skeleton(out);
-        output_bind_pose(skel, out);
-        return;
-    }
-
     if (is_empty()) {
-    if (!skeleton_has_bones(skel) || clip == nullptr) {
-    if (skeleton_has_no_bones(skel) || is_empty()) {
         out = Pose::make_bind_pose(skel);
-        output_bind_pose(skel, out);
         return;
     }
 
@@ -211,19 +160,8 @@ void ClipNode::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 }
 
 void ClipNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
-    if (skeleton_is_empty(skel)) {
-        clear_pose_soa_for_empty_skeleton(out);
-        out.clear();
-        return;
-    }
-
     if (is_empty()) {
-    if (!skeleton_has_bones(skel)) {
-
-    if (clip == nullptr) {
-    if (skeleton_has_no_bones(skel) || is_empty()) {
         out = PoseSoA::from_bind_pose(skel);
-        output_bind_pose_soa(skel, out);
         return;
     }
 
@@ -266,17 +204,8 @@ bool AnimStateMachine::is_empty() const {
 }
 
 void BlendNode2::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
-    if (!skeleton_has_bones(skel)) {
-    if (skeleton_has_no_bones(skel) || is_empty()) {
-        out = Pose::make_bind_pose(skel);
-    if (skeleton_is_empty(skel)) {
-        clear_pose_for_empty_skeleton(out);
-        output_bind_pose(skel, out);
-        return;
-    }
-
     if (is_empty()) {
-        output_bind_pose(skel, out);
+        out = Pose::make_bind_pose(skel);
         return;
     }
 
@@ -295,16 +224,7 @@ void BlendNode2::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 }
 
 void BlendNode2::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
-    if (!skeleton_has_bones(skel)) {
-        out.clear();
-    if (skeleton_is_empty(skel)) {
-        clear_pose_soa_for_empty_skeleton(out);
-        return;
-    }
-
     if (is_empty()) {
-        output_bind_pose_soa(skel, out);
-    if (skeleton_has_no_bones(skel) || is_empty()) {
         out = PoseSoA::from_bind_pose(skel);
         return;
     }
@@ -328,17 +248,8 @@ void BlendNode2::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
 }
 
 void BlendSpace1D::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
-    if (!skeleton_has_bones(skel)) {
-    if (skeleton_has_no_bones(skel) || is_empty()) {
-        out = Pose::make_bind_pose(skel);
-    if (skeleton_is_empty(skel)) {
-        clear_pose_for_empty_skeleton(out);
-        output_bind_pose(skel, out);
-        return;
-    }
-
     if (is_empty()) {
-        output_bind_pose(skel, out);
+        out = Pose::make_bind_pose(skel);
         return;
     }
 
@@ -360,16 +271,7 @@ void BlendSpace1D::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 }
 
 void BlendSpace1D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
-    if (!skeleton_has_bones(skel)) {
-        out.clear();
-    if (skeleton_is_empty(skel)) {
-        clear_pose_soa_for_empty_skeleton(out);
-        return;
-    }
-
     if (is_empty()) {
-        output_bind_pose_soa(skel, out);
-    if (skeleton_has_no_bones(skel) || is_empty()) {
         out = PoseSoA::from_bind_pose(skel);
         return;
     }
@@ -396,14 +298,7 @@ void BlendSpace1D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
 }
 
 void BlendSpace2D::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
-    if (skeleton_is_empty(skel)) {
-        clear_pose_for_empty_skeleton(out);
-        output_bind_pose(skel, out);
-        return;
-    }
-
     if (is_empty()) {
-    if (skeleton_has_no_bones(skel) || is_empty()) {
         out = Pose::make_bind_pose(skel);
         return;
     }
@@ -414,16 +309,7 @@ void BlendSpace2D::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 }
 
 void BlendSpace2D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
-    if (!skeleton_has_bones(skel)) {
-        out.clear();
-    if (skeleton_is_empty(skel)) {
-        clear_pose_soa_for_empty_skeleton(out);
-        return;
-    }
-
     if (is_empty()) {
-        output_bind_pose_soa(skel, out);
-    if (skeleton_has_no_bones(skel) || is_empty()) {
         out = PoseSoA::from_bind_pose(skel);
         return;
     }
@@ -449,16 +335,7 @@ void BlendSpace2D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
 }
 
 void LayeredBlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
-    if (!skeleton_has_bones(skel)) {
-        out.clear();
-    if (skeleton_is_empty(skel)) {
-        clear_pose_soa_for_empty_skeleton(out);
-        return;
-    }
-
     if (is_empty()) {
-        output_bind_pose_soa(skel, out);
-    if (skeleton_has_no_bones(skel) || is_empty()) {
         out = PoseSoA::from_bind_pose(skel);
         return;
     }
@@ -495,14 +372,7 @@ void LayeredBlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
 }
 
 void LayeredBlendNode::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
-    if (skeleton_is_empty(skel)) {
-        clear_pose_for_empty_skeleton(out);
-        output_bind_pose(skel, out);
-        return;
-    }
-
     if (is_empty()) {
-    if (skeleton_has_no_bones(skel) || is_empty()) {
         out = Pose::make_bind_pose(skel);
         return;
     }
@@ -513,16 +383,7 @@ void LayeredBlendNode::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 }
 
 void AdditiveBlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
-    if (!skeleton_has_bones(skel)) {
-        out.clear();
-    if (skeleton_is_empty(skel)) {
-        clear_pose_soa_for_empty_skeleton(out);
-        return;
-    }
-
     if (is_empty()) {
-        output_bind_pose_soa(skel, out);
-    if (skeleton_has_no_bones(skel) || is_empty()) {
         out = PoseSoA::from_bind_pose(skel);
         return;
     }
@@ -546,14 +407,7 @@ void AdditiveBlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out)
 }
 
 void AdditiveBlendNode::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
-    if (skeleton_is_empty(skel)) {
-        clear_pose_for_empty_skeleton(out);
-        output_bind_pose(skel, out);
-        return;
-    }
-
     if (is_empty()) {
-    if (skeleton_has_no_bones(skel) || is_empty()) {
         out = Pose::make_bind_pose(skel);
         return;
     }
@@ -580,8 +434,6 @@ void AnimStateMachine::reset() {
     blend_time = 0.f;
     blend_duration = 0.2f;
     has_entered_initial = false;
-    blend_from_pose = Pose{};
-    blend_from_pose_soa.clear();
 }
 
 s32 AnimStateMachine::find_state_index(const char* name) const {
@@ -719,10 +571,6 @@ bool AnimStateMachine::has_state_node(u32 state_index) const {
 }
 
 s32 AnimStateMachine::find_transition_index(u32 from_state, u32 to_state) const {
-    if (!is_valid_state(from_state) || !is_valid_state(to_state) || from_state == to_state) {
-        return -1;
-    }
-
     for (u32 i = 0; i < transitions.size(); ++i) {
         if (transitions[i].from == from_state && transitions[i].to == to_state) {
             return static_cast<s32>(i);
@@ -732,10 +580,6 @@ s32 AnimStateMachine::find_transition_index(u32 from_state, u32 to_state) const 
 }
 
 bool AnimStateMachine::transition_condition_passes(u32 from_state, u32 to_state) const {
-    if (!is_valid_state(from_state) || !is_valid_state(to_state) || from_state == to_state) {
-        return false;
-    }
-
     const s32 index = find_transition_index(from_state, to_state);
     if (index < 0) {
         return false;
@@ -754,63 +598,21 @@ bool AnimStateMachine::can_transition(const char* from, const char* to) const {
     return transition_condition_passes(static_cast<u32>(fromIndex), static_cast<u32>(toIndex));
 }
 
-s32 AnimStateMachine::find_named_transition_index(const char* from, const char* to) const {
-    const s32 fromIndex = find_state_index(from);
-    const s32 toIndex = find_state_index(to);
-    if (fromIndex < 0 || toIndex < 0) {
-        return -1;
-    }
-    return find_transition_index(static_cast<u32>(fromIndex), static_cast<u32>(toIndex));
-
-bool AnimStateMachine::is_valid_transition(u32 from_state, u32 to_state) const {
-    if (!is_valid_state(from_state) || !is_valid_state(to_state) || from_state == to_state) {
-        return false;
-    }
-    return has_transition(from_state, to_state);
-}
-
-bool AnimStateMachine::is_transition_index_valid(u32 transition_index) const {
-    return transition_index < transitions.size();
-
-
-bool AnimStateMachine::can_take_transition(u32 from_state, u32 to_state) const {
-    return is_valid_transition(from_state, to_state) && transition_condition_passes(from_state, to_state);
-}
-
 f32 AnimStateMachine::remaining_crossfade_time() const {
     if (!is_transitioning || blend_duration <= 0.f) {
         return 0.f;
     }
 
     return std::max(0.f, blend_duration - blend_time);
-s32 AnimStateMachine::find_named_transition_index(const char* from, const char* to) const {
-    const s32 fromIndex = find_state_index(from);
-    const s32 toIndex = find_state_index(to);
-    if (fromIndex < 0 || toIndex < 0) {
-        return -1;
-    return find_transition_index(static_cast<u32>(fromIndex), static_cast<u32>(toIndex));
-    }
-
-bool AnimStateMachine::outgoing_transition_condition_passes(u32 from_state, u32 edge_index) const {
-    const s32 toState = outgoing_transition_to(from_state, edge_index);
-    if (toState < 0) {
-        return false;
-    }
-    return transition_condition_passes(from_state, static_cast<u32>(toState));
 }
 
 s32 AnimStateMachine::find_first_passing_outgoing_transition(u32 from_state) const {
-    if (!is_valid_state(from_state)) {
-        return -1;
-    }
-
     for (u32 i = 0; i < transitions.size(); ++i) {
         const Transition& transition = transitions[i];
-        if (transition.from != from_state || !is_valid_transition(transition.from, transition.to)) {
         if (transition.from != from_state || transition.to == from_state) {
             continue;
         }
-        if (!is_valid_state(transition.to)) {
+        if (transition.to >= states.size()) {
             continue;
         }
         if (!transition.condition || transition.condition()) {
@@ -828,19 +630,33 @@ bool AnimStateMachine::outgoing_transition_condition_passes(u32 from_state, u32 
         }
         if (seen == edge_index) {
             return !transition.condition || transition.condition();
+        }
         ++seen;
+    }
     return false;
+}
 
 f32 AnimStateMachine::incoming_transition_blend_duration_at(u32 to_state, u32 edge_index) const {
+    u32 seen = 0;
+    for (const Transition& transition : transitions) {
         if (transition.to != to_state) {
+            continue;
+        }
+        if (seen == edge_index) {
             return transition.blend_duration;
+        }
+        ++seen;
+    }
     return -1.f;
+}
 
 f32 AnimStateMachine::elapsed_crossfade_time() const {
     if (!is_transitioning) {
         return 0.f;
+    }
 
     return std::max(0.f, blend_time);
+}
 
 bool AnimStateMachine::has_passing_outgoing_transition(u32 from_state) const {
     return find_first_passing_outgoing_transition(from_state) >= 0;
@@ -854,116 +670,43 @@ bool AnimStateMachine::incoming_transition_condition_passes(u32 to_state, u32 ed
         }
         if (seen == edge_index) {
             return !transition.condition || transition.condition();
+        }
         ++seen;
+    }
     return false;
+}
 
 bool AnimStateMachine::is_valid_transition_index(u32 transition_index) const {
     return transition_index < transitions.size();
+}
 
 s32 AnimStateMachine::transition_from_at(u32 transition_index) const {
     if (!is_valid_transition_index(transition_index)) {
         return -1;
+    }
     return static_cast<s32>(transitions[transition_index].from);
+}
 
 s32 AnimStateMachine::transition_to_at(u32 transition_index) const {
+    if (!is_valid_transition_index(transition_index)) {
+        return -1;
+    }
     return static_cast<s32>(transitions[transition_index].to);
+}
 
 bool AnimStateMachine::is_valid_pending_state() const {
     if (!is_transitioning) {
         return true;
+    }
 
     return pending_state < states.size();
-
-f32 AnimStateMachine::transition_blend_duration_at(u32 transition_index) const {
-        return -1.f;
-
-    return transitions[transition_index].blend_duration;
-
-bool AnimStateMachine::transition_condition_passes_at(u32 transition_index) const {
-
-    const Transition& transition = transitions[transition_index];
-
-bool AnimStateMachine::is_valid_transition_index(u32 index) const {
-    return index < transitions.size();
-}
-
-s32 AnimStateMachine::transition_from_at(u32 index) const {
-    if (!is_valid_transition_index(index)) {
-        return -1;
-    }
-    return static_cast<s32>(transitions[index].from);
-}
-
-s32 AnimStateMachine::transition_to_at(u32 index) const {
-    if (!is_valid_transition_index(index)) {
-        return -1;
-    }
-    return static_cast<s32>(transitions[index].to);
-}
-
-f32 AnimStateMachine::transition_blend_duration_at(u32 index) const {
-    if (!is_valid_transition_index(index)) {
-        return -1.f;
-    }
-    return transitions[index].blend_duration;
-}
-
-bool AnimStateMachine::is_valid_transition_edge(u32 from_state, u32 to_state) const {
-    if (!is_valid_state(from_state) || !is_valid_state(to_state) || from_state == to_state) {
-        return false;
-    }
-    return has_transition(from_state, to_state);
-}
-
-bool AnimStateMachine::incoming_transition_condition_passes(u32 to_state, u32 edge_index) const {
-    u32 seen = 0;
-    for (const Transition& transition : transitions) {
-        if (transition.to != to_state) {
-            continue;
-        }
-        if (seen == edge_index) {
-            return !transition.condition || transition.condition();
-        }
-        ++seen;
-    }
-    return false;
-}
-
-bool AnimStateMachine::is_valid_transition(u32 from_state, u32 to_state) const {
-    if (!is_valid_state(from_state) || !is_valid_state(to_state) || from_state == to_state) {
-        return false;
-    }
-
-    return has_transition(from_state, to_state);
-}
-
-bool AnimStateMachine::can_take_transition(u32 from_state, u32 to_state) const {
-    return is_valid_transition(from_state, to_state) && transition_condition_passes(from_state, to_state);
-}
-
-bool AnimStateMachine::has_passing_outgoing_transition(u32 from_state) const {
-    return find_first_passing_outgoing_transition(from_state) >= 0;
-}
-
-s32 AnimStateMachine::transition_from_at(u32 transition_index) const {
-    if (transition_index >= transitions.size()) {
-        return -1;
-    }
-    return static_cast<s32>(transitions[transition_index].from);
-}
-
-s32 AnimStateMachine::transition_to_at(u32 transition_index) const {
-    if (transition_index >= transitions.size()) {
-        return -1;
-    }
-    return static_cast<s32>(transitions[transition_index].to);
 }
 
 f32 AnimStateMachine::transition_blend_duration_at(u32 transition_index) const {
-    if (transition_index >= transitions.size()) {
     if (!is_valid_transition_index(transition_index)) {
         return -1.f;
     }
+
     return transitions[transition_index].blend_duration;
 }
 
@@ -974,29 +717,10 @@ bool AnimStateMachine::transition_condition_passes_at(u32 transition_index) cons
 
     const Transition& transition = transitions[transition_index];
     return !transition.condition || transition.condition();
-
-s32 AnimStateMachine::first_outgoing_transition_index(u32 from_state) const {
-    for (u32 i = 0; i < transitions.size(); ++i) {
-        if (transitions[i].from == from_state) {
-            return static_cast<s32>(i);
-    return -1;
 }
 
 void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
-    if (!skeleton_has_bones(skel)) {
-        out.clear();
-    if (skeleton_is_empty(skel)) {
-        clear_pose_soa_for_empty_skeleton(out);
-        return;
-    }
-
     if (is_empty()) {
-        output_bind_pose_soa(skel, out);
-
-bool AnimStateMachine::is_valid_pending_state() const {
-    return is_transitioning && pending_state < states.size();
-
-    if (skeleton_has_no_bones(skel) || is_empty()) {
         out = PoseSoA::from_bind_pose(skel);
         return;
     }
@@ -1016,25 +740,18 @@ bool AnimStateMachine::is_valid_pending_state() const {
         if (!is_valid_pending_state()) {
             is_transitioning = false;
             out = PoseSoA::from_bind_pose(skel);
-        if (!is_valid_state(pending_state)) {
-            blend_time = 0.f;
-            output_bind_pose_soa(skel, out);
             return;
         }
 
         blend_time += dt;
-        ensure_pose_soa_bind_fallback(blend_from_pose_soa, skel);
-
         PoseSoA targetSoa = PoseSoA::from_bind_pose(skel);
-        if (states[pending_state].node) {
-        if (is_valid_pending_state() && states[pending_state].node) {
+        if (pending_state < states.size() && states[pending_state].node) {
             states[pending_state].node->evaluate_soa(dt, skel, targetSoa);
             ensure_pose_soa_bind_fallback(targetSoa, skel);
         }
 
         ensure_pose_soa_bind_fallback(blend_from_pose_soa, skel);
         const f32 alpha = crossfade_alpha();
-        ensure_pose_soa_bind_fallback(blend_from_pose_soa, skel);
         blend_poses_soa(blend_from_pose_soa, targetSoa, alpha, out);
         ensure_pose_soa_bind_fallback(out, skel);
         out.compute_world_transforms(skel);
@@ -1058,31 +775,22 @@ bool AnimStateMachine::is_valid_pending_state() const {
     }
 
     for (const Transition& transition : transitions) {
-        if (transition.from != active_state || !is_valid_transition(transition.from, transition.to)) {
-        if (transition.from != active_state) {
-            continue;
-        }
-        if (!is_valid_transition(transition.from, transition.to)) {
-            continue;
-        }
-        if (transition.from >= states.size()) {
+        if (transition.from != active_state || transition.to == active_state) {
             continue;
         }
         if (!transition.condition || !transition.condition()) {
             continue;
         }
         if (transition.to >= states.size()) {
-            continue;
+            break;
         }
 
-        if (states[active_state].on_exit) {
+        if (active_state < states.size() && states[active_state].on_exit) {
             states[active_state].on_exit();
         }
 
         ensure_pose_soa_bind_fallback(out, skel);
         blend_from_pose_soa = out;
-        ensure_pose_soa_bind_fallback(blend_from_pose_soa, skel);
-        capture_blend_from_pose_soa(out, blend_from_pose_soa, skel);
         pending_state = transition.to;
         blend_duration = transition.blend_duration;
         blend_time = blend_duration <= 0.f ? blend_duration : dt;
@@ -1094,7 +802,6 @@ bool AnimStateMachine::is_valid_pending_state() const {
             ensure_pose_soa_bind_fallback(targetSoa, skel);
         }
 
-        ensure_pose_soa_bind_fallback(blend_from_pose_soa, skel);
         const f32 alpha = crossfade_alpha();
         if (alpha >= 1.f) {
             active_state = pending_state;
@@ -1118,17 +825,8 @@ bool AnimStateMachine::is_valid_pending_state() const {
 }
 
 void AnimStateMachine::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
-    if (!skeleton_has_bones(skel)) {
-    if (skeleton_has_no_bones(skel) || is_empty()) {
-        out = Pose::make_bind_pose(skel);
-    if (skeleton_is_empty(skel)) {
-        clear_pose_for_empty_skeleton(out);
-        output_bind_pose(skel, out);
-        return;
-    }
-
     if (is_empty()) {
-        output_bind_pose(skel, out);
+        out = Pose::make_bind_pose(skel);
         return;
     }
 
@@ -1144,16 +842,9 @@ void AnimStateMachine::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
     }
 
     if (is_transitioning) {
-        if (!is_valid_state(pending_state)) {
-            is_transitioning = false;
-            blend_time = 0.f;
-            output_bind_pose(skel, out);
-            return;
-        }
-
         blend_time += dt;
         Pose targetPose = Pose::make_bind_pose(skel);
-        if (states[pending_state].node) {
+        if (pending_state < states.size() && states[pending_state].node) {
             states[pending_state].node->evaluate(dt, skel, targetPose);
         }
 
@@ -1165,7 +856,7 @@ void AnimStateMachine::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
             is_transitioning = false;
             blend_time = 0.f;
             blend_from_pose = out;
-            if (states[active_state].on_enter) {
+            if (active_state < states.size() && states[active_state].on_enter) {
                 states[active_state].on_enter();
             }
         }
@@ -1178,18 +869,17 @@ void AnimStateMachine::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
     }
 
     for (const Transition& transition : transitions) {
-        if (transition.from != active_state || !is_valid_transition(transition.from, transition.to)) {
-        if (transition.from != active_state) {
-            continue;
-        }
-        if (!is_valid_transition(transition.from, transition.to)) {
+        if (transition.from != active_state || transition.to == active_state) {
             continue;
         }
         if (!transition.condition || !transition.condition()) {
             continue;
         }
+        if (transition.to >= states.size()) {
+            break;
+        }
 
-        if (states[active_state].on_exit) {
+        if (active_state < states.size() && states[active_state].on_exit) {
             states[active_state].on_exit();
         }
 
@@ -1231,17 +921,13 @@ void AnimStateMachine::add_transition(const char* from,
                                       const char* to,
                                       f32 duration,
                                       std::function<bool()> condition) {
-    if (from == nullptr || to == nullptr) {
-        return;
-    }
-
     s32 fromIndex = -1;
     s32 toIndex = -1;
     for (u32 i = 0; i < states.size(); ++i) {
-        if (states[i].name == from) {
+        if (from != nullptr && states[i].name == from) {
             fromIndex = static_cast<s32>(i);
         }
-        if (states[i].name == to) {
+        if (to != nullptr && states[i].name == to) {
             toIndex = static_cast<s32>(i);
         }
     }

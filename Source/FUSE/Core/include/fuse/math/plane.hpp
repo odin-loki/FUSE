@@ -61,7 +61,6 @@ inline Vec4 makePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point) {
 }
 
 /// Writes a normalized plane equation; returns false when the normal is degenerate.
-/// Builds a normalized plane when the normal is non-degenerate.
 inline bool tryMakePlaneFromNormalAndPoint(const Vec3& normal, const Vec3& point, Vec4& out,
                                            f32 epsilon = 1e-8f) {
     const f32 lenSq = normal.dot(normal);
@@ -115,18 +114,6 @@ inline bool rayIntersectPlane(const Vec4& plane, const Vec3& origin, const Vec3&
     return true;
 }
 
-/// Ray-plane intersection clamped to `[tMin, tMax]`; returns false on miss or degenerate early-out.
-inline bool tryRayIntersectPlaneClamped(const Vec4& plane, const Vec3& origin, const Vec3& direction, f32 tMin,
-                                        f32 tMax, f32& t, f32 epsilon = 1e-8f) {
-    if (tMin > tMax) {
-        return false;
-    }
-    if (!rayIntersectPlane(plane, origin, direction, t, epsilon)) {
-        return false;
-    }
-    return t >= tMin && t <= tMax;
-}
-
 /// Positive-vertex test for an AABB against a plane (frustum culling convention).
 inline PlaneSide classifyAabb(const Vec4& plane, const AABB& box) {
     if (box.isEmpty()) {
@@ -157,15 +144,6 @@ inline PlaneSide classifyAabb(const Vec4& plane, const AABB& box) {
         return PlaneSide::InFront;
     }
     return PlaneSide::Straddling;
-}
-
-/// Classifies an AABB when the plane and box are usable; returns false on empty box or degenerate plane.
-inline bool tryClassifyAabb(const Vec4& plane, const AABB& box, PlaneSide& side, f32 epsilon = 1e-8f) {
-    if (box.isEmpty() || isDegeneratePlane(plane, epsilon)) {
-        return false;
-    }
-    side = classifyAabb(plane, box);
-    return true;
 }
 
 /// Clips a segment `[a, b]` against the positive half-space of `plane`.
@@ -267,9 +245,9 @@ inline u32 clipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32 inp
     return outCount;
 }
 
-/// Classifies an AABB when the plane and box are usable; returns false on degenerate or empty early-out.
+/// Classifies an AABB when the plane is usable; returns false on degenerate early-out.
 inline bool tryClassifyAabb(const Vec4& plane, const AABB& box, PlaneSide& side, f32 epsilon = 1e-8f) {
-    if (isDegeneratePlane(plane, epsilon) || box.isEmpty()) {
+    if (isDegeneratePlane(plane, epsilon)) {
         return false;
     }
     side = classifyAabb(plane, box);
@@ -289,8 +267,6 @@ inline bool tryClipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32
                                        u32& outCount, u32 maxOutput, f32 epsilon = 1e-5f) {
     if (isDegeneratePlane(plane, epsilon)) {
         outCount = 0;
-/// Clips a convex polygon when the plane is usable; returns false on degenerate early-out.
-                                       u32 maxOutput, u32& outCount, f32 epsilon = 1e-5f) {
         return false;
     }
     outCount = clipPolygonAgainstPlane(plane, input, inputCount, output, maxOutput, epsilon);

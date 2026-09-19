@@ -131,7 +131,7 @@ u32 TransformSystem::count_roots(Registry& reg) {
 
     u32 count = 0;
     reg.each<Transform>([&](EntityID, Transform& transform) {
-        if (is_root_transform(transform)) {
+        if (!transform.parent.valid()) {
             ++count;
         }
     });
@@ -208,10 +208,6 @@ void TransformSystem::update(Registry& reg, const TransformSystemOptions& option
     }
 
     for (EntityID root : roots) {
-        if (should_skip_hierarchy_subtree(reg, root)) {
-            continue;
-        }
-
         Transform* transform = reg.get<Transform>(root);
         if (transform == nullptr) {
             continue;

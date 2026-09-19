@@ -74,16 +74,10 @@ public:
     void set_baseline_state();
     u32 baselineUndoCount() const { return m_baselineUndoCount; }
     u32 baselineRedoCount() const { return m_baselineRedoCount; }
-    [[nodiscard]] bool isBaselineConfigured() const { return m_baselineConfigured; }
     [[nodiscard]] bool isAtBaseline() const;
 
-    /// True when undo/redo depth or post-baseline coalesce differs from the last save point.
-    [[nodiscard]] bool hasUnsavedChanges() const {
-        return !isAtBaseline() || coalescedOpsSinceBaseline() > 0u;
-    }
     /// True when undo/redo depth differs from the last `set_baseline_state` call.
-    /// Unconfigured stacks treat any non-empty or dirty state as unsaved (B6.2 deepen).
-    [[nodiscard]] bool hasUnsavedChanges() const;
+    [[nodiscard]] bool hasUnsavedChanges() const { return !isAtBaseline(); }
 
     std::string peekUndoDescription() const;
     std::string peekRedoDescription() const;

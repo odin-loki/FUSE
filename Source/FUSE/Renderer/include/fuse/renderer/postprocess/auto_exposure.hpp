@@ -49,8 +49,6 @@ void reset_auto_exposure_state_to(AutoExposureState& state, f32 ev = 0.f);
 void reset_auto_exposure_state_to_clamped(AutoExposureState& state, f32 ev, const AutoExposureParams& params);
 /// Reset temporal state only when EV anchor is within params range; returns false when rejected (B5.10 deepen).
 bool reset_auto_exposure_state_to_if_valid(AutoExposureState& state, f32 ev, const AutoExposureParams& params);
-/// Clear measured/smoothed luminance while preserving the current EV anchor (B5.10 deepen).
-void reset_auto_exposure_measurements(AutoExposureState& state);
 f32 ema_alpha_for_direction(bool brightening, const AutoExposureParams& params);
 bool is_brightening_luminance(f32 measured_luminance, f32 reference_luminance);
 f32 ema_blend(f32 previous, f32 measured, f32 alpha);
@@ -72,8 +70,6 @@ struct LuminanceHistogramParams {
 bool metering_percentile_valid(f32 percentile);
 /// True when histogram binning and percentile knobs are usable (B5.10 deepen).
 bool luminance_histogram_params_valid(const LuminanceHistogramParams& params);
-/// True when an explicit percentile knob is in [0, 1] (B5.10 deepen).
-bool luminance_histogram_percentile_valid(f32 percentile);
 /// True when a histogram bin index is within the configured bin count (B5.10 deepen).
 bool luminance_histogram_bin_in_range(u32 bin, const LuminanceHistogramParams& params);
 
@@ -105,24 +101,12 @@ private:
 
 void reset_luminance_histogram(LuminanceHistogram& histogram);
 
-/// True when auto-exposure tuning knobs are usable (B5.10 deepen).
-bool auto_exposure_params_valid(const AutoExposureParams& params);
-/// True when auto-exposure adaptation is enabled and params are valid (B5.10 deepen).
-bool auto_exposure_can_adapt(const AutoExposureParams& params);
-/// True when a measured luminance can drive adaptation (B5.10 deepen).
-bool auto_exposure_can_update_from_luminance(f32 measured_luminance, const AutoExposureParams& params);
-
 /// Batch histogram accumulation helpers (B5.10 deepen).
 namespace histogram_util {
 /// True when a sample buffer can contribute metering (non-null and non-empty).
 bool hasMeteringSamples(const fuse::math::Vec3* samples, u32 count);
 /// True when histogram params and sample buffer are ready for accumulation (B5.10 deepen).
 bool canAccumulateFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params);
-/// True when an explicit percentile and histogram params are ready for metering (B5.10 deepen).
-bool canMeterPercentile(f32 percentile, const LuminanceHistogramParams& params);
-/// True when percentile, params, and sample buffer are ready for percentile metering (B5.10 deepen).
-bool canMeterPercentileFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
-                                   f32 percentile);
 /// True when histogram params and sample buffer are ready for percentile metering (B5.10 deepen).
 bool canMeterFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params);
 /// True when a histogram has accumulated samples (B5.10 deepen).
@@ -134,11 +118,6 @@ bool canMeterPercentile(const LuminanceHistogram& histogram, f32 percentile);
 /// True when percentile, params, and sample buffer are ready for percentile metering (B5.10 deepen).
 bool canMeterPercentileFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                                    f32 percentile);
-/// True when histogram params are valid and samples are present (B5.10 deepen).
-/// True when histogram params and accumulated samples are ready for average metering (B5.10 deepen).
-bool canMeterAverage(const LuminanceHistogram& histogram);
-/// True when histogram params and sample buffer are ready for average metering (B5.10 deepen).
-bool canMeterAverageFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params);
 void accumulateSamples(LuminanceHistogram& histogram, const fuse::math::Vec3* samples, u32 count);
 f32 measurePercentile(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params,
                       f32 percentile);
@@ -151,12 +130,6 @@ f32 meterFromHistogram(const LuminanceHistogram& histogram, f32 percentile);
 bool canMeterDefaultPercentile(const LuminanceHistogram& histogram);
 /// Percentile metering using the histogram's configured metering percentile (B5.10 deepen).
 f32 meterDefaultPercentile(const LuminanceHistogram& histogram);
-/// True when histogram params and accumulated samples can contribute metering (B5.10 deepen).
-bool canMeterHistogram(const LuminanceHistogram& histogram);
-/// Average metering from histogram; returns 0 when empty (B5.10 deepen).
-f32 meterAverageFromHistogram(const LuminanceHistogram& histogram);
-/// Average metering from samples; returns 0 when empty (B5.10 deepen).
-f32 meterAverageFromSamples(const fuse::math::Vec3* samples, u32 count, const LuminanceHistogramParams& params);
 } // namespace histogram_util
 
 /// CPU histogram-free exposure meter stub (CUDA reduction deferred).
@@ -192,23 +165,10 @@ f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count);
 /// Reset histogram and average meter together (B5.10 deepen).
 void reset_metering(LuminanceHistogram& histogram, ExposureMeter& meter);
 
+/// True when an exposure meter has accumulated samples (B5.10 deepen).
 bool exposure_meter_has_samples(const ExposureMeter& meter);
 /// True when an exposure meter can report a luminance average (B5.10 deepen).
 bool exposure_meter_can_measure(const ExposureMeter& meter);
-
-/// Batch exposure-meter helpers mirroring histogram_util (B5.10 deepen).
-/// Average luminance from meter; returns 0 when empty (B5.10 deepen).
-/// Average luminance from samples; returns 0 when empty (B5.10 deepen).
-
-/// Batch exposure-meter helpers mirroring histogram_util (B5.10 deepen).
-namespace meter_util {
-/// True when an exposure meter has accumulated samples.
-bool hasMeteringMeter(const ExposureMeter& meter);
-/// Average luminance from meter; returns 0 when empty (B5.10 deepen).
-f32 meterFromMeter(const ExposureMeter& meter);
-/// Average luminance from samples; returns 0 when empty (B5.10 deepen).
-f32 meterFromSamples(const fuse::math::Vec3* samples, u32 count);
-} // namespace meter_util
 
 /// Host-side auto-exposure pass stub (CUDA histogram deferred).
 class AutoExposure {
@@ -239,15 +199,6 @@ private:
 bool auto_exposure_can_update_from_samples(const fuse::math::Vec3* samples, u32 count);
 /// True when a histogram can drive auto-exposure adaptation (B5.10 deepen).
 bool auto_exposure_can_update_from_histogram(const LuminanceHistogram& histogram);
-/// True when a positive measured luminance can drive adaptation (B5.10 deepen).
-bool auto_exposure_can_update_from_luminance(f32 measured_luminance, const AutoExposureParams& params);
-/// True when histogram metering and auto-exposure params can adapt (B5.10 deepen).
-bool auto_exposure_can_update_from_histogram_with_params(const LuminanceHistogram& histogram,
-                                                         const AutoExposureParams& params, f32 delta_seconds);
-/// True when sample metering and auto-exposure params can adapt (B5.10 deepen).
-bool auto_exposure_can_update_from_samples_with_params(const fuse::math::Vec3* samples, u32 count,
-/// True when the auto-exposure facade is initialized (B5.10 deepen).
-bool auto_exposure_is_ready(const AutoExposure& exposure);
 /// Reset temporal auto-exposure state via facade (B5.10 deepen).
 void reset_auto_exposure(AutoExposure& exposure);
 /// Reset temporal auto-exposure state with clamped EV anchor via facade (B5.10 deepen).
