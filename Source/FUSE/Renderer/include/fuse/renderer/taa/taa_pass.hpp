@@ -371,3 +371,7 @@ void addTaaPassToGraph(RenderGraph& graph);
     TaaJitterGuardRejectReason jitterReject = TaaJitterGuardRejectReason::None;
     TaaResolveBlendRejectReason blendReject = TaaResolveBlendRejectReason::None;
     bool preflightTemporalGuards(u32 frameIndex, const TaaResolveDesc& desc, u32 observedGeneration,
+
+// --- deepen additive from deepen-b59-taa-guards-2f25 ---
+    bool preflightHistoryTemporal(u32 observedGeneration, TaaHistoryReuseBlockReason* reason = nullptr) const;
+    bool preflightJitterFrame(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;

@@ -4493,3 +4493,31 @@ void testTaaPassTemporalGuardsAndTryPreflight() {
                "pass tryPreflightJitterSync passes after invalid desc fallback");
                "pass classifyJitterNdcReject detects zero width");
                "pass tryPreflightJitterNdc reject reason is InvalidViewport");
+
+// --- deepen additive from deepen-b59-taa-guards-2f25 ---
+void testTaaPassTryPreflightAndCompositeGuards() {
+               "tryPreflightHistoryReadyForResolve fails before init");
+               "tryPreflightHistoryReuse fails before init");
+               "tryPreflightJitterSync passes before init");
+               "tryPreflightJitterNdc passes before init");
+               "tryPreflightJitterAdvance passes before init");
+    expectTrue(pass->preflightJitterFrame(4u, &jitterReason),
+               "preflightJitterFrame passes before init");
+               "tryPreflightHistoryWarmup fails before first resolve");
+               "tryPreflightResolve passes with valid desc after init");
+               "tryPreflightResolve skip reason is None after init");
+               "preflightResolveWithBlend passes before first resolve");
+               "tryComputeResolveBlendWeights passes before first resolve");
+               "tryPreflightHistoryReuse passes after resolve");
+    expectTrue(pass->preflightHistoryTemporal(0u, &reuseReason),
+               "preflightHistoryTemporal passes after resolve");
+               "tryComputeResolveBlendWeights passes after resolve");
+    expectNear(weights.current, 0.25f, 1e-5f, "tryCompute steady current weight");
+    expectNear(weights.history, 0.75f, 1e-5f, "tryCompute steady history weight");
+    expectTrue(pass->preflightJitterFrame(9u, &jitterReason),
+               "preflightJitterFrame passes after sync");
+               "tryPreflightHistoryReuse fails after invalidate");
+               "tryPreflightJitterNdc fails for zero-width pass");
+               "tryPreflightResolve fails with invalid dimensions");
+               "tryPreflightResolve skip reason is InvalidDimensions");
+    testTaaPassTryPreflightAndCompositeGuards();

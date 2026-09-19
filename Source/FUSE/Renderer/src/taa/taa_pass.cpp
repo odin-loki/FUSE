@@ -666,3 +666,17 @@ bool TaaPass::preflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason*
         preflightTaaResolveBlendWeights(desc, m_history, &verdict.blendReject);
 bool TaaPass::preflightTemporalGuards(u32 frameIndex, const TaaResolveDesc& desc, u32 observedGeneration,
     return !preflightTemporalGuards(frameIndex, desc, observedGeneration);
+
+// --- deepen additive from deepen-b59-taa-guards-2f25 ---
+bool TaaPass::preflightHistoryTemporal(u32 observedGeneration, TaaHistoryReuseBlockReason* reason) const {
+    if (!tryPreflightHistoryReadyForResolve(localReason)) {
+    return preflightHistoryReuse(observedGeneration, reason);
+    return !preflightHistoryTemporal(observedGeneration);
+    if (wouldSkipResolve(desc, skipReason)) {
+    return preflightResolveBlendWeights(desc, blendReason);
+    return !preflightResolveWithBlend(desc);
+bool TaaPass::preflightJitterFrame(u32 frameIndex, TaaJitterGuardRejectReason* reason) const {
+    TaaJitterGuardRejectReason localReason = TaaJitterGuardRejectReason::None;
+    if (!preflightJitterSync(frameIndex, &localReason)) {
+    return preflightJitterNdc(reason);
+    return !preflightJitterFrame(frameIndex);
