@@ -115,4 +115,25 @@ bool should_skip_friction_basis_preflight(
     const ContactManifold& manifold,
     f32 epsilon = 1e-4f);
 
+/// Const preflight for warm-start friction impulse restore (B4.4 deepen follow-up pass).
+struct WarmStartFrictionPreflight {
+    bool skipped = false;
+    bool hasWarmImpulse = false;
+    bool hasValidBasis = false;
+
+    bool can_warm_start() const { return !skipped && hasWarmImpulse && hasValidBasis; }
+};
+
+/// Populate warm-start friction preflight without mutating the manifold (B4.4 deepen follow-up pass).
+WarmStartFrictionPreflight preflight_warm_start_friction(
+    const ContactManifold& manifold,
+    f32 impulseEpsilon = 1e-8f,
+    f32 basisEpsilon = 1e-4f);
+
+/// Returns true when warm-start friction restore should be skipped (B4.4 deepen follow-up pass).
+bool should_skip_warm_start_friction(
+    const ContactManifold& manifold,
+    f32 impulseEpsilon = 1e-8f,
+    f32 basisEpsilon = 1e-4f);
+
 } // namespace fuse::physics::narrowphase

@@ -237,4 +237,28 @@ bool should_skip_friction_basis_preflight(
     return preflight_friction_basis_rebuild(manifold, epsilon).can_skip_rebuild();
 }
 
+WarmStartFrictionPreflight preflight_warm_start_friction(
+    const ContactManifold& manifold,
+    f32 impulseEpsilon,
+    f32 basisEpsilon) {
+    WarmStartFrictionPreflight preflight{};
+    if (manifold.empty() || !manifold.hasValidNormal()) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.hasWarmImpulse =
+        std::fabs(manifold.warmNormalImpulse) > impulseEpsilon ||
+        tangentialSpeed(manifold.warmTangentImpulse) > impulseEpsilon;
+    preflight.hasValidBasis = can_skip_friction_basis_rebuild(manifold, basisEpsilon);
+    return preflight;
+}
+
+bool should_skip_warm_start_friction(
+    const ContactManifold& manifold,
+    f32 impulseEpsilon,
+    f32 basisEpsilon) {
+    return !preflight_warm_start_friction(manifold, impulseEpsilon, basisEpsilon).can_warm_start();
+}
+
 } // namespace fuse::physics::narrowphase
