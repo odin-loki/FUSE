@@ -267,6 +267,15 @@ public:
     /// Combined resolve temporal-blend preflight with optional reject diagnostics (B5.9 deepen).
                                        TaaResolveBlendRejectReason* blendReason = nullptr,
                                        TaaHistoryReuseBlockReason* reuseReason = nullptr) const;
+    /// Classify pass history warm-up state (B5.9 deepen).
+    TaaHistoryWarmupState classifyHistoryWarmupState() const;
+    /// True when pass history warm-up is complete (B5.9 deepen).
+    bool preflightHistoryWarmup(TaaHistoryWarmupState* state = nullptr) const;
+    /// Classify resolve blend mode for the next resolve (B5.9 deepen).
+    TaaResolveBlendMode classifyResolveBlendMode(const TaaResolveDesc& desc) const;
+    /// True when pass jitter slot differs from the frame-index mapping (B5.9 deepen).
+    bool jitterNeedsSyncToFrameIndex(u32 frameIndex) const;
+    /// Combined resolve-frame preflight — skip check then blend-weight validation (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

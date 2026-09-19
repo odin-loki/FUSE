@@ -541,6 +541,18 @@ bool TaaPass::resolveTemporalBlendAllowed(const TaaResolveDesc& desc) const {
                                             TaaResolveBlendRejectReason* blendReason,
                                             TaaHistoryReuseBlockReason* reuseReason) const {
     return preflightTaaResolveTemporalBlend(desc, m_history, blendReason, reuseReason);
+TaaHistoryWarmupState TaaPass::classifyHistoryWarmupState() const {
+    return classifyTaaHistoryWarmupState(m_history);
+
+bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupState* state) const {
+    return preflightTaaHistoryWarmup(m_history, state);
+
+TaaResolveBlendMode TaaPass::classifyResolveBlendMode(const TaaResolveDesc& desc) const {
+    return classifyTaaResolveBlendMode(desc, m_history);
+
+bool TaaPass::jitterNeedsSyncToFrameIndex(u32 frameIndex) const {
+    return m_jitter.needsSyncToFrameIndex(frameIndex);
+
 }
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {

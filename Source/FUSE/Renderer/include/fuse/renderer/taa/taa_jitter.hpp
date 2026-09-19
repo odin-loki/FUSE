@@ -119,6 +119,10 @@ struct TaaJitterLayout {
     /// True when jitter can sync to `frameIndex` for the given sequence (B5.9 deepen).
     static bool preflightSyncToFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
                                           TaaJitterSyncRejectReason* reason = nullptr);
+    /// Circular slot distance from the frame-index mapping (0 when aligned) (B5.9 deepen).
+    static u32 frameIndexSlotDrift(u32 frameIndex, u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// True when jitter slot differs from the frame-index mapping (B5.9 deepen).
+    static bool needsSyncToFrameIndex(u32 frameIndex, u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Returns the jitter cycle length after validation (0 when invalid).
     static u32 sequencePeriod(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Maps a monotonic frame counter into the active Halton slot.
@@ -222,6 +226,10 @@ public:
     TaaJitterSyncRejectReason classifySyncReject(u32 frameIndex) const;
     /// Sync only when preflight passes; returns false when blocked (B5.9 deepen).
     bool preflightSyncToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason* reason = nullptr);
+    /// Circular slot distance from the frame-index mapping (0 when aligned) (B5.9 deepen).
+    u32 frameIndexSlotDrift(u32 frameIndex) const;
+    /// True when jitter slot differs from the frame-index mapping (B5.9 deepen).
+    bool needsSyncToFrameIndex(u32 frameIndex) const;
 
     u32 index() const { return m_index; }
     /// True when monotonic frame counter matches `frameIndex` (B5.9 deepen).

@@ -200,6 +200,40 @@ bool taaHistoryTemporalReuseReady(const TaaHistoryBuffer& history, u32 observedG
     return preflightTaaHistoryWarmup(history) && preflightTaaHistoryReuse(history, observedGeneration);
 }
 
+const char* taaHistoryWarmupStateLabel(TaaHistoryWarmupState state) {
+    switch (state) {
+    case TaaHistoryWarmupState::NotReady:
+        return "not_ready";
+    case TaaHistoryWarmupState::AwaitingFirstResolve:
+        return "awaiting_first_resolve";
+    case TaaHistoryWarmupState::Complete:
+        return "complete";
+    }
+    return "unknown";
+}
+
+TaaHistoryWarmupState classifyTaaHistoryWarmupState(const TaaHistoryBuffer& history) {
+    if (!history.isReady()) {
+        return TaaHistoryWarmupState::NotReady;
+    }
+    if (history.hasValidHistory()) {
+        return TaaHistoryWarmupState::Complete;
+    }
+    return TaaHistoryWarmupState::AwaitingFirstResolve;
+}
+
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return classifyTaaHistoryWarmupState(history) == TaaHistoryWarmupState::Complete;
+}
+
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupState* state) {
+    const TaaHistoryWarmupState warmupState = classifyTaaHistoryWarmupState(history);
+    if (state != nullptr) {
+        *state = warmupState;
+    }
+    return warmupState == TaaHistoryWarmupState::Complete;
+}
+
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
                               TaaHistoryReuseBlockReason* reason) {
     const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlock(history, observedGeneration);
