@@ -1764,6 +1764,7 @@ enum class PairBufferInvalidateRejectReason : u8 {
 /// Predict whether writeSlot would bail before mutation (B4.2 deepen follow-up pass).
 /// Preflight skip check for write-slot — mirrors `canSkipPairBufferWriteSlot` (B4.2 deepen pass).
 /// Preflight write-slot without mutation — returns true when write would proceed (B4.2 deepen pass).
+/// Preflight write-slot skip check without mutating the buffer (B4.2 deepen pass).
 bool wouldSkipPairBufferWriteSlot(
     const PairBufferSoA& buffer,
     u32 slot,
@@ -2023,8 +2024,10 @@ struct PairBufferInvalidateSlotPreflight {
 
 
 
-    bool outOfRangeSlot = false;
-    bool alreadyInvalid = false;
+
+
+
+
 
 };
 
@@ -2071,6 +2074,9 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
 /// Preflight invalidate-slot without mutation — returns true when invalidate would skip (B4.2 deepen pass).
 
 
+
+
+/// Preflight invalidate-slot skip check without mutating the buffer (B4.2 deepen pass).
 bool wouldSkipPairBufferInvalidateSlot(
     const PairBufferSoA& buffer,
     u32 slot,
@@ -2121,6 +2127,8 @@ FUSE_PHYSICS_INLINE bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& 
 
 
 
+/// Invalidate only when `preflightPairBufferInvalidateSlot` allows; returns false when skipped (B4.2 deepen pass).
+bool invalidatePairBufferSlotWithPreflight(PairBufferSoA& buffer, u32 slot);
 
 /// Why pair-buffer toVector would early-out (B4.2 deepen follow-up pass).
 enum class PairBufferToVectorRejectReason : u8 {
