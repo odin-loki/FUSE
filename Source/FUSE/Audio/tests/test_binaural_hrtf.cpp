@@ -2077,3 +2077,10 @@ void testRejectReasonMirrorsExistingPreflights() {
 
 // --- deepen additive from b72-hrtf-reject-reasons-b804 ---
     reason = fuse::audio::HrtfAttenuationCouplingRejectReason::None;
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-e349 ---
+    expectTrue(std::strcmp(fuse::audio::hrtf_ir_reject_reason_name(fuse::audio::HrtfIrRejectReason::NullSamples),
+    expectTrue(fuse::audio::hrtf_ir_rejects_for_reason(malformed, fuse::audio::HrtfIrRejectReason::MalformedIr),
+                                                             fuse::audio::HrtfPanPathRejectReason::CoLocatedSource),
+    expectTrue(conv_preflight.reason == fuse::audio::HrtfPanPathRejectReason::None,
+                   co_located_preflight, fuse::audio::HrtfBinauralRejectReason::CoLocatedSource),

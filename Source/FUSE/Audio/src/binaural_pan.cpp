@@ -1520,3 +1520,11 @@ bool tryPreflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
 
 // --- deepen additive from b72-hrtf-reject-reasons-b804 ---
     const HrtfPanPathRejectReason pan_reason = classify_hrtf_pan_path_reject(preflight.panPath);
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-e349 ---
+    case HrtfPanPathRejectReason::CoLocatedSource:
+        return HrtfPanPathRejectReason::CoLocatedSource;
+HrtfBinauralRejectReason composite_hrtf_binaural_reject_reason(
+    const HrtfPanPathPreflight& panPath, const HrtfAttenuationCouplingPreflight& attenuationCoupling) {
+        return HrtfBinauralRejectReason::CoLocatedSource;
+    case HrtfBinauralRejectReason::CoLocatedSource:
