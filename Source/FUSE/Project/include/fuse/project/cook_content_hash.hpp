@@ -346,5 +346,6 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 /// Non-empty dependency output paths must resolve to manifest entries (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_manifest_dependency_coverage(
     const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
+/// Mirrors `is_cacheable_cook_cache_key` — rejects zero source fold with `ZeroSourceHash` (B7.9 deepen).
 
 } // namespace fuse::project

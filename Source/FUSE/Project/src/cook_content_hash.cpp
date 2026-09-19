@@ -923,6 +923,10 @@ CookHashPreflight preflight_manifest_dependency_coverage(
 
     if (!has_non_empty) {
         preflight.reason = CookHashRejectReason::EmptyDependencyList;
+    const CookHashPreflight combined = preflight_combine_cook_cache_key(source_hash, upstream_hash);
+    if (!combined.can_hash) {
+        return combined;
+
         return preflight;
     }
 

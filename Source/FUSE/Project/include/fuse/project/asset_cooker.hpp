@@ -254,6 +254,7 @@ public:
     /// True when `estimate_reconcile_invalidation` would remove at least one entry (B7.9 deepen).
     /// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
     [[nodiscard]] CookCacheUpstreamInvalidationEstimate estimate_upstream_invalidation(
+    /// Deduplicated source paths upstream invalidation would touch — read-only probe (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

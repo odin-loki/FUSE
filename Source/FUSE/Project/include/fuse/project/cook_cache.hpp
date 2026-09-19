@@ -110,6 +110,14 @@ struct CookCacheUpstreamInvalidationEstimate {
     [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
 };
 
+/// Structural store preflight — mirrors `store` / `is_valid_cook_cache_entry` guards (B7.9 deepen).
+struct CookCacheEntryPreflight {
+    bool can_store = false;
+    CookHashRejectReason reason = CookHashRejectReason::None;
+
+    [[nodiscard]] bool ok() const { return can_store; }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -285,6 +293,8 @@ struct CookCacheReconcileEstimate {
     [[nodiscard]] bool would_prune() const { return total_entries() > 0; }
 /// Structural + source-readability preflight for cache records (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+/// Structural validity preflight for cache records — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
+[[nodiscard]] CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -345,6 +355,8 @@ public:
     /// True when `invalidate_stale_content_for_source` would remove entries (B7.9 deepen).
     /// True when `invalidate_stale_upstream_hashes` would touch at least one entry (B7.9 deepen).
     /// True when `invalidate_downstream_of` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_downstream_of(
+        const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
@@ -388,6 +400,7 @@ public:
     /// Deduplicated stale upstream sources — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources_dedup(
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources_unique(
+    /// Deduplicated stale-upstream source paths — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;

@@ -3237,6 +3237,15 @@ void testCookerWouldReconcileAndUpstreamProbes() {
     expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes(source_upstream),
                "would_invalidate_stale_upstream true after upstream content change");
                "would_invalidate_downstream true for chain producer");
+               "changed upstream source would_upstream is true");
+
+    const std::vector<std::string> upstream_sources =
+        cooker.probe_upstream_invalidation_sources(manifest, source_a);
+    expectTrue(upstream_sources.size() >= 2u, "upstream probe lists changed source and dependents");
+
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "stale dependency makes would_reconcile true");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest).total() >= 1u,
+               "would_reconcile agrees with reconcile estimate total");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
