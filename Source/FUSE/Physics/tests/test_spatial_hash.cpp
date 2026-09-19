@@ -4490,3 +4490,18 @@ void testPairBufferWouldSkipGuards() {
     expectTrue(fuse::physics::broadphase::wouldSkipShapeCellOccupancy(planeRange, params, &skipReason),
                "2D wouldSkipShapeCellOccupancy true over params budget");
              "2D wouldSkipShapeCellOccupancy reports ExceedsBudget");
+
+// --- deepen additive from b4-broadphase-deepen-guards-ae9f ---
+void testWouldSkipBroadphaseGuardHelpers() {
+               "wouldSkipBroadphase reports EmptyInput reason");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(overBudget, 8u),
+               "wouldSkipCellOccupancyIteration true when occupancy exceeds budget");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(overBudget, 8u) ==
+    expectTrue(!fuse::physics::broadphase::wouldSkipCellSpanClamp(overBudget, 3u),
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(overBudget, 3u) ==
+               "wouldSkipRefineBroadphase true on empty buffer");
+             "wouldSkipRefineBroadphase reports EmptyBuffer reason");
+             "wouldSkipDedupeBroadphase reports EmptyBuffer reason");
+    expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(mergePairs, buffer, &mergeIntoReason),
+             "wouldSkipMergePairsIntoBuffer reports BufferFull reason");
+    expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(mergePairs, buffer) ==

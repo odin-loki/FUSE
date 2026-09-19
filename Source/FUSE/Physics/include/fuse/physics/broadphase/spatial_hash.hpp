@@ -1798,3 +1798,6 @@ bool wouldSkipRefineBroadphase(const RigidBodySoA& bodies,
 // --- deepen additive from b4-broadphase-deepen-guards-82a8 ---
 FUSE_PHYSICS_INLINE bool wouldSkipShapeCellOccupancy(
     return wouldSkipCellOccupancyIteration(range, params.maxCellOccupancy, reason);
+
+// --- deepen additive from b4-broadphase-deepen-guards-ae9f ---
+    const BroadphasePreflight preflight = preflightBroadphase(bodies, shapes);
