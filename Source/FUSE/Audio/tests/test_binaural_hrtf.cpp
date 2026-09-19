@@ -1389,3 +1389,19 @@ void testPreflightHrtfAttenuationCoupling() {
     testPreflightHrtfIr();
     testPreflightHrtfPanPath();
     testPreflightHrtfAttenuationCoupling();
+
+// --- deepen additive from deepen-hrtf-preflights-ccde ---
+               "preflight skip matches should_skip_hrtf_convolution");
+    expectTrue(malformed_preflight.should_skip_convolution(),
+    expectTrue(!ild_stub.should_skip_attenuation_coupling(),
+    expectTrue(disabled.should_skip_pan(), "disabled HRTF preflight skips pan");
+    expectTrue(disabled.should_skip_spatial_pan()
+               "preflight skip matches should_skip_hrtf_spatial_pan");
+    expectTrue(co_located_preflight.should_skip_attenuation_coupling(),
+    expectTrue(bypass.should_skip_coupling(), "bypass path preflight skips coupling");
+    expectTrue(unity.should_skip_coupling(), "unity attenuation preflight skips coupling");
+               "preflight skip matches should_skip_hrtf_spatial_blend");
+    const fuse::audio::HrtfAttenuationCouplingPreflight bundled =
+    const fuse::audio::HrtfAttenuationCouplingPreflight manual =
+    const fuse::audio::HrtfAttenuationCouplingPreflight disabled_bundle =
+    expectTrue(disabled_bundle.should_skip_coupling(),

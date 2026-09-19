@@ -605,3 +605,13 @@ bool should_skip_hrtf_attenuation_coupling_for_inputs(HrtfPanPath path, float di
 // --- deepen additive from deepen-hrtf-preflight-guards-1cf6 ---
     bool should_skip_pan() const;
     bool should_skip_coupling() const;
+
+// --- deepen additive from deepen-hrtf-preflights-ccde ---
+enum class HrtfPanSkipReason : u8 {
+    bool should_skip_pan() const { return path == HrtfPanPath::Bypass; }
+    bool should_skip_spatial_pan() const { return should_skip_pan(); }
+    bool should_skip_attenuation_coupling() const { return should_skip_pan(); }
+    bool can_apply_spatial_pan() const { return !should_skip_spatial_pan(); }
+    bool should_skip_coupling() const { return bypass_pan_path || unity_spatial_blend; }
+    bool should_narrow_spatial_image() const { return !should_skip_coupling(); }
+    bool can_couple() const { return !should_skip_coupling(); }

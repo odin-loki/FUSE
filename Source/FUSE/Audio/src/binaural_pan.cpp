@@ -896,3 +896,10 @@ bool HrtfAttenuationCouplingPreflight::should_skip_coupling() const {
 
 // --- deepen additive from deepen-b72-hrtf-preflights-201d ---
     preflight.bypassed = should_skip_hrtf_pan_path(preflight.path);
+
+// --- deepen additive from deepen-hrtf-preflights-ccde ---
+    HrtfIrPreflight out;
+    HrtfPanPathPreflight out;
+    HrtfAttenuationCouplingPreflight out;
+    out.bypass_pan_path = should_skip_hrtf_pan_path(path);
+    const HrtfPanPathPreflight pan = preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
