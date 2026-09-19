@@ -590,3 +590,7 @@ struct HrtfSpatialPanPreflight {
 
 // --- deepen additive from hrtf-preflight-guards-69c4 ---
     [[nodiscard]] bool should_skip() const { return !will_narrow; }
+
+// --- deepen additive from hrtf-preflight-guards-3b8d ---
+    [[nodiscard]] bool should_skip_coupling() const { return bypass_path || unity_attenuation; }
+[[nodiscard]] HrtfSpatialPanPreflight preflight_hrtf_spatial_pan(bool hrtf_enabled,
