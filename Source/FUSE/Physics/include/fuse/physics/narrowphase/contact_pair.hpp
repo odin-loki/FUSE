@@ -23,6 +23,7 @@ enum class ContactPairRejectReason : u8 {
     BothKinematic,
     AnyTrigger,
     BothMassless,
+    PlanePlane,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -225,5 +226,94 @@ bool narrowphase_batch_rejects_all(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+
+/// Extended reject reason including plane-plane pairs (B4.6 deepen pass).
+/// Does not alter `contact_pair_deepen_reject_reason`; use for additive preflight only.
+inline ContactPairRejectReason contact_pair_deepen_pass_reject_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (is_plane_plane_contact_pair(pair, shapes)) {
+        return ContactPairRejectReason::PlanePlane;
+    }
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes);
+}
+
+/// Human-readable label for deepen-pass reject reasons (B4.6 deepen pass).
+inline const char* contact_pair_deepen_pass_reject_reason_name(ContactPairRejectReason reason) {
+    if (reason == ContactPairRejectReason::PlanePlane) {
+        return "PlanePlane";
+    }
+    return contact_pair_reject_reason_name(reason);
+}
+
+/// Returns true when `contact_pair_deepen_pass_reject_reason` matches `expected` (B4.6 deepen pass).
+inline bool contact_pair_deepen_pass_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected) {
+    return contact_pair_deepen_pass_reject_reason(pair, bodies, shapes) == expected;
+}
+
+/// Const preflight with plane-plane reject checks (B4.6 deepen pass).
+struct ContactPairDeepenPassPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+
+    bool can_dispatch() const { return !rejected; }
+};
+
+/// Populate deepen-pass pair preflight without running shape dispatch (B4.6 deepen pass).
+inline ContactPairDeepenPassPreflight preflight_contact_pair_deepen_pass(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairDeepenPassPreflight preflight{};
+    preflight.reason = contact_pair_deepen_pass_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+    return preflight;
+}
+
+/// Returns true when deepen-pass preflight rejects this pair (B4.6 deepen pass).
+inline bool should_skip_contact_pair_deepen_pass_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return contact_pair_deepen_pass_reject_reason(pair, bodies, shapes) != ContactPairRejectReason::None;
+}
+
+/// Count pairs that pass deepen-pass preflight (B4.6 deepen pass).
+inline u32 count_deepen_pass_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    u32 dispatchable = 0u;
+    for (const broadphase::CandidatePair& pair : pairs) {
+        if (!should_skip_contact_pair_deepen_pass_dispatch(pair, bodies, shapes)) {
+            ++dispatchable;
+        }
+    }
+    return dispatchable;
+}
+
+/// True when at least one pair passes deepen-pass preflight (B4.6 deepen pass).
+inline bool has_deepen_pass_dispatchable_contact_pair(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (pairs.empty()) {
+        return false;
+    }
+    return count_deepen_pass_dispatchable_contact_pairs(pairs, bodies, shapes) > 0u;
+}
+
+/// True when all pairs are rejected by deepen-pass preflight or the pair list is empty (B4.6 deepen pass).
+inline bool can_skip_narrowphase_deepen_pass(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !has_deepen_pass_dispatchable_contact_pair(pairs, bodies, shapes);
+}
 
 } // namespace fuse::physics::narrowphase
