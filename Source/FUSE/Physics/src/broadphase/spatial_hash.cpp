@@ -490,6 +490,18 @@ bool shouldRunRefineBroadphase(
     return preflightRefineBroadphase(bodies, shapes, buffer).canRefine();
 }
 
+bool wouldSkipRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer,
+    RefineBroadphaseRejectReason* reason) {
+    const RefineBroadphasePreflight preflight = preflightRefineBroadphase(bodies, shapes, buffer);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return !preflight.canRefine();
+}
+
 DedupeBroadphaseRejectReason dedupeBroadphaseRejectReason(const PairBufferSoA& buffer) {
     if (buffer.canSkipSoAIteration()) {
         return DedupeBroadphaseRejectReason::EmptyBuffer;
@@ -518,6 +530,14 @@ bool shouldRunDedupeBroadphase(const PairBufferSoA& buffer) {
 
 bool canSkipDedupeBroadphase(const PairBufferSoA& buffer) {
     return !shouldRunDedupeBroadphase(buffer);
+}
+
+bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseRejectReason* reason) {
+    const DedupeBroadphasePreflight preflight = preflightDedupeBroadphase(buffer);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return !preflight.canDedupe();
 }
 
 BroadphaseMergePreflight preflightBroadphaseMerge(
@@ -576,6 +596,17 @@ bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSo
     return preflightBroadphaseMerge(bodies, shapes).canMerge();
 }
 
+bool wouldSkipBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason* reason) {
+    const BroadphaseMergePreflight preflight = preflightBroadphaseMerge(bodies, shapes);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return !preflight.canMerge();
+}
+
 const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReason reason) {
     switch (reason) {
     case MergePairsIntoBufferRejectReason::None:
@@ -623,6 +654,17 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
     return preflightMergePairsIntoBuffer(pairs, buffer).canMerge();
+}
+
+bool wouldSkipMergePairsIntoBuffer(
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer,
+    MergePairsIntoBufferRejectReason* reason) {
+    const MergePairsIntoBufferPreflight preflight = preflightMergePairsIntoBuffer(pairs, buffer);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return !preflight.canMerge();
 }
 
 void refineBroadphasePairsParallel(
