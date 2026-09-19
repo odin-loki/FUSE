@@ -9278,6 +9278,7 @@ void testTaaPassTryAndClassifyGuards() {
 void testTaaPassTryPreflightAndClassifyWrappers() {
 void testTaaPassTryPreflightGuardWrappers() {
 void testTaaPassTryClassifyWrappers() {
+void testTaaPassTryAndClassifyWrappers() {
     fuse::renderer::TaaPassDesc passDesc{};
     passDesc.width = 128;
     passDesc.height = 128;
@@ -9391,6 +9392,10 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 
 
+
+        fuse::renderer::TaaJitterGuardRejectReason::None;
+    expectTrue(pass->preflightJitterAdvance(&jitterReject), "pass preflightJitterAdvance passes before init");
+
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
                "pass tryPreflightHistoryReuse fails before init");
     expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
@@ -9482,6 +9487,8 @@ void testTaaPassHistoryWarmupPreflight() {
     expectTrue(pass->shouldSkipHistoryTemporal(0u), "pass should skip history temporal before init");
 
     expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
+    expectTrue(pass->classifyHistoryReuseBlock(0u) == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
+               "pass classifyHistoryReuseBlock is NotReady before init");
 
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -10543,6 +10550,15 @@ void testTaaPassTryPreflightAndClassifyGuards() {
 
 
 
+
+               "pass classifyResolveSkip is None for valid resolve desc");
+               "pass tryPreflightResolve passes for valid resolve desc");
+
+    expectTrue(pass->classifyHistoryReuseBlock(0u) == fuse::renderer::TaaHistoryReuseBlockReason::None,
+               "pass classifyHistoryReuseBlock is None after warmup");
+
+
+
     fuse::renderer::TaaPassDesc zeroWidthDesc{};
     zeroWidthDesc.width = 0;
     zeroWidthDesc.height = 128;
@@ -10663,6 +10679,11 @@ void testTaaPassTryPreflightAndClassifyGuards() {
 
     expectTrue(!zeroPass->shouldSkipJitterAdvance(),
                "zero-width pass still allows jitter advance when sequence is valid");
+
+    expectTrue(pass->classifyResolveSkip(resolveDesc) ==
+                   fuse::renderer::TaaResolveSkipReason::InvalidDimensions,
+               "pass classifyResolveSkip is InvalidDimensions for zero width");
+               "pass tryPreflightResolve fails for zero width");
 
     resources.destroy();
     bindless.destroy(*bootstrap->device());
@@ -15183,6 +15204,7 @@ int main() {
     testTaaPassTryPreflightAndClassifyWrappers();
     testTaaPassHistoryWarmupPreflight();
     testTaaPassTryClassifyGuardWrappers();
+    testTaaPassTryAndClassifyWrappers();
     testTaaPassShouldSkipGuardWrappers();
     testHistoryWarmupPreflight();
     testHistoryReusePreflight();
