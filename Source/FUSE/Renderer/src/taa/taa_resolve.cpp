@@ -331,6 +331,29 @@ bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHisto
                                       TaaBlendWeights& outWeights, TaaResolveBlendRejectReason& reason) {
     outWeights = computeTaaResolveBlendWeights(desc, history);
 
+bool TaaResolveBlendPreflight::readyForBlend() const {
+    return weights_valid;
+}
+
+TaaResolveBlendPreflight preflightTaaResolveBlend(bool firstFrame, const TAAParams& params,
+                                                  const TaaHistoryBuffer& history) {
+    TaaResolveBlendPreflight preflight{};
+    preflight.first_frame = firstFrame;
+    preflight.weights = computeTaaBlendWeights(firstFrame, params);
+    preflight.weights_valid = taaBlendWeightsValid(preflight.weights);
+    preflight.history_blend_allowed = taaHistoryBlendAllowed(firstFrame, history);
+    preflight.history_reuse_allowed = taaHistoryCanReuse(history);
+    return preflight;
+}
+
+TaaResolveBlendPreflight preflightTaaResolveBlendForDesc(const TaaResolveDesc& desc,
+                                                         const TaaHistoryBuffer& history) {
+    const bool firstFrame = !history.hasValidHistory();
+    TaaResolveBlendPreflight preflight = preflightTaaResolveBlend(firstFrame, desc.params, history);
+    preflight.history_reuse_allowed = taaResolveCanReuseHistory(desc, history);
+    return preflight;
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
     if (taaResolveBypassesHistoryGenerationGuard(desc)) {

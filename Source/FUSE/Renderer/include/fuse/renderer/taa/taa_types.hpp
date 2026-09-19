@@ -219,6 +219,48 @@ bool taaBlendSkipsHistoryReuse(f32 effectiveBlend);
 /// History accumulation weight from frame state and params (B5.9 deepen).
 /// True when warm-up path forces full current-frame weight (no history reuse) (B5.9 deepen).
 
+/// History warm-up preflight snapshot (B5.9 deepen).
+struct TaaHistoryWarmupPreflight {
+    bool buffer_ready = false;
+    bool needs_warmup = true;
+    bool can_reuse = false;
+    u32 invalidate_generation = 0;
+    u32 accumulated_frames = 0;
+
+    bool readyForResolve() const;
+    bool warmupComplete() const;
+};
+
+/// History reuse preflight including generation epoch (B5.9 deepen).
+struct TaaHistoryReusePreflight {
+    TaaHistoryWarmupPreflight warmup{};
+    u32 observed_generation = 0;
+    bool generation_matches = false;
+    bool reuse_allowed = false;
+
+    bool canReuseHistory() const;
+};
+
+/// Resolve blend preflight snapshot (B5.9 deepen).
+struct TaaResolveBlendPreflight {
+    bool first_frame = true;
+    bool history_blend_allowed = false;
+    bool history_reuse_allowed = false;
+    bool weights_valid = false;
+    TaaBlendWeights weights{};
+
+    bool readyForBlend() const;
+};
+
+TaaHistoryWarmupPreflight preflightTaaHistoryWarmup(const TaaHistoryBuffer& history);
+TaaHistoryReusePreflight preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
+TaaHistoryReusePreflight preflightTaaHistoryReuseForDesc(const TaaHistoryBuffer& history,
+                                                         const TaaResolveDesc& desc);
+TaaResolveBlendPreflight preflightTaaResolveBlend(bool firstFrame, const TAAParams& params,
+                                                  const TaaHistoryBuffer& history);
+TaaResolveBlendPreflight preflightTaaResolveBlendForDesc(const TaaResolveDesc& desc,
+                                                         const TaaHistoryBuffer& history);
+
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
     bool resolved = false;
