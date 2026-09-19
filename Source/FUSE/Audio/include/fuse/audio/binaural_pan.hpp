@@ -1392,3 +1392,16 @@ HrtfPanPathRejectReason classify_hrtf_binaural_pan_reject(const HrtfBinauralPref
 // --- deepen additive from b72-hrtf-reject-reason-wrappers-4cd0 ---
                                                HrtfBinauralConvolutionRejectReason* reason = nullptr,
                                              HrtfBinauralConvolutionRejectReason& reason,
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-95e5 ---
+enum class HrtfBinauralNarrowRejectReason : u8 {
+const char* hrtf_binaural_narrow_reject_reason_label(HrtfBinauralNarrowRejectReason reason);
+HrtfBinauralNarrowRejectReason classify_hrtf_binaural_narrow_reject(
+bool preflight_hrtf_binaural_convolve_ready(const HrtfBinauralPreflight& preflight,
+                                            HrtfBinauralConvolveRejectReason* reason = nullptr);
+bool try_preflight_hrtf_binaural_convolve(const HrtfBinauralPreflight& preflight,
+                                          HrtfBinauralConvolveRejectReason& reason);
+bool preflight_hrtf_binaural_narrow_ready(const HrtfBinauralPreflight& preflight,
+                                          HrtfBinauralNarrowRejectReason* reason = nullptr);
+bool try_preflight_hrtf_binaural_narrow(const HrtfBinauralPreflight& preflight,
+                                          HrtfBinauralNarrowRejectReason& reason);

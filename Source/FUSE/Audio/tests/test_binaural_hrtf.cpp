@@ -2665,3 +2665,20 @@ void testHrtfBinauralCompositeRejectReasonWrappers() {
 
 // --- deepen additive from b72-hrtf-reject-reason-wrappers-4cd0 ---
     expectTrue(conv_reason == fuse::audio::HrtfBinauralConvolutionRejectReason::MalformedIr,
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-95e5 ---
+void testHrtfIrRejectReasonWrappers() {
+void testHrtfPanPathRejectReasonWrappers() {
+void testHrtfAttenuationCouplingRejectReasonWrappers() {
+                               fuse::audio::HrtfBinauralConvolveRejectReason::EmptyIr),
+    fuse::audio::HrtfBinauralConvolveRejectReason conv_reason =
+        fuse::audio::HrtfBinauralConvolveRejectReason::EmptyIr;
+    expectTrue(conv_reason == fuse::audio::HrtfBinauralConvolveRejectReason::None,
+    fuse::audio::HrtfBinauralNarrowRejectReason narrow_reason =
+        fuse::audio::HrtfBinauralNarrowRejectReason::BypassPath;
+    expectTrue(narrow_reason == fuse::audio::HrtfBinauralNarrowRejectReason::UnityAttenuation,
+                               fuse::audio::HrtfBinauralConvolveRejectReason::MalformedIr),
+                               fuse::audio::HrtfBinauralNarrowRejectReason::BypassPath),
+    testHrtfIrRejectReasonWrappers();
+    testHrtfPanPathRejectReasonWrappers();
+    testHrtfAttenuationCouplingRejectReasonWrappers();

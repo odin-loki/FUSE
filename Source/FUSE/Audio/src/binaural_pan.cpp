@@ -2265,3 +2265,36 @@ HrtfPanPathRejectReason classify_hrtf_binaural_pan_reject(const HrtfBinauralPref
 // --- deepen additive from b72-hrtf-reject-reason-wrappers-4cd0 ---
                                                HrtfBinauralConvolutionRejectReason* reason,
                                              HrtfBinauralConvolutionRejectReason& reason,
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-95e5 ---
+    const HrtfIrRejectReason reject = classify_hrtf_ir_reject(preflight_hrtf_ir(ir));
+    const HrtfAttenuationCouplingRejectReason reject = classify_hrtf_attenuation_coupling_reject(
+    case HrtfBinauralConvolveRejectReason::HrtfDisabled:
+    case HrtfBinauralConvolveRejectReason::CoLocated:
+const char* hrtf_binaural_narrow_reject_reason_label(HrtfBinauralNarrowRejectReason reason) {
+    case HrtfBinauralNarrowRejectReason::None:
+    case HrtfBinauralNarrowRejectReason::BypassPath:
+    case HrtfBinauralNarrowRejectReason::UnityAttenuation:
+    const HrtfPanPathRejectReason pan_reject = classify_hrtf_pan_path_reject(preflight.panPath);
+        return HrtfBinauralConvolveRejectReason::HrtfDisabled;
+        return HrtfBinauralConvolveRejectReason::CoLocated;
+    const HrtfIrRejectReason ir_reject = classify_hrtf_ir_reject(preflight.ir);
+HrtfBinauralNarrowRejectReason classify_hrtf_binaural_narrow_reject(
+        return HrtfBinauralNarrowRejectReason::BypassPath;
+        return HrtfBinauralNarrowRejectReason::UnityAttenuation;
+        return HrtfBinauralNarrowRejectReason::None;
+    const HrtfBinauralRejectReason reject = classify_hrtf_binaural_reject(
+bool preflight_hrtf_binaural_convolve_ready(const HrtfBinauralPreflight& preflight,
+                                            HrtfBinauralConvolveRejectReason* reason) {
+    const HrtfBinauralConvolveRejectReason reject = classify_hrtf_binaural_convolve_reject(preflight);
+    return reject == HrtfBinauralConvolveRejectReason::None;
+bool try_preflight_hrtf_binaural_convolve(const HrtfBinauralPreflight& preflight,
+                                          HrtfBinauralConvolveRejectReason& reason) {
+    return reason == HrtfBinauralConvolveRejectReason::None;
+bool preflight_hrtf_binaural_narrow_ready(const HrtfBinauralPreflight& preflight,
+                                            HrtfBinauralNarrowRejectReason* reason) {
+    const HrtfBinauralNarrowRejectReason reject = classify_hrtf_binaural_narrow_reject(preflight);
+    return reject == HrtfBinauralNarrowRejectReason::None;
+bool try_preflight_hrtf_binaural_narrow(const HrtfBinauralPreflight& preflight,
+                                          HrtfBinauralNarrowRejectReason& reason) {
+    return reason == HrtfBinauralNarrowRejectReason::None;
