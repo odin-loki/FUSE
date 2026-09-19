@@ -1169,3 +1169,12 @@ HrtfBinauralRejectReason compute_hrtf_binaural_reject_reason(
     const HrtfBinauralRejectReason ir_reject = map_ir_reject_to_binaural(ir.reason);
     if (ir_reject != HrtfBinauralRejectReason::None) {
                                       float occlusion_gain, HrtfBinauralRejectReason expected) {
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-e7b1 ---
+    preflight.hrtfDisabled = preflight.reason == HrtfPanPathRejectReason::HrtfDisabled;
+    preflight.coLocated = preflight.reason == HrtfPanPathRejectReason::CoLocated;
+        preflight.reason == HrtfAttenuationCouplingRejectReason::BypassPath;
+        preflight.reason == HrtfAttenuationCouplingRejectReason::UnityAttenuation;
+HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_pan(HrtfPanPathRejectReason reason) {
+HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_ir(HrtfIrRejectReason reason) {
+HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_coupling(

@@ -798,3 +798,8 @@ HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const Ve
 
 // --- deepen additive from deepen-b72-hrtf-reject-reasons-db94 ---
                                       float occlusion_gain, HrtfBinauralRejectReason expected);
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-e7b1 ---
+HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_pan(HrtfPanPathRejectReason reason);
+HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_ir(HrtfIrRejectReason reason);
+HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_coupling(
