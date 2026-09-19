@@ -2304,3 +2304,16 @@ bool tryScheduleProbeUpdates(u32 probe_count,
                         : ProbeSpatialSampleRejectReason::InvalidSampleCoords;
     if (!tryCanSampleAtProbeCoords(desc, coords, cache_count, outReason)) {
         outReason = ProbeUpdateLaunchRejectReason::ZeroRaysPerProbe;
+
+// --- deepen additive from deepen-ddgi-b56-guards-7655 ---
+    case ProbeScheduleRejectReason::NullOutputIndices:
+    case ProbeScheduleRejectReason::NullOutputCount:
+    case SampleRequestRejectReason::EmptyGrid:
+bool tryValidateCacheAccess(const DDGIDesc& desc,
+    if (!tryValidateCacheAccess(desc, cache, cache_count, probe_index, reason)) {
+        outReason = SampleRequestRejectReason::EmptyGrid;
+    SampleRequestRejectReason reason = SampleRequestRejectReason::None;
+    return tryValidateSampleRequest(desc, request, cache_count, reason);
+        outReason = ProbeScheduleRejectReason::NullOutputIndices;
+        outReason = ProbeScheduleRejectReason::NullOutputCount;
+    tryScheduleProbeUpdates(frame_index,
