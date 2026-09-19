@@ -887,3 +887,12 @@ bool hrtf_binaural_reject_reason_is_blocking(HrtfBinauralRejectReason reason);
     bool can_spatial_pan() const { return reason == HrtfBinauralRejectReason::None; }
                               const BinauralPanParams& params, HrtfBinauralRejectReason* reason);
                                  const BinauralPanParams& params, HrtfBinauralRejectReason& reason);
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-e7e2 ---
+    HrtfAttenuationCouplingPreflight& preflight, const HrtfAttenuationCoupling& coupling = {},
+HrtfBinauralRejectReason classify_hrtf_binaural_pan_reject(bool hrtf_enabled, const Vec3& rel_listener);
+HrtfBinauralRejectReason classify_hrtf_binaural_attenuation_reject(
+bool hrtf_binaural_reject_reason_is_pan_blocking(HrtfBinauralRejectReason reason);
+bool hrtf_binaural_reject_reason_is_convolution_blocking(HrtfBinauralRejectReason reason);
+    HrtfBinauralRejectReason panRejectReason = HrtfBinauralRejectReason::None;
+    HrtfBinauralRejectReason attenuationRejectReason = HrtfBinauralRejectReason::None;

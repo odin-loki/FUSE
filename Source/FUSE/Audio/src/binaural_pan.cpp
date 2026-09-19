@@ -1320,3 +1320,18 @@ bool hrtf_binaural_reject_reason_is_blocking(HrtfBinauralRejectReason reason) {
     const HrtfPanPathRejectReason pan_reason = classify_hrtf_pan_path_reject(hrtf_enabled, rel_listener);
                              const BinauralPanParams& params, HrtfBinauralRejectReason* reason) {
                                  const BinauralPanParams& params, HrtfBinauralRejectReason& reason) {
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-e7e2 ---
+    preflight.panRejectReason =
+    if (preflight.panRejectReason != HrtfBinauralRejectReason::None) {
+        preflight.convolutionRejectReason = preflight.panRejectReason;
+        preflight.convolutionRejectReason = map_ir_reject_to_binaural(preflight.ir.reason);
+    if (preflight.attenuationCoupling.reason == HrtfAttenuationCouplingRejectReason::UnityAttenuation) {
+        preflight.attenuationRejectReason = HrtfBinauralRejectReason::UnityAttenuation;
+        preflight.attenuationRejectReason = HrtfBinauralRejectReason::None;
+HrtfBinauralRejectReason classify_hrtf_binaural_pan_reject(bool hrtf_enabled,
+    const HrtfBinauralRejectReason pan_reject = classify_hrtf_binaural_pan_reject(hrtf_enabled, rel_listener);
+HrtfBinauralRejectReason classify_hrtf_binaural_attenuation_reject(
+    if (reject == HrtfAttenuationCouplingRejectReason::UnityAttenuation) {
+bool hrtf_binaural_reject_reason_is_pan_blocking(HrtfBinauralRejectReason reason) {
+bool hrtf_binaural_reject_reason_is_convolution_blocking(HrtfBinauralRejectReason reason) {
