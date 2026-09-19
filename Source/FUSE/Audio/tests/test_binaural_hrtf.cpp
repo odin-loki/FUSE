@@ -1036,6 +1036,42 @@ void testHrtfBinauralRejectReasonGuards() {
                "no-IR composite pan reject reason is None");
 }
 
+void testRejectReasonMirrorsExistingPreflights() {
+    const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
+    const fuse::audio::HrtfIrStub empty = fuse::audio::make_empty_hrtf_ir();
+    const float samples[] = {1.f};
+    const fuse::audio::HrtfIrStub valid{samples, 1};
+
+    const fuse::audio::HrtfIrPreflight ir_preflight = fuse::audio::preflight_hrtf_ir(valid);
+    expectTrue(fuse::audio::preflight_hrtf_ir_ready(valid)
+                   == fuse::audio::can_convolve_hrtf_ir(ir_preflight),
+               "preflight_hrtf_ir_ready mirrors can_convolve_hrtf_ir on valid IR");
+
+    const fuse::audio::HrtfPanPathPreflight pan_preflight =
+        fuse::audio::preflight_hrtf_pan_path(true, empty, offset);
+    expectTrue(fuse::audio::preflight_hrtf_pan_path_ready(true, empty, offset)
+                   == fuse::audio::can_apply_spatial_hrtf_pan(pan_preflight),
+               "preflight_hrtf_pan_path_ready mirrors can_apply_spatial_hrtf_pan on stub path");
+
+    const fuse::audio::HrtfAttenuationCouplingPreflight coupling_preflight =
+        fuse::audio::preflight_hrtf_attenuation_coupling(fuse::audio::HrtfPanPath::IldItdStub, 0.2f,
+                                                          0.3f);
+    expectTrue(fuse::audio::preflight_hrtf_attenuation_coupling_ready(
+                   fuse::audio::HrtfPanPath::IldItdStub, 0.2f, 0.3f)
+                   == fuse::audio::can_narrow_hrtf_spatial_image(coupling_preflight),
+               "preflight_hrtf_attenuation_coupling_ready mirrors can_narrow on reduced attenuation");
+
+    const fuse::audio::HrtfBinauralPreflight binaural_preflight =
+        fuse::audio::preflight_hrtf_binaural(true, empty, offset, 0.2f, 0.3f);
+    expectTrue(fuse::audio::preflight_hrtf_binaural_pan_ready(true, empty, offset)
+                   == fuse::audio::can_apply_hrtf_binaural_pan(binaural_preflight),
+               "preflight_hrtf_binaural_pan_ready mirrors can_apply_hrtf_binaural_pan on stub path");
+    expectTrue(fuse::audio::preflight_hrtf_binaural_convolution_ready(valid)
+                   == fuse::audio::can_convolve_hrtf_binaural(
+                          fuse::audio::preflight_hrtf_binaural(true, valid, offset, 1.f, 1.f)),
+               "preflight_hrtf_binaural_convolution_ready mirrors can_convolve on valid IR");
+}
+
 void testHrtfBinauralPreflight() {
     const fuse::audio::Vec3 offset{5.f, 0.f, 0.f};
     const fuse::audio::Vec3 co_located{};
@@ -1166,6 +1202,7 @@ int main() {
     testHrtfPanPathRejectReasonGuards();
     testHrtfAttenuationCouplingRejectReasonGuards();
     testHrtfBinauralRejectReasonGuards();
+    testRejectReasonMirrorsExistingPreflights();
     testHrtfBinauralPreflight();
     fuse::core::shutdown();
 
