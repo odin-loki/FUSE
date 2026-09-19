@@ -50,37 +50,45 @@ enum class EventNameRejectReason : u8 {
 
 /// Why profiler nesting/async state is unbalanced (B1.6 deepen).
 enum class NestingStateRejectReason : u8 {
-    None = 0,
     UnbalancedScopeNesting,
     UnbalancedFlowNesting,
     OpenAsyncFlows,
-};
 
 /// Why chrome trace export preflight rejected the request (B1.6 deepen).
 enum class ChromeTraceExportRejectReason : u8 {
-    None = 0,
     FlowDepthDetached,
 
 /// Why a guarded chrome trace export preflight rejected the request (B1.6 deepen).
     ProfilerDisabled,
     NoExportableEvents,
-    UnbalancedScopeNesting,
-    UnbalancedFlowNesting,
-    OpenAsyncFlows,
-    FlowDepthDetached,
 
-/// Why a guarded chrome trace export preflight rejected the request (B1.6 deepen).
-    ProfilerDisabled,
-    NoExportableEvents,
-};
 
 /// Why an event lookup preflight rejected the request (B1.6 deepen).
 enum class EventLookupRejectReason : u8 {
-    None = 0,
+/// Why an event name was rejected by recording guards (B1.6 deepen).
+    None,
+    Blank,
+
+/// Why an event index lookup was rejected (B1.6 deepen).
     EmptyBuffer,
     OutOfRange,
     InvalidEvent,
 };
+
+/// Why profiler nesting state is unbalanced or detached (B1.6 deepen).
+enum class NestingStateRejectReason : u8 {
+    None,
+    UnbalancedScopeNesting,
+    UnbalancedFlowNesting,
+    OpenAsyncFlows,
+    FlowDepthDetached,
+};
+
+/// Why a strict chrome trace export would be rejected (B1.6 deepen).
+enum class ChromeTraceExportRejectReason : u8 {
+    ProfilerDisabled,
+    NoExportableEvents,
+    BufferOverflow,
 
 struct ProfileEvent {
     const char* name = nullptr;
@@ -176,6 +184,11 @@ struct ChromeTraceExportPreflight {
     bool hasExportWarnings = false;
     bool needsFlowNestingCleanup = false;
     u32 lastExportableEventIndex = kInvalidEventIndex;
+    u32 totalWriteCount = 0;
+    u32 remainingEventCapacity = 0;
+    bool hasDroppedEvents = false;
+    bool hasRingWrapped = false;
+    ChromeTraceExportRejectReason rejectReason = ChromeTraceExportRejectReason::None;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -450,6 +463,8 @@ struct NestingStatePreflight {
     bool isNestingClean() const { return !hasUnbalancedNesting() && !flowDepthDetached; }
     bool hasValidEventIndices() const {
         return firstEventIndex != kInvalidEventIndex && lastEventIndex != kInvalidEventIndex;
+    bool canExportStrict() const {
+        return !profilerDisabled && exportableEventCount > 0 && rejectReason == ChromeTraceExportRejectReason::None;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -575,6 +590,13 @@ u32 ringBufferCapacity();
 bool wouldRecordEventName(const char* name);
 bool isNullOrEmptyEventName(const char* name);
 bool wouldRecordWithName(const char* name);
+bool isNullEventName(const char* name);
+bool isEmptyEventName(const char* name);
+bool isBlankEventName(const char* name);
+bool tryValidateEventName(const char* name, EventNameRejectReason& outReason);
+EventNameRejectReason eventNameRejectReason(const char* name);
+u32 rejectedInvalidNameCount();
+bool hasRejectedInvalidNames();
 bool isValidProfileEvent(const ProfileEvent& event);
 bool canRecordEvent(const char* name);
 bool canBeginAsyncFlow(const char* name);
@@ -589,7 +611,6 @@ bool isEventExportable(u32 index);
 bool isFirstEventIndex(u32 index);
 bool isLastEventIndex(u32 index);
 bool tryEventPhaseAt(u32 index, EventPhase& outPhase);
-u32 nonExportableEventCount();
 u32 totalEventsWritten();
 bool hasRingWrapped();
 u32 exportableFirstEventIndex();
@@ -598,6 +619,11 @@ u32 countEventsOfPhase(EventPhase phase);
 u32 firstEventIndexOfPhase(EventPhase phase);
 u32 lastEventIndexOfPhase(EventPhase phase);
 bool isEventAtPhase(u32 index, EventPhase phase);
+EventLookupRejectReason eventLookupRejectReason(u32 index);
+bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason);
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
+bool tryFirstExportableEvent(ProfileEvent& outEvent);
+bool tryLastExportableEvent(ProfileEvent& outEvent);
 u32 firstEventIndex();
 u32 lastEventIndex();
 u32 countEventsByPhase(EventPhase phase);
@@ -698,10 +724,8 @@ bool canBeginAsyncFlow(const char* name);
 bool canEndAsyncFlow(const char* name);
 bool canLookupEventAt(u32 index);
 bool isFlowOpenCountAttached();
-bool canEndAsyncFlow();
 bool hasActiveScopes();
 bool hasActiveFlows();
-void reconcileDetachedFlowDepth();
 u32 orphanAsyncFlowEndCount();
 bool hasResidualFlowNestingDepth();
 
@@ -734,7 +758,6 @@ bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
 bool hasInvalidNameEvents();
 u32 exportableEventCount();
-u32 nonExportableEventCount();
 bool hasNonExportableEvents();
 bool isEventExportable(u32 index);
 u32 countEventsWithPhase(EventPhase phase);
@@ -749,43 +772,23 @@ const char* eventNameRejectReasonLabel(EventNameRejectReason reason);
 bool isProfilerStateBalanced();
 bool preflightProfilerState(NestingStateRejectReason* reason = nullptr);
 const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason);
-bool canLookupEventAt(u32 index);
 bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason);
 const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
-bool isFirstEventIndex(u32 index);
-bool isLastEventIndex(u32 index);
 u32 countEventsByPhase(EventPhase phase);
 u32 findFirstEventIndexByPhase(EventPhase phase);
 bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
-u32 droppedEventCount();
 u32 firstEventIndex();
-bool isScopeNestingBalanced();
-bool isFlowNestingBalanced();
-bool hasOpenAsyncFlows();
 u32 ringCapacity();
-ChromeTraceExportPreflight preflightChromeTraceExport();
 /// True when `name` is non-null and not an empty C string — shared guard for scopes, flows, and counters.
 [[nodiscard]] inline bool isValidProfileName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
-bool isValidEventName(const char* name);
-bool tryValidateEventName(const char* name, EventNameRejectReason& outReason);
-const char* eventNameRejectReasonLabel(EventNameRejectReason reason);
-bool isProfilerStateBalanced();
-bool preflightProfilerState(NestingStateRejectReason* reason = nullptr);
-const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason);
-bool canExportChromeTrace();
 bool preflightChromeTraceExport(ChromeTraceExportRejectReason* reason = nullptr);
 const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason);
-bool canLookupEventAt(u32 index);
-bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason);
-const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
 bool isValidProfilerName(const char* name);
 bool isEventLookupPreflightOk(u32 index);
 u32 lastEventIndex();
-u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
-u32 countEventsByPhase(EventPhase phase);
 u32 findFirstEventIndexByName(const char* name);
 u32 findLastEventIndexByName(const char* name);
 u32 countEventsByName(const char* name);
@@ -799,12 +802,8 @@ bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex);
 bool tryFindFirstEventIndexByName(const char* name, u32& outIndex);
 bool tryFindFirstEventIndexByFlowId(u32 flowId, u32& outIndex);
 bool tryFindLastEventIndexByFlowId(u32 flowId, u32& outIndex);
-u32 orphanAsyncFlowEndCount();
 bool hasOrphanAsyncFlowEnds();
-bool isValidProfilerName(const char* name);
 bool isValidChromeTraceExport(const std::string& json);
-u32 countEventsWithPhase(EventPhase phase);
-u32 findFirstEventIndexWithPhase(EventPhase phase);
 bool tryFindFirstEventWithPhase(EventPhase phase, ProfileEvent& outEvent);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
@@ -829,15 +828,16 @@ bool tryEventAt(u32 index, ProfileEvent& out);
 bool isLastEventIndexValid();
 bool tryFirstExportableEvent(ProfileEvent& outEvent);
 bool tryLastExportableEvent(ProfileEvent& outEvent);
-u32 countEventsByPhase(EventPhase phase);
 bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent);
 u32 findEventIndex(EventPhase phase, u32 startIndex = 0u);
 bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
-bool tryEventAt(u32 index, ProfileEvent& outEvent);
-bool tryLastEvent(ProfileEvent& outEvent);
 ProfilerRecordPreflight preflightRecord(const char* name);
 ProfilerExportPreflight preflightChromeTraceExport();
+u32 remainingEventCapacity();
+bool hasDroppedEvents();
+bool hasRingWrapped();
+NestingStateRejectReason nestingStateRejectReason();
 void reset();
 
 NestingStatePreflight preflightNestingState();
@@ -1029,6 +1029,7 @@ bool hasExportableEvents();
 bool isChromeTraceExportEmpty();
 bool preflightChromeTraceNesting(ChromeTraceExportRejectReason* reason = nullptr);
 const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason);
+bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason = nullptr);
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
@@ -1075,6 +1076,11 @@ bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReaso
 /// Export preflight — writes chrome JSON and reports whether any trace events were emitted.
 bool tryExportChromeTraceJson(std::string& outJson);
 /// Guarded export — returns false when nesting/export preflight rejects (profiler disabled, empty export, or unbalanced nesting).
+
+const char* eventNameRejectReasonLabel(EventNameRejectReason reason);
+const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
+const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason);
+const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason);
 
 } // namespace fuse::profiler
 
