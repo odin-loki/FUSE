@@ -178,6 +178,24 @@ u32 count_valid_island_contacts(
 bool has_island_build_constraints(
 
 /// Populate island build preflight without mutating a graph (B4.4 deepen follow-up).
+struct IslandBuildStats {
+    u32 bodyCount = 0;
+    u32 contactCount = 0;
+    u32 validContactCount = 0;
+    u32 distanceConstraintCount = 0;
+};
+
+struct IslandBuildPreflight {
+    IslandBuildStats stats{};
+    bool zeroBodies = false;
+    bool skipped = false;
+
+    bool can_build() const { return !skipped; }
+
+
+
+    const std::vector<DistanceConstraint>& distanceConstraints,
+
 IslandBuildPreflight preflight_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,

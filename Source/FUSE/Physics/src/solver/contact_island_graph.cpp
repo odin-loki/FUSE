@@ -332,6 +332,25 @@ IslandBuildStats compute_island_build_input_stats(
     stats.constraintEdgeCount = stats.validContactCount + stats.distanceConstraintCount;
 
         return IslandBuildRejectReason::ZeroBodies;
+    default:
+        return "Unknown";
+    }
+
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildStats stats{};
+    stats.bodyCount = bodyCount;
+    stats.contactCount = static_cast<u32>(contacts.size());
+    stats.distanceConstraintCount = static_cast<u32>(distanceConstraints.size());
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (contact.valid) {
+            ++stats.validContactCount;
+    return stats;
+
+IslandBuildRejectReason island_build_reject_reason(
+    if (bodyCount == 0u) {
 
     const IslandBuildStats stats = compute_island_build_input_stats(bodyCount, contacts, distanceConstraints);
     if (stats.constraintEdgeCount == 0u) {
@@ -386,10 +405,32 @@ bool has_island_build_constraints(
         return false;
 }
 
+    return IslandBuildRejectReason::None;
+
+bool island_build_rejects_for_reason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    IslandBuildRejectReason expected) {
+    return island_build_reject_reason(bodyCount, contacts, distanceConstraints) == expected;
+
+IslandBuildPreflight preflight_island_build(
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildPreflight preflight{};
+    preflight.reason = island_build_reject_reason(bodyCount, contacts, distanceConstraints);
+    preflight.skipped = preflight.zeroBodies;
+    return preflight;
+
+bool should_skip_island_build(
+    return preflight_island_build(bodyCount, contacts, distanceConstraints).skipped;
+
                                 u32 bodyCount,
                                 const std::vector<narrowphase::ContactManifold>& contacts,
                                 const std::vector<DistanceConstraint>& distanceConstraints) {
     if (should_skip_island_build(bodyCount, contacts, distanceConstraints)) {
+        graph.clear();
+        return false;
+    }
     graph.build(bodyCount, contacts, distanceConstraints);
     return true;
 }
