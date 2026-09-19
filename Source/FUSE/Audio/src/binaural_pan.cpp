@@ -864,3 +864,8 @@ HrtfSpatialPanPreflight preflight_hrtf_spatial_pan(bool hrtf_enabled, const Hrtf
     HrtfIrPreflight result;
     HrtfPanPathPreflight result;
     HrtfAttenuationCouplingPreflight result;
+
+// --- deepen additive from hrtf-preflight-guards-1a3b ---
+    HrtfIrPreflight preflight;
+    HrtfPanPathPreflight preflight;
+    const HrtfPanPathPreflight pan_preflight =

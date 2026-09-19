@@ -1308,3 +1308,16 @@ void testHrtfAttenuationCouplingPreflightGuards() {
 // --- deepen additive from deepen-hrtf-preflight-guards-fa19 ---
     const fuse::audio::HrtfPanPathPreflight bypass_disabled =
     const fuse::audio::HrtfPanPathPreflight bypass_co_located =
+
+// --- deepen additive from hrtf-preflight-guards-1a3b ---
+    expectTrue(empty_preflight.should_skip(), "empty IR preflight should skip convolution");
+    expectTrue(!valid_preflight.should_skip(), "valid IR preflight does not skip convolution");
+    expectTrue(null_preflight.should_skip(), "null samples preflight skips convolution");
+    expectTrue(!convolution.should_skip(), "pan-path preflight does not skip spatial pan");
+    expectTrue(bypass.should_skip(), "bypass preflight skips spatial pan");
+    expectTrue(co_located_preflight.should_skip(), "co-located preflight skips spatial pan");
+    expectTrue(!narrowed.should_skip(), "coupling preflight does not skip");
+    expectTrue(unity.should_skip(), "unity coupling preflight should skip");
+    const fuse::audio::HrtfAttenuationCouplingPreflight ir_coupled =
+    const fuse::audio::HrtfAttenuationCouplingPreflight disabled =
+    const fuse::audio::HrtfAttenuationCouplingPreflight full_unity =

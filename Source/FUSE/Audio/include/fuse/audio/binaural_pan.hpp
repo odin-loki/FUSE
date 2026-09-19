@@ -583,3 +583,7 @@ struct HrtfSpatialPanPreflight {
     [[nodiscard]] bool should_skip_spatial_pan() const { return bypass; }
     bool would_narrow = false;
     [[nodiscard]] bool should_skip() const { return skipped; }
+
+// --- deepen additive from hrtf-preflight-guards-1a3b ---
+    [[nodiscard]] bool should_skip() const { return empty_ir; }
+    [[nodiscard]] bool should_skip() const { return bypass; }
