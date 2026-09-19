@@ -180,3 +180,6 @@ enum class IslandUnionRejectReason : u8 {
 const char* islandUnionRejectReasonName(IslandUnionRejectReason reason);
 IslandUnionRejectReason islandUnionRejectReason(u32 bodyCount, u32 bodyA, u32 bodyB);
 bool islandUnionRejectsForReason(u32 bodyCount, u32 bodyA, u32 bodyB, IslandUnionRejectReason expected);
+
+// --- deepen additive from deepen-pbd-island-guards-6fff ---
+    static IslandGraphBuildPreflight preflightBuildInputs(

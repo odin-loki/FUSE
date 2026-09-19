@@ -4915,3 +4915,22 @@ void testIslandUnionRejectReasonAndBuildRange() {
     expectTrue(wakeGraphReject.can_wake(), "wake graph reject preflight can wake");
     expectTrue(islandWakeGraphRejectsForReason(graph, bodies, IslandWakeGraphRejectReason::None),
     testIslandUnionRejectReasonAndBuildRange();
+
+// --- deepen additive from deepen-pbd-island-guards-6fff ---
+void testContactIslandGraphBuildGuards() {
+    const IslandGraphBuildPreflight selfContactPreflight =
+        ContactIslandGraph::preflightBuildInputs(2, contacts, {});
+    expectTrue(selfContactPreflight.has_unsafe_refs(), "graph build preflight flags self-referencing contact");
+    expectTrue(!selfContactPreflight.can_build(), "graph build preflight rejects self-referencing contact");
+    const IslandGraphBuildPreflight selfDistancePreflight =
+        ContactIslandGraph::preflightBuildInputs(2, {}, selfDistance);
+    expectTrue(selfDistancePreflight.stats.selfReferencingDistanceCount == 1u,
+    expectTrue(!selfDistancePreflight.can_build(), "graph build preflight rejects self-referencing distance");
+    const IslandConstraintSolveGraphPreflight graphPreflight = preflight_island_constraint_solve_graph(
+    expectTrue(!graphPreflight.skipped, "constraint-solve graph preflight has solveable islands");
+    expectTrue(graphPreflight.stats.solveableCount == 1u, "constraint-solve graph counts mixed island");
+    expectTrue(indexPreflight.can_solve(), "index constraint-solve preflight allows mixed island");
+               "should_skip index false for mixed island");
+    expectTrue(!sleepingPreflight.can_solve(), "index constraint-solve preflight rejects all-sleeping island");
+               "should_skip index true for all-sleeping island");
+void testIslandSleepDispatchAndWakeResultGuards() {

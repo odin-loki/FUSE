@@ -2764,3 +2764,6 @@ IslandSleepGraphRejectPreflight preflight_island_sleep_graph_reject(const Contac
     const IslandWakeGraphPreflight wakeGraph = preflight_island_wake_graph(graph, bodies);
 IslandWakeGraphRejectPreflight preflight_island_wake_graph_reject(const ContactIslandGraph& graph,
     preflight.noWakeableIslands = preflight.reason == IslandWakeGraphRejectReason::NoWakeableIslands;
+
+// --- deepen additive from deepen-pbd-island-guards-6fff ---
+    return ContactIslandGraph::preflightBuildInputs(bodyCount, contacts, distanceConstraints);

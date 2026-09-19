@@ -1684,3 +1684,6 @@ IslandWakeRejectPreflight preflight_island_wake_reject_by_index(const ContactIsl
 IslandSleepGraphRejectPreflight preflight_island_sleep_graph_reject(const ContactIslandGraph& graph,
     bool can_wake() const { return reason == IslandWakeGraphRejectReason::None && wake.can_wake(); }
 IslandWakeGraphRejectPreflight preflight_island_wake_graph_reject(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-6fff ---
+using IslandBuildPreflight = IslandGraphBuildPreflight;

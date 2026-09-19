@@ -424,3 +424,7 @@ IslandUnionRejectReason islandUnionRejectReason(u32 bodyCount, u32 bodyA, u32 bo
     return IslandUnionRejectReason::None;
 bool islandUnionRejectsForReason(u32 bodyCount, u32 bodyA, u32 bodyB, IslandUnionRejectReason expected) {
     return islandUnionRejectReason(bodyCount, bodyA, bodyB) == expected;
+
+// --- deepen additive from deepen-pbd-island-guards-6fff ---
+IslandGraphBuildPreflight ContactIslandGraph::preflightBuildInputs(
+    return !preflightBuildInputs(bodyCount, contacts, distanceConstraints).can_build();
