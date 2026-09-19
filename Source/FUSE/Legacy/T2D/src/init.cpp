@@ -18,6 +18,7 @@ bool initialize() {
 
     fuse_t2d_StringTable_intern("FUSE_T2D_BOOT");
     Con::init();
+    Con::addPathExpando("game", "/game");
     Con::setVariable("$FuseT2D", "1");
     Con::execute("legacyBoot();");
     fuse::log::info("[t2d] dimension initialized");

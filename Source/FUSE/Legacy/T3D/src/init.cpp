@@ -19,6 +19,7 @@ bool initialize() {
     // Explicit init order: string table before console (mirrors T3D startup constraints).
     fuse_t3d_StringTable_intern("FUSE_T3D_BOOT");
     Con::init();
+    Con::addPathExpando("game", "/game");
     Con::setVariable("$FuseT3D", "1");
     Con::execute("legacyBoot();");
     fuse::log::info("[t3d] dimension initialized");

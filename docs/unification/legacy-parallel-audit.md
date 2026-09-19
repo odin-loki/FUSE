@@ -73,7 +73,7 @@ Identify **safe** Torque3D (T3D) and Torque2D (T2D) loops that can be routed ont
 
 | Step | Action |
 |------|--------|
-| 1 | Route Tier A compress loops through `fuse::legacy::parallel_for` (this WP) |
+| 1 | Route Tier A compress loops through `fuse::legacy::parallel_for` (this WP) — ✅ quarantine route; upstream `imageUtils.cpp` swap when `FUSE_T3D_LEGACY_ENGINE_PROBE` unblocks |
 | 2 | Add TSan nightly coverage for migrated sites |
 | 3 | Default `_forceAllMainThread=0` in CI smoke; compare checksums |
 | 4 | Remove `ThreadPool::GLOBAL()` for Tier A once parity proven |

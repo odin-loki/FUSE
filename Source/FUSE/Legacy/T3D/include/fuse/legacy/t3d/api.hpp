@@ -18,6 +18,14 @@ void errorf(const char* fmt, ...);
 void warnf(const char* fmt, ...);
 const char* getVariable(const char* name);
 void setVariable(const char* name, const char* value);
+int getIntVariable(const char* name, int def = 0);
+void setIntVariable(const char* name, int value);
+bool getBoolVariable(const char* name, bool def = false);
+void setBoolVariable(const char* name, bool value);
+void addPathExpando(const char* expandoName, const char* path);
+bool expandPath(char* dst, u32 size, const char* src, const char* workingDirHint = nullptr,
+                bool ensureTrailingSlash = false);
+void collapsePath(char* dst, u32 size, const char* src, const char* workingDirHint = nullptr);
 } // namespace Con
 
 u32 stringTableEntryCount();

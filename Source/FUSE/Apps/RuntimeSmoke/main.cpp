@@ -51,6 +51,31 @@ void runLegacyConSmoke() {
     fuse::legacy::t2d::Con::errorf("[t2d] errorf shim");
     fuse::legacy::t3d::Con::executef("echo %s", "T3D executef");
     fuse::legacy::t2d::Con::executef("echo %s", "T2D executef");
+
+    fuse::legacy::t3d::Con::setIntVariable("$SmokeInt", 42);
+    fuse::legacy::t2d::Con::setIntVariable("$SmokeInt", 24);
+    check(fuse::legacy::t3d::Con::getIntVariable("$SmokeInt", 0) == 42, "t3d int variable round-trip");
+    check(fuse::legacy::t2d::Con::getIntVariable("$SmokeInt", 0) == 24, "t2d int variable round-trip");
+    check(fuse::legacy::t3d::Con::getIntVariable("$MissingInt", 7) == 7, "t3d int default preserved");
+    check(fuse::legacy::t2d::Con::getIntVariable("$MissingInt", 9) == 9, "t2d int default preserved");
+
+    fuse::legacy::t3d::Con::setBoolVariable("$SmokeBool", true);
+    fuse::legacy::t2d::Con::setBoolVariable("$SmokeBool", false);
+    check(fuse::legacy::t3d::Con::getBoolVariable("$SmokeBool", false), "t3d bool variable round-trip");
+    check(!fuse::legacy::t2d::Con::getBoolVariable("$SmokeBool", true), "t2d bool variable round-trip");
+
+    char expanded[256] = {};
+    check(fuse::legacy::t3d::Con::expandPath(expanded, sizeof(expanded), "^game/textures/foo.png"),
+          "t3d expandPath resolves ^game expando");
+    check(std::strcmp(expanded, "/game/textures/foo.png") == 0, "t3d expandPath output matches");
+    check(fuse::legacy::t2d::Con::expandPath(expanded, sizeof(expanded), "^game/textures/foo.png"),
+          "t2d expandPath resolves ^game expando");
+    check(std::strcmp(expanded, "/game/textures/foo.png") == 0, "t2d expandPath output matches");
+
+    fuse::legacy::t3d::Con::collapsePath(expanded, sizeof(expanded), "/game/textures/foo.png");
+    check(std::strcmp(expanded, "^game/textures/foo.png") == 0, "t3d collapsePath round-trip");
+    fuse::legacy::t2d::Con::collapsePath(expanded, sizeof(expanded), "/game/textures/foo.png");
+    check(std::strcmp(expanded, "^game/textures/foo.png") == 0, "t2d collapsePath round-trip");
 }
 
 void runImageCompressSmoke() {

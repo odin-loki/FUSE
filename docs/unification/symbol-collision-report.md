@@ -222,6 +222,6 @@ These do **not** collide with T2D (T3D-only addons) but reinforce that addon sym
 ## 8. Gate U0 checklist item
 
 - [x] Collision report published under `docs/unification/`
-- [x] Trend tracking begins at U2 — see [U2-SMOKE.md](./U2-SMOKE.md) §4 (8/33 `Con::` APIs shimmed per dimension as of 2026-09-19)
+- [x] Trend tracking begins at U2 — see [U2-SMOKE.md](./U2-SMOKE.md) §4 (14/33 `Con::` APIs shimmed per dimension as of 2026-09-19)
 
 **Next consumer:** Phase U1 umbrella CMake and Phase U2 one-process smoke tests use this report to choose prefix vs multiprocess fallback (multiprocess is **temporary scaffold only** per prestarter §7).

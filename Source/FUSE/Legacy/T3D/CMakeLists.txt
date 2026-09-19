@@ -35,3 +35,5 @@ target_compile_definitions(fuse_t3d_legacy
 
 target_link_libraries(fuse_t3d_legacy PUBLIC fuse_core fuse_legacy_common fuse_world3d PRIVATE squish)
 target_compile_features(fuse_t3d_legacy PUBLIC cxx_std_17)
+
+include("${CMAKE_SOURCE_DIR}/cmake/FuseT3DLegacyEngine.cmake")
