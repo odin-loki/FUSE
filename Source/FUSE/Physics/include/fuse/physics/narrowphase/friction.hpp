@@ -202,3 +202,6 @@ bool should_skip_warm_start_friction(
 // --- deepen additive from b4-narrowphase-deepen-guards-6e88 ---
 struct FrictionBasisEnsurePreflight {
 FrictionBasisEnsurePreflight preflight_friction_basis_ensure(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-ddb5 ---
+    FrictionBasisRejectReason rejectReason = FrictionBasisRejectReason::None;

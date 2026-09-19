@@ -675,3 +675,10 @@ ManifoldPruneChainPreflight preflight_manifold_prune_chain(
     ManifoldPruneChainPreflight preflight{};
 ManifoldFinalizeChainPreflight preflight_manifold_finalize_chain(
     ManifoldFinalizeChainPreflight preflight{};
+
+// --- deepen additive from deepen-b4-narrowphase-guards-ddb5 ---
+    case ManifoldFinalizeRejectReason::Empty:
+    case ManifoldFinalizeRejectReason::EmptyAfterPrune:
+        return ManifoldFinalizeRejectReason::Empty;
+        return ManifoldFinalizeRejectReason::EmptyAfterPrune;
+    preflight.rejectReason = ManifoldFinalizeRejectReason::None;

@@ -374,3 +374,13 @@ bool should_skip_warm_start_friction(
 FrictionBasisEnsurePreflight preflight_friction_basis_ensure(
     FrictionBasisEnsurePreflight preflight{};
         return !should_skip_friction_tangents(manifold);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-ddb5 ---
+    case FrictionBasisRejectReason::Skipped:
+    case FrictionBasisRejectReason::MissingNormal:
+        return FrictionBasisRejectReason::Skipped;
+        return FrictionBasisRejectReason::MissingNormal;
+        preflight.rejectReason = FrictionBasisRejectReason::None;
+    const FrictionBasisRejectReason reason = friction_basis_reject_reason(manifold, epsilon);
+    return reason == FrictionBasisRejectReason::None ||
+           reason == FrictionBasisRejectReason::StaleBasis;

@@ -751,3 +751,11 @@ ContactPairBatchPreflight preflight_contact_pair_batch(
 // --- deepen additive from b4-narrowphase-deepen-guards-6e88 ---
     case ContactPairRejectReason::ZeroInvMass:
         return ContactPairRejectReason::ZeroInvMass;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-ddb5 ---
+    case ContactPairRejectReason::NegativeInverseMass:
+    case ContactPairRejectReason::BothZeroMass:
+    case ContactPairRejectReason::SleepingKinematicMix:
+        return ContactPairRejectReason::NegativeInverseMass;
+        return ContactPairRejectReason::BothZeroMass;
+        return ContactPairRejectReason::SleepingKinematicMix;

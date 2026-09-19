@@ -2355,3 +2355,22 @@ void testFrictionBasisEnsurePreflightGuards() {
     testManifoldGeneratePreflightGuards();
     testManifoldPruneChainPreflightGuards();
     testFrictionBasisEnsurePreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-ddb5 ---
+void testContactPairDeepenFollowUpGuards() {
+            fuse::physics::narrowphase::ContactPairRejectReason::NegativeInverseMass,
+            fuse::physics::narrowphase::ContactPairRejectReason::NegativeInverseMass),
+            fuse::physics::narrowphase::ContactPairRejectReason::BothZeroMass,
+            fuse::physics::narrowphase::ContactPairRejectReason::SleepingKinematicMix,
+                fuse::physics::narrowphase::ContactPairRejectReason::SleepingKinematicMix),
+            empty, fuse::physics::narrowphase::ManifoldFinalizeRejectReason::Empty),
+            fuse::physics::narrowphase::ManifoldFinalizeRejectReason::EmptyAfterPrune,
+        readyPreflight.rejectReason == fuse::physics::narrowphase::ManifoldFinalizeRejectReason::None,
+                fuse::physics::narrowphase::ManifoldFinalizeRejectReason::EmptyAfterPrune),
+void testManifoldPruneDispatchGuards() {
+        !fuse::physics::narrowphase::should_skip_manifold_prune(dirty),
+        "should_skip_manifold_prune false when separated slots exist");
+            fuse::physics::narrowphase::FrictionBasisRejectReason::Skipped,
+            fuse::physics::narrowphase::FrictionBasisRejectReason::MissingNormal,
+            fuse::physics::narrowphase::FrictionBasisRejectReason::StaleBasis,
+        stalePreflight.rejectReason == fuse::physics::narrowphase::FrictionBasisRejectReason::StaleBasis,
