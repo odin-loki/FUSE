@@ -70,5 +70,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
 /// Fold source/upstream preflight — upstream zero is allowed on valid source keys (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+/// Manifest entry cook-key preflight — import hash plus upstream dependency fold (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_manifest_cook_key(const CookManifestEntry& entry,
+                                                            const CookManifest& manifest);
 
 } // namespace fuse::project

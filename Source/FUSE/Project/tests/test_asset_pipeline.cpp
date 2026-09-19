@@ -1706,6 +1706,75 @@ void testCookCacheDownstreamSourceProbe() {
                "empty output path downstream probe is guarded");
 }
 
+void testCookerUpstreamInvalidationEstimate() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_up_est_a.obj", "# up est a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_up_est_b.obj", "# up est b\n");
+    const std::string source_c = writeTempFile("/tmp/fuse_b79_up_est_c.obj", "# up est c\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry_a;
+    entry_a.kind = fuse::project::CookAssetKind::Mesh;
+    entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_up_est_a.fusemesh";
+    manifest.assets.push_back(entry_a);
+
+    fuse::project::CookManifestEntry entry_b;
+    entry_b.kind = fuse::project::CookAssetKind::Mesh;
+    entry_b.source_path = source_b;
+    entry_b.output_path = "/tmp/fuse_b79_up_est_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::CookManifestEntry entry_c;
+    entry_c.kind = fuse::project::CookAssetKind::Mesh;
+    entry_c.source_path = source_c;
+    entry_c.output_path = "/tmp/fuse_b79_up_est_c.fusemesh";
+    entry_c.dependencies.push_back(entry_b.output_path);
+    manifest.assets.push_back(entry_c);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "chain manifest cook for upstream estimate ok");
+    expectTrue(cooker.cache().entry_count() == 3u, "three entries seeded for upstream estimate");
+
+    const fuse::project::CookUpstreamInvalidationEstimate estimate =
+        cooker.estimate_upstream_invalidation(manifest, source_a);
+    expectTrue(estimate.direct_source_entries == 1u, "upstream estimate counts direct source entry");
+    expectTrue(estimate.downstream_entries == 2u, "upstream estimate counts downstream entries");
+    expectTrue(estimate.total() == 3u, "upstream estimate total matches chain size");
+
+    const fuse::project::CookUpstreamInvalidationEstimate empty =
+        cooker.estimate_upstream_invalidation(manifest, "");
+    expectTrue(empty.total() == 0u, "empty changed source upstream estimate is zero");
+
+    const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, source_a);
+    expectTrue(removed >= estimate.total(), "upstream invalidation removes at least estimated total");
+}
+
+void testCookerWouldReconcileInvalidation() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_would_reconcile.obj", "# would reconcile\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_would_reconcile.fusemesh";
+    manifest.assets.push_back(entry);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would_reconcile ok");
+    expectTrue(!cooker.would_reconcile_invalidation(manifest),
+               "fresh cache would_reconcile_invalidation is false");
+
+    writeTempFile(source, "# would reconcile revised\n");
+    expectTrue(cooker.would_reconcile_invalidation(manifest),
+               "stale upstream would_reconcile_invalidation is true");
+
+    const fuse::project::CookCacheReconcileEstimate estimate = cooker.estimate_reconcile_invalidation(manifest);
+    expectTrue(estimate.total() > 0u, "stale cache reconcile estimate is non-zero");
+    expectTrue(cooker.would_reconcile_invalidation(manifest) == (estimate.total() != 0u),
+               "would_reconcile matches estimate total");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 
@@ -1790,6 +1859,8 @@ int main() {
     testCookerInvalidationCountProbes();
     testCookerReconcileEstimateProbes();
     testCookCacheDownstreamSourceProbe();
+    testCookerUpstreamInvalidationEstimate();
+    testCookerWouldReconcileInvalidation();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
