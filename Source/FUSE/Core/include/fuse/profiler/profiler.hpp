@@ -44,14 +44,20 @@ struct ChromeTraceExportPreflight {
     u32 exportableEventCount = 0;
     u32 frameIndex = 0;
     u32 openAsyncFlowCount = 0;
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+    u32 maxScopeNestingDepth = 0;
+    u32 maxFlowNestingDepth = 0;
     bool profilerDisabled = false;
     bool bufferEmpty = false;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
+    bool flowDepthDetached = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
+    bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -88,6 +94,8 @@ u32 openAsyncFlowCount();
 bool hasOpenAsyncFlows();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
+bool hasUnbalancedNesting();
+bool isFlowDepthDetached();
 
 bool hasEvents();
 bool isBufferEmpty();
@@ -95,10 +103,14 @@ bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
+u32 exportableEventCount();
+bool isEventExportable(u32 index);
+u32 firstEventIndex();
 u32 lastEventIndex();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
+bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
