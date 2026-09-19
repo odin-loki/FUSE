@@ -2101,3 +2101,7 @@ void testResidencyFocusDistanceGuards() {
 
 // --- deepen additive from deepen-b76-partition-eviction-7714 ---
 void testEvictionDeficitAndScoreGuards() {
+
+// --- deepen additive from deepen-b76-eviction-budget-guards-ea1b ---
+void testEmptyResidencyEvictionSkipGuard() {
+void testResidencyEvictionCandidateGuards() {
