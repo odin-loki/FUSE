@@ -1147,65 +1147,41 @@ ContactPairDispatchResult detect_contacts_pair_result(
 ContactPairDispatchResult detect_contacts_pair_guarded(
     return detect_contacts_pair_result(pair, bodies, shapes);
 bool contact_pair_deepen_rejects_for_reason(
-    const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes,
     return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
-}
 
 const char* narrowphase_reject_reason_name(NarrowphaseRejectReason reason) {
-    switch (reason) {
     case NarrowphaseRejectReason::None:
-        return "None";
     case NarrowphaseRejectReason::EmptyPairList:
         return "EmptyPairList";
     case NarrowphaseRejectReason::AllPairsRejected:
         return "AllPairsRejected";
-    return "Unknown";
 
 NarrowphaseRejectReason narrowphase_reject_reason(
     const std::vector<broadphase::CandidatePair>& pairs,
-    const CollisionShapeSoA& shapes) {
     if (pairs.empty()) {
         return NarrowphaseRejectReason::EmptyPairList;
     return !should_run_narrowphase(pairs, bodies, shapes);
-}
 
-bool contact_pair_deepen_rejects_for_reason(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    ContactPairRejectReason expected) {
-    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
 
 bool is_plane_plane_contact_pair(
-    const CollisionShapeSoA& shapes) {
     const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
     const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
     if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
-        return false;
 
     return shapeType(shapes, shapeA) == CollisionShapeType::Plane &&
            shapeType(shapes, shapeB) == CollisionShapeType::Plane;
-}
 
 bool is_zero_friction_contact_pair(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies) {
     if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
-        return false;
-    }
 
     const bool zeroA =
         bodies.frictionStatic[pair.bodyA] <= 0.f && bodies.frictionDynamic[pair.bodyA] <= 0.f;
     const bool zeroB =
         bodies.frictionStatic[pair.bodyB] <= 0.f && bodies.frictionDynamic[pair.bodyB] <= 0.f;
     return zeroA && zeroB;
-}
 
 u32 count_dispatchable_contact_pairs(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     u32 dispatchable = 0u;
     for (const broadphase::CandidatePair& pair : pairs) {
         if (!should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
@@ -1226,22 +1202,11 @@ NarrowphasePairListPreflight preflight_narrowphase_pair_list(
         preflight.dispatchablePairCount = static_cast<u32>(pairs.size());
             if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
                 --preflight.dispatchablePairCount;
-    return preflight;
 
 bool can_skip_narrowphase(
     return narrowphase_reject_reason(pairs, bodies, shapes) != NarrowphaseRejectReason::None;
-}
 
-bool contact_pair_deepen_rejects_for_reason(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    ContactPairRejectReason expected) {
-    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
 
-u32 count_dispatchable_contact_pairs(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const CollisionShapeSoA& shapes) {
             ++dispatchable;
     return dispatchable;
 
@@ -1293,46 +1258,29 @@ NarrowphasePairBatchPreflight preflight_narrowphase_pairs(
 ContactManifold detect_contacts_pair_if_needed(
         return invalidContactManifold();
     return detect_contacts_pair(pair, bodies, shapes);
-}
 
 namespace {
 
 bool hasColliderDispatchPath(CollisionShapeType typeA, CollisionShapeType typeB) {
     if (typeA == CollisionShapeType::Sphere || typeB == CollisionShapeType::Sphere) {
-        return true;
-    }
     if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Box) {
-        return true;
-    }
-    return false;
-}
 
 } // namespace
 
 bool is_zero_inv_mass_contact_pair(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies) {
-    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
-        return false;
-    }
     return bodies.invMasses[pair.bodyA] <= 0.f && bodies.invMasses[pair.bodyB] <= 0.f;
-}
 
 bool is_undispatched_shape_pair(
-    const broadphase::CandidatePair& pair,
-    const CollisionShapeSoA& shapes) {
-    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
-    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
-    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
-        return false;
-    }
 
     const CollisionShapeType typeA = shapeType(shapes, shapeA);
     const CollisionShapeType typeB = shapeType(shapes, shapeB);
     return !hasColliderDispatchPath(typeA, typeB);
-}
 
 ContactPairRejectReason contact_pair_deepen2_reject_reason(
+bool should_run_contact_pair_dispatch(
+    return !should_skip_contact_pair_dispatch(pair, bodies, shapes);
+
+ContactPairRejectReason contact_pair_deepen_reject_reason(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
@@ -1380,6 +1328,19 @@ bool should_skip_contact_pair_deepen2_dispatch(
 }
 
 bool can_skip_narrowphase_deepen2(
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected) {
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
+}
+
+bool should_run_contact_pair_deepen_dispatch(
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+
+bool can_skip_narrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
