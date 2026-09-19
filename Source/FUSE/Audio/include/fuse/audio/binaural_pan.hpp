@@ -1256,3 +1256,13 @@ bool should_skip_hrtf_narrowing_preflight(HrtfPanPath path, float distance_atten
                                              HrtfBinauralConvolutionRejectReason& reason);
                                              HrtfBinauralNarrowingRejectReason* reason = nullptr);
                                            HrtfBinauralNarrowingRejectReason& reason);
+
+// --- deepen additive from deepen-b7-2-hrtf-reject-reasons-364a ---
+HrtfPanPathRejectReason classify_hrtf_pan_path_spatial_reject(const HrtfPanPathPreflight& preflight);
+bool should_skip_hrtf_binaural_spatial_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_binaural_spatial_preflight(bool hrtf_enabled, const Vec3& rel_listener,
+bool should_skip_hrtf_binaural_convolution_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool try_preflight_hrtf_binaural_coupling(bool hrtf_enabled, const HrtfIrStub& ir,
+bool try_preflight_hrtf_binaural_coupling(bool hrtf_enabled, const Vec3& rel_listener,
+bool should_skip_hrtf_binaural_coupling_preflight(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_binaural_coupling_preflight(bool hrtf_enabled, const Vec3& rel_listener,

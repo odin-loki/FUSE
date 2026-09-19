@@ -2482,3 +2482,13 @@ void testHrtfPanPathRejectReasonNoIrOverload() {
 // --- deepen additive from b72-hrtf-reject-reasons-9289 ---
                "should_skip_hrtf_pan_path_preflight false for spatial stub path");
     expectTrue(reason == fuse::audio::HrtfBinauralRejectReason::NullSamples,
+
+// --- deepen additive from deepen-b7-2-hrtf-reject-reasons-364a ---
+    expectTrue(!fuse::audio::should_skip_hrtf_pan_path_preflight(true, valid, offset),
+               "should_skip_hrtf_pan_path_preflight false on valid path");
+    expectTrue(fuse::audio::should_skip_hrtf_binaural_spatial_preflight(false, valid, offset, 0.1f,
+               "should_skip_hrtf_binaural_spatial_preflight true when disabled");
+    expectTrue(fuse::audio::should_skip_hrtf_binaural_convolution_preflight(true, empty, offset,
+               "should_skip_hrtf_binaural_convolution_preflight true for empty IR");
+    expectTrue(!fuse::audio::should_skip_hrtf_binaural_coupling_preflight(true, empty, offset,
+               "should_skip_hrtf_binaural_coupling_preflight false when narrowing applies");
