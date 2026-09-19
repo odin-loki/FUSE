@@ -400,6 +400,10 @@ public:
     /// Pass NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
     /// Sync jitter when preflight passes; returns false when blocked (B5.9 deepen).
     bool trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason);
+    /// Classify why pass jitter sync would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
+    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSync(u32 frameIndex) const;
     /// Sync jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
@@ -442,6 +446,8 @@ public:
     /// True when jitter sync and NDC preflights both pass (B5.9 deepen).
     /// NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
     /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterNdcReject() const;
     bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass NDC jitter preflight would reject (B5.9 deepen).
     bool shouldSkipJitterNdc() const;
@@ -960,6 +966,7 @@ public:
     /// Classify why pass resolve would skip (B5.9 deepen).
     /// Classify why resolve would skip — same ordering as `wouldSkipResolve` (B5.9 deepen).
     /// Classify why resolve would skip before history update (B5.9 deepen).
+    /// Classify why pass resolve would skip — same ordering as `wouldSkipResolve` (B5.9 deepen).
     TaaResolveSkipReason classifyResolveSkip(const TaaResolveDesc& desc) const;
     /// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
     bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
