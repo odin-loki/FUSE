@@ -74,6 +74,30 @@ const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason
     return "Unknown";
 }
 
+const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason) {
+    switch (reason) {
+    case CellSpanClampRejectReason::None:
+        return "None";
+    case CellSpanClampRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellSpanClampRejectReason::WithinSpan:
+        return "WithinSpan";
+    case CellSpanClampRejectReason::UnlimitedSpan:
+        return "UnlimitedSpan";
+    }
+    return "Unknown";
+}
+
+const char* broadphasePairSlotRejectReasonName(BroadphasePairSlotRejectReason reason) {
+    switch (reason) {
+    case BroadphasePairSlotRejectReason::None:
+        return "None";
+    case BroadphasePairSlotRejectReason::ZeroPairSlots:
+        return "ZeroPairSlots";
+    }
+    return "Unknown";
+}
+
 const char* mergeBroadphaseRejectReasonName(BroadphaseMergeRejectReason reason) {
     switch (reason) {
     case BroadphaseMergeRejectReason::None:
@@ -223,7 +247,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        if (!shouldRunCellOccupancyIteration(range, maxOccupancy)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -243,7 +267,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+    if (!shouldRunCellOccupancyIteration(range, maxOccupancy)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -270,7 +294,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (!shouldRunDedupeBroadphase(buffer)) {
+    if (!shouldRunDedupeBroadphase(buffer) || !shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
@@ -315,7 +339,7 @@ void runBroadphaseIntoBufferInternal(
     bool use2D,
     PairBufferSoA& buffer) {
     buffer.clear();
-    if (!preflightBroadphase(bodies, shapes).canRun()) {
+    if (!shouldRunBroadphase(bodies, shapes)) {
         return;
     }
 
@@ -336,7 +360,7 @@ void runBroadphaseIntoBufferInternal(
     }
 
     buffer.preparePairSlots(totalCellSlots);
-    if (totalCellSlots == 0u) {
+    if (!shouldRunBroadphasePairSlotWrite(totalCellSlots)) {
         return;
     }
 
@@ -393,7 +417,7 @@ void runBroadphaseIntoBufferInternal(
         dedupeBuffer(buffer);
     }
 
-    if (buffer.maxCapacity > 0u) {
+    if (shouldRunPairBufferClamp(buffer)) {
         buffer.applyMaxCapacityClamp();
     }
 }
@@ -423,7 +447,9 @@ void refineBroadphasePairsParallelImpl(
         }
     });
 
-    buffer.compact();
+    if (shouldRunPairBufferCompaction(buffer)) {
+        buffer.compact();
+    }
 }
 
 } // namespace

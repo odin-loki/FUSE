@@ -1617,6 +1617,132 @@ void testPairBufferShouldRunDedupeGuards() {
                "canSkipPairBufferDedupe false when shouldRunPairBufferDedupe true");
 }
 
+void testPairBufferWriteSlotRejectReasonGuards() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::pairBufferWriteSlotRejectReason(buffer, 0u, 0u, 1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteSlotRejectReason::None),
+             "in-range slot reports None writeSlot reject reason");
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferWriteSlotRejectReasonName(
+                               fuse::physics::broadphase::PairBufferWriteSlotRejectReason::OutOfRangeSlot),
+                           "OutOfRangeSlot") == 0,
+               "OutOfRangeSlot writeSlot reject reason has stable label");
+
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::pairBufferWriteSlotRejectReason(buffer, 2u, 0u, 1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteSlotRejectReason::OutOfRangeSlot),
+             "out-of-range slot reports OutOfRangeSlot reject reason");
+    expectTrue(fuse::physics::broadphase::pairBufferWriteSlotRejectsForReason(
+                   buffer, 2u, 0u, 1u,
+                   fuse::physics::broadphase::PairBufferWriteSlotRejectReason::OutOfRangeSlot),
+               "writeSlot rejects for OutOfRangeSlot");
+
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::pairBufferWriteSlotRejectReason(buffer, 0u, 1u, 1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteSlotRejectReason::InvalidPair),
+             "self-pair reports InvalidPair writeSlot reject reason");
+
+    const fuse::physics::broadphase::PairBufferWriteSlotPreflight validPreflight =
+        fuse::physics::broadphase::preflightPairBufferWriteSlot(buffer, 1u, 2u, 3u);
+    expectTrue(validPreflight.canWrite(), "writeSlot preflight accepts valid slot");
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferWriteSlot(buffer, 1u, 2u, 3u),
+               "shouldRunPairBufferWriteSlot true for valid slot");
+    expectTrue(!fuse::physics::broadphase::canSkipPairBufferWriteSlot(buffer, 1u, 2u, 3u),
+               "canSkipPairBufferWriteSlot false for valid slot");
+
+    buffer.writeSlot(0u, 0u, 1u);
+    buffer.writeSlot(2u, 2u, 3u);
+    expectEq(buffer.compact(), 1u, "writeSlot rejects out-of-range and self-pair slots via preflight gate");
+}
+
+void testCellSpanClampRejectReasonGuards() {
+    const fuse::physics::broadphase::CellRange3 wideRange = {
+        {-100, -100, -100},
+        {100, 100, 100},
+    };
+    expectTrue(fuse::physics::broadphase::cellSpanClampRejectsForReason(
+                   wideRange, 8u, fuse::physics::broadphase::CellSpanClampRejectReason::None),
+               "wide range rejects for None span-clamp reason");
+    expectTrue(fuse::physics::broadphase::shouldRunCellSpanClamp(wideRange, 8u),
+               "shouldRunCellSpanClamp true when span exceeds max");
+    expectTrue(!fuse::physics::broadphase::canSkipCellSpanClamp(wideRange, 8u),
+               "canSkipCellSpanClamp false when span exceeds max");
+    expectTrue(std::strcmp(fuse::physics::broadphase::cellSpanClampRejectReasonName(
+                               fuse::physics::broadphase::CellSpanClampRejectReason::WithinSpan),
+                           "WithinSpan") == 0,
+               "WithinSpan span-clamp reject reason has stable label");
+
+    const fuse::physics::broadphase::CellRange3 unitRange = {{0, 0, 0}, {1, 1, 1}};
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::cellSpanClampRejectReason(unitRange, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanClampRejectReason::WithinSpan),
+             "unit range reports WithinSpan clamp reject reason");
+    expectTrue(fuse::physics::broadphase::canSkipCellSpanClamp(unitRange, 8u),
+               "canSkipCellSpanClamp true when span is within max");
+
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::cellSpanClampRejectReason(unitRange, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanClampRejectReason::UnlimitedSpan),
+             "zero max span reports UnlimitedSpan clamp reject reason");
+
+    fuse::physics::broadphase::CellRange3 inverted = {{2, 2, 2}, {1, 1, 1}};
+    const fuse::physics::broadphase::CellSpanClampPreflight emptyPreflight =
+        fuse::physics::broadphase::preflightCellSpanClamp(inverted, 4u);
+    expectTrue(emptyPreflight.emptyRange, "span-clamp preflight marks empty range");
+    expectTrue(!emptyPreflight.canClamp(), "span-clamp preflight cannot clamp empty range");
+
+    const fuse::physics::broadphase::CellRange2 planeRange = {{0, 0}, {3, 1}};
+    expectTrue(fuse::physics::broadphase::cellSpanClampRejectsForReason(
+                   planeRange, 4u, fuse::physics::broadphase::CellSpanClampRejectReason::WithinSpan),
+               "2D within-span range rejects for WithinSpan");
+}
+
+void testBroadphasePairSlotRejectReasonGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::broadphasePairSlotRejectReason(0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphasePairSlotRejectReason::ZeroPairSlots),
+             "zero slots reports ZeroPairSlots pair-slot reject reason");
+    expectTrue(fuse::physics::broadphase::broadphasePairSlotRejectsForReason(
+                   0u, fuse::physics::broadphase::BroadphasePairSlotRejectReason::ZeroPairSlots),
+               "pair-slot rejects for ZeroPairSlots");
+    expectTrue(std::strcmp(fuse::physics::broadphase::broadphasePairSlotRejectReasonName(
+                               fuse::physics::broadphase::BroadphasePairSlotRejectReason::ZeroPairSlots),
+                           "ZeroPairSlots") == 0,
+               "ZeroPairSlots pair-slot reject reason has stable label");
+
+    const fuse::physics::broadphase::BroadphasePairSlotPreflight zeroPreflight =
+        fuse::physics::broadphase::preflightBroadphasePairSlots(0u);
+    expectTrue(zeroPreflight.zeroPairSlots, "pair-slot preflight marks zero slots");
+    expectTrue(!zeroPreflight.canWriteSlots(), "pair-slot preflight cannot write zero slots");
+    expectTrue(fuse::physics::broadphase::canSkipBroadphasePairSlotWrite(0u),
+               "canSkipBroadphasePairSlotWrite on zero slots");
+
+    const fuse::physics::broadphase::BroadphasePairSlotPreflight validPreflight =
+        fuse::physics::broadphase::preflightBroadphasePairSlots(4u);
+    expectTrue(validPreflight.canWriteSlots(), "pair-slot preflight accepts non-zero slots");
+    expectTrue(fuse::physics::broadphase::shouldRunBroadphasePairSlotWrite(4u),
+               "shouldRunBroadphasePairSlotWrite true for non-zero slots");
+}
+
+void testPairBufferClampShouldRunWiring() {
+    fuse::physics::broadphase::PairBufferSoA buffer;
+    buffer.push(0u, 1u);
+    buffer.setMaxCapacity(2u);
+    expectTrue(!fuse::physics::broadphase::shouldRunPairBufferClamp(buffer),
+               "shouldRunPairBufferClamp false when within capacity");
+    expectEq(buffer.applyMaxCapacityClamp(), 1u, "applyMaxCapacityClamp early-outs via shouldRun gate");
+
+    fuse::physics::broadphase::PairBufferSoA overflowBuffer;
+    overflowBuffer.push(0u, 1u);
+    overflowBuffer.push(2u, 3u);
+    overflowBuffer.push(4u, 5u);
+    overflowBuffer.setMaxCapacity(2u);
+    expectTrue(fuse::physics::broadphase::shouldRunPairBufferClamp(overflowBuffer),
+               "shouldRunPairBufferClamp true when overflow exists");
+    expectEq(overflowBuffer.applyMaxCapacityClamp(), 2u, "applyMaxCapacityClamp proceeds via shouldRun gate");
+}
+
 void testBroadphaseMergeRejectReasonGuards() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
@@ -1726,6 +1852,10 @@ int main() {
     testShouldRunBroadphaseGuards();
     testMergePairsIntoBufferPreflightGuards();
     testPairBufferShouldRunDedupeGuards();
+    testPairBufferWriteSlotRejectReasonGuards();
+    testCellSpanClampRejectReasonGuards();
+    testBroadphasePairSlotRejectReasonGuards();
+    testPairBufferClampShouldRunWiring();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");

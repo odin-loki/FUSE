@@ -48,7 +48,7 @@ void PairBufferSoA::preparePairSlots(u32 slotCount) {
 }
 
 void PairBufferSoA::writeSlot(u32 slot, u32 idxA, u32 idxB) {
-    if (slot >= pairSlotCount || !isValidCandidatePair(idxA, idxB)) {
+    if (!shouldRunPairBufferWriteSlot(*this, slot, idxA, idxB)) {
         return;
     }
 
@@ -177,7 +177,7 @@ void PairBufferSoA::sortCanonical() {
 }
 
 u32 PairBufferSoA::applyMaxCapacityClamp() {
-    if (!preflightPairBufferClamp(*this).needsClamp()) {
+    if (!shouldRunPairBufferClamp(*this)) {
         return activeCount;
     }
 
@@ -572,6 +572,61 @@ bool canSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
 
 bool shouldRunPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
     return preflightPairBufferCompactAndClamp(buffer).needsCompactAndClamp();
+}
+
+const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason) {
+    switch (reason) {
+    case PairBufferWriteSlotRejectReason::None:
+        return "None";
+    case PairBufferWriteSlotRejectReason::OutOfRangeSlot:
+        return "OutOfRangeSlot";
+    case PairBufferWriteSlotRejectReason::InvalidPair:
+        return "InvalidPair";
+    }
+    return "Unknown";
+}
+
+PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB) {
+    if (slot >= buffer.pairSlotCount) {
+        return PairBufferWriteSlotRejectReason::OutOfRangeSlot;
+    }
+    if (!isValidCandidatePair(idxA, idxB)) {
+        return PairBufferWriteSlotRejectReason::InvalidPair;
+    }
+    return PairBufferWriteSlotRejectReason::None;
+}
+
+bool pairBufferWriteSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB,
+    PairBufferWriteSlotRejectReason expected) {
+    return pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB) == expected;
+}
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB) {
+    PairBufferWriteSlotPreflight preflight{};
+    preflight.reason = pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB);
+    preflight.outOfRangeSlot = preflight.reason == PairBufferWriteSlotRejectReason::OutOfRangeSlot;
+    preflight.invalidPair = preflight.reason == PairBufferWriteSlotRejectReason::InvalidPair;
+    return preflight;
+}
+
+bool canSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {
+    return !preflightPairBufferWriteSlot(buffer, slot, idxA, idxB).canWrite();
+}
+
+bool shouldRunPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {
+    return preflightPairBufferWriteSlot(buffer, slot, idxA, idxB).canWrite();
 }
 
 } // namespace fuse::physics::broadphase

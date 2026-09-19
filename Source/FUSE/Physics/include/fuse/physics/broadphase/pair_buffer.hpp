@@ -261,4 +261,50 @@ bool canSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer);
 /// Non-mutating compact-and-clamp predicate — mirrors `preflightPairBufferCompactAndClamp` (B4.2 deepen pass).
 bool shouldRunPairBufferCompactAndClamp(const PairBufferSoA& buffer);
 
+/// Why pair-buffer writeSlot would reject (B4.2 deepen pass).
+enum class PairBufferWriteSlotRejectReason : u8 {
+    None = 0,
+    OutOfRangeSlot,
+    InvalidPair,
+};
+
+/// Human-readable label for pair-buffer writeSlot reject reasons (logging / tests).
+const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason);
+
+/// Diagnose why writeSlot would reject; vacuously succeeds when writeSlot may proceed.
+PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Returns true when `pairBufferWriteSlotRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferWriteSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB,
+    PairBufferWriteSlotRejectReason expected);
+
+/// Read-only writeSlot diagnostics — no mutation (B4.2 deepen pass).
+struct PairBufferWriteSlotPreflight {
+    PairBufferWriteSlotRejectReason reason = PairBufferWriteSlotRejectReason::None;
+    bool outOfRangeSlot = false;
+    bool invalidPair = false;
+
+    bool canWrite() const { return reason == PairBufferWriteSlotRejectReason::None; }
+};
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Non-mutating writeSlot skip predicate — inverse of `canWrite` (B4.2 deepen pass).
+bool canSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
+
+/// Non-mutating writeSlot predicate — mirrors `preflightPairBufferWriteSlot` (B4.2 deepen pass).
+bool shouldRunPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
+
 } // namespace fuse::physics::broadphase
