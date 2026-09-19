@@ -3153,3 +3153,16 @@ void testShouldRunManifoldPruneGuards() {
 void testShouldRunFrictionBasisRebuildGuards() {
         "should_skip_friction_basis_preflight true with valid cached basis");
     testNarrowphaseDispatchRejectReasonGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-68a1 ---
+void testContactPairBothPlaneDeepenGuards() {
+void testShouldRunNarrowphaseDispatchGuards() {
+void testManifoldPruneInvalidNormalGuards() {
+            fuse::physics::narrowphase::ManifoldPruneRejectReason::InvalidNormal,
+                fuse::physics::narrowphase::ManifoldPruneRejectReason::InvalidNormal),
+void testShouldRunManifoldPruneFinalizeGuards() {
+void testFrictionBasisShouldRunAndComputePreflightGuards() {
+            fuse::physics::narrowphase::ContactBufferCompactRejectReason::EmptyBuffer,
+            fuse::physics::narrowphase::ContactBufferCompactRejectReason::NoWork,
+            buffer, fuse::physics::narrowphase::ContactBufferCompactRejectReason::NoWork),
+    testFrictionBasisShouldRunAndComputePreflightGuards();

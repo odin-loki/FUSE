@@ -754,3 +754,9 @@ bool should_skip_buffer_friction_rebuild(const ContactBufferSoA& buffer, f32 eps
     const ContactBufferCompactPreflight preflight = preflight_contact_buffer_compact(*this);
     if (preflight.reason == ContactBufferCompactRejectReason::EmptyBuffer) {
     if (preflight.reason == ContactBufferCompactRejectReason::AllValid) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-68a1 ---
+    case ContactBufferCompactRejectReason::NoWork:
+        return ContactBufferCompactRejectReason::NoWork;
+    preflight.noWork = preflight.reason == ContactBufferCompactRejectReason::NoWork;
+    if (preflight.reason == ContactBufferCompactRejectReason::NoWork) {

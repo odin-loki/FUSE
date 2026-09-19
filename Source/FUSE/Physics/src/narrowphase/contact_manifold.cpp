@@ -804,3 +804,7 @@ bool should_skip_manifold_beyond_prune(
 // --- deepen additive from b4-narrowphase-deepen-pass-6859 ---
     case ManifoldPruneRejectReason::NeedsNormalNormalize:
     if (expected == ManifoldPruneRejectReason::NeedsNormalNormalize) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-68a1 ---
+    case ManifoldPruneRejectReason::InvalidNormal:
+        return ManifoldPruneRejectReason::InvalidNormal;
