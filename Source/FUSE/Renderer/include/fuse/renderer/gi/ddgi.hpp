@@ -737,6 +737,9 @@ bool preflightProbeTrilinearSample(const DDGIDesc& desc,
 
 
 
+/// Why probe-grid source validation rejected the DDGI desc (B5.6 deepen pass).
+    NonPositiveSpacing,
+
 /// Human-readable label for probe-grid source reject reasons (logging / tests).
 const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason);
 
@@ -1702,6 +1705,9 @@ bool preflightProbeGrid(const DDGIDesc& desc, ProbeGridRejectReason* reason = nu
 /// Classify why probe-grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
 /// Non-mutating probe-grid source preflight — returns true when the grid can supply samples.
 /// Early-out when probe-grid source preflight would be rejected.
+/// Diagnose why probe-grid source validation would reject; vacuously succeeds on valid descs.
+/// Non-mutating probe-grid source preflight — returns true when desc is a valid sampling source.
+/// Early-out when probe-grid source validation would reject.
 /// Early-out when probe irradiance lookup should be skipped for an empty or non-sampleable grid.
 bool shouldSkipProbeGrid(const DDGIDesc& desc);
 /// Early-out when the probe grid cannot serve as an irradiance sample source (B5.6 deepen pass).
@@ -2012,6 +2018,7 @@ bool wouldSkipProbeTrilinearSample(const ProbeGridSource& source, const ProbeSam
 /// Early-out when coord-based trilinear sampling would be rejected (B5.6 deepen pass).
 /// Early-out when spatial trilinear irradiance lookup would be rejected.
 /// Early-out when directional trilinear irradiance lookup would be rejected.
+/// World-position trilinear preflight — builds coords then checks cache.
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -2635,6 +2642,7 @@ bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
                                    u32 max_indices,
                                    u32* out_count,
                                    ProbeScheduleRejectReason& outReason);
+/// Schedule probe updates at rate with reject-reason diagnostics; false when preflight rejects.
 /// Classify why probe scheduling would be rejected — same ordering as `tryCanScheduleProbeUpdates`.
 ProbeScheduleRejectReason classifyProbeScheduleReject(u32 probe_count,
                                                       const u32* out_indices,

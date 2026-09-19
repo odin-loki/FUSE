@@ -143,6 +143,12 @@ ProbeKernelRejectReason classifyProbeKernelRejectWithGrid(const DDGIDesc& desc, 
 ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
 
 
+/// Classify why probe trace kernel launch would reject.
+ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
+
+/// Classify why probe blend kernel launch would reject.
+ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
+
 /// Early-out when either probe kernel launch would be rejected.
 bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
 /// Early-out when grid-aware probe kernel launch would be rejected.
@@ -599,6 +605,11 @@ bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Launch probe blend with reject-reason diagnostics; false when preflight rejects.
 /// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
+                                  void* cuda_stream,
+                                  ProbeKernelRejectReason& outReason);
+
+/// Launch probe trace + blend kernels with reject-reason diagnostics; false when either preflight rejects.
+bool tryLaunch_ddgi_probe_kernels(const DDGIKernelParams& params,
                                   void* cuda_stream,
                                   ProbeKernelRejectReason& outReason);
 
