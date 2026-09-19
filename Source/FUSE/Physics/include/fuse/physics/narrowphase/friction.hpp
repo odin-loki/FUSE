@@ -153,4 +153,10 @@ bool should_normalize_contact_normal_before_friction(
     const ContactManifold& manifold,
     f32 lengthEpsilon = 1e-4f);
 
+/// Returns true when friction-basis rebuild can proceed (B4.5 deepen follow-up).
+bool can_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Build or reuse friction basis using deepen preflight; no-op when preflight says skip (B4.5 deepen follow-up).
+bool ensure_friction_basis_if_needed(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
 } // namespace fuse::physics::narrowphase
