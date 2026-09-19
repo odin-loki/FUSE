@@ -1556,3 +1556,13 @@ struct RefinePairPreflight {
     RefinePairRejectReason reason = RefinePairRejectReason::None;
     bool canRefine() const { return reason == RefinePairRejectReason::None; }
 RefinePairPreflight preflightRefinePair(
+
+// --- deepen additive from deepen-b4-broadphase-guards-2345 ---
+enum class MergePairIntoBufferRejectReason : u8 {
+const char* mergePairIntoBufferRejectReasonName(MergePairIntoBufferRejectReason reason);
+MergePairIntoBufferRejectReason mergePairIntoBufferRejectReason(
+    MergePairIntoBufferRejectReason expected);
+struct MergePairIntoBufferPreflight {
+    MergePairIntoBufferRejectReason reason = MergePairIntoBufferRejectReason::None;
+    bool canMerge() const { return reason == MergePairIntoBufferRejectReason::None; }
+MergePairIntoBufferPreflight preflightMergePairIntoBuffer(

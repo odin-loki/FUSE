@@ -1549,3 +1549,23 @@ RefinePairPreflight preflightRefinePair(
     preflight.invalidPair = preflight.reason == RefinePairRejectReason::InvalidPair;
     return !preflightRefinePair(buffer, pairIndex, bodyCount).canRefine();
     return preflightRefinePair(buffer, pairIndex, bodyCount).canRefine();
+
+// --- deepen additive from deepen-b4-broadphase-guards-2345 ---
+        if (!preflightMergePairIntoBuffer(buffer, pair.bodyA, pair.bodyB).canMerge()) {
+const char* mergePairIntoBufferRejectReasonName(MergePairIntoBufferRejectReason reason) {
+    case MergePairIntoBufferRejectReason::None:
+    case MergePairIntoBufferRejectReason::InvalidPair:
+    case MergePairIntoBufferRejectReason::BufferFull:
+MergePairIntoBufferRejectReason mergePairIntoBufferRejectReason(
+        return MergePairIntoBufferRejectReason::InvalidPair;
+        return MergePairIntoBufferRejectReason::BufferFull;
+    return MergePairIntoBufferRejectReason::None;
+    MergePairIntoBufferRejectReason expected) {
+    return mergePairIntoBufferRejectReason(buffer, bodyA, bodyB) == expected;
+MergePairIntoBufferPreflight preflightMergePairIntoBuffer(
+    MergePairIntoBufferPreflight preflight{};
+    preflight.reason = mergePairIntoBufferRejectReason(buffer, bodyA, bodyB);
+    preflight.invalidPair = preflight.reason == MergePairIntoBufferRejectReason::InvalidPair;
+    preflight.bufferFull = preflight.reason == MergePairIntoBufferRejectReason::BufferFull;
+    return !preflightMergePairIntoBuffer(buffer, bodyA, bodyB).canMerge();
+    return preflightMergePairIntoBuffer(buffer, bodyA, bodyB).canMerge();

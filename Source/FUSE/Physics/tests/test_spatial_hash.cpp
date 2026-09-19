@@ -3811,3 +3811,26 @@ void testMergePairPushRejectReasonGuards() {
     expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::mergePairPushRejectReason(buffer, 2u, 3u)),
     testRefinePairRejectReasonGuards();
     testMergePairPushRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-2345 ---
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteRejectReason::NoPreparedSlots),
+                   buffer, 2u, 0u, 1u, fuse::physics::broadphase::PairBufferWriteRejectReason::OutOfRangeSlot),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateRejectReason::NoPreparedSlots),
+void testShapeCellOccupancyParamsPreflightGuards() {
+    expectTrue(withinBudget.canIterate(), "preflightShapeCellOccupancy accepts range within budget");
+        fuse::physics::broadphase::preflightShapeCellOccupancy(planeRange, params);
+    expectTrue(!planePreflight.canIterate(), "2D params preflight rejects over-budget range");
+void testMergePairIntoBufferPreflightGuards() {
+    const fuse::physics::broadphase::MergePairIntoBufferPreflight validPreflight =
+        fuse::physics::broadphase::preflightMergePairIntoBuffer(buffer, 0u, 1u);
+    expectTrue(validPreflight.canMerge(), "single-pair merge preflight accepts valid pair into empty buffer");
+                 fuse::physics::broadphase::mergePairIntoBufferRejectReason(buffer, 2u, 2u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::MergePairIntoBufferRejectReason::InvalidPair),
+    expectTrue(fuse::physics::broadphase::mergePairIntoBufferRejectsForReason(
+                   buffer, 2u, 2u, fuse::physics::broadphase::MergePairIntoBufferRejectReason::InvalidPair),
+    expectTrue(std::strcmp(fuse::physics::broadphase::mergePairIntoBufferRejectReasonName(
+                               fuse::physics::broadphase::MergePairIntoBufferRejectReason::BufferFull),
+                 fuse::physics::broadphase::mergePairIntoBufferRejectReason(buffer, 2u, 3u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::MergePairIntoBufferRejectReason::BufferFull),
+    testShapeCellOccupancyParamsPreflightGuards();
+    testMergePairIntoBufferPreflightGuards();
