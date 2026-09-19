@@ -189,6 +189,23 @@ const char* sampleCoordRejectReasonLabel(SampleCoordRejectReason reason);
 /// True when a sample-coord reject reason would block sampling (B5.11 deepen pass).
 bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason);
 
+/// True when a sample-coord reject reason would block sampling (B5.11 deepen).
+
+/// Why froxel bilinear density sampling preflight rejected the request (B5.11 deepen).
+enum class FroxelBilinearSampleRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    InaccessibleGrid,
+    InvalidSampleCoords,
+    ClampableWeights,
+};
+
+/// Human-readable label for bilinear sample reject reasons (logging / tests).
+const char* froxelBilinearSampleRejectReasonLabel(FroxelBilinearSampleRejectReason reason);
+
+/// True when a bilinear sample reject reason would block sampling (B5.11 deepen).
+bool froxelBilinearSampleRejectReasonIsBlocking(FroxelBilinearSampleRejectReason reason);
+
 /// Why froxel trilinear density sampling preflight rejected the request (B5.11 deepen).
 enum class FroxelTrilinearSampleRejectReason : u8 {
     None = 0,
@@ -287,6 +304,7 @@ const char* trilinearSampleRejectReasonLabel(TrilinearSampleRejectReason reason)
 
 /// True when a sample-coord reject reason would block sampling (B5.11 deepen).
 
+/// True when a trilinear sample reject reason would block sampling (B5.11 deepen).
 
 /// Froxel grid indexing helpers — mirrors clustered light layout (B5.4).
 struct FroxelGridLayout {
@@ -553,6 +571,9 @@ struct FroxelGridLayout {
     /// Non-mutating sample-coord preflight — returns true when sampling may proceed.
     static ScreenMappingRejectReason classifyScreenDepthMappingReject(f32 screenX,
     /// Non-mutating screen-depth mapping preflight — returns true when mapping may proceed.
+    /// Early-out when screen-depth → sample-coords mapping would be rejected.
+    /// Early-out when screen-depth → froxel index mapping would be rejected.
+    static bool wouldSkipScreenDepthToFroxelIndex(f32 screenX,
 };
 
 /// Why screen-depth → sample-coord mapping rejected the request (B5.11 deepen).
@@ -714,6 +735,9 @@ bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 /// True when a populate reject reason would block meaningful fill (B5.11 deepen pass).
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
+/// True when a populate reject reason would block meaningful fill (B5.11 deepen).
+bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
+
 /// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
 enum class DensityLookupRejectReason : u8 {
     None = 0,
@@ -825,6 +849,7 @@ bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReas
 /// True when a density-lookup reject reason would block lookup (B5.11 deepen pass).
 
 /// True when a trilinear sample reject reason would block sampling (B5.11 deepen).
+
 
 
 
@@ -1113,6 +1138,19 @@ bool preflightFroxelTrilinearSample(const FroxelDensityGrid& grid,
 bool tryCanSampleAtCoords(const FroxelDensityGrid& grid,
                           const FroxelSampleCoords& coords,
                           SampleCoordRejectReason& outReason);
+/// Preflight guard before bilinear density sampling; false on inaccessible grid or hard OOB coords.
+bool canBilinearSampleAtCoords(const FroxelDensityGrid& grid,
+                               const FroxelGridDesc& desc,
+                               const FroxelSampleCoords& coords);
+/// Diagnose why bilinear sample preflight would reject; warns on clampable weights.
+bool tryCanBilinearSampleAtCoords(const FroxelDensityGrid& grid,
+                                  const FroxelGridDesc& desc,
+                                  const FroxelSampleCoords& coords,
+                                  FroxelBilinearSampleRejectReason& outReason);
+/// Early-out when bilinear density sampling would be rejected — same ordering as `tryCanBilinearSampleAtCoords`.
+bool wouldSkipDensityBilinearSample(const FroxelDensityGrid& grid,
+                                    const FroxelGridDesc& desc,
+                                    const FroxelSampleCoords& coords);
 /// Preflight guard before trilinear density sampling; false on inaccessible grid or hard OOB coords.
 bool canTrilinearSampleAtCoords(const FroxelDensityGrid& grid,
 /// Classify why trilinear sample preflight would reject — same ordering as `tryCanTrilinearSampleAtCoords`.
@@ -1439,6 +1477,8 @@ u32 countNonFiniteDensities(const FroxelDensityGrid& grid);
 /// True when at least one froxel holds a non-finite density value (B5.11 deepen).
 bool hasNonFiniteDensity(const FroxelDensityGrid& grid);
 /// Non-mutating grid density preflight — returns true when validation may proceed.
+/// Diagnose density validation against `desc`; vacuously succeeds when `desc` is empty.
+/// Early-out when grid density validation would be rejected — same ordering as `tryValidateGridDensity`.
 /// Read density with guard preflight; returns false when `canLookupAtIndex` would reject the request.
 bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
                              u32 index,
@@ -1576,6 +1616,12 @@ bool trySampleDensityBilinear(const FroxelDensityGrid& grid,
                               DensityLookupRejectReason& outReason);
                               DensityLookupRejectReason& outLookupReason,
                               SampleCoordRejectReason& outCoordReason);
+/// Bilinear sample with guard preflight and bilinear-specific reject-reason diagnostics.
+bool trySampleDensityBilinear(const FroxelDensityGrid& grid,
+                              const FroxelGridDesc& desc,
+                              const FroxelSampleCoords& coords,
+                              f32& outDensity,
+                              FroxelBilinearSampleRejectReason& outReason);
 f32 sampleDensityTrilinear(const FroxelDensityGrid& grid,
                            const FroxelSampleCoords& coords);
 /// Trilinear sample preflight with optional reject-reason diagnostics (B5.11 deepen).
