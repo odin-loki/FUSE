@@ -326,3 +326,6 @@ void accumulateCascadeShadowSkipCount(CascadeShadowSkipCounts& counts, CascadeSh
 
 // --- deepen additive from deepen-b55-csm-split-guards-b8b6 ---
 bool cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason reason);
+
+// --- deepen additive from deepen-b55-csm-split-guards-448c ---
+    static bool wouldSkipCascadeShadowBuild(u32 cascadeIndex,
