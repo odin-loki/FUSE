@@ -40,6 +40,9 @@ struct ContactBufferSoA {
     void writeSlot(u32 slot, const ContactManifold& manifold);
     void applyWarmStartStub(u32 slot, ContactManifold& manifold) const;
     void buildFrictionTangentBases();
+    void buildFrictionTangentBasesIfNeeded();
+    bool frictionBasisMatchesNormalAt(u32 slot, f32 epsilon = 1e-4f) const;
+    bool canSkipBuildFrictionTangentBases(f32 epsilon = 1e-4f) const;
     u32 compact();
     u32 applyMaxCapacityClamp();
     u32 compactAndClamp();
@@ -50,5 +53,24 @@ struct ContactBufferSoA {
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
 };
+
+/// Const preflight for contact-buffer friction tangent rebuild (B4.6 deepen pass).
+struct ContactBufferFrictionPreflight {
+    u32 activeCount = 0u;
+    u32 staleCount = 0u;
+
+    bool can_skip_rebuild() const { return staleCount == 0u; }
+    bool needs_rebuild() const { return staleCount > 0u; }
+};
+
+/// Populate friction tangent rebuild preflight without mutating slots (B4.6 deepen pass).
+ContactBufferFrictionPreflight preflight_contact_buffer_friction_rebuild(
+    const ContactBufferSoA& buffer,
+    f32 epsilon = 1e-4f);
+
+/// Returns true when all active slots already store orthonormal tangent frames (B4.6 deepen pass).
+bool can_skip_build_friction_tangent_bases(
+    const ContactBufferSoA& buffer,
+    f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

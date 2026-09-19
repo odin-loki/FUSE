@@ -4,6 +4,23 @@
 
 namespace fuse::physics::narrowphase {
 
+NarrowphaseSlotPreflight preflight_narrowphase_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphaseSlotPreflight preflight{};
+    preflight.reason = contact_pair_deepen_reject_reason(pair, bodies, shapes);
+    preflight.rejected = preflight.reason != ContactPairRejectReason::None;
+    return preflight;
+}
+
+bool should_skip_narrowphase_slot_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !preflight_narrowphase_slot(pair, bodies, shapes).can_dispatch();
+}
+
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,

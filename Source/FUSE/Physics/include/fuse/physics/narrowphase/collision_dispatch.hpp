@@ -4,6 +4,7 @@
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
@@ -186,6 +187,26 @@ ContactManifold collideBoxBox(
     u32 idxB);
 
 struct ContactBufferSoA;
+
+/// Const preflight for per-slot narrowphase dispatch (B4.6 deepen pass).
+struct NarrowphaseSlotPreflight {
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+
+    bool can_dispatch() const { return !rejected; }
+};
+
+/// Populate per-slot narrowphase preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphaseSlotPreflight preflight_narrowphase_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when extended deepen preflight rejects this slot (B4.6 deepen pass).
+bool should_skip_narrowphase_slot_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.
 void runNarrowphaseIntoBuffer(
