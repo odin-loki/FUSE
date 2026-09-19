@@ -1056,3 +1056,32 @@ void testPreflightCanMatchWithoutEntities() {
                "should_skip_query_filter matches preflight skipped");
                "should_skip_query_filter true for empty table");
     expectTrue(fuse::ecs::should_skip_query_filter(table, conflicting),
+
+// --- deepen additive from deepen-b3-ecs-filter-conflict-guards-4814 ---
+    expectTrue(conflictPreflight.should_skip(), "filter-only preflight skips conflicting filter");
+void testPreflightExposesConflictGuard() {
+    expectTrue(!runnablePreflight.has_conflict, "runnable filter has no conflict");
+    expectTrue(runnablePreflight.runnable, "runnable filter remains runnable");
+    expectTrue(runnablePreflight.should_skip_match(), "filter-only preflight skips signature match");
+    expectTrue(conflictPreflight.has_conflict, "conflicting filter reports has_conflict");
+    expectTrue(!conflictPreflight.runnable, "conflicting filter is not runnable");
+    expectTrue(conflictPreflight.should_skip_match(), "conflicting filter skips signature match");
+    expectTrue(conflictPreflight.should_skip(), "conflicting filter skips iteration");
+    const fuse::ecs::QueryFilterPreflight tableConflict = fuse::ecs::preflight_query_filter(table, conflicting);
+    expectTrue(tableConflict.should_skip_match(), "table conflict skips signature match");
+    expectTrue(!fuse::ecs::should_skip_query_match(table, filter),
+               "should_skip_query_match false when a signature matches");
+    expectTrue(fuse::ecs::should_skip_query_match({}, filter),
+               "should_skip_query_match true for empty archetype table");
+    expectTrue(fuse::ecs::should_skip_query_match(table, conflicting),
+               "should_skip_query_match true for conflicting filter");
+    expectTrue(fuse::ecs::should_skip_query_match(table, missingWith),
+               "should_skip_query_match true when no signature satisfies With set");
+    expectTrue(!fuse::ecs::should_skip_query_match(zeroRowTable, filter),
+               "should_skip_query_match false for zero-row matching signature");
+    expectTrue(fuse::ecs::should_skip_query_iteration(zeroRowTable, filter),
+               "should_skip_query_iteration true for zero-row matching signature");
+void testConflictGuardAlignsAcrossCountHelpers() {
+               "should_skip_query_match true under conflict guard");
+               "should_skip_query_iteration true under conflict guard");
+    testPreflightExposesConflictGuard();

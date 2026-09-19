@@ -116,3 +116,7 @@ template <typename... WithTs, typename... WithoutTs>
 // --- deepen additive from deepen-b3-ecs-filters-preflight-6c37 ---
     [[nodiscard]] bool should_skip() const { return !can_iterate(); }
 [[nodiscard]] bool should_skip_query_filter(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
+
+// --- deepen additive from deepen-b3-ecs-filter-conflict-guards-4814 ---
+    [[nodiscard]] bool should_skip_match() const { return has_conflict || empty_table || matching_archetypes == 0; }
+[[nodiscard]] bool should_skip_query_match(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
