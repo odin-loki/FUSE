@@ -2267,3 +2267,10 @@ void testPairBufferRejectReasonTracking() {
     expectTrue(buffer.lastRejectReason == fuse::physics::broadphase::CandidateRejectReason::BufferFull,
     testCandidateRejectReasonGuards();
     testPairBufferRejectReasonTracking();
+
+// --- deepen additive from deepen-b4-broadphase-guards-90dc ---
+        fuse::physics::broadphase::candidatePairRejectReason(2u, 2u) ==
+            fuse::physics::broadphase::CandidatePairRejectReason::SelfPair,
+            fuse::physics::broadphase::CandidatePairRejectReason::None,
+            fuse::physics::broadphase::CandidatePairRejectReason::OutOfRangeBody,
+        fuse::physics::broadphase::candidatePairRejectReason(selfPair, 4u) ==

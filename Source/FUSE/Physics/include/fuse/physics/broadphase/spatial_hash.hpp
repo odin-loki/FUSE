@@ -1113,3 +1113,7 @@ FUSE_PHYSICS_INLINE CandidateRejectReason candidatePairRejectReason(u32 bodyA, u
 FUSE_PHYSICS_INLINE CandidateRejectReason candidatePairRejectReason(const CandidatePair& pair, u32 bodyCount = 0u) {
     return candidatePairRejectReason(bodyA, bodyB, bodyCount) != CandidateRejectReason::None;
 CandidateRejectReason candidatePairRejectReason(
+
+// --- deepen additive from deepen-b4-broadphase-guards-90dc ---
+FUSE_PHYSICS_INLINE CandidatePairRejectReason candidatePairRejectReason(u32 bodyA, u32 bodyB, u32 bodyCount = 0u) {
+FUSE_PHYSICS_INLINE CandidatePairRejectReason candidatePairRejectReason(const CandidatePair& pair, u32 bodyCount = 0u) {
