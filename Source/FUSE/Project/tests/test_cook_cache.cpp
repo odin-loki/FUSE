@@ -806,3 +806,27 @@ void testCookCacheInvalidAndStaleEntryHelpers() {
 void testCookCacheHasInvalidAndStaleEntryGuards() {
     testCookCacheInvalidAndStaleEntryHelpers();
     testCookCacheHasInvalidAndStaleEntryGuards();
+
+// --- deepen additive from b79-cooker-hash-guards-111f ---
+void testCookCacheLookupPreflightGuards() {
+    expectTrue(zero_preflight.should_skip(), "zero-key lookup preflight should skip");
+void testCookCacheStorePreflightGuards() {
+    expectTrue(zero_preflight.should_skip(), "zero-key store preflight should skip");
+    expectTrue(empty_source_preflight.should_skip(), "empty source store preflight should skip");
+void testCookImportHashPreflightGuards() {
+    expectTrue(unreadable.should_skip(), "unreadable source import preflight should skip");
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_probe_a.fusemesh";
+    manifest.assets.push_back(entryA);
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_probe_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+    expectTrue(upstream_probe.would_invalidate(), "upstream probe reports invalidation scope");
+    testCookCacheLookupPreflightGuards();
+    testCookCacheStorePreflightGuards();
+    testCookImportHashPreflightGuards();

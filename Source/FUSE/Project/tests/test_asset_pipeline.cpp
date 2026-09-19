@@ -1920,3 +1920,9 @@ void testCombineCookCacheKeyZeroSourceGuard() {
 
 // --- deepen additive from deepen-b79-cooker-hash-guards-1c96 ---
 void testAssetCookerInvalidationEmptyGuards() {
+
+// --- deepen additive from b79-cooker-hash-guards-111f ---
+void testCookCachePreflightAndReconcileEstimators() {
+    entryA.output_path = "/tmp/fuse_b79_est_a.fusemesh";
+    entryB.output_path = "/tmp/fuse_b79_est_b.fusemesh";
+    testCookCachePreflightAndReconcileEstimators();

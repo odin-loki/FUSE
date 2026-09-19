@@ -372,3 +372,12 @@ u64 hash_manifest_entry(const CookManifestEntry& entry) {
 }
 
 } // namespace fuse::project
+
+// --- deepen additive from b79-cooker-hash-guards-111f ---
+CookCacheKeyPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    CookCacheKeyPreflight preflight;
+CookImportHashPreflight preflight_import_paths(const std::string& input_path, const std::string& output_path) {
+    CookImportHashPreflight preflight;
+CookImportHashPreflight preflight_mesh_import(const MeshImportDesc& desc) {
+CookImportHashPreflight preflight_texture_import(const TextureImportDesc& desc) {
+CookImportHashPreflight preflight_audio_import(const AudioImportDesc& desc) {

@@ -79,3 +79,13 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 
 } // namespace fuse::project
+
+// --- deepen additive from b79-cooker-hash-guards-111f ---
+struct CookCacheKeyPreflight {
+    [[nodiscard]] bool should_skip() const { return !can_fold(); }
+struct CookImportHashPreflight {
+    [[nodiscard]] bool should_skip() const { return !can_hash(); }
+[[nodiscard]] CookCacheKeyPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash);
+[[nodiscard]] CookImportHashPreflight preflight_mesh_import(const MeshImportDesc& desc);
+[[nodiscard]] CookImportHashPreflight preflight_texture_import(const TextureImportDesc& desc);
+[[nodiscard]] CookImportHashPreflight preflight_audio_import(const AudioImportDesc& desc);

@@ -802,3 +802,9 @@ bool CookCache::load(const std::string& path) {
 }
 
 } // namespace fuse::project
+
+// --- deepen additive from b79-cooker-hash-guards-111f ---
+CookCacheLookupPreflight preflight_cook_cache_lookup(const CookCache& cache, u64 content_hash) {
+    CookCacheLookupPreflight preflight;
+CookCacheStorePreflight preflight_cook_cache_store(const CookCacheEntry& entry) {
+    CookCacheStorePreflight preflight;

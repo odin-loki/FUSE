@@ -86,3 +86,6 @@ private:
 };
 
 } // namespace fuse::project
+
+// --- deepen additive from b79-cooker-hash-guards-111f ---
+        [[nodiscard]] bool would_reconcile() const { return total_entries() > 0; }

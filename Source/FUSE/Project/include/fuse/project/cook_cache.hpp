@@ -148,3 +148,14 @@ private:
 };
 
 } // namespace fuse::project
+
+// --- deepen additive from b79-cooker-hash-guards-111f ---
+struct CookCacheLookupPreflight {
+    [[nodiscard]] bool would_hit() const { return can_lookup() && has_entry; }
+    [[nodiscard]] bool would_miss() const { return can_lookup() && !has_entry; }
+    [[nodiscard]] bool should_skip() const { return !can_lookup(); }
+struct CookCacheStorePreflight {
+    [[nodiscard]] bool should_skip() const { return !can_store(); }
+    [[nodiscard]] bool would_invalidate() const {
+[[nodiscard]] CookCacheLookupPreflight preflight_cook_cache_lookup(const CookCache& cache, u64 content_hash);
+[[nodiscard]] CookCacheStorePreflight preflight_cook_cache_store(const CookCacheEntry& entry);
