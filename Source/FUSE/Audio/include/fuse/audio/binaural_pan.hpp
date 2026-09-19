@@ -1185,3 +1185,11 @@ HrtfPanPathConvolutionRejectReason classify_hrtf_pan_path_convolution_reject(
     const HrtfPanPathPreflight& preflight, const HrtfIrPreflight& ir_preflight,
     HrtfPanPathConvolutionRejectReason expected);
 bool hrtf_attenuation_coupling_rejects_for_reason(const HrtfAttenuationCouplingPreflight& preflight,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-1b78 ---
+enum class HrtfPanConvolutionRejectReason : u8 {
+const char* hrtf_pan_convolution_reject_reason_label(HrtfPanConvolutionRejectReason reason);
+HrtfPanConvolutionRejectReason classify_hrtf_pan_convolution_reject(
+    const HrtfPanPathPreflight& preflight, const HrtfIrPreflight& ir);
+                                          HrtfPanConvolutionRejectReason* reason = nullptr);
+                                        HrtfPanConvolutionRejectReason& reason);
