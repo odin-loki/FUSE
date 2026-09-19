@@ -4474,3 +4474,10 @@ void testTaaPassTemporalGuardsAndTryPreflight() {
                "pass tryPreflightResolve passes with valid desc after init");
     expectNear(weights.current, 0.35f, 1e-5f, "pass tryCompute steady current weight");
     expectNear(weights.history, 0.65f, 1e-5f, "pass tryCompute steady history weight");
+
+// --- deepen additive from deepen-taa-pass-guards-ab01 ---
+        std::printf("SKIP: Vulkan device not available for pass tryPreflight wrapper test\n");
+               "pass classifyResolveBlendReject is None after warmup");
+    expectTrue(pass->jitterAlignedToFrameIndex(6u), "pass jitter aligned after sync for tryPreflight");
+    expectTrue(zeroPass->tryPreflightJitterSync(0u, jitterReason),
+               "zero-width pass tryPreflightJitterSync still valid for sequence");
