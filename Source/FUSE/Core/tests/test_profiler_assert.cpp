@@ -4351,3 +4351,39 @@ void testUnpairedAsyncFlowsInBufferGuard() {
 void testHasExportBlockersGuard() {
     expectTrue(!emptyPreflight.hasExportBlockers(),
         expectTrue(activePreflight.hasExportBlockers(),
+
+// --- deepen additive from deepen-b16-profiler-guards-c4cf ---
+void testTryEventLookupByNameAndFlowIdGuard() {
+    expectTrue(!fuse::profiler::tryFirstEventByFlowId(0u, outEvent),
+               "tryFirstEventByFlowId false for zero flow id");
+    expectTrue(!fuse::profiler::tryLastEventByFlowId(0u, outEvent),
+               "tryLastEventByFlowId false for zero flow id");
+    expectTrue(fuse::profiler::tryLastEventByName("try_lookup_scope", outEvent),
+               "tryLastEventByName copies scope end phase");
+    expectTrue(outEvent.scopeId == flowId, "tryFirstEventByFlowId preserves flow id");
+    expectTrue(fuse::profiler::tryFirstEventByName("try_lookup_counter", outEvent),
+    expectTrue(!fuse::profiler::tryFirstEventByName("missing_try_name", outEvent),
+void testNestingAsyncFlowPreflightGuard() {
+    expectTrue(!resetPreflight.hasOpenAsyncFlows, "reset has no open async flows");
+    expectTrue(!resetPreflight.flowDepthDetached, "reset flow depth is attached");
+    expectTrue(!resetPreflight.crossThreadFlowHandoffPending,
+        const fuse::profiler::NestingAsyncFlowPreflight activeScopePreflight =
+        expectTrue(!activeScopePreflight.isBalanced(), "active scope reports unbalanced nesting preflight");
+        expectTrue(!activeScopePreflight.scopeNestingBalanced,
+        expectTrue(activeScopePreflight.activeScopeNestingDepth == 1u,
+        expectTrue(activeScopePreflight.maxScopeNestingDepth == 1u,
+            const fuse::profiler::NestingAsyncFlowPreflight nestedPreflight =
+            expectTrue(!nestedPreflight.isBalanced(), "nested scope/flow preflight is unbalanced");
+            expectTrue(nestedPreflight.activeScopeNestingDepth == 2u,
+            expectTrue(nestedPreflight.activeFlowNestingDepth == 2u,
+            expectTrue(nestedPreflight.openAsyncFlowCount == 2u,
+            expectTrue(nestedPreflight.hasOpenAsyncFlows, "nested preflight marks open async flows");
+            expectTrue(nestedPreflight.maxFlowNestingDepth == 2u,
+    expectTrue(closedPreflight.isBalanced(), "closed nesting preflight is balanced");
+    expectTrue(!closedPreflight.hasOpenAsyncFlows, "closed nesting preflight clears open flows");
+    const fuse::profiler::NestingAsyncFlowPreflight handoffPreflight =
+    expectTrue(!handoffPreflight.isBalanced(), "cross-thread handoff preflight is unbalanced");
+    expectTrue(handoffPreflight.flowDepthDetached, "handoff preflight marks detached flow depth");
+    expectTrue(handoffPreflight.crossThreadFlowHandoffPending,
+    expectTrue(!handoffPreflight.hasOpenAsyncFlows, "handoff preflight clears global open flow count");
+    testNestingAsyncFlowPreflightGuard();
