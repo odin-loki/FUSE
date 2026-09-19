@@ -141,8 +141,8 @@ bool isSnapStepValid(GizmoMode mode, const GizmoSnapSettings& settings);
 /// True when snap is enabled with a usable step for the active mode (B6.4 deepen pass).
 bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings);
 
-/// True when snap is enabled but the mode step is unusable (B6.4 deepen pass).
-bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings);
+/// True when ray direction is non-zero and unit length (B6.4 deepen pass).
+bool isRayNormalized(const GizmoRay& ray);
 
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
 struct PickPreflight {
@@ -153,6 +153,8 @@ struct PickPreflight {
     bool outOfBounds = false;
     bool screenMiss = false;
     bool pickMiss = false;
+    /// Non-unit ray direction — informational only; does not block pick (B6.4 deepen pass).
+    bool nonUnitRay = false;
     GizmoAxis axis = GizmoAxis::None;
 
     bool canPick() const {
@@ -176,6 +178,22 @@ struct SnapPreflight {
 };
 
 SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings);
+
+/// Read-only drag-delta snap diagnostics — no mutation (B6.4 deepen pass).
+struct SnapDeltaPreflight {
+    bool snapDisabled = false;
+    bool invalidStep = false;
+    f32 delta = 0.f;
+    f32 snappedDelta = 0.f;
+
+    bool canApply() const { return !snapDisabled && !invalidStep; }
+    bool isDegraded() const { return !snapDisabled && invalidStep; }
+};
+
+SnapDeltaPreflight preflightSnapDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
+
+/// Non-mutating drag-delta snap predicate — same guards as `preflightSnapDelta` (B6.4 deepen pass).
+bool canSnapDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
 
 /// Guarded transform snap — returns false when snap cannot apply (B6.4 deepen follow-up).
 bool trySnapTransform(const GizmoTransform& transform, GizmoMode mode,
@@ -567,7 +585,11 @@ public:
     [[nodiscard]] PickInteractionPreflight preflightPickInteraction(
         const GizmoHitTest& hit) const;
     [[nodiscard]] SnapPreflight preflightSnap() const;
+    [[nodiscard]] SnapDeltaPreflight preflightSnapDelta(f32 delta) const;
     [[nodiscard]] bool canApplySnapNow() const;
+    [[nodiscard]] bool canSnapDelta(f32 delta) const;
+    [[nodiscard]] GizmoInteractionPhase interactionPhase() const;
+    [[nodiscard]] bool canActOnPhase(const GizmoHitTest& hit) const;
     [[nodiscard]] bool trySnapTransform(const GizmoTransform& transform,
                                         GizmoTransform& out) const;
     [[nodiscard]] UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit) const;
