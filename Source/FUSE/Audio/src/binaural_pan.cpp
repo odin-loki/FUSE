@@ -1433,3 +1433,22 @@ bool tryPreflightHrtfBinaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec
 bool tryPreflightHrtfBinaural(bool hrtf_enabled, const Vec3& rel_listener,
     return tryPreflightHrtfBinaural(hrtf_enabled, make_empty_hrtf_ir(), rel_listener,
     preflight.rejectReason = classifyHrtfBinauralReject(
+
+// --- deepen additive from hrtf-b7-2-deepen-guards-653a ---
+    preflight.reason = classifyHrtfIrReject(ir);
+    const HrtfIrRejectReason reject = classifyHrtfIrReject(ir);
+HrtfPanPathRejectReason classifyHrtfPanPathReject(bool hrtf_enabled, const HrtfIrStub& ir,
+    if (ir_reject != HrtfIrRejectReason::None) {
+    preflight.reason = classifyHrtfPanPathReject(hrtf_enabled, ir, rel_listener);
+        classifyHrtfPanPathReject(hrtf_enabled, ir, rel_listener);
+    return !hrtfPanPathRejectReasonIsBlocking(reject);
+                                 const Vec3& rel_listener, HrtfPanPathRejectReason& reason) {
+        classifyHrtfAttenuationCouplingReject(path, distance_attenuation, occlusion_gain);
+bool hrtfBinauralRejectReasonIsBlocking(HrtfBinauralRejectReason reason) {
+HrtfBinauralRejectReason classifyHrtfBinauralReject(const HrtfBinauralPreflight& preflight) {
+    if (preflight.panPath.reason == HrtfPanPathRejectReason::HrtfDisabled) {
+    if (preflight.panPath.reason == HrtfPanPathRejectReason::CoLocated) {
+    if (preflight.panPath.reason == HrtfPanPathRejectReason::MalformedIr) {
+    if (preflight.panPath.reason == HrtfPanPathRejectReason::EmptyIr) {
+    preflight.reason = classifyHrtfBinauralReject(preflight);
+    return !hrtfBinauralRejectReasonIsBlocking(preflight.reason);

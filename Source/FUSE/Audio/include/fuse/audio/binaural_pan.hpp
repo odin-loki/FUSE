@@ -939,3 +939,8 @@ bool hrtfBinauralRejectReasonBlocksConvolution(HrtfBinauralRejectReason reason);
 HrtfBinauralRejectReason classifyHrtfBinauralReject(
 bool tryPreflightHrtfBinaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
 bool tryPreflightHrtfBinaural(bool hrtf_enabled, const Vec3& rel_listener,
+
+// --- deepen additive from hrtf-b7-2-deepen-guards-653a ---
+HrtfPanPathRejectReason classifyHrtfPanPathReject(bool hrtf_enabled, const HrtfIrStub& ir,
+bool hrtfBinauralRejectReasonIsBlocking(HrtfBinauralRejectReason reason);
+HrtfBinauralRejectReason classifyHrtfBinauralReject(const HrtfBinauralPreflight& preflight);

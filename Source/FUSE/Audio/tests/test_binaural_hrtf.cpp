@@ -2007,3 +2007,27 @@ void testHrtfBinauralCompositeRejectReasonPreflight() {
     expectTrue(fuse::audio::classifyHrtfBinauralReject(true, valid, offset, 1.f, 1.f)
                "classifyHrtfBinauralReject unity_attenuation when narrowing skipped");
     expectTrue(preflight.rejectReason == fuse::audio::HrtfBinauralRejectReason::EmptyIr,
+
+// --- deepen additive from hrtf-b7-2-deepen-guards-653a ---
+void testHrtfIrRejectReasonEnums() {
+    expectTrue(fuse::audio::classifyHrtfIrReject(empty)
+    expectTrue(fuse::audio::classifyHrtfIrReject(valid) == fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(!fuse::audio::hrtfIrRejectReasonIsBlocking(fuse::audio::HrtfIrRejectReason::None),
+    expectTrue(fuse::audio::classifyHrtfIrReject(null_samples_nonzero)
+void testHrtfPanPathRejectReasonEnums() {
+    expectTrue(fuse::audio::classifyHrtfPanPathReject(false, valid, offset)
+    expectTrue(fuse::audio::classifyHrtfPanPathReject(true, valid, co_located)
+    expectTrue(fuse::audio::classifyHrtfPanPathReject(true, empty, offset)
+    expectTrue(fuse::audio::classifyHrtfPanPathReject(true, malformed, offset)
+    expectTrue(fuse::audio::classifyHrtfPanPathReject(true, valid, offset)
+void testHrtfAttenuationCouplingRejectReasonEnums() {
+    expectTrue(fuse::audio::classifyHrtfAttenuationCouplingReject(
+void testHrtfBinauralRejectReasonEnums() {
+    expectTrue(!fuse::audio::hrtfBinauralRejectReasonIsBlocking(stub_preflight.reason),
+    expectTrue(fuse::audio::hrtfBinauralRejectReasonIsBlocking(bypass_preflight.reason),
+    expectTrue(fuse::audio::classifyHrtfBinauralReject(bypass_preflight)
+               "classifyHrtfBinauralReject mirrors stored composite reason");
+    testHrtfIrRejectReasonEnums();
+    testHrtfPanPathRejectReasonEnums();
+    testHrtfAttenuationCouplingRejectReasonEnums();
+    testHrtfBinauralRejectReasonEnums();
