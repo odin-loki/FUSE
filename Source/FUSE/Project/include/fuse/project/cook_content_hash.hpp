@@ -21,6 +21,7 @@ enum class CookHashRejectReason : u8 {
     EmptyDependencyList,
     ZeroSourceHash,
     ZeroContentHash,
+    NonCacheableKey,
 };
 
 /// Read-only hash preflight — mirrors empty-input guards without computing keys (B7.9 deepen).
@@ -295,5 +296,6 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookImportHashPreflight preflight_manifest_entry(const CookManifestEntry& entry);
 /// Null-pointer guard for non-zero-length FNV input — mirrors `is_valid_fnv1a64_input` (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_fnv1a64_input(const u8* data, usize size);
+[[nodiscard]] CookHashPreflight preflight_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
 } // namespace fuse::project

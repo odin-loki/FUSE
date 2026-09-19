@@ -3,6 +3,7 @@
 #include <fuse/project/cook_content_hash.hpp>
 #include <fuse/project/import_desc.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -485,6 +486,14 @@ bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
                                                const std::vector<CookJobDependencyEdge>& edges,
                                                const std::vector<CookJob>& jobs) const {
     return count_downstream_of(output_path, edges, jobs) > 0;
+}
+
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) > 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) > 0;
 }
 
 u32 CookCache::count_by_source(const std::string& source_path) const {
@@ -1332,6 +1341,36 @@ u32 CookCache::estimate_invalidation_downstream_of(const std::string& output_pat
                                                  const std::vector<CookJobDependencyEdge>& edges,
                                                  const std::vector<CookJob>& jobs) const {
     if (!is_valid_cook_cache_path(output_path) || m_entries.empty()) {
+std::vector<std::string> CookCache::probe_unique_stale_upstream_sources(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    const std::vector<std::string> stale_sources = probe_stale_upstream_sources(source_upstream_by_path);
+    if (stale_sources.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> unique_sources;
+    unique_sources.reserve(stale_sources.size());
+    for (const std::string& source_path : stale_sources) {
+        if (std::find(unique_sources.begin(), unique_sources.end(), source_path) == unique_sources.end()) {
+            unique_sources.push_back(source_path);
+    return unique_sources;
+
+u32 CookCache::count_stale_entries() const {
+    if (m_entries.empty()) {
+        return 0;
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_valid_cook_cache_entry(entry) && is_stale_cache_entry_(entry)) {
+            ++count;
+    return count;
+
+namespace {
+
+u32 count_downstream_of_(const CookCache& cache,
+                         const std::string& output_path,
+                         const std::vector<CookJob>& jobs) {
+    if (!is_valid_cook_cache_path(output_path) || cache.empty()) {
         return 0;
     }
 

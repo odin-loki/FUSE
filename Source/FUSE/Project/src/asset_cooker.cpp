@@ -307,6 +307,14 @@ u32 AssetCooker::count_stale_content_invalidation(const CookManifest& manifest) 
     return count;
 }
 
+u32 AssetCooker::estimate_prune_all() const {
+    return m_cache.count_prunable_entries();
+}
+
+u32 AssetCooker::estimate_reconcile_invalidation(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) + estimate_prune_all();
+}
+
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
     return estimate_stale_dependency_invalidation(manifest);
 }

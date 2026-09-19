@@ -296,6 +296,10 @@ public:
     [[nodiscard]] u32 count_stale_upstream_hashes(
     /// Source paths that `invalidate_stale_upstream_hashes` would touch — one push per matching entry (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Deduped source paths from `probe_stale_upstream_sources` — stable first-seen order (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_unique_stale_upstream_sources(
+    [[nodiscard]] u32 count_stale_entries() const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;

@@ -121,6 +121,10 @@ public:
     /// Read-only prune reconcile probe — entries `CookCache::prune_all` would drop (B7.9 deepen).
     [[nodiscard]] u32 count_prune_invalidation() const;
     [[nodiscard]] u32 estimate_stale_dependency_invalidation(const CookManifest& manifest) const;
+    /// Read-only prune-all impact estimate — mirrors `CookCache::count_prunable_entries` (B7.9 deepen).
+    [[nodiscard]] u32 estimate_prune_all() const;
+    /// Combined reconcile estimate — stale dependency invalidation plus prunable entries (B7.9 deepen).
+    [[nodiscard]] u32 estimate_reconcile_invalidation(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
