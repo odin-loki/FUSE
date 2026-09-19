@@ -98,6 +98,25 @@ public:
     bool syncJitterToFrameIndexAndProduceNdcIfReady(u32 frameIndex, fuse::math::Vec2& out);
     /// True when pass jitter state is aligned to `frameIndex` (B5.9 deepen).
     bool preflightJitterAlignment(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
+    bool canAdvanceJitter() const;
+    /// True when pass jitter can align to `frameIndex` (B5.9 deepen).
+    bool canSyncJitterToFrameIndex(u32 frameIndex) const;
+    /// Classify why pass jitter sync would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
+    /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterNdcReject() const;
+    /// Classify why pass jitter advance would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterAdvanceReject() const;
+    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
+    /// NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
+    bool preflightJitterAdvance(TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
+    /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
+    bool shouldSkipJitterAdvance() const;
     void invalidateHistory();
     /// Invalidate when `observedGeneration` differs from pass history epoch (B5.9 deepen).
     /// Invalidate when `observedGeneration` differs from pass history epoch; returns true when invalidated.
@@ -752,6 +771,9 @@ public:
     bool preflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason* reason = nullptr) const;
     /// Preflight resolve blend weights for consistency with reuse policy (B5.9 deepen).
     bool preflightResolveBlend(const TaaResolveDesc& desc) const;
+    /// Preflight resolve without mutating history — returns true when resolve would proceed (B5.9 deepen).
+    bool preflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
+    /// Classify why resolve would skip (B5.9 deepen).
     /// Stamp `observed_history_generation` from pass history when still at the no-guard sentinel.
     void stampObservedHistoryGeneration(TaaResolveDesc& desc) const;
     /// Clamp params and stamp observed generation from pass history.
