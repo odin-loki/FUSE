@@ -3021,3 +3021,14 @@ void testTaaPassJitterSyncAndBlendPreflight() {
 void testTaaPassWarmupAndBlendPreflight() {
     expectTrue(pass->preflightResolveBlend(resolveDesc, &projected),
     testTaaPassWarmupAndBlendPreflight();
+
+// --- deepen additive from deepen-b59-taa-guards-108b ---
+void testHistoryWarmupReuseGuards() {
+    expectTrue(fuse::renderer::tryComputeTaaResolveBlendWeights(desc, history, weights),
+    expectTrue(fuse::renderer::preflightTaaResolveBlend(desc, history, &weights),
+    expectTrue(fuse::renderer::taaResolveHistoryBlendPreflightPasses(desc, history),
+    expectTrue(!fuse::renderer::taaResolveHistoryBlendPreflightPasses(desc, history),
+    expectTrue(!fuse::renderer::tryComputeTaaResolveBlendWeights(desc, history, weights),
+    expectTrue(!fuse::renderer::preflightTaaResolveBlend(desc, history),
+void testTaaPassSyncWarmupAndBlendPreflight() {
+    testTaaPassSyncWarmupAndBlendPreflight();

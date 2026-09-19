@@ -63,3 +63,7 @@ bool taaResolveBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistory
 
 // --- deepen additive from deepen-b59-taa-guards-94db ---
 TaaBlendWeights computeTaaResolveBlendPreflight(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+
+// --- deepen additive from deepen-b59-taa-guards-108b ---
+bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+bool taaResolveHistoryBlendPreflightPasses(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
