@@ -211,6 +211,9 @@ IslandGraphBuildRejectReason islandGraphBuildRejectReason(
 
 
 
+/// Why island graph build would be rejected before partitioning (B4.4 deepen follow-up).
+
+
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -855,6 +858,7 @@ struct ContactIslandGraph {
     /// Build only when inputs pass preflight guards; clears graph and returns false on reject.
                        IslandGraphBuildRejectReason* reason = nullptr);
     /// Build only when `island_graph_build_reject_reason` allows; clears and returns false when skipped.
+    /// Guarded build; returns false and clears on reject without partitioning unsafe refs.
 
     void clear();
 
