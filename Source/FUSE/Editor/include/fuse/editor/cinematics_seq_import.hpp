@@ -28,10 +28,15 @@ public:
     [[nodiscard]] bool scrubPreviewAtMs(fuse::cinematics::TimelineMs timeMs,
                                         fuse::cinematics::SeqScrubPreview& outPreview) const;
 
+    /// Qt seq preview pane stub — posts scrub time through EditorHost for game-thread sampling.
+    bool postScrubPreviewAtMs(fuse::cinematics::TimelineMs timeMs);
+    [[nodiscard]] u32 scrubPreviewPostCount() const { return m_scrubPreviewPostCount; }
+
 private:
     EditorHost& m_host;
     std::string m_lastAssetText;
     u32 m_importCount = 0;
+    u32 m_scrubPreviewPostCount = 0;
 };
 
 } // namespace fuse::editor

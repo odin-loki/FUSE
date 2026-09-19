@@ -95,8 +95,15 @@ void VActorBridge::apply_shapebase_attach(const std::string& actor_id,
     state.offset.orientation = combine_mount_orientation(mountQuat, eventQuat);
     state.offset.yaw_deg = quaternion_to_yaw_deg(state.offset.orientation);
     state.mounted = true;
+    state.runtimeAttached = true;
     ++m_shapebaseAttachCount;
+    ++m_runtimeAttachCount;
     sync_bound_objects();
+}
+
+bool VActorBridge::is_runtime_attached(const std::string& actor_id) const {
+    const auto it = m_actors.find(actor_id);
+    return it != m_actors.end() && it->second.runtimeAttached;
 }
 
 void VActorBridge::sync_bound_objects() {
@@ -140,6 +147,14 @@ void VActorBridge::sync_motion_from_timeline(const Timeline& timeline) {
         state.motionX = sample.position.x * 0.01f;
         state.motionY = sample.position.y * 0.01f;
         state.motionZ = sample.position.z * 0.01f;
+        if (state.runtimeAttached) {
+            const float motionYaw = sample.position.x * 0.1f;
+            state.offset.yaw_deg = combine_mount_yaw_deg(state.offset.yaw_deg, motionYaw);
+            const MountQuaternion motionQuat = yaw_deg_to_quaternion(motionYaw);
+            state.offset.orientation =
+                combine_mount_orientation(state.offset.orientation, motionQuat);
+            state.offset.yaw_deg = quaternion_to_yaw_deg(state.offset.orientation);
+        }
     }
 
     sync_bound_objects();

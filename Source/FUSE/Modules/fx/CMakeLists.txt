@@ -10,6 +10,7 @@ add_library(fuse_fx STATIC
     src/fx_composer.cpp
     src/particle_pool.cpp
     src/particle_pool_gpu.cpp
+    src/afx_choreographer_bridge.cpp
     src/parameter_bind.cpp
     src/missile_descriptor.cpp
     src/socket_constraint.cpp
@@ -28,6 +29,7 @@ add_library(fuse_fx STATIC
     include/fuse/fx/fx_socket.hpp
     include/fuse/fx/particle_pool.hpp
     include/fuse/fx/particle_pool_gpu.hpp
+    include/fuse/fx/afx_choreographer_bridge.hpp
     include/fuse/fx/parameter_bind.hpp
     include/fuse/fx/missile_descriptor.hpp
     include/fuse/fx/socket_constraint.hpp
@@ -44,6 +46,13 @@ target_include_directories(fuse_fx
 
 target_link_libraries(fuse_fx PUBLIC fuse_core fuse_world2d fuse_world3d)
 target_compile_features(fuse_fx PUBLIC cxx_std_17)
+
+if(FUSE_CUDA_BACKEND)
+    target_sources(fuse_fx PRIVATE src/particle_pool_cuda.cu)
+    target_compile_definitions(fuse_fx PUBLIC FUSE_HAS_CUDA=1)
+    target_link_libraries(fuse_fx PUBLIC CUDA::cudart)
+    set_target_properties(fuse_fx PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+endif()
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

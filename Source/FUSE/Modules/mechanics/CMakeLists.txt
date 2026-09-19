@@ -19,6 +19,7 @@ add_library(fuse_mechanics STATIC
     src/spawn_component.cpp
     src/destroy_component.cpp
     src/area_component.cpp
+    src/sound_component.cpp
     src/inventory_provider.cpp
     src/interact_action.cpp
     src/interactable.cpp
@@ -43,6 +44,7 @@ add_library(fuse_mechanics STATIC
     include/fuse/mechanics/spawn_component.hpp
     include/fuse/mechanics/destroy_component.hpp
     include/fuse/mechanics/area_component.hpp
+    include/fuse/mechanics/sound_component.hpp
     include/fuse/mechanics/inventory_provider.hpp
     include/fuse/mechanics/interact_action.hpp
     include/fuse/mechanics/interactable.hpp

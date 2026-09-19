@@ -39,7 +39,7 @@ int main() {
 
     fuse::adventure::ConversationScriptVm vm;
     fuse::adventure::registerOutpostConversationScriptHooks(vm);
-    expectTrue(vm.hookCount() == 2u, "conversation script hooks registered");
+    expectTrue(vm.hookCount() == 3u, "conversation script hooks registered");
 
     fuse::adventure::InteractContext ctx;
     ctx.actorName = "player";

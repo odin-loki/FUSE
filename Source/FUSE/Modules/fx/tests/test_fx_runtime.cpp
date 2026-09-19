@@ -9,6 +9,7 @@
 #include <fuse/fx/afx_mission_hooks.hpp>
 #include <fuse/fx/afx_mission_loader.hpp>
 #include <fuse/fx/afx_mission_script_vm.hpp>
+#include <fuse/fx/afx_choreographer_bridge.hpp>
 #include <fuse/fx/socket_constraint.hpp>
 #include <fuse/fx/fx_defs.hpp>
 #include <fuse/fx/parameter_bind.hpp>
@@ -456,6 +457,26 @@ void testParticlePoolCudaSkip() {
     expectTrue(gpuBackend.cudaSkipCount() == 1u, "cuda dispatch skipped without toolkit");
 }
 
+void testAfxChoreographerBridge() {
+    fuse::fx::FxComposer composer;
+    composer.registerDemoVerticalSlice();
+
+    fuse::fx::AfxChoreographerBridge bridge;
+    fuse::fx::ChoreographerBinding binding;
+    binding.socket.kind = fuse::fx::FxSocketKind::Sprite2D;
+    binding.socket.effectId = "spark_burst";
+    binding.spellId = "fireball";
+    binding.beginCastOnAttach = true;
+    expectTrue(bridge.bindSocket(composer, binding), "choreographer bridge binds socket");
+    expectTrue(bridge.attachCount() == 1u, "choreographer attach counted");
+    expectTrue(bridge.castCount() == 1u, "choreographer cast counted");
+
+    fuse::frame::FrameCtx ctx;
+    ctx.dt = 1.f / 60.f;
+    bridge.tick(composer, ctx);
+    expectTrue(bridge.tickCount() == 1u, "choreographer bridge tick counted");
+}
+
 void testParticlePoolTick() {
     fuse::fx::ParticlePool pool(4);
     expectTrue(pool.spawn({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.5f), "particle spawns");
@@ -495,6 +516,7 @@ int main() {
     testAfxMissionOnTickHook();
     testParticlePoolCudaSkipReason();
     testParticlePoolCudaSkip();
+    testAfxChoreographerBridge();
     testParticlePoolTick();
     fuse::core::shutdown();
 

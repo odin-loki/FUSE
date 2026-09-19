@@ -272,6 +272,16 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_mechanics` | `AreaComponent` GMK leaf; `BroadphaseProxyDesc` / `makeBroadphaseProxyDesc()` Bullet proxy deepen |
 | `fuse_adventure` | `WeaponGrantPipeline::grantOnPickup()`; conversation VM multi-line peek + inventory grant on branch |
 
+#### Landed wave 12 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | `UaiskCsSyntaxTree` line-level AST nodes; `TreeFileWatchRegistry` content-hash `.bt`/`.cs` reload stub |
+| `fuse_cinematics` | `VActorBridge` runtime attach flag + motion quaternion deepen; `CinematicsSeqImport::postScrubPreviewAtMs()` Qt pane stub |
+| `fuse_fx` | `particle_pool_cuda.cu` kernel when toolkit present; `AfxChoreographerBridge` socket/cast orchestration |
+| `fuse_mechanics` | GMK `SoundComponent` leaf |
+| `fuse_adventure` | `armed` conversation branch gated on `plasma_rifle` inventory |
+
 ---
 
 ## 8. Related docs

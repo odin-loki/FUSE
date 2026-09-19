@@ -1368,6 +1368,8 @@ void testVActorShapeBaseAttach() {
 
     expectTrue(bridge.mountCount() == 1u, "shapebase attach records mount");
     expectTrue(bridge.shapebaseAttachCount() == 1u, "shapebase attach counter");
+    expectTrue(bridge.runtimeAttachCount() == 1u, "runtime attach counter");
+    expectTrue(bridge.is_runtime_attached("agent_3d"), "runtime attach flag set");
     expectTrue(bridge.mount_point_for("agent_3d") == "cockpit", "mount point stored");
     expectNear(agent.z(), 1.5f, 0.001f, "cockpit mount raises agent Z");
     expectNear(agent.yawDeg(), 15.f, 0.001f, "cockpit mount applies ShapeBase yaw");

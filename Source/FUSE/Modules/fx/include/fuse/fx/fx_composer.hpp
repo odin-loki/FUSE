@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/fx/afx_choreographer_bridge.hpp>
 #include <fuse/fx/cast_pipeline.hpp>
 #include <fuse/fx/effect_descriptor.hpp>
 #include <fuse/fx/effect_graph.hpp>
@@ -71,6 +72,9 @@ public:
     ParticlePoolGpuBackend& particlePoolGpu() { return m_particlePoolGpu; }
     const ParticlePoolGpuBackend& particlePoolGpu() const { return m_particlePoolGpu; }
 
+    AfxChoreographerBridge& choreographer() { return m_choreographer; }
+    const AfxChoreographerBridge& choreographer() const { return m_choreographer; }
+
     u32 tickCount() const { return m_tickCount; }
 
 private:
@@ -85,6 +89,7 @@ private:
     bind::ParameterBinder m_parameters;
     ParticlePool m_particlePool{64};
     ParticlePoolGpuBackend m_particlePoolGpu{64};
+    AfxChoreographerBridge m_choreographer;
     u32 m_attachments = 0;
     u32 m_tickCount = 0;
 };

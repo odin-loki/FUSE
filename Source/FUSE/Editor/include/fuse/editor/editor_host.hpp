@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/ai/behavior_runtime.hpp>
+#include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/command_stack.hpp>
 #include <fuse/editor/editor_scene.hpp>
@@ -60,6 +61,8 @@ public:
     fuse::ai::BehaviorRuntime& pieBehaviorRuntime() { return m_pieBehaviorRuntime; }
     const fuse::ai::BehaviorRuntime& pieBehaviorRuntime() const { return m_pieBehaviorRuntime; }
     const std::string& loadedCinematicsSeqAsset() const { return m_loadedCinematicsSeqAsset; }
+    fuse::cinematics::TimelineMs cinematicsSeqScrubPreviewMs() const { return m_cinematicsSeqScrubPreviewMs; }
+    const fuse::cinematics::SeqScrubPreview& cinematicsSeqScrubPreview() const { return m_cinematicsSeqScrubPreview; }
     u32 gameTickCount() const { return m_gameTickCount; }
     u32 commandsAppliedLastTick() const { return m_commandsAppliedLastTick; }
 
@@ -74,6 +77,8 @@ public:
     void setAiAgentEntityBinding(u32 agentIndex, Handle<Object> entity);
     bool reloadAiCodegenProfile(u32 profileId, const std::string& uaiskModule, const std::string& csText);
     void setLoadedCinematicsSeqAsset(std::string assetText);
+    void setCinematicsSeqScrubPreview(fuse::cinematics::TimelineMs timeMs,
+                                      const fuse::cinematics::SeqScrubPreview& preview);
 
     /// Undo/redo property edits recorded on the game-thread `CommandStack`.
     void undoPropertyEdit();
@@ -98,6 +103,8 @@ private:
     RuntimeViewportHook m_runtimeViewport;
     std::string m_loadedProject;
     std::string m_loadedCinematicsSeqAsset;
+    fuse::cinematics::TimelineMs m_cinematicsSeqScrubPreviewMs = 0;
+    fuse::cinematics::SeqScrubPreview m_cinematicsSeqScrubPreview;
     u32 m_selectedAiTreeProfileId = 0;
     u32 m_selectedAiAgentIndex = 0;
     u32 m_aiCodegenReloadCount = 0;

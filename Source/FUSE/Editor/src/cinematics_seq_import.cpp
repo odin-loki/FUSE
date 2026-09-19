@@ -56,4 +56,18 @@ bool CinematicsSeqImport::scrubPreviewAtMs(fuse::cinematics::TimelineMs timeMs,
     return fuse::cinematics::scrub_seq_preview(m_lastAssetText, timeMs, timeline, outPreview, &error);
 }
 
+bool CinematicsSeqImport::postScrubPreviewAtMs(fuse::cinematics::TimelineMs timeMs) {
+    if (m_lastAssetText.empty()) {
+        return false;
+    }
+
+    ++m_scrubPreviewPostCount;
+    EditorCommand command;
+    command.kind = CommandKind::SetProperty;
+    command.propertyName = "cinematics.seq_scrub_preview_ms";
+    command.propertyValue = std::to_string(timeMs);
+    m_host.postFromUi(std::move(command));
+    return true;
+}
+
 } // namespace fuse::editor

@@ -4,6 +4,8 @@
 #include <fuse/ai/uaisk_script_import.hpp>
 #include <fuse/ai/uaisk_cs_parser.hpp>
 #include <fuse/ai/uaisk_cs_codegen.hpp>
+#include <fuse/ai/uaisk_cs_syntax_tree.hpp>
+#include <fuse/ai/uaisk_tree_reload.hpp>
 #if __has_include(<fuse/ai/uaisk_script_host_bridge.hpp>)
 #include <fuse/ai/uaisk_script_host_bridge.hpp>
 #include <fuse/script/script_host.hpp>
@@ -1960,6 +1962,40 @@ void testRuntimeParallelMultiAgentAggregation() {
     scheduler.shutdown();
 }
 
+void testUaiskCsSyntaxTree() {
+    static const char* kCsText =
+        "class PatrolSquad {\n"
+        "  behaviorTree = \"patrol_squad.bt\";\n"
+        "  public void onTick() {}\n"
+        "  squadRadius = 8;\n"
+        "}\n";
+
+    fuse::ai::uaisk::UaiskCsSyntaxTree tree;
+    expectTrue(fuse::ai::uaisk::parseCsSyntaxTree("aiBehaviors.cs", kCsText, tree),
+               "UAISK syntax tree parse succeeds");
+    expectTrue(tree.rootClassName == "PatrolSquad", "UAISK syntax tree root class");
+    expectTrue(tree.nodes.size() >= 4u, "UAISK syntax tree collects nodes");
+    expectTrue(!tree.behaviorTreeHooks.empty(), "UAISK syntax tree collects hooks");
+}
+
+void testUaiskTreeFileWatchReload() {
+    static const char* kInitialBt =
+        "bb.action.set_flag flag=1\n"
+        "root=0\n";
+    static const char* kUpdatedBt =
+        "bb.action.set_flag flag=0\n"
+        "root=0\n";
+
+    fuse::ai::BehaviorRuntime runtime;
+    fuse::ai::uaisk::TreeFileWatchRegistry registry;
+    registry.watchProfile("patrol_squad.bt", 2u, kInitialBt);
+    expectTrue(registry.pollReloads(runtime) == 0u, "no reload when content unchanged");
+
+    registry.setContent("patrol_squad.bt", kUpdatedBt);
+    expectTrue(registry.pollReloads(runtime) == 1u, "tree reload on content change");
+    expectTrue(registry.reloadCount() == 1u, "reload counter tracked");
+}
+
 void testReloadCodegenProfile() {
     static const char* kCsText =
         "class PatrolSquad : BehaviorBase {\n"
@@ -2108,6 +2144,8 @@ int main() {
     testNearestAllyWritesScalarSlot();
     testNearestAllyActionFailsBeyondRadius();
     testParallelSpatialChildStatusAggregation();
+    testUaiskCsSyntaxTree();
+    testUaiskTreeFileWatchReload();
     testReloadCodegenProfile();
     testRuntimeTreeReloadPreservesBlackboard();
     testAgentEntityBindSyncsBindingPosition();

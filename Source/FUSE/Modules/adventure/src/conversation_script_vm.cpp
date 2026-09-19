@@ -94,8 +94,16 @@ void registerOutpostConversationScriptHooks(ConversationScriptVm& vm) {
     aggressive.grantItem = "security_badge";
     aggressive.grantAmount = 1;
 
+    ConversationScriptHook armed{};
+    armed.npcId = "outpost_guard";
+    armed.branchId = "armed";
+    armed.lines = {"I see you are armed. Keep that rifle stowed."};
+    armed.requiredItem = "plasma_rifle";
+    armed.minInventoryCount = 1;
+
     vm.registerHook(polite);
     vm.registerHook(aggressive);
+    vm.registerHook(armed);
 }
 
 } // namespace fuse::adventure

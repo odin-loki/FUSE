@@ -40,6 +40,8 @@ public:
     u32 mountCount() const { return m_mountCount; }
     u32 unmountCount() const { return m_unmountCount; }
     u32 shapebaseAttachCount() const { return m_shapebaseAttachCount; }
+    u32 runtimeAttachCount() const { return m_runtimeAttachCount; }
+    bool is_runtime_attached(const std::string& actor_id) const;
     u32 syncCount() const { return m_syncCount; }
     u32 motionSyncCount() const { return m_motionSyncCount; }
 
@@ -51,6 +53,7 @@ private:
         float baseZ = 0.f;
         ShapeBaseMountOffset offset{};
         bool mounted = false;
+        bool runtimeAttached = false;
         float motionX = 0.f;
         float motionY = 0.f;
         float motionZ = 0.f;
@@ -61,6 +64,7 @@ private:
     u32 m_mountCount = 0;
     u32 m_unmountCount = 0;
     u32 m_shapebaseAttachCount = 0;
+    u32 m_runtimeAttachCount = 0;
     u32 m_syncCount = 0;
     u32 m_motionSyncCount = 0;
 };

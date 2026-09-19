@@ -3,6 +3,7 @@
 
 #include <fuse/ai/agent_entity_bind.hpp>
 #include <fuse/ai/uaisk_cs_codegen.hpp>
+#include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
@@ -258,6 +259,20 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         return true;
     }
 
+    if (command.propertyName == "cinematics.seq_scrub_preview_ms") {
+        const fuse::cinematics::TimelineMs timeMs =
+            static_cast<fuse::cinematics::TimelineMs>(std::strtoul(command.propertyValue.c_str(), nullptr, 10));
+        fuse::cinematics::Timeline timeline;
+        fuse::cinematics::SeqScrubPreview preview;
+        std::string error;
+        if (fuse::cinematics::scrub_seq_preview(host.loadedCinematicsSeqAsset(), timeMs, timeline,
+                                                preview, &error)) {
+            host.setCinematicsSeqScrubPreview(timeMs, preview);
+            return true;
+        }
+        return false;
+    }
+
     const ecs::EntityID entity = handleToEntity(command.target);
     if (!entity.valid() || !host.editorScene().registry().alive(entity)) {
         return false;
@@ -458,6 +473,12 @@ void EditorHost::syncPieAiBindings_() {
 
 void EditorHost::setLoadedCinematicsSeqAsset(std::string assetText) {
     m_loadedCinematicsSeqAsset = std::move(assetText);
+}
+
+void EditorHost::setCinematicsSeqScrubPreview(fuse::cinematics::TimelineMs timeMs,
+                                              const fuse::cinematics::SeqScrubPreview& preview) {
+    m_cinematicsSeqScrubPreviewMs = timeMs;
+    m_cinematicsSeqScrubPreview = preview;
 }
 
 void EditorHost::applyCommand_(const EditorCommand& command) {

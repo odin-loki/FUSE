@@ -14,7 +14,7 @@ constexpr bool kCudaCompiled = true;
 
 extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCount, float dt);
 
-void launchParticlePoolCudaStub(const std::vector<u8>& packed, u32 activeCount, float dt) {
+void launchParticlePoolCudaStub(std::vector<u8>& packed, u32 activeCount, float dt) {
     fuse_fx_particle_pool_cuda_stub(packed.data(), activeCount, dt);
 }
 #else
@@ -111,33 +111,3 @@ void ParticlePoolGpuBackend::cudaDispatchOrSkip(const frame::FrameCtx& ctx) {
 }
 
 } // namespace fuse::fx
-
-#if defined(FUSE_HAS_CUDA) && FUSE_HAS_CUDA
-extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCount, float dt) {
-    if (packed == nullptr || activeCount == 0u) {
-        return;
-    }
-
-    // B7.7 pre-kernel deepen: advance age/lifetime in packed SSBO layout on host when CUDA is linked.
-    u8* cursor = const_cast<u8*>(packed);
-    for (u32 slotIndex = 0; slotIndex < activeCount; ++slotIndex) {
-        cursor += sizeof(float) * 6; // position + velocity
-        float* lifetime = reinterpret_cast<float*>(cursor);
-        cursor += sizeof(float);
-        float* age = reinterpret_cast<float*>(cursor);
-        cursor += sizeof(float);
-        cursor += sizeof(float); // blend_weight
-        const u32 aliveFlag = *reinterpret_cast<const u32*>(cursor);
-        cursor += sizeof(u32);
-
-        if (aliveFlag == 0u) {
-            continue;
-        }
-
-        *age += dt;
-        if (*age >= *lifetime) {
-            *reinterpret_cast<u32*>(cursor - sizeof(u32)) = 0u;
-        }
-    }
-}
-#endif

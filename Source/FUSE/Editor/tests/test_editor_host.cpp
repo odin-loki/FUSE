@@ -598,6 +598,18 @@ void testAiAgentSelectionDeepen() {
     expectTrue(picker.selectedAgentIndex() == 2u, "picker tracks selected agent");
 }
 
+void testCinematicsSeqScrubPreviewPostsSample() {
+    fuse::editor::EditorHost host;
+    fuse::editor::CinematicsSeqImport importer(host);
+
+    expectTrue(importer.postImportEmbeddedOutpostIntro(), "seq import posts embedded asset");
+    host.gameTick();
+    expectTrue(importer.postScrubPreviewAtMs(2'500), "seq scrub preview posts scrub time");
+    host.gameTick();
+    expectTrue(host.cinematicsSeqScrubPreviewMs() == 2'500u, "seq scrub preview time on game thread");
+    expectTrue(importer.scrubPreviewPostCount() == 1u, "seq scrub preview post counted");
+}
+
 void testCinematicsSeqImportPostsAsset() {
     fuse::editor::EditorHost host;
     fuse::editor::CinematicsSeqImport importer(host);
@@ -640,6 +652,7 @@ int main() {
     testAiAgentEntityBindingPostsCommand();
     testAiCodegenReloadPostsCommand();
     testAiAgentSelectionDeepen();
+    testCinematicsSeqScrubPreviewPostsSample();
     testCinematicsSeqImportPostsAsset();
     fuse::core::shutdown();
 
