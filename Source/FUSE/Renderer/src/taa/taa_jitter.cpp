@@ -342,3 +342,12 @@ bool TaaJitter::preflightCurrentNdcOffset(u32 width, u32 height, TaaJitterNdcRej
 bool taaJitterSyncBlockReasonIsBlocking(TaaJitterSyncBlockReason reason) {
 bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncBlockReason* reason) {
 bool TaaJitter::preflightSync(u32 frameIndex, TaaJitterSyncBlockReason* reason) const {
+
+// --- deepen additive from deepen-b59-taa-guards-3c58 ---
+TaaJitterSyncRejectReason TaaJitterLayout::classifySyncReject(u32 sequenceLength) {
+bool TaaJitterLayout::preflightSyncToFrameIndex(u32 /*frameIndex*/, u32 sequenceLength,
+    const TaaJitterSyncRejectReason reject = classifySyncReject(sequenceLength);
+    return TaaJitterLayout::classifySyncReject(m_sequenceLength);
+bool TaaJitter::preflightSyncToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason* reason) {
+    const TaaJitterSyncRejectReason reject = classifySyncReject(frameIndex);
+    if (reject != TaaJitterSyncRejectReason::None) {

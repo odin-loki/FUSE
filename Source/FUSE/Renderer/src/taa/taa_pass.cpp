@@ -452,3 +452,11 @@ bool TaaPass::preflightHistoryReuseForDesc(const TaaResolveDesc& desc,
     return preflightTaaHistoryReuseForDesc(desc, m_history, reason);
 bool TaaPass::preflightResolveGuards(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason,
     return preflightTaaResolveGuards(desc, m_history, skipReason, blendRejectReason);
+
+// --- deepen additive from deepen-b59-taa-guards-3c58 ---
+    const TaaJitterSyncRejectReason reject = m_jitter.classifySyncReject(frameIndex);
+    return reject == TaaJitterSyncRejectReason::None;
+bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupPhase* phase) const {
+    return preflightTaaHistoryWarmup(m_history, phase);
+                                            TaaResolveBlendRejectReason* blendReason,
+    return preflightTaaResolveTemporalBlend(desc, m_history, blendReason, reuseReason);

@@ -284,3 +284,7 @@ bool taaHistoryReuseBlockReasonIsBlocking(TaaHistoryReuseBlockReason reason);
 bool preflightTaaHistoryReuseForDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
 bool taaResolveBlendRejectReasonIsBlocking(TaaResolveBlendRejectReason reason);
 bool preflightTaaResolveGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+
+// --- deepen additive from deepen-b59-taa-guards-3c58 ---
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupPhase* phase = nullptr);
+                                      TaaResolveBlendRejectReason* blendReason = nullptr,

@@ -3249,3 +3249,27 @@ void testTaaPassResolveGuardsPreflight() {
     testPreflightTaaResolveGuards();
     testJitterSyncPreflightHelpers();
     testTaaPassResolveGuardsPreflight();
+
+// --- deepen additive from deepen-b59-taa-guards-3c58 ---
+void testHistoryWarmupPhaseGuards() {
+    expectTrue(!fuse::renderer::preflightTaaHistoryWarmup(history, &phase),
+    expectTrue(fuse::renderer::preflightTaaHistoryWarmup(history, &phase),
+    expectTrue(TaaJitterLayout::classifySyncReject(8u) == fuse::renderer::TaaJitterSyncRejectReason::None,
+    expectTrue(TaaJitterLayout::classifySyncReject(0u) ==
+    fuse::renderer::TaaJitterSyncRejectReason reason = fuse::renderer::TaaJitterSyncRejectReason::None;
+    expectTrue(TaaJitterLayout::preflightSyncToFrameIndex(5u, 8u, &reason),
+    expectTrue(reason == fuse::renderer::TaaJitterSyncRejectReason::None,
+    expectTrue(!TaaJitterLayout::preflightSyncToFrameIndex(5u, 0u, &reason),
+    expectTrue(reason == fuse::renderer::TaaJitterSyncRejectReason::InvalidSequence,
+    expectTrue(jitter.classifySyncReject(5u) == fuse::renderer::TaaJitterSyncRejectReason::None,
+    expectTrue(jitter.preflightSyncToFrameIndex(5u, &reason), "jitter preflightSyncToFrameIndex succeeds");
+    expectTrue(jitter.isAlignedToFrameIndex(5u), "jitter aligned after preflightSyncToFrameIndex");
+    expectTrue(jitter.monotonicFrameIndex() == 5u, "jitter monotonic counter set by preflightSyncToFrameIndex");
+    expectTrue(pass->classifyJitterSyncReject(7u) == fuse::renderer::TaaJitterSyncRejectReason::None,
+    expectTrue(pass->preflightJitterSync(7u, &reason), "pass preflightJitterSync succeeds");
+void testResolveTemporalBlendPreflight() {
+    expectTrue(!fuse::renderer::preflightTaaResolveTemporalBlend(desc, history, &blendReason, &reuseReason),
+    expectTrue(fuse::renderer::preflightTaaResolveTemporalBlend(desc, history, &blendReason, &reuseReason),
+    expectTrue(pass->preflightHistoryWarmup(), "pass warmup preflight passes after resolve");
+    expectTrue(pass->preflightResolveTemporalBlend(desc, &blendReason, &reuseReason),
+    testResolveTemporalBlendPreflight();

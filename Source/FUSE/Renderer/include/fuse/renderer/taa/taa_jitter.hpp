@@ -162,3 +162,8 @@ bool canPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDe
 bool taaJitterSyncBlockReasonIsBlocking(TaaJitterSyncBlockReason reason);
 bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncBlockReason* reason = nullptr);
     bool preflightSync(u32 frameIndex, TaaJitterSyncBlockReason* reason = nullptr) const;
+
+// --- deepen additive from deepen-b59-taa-guards-3c58 ---
+    static TaaJitterSyncRejectReason classifySyncReject(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    static bool preflightSyncToFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+    bool preflightSyncToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason* reason = nullptr);
