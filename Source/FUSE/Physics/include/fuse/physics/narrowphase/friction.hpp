@@ -185,6 +185,7 @@ struct FrictionBasisPreflight {
 
     /// True when a friction-basis rebuild pass has work to do (B4.5 deepen follow-up).
     bool needs_work() const { return !skipped && needsRebuild; }
+    bool can_rebuild() const { return !skipped && needsRebuild; }
 };
 
 /// Populate friction-basis preflight without mutating the manifold (B4.4 deepen follow-up).
@@ -383,5 +384,10 @@ bool should_rebuild_friction_basis(
 
 /// Rebuild friction tangents only when preflight reports `needsRebuild` (B4.4 deepen pass).
 bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+/// Returns true when friction-basis rebuild can proceed (B4.5 deepen follow-up).
+bool can_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Build or reuse friction basis using deepen preflight; no-op when preflight says skip (B4.5 deepen follow-up).
+bool ensure_friction_basis_if_needed(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
