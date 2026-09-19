@@ -1274,3 +1274,7 @@ HrtfAttenuationCouplingRejectReason classify_hrtf_attenuation_coupling_reject_re
 HrtfBinauralRejectReason classify_hrtf_binaural_reject_reason(bool hrtf_enabled, const HrtfIrStub& ir,
 HrtfBinauralRejectReason classify_hrtf_binaural_reject_reason(bool hrtf_enabled,
 bool try_preflight_hrtf_binaural_spatial(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+
+// --- deepen additive from b72-hrtf-reject-reason-guards-29d7 ---
+bool try_preflight_hrtf_binaural_convolution(const HrtfIrStub& ir,
+bool try_preflight_hrtf_binaural_narrowing(HrtfPanPath path, float distance_attenuation,

@@ -2101,3 +2101,13 @@ bool try_preflight_hrtf_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir, con
 HrtfAttenuationCouplingRejectReason classify_hrtf_attenuation_coupling_reject_reason(
 HrtfBinauralRejectReason classify_hrtf_binaural_reject_reason(bool hrtf_enabled, const HrtfIrStub& ir,
 HrtfBinauralRejectReason classify_hrtf_binaural_reject_reason(bool hrtf_enabled,
+
+// --- deepen additive from b72-hrtf-reject-reason-guards-29d7 ---
+            *reason = HrtfBinauralRejectReason::MalformedIr;
+            *reason = HrtfBinauralRejectReason::EmptyIr;
+            *reason = HrtfBinauralRejectReason::None;
+bool try_preflight_hrtf_binaural_convolution(const HrtfIrStub& ir,
+    const HrtfAttenuationCouplingPreflight coupling_preflight =
+            *reason = HrtfBinauralRejectReason::BypassPath;
+            *reason = HrtfBinauralRejectReason::UnityAttenuation;
+bool try_preflight_hrtf_binaural_narrowing(HrtfPanPath path, float distance_attenuation,
