@@ -4577,3 +4577,8 @@ void testProbeKernelPreflightHelpers() {
     expectTrue(!fuse::renderer::gi::preflightProbeTraceKernel(zeroCount, &reason),
     expectTrue(!fuse::renderer::gi::preflightProbeBlendKernel(zeroCount, &reason),
     testProbeKernelPreflightHelpers();
+
+// --- deepen additive from deepen-ddgi-b56-guards-d572 ---
+void testDdgiDeepenPass2Guards() {
+    expectTrue(!fuse::renderer::preflightProbeGridSource(empty),
+    expectTrue(fuse::renderer::classifyProbeGridSourceReject(zeroSpacing) ==

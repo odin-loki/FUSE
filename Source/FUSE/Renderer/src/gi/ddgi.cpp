@@ -3282,3 +3282,6 @@ bool wouldSkipProbeTrilinearSampleAtCoords(const DDGIDesc& desc,
     return preflightProbeTrilinearSampleAtCoords(desc, coords, cache, cache_count, reason);
     ProbeScheduleRejectReason reject = ProbeScheduleRejectReason::None;
     const bool ok = tryCanScheduleProbeUpdatesAtRate(
+
+// --- deepen additive from deepen-ddgi-b56-guards-d572 ---
+        return ProbeGridSourceRejectReason::ZeroSpacing;
