@@ -4691,6 +4691,30 @@ void testHitTestOutOfBoundsGuards() {
     const fuse::editor::PickPreflight negativePick =
     expectTrue(negativePick.outOfBounds, "pick preflight marks out-of-bounds screen hit");
     expectTrue(!negativePick.canPick(), "pick preflight rejects out-of-bounds screen hit");
+void testScreenHitBoundsGuards() {
+
+    hit.screenX = -1.f;
+    expectTrue(fuse::editor::isScreenHitOutOfBounds(hit),
+    expectTrue(!fuse::editor::isScreenHitInViewport(hit),
+               "negative screen X is not in viewport");
+
+    hit.screenX = 101.f;
+
+    hit.screenX = 50.f;
+
+
+    expectTrue(!fuse::editor::isScreenHitOutOfBounds(hit),
+               "in-bounds screen hit clears outOfBounds");
+    expectTrue(fuse::editor::isScreenHitInViewport(hit),
+               "in-bounds screen hit is in viewport");
+
+}
+
+void testPickPreflightOutOfBounds() {
+    hit.screenX = 150.f;
+
+    expectTrue(outOfBoundsPick.outOfBounds, "pick preflight marks out-of-bounds screen hit");
+    expectTrue(!outOfBoundsPick.canPick(), "pick preflight rejects out-of-bounds screen hit");
 
     fuse::editor::GizmoAxis axis = fuse::editor::GizmoAxis::X;
     expectTrue(!fuse::editor::tryPickAxis(hit, fuse::editor::GizmoMode::Translate, axis),
@@ -4734,6 +4758,13 @@ void testBeginDragOutOfBoundsAndSnapDegraded() {
     fuse::editor::GizmoSnapSettings snap{};
     snap.translateSnap = true;
     snap.gridSize = 0.f;
+    hit.screenX = 10.f;
+    const fuse::editor::PickPreflight validPick =
+        fuse::editor::preflightPick(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(validPick.canPick(), "pick preflight accepts in-bounds screen hit");
+    expectTrue(!validPick.outOfBounds, "valid screen pick clears outOfBounds");
+
+void testBeginDragPreflightPickedAxis() {
 
     fuse::editor::GizmoHitTest hit{};
     hit.viewportWidth = 100.f;
@@ -4754,6 +4785,19 @@ void testBeginDragOutOfBoundsAndSnapDegraded() {
     const fuse::editor::BeginDragPreflight validSnapPreflight =
     expectTrue(validSnapPreflight.canBegin, "begin preflight accepts valid snap settings");
     expectTrue(!validSnapPreflight.snapDegraded, "valid snap clears snapDegraded on begin");
+    const fuse::editor::BeginDragPreflight validPreflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(validPreflight.canBegin, "begin preflight accepts valid screen hit");
+    expectTrue(validPreflight.pickedAxis == fuse::editor::GizmoAxis::X,
+               "begin preflight resolves picked axis from screen hit");
+
+    hit.screenX = 150.f;
+    const fuse::editor::BeginDragPreflight outOfBoundsPreflight =
+    expectTrue(outOfBoundsPreflight.outOfBounds, "begin preflight marks out-of-bounds screen hit");
+    expectTrue(!outOfBoundsPreflight.canBegin,
+               "begin preflight rejects out-of-bounds screen hit");
+    expectTrue(outOfBoundsPreflight.pickedAxis == fuse::editor::GizmoAxis::None,
+               "out-of-bounds begin preflight leaves pickedAxis unset");
 
     const fuse::editor::GizmoRay xRay = rayAlongX();
     const fuse::editor::BeginDragPreflight rayPreflight = fuse::editor::preflightBeginDrag(
@@ -4784,7 +4828,6 @@ void testBeginDragOutOfBoundsAndSnapDegraded() {
 }
 
 void testUpdateDragOutOfBoundsPreflight() {
-    fuse::editor::GizmoSystem gizmo;
     expectTrue(gizmoPreflight.canBegin, "gizmo begin preflight accepts valid snap settings");
     expectTrue(!gizmoPreflight.snapDegraded, "gizmo begin preflight clears snapDegraded");
 
@@ -4801,19 +4844,15 @@ void testUpdateDragOutOfBoundsPreflight() {
     const fuse::editor::UpdateDragPreflight outOfBoundsPreflight = gizmo.preflightUpdateDrag(hit);
     expectTrue(outOfBoundsPreflight.outOfBounds, "update preflight marks out-of-bounds hit");
     expectTrue(!outOfBoundsPreflight.canUpdate(), "update preflight rejects out-of-bounds hit");
-    fuse::editor::GizmoSystem gizmo;
 
-    hit.screenX = 150.f;
     expectTrue(!gizmo.canUpdateDrag(hit), "canUpdateDrag rejects out-of-bounds hit");
 
     fuse::editor::GizmoResult result{};
     expectTrue(!gizmo.tryUpdateDrag(hit, result), "tryUpdateDrag rejects out-of-bounds hit");
     expectTrue(gizmo.isDragging(), "out-of-bounds update reject keeps drag active");
     gizmo.endDrag();
-}
 
 void testInteractionPreflightGuards() {
-    fuse::editor::GizmoTransform transform{};
     fuse::editor::GizmoSnapSettings snap{};
     snap.translateSnap = true;
     snap.gridSize = 0.5f;
@@ -4821,7 +4860,6 @@ void testInteractionPreflightGuards() {
     const fuse::editor::GizmoRay xRay = rayAlongX();
     const fuse::editor::InteractionPreflight rayInteraction = fuse::editor::preflightInteraction(
         xRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
-        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius, snap);
     expectTrue(rayInteraction.canInteract(), "interaction preflight accepts valid ray pick");
     expectTrue(rayInteraction.snapReady(), "interaction preflight accepts valid snap");
     expectTrue(rayInteraction.pick.axis == fuse::editor::GizmoAxis::X,
@@ -4843,17 +4881,36 @@ void testInteractionPreflightGuards() {
     expectTrue(!invalidSnapInteraction.snapReady(),
                "interaction preflight marks invalid snap step");
 
-    fuse::editor::GizmoSystem gizmo;
-    gizmo.setSnapSettings(snap);
     missHit.screenX = 10.f;
     const fuse::editor::InteractionPreflight gizmoInteraction = gizmo.preflightInteraction(missHit);
     expectTrue(gizmoInteraction.canInteract(), "gizmo interaction preflight accepts valid hit");
     expectTrue(!gizmoInteraction.snapReady(), "gizmo interaction preflight marks invalid snap");
     expectTrue(gizmo.preflightInteraction(xRay, transform).canInteract(),
                "gizmo interaction preflight accepts valid ray");
-}
 
 void testGizmoUpdateDragSnapDegradedPreflight() {
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(rayPreflight.pickedAxis == fuse::editor::GizmoAxis::X,
+               "begin preflight resolves picked axis from ray pick");
+
+
+    const fuse::editor::UpdateDragPreflight outOfBoundsPreflight = fuse::editor::preflightUpdateDrag(
+        hit, true, fuse::editor::GizmoAxis::X);
+    expectTrue(outOfBoundsPreflight.outOfBounds, "update preflight marks out-of-bounds screen hit");
+    expectTrue(!outOfBoundsPreflight.canUpdate(),
+               "update preflight rejects out-of-bounds screen hit");
+
+    const fuse::editor::UpdateDragPreflight validPreflight = fuse::editor::preflightUpdateDrag(
+    expectTrue(validPreflight.canUpdate(), "update preflight accepts in-bounds screen hit");
+    expectTrue(!validPreflight.outOfBounds, "valid update preflight clears outOfBounds");
+
+
+    fuse::editor::GizmoResult updateResult{};
+    expectTrue(!gizmo.tryUpdateDrag(hit, updateResult),
+               "tryUpdateDrag rejects out-of-bounds screen hit");
+    expectTrue(gizmo.isDragging(), "out-of-bounds update keeps drag active");
+
+void testGizmoSnapAwareUpdatePreflight() {
     fuse::editor::GizmoSnapSettings snap{};
     snap.translateSnap = true;
     snap.gridSize = 0.f;
@@ -4876,6 +4933,7 @@ void testGizmoUpdateDragSnapDegradedPreflight() {
                "gizmo update preflight marks snap degraded with invalid step");
     hit.screenX = 30.f;
     expectTrue(degradedPreflight.snapDegraded, "gizmo update preflight marks snap degraded");
+               "gizmo update preflight marks snap degraded via snap-aware overload");
 
     snap.gridSize = 1.f;
     gizmo.setSnapSettings(snap);
@@ -4886,6 +4944,9 @@ void testGizmoUpdateDragSnapDegradedPreflight() {
 }
 
 void testPickSnapPreflight() {
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears snapDegraded on gizmo preflight");
+
+void testGizmoSnapDragDeltaWrappers() {
     fuse::editor::GizmoSnapSettings snap{};
     snap.translateSnap = true;
     snap.gridSize = 0.5f;
@@ -5822,6 +5883,15 @@ void testInteractionRejectReasonHelpers() {
                "gizmo shouldSkipEndDragInteraction false while dragging");
     expectTrue(!validPreflight.snapDegraded, "valid snap clears gizmo update snapDegraded");
     gizmo.endDrag();
+
+    expectTrue(gizmo.canSnapDragDelta(), "gizmo canSnapDragDelta accepts valid translate snap");
+    expectNear(gizmo.trySnapDragDelta(0.37f), 0.5f, 0.001f,
+               "gizmo trySnapDragDelta snaps translate delta");
+
+    expectTrue(!gizmo.canSnapDragDelta(),
+               "gizmo canSnapDragDelta rejects invalid translate step");
+    expectNear(gizmo.trySnapDragDelta(0.37f), 0.37f, 0.001f,
+               "gizmo trySnapDragDelta passthrough when step invalid");
 }
 
 } // namespace
@@ -5966,6 +6036,11 @@ int main() {
     testScreenOutOfBoundsGuards();
     testBeginDragOutOfBoundsAndSnapDegraded();
     testInteractionPreflightGuards();
+    testScreenHitBoundsGuards();
+    testPickPreflightOutOfBounds();
+    testBeginDragPreflightPickedAxis();
+    testGizmoSnapAwareUpdatePreflight();
+    testGizmoSnapDragDeltaWrappers();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test failure(s)\n", g_failures);

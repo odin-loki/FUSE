@@ -418,6 +418,18 @@ bool isScreenHitInBounds(const GizmoHitTest& hit) {
     return isHitTestValid(hit) && !isScreenHitOutOfBounds(hit);
 }
 
+bool isScreenHitOutOfBounds(const GizmoHitTest& hit) {
+    if (isHitTestEmpty(hit)) {
+        return false;
+    }
+    return hit.screenX < 0.f || hit.screenY < 0.f || hit.screenX > hit.viewportWidth ||
+           hit.screenY > hit.viewportHeight;
+}
+
+bool isScreenHitInViewport(const GizmoHitTest& hit) {
+    return isHitTestValid(hit) && !isScreenHitOutOfBounds(hit);
+}
+
 bool normalizeRay(GizmoRay& ray) {
     const f32 len = ray.direction.length();
     if (len < kEpsilon) {
@@ -651,6 +663,11 @@ PickPreflight preflightPick(const GizmoHitTest& hit, GizmoMode mode) {
     }
 
     if (isHitTestOutOfBounds(hit)) {
+    if (isScreenHitOutOfBounds(hit)) {
+        preflight.outOfBounds = true;
+        return preflight;
+    }
+
     if (isScreenHitOutOfBounds(hit)) {
         preflight.outOfBounds = true;
         return preflight;
@@ -1353,6 +1370,7 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
 
     if (isScreenHitOutOfBounds(hit)) {
 
+
     }
 
     return preflight;
@@ -1672,6 +1690,7 @@ BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform&
     preflight.pickMiss = pick.pickMiss;
     preflight.axis = pick.axis;
     applyPickToBeginDragPreflight(pick, preflight);
+    preflight.pickedAxis = pick.axis;
     if (!pick.canPick()) {
 
     preflight.axis = pick.axis;
@@ -1721,6 +1740,8 @@ BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
     preflight.screenMiss = pick.screenMiss;
     preflight.axis = pick.axis;
     applyPickToBeginDragPreflight(pick, preflight);
+    preflight.outOfBounds = pick.outOfBounds;
+    preflight.pickedAxis = pick.axis;
     if (!pick.canPick()) {
         return preflight;
     }
@@ -3056,6 +3077,14 @@ GizmoEndDragRejectReason GizmoSystem::classifyEndDragReject(
     return fuse::editor::classifyEndDragReject(preflight);
 }
 
+bool GizmoSystem::canSnapDragDelta() const {
+    return fuse::editor::canSnapDragDelta(m_mode, m_snap);
+}
+
+f32 GizmoSystem::trySnapDragDelta(f32 delta) const {
+    return fuse::editor::trySnapDragDelta(delta, m_mode, m_snap);
+}
+
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
     GizmoResult result;
     if (!tryBeginDrag(hit, current, result)) {
@@ -3317,6 +3346,7 @@ GizmoTransform GizmoSystem::applyAxisDelta_(const GizmoHitTest& hit,
     const f32 dx = normalizedX(hit) - normalizedX(m_lastHit);
     const f32 dy = normalizedY(hit) - normalizedY(m_lastHit);
     const f32 delta = this->trySnapDragDelta(dx + dy);
+    const f32 delta = fuse::editor::trySnapDragDelta(dx + dy, m_mode, m_snap);
 
     switch (m_mode) {
     case GizmoMode::Translate: {
