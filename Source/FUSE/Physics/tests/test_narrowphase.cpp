@@ -2969,3 +2969,8 @@ void testDeepenFollowUpPreflightWrappers() {
     const auto noWorkPreflight = fuse::physics::narrowphase::preflightContactBufferCompactAndClamp(buffer);
     expectTrue(noWorkPreflight.noWork, "compactAndClamp preflight marks no-work after compact");
             fuse::physics::narrowphase::contactBufferCompactAndClampRejectReasonName(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-78d0 ---
+    expectTrue(validPreflight.canWrite(), "write preflight allows valid manifold");
+            buffer, 9u, valid, fuse::physics::narrowphase::ContactBufferWriteRejectReason::OutOfRangeSlot),
+            fuse::physics::narrowphase::contactBufferClampRejectReasonName(
