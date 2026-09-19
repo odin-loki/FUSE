@@ -4787,3 +4787,15 @@ void testBuildIslandGraphInRangeGuarded() {
 void testSolveIslandJobGuardedAndSleepAwareDispatch() {
     const IslandSleepAwareDispatchPreflight sleepDispatch =
     expectTrue(!should_skip_island_sleep_aware_dispatch(graph, freshBodies, dt),
+
+// --- deepen additive from deepen-b4-pbd-island-guards-0323 ---
+void testPreflightContactIslandBuildGuards() {
+    const ContactIslandBuildPreflight preflight = preflight_contact_island_build(4, contacts, constraints);
+    expectTrue(should_skip_contact_island_build(4, contacts, constraints),
+               "should_skip_contact_island_build on unsafe refs");
+    const IslandConstraintSolveGraphPreflight allSleeping =
+    expectTrue(should_skip_island_constraint_solve_graph(graph, bodies, work.contactManifolds(), constraints),
+               "should_skip constraint-solve graph true when all islands blocked");
+void testDispatchAfterWakeGuards() {
+    const IslandDispatchAfterWakePreflight preflight = preflight_island_dispatch_after_wake(graph, bodies, dt);
+    testPreflightContactIslandBuildGuards();

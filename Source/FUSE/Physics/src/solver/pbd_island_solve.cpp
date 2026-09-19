@@ -2657,3 +2657,20 @@ bool should_skip_island_sleep_wake_solve_graph(
 // --- deepen additive from deepen-pbd-island-guards-dcf7 ---
     const IslandConstraintSolveGraphPreflight preflight =
     const IslandSleepAwareDispatchPreflight preflight = preflight_island_sleep_aware_dispatch(graph, bodies, dt);
+
+// --- deepen additive from deepen-b4-pbd-island-guards-0323 ---
+    const ContactIslandBuildPreflight contactPreflight =
+    preflight.stats.bodyCount = contactPreflight.stats.bodyCount;
+    preflight.stats.contactSlotCount = contactPreflight.stats.contactSlotCount;
+    preflight.stats.distanceSlotCount = contactPreflight.stats.distanceSlotCount;
+    preflight.stats.validContactCount = contactPreflight.stats.validContactCount;
+    preflight.stats.inRangeContactCount = contactPreflight.stats.inRangeContactCount;
+    preflight.stats.inRangeDistanceCount = contactPreflight.stats.inRangeDistanceCount;
+    preflight.stats.outOfRangeContactBodyCount = contactPreflight.stats.outOfRangeContactBodyCount;
+    preflight.stats.outOfRangeDistanceBodyCount = contactPreflight.stats.outOfRangeDistanceBodyCount;
+    preflight.skipped = contactPreflight.skipped;
+bool should_skip_island_constraint_solve_graph(const ContactIslandGraph& graph,
+IslandDispatchAfterWakePreflight preflight_island_dispatch_after_wake(const ContactIslandGraph& graph,
+    IslandDispatchAfterWakePreflight preflight{};
+bool should_skip_island_dispatch_after_wake(const ContactIslandGraph& graph,
+    const IslandDispatchAfterWakePreflight preflight = preflight_island_dispatch_after_wake(graph, bodies, dt);
