@@ -4505,3 +4505,18 @@ void testWouldSkipBroadphaseGuardHelpers() {
     expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(mergePairs, buffer, &mergeIntoReason),
              "wouldSkipMergePairsIntoBuffer reports BufferFull reason");
     expectTrue(fuse::physics::broadphase::wouldSkipMergePairsIntoBuffer(mergePairs, buffer) ==
+
+// --- deepen additive from deepen-b4-broadphase-guards-0c25 ---
+    const fuse::physics::broadphase::CellCapacityPreflight validPreflight =
+    expectTrue(validPreflight.canInsert(), "cell-capacity preflight accepts within-limit range");
+    expectEq(validPreflight.occupancyCount, 8u, "cell-capacity preflight reports occupancy count");
+    expectTrue(!fuse::physics::broadphase::wouldSkipCellCapacityCheck(validRange, 8u, 4u),
+               "wouldSkipCellCapacityCheck false for valid range");
+                   wideRange, 0u, 4u, fuse::physics::broadphase::CellCapacityRejectReason::ExceedsSpan),
+    expectTrue(fuse::physics::broadphase::wouldSkipCellCapacityCheck(inverted, 8u, 4u),
+               "wouldSkipCellCapacityCheck true for empty range");
+    expectTrue(planePreflight.exceedsBudget, "2D cell-capacity preflight marks exceedsBudget");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellOccupancyIteration(planeRange, 4u) ==
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(planeRange, 2u) ==
+               "wouldSkipMergePairsIntoBuffer agrees with canSkipMergePairsIntoBuffer on empty buffer");
+               "wouldSkipMergePairsIntoBuffer is inverse of shouldRunMergePairsIntoBuffer");

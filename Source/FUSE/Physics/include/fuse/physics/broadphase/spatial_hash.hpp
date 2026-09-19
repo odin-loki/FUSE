@@ -1801,3 +1801,7 @@ FUSE_PHYSICS_INLINE bool wouldSkipShapeCellOccupancy(
 
 // --- deepen additive from b4-broadphase-deepen-guards-ae9f ---
     const BroadphasePreflight preflight = preflightBroadphase(bodies, shapes);
+
+// --- deepen additive from deepen-b4-broadphase-guards-0c25 ---
+FUSE_PHYSICS_INLINE bool wouldSkipCellCapacityCheck(const CellRange3& range, u32 maxCells, u32 maxSpanPerAxis) {
+FUSE_PHYSICS_INLINE bool wouldSkipCellCapacityCheck(const CellRange2& range, u32 maxCells, u32 maxSpanPerAxis) {
