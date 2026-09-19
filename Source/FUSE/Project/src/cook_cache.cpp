@@ -1823,6 +1823,19 @@ CookCachePruneEstimate CookCache::estimate_prune_reconcile() const {
 
 
 
+        }
+
+std::vector<std::string> CookCache::probe_stale_content_sources() const {
+    if (m_entries.empty()) {
+        return {};
+
+    std::vector<std::string> stale_sources;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_valid_cook_cache_entry(entry) && is_stale_cache_entry_(entry)) {
+            stale_sources.push_back(entry.source_path);
+    return stale_sources;
+
+
 
 bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
                                                           u64 current_content_hash) const {
@@ -2070,8 +2083,6 @@ void collect_downstream_sources_(const CookCache& cache,
 
 } // namespace
 
-std::vector<std::string> CookCache::probe_downstream_sources(
-    const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
     std::vector<std::string> sources;
     collect_downstream_sources_(*this, output_path, edges, jobs, sources);
     return sources;
@@ -2158,8 +2169,6 @@ std::vector<std::string> CookCache::probe_unique_stale_upstream_sources(
     return unique_sources;
 
         return 0;
-            continue;
-        }
 
 
         downstream_sources.push_back(to_job->source_path);
@@ -2170,8 +2179,6 @@ std::vector<std::string> CookCache::probe_unique_stale_upstream_sources(
     return downstream_sources;
 
 CookCacheReconcileEstimate CookCache::estimate_reconcile(
-    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
-    CookCacheReconcileEstimate estimate;
     if (m_entries.empty()) {
         return estimate;
 
@@ -2181,6 +2188,19 @@ CookCacheReconcileEstimate CookCache::estimate_reconcile(
             ? count_prunable_entries() - estimate.invalid_entries
             : 0;
     estimate.stale_upstream_entries = count_stale_upstream_hashes(source_upstream_by_path);
+
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_path(entry.source_path)) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    if (!is_valid_cook_cache_path(entry.output_path)) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
 }
 
 bool CookCache::contains(u64 content_hash) const {

@@ -545,6 +545,10 @@ public:
     /// Entries `prune_all` would remove — mirrors early-exit guards without mutating stats (B7.9 deepen).
     [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile(
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path = {}) const;
+    /// Entries whose on-disk source no longer matches stored hash — excludes structurally invalid rows (B7.9 deepen).
+    /// Source paths with stale content keys — one push per matching entry (B7.9 deepen).
+
+    /// Read-only invalidation would-* probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
@@ -574,5 +578,7 @@ private:
 [[nodiscard]] CookCacheStorePreflight preflight_cook_cache_store(const CookCacheEntry& entry);
 
 /// Free-function preflights — delegate to cache helpers without requiring a populated cache (B7.9 deepen).
+/// Read-only preflight for cache entry storage — mirrors `store()` guards (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 
 } // namespace fuse::project

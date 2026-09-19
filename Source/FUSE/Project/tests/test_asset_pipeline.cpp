@@ -2665,6 +2665,46 @@ void testCookerReconcileEstimators() {
                "stale content estimate zero after prune");
 }
 
+void testCookerStaleDependencyReconcileEstimator() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_stale_a.obj", "# est stale a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_stale_b.obj", "# est stale b\n");
+
+    fuse::project::CookManifest manifest;
+
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_est_stale_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_est_stale_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "manifest cook for stale reconcile estimator ok");
+    expectTrue(cooker.cache().entry_count() == 2u, "two entries seeded for stale reconcile estimator");
+
+    const fuse::u32 stale_count_before = cooker.count_stale_dependency_invalidation(manifest);
+    expectTrue(stale_count_before == 0u, "fresh cache stale reconcile estimate is zero");
+
+    writeTempFile(sourceA, "# est stale a revised\n");
+    const fuse::u32 stale_estimate = cooker.count_stale_dependency_invalidation(manifest);
+    expectTrue(stale_estimate >= 1u, "stale reconcile estimator reports dependent invalidations");
+
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= stale_estimate,
+               "stale dependency invalidation removes at least estimated count");
+    expectTrue(cooker.cache().lookup(batch.records[1].content_hash) == fuse::project::CookCacheLookup::Miss,
+               "downstream misses after estimated stale reconcile");
+    expectTrue(cooker.count_stale_dependency_invalidation(manifest) == 0u,
+               "stale reconcile estimate is zero after invalidation");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 
