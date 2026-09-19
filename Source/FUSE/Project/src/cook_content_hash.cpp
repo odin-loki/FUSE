@@ -1,5 +1,8 @@
 #include <fuse/project/cook_content_hash.hpp>
 
+#include <fuse/project/cook_cache.hpp>
+#include <fuse/project/import_desc.hpp>
+
 #include <filesystem>
 #include <fstream>
 
@@ -321,6 +324,77 @@ CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
 CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     (void)upstream_hash;
     return preflight_cook_cache_key(source_hash, upstream_hash);
+}
+
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_entry(entry)) {
+        if (!is_valid_cook_cache_key(entry.content_hash)) {
+            preflight.reason = CookHashRejectReason::ZeroSourceHash;
+            return preflight;
+        }
+        if (!is_valid_cook_cache_path(entry.source_path)) {
+            preflight.reason = CookHashRejectReason::EmptyInputPath;
+            return preflight;
+        }
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+
+    switch (entry.kind) {
+    case CookAssetKind::Mesh: {
+        MeshImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_mesh_import_hash(desc);
+    }
+    case CookAssetKind::Texture: {
+        TextureImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_texture_import_hash(desc);
+    }
+    case CookAssetKind::Audio: {
+        AudioImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_audio_import_hash(desc);
+    }
+    case CookAssetKind::Shader:
+        preflight.reason = CookHashRejectReason::SourceUnreadable;
+        return preflight;
+    }
+    return preflight;
+}
+
+bool tryPreflightMeshImportHash(const MeshImportDesc& desc, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_mesh_import_hash(desc);
+    reason = preflight.reason;
+    return preflight.can_hash;
+}
+
+bool tryPreflightTextureImportHash(const TextureImportDesc& desc, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_texture_import_hash(desc);
+    reason = preflight.reason;
+    return preflight.can_hash;
+}
+
+bool tryPreflightAudioImportHash(const AudioImportDesc& desc, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_audio_import_hash(desc);
+    reason = preflight.reason;
+    return preflight.can_hash;
+}
+
+bool tryPreflightManifestEntryHash(const CookManifestEntry& entry, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_manifest_entry_hash(entry);
+    reason = preflight.reason;
+    return preflight.can_hash;
+}
+
+bool tryPreflightCookCacheEntry(const CookCacheEntry& entry, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_cook_cache_entry(entry);
+    reason = preflight.reason;
+    return preflight.can_hash;
 }
 
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
