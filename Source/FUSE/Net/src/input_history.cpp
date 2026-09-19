@@ -51,20 +51,21 @@ bool InputHistoryBuffer::will_evict_oldest_on_push(u32 frame) const {
     u32 newest = m_newest_frame;
     if (frame < oldest) {
         oldest = frame;
-    }
     if (frame > newest) {
         newest = frame;
-    }
 
     return newest - oldest + 1 > m_capacity;
-}
 
 bool is_empty_input_history(const InputHistoryBuffer& history) {
     return history.empty();
-}
 
 u32 input_history_remaining_capacity(const InputHistoryBuffer& history) {
     return history.remaining_capacity();
+InputReconcilePreflight InputHistoryBuffer::preflight_reconcile(u32 frame) const {
+    return preflight_reconcile_input(*this, frame);
+
+bool InputHistoryBuffer::should_skip_reconcile(u32 frame) const {
+    return should_skip_reconcile_input(*this, frame);
 }
 
 void InputHistoryBuffer::push_frame(u32 frame, const PlayerInput& predicted) {

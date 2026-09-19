@@ -194,6 +194,26 @@ void run_input_history_tests() {
     expectTrue(future_preflight.frame_beyond_newest, "preflight marks future frame");
     expectTrue(fuse::net::should_skip_input_reconcile(bounded, 6u),
                "should_skip rejects future frame");
+    // --- remaining capacity and preflight guards (B7.4 deepen follow-up) ---
+    fuse::net::InputHistoryBuffer capacity_history;
+    capacity_history.init(4);
+    expectTrue(capacity_history.remaining_capacity() == 4u,
+
+    for (fuse::u32 frame = 0; frame < 3; ++frame) {
+        capacity_history.push_frame(frame, input);
+    expectTrue(capacity_history.remaining_capacity() == 1u,
+               "remaining_capacity shrinks as frames are retained");
+
+    const fuse::net::InputReconcilePreflight future_preflight = capacity_history.preflight_reconcile(9u);
+    expectTrue(future_preflight.frame_future, "preflight marks future frame beyond newest");
+    expectTrue(!future_preflight.can_reconcile(), "preflight rejects future frame");
+    expectTrue(capacity_history.should_skip_reconcile(9u), "should_skip true for future frame");
+
+    fuse::net::InputHistoryBuffer cleared_capacity;
+    cleared_capacity.init(4);
+    cleared_capacity.clear();
+    expectTrue(cleared_capacity.remaining_capacity() == 0u,
+               "cleared history reports zero remaining capacity");
 }
 
 } // namespace fuse::net::tests

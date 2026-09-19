@@ -27,6 +27,21 @@ u32 RollbackBuffer::stored_frame_count() const {
     return m_newest_frame - m_oldest_frame + 1;
 }
 
+u32 RollbackBuffer::remaining_capacity() const {
+    if (m_capacity == 0) {
+        return 0;
+    }
+    return m_capacity - stored_frame_count();
+}
+
+RollbackReconcilePreflight RollbackBuffer::preflight_reconcile(u32 frame) const {
+    return preflight_reconcile_rollback(*this, frame);
+}
+
+bool RollbackBuffer::should_skip_reconcile(u32 frame) const {
+    return should_skip_reconcile_rollback(*this, frame);
+}
+
 bool RollbackBuffer::has_frame(u32 frame) const {
     const std::optional<u32> slot = slot_index_(frame);
     return slot.has_value();
