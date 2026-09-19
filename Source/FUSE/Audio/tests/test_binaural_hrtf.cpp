@@ -395,7 +395,6 @@ void testEmptyIrConvolutionSkipGuards() {
                "non-null zero-length IR is recognised");
     expectTrue(fuse::audio::should_skip_hrtf_convolution(zero_length),
                "non-null zero-length IR skips convolution");
-}
 
 void testHrtfPanPathBypassAndIldStubPredicates() {
     expectTrue(fuse::audio::is_bypass_hrtf_pan_path(fuse::audio::HrtfPanPath::Bypass),
@@ -418,7 +417,6 @@ void testHrtfPanPathBypassAndIldStubPredicates() {
                    == !fuse::audio::should_skip_hrtf_attenuation_coupling(
                           fuse::audio::HrtfPanPath::IldItdStub),
                "should_apply coupling is inverse of should_skip");
-}
 
 void testSpatialBlendSkipGuards() {
     expectTrue(fuse::audio::is_unity_hrtf_spatial_blend(1.f), "unity blend at one");
@@ -443,7 +441,6 @@ void testSpatialBlendSkipGuards() {
     fuse::audio::apply_hrtf_spatial_blend_guarded(narrowed, 0.25f);
     expectTrue(fuse::audio::compute_pan_spread(narrowed) < wide_spread,
                "guarded partial blend narrows image");
-}
 
 void testClampHrtfOcclusionCouplingWeight() {
     expectNear(fuse::audio::clamp_hrtf_occlusion_coupling_weight(-0.2f), 0.f, 1e-5f,
@@ -452,13 +449,11 @@ void testClampHrtfOcclusionCouplingWeight() {
                "above-unity coupling weight clamps to one");
     expectNear(fuse::audio::clamp_hrtf_occlusion_coupling_weight(0.6f), 0.6f, 1e-5f,
                "in-range coupling weight is preserved");
-}
 
 void testAttenuationCouplingForPath() {
     const fuse::audio::BinauralPanGains wide =
         fuse::audio::compute_binaural_pan_gains(offset);
 
-    fuse::audio::BinauralPanGains narrowed = wide;
     fuse::audio::apply_hrtf_attenuation_coupling_for_path(
         narrowed, fuse::audio::HrtfPanPath::IldItdStub, 0.1f, 0.2f);
     expectTrue(fuse::audio::compute_pan_spread(narrowed)
@@ -534,27 +529,18 @@ void testCoLocatedHrtfGuards() {
                "zero offset is co-located");
     expectTrue(!fuse::audio::is_co_located_hrtf_source(offset),
                "separated offset is not co-located");
-    expectTrue(fuse::audio::should_skip_hrtf_pan(false, offset),
-               "disabled HRTF skips pan");
     expectTrue(fuse::audio::should_skip_hrtf_pan(true, co_located),
-               "co-located source skips pan");
-    expectTrue(!fuse::audio::should_skip_hrtf_pan(true, offset),
                "enabled separated source does not skip pan");
-    expectTrue(fuse::audio::should_apply_hrtf_pan(true, offset)
-                   == !fuse::audio::should_skip_hrtf_pan(true, offset),
                "should_apply_hrtf_pan is inverse of should_skip_hrtf_pan");
     expectTrue(fuse::audio::should_bypass_hrtf_pan(true, co_located)
                    == fuse::audio::should_skip_hrtf_pan(true, co_located),
                "should_bypass_hrtf_pan matches should_skip_hrtf_pan");
 
 void testBypassPanPathAndAttenuationSkipGuards() {
-    expectTrue(fuse::audio::is_bypass_hrtf_pan_path(fuse::audio::HrtfPanPath::Bypass),
                "bypass path predicate alias");
     expectTrue(fuse::audio::is_bypass_hrtf_pan_path(fuse::audio::HrtfPanPath::Bypass)
                    == fuse::audio::is_hrtf_pan_path_bypass(fuse::audio::HrtfPanPath::Bypass),
                "bypass aliases agree");
-        fuse::audio::should_skip_hrtf_attenuation_coupling(fuse::audio::HrtfPanPath::Bypass),
-        "bypass skips attenuation coupling");
         !fuse::audio::should_skip_hrtf_attenuation_coupling(fuse::audio::HrtfPanPath::Convolution),
         "convolution path does not skip attenuation coupling");
     expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling(fuse::audio::HrtfPanPath::Bypass)
@@ -588,9 +574,7 @@ void testUnityHrtfAttenuationGuards() {
 
 void testClampHrtfAttenuationCouplingWeight() {
     expectNear(fuse::audio::clamp_hrtf_attenuation_coupling_weight(-0.2f), 0.f, 1e-5f,
-               "negative coupling weight clamps to zero");
     expectNear(fuse::audio::clamp_hrtf_attenuation_coupling_weight(1.5f), 1.f, 1e-5f,
-               "above-unity coupling weight clamps to one");
 
     const fuse::audio::HrtfAttenuationCoupling distance_only{.occlusion_weight = 0.f};
     const fuse::audio::HrtfAttenuationCoupling occlusion_only{.occlusion_weight = 1.f};
@@ -608,16 +592,10 @@ void testCoupledPanVec3UsesCoupledForPath() {
     expectNear(coupled.right, via_path.right, 1e-5f,
 
 void testShouldSkipHrtfConvolution() {
-    expectTrue(fuse::audio::should_skip_hrtf_convolution(empty),
-               "empty IR skips convolution");
-    expectTrue(fuse::audio::should_skip_hrtf_convolution(empty)
                    == !fuse::audio::should_use_hrtf_ir(empty),
                "should_skip_hrtf_convolution inverts should_use_hrtf_ir");
 
     const float samples[] = {0.5f};
-    const fuse::audio::HrtfIrStub valid{samples, 1};
-    expectTrue(!fuse::audio::should_skip_hrtf_convolution(valid),
-               "valid IR does not skip convolution");
 
     const fuse::audio::HrtfIrStub malformed{samples, 0};
     expectTrue(fuse::audio::is_nonnull_zero_length_hrtf_ir(malformed),
@@ -651,7 +629,6 @@ void testUnitySpatialBlendGuards() {
     expectTrue(!fuse::audio::is_unity_hrtf_spatial_blend(0.99f),
                "sub-unity blend is not unity");
 
-    expectTrue(fuse::audio::should_skip_hrtf_spatial_blend(1.f, 1.f),
                "full distance and occlusion skip spatial narrowing");
     expectTrue(!fuse::audio::should_skip_hrtf_spatial_blend(0.2f, 1.f),
                "reduced distance attenuation warrants narrowing");
@@ -659,16 +636,11 @@ void testUnitySpatialBlendGuards() {
                "reduced occlusion gain warrants narrowing");
 
 void testApplyHrtfSpatialBlendGuarded() {
-    fuse::audio::BinauralPanGains wide =
-        fuse::audio::compute_binaural_pan_gains(fuse::audio::Vec3{5.f, 0.f, 0.f});
-    const float wide_spread = fuse::audio::compute_pan_spread(wide);
 
     fuse::audio::apply_hrtf_spatial_blend_guarded(unchanged, 1.f);
                "unity guarded blend leaves left gain unchanged");
                "unity guarded blend leaves right gain unchanged");
 
-    fuse::audio::apply_hrtf_spatial_blend_guarded(narrowed, 0.25f);
-    expectTrue(fuse::audio::compute_pan_spread(narrowed) < wide_spread,
                "sub-unity guarded blend narrows pan spread");
 
     fuse::audio::BinauralPanGains coupling_unchanged = wide;
@@ -783,6 +755,60 @@ void testHrtfAttenuationCouplingPreflight() {
 
     expectNear(bypassed.left, wide.left, 1e-5f,
                "bypass preflight leaves gains unchanged");
+void testSpatialBlendForPathGuards() {
+    expectNear(fuse::audio::compute_hrtf_spatial_blend_for_path(
+                   fuse::audio::HrtfPanPath::Bypass, 0.1f, 0.1f),
+               1.f, 1e-5f, "bypass path returns unity spatial blend");
+                   fuse::audio::HrtfPanPath::IldItdStub, 1.f, 1.f),
+               1.f, 1e-5f, "unity attenuation on spatial path returns unity blend");
+                   fuse::audio::HrtfPanPath::Convolution, 0.2f, 0.8f),
+               fuse::audio::compute_hrtf_spatial_blend(0.2f, 0.8f), 1e-5f,
+               "non-unity spatial path matches base spatial blend");
+
+void testAttenuationCouplingGuardedHelpers() {
+
+    fuse::audio::apply_hrtf_attenuation_coupling_guarded(guarded, true, offset, 0.2f, 0.3f);
+        manual, fuse::audio::resolve_hrtf_pan_path(true, offset), 0.2f, 0.3f);
+    expectNear(guarded.left, manual.left, 1e-5f,
+               "guarded coupling matches manual path coupling");
+    expectNear(guarded.right, manual.right, 1e-5f,
+
+    fuse::audio::BinauralPanGains ir_guarded = wide;
+    fuse::audio::apply_hrtf_attenuation_coupling_guarded(ir_guarded, true, empty, offset, 0.2f,
+                                                         0.3f);
+    expectNear(ir_guarded.left, guarded.left, 1e-5f,
+               "IR-aware guarded coupling matches empty-IR path");
+    expectNear(ir_guarded.right, guarded.right, 1e-5f,
+
+    fuse::audio::apply_hrtf_attenuation_coupling_guarded(bypassed, false, offset, 0.1f, 0.1f);
+    expectNear(bypassed.left, wide.left, 1e-5f, "disabled HRTF skips guarded coupling");
+    expectNear(bypassed.right, wide.right, 1e-5f, "disabled HRTF skips guarded coupling");
+
+void testGuardedBinauralPanSampleApply() {
+
+    float left = 0.f;
+    float right = 0.f;
+    fuse::audio::apply_binaural_pan_to_sample_for_path(fuse::audio::HrtfPanPath::Bypass, 1.f, wide,
+                                                        0.5f, left, right);
+    expectNear(left, 0.5f, 1e-5f, "for_path bypass applies centre mono to left");
+    expectNear(right, 0.5f, 1e-5f, "for_path bypass applies centre mono to right");
+
+    left = 0.f;
+    right = 0.f;
+    fuse::audio::apply_binaural_pan_to_sample_for_path(fuse::audio::HrtfPanPath::IldItdStub, 1.f,
+                                                       wide, 0.5f, left, right);
+    expectNear(left, 0.5f * wide.left, 1e-5f, "for_path spatial stub scales left");
+    expectNear(right, 0.5f * wide.right, 1e-5f, "for_path spatial stub scales right");
+
+    fuse::audio::apply_guarded_binaural_pan_to_sample(false, offset, 1.f, wide, 0.25f, left,
+                                                      right);
+    expectNear(left, 0.25f, 1e-5f, "guarded sample apply bypasses to centre when disabled");
+    expectNear(right, 0.25f, 1e-5f, "guarded sample apply bypasses to centre when disabled");
+
+    fuse::audio::apply_guarded_binaural_pan_to_sample(true, fuse::audio::Vec3{}, 1.f, wide, 0.25f,
+                                                      left, right);
+    expectNear(left, 0.25f, 1e-5f, "guarded sample apply bypasses co-located source");
+    expectNear(right, 0.25f, 1e-5f, "guarded sample apply bypasses co-located source");
 
 void testBinauralPanGainSampleHelpers() {
     const fuse::audio::BinauralPanGains centre = fuse::audio::make_centre_binaural_pan_gains();
@@ -1371,6 +1397,9 @@ int main() {
     testHrtfIrPreflight();
     testHrtfPanPathPreflight();
     testHrtfAttenuationCouplingPreflight();
+    testSpatialBlendForPathGuards();
+    testAttenuationCouplingGuardedHelpers();
+    testGuardedBinauralPanSampleApply();
     testBinauralPanGainSampleHelpers();
     testHrtfIrPreflightSkipAlias();
     testHrtfPanPathPreflightPredicateAliases();

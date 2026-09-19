@@ -82,15 +82,11 @@ float SpatialMixer::sample_clip(const AudioClip& clip, float play_head, u32 chan
 void SpatialMixer::apply_hrtf_pan(float mono_sample, const Vec3& rel, float distance_attenuation,
                                   float occlusion_gain, float output_attenuation, float& left,
                                   float& right) const {
-    if (!should_apply_hrtf_pan(m_hrtfEnabled, rel)) {
-        left += mono_sample * output_attenuation;
-        right += mono_sample * output_attenuation;
-        return;
-    }
-
     const BinauralPanGains pan =
         compute_source_binaural_pan_gains(rel, distance_attenuation, occlusion_gain);
     accumulate_binaural_pan(mono_sample, pan, output_attenuation, left, right);
+    apply_guarded_binaural_pan_to_sample(m_hrtfEnabled, rel, mono_sample, pan, output_attenuation,
+                                         left, right);
 }
 
 void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>& clips, float dt,

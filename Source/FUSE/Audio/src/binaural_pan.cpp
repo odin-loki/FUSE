@@ -356,10 +356,35 @@ void apply_binaural_pan_to_sample(float mono, const BinauralPanGains& pan, float
     right += scaled * pan.right;
 }
 
+void apply_binaural_pan_to_sample_for_path(HrtfPanPath path, float mono,
+                                           const BinauralPanGains& pan, float attenuation,
+                                           float& left, float& right) {
+    if (should_skip_hrtf_spatial_pan(path)) {
+        apply_centre_binaural_pan_to_sample(mono, attenuation, left, right);
+        return;
+    }
+    apply_binaural_pan_to_sample(mono, pan, attenuation, left, right);
+}
+
 void apply_centre_binaural_pan_to_sample(float mono, float attenuation, float& left, float& right) {
     const float scaled = mono * attenuation;
     left += scaled;
     right += scaled;
+}
+
+void apply_guarded_binaural_pan_to_sample(bool hrtf_enabled, const Vec3& rel_listener, float mono,
+                                          const BinauralPanGains& pan, float attenuation,
+                                          float& left, float& right) {
+    apply_binaural_pan_to_sample_for_path(resolve_hrtf_pan_path(hrtf_enabled, rel_listener), mono,
+                                          pan, attenuation, left, right);
+}
+
+void apply_guarded_binaural_pan_to_sample(bool hrtf_enabled, const HrtfIrStub& ir,
+                                          const Vec3& rel_listener, float mono,
+                                          const BinauralPanGains& pan, float attenuation,
+                                          float& left, float& right) {
+    apply_binaural_pan_to_sample_for_path(resolve_hrtf_pan_path(hrtf_enabled, ir, rel_listener),
+                                          mono, pan, attenuation, left, right);
 }
 
 BinauralPanGains compute_binaural_pan_gains_guarded(bool hrtf_enabled, const Vec3& rel_listener,
@@ -579,6 +604,12 @@ bool should_skip_hrtf_spatial_blend(float distance_attenuation, float occlusion_
 
     return is_unity_hrtf_spatial_blend(
         compute_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params));
+float compute_hrtf_spatial_blend_for_path(HrtfPanPath path, float distance_attenuation,
+                                          float occlusion_gain,
+    if (!should_narrow_hrtf_spatial_image(path, distance_attenuation, occlusion_gain)) {
+        return 1.f;
+    }
+    return compute_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params);
 }
 
 void apply_hrtf_attenuation_coupling(BinauralPanGains& gains, float distance_attenuation,
@@ -589,6 +620,26 @@ void apply_hrtf_attenuation_coupling(BinauralPanGains& gains, float distance_att
     }
     apply_hrtf_spatial_blend_guarded(
         gains, compute_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params));
+}
+
+void apply_hrtf_attenuation_coupling_guarded(BinauralPanGains& gains, bool hrtf_enabled,
+                                             const Vec3& rel_listener, float distance_attenuation,
+                                             float occlusion_gain,
+                                             const HrtfAttenuationCoupling& coupling,
+                                             const BinauralPanParams& params) {
+    apply_hrtf_attenuation_coupling_for_path(
+        gains, resolve_hrtf_pan_path(hrtf_enabled, rel_listener), distance_attenuation,
+        occlusion_gain, coupling, params);
+}
+
+void apply_hrtf_attenuation_coupling_guarded(BinauralPanGains& gains, bool hrtf_enabled,
+                                             const HrtfIrStub& ir, const Vec3& rel_listener,
+                                             float distance_attenuation, float occlusion_gain,
+                                             const HrtfAttenuationCoupling& coupling,
+                                             const BinauralPanParams& params) {
+    apply_hrtf_attenuation_coupling_for_path(
+        gains, resolve_hrtf_pan_path(hrtf_enabled, ir, rel_listener), distance_attenuation,
+        occlusion_gain, coupling, params);
 }
 
 void apply_hrtf_attenuation_coupling_for_path(BinauralPanGains& gains, HrtfPanPath path,
