@@ -1811,3 +1811,10 @@ int main() {
     std::fprintf(stderr, "fuse_physics_narrowphase_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b4-narrowphase-manifold-prune-friction-guards-e8ef ---
+void testContactPairRejectReasonNames() {
+                fuse::physics::narrowphase::ContactPairRejectReason::UnsupportedShapePair),
+                fuse::physics::narrowphase::ContactPairRejectReason::None),
+void testIsValidContactManifoldGuards() {
+    testContactPairRejectReasonNames();
