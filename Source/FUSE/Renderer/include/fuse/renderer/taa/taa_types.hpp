@@ -193,6 +193,12 @@ bool taaBlendWeightReusesHistory(f32 effective_blend);
 f32 computeHistoryContributionWeight(f32 effective_blend);
 /// True when warm-up path forces full current-frame weight (no history reuse).
 bool taaUsesWarmupBlend(bool first_frame);
+/// Blend weight with explicit history-reuse guard — forces 1.0 when history cannot be sampled.
+f32 computeEffectiveBlend(bool firstFrame, bool historyReusable, const TAAParams& params);
+/// True when effective blend samples history (strictly below full-current weight).
+bool taaBlendUsesHistory(f32 effectiveBlend);
+/// True when effective blend ignores history (warm-up / stale / full-current weight).
+bool taaBlendSkipsHistoryReuse(f32 effectiveBlend);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
@@ -207,6 +213,8 @@ struct TaaResolveStats {
     f32 effective_blend = 0.f;
     /// History contribution weight — complement of `effective_blend`.
     f32 history_blend = 0.f;
+    /// Set when resolve samples ping-pong history (reusable + blend below full-current weight).
+    bool history_reused = false;
     bool history_swapped = false;
     bool first_frame = false;
     bool has_valid_history = false;

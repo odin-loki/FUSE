@@ -68,6 +68,9 @@ struct TaaJitterLayout {
     static fuse::math::Vec2 haltonPixelOffset(u32 index, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     static fuse::math::Vec2 haltonNdcOffset(u32 index, u32 width, u32 height,
                                             u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// Returns zero when viewport dimensions are invalid (B5.9 deepen guard).
+    static fuse::math::Vec2 safeHaltonNdcOffset(u32 index, u32 width, u32 height,
+                                                u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Halton offset for a monotonic frame counter (wraps via `frameIndexInSequence`).
     static fuse::math::Vec2 offsetForFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Halton offset for a frame counter only when the sequence is valid (B5.9 deepen).
@@ -78,6 +81,9 @@ struct TaaJitterLayout {
     /// NDC jitter for a frame counter only when viewport and sequence are valid (B5.9 deepen).
     static bool ndcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
                                               fuse::math::Vec2& out);
+    /// Returns zero when viewport dimensions are invalid (B5.9 deepen guard).
+    static fuse::math::Vec2 safeNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
+                                                       u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
     static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
 };

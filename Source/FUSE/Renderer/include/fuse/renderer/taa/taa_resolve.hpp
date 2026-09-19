@@ -60,6 +60,8 @@ bool isObservedHistoryGenerationCurrent(const TaaResolveDesc& desc, const TaaHis
 bool taaResolveCanProceed(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
 /// Blend weight from history warm-up state and clamped params.
 f32 computeEffectiveBlendForHistory(const TaaHistoryBuffer& history, const TAAParams& params);
+/// True when history is ready, valid, and passes the generation guard (B5.9 deepen).
+bool taaHistoryIsReusable(const TaaHistoryBuffer& history, const TaaResolveDesc& desc);
 
 /// CPU/CUDA resolve facade — records resolve intent; kernel deferred (B5.9 stub).
 class TaaResolve {
