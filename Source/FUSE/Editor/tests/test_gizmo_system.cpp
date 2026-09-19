@@ -3940,3 +3940,31 @@ void testInteractionPreflightSnapOnPhase() {
 
 // --- deepen additive from deepen-gizmo-interaction-preflights-2f0c ---
     expectTrue(!gizmo.tryUpdateDrag(nanHit, result),
+
+// --- deepen additive from deepen-gizmo-preflight-guards-c502 ---
+void testNonFinitePickPreflightGuards() {
+    expectTrue(!fuse::editor::tryPickAxis(nanRay, transform, fuse::editor::GizmoMode::Translate,
+               "tryPickAxis rejects non-finite ray");
+               "tryPickAxis rejects non-finite hit");
+void testNonFiniteBeginDragPreflightGuards() {
+    const fuse::editor::BeginDragPreflight nanHitBegin =
+    expectTrue(!gizmo.tryBeginDrag(nanHit, transform, result),
+               "tryBeginDrag rejects non-finite hit");
+void testNonFiniteUpdateDragPreflightGuards() {
+    const fuse::editor::UpdateDragPreflight nanUpdate = gizmo.preflightUpdateDrag(hit);
+    expectTrue(!gizmo.tryUpdateDrag(hit, result), "tryUpdateDrag rejects non-finite hit");
+void testAxisModeUpdateEndPreflightGuards() {
+    const fuse::editor::UpdateDragPreflight invalidAxisUpdate = fuse::editor::preflightUpdateDrag(
+    const fuse::editor::UpdateDragPreflight validAxisUpdate = fuse::editor::preflightUpdateDrag(
+    const fuse::editor::EndDragPreflight invalidAxisEnd = fuse::editor::preflightEndDrag(
+    const fuse::editor::EndDragPreflight validAxisEnd = fuse::editor::preflightEndDrag(
+void testNonFiniteInteractionPreflightGuards() {
+    const fuse::editor::PickInteractionPreflight nanPickInteraction =
+        fuse::editor::preflightPickInteraction(nanRay, transform, fuse::editor::GizmoMode::Translate,
+    const fuse::editor::BeginInteractionPreflight nanBeginInteraction =
+        fuse::editor::preflightBeginInteraction(nanHit, fuse::editor::GizmoMode::Translate, snap);
+    testNonFinitePickPreflightGuards();
+    testNonFiniteBeginDragPreflightGuards();
+    testNonFiniteUpdateDragPreflightGuards();
+    testAxisModeUpdateEndPreflightGuards();
+    testNonFiniteInteractionPreflightGuards();
