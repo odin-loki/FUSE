@@ -4741,3 +4741,17 @@ void testPreflightIslandBuildSelfReferentialGuards() {
     const IslandSolvePipelinePreflight mixedPipeline = preflight_island_solve_pipeline(
     const IslandSolvePipelinePreflight outOfRange =
     testPreflightIslandBuildSelfReferentialGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-ae58 ---
+void testPreflightIslandBuildSelfContactGuard() {
+    const IslandBuildPreflight preflight = preflight_island_build(2, contacts, {});
+void testPreflightIslandConstraintRefsOutOfRangeCounts() {
+    expectTrue(!mixedPreflight.skipped, "index constraint-solve preflight does not skip mixed island");
+    expectTrue(mixedPreflight.can_solve(), "mixed island passes index constraint-solve preflight");
+    expectTrue(!sleepingPreflight.can_solve(), "all-sleeping island fails index constraint-solve preflight");
+               "should_skip index constraint-solve on all-sleeping island");
+void testDispatchSolveIslandConstraintGuarded() {
+    const IslandWakeThenSolvePreflight preflight = preflight_wake_then_solve_island_by_index(
+               "should_skip solveable graph false when mixed island exists");
+    testPreflightIslandBuildSelfContactGuard();
+    testPreflightIslandConstraintRefsOutOfRangeCounts();

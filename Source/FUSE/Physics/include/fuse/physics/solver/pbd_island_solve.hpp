@@ -1616,3 +1616,6 @@ bool should_skip_island_sleep_wake_dispatch(const ContactIslandGraph& graph,
 
 // --- deepen additive from deepen-pbd-island-guards-d51d ---
 bool should_skip_island_solve_pipeline_by_index(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-guards-ae58 ---
+IslandWakeThenSolvePreflight preflight_wake_then_solve_island(const ContactIslandGraph::Island& island,

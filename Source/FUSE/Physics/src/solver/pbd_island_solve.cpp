@@ -2629,3 +2629,9 @@ bool should_skip_island_sleep_wake_dispatch(const ContactIslandGraph& graph,
 bool should_skip_island_solve_pipeline_by_index(const ContactIslandGraph& graph,
         const IslandConstraintSolvePreflight preflight = preflight_island_constraint_solve_by_index(
         const IslandSolvePipelinePreflight preflight = preflight_island_solve_pipeline_by_index(
+
+// --- deepen additive from deepen-pbd-island-guards-ae58 ---
+    const IslandWakeThenSolvePreflight preflight =
+        if (solvePreflight.skipped) {
+        if (solvePreflight.can_solve()) {
+        } else if (!solvePreflight.bodies.can_solve()) {
