@@ -624,3 +624,12 @@ bool TaaPass::preflightHistoryWarmupSatisfied(TaaHistoryReuseBlockReason* reason
     return preflightTaaHistoryWarmupSatisfied(m_history, reason);
 bool TaaPass::tryPreflightHistoryWarmupSatisfied(TaaHistoryReuseBlockReason& reason) const {
     return tryPreflightTaaHistoryWarmupSatisfied(m_history, reason);
+
+// --- deepen additive from deepen-b59-taa-guards-de0e ---
+    return preflightTaaJitterAlignment(frameIndex, m_jitter.index(), m_jitter.monotonicFrameIndex(),
+bool TaaPass::preflightHistoryWarmupComplete(TaaHistoryWarmupState* state) const {
+    return preflightTaaHistoryWarmupComplete(m_history, state);
+bool TaaPass::preflightHistoryForTemporalBlend(u32 observedGeneration,
+    return preflightTaaHistoryForTemporalBlend(m_history, observedGeneration, reason);
+bool TaaPass::preflightResolveWithBlendWeights(const TaaResolveDesc& desc,
+    return preflightTaaResolveWithBlendWeights(desc, m_history, skipReason, blendReason);

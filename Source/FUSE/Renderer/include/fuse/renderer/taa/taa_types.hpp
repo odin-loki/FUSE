@@ -424,3 +424,10 @@ bool tryPreflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history,
 // --- deepen additive from deepen-taa-b59-guards-4c9c ---
 bool preflightTaaHistoryWarmupSatisfied(const TaaHistoryBuffer& history,
 bool tryPreflightTaaHistoryWarmupSatisfied(const TaaHistoryBuffer& history,
+
+// --- deepen additive from deepen-b59-taa-guards-de0e ---
+bool tryPreflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history, TaaHistoryWarmupState& state);
+bool preflightTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration,
+bool tryPreflightTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration,
+bool preflightTaaResolveWithBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+bool tryPreflightTaaResolveWithBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,

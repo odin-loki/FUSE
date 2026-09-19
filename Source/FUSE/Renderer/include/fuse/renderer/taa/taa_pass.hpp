@@ -348,3 +348,8 @@ void addTaaPassToGraph(RenderGraph& graph);
     bool tryPreflightResolveTemporalBlend(const TaaResolveDesc& desc,
     bool preflightHistoryWarmupSatisfied(TaaHistoryReuseBlockReason* reason = nullptr) const;
     bool tryPreflightHistoryWarmupSatisfied(TaaHistoryReuseBlockReason& reason) const;
+
+// --- deepen additive from deepen-b59-taa-guards-de0e ---
+    bool preflightHistoryWarmupComplete(TaaHistoryWarmupState* state = nullptr) const;
+    bool preflightHistoryForTemporalBlend(u32 observedGeneration,
+    bool preflightResolveWithBlendWeights(const TaaResolveDesc& desc,

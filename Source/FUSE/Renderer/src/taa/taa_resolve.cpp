@@ -759,3 +759,14 @@ bool tryComputeTaaResolveBlendWeightsIfResolveReady(const TaaResolveDesc& desc,
 
 // --- deepen additive from deepen-taa-b59-guards-4c9c ---
     return preflightTaaResolveTemporalBlend(desc, history, &reuseReason, &blendReason);
+
+// --- deepen additive from deepen-b59-taa-guards-de0e ---
+bool preflightTaaResolveWithBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+    return blend == TaaResolveBlendRejectReason::None;
+bool tryPreflightTaaResolveWithBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+    return preflightTaaResolveWithBlendWeights(desc, history, &skipReason, &blendReason);
+    return !preflightTaaResolveWithBlendWeights(desc, history);
+bool preflightTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+    return preflightTaaResolveWithBlendWeights(desc, history, skipReason, blendReason);
+bool tryPreflightTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+    return tryPreflightTaaResolveWithBlendWeights(desc, history, skipReason, blendReason);

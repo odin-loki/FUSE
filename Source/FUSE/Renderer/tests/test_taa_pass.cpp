@@ -4168,3 +4168,30 @@ void testHistoryWarmupSatisfiedPreflight() {
                "pass tryPreflightResolveTemporalBlend passes after warmup");
     testJitterAlignmentPreflightGuards();
     testHistoryWarmupSatisfiedPreflight();
+
+// --- deepen additive from deepen-b59-taa-guards-de0e ---
+    expectTrue(fuse::renderer::classifyTaaJitterAlignmentReject(5u, 5u, 5u, 8u) ==
+    expectTrue(fuse::renderer::classifyTaaJitterAlignmentReject(5u, 4u, 5u, 8u) ==
+    expectTrue(fuse::renderer::classifyTaaJitterAlignmentReject(5u, 5u, 4u, 8u) ==
+    expectTrue(fuse::renderer::classifyTaaJitterAlignmentReject(5u, 5u, 5u, 0u) ==
+    expectTrue(fuse::renderer::preflightTaaJitterAlignment(13u, 5u, 13u, 8u, &rejectReason),
+    expectTrue(fuse::renderer::tryPreflightTaaJitterAlignment(13u, 5u, 13u, 8u, rejectReason),
+               "tryPreflightTaaJitterAlignment passes for aligned state");
+    expectTrue(!fuse::renderer::preflightTaaJitterAlignment(13u, 4u, 13u, 8u, &rejectReason),
+    expectTrue(pass->preflightJitterAlignment(9u, &rejectReason),
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryWarmupComplete(emptyHistory, warmupState),
+               "tryPreflightTaaHistoryWarmupComplete fails for empty history");
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryForTemporalBlend(history, 0u, reuseReason),
+               "tryPreflightTaaHistoryForTemporalBlend fails before warmup");
+    expectTrue(fuse::renderer::preflightTaaHistoryWarmupComplete(history, &warmupState),
+    expectTrue(fuse::renderer::tryPreflightTaaHistoryForTemporalBlend(history, 0u, reuseReason),
+               "tryPreflightTaaHistoryForTemporalBlend passes after warmup");
+    expectTrue(pass->preflightHistoryWarmupComplete(), "pass warmup-complete preflight passes after resolve");
+void testResolvePipelineBlendPreflights() {
+    expectTrue(!fuse::renderer::tryPreflightTaaResolveWithBlendWeights(desc, emptyHistory, skipReason, blendReason),
+               "tryPreflightTaaResolveWithBlendWeights fails when history not ready");
+    expectTrue(fuse::renderer::preflightTaaResolveWithBlendWeights(desc, history, &skipReason, &blendReason),
+    expectTrue(fuse::renderer::tryPreflightTaaResolvePipeline(desc, history, skipReason, blendReason),
+               "tryPreflightTaaResolvePipeline passes for valid desc");
+    expectTrue(pass->preflightResolveWithBlendWeights(desc, &skipReason, &blendReason),
+    testResolvePipelineBlendPreflights();

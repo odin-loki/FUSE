@@ -352,3 +352,10 @@ bool tryPreflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history,
 bool preflightTaaHistoryWarmupSatisfied(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason* reason) {
 bool tryPreflightTaaHistoryWarmupSatisfied(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason& reason) {
     return preflightTaaHistoryWarmupSatisfied(history);
+
+// --- deepen additive from deepen-b59-taa-guards-de0e ---
+bool preflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history, TaaHistoryWarmupState* state) {
+bool tryPreflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history, TaaHistoryWarmupState& state) {
+bool preflightTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration,
+bool tryPreflightTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration,
+    return tryPreflightTaaHistoryReuse(history, observedGeneration, reason);
