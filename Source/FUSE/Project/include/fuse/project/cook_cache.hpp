@@ -92,6 +92,10 @@ public:
 
     /// Read-only invalidation probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] bool would_invalidate(u64 content_hash) const;
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
@@ -101,6 +105,13 @@ public:
     /// Source paths that `invalidate_stale_upstream_hashes` would touch — one push per matching entry (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources(
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Deduplicated stale upstream sources — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources_unique(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// True when `invalidate_downstream_of` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                     const std::vector<CookJobDependencyEdge>& edges,
+                                                     const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
                                           const std::vector<CookJobDependencyEdge>& edges,
                                           const std::vector<CookJob>& jobs) const;
