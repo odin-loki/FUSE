@@ -913,6 +913,14 @@ void reconcileDetachedFlowNestingDepth() {
     }
 }
 
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -1048,6 +1056,32 @@ u32 rejectedInvalidNameCount() {
 
 bool hasRejectedInvalidNames() {
     return rejectedInvalidNameCount() > 0u;
+    if (name == nullptr) {
+        return EventNameRejectReason::Null;
+    if (name[0] == '\0') {
+        return EventNameRejectReason::Empty;
+    return EventNameRejectReason::None;
+
+const char* eventNameRejectReasonLabel(EventNameRejectReason reason) {
+    switch (reason) {
+    case EventNameRejectReason::None:
+        return "none";
+    case EventNameRejectReason::Null:
+        return "null";
+    case EventNameRejectReason::Empty:
+        return "empty";
+    return "unknown";
+
+bool wouldRecordEvent(const char* name) {
+
+bool canBeginAsyncFlow(const char* name) {
+    return wouldRecordEvent(name);
+
+bool canEndAsyncFlow(const char* name) {
+    return wouldRecordEvent(name) && openAsyncFlowCount() > 0u;
+
+bool canSampleCounter(const char* track) {
+    return wouldRecordEvent(track);
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     EventNameRejectReason reason = EventNameRejectReason::None;
@@ -1725,6 +1759,46 @@ bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
     return true;
 }
 
+EventLookupRejectReason eventLookupRejectReason(u32 index) {
+    if (isBufferEmpty()) {
+        return EventLookupRejectReason::EmptyBuffer;
+    }
+    if (!isEventIndexValid(index)) {
+        return EventLookupRejectReason::OutOfRange;
+    }
+    if (!isValidProfileEvent(eventAt(index))) {
+        return EventLookupRejectReason::NotExportable;
+    }
+    return EventLookupRejectReason::None;
+}
+
+EventLookupRejectReason exportableEventLookupRejectReason(u32 index) {
+    if (isBufferEmpty()) {
+        return EventLookupRejectReason::EmptyBuffer;
+    }
+    if (!isEventIndexValid(index)) {
+        return EventLookupRejectReason::OutOfRange;
+    }
+    if (!isEventExportable(index)) {
+        return EventLookupRejectReason::NotExportable;
+    }
+    return EventLookupRejectReason::None;
+}
+
+const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason) {
+    switch (reason) {
+    case EventLookupRejectReason::None:
+        return "none";
+    case EventLookupRejectReason::EmptyBuffer:
+        return "empty_buffer";
+    case EventLookupRejectReason::OutOfRange:
+        return "out_of_range";
+    case EventLookupRejectReason::NotExportable:
+        return "not_exportable";
+    }
+    return "unknown";
+}
+
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
     if (index == kInvalidEventIndex) {
@@ -1913,6 +1987,23 @@ bool tryFirstEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
         outEvent = ProfileEvent{};
         return false;
     }
+
+    return tryExportableEventAt(index, outEvent);
+
+bool tryLastExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = lastExportableEventIndex();
+
+
+u32 firstEventIndex() {
+    return hasEvents() ? 0u : kInvalidEventIndex;
+
+u32 findFirstEventIndexByPhase(EventPhase phase) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.phase == phase && isValidEventName(event.name)) {
+            return i;
+    }
 bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex) {
         outIndex = kInvalidEventIndex;
 
@@ -2068,6 +2159,15 @@ u32 findFirstEventIndexByName(const char* name) {
 u32 findLastEventIndexByName(const char* name) {
 
         const ProfileEvent& event = eventAt(i - 1u);
+
+
+        const u32 index = i - 1u;
+        if (isEventExportable(index)) {
+            return index;
+
+
+
+
             return i - 1u;
         }
     }
@@ -2090,6 +2190,7 @@ u32 countEventsByName(const char* name) {
 
 u32 droppedEventCount() {
     return g_droppedEventCount.load(std::memory_order_acquire);
+        }
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -2271,6 +2372,46 @@ bool preflightProfilerState(NestingStateRejectReason* reason) {
 void reconcileDetachedFlowDepth() {
     if (openAsyncFlowCount() == 0u && flowNestingDepth() > 0u) {
         threadLocalFlowNestingDepth() = 0u;
+    if (hasActiveScope()) {
+        return NestingStateRejectReason::ActiveScope;
+    if (isCrossThreadFlowHandoffPending()) {
+        return NestingStateRejectReason::CrossThreadFlowHandoffPending;
+    if (hasActiveAsyncFlowNesting()) {
+        return NestingStateRejectReason::ActiveFlowNesting;
+
+const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason) {
+    switch (reason) {
+    case NestingStateRejectReason::None:
+        return "none";
+    case NestingStateRejectReason::ActiveScope:
+        return "active_scope";
+    case NestingStateRejectReason::ActiveFlowNesting:
+        return "active_flow_nesting";
+    case NestingStateRejectReason::OpenAsyncFlows:
+        return "open_async_flows";
+    case NestingStateRejectReason::FlowDepthDetached:
+        return "flow_depth_detached";
+    case NestingStateRejectReason::CrossThreadFlowHandoffPending:
+        return "cross_thread_flow_handoff_pending";
+    return "unknown";
+
+ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
+    if (!enabled()) {
+        return ChromeTraceExportRejectReason::ProfilerDisabled;
+        return ChromeTraceExportRejectReason::CrossThreadFlowHandoffPending;
+        return ChromeTraceExportRejectReason::FlowDepthDetached;
+    if (hasUnbalancedNesting()) {
+        return ChromeTraceExportRejectReason::UnbalancedNesting;
+    return ChromeTraceExportRejectReason::None;
+
+const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason) {
+    case ChromeTraceExportRejectReason::None:
+    case ChromeTraceExportRejectReason::ProfilerDisabled:
+        return "profiler_disabled";
+    case ChromeTraceExportRejectReason::UnbalancedNesting:
+        return "unbalanced_nesting";
+    case ChromeTraceExportRejectReason::FlowDepthDetached:
+    case ChromeTraceExportRejectReason::CrossThreadFlowHandoffPending:
 }
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
@@ -2293,6 +2434,8 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
         if (isValidEventName(eventAt(i).name)) {
             ++preflight.exportableEventCount;
         }
+    preflight.firstExportableEventIndex = firstExportableEventIndex();
+    preflight.lastExportableEventIndex = lastExportableEventIndex();
     preflight.bufferEmpty = isBufferEmpty();
     preflight.ringSaturated = isRingSaturated();
     preflight.bufferFull = isBufferFull();

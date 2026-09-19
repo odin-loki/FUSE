@@ -42,6 +42,7 @@ enum class CounterValueKind : u8 {
 };
 
 /// Why an event name failed validation (B1.6 deepen).
+/// Why an event name failed validation — read-only guard for empty/null names.
 enum class EventNameRejectReason : u8 {
     None = 0,
     Null,
@@ -76,19 +77,20 @@ enum class EventLookupRejectReason : u8 {
 };
 
 /// Why profiler nesting state is unbalanced or detached (B1.6 deepen).
-enum class NestingStateRejectReason : u8 {
-    None,
-    UnbalancedScopeNesting,
-    UnbalancedFlowNesting,
-    OpenAsyncFlows,
-    FlowDepthDetached,
-};
 
 /// Why a strict chrome trace export would be rejected (B1.6 deepen).
-enum class ChromeTraceExportRejectReason : u8 {
-    ProfilerDisabled,
-    NoExportableEvents,
     BufferOverflow,
+/// Why an event lookup preflight rejected the request.
+    None = 0,
+    NotExportable,
+
+/// Why profiler nesting/async state is unbalanced.
+    ActiveScope,
+    ActiveFlowNesting,
+    CrossThreadFlowHandoffPending,
+
+/// Why chrome trace safe export preflight rejected the request.
+    UnbalancedNesting,
 
 struct ProfileEvent {
     const char* name = nullptr;
@@ -139,6 +141,8 @@ struct ChromeTraceExportPreflight {
     u32 maxFlowNestingDepth = 0;
     u32 nonExportableEventCount = 0;
     u32 droppedEventCount = 0;
+    u32 firstExportableEventIndex = kInvalidEventIndex;
+    u32 lastExportableEventIndex = kInvalidEventIndex;
     bool profilerDisabled = false;
     bool bufferEmpty = false;
     bool ringSaturated = false;
@@ -201,6 +205,7 @@ struct ChromeTraceExportPreflight {
     bool hasNonExportableEvents() const { return nonExportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
     bool canExportWithEvents() const { return canExport() && hasExportableEvents(); }
+    bool canExportNonEmptyTrace() const { return canExport() && hasExportableEvents(); }
     bool canExportSafely() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending
             && !ringBufferFull && !hasInvalidNameEvents;
@@ -651,21 +656,14 @@ const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
-bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
-u32 lastExportableEventIndex();
-u32 findLastEventIndexByPhase(EventPhase phase);
 bool tryEventAtPhase(u32 index, EventPhase expectedPhase, ProfileEvent& outEvent);
 bool tryRecordedEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
-bool tryFirstExportableEvent(ProfileEvent& outEvent);
-bool tryLastExportableEvent(ProfileEvent& outEvent);
-bool tryEventPhaseAt(u32 index, EventPhase& outPhase);
 bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent);
 bool tryEventAtPhase(u32 index, EventPhase phase, ProfileEvent& outEvent);
 bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
 bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
-bool tryFirstEventOfPhase(EventPhase phase, ProfileEvent& outEvent);
 bool tryLastEventOfPhase(EventPhase phase, ProfileEvent& outEvent);
 bool tryFindEventByName(const char* name, u32& outIndex);
 const ProfileEvent& lastEvent();
@@ -731,8 +729,6 @@ EventLookupPreflight preflightLastEvent();
 
 /// Convenience guards mirroring preflight predicates (B1.6 deepen).
 bool canEnterProfileScope(const char* name);
-bool canBeginAsyncFlow(const char* name);
-bool canEndAsyncFlow(const char* name);
 bool canLookupEventAt(u32 index);
 bool isFlowOpenCountAttached();
 bool hasActiveScopes();
@@ -751,19 +747,16 @@ bool isBufferFull();
 bool hasRingBufferWrapped();
 u32 totalWriteCount();
 u32 droppedEventCount();
-u32 nonExportableEventCount();
 bool isEventIndexValid(u32 index);
 /// True for null, empty, or whitespace-only names — diagnostic only; does not affect recording guards.
-bool isBlankEventName(const char* name);
-bool isFirstEventIndex(u32 index);
-bool isLastEventIndex(u32 index);
-bool isEmptyEventName(const char* name);
 bool isValidEventName(const char* name);
 bool isValidFlowId(u32 flowId);
 bool isFlowPhaseEvent(const ProfileEvent& event);
 bool eventNameMatches(const ProfileEvent& event, const char* name);
 bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId);
-bool isValidProfileName(const char* name);
+const char* eventNameRejectReasonLabel(EventNameRejectReason reason);
+bool wouldRecordEvent(const char* name);
+bool canSampleCounter(const char* track);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
@@ -817,6 +810,10 @@ bool hasOrphanAsyncFlowEnds();
 bool isValidChromeTraceExport(const std::string& json);
 bool tryFindFirstEventWithPhase(EventPhase phase, ProfileEvent& outEvent);
 u32 droppedEventCount();
+u32 firstExportableEventIndex();
+u32 lastExportableEventIndex();
+EventLookupRejectReason eventLookupRejectReason(u32 index);
+EventLookupRejectReason exportableEventLookupRejectReason(u32 index);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
@@ -859,6 +856,10 @@ void reset();
 NestingStatePreflight preflightNestingState();
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name);
 AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name);
+NestingStateRejectReason nestingStateRejectReason();
+const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason);
+ChromeTraceExportRejectReason chromeTraceExportRejectReason();
+const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason);
 ChromeTraceExportPreflight preflightChromeTraceExport();
 ProfileScopePreflight preflightProfileScope(const char* name);
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);

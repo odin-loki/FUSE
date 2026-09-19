@@ -10617,6 +10617,288 @@ void testEmptyNameDoesNotAffectNameLookup() {
                "eventNameAt returns valid name after empty-name attempts");
 }
 
+void testEventNameRejectReasonGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::eventNameRejectReason(nullptr) == fuse::profiler::EventNameRejectReason::Null,
+               "null name rejects as Null");
+    expectTrue(fuse::profiler::eventNameRejectReason("") == fuse::profiler::EventNameRejectReason::Empty,
+               "empty name rejects as Empty");
+    expectTrue(fuse::profiler::eventNameRejectReason("scope")
+                   == fuse::profiler::EventNameRejectReason::None,
+               "valid name rejects as None");
+    expectTrue(std::string(fuse::profiler::eventNameRejectReasonLabel(
+                   fuse::profiler::EventNameRejectReason::Null)) == "null",
+               "null reject reason label");
+    expectTrue(std::string(fuse::profiler::eventNameRejectReasonLabel(
+                   fuse::profiler::EventNameRejectReason::Empty)) == "empty",
+               "empty reject reason label");
+}
+
+void testWouldRecordAndCanBeginEndGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::wouldRecordEvent(nullptr), "wouldRecordEvent false for null");
+    expectTrue(!fuse::profiler::wouldRecordEvent(""), "wouldRecordEvent false for empty");
+    expectTrue(fuse::profiler::wouldRecordEvent("scope"), "wouldRecordEvent true when enabled");
+
+    expectTrue(!fuse::profiler::canBeginAsyncFlow(nullptr), "canBeginAsyncFlow false for null");
+    expectTrue(!fuse::profiler::canEndAsyncFlow(""), "canEndAsyncFlow false for empty");
+    expectTrue(!fuse::profiler::canEndAsyncFlow("flow"), "canEndAsyncFlow false with no open flows");
+    expectTrue(!fuse::profiler::canSampleCounter(nullptr), "canSampleCounter false for null");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("record_flow", flowId);
+    expectTrue(fuse::profiler::canEndAsyncFlow("record_flow"), "canEndAsyncFlow true with open flow");
+    FUSE_PROFILE_ASYNC_FLOW_END("record_flow", flowId);
+
+    fuse::profiler::setEnabled(false);
+    expectTrue(!fuse::profiler::wouldRecordEvent("disabled"), "wouldRecordEvent false when disabled");
+    expectTrue(!fuse::profiler::canBeginAsyncFlow("disabled"), "canBeginAsyncFlow false when disabled");
+}
+
+void testFirstAndLastExportableEventIndexGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::firstExportableEventIndex() == fuse::profiler::kInvalidEventIndex,
+               "firstExportableEventIndex invalid on empty buffer");
+    expectTrue(fuse::profiler::lastExportableEventIndex() == fuse::profiler::kInvalidEventIndex,
+               "lastExportableEventIndex invalid on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("exportable_scope");
+        FUSE_PROFILE_COUNTER("exportable_counter", 5);
+    }
+
+    expectTrue(fuse::profiler::firstExportableEventIndex() == 0u,
+               "firstExportableEventIndex points at first recorded event");
+    expectTrue(fuse::profiler::lastExportableEventIndex() == 2u,
+               "lastExportableEventIndex points at last recorded event");
+    expectTrue(fuse::profiler::firstExportableEventIndex() == fuse::profiler::firstEventIndex(),
+               "first exportable index matches first event index for valid names");
+    expectTrue(fuse::profiler::lastExportableEventIndex() == fuse::profiler::lastEventIndex(),
+               "last exportable index matches last event index for valid names");
+}
+
+void testTryFirstAndLastExportableEventGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::ProfileEvent outEvent{};
+    expectTrue(!fuse::profiler::tryFirstExportableEvent(outEvent),
+               "tryFirstExportableEvent false on empty buffer");
+    expectTrue(!fuse::profiler::tryLastExportableEvent(outEvent),
+               "tryLastExportableEvent false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryFirstExportableEvent clears output on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("exportable_first_last");
+    }
+
+    expectTrue(fuse::profiler::tryFirstExportableEvent(outEvent),
+               "tryFirstExportableEvent true after recording");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Begin,
+               "tryFirstExportableEvent copies begin phase");
+    expectTrue(outEvent.name != nullptr && std::string(outEvent.name) == "exportable_first_last",
+               "tryFirstExportableEvent copies scope name");
+
+    expectTrue(fuse::profiler::tryLastExportableEvent(outEvent),
+               "tryLastExportableEvent true after recording");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End,
+               "tryLastExportableEvent copies end phase");
+}
+
+void testEventLookupRejectReasonGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::eventLookupRejectReason(0u)
+                   == fuse::profiler::EventLookupRejectReason::EmptyBuffer,
+               "eventLookupRejectReason marks empty buffer");
+    expectTrue(fuse::profiler::exportableEventLookupRejectReason(99u)
+                   == fuse::profiler::EventLookupRejectReason::EmptyBuffer,
+               "exportable lookup reject marks empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("lookup_scope");
+    }
+
+    expectTrue(fuse::profiler::eventLookupRejectReason(0u)
+                   == fuse::profiler::EventLookupRejectReason::None,
+               "eventLookupRejectReason none for valid begin");
+    expectTrue(fuse::profiler::exportableEventLookupRejectReason(1u)
+                   == fuse::profiler::EventLookupRejectReason::None,
+               "exportable lookup reject none for valid end");
+    expectTrue(fuse::profiler::eventLookupRejectReason(2u)
+                   == fuse::profiler::EventLookupRejectReason::OutOfRange,
+               "eventLookupRejectReason out-of-range past event count");
+    expectTrue(std::string(fuse::profiler::eventLookupRejectReasonLabel(
+                   fuse::profiler::EventLookupRejectReason::NotExportable)) == "not_exportable",
+               "not_exportable lookup reject label");
+}
+
+void testFindEventIndexByNameGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::findFirstEventIndexByName(nullptr) == fuse::profiler::kInvalidEventIndex,
+               "findFirstEventIndexByName invalid for null name");
+    expectTrue(fuse::profiler::findLastEventIndexByName("") == fuse::profiler::kInvalidEventIndex,
+               "findLastEventIndexByName invalid for empty name");
+    expectTrue(fuse::profiler::countEventsByName(nullptr) == 0u,
+               "countEventsByName zero for null name");
+
+    {
+        FUSE_PROFILE_SCOPE("named_outer");
+        {
+            FUSE_PROFILE_SCOPE("named_inner");
+        }
+    }
+    {
+        FUSE_PROFILE_SCOPE("named_outer");
+    }
+
+    expectTrue(fuse::profiler::findFirstEventIndexByName("named_outer") == 0u,
+               "findFirstEventIndexByName locates first outer begin");
+    expectTrue(fuse::profiler::findLastEventIndexByName("named_outer") == 5u,
+               "findLastEventIndexByName locates last outer end");
+    expectTrue(fuse::profiler::findFirstEventIndexByName("named_inner") == 1u,
+               "findFirstEventIndexByName locates inner begin");
+    expectTrue(fuse::profiler::countEventsByName("named_outer") == 4u,
+               "countEventsByName counts both outer begin/end pairs");
+    expectTrue(fuse::profiler::countEventsByName("named_inner") == 2u,
+               "countEventsByName counts inner begin/end");
+}
+
+void testHasActiveScopeAndFlowNestingGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::hasActiveScope(), "reset leaves hasActiveScope false");
+    expectTrue(!fuse::profiler::hasActiveAsyncFlowNesting(),
+               "reset leaves hasActiveAsyncFlowNesting false");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("active_scope");
+        expectTrue(fuse::profiler::hasActiveScope(), "active scope reports hasActiveScope");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("active_flow", flowId);
+        expectTrue(fuse::profiler::hasActiveAsyncFlowNesting(),
+                   "open flow reports hasActiveAsyncFlowNesting");
+        FUSE_PROFILE_ASYNC_FLOW_END("active_flow", flowId);
+        expectTrue(!fuse::profiler::hasActiveAsyncFlowNesting(),
+                   "flow end clears hasActiveAsyncFlowNesting");
+    }
+    expectTrue(!fuse::profiler::hasActiveScope(), "scope end clears hasActiveScope");
+}
+
+void testNestingStateRejectReasonGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::nestingStateRejectReason() == fuse::profiler::NestingStateRejectReason::None,
+               "reset nesting state reject reason is none");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("reject_outer");
+        expectTrue(fuse::profiler::nestingStateRejectReason()
+                       == fuse::profiler::NestingStateRejectReason::ActiveScope,
+                   "active scope reports ActiveScope reject reason");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("reject_flow", flowId);
+        expectTrue(fuse::profiler::nestingStateRejectReason()
+                       == fuse::profiler::NestingStateRejectReason::ActiveScope,
+                   "active scope takes priority over open flow");
+        FUSE_PROFILE_ASYNC_FLOW_END("reject_flow", flowId);
+    }
+
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("open_flow", flowId);
+    expectTrue(fuse::profiler::nestingStateRejectReason()
+                   == fuse::profiler::NestingStateRejectReason::ActiveFlowNesting,
+               "open flow with balanced scope reports ActiveFlowNesting");
+    FUSE_PROFILE_ASYNC_FLOW_END("open_flow", flowId);
+
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("detach_flow", flowId);
+    std::atomic<bool> workerDone{false};
+    std::thread worker([&]() {
+        FUSE_PROFILE_ASYNC_FLOW_END("detach_flow", flowId);
+        workerDone.store(true, std::memory_order_release);
+    });
+    worker.join();
+    expectTrue(workerDone.load(std::memory_order_acquire), "worker thread completed");
+    expectTrue(fuse::profiler::nestingStateRejectReason()
+                   == fuse::profiler::NestingStateRejectReason::CrossThreadFlowHandoffPending,
+               "cross-thread finish reports CrossThreadFlowHandoffPending reject reason");
+}
+
+void testChromeTraceExportRejectReasonGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::chromeTraceExportRejectReason()
+                   == fuse::profiler::ChromeTraceExportRejectReason::None,
+               "balanced reset export reject reason is none");
+
+    {
+        FUSE_PROFILE_SCOPE("safe_scope");
+        expectTrue(fuse::profiler::chromeTraceExportRejectReason()
+                       == fuse::profiler::ChromeTraceExportRejectReason::UnbalancedNesting,
+                   "active scope blocks safe export with UnbalancedNesting");
+    }
+
+    fuse::profiler::setEnabled(false);
+    expectTrue(fuse::profiler::chromeTraceExportRejectReason()
+                   == fuse::profiler::ChromeTraceExportRejectReason::ProfilerDisabled,
+               "disabled profiler export reject reason is ProfilerDisabled");
+    fuse::profiler::setEnabled(true);
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("handoff_flow", flowId);
+    std::atomic<bool> workerDone{false};
+    std::thread worker([&]() {
+        FUSE_PROFILE_ASYNC_FLOW_END("handoff_flow", flowId);
+        workerDone.store(true, std::memory_order_release);
+    });
+    worker.join();
+    expectTrue(workerDone.load(std::memory_order_acquire), "worker thread completed");
+    expectTrue(fuse::profiler::chromeTraceExportRejectReason()
+                   == fuse::profiler::ChromeTraceExportRejectReason::CrossThreadFlowHandoffPending,
+               "cross-thread finish export reject reason is CrossThreadFlowHandoffPending");
+    expectTrue(fuse::profiler::isCrossThreadFlowHandoffPending(),
+               "cross-thread finish sets handoff pending flag");
+}
+
+void testChromeTraceExportPreflightExportableIndices() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    const fuse::profiler::ChromeTraceExportPreflight emptyPreflight =
+        fuse::profiler::preflightChromeTraceExport();
+    expectTrue(emptyPreflight.firstExportableEventIndex == fuse::profiler::kInvalidEventIndex,
+               "empty preflight first exportable index invalid");
+    expectTrue(emptyPreflight.lastExportableEventIndex == fuse::profiler::kInvalidEventIndex,
+               "empty preflight last exportable index invalid");
+    expectTrue(!emptyPreflight.canExportNonEmptyTrace(),
+               "empty preflight cannot export non-empty trace");
+
+    {
+        FUSE_PROFILE_SCOPE("preflight_exportable_scope");
+        FUSE_PROFILE_COUNTER("preflight_exportable_counter", 11);
+    }
+
+    const fuse::profiler::ChromeTraceExportPreflight preflight =
+        fuse::profiler::preflightChromeTraceExport();
+    expectTrue(preflight.firstExportableEventIndex == 0u,
+               "preflight first exportable index points at first event");
+    expectTrue(preflight.lastExportableEventIndex == 2u,
+               "preflight last exportable index points at last event");
+    expectTrue(preflight.canExportNonEmptyTrace(), "preflight can export non-empty trace");
+    expectTrue(preflight.canExportSafely(), "balanced trace can export safely");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -11263,6 +11545,11 @@ int main() {
     testBufferPairBalanceGuards();
     testChromeTraceExportPreflightBufferPairs();
     testEmptyNameDoesNotAffectNameLookup();
+    testEventNameRejectReasonGuard();
+    testWouldRecordAndCanBeginEndGuards();
+    testEventLookupRejectReasonGuard();
+    testHasActiveScopeAndFlowNestingGuard();
+    testChromeTraceExportRejectReasonGuard();
     testFatalHandlerHook();
     testVerifyMacro();
     testIsValidEventNamePreflight();
