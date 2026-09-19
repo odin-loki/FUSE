@@ -1385,6 +1385,138 @@ void testCookCacheStaleUpstreamProbes() {
                "estimate is zero after reconcile");
 }
 
+void testCookContentHashPreflightGuards() {
+    expectTrue(fuse::project::should_skip_hash_file_content(""), "empty path skips file hash preflight");
+    const fuse::project::CookHashPreflight empty_preflight = fuse::project::preflight_hash_file_content("");
+    expectTrue(empty_preflight.empty_path, "empty path preflight marks empty_path");
+    expectTrue(empty_preflight.should_skip(), "empty path preflight should skip");
+
+    expectTrue(fuse::project::should_skip_hash_file_content("/tmp/fuse_b79_preflight_missing.obj"),
+               "missing file skips hash preflight");
+    const fuse::project::CookHashPreflight missing_preflight =
+        fuse::project::preflight_hash_file_content("/tmp/fuse_b79_preflight_missing.obj");
+    expectTrue(missing_preflight.missing_file, "missing file preflight marks missing_file");
+    expectTrue(!missing_preflight.empty_path, "missing file preflight clears empty_path");
+    expectTrue(missing_preflight.should_skip(), "missing file preflight should skip");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_preflight_valid.obj", "# preflight valid\n");
+    const fuse::project::CookHashPreflight valid_preflight =
+        fuse::project::preflight_hash_file_content(source);
+    expectTrue(valid_preflight.can_hash(), "existing file passes hash preflight");
+    expectTrue(!valid_preflight.should_skip(), "valid file preflight does not skip");
+    expectTrue(fuse::project::hash_file_content(source) != 0,
+               "valid preflight path still yields non-zero hash");
+
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_preflight_valid.fusemesh";
+    expectTrue(fuse::project::preflight_hash_mesh_import(desc).can_hash(),
+               "valid mesh import passes hash preflight");
+    desc.output_path = "";
+    expectTrue(fuse::project::preflight_hash_mesh_import(desc).should_skip(),
+               "empty output path fails mesh hash preflight");
+
+    const fuse::project::CookCacheKeyPreflight key_preflight =
+        fuse::project::preflight_combine_cook_cache_key(0, 42u);
+    expectTrue(key_preflight.zero_source_hash, "zero source hash preflight flagged");
+    expectTrue(fuse::project::should_skip_combine_cook_cache_key(0, 42u),
+               "zero source combine preflight skips");
+    expectTrue(fuse::project::preflight_combine_cook_cache_key(99u, 0).can_combine(),
+               "valid source with zero upstream can combine");
+}
+
+void testCookCacheInvalidationProbes() {
+    fuse::project::CookCache cache;
+
+    const fuse::project::CookCacheInvalidationProbe empty_probe = cache.probe_invalidate(42u);
+    expectTrue(empty_probe.empty_cache, "probe on empty cache marks empty_cache");
+    expectTrue(empty_probe.should_skip(), "probe on empty cache should skip");
+
+    fuse::project::CookCacheEntry valid;
+    valid.content_hash = 801;
+    valid.source_path = "/tmp/fuse_b79_probe_source.obj";
+    valid.output_path = "/tmp/fuse_b79_probe_source.fusemesh";
+    cache.store(valid);
+    expectTrue(cache.entry_count() == 1u, "probe setup stores valid entry");
+
+    const fuse::project::CookCacheInvalidationProbe zero_probe = cache.probe_invalidate(0);
+    expectTrue(zero_probe.zero_hash, "zero hash probe flagged");
+    expectTrue(zero_probe.should_skip(), "zero hash probe should skip");
+
+    const fuse::project::CookCacheInvalidationProbe known_probe = cache.probe_invalidate(801u);
+    expectTrue(known_probe.would_invalidate(), "known hash probe would invalidate");
+    expectTrue(known_probe.affected_entries == 1u, "known hash probe counts one entry");
+    expectTrue(!known_probe.empty_cache, "populated cache probe clears empty_cache");
+
+    const fuse::project::CookCacheInvalidationProbe unknown_probe = cache.probe_invalidate(802u);
+    expectTrue(unknown_probe.should_skip(), "unknown hash probe should skip");
+
+    const fuse::project::CookCacheInvalidationProbe source_probe =
+        cache.probe_invalidate_source(valid.source_path);
+    expectTrue(source_probe.would_invalidate(), "source probe would invalidate");
+    expectTrue(source_probe.affected_entries == 1u, "source probe counts one entry");
+
+    const fuse::project::CookCacheInvalidationProbe output_probe =
+        cache.probe_invalidate_output(valid.output_path);
+    expectTrue(output_probe.would_invalidate(), "output probe would invalidate");
+
+    expectTrue(cache.probe_invalidate_source("").empty_path, "empty source path probe flagged");
+    expectTrue(cache.probe_invalidate_stale_content_for_source(valid.source_path, 0).zero_hash,
+               "zero current hash probe flagged");
+    expectTrue(cache.probe_invalidate_stale_content_for_source(valid.source_path, 802u).would_invalidate(),
+               "mismatched current hash probe would invalidate");
+    expectTrue(cache.probe_invalidate_stale_content_for_source(valid.source_path, 801u).should_skip(),
+               "matching current hash probe should skip");
+
+    const fuse::u64 invalidations_before = cache.stats().invalidations;
+    expectTrue(cache.invalidate(801u), "actual invalidate still works after probes");
+    expectTrue(cache.stats().invalidations == invalidations_before + 1u,
+               "probes do not mutate invalidation stats");
+}
+
+void testCookCacheReconcileEstimators() {
+    fuse::project::CookCache cache;
+
+    fuse::project::CookCacheReconcileEstimate empty_estimate = cache.estimate_prune_all();
+    expectTrue(empty_estimate.empty_cache, "empty cache reconcile estimate marks empty_cache");
+    expectTrue(empty_estimate.should_skip(), "empty cache reconcile estimate should skip");
+
+    fuse::project::CookCacheEntry invalid;
+    invalid.content_hash = 0;
+    invalid.source_path = "/tmp/fuse_b79_estimate_invalid.obj";
+    invalid.output_path = "/tmp/fuse_b79_estimate_invalid.fusemesh";
+    cache.store(invalid);
+    expectTrue(cache.entry_count() == 0u, "invalid entry not stored for reconcile estimate setup");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_estimate_stale.obj", "# estimate v1\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_estimate_stale.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord first = cooker.cook_mesh(desc);
+    expectTrue(first.ok, "seed cook for reconcile estimate ok");
+    expectTrue(!cooker.cache().estimate_prune_all().would_reconcile(),
+               "fresh cook cache reconcile estimate should skip");
+
+    writeTempFile(source, "# estimate v2\n");
+    const fuse::project::CookCacheReconcileEstimate stale_estimate = cooker.cache().estimate_prune_stale_entries();
+    expectTrue(stale_estimate.would_reconcile(), "stale content reconcile estimate would reconcile");
+    expectTrue(stale_estimate.stale_entries == 1u, "stale reconcile estimate counts one stale entry");
+    expectTrue(stale_estimate.total_removable == 1u, "stale reconcile estimate total matches stale count");
+
+    const fuse::project::CookCacheReconcileEstimate all_estimate = cooker.cache().estimate_prune_all();
+    expectTrue(all_estimate.would_reconcile(), "prune_all estimate would reconcile");
+    expectTrue(all_estimate.stale_entries == 1u, "prune_all estimate counts stale entry");
+    expectTrue(all_estimate.invalid_entries == 0u, "prune_all estimate has no invalid entries");
+
+    const fuse::u32 removed = cooker.cache().prune_all();
+    expectTrue(removed == all_estimate.total_removable,
+               "reconcile estimate matches prune_all removal count");
+    expectTrue(cooker.cache().estimate_prune_all().should_skip(),
+               "clean cache reconcile estimate should skip after prune");
+}
+
 void testCookCachePruneInvalidEntriesOnLoad() {
     const std::string source = writeTempFile("/tmp/fuse_b79_prune_load_valid.obj", "# prune load valid\n");
     fuse::project::MeshImportDesc desc;
@@ -1840,6 +1972,8 @@ int main() {
     testCookCacheStaleVsInvalidClassification();
     testCookCacheHasStaleInvalidAndCountGuards();
     testAssetCookerPruneStaleCache();
+    testCookContentHashPreflightGuards();
+    testCookCacheReconcileEstimators();
     testCookCachePruneInvalidEntriesOnLoad();
     testCookCacheLookupPreflightGuards();
     testCookCacheStorePreflightGuards();

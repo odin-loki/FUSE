@@ -1666,6 +1666,9 @@ void testCookCacheReconcileEstimators() {
 void testCookCacheReconcileEstimator() {
 
 
+void testCookStaleDependencyHashReconcileEstimate() {
+
+
     entryA.output_path = "/tmp/fuse_b79_est_a.fusemesh";
     manifest.assets.push_back(entryA);
 
@@ -2030,6 +2033,20 @@ void testCookCachePruneEstimateMatchesPrune() {
     const fuse::u32 pruned = cooker.cache().prune_stale_entries();
     expectTrue(pruned == estimate.stale_entries, "prune_stale removes estimated stale count");
     expectTrue(cooker.cache().estimate_prune_all().total() == 0u, "estimate is zero after prune");
+    expectTrue(batch.ok, "manifest cook seeds cache for reconcile estimate");
+    expectTrue(cooker.cache().entry_count() == 2u, "upstream and downstream cached");
+
+    const fuse::project::CookCacheReconcileEstimate fresh_estimate =
+        cooker.estimate_stale_dependency_hashes(manifest);
+    expectTrue(fresh_estimate.should_skip(), "fresh manifest reconcile estimate should skip");
+
+    const fuse::project::CookCacheReconcileEstimate stale_estimate =
+    expectTrue(stale_estimate.would_reconcile(), "upstream change reconcile estimate would reconcile");
+    expectTrue(stale_estimate.upstream_stale_entries >= 1u,
+               "upstream change reconcile estimate counts stale upstream entries");
+
+    expectTrue(removed >= stale_estimate.upstream_stale_entries,
+               "actual reconcile removes at least estimated upstream stale entries");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -2235,6 +2252,7 @@ int main() {
     testCookCacheDownstreamSourceProbe();
     testCookCachePreflightAndReconcileEstimators();
     testCookCacheReconcileEstimators();
+    testCookStaleDependencyHashReconcileEstimate();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

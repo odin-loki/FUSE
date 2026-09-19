@@ -417,6 +417,46 @@ bool preflight_mesh_import_hash(const MeshImportDesc& desc, u64* out_hash, CookH
     result.zero_combined = combined == 0;
     result.cacheable = combined != 0;
     return result;
+CookHashPreflight preflight_hash_file_content(const std::string& path) {
+    CookHashPreflight preflight;
+
+    preflight.empty_path = false;
+
+        preflight.missing_file = true;
+
+        preflight.unreadable = true;
+
+bool should_skip_hash_file_content(const std::string& path) {
+    return preflight_hash_file_content(path).should_skip();
+
+CookCacheKeyPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    CookCacheKeyPreflight preflight;
+    preflight.zero_source_hash = source_hash == 0;
+    preflight.zero_upstream_hash = upstream_hash == 0;
+
+bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    return preflight_combine_cook_cache_key(source_hash, upstream_hash).should_skip();
+
+CookHashPreflight preflight_hash_mesh_import(const MeshImportDesc& desc) {
+        preflight.empty_path = true;
+    return preflight_hash_file_content(desc.input_path);
+
+CookHashPreflight preflight_hash_texture_import(const TextureImportDesc& desc) {
+
+CookHashPreflight preflight_hash_audio_import(const AudioImportDesc& desc) {
+
+CookHashPreflight preflight_hash_manifest_entry(const CookManifestEntry& entry) {
+    if (entry.source_path.empty() || entry.output_path.empty()) {
+
+    CookHashPreflight preflight = preflight_hash_file_content(entry.source_path);
+    if (preflight.should_skip()) {
+
+    for (const std::string& dependency : entry.dependencies) {
+        if (dependency.empty()) {
+            continue;
+        const CookHashPreflight dependency_preflight = preflight_hash_file_content(dependency);
+        if (dependency_preflight.should_skip()) {
+            return dependency_preflight;
 }
 
 u64 hash_mesh_import(const MeshImportDesc& desc) {
