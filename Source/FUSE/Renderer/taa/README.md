@@ -38,6 +38,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `shouldSkipTaaJitterSync` / `shouldSkipTaaJitterNdc` — early-out when jitter sync/NDC preflight would reject
 - `tryPreflightTaaJitterNdc` — NDC jitter preflight with mandatory reject-reason output
 - `TaaJitter::shouldSkipSyncToFrameIndex` / `shouldSkipNdcOffset` — instance-level jitter skip helpers
+- `tryPreflightTaaJitterNdc` / `shouldSkipTaaJitterSync` / `shouldSkipTaaJitterNdc` — jitter guard early-outs
+- `TaaJitter::needsResyncToFrameIndex` — detect jitter drift from expected frame counter
 
 ## History validity (B5.9 deepen)
 
@@ -104,6 +106,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `preflightTaaResolveWithBlend(desc, history)` — combined resolve skip + blend-weight preflight
 - `TaaResolve::resetBookkeeping()` — clears resolve stats/message (called on `TaaPass::destroy` / `invalidateHistory`)
 - `TaaPass::invalidateHistory()` — clears history validity and resolve bookkeeping without destroying buffers
+- `classifyTaaHistoryWarmupBlock` / `tryPreflightTaaHistoryWarmup` / `shouldSkipTaaHistoryWarmup` — warm-up preflight guards
+- `taaHistoryWarmupComplete` — true when history is ready and warmed
 - `TaaPass::resize(w, h)` — resizes history targets and invalidates accumulated frames
 - `TaaPass::matchesDimensions(w, h)` — true when pass and history dimensions align
 - `TaaPass::viewportMatchesResolve(desc)` — true when resolve request matches pass viewport
@@ -178,6 +182,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaResolveBlendPreflight` — read-only blend diagnostics (`weights`, `reject_reason`, `can_apply`, `appliesHistoryBlend()`)
 - `preflightTaaResolveBlend(desc, history)` — populate blend diagnostics without mutation
 - `TaaPass::preflightResolveBlend(desc)` — pass-level resolve blend preflight wrapper
+- `preflightTaaResolveFrame` / `tryPreflightTaaResolveFrame` / `shouldSkipTaaResolveFrame` — combined resolve + blend preflight
+- `TaaPass::preflightResolveFrame` / `shouldSkipResolveFrame` — pass-level composite preflight
 
 ## Pipeline (stub)
 

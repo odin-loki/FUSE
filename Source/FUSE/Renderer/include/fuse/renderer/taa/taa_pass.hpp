@@ -132,6 +132,7 @@ public:
     bool preflightHistoryWarmup(TaaHistoryWarmupPhase* phase = nullptr) const;
     /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
     u32 historyWarmupFramesRemaining() const;
+    /// True when pass history warm-up is complete (B5.9 deepen).
     /// Classify why pass history warm-up is blocked (B5.9 deepen).
     TaaHistoryWarmupBlockReason classifyHistoryWarmupBlock() const;
     /// True when pass history warm-up preflight passes (B5.9 deepen).
@@ -148,6 +149,7 @@ public:
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).
     /// Early-out when pass history warm-up is not complete (B5.9 deepen).
+    /// Early-out when pass history warm-up preflight would reject (B5.9 deepen).
     /// True when pass history is warmed and may be sampled (B5.9 deepen).
     bool canReuseHistory() const;
     /// True when pass history is ready, warmed, and generation matches for reuse (B5.9 deepen).
@@ -324,8 +326,6 @@ public:
     /// Fill `out` only when blend-weight preflight passes (B5.9 deepen).
     bool tryExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& out,
     /// True when history reuse and blend-weight preflights both pass (B5.9 deepen).
-    bool preflightResolveTemporalBlend(const TaaResolveDesc& desc,
-                                       TaaResolveTemporalRejectReason* reason = nullptr) const;
     /// Convenience wrapper — true when pass temporal-blend preflight would pass (B5.9 deepen).
     bool canPreflightResolveTemporalBlend(const TaaResolveDesc& desc) const;
     /// True when resolve request passes skip preflight guards (B5.9 deepen).
@@ -460,6 +460,10 @@ public:
     /// Populate history warm-up diagnostics without mutating pass state (B5.9 deepen follow-up).
     /// Early-out when pass history still needs warm-up (B5.9 deepen follow-up).
     /// Populate resolve blend diagnostics without mutating pass state (B5.9 deepen follow-up).
+    /// True when pass jitter must resync to `frameIndex` before projection (B5.9 deepen).
+    bool jitterNeedsResync(u32 frameIndex) const;
+    /// Combined resolve + blend-weight preflight (B5.9 deepen).
+    /// Early-out when combined resolve frame preflight would reject (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

@@ -257,6 +257,22 @@ bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason) const 
     return preflightTaaHistoryWarmup(m_history, reason);
 }
 
+bool TaaPass::historyWarmupComplete() const {
+    return taaHistoryWarmupComplete(m_history);
+}
+
+TaaHistoryWarmupBlockReason TaaPass::classifyHistoryWarmupBlock() const {
+    return classifyTaaHistoryWarmupBlock(m_history);
+}
+
+bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason) const {
+    return preflightTaaHistoryWarmup(m_history, reason);
+}
+
+bool TaaPass::shouldSkipHistoryWarmup() const {
+    return shouldSkipTaaHistoryWarmup(m_history);
+}
+
 bool TaaPass::canReuseHistory() const {
     return m_history.canReuseHistory();
 
@@ -936,6 +952,11 @@ bool TaaPass::tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const {
     return preflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), &reason);
 
     return preflightTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength(), &reason);
+}
+
+
+bool TaaPass::jitterNeedsResync(u32 frameIndex) const {
+    return m_jitter.needsResyncToFrameIndex(frameIndex);
 
 bool TaaPass::preflightResolveFrame(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason,
                                     TaaResolveBlendRejectReason* blendReason) const {
@@ -1003,6 +1024,8 @@ TaaHistoryWarmupPreflight TaaPass::preflightHistoryWarmup() const {
 
 TaaResolveBlendPreflight TaaPass::preflightResolveBlend(const TaaResolveDesc& desc) const {
     return preflightTaaResolveBlend(desc, m_history);
+
+
 
 
 

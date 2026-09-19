@@ -719,6 +719,9 @@ u32 TaaJitter::frameIndexSlotDrift(u32 frameIndex) const {
 bool TaaJitter::needsSyncToFrameIndex(u32 frameIndex) const {
     return TaaJitterLayout::needsSyncToFrameIndex(frameIndex, m_index, m_sequenceLength);
 
+bool TaaJitter::needsResyncToFrameIndex(u32 frameIndex) const {
+    return !isAlignedToFrameIndex(frameIndex);
+
 bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
 bool TaaJitter::needsResyncToFrameIndex(u32 frameIndex) const {
     if (!canSyncToFrameIndex(frameIndex)) {

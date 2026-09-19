@@ -354,6 +354,7 @@ public:
     /// Sync with reject-reason diagnostics; returns false when blocked (B5.9 deepen).
     bool syncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason* reason);
     /// True when jitter state differs from the expected slot for `frameIndex` (B5.9 deepen).
+    /// True when jitter state must resync to `frameIndex` before projection (B5.9 deepen).
 
     u32 index() const { return m_index; }
     /// True when monotonic frame counter matches `frameIndex` (B5.9 deepen).
