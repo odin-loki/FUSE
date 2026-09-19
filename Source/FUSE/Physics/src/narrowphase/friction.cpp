@@ -629,6 +629,13 @@ bool ensure_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon
     if (preflight.canReuse) {
         return true;
     return rebuild_friction_basis_from_preflight(manifold, epsilon);
+bool should_rebuild_friction_basis(
+    return !should_skip_friction_basis_preflight(manifold, epsilon);
+
+
+
+    if (!preflight.needsRebuild) {
+
 }
 
 } // namespace fuse::physics::narrowphase

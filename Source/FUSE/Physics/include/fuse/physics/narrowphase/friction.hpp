@@ -376,4 +376,12 @@ bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilo
 /// Build or reuse friction basis using preflight dispatch (B4.5 deepen follow-up).
 bool ensure_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
+/// Non-mutating rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 deepen pass).
+bool should_rebuild_friction_basis(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Rebuild friction tangents only when preflight reports `needsRebuild` (B4.4 deepen pass).
+bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
 } // namespace fuse::physics::narrowphase
