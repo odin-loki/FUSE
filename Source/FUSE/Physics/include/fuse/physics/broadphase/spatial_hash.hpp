@@ -704,6 +704,7 @@ struct MergePairsIntoBufferPreflight {
     MergePairsIntoBufferRejectReason reason = MergePairsIntoBufferRejectReason::None;
     bool emptyPairs = false;
     bool bufferFull = false;
+    bool insufficientCapacity = false;
 
     bool canMerge() const { return reason == MergePairsIntoBufferRejectReason::None; }
 };
