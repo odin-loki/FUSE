@@ -615,3 +615,14 @@ bool wouldSkipPairBufferSlotReservation(
 // --- deepen additive from deepen-b4-broadphase-guards-04aa ---
 bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB);
 bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
+
+// --- deepen additive from b4-broadphase-wouldskip-guards-ba06 ---
+bool wouldSkipPairBufferCompaction(
+    PairBufferCompactionRejectReason* reason = nullptr);
+bool wouldSkipPairBufferClamp(const PairBufferSoA& buffer, PairBufferClampRejectReason* reason = nullptr);
+bool wouldSkipPairBufferDedupe(const PairBufferSoA& buffer, PairBufferDedupeRejectReason* reason = nullptr);
+bool wouldSkipPairBufferSort(const PairBufferSoA& buffer, PairBufferSortRejectReason* reason = nullptr);
+bool wouldSkipPairBufferCompactAndClamp(
+    PairBufferCompactAndClampRejectReason* reason = nullptr);
+bool wouldSkipPairBufferToVector(const PairBufferSoA& buffer, PairBufferToVectorRejectReason* reason = nullptr);
+bool invalidatePairBufferSlotWithPreflight(PairBufferSoA& buffer, u32 slot);

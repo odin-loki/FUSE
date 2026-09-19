@@ -1205,3 +1205,27 @@ bool wouldSkipPairBufferSlotReservation(
 // --- deepen additive from deepen-b4-broadphase-guards-04aa ---
 bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {
 bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
+
+// --- deepen additive from b4-broadphase-wouldskip-guards-ba06 ---
+    const PairBufferPushRejectReason reject = pairBufferPushRejectReason(buffer, idxA, idxB);
+    return reject != PairBufferPushRejectReason::None;
+bool wouldSkipPairBufferCompaction(const PairBufferSoA& buffer, PairBufferCompactionRejectReason* reason) {
+    const PairBufferCompactionRejectReason reject = pairBufferCompactionRejectReason(buffer);
+    return reject != PairBufferCompactionRejectReason::None;
+bool wouldSkipPairBufferClamp(const PairBufferSoA& buffer, PairBufferClampRejectReason* reason) {
+    const PairBufferClampRejectReason reject = pairBufferClampRejectReason(buffer);
+    return reject != PairBufferClampRejectReason::None;
+bool wouldSkipPairBufferDedupe(const PairBufferSoA& buffer, PairBufferDedupeRejectReason* reason) {
+    const PairBufferDedupeRejectReason reject = pairBufferDedupeRejectReason(buffer);
+    return reject != PairBufferDedupeRejectReason::None;
+bool wouldSkipPairBufferSort(const PairBufferSoA& buffer, PairBufferSortRejectReason* reason) {
+    const PairBufferSortRejectReason reject = pairBufferSortRejectReason(buffer);
+    return reject != PairBufferSortRejectReason::None;
+bool wouldSkipPairBufferCompactAndClamp(
+    PairBufferCompactAndClampRejectReason* reason) {
+    const PairBufferCompactAndClampRejectReason reject = pairBufferCompactAndClampRejectReason(buffer);
+    return reject != PairBufferCompactAndClampRejectReason::None;
+bool wouldSkipPairBufferToVector(const PairBufferSoA& buffer, PairBufferToVectorRejectReason* reason) {
+    const PairBufferToVectorRejectReason reject = pairBufferToVectorRejectReason(buffer);
+    return reject != PairBufferToVectorRejectReason::None;
+bool invalidatePairBufferSlotWithPreflight(PairBufferSoA& buffer, u32 slot) {

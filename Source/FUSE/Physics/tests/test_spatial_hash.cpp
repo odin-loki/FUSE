@@ -4426,3 +4426,37 @@ void testPairBufferWriteSlotWouldSkipGuards() {
                "wouldSkipCellSpanClamp inverts shouldRunCellSpanClamp");
     expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(overSpanRange, 4u),
                "wouldSkipCellSpanClamp true when span is within limit");
+
+// --- deepen additive from b4-broadphase-wouldskip-guards-ba06 ---
+    expectTrue(fuse::physics::broadphase::invalidatePairBufferSlotWithPreflight(buffer, 1u),
+    expectTrue(!fuse::physics::broadphase::invalidatePairBufferSlotWithPreflight(buffer, 1u),
+             "wouldSkipCellSpanClamp reports ExceedsSpan over budget");
+    expectTrue(fuse::physics::broadphase::wouldSkipCellSpanClamp(validRange, 4u) ==
+               "wouldSkipCellSpanClamp agrees with canSkipCellSpanClamp within budget");
+             "wouldSkipDedupeBroadphase reports EmptyBuffer");
+void testPairBufferWouldSkipGuards() {
+               "wouldSkipPairBufferPush false for valid pair");
+             "wouldSkipPairBufferPush reports None for valid pair");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferPush(buffer, 1u, 1u),
+    fuse::physics::broadphase::PairBufferCompactionRejectReason compactionReason =
+        fuse::physics::broadphase::PairBufferCompactionRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferCompaction(emptyBuffer, &compactionReason),
+               "wouldSkipPairBufferCompaction true on empty buffer");
+             "wouldSkipPairBufferCompaction reports EmptyBuffer");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferCompaction(emptyBuffer) ==
+               "wouldSkipPairBufferCompaction agrees with canSkipPairBufferCompaction");
+    fuse::physics::broadphase::PairBufferToVectorRejectReason exportReason =
+        fuse::physics::broadphase::PairBufferToVectorRejectReason::None;
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferToVector(emptyBuffer, &exportReason),
+               "wouldSkipPairBufferToVector true on empty buffer");
+             "wouldSkipPairBufferToVector reports EmptyBuffer");
+    expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferDedupe(buffer),
+               "wouldSkipPairBufferDedupe false for multiple pairs");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferSort(buffer) ==
+               "wouldSkipPairBufferSort agrees with canSkipPairBufferSort");
+    expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferClamp(buffer),
+               "wouldSkipPairBufferClamp false when overflow exists");
+    expectTrue(fuse::physics::broadphase::wouldSkipPairBufferClamp(buffer) ==
+               "wouldSkipPairBufferClamp agrees with canSkipPairBufferClamp");
+    expectTrue(!fuse::physics::broadphase::wouldSkipPairBufferCompactAndClamp(buffer),
+               "wouldSkipPairBufferCompactAndClamp false when clamp work exists");
