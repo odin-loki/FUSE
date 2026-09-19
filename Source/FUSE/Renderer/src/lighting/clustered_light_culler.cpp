@@ -1041,3 +1041,17 @@ u32 ClusterLightGridLayout::tryRebuildLightGridForDesc(ClusterGridSoA& grid,
 
 // --- deepen additive from deepen-b5-clustered-lights-e99c ---
     return tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights, maxLightsPerCluster, outDropped);
+
+// --- deepen additive from deepen-b5-clustered-lights-guards-d1c3 ---
+const char* clusterRebuildRejectReasonLabel(ClusterRebuildRejectReason reason) {
+    case ClusterRebuildRejectReason::None:
+    case ClusterRebuildRejectReason::EmptyGrid:
+    case ClusterRebuildRejectReason::CountMismatch:
+bool cluster_util::tryLookupClusterLightsAtScreenDepth(const ClusterGridSoA& grid,
+    return tryLookupClusterLightsAtScreenDepth(grid, desc, camera, screenX, screenY, viewDepth, outLights, outCount,
+    ClusterRebuildRejectReason reason = ClusterRebuildRejectReason::None;
+                                                     ClusterRebuildRejectReason& outReason) {
+        outReason = ClusterRebuildRejectReason::None;
+        outReason = ClusterRebuildRejectReason::EmptyGrid;
+        outReason = ClusterRebuildRejectReason::CountMismatch;
+                                                        ClusterRebuildRejectReason& outReason,

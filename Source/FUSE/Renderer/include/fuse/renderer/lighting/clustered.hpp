@@ -413,3 +413,10 @@ const char* gridRebuildRejectReasonLabel(GridRebuildRejectReason reason);
     static bool tryCanRebuildLightGridForDesc(const ClusterDesc& desc, GridRebuildRejectReason& outReason);
     static u32 tryRebuildLightGrid(ClusterGridSoA& grid,
     static u32 tryRebuildLightGridForDesc(ClusterGridSoA& grid,
+
+// --- deepen additive from deepen-b5-clustered-lights-guards-d1c3 ---
+enum class ClusterRebuildRejectReason : u8 {
+const char* clusterRebuildRejectReasonLabel(ClusterRebuildRejectReason reason);
+                                       ClusterRebuildRejectReason& outReason);
+                                          ClusterRebuildRejectReason& outReason,
+bool tryLookupClusterLightsAtScreenDepth(const ClusterGridSoA& grid,

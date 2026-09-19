@@ -1621,3 +1621,41 @@ void testClusterContiguousOffsetPreflight() {
     expectTrue(rejectedCoordCount == 0u, "tryCoordLookup with reason zeroes count on failure");
     expectTrue(rejectedCoordLights.empty(), "tryCoordLookup with reason clears output on failure");
     expectTrue(std::strcmp(fuse::renderer::clusterLookupRejectReasonLabel(reason), "empty_storage") == 0,
+
+// --- deepen additive from deepen-b5-clustered-lights-guards-d1c3 ---
+    fuse::renderer::ClusterRebuildRejectReason rebuildReason = fuse::renderer::ClusterRebuildRejectReason::None;
+    expectTrue(rebuildReason == fuse::renderer::ClusterRebuildRejectReason::None,
+    expectTrue(std::strcmp(fuse::renderer::clusterRebuildRejectReasonLabel(rebuildReason), "none") == 0,
+    expectTrue(rebuildReason == fuse::renderer::ClusterRebuildRejectReason::CountMismatch,
+    expectTrue(std::strcmp(fuse::renderer::clusterRebuildRejectReasonLabel(rebuildReason), "count_mismatch") == 0,
+    expectTrue(rebuildReason == fuse::renderer::ClusterRebuildRejectReason::EmptyGrid,
+    expectTrue(std::strcmp(fuse::renderer::clusterRebuildRejectReasonLabel(rebuildReason), "empty_grid") == 0,
+    fuse::renderer::ClusterRebuildRejectReason tryRebuildReason = fuse::renderer::ClusterRebuildRejectReason::None;
+                                                                           tryRebuildReason, 2u);
+    expectTrue(dropped == 0u, "tryRebuildForDesc drops nothing when within capacity");
+    expectTrue(tryRebuildReason == fuse::renderer::ClusterRebuildRejectReason::None,
+               "successful tryRebuild clears reject reason");
+               "tryRebuildForDesc produces valid population");
+        fuse::renderer::ClusterLightGridLayout::tryRebuildLightGridForDesc(rejectedGrid, zeroDesc, perClusterLights,
+    expectTrue(rejectedDropped == 0u, "tryRebuildForDesc returns zero on guard failure");
+    expectTrue(tryRebuildReason == fuse::renderer::ClusterRebuildRejectReason::EmptyGrid,
+               "tryRebuildForDesc preserves rebuild reject reason");
+    expectTrue(rejectedGrid.lightList.size() == 2u, "tryRebuildForDesc does not mutate grid on guard failure");
+void testClusterScreenDepthLookupGuards() {
+    fuse::u32 tryScreenCount = 0u;
+    std::vector<fuse::u32> tryScreenLights;
+    expectTrue(fuse::renderer::cluster_util::tryLookupClusterLightsAtScreenDepth(grid, desc, camera, 0.25f, 0.25f, 10.f,
+                                                                                 tryScreenLights, tryScreenCount),
+               "tryScreenDepthLookup succeeds on accessible grid");
+    expectTrue(tryScreenCount == 2u, "tryScreenDepthLookup reports cluster light count");
+                                                                                 tryScreenLights, tryScreenCount,
+               "tryScreenDepthLookup with reason succeeds on accessible grid");
+    expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLightsAtScreenDepth(grid, desc, camera, 0.5f, 0.5f, 0.01f,
+               "tryScreenDepthLookup rejects depth below near plane");
+    expectTrue(rejectedScreenCount == 0u, "tryScreenDepthLookup zeroes count on mapping failure");
+    expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLightsAtScreenDepth(emptyGrid, desc, camera, 0.5f, 0.5f,
+               "tryScreenDepthLookup with reason rejects empty storage");
+    fuse::renderer::ClusterLookupRejectReason coordReason = fuse::renderer::ClusterLookupRejectReason::None;
+                                                                           tryCoordCount, coordReason),
+    expectTrue(coordReason == fuse::renderer::ClusterLookupRejectReason::None,
+    expectTrue(coordReason == fuse::renderer::ClusterLookupRejectReason::EmptyStorage,
