@@ -234,6 +234,10 @@ const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
         return "AnyTrigger";
     case ContactPairRejectReason::BothMassless:
         return "BothMassless";
+    case ContactPairRejectReason::PlanePlane:
+        return "PlanePlane";
+    case ContactPairRejectReason::RestingPair:
+        return "RestingPair";
     }
     return "Unknown";
 }
@@ -496,10 +500,24 @@ bool should_skip_contact_pair_dispatch(
     return is_invalid_contact_pair(pair, bodies, shapes);
 }
 
+bool is_resting_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    f32 invMassEpsilon) {
+    return is_sleeping_contact_pair(pair, bodies) ||
+           is_static_contact_pair(pair, bodies) ||
+           is_kinematic_contact_pair(pair, bodies) ||
+           is_massless_contact_pair(pair, bodies, invMassEpsilon);
+}
+
 ContactPairRejectReason contact_pair_deepen_reject_reason(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
+    if (is_plane_plane_contact_pair(pair, shapes)) {
+        return ContactPairRejectReason::PlanePlane;
+    }
+
     const ContactPairRejectReason baseReason = contact_pair_reject_reason(pair, bodies, shapes);
     if (baseReason != ContactPairRejectReason::None) {
         return baseReason;
@@ -607,6 +625,54 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return preflight_narrowphase_batch(pairs, bodies, shapes).can_skip();
+}
+
+bool contact_pair_deepen_rejects_for_reason_v2(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected) {
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
+}
+
+std::vector<broadphase::CandidatePair> filter_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    std::vector<broadphase::CandidatePair> dispatchable;
+    dispatchable.reserve(pairs.size());
+    for (const broadphase::CandidatePair& pair : pairs) {
+        if (!should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+            dispatchable.push_back(pair);
+        }
+    }
+    return dispatchable;
+}
+
+ContactPairBatchRejectSummary summarize_contact_pair_batch_rejects(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactPairBatchRejectSummary summary{};
+    summary.pairCount = static_cast<u32>(pairs.size());
+    for (const broadphase::CandidatePair& pair : pairs) {
+        const ContactPairRejectReason reason = contact_pair_deepen_reject_reason(pair, bodies, shapes);
+        if (reason == ContactPairRejectReason::None) {
+            ++summary.dispatchableCount;
+            continue;
+        }
+        if (reason == ContactPairRejectReason::PlanePlane) {
+            ++summary.planePlaneCount;
+        }
+        if (reason == ContactPairRejectReason::RestingPair ||
+            reason == ContactPairRejectReason::BothSleeping ||
+            reason == ContactPairRejectReason::BothStatic ||
+            reason == ContactPairRejectReason::BothKinematic ||
+            reason == ContactPairRejectReason::BothMassless) {
+            ++summary.restingCount;
+        }
+    }
+    return summary;
 }
 
 } // namespace fuse::physics::narrowphase

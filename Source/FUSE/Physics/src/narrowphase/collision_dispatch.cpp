@@ -25,6 +25,16 @@ void runNarrowphaseIntoBuffer(
     buffer.compactAndClamp();
 }
 
+void runNarrowphaseFilteredIntoBuffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer) {
+    const std::vector<broadphase::CandidatePair> dispatchable =
+        filter_dispatchable_contact_pairs(pairs, bodies, shapes);
+    runNarrowphaseIntoBuffer(dispatchable, bodies, shapes, buffer);
+}
+
 std::vector<ContactManifold> runNarrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
