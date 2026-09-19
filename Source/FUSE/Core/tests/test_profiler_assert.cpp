@@ -5500,3 +5500,14 @@ void testNestingAndExportRejectReasonGuards() {
     expectTrue(fuse::profiler::wouldSkipCounter(nullptr), "wouldSkipCounter true for null name");
     testWouldSkipEntryPointGuards();
     testNestingAndExportRejectReasonGuards();
+
+// --- deepen additive from b16-profiler-deepen-guards-46fd ---
+    expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow(nullptr, 1u),
+    expectTrue(fuse::profiler::wouldSkipEndAsyncFlow("orphan_flow", 1u),
+    expectTrue(!fuse::profiler::wouldSkipBeginAsyncFlow("paired_flow", flowId),
+    expectTrue(!fuse::profiler::wouldSkipEndAsyncFlow("paired_flow", flowId),
+               "wouldSkipBeginAsyncFlow true when profiler disabled");
+    expectTrue(fuse::profiler::wouldSkipEndAsyncFlow("paired_flow", flowId),
+               "wouldSkipEndAsyncFlow true when profiler disabled");
+    expectTrue(fuse::profiler::wouldSkipCounter("ignored_counter"),
+               "wouldSkipChromeTraceExport false after re-enable");
