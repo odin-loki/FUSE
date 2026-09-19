@@ -2271,3 +2271,9 @@ IslandSolvePassPreflight preflight_island_solve_pass(
 bool should_skip_island_solve_pass(const ContactIslandGraph::Island& island,
     if (should_skip_island_solve_pass(island, bodies, contacts, distanceConstraints)) {
     if (should_skip_solve_sleeping_island(*job.island, bodies)) {
+
+// --- deepen additive from deepen-pbd-island-guards-9b4f ---
+bool should_skip_solve_fully_sleeping_island(const RigidBodySoA& bodies,
+IslandSolveSleepPreflight preflight_solve_island_with_sleep(
+bool should_skip_solve_island_with_sleep(const RigidBodySoA& bodies,
+    if (should_skip_solve_island_with_sleep(bodies, island, contacts, distanceConstraints)) {

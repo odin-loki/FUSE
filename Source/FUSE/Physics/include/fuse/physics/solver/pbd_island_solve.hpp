@@ -1415,3 +1415,8 @@ struct IslandSolvePassPreflight {
 bool should_skip_island_dispatch_for_sleep(const ContactIslandGraph& graph,
 IslandSolvePassPreflight preflight_island_solve_pass(
 bool should_skip_island_solve_pass(const ContactIslandGraph::Island& island,
+
+// --- deepen additive from deepen-pbd-island-guards-9b4f ---
+bool should_skip_solve_fully_sleeping_island(const RigidBodySoA& bodies,
+IslandSolveSleepPreflight preflight_solve_island_with_sleep(
+bool should_skip_solve_island_with_sleep(const RigidBodySoA& bodies,
