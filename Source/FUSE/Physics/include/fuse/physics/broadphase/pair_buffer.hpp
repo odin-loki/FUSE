@@ -3412,6 +3412,7 @@ struct PairBufferInvalidateSlotPreflight {
 
 
 
+
 };
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
@@ -3499,10 +3500,16 @@ enum class PairBufferSlotReservationRejectReason : u8 {
 
 /// Preflight invalidate-slot skip check with optional reject reason (B4.2 deepen pass).
 bool wouldSkipPairBufferInvalidateSlot(
+
     u32 slot,
     PairBufferInvalidateSlotRejectReason* reason = nullptr);
 
 /// Why pair-buffer slot reservation would reject (B4.2 deepen pass).
+enum class PairBufferSlotReservationRejectReason : u8 {
+    None = 0,
+    ZeroSlots,
+    ExceedsCapacity,
+};
 
 /// Human-readable label for pair-buffer slot-reservation reject reasons (logging / tests).
 const char* pairBufferSlotReservationRejectReasonName(PairBufferSlotReservationRejectReason reason);
@@ -3520,6 +3527,8 @@ bool pairBufferSlotReservationRejectsForReason(
     const PairBufferSoA& buffer,
 
 /// Returns true when `pairBufferSlotReservationRejectReason` matches `expected` (B4.2 deepen pass).
+
+
 
 /// Read-only slot-reservation diagnostics — no mutation (B4.2 deepen pass).
 struct PairBufferSlotReservationPreflight {
@@ -3642,6 +3651,7 @@ bool wouldSkipPairBufferInvalidateSlot(
 bool wouldSkipPairBufferWriteSlot(
 };
 
+
     const PairBufferSoA& buffer,
     u32 slotCount);
 
@@ -3651,10 +3661,18 @@ bool wouldSkipPairBufferWriteSlot(
 
 /// Preflight slot-reservation skip check with optional reject reason (B4.2 deepen pass).
 bool wouldSkipPairBufferSlotReservation(
+bool canSkipPairBufferSlotReservation(const PairBufferSoA& buffer, u32 slotCount);
+
+bool shouldRunPairBufferSlotReservation(const PairBufferSoA& buffer, u32 slotCount);
+
+    const PairBufferSoA& buffer,
     u32 slotCount,
     PairBufferSlotReservationRejectReason* reason = nullptr);
 
 /// Preflight write-slot skip check with optional reject reason (B4.2 deepen pass).
+bool wouldSkipPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
     u32 idxA,
     u32 idxB,
     PairBufferWriteSlotRejectReason* reason = nullptr);
