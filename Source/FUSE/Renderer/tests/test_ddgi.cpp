@@ -4456,3 +4456,17 @@ void testDdgiKernelUpdatePreflightGuards() {
     expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::InvalidSampleCoords,
     expectTrue(fuse::renderer::probeTrilinearSampleRejectReasonIsBlocking(trilinearReason),
     expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, hardOob, cache.data(), 8u) ==
+
+// --- deepen additive from deepen-b56-ddgi-guards-f77d ---
+    expectTrue(std::strcmp(fuse::renderer::probeGridSourceRejectReasonLabel(reason), "null_cache") == 0,
+               "classifyProbeGridSourceReject undersized cache");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(emptySource) ==
+void testProbeTrilinearSamplePreflightGuards() {
+               "preflightProbeTrilinearSample succeeds for valid coords");
+               "tryCanTrilinearSampleAtProbeCoords soft-fails clampable weights");
+    expectTrue(!fuse::renderer::ddgi_util::tryCanTrilinearSampleAtProbeCoords(
+               "tryCanTrilinearSampleAtProbeCoords rejects hard OOB indices");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordsPreflight(desc, coords),
+void testCacheIndexAtCoordGuards() {
+               "tryValidateCacheIndexAtCoord rejects OOB coord");
+    testProbeTrilinearSamplePreflightGuards();

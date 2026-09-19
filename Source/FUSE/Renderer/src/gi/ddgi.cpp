@@ -3198,3 +3198,11 @@ bool preflightProbeGrid(const DDGIDesc& desc, ProbeGridRejectReason* reason) {
 bool wouldSkipProbeGrid(const DDGIDesc& desc) {
     tryPreflightProbeTrilinearSample(desc, coords, cache, cache_count, reason);
     return !tryPreflightProbeTrilinearSample(desc, coords, cache, cache_count, reason);
+
+// --- deepen additive from deepen-b56-ddgi-guards-f77d ---
+    return tryValidateProbeGridSource(source, reason);
+    if (!tryValidateProbeGridSource(source, sourceReason)) {
+    return !tryValidateCacheIndexAtCoord(desc, cache, coord, cache_count, reason);
+bool wouldClampCacheIndexLookupAtCoord(const ProbeGridCoord& coord, const DDGIDesc& desc) {
+    tryValidateCacheIndexAtCoord(desc, cache, coord, cache_count, reason);
+    return wouldSkipProbeTraceKernel(params) || wouldSkipProbeBlendKernel(params);
