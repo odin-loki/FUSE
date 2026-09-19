@@ -1915,3 +1915,8 @@ IslandDispatchRejectReason island_dispatch_index_reject_reason(const ContactIsla
         return !skipped && reason == IslandWakeRejectReason::None && stats.wakeableCount > 0u;
         return !skipped && buildReason == IslandGraphBuildRejectReason::None &&
 bool should_skip_island_pipeline_dispatch(u32 bodyCount,
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-b9d2 ---
+    bool can_dispatch() const { return reason == IslandSolveRejectReason::None && !skipped && stats.dispatchableCount > 0u; }
+        return reason == IslandWakeRejectReason::None && !skipped && stats.wakeableCount > 0u;
+        return reason == IslandPipelineDispatchRejectReason::None && !skipped && dispatch.can_dispatch() &&

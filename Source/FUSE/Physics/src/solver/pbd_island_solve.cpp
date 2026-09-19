@@ -3240,3 +3240,19 @@ bool should_skip_island_pipeline_dispatch(u32 bodyCount,
         result.dispatchReason = IslandDispatchRejectReason::NoDispatchableIslands;
     if (result.buildReason != IslandGraphBuildRejectReason::None) {
         result.dispatchReason = IslandDispatchRejectReason::InvalidDt;
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-b9d2 ---
+    case IslandSolveRejectReason::NoConstraintRefs:
+    case IslandWakeRejectReason::NoWakeTargets:
+    case IslandPipelineDispatchRejectReason::BuildFailed:
+    case IslandPipelineDispatchRejectReason::AllSleeping:
+        preflight.reason = IslandSolveRejectReason::OutOfRangeIsland;
+    preflight.skipped = preflight.reason != IslandDispatchRejectReason::None || preflight.solve.skipped;
+        preflight.reason = IslandSolveRejectReason::NoConstraintRefs;
+        preflight.reason = IslandWakeRejectReason::NoWakeTargets;
+    if (preflight.dispatch.reason == IslandDispatchRejectReason::InvalidDt) {
+        preflight.reason = IslandPipelineDispatchRejectReason::InvalidDt;
+    if (preflight.dispatch.reason == IslandDispatchRejectReason::NoDispatchableIslands) {
+        preflight.reason = IslandPipelineDispatchRejectReason::NoDispatchableIslands;
+    if (preflight.sleep.reason == IslandSleepRejectReason::NoSolveableIslands) {
+        preflight.reason = IslandPipelineDispatchRejectReason::AllSleeping;
