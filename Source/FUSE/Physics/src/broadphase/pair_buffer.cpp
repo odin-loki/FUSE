@@ -1471,6 +1471,7 @@ const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason 
         return "InvalidPair";
     }
     return "Unknown";
+}
 
 PairBufferWriteSlotRejectReason pairBufferWriteSlotRejectReason(
     const PairBufferSoA& buffer,
@@ -1489,6 +1490,13 @@ bool pairBufferWriteSlotRejectsForReason(
     return pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB) == expected;
 
 PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    }
+
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+
+    u32 idxB) {
     PairBufferWriteSlotPreflight preflight{};
     preflight.reason = pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB);
     preflight.outOfRangeSlot = preflight.reason == PairBufferWriteSlotRejectReason::OutOfRangeSlot;
@@ -1500,6 +1508,9 @@ bool canSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA,
 
 bool shouldRunPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {
     return preflightPairBufferWriteSlot(buffer, slot, idxA, idxB).canWrite();
+}
+
+
 
 PairBufferCompactionPreflight preflightPairBufferCompaction(const PairBufferSoA& buffer) {
     PairBufferCompactionPreflight preflight{};
@@ -1512,6 +1523,11 @@ bool canSkipPairBufferCompaction(const PairBufferSoA& buffer) {
 
 bool shouldRunPairBufferCompaction(const PairBufferSoA& buffer) {
     return preflightPairBufferCompaction(buffer).needsCompaction();
+    if (preflightPairBufferCompaction(buffer).needsCompaction()) {
+        return true;
+    }
+    // All-valid prepared slots still need compact to sync dense activeCount.
+    return buffer.pairSlotCount > 0u && buffer.activeCount != buffer.countValidSlots();
 
 PairBufferClampPreflight preflightPairBufferClamp(const PairBufferSoA& buffer) {
     PairBufferClampPreflight preflight{};

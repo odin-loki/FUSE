@@ -1204,7 +1204,9 @@ void runBroadphaseIntoBufferInternal(
         }
         writePairsForCellSlots(cells.buckets[cellIndex], cellSlotOffsets[cellIndex], bodyCount, buffer);
     });
-    buffer.compact();
+    if (shouldRunPairBufferCompaction(buffer)) {
+        buffer.compact();
+    }
     dedupeBuffer(buffer);
 
     std::vector<u32> planeBodies;
