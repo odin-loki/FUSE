@@ -118,6 +118,8 @@ public:
 
     /// True when at least one queued event targets `window`.
     bool hasPendingEventsFor(const Window& window) const;
+    /// Number of queued events whose `type` matches `type` (0 when empty).
+    u32 countPendingEventsOfType(PlatformEventType type) const;
 
     /// Number of queued events whose `window` pointer matches `window`.
     u32 countPendingEventsFor(const Window& window) const;

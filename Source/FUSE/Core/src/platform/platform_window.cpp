@@ -232,15 +232,15 @@ bool EventPump::peekEventTypeMatches(PlatformEventType expected) const {
     }
 
     return front == type;
-}
 
 bool EventPump::frontEventIsFor(const Window& window, PlatformEventType type) const {
     if (m_syntheticHead == m_syntheticTail) {
-        return false;
 
     const PlatformEvent& front = m_syntheticEvents[m_syntheticHead];
     return front.type == type && front.window == &window;
     return front == expected;
+        outEvent = {};
+
 }
 
 bool EventPump::hasPendingEvents() const {
@@ -305,7 +305,6 @@ bool EventPump::hasPendingEventOfTypeFor(const Window& window, PlatformEventType
 
 bool EventPump::hasPendingEventOfTypeFor(const Window& window, PlatformEventType type) const {
     return countPendingEventsOfTypeFor(window, type) > 0u;
-}
 
 bool EventPump::hasPendingEventsFor(const Window& window) const {
     return countPendingEventsFor(window) > 0u;
