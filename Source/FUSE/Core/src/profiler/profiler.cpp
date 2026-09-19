@@ -1260,3 +1260,7 @@ EventLookupPreflight preflightLastEvent() {
 // --- deepen additive from deepen-profiler-b16-guards-10ba ---
 bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
     if (!tryEventAt(index, event)) {
+
+// --- deepen additive from deepen-b16-profiler-guards-fb79 ---
+bool tryFirstExportableEvent(ProfileEvent& outEvent) {
+bool tryLastExportableEvent(ProfileEvent& outEvent) {

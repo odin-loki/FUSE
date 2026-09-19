@@ -3201,3 +3201,35 @@ void testChromeTraceExportPreflightStructuralBalance() {
     expectTrue(openPreflight.asyncFlowStartEventCount == 2u,
     expectTrue(openPreflight.asyncFlowFinishEventCount == 1u,
     testChromeTraceExportPreflightStructuralBalance();
+
+// --- deepen additive from deepen-b16-profiler-guards-fb79 ---
+void testRingSaturationAndDroppedEventCountGuard() {
+    expectTrue(outEvent.name == nullptr, "tryExportableEventAt clears output on empty buffer");
+               "tryExportableEventAt true for exportable begin");
+               "tryExportableEventAt copies exportable begin phase");
+               "tryExportableEventAt copies exportable event name");
+    expectTrue(outEvent.name == nullptr, "tryExportableEventAt clears output when out of range");
+void testExportableFirstAndLastEventIndexGuard() {
+void testTryFirstAndLastExportableEventGuard() {
+    expectTrue(!fuse::profiler::tryFirstExportableEvent(outEvent),
+               "tryFirstExportableEvent false on empty buffer");
+    expectTrue(!fuse::profiler::tryLastExportableEvent(outEvent),
+               "tryLastExportableEvent false on empty buffer");
+    expectTrue(fuse::profiler::tryFirstExportableEvent(outEvent),
+               "tryFirstExportableEvent true after recording");
+               "tryFirstExportableEvent copies begin phase");
+               "tryFirstExportableEvent copies first scope name");
+    expectTrue(fuse::profiler::tryLastExportableEvent(outEvent),
+               "tryLastExportableEvent true after recording");
+               "tryLastExportableEvent copies end phase");
+               "tryLastExportableEvent copies last scope name");
+void testChromeTraceExportPreflightRingSaturated() {
+void testChromeTraceExportPreflightNestingWarnings() {
+        expectTrue(activePreflight.hasNestingWarnings(),
+        expectTrue(!activePreflight.flowDepthDetached,
+    const fuse::profiler::ChromeTraceExportPreflight detachedPreflight =
+    expectTrue(detachedPreflight.hasNestingWarnings(),
+    expectTrue(detachedPreflight.flowDepthDetached,
+    expectTrue(detachedPreflight.hasUnbalancedNesting(),
+    testChromeTraceExportPreflightRingSaturated();
+    testChromeTraceExportPreflightNestingWarnings();
