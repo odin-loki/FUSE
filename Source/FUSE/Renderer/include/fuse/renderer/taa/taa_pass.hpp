@@ -336,10 +336,8 @@ public:
                                        TaaResolveTemporalBlendRejectReason* reason = nullptr) const;
     /// Early-out when combined resolve temporal-blend preflight would reject (B5.9 deepen).
     bool shouldSkipResolveTemporalBlend(const TaaResolveDesc& desc) const;
-    /// Classify why pass resolve blend weights would be rejected (B5.9 deepen).
     TaaResolveBlendRejectReason classifyResolveBlendReject(const TaaResolveDesc& desc) const;
     /// Resolve blend preflight with mandatory reject-reason output (B5.9 deepen).
-    bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
     /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
     bool tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
                                        TaaResolveBlendRejectReason& reason) const;
@@ -498,8 +496,6 @@ public:
     /// Early-out when pass jitter frame preflight would reject (B5.9 deepen).
     /// Advance jitter with mandatory reject-reason output; returns false when blocked (B5.9 deepen).
     bool tryAdvanceJitter(TaaJitterGuardRejectReason& reason);
-    /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
-    TaaJitterGuardRejectReason classifyJitterNdcReject() const;
     bool canAdvanceJitter() const;
     /// True when pass jitter can sync to `frameIndex` (B5.9 deepen).
     bool canSyncJitterToFrameIndex(u32 frameIndex) const;
@@ -917,6 +913,7 @@ public:
     bool shouldSkipResolveFrameGuards(const TaaResolveDesc& desc, u32 frameIndex,
                                       u32 observedGeneration) const;
     /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
+    /// Classify why resolve would skip for this pass (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
