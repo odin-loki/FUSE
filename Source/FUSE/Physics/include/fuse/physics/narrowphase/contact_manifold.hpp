@@ -282,3 +282,9 @@ inline ContactManifold invalidContactManifold() {
 }
 
 } // namespace fuse::physics::narrowphase
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56bb ---
+    bool pruneFromPreflight(
+        const ManifoldPrunePreflight& preflight,
+ManifoldPrunePreflight preflight_manifold_prune_ex(
+bool can_skip_manifold_prune(const ManifoldPrunePreflight& preflight);

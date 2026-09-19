@@ -627,3 +627,7 @@ bool should_run_narrowphase_batch(
 // --- deepen additive from deepen-b4-narrowphase-manifold-prune-4828 ---
     return contact_pair_reject_reason(pair, bodies, shapes) == ContactPairRejectReason::None;
 const char* contact_pair_reject_reason_label(ContactPairRejectReason reason) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56bb ---
+    if (should_skip_contact_pair_dispatch(pair, bodies, shapes)) {
+const char* contact_pair_preflight_reason_name(const ContactPairPreflight& preflight) {

@@ -1831,3 +1831,18 @@ void testContactPairStaticSleepingRejectGuards() {
 void testContactPairSleepingKinematicGuards() {
 void testManifoldFinalizeGuards() {
 void testFrictionBasisRebuildGuards() {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56bb ---
+void testContactPairDispatchGuards() {
+void testManifoldPrunePreflightExGuards() {
+        fuse::physics::narrowphase::can_skip_manifold_prune(dirtyPreflight) == false,
+    expectTrue(dirty.pruneFromPreflight(dirtyPreflight), "pruneFromPreflight keeps penetrating slots");
+    expectTrue(dirty.pointCount == 1u, "pruneFromPreflight removes separated and duplicate slots");
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_friction_basis(empty);
+        fuse::physics::narrowphase::should_skip_friction_basis_compute(empty),
+        "should_skip_friction_basis_compute true for empty manifold");
+    const auto cachedPreflight = fuse::physics::narrowphase::preflight_friction_basis(fresh);
+    expectTrue(cachedPreflight.canSkipRebuild, "friction preflight can skip valid cached basis");
+        fuse::physics::narrowphase::should_skip_friction_basis_compute(fresh),
+        "should_skip_friction_basis_compute true with valid basis");
+    testManifoldPrunePreflightExGuards();

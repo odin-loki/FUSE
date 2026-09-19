@@ -248,3 +248,7 @@ bool should_run_narrowphase_batch(
 
 // --- deepen additive from deepen-b4-narrowphase-manifold-prune-4828 ---
 const char* contact_pair_reject_reason_label(ContactPairRejectReason reason);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56bb ---
+    ContactPairPreflight preflight{};
+const char* contact_pair_preflight_reason_name(const ContactPairPreflight& preflight);

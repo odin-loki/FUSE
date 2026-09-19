@@ -605,3 +605,9 @@ void ContactManifold::syncLegacyFields() {
 }
 
 } // namespace fuse::physics::narrowphase
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56bb ---
+ManifoldPrunePreflight preflight_manifold_prune_ex(
+bool can_skip_manifold_prune(const ManifoldPrunePreflight& preflight) {
+bool ContactManifold::pruneFromPreflight(
+    const ManifoldPrunePreflight& preflight,

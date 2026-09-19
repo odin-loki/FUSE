@@ -155,3 +155,8 @@ bool should_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsi
 
 // --- deepen additive from deepen-b4-narrowphase-manifold-prune-4828 ---
 bool should_skip_friction_for_manifold(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-56bb ---
+FrictionBasisPreflight preflight_friction_basis(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+bool should_skip_friction_basis_compute(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+bool rebuild_friction_basis_from_preflight(ContactManifold& manifold, const FrictionBasisPreflight& preflight);
