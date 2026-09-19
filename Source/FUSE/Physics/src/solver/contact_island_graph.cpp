@@ -3,6 +3,83 @@
 #include <algorithm>
 
 namespace fuse::physics {
+namespace {
+
+bool contact_body_refs_in_range(u32 bodyA, u32 bodyB, u32 bodyCount) {
+    return bodyA < bodyCount && bodyB < bodyCount;
+}
+
+} // namespace
+
+const char* islandBuildRejectReasonName(IslandBuildRejectReason reason) {
+    switch (reason) {
+    case IslandBuildRejectReason::None:
+        return "None";
+    case IslandBuildRejectReason::ZeroBodyCount:
+        return "ZeroBodyCount";
+    case IslandBuildRejectReason::StaleContactBodyRefs:
+        return "StaleContactBodyRefs";
+    case IslandBuildRejectReason::StaleDistanceBodyRefs:
+        return "StaleDistanceBodyRefs";
+    }
+    return "Unknown";
+}
+
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandBuildPreflight preflight{};
+    preflight.bodyCount = bodyCount;
+    preflight.contactCount = static_cast<u32>(contacts.size());
+    preflight.distanceCount = static_cast<u32>(distanceConstraints.size());
+    preflight.zeroBodyCount = bodyCount == 0u;
+
+    if (preflight.zeroBodyCount) {
+        preflight.reason = IslandBuildRejectReason::ZeroBodyCount;
+        return preflight;
+    }
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (!contact.valid) {
+            continue;
+        }
+        if (!contact_body_refs_in_range(contact.bodyA, contact.bodyB, bodyCount)) {
+            ++preflight.staleContactRefCount;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (!contact_body_refs_in_range(constraint.bodyA, constraint.bodyB, bodyCount)) {
+            ++preflight.staleDistanceRefCount;
+        }
+    }
+
+    if (preflight.staleContactRefCount > 0u) {
+        preflight.reason = IslandBuildRejectReason::StaleContactBodyRefs;
+    } else if (preflight.staleDistanceRefCount > 0u) {
+        preflight.reason = IslandBuildRejectReason::StaleDistanceBodyRefs;
+    }
+
+    return preflight;
+}
+
+bool should_skip_island_build(u32 bodyCount,
+                              const std::vector<narrowphase::ContactManifold>& contacts,
+                              const std::vector<DistanceConstraint>& distanceConstraints) {
+    return !preflight_island_build(bodyCount, contacts, distanceConstraints).can_build();
+}
+
+bool build_island_graph_guarded(ContactIslandGraph& graph,
+                                u32 bodyCount,
+                                const std::vector<narrowphase::ContactManifold>& contacts,
+                                const std::vector<DistanceConstraint>& distanceConstraints) {
+    if (should_skip_island_build(bodyCount, contacts, distanceConstraints)) {
+        return false;
+    }
+    graph.build(bodyCount, contacts, distanceConstraints);
+    return true;
+}
 
 void ContactIslandGraph::clear() {
     parent_.clear();
