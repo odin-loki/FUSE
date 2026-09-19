@@ -2181,3 +2181,24 @@ bool tryValidateCacheSizedForGrid(const DDGIDesc& desc,
         outReason = DdgiLaunchRejectReason::NullIndexBuffer;
     case DdgiKernelRejectReason::ZeroUpdateCount:
         outReason = DdgiKernelRejectReason::ZeroUpdateCount;
+
+// --- deepen additive from deepen-ddgi-guards-2d52 ---
+ProbeSampleCoordRejectReason probeSampleCoordRejectFromValidity(const DDGIDesc& desc,
+        return ProbeSampleCoordRejectReason::EmptyGrid;
+        return ProbeSampleCoordRejectReason::OutOfBounds;
+    return ProbeSampleCoordRejectReason::InvalidWeights;
+const char* probeSampleCoordRejectReasonLabel(ProbeSampleCoordRejectReason reason) {
+    case ProbeSampleCoordRejectReason::None:
+    case ProbeSampleCoordRejectReason::EmptyGrid:
+    case ProbeSampleCoordRejectReason::OutOfBounds:
+    case ProbeSampleCoordRejectReason::InvalidWeights:
+    case CacheIndexRejectReason::OutOfRangeProbe:
+                                                ProbeSampleCoordRejectReason& outReason) {
+        outReason = ProbeSampleCoordRejectReason::EmptyGrid;
+    outReason = ProbeSampleCoordRejectReason::None;
+        outReason = CacheIndexRejectReason::OutOfRangeProbe;
+    ProbeSampleCoordRejectReason reason = ProbeSampleCoordRejectReason::None;
+    return tryCanSampleAtProbeCoords(desc, coords, cache_count, reason);
+        outReason = ProbeSampleCoordRejectReason::OutOfBounds;
+bool tryCanLaunchProbeKernel(const DDGIKernelParams& params, DdgiKernelRejectReason& outReason) {
+    return tryCanLaunchProbeKernel(params, outReason);

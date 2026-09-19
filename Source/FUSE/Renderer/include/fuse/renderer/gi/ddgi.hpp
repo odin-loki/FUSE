@@ -748,3 +748,8 @@ bool tryIsCacheIndexValid(const DDGIDesc& desc,
 
 // --- deepen additive from deepen-ddgi-probe-guards-9a61 ---
 bool tryValidateCacheSizedForGrid(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-2d52 ---
+enum class ProbeSampleCoordRejectReason : u8 {
+const char* probeSampleCoordRejectReasonLabel(ProbeSampleCoordRejectReason reason);
+                                          ProbeSampleCoordRejectReason& outReason);
