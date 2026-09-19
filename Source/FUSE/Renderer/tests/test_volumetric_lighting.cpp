@@ -4193,3 +4193,15 @@ void testFroxelGuardClassifyPreflightAndIsBlocking() {
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-d893 ---
                "preflightGridDensity mirrors validateGridDensity on accessible grid");
+
+// --- deepen additive from froxel-volumetric-b511-deepen-cd85 ---
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookupReady(grid, desc, 99u, 99u, 99u),
+               "preflightDensityLookupReady succeeds when coord lookup only clamps");
+               "preflightScreenMappingReady succeeds for in-range depth");
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSampleReady(grid, desc, inBounds),
+    expectTrue(fuse::renderer::froxel_util::preflightTrilinearSampleReady(grid, desc, warnWeights),
+               "preflightTrilinearSampleReady succeeds for clampable weights");
+    expectTrue(!fuse::renderer::froxel_util::preflightTrilinearSampleReady(grid, desc, hardOob),
+    expectTrue(fuse::renderer::froxel_util::preflightGridDensityReady(grid, zeroDesc),
+               "preflightGridDensityReady succeeds for empty desc");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulateReady(desc, badCamera, params),
