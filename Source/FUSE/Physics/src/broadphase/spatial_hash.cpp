@@ -1523,6 +1523,7 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
 
         }
         if (canSkipShapeCellInsertion(range, params)) {
+        if (canSkipShapeCellInsertion(range, maxSpan, maxOccupancy)) {
             return;
         }
             return;
@@ -1581,6 +1582,7 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
     if (canSkipShapeCellInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
     if (canSkipShapeCellOccupancyIteration(range, params)) {
     if (canSkipShapeCellInsertion(range, params)) {
+    if (canSkipShapeCellInsertion(range, maxSpan, maxOccupancy)) {
         return;
     if (isEmptyCellRange(range)) {
     if (params.maxCellOccupancyPerShape > 0u) {
@@ -1639,7 +1641,6 @@ void dedupeBuffer(PairBufferSoA& buffer) {
     if (canSkipDedupeBroadphase(buffer)) {
         return;
     }
-    if (!shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
@@ -2441,6 +2442,7 @@ RefineBroadphasePreflight preflightRefineBroadphase(
     preflight.activePairCount = buffer.activeCount;
     preflight.allSlotsInvalid = buffer.pairSlotCount > 0u && buffer.countValidSlots() == 0u;
     preflight.emptyInput = !preflightBroadphase(bodies, shapes).canRun();
+    preflight.pairCount = buffer.activeCount;
     preflight.reason = refineBroadphaseRejectReason(bodies, shapes, buffer);
 
 bool refineBroadphasePreflightRejectsForReason(
@@ -2757,6 +2759,7 @@ BroadphaseMergeScan scanBroadphaseMergeBodies(
 
 
 
+
     if (preflight.emptyPlaneBodies) {
         preflight.reason = BroadphaseMergeRejectReason::EmptyPlaneBodies;
     } else if (preflight.emptyDynamicBodies) {
@@ -3069,6 +3072,8 @@ const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReaso
         return "EmptyPairs";
     case MergePairsIntoBufferRejectReason::BufferFull:
         return "BufferFull";
+    case MergePairsIntoBufferRejectReason::InsufficientCapacity:
+        return "InsufficientCapacity";
     }
     return "Unknown";
 }
@@ -3081,6 +3086,9 @@ MergePairsIntoBufferRejectReason mergePairsIntoBufferRejectReason(
     }
     if (buffer.isFull()) {
         return MergePairsIntoBufferRejectReason::BufferFull;
+    }
+    if (buffer.maxCapacity > 0u && buffer.remainingCapacity() == 0u) {
+        return MergePairsIntoBufferRejectReason::InsufficientCapacity;
     }
     return MergePairsIntoBufferRejectReason::None;
 }
@@ -3110,17 +3118,17 @@ MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
             }
             if (remainingSlots == 0u) {
                 break;
-            }
             ++mergeableCount;
             if (remainingSlots != UINT32_MAX) {
                 --remainingSlots;
-            }
-        }
         preflight.mergeablePairCount = mergeableCount;
         preflight.partialCapacity =
             mergeableCount > 0u && mergeableCount < preflight.requestedPairCount;
-    }
 
+    preflight.insufficientCapacity = preflight.reason == MergePairsIntoBufferRejectReason::InsufficientCapacity ||
+        (buffer.maxCapacity > 0u && pairs.size() > buffer.remainingCapacity());
+    preflight.pairsToMerge = static_cast<u32>(pairs.size());
+    preflight.remainingCapacity = buffer.remainingCapacity();
     return preflight;
 }
 
