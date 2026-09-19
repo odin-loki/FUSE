@@ -3674,3 +3674,31 @@ void testDdgiTryPreflightDeepenGuards() {
                "classifyProbeTrilinearSampleReject null cache at world position");
                "preflightCacheIndexLookup index-only succeeds for valid index");
                "classifyCacheIndexReject index-only out_of_range_probe_index");
+
+// --- deepen additive from deepen-ddgi-guards-5dcb ---
+void testDdgiTrilinearSamplePreflightGuards() {
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeTrilinearSample(desc, coords, cache.data(), 8u),
+               "preflightProbeTrilinearSample succeeds for valid sample");
+               "wouldSkipProbeTrilinearSample false for valid sample");
+               "preflightTrilinearProbeIrradiance reports no reject reason");
+    expectTrue(!fuse::renderer::ddgi_util::preflightProbeTrilinearSample(desc, coords, nullptr, 8u, &reason),
+               "preflightProbeTrilinearSample rejects null cache");
+    expectTrue(!fuse::renderer::ddgi_util::preflightProbeTrilinearSample(desc, coords, cache.data(), 4u, &reason),
+               "preflightProbeTrilinearSample rejects undersized cache");
+    expectTrue(!fuse::renderer::ddgi_util::preflightProbeTrilinearSample(desc, invalid, cache.data(), 8u, &reason),
+               "preflightProbeTrilinearSample rejects unordered corners");
+void testDdgiScheduleAtRatePreflightGuards() {
+    expectTrue(!fuse::renderer::ddgi_util::preflightProbeScheduleAtRate(2048u, 0u, 64u, indices, &count, &reason),
+void testDdgiSampleCoordSkipPreflight() {
+               "wouldSkipProbeSampleCoordPreflight false for valid coords");
+               "wouldSkipProbeSampleCoordPreflight true for hard OOB indices");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(desc, oobWeights),
+               "wouldSkipProbeSampleCoordPreflight false for clampable weights");
+void testDdgiKernelPerPassPreflightGuards() {
+    expectTrue(!fuse::renderer::gi::preflightProbeTraceKernel(zeroRays, &reason),
+               "preflightProbeBlendKernel rejects null probe indices");
+               "preflightProbeBlendKernel reports null_probe_indices reason");
+    testDdgiTrilinearSamplePreflightGuards();
+    testDdgiScheduleAtRatePreflightGuards();
+    testDdgiSampleCoordSkipPreflight();
+    testDdgiKernelPerPassPreflightGuards();

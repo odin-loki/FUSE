@@ -2812,3 +2812,8 @@ bool tryPreflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRej
 
 // --- deepen additive from deepen-ddgi-guards-f003 ---
     return probeTrilinearSampleRejectReasonIsBlocking(reject);
+
+// --- deepen additive from deepen-ddgi-guards-5dcb ---
+bool preflightProbeTrilinearSample(const DDGIDesc& desc,
+    return preflightProbeTrilinearSample(desc, coords, cache, cache_count, reason);
+    return !preflightProbeTrilinearSample(desc, coords, cache, cache_count);
