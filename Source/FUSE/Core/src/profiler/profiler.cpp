@@ -311,6 +311,14 @@ bool isFlowDepthDetached() {
     return flowNestingDepth() != openAsyncFlowCount();
 }
 
+bool needsFlowNestingCleanup() {
+    return isFlowDepthDetached() || (flowNestingDepth() > 0u && !hasOpenAsyncFlows());
+}
+
+bool wouldIgnoreOrphanAsyncFlowEnd() {
+    return openAsyncFlowCount() == 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -331,6 +339,10 @@ bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
 
+bool wouldRecordEventName(const char* name) {
+    return g_enabled.load(std::memory_order_acquire) && isValidEventName(name);
+}
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return isValidEventName(event.name);
 }
@@ -346,8 +358,34 @@ u32 exportableEventCount() {
     return count;
 }
 
+u32 invalidEventCount() {
+    const u32 total = eventCount();
+    return total >= exportableEventCount() ? total - exportableEventCount() : 0u;
+}
+
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
+}
+
+bool isFirstEventIndex(u32 index) {
+    const u32 first = firstEventIndex();
+    return first != kInvalidEventIndex && index == first;
+}
+
+bool isLastEventIndex(u32 index) {
+    const u32 last = lastEventIndex();
+    return last != kInvalidEventIndex && index == last;
+}
+
+bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
+    ProfileEvent event{};
+    if (!tryEventAt(index, event)) {
+        outPhase = EventPhase::Begin;
+        return false;
+    }
+
+    outPhase = event.phase;
+    return true;
 }
 
 const ProfileEvent& emptyProfileEvent() {
@@ -430,6 +468,10 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.invalidEventCount = invalidEventCount();
+    preflight.needsFlowNestingCleanup = needsFlowNestingCleanup();
+    preflight.hasExportWarnings = preflight.hasUnbalancedNesting() || preflight.flowDepthDetached
+                                  || preflight.hasOpenAsyncFlows;
     return preflight;
 }
 
