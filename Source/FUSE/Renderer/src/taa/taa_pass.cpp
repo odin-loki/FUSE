@@ -484,3 +484,9 @@ bool TaaPass::tryCanBeginTemporalReuse(u32 observedGeneration, TaaHistoryReuseBl
 bool TaaPass::preflightResolveFrame(const TaaResolveDesc& desc, TaaResolveFramePreflight* out) const {
     return preflightTaaResolveFrame(desc, m_history, out);
 bool TaaPass::tryExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
+
+// --- deepen additive from deepen-b59-taa-guards-9737 ---
+bool TaaPass::trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason& outReason) {
+    if (!fuse::renderer::trySyncJitterToFrameIndexIfReady(m_jitter, frameIndex, outReason)) {
+bool TaaPass::tryPreflightHistoryReuseForResolve(const TaaResolveDesc& desc,
+    return tryPreflightTaaHistoryReuseForResolve(desc, m_history, outReason);

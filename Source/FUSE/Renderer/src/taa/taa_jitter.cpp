@@ -364,3 +364,12 @@ bool TaaJitter::tryAdvanceIfViewportReady(u32 width, u32 height, TaaJitterAdvanc
 // --- deepen additive from deepen-b59-taa-guards-8394 ---
 bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason* reason) {
     if (!preflightTaaJitterSync(frameIndex, m_sequenceLength, reason)) {
+
+// --- deepen additive from deepen-b59-taa-guards-9737 ---
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 sequenceLength) {
+    return TaaJitterLayout::validateSequenceLength(sequenceLength) ? TaaJitterSyncRejectReason::None
+                                                                   : TaaJitterSyncRejectReason::InvalidSequence;
+bool wouldResyncJitterToFrameIndex(const TaaJitter& jitter, u32 frameIndex) {
+bool trySyncJitterToFrameIndexIfReady(TaaJitter& jitter, u32 frameIndex, TaaJitterSyncRejectReason& outReason) {
+    outReason = classifyTaaJitterSyncReject(jitter.sequenceLength());
+    if (outReason != TaaJitterSyncRejectReason::None) {

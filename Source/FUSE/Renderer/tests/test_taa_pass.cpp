@@ -3376,3 +3376,26 @@ void testTaaJitterSyncRejectReasonGuards() {
     expectNear(weights.current, 0.35f, 1e-5f, "pass tryExpectedResolveBlendWeights current weight");
     expectNear(weights.history, 0.65f, 1e-5f, "pass tryExpectedResolveBlendWeights history weight");
     testTaaJitterSyncRejectReasonGuards();
+
+// --- deepen additive from deepen-b59-taa-guards-9737 ---
+void testJitterSyncRejectReasonGuards() {
+    expectTrue(fuse::renderer::trySyncJitterToFrameIndexIfReady(jitter, 5u, syncReason),
+               "trySync succeeds for valid sequence");
+               "trySync reject reason is None on success");
+               "jitter aligned after trySync");
+    expectTrue(fuse::renderer::trySyncJitterToFrameIndexIfReady(fallbackJitter, 2u, syncReason),
+void testHistorySampleAndWarmupGuards() {
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryReuse(emptyHistory, 0u, reuseReason),
+               "tryPreflight fails for empty history");
+               "empty history tryPreflight reason is NotReady");
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryReuseForResolve(desc, history, reuseReason),
+    expectTrue(fuse::renderer::tryPreflightTaaHistoryReuseForResolve(desc, history, reuseReason),
+void testResolveBlendApplyGuards() {
+               "tryPreflight blend passes on warmup frame");
+               "warmup tryPreflight reject reason is None");
+               "tryPreflight blend passes after warmup");
+    expectTrue(pass->trySyncJitterToFrameIndexIfReady(4u, syncReason),
+    expectTrue(!pass->jitterNeedsResyncToFrameIndex(4u), "pass jitter aligned after trySync");
+    expectTrue(!pass->tryPreflightHistoryReuseForResolve(resolveDesc, reuseReason),
+    expectTrue(pass->tryPreflightHistoryReuseForResolve(resolveDesc, reuseReason),
+    testJitterSyncRejectReasonGuards();

@@ -313,3 +313,6 @@ bool tryCanBeginTemporalReuse(const TaaHistoryBuffer& history, u32 observedGener
 struct TaaResolveFramePreflight {
     TaaResolveBlendRejectReason blend_reason = TaaResolveBlendRejectReason::None;
                               TaaResolveFramePreflight* out = nullptr);
+
+// --- deepen additive from deepen-b59-taa-guards-9737 ---
+bool wouldInvalidateHistoryIfStale(const TaaHistoryBuffer& history, u32 observedGeneration);
