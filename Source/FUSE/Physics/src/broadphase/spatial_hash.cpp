@@ -982,3 +982,12 @@ CandidateRejectReason candidatePairRejectReason(
 
 // --- deepen additive from deepen-b4-broadphase-guards-cd2f ---
 const char* candidate_pair_reject_reason_name(CandidatePairRejectReason reason) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-b3ad ---
+    case CandidatePairRejectReason::AabbSeparated:
+    case CandidatePairRejectReason::BufferFull:
+CandidatePairRejectReason candidatePairRejectReason(
+    const CandidatePairRejectReason indexReason = candidatePairRejectReason(pair, bodies.count());
+    if (indexReason != CandidatePairRejectReason::None) {
+        return CandidatePairRejectReason::AabbSeparated;
+    return CandidatePairRejectReason::None;

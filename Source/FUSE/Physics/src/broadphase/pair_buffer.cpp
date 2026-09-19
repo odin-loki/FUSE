@@ -781,3 +781,9 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
     if (rejectReason != CandidateRejectReason::None) {
         lastRejectReason = rejectReason;
         lastRejectReason = CandidateRejectReason::BufferFull;
+
+// --- deepen additive from deepen-b4-broadphase-guards-b3ad ---
+    lastRejectReason = CandidatePairRejectReason::None;
+    const CandidatePairRejectReason rejectReason = candidatePairRejectReason(idxA, idxB);
+    if (rejectReason != CandidatePairRejectReason::None) {
+        lastRejectReason = CandidatePairRejectReason::BufferFull;

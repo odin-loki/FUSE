@@ -2279,3 +2279,23 @@ void testPairBufferRejectReasonTracking() {
     expectTrue(!buffer.wouldRejectPush(0u, 1u), "wouldRejectPush accepts valid pair under capacity");
     expectTrue(buffer.wouldRejectPush(4u, 5u), "wouldRejectPush rejects when full");
 void testPairBufferWriteSlotBodyCountGuard() {
+
+// --- deepen additive from deepen-b4-broadphase-guards-b3ad ---
+                               fuse::physics::broadphase::CandidatePairRejectReason::AabbSeparated),
+                               fuse::physics::broadphase::CandidatePairRejectReason::BufferFull),
+void testRejectedCandidatePairGuards() {
+    expectTrue(fuse::physics::broadphase::isRejectedCandidatePair(1u, 1u),
+    expectTrue(!fuse::physics::broadphase::isRejectedCandidatePair(0u, 1u, 2u),
+    expectTrue(fuse::physics::broadphase::isRejectedCandidatePair(0u, 2u, 2u),
+void testCanSkipBroadphaseEmptySetGuard() {
+void testCellSpanExceedsClampGuards() {
+void testPairBufferLastRejectReasonGuards() {
+    expectEq(static_cast<fuse::u32>(buffer.lastRejectReason),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CandidatePairRejectReason::BufferFull),
+void testPairBufferRefineAndInvalidSlotGuards() {
+void testCandidatePairAabbRejectReason() {
+                 fuse::physics::broadphase::candidatePairRejectReason(overlapping, bodies, shapes)),
+                 fuse::physics::broadphase::candidatePairRejectReason(separated, bodies, shapes)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CandidatePairRejectReason::AabbSeparated),
+    testPairBufferLastRejectReasonGuards();
+    testCandidatePairAabbRejectReason();
