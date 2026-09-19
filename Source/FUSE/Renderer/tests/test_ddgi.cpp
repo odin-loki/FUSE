@@ -4834,3 +4834,21 @@ void testTrilinearCachePreflights() {
                "tryCanLaunchProbeKernels rejects zero rays per probe");
     expectTrue(!fuse::renderer::gi::tryLaunch_probe_kernels(zeroRays, nullptr, kernelReason),
                "tryLaunch_probe_kernels rejects zero rays per probe");
+
+// --- deepen additive from deepen-ddgi-b56-guards-18b0 ---
+               "wouldSkip false for valid probe grid source");
+               "wouldSkip true for empty grid source");
+void testTrilinearAndCachePreflights() {
+               "wouldSkip false for valid trilinear preflight");
+               "wouldSkip false for valid directional trilinear preflight");
+               "preflightTrilinear rejects undersized cache");
+    expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::UndersizedCache,
+               "wouldSkip true for undersized cache trilinear preflight");
+               "preflightTrilinear rejects null cache");
+               "preflightTrilinear rejects empty grid");
+void testKernelPreflightHelpers() {
+               "preflightProbeTraceKernel with reason pointer succeeds");
+               "preflightProbeTraceKernel zero count reports zero_update_count reason");
+               "preflightProbeBlendKernel zero count reports zero_update_count reason");
+    testTrilinearAndCachePreflights();
+    testKernelPreflightHelpers();
