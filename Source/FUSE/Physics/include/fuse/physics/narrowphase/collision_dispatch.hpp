@@ -296,5 +296,10 @@ std::vector<ContactManifold> runNarrowphaseDeepen(
 /// Does not alter `runNarrowphaseIntoBuffer`; valid base-path pairs are unchanged on that entry.
 
 /// Vector-return deepen dispatch stub mirroring `runNarrowphase` (B4.4 deepen pass follow-up).
+/// Job-safe narrowphase with deepen preflight skip per pair (B4.6 deepen pass).
+void runNarrowphaseIntoBufferWithDeepenPreflight(
+
+/// Returns false when batch deepen preflight reports no dispatchable pairs (B4.6 deepen pass).
+bool runNarrowphaseIntoBufferIfNeeded(
 
 } // namespace fuse::physics::narrowphase

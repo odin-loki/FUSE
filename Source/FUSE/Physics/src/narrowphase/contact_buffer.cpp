@@ -168,6 +168,16 @@ bool tangentBasisMatchesNormal(vec3 normal, const TangentBasis& basis, f32 epsil
 
 } // namespace
 
+bool ContactBufferSoA::canSkipMaxCapacityClamp() const {
+    if (maxCapacity == 0u || activeCount == 0u) {
+    return activeCount <= maxCapacity;
+
+    u32 valid = 0u;
+            ++valid;
+    return valid;
+
+    return slot < pairSlotCount && validFlags[slot] != 0u;
+
 void ContactBufferSoA::setMaxCapacity(u32 capacity) {
     maxCapacity = capacity;
 }
@@ -366,6 +376,8 @@ bool ContactBufferSoA::writeSlotIfValid(u32 slot, const ContactManifold& manifol
         return false;
     writeSlot(slot, manifold);
     return true;
+bool ContactBufferSoA::writeSlotWithPreflight(u32 slot, const ContactManifold& manifold) {
+    if (!preflight_contact_buffer_write(*this, slot, manifold).canWrite()) {
 
 void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
     if (slot >= pairSlotCount || !manifold.valid || manifold.bodyA == manifold.bodyB ||
@@ -944,6 +956,7 @@ ContactBufferWriteRejectReason contactBufferWriteRejectReason(
 
     }
 
+
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold) {
@@ -982,11 +995,7 @@ const char* contact_buffer_compaction_reject_reason_name(ContactBufferCompaction
         return ContactBufferWriteRejectReason::OutOfRange;
         return ContactBufferWriteRejectReason::InvalidSlot;
 
-bool contactBufferWriteRejectsForReason(
-    return contactBufferWriteRejectReason(buffer, slot, manifold) == expected;
 
-ContactBufferWritePreflight preflightContactBufferWrite(
-    preflight.reason = contactBufferWriteRejectReason(buffer, slot, manifold);
     preflight.outOfRange = preflight.reason == ContactBufferWriteRejectReason::OutOfRange;
 
 
@@ -1034,6 +1043,15 @@ bool contact_buffer_compaction_rejects_for_reason(
 ContactBufferWritePreflight preflight_contact_buffer_write(const ContactManifold& manifold) {
     preflight.invalidManifold = !manifold.valid;
     preflight.selfPair = manifold.bodyA == manifold.bodyB;
+
+
+
+    switch (reason) {
+        return "None";
+    return "Unknown";
+
+    if (buffer.pairSlotCount == 0u) {
+
 
 ContactBufferCompactionPreflight preflight_contact_buffer_compaction(const ContactBufferSoA& buffer) {
     ContactBufferCompactionPreflight preflight{};
@@ -1281,6 +1299,14 @@ bool should_skip_contact_buffer_friction_rebuild(const ContactBufferSoA& buffer)
 
 
 bool shouldRunContactBufferClamp(const ContactBufferSoA& buffer) {
+
+
+        return "EmptyBuffer";
+
+
+
+
+bool can_skip_contact_buffer_clamp(const ContactBufferSoA& buffer) {
 }
 
 } // namespace fuse::physics::narrowphase

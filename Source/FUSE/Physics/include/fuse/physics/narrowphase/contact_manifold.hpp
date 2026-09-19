@@ -1174,6 +1174,15 @@ void normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEps
 
 /// Finalize using `preflight_manifold_finalize` / `generate_contact_manifold_if_needed` (B4.4 deepen pass follow-up).
 bool finalize_contact_manifold_with_preflight(
+/// Returns true when `preflight_manifold_prune` would skip pruning (B4.6 deepen pass).
+bool manifold_prune_preflight_skips(
+
+/// Prune only when preflight reports work is needed; no-op otherwise (B4.6 deepen pass).
+
+/// Finalize only when `can_finalize_contact_manifold` passes; uses preflight path (B4.6 deepen pass).
+
+/// Returns true when `preflight_manifold_finalize` would skip finalize (B4.6 deepen pass).
+bool manifold_finalize_preflight_skips(
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
