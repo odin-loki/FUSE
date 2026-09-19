@@ -540,6 +540,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "empty_dependency_list";
     case CookHashRejectReason::UnknownDependencyOutput:
         return "unknown_dependency_output";
+    case CookHashRejectReason::UnresolvedDependency:
+        return "unresolved_dependency";
     case CookHashRejectReason::ZeroSourceHash:
         return "zero_source_hash";
     case CookHashRejectReason::ZeroContentHash:
@@ -552,6 +554,18 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "non_cacheable_combined_key";
     }
     return "unknown";
+
+CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
+    CookHashPreflight preflight;
+    if (!is_valid_fnv1a64_input(data, size)) {
+        preflight.reason = CookHashRejectReason::NullData;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
 
 CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
     CookHashPreflight preflight;
@@ -722,6 +736,18 @@ CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::st
                 const CookHashPreflight source_preflight = preflight_file_content_hash(asset.source_path);
                 if (!source_preflight.can_hash) {
                     return source_preflight;
+        }
+
+        bool resolved = false;
+            if (asset.output_path != dependency_output) {
+                continue;
+
+            resolved = true;
+            break;
+
+        if (!resolved) {
+            preflight.reason = CookHashRejectReason::UnresolvedDependency;
+            return preflight;
         }
 
         bool found = false;

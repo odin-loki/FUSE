@@ -321,6 +321,8 @@ public:
     [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
                                                       const std::vector<CookJobDependencyEdge>& edges,
                                                       const std::vector<CookJob>& jobs) const;
+    [[nodiscard]] bool would_invalidate_stale_content(const std::string& source_path,
+    [[nodiscard]] bool would_invalidate_stale_upstream(
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,

@@ -20,6 +20,7 @@ enum class CookHashRejectReason : u8 {
     SourceUnreadable,
     EmptyDependencyList,
     UnknownDependencyOutput,
+    UnresolvedDependency,
     ZeroSourceHash,
     ZeroContentHash,
     NonCacheableKey,
