@@ -1549,3 +1549,10 @@ const char* island_sleep_solve_reject_reason_name(IslandSleepSolveRejectReason r
 struct IslandFullDispatchPreflight {
     IslandConstraintSolveDeepenPreflight constraintSolve{};
 IslandFullDispatchPreflight preflight_dispatch_solve_island(
+
+// --- deepen additive from deepen-pbd-island-guards-9a14 ---
+struct IslandSleepAwareGraphPreflight {
+IslandSleepAwareDispatchPreflight preflight_island_sleep_aware_dispatch_by_index(
+IslandSleepAwareDispatchPreflight preflight_island_sleep_aware_dispatch_job(
+IslandSleepAwareGraphPreflight preflight_island_sleep_aware_graph(const ContactIslandGraph& graph,
+bool should_skip_island_sleep_aware_dispatch(const ContactIslandGraph::Island& island,

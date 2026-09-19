@@ -2533,3 +2533,13 @@ const char* island_sleep_solve_reject_reason_name(IslandSleepSolveRejectReason r
 IslandFullDispatchPreflight preflight_dispatch_solve_island(
     IslandFullDispatchPreflight preflight{};
     const IslandFullDispatchPreflight preflight = preflight_dispatch_solve_island(
+
+// --- deepen additive from deepen-pbd-island-guards-9a14 ---
+IslandSleepAwareDispatchPreflight preflight_island_sleep_aware_dispatch_by_index(
+IslandSleepAwareDispatchPreflight preflight_island_sleep_aware_dispatch_job(
+IslandSleepAwareGraphPreflight preflight_island_sleep_aware_graph(const ContactIslandGraph& graph,
+    IslandSleepAwareGraphPreflight preflight{};
+bool should_skip_island_sleep_aware_dispatch(const ContactIslandGraph::Island& island,
+    if (should_skip_island_sleep_aware_dispatch(island, bodies, contacts, distanceConstraints, dt)) {
+    const IslandSleepAwareGraphPreflight preflight = preflight_island_sleep_aware_graph(graph, bodies, dt);
+        } else if (should_skip_island_constraint_solve(

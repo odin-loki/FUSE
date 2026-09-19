@@ -4556,3 +4556,17 @@ void testDispatchSolveIslandWithPreflightGuards() {
     expectTrue(std::strcmp(island_wake_reject_reason_name(IslandWakeRejectReason::NoMixedSleepState),
     testPreflightIslandBuildDeepenGuards();
     testDispatchSolveIslandWithPreflightGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-9a14 ---
+void testGuardedIslandSleepAwareDispatch() {
+    const IslandConstraintSolvePreflight outOfRangeSolve =
+    const IslandSolveBodiesPreflight outOfRangeBodies =
+    const IslandSleepAwareDispatchPreflight mixedPreflight =
+    expectTrue(mixedPreflight.can_dispatch(), "sleep-aware dispatch preflight allows mixed island");
+               "should_skip sleep-aware dispatch false for mixed island");
+    const IslandSleepAwareDispatchPreflight sleepingPreflight =
+    expectTrue(!sleepingPreflight.can_dispatch(), "sleep-aware dispatch preflight rejects all-sleeping island");
+    expectTrue(should_skip_island_sleep_aware_dispatch(
+               "should_skip sleep-aware dispatch true for all-sleeping island");
+    const IslandSleepAwareGraphPreflight graphPreflight = preflight_island_sleep_aware_graph(graph, bodies, dt);
+    expectTrue(graphPreflight.can_dispatch(), "sleep-aware graph preflight has dispatchable islands");
