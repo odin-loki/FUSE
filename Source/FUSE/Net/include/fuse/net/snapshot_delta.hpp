@@ -308,3 +308,9 @@ private:
 
 // --- deepen additive from deepen-snapshot-delta-preflight-c635 ---
 [[nodiscard]] bool should_skip_redundant_empty_apply(const GameSnapshot& base, const SnapshotDelta& delta);
+
+// --- deepen additive from deepen-snapshot-delta-preflight-mask-6337 ---
+    [[nodiscard]] bool should_skip_apply() const { return empty_delta; }
+    [[nodiscard]] bool would_mutate_state() const { return !empty_delta && can_apply(); }
+    [[nodiscard]] bool should_skip_apply() const { return ring_empty || !has_baseline || skipped; }
+[[nodiscard]] SnapshotDeltaPreflight preflight_delta_masks(const SnapshotDelta& delta);

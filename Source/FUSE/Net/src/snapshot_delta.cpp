@@ -1009,3 +1009,9 @@ bool SnapshotHistoryRing::apply_delta_and_store(u32 base_frame, const SnapshotDe
 
 // --- deepen additive from deepen-snapshot-delta-preflight-c635 ---
 bool should_skip_redundant_empty_apply(const GameSnapshot& base, const SnapshotDelta& delta) {
+
+// --- deepen additive from deepen-snapshot-delta-preflight-mask-6337 ---
+SnapshotDeltaPreflight preflight_delta_masks(const SnapshotDelta& delta) {
+    SnapshotDeltaPreflight result = preflight_delta_masks(delta);
+    return preflight.can_apply() && preflight.should_skip_apply();
+    return preflight_apply_delta(base_frame, delta).should_skip_apply();
