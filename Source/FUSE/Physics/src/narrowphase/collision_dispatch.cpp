@@ -96,6 +96,9 @@ void runNarrowphaseIntoBuffer(
     const u32 pairCount = static_cast<u32>(pairs.size());
     const u32 pairCount = preflight.pairCount;
     buffer.preparePairSlots(pairCount);
+    if (pairCount == 0u) {
+        return;
+    }
 
     if (can_skip_narrowphase(pairs, bodies, shapes)) {
         buffer.compactAndClamp();
