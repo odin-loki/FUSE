@@ -1079,3 +1079,7 @@ void testCookHashPreflightFnvAndManifestCook() {
     expectTrue(!cooker.cache().would_invalidate_source(""), "empty source path would_invalidate guarded");
     expectTrue(!cooker.cache().would_invalidate_output(""), "empty output path would_invalidate guarded");
     testCookHashPreflightFnvAndManifestCook();
+
+// --- deepen additive from deepen-b79-cooker-hash-3e1a ---
+                   fuse::project::CookHashRejectReason::NullData)) == "null_data",
+               "would_invalidate_stale_upstream with matching upstream is false");

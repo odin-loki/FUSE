@@ -381,3 +381,6 @@ CookBatchResult AssetCooker::cook_dirty(AssetGraph& graph, const std::string& pr
     probe.would_invalidate_count = static_cast<u32>(stale_sources.size());
                 probe.would_invalidate_count +=
                         .would_invalidate_count;
+
+// --- deepen additive from deepen-b79-cooker-hash-3e1a ---
+bool AssetCooker::would_invalidate_upstream(const CookManifest& manifest,

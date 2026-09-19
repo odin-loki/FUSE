@@ -1986,3 +1986,11 @@ void testCookerReconcileEstimatorGuards() {
 
 // --- deepen additive from deepen-b79-cooker-hash-ff33 ---
                "would_invalidate_downstream_of true on repopulated chain cache");
+
+// --- deepen additive from deepen-b79-cooker-hash-3e1a ---
+    expectTrue(cooker.would_invalidate_upstream(manifest, sourceA),
+               "would_invalidate_upstream true for seeded chain source");
+    expectTrue(!cooker.would_invalidate_upstream(manifest, ""),
+               "would_invalidate_upstream false for empty changed source");
+    expectTrue(!cooker.would_invalidate_upstream(manifest, sourceA),
+               "would_invalidate_upstream false after upstream invalidation");
