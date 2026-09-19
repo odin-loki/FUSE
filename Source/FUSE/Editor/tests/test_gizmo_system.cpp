@@ -7597,6 +7597,24 @@ void testSnapDragRejectReasonGuards() {
     expectTrue(!gizmo.shouldSkipSnapDrag(0.37f), "gizmo shouldSkipSnapDrag false for valid delta");
     expectTrue(gizmo.shouldSkipSnapDrag(std::numeric_limits<fuse::f32>::quiet_NaN()),
                "gizmo shouldSkipSnapDrag true for non-finite delta");
+
+    snap.gridSize = 0.f;
+    expectTrue(!fuse::editor::tryPreflightSnapDrag(0.37f, fuse::editor::GizmoMode::Translate, snap,
+                                                   reason),
+               "tryPreflightSnapDrag rejects invalid step");
+    expectTrue(reason == fuse::editor::GizmoSnapDragRejectReason::InvalidStep,
+               "invalid step snap-drag reject reason is InvalidStep");
+    expectTrue(fuse::editor::isSnapDragDegraded(0.37f, fuse::editor::GizmoMode::Translate, snap),
+               "isSnapDragDegraded true when snap enabled with invalid step");
+
+    const fuse::editor::SnapDragPreflight nanPreflight = fuse::editor::preflightSnapDrag(
+        std::numeric_limits<fuse::f32>::quiet_NaN(), fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(fuse::editor::classifySnapDragReject(nanPreflight) ==
+                   fuse::editor::GizmoSnapDragRejectReason::DeltaNonFinite,
+               "classifySnapDragReject maps deltaNonFinite flag");
+    expectTrue(fuse::editor::shouldSkipSnapDrag(std::numeric_limits<fuse::f32>::infinity(),
+                                                fuse::editor::GizmoMode::Translate, snap),
+               "shouldSkipSnapDrag true for non-finite delta");
 }
 
 void testUpdateDragInteractionDeltaPreflight() {
@@ -10329,9 +10347,46 @@ void testBeginDragInteractionRejectReasonGuards() {
                "preflightBeginDragInteractionReady rejects empty ray");
     expectTrue(reason == fuse::editor::GizmoBeginDragRejectReason::EmptyRay,
                "empty ray interaction reject reason is EmptyRay");
+void testIsSnapDragDegraded() {
+    expectTrue(!fuse::editor::isSnapDragDegraded(0.37f, fuse::editor::GizmoMode::Translate, snap),
+               "isSnapDragDegraded false when snap disabled");
 
+    snap.gridSize = 0.f;
+    expectTrue(fuse::editor::isSnapDragDegraded(0.37f, fuse::editor::GizmoMode::Translate, snap),
+               "isSnapDragDegraded true when translate snap enabled with zero step");
+    expectTrue(!fuse::editor::isSnapDragDegraded(std::numeric_limits<fuse::f32>::quiet_NaN(),
+                                                 fuse::editor::GizmoMode::Translate, snap),
+               "isSnapDragDegraded false for non-finite delta");
+
+    snap.gridSize = 0.5f;
+               "isSnapDragDegraded false when translate snap step is valid");
+
+    const fuse::editor::SnapDragPreflight invalidStepPreflight =
+        fuse::editor::preflightSnapDrag(0.37f, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(invalidStepPreflight.isDegraded(),
+               "snap-drag preflight isDegraded marks invalid step");
+    expectTrue(!invalidStepPreflight.canApply(), "degraded snap-drag cannot apply");
+}
+
+void testUpdateDragInteractionSnapDragDegraded() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit = hitFromValidScreen();
     fuse::editor::GizmoSystem gizmo;
     gizmo.setSnapSettings(snap);
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+
+    const fuse::editor::UpdateDragInteractionPreflight degraded =
+        gizmo.preflightUpdateDragInteraction(hit, 0.37f);
+    expectTrue(degraded.canUpdate(), "update interaction still allows drag with degraded snap");
+    expectTrue(degraded.snapDragDegraded(),
+               "update interaction marks snap-drag degraded with invalid step");
+    expectTrue(!degraded.snapDragWillApply(),
+               "degraded snap-drag does not apply rounding in interaction preflight");
+    gizmo.endDrag();
 }
 
 void testUpdateDragInteractionRejectReasonGuards() {
@@ -10644,6 +10699,8 @@ int main() {
     testBeginDragInteractionRejectReasonGuards();
     testUpdateDragInteractionRejectReasonGuards();
     testEndDragInteractionRejectReasonGuards();
+    testIsSnapDragDegraded();
+    testUpdateDragInteractionSnapDragDegraded();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test failure(s)\n", g_failures);

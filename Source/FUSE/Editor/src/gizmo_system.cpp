@@ -824,6 +824,9 @@ bool canUseRay(const GizmoRay& ray, f32 axisLength, f32 pickRadius) {
 bool isRayRejected(const GizmoRay& ray, f32 axisLength, f32 pickRadius) {
     return !canUseRay(ray, axisLength, pickRadius);
 
+bool isSnapDragDegraded(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings) {
+    return preflightSnapDrag(delta, mode, settings).isDegraded();
+
 bool isRayValid(const GizmoRay& ray) {
     return !isRayEmpty(ray);
 
@@ -5533,22 +5536,10 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
     }
     if (preflight.snapDisabled) {
         return GizmoSnapDragRejectReason::SnapDisabled;
-    }
     if (preflight.invalidStep) {
         return GizmoSnapDragRejectReason::InvalidStep;
-    }
     return GizmoSnapDragRejectReason::None;
-}
 
-GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& preflight) {
-    if (preflight.deltaNonFinite) {
-        return GizmoSnapDragRejectReason::DeltaNonFinite;
-    }
-    if (preflight.snapDisabled) {
-        return GizmoSnapDragRejectReason::SnapDisabled;
-    if (preflight.invalidStep) {
-        return GizmoSnapDragRejectReason::InvalidStep;
-    return GizmoSnapDragRejectReason::None;
 
 GizmoEndDragRejectReason classifyEndDragReject(const EndDragPreflight& preflight) {
     if (preflight.notDragging) {
