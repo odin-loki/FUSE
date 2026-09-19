@@ -3376,3 +3376,17 @@ bool tryLaunch_ddgi_probe_kernels(const DDGIKernelParams& params,
 // --- deepen additive from ddgi-deepen-guards-c072 ---
     return preflightProbeGridSource(desc);
         *reason = ProbeScheduleRejectReason::None;
+
+// --- deepen additive from deepen-ddgi-b56-guards-dcb7 ---
+    const bool ok = tryCanTrilinearSampleAtProbeCoords(desc, coords, cache, cache_count, reject);
+    return ok && !probeTrilinearSampleRejectReasonIsBlocking(reject);
+bool preflightCacheSampling(const DDGIDesc& desc,
+        const CacheIndexRejectReason reject = ProbeGridLayout::isEmptyGrid(desc)
+                                                  ? CacheIndexRejectReason::EmptyGrid
+                                                  : CacheIndexRejectReason::UndersizedCache;
+            *reason = CacheIndexRejectReason::NullCache;
+            *reason = CacheIndexRejectReason::UndersizedCache;
+bool wouldSkipCacheSampling(const DDGIDesc& desc,
+    return !preflightCacheSampling(desc, cache, cache_count);
+bool tryCanLaunchProbeKernels(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
+    if (!tryCanLaunchProbeKernels(params, outReason)) {

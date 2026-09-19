@@ -206,3 +206,6 @@ bool wouldSkipProbeBlendKernelWithGrid(const DDGIDesc& desc, const DDGIKernelPar
 
 // --- deepen additive from deepen-ddgi-b56-guards-0b59 ---
 bool tryLaunch_ddgi_probe_kernels(const DDGIKernelParams& params,
+
+// --- deepen additive from deepen-ddgi-b56-guards-dcb7 ---
+bool tryCanLaunchProbeKernels(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);

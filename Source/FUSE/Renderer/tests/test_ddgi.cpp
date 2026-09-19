@@ -4812,3 +4812,25 @@ void testTrilinearCachePreflights() {
     expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearDirectionalProbeSample(
                "wouldSkipTrilinearDirectionalProbeSample true for null cache");
                "preflightTrilinearDirectionalProbeIrradiance succeeds on full cache");
+
+// --- deepen additive from deepen-ddgi-b56-guards-dcb7 ---
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, warnWeights),
+               "tryCanTrilinearSampleAtProbeCoords warns but succeeds for clampable weights");
+    expectTrue(!fuse::renderer::ddgi_util::preflightTrilinearProbeSample(empty, {0.f, 0.f, 0.f}, cache.data(), 8u),
+               "preflightTrilinearProbeSample rejects empty grid");
+    expectTrue(fuse::renderer::ddgi_util::preflightCacheSampling(desc, cache.data(), 8u),
+               "preflightCacheSampling succeeds for full cache");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheSampling(desc, cache.data(), 8u),
+               "wouldSkipCacheSampling false for full cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheSampling(desc, nullptr, 8u),
+               "wouldSkipCacheSampling true for null cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheSampling(desc, cache.data(), 4u),
+               "wouldSkipCacheSampling true for undersized cache");
+               "classifyProbeScheduleAtRateReject none for valid inputs");
+    expectTrue(fuse::renderer::gi::tryCanLaunchProbeKernels(kernelParams, kernelReason),
+               "tryCanLaunchProbeKernels succeeds for valid params");
+    expectTrue(fuse::renderer::gi::tryLaunch_probe_kernels(kernelParams, nullptr, kernelReason),
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeKernels(zeroRays, kernelReason),
+               "tryCanLaunchProbeKernels rejects zero rays per probe");
+    expectTrue(!fuse::renderer::gi::tryLaunch_probe_kernels(zeroRays, nullptr, kernelReason),
+               "tryLaunch_probe_kernels rejects zero rays per probe");
