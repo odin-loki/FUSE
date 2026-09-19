@@ -1711,3 +1711,22 @@ FUSE_PHYSICS_INLINE ShapeCellHashInsertPreflight preflightShapeCellHashInsert2D(
     return !preflightShapeCellHashInsert2D(range, maxCells).canInsert();
     return preflightShapeCellHashInsert(range, maxCells).canInsert();
     return preflightShapeCellHashInsert2D(range, maxCells).canInsert();
+
+// --- deepen additive from deepen-b4-broadphase-guards-e754 ---
+enum class CellCapacityRejectReason : u8 {
+const char* cellCapacityRejectReasonName(CellCapacityRejectReason reason);
+FUSE_PHYSICS_INLINE CellCapacityRejectReason cellCapacityRejectReason(
+        return CellCapacityRejectReason::EmptyRange;
+        return CellCapacityRejectReason::ExceedsSpan;
+        return CellCapacityRejectReason::ExceedsBudget;
+    return CellCapacityRejectReason::None;
+    return cellCapacityRejectReason(range, maxCells, maxSpanPerAxis) == expected;
+    CellCapacityRejectReason reason = CellCapacityRejectReason::None;
+    bool canIterate() const { return reason == CellCapacityRejectReason::None; }
+    preflight.reason = cellCapacityRejectReason(range, maxCells, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellCapacityRejectReason::EmptyRange;
+    preflight.exceedsSpan = preflight.reason == CellCapacityRejectReason::ExceedsSpan;
+    preflight.exceedsBudget = preflight.reason == CellCapacityRejectReason::ExceedsBudget;
+    return !preflightCellCapacity(range, maxCells, maxSpanPerAxis).canIterate();
+    return preflightCellCapacity(range, maxCells, maxSpanPerAxis).canIterate();
+bool mergeBroadphasePlaneDynamicWithPreflight(

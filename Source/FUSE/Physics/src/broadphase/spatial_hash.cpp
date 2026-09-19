@@ -1719,3 +1719,11 @@ BroadphaseMergePairsIntoBufferPreflight preflightBroadphaseMergePairsIntoBuffer(
     return !preflightBroadphaseMergePairsIntoBuffer(bodies, shapes, pairs, buffer).canMerge();
     return preflightBroadphaseMergePairsIntoBuffer(bodies, shapes, pairs, buffer).canMerge();
 bool mergeBroadphasePairsIntoBufferWithPreflight(
+
+// --- deepen additive from deepen-b4-broadphase-guards-e754 ---
+const char* cellCapacityRejectReasonName(CellCapacityRejectReason reason) {
+    case CellCapacityRejectReason::None:
+    case CellCapacityRejectReason::EmptyRange:
+    case CellCapacityRejectReason::ExceedsSpan:
+    case CellCapacityRejectReason::ExceedsBudget:
+bool mergeBroadphasePlaneDynamicWithPreflight(

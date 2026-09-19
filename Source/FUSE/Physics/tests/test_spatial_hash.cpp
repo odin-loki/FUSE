@@ -4125,3 +4125,25 @@ void testShapeCellHashInsertPreflightGuards() {
     expectTrue(!planePreflight.canInsert(), "2D shape hash-insert preflight rejects over-budget range");
     expectEq(planePreflight.occupancy.occupancyCount, 8u, "2D shape hash-insert preflight reports occupancy count");
     testShapeCellHashInsertPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-e754 ---
+    expectTrue(!fuse::physics::broadphase::mergeBroadphasePlaneDynamicWithPreflight(bodies, shapes, mergeBuffer),
+void testCellCapacityRejectReasonAndPreflight() {
+                 fuse::physics::broadphase::cellCapacityRejectReason(validRange, 8u, 4u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellCapacityRejectReason::None),
+        fuse::physics::broadphase::preflightCellCapacity(validRange, 8u, 4u);
+    expectTrue(fuse::physics::broadphase::cellCapacityRejectsForReason(
+                   fuse::physics::broadphase::CellCapacityRejectReason::ExceedsBudget),
+                   fuse::physics::broadphase::CellCapacityRejectReason::ExceedsSpan),
+    expectTrue(std::strcmp(fuse::physics::broadphase::cellCapacityRejectReasonName(
+                 fuse::physics::broadphase::cellCapacityRejectReason(inverted, 4u, 4u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellCapacityRejectReason::EmptyRange),
+    const fuse::physics::broadphase::CellCapacityPreflight planePreflight =
+        fuse::physics::broadphase::preflightCellCapacity(planeRange, 8u, 4u);
+    expectTrue(!planePreflight.canIterate(), "2D combined preflight rejects over-span range");
+    expectTrue(planePreflight.exceedsSpan, "2D combined preflight marks exceedsSpan");
+void testBroadphaseMergePlaneDynamicWithPreflightGuards() {
+    expectTrue(!fuse::physics::broadphase::mergeBroadphasePlaneDynamicWithPreflight(bodies, shapes, buffer),
+    expectTrue(fuse::physics::broadphase::mergeBroadphasePlaneDynamicWithPreflight(bodies, shapes, buffer),
+    testCellCapacityRejectReasonAndPreflight();
+    testBroadphaseMergePlaneDynamicWithPreflightGuards();
