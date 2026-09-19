@@ -26,6 +26,23 @@ public:
     /// Reconcile cache with current upstream dependency hashes via the cook job graph (B7.9 deepen).
     u32 invalidate_stale_dependency_hashes(const CookManifest& manifest);
 
+    /// Non-mutating upstream invalidation scope probe via the cook job graph (B7.9 deepen).
+    [[nodiscard]] CookCacheInvalidationProbe probe_upstream_dependency(const CookManifest& manifest,
+                                                                       const std::string& changed_source) const;
+    /// Non-mutating reconcile estimate for stale upstream dependency hashes (B7.9 deepen).
+    struct CookDependencyReconcileEstimate {
+        u32 stale_upstream_entries = 0;
+        u32 downstream_cascade_entries = 0;
+        std::vector<std::string> stale_source_paths;
+
+        [[nodiscard]] u32 total_entries() const {
+            return stale_upstream_entries + downstream_cascade_entries;
+        }
+        [[nodiscard]] bool would_reconcile() const { return total_entries() > 0; }
+    };
+    [[nodiscard]] CookDependencyReconcileEstimate estimate_stale_dependency_hashes(
+        const CookManifest& manifest) const;
+
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
 
