@@ -1021,3 +1021,6 @@ bool tryValidateProbeGridSource(const ProbeGridSource& source, ProbeGridSourceRe
 ProbeGridSourceRejectReason classifyProbeGridSourceReject(const ProbeGridSource& source);
 bool preflightProbeGridSource(const ProbeGridSource& source, ProbeGridSourceRejectReason* reason = nullptr);
 bool wouldSkipProbeGridSource(const ProbeGridSource& source);
+
+// --- deepen additive from deepen-ddgi-b56-guards-8377 ---
+bool wouldSkipProbeSample(const DDGIDesc& desc,

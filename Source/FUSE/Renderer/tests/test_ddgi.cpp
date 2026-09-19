@@ -4316,3 +4316,27 @@ void testDdgiKernelUpdatePreflightGuards() {
     expectTrue(fuse::renderer::gi::wouldSkipDdgiKernelUpdate(desc, validIndices, 0u),
                "wouldSkipDdgiKernelUpdate true for zero count");
     testDdgiKernelUpdatePreflightGuards();
+
+// --- deepen additive from deepen-ddgi-b56-guards-8377 ---
+    expectTrue(fuse::renderer::tryValidateProbeGridSource(desc, reason),
+               "valid probe grid source passes tryValidate");
+               "preflightProbeGridSource succeeds for valid descriptor");
+               "wouldSkipProbeGridSource false for valid descriptor");
+               "classifyProbeGridSourceReject none for valid descriptor");
+    expectTrue(!fuse::renderer::tryValidateProbeGridSource(empty, reason),
+    expectTrue(fuse::renderer::classifyProbeGridSourceReject(zeroIrradiance) ==
+    expectTrue(fuse::renderer::classifyProbeGridSourceReject(zeroDepth) ==
+               "classifyProbeGridSourceReject zero_depth_res");
+    expectTrue(fuse::renderer::classifyProbeGridSourceReject(zeroRays) ==
+               "classifyProbeGridSourceReject zero_rays_per_probe");
+               "count-only preflightCacheIndexLookup succeeds");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipReadIrradianceAtIndex(desc, cache.data(), 3u, 8u),
+               "wouldSkipReadIrradianceAtIndex false for valid cache read");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipReadIrradianceAtIndex(desc, nullptr, 3u, 8u),
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSample(desc, request, cache.data(), 8u),
+               "wouldSkipProbeSample false for valid request");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSample(desc, request, cache.data(), 4u),
+               "wouldSkipProbeSample true for undersized cache");
+    expectTrue(fuse::renderer::gi::preflightPopulatedProbeKernelLaunch(
+               "preflightPopulatedProbeKernelLaunch succeeds for valid params");
+    expectTrue(populated.frame_seed == 99u, "preflightPopulatedProbeKernelLaunch sets frame_seed");

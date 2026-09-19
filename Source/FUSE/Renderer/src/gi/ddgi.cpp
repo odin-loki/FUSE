@@ -3140,3 +3140,7 @@ bool wouldSkipProbeGridSource(const ProbeGridSource& source) {
 bool preflightDdgiKernelUpdate(const DDGIDesc& desc,
 bool wouldSkipDdgiKernelUpdate(const DDGIDesc& desc,
     return !preflightDdgiKernelUpdate(desc, probe_indices, probe_count, frame_seed);
+
+// --- deepen additive from deepen-ddgi-b56-guards-8377 ---
+bool wouldSkipProbeSample(const DDGIDesc& desc,
+bool preflightPopulatedProbeKernelLaunch(DDGIKernelParams& params,

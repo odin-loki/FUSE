@@ -183,3 +183,6 @@ bool wouldSkipProbeKernelLaunchForDesc(const DDGIDesc& desc, const DDGIKernelPar
 // --- deepen additive from deepen-ddgi-guards-0e44 ---
 bool preflightDdgiKernelUpdate(const DDGIDesc& desc,
 bool wouldSkipDdgiKernelUpdate(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-b56-guards-8377 ---
+bool preflightPopulatedProbeKernelLaunch(DDGIKernelParams& params,
