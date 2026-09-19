@@ -1210,6 +1210,102 @@ void testLensFlareGeneration() {
     expectTrue(occluded.empty(), "fully occluded sun produces no flare elements");
 }
 
+void testFroxelCoordLookupDescPopulationAndDiagnosticGuards() {
+    fuse::renderer::FroxelGridDesc desc{};
+    desc.tilesX = 4;
+    desc.tilesY = 2;
+    desc.slicesZ = 3;
+
+    fuse::renderer::FroxelDensityGrid grid{};
+    grid.allocate(desc);
+    grid.density[0] = 1.f;
+
+    expectTrue(fuse::renderer::froxel_util::canLookupAtCoord(grid, desc, 0u, 0u, 0u),
+               "canLookupAtCoord accepts accessible grid");
+    expectTrue(fuse::renderer::froxel_util::canLookupAtCoord(grid, desc, 99u, 99u, 99u),
+               "canLookupAtCoord accepts OOB coords that will be clamped");
+
+    fuse::renderer::DensityLookupRejectReason lookupReason = fuse::renderer::DensityLookupRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryCanLookupAtCoord(grid, desc, 0u, 0u, 0u, lookupReason),
+               "tryCanLookupAtCoord accepts accessible grid");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::None,
+               "in-bounds coord lookup reports no reject reason");
+
+    expectTrue(fuse::renderer::froxel_util::tryCanLookupAtCoord(grid, desc, 99u, 0u, 0u, lookupReason),
+               "tryCanLookupAtCoord warns but succeeds for clampable OOB tileX");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::IndexOutOfRange,
+               "OOB tileX coord reports index_out_of_range lookup reject reason");
+    expectTrue(fuse::renderer::froxel_util::wouldClampCoordLookup(99u, 0u, 0u, desc),
+               "wouldClampCoordLookup true for OOB tileX");
+    expectTrue(!fuse::renderer::froxel_util::wouldClampCoordLookup(0u, 0u, 0u, desc),
+               "wouldClampCoordLookup false for in-bounds coords");
+
+    fuse::f32 coordSample = 0.f;
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtCoord(grid, desc, 0u, 0u, 0u, coordSample, lookupReason),
+               "trySampleDensityAtCoord with reason succeeds on accessible grid");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::None,
+               "successful coord sample reports no lookup reject reason");
+    expectNear(coordSample, 1.f, 1e-5f, "trySampleDensityAtCoord with reason returns stored density");
+
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtCoord(grid, desc, 1u, 0u, 0u, 2.5f, lookupReason),
+               "tryWriteDensityAtCoord with reason succeeds on accessible grid");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::None,
+               "successful coord write reports no lookup reject reason");
+
+    fuse::f32 indexSample = 0.f;
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 0u, indexSample, lookupReason),
+               "trySampleDensityAtIndex with reason succeeds on accessible grid");
+    expectNear(indexSample, 1.f, 1e-5f, "trySampleDensityAtIndex with reason returns stored density");
+
+    fuse::renderer::FroxelCameraDesc camera{};
+    camera.nearPlane = 1.f;
+    camera.farPlane = 100.f;
+    fuse::f32 screenSample = 0.f;
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtScreen(
+                   grid, desc, camera, 0.25f, 0.25f, 3.16f, screenSample, lookupReason),
+               "trySampleDensityAtScreen with reason succeeds on accessible grid");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::None,
+               "successful screen sample reports no lookup reject reason");
+
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtScreen(
+                   grid, desc, camera, 0.5f, 0.5f, 0.01f, screenSample, lookupReason),
+               "trySampleDensityAtScreen with reason rejects depth below near plane");
+    expectTrue(lookupReason == fuse::renderer::DensityLookupRejectReason::ScreenMappingFailed,
+               "below-near screen sample reports screen_mapping_failed lookup reject reason");
+    expectTrue(std::strcmp(fuse::renderer::densityLookupRejectReasonLabel(lookupReason), "screen_mapping_failed") == 0,
+               "screen_mapping_failed lookup reject reason label");
+
+    expectTrue(fuse::renderer::froxel_util::countNonZeroFroxelsForDesc(grid, desc) >= 1u,
+               "countNonZeroFroxelsForDesc counts seeded density");
+    expectTrue(fuse::renderer::froxel_util::validateDensityCountsForDesc(grid, desc),
+               "validateDensityCountsForDesc succeeds on accessible grid");
+
+    fuse::renderer::FroxelGridDesc mismatched{};
+    mismatched.tilesX = 2;
+    mismatched.tilesY = 2;
+    mismatched.slicesZ = 2;
+    expectTrue(fuse::renderer::froxel_util::countNonZeroFroxelsForDesc(grid, mismatched) == 0u,
+               "countNonZeroFroxelsForDesc returns zero on desc mismatch");
+    expectTrue(fuse::renderer::froxel_util::countEmptyFroxelsForDesc(grid, mismatched) == mismatched.froxelCount(),
+               "countEmptyFroxelsForDesc returns full count on desc mismatch");
+    expectTrue(!fuse::renderer::froxel_util::validateDensityCountsForDesc(grid, mismatched),
+               "validateDensityCountsForDesc fails on desc mismatch");
+
+    fuse::renderer::FroxelCameraDesc badCamera{};
+    badCamera.nearPlane = 100.f;
+    badCamera.farPlane = 1.f;
+    fuse::renderer::VolumetricFogParams params{};
+    params.density = 0.02f;
+    params.march_steps = 32u;
+    fuse::renderer::FroxelPopulateRejectReason populateReason = fuse::renderer::FroxelPopulateRejectReason::None;
+    fuse::renderer::FroxelDensityGrid populateGrid{};
+    expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(
+                   populateGrid, desc, badCamera, params, populateReason),
+               "tryPopulate with reason rejects invalid camera");
+    expectTrue(populateReason == fuse::renderer::FroxelPopulateRejectReason::InvalidCamera,
+               "tryPopulate with reason reports invalid_camera populate reject reason");
+}
+
 void testDeferredPipelinePassHooks() {
     expectTrue(fuse::renderer::DeferredFramePipeline::passCount() == 19u,
                "deferred pipeline exposes 19 passes after B5.11 hooks");
@@ -1228,6 +1324,9 @@ void testDeferredPipelinePassHooks() {
     bootstrapDesc.createSwapchain = false;
     auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
     expectTrue(bootstrap != nullptr, "bootstrap allocated for B5.11 graph test");
+    if (!bootstrap->status().deviceReady) {
+        return;
+    }
 
     fuse::renderer::BindlessDescriptors bindless{};
     bindless.init(*bootstrap->device());
@@ -1267,6 +1366,7 @@ int main() {
     testFroxelDensityLookupAndSampleCoordGuards();
     testFroxelSampleCoordNormalizeAndScreenMappingGuards();
     testFroxelPopulatePreflightAndLookupGuards();
+    testFroxelCoordLookupDescPopulationAndDiagnosticGuards();
     testEmptySceneVolumetricFog();
     testZeroDimensionFroxelGrid();
     testFroxelPopulateFromAnalyticFog();
