@@ -2865,3 +2865,18 @@ void testNestingStatePreflight() {
     const fuse::profiler::ChromeExportPreflight overflowPreflight = fuse::profiler::preflightChromeExport();
     expectTrue(overflowPreflight.droppedEventCount == 1u, "export preflight reports dropped events");
     testNestingStatePreflight();
+
+// --- deepen additive from deepen-b16-profiler-guards-5d2c ---
+    expectTrue(emptyPreflight.canExport(), "empty buffer can still export");
+    expectTrue(emptyPreflight.bufferEmpty, "preflight marks empty buffer");
+    expectTrue(!emptyPreflight.hasStateWarnings(), "clean reset has no state warnings");
+    expectTrue(!emptyPreflight.unbalancedScopeNesting, "reset leaves scope nesting balanced");
+    expectTrue(!emptyPreflight.unbalancedFlowNesting, "reset leaves flow nesting balanced");
+    expectTrue(!emptyPreflight.hasOpenAsyncFlows, "reset leaves no open async flows");
+    const fuse::profiler::ChromeExportPreflight dirtyPreflight = fuse::profiler::preflightChromeExport();
+    expectTrue(dirtyPreflight.canExport(), "unbalanced state can still export");
+    expectTrue(!dirtyPreflight.bufferEmpty, "preflight sees recorded events");
+    expectTrue(dirtyPreflight.hasStateWarnings(), "unmatched flow triggers state warnings");
+    expectTrue(!dirtyPreflight.unbalancedScopeNesting, "ended scope is balanced");
+    expectTrue(dirtyPreflight.unbalancedFlowNesting, "unmatched flow marks flow nesting unbalanced");
+    expectTrue(dirtyPreflight.hasOpenAsyncFlows, "unmatched flow marks open async flows");

@@ -1156,3 +1156,6 @@ ProfilerGuardPreflight preflightGuardState() {
 NestingStatePreflight preflightNestingState() {
     NestingStatePreflight preflight{};
     return preflightChromeExport().canExport();
+
+// --- deepen additive from deepen-b16-profiler-guards-5d2c ---
+    ChromeExportPreflight preflight;
