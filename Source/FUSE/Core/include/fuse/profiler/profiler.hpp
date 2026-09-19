@@ -45,6 +45,9 @@ enum class CounterValueKind : u8 {
 /// Why an event name failed validation — read-only guard for empty/null names.
 enum class EventNameRejectReason : u8 {
     None = 0,
+/// Classify why an event name would be rejected by record guards (B1.6 deepen).
+enum class InvalidEventNameKind : u8 {
+    Valid,
     Null,
     Empty,
 };
@@ -164,6 +167,11 @@ enum class ProfilerRecordSkipReason : u8 {
     EmptyName,
     NoOpenFlows,
     CrossThreadHandoffPending,
+/// Classify why a profile record call would no-op (B1.6 deepen).
+    OrphanFlowEnd,
+};
+
+/// Classify why chrome export would bail before emitting trace events (B1.6 deepen).
 };
 
 struct ProfileEvent {
@@ -312,6 +320,11 @@ struct ChromeTraceExportPreflight {
     u32 nonExportableEventCount = 0;
     u32 firstExportableEventIndex = kInvalidEventIndex;
     u32 lastExportableEventIndex = kInvalidEventIndex;
+    u32 beginEventCount = 0;
+    u32 endEventCount = 0;
+    u32 flowStartEventCount = 0;
+    u32 flowFinishEventCount = 0;
+    u32 counterEventCount = 0;
     bool ringBufferFull = false;
     bool hasInvalidNameEvents = false;
     bool crossThreadFlowHandoffPending = false;
@@ -444,6 +457,8 @@ struct AsyncFlowEndPreflight {
 
 /// Read-only nesting and async-flow diagnostics — safe before scope/flow entry.
 struct NestingAsyncFlowPreflight {
+/// Read-only nesting/async-flow diagnostics — safe before recording or export.
+struct ProfileNestingPreflight {
     u32 activeScopeNestingDepth = 0;
     u32 activeFlowNestingDepth = 0;
     u32 maxScopeNestingDepth = 0;
@@ -451,6 +466,8 @@ struct NestingAsyncFlowPreflight {
     u32 openAsyncFlowCount = 0;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
+    bool scopeNestingBalanced = true;
+    bool flowNestingBalanced = true;
     bool hasOpenAsyncFlows = false;
     bool flowDepthDetached = false;
     bool crossThreadFlowHandoffPending = false;
@@ -972,68 +989,25 @@ struct ProfilerNestingPreflight {
     bool hasActiveAsyncFlowNesting() const { return activeFlowNestingDepth > 0u; }
 };
 
-/// Read-only scope nesting diagnostics — safe before entering or ending scopes.
-struct ScopeNestingPreflight {
-    u32 activeDepth = 0;
-    u32 maxDepth = 0;
-    bool balanced = true;
-    bool hasActiveScopes = false;
-};
 
-/// Read-only async-flow nesting diagnostics — safe before flow begin/end.
-struct AsyncFlowPreflight {
-    u32 activeDepth = 0;
-    u32 maxDepth = 0;
-    u32 openFlowCount = 0;
-    bool balanced = true;
-    bool consistent = true;
-    bool depthDetached = false;
-    bool crossThreadHandoffPending = false;
-    bool hasOpenFlows = false;
-};
 
 /// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
 struct ProfileScopePreflight {
     bool profilerDisabled = false;
     bool invalidName = false;
     bool canEnter = false;
-};
 
 /// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
 struct AsyncFlowBeginPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
     bool canBegin = false;
-};
 
 /// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
 struct AsyncFlowEndPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
     bool wouldUnderflowOpenCount = false;
     bool canEnd = false;
-};
 
-/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
-struct ProfileScopePreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool canEnter = false;
-};
 
-/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
-struct AsyncFlowBeginPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool canBegin = false;
-};
 
-/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
-struct AsyncFlowEndPreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool wouldUnderflowOpenCount = false;
-    bool canEnd = false;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -1165,6 +1139,18 @@ bool preflightEndAsyncFlow(const char* name);
 
 bool wouldSkipAsyncFlow(const char* name);
 bool wouldSkipCounter(const char* track);
+
+InvalidEventNameKind classifyInvalidEventName(const char* name);
+bool isNullEventName(const char* name);
+bool isEmptyEventName(const char* name);
+ProfileRecordSkipReason classifyProfileRecordSkip(const char* name);
+bool wouldSkipProfileScope(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowBegin(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowEnd(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipCounter(const char* track, ProfileRecordSkipReason* reason = nullptr);
+ChromeTraceExportSkipReason classifyChromeTraceExportSkip();
+bool wouldSkipChromeTraceExport(ChromeTraceExportSkipReason* reason = nullptr);
+bool wouldSkipSafeChromeTraceExport(ChromeTraceExportSkipReason* reason = nullptr);
 
 bool hasEvents();
 bool isBufferEmpty();
@@ -1582,6 +1568,8 @@ bool tryFirstExportableEventByName(const char* name, ProfileEvent& outEvent);
 bool tryLastExportableEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFirstExportableEventByFlow(u32 flowId, ProfileEvent& outEvent);
 bool tryLastExportableEventByFlow(u32 flowId, ProfileEvent& outEvent);
+bool tryFindAsyncFlowStartIndex(u32 flowId, u32& outIndex);
+bool tryFindAsyncFlowFinishIndex(u32 flowId, u32& outIndex);
 const ProfileEvent& lastEvent();
 ProfilerRecordPreflight preflightRecord(const char* name);
 ProfilerExportPreflight preflightChromeTraceExport();
@@ -1883,6 +1871,7 @@ bool wouldSkipAsyncFlowEnd(const char* name);
 
 
 /// Preflight skip checks — mirror hot-path guards without recording events.
+ProfileNestingPreflight preflightNesting();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
