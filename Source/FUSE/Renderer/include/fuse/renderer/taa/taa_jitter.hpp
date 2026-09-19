@@ -123,4 +123,23 @@ private:
     u32 m_monotonicFrame = 0;
 };
 
+/// Why jitter alignment to a monotonic frame counter was rejected (B5.9 deepen).
+enum class TaaJitterAlignmentRejectReason : u8 {
+    None = 0,
+    SyncBlocked,
+    Misaligned,
+};
+/// Human-readable label for jitter alignment reject reasons (B5.9 deepen).
+const char* taaJitterAlignmentRejectReasonLabel(TaaJitterAlignmentRejectReason reason);
+/// Classify why jitter is not aligned to `frameIndex` (B5.9 deepen).
+TaaJitterAlignmentRejectReason classifyTaaJitterAlignmentReject(u32 frameIndex, const TaaJitter& jitter);
+/// True when jitter can sync to and is aligned with `frameIndex` (B5.9 deepen).
+bool preflightTaaJitterAligned(u32 frameIndex, const TaaJitter& jitter,
+                               TaaJitterAlignmentRejectReason* reason = nullptr);
+/// Jitter alignment preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterAligned(u32 frameIndex, const TaaJitter& jitter,
+                                  TaaJitterAlignmentRejectReason& reason);
+/// Early-out when jitter alignment preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterAlignment(u32 frameIndex, const TaaJitter& jitter);
+
 } // namespace fuse::renderer
