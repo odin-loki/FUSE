@@ -1221,6 +1221,258 @@ bool should_skip_island_constraint_solve(const ContactIslandGraph::Island& islan
     return !preflight_island_constraint_solve(island, bodies, contacts, distanceConstraints).can_solve();
 }
 
+IslandSolveDispatchPreflight preflight_island_solve_dispatch(
+    const ContactIslandGraph::Island& island,
+    const RigidBodySoA& bodies,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandSolveDispatchPreflight preflight{};
+    if (!island_has_constraints(island)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.constraint = preflight_island_constraint_solve(island, bodies, contacts, distanceConstraints);
+    preflight.sleep = preflight_island_sleep(island, bodies);
+    return preflight;
+}
+
+IslandSolveDispatchPreflight preflight_island_solve_dispatch_by_index(
+    const ContactIslandGraph& graph,
+    u32 islandIndex,
+    const RigidBodySoA& bodies,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandSolveDispatchPreflight preflight{};
+    if (!island_index_valid(graph, islandIndex)) {
+        preflight.skipped = true;
+        return preflight;
+    }
+    return preflight_island_solve_dispatch(graph.island(islandIndex), bodies, contacts, distanceConstraints);
+}
+
+bool should_skip_island_solve_dispatch(const ContactIslandGraph::Island& island,
+                                       const RigidBodySoA& bodies,
+                                       const std::vector<narrowphase::ContactManifold>& contacts,
+                                       const std::vector<DistanceConstraint>& distanceConstraints) {
+    return !preflight_island_solve_dispatch(island, bodies, contacts, distanceConstraints).can_dispatch();
+}
+
+IslandSolveableStats compute_island_solveable_stats(
+    const ContactIslandGraph& graph,
+    const RigidBodySoA& bodies,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandSolveableStats stats{};
+    stats.totalIslands = graph.islandCount();
+    for (u32 islandIndex = 0; islandIndex < stats.totalIslands; ++islandIndex) {
+        const IslandSolveDispatchPreflight preflight =
+            preflight_island_solve_dispatch(graph.island(islandIndex), bodies, contacts, distanceConstraints);
+        if (preflight.skipped) {
+            ++stats.emptyCount;
+        } else if (preflight.sleep.can_skip_solve()) {
+            ++stats.allSleepingCount;
+        } else if (preflight.can_dispatch()) {
+            ++stats.solveableCount;
+        } else {
+            ++stats.blockedCount;
+        }
+    }
+    return stats;
+}
+
+u32 count_solveable_islands(const ContactIslandGraph& graph,
+                            const RigidBodySoA& bodies,
+                            const std::vector<narrowphase::ContactManifold>& contacts,
+                            const std::vector<DistanceConstraint>& distanceConstraints) {
+    return compute_island_solveable_stats(graph, bodies, contacts, distanceConstraints).solveableCount;
+}
+
+bool has_solveable_islands(const ContactIslandGraph& graph,
+                           const RigidBodySoA& bodies,
+                           const std::vector<narrowphase::ContactManifold>& contacts,
+                           const std::vector<DistanceConstraint>& distanceConstraints) {
+    return count_solveable_islands(graph, bodies, contacts, distanceConstraints) > 0u;
+}
+
+std::vector<u32> collect_solveable_island_indices(
+    const ContactIslandGraph& graph,
+    const RigidBodySoA& bodies,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    std::vector<u32> indices;
+    const u32 count = graph.islandCount();
+    indices.reserve(count);
+    for (u32 islandIndex = 0; islandIndex < count; ++islandIndex) {
+        const IslandSolveDispatchPreflight preflight =
+            preflight_island_solve_dispatch(graph.island(islandIndex), bodies, contacts, distanceConstraints);
+        if (preflight.can_dispatch()) {
+            indices.push_back(islandIndex);
+        }
+    }
+    return indices;
+}
+
+IslandSleepSolveDispatchPreflight preflight_island_sleep_dispatch(const ContactIslandGraph& graph,
+                                                                  const RigidBodySoA& bodies,
+                                                                  f32 dt) {
+    IslandSleepSolveDispatchPreflight preflight{};
+    preflight.dispatch = preflight_island_dispatch(graph, dt);
+    preflight.sleep = preflight_island_sleep_graph(graph, bodies);
+    preflight.skipped = preflight.dispatch.skipped;
+    return preflight;
+}
+
+bool should_skip_island_sleep_dispatch(const ContactIslandGraph& graph,
+                                       const RigidBodySoA& bodies,
+                                       f32 dt) {
+    return !preflight_island_sleep_dispatch(graph, bodies, dt).can_dispatch();
+}
+
+bool solve_island_job_guarded(RigidBodySoA& bodies,
+                              const ContactIslandGraph::Island& island,
+                              SolverWorkBuffers& workBuffers,
+                              const std::vector<DistanceConstraint>& distanceConstraints,
+                              f32 dt,
+                              f32 contactCompliance,
+                              const std::function<f32(const RigidBodySoA&, u32)>& invMassFn) {
+    const std::vector<narrowphase::ContactManifold>& contacts = workBuffers.contactManifolds();
+    if (should_skip_island_solve_dispatch(island, bodies, contacts, distanceConstraints)) {
+        return false;
+    }
+    return solve_island_job(bodies,
+                            island,
+                            workBuffers,
+                            distanceConstraints,
+                            dt,
+                            contactCompliance,
+                            invMassFn);
+}
+
+bool dispatch_solve_island_guarded(RigidBodySoA& bodies,
+                                   const ContactIslandGraph& graph,
+                                   u32 islandIndex,
+                                   SolverWorkBuffers& workBuffers,
+                                   const std::vector<DistanceConstraint>& distanceConstraints,
+                                   f32 dt,
+                                   f32 contactCompliance,
+                                   const std::function<f32(const RigidBodySoA&, u32)>& invMassFn,
+                                   bool wakeSleepers) {
+    return dispatch_solve_island_guarded_result(bodies,
+                                                graph,
+                                                islandIndex,
+                                                workBuffers,
+                                                distanceConstraints,
+                                                dt,
+                                                contactCompliance,
+                                                invMassFn,
+                                                wakeSleepers)
+        .solved;
+}
+
+IslandDispatchResult dispatch_solve_island_guarded_result(
+    RigidBodySoA& bodies,
+    const ContactIslandGraph& graph,
+    u32 islandIndex,
+    SolverWorkBuffers& workBuffers,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt,
+    f32 contactCompliance,
+    const std::function<f32(const RigidBodySoA&, u32)>& invMassFn,
+    bool wakeSleepers) {
+    IslandDispatchResult result{};
+    result.islandIndex = islandIndex;
+    if (!is_valid_island_solve_dt(dt)) {
+        result.skipped = true;
+        return result;
+    }
+
+    const IslandSolveJob job = extract_island(graph, islandIndex);
+    if (!should_solve_island(job) || job.island == nullptr) {
+        result.skipped = true;
+        return result;
+    }
+
+    const std::vector<narrowphase::ContactManifold>& contacts = workBuffers.contactManifolds();
+    const IslandSolveDispatchPreflight preflight =
+        preflight_island_solve_dispatch(*job.island, bodies, contacts, distanceConstraints);
+    if (!preflight.can_dispatch()) {
+        result.skipped = true;
+        return result;
+    }
+
+    if (wakeSleepers) {
+        wake_island_sleepers_guarded(bodies, *job.island);
+    }
+
+    result.solved = solve_island_job(bodies,
+                                     *job.island,
+                                     workBuffers,
+                                     distanceConstraints,
+                                     dt,
+                                     contactCompliance,
+                                     invMassFn);
+    result.skipped = !result.solved;
+    return result;
+}
+
+IslandBatchDispatchResult dispatch_solveable_islands_result(
+    RigidBodySoA& bodies,
+    const ContactIslandGraph& graph,
+    SolverWorkBuffers& workBuffers,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt,
+    f32 contactCompliance,
+    const std::function<f32(const RigidBodySoA&, u32)>& invMassFn,
+    bool wakeSleepers) {
+    IslandBatchDispatchResult result{};
+    const IslandSleepSolveDispatchPreflight preflight = preflight_island_sleep_dispatch(graph, bodies, dt);
+    result.dispatchableCount = preflight.dispatch.solve.stats.dispatchableCount;
+    if (!preflight.can_dispatch()) {
+        result.skipped = true;
+        result.skippedCount = result.dispatchableCount;
+        return result;
+    }
+
+    const std::vector<narrowphase::ContactManifold>& contacts = workBuffers.contactManifolds();
+    for (u32 islandIndex : collect_solveable_island_indices(graph, bodies, contacts, distanceConstraints)) {
+        const IslandDispatchResult dispatchResult = dispatch_solve_island_guarded_result(bodies,
+                                                                                         graph,
+                                                                                         islandIndex,
+                                                                                         workBuffers,
+                                                                                         distanceConstraints,
+                                                                                         dt,
+                                                                                         contactCompliance,
+                                                                                         invMassFn,
+                                                                                         wakeSleepers);
+        if (dispatchResult.solved) {
+            ++result.solvedCount;
+        } else {
+            ++result.skippedCount;
+        }
+    }
+    return result;
+}
+
+u32 dispatch_solveable_islands(RigidBodySoA& bodies,
+                               const ContactIslandGraph& graph,
+                               SolverWorkBuffers& workBuffers,
+                               const std::vector<DistanceConstraint>& distanceConstraints,
+                               f32 dt,
+                               f32 contactCompliance,
+                               const std::function<f32(const RigidBodySoA&, u32)>& invMassFn,
+                               bool wakeSleepers) {
+    return dispatch_solveable_islands_result(bodies,
+                                             graph,
+                                             workBuffers,
+                                             distanceConstraints,
+                                             dt,
+                                             contactCompliance,
+                                             invMassFn,
+                                             wakeSleepers)
+        .solvedCount;
+}
+
 IslandSleepPreflight preflight_island_sleep(const ContactIslandGraph::Island& island,
                                             const RigidBodySoA& bodies) {
     IslandSleepPreflight preflight{};
