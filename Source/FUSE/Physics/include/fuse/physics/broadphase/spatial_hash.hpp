@@ -1701,3 +1701,13 @@ struct BroadphaseMergePairsIntoBufferPreflight {
     bool canMerge() const { return reason == BroadphaseMergePairsIntoBufferRejectReason::None; }
 BroadphaseMergePairsIntoBufferPreflight preflightBroadphaseMergePairsIntoBuffer(
 bool mergeBroadphasePairsIntoBufferWithPreflight(
+
+// --- deepen additive from deepen-b4-broadphase-guards-97b4 ---
+struct ShapeCellHashInsertPreflight {
+FUSE_PHYSICS_INLINE ShapeCellHashInsertPreflight preflightShapeCellHashInsert(const CellRange3& range, u32 maxCells) {
+    ShapeCellHashInsertPreflight preflight{};
+FUSE_PHYSICS_INLINE ShapeCellHashInsertPreflight preflightShapeCellHashInsert2D(const CellRange2& range, u32 maxCells) {
+    return !preflightShapeCellHashInsert(range, maxCells).canInsert();
+    return !preflightShapeCellHashInsert2D(range, maxCells).canInsert();
+    return preflightShapeCellHashInsert(range, maxCells).canInsert();
+    return preflightShapeCellHashInsert2D(range, maxCells).canInsert();

@@ -4114,3 +4114,14 @@ void testBroadphaseMergePairsIntoBufferPreflightGuards() {
     expectTrue(fuse::physics::broadphase::mergePairsIntoBufferWithPreflight(mergePairs, mergeBuffer),
     testShapeCellCapacityRejectReasonAndPreflight();
     testBroadphaseMergePairsIntoBufferPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-97b4 ---
+    expectTrue(!fuse::physics::broadphase::mergePairsIntoBufferWithPreflight(mergePairs, mergeBuffer),
+void testShapeCellHashInsertPreflightGuards() {
+    const fuse::physics::broadphase::ShapeCellHashInsertPreflight withinBudget =
+        fuse::physics::broadphase::preflightShapeCellHashInsert(validRange, 8u);
+    const fuse::physics::broadphase::ShapeCellHashInsertPreflight planePreflight =
+        fuse::physics::broadphase::preflightShapeCellHashInsert2D(planeRange, 4u);
+    expectTrue(!planePreflight.canInsert(), "2D shape hash-insert preflight rejects over-budget range");
+    expectEq(planePreflight.occupancy.occupancyCount, 8u, "2D shape hash-insert preflight reports occupancy count");
+    testShapeCellHashInsertPreflightGuards();
