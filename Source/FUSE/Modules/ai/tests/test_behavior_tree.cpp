@@ -1,5 +1,6 @@
 #include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/ai/behavior_tree.hpp>
+#include <fuse/ai/uaisk_script_import.hpp>
 #include <fuse/ai/node_registry.hpp>
 #include <fuse/ai/spatial_query.hpp>
 #include <fuse/ai/tree_loader.hpp>
@@ -258,6 +259,59 @@ void testPatrolWithAllySupportDemoTree() {
     runtime.commit();
 
     expectTrue(runtime.blackboard().flag(0, 1), "ally agent sets squad flag when allies in radius");
+}
+
+void testPerAgentTreeSelection() {
+    fuse::ai::BehaviorRuntime runtime;
+    runtime.registerTreeProfile(0, fuse::ai::BehaviorTree::makeMoveTowardDemoTree(0.5f));
+    runtime.registerTreeProfile(1, fuse::ai::BehaviorTree::makePatrolWithAllySupportDemoTree(8.f));
+
+    fuse::ai::AgentBinding mover{};
+    mover.x = 0.f;
+    mover.y = 0.f;
+    mover.targetX = 4.f;
+    mover.targetY = 0.f;
+    mover.moveSpeed = 0.5f;
+    mover.treeProfileId = 0;
+    runtime.addAgent(mover);
+
+    fuse::ai::AgentBinding patrol{};
+    patrol.x = 0.f;
+    patrol.y = 0.f;
+    patrol.targetX = 10.f;
+    patrol.targetY = 0.f;
+    patrol.teamId = 1;
+    patrol.treeProfileId = 1;
+    runtime.addAgent(patrol);
+
+    fuse::ai::AgentBinding squadMate{};
+    squadMate.x = 1.f;
+    squadMate.y = 0.f;
+    squadMate.teamId = 1;
+    squadMate.treeProfileId = 1;
+    runtime.addAgent(squadMate);
+
+    fuse::frame::FrameCtx ctx;
+    runtime.buildSnapshots();
+    runtime.evaluate(ctx);
+    runtime.commit();
+
+    expectTrue(runtime.bindings()[0].x > 0.f, "profile 0 agent moves toward target");
+    expectTrue(runtime.blackboard().flag(1, 1), "profile 1 patrol agent sets squad flag");
+    expectTrue(runtime.treeProfileCount() == 2u, "two tree profiles registered");
+}
+
+void testUaiskScriptImportProfile() {
+    fuse::ai::BehaviorRuntime runtime;
+    runtime.registerTreeProfile(0, fuse::ai::BehaviorTree::makeMoveTowardDemoTree(0.25f));
+
+    std::string error;
+    expectTrue(fuse::ai::uaisk::registerPatrolSquadProfile(runtime, &error), "UAISK patrol_squad profile imports");
+    expectTrue(fuse::ai::uaisk::treeProfileForModule("aiBehaviors.cs") == 1u,
+               "aiBehaviors.cs maps to patrol selector profile");
+    expectTrue(fuse::ai::uaisk::treeProfileForModule("aiMovement.cs") == 0u,
+               "aiMovement.cs maps to move-toward profile");
+    expectTrue(runtime.treeProfileCount() == 2u, "import adds profile 1");
 }
 
 void testUaiskPatrolSquadTemplateLoad() {
@@ -1841,6 +1895,8 @@ int main() {
     testMoveTowardRuntimeCommit();
     testMoveTowardDemoTreeFactory();
     testPatrolWithAllySupportDemoTree();
+    testPerAgentTreeSelection();
+    testUaiskScriptImportProfile();
     testUaiskPatrolSquadTemplateLoad();
     testGuideBotMoveTowardLeaf();
     testMonitorDecorator();

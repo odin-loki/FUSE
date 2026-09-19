@@ -9,6 +9,7 @@
 #include <fuse/fx/fx_socket.hpp>
 #include <fuse/fx/parameter_bind.hpp>
 #include <fuse/fx/particle_pool.hpp>
+#include <fuse/fx/particle_pool_gpu.hpp>
 #include <fuse/fx/residual_effects.hpp>
 #include <fuse/fx/spell_descriptor.hpp>
 #include <fuse/frame/frame_ctx.hpp>
@@ -67,6 +68,9 @@ public:
     ParticlePool& particlePool() { return m_particlePool; }
     const ParticlePool& particlePool() const { return m_particlePool; }
 
+    ParticlePoolGpuBackend& particlePoolGpu() { return m_particlePoolGpu; }
+    const ParticlePoolGpuBackend& particlePoolGpu() const { return m_particlePoolGpu; }
+
     u32 tickCount() const { return m_tickCount; }
 
 private:
@@ -80,6 +84,7 @@ private:
     MissilePipeline m_missiles;
     bind::ParameterBinder m_parameters;
     ParticlePool m_particlePool{64};
+    ParticlePoolGpuBackend m_particlePoolGpu{64};
     u32 m_attachments = 0;
     u32 m_tickCount = 0;
 };

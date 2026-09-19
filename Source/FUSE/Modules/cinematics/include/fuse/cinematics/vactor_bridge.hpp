@@ -11,6 +11,12 @@
 
 namespace fuse::cinematics {
 
+struct ShapeBaseMountOffset {
+    float x = 0.f;
+    float y = 0.f;
+    float z = 0.f;
+};
+
 /// Headless VActor mount bridge — maps actor_id strings to SceneObject3D instances.
 class VActorBridge {
 public:
@@ -19,15 +25,23 @@ public:
     void apply_mount(const std::string& actor_id, const std::string& mount_point);
     void apply_unmount(const std::string& actor_id);
 
+    /// Apply ShapeBase mount offset to bound scene object (VActor ore without Torque).
+    void apply_shapebase_attach(const std::string& actor_id, const std::string& mount_point);
+    void sync_bound_objects();
+
     const std::string& mount_point_for(const std::string& actor_id) const;
+    ShapeBaseMountOffset mount_offset_for(const std::string& mount_point) const;
     u32 mountCount() const { return m_mountCount; }
     u32 unmountCount() const { return m_unmountCount; }
+    u32 shapebaseAttachCount() const { return m_shapebaseAttachCount; }
 
 private:
     std::unordered_map<std::string, fuse::SceneObject3D*> m_objects;
     std::unordered_map<std::string, std::string> m_mountPoints;
+    std::unordered_map<std::string, ShapeBaseMountOffset> m_actorOffsets;
     u32 m_mountCount = 0;
     u32 m_unmountCount = 0;
+    u32 m_shapebaseAttachCount = 0;
 };
 
 /// Drain actor mount/unmount cues crossed since `since_ms` up to the playhead time.
@@ -35,5 +49,8 @@ void drain_actor_cues(const Timeline& timeline, VActorBridge& bridge, TimelineMs
 
 /// 30s Outpost intro sequence stub (Verve VController ore without Torque content pack).
 Timeline make_outpost_intro_30s_stub();
+
+/// Load 30s Outpost intro from embedded Samples asset text.
+bool load_outpost_intro_30s_from_asset(Timeline& outTimeline, std::string* errorOut = nullptr);
 
 } // namespace fuse::cinematics

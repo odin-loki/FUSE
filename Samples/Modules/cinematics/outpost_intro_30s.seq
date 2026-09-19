@@ -1,0 +1,6 @@
+# Outpost intro 30s sequence — Verve VController ore (Samples asset pack)
+duration_ms=30000
+sprite hud_sprite 0,-20,0,1 15000,0,10,1 30000,40,20,1
+camera 0,0,0,8,55 15000,0,30,12,70 30000,0,60,15,85
+actor agent_3d mount 2000 cockpit
+actor agent_3d unmount 28000

@@ -9,6 +9,7 @@
 #include <fuse/object.hpp>
 #include <fuse/types.hpp>
 
+#include <unordered_map>
 #include <vector>
 
 namespace fuse::ai {
@@ -21,6 +22,8 @@ struct AgentBinding {
     float targetY = 0.f;
     float moveSpeed = 1.f;
     u32 teamId = 0;
+    /// Selects registered tree profile (default 0).
+    u32 treeProfileId = 0;
 };
 
 /// Game-thread facade: build snapshots, jobify BT eval, commit blackboard writes.
@@ -28,7 +31,11 @@ struct AgentBinding {
 class BehaviorRuntime {
 public:
     void setTree(const BehaviorTree& tree);
-    const BehaviorTree& tree() const { return m_tree; }
+    const BehaviorTree& tree() const;
+
+    /// Register a named tree profile for per-agent selection.
+    void registerTreeProfile(u32 profileId, const BehaviorTree& tree);
+    u32 treeProfileCount() const { return static_cast<u32>(m_treeProfiles.size()); }
 
     void clearAgents();
     void addAgent(const AgentBinding& binding);
@@ -57,8 +64,11 @@ public:
 private:
     void ensureWaitState();
     void buildAllyCandidates();
+    [[nodiscard]] const BehaviorTree& treeForAgent(u32 agentIndex) const;
+    [[nodiscard]] u32 maxTreeNodeCount() const;
 
-    BehaviorTree m_tree;
+    std::unordered_map<u32, BehaviorTree> m_treeProfiles;
+    u32 m_defaultProfileId = 0;
     std::vector<AgentBinding> m_bindings;
     std::vector<AgentSnapshot> m_snapshots;
     std::vector<BehaviorTickResult> m_results;

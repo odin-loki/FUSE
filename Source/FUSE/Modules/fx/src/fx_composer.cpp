@@ -102,6 +102,8 @@ void FxComposer::tick(const frame::FrameCtx& ctx) {
         m_particlePool.spawn({0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.25f);
     }
     m_particlePool.tick(ctx);
+    m_particlePoolGpu.syncFromCpu(m_particlePool);
+    m_particlePoolGpu.tick(ctx);
 
     ++m_tickCount;
 }

@@ -5,6 +5,8 @@
 #include <fuse/fx/fx_composer.hpp>
 #include <fuse/fx/missile_descriptor.hpp>
 #include <fuse/fx/particle_pool.hpp>
+#include <fuse/fx/particle_pool_gpu.hpp>
+#include <fuse/fx/afx_mission_hooks.hpp>
 #include <fuse/fx/socket_constraint.hpp>
 #include <fuse/fx/fx_defs.hpp>
 #include <fuse/fx/parameter_bind.hpp>
@@ -315,6 +317,29 @@ void testComposerParticlePoolTick() {
     expectTrue(composer.particlePool().spawnCount() > 0u, "composer spawns particles during active effects");
 }
 
+void testParticlePoolGpuBackend() {
+    fuse::fx::ParticlePool cpuPool(8);
+    cpuPool.spawn({1.f, 2.f, 3.f}, {0.f, 1.f, 0.f}, 0.5f);
+
+    fuse::fx::ParticlePoolGpuBackend gpuBackend(8);
+    gpuBackend.syncFromCpu(cpuPool);
+
+    expectTrue(gpuBackend.hasDeviceBinding(), "gpu backend has packed binding");
+    expectTrue(gpuBackend.activeCount() == 1u, "gpu backend mirrors active count");
+    expectTrue(gpuBackend.packedDeviceBytes() > 0u, "gpu backend packed bytes non-zero");
+    expectTrue(gpuBackend.syncCount() == 1u, "gpu backend sync counted");
+}
+
+void testAfxMissionHooks() {
+    fuse::fx::FxComposer composer;
+    std::vector<fuse::fx::AfxMissionHook> hooks;
+    expectTrue(fuse::fx::registerAfxTemplateMissionHooks(composer, &hooks), "mission hooks register");
+    expectTrue(hooks.size() == 2u, "two mission hooks parsed");
+    expectTrue(hooks[0].missionId == "AFXDemo_Minimal", "minimal mission id");
+    expectTrue(hooks[0].scriptHook == "on_spell_cast", "spell cast hook");
+    expectTrue(composer.findSpell("fireball") != nullptr, "fireball spell registered by mission hook");
+}
+
 void testParticlePoolTick() {
     fuse::fx::ParticlePool pool(4);
     expectTrue(pool.spawn({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.5f), "particle spawns");
@@ -343,6 +368,8 @@ int main() {
     testRegisterDemoVerticalSlice();
     testRegisterAfxTemplateSamplePack();
     testComposerParticlePoolTick();
+    testParticlePoolGpuBackend();
+    testAfxMissionHooks();
     testParticlePoolTick();
     fuse::core::shutdown();
 

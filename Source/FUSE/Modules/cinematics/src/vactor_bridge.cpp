@@ -1,6 +1,7 @@
 #include <fuse/cinematics/vactor_bridge.hpp>
 
 #include <fuse/cinematics/camera_track.hpp>
+#include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/cinematics/motion_track.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
 
@@ -44,6 +45,41 @@ const std::string& VActorBridge::mount_point_for(const std::string& actor_id) co
     return kEmpty;
 }
 
+ShapeBaseMountOffset VActorBridge::mount_offset_for(const std::string& mount_point) const {
+    if (mount_point == "cockpit") {
+        return {0.f, 0.f, 1.5f};
+    }
+    if (mount_point == "vehicle_seat") {
+        return {0.f, 0.5f, 0.75f};
+    }
+    if (mount_point == "turret") {
+        return {0.f, 1.25f, 2.f};
+    }
+    return {};
+}
+
+void VActorBridge::apply_shapebase_attach(const std::string& actor_id, const std::string& mount_point) {
+    apply_mount(actor_id, mount_point);
+    m_actorOffsets[actor_id] = mount_offset_for(mount_point);
+    ++m_shapebaseAttachCount;
+
+    const auto objectIt = m_objects.find(actor_id);
+    if (objectIt != m_objects.end() && objectIt->second != nullptr) {
+        const ShapeBaseMountOffset offset = m_actorOffsets[actor_id];
+        objectIt->second->setZ(objectIt->second->z() + offset.z);
+    }
+}
+
+void VActorBridge::sync_bound_objects() {
+    for (const auto& entry : m_actorOffsets) {
+        const auto objectIt = m_objects.find(entry.first);
+        if (objectIt == m_objects.end() || objectIt->second == nullptr) {
+            continue;
+        }
+        objectIt->second->setZ(entry.second.z);
+    }
+}
+
 void drain_actor_cues(const Timeline& timeline, VActorBridge& bridge, TimelineMs since_ms) {
     const ActorTrack* actorTrack = find_first_actor_track(timeline);
     if (actorTrack == nullptr) {
@@ -56,7 +92,7 @@ void drain_actor_cues(const Timeline& timeline, VActorBridge& bridge, TimelineMs
             continue;
         }
         if (event.kind == ActorEventKind::Mount) {
-            bridge.apply_mount(event.actor_id, event.mount_point);
+            bridge.apply_shapebase_attach(event.actor_id, event.mount_point);
         } else {
             bridge.apply_unmount(event.actor_id);
         }
@@ -121,6 +157,18 @@ Timeline make_outpost_intro_30s_stub() {
     motionTrack.path().sort_waypoints();
 
     return timeline;
+}
+
+bool load_outpost_intro_30s_from_asset(Timeline& outTimeline, std::string* errorOut) {
+    static const char* kAssetText =
+        "# Outpost intro 30s sequence\n"
+        "duration_ms=30000\n"
+        "sprite hud_sprite 0,-20,0,1 15000,0,10,1 30000,40,20,1\n"
+        "camera 0,0,0,8,55 15000,0,30,12,70 30000,0,60,15,85\n"
+        "actor agent_3d mount 2000 cockpit\n"
+        "actor agent_3d unmount 28000\n";
+
+    return load_timeline_from_asset(kAssetText, outTimeline, errorOut);
 }
 
 } // namespace fuse::cinematics

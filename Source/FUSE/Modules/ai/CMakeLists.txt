@@ -6,6 +6,7 @@ add_library(fuse_ai STATIC
     src/node_registry.cpp
     src/spatial_query.cpp
     src/tree_loader.cpp
+    src/uaisk_script_import.cpp
     include/fuse/ai/agent_snapshot.hpp
     include/fuse/ai/blackboard.hpp
     include/fuse/ai/behavior_tree.hpp
@@ -14,6 +15,7 @@ add_library(fuse_ai STATIC
     include/fuse/ai/spatial_query.hpp
     include/fuse/ai/tree_loader.hpp
     include/fuse/ai/uaisk_template_hooks.hpp
+    include/fuse/ai/uaisk_script_import.hpp
 )
 
 add_library(fuse::ai ALIAS fuse_ai)

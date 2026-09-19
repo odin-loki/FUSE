@@ -6,6 +6,9 @@ add_library(fuse_mechanics STATIC
     src/trigger_zone.cpp
     src/console_method_component.cpp
     src/polyhedron_trigger.cpp
+    src/physics_trigger_bridge.cpp
+    src/delay_component.cpp
+    src/rotate_component.cpp
     src/toggle_component.cpp
     src/inventory_provider.cpp
     src/interact_action.cpp
@@ -18,6 +21,9 @@ add_library(fuse_mechanics STATIC
     include/fuse/mechanics/trigger_zone.hpp
     include/fuse/mechanics/console_method_component.hpp
     include/fuse/mechanics/polyhedron_trigger.hpp
+    include/fuse/mechanics/physics_trigger_bridge.hpp
+    include/fuse/mechanics/delay_component.hpp
+    include/fuse/mechanics/rotate_component.hpp
     include/fuse/mechanics/toggle_component.hpp
     include/fuse/mechanics/inventory_provider.hpp
     include/fuse/mechanics/interact_action.hpp

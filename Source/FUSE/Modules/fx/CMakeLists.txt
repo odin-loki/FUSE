@@ -4,8 +4,10 @@ add_library(fuse_fx STATIC
     src/effect_graph.cpp
     src/effect_timeline.cpp
     src/afx_template_pack.cpp
+    src/afx_mission_hooks.cpp
     src/fx_composer.cpp
     src/particle_pool.cpp
+    src/particle_pool_gpu.cpp
     src/parameter_bind.cpp
     src/missile_descriptor.cpp
     src/socket_constraint.cpp
@@ -16,10 +18,12 @@ add_library(fuse_fx STATIC
     include/fuse/fx/effect_graph.hpp
     include/fuse/fx/effect_timeline.hpp
     include/fuse/fx/afx_template_pack.hpp
+    include/fuse/fx/afx_mission_hooks.hpp
     include/fuse/fx/fx_composer.hpp
     include/fuse/fx/fx_defs.hpp
     include/fuse/fx/fx_socket.hpp
     include/fuse/fx/particle_pool.hpp
+    include/fuse/fx/particle_pool_gpu.hpp
     include/fuse/fx/parameter_bind.hpp
     include/fuse/fx/missile_descriptor.hpp
     include/fuse/fx/socket_constraint.hpp

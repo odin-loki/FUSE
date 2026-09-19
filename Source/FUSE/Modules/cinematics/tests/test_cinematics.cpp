@@ -11,6 +11,9 @@
 #include <fuse/cinematics/property_track.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
 #include <fuse/cinematics/timeline.hpp>
+#include <fuse/cinematics/timeline_loader.hpp>
+#include <fuse/cinematics/vactor_bridge.hpp>
+#include <fuse/world3d/scene_object_3d.hpp>
 #include <fuse/cinematics/vactor_bridge.hpp>
 #include <fuse/core/init.hpp>
 
@@ -1342,6 +1345,30 @@ void testHybridTimelineDrive() {
     expectTrue(sample.clearG > 0.15f, "hybrid drive samples camera clear tint");
 }
 
+void testLoadThirtySecondSequenceFromAsset() {
+    fuse::cinematics::Timeline timeline;
+    std::string error;
+    expectTrue(fuse::cinematics::load_outpost_intro_30s_from_asset(timeline, &error),
+               "30s outpost intro loads from asset text");
+    expectTrue(timeline.playhead().duration_ms() == 30'000, "asset duration is 30s");
+    expectTrue(timeline.suggested_duration_ms() == 30'000, "asset suggested duration is 30s");
+    expectTrue(timeline.groups().size() >= 1u, "asset timeline has director group");
+}
+
+void testVActorShapeBaseAttach() {
+    fuse::SceneObject3D agent("agent_3d");
+    agent.setZ(0.f);
+
+    fuse::cinematics::VActorBridge bridge;
+    bridge.bind("agent_3d", &agent);
+    bridge.apply_shapebase_attach("agent_3d", "cockpit");
+
+    expectTrue(bridge.mountCount() == 1u, "shapebase attach records mount");
+    expectTrue(bridge.shapebaseAttachCount() == 1u, "shapebase attach counter");
+    expectTrue(bridge.mount_point_for("agent_3d") == "cockpit", "mount point stored");
+    expectNear(agent.z(), 1.5f, 0.001f, "cockpit mount raises agent Z");
+}
+
 void testMotionTrackPathSampling() {
     fuse::cinematics::MotionTrack track("ActorPath");
     track.set_target_object_id("hero");
@@ -1440,6 +1467,8 @@ int main() {
     testSpriteTrackSampling();
     testPropertyTrackSampling();
     testActorTrackMountUnmount();
+    testLoadThirtySecondSequenceFromAsset();
+    testVActorShapeBaseAttach();
     testVActorBridgeDrainCues();
     testOutpostIntro30sStub();
     testHybridTimelineDrive();

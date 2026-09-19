@@ -188,7 +188,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **MT note** | AI/FX jobify per architecture §7 |
 | **Exit** | Per-module U5 gates in prestarter §10 |
 | **Deps** | WP-06 |
-| **Status** | ✅ Prestarter §10 gates closed; post-gate ore: patrol+ally spatial, UAISK `patrol_squad.bt`, `VActorBridge`, `make_outpost_intro_30s_stub`, AFX template pack + composer particle pool, `ConsoleMethodComponent`, `PolyhedronTriggerZone`, weapon/conversation interactables — [U5-MODULES.md](./U5-MODULES.md) |
+| **Status** | ✅ Prestarter §10 gates closed; post-gate ore: per-agent tree profiles, UAISK script import, `outpost_intro_30s.seq` loader, ShapeBase VActor attach, GPU particle pool backend, AFX mission hooks, `PhysicsTriggerBridge`, Delay/Rotate GMK leaves, `outpost_loader` + hybrid NPC converse — [U5-MODULES.md](./U5-MODULES.md) |
 
 ---
 

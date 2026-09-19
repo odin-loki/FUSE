@@ -1,12 +1,28 @@
 #include <fuse/ai/behavior_runtime.hpp>
 
+#include <algorithm>
+
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/parallel_for.hpp>
 
 namespace fuse::ai {
 
+const BehaviorTree& BehaviorRuntime::tree() const {
+    const auto it = m_treeProfiles.find(m_defaultProfileId);
+    if (it != m_treeProfiles.end()) {
+        return it->second;
+    }
+    static const BehaviorTree kEmpty;
+    return kEmpty;
+}
+
 void BehaviorRuntime::setTree(const BehaviorTree& tree) {
-    m_tree = tree;
+    registerTreeProfile(m_defaultProfileId, tree);
+    m_waitStartTicks.clear();
+}
+
+void BehaviorRuntime::registerTreeProfile(u32 profileId, const BehaviorTree& tree) {
+    m_treeProfiles[profileId] = tree;
     m_waitStartTicks.clear();
 }
 
@@ -31,8 +47,37 @@ void BehaviorRuntime::setBindingPosition(u32 agentIndex, float x, float y) {
     }
 }
 
+u32 BehaviorRuntime::maxTreeNodeCount() const {
+    u32 maxNodes = 0;
+    for (const auto& entry : m_treeProfiles) {
+        maxNodes = std::max(maxNodes, entry.second.nodeCount());
+    }
+    return maxNodes;
+}
+
+const BehaviorTree& BehaviorRuntime::treeForAgent(u32 agentIndex) const {
+    u32 profileId = m_defaultProfileId;
+    if (agentIndex < m_bindings.size()) {
+        profileId = m_bindings[agentIndex].treeProfileId;
+    }
+
+    const auto it = m_treeProfiles.find(profileId);
+    if (it != m_treeProfiles.end()) {
+        return it->second;
+    }
+
+    const auto fallback = m_treeProfiles.find(m_defaultProfileId);
+    if (fallback != m_treeProfiles.end()) {
+        return fallback->second;
+    }
+
+    static const BehaviorTree kEmpty;
+    return kEmpty;
+}
+
 void BehaviorRuntime::ensureWaitState() {
-    const std::size_t needed = m_bindings.size() * m_tree.nodeCount();
+    const u32 nodeCount = maxTreeNodeCount();
+    const std::size_t needed = m_bindings.size() * nodeCount;
     if (m_waitStartTicks.size() != needed) {
         m_waitStartTicks.assign(needed, 0);
     }
@@ -83,16 +128,20 @@ void BehaviorRuntime::evaluate(const frame::FrameCtx& ctx) {
 
     const BlackboardView boardView(m_blackboard);
     auto& scheduler = fuse::jobs::JobScheduler::instance();
-    const u32 nodeCount = m_tree.nodeCount();
+    const u32 maxNodeCount = maxTreeNodeCount();
 
     scheduler.parallel_for(0, static_cast<u32>(m_snapshots.size()), 1, [&](u32 agentIndex) {
+        const BehaviorTree& tree = treeForAgent(agentIndex);
+        const u32 nodeCount = tree.nodeCount();
+
         BehaviorEvalContext evalCtx;
         evalCtx.tickCount = m_tickCount;
         evalCtx.allies = &m_allies;
-        if (nodeCount > 0) {
-            evalCtx.waitStartTicks = m_waitStartTicks.data() + static_cast<std::size_t>(agentIndex) * nodeCount;
+        if (maxNodeCount > 0) {
+            evalCtx.waitStartTicks = m_waitStartTicks.data() + static_cast<std::size_t>(agentIndex) * maxNodeCount;
         }
-        m_results[agentIndex] = m_tree.tick(agentIndex, m_snapshots[agentIndex], boardView, evalCtx);
+        m_results[agentIndex] = tree.tick(agentIndex, m_snapshots[agentIndex], boardView, evalCtx);
+        (void)nodeCount;
     });
 }
 
