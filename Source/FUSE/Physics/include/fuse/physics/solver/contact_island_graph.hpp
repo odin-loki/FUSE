@@ -170,3 +170,7 @@ IslandGraphBuildPreflight preflightIslandGraphBuild(
 struct ContactIslandBuildPreflight {
 ContactIslandBuildPreflight preflight_contact_island_build(
 bool should_skip_contact_island_build(u32 bodyCount,
+
+// --- deepen additive from deepen-pbd-island-b4-guards-e0ed ---
+IslandGraphBuildPreflight preflight_contact_island_graph_build(
+bool should_skip_contact_island_graph_build(

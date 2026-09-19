@@ -4856,3 +4856,22 @@ void testPreflightIslandJobSolveGuards() {
 void testDispatchSolveableIslandsGuarded() {
 void testDispatchWithWakeGuarded() {
     testPreflightIslandJobSolveGuards();
+
+// --- deepen additive from deepen-pbd-island-b4-guards-e0ed ---
+    const IslandGraphBuildPreflight preflight = preflight_contact_island_graph_build(4, contacts, constraints);
+    expectTrue(should_skip_contact_island_graph_build(4, contacts, constraints),
+               "should_skip graph build on unsafe refs");
+void testPreflightIslandFullSolveGuards() {
+    const IslandFullSolvePreflight mixedPreflight = preflight_island_full_solve(
+    expectTrue(mixedPreflight.can_solve(), "full solve preflight allows mixed island");
+    expectTrue(!mixedPreflight.sleep.can_skip_solve(), "mixed island is not all-sleeping");
+    const IslandFullSolvePreflight sleepingPreflight = preflight_island_full_solve(
+    expectTrue(!sleepingPreflight.can_solve(), "full solve preflight rejects all-sleeping island");
+    expectTrue(should_skip_island_full_solve(
+               "should_skip full solve on all-sleeping island");
+    const IslandFullSolvePreflight invalidDt =
+    const IslandFullSolvePreflight outOfRange =
+void testSolveIslandJobGuardedAndFullDispatch() {
+    const IslandSolveBodiesPreflight bodiesPreflight = preflight_island_solve_bodies_by_index(graph, 0u, bodies);
+    expectTrue(bodiesPreflight.can_solve(), "solve bodies by index allows mixed island");
+    testPreflightIslandFullSolveGuards();

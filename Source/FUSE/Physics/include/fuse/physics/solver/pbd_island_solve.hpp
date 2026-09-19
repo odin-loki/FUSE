@@ -1657,3 +1657,8 @@ IslandJobSolvePreflight preflight_island_job_solve(const IslandSolveJob& job,
 bool should_skip_island_job_solve(const IslandSolveJob& job,
 IslandGraphSolvePreflight preflight_island_graph_solve(const ContactIslandGraph& graph,
 bool should_skip_island_graph_solve(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-b4-guards-e0ed ---
+IslandFullSolvePreflight preflight_island_full_solve(const ContactIslandGraph::Island& island,
+IslandFullSolvePreflight preflight_island_full_solve_by_index(const ContactIslandGraph& graph,
+bool should_skip_island_full_solve(const ContactIslandGraph::Island& island,

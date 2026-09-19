@@ -406,3 +406,8 @@ ContactIslandBuildPreflight preflight_contact_island_build(
     ContactIslandBuildPreflight preflight{};
 bool should_skip_contact_island_build(u32 bodyCount,
     if (should_skip_contact_island_build(bodyCount, contacts, distanceConstraints)) {
+
+// --- deepen additive from deepen-pbd-island-b4-guards-e0ed ---
+IslandGraphBuildPreflight preflight_contact_island_graph_build(
+bool should_skip_contact_island_graph_build(
+    if (should_skip_contact_island_graph_build(bodyCount, contacts, distanceConstraints)) {

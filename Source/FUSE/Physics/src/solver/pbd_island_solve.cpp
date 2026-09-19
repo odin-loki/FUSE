@@ -2712,3 +2712,10 @@ bool should_skip_island_graph_solve(const ContactIslandGraph& graph,
     if (should_skip_island_job_solve(job, bodies, contacts, distanceConstraints, dt)) {
     const IslandGraphSolvePreflight preflight = preflight_island_graph_solve(
     const IslandGraphSolvePreflight preflight =
+
+// --- deepen additive from deepen-pbd-island-b4-guards-e0ed ---
+IslandFullSolvePreflight preflight_island_full_solve(const ContactIslandGraph::Island& island,
+IslandFullSolvePreflight preflight_island_full_solve_by_index(const ContactIslandGraph& graph,
+bool should_skip_island_full_solve(const ContactIslandGraph::Island& island,
+        const IslandFullSolvePreflight preflight =
+    if (should_skip_island_full_solve(island, bodies, contacts, distanceConstraints, dt)) {
