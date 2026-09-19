@@ -947,6 +947,14 @@ u32 countEventsWithPhase(EventPhase phase) {
     return count;
 }
 
+bool isNullEventName(const char* name) {
+    return name == nullptr;
+}
+
+bool isEmptyEventName(const char* name) {
+    return name != nullptr && name[0] == '\0';
+}
+
 bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
 
@@ -992,6 +1000,7 @@ bool isValidProfileName(const char* name) {
 
     return !isEmptyEventName(name);
     return !isBlankEventName(name);
+    return !isNullEventName(name) && !isEmptyEventName(name);
 }
 
 }
@@ -1085,6 +1094,12 @@ u32 invalidNameEventCount() {
         }
     }
     return count;
+}
+
+u32 nonExportableEventCount() {
+    const u32 total = eventCount();
+    const u32 exportable = exportableEventCount();
+    return total >= exportable ? total - exportable : 0u;
 }
 
 bool isEventExportable(u32 index) {
@@ -1313,14 +1328,13 @@ u32 totalEventsWritten() {
 
 bool hasRingWrapped() {
     return totalEventsWritten() > kRingCapacity;
-}
 
-    const u32 total = eventCount();
 
 u32 lastExportableEventIndex() {
 
 u32 findLastEventIndexByPhase(EventPhase phase) {
         if (eventAt(index).phase == phase) {
+
 
 
 const ProfileEvent& emptyProfileEvent() {
@@ -1720,10 +1734,8 @@ bool tryLastExportableEvent(ProfileEvent& outEvent) {
     const u32 index = exportableLastEventIndex();
 
     return tryEventAt(count - 1u - reverseIndex, outEvent);
-}
 
 u32 findEventIndex(EventPhase phase, u32 startIndex) {
-    const u32 count = eventCount();
     for (u32 i = startIndex; i < count; ++i) {
         if (eventAt(i).phase == phase) {
             return i;
@@ -1742,17 +1754,24 @@ bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent) {
             outEvent = event;
             return true;
 
-    outEvent = ProfileEvent{};
-    return false;
 
     const u32 index = lastEventIndex();
-    if (index == kInvalidEventIndex) {
 
     outEvent = eventAt(index);
     return isExportableProfileEvent(outEvent);
 
     const u32 index = lastExportableEventIndex();
 
+
+const char* eventNameAt(u32 index) {
+    if (!isEventIndexValid(index)) {
+        return nullptr;
+    return eventAt(index).name;
+
+bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
+        outPhase = EventPhase::Begin;
+
+    outPhase = eventAt(index).phase;
 
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
@@ -1813,6 +1832,27 @@ u32 lastExportableEventIndex() {
         }
     }
     return kInvalidEventIndex;
+}
+
+u32 lastEventIndexByPhase(EventPhase phase) {
+    const u32 count = eventCount();
+    for (u32 i = count; i > 0u; --i) {
+        const u32 index = i - 1u;
+        if (eventAt(index).phase == phase) {
+            return index;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = lastEventIndexByPhase(phase);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
 }
 
 const ProfileEvent& lastEvent() {
@@ -2145,6 +2185,14 @@ void reconcileDetachedFlowDepth() {
     if (isFlowDepthDetached() && openAsyncFlowCount() == 0u) {
         threadLocalFlowNestingDepth() = 0u;
     }
+}
+
+bool canEndAsyncFlow() {
+    return openAsyncFlowCount() > 0u;
+}
+
+bool wouldIgnoreOrphanAsyncFlowEnd() {
+    return openAsyncFlowCount() == 0u;
 }
 
 void reset() {

@@ -442,6 +442,8 @@ struct NestingStatePreflight {
     bool readyForExport() const { return canExport() && (bufferEmpty || hasExportableEvents()); }
     bool canExportClean() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !bufferFull;
+    bool isExportRecommended() const {
+        return canExport() && hasExportableEvents() && !hasUnbalancedNesting() && !flowDepthDetached;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -525,6 +527,8 @@ bool isBlankEventName(const char* name);
 bool isFirstEventIndex(u32 index);
 bool isLastEventIndex(u32 index);
 u32 countEventsWithPhase(EventPhase phase);
+bool isNullEventName(const char* name);
+bool isEmptyEventName(const char* name);
 bool isValidEventName(const char* name);
 
 /// Read-only chrome export diagnostics — no mutation (B1.6 deepen).
@@ -572,15 +576,16 @@ bool tryEventPhaseAt(u32 index, EventPhase& outPhase);
 u32 nonExportableEventCount();
 u32 totalEventsWritten();
 bool hasRingWrapped();
-u32 invalidNameEventCount();
 u32 firstEventIndex();
 u32 lastEventIndex();
 u32 countEventsByPhase(EventPhase phase);
 u32 findFirstEventIndexOfPhase(EventPhase phase);
 u32 firstExportableEventIndex();
 u32 lastExportableEventIndex();
+u32 lastEventIndexByPhase(EventPhase phase);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
+const char* eventNameAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 u32 lastExportableEventIndex();
@@ -590,7 +595,11 @@ bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
 bool tryFirstExportableEvent(ProfileEvent& outEvent);
 bool tryLastExportableEvent(ProfileEvent& outEvent);
+bool tryEventPhaseAt(u32 index, EventPhase& outPhase);
+bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
+bool canEndAsyncFlow();
+bool wouldIgnoreOrphanAsyncFlowEnd();
 void reset();
 void reconcileDetachedFlowDepth();
 
