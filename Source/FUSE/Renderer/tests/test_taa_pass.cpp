@@ -4809,3 +4809,6 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 // --- deepen additive from deepen-taa-b59-guards-64d7 ---
                "pass tryPreflightResolveBlendWeights reject reason is None after warmup");
+
+// --- deepen additive from deepen-taa-pass-b59-guards-5226 ---
+               "pass tryPreflightResolveBlendWeights passes after init");
