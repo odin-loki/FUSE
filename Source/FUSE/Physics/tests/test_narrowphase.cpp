@@ -2448,3 +2448,16 @@ void testFrictionBasisDeepenPassRejectGuards() {
             fuse::physics::narrowphase::FrictionBasisRejectReason::EmptyManifold,
             fuse::physics::narrowphase::FrictionBasisRejectReason::CanReuseBasis,
                 fuse::physics::narrowphase::FrictionBasisRejectReason::CanReuseBasis),
+
+// --- deepen additive from deepen-narrowphase-guards-6b0c ---
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ManifoldPruneRejectReason::EmptyManifold),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ManifoldPruneRejectReason::NothingToPrune),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ManifoldPruneRejectReason::None),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ManifoldPruneRejectReason::WouldBeEmpty),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ManifoldFinalizeRejectReason::EmptyManifold),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ManifoldFinalizeRejectReason::InvalidNormal),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::ManifoldFinalizeRejectReason::None),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::FrictionBasisRejectReason::EmptyManifold),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::FrictionBasisRejectReason::None),
+        static_cast<fuse::u32>(fuse::physics::narrowphase::FrictionBasisRejectReason::CanReuse),
+                fuse::physics::narrowphase::FrictionBasisRejectReason::CanReuse),

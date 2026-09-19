@@ -714,3 +714,7 @@ ManifoldPruneDispatchPreflight preflight_manifold_prune_dispatch(
         preflight.reason = ManifoldPruneRejectReason::AlreadyClean;
         preflight.skipped = preflight.reason == ManifoldFinalizeRejectReason::EmptyManifold;
         if (preflight.reason == ManifoldFinalizeRejectReason::WouldBeEmptyAfterPrune) {
+
+// --- deepen additive from deepen-narrowphase-guards-6b0c ---
+    case ManifoldPruneRejectReason::NothingToPrune:
+        return ManifoldPruneRejectReason::NothingToPrune;
