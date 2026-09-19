@@ -4519,3 +4519,17 @@ void testPreflightIslandSleepWakeRejectReasonGuards() {
     testPreflightIslandBuildRejectReasonGuards();
     testPreflightIslandConstraintSolveDeepenGuards();
     testPreflightIslandSleepWakeRejectReasonGuards();
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-a666 ---
+    expectTrue(island_build_rejects_for_reason(4, contacts, constraints, IslandBuildRejectReason::OutOfRangeRefs),
+    expectTrue(island_build_reject_reason_name(IslandBuildRejectReason::OutOfRangeRefs) != nullptr,
+    expectTrue(island_build_reject_reason(4, {}, {}) == IslandBuildRejectReason::None,
+    expectTrue(buildPreflight.reason == IslandBuildRejectReason::OutOfRangeRefs,
+    expectTrue(island_constraint_solve_reject_reason_name(IslandConstraintSolveRejectReason::NoMovableBodies) !=
+    expectTrue(island_sleep_reject_reason(graph.island(mixedIsland), bodies) == IslandSleepRejectReason::None,
+                                              IslandWakeRejectReason::NoWakeTarget),
+    expectTrue(sleepGraph.reason == IslandSleepGraphRejectReason::None,
+    expectTrue(island_sleep_graph_reject_reason_name(IslandSleepGraphRejectReason::None) != nullptr,
+    expectTrue(wakeGraph.reason == IslandWakeGraphRejectReason::None,
+    expectTrue(island_sleep_graph_reject_reason(emptyGraph, bodies) == IslandSleepGraphRejectReason::EmptyGraph,
+    expectTrue(island_wake_graph_reject_reason(emptyGraph, bodies) == IslandWakeGraphRejectReason::EmptyGraph,

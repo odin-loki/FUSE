@@ -1536,3 +1536,11 @@ IslandWakeGraphRejectReason island_wake_graph_reject_reason(const ContactIslandG
 const char* island_sleep_solve_reject_reason_name(IslandSleepSolveRejectReason reason);
         return !skipped && reason == IslandSleepSolveRejectReason::AllSleeping && allSleeping;
         return !skipped && reason == IslandWakeRejectReason::None && hasMixedSleepState &&
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-a666 ---
+    bool can_build() const { return !skipped && reason == IslandBuildRejectReason::None; }
+    bool can_solve() const { return !skipped && reason == IslandConstraintSolveRejectReason::None; }
+        return !skipped && reason == IslandSleepRejectReason::AllSleeping;
+    bool should_wake_sleepers() const { return !skipped && reason == IslandWakeRejectReason::None; }
+    bool has_solveable_islands() const { return !skipped && reason == IslandSleepGraphRejectReason::None; }
+    bool can_wake() const { return !skipped && reason == IslandWakeGraphRejectReason::None; }
