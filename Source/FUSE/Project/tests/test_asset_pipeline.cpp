@@ -2266,3 +2266,8 @@ void testCookerReconcileShouldSkipGuards() {
                "would_invalidate_downstream rejects empty output path");
     expectTrue(cooker.cache().would_invalidate_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()) ==
                "would_invalidate_downstream matches count_downstream_of");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-7c29 ---
+               "should_skip_upstream false when chain would be invalidated");
+               "would_invalidate_stale_upstream or stale count non-zero after change");
+               "would_invalidate_downstream true for dependent chain");

@@ -1849,3 +1849,9 @@ void testCookCacheShouldSkipStoreGuard() {
                "should_skip allows readable audio import");
                "should_skip allows readable manifest entry");
                "would_invalidate_stale_content with freshly computed hash is true");
+
+// --- deepen additive from deepen-b79-cooker-hash-should-skip-7c29 ---
+               "should_skip_combine_cook_cache_key false when upstream is zero");
+    expectTrue(!cooker.cache().would_invalidate_stale_content_for_source("", seeded.content_hash),
+               "would_invalidate_stale_content false for empty source path");
+    expectTrue(prune.should_skip() == !cooker.cache().would_prune_all(),
