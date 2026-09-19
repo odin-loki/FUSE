@@ -2015,3 +2015,7 @@ bool wouldClampTrilinearDensitySample(const FroxelDensityGrid& grid,
 bool tryValidatePopulateResult(const FroxelDensityGrid& grid,
     FroxelPopulateRejectReason populateReason = FroxelPopulateRejectReason::None;
     if (!tryCanPopulateFromAnalyticFog(desc, camera, params, populateReason)) {
+
+// --- deepen additive from deepen-b511-froxel-preflights-e22d ---
+    const bool ok = tryCanLookupAtCoord(grid, desc, tileX, tileY, sliceZ, localReason);
+    const bool ok = tryCanSampleAtCoords(grid, desc, coords, localReason);
