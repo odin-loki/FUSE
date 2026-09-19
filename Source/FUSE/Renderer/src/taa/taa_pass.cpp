@@ -706,3 +706,15 @@ bool TaaPass::preflightHistoryWarmupAndReuse(u32 observedGeneration, TaaHistoryR
 // --- deepen additive from deepen-b59-taa-guards-58fa ---
 bool TaaPass::preflightHistoryReadyForResolve(TaaHistoryReuseBlockReason* reason) const {
     return tryPreflightTaaHistoryReadyForResolve(m_history, *reason);
+
+// --- deepen additive from deepen-b59-taa-pass-guards-5bd0 ---
+    if (!tryPreflightTaaHistoryReadyForResolve(m_history, local)) {
+bool TaaPass::tryPreflightHistoryTemporal(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const {
+    if (!tryPreflightTaaHistoryReadyForResolve(m_history, reason)) {
+    return tryPreflightHistoryReuse(observedGeneration, reason);
+    if (!preflightResolveBlendWeights(desc, blendReason)) {
+    return preflightHistoryReuse(observedGeneration, reuseReason);
+    if (!preflightJitterSync(frameIndex, reason)) {
+bool TaaPass::tryPreflightJitterFrame(u32 frameIndex, TaaJitterGuardRejectReason& reason) const {
+    if (!tryPreflightJitterSync(frameIndex, reason)) {
+    return tryPreflightJitterNdc(reason);

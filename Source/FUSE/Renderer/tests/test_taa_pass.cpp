@@ -4625,3 +4625,18 @@ void testTaaPassHistoryWarmupPreflight() {
 
 // --- deepen additive from deepen-b59-taa-pass-guards-3123 ---
                "pass tryPreflightResolveBlendWeights reason is None before warmup");
+
+// --- deepen additive from deepen-b59-taa-pass-guards-5bd0 ---
+    expectTrue(pass->tryPreflightJitterFrame(4u, jitterReject), "pass tryPreflightJitterFrame passes");
+    expectTrue(pass->preflightJitterFrame(4u), "pass preflightJitterFrame passes");
+    expectTrue(!pass->tryPreflightHistoryTemporal(0u, reuseReason),
+               "pass tryPreflightHistoryTemporal fails before warmup");
+    expectTrue(pass->preflightResolveTemporal(resolveDesc, &blendReason, &reuseReason),
+               "pass preflightResolveTemporal passes before warmup (no history blend)");
+    expectTrue(pass->tryPreflightHistoryTemporal(0u, reuseReason),
+               "pass tryPreflightHistoryTemporal passes after warmup");
+               "pass preflightResolveTemporal passes after warmup");
+    expectNear(weights.current, 0.2f, 1e-5f, "pass tryCompute steady current weight");
+    expectNear(weights.history, 0.8f, 1e-5f, "pass tryCompute steady history weight");
+               "pass tryPreflightHistoryTemporal fails after invalidate");
+               "pass tryPreflightHistoryTemporal reason is StaleGeneration after invalidate");
