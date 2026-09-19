@@ -4183,3 +4183,21 @@ void testTryPreflightEndDragRejectReason() {
     expectTrue(fuse::editor::classifySnapDragReject(fuse::editor::preflightSnapDrag(
                "tryPreflightSnapDrag rejects disabled snap");
     expectTrue(gizmo.preflightSnapDragReady(0.37f), "gizmo preflightSnapDragReady accepts valid delta");
+
+// --- deepen additive from deepen-b6-gizmo-preflights-d971 ---
+void testSnapStepFiniteGuards() {
+    const fuse::editor::SnapPreflight nanStepPreflight =
+    expectTrue(nanStepPreflight.nonFiniteStep, "snap preflight marks non-finite step");
+    expectTrue(!nanStepPreflight.canApply(), "snap preflight rejects non-finite step");
+    expectTrue(fuse::editor::classifySnapReject(nanStepPreflight) ==
+                   fuse::editor::GizmoSnapRejectReason::NonFiniteStep,
+               "classifySnapReject maps nonFiniteStep flag");
+               "tryPreflightSnap rejects non-finite step");
+    expectTrue(reason == fuse::editor::GizmoSnapRejectReason::NonFiniteStep,
+               "preflightPickReady rejects non-finite hit");
+               "tryPreflightBeginDrag rejects non-finite hit");
+               "tryPreflightUpdateDrag rejects non-finite hit");
+    expectTrue(fuse::editor::tryPreflightSnapDrag(0.25f, fuse::editor::GizmoMode::Translate, snap,
+               "tryPreflightSnapDrag accepts valid delta");
+    expectTrue(gizmo.preflightSnapDragReady(0.25f), "gizmo preflightSnapDragReady accepts delta");
+    const fuse::editor::UpdateDragInteractionPreflight withDelta =

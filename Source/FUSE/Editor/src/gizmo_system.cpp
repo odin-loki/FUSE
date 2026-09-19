@@ -2943,3 +2943,10 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
         return GizmoSnapDragRejectReason::SnapDisabled;
         return GizmoSnapDragRejectReason::InvalidStep;
     return GizmoSnapDragRejectReason::None;
+
+// --- deepen additive from deepen-b6-gizmo-preflights-d971 ---
+    preflight.snapDrag = preflightSnapDrag(dragDelta, mode, settings);
+    case GizmoSnapRejectReason::NonFiniteStep:
+    case GizmoSnapDragRejectReason::NonFiniteStep:
+        return GizmoSnapRejectReason::NonFiniteStep;
+        return GizmoSnapDragRejectReason::NonFiniteStep;
