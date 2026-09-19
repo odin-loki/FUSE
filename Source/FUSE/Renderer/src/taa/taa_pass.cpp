@@ -600,6 +600,8 @@ bool TaaPass::advanceJitterIfAligned(u32 expectedFrameIndex) {
     if (!m_jitter.advanceIfAlignedToFrameIndex(expectedFrameIndex)) {
 bool TaaPass::advanceJitterIfViewportReady() {
     if (!m_jitter.advanceIfViewportReady(m_desc.width, m_desc.height)) {
+bool TaaPass::tryAdvanceJitterIfReady(TaaJitterGuardRejectReason& reason) {
+    if (!m_jitter.tryAdvanceIfReady(reason)) {
         return false;
     }
     m_stats.lastJitterNdc = currentJitterNdc();
@@ -608,6 +610,12 @@ bool TaaPass::advanceJitterIfViewportReady() {
 
 bool TaaPass::preflightJitterAlignment(u32 expectedFrameIndex) const {
     return preflightTaaJitterAlignment(expectedFrameIndex, m_jitter);
+bool TaaPass::preflightJitterAdvance(TaaJitterGuardRejectReason* reason) const {
+    return preflightTaaJitterAdvance(m_jitter.sequenceLength(), reason);
+}
+
+bool TaaPass::shouldSkipJitterAdvance() const {
+    return shouldSkipTaaJitterAdvance(m_jitter.sequenceLength());
 }
 
 TaaBlendWeights TaaPass::expectedResolveBlendWeights(const TaaResolveDesc& desc) const {
@@ -781,6 +789,18 @@ bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason) const 
 }
 
 bool TaaPass::tryPreflightHistoryWarmup(TaaHistoryWarmupBlockReason& reason) const {
+    return tryPreflightTaaHistoryWarmup(m_history, reason);
+}
+
+bool TaaPass::tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const {
+    return tryPreflightTaaHistoryReuse(m_history, observedGeneration, reason);
+}
+
+bool TaaPass::preflightHistoryWarmup(TaaHistoryReuseBlockReason* reason) const {
+    return preflightTaaHistoryWarmup(m_history, reason);
+}
+
+bool TaaPass::tryPreflightHistoryWarmup(TaaHistoryReuseBlockReason& reason) const {
     return tryPreflightTaaHistoryWarmup(m_history, reason);
 }
 
@@ -1282,6 +1302,10 @@ bool TaaPass::tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& rea
     return tryPreflightTaaHistoryReadyForResolve(m_history, reason);
 }
 
+bool TaaPass::shouldSkipHistoryResolve() const {
+    return shouldSkipTaaHistoryResolve(m_history);
+}
+
 bool TaaPass::shouldSkipResolve(const TaaResolveDesc& desc) const {
     return shouldSkipTaaResolve(desc, m_history);
 bool TaaPass::preflightResolveReuseAndBlend(const TaaResolveDesc& desc, u32 observedGeneration,
@@ -1540,6 +1564,24 @@ bool TaaPass::tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBl
 bool TaaPass::tryPreflightResolveBlendWeights(const TaaResolveDesc& desc,
                                               TaaResolveBlendRejectReason& reason) const {
     return tryPreflightTaaResolveBlendWeights(desc, m_history, reason);
+}
+
+bool TaaPass::tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const {
+    return tryPreflightTaaResolve(desc, m_history, reason);
+}
+
+bool TaaPass::preflightResolveFrame(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason,
+                                    TaaResolveBlendRejectReason* blendReason) const {
+    return preflightTaaResolveFrame(desc, m_history, skipReason, blendReason);
+}
+
+bool TaaPass::tryPreflightResolveFrame(const TaaResolveDesc& desc, TaaResolveSkipReason& skipReason,
+                                       TaaResolveBlendRejectReason& blendReason) const {
+    return tryPreflightTaaResolveFrame(desc, m_history, skipReason, blendReason);
+}
+
+bool TaaPass::shouldSkipResolveFrame(const TaaResolveDesc& desc) const {
+    return shouldSkipTaaResolveFrame(desc, m_history);
 }
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {

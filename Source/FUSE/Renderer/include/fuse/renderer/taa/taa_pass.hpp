@@ -198,6 +198,12 @@ public:
     bool preflightJitterAlignment(u32 expectedFrameIndex) const;
     /// Advance jitter only when sequence and viewport are valid; returns false when blocked (B5.9 deepen).
     bool advanceJitterIfViewportReady();
+    /// Advance jitter with reject-reason diagnostics (B5.9 deepen).
+    bool tryAdvanceJitterIfReady(TaaJitterGuardRejectReason& reason);
+    /// True when pass jitter can advance (B5.9 deepen).
+    bool preflightJitterAdvance(TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
+    bool shouldSkipJitterAdvance() const;
     /// Expected blend weights for the next resolve (B5.9 deepen).
     TaaBlendWeights expectedResolveBlendWeights(const TaaResolveDesc& desc) const;
     /// True when resolve would sample warmed history this frame (B5.9 deepen).
@@ -227,6 +233,7 @@ public:
     /// True when pass history warm-up is complete (B5.9 deepen).
     bool preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason = nullptr) const;
     bool tryPreflightHistoryWarmup(TaaHistoryWarmupBlockReason& reason) const;
+    bool preflightHistoryWarmup(TaaHistoryReuseBlockReason* reason = nullptr) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
@@ -360,6 +367,8 @@ public:
     bool shouldSkipHistoryTemporalSample(u32 observedGeneration) const;
     /// True when pass history buffers are allocated and ready for resolve (B5.9 deepen).
     bool historyReadyForResolve() const;
+    /// History resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& reason) const;
     /// Early-out when pass history is not ready for resolve (B5.9 deepen).
     bool shouldSkipHistoryResolve() const;
     /// History resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
@@ -689,6 +698,8 @@ public:
     bool tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const;
     /// Resolve blend preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc,
+    /// Resolve-frame preflight with mandatory skip/blend reject-reason output (B5.9 deepen).
+    /// Early-out when resolve-frame preflight would skip or reject blend weights (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

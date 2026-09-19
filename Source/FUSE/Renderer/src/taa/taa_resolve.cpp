@@ -486,6 +486,12 @@ bool tryPreflightTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistory
 bool shouldSkipTaaResolvePipeline(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     return shouldSkipTaaResolveWithBlendWeights(desc, history);
 
+    skipReason = classifyTaaResolveSkip(desc, history);
+    if (taaResolveSkipReasonIsBlocking(skipReason)) {
+    blendReason = classifyTaaResolveBlendReject(desc, history);
+    return blendReason == TaaResolveBlendRejectReason::None;
+
+
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanAccumulate(history)) {
         return TaaResolveSkipReason::HistoryNotReady;

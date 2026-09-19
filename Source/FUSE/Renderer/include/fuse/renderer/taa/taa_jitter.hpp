@@ -310,6 +310,9 @@ struct TaaJitterLayout {
     static fuse::math::Vec2 offsetForFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Halton offset for a frame counter only when the sequence is valid (B5.9 deepen).
     static bool offsetForFrameIndexIfReady(u32 frameIndex, u32 sequenceLength, fuse::math::Vec2& out);
+    /// Halton offset for a frame counter with reject-reason diagnostics (B5.9 deepen).
+    static bool tryOffsetForFrameIndexIfReady(u32 frameIndex, u32 sequenceLength, fuse::math::Vec2& out,
+                                              TaaJitterGuardRejectReason& reason);
     /// NDC jitter for a monotonic frame counter (wraps via `frameIndexInSequence`).
     static fuse::math::Vec2 ndcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
                                                    u32 sequenceLength = kTaaDefaultJitterSequenceLength);
@@ -334,6 +337,8 @@ struct TaaJitterLayout {
     /// NDC jitter for a frame counter with guard preflight and reject-reason diagnostics (B5.9 deepen).
     static bool tryComputeNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
     static bool tryNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height, fuse::math::Vec2& out,
+    /// NDC jitter for a frame counter with reject-reason diagnostics (B5.9 deepen).
+    static bool tryNdcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
     static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
     /// True when `slot` is the expected Halton slot for a monotonic frame counter (B5.9 deepen).
@@ -384,6 +389,7 @@ public:
     /// Diagnose viewport-aware jitter advance; false when advance is blocked (B5.9 deepen).
     bool tryAdvanceIfViewportReady(u32 width, u32 height, TaaJitterAdvanceBlockReason& outReason);
     /// Advance with mandatory reject-reason output (B5.9 deepen).
+    /// Advance with reject-reason diagnostics (B5.9 deepen).
     bool tryAdvanceIfReady(TaaJitterGuardRejectReason& reason);
     void reset();
     /// Align jitter state to a monotonic frame counter (wraps with sequence period).
