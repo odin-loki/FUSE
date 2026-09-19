@@ -847,6 +847,46 @@ bool distancePairEligibleForBuild(u32 bodyA, u32 bodyB, u32 bodyCount) {
 
 } // namespace
 
+ContactIslandBuildPreflight preflight_contact_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    ContactIslandBuildPreflight preflight{};
+    preflight.stats.bodyCount = bodyCount;
+    preflight.stats.contactSlotCount = static_cast<u32>(contacts.size());
+    preflight.stats.distanceSlotCount = static_cast<u32>(distanceConstraints.size());
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (contact.valid) {
+            ++preflight.stats.validContactCount;
+        }
+        const bool inRange = contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+        if (inRange) {
+            ++preflight.stats.inRangeContactCount;
+        } else if (contact.valid) {
+            ++preflight.stats.outOfRangeContactBodyCount;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (constraint.bodyA < bodyCount && constraint.bodyB < bodyCount) {
+            ++preflight.stats.inRangeDistanceCount;
+        } else {
+            ++preflight.stats.outOfRangeDistanceBodyCount;
+        }
+    }
+
+    preflight.skipped = bodyCount == 0u && preflight.stats.inRangeContactCount == 0u &&
+                        preflight.stats.inRangeDistanceCount == 0u;
+    return preflight;
+}
+
+bool should_skip_contact_island_build(u32 bodyCount,
+                                      const std::vector<narrowphase::ContactManifold>& contacts,
+                                      const std::vector<DistanceConstraint>& distanceConstraints) {
+    return !preflight_contact_island_build(bodyCount, contacts, distanceConstraints).can_build();
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
@@ -1119,6 +1159,7 @@ bool ContactIslandGraph::build_guarded(u32 bodyCount,
     if (!preflight.can_build()) {
     if (should_skip_island_build(bodyCount, contacts, distanceConstraints)) {
     if (shouldSkipIslandGraphBuild(bodyCount, contacts, distanceConstraints)) {
+    if (should_skip_contact_island_build(bodyCount, contacts, distanceConstraints)) {
         clear();
         return false;
     }
