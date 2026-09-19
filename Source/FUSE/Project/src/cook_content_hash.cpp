@@ -323,6 +323,23 @@ CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream
     return preflight_cook_cache_key(source_hash, upstream_hash);
 }
 
+CookHashPreflight preflight_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    const CookHashPreflight combined = preflight_combine_cook_cache_key(source_hash, upstream_hash);
+    if (!combined.can_hash) {
+        return combined;
+    }
+
+    CookHashPreflight preflight;
+    if (combine_cook_cache_key(source_hash, upstream_hash) == 0) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;
