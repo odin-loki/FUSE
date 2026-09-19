@@ -256,6 +256,50 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Non-mutating prune skip predicate — mirrors `should_skip_manifold_prune` (B4.3 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool would_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f) {
+    return should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+/// Non-mutating finalize skip predicate — mirrors `can_skip_manifold_finalize` (B4.3 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool would_skip_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f) {
+    return can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
+/// Prune only when preflight allows; returns false when skipped (B4.3 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool try_prune_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f) {
+    if (would_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+        return !manifold.empty();
+    }
+    return prune_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+/// Finalize only when preflight allows; returns false when skipped (B4.3 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool try_finalize_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f) {
+    if (would_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)) {
+        return false;
+    }
+    return finalize_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
