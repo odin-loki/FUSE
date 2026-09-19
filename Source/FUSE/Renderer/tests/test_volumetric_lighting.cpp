@@ -2022,3 +2022,27 @@ void testFroxelDeepenGuardPreflights() {
                "tryPopulate rejects empty grid desc without modifying grid");
     expectTrue(populateGridReason == fuse::renderer::FroxelGridRejectReason::EmptyTilesY,
     testFroxelDeepenGuardPreflights();
+
+// --- deepen additive from deepen-b511-froxel-guards-98ed ---
+void testFroxelSampleCoordNormalizeAndPreflightGuards() {
+    expectTrue(fuse::renderer::FroxelGridLayout::tryCanSampleAtCoords(valid, desc, coordReason),
+               "tryCanSampleAtCoords succeeds on valid coords");
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryCanSampleAtCoords(inverted, desc, coordReason),
+               "tryCanSampleAtCoords rejects inverted corners");
+    expectTrue(coordReason == fuse::renderer::SampleCoordRejectReason::InvertedCorners,
+    expectTrue(std::strcmp(fuse::renderer::sampleCoordRejectReasonLabel(coordReason), "inverted_corners") == 0,
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryCanSampleAtCoords(outOfRange, desc, coordReason),
+               "tryCanSampleAtCoords rejects OOB tile coord");
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryCanSampleAtCoords(valid, zeroDesc, coordReason),
+               "tryCanSampleAtCoords rejects empty froxel desc");
+    expectTrue(fuse::renderer::froxel_util::tryCanSampleAtCoords(grid, desc, valid, lookupReason, coordReason),
+               "tryCanSampleAtCoords succeeds when grid and coords are valid");
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleAtCoords(emptyGrid, desc, valid, lookupReason, coordReason),
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleAtCoords(grid, desc, outOfRange, lookupReason, coordReason),
+               "tryCanSampleAtCoords rejects OOB sample coords");
+                   fuse::renderer::GridDensityRejectReason::EmptyDesc),
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 0u, indexedSample, lookupReason),
+    expectNear(indexedSample, 1.25f, 1e-5f, "trySampleDensityAtIndex with reason returns stored density");
+    expectTrue(!fuse::renderer::froxel_util::trySampleDensityAtIndex(emptyGrid, desc, 0u, rejectedIndexed, lookupReason),
+    expectNear(rejectedIndexed, 0.f, 1e-6f, "trySampleDensityAtIndex with reason zeroes output on rejection");
+    testFroxelSampleCoordNormalizeAndPreflightGuards();

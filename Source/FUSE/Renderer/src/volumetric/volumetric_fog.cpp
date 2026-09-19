@@ -1560,3 +1560,14 @@ bool trySampleDensityTrilinearInBounds(const FroxelDensityGrid& grid,
     outCameraReason = FroxelCameraRejectReason::None;
     if (!tryValidateFroxelGridDesc(desc, outGridReason)) {
     if (!FroxelSliceLayout::tryValidateCamera(camera, outCameraReason)) {
+
+// --- deepen additive from deepen-b511-froxel-guards-98ed ---
+bool FroxelGridLayout::tryCanSampleAtCoords(const FroxelSampleCoords& coords,
+        outReason = SampleCoordRejectReason::InvertedCorners;
+    case SampleCoordRejectReason::InvertedCorners:
+                          DensityLookupRejectReason& outLookupReason,
+                          SampleCoordRejectReason& outCoordReason) {
+    if (!tryCanLookupAtIndex(grid, desc, 0u, outLookupReason)) {
+        outCoordReason = SampleCoordRejectReason::None;
+    if (!FroxelGridLayout::tryCanSampleAtCoords(coords, desc, outCoordReason)) {
+        outLookupReason = DensityLookupRejectReason::None;

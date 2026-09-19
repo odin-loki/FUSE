@@ -628,3 +628,8 @@ bool trySampleDensityBilinearInBounds(const FroxelDensityGrid& grid,
 bool trySampleDensityTrilinearInBounds(const FroxelDensityGrid& grid,
                                 FroxelGridRejectReason& outGridReason,
                                 FroxelCameraRejectReason& outCameraReason);
+
+// --- deepen additive from deepen-b511-froxel-guards-98ed ---
+    static bool tryCanSampleAtCoords(const FroxelSampleCoords& coords,
+                          DensityLookupRejectReason& outLookupReason,
+                          SampleCoordRejectReason& outCoordReason);
