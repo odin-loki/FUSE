@@ -2645,3 +2645,41 @@ bool GizmoSystem::tryPreflightSnap(GizmoSnapGuardRejectReason& reason) const {
     return fuse::editor::tryPreflightUpdateDrag(hit, m_dragging, m_activeAxis, m_mode, m_snap,
 bool GizmoSystem::tryPreflightEndDrag(GizmoEndDragGuardRejectReason& reason) const {
     return fuse::editor::tryPreflightEndDrag(m_dragging, m_activeAxis, m_mode, m_snap, reason);
+
+// --- deepen additive from deepen-b6-gizmo-guards-9adb ---
+    case GizmoPickRejectReason::NonFiniteInput:
+    case GizmoBeginDragRejectReason::NonFiniteInput:
+    case GizmoUpdateDragRejectReason::NonFiniteInput:
+        return GizmoPickRejectReason::NonFiniteInput;
+        return GizmoBeginDragRejectReason::NonFiniteInput;
+        return GizmoUpdateDragRejectReason::NonFiniteInput;
+                      GizmoSpace space, f32 axisLength, f32 pickRadius, PickPreflight& out,
+    out = preflightPick(ray, transform, mode, space, axisLength, pickRadius);
+    reason = classifyPickReject(out);
+bool tryPreflightPick(const GizmoHitTest& hit, GizmoMode mode, PickPreflight& out,
+    out = preflightPick(hit, mode);
+bool tryPreflightSnap(GizmoMode mode, const GizmoSnapSettings& settings, SnapPreflight& out,
+    out = preflightSnap(mode, settings);
+    reason = classifySnapReject(out);
+                           BeginDragPreflight& out, GizmoBeginDragRejectReason& reason) {
+    out = preflightBeginDrag(ray, transform, mode, space, axisLength, pickRadius, settings,
+    reason = classifyBeginDragReject(out);
+    out = preflightBeginDrag(hit, mode, settings, alreadyDragging);
+                            UpdateDragPreflight& out, GizmoUpdateDragRejectReason& reason) {
+    out = preflightUpdateDrag(hit, dragging, activeAxis, mode, settings);
+    reason = classifyUpdateDragReject(out);
+                         const GizmoSnapSettings& settings, EndDragPreflight& out,
+    out = preflightEndDrag(dragging, activeAxis, mode, settings);
+    reason = classifyEndDragReject(out);
+bool GizmoSystem::tryPreflightPick(const GizmoHitTest& hit, PickPreflight& out,
+    return fuse::editor::tryPreflightPick(hit, m_mode, out, reason);
+                                   PickPreflight& out, GizmoPickRejectReason& reason) const {
+bool GizmoSystem::tryPreflightSnap(SnapPreflight& out, GizmoSnapRejectReason& reason) const {
+    return fuse::editor::tryPreflightSnap(m_mode, m_snap, out, reason);
+bool GizmoSystem::tryPreflightBeginDrag(const GizmoHitTest& hit, BeginDragPreflight& out,
+    return fuse::editor::tryPreflightBeginDrag(hit, m_mode, m_snap, m_dragging, out, reason);
+                                          BeginDragPreflight& out,
+bool GizmoSystem::tryPreflightUpdateDrag(const GizmoHitTest& hit, UpdateDragPreflight& out,
+    return fuse::editor::tryPreflightUpdateDrag(hit, m_dragging, m_activeAxis, m_mode, m_snap, out,
+bool GizmoSystem::tryPreflightEndDrag(EndDragPreflight& out,
+    return fuse::editor::tryPreflightEndDrag(m_dragging, m_activeAxis, m_mode, m_snap, out, reason);

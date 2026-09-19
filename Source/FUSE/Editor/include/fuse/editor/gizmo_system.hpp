@@ -1126,3 +1126,18 @@ GizmoEndDragGuardRejectReason classifyEndDragReject(const EndDragPreflight& pref
                                              GizmoBeginDragGuardRejectReason& reason) const;
                                               GizmoUpdateDragGuardRejectReason& reason) const;
     [[nodiscard]] bool tryPreflightEndDrag(GizmoEndDragGuardRejectReason& reason) const;
+
+// --- deepen additive from deepen-b6-gizmo-guards-9adb ---
+                      GizmoSpace space, f32 axisLength, f32 pickRadius, PickPreflight& out,
+bool tryPreflightPick(const GizmoHitTest& hit, GizmoMode mode, PickPreflight& out,
+bool tryPreflightSnap(GizmoMode mode, const GizmoSnapSettings& settings, SnapPreflight& out,
+                           BeginDragPreflight& out, GizmoBeginDragRejectReason& reason);
+                            UpdateDragPreflight& out, GizmoUpdateDragRejectReason& reason);
+                         const GizmoSnapSettings& settings, EndDragPreflight& out,
+    [[nodiscard]] bool tryPreflightPick(const GizmoHitTest& hit, PickPreflight& out,
+                                        PickPreflight& out, GizmoPickRejectReason& reason) const;
+    [[nodiscard]] bool tryPreflightSnap(SnapPreflight& out, GizmoSnapRejectReason& reason) const;
+    [[nodiscard]] bool tryPreflightBeginDrag(const GizmoHitTest& hit, BeginDragPreflight& out,
+                                             BeginDragPreflight& out,
+    [[nodiscard]] bool tryPreflightUpdateDrag(const GizmoHitTest& hit, UpdateDragPreflight& out,
+    [[nodiscard]] bool tryPreflightEndDrag(EndDragPreflight& out,
