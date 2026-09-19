@@ -2115,3 +2115,7 @@ void testManifoldPrunePreflightShallowFlag() {
     expectTrue(freshPreflight.can_reuse(), "friction preflight can reuse valid basis");
     testManifoldFinalizeGuardedEntryPoints();
     testManifoldPrunePreflightShallowFlag();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-7360 ---
+void testRunNarrowphaseDeepenDispatchGuards() {
+void testBuildFrictionTangentBasesReuseGuard() {

@@ -699,3 +699,7 @@ ContactPairDispatchPreflight preflight_contact_pair_dispatch(
     preflight.unsupportedShapePair = preflight.reason == ContactPairRejectReason::UnsupportedShapePair;
     preflight.bothStatic = preflight.reason == ContactPairRejectReason::BothStatic;
     preflight.degenerateShape = preflight.reason == ContactPairRejectReason::DegenerateShape;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-7360 ---
+    const ManifoldFinalizePreflight finalizePreflight = preflight_manifold_finalize(manifold);
+    if (finalizePreflight.wouldBeEmptyAfterPrune) {

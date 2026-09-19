@@ -414,3 +414,6 @@ bool should_run_contact_buffer_friction_basis(const ContactBufferSoA& buffer) {
 
 // --- deepen additive from deepen-b4-narrowphase-guards-914a ---
         const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
+
+// --- deepen additive from deepen-b4-narrowphase-guards-7360 ---
+        if (should_skip_friction_basis_preflight(manifold)) {
