@@ -4566,3 +4566,16 @@ void testTaaPassTryPreflightAndCompositeGuards() {
     expectTrue(!pass->preflightResolveFrame(resolveDesc, &skipReason, &blendReason),
                "preflightResolveFrame fails with invalid dimensions");
                "preflightResolveFrame skip reason is InvalidDimensions");
+
+// --- deepen additive from deepen-b59-taa-pass-guards-5ca7 ---
+    expectTrue(pass->preflightJitterSyncAndNdc(4u, &jitterReason),
+               "pass preflightJitterSyncAndNdc passes before init");
+    expectTrue(!pass->preflightHistoryWarmupAndReuse(0u, &reuseReason),
+               "pass preflightHistoryWarmupAndReuse fails before warmup");
+               "pass preflightHistoryWarmupAndReuse reason is NotWarm before warmup");
+    expectTrue(pass->preflightJitterSyncAndNdc(6u, &jitterReason),
+               "pass preflightJitterSyncAndNdc passes when aligned");
+    expectTrue(pass->preflightHistoryWarmupAndReuse(0u, &reuseReason),
+               "pass preflightHistoryWarmupAndReuse passes after warmup");
+    expectTrue(!zeroPass->preflightJitterSyncAndNdc(0u, &jitterReason),
+               "zero-width pass preflightJitterSyncAndNdc fails");

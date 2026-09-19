@@ -689,3 +689,11 @@ bool TaaPass::preflightJitterFrame(u32 frameIndex, TaaJitterGuardRejectReason* r
             *blendReason = TaaResolveBlendRejectReason::None;
     return preflightTaaResolveBlendWeights(desc, m_history, blendReason);
     return preflightResolveFrame(desc, &skipReason, &blendReason);
+
+// --- deepen additive from deepen-b59-taa-pass-guards-5ca7 ---
+bool TaaPass::preflightHistoryWarmupAndReuse(u32 observedGeneration, TaaHistoryReuseBlockReason* reason) const {
+    return !preflightHistoryWarmupAndReuse(observedGeneration);
+    TaaJitterGuardRejectReason local = TaaJitterGuardRejectReason::None;
+    if (!preflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), &local)) {
+    if (!preflightTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength(), &local)) {
+    return !preflightJitterSyncAndNdc(frameIndex);
