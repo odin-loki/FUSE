@@ -2253,3 +2253,8 @@ bool try_preflight_spatial_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir
 bool try_preflight_hrtf_spatial_narrowing(HrtfPanPath path, float distance_attenuation,
 HrtfBinauralRejectBundle classify_hrtf_binaural_rejects(const HrtfBinauralPreflight& preflight) {
                                  const BinauralPanParams& params, HrtfBinauralPreflight& preflight,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-9955 ---
+bool preflight_hrtf_ir_convolve_ready(const HrtfIrStub& ir, HrtfIrRejectReason* reason) {
+bool try_preflight_hrtf_ir_convolve(const HrtfIrStub& ir, HrtfIrRejectReason& reason) {
+    const HrtfBinauralRejectReason spatial_reject = classify_hrtf_binaural_spatial_pan_reject(preflight);
