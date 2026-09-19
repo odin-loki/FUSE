@@ -348,6 +348,9 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
     if (eventName == nullptr || eventName[0] == '\0' || queryName == nullptr || queryName[0] == '\0') {
     return std::strcmp(eventName, queryName) == 0;
 
+bool eventNameEquals(const char* lhs, const char* rhs) {
+    return lhs != nullptr && rhs != nullptr && std::strcmp(lhs, rhs) == 0;
+
 }
 
 } // namespace
@@ -1558,6 +1561,7 @@ bool isAsyncFlowPhase(EventPhase phase) {
 
 
     return isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name);
+
 
 
 bool isValidProfileEvent(const ProfileEvent& event) {
@@ -2843,6 +2847,16 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
+
+
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -3996,6 +4010,18 @@ u32 openAsyncFlowCountForId(u32 flowId) {
 
 bool isAsyncFlowOpen(u32 flowId) {
     return openAsyncFlowCountForId(flowId) > 0u;
+
+        if (isValidEventName(event.name) && eventNameEquals(event.name, name)) {
+
+
+
+
+
+        if (isFlowPhase(event.phase) && isValidEventName(event.name) && event.scopeId == flowId) {
+
+
+
+
 
 u32 lastEventIndex() {
     const u32 count = eventCount();

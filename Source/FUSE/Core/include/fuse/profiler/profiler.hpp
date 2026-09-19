@@ -289,6 +289,7 @@ struct ChromeTraceExportPreflight {
 
             && !hasInvalidNameEvents;
             && !hasInvalidNameEvents && !ringBufferFull;
+            && !ringBufferFull && !hasInvalidNameEvents;
     }
 
     bool canExportSafely() const {
@@ -686,6 +687,28 @@ struct NestingStatePreflight {
 
 
 
+};
+
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canBegin = false;
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
