@@ -539,6 +539,7 @@ enum class DensityLookupRejectReason : u8 {
     IndexOutOfRange,
     ScreenMappingFailed,
     SampleCoordRejected,
+    CoordOutOfRange,
 };
 
 /// Human-readable label for density lookup reject reasons (logging / tests).
@@ -626,6 +627,13 @@ bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          u32 sliceZ,
                          DensityLookupRejectReason& outReason);
 /// Diagnose why tile/slice coord lookup preflight would reject; vacuously succeeds on accessible grids.
+bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
+                         const FroxelGridDesc& desc,
+                         u32 tileX,
+                         u32 tileY,
+                         u32 sliceZ,
+                         DensityLookupRejectReason& outReason);
+/// Diagnose why coord lookup preflight would reject; vacuously succeeds on accessible grids.
 bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          const FroxelGridDesc& desc,
                          u32 tileX,

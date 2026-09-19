@@ -1293,6 +1293,8 @@ const char* froxelSampleCoordRejectReasonLabel(FroxelSampleCoordRejectReason rea
     case DensityLookupRejectReason::ScreenMappingFailed:
         return "screen_mapping_failed";
 
+    case DensityLookupRejectReason::CoordOutOfRange:
+        return "coord_out_of_range";
     }
     return "unknown";
 }
@@ -1504,6 +1506,14 @@ bool canLookupAtCoord(const FroxelDensityGrid& grid,
     return canLookupAtIndex(grid, desc, 0u);
 }
 
+bool canLookupAtCoord(const FroxelDensityGrid& grid,
+                      const FroxelGridDesc& desc,
+                      u32 /*tileX*/,
+                      u32 /*tileY*/,
+                      u32 /*sliceZ*/) {
+    return canLookupAtIndex(grid, desc, 0u);
+}
+
 bool tryCanLookupAtIndex(const FroxelDensityGrid& grid,
                          u32 /*index*/,
                          const FroxelGridDesc& desc,
@@ -1621,6 +1631,11 @@ bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
 
     if (wouldClampDensityLookupCoord(tileX, tileY, sliceZ, desc)) {
         outReason = DensityLookupRejectReason::IndexOutOfRange;
+    if (!tryCanLookupAtIndex(grid, desc, FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc), outReason)) {
+
+    outReason = DensityLookupRejectReason::None;
+    if (tileX >= desc.tilesX || tileY >= desc.tilesY || sliceZ >= desc.slicesZ) {
+        outReason = DensityLookupRejectReason::CoordOutOfRange;
     return true;
 }
 
@@ -1655,10 +1670,9 @@ bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
     if (!tryCanLookupAtIndex(grid, desc, FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc),
                              outReason)) {
         return false;
-    }
 
     outReason = DensityLookupRejectReason::None;
-}
+
 
 bool canSampleAtCoords(const FroxelDensityGrid& grid,
                        const FroxelGridDesc& desc,
@@ -3027,6 +3041,7 @@ bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
         outSampleReason = SampleCoordRejectReason::OutOfBounds;
         if (lookupReason == DensityLookupRejectReason::EmptyGrid) {
             outReason = ScreenMappingRejectReason::None;
+        case DensityLookupRejectReason::CoordOutOfRange:
         return false;
     }
 
