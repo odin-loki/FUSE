@@ -204,6 +204,11 @@ bool is_plane_plane_contact_pair(
     const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes);
 
+/// Returns true when the resolved shape types have no narrowphase dispatch handler (B4.6 deepen pass).
+bool is_undispatched_shape_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
 /// Const preflight for narrowphase batch dispatch (B4.5 deepen follow-up pass).
 struct NarrowphaseBatchPreflight {
     u32 pairCount = 0u;
@@ -222,6 +227,12 @@ NarrowphaseBatchPreflight preflight_narrowphase_batch(
 
 /// Returns true when batch preflight reports no dispatchable pairs (B4.5 deepen follow-up pass).
 bool narrowphase_batch_rejects_all(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when batch preflight reports at least one rejected pair (B4.6 deepen pass).
+bool narrowphase_batch_has_rejected_pairs(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
