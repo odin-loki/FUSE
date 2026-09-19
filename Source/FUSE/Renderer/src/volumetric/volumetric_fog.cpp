@@ -2355,3 +2355,7 @@ bool preflightScreenDepthToFroxelIndex(f32 screenX,
 // --- deepen additive from deepen-b511-froxel-classify-preflight-9310 ---
     tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, unused, reason);
         tryMapScreenDepthToFroxelIndex(screenX, screenY, viewDepth, desc, camera, froxelIndex, reject);
+
+// --- deepen additive from b511-froxel-classify-preflight-a761 ---
+    return !preflightSampleCoords(coords, desc);
+    return !preflightFroxelPopulate(desc, camera, params);

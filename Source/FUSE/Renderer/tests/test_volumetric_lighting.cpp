@@ -3874,3 +3874,9 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "preflightScreenDepthToSampleCoords rejects depth below near plane");
     expectTrue(fuse::renderer::froxel_util::classifyFroxelTrilinearSampleReject(grid, desc, warnTrilinear) ==
     expectTrue(fuse::renderer::froxel_util::preflightFroxelTrilinearSample(grid, desc, warnTrilinear),
+
+// --- deepen additive from b511-froxel-classify-preflight-a761 ---
+    expectTrue(froxelIndex < desc.froxelCount(), "preflightScreenDepthToFroxelIndex returns valid index");
+               "preflightTrilinearSample reports clampable_weights reject reason");
+               "preflightTrilinearSample reports invalid_sample_coords for hard OOB");
+               "wouldSkipFroxelPopulate agrees with preflightFroxelPopulate for zero density");
