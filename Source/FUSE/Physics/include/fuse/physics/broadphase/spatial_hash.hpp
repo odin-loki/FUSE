@@ -185,6 +185,20 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
     return !canSkipBroadphase(bodies, shapes);
 }
 
+/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphase(bodies, shapes);
+}
+
+/// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,
@@ -2259,6 +2273,9 @@ bool wouldSkipBroadphaseMerge(
 enum class MergePairsIntoBufferRejectReason : u8 {
     EmptyPairs,
     BufferFull,
+/// Why merging candidate pairs into a pair buffer would early-out (B4.2 deepen follow-up pass).
+    None = 0,
+};
 
 /// Human-readable label for merge-into-buffer reject reasons (logging / tests).
 const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReason reason);
@@ -2272,6 +2289,13 @@ bool mergePairsIntoBufferRejectsForReason(
     MergePairsIntoBufferRejectReason expected);
 
 /// Read-only merge-into-buffer diagnostics — no mutation (B4.2 deepen pass).
+    const PairBufferSoA& buffer);
+
+/// Returns true when `mergePairsIntoBufferRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer,
+
+/// Read-only merge-into-buffer diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct MergePairsIntoBufferPreflight {
     MergePairsIntoBufferRejectReason reason = MergePairsIntoBufferRejectReason::None;
     bool emptyPairs = false;
@@ -2362,6 +2386,15 @@ u32 countRefinableBroadphasePairs(
 
 /// True when at least one pair would survive refine (B4.2 deepen pass).
 bool hasRefinableBroadphasePair(
+
+    const std::vector<CandidatePair>& pairs,
+
+/// Non-mutating merge-into-buffer skip predicate — inverse of `canMerge` (B4.2 deepen follow-up pass).
+
+/// Non-mutating merge-into-buffer predicate — mirrors `preflightMergePairsIntoBuffer` (B4.2 deepen follow-up pass).
+
+/// Append canonical pairs into `buffer`, stopping at capacity (B4.2 deepen follow-up pass).
+void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(

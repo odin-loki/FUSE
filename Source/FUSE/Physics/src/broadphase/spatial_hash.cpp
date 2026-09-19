@@ -1022,15 +1022,9 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
         if (!preflightPairBufferPush(buffer, pair.bodyA, pair.bodyB).canPush()) {
         if (accepted >= mergePreflight.acceptedCount) {
             break;
-        }
         if (!buffer.canAcceptPairs(1u)) {
-            break;
-        }
         if (buffer.push(pair.bodyA, pair.bodyB)) {
             ++accepted;
-        }
-    }
-}
 
 void dedupeBuffer(PairBufferSoA& buffer) {
     if (!shouldRunDedupeBroadphase(buffer) || !shouldRunPairBufferDedupe(buffer)) {
@@ -1125,6 +1119,7 @@ void runBroadphaseIntoBufferInternal(
     if (should_skip_broadphase_build(bodies, shapes)) {
     if (can_skip_broadphase_dispatch(bodies, shapes)) {
     if (!shouldRunBroadphase(bodies, shapes)) {
+    if (!shouldRunBroadphasePairGeneration(bodies, shapes)) {
         return;
     }
 
@@ -1210,7 +1205,9 @@ void runBroadphaseIntoBufferInternal(
         });
 
         for (const std::vector<CandidatePair>& bucketPairs : dynamicPlanePairs) {
-            mergePairsIntoBuffer(bucketPairs, buffer);
+            if (shouldRunMergePairsIntoBuffer(bucketPairs, buffer)) {
+                mergePairsIntoBuffer(bucketPairs, buffer);
+            }
         }
         dedupeBuffer(buffer);
     }
@@ -1903,6 +1900,68 @@ bool hasRefinableBroadphasePair(
     const CollisionShapeSoA& shapes,
     const PairBufferSoA& buffer) {
     return countRefinableBroadphasePairs(bodies, shapes, buffer) > 0u;
+}
+
+const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReason reason) {
+    switch (reason) {
+    case MergePairsIntoBufferRejectReason::None:
+        return "None";
+    case MergePairsIntoBufferRejectReason::EmptyPairs:
+        return "EmptyPairs";
+    case MergePairsIntoBufferRejectReason::BufferFull:
+        return "BufferFull";
+    }
+    return "Unknown";
+}
+
+MergePairsIntoBufferRejectReason mergePairsIntoBufferRejectReason(
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer) {
+    if (pairs.empty()) {
+        return MergePairsIntoBufferRejectReason::EmptyPairs;
+    }
+    if (buffer.isFull()) {
+        return MergePairsIntoBufferRejectReason::BufferFull;
+    }
+    return MergePairsIntoBufferRejectReason::None;
+}
+
+bool mergePairsIntoBufferRejectsForReason(
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer,
+    MergePairsIntoBufferRejectReason expected) {
+    return mergePairsIntoBufferRejectReason(pairs, buffer) == expected;
+}
+
+MergePairsIntoBufferPreflight preflightMergePairsIntoBuffer(
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer) {
+    MergePairsIntoBufferPreflight preflight{};
+    preflight.reason = mergePairsIntoBufferRejectReason(pairs, buffer);
+    preflight.emptyPairs = preflight.reason == MergePairsIntoBufferRejectReason::EmptyPairs;
+    preflight.bufferFull = preflight.reason == MergePairsIntoBufferRejectReason::BufferFull;
+    return preflight;
+}
+
+bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
+    return !preflightMergePairsIntoBuffer(pairs, buffer).canMerge();
+}
+
+bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
+    return preflightMergePairsIntoBuffer(pairs, buffer).canMerge();
+}
+
+void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
+    if (!shouldRunMergePairsIntoBuffer(pairs, buffer)) {
+        return;
+    }
+
+    for (const CandidatePair& pair : pairs) {
+        if (!preflightPairBufferPush(buffer, pair.bodyA, pair.bodyB).canPush()) {
+            break;
+        }
+        buffer.push(pair.bodyA, pair.bodyB);
+    }
 }
 
 void refineBroadphasePairsParallel(

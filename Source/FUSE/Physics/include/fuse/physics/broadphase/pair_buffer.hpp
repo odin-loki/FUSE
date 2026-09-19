@@ -586,6 +586,7 @@ bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
 /// Non-mutating dedupe predicate — mirrors `preflightPairBufferDedupe` (B4.2 deepen pass).
 
 
+
 enum class PairBufferSortRejectReason : u8 {
     None = 0,
     EmptyBuffer,
@@ -621,6 +622,10 @@ enum class PairBufferSortRejectReason : u8 {
     bool singlePair = false;
 
 /// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+
+
+
+
 
 
 
@@ -1090,5 +1095,15 @@ bool canSkipPairBufferSlotReservation(const PairBufferSoA& buffer, u32 slotCount
 
 /// Non-mutating slot-reservation predicate — mirrors `preflightPairBufferSlotReservation` (B4.2 deepen follow-up pass).
 bool shouldRunPairBufferSlotReservation(const PairBufferSoA& buffer, u32 slotCount);
+
+
+
+
+
+
+
+
+
+
 
 } // namespace fuse::physics::broadphase
