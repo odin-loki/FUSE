@@ -1179,3 +1179,55 @@ ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
 
 // --- deepen additive from deepen-b16-profiler-preflights-3a15 ---
     ChromeTraceExportPreflight result{};
+
+// --- deepen additive from deepen-fuse-b16-profiler-11c2 ---
+EventNameRejectReason diagnoseEventNameRejectReason(const char* name) {
+        return EventNameRejectReason::Null;
+        return EventNameRejectReason::Empty;
+    return EventNameRejectReason::None;
+NestingStateRejectReason diagnoseNestingStateRejectReason() {
+        return NestingStateRejectReason::UnbalancedScopeNesting;
+        return NestingStateRejectReason::UnbalancedFlowNesting;
+        return NestingStateRejectReason::OpenAsyncFlows;
+    return NestingStateRejectReason::None;
+ChromeTraceExportRejectReason diagnoseChromeTraceExportRejectReason() {
+bool tryValidateEventName(const char* name, EventNameRejectReason& outReason) {
+    outReason = diagnoseEventNameRejectReason(name);
+    return outReason == EventNameRejectReason::None;
+const char* eventNameRejectReasonLabel(EventNameRejectReason reason) {
+    case EventNameRejectReason::None:
+    case EventNameRejectReason::Null:
+    case EventNameRejectReason::Empty:
+    return diagnoseNestingStateRejectReason() == NestingStateRejectReason::None;
+bool preflightProfilerState(NestingStateRejectReason* reason) {
+    const NestingStateRejectReason rejectReason = diagnoseNestingStateRejectReason();
+    return rejectReason == NestingStateRejectReason::None;
+const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason) {
+    case NestingStateRejectReason::None:
+    case NestingStateRejectReason::UnbalancedScopeNesting:
+    case NestingStateRejectReason::UnbalancedFlowNesting:
+    case NestingStateRejectReason::OpenAsyncFlows:
+    return diagnoseChromeTraceExportRejectReason() == ChromeTraceExportRejectReason::None;
+bool preflightChromeTraceExport(ChromeTraceExportRejectReason* reason) {
+    const ChromeTraceExportRejectReason rejectReason = diagnoseChromeTraceExportRejectReason();
+    return rejectReason == ChromeTraceExportRejectReason::None;
+const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason) {
+    case ChromeTraceExportRejectReason::None:
+    case ChromeTraceExportRejectReason::UnbalancedScopeNesting:
+    case ChromeTraceExportRejectReason::UnbalancedFlowNesting:
+    case ChromeTraceExportRejectReason::OpenAsyncFlows:
+    EventLookupRejectReason reason = EventLookupRejectReason::None;
+    return tryCanLookupEventAt(index, reason);
+bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason) {
+        outReason = EventLookupRejectReason::EmptyBuffer;
+        outReason = EventLookupRejectReason::OutOfRange;
+        outReason = EventLookupRejectReason::InvalidEvent;
+    outReason = EventLookupRejectReason::None;
+const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason) {
+    case EventLookupRejectReason::None:
+    case EventLookupRejectReason::EmptyBuffer:
+    case EventLookupRejectReason::OutOfRange:
+    case EventLookupRejectReason::InvalidEvent:
+    if (!tryCanLookupEventAt(index, reason)) {
+bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason) {
+    if (!preflightChromeTraceExport(reason)) {

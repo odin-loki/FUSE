@@ -2947,3 +2947,82 @@ void testExportPreflightDisabledProfiler() {
     testExportPreflightWithEvents();
     testExportPreflightUnbalancedWarnings();
     testExportPreflightDisabledProfiler();
+
+// --- deepen additive from deepen-fuse-b16-profiler-11c2 ---
+void testEventNameValidationPreflight() {
+    fuse::profiler::EventNameRejectReason reason = fuse::profiler::EventNameRejectReason::None;
+    expectTrue(fuse::profiler::tryValidateEventName("scope", reason),
+               "tryValidateEventName succeeds for valid name");
+    expectTrue(reason == fuse::profiler::EventNameRejectReason::None, "valid name reject reason is None");
+    expectTrue(std::string(fuse::profiler::eventNameRejectReasonLabel(reason)) == "none",
+    expectTrue(!fuse::profiler::tryValidateEventName(nullptr, reason),
+               "tryValidateEventName rejects null name");
+    expectTrue(reason == fuse::profiler::EventNameRejectReason::Null, "null name reject reason is Null");
+    expectTrue(std::string(fuse::profiler::eventNameRejectReasonLabel(reason)) == "null",
+    expectTrue(!fuse::profiler::tryValidateEventName("", reason),
+               "tryValidateEventName rejects empty name");
+    expectTrue(reason == fuse::profiler::EventNameRejectReason::Empty, "empty name reject reason is Empty");
+    expectTrue(std::string(fuse::profiler::eventNameRejectReasonLabel(reason)) == "empty",
+void testProfilerStatePreflight() {
+    fuse::profiler::NestingStateRejectReason reason = fuse::profiler::NestingStateRejectReason::None;
+    expectTrue(fuse::profiler::preflightProfilerState(&reason),
+               "preflightProfilerState succeeds after reset");
+    expectTrue(reason == fuse::profiler::NestingStateRejectReason::None, "balanced state reject reason is None");
+        expectTrue(!fuse::profiler::preflightProfilerState(&reason),
+                   "preflightProfilerState rejects active scope");
+        expectTrue(reason == fuse::profiler::NestingStateRejectReason::UnbalancedScopeNesting,
+        expectTrue(std::string(fuse::profiler::nestingStateRejectReasonLabel(reason))
+               "preflightProfilerState rejects open async flow");
+    expectTrue(reason == fuse::profiler::NestingStateRejectReason::UnbalancedFlowNesting,
+               "preflightProfilerState succeeds after flow pair");
+    fuse::profiler::ChromeTraceExportRejectReason reason =
+        fuse::profiler::ChromeTraceExportRejectReason::None;
+    expectTrue(fuse::profiler::preflightChromeTraceExport(&reason),
+               "preflightChromeTraceExport succeeds on empty buffer");
+    expectTrue(reason == fuse::profiler::ChromeTraceExportRejectReason::None,
+        expectTrue(!fuse::profiler::preflightChromeTraceExport(&reason),
+                   "preflightChromeTraceExport rejects active scope");
+        expectTrue(reason == fuse::profiler::ChromeTraceExportRejectReason::UnbalancedScopeNesting,
+               "preflightChromeTraceExport rejects open async flow");
+    expectTrue(reason == fuse::profiler::ChromeTraceExportRejectReason::UnbalancedFlowNesting,
+    expectTrue(std::string(fuse::profiler::chromeTraceExportRejectReasonLabel(reason))
+    expectTrue(!fuse::profiler::tryExportChromeTraceJson(guardedJson, &reason),
+               "tryExportChromeTraceJson rejects unbalanced state");
+    expectTrue(guardedJson.empty(), "tryExportChromeTraceJson clears output on rejection");
+               "tryExportChromeTraceJson reports unbalanced flow nesting");
+    expectTrue(fuse::profiler::tryExportChromeTraceJson(guardedJson, &reason),
+               "tryExportChromeTraceJson succeeds on balanced state");
+    expectTrue(!guardedJson.empty(), "tryExportChromeTraceJson returns non-empty json");
+               "tryExportChromeTraceJson preserves scope name");
+void testEventLookupPreflightStubs() {
+    fuse::profiler::EventLookupRejectReason reason = fuse::profiler::EventLookupRejectReason::None;
+    expectTrue(!fuse::profiler::tryCanLookupEventAt(0u, reason),
+               "tryCanLookupEventAt false on empty buffer");
+    expectTrue(reason == fuse::profiler::EventLookupRejectReason::EmptyBuffer,
+    expectTrue(std::string(fuse::profiler::eventLookupRejectReasonLabel(reason)) == "empty_buffer",
+    expectTrue(fuse::profiler::tryCanLookupEventAt(1u, reason),
+               "tryCanLookupEventAt succeeds for last event");
+    expectTrue(reason == fuse::profiler::EventLookupRejectReason::None,
+    expectTrue(!fuse::profiler::tryCanLookupEventAt(2u, reason),
+               "tryCanLookupEventAt rejects out-of-range index");
+    expectTrue(reason == fuse::profiler::EventLookupRejectReason::OutOfRange,
+    expectTrue(std::string(fuse::profiler::eventLookupRejectReasonLabel(reason)) == "out_of_range",
+void testOpenAsyncFlowCrossThreadPreflight() {
+    fuse::profiler::NestingStateRejectReason nestingReason = fuse::profiler::NestingStateRejectReason::None;
+    fuse::profiler::ChromeTraceExportRejectReason exportReason =
+        expectTrue(!fuse::profiler::preflightProfilerState(&nestingReason),
+        expectTrue(nestingReason == fuse::profiler::NestingStateRejectReason::OpenAsyncFlows,
+        expectTrue(!fuse::profiler::preflightChromeTraceExport(&exportReason),
+        expectTrue(exportReason == fuse::profiler::ChromeTraceExportRejectReason::OpenAsyncFlows,
+void testUnbalancedFlowNestingExportPreflight() {
+               "preflightProfilerState rejects unmatched outer flow");
+    expectTrue(nestingReason == fuse::profiler::NestingStateRejectReason::UnbalancedFlowNesting,
+               "preflightChromeTraceExport rejects unmatched outer flow");
+    expectTrue(exportReason == fuse::profiler::ChromeTraceExportRejectReason::UnbalancedFlowNesting,
+    expectTrue(fuse::profiler::preflightChromeTraceExport(&exportReason),
+               "preflightChromeTraceExport succeeds after flow balance restored");
+    testEventNameValidationPreflight();
+    testProfilerStatePreflight();
+    testEventLookupPreflightStubs();
+    testOpenAsyncFlowCrossThreadPreflight();
+    testUnbalancedFlowNestingExportPreflight();

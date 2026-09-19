@@ -349,3 +349,17 @@ ChromeExportPreflight preflightChromeTraceExport();
 // --- deepen additive from deepen-b16-profiler-export-preflight-bcfd ---
 enum class ChromeTraceExportRejectReason : u8 {
 ChromeTraceExportRejectReason chromeTraceExportRejectReason();
+
+// --- deepen additive from deepen-fuse-b16-profiler-11c2 ---
+enum class EventNameRejectReason : u8 {
+enum class NestingStateRejectReason : u8 {
+enum class EventLookupRejectReason : u8 {
+bool tryValidateEventName(const char* name, EventNameRejectReason& outReason);
+const char* eventNameRejectReasonLabel(EventNameRejectReason reason);
+bool preflightProfilerState(NestingStateRejectReason* reason = nullptr);
+const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason);
+bool preflightChromeTraceExport(ChromeTraceExportRejectReason* reason = nullptr);
+const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason);
+bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason);
+const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
+bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReason* reason = nullptr);
