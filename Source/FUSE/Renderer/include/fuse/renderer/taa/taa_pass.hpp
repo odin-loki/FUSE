@@ -273,6 +273,8 @@ public:
     /// True when pass history is warmed and ready for temporal reuse (B5.9 deepen).
     bool preflightHistoryWarmup(TaaHistoryReuseBlockReason* reason = nullptr) const;
     /// History warmup preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Classify why pass history warm-up preflight would reject (B5.9 deepen).
+    TaaHistoryReuseBlockReason classifyHistoryWarmupBlock() const;
     /// Resolve blend preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc,
                                          TaaResolveBlendRejectReason& reason) const;
@@ -303,6 +305,7 @@ public:
     /// True when pass history buffers are warmed and temporal reuse is allowed (B5.9 deepen).
     /// Early-out when pass history warmup/reuse preflight would reject (B5.9 deepen).
     bool shouldSkipHistoryWarmupAndReuse(u32 observedGeneration) const;
+                                       TaaResolveBlendRejectReason& reason) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// Early-out when resolve preflight would bail (B5.9 deepen).
