@@ -251,3 +251,10 @@ TaaBlendPreflightRejectReason classifyTaaBlendPreflightReject(const TaaResolveDe
 bool taaResolveBlendPreflight(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                TaaBlendPreflightRejectReason* reason = nullptr);
 const char* taaBlendPreflightRejectReasonLabel(TaaBlendPreflightRejectReason reason);
+
+// --- deepen additive from deepen-b59-taa-guards-a831 ---
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history);
+enum class TaaResolveBlendPreflightRejectReason : u8 {
+const char* taaResolveBlendPreflightRejectReasonLabel(TaaResolveBlendPreflightRejectReason reason);
+TaaResolveBlendPreflightRejectReason diagnoseTaaResolveBlendPreflight(const TaaResolveDesc& desc,
+                              TaaResolveBlendPreflightRejectReason* reason = nullptr);

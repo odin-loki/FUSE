@@ -246,3 +246,8 @@ bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGener
         return TaaHistoryReuseRejectReason::HistoryNotReady;
         return TaaHistoryReuseRejectReason::HistoryNotWarmed;
 bool taaHistoryReusePreflight(const TaaHistoryBuffer& history, u32 observedGeneration,
+
+// --- deepen additive from deepen-b59-taa-guards-a831 ---
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history) {
+bool TaaHistoryBuffer::preflightReuse(u32 observedGeneration) const {
+    return preflightTaaHistoryReuse(*this, observedGeneration);

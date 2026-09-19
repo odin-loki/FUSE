@@ -482,3 +482,18 @@ const char* taaBlendPreflightRejectReasonLabel(TaaBlendPreflightRejectReason rea
     case TaaBlendPreflightRejectReason::HistoryNotReady:
     case TaaBlendPreflightRejectReason::WarmupRequired:
     case TaaBlendPreflightRejectReason::StaleGeneration:
+
+// --- deepen additive from deepen-b59-taa-guards-a831 ---
+const char* taaResolveBlendPreflightRejectReasonLabel(TaaResolveBlendPreflightRejectReason reason) {
+    case TaaResolveBlendPreflightRejectReason::None:
+    case TaaResolveBlendPreflightRejectReason::HistoryNotReady:
+    case TaaResolveBlendPreflightRejectReason::InvalidWeights:
+    case TaaResolveBlendPreflightRejectReason::ReusePolicyViolation:
+TaaResolveBlendPreflightRejectReason diagnoseTaaResolveBlendPreflight(const TaaResolveDesc& desc,
+        return TaaResolveBlendPreflightRejectReason::HistoryNotReady;
+        return TaaResolveBlendPreflightRejectReason::InvalidWeights;
+        return TaaResolveBlendPreflightRejectReason::ReusePolicyViolation;
+    return TaaResolveBlendPreflightRejectReason::None;
+                              TaaResolveBlendPreflightRejectReason* reason) {
+    const TaaResolveBlendPreflightRejectReason reject = diagnoseTaaResolveBlendPreflight(desc, history);
+    return reject == TaaResolveBlendPreflightRejectReason::None;

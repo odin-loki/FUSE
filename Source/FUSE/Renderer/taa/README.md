@@ -87,3 +87,12 @@ Part of `fuse_rhi`. Built with `FUSE_BUILD_CORE=ON`. Tests run when `FUSE_BUILD_
 
 // --- deepen additive from deepen-b59-taa-guards-e811 ---
 - `computeTaaBlendWeightsWithReuseGuard` / `preflightTaaBlendWeights` — resolve-blend preflights
+
+// --- deepen additive from deepen-b59-taa-guards-a831 ---
+- `preflightTaaHistoryWarmup(history)` — true when history buffers are allocated
+- `preflightTaaHistoryReuse(history, observedGeneration)` — true when temporal reuse is allowed
+- `TaaHistoryBuffer::isWarmupFrame()` / `preflightReuse(observedGeneration)` — buffer-level warmup/reuse preflight
+- `TaaResolveBlendPreflightRejectReason` — `HistoryNotReady`, `InvalidWeights`, `ReusePolicyViolation`
+- `diagnoseTaaResolveBlendPreflight(desc, history)` — classify blend preflight reject reason
+- `preflightTaaResolveBlend(desc, history, &reason)` — false when history not ready or weights violate reuse policy
+- `TaaPass::isWarmupResolveFrame()` / `preflightHistoryReuse(observedGeneration)` / `preflightResolveBlend(desc, &reason)` — pass-level preflight

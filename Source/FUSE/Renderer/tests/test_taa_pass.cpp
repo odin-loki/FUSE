@@ -3065,3 +3065,24 @@ void testTaaPassSyncWarmupAndBlendPreflight() {
 void testPreflightTaaResolveBlend() {
     expectTrue(!fuse::renderer::preflightTaaResolveBlend(desc, history, &weights),
     testPreflightTaaResolveBlend();
+
+// --- deepen additive from deepen-b59-taa-guards-a831 ---
+    expectTrue(!fuse::renderer::preflightTaaHistoryWarmup(emptyHistory),
+    expectTrue(fuse::renderer::preflightTaaHistoryWarmup(history), "allocated history passes warmup preflight");
+    expectTrue(!history.preflightReuse(0u), "preflightReuse false before first resolve");
+    expectTrue(history.preflightReuse(0u), "preflightReuse true after first resolve");
+    expectTrue(!history.preflightReuse(history.invalidateGeneration()),
+    expectTrue(history.preflightReuse(history.invalidateGeneration()),
+    fuse::renderer::TaaResolveBlendPreflightRejectReason rejectReason =
+        fuse::renderer::TaaResolveBlendPreflightRejectReason::None;
+    expectTrue(!fuse::renderer::preflightTaaResolveBlend(desc, emptyHistory, &rejectReason),
+    expectTrue(rejectReason == fuse::renderer::TaaResolveBlendPreflightRejectReason::HistoryNotReady,
+    expectTrue(std::strcmp(fuse::renderer::taaResolveBlendPreflightRejectReasonLabel(
+                               fuse::renderer::TaaResolveBlendPreflightRejectReason::HistoryNotReady),
+    expectTrue(fuse::renderer::preflightTaaResolveBlend(desc, history, &rejectReason),
+    expectTrue(rejectReason == fuse::renderer::TaaResolveBlendPreflightRejectReason::None,
+    expectTrue(fuse::renderer::diagnoseTaaResolveBlendPreflight(desc, history) ==
+                   fuse::renderer::TaaResolveBlendPreflightRejectReason::None,
+    expectTrue(!pass->preflightHistoryReuse(0u), "pass reuse preflight false before warmup");
+    expectTrue(pass->preflightResolveBlend(resolveDesc, &rejectReason),
+    expectTrue(pass->preflightHistoryReuse(0u), "pass reuse preflight true after warmup");
