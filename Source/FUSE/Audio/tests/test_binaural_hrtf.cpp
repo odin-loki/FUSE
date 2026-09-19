@@ -2558,3 +2558,16 @@ void testHrtfPanConvolveRejectReasonGuards() {
                "should_skip convolution preflight true on empty IR");
                    fuse::audio::HrtfConvolutionRejectReason::MalformedIr),
                "preflight_hrtf_binaural_ready mirrors should_skip inverse");
+
+// --- deepen additive from deepen-b7-2-hrtf-reject-reasons-d1c9 ---
+    expectTrue(!fuse::audio::should_skip_spatial_hrtf_pan_preflight(true, empty, offset),
+               "should_skip_spatial_hrtf_pan_preflight false on valid stub path");
+    expectTrue(fuse::audio::should_skip_spatial_hrtf_pan_preflight(false, valid, offset),
+               "should_skip_spatial_hrtf_pan_preflight true when disabled");
+    expectTrue(spatial_reason == fuse::audio::HrtfPanPathRejectReason::CoLocated,
+               "should_skip_hrtf_convolution_preflight true for empty IR");
+    expectTrue(conv_reason == fuse::audio::HrtfConvolutionRejectReason::MalformedIr,
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_narrowing_preflight(
+               "should_skip_hrtf_attenuation_narrowing_preflight true on bypass");
+    expectTrue(!fuse::audio::should_skip_hrtf_binaural_spatial_preflight(true, empty, offset, 0.2f,
+               "should_skip_hrtf_binaural_spatial_preflight false on stub path");
