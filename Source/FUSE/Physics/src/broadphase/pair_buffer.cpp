@@ -799,3 +799,7 @@ PairBufferClampPreflight preflight_pair_buffer_clamp(const PairBufferSoA& buffer
 // --- deepen additive from b4-broadphase-deepen-guards-1b87 ---
 PairSlotPreflight preflightPairSlots(u32 slotCount, const PairBufferSoA& buffer) {
     PairSlotPreflight preflight{};
+
+// --- deepen additive from deepen-b4-broadphase-preflights-76e1 ---
+PairBufferDedupePreflight preflight_pair_buffer_dedupe(const PairBufferSoA& buffer) {
+bool should_skip_pair_buffer_dedupe(const PairBufferSoA& buffer) {

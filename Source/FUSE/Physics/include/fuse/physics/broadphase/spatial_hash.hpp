@@ -1160,3 +1160,8 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflight_cell_occupancy(const CellRa
 struct BroadphaseDispatchPreflight {
 FUSE_PHYSICS_INLINE BroadphaseDispatchPreflight preflight_broadphase_dispatch(
     BroadphaseDispatchPreflight preflight{};
+
+// --- deepen additive from deepen-b4-broadphase-preflights-76e1 ---
+bool should_skip_broadphase(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
+RefineBroadphasePreflight preflight_refine_broadphase_pairs(
+bool should_skip_refine_broadphase_pairs(

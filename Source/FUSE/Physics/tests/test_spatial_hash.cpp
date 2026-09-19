@@ -2486,3 +2486,44 @@ void testBroadphaseDispatchPreflightGuards() {
     expectTrue(!validPreflight.skipped, "refine preflight does not skip valid scene");
     expectEq(validPreflight.validPairCount, 1u, "refine preflight counts valid pairs");
     testBroadphaseDispatchPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-preflights-76e1 ---
+    expectTrue(!emptyPreflight.can_dispatch(), "empty scene preflight cannot dispatch");
+    expectEq(emptyPreflight.bodyCount, 0u, "empty scene preflight reports zero bodies");
+    expectEq(emptyPreflight.shapeCount, 0u, "empty scene preflight reports zero shapes");
+    const auto populatedPreflight = fuse::physics::broadphase::preflight_broadphase(bodies, shapes);
+    expectTrue(!populatedPreflight.skipped, "populated scene preflight is not skipped");
+    expectTrue(populatedPreflight.can_dispatch(), "populated scene preflight can dispatch");
+    expectEq(populatedPreflight.bodyCount, 1u, "populated preflight reports body count");
+    expectEq(populatedPreflight.shapeCount, 1u, "populated preflight reports shape count");
+    expectTrue(emptyPreflight.emptyRange, "inverted range preflight is empty");
+    expectTrue(emptyPreflight.skipped, "inverted range preflight is skipped");
+    expectTrue(!emptyPreflight.can_iterate(), "inverted range preflight cannot iterate");
+    expectTrue(planePreflight.exceedsBudget, "2D over-budget preflight flags exceed");
+    expectTrue(!planePreflight.can_iterate(), "2D over-budget preflight cannot iterate");
+    expectTrue(fuse::physics::broadphase::should_skip_refine_broadphase_pairs(bodies, shapes, buffer),
+               "should_skip_refine on empty buffer");
+    const auto refinePreflight =
+    expectTrue(!refinePreflight.skipped, "refine preflight does not skip valid pair");
+    expectTrue(refinePreflight.can_refine(), "refine preflight can refine valid pair");
+    expectEq(refinePreflight.pairCount, 1u, "refine preflight reports pair count");
+    expectEq(refinePreflight.bodyCount, 2u, "refine preflight reports body count");
+    expectEq(refinePreflight.shapeCount, 2u, "refine preflight reports shape count");
+    expectTrue(!fuse::physics::broadphase::should_skip_refine_broadphase_pairs(bodies, shapes, buffer),
+               "should_skip_refine on valid pair buffer");
+void testPairBufferDedupePreflightGuards() {
+    const auto emptyPreflight = fuse::physics::broadphase::preflight_pair_buffer_dedupe(buffer);
+    expectTrue(!emptyPreflight.can_dedupe(), "empty buffer cannot dedupe");
+    expectTrue(fuse::physics::broadphase::should_skip_pair_buffer_dedupe(buffer),
+               "should_skip_pair_buffer_dedupe on empty buffer");
+    const auto singlePreflight = fuse::physics::broadphase::preflight_pair_buffer_dedupe(buffer);
+    expectTrue(singlePreflight.skipped, "dedupe preflight skips single-pair buffer");
+    expectTrue(!singlePreflight.can_dedupe(), "single-pair buffer cannot dedupe");
+               "should_skip_pair_buffer_dedupe on single-pair buffer");
+    const auto multiPreflight = fuse::physics::broadphase::preflight_pair_buffer_dedupe(buffer);
+    expectTrue(!multiPreflight.skipped, "dedupe preflight does not skip multi-pair buffer");
+    expectEq(multiPreflight.activeCount, 2u, "dedupe preflight reports active count");
+    expectTrue(!fuse::physics::broadphase::should_skip_pair_buffer_dedupe(buffer),
+               "should_skip_pair_buffer_dedupe on multi-pair buffer");
+void testPairBufferCanSkipRefineGuard() {
+    testPairBufferDedupePreflightGuards();

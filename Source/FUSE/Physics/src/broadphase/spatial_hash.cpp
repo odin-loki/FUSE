@@ -1037,3 +1037,11 @@ BroadphaseDedupePreflight preflight_broadphase_dedupe(const PairBufferSoA& buffe
     if (!inputPreflight.can_run()) {
     const BroadphaseRefinePreflight refinePreflight = preflight_broadphase_refine(buffer, bodies, shapes);
     if (!refinePreflight.can_refine()) {
+
+// --- deepen additive from deepen-b4-broadphase-preflights-76e1 ---
+bool should_skip_broadphase(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
+RefineBroadphasePreflight preflight_refine_broadphase_pairs(
+        should_skip_broadphase(bodies, shapes) || buffer.canSkipRefine();
+bool should_skip_refine_broadphase_pairs(
+    if (should_skip_pair_buffer_dedupe(buffer)) {
+    if (should_skip_refine_broadphase_pairs(bodies, shapes, buffer)) {
