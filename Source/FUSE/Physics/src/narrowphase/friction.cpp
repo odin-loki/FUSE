@@ -229,10 +229,47 @@ void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon)
     manifold.buildFrictionBasis();
 }
 
+const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason) {
+    switch (reason) {
+    case FrictionBasisRejectReason::None:
+        return "None";
+    case FrictionBasisRejectReason::EmptyManifold:
+        return "EmptyManifold";
+    case FrictionBasisRejectReason::InvalidNormal:
+        return "InvalidNormal";
+    case FrictionBasisRejectReason::CanReuse:
+        return "CanReuse";
+    }
+    return "Unknown";
+}
+
+FrictionBasisRejectReason friction_basis_reject_reason(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    if (manifold.empty()) {
+        return FrictionBasisRejectReason::EmptyManifold;
+    }
+    if (!manifold.hasValidNormal()) {
+        return FrictionBasisRejectReason::InvalidNormal;
+    }
+    if (can_skip_friction_basis_rebuild(manifold, epsilon)) {
+        return FrictionBasisRejectReason::CanReuse;
+    }
+    return FrictionBasisRejectReason::None;
+}
+
+bool friction_basis_rejects_for_reason(
+    const ContactManifold& manifold,
+    FrictionBasisRejectReason expected,
+    f32 epsilon) {
+    return friction_basis_reject_reason(manifold, epsilon) == expected;
+}
+
 FrictionBasisPreflight preflight_friction_basis_rebuild(
     const ContactManifold& manifold,
     f32 epsilon) {
     FrictionBasisPreflight preflight{};
+    preflight.reason = friction_basis_reject_reason(manifold, epsilon);
     if (should_skip_friction_tangents(manifold)) {
         preflight.skipped = true;
         return preflight;
@@ -249,6 +286,12 @@ bool should_skip_friction_basis_preflight(
     const ContactManifold& manifold,
     f32 epsilon) {
     return preflight_friction_basis_rebuild(manifold, epsilon).can_skip_rebuild();
+}
+
+bool should_run_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    return !should_skip_friction_basis_preflight(manifold, epsilon);
 }
 
 } // namespace fuse::physics::narrowphase
