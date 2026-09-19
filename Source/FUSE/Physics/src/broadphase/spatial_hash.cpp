@@ -24,6 +24,18 @@ const char* candidatePairRejectReasonName(CandidatePairRejectReason reason) {
     return "Unknown";
 }
 
+const char* cellSpanRejectReasonName(CellSpanRejectReason reason) {
+    switch (reason) {
+    case CellSpanRejectReason::None:
+        return "None";
+    case CellSpanRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellSpanRejectReason::ExceedsSpan:
+        return "ExceedsSpan";
+    }
+    return "Unknown";
+}
+
 const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     switch (reason) {
     case CellOccupancyRejectReason::None:
@@ -618,6 +630,25 @@ void refineBroadphasePairsParallel(
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer) {
     refineBroadphasePairsParallelImpl(bodies, shapes, buffer);
+}
+
+bool refineBroadphasePairsParallelWithPreflight(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    PairBufferSoA& buffer) {
+    if (!shouldRunRefineBroadphase(bodies, shapes, buffer)) {
+        return false;
+    }
+    refineBroadphasePairsParallelImpl(bodies, shapes, buffer);
+    return true;
+}
+
+void dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer) {
+    dedupeBuffer(buffer);
+}
+
+void mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
+    mergePairsIntoBuffer(pairs, buffer);
 }
 
 void runBroadphaseIntoBuffer(
