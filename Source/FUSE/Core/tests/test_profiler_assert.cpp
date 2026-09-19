@@ -4087,3 +4087,65 @@ void testChromeTraceExportPreflightUnpairedFlows() {
     expectTrue(fuse::profiler::tryFirstEventByName("valid_lookup_counter", counterEvent),
                "tryFirstEventByName succeeds after empty-name attempts");
     testChromeTraceExportPreflightUnpairedFlows();
+
+// --- deepen additive from deepen-b16-profiler-name-flow-guards-4e15 ---
+void testEventNameLookupGuards() {
+    expectTrue(fuse::profiler::tryFirstEventByName("lookup_scope", namedEvent),
+               "tryFirstEventByName succeeds for recorded scope");
+    expectTrue(fuse::profiler::tryLastEventByName("lookup_scope", namedEvent),
+               "tryLastEventByName succeeds for recorded scope");
+    expectTrue(!fuse::profiler::tryFirstEventByName("", namedEvent),
+               "tryFirstEventByName rejects empty name");
+void testFlowIdLookupGuards() {
+    expectTrue(fuse::profiler::tryFirstFlowEventById(flowId, flowEvent),
+               "tryFirstFlowEventById succeeds for flow start");
+               "tryFirstFlowEventById copies flow start phase");
+    expectTrue(fuse::profiler::tryLastFlowEventById(flowId, flowEvent),
+               "tryLastFlowEventById succeeds for flow finish");
+               "tryLastFlowEventById copies flow finish phase");
+void testUnbalancedFlowPairLookupGuards() {
+    const fuse::profiler::FlowIdLookupPreflight openPreflight =
+        fuse::profiler::preflightFlowLookupById(flowId);
+    expectTrue(openPreflight.canLookup(), "flow lookup preflight ok with open flow");
+    expectTrue(openPreflight.hasFlowEvents(), "flow lookup preflight sees flow start");
+    expectTrue(!openPreflight.isPairBalanced(), "flow lookup preflight marks unbalanced pair");
+    expectTrue(openPreflight.flowStartCount == 1u, "flow lookup preflight counts flow start");
+    expectTrue(openPreflight.flowFinishCount == 0u, "flow lookup preflight counts zero finishes");
+    const fuse::profiler::ChromeTraceExportPreflight exportPreflight =
+    expectTrue(exportPreflight.hasUnbalancedFlowPairsInBuffer,
+    expectTrue(exportPreflight.unbalancedFlowPairCount == 1u,
+    expectTrue(!exportPreflight.canExportSafely(),
+void testEventNameLookupPreflight() {
+    const fuse::profiler::EventNameLookupPreflight emptyNamePreflight =
+        fuse::profiler::preflightEventLookupByName("");
+    expectTrue(!emptyNamePreflight.nameValid, "name lookup preflight rejects empty name");
+    expectTrue(!emptyNamePreflight.canLookup(), "empty name cannot lookup");
+    const fuse::profiler::EventNameLookupPreflight emptyBufferPreflight =
+        fuse::profiler::preflightEventLookupByName("missing");
+    expectTrue(emptyBufferPreflight.nameValid, "valid name on empty buffer passes nameValid");
+    expectTrue(!emptyBufferPreflight.canLookup(), "empty buffer cannot lookup by name");
+    expectTrue(!emptyBufferPreflight.hasMatches(), "empty buffer has no name matches");
+    const fuse::profiler::EventNameLookupPreflight matchPreflight =
+        fuse::profiler::preflightEventLookupByName("preflight_track");
+    expectTrue(matchPreflight.canLookup(), "name lookup preflight ok with recorded event");
+    expectTrue(matchPreflight.hasMatches(), "name lookup preflight finds counter track");
+    expectTrue(matchPreflight.matchCount == 1u, "name lookup preflight counts one match");
+    expectTrue(matchPreflight.firstMatchIndex == 0u, "name lookup preflight first index is zero");
+    expectTrue(matchPreflight.lastMatchIndex == 0u, "name lookup preflight last index is zero");
+void testNestingConsistencyPreflight() {
+    const fuse::profiler::NestingConsistencyPreflight resetPreflight =
+        fuse::profiler::preflightNestingConsistency();
+    expectTrue(resetPreflight.isConsistent(), "reset nesting consistency is balanced");
+    expectTrue(resetPreflight.scopeNestingBalanced, "reset scope nesting balanced");
+    expectTrue(resetPreflight.flowNestingBalanced, "reset flow nesting balanced");
+    expectTrue(resetPreflight.flowDepthAttached, "reset flow depth attached");
+        const fuse::profiler::NestingConsistencyPreflight activePreflight =
+        expectTrue(!activePreflight.isConsistent(), "open scope and flow report inconsistent nesting");
+        expectTrue(!activePreflight.scopeNestingBalanced, "active scope is unbalanced");
+        expectTrue(!activePreflight.flowNestingBalanced, "open flow is unbalanced");
+        expectTrue(activePreflight.openAsyncFlowCount == 1u, "consistency preflight tracks open flow count");
+    const fuse::profiler::NestingConsistencyPreflight closedPreflight =
+    expectTrue(closedPreflight.isConsistent(), "closed scope and flow restore consistency");
+void testEventMatchesNameAndFlowGuards() {
+    testEventNameLookupPreflight();
+    testNestingConsistencyPreflight();

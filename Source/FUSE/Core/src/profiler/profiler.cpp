@@ -1393,3 +1393,13 @@ bool tryFindEventIndexByName(const char* name, u32& outIndex) {
 // --- deepen additive from deepen-profiler-b16-guards-eb78 ---
 bool tryFirstFlowStartById(u32 flowId, ProfileEvent& outEvent) {
 bool tryLastFlowFinishById(u32 flowId, ProfileEvent& outEvent) {
+
+// --- deepen additive from deepen-b16-profiler-name-flow-guards-4e15 ---
+bool tryFirstFlowEventById(u32 flowId, ProfileEvent& outEvent) {
+bool tryLastFlowEventById(u32 flowId, ProfileEvent& outEvent) {
+EventNameLookupPreflight preflightEventLookupByName(const char* name) {
+    EventNameLookupPreflight preflight{};
+FlowIdLookupPreflight preflightFlowLookupById(u32 flowId) {
+    FlowIdLookupPreflight preflight{};
+NestingConsistencyPreflight preflightNestingConsistency() {
+    NestingConsistencyPreflight preflight{};
