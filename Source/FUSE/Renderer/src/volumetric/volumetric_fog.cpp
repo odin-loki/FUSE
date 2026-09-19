@@ -1908,3 +1908,8 @@ bool wouldSkipDensityLookupAtIndex(const FroxelDensityGrid& grid, const FroxelGr
 
 // --- deepen additive from deepen-b511-froxel-guards-5875 ---
     froxel_util::tryCanTrilinearSampleAtCoords(grid, desc, coords, reason);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-4fcc ---
+bool wouldClampTrilinearSampleCoords(const FroxelDensityGrid& grid,
+bool canPreflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+bool tryPreflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,

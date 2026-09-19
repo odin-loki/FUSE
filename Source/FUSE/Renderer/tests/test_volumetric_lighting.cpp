@@ -2839,3 +2839,24 @@ void testFroxelTrilinearAndPreflightDeepenGuards() {
                "classifyFroxelPopulateReject returns empty_desc for zero-dimension grid");
     expectTrue(fuse::renderer::classifyFroxelPopulateReject(desc, badCamera, params) ==
                "classifyFroxelPopulateReject returns invalid_camera for bad camera");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-4fcc ---
+void testFroxelTrilinearAndPopulatePreflightGuards() {
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleDensityTrilinear(undersized, desc, inBounds, trilinearReason),
+               "tryCanSampleDensityTrilinear rejects undersized storage");
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleDensityTrilinear(grid, mismatched, inBounds, trilinearReason),
+               "tryCanSampleDensityTrilinear rejects desc mismatch");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::NotSampleable,
+    expectTrue(std::strcmp(fuse::renderer::froxelTrilinearSampleRejectReasonLabel(trilinearReason), "not_sampleable") == 0,
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleDensityTrilinear(grid, desc, reversed, trilinearReason),
+               "tryCanSampleDensityTrilinear rejects unordered corners");
+    expectTrue(!fuse::renderer::FroxelGridLayout::tryPreflightSampleCoords(reversed, desc, sampleReason),
+               "tryPreflightSampleCoords rejects unordered corners");
+               "tryCanSampleDensityTrilinear still succeeds when weights will be clamped");
+    expectTrue(fuse::renderer::froxel_util::canPreflightPopulateFromAnalyticFog(desc, camera, params),
+               "canPreflightPopulateFromAnalyticFog succeeds for valid inputs");
+    expectTrue(fuse::renderer::froxel_util::tryPreflightPopulateFromAnalyticFog(desc, camera, params, populateReason),
+               "tryPreflightPopulateFromAnalyticFog succeeds for valid inputs");
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightPopulateFromAnalyticFog(desc, camera, zeroDensity, populateReason),
+               "tryPreflightPopulateFromAnalyticFog rejects zero density");
+    testFroxelTrilinearAndPopulatePreflightGuards();
