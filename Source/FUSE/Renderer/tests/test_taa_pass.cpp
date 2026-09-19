@@ -4687,3 +4687,6 @@ void testTaaPassTryClassifyGuardWrappers() {
                "fallback sequence pass tryAdvanceJitterIfReady passes");
     expectTrue(invalidSeqPass->trySyncJitterToFrameIndexIfReady(0u, jitterReason),
                "fallback sequence pass trySyncJitterToFrameIndexIfReady passes");
+
+// --- deepen additive from deepen-taa-pass-guards-8544 ---
+               "pass classifyResolveBlendReject passes after warmup");
