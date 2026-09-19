@@ -1540,6 +1540,18 @@ bool isFlowPhase(EventPhase phase) {
     return isValidFlowId(flowId) && isFlowPhaseEvent(event) && isValidEventName(event.name)
 
 
+
+bool profileEventNameEquals(const ProfileEvent& event, const char* name) {
+
+
+bool profileEventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
+    if (flowId == 0u) {
+
+    if (event.phase != EventPhase::FlowStart && event.phase != EventPhase::FlowFinish) {
+
+    return isValidEventName(event.name) && event.scopeId == flowId;
+
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
 
@@ -3930,6 +3942,21 @@ bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
 
 
 
+
+        if (profileEventNameEquals(event, name)) {
+
+
+
+
+        if (profileEventNameEquals(eventAt(i), name)) {
+
+
+        if (profileEventMatchesFlowId(event, flowId)) {
+
+
+
+
+        if (profileEventMatchesFlowId(eventAt(i), flowId)) {
 
 u32 lastEventIndex() {
     const u32 count = eventCount();

@@ -288,6 +288,7 @@ struct ChromeTraceExportPreflight {
     bool hasNestedAsyncFlowContext = false;
 
             && !hasInvalidNameEvents;
+            && !hasInvalidNameEvents && !ringBufferFull;
     }
 
     bool canExportSafely() const {
