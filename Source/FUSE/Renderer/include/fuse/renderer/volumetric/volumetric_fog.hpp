@@ -625,6 +625,13 @@ bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          u32 tileY,
                          u32 sliceZ,
                          DensityLookupRejectReason& outReason);
+/// Diagnose why tile/slice coord lookup preflight would reject; vacuously succeeds on accessible grids.
+bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
+                         const FroxelGridDesc& desc,
+                         u32 tileX,
+                         u32 tileY,
+                         u32 sliceZ,
+                         DensityLookupRejectReason& outReason);
 /// True when a lookup at `index` would clamp into the valid froxel range.
 bool wouldClampDensityLookupIndex(u32 index, const FroxelGridDesc& desc);
 /// True when a lookup at tile/slice coords would clamp into the valid froxel range.

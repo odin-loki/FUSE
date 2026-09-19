@@ -1496,6 +1496,14 @@ bool canLookupAtCoord(const FroxelDensityGrid& grid,
     return canLookupAtIndex(grid, desc, 0u);
 }
 
+bool canLookupAtCoord(const FroxelDensityGrid& grid,
+                      const FroxelGridDesc& desc,
+                      u32 /*tileX*/,
+                      u32 /*tileY*/,
+                      u32 /*sliceZ*/) {
+    return canLookupAtIndex(grid, desc, 0u);
+}
+
 bool tryCanLookupAtIndex(const FroxelDensityGrid& grid,
                          u32 /*index*/,
                          const FroxelGridDesc& desc,
@@ -1627,6 +1635,7 @@ bool wouldClampDensityLookupCoord(u32 tileX, u32 tileY, u32 sliceZ, const Froxel
 
     return tileX > desc.tilesX - 1u || tileY > desc.tilesY - 1u || sliceZ > desc.slicesZ - 1u;
     return tileX >= desc.tilesX || tileY >= desc.tilesY || sliceZ >= desc.slicesZ;
+}
 
 bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          const FroxelGridDesc& desc,
@@ -1643,6 +1652,12 @@ bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
         outReason = DensityLookupRejectReason::IndexOutOfRange;
     return true;
     return FroxelGridLayout::wouldClampTileCoords(tileX, tileY, sliceZ, desc);
+    if (!tryCanLookupAtIndex(grid, desc, FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc),
+                             outReason)) {
+        return false;
+    }
+
+    outReason = DensityLookupRejectReason::None;
 }
 
 bool canSampleAtCoords(const FroxelDensityGrid& grid,
@@ -2895,6 +2910,7 @@ bool trySampleDensityAtScreen(const FroxelDensityGrid& grid,
     return trySampleDensityAtScreen(grid, desc, camera, screenX, screenY, viewDepth, outDensity, reason);
     ScreenMappingRejectReason mapReason = ScreenMappingRejectReason::None;
     return trySampleDensityAtScreen(grid, desc, camera, screenX, screenY, viewDepth, outDensity, mapReason);
+    ScreenMappingRejectReason reason = ScreenMappingRejectReason::None;
 }
 
 bool trySampleDensityAtScreen(const FroxelDensityGrid& grid,
@@ -3009,6 +3025,8 @@ bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
 
             outMapReason = ScreenMappingRejectReason::EmptyGrid;
         outSampleReason = SampleCoordRejectReason::OutOfBounds;
+        if (lookupReason == DensityLookupRejectReason::EmptyGrid) {
+            outReason = ScreenMappingRejectReason::None;
         return false;
     }
 
