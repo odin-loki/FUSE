@@ -79,6 +79,18 @@ bool can_convolve_hrtf_ir(const HrtfIrPreflight& preflight);
 
 /// Non-mutating skip predicate — mirrors \c HrtfIrPreflight::should_skip_convolution.
 bool should_skip_hrtf_ir_convolution(const HrtfIrPreflight& preflight);
+/// True when IR stub cannot select convolution (null or zero-length samples).
+bool should_skip_hrtf_ir_convolution(const HrtfIrStub& ir);
+
+/// Readable alias — empty IR falls back to ILD/ITD stub path.
+bool should_fallback_hrtf_to_ild_itd_stub(const HrtfIrStub& ir);
+
+/// True when enabled, non-co-located source with empty IR selects ILD/ITD stub.
+bool should_fallback_hrtf_to_ild_itd_stub(bool hrtf_enabled, const HrtfIrStub& ir,
+                                          const Vec3& rel_listener);
+
+/// True when enabled, non-co-located source with valid IR selects convolution.
+bool should_use_hrtf_convolution_path(bool hrtf_enabled, const HrtfIrStub& ir,
 
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
@@ -159,6 +171,9 @@ bool is_spatial_hrtf_pan_path(HrtfPanPath path);
 /// True when the pan path selects convolution (non-empty IR stub).
 bool hrtf_pan_path_uses_convolution(HrtfPanPath path);
 
+/// Readable alias for \c hrtf_pan_path_uses_convolution.
+bool is_convolution_hrtf_pan_path(HrtfPanPath path);
+
 /// True when the pan path selects ILD/ITD stub (empty IR fallback).
 bool hrtf_pan_path_uses_ild_itd_stub(HrtfPanPath path);
 
@@ -172,6 +187,8 @@ bool is_bypass_hrtf_pan_path(HrtfPanPath path);
 bool should_skip_hrtf_spatial_pan(HrtfPanPath path);
 
 /// True when the pan path is centre-mono bypass.
+/// Inverse of \c should_skip_hrtf_spatial_pan — spatial path produces lateral image.
+bool should_apply_hrtf_spatial_pan(HrtfPanPath path);
 
 /// True when listener and source share the same listener-local position.
 bool is_co_located_hrtf_source(const Vec3& rel_listener);
@@ -374,6 +391,21 @@ float clamp_hrtf_attenuation_coupling_weight(float weight);
 /// True when distance and occlusion are both fully audible (no narrowing).
 bool is_unity_hrtf_attenuation(float distance_attenuation, float occlusion_gain);
 float clamp_hrtf_occlusion_coupling_weight(float weight);
+
+/// True when distance attenuation is fully audible (no distance narrowing).
+bool is_unity_hrtf_distance_attenuation(float distance_attenuation);
+
+/// True when occlusion LF gain is fully audible.
+bool is_unity_hrtf_occlusion_gain(float occlusion_gain);
+
+/// Early-out when both distance and occlusion are unity — coupling is a no-op.
+bool should_skip_hrtf_attenuation_coupling(float distance_attenuation, float occlusion_gain);
+
+/// True when distance attenuation warrants spatial narrowing.
+bool should_apply_hrtf_distance_coupling(float distance_attenuation);
+
+/// True when occlusion gain warrants spatial narrowing.
+bool should_apply_hrtf_occlusion_coupling(float occlusion_gain);
 
 /// True when distance/occlusion coupling should narrow the binaural image.
 bool should_apply_hrtf_attenuation_coupling(HrtfPanPath path);
