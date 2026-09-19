@@ -3884,3 +3884,17 @@ void testGizmoSystemPreflightRouter() {
     testInteractionPreflightSnapHelpers();
     testGizmoPreflightRouter();
     testGizmoSystemPreflightRouter();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-4ea2 ---
+void testPickSnapPreflightDegraded() {
+    const fuse::editor::BeginInteractionPreflight degradedBegin =
+    const fuse::editor::EndInteractionPreflight activeEnd = fuse::editor::preflightEndInteraction(
+    const fuse::editor::BeginDragInteractionPreflight degradedBegin =
+void testSnapPhasePreflight() {
+    const fuse::editor::SnapPhasePreflight idleDegraded = fuse::editor::preflightSnapPhase(
+    const fuse::editor::SnapPhasePreflight draggingDegraded = fuse::editor::preflightSnapPhase(
+    const fuse::editor::SnapPhasePreflight gizmoIdle = gizmo.preflightSnapPhase();
+    const fuse::editor::SnapPhasePreflight gizmoDragging = gizmo.preflightSnapPhase();
+    const fuse::editor::InteractionPreflight validSnap = fuse::editor::preflightInteraction(
+    testPickSnapPreflightDegraded();
+    testSnapPhasePreflight();

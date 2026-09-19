@@ -2807,3 +2807,10 @@ GizmoPreflightRouter GizmoSystem::preflightRouter(const GizmoRay& ray,
     return preflightRouter(hit).canRouteAny();
     return preflightRouter(ray, transform).canRouteAny();
     return preflightRouter(hit).canRouteActOrEnd();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-4ea2 ---
+SnapPhasePreflight preflightSnapPhase(GizmoMode mode, const GizmoSnapSettings& settings,
+    SnapPhasePreflight preflight{};
+    return preflightInteraction(hit, dragging, activeAxis, mode, settings).canInteract();
+SnapPhasePreflight GizmoSystem::preflightSnapPhase() const {
+    return fuse::editor::preflightSnapPhase(m_mode, m_snap,

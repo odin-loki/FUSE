@@ -1199,3 +1199,8 @@ GizmoPreflightRouter preflightGizmoRouter(const GizmoHitTest& hit, bool dragging
 GizmoPreflightRouter preflightGizmoRouter(const GizmoRay& ray, const GizmoTransform& transform,
     [[nodiscard]] GizmoPreflightRouter preflightRouter(const GizmoHitTest& hit) const;
     [[nodiscard]] GizmoPreflightRouter preflightRouter(const GizmoRay& ray,
+
+// --- deepen additive from deepen-gizmo-preflight-guards-4ea2 ---
+struct SnapPhasePreflight {
+SnapPhasePreflight preflightSnapPhase(GizmoMode mode, const GizmoSnapSettings& settings,
+    [[nodiscard]] SnapPhasePreflight preflightSnapPhase() const;
