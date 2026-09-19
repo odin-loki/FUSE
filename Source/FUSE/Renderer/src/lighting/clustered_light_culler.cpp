@@ -1072,3 +1072,10 @@ const char* clusterScreenMappingRejectReasonLabel(ClusterScreenMappingRejectReas
         outReason = ClusterScreenMappingRejectReason::InvalidCamera;
         outReason = ClusterScreenMappingRejectReason::DepthOutOfRange;
     outReason = ClusterScreenMappingRejectReason::None;
+
+// --- deepen additive from deepen-b5-clustered-lights-lookup-population-guards-f597 ---
+    case ClusterLookupRejectReason::OutOfRangeCluster:
+bool cluster_util::tryCanLookupCluster(const ClusterGridSoA& grid,
+        outReason = ClusterLookupRejectReason::OutOfRangeCluster;
+    return tryLookupClusterLights(grid, clusterIdx, outLights, outCount, reason);
+    if (!tryCanLookupCluster(grid, clusterIdx, outReason)) {

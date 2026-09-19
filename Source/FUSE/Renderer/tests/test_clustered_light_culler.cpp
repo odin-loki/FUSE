@@ -1701,3 +1701,25 @@ void testClusterCoordLookupRejectReasonsAndSkipGrid() {
     testClusterScreenMappingRejectReasons();
     testGridRebuildRejectReasons();
     testClusterCoordLookupRejectReasonsAndSkipGrid();
+
+// --- deepen additive from deepen-b5-clustered-lights-lookup-population-guards-f597 ---
+void testClusterLookupAtCoordRejectReasons() {
+void testClusterDirectLookupGuards() {
+    expectTrue(fuse::renderer::cluster_util::tryCanLookupCluster(grid, 0u, reason),
+               "tryCanLookupCluster accepts in-range index");
+    expectTrue(!fuse::renderer::cluster_util::tryCanLookupCluster(grid, 99u, reason),
+               "tryCanLookupCluster rejects OOB index");
+    expectTrue(reason == fuse::renderer::ClusterLookupRejectReason::OutOfRangeCluster,
+    expectTrue(std::strcmp(fuse::renderer::clusterLookupRejectReasonLabel(reason), "out_of_range_cluster") == 0,
+    expectTrue(fuse::renderer::cluster_util::tryLookupClusterLights(grid, 0u, tryLights, tryCount),
+               "tryLookupClusterLights succeeds on in-range index");
+    expectTrue(tryCount == 2u, "tryLookupClusterLights reports cluster light count");
+    expectTrue(tryLights.size() == 2u && tryLights[0] == 0u && tryLights[1] == 2u,
+               "tryLookupClusterLights copies assigned lights");
+    expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLights(grid, 99u, rejectedLights, rejectedCount, reason),
+               "tryLookupClusterLights rejects OOB index");
+    expectTrue(rejectedCount == 0u, "tryLookupClusterLights zeroes count on failure");
+    expectTrue(rejectedLights.empty(), "tryLookupClusterLights clears output on failure");
+    expectTrue(reason == fuse::renderer::GridRebuildRejectReason::None, "matching rebuild reports no reject reason");
+    expectTrue(reason == fuse::renderer::GridRebuildRejectReason::None, "zero cluster count reports no reject reason");
+    testClusterLookupAtCoordRejectReasons();
