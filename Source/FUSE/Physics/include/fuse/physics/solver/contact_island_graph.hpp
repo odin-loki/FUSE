@@ -140,3 +140,7 @@ const char* island_build_reject_reason_name(IslandBuildRejectReason reason);
     IslandBuildRejectReason reason = IslandBuildRejectReason::None;
     bool can_build() const { return !skipped && reason == IslandBuildRejectReason::None; }
 IslandBuildRejectReason island_build_reject_reason(
+
+// --- deepen additive from deepen-pbd-island-guards-bda2 ---
+enum class IslandBuildRejectReason : u32 {
+    bool can_build() const { return reason == IslandBuildRejectReason::None; }

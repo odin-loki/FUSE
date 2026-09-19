@@ -1335,3 +1335,9 @@ bool should_skip_island_sleep(const ContactIslandGraph::Island& island, f32 dt);
 bool should_skip_island_sleep_index(const ContactIslandGraph& graph, u32 islandIndex, f32 dt);
 bool should_skip_island_wake_index(const ContactIslandGraph& graph, u32 islandIndex);
 IslandWakeGraphPreflight preflight_island_wake_graph(const RigidBodySoA& bodies,
+
+// --- deepen additive from deepen-pbd-island-guards-bda2 ---
+bool should_skip_island_constraint_solve_index(const RigidBodySoA& bodies,
+bool should_skip_island_sleep_check(const ContactIslandGraph::Island& island);
+bool should_skip_island_sleep_index(const ContactIslandGraph& graph, u32 islandIndex);
+IslandWakePreflight preflight_island_wake(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island);

@@ -2166,3 +2166,16 @@ IslandWakeGraphPreflight preflight_island_wake_graph(const RigidBodySoA& bodies,
     const IslandWakePreflight preflight = preflight_island_wake(bodies, island, IslandSleepParams{});
     const IslandSleepGraphPreflight preflight = preflight_island_sleep_graph(bodies, graph, params, dt);
     const IslandWakeGraphPreflight preflight = preflight_island_wake_graph(bodies, graph, params);
+
+// --- deepen additive from deepen-pbd-island-guards-bda2 ---
+bool should_skip_island_constraint_solve_index(const RigidBodySoA& bodies,
+    return should_skip_island_constraint_solve(bodies, graph.island(islandIndex), dt);
+bool should_skip_island_sleep_check(const ContactIslandGraph::Island& island) {
+bool should_skip_island_sleep_index(const ContactIslandGraph& graph, u32 islandIndex) {
+    return should_skip_island_sleep_check(graph.island(islandIndex));
+IslandWakePreflight preflight_island_wake(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island) {
+    return should_skip_island_wake_check(graph.island(islandIndex));
+        if (sleepPreflight.can_consider_sleep()) {
+        if (sleepPreflight.all_dynamic_sleeping()) {
+        const IslandWakePreflight wakePreflight = preflight_island_wake(bodies, island);
+        if (wakePreflight.should_wake()) {

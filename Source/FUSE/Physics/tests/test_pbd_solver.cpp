@@ -3746,3 +3746,32 @@ void testDispatchSolveIslandWithBodyGuards() {
 void testSleepWakeIslandGuardedBatch() {
     const IslandSleepGraphPreflight graphSleep =
     testPreflightIslandSolveBodiesSleepGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-bda2 ---
+    expectTrue(emptyBodies.reason == IslandBuildRejectReason::EmptyBodyCount,
+    const IslandBuildPreflight loneBodies = preflight_island_build(2, {}, {});
+    expectTrue(!should_skip_island_build(2, {}, {}), "should_skip false for lone bodies");
+    const IslandBuildPreflight constrained = preflight_island_build(3, contacts, constraints);
+    expectTrue(!awakePreflight.skipped, "constraint solve preflight does not skip awake island");
+    expectTrue(awakePreflight.can_solve(), "awake constrained island can solve");
+    expectTrue(awakePreflight.constraintCount == 1u, "constraint solve preflight counts constraints");
+    expectTrue(awakePreflight.awakeDynamicCount == 2u, "constraint solve preflight counts awake dynamics");
+    expectTrue(!should_skip_island_constraint_solve(bodies, graph.island(constrainedIndex), 1.f / 60.f),
+    const IslandConstraintSolvePreflight allSleepingPreflight =
+    expectTrue(allSleepingPreflight.allDynamicSleeping, "constraint solve preflight detects all sleeping");
+    expectTrue(!allSleepingPreflight.can_solve(), "all-sleeping island cannot constraint solve");
+    expectTrue(should_skip_island_constraint_solve(bodies, graph.island(constrainedIndex), 1.f / 60.f),
+               "should_skip true when all dynamic bodies sleeping");
+        expectTrue(should_skip_island_constraint_solve_index(bodies, graph, islandIndex, 1.f / 60.f),
+                   "should_skip constraint solve on empty island");
+    expectTrue(!sleepPreflight.skipped, "sleep preflight does not skip contact island");
+    expectTrue(sleepPreflight.can_consider_sleep(), "slow contact island can consider sleep");
+    expectTrue(sleepPreflight.belowThresholdCount == 2u, "sleep preflight counts below-threshold bodies");
+    expectTrue(!sleepPreflight.all_dynamic_sleeping(), "contact island is not all sleeping yet");
+    expectTrue(allSleepingPreflight.all_dynamic_sleeping(), "sleep preflight detects all-sleeping island");
+    expectTrue(should_skip_island_sleep_index(graph, graph.islandCount() + 2u),
+               "should_skip sleep index on out-of-range island");
+    const IslandWakePreflight wakeSleeping =
+    const IslandWakePreflight wakeContact =
+        expectTrue(should_skip_island_sleep_check(island), "should_skip sleep check on empty island");
+        expectTrue(should_skip_island_wake_check(island), "should_skip wake check on empty island");
