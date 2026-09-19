@@ -362,8 +362,6 @@ public:
     /// Classify why resolve blend weights would be rejected (B5.9 deepen).
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
     /// Classify why expected resolve blend weights would be rejected (B5.9 deepen).
-    bool tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
-                                       TaaResolveBlendRejectReason& reason) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// Early-out when resolve preflight would bail (B5.9 deepen).
@@ -528,6 +526,16 @@ public:
     /// Pass jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
     bool preflightJitterAdvance(TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Classify why pass NDC jitter would be rejected (B5.9 deepen).
+    /// Classify why pass jitter sync to `frameIndex` would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
+    /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterNdcReject() const;
+    /// Classify why pass jitter advance would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterAdvanceReject() const;
+    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
+    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
     /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
