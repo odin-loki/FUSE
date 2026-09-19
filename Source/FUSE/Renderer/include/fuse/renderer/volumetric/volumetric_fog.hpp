@@ -262,6 +262,9 @@ bool screenMappingRejectReasonIsBlocking(ScreenMappingRejectReason reason);
 /// True when a screen-mapping reject reason would block mapping (B5.11 deepen pass).
 bool screenMappingRejectReasonIsBlocking(ScreenMappingRejectReason reason);
 
+/// True when a screen-mapping reject reason would block froxel index/coord mapping (B5.11 deepen pass).
+bool screenMappingRejectReasonIsBlocking(ScreenMappingRejectReason reason);
+
 /// Why froxel sample-coord preflight rejected the request (B5.11 deepen).
 enum class SampleCoordRejectReason : u8 {
     None = 0,
@@ -374,6 +377,9 @@ bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason);
 bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason);
 
 /// True when a sample-coord reject reason would block sampling (B5.11 deepen pass).
+bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason);
+
+/// True when a sample-coord reject reason would block froxel sampling (B5.11 deepen pass).
 bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason);
 
 /// Why froxel trilinear density sampling preflight rejected the request (B5.11 deepen).
@@ -558,6 +564,9 @@ bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReas
 bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReason reason);
 
 /// True when a trilinear sample reject reason would block sampling (B5.11 deepen pass).
+bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReason reason);
+
+/// True when a trilinear sample reject reason would block density sampling (B5.11 deepen pass).
 bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReason reason);
 
 /// Froxel grid indexing helpers — mirrors clustered light layout (B5.4).
@@ -981,6 +990,9 @@ bool gridDensityRejectReasonIsBlocking(GridDensityRejectReason reason);
 /// True when a grid-density reject reason would block validation (B5.11 deepen pass).
 bool gridDensityRejectReasonIsBlocking(GridDensityRejectReason reason);
 
+/// True when a grid-density reject reason would block froxel validation (B5.11 deepen pass).
+bool gridDensityRejectReasonIsBlocking(GridDensityRejectReason reason);
+
 /// Why analytic froxel populate would skip meaningful fill (B5.11 deepen).
 enum class FroxelPopulateRejectReason : u8 {
     InvalidCamera,
@@ -1171,6 +1183,9 @@ bool preflightFroxelPopulate(const FroxelGridDesc& desc,
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
 /// True when a populate reject reason would block meaningful fill (B5.11 deepen pass).
+bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
+
+/// True when a populate reject reason would block meaningful analytic fill (B5.11 deepen pass).
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
 /// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
@@ -1394,6 +1409,9 @@ bool preflightDensityLookup(const FroxelDensityGrid& grid,
 bool densityLookupRejectReasonIsBlocking(DensityLookupRejectReason reason);
 
 /// True when a density lookup reject reason would block lookup (B5.11 deepen pass).
+bool densityLookupRejectReasonIsBlocking(DensityLookupRejectReason reason);
+
+/// True when a density-lookup reject reason would block index/coord lookup (B5.11 deepen pass).
 bool densityLookupRejectReasonIsBlocking(DensityLookupRejectReason reason);
 
 /// CPU froxel density interpolation helpers — mirrors CUDA trilinear sample stub.
@@ -1818,6 +1836,8 @@ SampleCoordRejectReason classifyFroxelSampleCoordReject(const FroxelDensityGrid&
 /// Non-mutating coord-based sample preflight — returns true when sampling would proceed.
 bool preflightDensitySampleAtCoords(const FroxelDensityGrid& grid,
                                     SampleCoordRejectReason* reason = nullptr);
+SampleCoordRejectReason classifyFroxelSampleReject(const FroxelDensityGrid& grid,
+bool preflightFroxelSampleAtCoords(const FroxelDensityGrid& grid,
 /// Diagnose why coord-based sample preflight would reject.
 bool tryCanSampleAtCoords(const FroxelDensityGrid& grid,
                           const FroxelSampleCoords& coords,
@@ -1888,6 +1908,7 @@ bool preflightTrilinearSample(const FroxelDensityGrid& grid,
 /// Non-mutating trilinear sample preflight; returns true when sampling would not block.
                                      const FroxelGridDesc& desc,
                                      const FroxelSampleCoords& coords,
+bool preflightFroxelTrilinearSample(const FroxelDensityGrid& grid,
 /// Diagnose why trilinear sample preflight would reject; warns on clampable weights.
 bool tryCanTrilinearSampleAtCoords(const FroxelDensityGrid& grid,
                                    FroxelTrilinearSampleRejectReason& outReason);
@@ -2641,6 +2662,7 @@ bool preflightPopulate(const FroxelGridDesc& desc,
 /// Analytic populate preflight without mutating storage (B5.11 deepen).
 /// Classify why analytic populate would skip — same ordering as `tryCanPopulateFromAnalyticFog`.
 /// Non-mutating populate preflight; returns true when populate would not block meaningful fill.
+                             const FroxelCameraDesc& camera,
 /// Diagnose why analytic populate would skip meaningful fill.
 bool tryCanPopulateFromAnalyticFog(const FroxelGridDesc& desc,
                                    const VolumetricFogParams& params,
