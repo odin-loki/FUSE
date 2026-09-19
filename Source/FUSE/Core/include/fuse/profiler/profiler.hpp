@@ -338,3 +338,7 @@ struct EventLookupPreflight {
 bool tryEventAt(u32 index, const ProfileEvent*& outEvent);
 struct ProfilerGuardPreflight {
 [[nodiscard]] ProfilerGuardPreflight preflightGuardState();
+
+// --- deepen additive from deepen-b16-profiler-preflights-479f ---
+struct NestingStatePreflight {
+NestingStatePreflight preflightNestingState();

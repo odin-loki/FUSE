@@ -1151,3 +1151,8 @@ bool tryEventAt(u32 index, const ProfileEvent*& event_out) {
 bool tryEventAt(u32 index, const ProfileEvent*& outEvent) {
 ProfilerGuardPreflight preflightGuardState() {
     ProfilerGuardPreflight preflight{};
+
+// --- deepen additive from deepen-b16-profiler-preflights-479f ---
+NestingStatePreflight preflightNestingState() {
+    NestingStatePreflight preflight{};
+    return preflightChromeExport().canExport();

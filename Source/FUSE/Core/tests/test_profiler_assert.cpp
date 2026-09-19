@@ -2823,3 +2823,45 @@ void testPreflightGuardState() {
     expectTrue(unmatchedPreflight.hasOpenAsyncFlows, "unmatched export preflight sees open flow");
     expectTrue(unmatchedPreflight.hasUnmatchedAsyncFlows,
     testPreflightGuardState();
+
+// --- deepen additive from deepen-b16-profiler-preflights-479f ---
+void testEmptyNameScopeGuard() {
+void testEmptyNameFlowAndCounterGuards() {
+    expectTrue(fuse::profiler::preflightBeginAsyncFlow("").emptyName,
+    expectTrue(!fuse::profiler::preflightBeginAsyncFlow("").canBegin(),
+    expectTrue(fuse::profiler::preflightEndAsyncFlow("").emptyName,
+    expectTrue(!fuse::profiler::preflightEndAsyncFlow("").canEnd(),
+    expectTrue(out.name == nullptr, "tryEventAt leaves out sentinel on failure");
+    expectTrue(std::string(out.name) == "lookup_scope", "tryEventAt copies event name");
+    expectTrue(!fuse::profiler::tryEventAt(99u, out), "tryEventAt false when out of range");
+    const fuse::profiler::AsyncFlowEndPreflight orphanPreflight = fuse::profiler::preflightEndAsyncFlow("flow");
+    expectTrue(orphanPreflight.orphanEnd, "end preflight marks orphan finish");
+    expectTrue(!orphanPreflight.canEnd(), "end preflight rejects orphan finish");
+        fuse::profiler::preflightBeginAsyncFlow("paired_flow");
+    expectTrue(beginPreflight.canBegin(), "begin preflight accepts valid name");
+    expectTrue(!beginPreflight.profilerDisabled, "begin preflight clears profilerDisabled");
+    expectTrue(!beginPreflight.emptyName, "begin preflight clears emptyName");
+    expectTrue(matchedPreflight.canEnd(), "end preflight accepts matched begin");
+    expectTrue(!matchedPreflight.orphanEnd, "matched end preflight clears orphanEnd");
+        fuse::profiler::preflightBeginAsyncFlow("ignored");
+void testNestingStatePreflight() {
+    const fuse::profiler::NestingStatePreflight initial = fuse::profiler::preflightNestingState();
+        const fuse::profiler::NestingStatePreflight nested = fuse::profiler::preflightNestingState();
+    const fuse::profiler::NestingStatePreflight finalState = fuse::profiler::preflightNestingState();
+    expectTrue(emptyPreflight.canExport(), "empty buffer can export");
+    expectTrue(emptyPreflight.bufferEmpty, "empty preflight marks buffer empty");
+    expectTrue(emptyPreflight.eventCount == 0u, "empty preflight event count zero");
+    expectTrue(emptyPreflight.exportableEventCount == 0u, "empty preflight exportable count zero");
+    expectTrue(emptyPreflight.droppedEventCount == 0u, "empty preflight dropped count zero");
+    const fuse::profiler::ChromeExportPreflight filledPreflight = fuse::profiler::preflightChromeExport();
+    expectTrue(filledPreflight.canExport(), "filled buffer can export");
+    expectTrue(!filledPreflight.bufferEmpty, "filled preflight clears bufferEmpty");
+    expectTrue(filledPreflight.eventCount == 3u, "filled preflight reports event count");
+    expectTrue(filledPreflight.exportableEventCount == 3u, "filled preflight counts exportable events");
+    expectTrue(filledPreflight.skippedInvalidNameCount == 0u, "filled preflight skips no valid names");
+    const fuse::profiler::ChromeExportPreflight disabledPreflight = fuse::profiler::preflightChromeExport();
+    expectTrue(disabledPreflight.profilerDisabled, "disabled profiler marks export preflight");
+    expectTrue(!disabledPreflight.canExport(), "disabled profiler rejects export preflight");
+    const fuse::profiler::ChromeExportPreflight overflowPreflight = fuse::profiler::preflightChromeExport();
+    expectTrue(overflowPreflight.droppedEventCount == 1u, "export preflight reports dropped events");
+    testNestingStatePreflight();
