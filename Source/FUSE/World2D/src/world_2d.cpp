@@ -57,23 +57,16 @@ void World2D::syncSceneFromPhysics() {
 }
 
 void World2D::buildSnapshot(frame::FrameCtx& ctx) {
-    m_snapshot.clear();
-    m_snapshot.reserve(static_cast<u32>(m_sprites.size()));
-
-    for (SceneObject2D* sprite : m_sprites) {
-        if (sprite == nullptr) {
-            continue;
-        }
-
-        SpriteDrawCmd cmd;
-        cmd.object = sprite->handle();
-        cmd.x = sprite->x();
-        cmd.y = sprite->y();
-        cmd.rotation = ctx.time * 1.5f;
-        cmd.layer = static_cast<u32>(sprite->layer());
-        cmd.visible = true;
-        m_snapshot.addSprite(cmd);
+    if (!m_root) {
+        m_snapshot.clear();
+        m_transformSoA.clear();
+        return;
     }
+
+    m_snapshot.reserve(static_cast<u32>(m_sprites.size()));
+    m_transformSoA.reserve(static_cast<u32>(m_sprites.size()));
+    fillSnapshotSoA(*m_root, m_snapshot, m_transformSoA, false);
+    m_snapshot.setSpriteRotations(ctx.time * 1.5f);
 }
 
 void World2D::runParallelCull() {
@@ -87,7 +80,9 @@ void World2D::runParallelCull() {
 
     jobs::parallel_for(0u, count, 8u, [this](u32 i) {
         const SpriteDrawCmd& cmd = m_snapshot.sprites()[i];
-        const bool inView = (cmd.x > -10000.f && cmd.x < 10000.f && cmd.y > -10000.f && cmd.y < 10000.f);
+        const float x = m_transformSoA.worldX[i];
+        const float y = m_transformSoA.worldY[i];
+        const bool inView = (x > -10000.f && x < 10000.f && y > -10000.f && y < 10000.f);
         m_cullVisible[i] = cmd.visible && inView;
     });
 

@@ -30,6 +30,12 @@ void SceneSnapshot2D::addSprite(const SpriteDrawCmd& cmd) {
     m_sprites.push_back(cmd);
 }
 
+void SceneSnapshot2D::setSpriteRotations(float rotation) {
+    for (SpriteDrawCmd& cmd : m_sprites) {
+        cmd.rotation = rotation;
+    }
+}
+
 namespace {
 
 void appendNode(const SceneObject2D& node, SceneSnapshot2D& snapshot, SceneTransformSoA2D& soa) {
@@ -57,10 +63,22 @@ void appendNode(const SceneObject2D& node, SceneSnapshot2D& snapshot, SceneTrans
 
 } // namespace
 
-void fillSnapshotSoA(const SceneObject2D& node, SceneSnapshot2D& snapshot, SceneTransformSoA2D& soa) {
+void fillSnapshotSoA(const SceneObject2D& node,
+                     SceneSnapshot2D& snapshot,
+                     SceneTransformSoA2D& soa,
+                     bool includeNode) {
     snapshot.clear();
     soa.clear();
-    appendNode(node, snapshot, soa);
+    if (includeNode) {
+        appendNode(node, snapshot, soa);
+        return;
+    }
+
+    for (Object* child : node.children()) {
+        if (const SceneObject2D* child2d = asSceneObject2D(child)) {
+            appendNode(*child2d, snapshot, soa);
+        }
+    }
 }
 
 } // namespace fuse::world2d

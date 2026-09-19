@@ -46,6 +46,10 @@ private:
     u32 m_visibleCount = 0;
 };
 
-void fillSnapshotSoA(const SceneObject3D& node, SceneSnapshot3D& snapshot, SceneTransformSoA3D& soa);
+/// When includeNode is false, only descendants of node are recorded (container roots stay out).
+void fillSnapshotSoA(const SceneObject3D& node,
+                     SceneSnapshot3D& snapshot,
+                     SceneTransformSoA3D& soa,
+                     bool includeNode = true);
 
 } // namespace fuse::world3d

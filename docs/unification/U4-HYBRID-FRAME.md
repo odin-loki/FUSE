@@ -2,7 +2,7 @@
 
 **Phase:** U4 (WP-06)  
 **Date:** 2026-09-15  
-**Status:** Frame barrier wait semantics + parallel cull batch edge cases covered in tests — software placeholder renderer; real GL/Vulkan deferred to Track B
+**Status:** `fillSnapshotSoA` wired in `World2D`/`World3D::buildSnapshot`; parallel cull reads transform SoA; frame barrier + software demo green — real GL/Vulkan deferred to Track B
 
 ---
 
@@ -12,8 +12,8 @@
 |-----------|----------|-------|
 | `FrameCtx` / `FrameBarrier` | `Source/FUSE/Core/include/fuse/frame/` | Per-frame timing + tick sync hook |
 | `IDimension` / `WorldHandle` | `Source/FUSE/Core/include/fuse/dimension/` | Stable dimension API surface |
-| `World2D` | `Source/FUSE/World2D/` | Snapshot build + `parallel_for` cull stub |
-| `World3D` | `Source/FUSE/World3D/` | Snapshot build + `parallel_for` cull stub |
+| `World2D` | `Source/FUSE/World2D/` | Hierarchy `fillSnapshotSoA` snapshot + SoA-backed `parallel_for` cull |
+| `World3D` | `Source/FUSE/World3D/` | Hierarchy `fillSnapshotSoA` snapshot + SoA-backed `parallel_for` cull |
 | `HybridComposer` | `Source/FUSE/Hybrid/` | 3D clear → 2D sprites → UI overlay order |
 | `PlaceholderRenderer` | `Source/FUSE/Hybrid/` | 320×240 RGBA software buffer (honest stub) |
 | `demo_hybrid_hud` | `Source/FUSE/Apps/HybridHud/` | 60-frame spin demo |
@@ -85,7 +85,8 @@ ctest --test-dir build
 | `IDimension` / `World2D` / `World3D` / `HybridComposer` headers stable for modules | ✅ |
 | Demo: empty 3D clear + spinning 2D sprite in one process | ✅ (`demo_hybrid_hud`, software renderer) |
 | Dimension enable/disable from project flags | ✅ |
-| `parallel_for` cull stub (per-world + composer game-thread dispatch) | ✅ |
+| `parallel_for` cull over snapshot + transform SoA (per-world + composer game-thread dispatch) | ✅ |
+| `fillSnapshotSoA` hierarchy walk in `buildSnapshot` (WP-05 gap closed) | ✅ |
 | Frame barrier between tick and render | ✅ (`fuse_core_frame_barrier_tests`, hybrid integration) |
 | `renderThread()` ownership honoured | ✅ |
 | No cross-thread raw `SceneObject*` in cull path | ✅ (tests) |

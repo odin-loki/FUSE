@@ -74,10 +74,36 @@ void appendNode(const SceneObject3D& node, SceneSnapshot3D& snapshot, SceneTrans
 
 } // namespace
 
-void fillSnapshotSoA(const SceneObject3D& node, SceneSnapshot3D& snapshot, SceneTransformSoA3D& soa) {
+void fillSnapshotSoA(const SceneObject3D& node,
+                     SceneSnapshot3D& snapshot,
+                     SceneTransformSoA3D& soa,
+                     bool includeNode) {
     snapshot.clear();
     soa.clear();
-    appendNode(node, snapshot, soa);
+    if (includeNode) {
+        appendNode(node, snapshot, soa);
+        return;
+    }
+
+    for (Object* child : node.children()) {
+        if (child != nullptr && std::strcmp(child->typeName(), "SceneObject3D") == 0) {
+            appendNode(*static_cast<SceneObject3D*>(child), snapshot, soa);
+        } else if (const SceneObject2D* child2d = asSceneObject2D(child)) {
+            const WorldTransform2D world2d = child2d->worldTransform();
+            ObjectDrawCmd3D childCmd;
+            childCmd.object = child2d->handle();
+            childCmd.x = world2d.x;
+            childCmd.y = world2d.y;
+            childCmd.z = 0.f;
+            childCmd.visible = true;
+            snapshot.addObject(childCmd);
+
+            soa.object.push_back(child2d->handle());
+            soa.worldX.push_back(world2d.x);
+            soa.worldY.push_back(world2d.y);
+            soa.worldZ.push_back(0.f);
+        }
+    }
 }
 
 } // namespace fuse::world3d

@@ -45,12 +45,19 @@ public:
 
     void setVisibleCount(u32 count) { m_visibleCount = count; }
 
+    /// Game-thread post-pass after hierarchy fill (e.g. per-frame spin for demo sprites).
+    void setSpriteRotations(float rotation);
+
 private:
     std::vector<SpriteDrawCmd> m_sprites;
     u32 m_visibleCount = 0;
 };
 
 /// Depth-first walk of node and descendants; fills snapshot + SoA with world transforms.
-void fillSnapshotSoA(const SceneObject2D& node, SceneSnapshot2D& snapshot, SceneTransformSoA2D& soa);
+/// When includeNode is false, only descendants of node are recorded (container roots stay out).
+void fillSnapshotSoA(const SceneObject2D& node,
+                     SceneSnapshot2D& snapshot,
+                     SceneTransformSoA2D& soa,
+                     bool includeNode = true);
 
 } // namespace fuse::world2d

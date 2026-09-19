@@ -63,22 +63,15 @@ void World3D::syncSceneFromPhysics() {
 }
 
 void World3D::buildSnapshot() {
-    m_snapshot.clear();
-    m_snapshot.reserve(static_cast<u32>(m_objects.size()));
-
-    for (SceneObject3D* object : m_objects) {
-        if (object == nullptr) {
-            continue;
-        }
-
-        ObjectDrawCmd3D cmd;
-        cmd.object = object->handle();
-        cmd.x = object->x();
-        cmd.y = object->y();
-        cmd.z = object->z();
-        cmd.visible = true;
-        m_snapshot.addObject(cmd);
+    if (!m_root) {
+        m_snapshot.clear();
+        m_transformSoA.clear();
+        return;
     }
+
+    m_snapshot.reserve(static_cast<u32>(m_objects.size()));
+    m_transformSoA.reserve(static_cast<u32>(m_objects.size()));
+    fillSnapshotSoA(*m_root, m_snapshot, m_transformSoA, false);
 }
 
 void World3D::runParallelCull() {
@@ -92,7 +85,8 @@ void World3D::runParallelCull() {
 
     jobs::parallel_for(0u, count, 4u, [this](u32 i) {
         const ObjectDrawCmd3D& cmd = m_snapshot.objects()[i];
-        const bool inFrustum = (cmd.z > -500.f && cmd.z < 500.f);
+        const float z = m_transformSoA.worldZ[i];
+        const bool inFrustum = (z > -500.f && z < 500.f);
         m_cullVisible[i] = cmd.visible && inFrustum;
     });
 

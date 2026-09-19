@@ -123,7 +123,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Mobile** | Hybrid demo runs on iOS **or** Android device/sim; respect surface loss / background |
 | **Exit** | Demo: 3D clear + spinning 2D sprite one window (desktop + one mobile); TSan clean on cull path |
 | **Deps** | WP-05, WP-03 |
-| **Status** | 🚧 Scaffolding — `IDimension`, worlds, `HybridComposer`, `demo_hybrid_hud`, tests; software renderer only — see [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md) |
+| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B present/swapchain ❌ — see [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md) |
 
 ---
 
@@ -226,7 +226,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 | **U1** | Umbrella build | `fuse_core` cmake target exists |
 | **U2** | One-process smoke | ASan init; jobs optional — ✅ smoke + quarantine libs |
 | **U3** | Shared services | I/O job publishes handle; TSan plan live |
-| **U4** | Hybrid demo | `parallel_for` cull; frame barrier; game-thread GFX — 🚧 scaffolding + software demo |
+| **U4** | Hybrid demo | `parallel_for` cull + SoA; frame barrier; software demo ✅ — real GLES/Vulkan present ❌ Track B |
 | **U5** | Feature modules | Five `fuse_*` targets; `fuse_ai` BT slice + tests — 🚧 scaffolds + ore backlog ([U5-MODULES.md](./U5-MODULES.md)) |
 | **U6** | Editor PIE | UI/game thread queue proven — 🚧 `fuse_editor_api` stub + expanded tests |
 | **U7** | Project format | `fuse_project` + `fuse_import` dry-run — ✅ minimal schema v1 |

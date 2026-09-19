@@ -36,6 +36,7 @@ public:
 
     void addSprite(SceneObject2D* sprite);
     const SceneSnapshot2D& readSnapshot() const { return m_snapshot; }
+    const SceneTransformSoA2D& readTransformSoA() const { return m_transformSoA; }
 
     physics::PhysicsWorld2D& physics() { return m_physics; }
     const physics::PhysicsWorld2D& physics() const { return m_physics; }
@@ -53,6 +54,7 @@ private:
     std::vector<SceneObject2D*> m_sprites;
 
     SceneSnapshot2D m_snapshot;
+    SceneTransformSoA2D m_transformSoA;
     std::vector<bool> m_cullVisible;
 
     physics::PhysicsWorld2D m_physics;

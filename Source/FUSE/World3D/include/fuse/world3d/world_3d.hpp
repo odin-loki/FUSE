@@ -36,6 +36,7 @@ public:
 
     void addObject(SceneObject3D* object);
     const SceneSnapshot3D& readSnapshot() const { return m_snapshot; }
+    const SceneTransformSoA3D& readTransformSoA() const { return m_transformSoA; }
 
     float clearColorR() const { return m_clearR; }
     float clearColorG() const { return m_clearG; }
@@ -58,6 +59,7 @@ private:
     std::vector<SceneObject3D*> m_objects;
 
     SceneSnapshot3D m_snapshot;
+    SceneTransformSoA3D m_transformSoA;
     std::vector<bool> m_cullVisible;
 
     float m_clearR = 0.1f;

@@ -98,6 +98,10 @@ int main() {
     check(composer.frameCount() == static_cast<fuse::u32>(kFrameCount), "all frames ticked");
     check(aiRuntime.tickCount() == static_cast<fuse::u32>(kFrameCount), "fuse_ai module ticked each frame");
     check(aiRuntime.blackboard().flag(0, 0), "fuse_ai patrol flag set for near HUD agent");
+    check(world2D.readSnapshot().sprites().size() == 1u, "2D snapshot built via hierarchy fillSnapshotSoA");
+    check(world2D.readTransformSoA().object.size() == 1u, "2D transform SoA filled for parallel cull");
+    check(world2D.readSnapshot().visibleCount() == 1u, "parallel cull kept HUD sprite visible");
+    check(world3D.readSnapshot().objects().empty(), "3D snapshot has no drawable objects (clear-only path)");
     check(composer.renderer().sample(160, 120) > 0, "3D clear colour present");
     check(composer.renderer().sample(172, 132) > 0, "spinning 2D sprite visible");
 
