@@ -105,6 +105,26 @@ void ContactBufferSoA::buildFrictionTangentBases() {
     }
 }
 
+bool ContactBufferSoA::slotNeedsFrictionBasisRebuild(u32 slot, f32 epsilon) const {
+    if (slot >= activeCount || validFlags[slot] == 0u) {
+        return false;
+    }
+
+    const TangentBasis basis{tangent1[slot], tangent2[slot]};
+    return !isOrthonormalTangentBasis(contactNormals[slot], basis, epsilon);
+}
+
+void ContactBufferSoA::rebuildFrictionTangentBasesIfNeeded(f32 epsilon) {
+    for (u32 slot = 0u; slot < activeCount; ++slot) {
+        if (validFlags[slot] == 0u || !slotNeedsFrictionBasisRebuild(slot, epsilon)) {
+            continue;
+        }
+        const TangentBasis basis = buildTangentBasis(contactNormals[slot]);
+        tangent1[slot] = basis.tangent1;
+        tangent2[slot] = basis.tangent2;
+    }
+}
+
 TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {
     if (index >= activeCount || validFlags[index] == 0u) {
         return {};

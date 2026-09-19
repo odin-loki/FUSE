@@ -234,6 +234,10 @@ const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
         return "AnyTrigger";
     case ContactPairRejectReason::BothMassless:
         return "BothMassless";
+    case ContactPairRejectReason::BothNoGravity:
+        return "BothNoGravity";
+    case ContactPairRejectReason::BothCcd:
+        return "BothCcd";
     }
     return "Unknown";
 }
@@ -302,6 +306,43 @@ bool is_massless_contact_pair(
     }
     return bodies.invMasses[pair.bodyA] <= invMassEpsilon &&
            bodies.invMasses[pair.bodyB] <= invMassEpsilon;
+}
+
+bool is_no_gravity_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool noGravityA = (bodies.flags[pair.bodyA] & RB_NO_GRAVITY) != 0u;
+    const bool noGravityB = (bodies.flags[pair.bodyB] & RB_NO_GRAVITY) != 0u;
+    return noGravityA && noGravityB;
+}
+
+bool is_ccd_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies) {
+    if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
+        return false;
+    }
+    const bool ccdA = (bodies.flags[pair.bodyA] & RB_CCD) != 0u;
+    const bool ccdB = (bodies.flags[pair.bodyB] & RB_CCD) != 0u;
+    return ccdA && ccdB;
+}
+
+bool is_mesh_shape_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes) {
+    const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
+    const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
+    if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
+        return false;
+    }
+
+    const CollisionShapeType typeA = shapeType(shapes, shapeA);
+    const CollisionShapeType typeB = shapeType(shapes, shapeB);
+    return typeA == CollisionShapeType::SdfMesh || typeA == CollisionShapeType::Voxel ||
+           typeB == CollisionShapeType::SdfMesh || typeB == CollisionShapeType::Voxel;
 }
 
 bool is_degenerate_shape_pair(
@@ -519,6 +560,12 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
     if (is_massless_contact_pair(pair, bodies)) {
         return ContactPairRejectReason::BothMassless;
     }
+    if (is_no_gravity_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothNoGravity;
+    }
+    if (is_ccd_contact_pair(pair, bodies)) {
+        return ContactPairRejectReason::BothCcd;
+    }
     return ContactPairRejectReason::None;
 }
 
@@ -607,6 +654,33 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return preflight_narrowphase_batch(pairs, bodies, shapes).can_skip();
+}
+
+NarrowphaseBatchDeepenPreflight preflight_narrowphase_batch_deepen(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphaseBatchDeepenPreflight preflight{};
+    preflight.base = preflight_narrowphase_batch(pairs, bodies, shapes);
+
+    for (const broadphase::CandidatePair& pair : pairs) {
+        const ContactPairRejectReason deepenReason =
+            contact_pair_deepen_reject_reason(pair, bodies, shapes);
+        if (deepenReason == ContactPairRejectReason::BothNoGravity) {
+            ++preflight.noGravityRejectedCount;
+        } else if (deepenReason == ContactPairRejectReason::BothCcd) {
+            ++preflight.ccdRejectedCount;
+        }
+    }
+
+    return preflight;
+}
+
+bool narrowphase_batch_deepen_rejects_all(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflight_narrowphase_batch_deepen(pairs, bodies, shapes).can_skip_deepen();
 }
 
 } // namespace fuse::physics::narrowphase
