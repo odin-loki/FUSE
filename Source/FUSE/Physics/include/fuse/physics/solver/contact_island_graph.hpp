@@ -37,6 +37,11 @@ struct ContactIslandGraph {
 
     static constexpr u32 invalidIsland = ~0u;
 
+    /// Guarded build entry; returns false when build inputs fail validation (B4.5 deepen follow-up).
+    bool buildGuarded(u32 bodyCount,
+                      const std::vector<narrowphase::ContactManifold>& contacts,
+                      const std::vector<DistanceConstraint>& distanceConstraints);
+
 private:
     void unionBodies(u32 a, u32 b);
     u32 findRoot(u32 index) const;
@@ -45,5 +50,11 @@ private:
     std::vector<u32> parent_;
     std::vector<Island> islands_;
 };
+
+/// Validate body-index coverage before graph build (B4.5 deepen follow-up pass).
+bool island_graph_build_inputs_valid(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
 
 } // namespace fuse::physics
