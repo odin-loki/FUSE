@@ -987,3 +987,10 @@ void testCookHashPreflightFnv1a64Guard() {
                "would_invalidate_stale_content reports mismatched hash");
                "would_invalidate_stale_content rejects matching hash");
     testCookHashPreflightFnv1a64Guard();
+
+// --- deepen additive from deepen-b79-cooker-hash-314f ---
+    const fuse::project::CookHashPreflight null_fnv = fuse::project::preflight_fnv1a64_bytes(nullptr, 4u);
+    const fuse::project::CookHashPreflight non_cacheable =
+    expectTrue(non_cacheable.reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+    const fuse::project::CookHashPreflight cacheable =
+                   fuse::project::CookHashRejectReason::NonCacheableKey)) == "non_cacheable_key",
