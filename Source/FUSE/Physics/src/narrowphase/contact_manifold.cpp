@@ -755,3 +755,22 @@ ManifoldShallowPruneRejectReason manifold_shallow_prune_reject_reason(
     return ManifoldShallowPruneRejectReason::None;
     ManifoldShallowPruneRejectReason expected,
     if (manifold_shallow_prune_reject_reason(manifold, minDepth) != ManifoldShallowPruneRejectReason::None) {
+
+// --- deepen additive from deepen-b4-narrowphase-6c66 ---
+const char* contact_manifold_write_reject_reason_name(ContactManifoldWriteRejectReason reason) {
+    case ContactManifoldWriteRejectReason::None:
+    case ContactManifoldWriteRejectReason::EmptyManifold:
+    case ContactManifoldWriteRejectReason::InvalidNormal:
+    case ContactManifoldWriteRejectReason::NotFinalized:
+    case ContactManifoldWriteRejectReason::SelfPair:
+ContactManifoldWriteRejectReason contact_manifold_write_reject_reason(const ContactManifold& manifold) {
+        return ContactManifoldWriteRejectReason::EmptyManifold;
+        return ContactManifoldWriteRejectReason::InvalidNormal;
+        return ContactManifoldWriteRejectReason::NotFinalized;
+        return ContactManifoldWriteRejectReason::SelfPair;
+    return ContactManifoldWriteRejectReason::None;
+    ContactManifoldWriteRejectReason expected) {
+ContactManifoldWritePreflight preflight_contact_manifold_buffer_write(const ContactManifold& manifold) {
+    ContactManifoldWritePreflight preflight{};
+    preflight.skipped = preflight.reason != ContactManifoldWriteRejectReason::None;
+bool should_skip_contact_manifold_buffer_write(const ContactManifold& manifold) {

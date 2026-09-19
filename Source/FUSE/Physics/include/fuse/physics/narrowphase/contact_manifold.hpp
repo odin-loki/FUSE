@@ -357,3 +357,14 @@ enum class ManifoldShallowPruneRejectReason : u8 {
 const char* manifold_shallow_prune_reject_reason_name(ManifoldShallowPruneRejectReason reason);
 ManifoldShallowPruneRejectReason manifold_shallow_prune_reject_reason(
     ManifoldShallowPruneRejectReason expected,
+
+// --- deepen additive from deepen-b4-narrowphase-6c66 ---
+enum class ContactManifoldWriteRejectReason : u8 {
+const char* contact_manifold_write_reject_reason_name(ContactManifoldWriteRejectReason reason);
+ContactManifoldWriteRejectReason contact_manifold_write_reject_reason(const ContactManifold& manifold);
+    ContactManifoldWriteRejectReason expected);
+struct ContactManifoldWritePreflight {
+    ContactManifoldWriteRejectReason reason = ContactManifoldWriteRejectReason::None;
+    bool can_write() const { return !skipped && reason == ContactManifoldWriteRejectReason::None; }
+ContactManifoldWritePreflight preflight_contact_manifold_buffer_write(const ContactManifold& manifold);
+bool should_skip_contact_manifold_buffer_write(const ContactManifold& manifold);

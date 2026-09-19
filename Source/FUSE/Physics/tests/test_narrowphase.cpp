@@ -2783,3 +2783,22 @@ void testFrictionComputeTangentsPreflightGuard() {
         "should_skip run true when all pairs deepen-rejected");
         fuse::physics::narrowphase::should_skip_narrowphase_run({}, bodies, shapes),
         "should_skip run true for empty pair list");
+
+// --- deepen additive from deepen-b4-narrowphase-6c66 ---
+    expectTrue(validWritePreflight.canWrite(), "write preflight allows valid manifold");
+    const auto outOfRangePreflight =
+    expectTrue(!outOfRangePreflight.canWrite(), "write preflight rejects out-of-range slot");
+    expectTrue(outOfRangePreflight.outOfRangeSlot, "write preflight flags out-of-range slot");
+            allValidBuffer, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::AllValid),
+        fuse::physics::narrowphase::preflightContactBufferCompactAndClamp(buffer);
+    expectTrue(noWorkPreflight.noWork, "compact-and-clamp preflight flags no-work buffer");
+    const auto frictionPreflight = fuse::physics::narrowphase::preflightContactBufferFrictionBuild(buffer);
+    expectTrue(frictionPreflight.canBuild(), "friction-build preflight allows valid contacts");
+    fuse::physics::narrowphase::buildContactBufferFrictionTangentBasesWithPreflight(buffer);
+void testContactManifoldBufferWritePreflightGuards() {
+            empty, fuse::physics::narrowphase::ContactManifoldWriteRejectReason::EmptyManifold),
+        fuse::physics::narrowphase::should_skip_contact_manifold_buffer_write(empty),
+        "should_skip_manifold_buffer_write on empty manifold");
+            noNormal, fuse::physics::narrowphase::ContactManifoldWriteRejectReason::InvalidNormal),
+            notFinalized, fuse::physics::narrowphase::ContactManifoldWriteRejectReason::NotFinalized),
+    testContactManifoldBufferWritePreflightGuards();

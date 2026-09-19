@@ -213,3 +213,10 @@ void writeContactBufferSlotWithPreflight(
 u32 compactContactBufferWithPreflight(ContactBufferSoA& buffer);
 u32 clampContactBufferWithPreflight(ContactBufferSoA& buffer);
 u32 compactAndClampContactBufferWithPreflight(ContactBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-narrowphase-6c66 ---
+const char* contactBufferFrictionBuildRejectReasonName(ContactBufferFrictionBuildRejectReason reason);
+ContactBufferFrictionBuildRejectReason contactBufferFrictionBuildRejectReason(const ContactBufferSoA& buffer);
+    bool canBuild() const { return reason == ContactBufferFrictionBuildRejectReason::None; }
+ContactBufferFrictionBuildPreflight preflightContactBufferFrictionBuild(const ContactBufferSoA& buffer);
+void buildContactBufferFrictionTangentBasesWithPreflight(ContactBufferSoA& buffer);

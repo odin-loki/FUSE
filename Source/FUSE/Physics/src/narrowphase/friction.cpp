@@ -453,3 +453,7 @@ bool should_skip_friction_basis_normalize_rebuild(
 
 // --- deepen additive from b4-narrowphase-guard-pass-0376 ---
         return FrictionBasisRebuildRejectReason::InvalidNormal;
+
+// --- deepen additive from deepen-b4-narrowphase-6c66 ---
+    if (!preflightContactBufferFrictionBuild(buffer).canBuild()) {
+    buildContactBufferFrictionTangentBasesWithPreflight(buffer);

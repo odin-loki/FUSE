@@ -616,3 +616,17 @@ u32 clampContactBufferWithPreflight(ContactBufferSoA& buffer) {
     if (!preflightContactBufferClamp(buffer).needsClamp()) {
 u32 compactAndClampContactBufferWithPreflight(ContactBufferSoA& buffer) {
     if (!preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp()) {
+
+// --- deepen additive from deepen-b4-narrowphase-6c66 ---
+const char* contactBufferFrictionBuildRejectReasonName(ContactBufferFrictionBuildRejectReason reason) {
+    case ContactBufferFrictionBuildRejectReason::NoValidContacts:
+ContactBufferFrictionBuildRejectReason contactBufferFrictionBuildRejectReason(const ContactBufferSoA& buffer) {
+        return ContactBufferFrictionBuildRejectReason::NoValidContacts;
+    return contactBufferFrictionBuildRejectReason(buffer) == expected;
+ContactBufferFrictionBuildPreflight preflightContactBufferFrictionBuild(const ContactBufferSoA& buffer) {
+    preflight.reason = contactBufferFrictionBuildRejectReason(buffer);
+    preflight.noValidContacts = preflight.reason == ContactBufferFrictionBuildRejectReason::NoValidContacts;
+    return !preflightContactBufferFrictionBuild(buffer).canBuild();
+    buildContactBufferFrictionTangentBasesWithPreflight(*this);
+void buildContactBufferFrictionTangentBasesWithPreflight(ContactBufferSoA& buffer) {
+    if (!preflightContactBufferFrictionBuild(buffer).canBuild()) {
