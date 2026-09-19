@@ -588,6 +588,17 @@ const char* cellSpanClampRejectReasonName(CellSpanClampRejectReason reason) {
         return "ExceedsSpanLimit";
     }
     return "Unknown";
+
+const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason) {
+    switch (reason) {
+    case ShapeCellInsertRejectReason::None:
+        return "None";
+    case ShapeCellInsertRejectReason::EmptyRange:
+        return "EmptyRange";
+    case ShapeCellInsertRejectReason::ExceedsBudget:
+        return "ExceedsBudget";
+    }
+    return "Unknown";
 }
 
 const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
@@ -924,6 +935,7 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReasonImpl(
         if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
             return ShapeCellInsertRejectReason::OccupancySkipped;
         if (!shouldRunCellOccupancyIteration(range, maxOccupancy)) {
+        if (canSkipShapeCellInsert(range, maxOccupancy)) {
             return;
         }
         return ShapeCellInsertRejectReason::None;
@@ -1026,6 +1038,7 @@ void populateShapeCells(
     if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
     if (canSkipCellOccupancyIteration(preflightCellOccupancy(range, maxOccupancy))) {
     if (!shouldRunCellOccupancyIteration(range, maxOccupancy)) {
+    if (canSkipShapeCellInsert(range, maxOccupancy)) {
         return;
     }
     if (isEmptyCellRange(range)) {
@@ -1057,6 +1070,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
         if (!preflightPairBufferPush(buffer, pair.bodyA, pair.bodyB).canPush()) {
         if (accepted >= mergePreflight.acceptedCount) {
         if (canSkipPairBufferPush(buffer, pair.bodyA, pair.bodyB)) {
+        if (!shouldRunPairBufferPush(buffer, pair.bodyA, pair.bodyB)) {
             break;
         if (!buffer.canAcceptPairs(1u)) {
         if (buffer.push(pair.bodyA, pair.bodyB)) {

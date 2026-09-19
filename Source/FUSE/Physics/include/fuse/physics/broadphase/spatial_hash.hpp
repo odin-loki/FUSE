@@ -882,6 +882,7 @@ enum class CellSpanRejectReason : u8 {
     None = 0,
     EmptyRange,
     ExceedsMaxSpan,
+/// Why a clamped cell span cannot drive occupancy iteration (B4.2 deepen pass).
 
 /// Human-readable label for cell-span reject reasons (logging / tests).
 const char* cellSpanRejectReasonName(CellSpanRejectReason reason);
@@ -1331,6 +1332,97 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairSlotWrite(u32 totalCellSlots) {
     return preflightCellSpan(range, maxSpanPerAxis).canClamp();
 
     return preflightCellSpan2D(range, maxSpanPerAxis).canClamp();
+/// Diagnose why a cell span would be skipped; vacuously succeeds on non-empty ranges.
+FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange3& range) {
+    if (isEmptyCellRange(range)) {
+        return CellSpanRejectReason::EmptyRange;
+    }
+    return CellSpanRejectReason::None;
+
+FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange2& range) {
+
+    return cellSpanRejectReason(range) == expected;
+
+
+/// Read-only cell-span diagnostics — no mutation (B4.2 deepen pass).
+struct CellSpanPreflight {
+    bool emptyRange = false;
+    u32 occupancyCount = 0;
+
+    bool canUseRange() const { return reason == CellSpanRejectReason::None; }
+};
+
+FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan(const CellRange3& range) {
+    CellSpanPreflight preflight{};
+    preflight.reason = cellSpanRejectReason(range);
+    preflight.occupancyCount = estimateCellOccupancyCount(range);
+    return preflight;
+
+FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan(const CellRange2& range) {
+
+/// Non-mutating cell-span skip predicate — inverse of `canUseRange` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipCellSpanOccupancy(const CellRange3& range) {
+    return !preflightCellSpan(range).canUseRange();
+
+FUSE_PHYSICS_INLINE bool canSkipCellSpanOccupancy(const CellRange2& range) {
+
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanOccupancy(const CellRange3& range) {
+    return preflightCellSpan(range).canUseRange();
+
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanOccupancy(const CellRange2& range) {
+
+/// Why shape→cell hash insertion would early-out (B4.2 deepen pass).
+enum class ShapeCellInsertRejectReason : u8 {
+    None = 0,
+    EmptyRange,
+    ExceedsBudget,
+
+/// Human-readable label for shape-cell insert reject reasons (logging / tests).
+const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason);
+
+FUSE_PHYSICS_INLINE ShapeCellInsertRejectReason shapeCellInsertRejectReason(const CellRange3& range, u32 maxCells) {
+    const CellSpanRejectReason spanReason = cellSpanRejectReason(range);
+    if (spanReason == CellSpanRejectReason::EmptyRange) {
+        return ShapeCellInsertRejectReason::EmptyRange;
+    if (exceedsCellOccupancyBudget(range, maxCells)) {
+        return ShapeCellInsertRejectReason::ExceedsBudget;
+    return ShapeCellInsertRejectReason::None;
+
+FUSE_PHYSICS_INLINE ShapeCellInsertRejectReason shapeCellInsertRejectReason(const CellRange2& range, u32 maxCells) {
+
+/// Returns true when `shapeCellInsertRejectReason` matches `expected` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shapeCellInsertRejectsForReason(
+    u32 maxCells,
+    ShapeCellInsertRejectReason expected) {
+    return shapeCellInsertRejectReason(range, maxCells) == expected;
+
+
+/// Read-only shape→cell insert diagnostics — no mutation (B4.2 deepen pass).
+struct ShapeCellInsertPreflight {
+    ShapeCellInsertRejectReason reason = ShapeCellInsertRejectReason::None;
+    bool exceedsBudget = false;
+
+    bool canInsert() const { return reason == ShapeCellInsertRejectReason::None; }
+
+FUSE_PHYSICS_INLINE ShapeCellInsertPreflight preflightShapeCellInsert(const CellRange3& range, u32 maxCells) {
+    ShapeCellInsertPreflight preflight{};
+    preflight.reason = shapeCellInsertRejectReason(range, maxCells);
+    preflight.emptyRange = preflight.reason == ShapeCellInsertRejectReason::EmptyRange;
+    preflight.exceedsBudget = preflight.reason == ShapeCellInsertRejectReason::ExceedsBudget;
+
+FUSE_PHYSICS_INLINE ShapeCellInsertPreflight preflightShapeCellInsert(const CellRange2& range, u32 maxCells) {
+
+/// Non-mutating shape→cell insert skip predicate — inverse of `canInsert` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsert(const CellRange3& range, u32 maxCells) {
+    return !preflightShapeCellInsert(range, maxCells).canInsert();
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsert(const CellRange2& range, u32 maxCells) {
+
+/// Non-mutating shape→cell insert predicate — mirrors `preflightShapeCellInsert` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsert(const CellRange3& range, u32 maxCells) {
+    return preflightShapeCellInsert(range, maxCells).canInsert();
+
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsert(const CellRange2& range, u32 maxCells) {
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {

@@ -290,6 +290,7 @@ bool PairBufferSoA::push(u32 idxA, u32 idxB, u32 bodyCount) {
 
     const PairBufferPushPreflight preflight = preflightPairBufferPush(*this, idxA, idxB);
     if (!preflight.canPush()) {
+    if (!shouldRunPairBufferPush(*this, idxA, idxB)) {
         if (preflight.atCapacity) {
             ++droppedCount;
     if (maxCapacity > 0u && activeCount >= maxCapacity) {
@@ -382,9 +383,10 @@ u32 PairBufferSoA::compact() {
         bodyA.resize(activeCount);
         bodyB.resize(activeCount);
         validFlags.resize(activeCount);
-    if (canSkipPairBufferCompaction(*this)) {
-        if (canSkipSoAIteration()) {
         } else {
+    if (!shouldRunPairBufferCompaction(*this)) {
+
+
         return activeCount;
     }
 
@@ -1494,6 +1496,7 @@ bool canSkipPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCou
 bool shouldRunPairBufferAcceptPairs(const PairBufferSoA& buffer, u32 additionalCount) {
     return preflightPairBufferAcceptPairs(buffer, additionalCount).canAccept();
 
+
 const char* pairBufferWriteSlotRejectReasonName(PairBufferWriteSlotRejectReason reason) {
     switch (reason) {
     case PairBufferWriteSlotRejectReason::None:
@@ -1531,12 +1534,15 @@ PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
 
 
 
+
+
     u32 idxB) {
     PairBufferWriteSlotPreflight preflight{};
     preflight.reason = pairBufferWriteSlotRejectReason(buffer, slot, idxA, idxB);
     preflight.outOfRangeSlot = preflight.reason == PairBufferWriteSlotRejectReason::OutOfRangeSlot;
     preflight.invalidPair = preflight.reason == PairBufferWriteSlotRejectReason::InvalidPair;
     return preflight;
+}
 
 bool canSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {
     return !preflightPairBufferWriteSlot(buffer, slot, idxA, idxB).canWrite();
