@@ -117,6 +117,21 @@ public:
     [[nodiscard]] std::vector<std::string> probe_downstream_sources(
         const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
         const std::vector<CookJob>& jobs) const;
+    /// Deduplicated source paths with structurally invalid records (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_invalid_entry_sources() const;
+    /// Deduplicated count of `probe_stale_upstream_sources` (B7.9 deepen).
+    [[nodiscard]] u32 count_unique_stale_upstream_sources(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Read-only probes mirroring remaining `invalidate_*` guards (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                      const std::vector<CookJobDependencyEdge>& edges,
+                                                      const std::vector<CookJob>& jobs) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

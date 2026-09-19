@@ -255,6 +255,30 @@ CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(const Co
     return estimate;
 }
 
+bool AssetCooker::would_reconcile_invalidation(const CookManifest& manifest) const {
+    return estimate_reconcile_invalidation(manifest).total() != 0;
+}
+
+CookCacheUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
+    const CookManifest& manifest, const std::string& changed_source) const {
+    CookCacheUpstreamInvalidationEstimate estimate;
+    if (!is_valid_cook_cache_path(changed_source)) {
+        return estimate;
+    }
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    estimate.source_entries = m_cache.count_by_source(changed_source);
+    for (const CookJob& job : graph.jobs()) {
+        if (job.source_path == changed_source) {
+            const u32 downstream = m_cache.count_downstream_of(job.output_path, graph.edges(), graph.jobs());
+            estimate.downstream_entries += downstream;
+        }
+    }
+    return estimate;
+}
+
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
