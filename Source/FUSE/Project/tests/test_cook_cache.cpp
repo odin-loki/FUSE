@@ -1356,3 +1356,11 @@ void testCookHashPreflightImportCookKeys() {
                "would_invalidate_stale_content rejects zero content hash");
                "would_invalidate_stale_content true after source change with fresh hash");
     const fuse::project::CookHashPreflight readable = fuse::project::preflight_cook_cache_entry(valid);
+
+// --- deepen additive from deepen-b79-cooker-hash-9039 ---
+    const fuse::project::CookCacheEntryPreflight valid_preflight =
+    const fuse::project::CookCacheEntryPreflight zero_preflight =
+               "would_invalidate_stale_upstream reports stale entries");
+void testCookHashImportCacheKeyPreflight() {
+    const fuse::project::CookHashPreflight mesh_key =
+    testCookHashImportCacheKeyPreflight();

@@ -575,3 +575,8 @@ CookHashPreflight preflight_texture_import_cook_key(const TextureImportDesc& des
     const CookHashPreflight import_preflight = preflight_texture_import_hash(desc);
 CookHashPreflight preflight_audio_import_cook_key(const AudioImportDesc& desc, u64 upstream_hash) {
     const CookHashPreflight import_preflight = preflight_audio_import_hash(desc);
+
+// --- deepen additive from deepen-b79-cooker-hash-9039 ---
+CookHashPreflight preflight_mesh_import_cache_key(const MeshImportDesc& desc, u64 upstream_hash) {
+CookHashPreflight preflight_texture_import_cache_key(const TextureImportDesc& desc, u64 upstream_hash) {
+CookHashPreflight preflight_audio_import_cache_key(const AudioImportDesc& desc, u64 upstream_hash) {
