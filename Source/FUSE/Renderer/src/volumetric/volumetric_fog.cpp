@@ -1126,6 +1126,27 @@ SampleCoordRejectReason FroxelGridLayout::classifySampleCoordsReject(const Froxe
 
 
 
+bool screenMappingRejectReasonIsBlocking(ScreenMappingRejectReason reason) {
+    return reason != ScreenMappingRejectReason::None;
+
+ScreenMappingRejectReason classifyScreenMappingReject(f32 screenX,
+                                                      f32 screenY,
+                                                      f32 viewDepth,
+                                                      const FroxelCameraDesc& camera) {
+    ScreenMappingRejectReason reason = ScreenMappingRejectReason::None;
+    FroxelSampleCoords coords{};
+    FroxelGridLayout::tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, reason);
+    return reason;
+
+bool sampleCoordRejectReasonIsBlocking(SampleCoordRejectReason reason) {
+    switch (reason) {
+    case SampleCoordRejectReason::None:
+    case SampleCoordRejectReason::InvalidWeights:
+        return false;
+    case SampleCoordRejectReason::EmptyGrid:
+    case SampleCoordRejectReason::OutOfBounds:
+
+
 
     if (!areSampleCoordsInBounds(coords, desc)) {
         if (indicesInRange) {
@@ -1223,6 +1244,11 @@ bool FroxelGridLayout::tryPreflightSampleCoords(const FroxelSampleCoords& coords
     const bool mapped =
         tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, reject);
     if (outCoords != nullptr && mapped) {
+
+
+
+
+
 }
 
 bool FroxelGridLayout::preflightSampleCoords(const FroxelSampleCoords& coords,
@@ -4131,6 +4157,15 @@ DensityLookupRejectReason classifyDensityLookupRejectAtCoord(const FroxelDensity
                                                              u32 sliceZ) {
     tryCanLookupAtCoord(grid, desc, tileX, tileY, sliceZ, reason);
 
+DensityLookupRejectReason classifyDensityLookupReject(const FroxelDensityGrid& grid,
+                                                      const FroxelGridDesc& desc,
+                                                      u32 index) {
+    DensityLookupRejectReason reason = DensityLookupRejectReason::None;
+    tryCanLookupAtIndex(grid, desc, index, reason);
+    return reason;
+}
+
+bool preflightDensityLookup(const FroxelDensityGrid& grid,
                             u32 index,
                             DensityLookupRejectReason* reason) {
     const DensityLookupRejectReason reject = classifyDensityLookupReject(grid, desc, index);
@@ -4144,6 +4179,11 @@ DensityLookupRejectReason classifyDensityLookupRejectAtCoord(const FroxelDensity
                                                              u32 tileX,
                                                              u32 tileY,
     DensityLookupRejectReason reason = DensityLookupRejectReason::None;
+    }
+
+DensityLookupRejectReason classifyDensityLookupAtCoordReject(const FroxelDensityGrid& grid,
+                                                             u32 sliceZ) {
+    tryCanLookupAtCoord(grid, desc, tileX, tileY, sliceZ, reason);
     return reason;
 }
 
@@ -4178,7 +4218,6 @@ DensityLookupRejectReason classifyDensityLookupCoordReject(const FroxelDensityGr
         *reason = reject;
     }
     return !densityLookupRejectReasonIsBlocking(reject);
-}
 
 bool preflightDensityLookupAtCoord(const FroxelDensityGrid& grid,
                                    const FroxelGridDesc& desc,
@@ -4194,6 +4233,7 @@ bool preflightDensityLookupAtCoord(const FroxelDensityGrid& grid,
     const DensityLookupRejectReason reject =
         classifyDensityLookupRejectAtCoord(grid, desc, tileX, tileY, sliceZ);
         classifyDensityLookupCoordReject(grid, desc, tileX, tileY, sliceZ);
+        classifyDensityLookupAtCoordReject(grid, desc, tileX, tileY, sliceZ);
 
 bool wouldSkipDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
     DensityLookupRejectReason reason = DensityLookupRejectReason::None;
@@ -6204,6 +6244,25 @@ bool preflightGridDensity(const FroxelDensityGrid& grid,
     return !gridDensityRejectReasonIsBlocking(reject);
 }
 
+GridDensityRejectReason classifyGridDensityReject(const FroxelDensityGrid& grid,
+                                                  const FroxelGridDesc& desc,
+                                                  f32 epsilon) {
+    GridDensityRejectReason reason = GridDensityRejectReason::None;
+    tryValidateGridDensity(grid, desc, reason, epsilon);
+    return reason;
+}
+
+bool preflightGridDensity(const FroxelDensityGrid& grid,
+                          const FroxelGridDesc& desc,
+                          GridDensityRejectReason* reason,
+                          f32 epsilon) {
+    const GridDensityRejectReason reject = classifyGridDensityReject(grid, desc, epsilon);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return !gridDensityRejectReasonIsBlocking(reject);
+}
+
 bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
                              const FroxelGridDesc& desc,
                              u32 index,
@@ -8004,6 +8063,25 @@ bool preflightFroxelTrilinearSampleReady(const FroxelDensityGrid& grid,
 
 bool preflightFroxelPopulateReady(const FroxelGridDesc& desc,
     }
+}
+
+FroxelPopulateRejectReason classifyFroxelPopulateReject(const FroxelGridDesc& desc,
+                                                        const FroxelCameraDesc& camera,
+                                                        const VolumetricFogParams& params) {
+    FroxelPopulateRejectReason reason = FroxelPopulateRejectReason::None;
+    tryCanPopulateFromAnalyticFog(desc, camera, params, reason);
+    return reason;
+}
+
+bool preflightFroxelPopulate(const FroxelGridDesc& desc,
+                             const FroxelCameraDesc& camera,
+                             const VolumetricFogParams& params,
+                             FroxelPopulateRejectReason* reason) {
+    const FroxelPopulateRejectReason reject = classifyFroxelPopulateReject(desc, camera, params);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return !froxelPopulateRejectReasonIsBlocking(reject);
 }
 
 bool canPopulateFromAnalyticFog(const FroxelGridDesc& desc,
