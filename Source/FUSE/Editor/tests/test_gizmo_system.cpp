@@ -7623,6 +7623,9 @@ void testSnapDragRejectReasonGuards() {
                "valid snap-drag reject reason is None after invalid step recovery");
 
 
+               "tryPreflightSnapDrag accepts valid delta and snap after reset");
+               "valid snap-drag reject reason is None after reset");
+
     const fuse::editor::SnapDragPreflight nanPreflight = fuse::editor::preflightSnapDrag(
         std::numeric_limits<fuse::f32>::quiet_NaN(), fuse::editor::GizmoMode::Translate, snap);
     expectTrue(fuse::editor::classifySnapDragReject(nanPreflight) ==
@@ -7649,7 +7652,7 @@ void testSnapDragRejectReasonGuards() {
                "classifySnapDragReject maps deltaNonFinite flag");
     expectTrue(fuse::editor::shouldSkipSnapDrag(std::numeric_limits<fuse::f32>::infinity(),
                                                 fuse::editor::GizmoMode::Translate, snap),
-               "shouldSkipSnapDrag true for non-finite delta");
+               "shouldSkipSnapDrag true for infinity delta");
 
     fuse::editor::GizmoSystem gizmo;
     gizmo.setSnapSettings(snap);
