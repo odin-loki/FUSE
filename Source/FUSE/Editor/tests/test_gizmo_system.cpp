@@ -4040,3 +4040,33 @@ void testDragSessionPreflight() {
     expectTrue(gizmo.preflightDragSession(hit).canUpdate(),
     testSnapDragDeltaPreflight();
     testDragSessionPreflight();
+
+// --- deepen additive from deepen-b6-gizmo-preflights-258e ---
+void testHitTestPreflightGuards() {
+    const fuse::editor::HitTestPreflight validPreflight = fuse::editor::preflightHitTest(hit);
+    expectTrue(validPreflight.canUse(), "hit-test preflight accepts valid viewport hit");
+    expectTrue(!fuse::editor::isHitTestRejected(hit), "valid hit is not rejected");
+    const fuse::editor::HitTestPreflight emptyPreflight = fuse::editor::preflightHitTest(hit);
+    expectTrue(emptyPreflight.emptyHit, "hit-test preflight marks empty viewport");
+    expectTrue(!emptyPreflight.canUse(), "hit-test preflight rejects empty viewport");
+    expectTrue(fuse::editor::isHitTestRejected(hit), "empty viewport is rejected");
+    const fuse::editor::HitTestPreflight invalidPreflight = fuse::editor::preflightHitTest(hit);
+    expectTrue(invalidPreflight.invalidDimensions,
+    expectTrue(!invalidPreflight.canUse(), "hit-test preflight rejects invalid dimensions");
+    const fuse::editor::HitTestPreflight outOfBoundsPreflight = fuse::editor::preflightHitTest(hit);
+    expectTrue(outOfBoundsPreflight.outOfBounds, "hit-test preflight marks out-of-bounds hit");
+    expectTrue(!outOfBoundsPreflight.canUse(), "hit-test preflight rejects out-of-bounds hit");
+    expectTrue(gizmo.preflightHitTest(hit).canUse(), "gizmo hit-test preflight accepts valid hit");
+        fuse::editor::preflightRay(emptyRay, fuse::editor::GizmoSystem::kAxisLength,
+    expectTrue(fuse::editor::isRayRejected(emptyRay, fuse::editor::GizmoSystem::kAxisLength,
+    const fuse::editor::RayPreflight validPreflight =
+        fuse::editor::preflightRay(xRay, fuse::editor::GizmoSystem::kAxisLength,
+    expectTrue(validPreflight.canUse(), "ray preflight accepts valid ray");
+    const fuse::editor::RayPreflight invalidConfigPreflight =
+        fuse::editor::preflightRay(xRay, 0.f, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(!invalidConfigPreflight.canUse(), "ray preflight rejects invalid pick config");
+    expectTrue(gizmo.preflightRay(xRay).canUse(), "gizmo ray preflight accepts valid ray");
+        fuse::editor::preflightDragInteraction(hit, true, fuse::editor::GizmoAxis::X,
+    const fuse::editor::InteractionPreflight idle = gizmo.preflightInteraction(hit);
+    const fuse::editor::InteractionPreflight active = gizmo.preflightInteraction(hit);
+    testHitTestPreflightGuards();

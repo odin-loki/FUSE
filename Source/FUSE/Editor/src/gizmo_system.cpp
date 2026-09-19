@@ -2858,3 +2858,23 @@ DragSessionPreflight GizmoSystem::preflightDragSession(const GizmoRay& ray,
     return fuse::editor::preflightDragSession(ray, transform, m_dragging, m_activeAxis, m_mode,
     return preflightDragInteraction(hit).canActOnPhase();
 SnapDragDeltaPreflight GizmoSystem::preflightSnapDragDelta() const {
+
+// --- deepen additive from deepen-b6-gizmo-preflights-258e ---
+HitTestPreflight preflightHitTest(const GizmoHitTest& hit) {
+    HitTestPreflight preflight{};
+    return preflightHitTest(hit).canUse();
+RayPreflight preflightRay(const GizmoRay& ray, f32 axisLength, f32 pickRadius) {
+    return preflightRay(ray, axisLength, pickRadius).canUse();
+    const RayPreflight rayPreflight = preflightRay(ray, axisLength, pickRadius);
+    preflight.emptyRay = rayPreflight.emptyRay;
+    preflight.invalidPickConfig = rayPreflight.invalidPickConfig;
+    if (!rayPreflight.canUse()) {
+    const HitTestPreflight hitPreflight = preflightHitTest(hit);
+    preflight.emptyHit = hitPreflight.emptyHit;
+    preflight.invalidDimensions = hitPreflight.invalidDimensions;
+    preflight.outOfBounds = hitPreflight.outOfBounds;
+    if (!hitPreflight.canUse()) {
+HitTestPreflight GizmoSystem::preflightHitTest(const GizmoHitTest& hit) const {
+    return fuse::editor::preflightHitTest(hit);
+RayPreflight GizmoSystem::preflightRay(const GizmoRay& ray) const {
+    return fuse::editor::preflightRay(ray, kAxisLength, kPickRadius);

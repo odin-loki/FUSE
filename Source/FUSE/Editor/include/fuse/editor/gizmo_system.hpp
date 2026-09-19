@@ -1229,3 +1229,10 @@ DragSessionPreflight preflightDragSession(const GizmoRay& ray, const GizmoTransf
     [[nodiscard]] SnapDragDeltaPreflight preflightSnapDragDelta() const;
     [[nodiscard]] DragSessionPreflight preflightDragSession(const GizmoHitTest& hit) const;
     [[nodiscard]] DragSessionPreflight preflightDragSession(const GizmoRay& ray,
+
+// --- deepen additive from deepen-b6-gizmo-preflights-258e ---
+struct HitTestPreflight {
+HitTestPreflight preflightHitTest(const GizmoHitTest& hit);
+RayPreflight preflightRay(const GizmoRay& ray, f32 axisLength, f32 pickRadius);
+    [[nodiscard]] HitTestPreflight preflightHitTest(const GizmoHitTest& hit) const;
+    [[nodiscard]] RayPreflight preflightRay(const GizmoRay& ray) const;
