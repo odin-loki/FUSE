@@ -2017,3 +2017,41 @@ void testLaunchProbeUpdateIndexGuard() {
                "tryTrilinearDirectionalProbeIrradiance succeeds with sized cache");
     expectTrue(tryDirectional.x > 0.f, "tryTrilinearDirectionalProbeIrradiance returns non-zero irradiance");
 void testKernelLaunchGuards() {
+
+// --- deepen additive from deepen-b56-ddgi-sample-cache-guards-89c4 ---
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeIndex(3u, desc, clamped),
+               "tryClampProbeIndex succeeds on non-empty grid");
+    expectTrue(clamped == 3u, "tryClampProbeIndex preserves in-range index");
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeIndex(99u, desc, oobClamped),
+               "tryClampProbeIndex succeeds for OOB index");
+    expectTrue(oobClamped == 7u, "tryClampProbeIndex clamps OOB index to max");
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryClampProbeIndex(5u, empty, emptyClamped),
+               "tryClampProbeIndex fails on empty grid");
+    expectTrue(emptyClamped == 0u, "tryClampProbeIndex zeroes out_index on empty grid");
+void testProbeSampleCoordBoundsGuards() {
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryClampProbeSampleCoords(empty, toClamp),
+    expectTrue(toClamp.x0 == originalX0, "tryClampProbeSampleCoords leaves coords unchanged on empty grid");
+    expectTrue(fuse::renderer::ProbeGridLayout::tryClampProbeSampleCoords(desc, toClamp),
+               "tryClampProbeSampleCoords yields in-bounds coords");
+               "tryClampProbeSampleCoords yields valid sample coords");
+    expectTrue(fuse::renderer::ddgi_util::tryClampCacheIndex(desc, 99u, 8u, cacheClamped),
+               "tryClampCacheIndex succeeds on non-empty grid");
+    expectTrue(cacheClamped == 7u, "tryClampCacheIndex clamps OOB probe index");
+    expectTrue(fuse::renderer::ddgi_util::tryClampCacheIndex(desc, 5u, 2u, undersizedClamped),
+               "tryClampCacheIndex succeeds with undersized cache");
+    expectTrue(undersizedClamped == 1u, "tryClampCacheIndex clamps to last cache entry");
+    expectTrue(!fuse::renderer::ddgi_util::tryClampCacheIndex(empty, 0u, 8u, emptyClamped),
+               "tryClampCacheIndex fails on empty grid");
+    expectTrue(emptyClamped == 0u, "tryClampCacheIndex zeroes out_index on empty grid");
+    fuse::renderer::DdgiLaunchRejectReason reason = fuse::renderer::DdgiLaunchRejectReason::None;
+               "tryCanLaunchDdgiProbeUpdate accepts valid indices");
+    expectTrue(reason == fuse::renderer::DdgiLaunchRejectReason::None,
+               "tryCanLaunchDdgiProbeUpdate rejects null indices");
+    expectTrue(reason == fuse::renderer::DdgiLaunchRejectReason::NullIndices,
+    expectTrue(std::string(fuse::renderer::ddgiLaunchRejectReasonLabel(reason)) == "null_indices",
+               "tryCanLaunchDdgiProbeUpdate rejects zero count");
+    expectTrue(reason == fuse::renderer::DdgiLaunchRejectReason::ZeroCount,
+               "tryCanLaunchDdgiProbeUpdate rejects OOB indices");
+    expectTrue(reason == fuse::renderer::DdgiLaunchRejectReason::OutOfRangeIndex,
+               "tryCanLaunchDdgiProbeUpdate rejects empty grid");
+    expectTrue(reason == fuse::renderer::DdgiLaunchRejectReason::EmptyGrid,

@@ -732,3 +732,9 @@ bool probeSampleSkipReasonIsBlocking(ProbeSampleSkipReason reason);
 
 // --- deepen additive from deepen-ddgi-probe-guards-54ac ---
     static bool tryClampProbeIndex(u32 probe_index, const DDGIDesc& desc, u32& out_index);
+
+// --- deepen additive from deepen-b56-ddgi-sample-cache-guards-89c4 ---
+    bool tryClampCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count, u32& out_index);
+enum class DdgiLaunchRejectReason : u8 {
+const char* ddgiLaunchRejectReasonLabel(DdgiLaunchRejectReason reason);
+                                 DdgiLaunchRejectReason& out_reason);

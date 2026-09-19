@@ -2083,3 +2083,19 @@ bool ProbeGridLayout::tryClampProbeIndex(u32 probe_index, const DDGIDesc& desc, 
 
 // --- deepen additive from deepen-ddgi-probe-guards-5f38 ---
     if (!ddgi_util::tryTrilinearDirectionalProbeIrradiance(m_desc,
+
+// --- deepen additive from deepen-b56-ddgi-sample-cache-guards-89c4 ---
+bool tryClampCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count, u32& out_index) {
+const char* ddgiLaunchRejectReasonLabel(DdgiLaunchRejectReason reason) {
+    case DdgiLaunchRejectReason::None:
+    case DdgiLaunchRejectReason::EmptyGrid:
+    case DdgiLaunchRejectReason::NullIndices:
+    case DdgiLaunchRejectReason::ZeroCount:
+    case DdgiLaunchRejectReason::OutOfRangeIndex:
+                                 DdgiLaunchRejectReason& out_reason) {
+        out_reason = DdgiLaunchRejectReason::EmptyGrid;
+        out_reason = DdgiLaunchRejectReason::NullIndices;
+        out_reason = DdgiLaunchRejectReason::ZeroCount;
+            out_reason = DdgiLaunchRejectReason::OutOfRangeIndex;
+    out_reason = DdgiLaunchRejectReason::None;
+    DdgiLaunchRejectReason reason = DdgiLaunchRejectReason::None;
