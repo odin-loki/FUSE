@@ -8,6 +8,43 @@
 
 namespace fuse::physics {
 
+/// Preflight diagnostics for island graph build inputs (B4.4 deepen).
+struct IslandBuildPreflight {
+    u32 bodyCount = 0;
+    u32 contactCount = 0;
+    u32 distanceConstraintCount = 0;
+    u32 inRangeContactCount = 0;
+    u32 outOfRangeContactCount = 0;
+    u32 validContactCount = 0;
+    u32 inRangeDistanceCount = 0;
+    u32 outOfRangeDistanceCount = 0;
+    bool skipped = false;
+
+    bool can_build() const { return !skipped; }
+
+    bool has_in_range_constraints() const {
+        return inRangeContactCount > 0u || inRangeDistanceCount > 0u;
+    }
+};
+
+/// True when both contact body indices are in range for `bodyCount`.
+bool contact_bodies_in_range(u32 bodyCount, u32 bodyA, u32 bodyB);
+
+/// True when both distance-constraint body indices are in range for `bodyCount`.
+bool distance_constraint_bodies_in_range(u32 bodyCount, const DistanceConstraint& constraint);
+
+/// Read-only preflight for island graph build inputs; flags out-of-range constraint body refs.
+IslandBuildPreflight preflight_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Early-out guard when build inputs have no bodies to partition.
+bool should_skip_island_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
@@ -24,6 +61,11 @@ struct ContactIslandGraph {
     void build(u32 bodyCount,
                const std::vector<narrowphase::ContactManifold>& contacts,
                const std::vector<DistanceConstraint>& distanceConstraints);
+
+    /// Guarded build: returns false when preflight skips; otherwise identical to `build`.
+    bool build_guarded(u32 bodyCount,
+                       const std::vector<narrowphase::ContactManifold>& contacts,
+                       const std::vector<DistanceConstraint>& distanceConstraints);
 
     void clear();
 
