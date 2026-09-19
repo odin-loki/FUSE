@@ -3400,3 +3400,9 @@ ProbeTrilinearSampleRejectReason classifyTrilinearSampleRejectAtWorld(const DDGI
     return classifyTrilinearSampleRejectAtCoords(desc, coords, cache, cache_count);
         classifyTrilinearSampleRejectAtWorld(desc, world_position, cache, cache_count);
     const ProbeScheduleRejectReason reject = classifyProbeScheduleAtRateReject(
+
+// --- deepen additive from deepen-ddgi-guards-6d20 ---
+bool preflightCacheLookup(const DDGIDesc& desc,
+            *reason = CacheIndexRejectReason::EmptyGrid;
+bool wouldSkipCacheLookup(const DDGIDesc& desc,
+    return !preflightCacheLookup(desc, cache, cache_count);

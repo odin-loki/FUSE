@@ -1098,3 +1098,7 @@ bool wouldSkipCacheSampling(const DDGIDesc& desc,
 ProbeTrilinearSampleRejectReason classifyTrilinearSampleRejectAtCoords(const DDGIDesc& desc,
 bool preflightTrilinearSampleAtCoords(const DDGIDesc& desc,
 ProbeTrilinearSampleRejectReason classifyTrilinearSampleRejectAtWorld(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-6d20 ---
+bool preflightCacheLookup(const DDGIDesc& desc,
+bool wouldSkipCacheLookup(const DDGIDesc& desc,

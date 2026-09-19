@@ -4862,3 +4862,29 @@ void testKernelPreflightHelpers() {
                "wouldSkipTrilinearSampleAtCoords false for valid coords");
     expectTrue(fuse::renderer::ddgi_util::classifyTrilinearSampleRejectAtCoords(desc, built, cache.data(), 8u) ==
                "classifyTrilinearSampleRejectAtCoords none for valid inputs");
+
+// --- deepen additive from deepen-ddgi-guards-6d20 ---
+    expectTrue(fuse::renderer::preflightProbeGridSource(valid), "default desc passes probe grid source preflight");
+    expectTrue(fuse::renderer::classifyProbeGridSourceReject(valid) ==
+    expectTrue(fuse::renderer::tryValidateProbeGridSource(valid, sourceReason),
+               "tryValidateProbeGridSource succeeds for default desc");
+               "wouldSkip false for clampable sample-coord weights");
+               "wouldSkip true for hard OOB sample-coord indices");
+void testTrilinearAndCachePreflightGuards() {
+               "wouldSkipTrilinearProbeSample false for valid inputs");
+               "preflightTrilinearProbeSample succeeds for valid inputs");
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearProbeSample(desc, oobWeights, cache.data(), 8u),
+               "preflightTrilinearProbeSample succeeds for clampable weights");
+               "strict tryCanSampleAtProbeCoords rejects unordered corners");
+    expectTrue(fuse::renderer::ddgi_util::preflightCacheLookup(desc, cache.data(), 8u),
+               "preflightCacheLookup succeeds for full cache");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheLookup(desc, cache.data(), 8u),
+               "wouldSkipCacheLookup false for full cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheLookup(desc, nullptr, 8u),
+               "wouldSkipCacheLookup true for null cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheLookup(desc, cache.data(), 4u),
+               "wouldSkipCacheLookup true for undersized cache");
+    expectTrue(!fuse::renderer::ddgi_util::preflightCacheLookup(desc, cache.data(), 4u, &cacheReason),
+               "preflightCacheLookup rejects undersized cache");
+               "classifyProbeScheduleRejectAtRate zero rate");
+    testTrilinearAndCachePreflightGuards();
