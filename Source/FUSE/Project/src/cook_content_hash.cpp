@@ -24,6 +24,12 @@ u64 hash_bool(bool value) {
 
 } // namespace
 
+CookFnvInputPreflight preflight_fnv1a64_input(const u8* data, usize size) {
+    CookFnvInputPreflight preflight;
+    preflight.null_data = size > 0 && data == nullptr;
+    return preflight;
+}
+
 u64 fnv1a64_bytes(const u8* data, usize size) {
     if (size == 0) {
         return kFnvOffset;
