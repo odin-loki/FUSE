@@ -2144,3 +2144,8 @@ bool should_skip_island_solve_sleeping_index(const ContactIslandGraph& graph,
     if (should_skip_island_wake_check(island)) {
 bool should_skip_island_wake_check(const ContactIslandGraph::Island& island) {
     if (should_skip_island_solve_sleeping(bodies, island)) {
+
+// --- deepen additive from deepen-pbd-island-guards-2fdd ---
+bool should_skip_island_wake(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island) {
+    const IslandWakePreflight preflight = preflight_island_wake(bodies, island);
+    return !should_skip_island_wake(bodies, island);

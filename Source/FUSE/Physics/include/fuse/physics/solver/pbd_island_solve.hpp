@@ -1322,3 +1322,6 @@ IslandSleepPreflight preflight_island_sleep(const RigidBodySoA& bodies, const Co
 bool should_skip_island_solve_sleeping(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island);
 bool should_skip_island_solve_sleeping_index(const ContactIslandGraph& graph,
 bool should_skip_island_wake_check(const ContactIslandGraph::Island& island);
+
+// --- deepen additive from deepen-pbd-island-guards-2fdd ---
+bool should_skip_island_wake(const RigidBodySoA& bodies, const ContactIslandGraph::Island& island);
