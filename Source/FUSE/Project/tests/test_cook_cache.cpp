@@ -1269,3 +1269,14 @@ void testCookHashPreflightImportPathsAndCacheEntry() {
 // --- deepen additive from deepen-b79-cooker-hash-guards-82a4 ---
     expectTrue(removed == 1u, "prune removes entry probed by would_invalidate_stale_content");
     expectTrue(!cooker.cache().would_invalidate_source(source), "would_invalidate_source false after prune");
+
+// --- deepen additive from deepen-b79-cooker-hash-4af9 ---
+               "revised hash would_invalidate stale stored entry");
+    expectTrue(!cache.would_invalidate_output(""), "empty output path would_invalidate is guarded");
+void testCookCacheProbeInvalidEntrySources() {
+void testCookHashPreflightCacheEntryAndManifestDeps() {
+    const fuse::project::CookHashPreflight shader_preflight =
+    expectTrue(shader_preflight.reason == fuse::project::CookHashRejectReason::UnsupportedAssetKind,
+                   fuse::project::CookHashRejectReason::UnsupportedAssetKind)) == "unsupported_asset_kind",
+    testCookCacheProbeInvalidEntrySources();
+    testCookHashPreflightCacheEntryAndManifestDeps();

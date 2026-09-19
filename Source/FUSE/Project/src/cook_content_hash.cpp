@@ -555,3 +555,8 @@ CookHashPreflight preflight_shader_entry_hash(const CookManifestEntry& entry) {
 
 // --- deepen additive from deepen-b79-cooker-hash-2ca8 ---
 CookHashPreflight preflight_import_paths(const std::string& input_path, const std::string& output_path) {
+
+// --- deepen additive from deepen-b79-cooker-hash-4af9 ---
+    case CookHashRejectReason::UnsupportedAssetKind:
+        preflight.reason = CookHashRejectReason::UnsupportedAssetKind;
+CookHashPreflight preflight_manifest_entry_with_dependencies(const CookManifestEntry& entry,

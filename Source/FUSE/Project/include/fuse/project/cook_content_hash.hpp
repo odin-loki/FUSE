@@ -184,3 +184,6 @@ struct CookFnvInputPreflight {
 
 // --- deepen additive from deepen-b79-cooker-hash-2ca8 ---
 [[nodiscard]] CookHashPreflight preflight_import_paths(const std::string& input_path,
+
+// --- deepen additive from deepen-b79-cooker-hash-4af9 ---
+[[nodiscard]] CookHashPreflight preflight_manifest_entry_with_dependencies(const CookManifestEntry& entry,

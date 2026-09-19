@@ -2057,3 +2057,7 @@ void testCookerReconcileEstimatorGuards() {
     expectTrue(cooker.would_invalidate_stale_dependencies(manifest),
                "would_invalidate_stale_dependencies true after upstream change");
                "would_invalidate_stale_dependencies false after reconcile");
+
+// --- deepen additive from deepen-b79-cooker-hash-4af9 ---
+               "mismatched upstream hash would_invalidate stale upstream");
+               "would_invalidate_downstream reports dependents");
