@@ -2525,6 +2525,7 @@ struct CellPairGenPreflight {
 
 
 
+
 };
 
 /// Count unique body indices in a hash-cell occupant list (cell-pair gen budgeting stub).
@@ -2676,6 +2677,8 @@ bool shouldRunCellCapacityInsert(
 
 
 };
+
+
 
 
 
@@ -3663,6 +3666,7 @@ bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer, DedupeBroadphaseReje
 struct RefineDedupeBroadphasePreflight {
 /// Combined refine/dedupe diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct RefineAndDedupeBroadphasePreflight {
+/// Combined refine + dedupe diagnostics — no mutation (B4.2 deepen pass).
     RefineBroadphasePreflight refine{};
     DedupeBroadphasePreflight dedupe{};
 
@@ -3723,6 +3727,12 @@ RefinePairPreflight preflightRefinePair(
 
 /// Non-mutating refine-pair predicate — true when refine would invalidate the pair (B4.2 deepen pass).
 bool shouldInvalidatePairDuringRefine(
+/// Non-mutating refine+dedupe skip predicate — true when either stage would early-out (B4.2 deepen pass).
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
+
+/// Non-mutating refine+dedupe predicate — mirrors `preflightRefineDedupeBroadphase` (B4.2 deepen pass).
 
 /// Why plane/dynamic merge would early-out (B4.2 deepen pass).
 enum class BroadphaseMergeRejectReason : u8 {
@@ -3894,6 +3904,25 @@ bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSo
 /// Early-out when plane/dynamic merge preflight would reject — same ordering as `canSkipBroadphaseMerge` (B4.2 deepen pass).
 bool wouldSkipBroadphaseMerge(
     BroadphaseMergeRejectReason* reason = nullptr);
+/// Combined broadphase launch + merge diagnostics — no mutation (B4.2 deepen pass).
+struct BroadphaseMergeLaunchPreflight {
+    BroadphasePreflight broadphase{};
+    BroadphaseMergePreflight merge{};
+
+    bool canRunBroadphase() const { return broadphase.canRun(); }
+    bool canMerge() const { return merge.canMerge(); }
+    bool canLaunchMerge() const { return canRunBroadphase() && canMerge(); }
+};
+
+BroadphaseMergeLaunchPreflight preflightBroadphaseMergeLaunch(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating merge-launch skip predicate — true when broadphase or merge would early-out (B4.2 deepen pass).
+bool canSkipBroadphaseMergeLaunch(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
+
+/// Non-mutating merge-launch predicate — mirrors `preflightBroadphaseMergeLaunch` (B4.2 deepen pass).
+bool shouldRunBroadphaseMergeLaunch(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 
 /// Why merge-into-buffer would early-out before pushing pairs (B4.2 deepen pass).
 enum class MergePairsIntoBufferRejectReason : u8 {

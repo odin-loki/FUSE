@@ -2021,6 +2021,12 @@ bool canSkipPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot);
 /// Non-mutating slot-invalidate predicate — mirrors `preflightPairBufferInvalidateSlot` (B4.2 deepen pass).
 bool shouldRunPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot);
 
+/// Non-mutating push skip predicate — inverse of `preflightPairBufferPush` (B4.2 deepen pass).
+bool canSkipPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+
+/// Non-mutating push predicate — mirrors `preflightPairBufferPush` (B4.2 deepen pass).
+bool shouldRunPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+
 /// Why pair-buffer compaction would early-out (B4.2 deepen pass).
 enum class PairBufferCompactionRejectReason : u8 {
     None = 0,
@@ -3186,6 +3192,7 @@ PairBufferWriteRejectReason pairBufferWriteRejectReason(
 
 
 
+
     const PairBufferSoA& buffer,
     u32 slot,
     u32 idxA,
@@ -3299,6 +3306,7 @@ struct PairBufferWritePreflight {
 
 
 PairBufferWritePreflight preflightPairBufferWrite(
+
 
 
 
@@ -3441,6 +3449,8 @@ enum class PairBufferInvalidateSlotRejectReason : u8 {
 
 
 /// Why pair-buffer slot invalidate would early-out (B4.2 deepen pass).
+
+
 
 
 
