@@ -146,6 +146,36 @@ int main() {
     expectTrue(skeletalMount.applyToMountAnimation(skeletalAnim), "skeletal mount applies to animation stub");
     expectTrue(skeletalMount.applyCount() == 1u, "skeletal mount apply counted");
     expectTrue(skeletalAnim.pose().mountPoint == "spine_weapon", "skeletal mount bone name wired");
+    expectTrue(skeletalMount.boneMount().boneIndex == 8u, "skeletal mount resolves bone index");
+
+    static const char* kPriorityConvText =
+        "branch outpost_guard polite\n"
+        "line Hello.\n"
+        "priority 1\n"
+        "branch outpost_guard urgent\n"
+        "line Move along.\n"
+        "priority 5\n";
+    fuse::adventure::ConversationScriptVm priorityVm;
+    expectTrue(fuse::adventure::register_conversation_hooks_from_text(kPriorityConvText, priorityVm),
+               "priority conversation hooks loaded");
+    std::string chosenBranch;
+    expectTrue(priorityVm.chooseHighestPriorityBranch("outpost_guard", ctx, chosenBranch),
+               "conversation VM chooses highest priority branch");
+    expectTrue(chosenBranch == "urgent", "urgent branch wins by priority");
+
+    fuse::adventure::ConversationBranch multiLineBranch;
+    multiLineBranch.id = "multi";
+    multiLineBranch.lines = {"Line one.", "Line two."};
+    fuse::adventure::ConversationInteractable guardMulti({"Halt."}, {multiLineBranch});
+    fuse::adventure::ConversationScriptHook multiHook;
+    multiHook.npcId = "outpost_guard";
+    multiHook.branchId = "multi";
+    multiHook.lines = {"Line one.", "Line two."};
+    scriptVm.registerHook(multiHook);
+    expectTrue(scriptVm.dispatchAllLines("outpost_guard", "multi", ctx, guardMulti) == 2u,
+               "conversation VM dispatches all lines");
+    expectTrue(scriptVm.lastLineDispatched() == "Line two.",
+               "conversation VM records last dispatched line");
 
     static const char* kTsConvText =
         "function onConversation_outpost_guard_welcome() {\n"

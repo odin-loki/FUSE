@@ -63,6 +63,8 @@ bool load_conversation_hooks_from_text(const std::string& convText,
         }
 
         if (line.rfind("priority ", 0) == 0) {
+            std::istringstream priorityStream(line.substr(9));
+            priorityStream >> current.priority;
             continue;
         }
     }
@@ -156,6 +158,14 @@ bool load_conversation_hooks_from_torquescript(const std::string& scriptText,
             std::string token;
             grantStream >> token;
             grantStream >> current.grantItem >> current.grantAmount;
+            continue;
+        }
+
+        if (line.find("priority ") != std::string::npos) {
+            std::istringstream priorityStream(line);
+            std::string token;
+            priorityStream >> token;
+            priorityStream >> current.priority;
             continue;
         }
     }

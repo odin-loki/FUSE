@@ -2017,6 +2017,28 @@ void testUaiskInotifyFileWatchProgress() {
     fs::remove(tempPath);
 }
 
+void testUaiskFSEventsBackendStub() {
+#if defined(__APPLE__)
+    namespace fs = std::filesystem;
+    const fs::path tempPath = fs::temp_directory_path() / "fuse_fsevents_wave15.bt";
+    {
+        std::ofstream out(tempPath);
+        out << "bb.action.set_flag flag=1\nroot=0\n";
+    }
+    fuse::ai::uaisk::OsFileWatchHandle handle;
+    expectTrue(fuse::ai::uaisk::createOsFileWatch(tempPath.string(), handle),
+               "FSEvents watch handle created on macOS");
+    expectTrue(handle.backend == fuse::ai::uaisk::OsFileWatchBackend::FSEvents,
+               "FSEvents backend selected on macOS");
+    fuse::ai::uaisk::closeOsFileWatch(handle);
+    fs::remove(tempPath);
+#else
+    fuse::ai::uaisk::OsFileWatchHandle handle;
+    expectTrue(handle.backend == fuse::ai::uaisk::OsFileWatchBackend::StatPoll,
+               "non-macOS builds use stat poll backend by default");
+#endif
+}
+
 void testUaiskCodegenSyntaxTreePath() {
     static const char* kCsText =
         "class SquadPatrol : BehaviorBase {\n"
@@ -2213,6 +2235,7 @@ int main() {
     testUaiskTreeFileWatchReload();
     testUaiskTreeOsFileWatchProgress();
     testUaiskInotifyFileWatchProgress();
+    testUaiskFSEventsBackendStub();
     testUaiskCodegenSyntaxTreePath();
     testReloadCodegenProfile();
     testRuntimeTreeReloadPreservesBlackboard();

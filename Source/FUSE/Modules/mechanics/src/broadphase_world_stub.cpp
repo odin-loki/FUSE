@@ -1,5 +1,7 @@
 #include <fuse/mechanics/broadphase_world_stub.hpp>
 
+#include <cmath>
+
 namespace fuse::mechanics {
 
 void BroadphaseWorldStub::addBody(const BroadphaseWorldBody& body) {
@@ -65,6 +67,44 @@ u32 BroadphaseWorldStub::queryAabbOverlaps(float minX, float minY, float minZ, f
     for (const BroadphaseWorldBody& body : m_bodies) {
         if (body.x >= minX && body.x <= maxX && body.y >= minY && body.y <= maxY && body.z >= minZ &&
             body.z <= maxZ) {
+            ++m_lastOverlapCount;
+        }
+    }
+
+    return m_lastOverlapCount;
+}
+
+u32 BroadphaseWorldStub::queryRaycastStub(float originX, float originY, float originZ, float dirX,
+                                          float dirY, float dirZ, float maxDistance) {
+    ++m_raycastQueryCount;
+    m_lastOverlapCount = 0;
+
+    const float dirLen = std::sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+    if (dirLen <= 0.0001f || maxDistance <= 0.f) {
+        return 0;
+    }
+
+    const float invLen = 1.f / dirLen;
+    const float ndx = dirX * invLen;
+    const float ndy = dirY * invLen;
+    const float ndz = dirZ * invLen;
+
+    for (const BroadphaseWorldBody& body : m_bodies) {
+        const float toX = body.x - originX;
+        const float toY = body.y - originY;
+        const float toZ = body.z - originZ;
+        const float projection = toX * ndx + toY * ndy + toZ * ndz;
+        if (projection < 0.f || projection > maxDistance) {
+            continue;
+        }
+
+        const float closestX = originX + ndx * projection;
+        const float closestY = originY + ndy * projection;
+        const float closestZ = originZ + ndz * projection;
+        const float dx = body.x - closestX;
+        const float dy = body.y - closestY;
+        const float dz = body.z - closestZ;
+        if ((dx * dx + dy * dy + dz * dz) <= 1.f) {
             ++m_lastOverlapCount;
         }
     }

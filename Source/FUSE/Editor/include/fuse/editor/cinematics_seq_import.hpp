@@ -19,6 +19,7 @@ struct SeqPreviewPaneSample {
     float mount_yaw_deg = 0.f;
     float mount_pitch_deg = 0.f;
     float mount_roll_deg = 0.f;
+    std::string bone_name;
     float sprite_x = 0.f;
     float sprite_y = 0.f;
     float camera_fov = 0.f;
@@ -50,6 +51,7 @@ public:
     bool wirePreviewPaneToHost(fuse::cinematics::TimelineMs initialTimeMs = 0);
     [[nodiscard]] const SeqPreviewPaneSample& lastWiredPreviewSample() const { return m_lastWiredPreviewSample; }
     [[nodiscard]] u32 previewPaneWireCount() const { return m_previewPaneWireCount; }
+    [[nodiscard]] u32 previewPaneScrubCount() const { return m_previewPaneScrubCount; }
     [[nodiscard]] u32 scrubPreviewPostCount() const { return m_scrubPreviewPostCount; }
 
 private:
@@ -58,6 +60,7 @@ private:
     u32 m_importCount = 0;
     u32 m_scrubPreviewPostCount = 0;
     u32 m_previewPaneWireCount = 0;
+    u32 m_previewPaneScrubCount = 0;
     SeqPreviewPaneSample m_lastWiredPreviewSample{};
 };
 

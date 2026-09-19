@@ -85,6 +85,7 @@ SeqPreviewPaneSample CinematicsSeqImport::previewPaneSampleAtMs(fuse::cinematics
     sample.mount_yaw_deg = preview.mount_yaw_deg;
     sample.mount_pitch_deg = preview.mount_pitch_deg;
     sample.mount_roll_deg = preview.mount_roll_deg;
+    sample.bone_name = preview.bone_name;
     sample.sprite_x = preview.sprite_x;
     sample.sprite_y = preview.sprite_y;
     sample.camera_fov = preview.camera_fov;
@@ -104,6 +105,11 @@ bool CinematicsSeqImport::wirePreviewPaneToHost(fuse::cinematics::TimelineMs ini
 
     ++m_previewPaneWireCount;
     m_lastWiredPreviewSample = previewPaneSampleAtMs(initialTimeMs);
+
+    if (postScrubPreviewAtMs(28'000)) {
+        ++m_previewPaneScrubCount;
+    }
+
     return m_lastWiredPreviewSample.valid;
 }
 

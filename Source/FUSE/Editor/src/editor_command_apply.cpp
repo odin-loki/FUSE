@@ -476,7 +476,10 @@ bool EditorHost::reloadAiCodegenProfile(u32 profileId, const std::string& uaiskM
 bool EditorHost::reloadAiTreeFromDisk(u32 profileId, const std::string& watchPath) {
     m_aiTreeFileWatch.watchProfileFromDisk(watchPath, profileId);
     std::string error;
-    u32 reloaded = m_aiTreeFileWatch.pollOsFileChanges(m_pieBehaviorRuntime, &error);
+    u32 reloaded = m_aiTreeFileWatch.pollInotifyFileChanges(m_pieBehaviorRuntime, &error);
+    if (reloaded == 0u) {
+        reloaded = m_aiTreeFileWatch.pollOsFileChanges(m_pieBehaviorRuntime, &error);
+    }
     if (reloaded == 0u) {
         reloaded = m_aiTreeFileWatch.pollReloads(m_pieBehaviorRuntime, &error);
     }

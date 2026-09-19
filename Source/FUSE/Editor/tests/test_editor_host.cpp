@@ -732,6 +732,8 @@ void testCinematicsSeqPreviewPaneWire() {
     expectTrue(host.cinematicsSeqPreviewPaneWireCount() == 1u, "host preview pane wire counted on game thread");
     expectTrue(importer.lastWiredPreviewSample().valid, "wired preview sample valid");
     expectTrue(importer.lastWiredPreviewSample().mount_point == "cockpit", "wired preview mount point");
+    expectTrue(importer.previewPaneScrubCount() == 1u, "preview pane follow-up scrub counted");
+    expectTrue(importer.scrubPreviewPostCount() == 1u, "preview pane scrub post counted");
 }
 
 void testCinematicsSeqImportPostsAsset() {

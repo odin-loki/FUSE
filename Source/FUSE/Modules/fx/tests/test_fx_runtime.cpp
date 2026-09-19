@@ -414,7 +414,25 @@ void testParticlePoolCudaWriteback() {
     fuse::frame::FrameCtx ctx;
     gpuBackend.cudaDispatchOrSkip(ctx);
     gpuBackend.syncAliveFlagsToCpu(pool);
-    expectTrue(gpuBackend.writebackCount() == 1u, "gpu writeback counted");
+    gpuBackend.syncPositionsToCpu(pool);
+    expectTrue(gpuBackend.writebackCount() >= 1u, "gpu writeback counted");
+    expectTrue(gpuBackend.positionWritebackCount() == 1u, "gpu position writeback counted");
+}
+
+void testAfxMissionBodyCodegen() {
+    static const char* kMisText =
+        "new SimObject(SparkEmitter) { effectName = \"spark\"; }\n"
+        "new SimObject(MuzzleFlashEmitter) { effectName = \"muzzle\"; }\n";
+
+    fuse::fx::AfxMissionBody body;
+    std::string error;
+    expectTrue(fuse::fx::parse_afx_mission_body_from_mis(kMisText, body, &error), ".mis body parse succeeds");
+    expectTrue(!body.simObjectBodies.empty(), ".mis body simobject block parsed");
+
+    std::vector<fuse::fx::AfxMissionBodyEffect> effects;
+    expectTrue(fuse::fx::codegen_effects_from_mission_body(body, effects) == 2u,
+               ".mis body codegen emits effects");
+    expectTrue(effects[0].effectId == "spark_burst", "SparkEmitter maps to spark_burst");
 }
 
 void testAfxMissionOnTickHook() {
@@ -530,6 +548,7 @@ int main() {
     testAfxMissionScriptVm();
     testAfxMissionLoaderFromMis();
     testAfxMissionBodyParse();
+    testAfxMissionBodyCodegen();
     testAfxMissionLoaderVmBridge();
     testAfxMissionScriptVmImpactHook();
     testParticlePoolCudaNotSyncedSkip();

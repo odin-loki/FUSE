@@ -78,6 +78,19 @@ ShapeBaseMountOffset VActorBridge::mount_offset_for(const std::string& mount_poi
     return {};
 }
 
+ShapeBaseBoneAttach VActorBridge::bone_attach_for(const std::string& bone_name) const {
+    if (bone_name == "spine_mount" || bone_name == "cockpit") {
+        return {"spine_mount", 0.f, 0.25f, 1.2f, 15.f, -5.f, 0.f};
+    }
+    if (bone_name == "turret_pivot" || bone_name == "turret") {
+        return {"turret_pivot", 0.f, 1.1f, 1.8f, 90.f, 10.f, -15.f};
+    }
+    if (bone_name == "weapon_shoulder") {
+        return {"weapon_shoulder", 0.15f, 0.35f, 0.f, 0.f, -8.f, 5.f};
+    }
+    return {bone_name};
+}
+
 void VActorBridge::apply_shapebase_attach(const std::string& actor_id,
                                           const std::string& mount_point,
                                           float mount_yaw_deg) {
@@ -114,6 +127,31 @@ void VActorBridge::apply_shapebase_attach(const std::string& actor_id,
     state.mounted = true;
     state.runtimeAttached = true;
     ++m_shapebaseAttachCount;
+    ++m_runtimeAttachCount;
+    sync_bound_objects();
+}
+
+void VActorBridge::apply_shapebase_bone_attach(const std::string& actor_id, const std::string& bone_name) {
+    const ShapeBaseBoneAttach boneAttach = bone_attach_for(bone_name);
+    BoundActorState& state = m_actors[actor_id];
+    if (state.object != nullptr) {
+        state.baseX = state.object->x();
+        state.baseY = state.object->y();
+        state.baseZ = state.object->z();
+    }
+
+    state.boneName = boneAttach.bone_name;
+    state.offset.x = boneAttach.offset_x;
+    state.offset.y = boneAttach.offset_y;
+    state.offset.z = boneAttach.offset_z;
+    state.offset.yaw_deg = boneAttach.yaw_deg;
+    state.offset.pitch_deg = boneAttach.pitch_deg;
+    state.offset.roll_deg = boneAttach.roll_deg;
+    state.offset.orientation = euler_deg_to_quaternion(
+        MountEulerDeg{boneAttach.yaw_deg, boneAttach.pitch_deg, boneAttach.roll_deg});
+    state.mounted = true;
+    state.runtimeAttached = true;
+    ++m_shapebaseBoneAttachCount;
     ++m_runtimeAttachCount;
     sync_bound_objects();
 }

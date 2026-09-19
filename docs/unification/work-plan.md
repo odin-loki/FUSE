@@ -292,7 +292,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **MT note** | AI/FX jobify per architecture §7 |
 | **Exit** | Per-module U5 gates in prestarter §10 |
 | **Deps** | WP-06 |
-| **Status** | ✅ Prestarter §10 gates closed; post-gate ore through U5 wave 14 (inotify AST codegen, ShapeBase pitch/roll, CUDA integrate, GMK Camera/Follow, skeletal/TorqueScript conv) — [U5-MODULES.md](./U5-MODULES.md) |
+| **Status** | ✅ Prestarter §10 gates closed; post-gate ore through U5 wave 15 (FSEvents/inotify reload, bone attach preview, CUDA writeback, Path/Timer GMK, conv VM priority) — [U5-MODULES.md](./U5-MODULES.md) |
 
 ---
 

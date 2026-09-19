@@ -2,6 +2,8 @@
 #include <fuse/mechanics/follow_component.hpp>
 #include <fuse/mechanics/light_component.hpp>
 #include <fuse/mechanics/move_component.hpp>
+#include <fuse/mechanics/path_component.hpp>
+#include <fuse/mechanics/timer_component.hpp>
 #include <fuse/mechanics/broadphase_world_stub.hpp>
 #include <fuse/core/init.hpp>
 
@@ -70,6 +72,19 @@ int main() {
     expectTrue(world.bodyCount() == 1u, "broadphase world body count after remove");
     expectTrue(world.queryAabbOverlaps(-1.f, -1.f, -1.f, 2.f, 2.f, 2.f) >= 1u,
                "broadphase world aabb query finds body");
+    expectTrue(world.queryRaycastStub(0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 5.f) >= 1u,
+               "broadphase world raycast stub finds body");
+
+    fuse::mechanics::PathComponent path("outpost_patrol");
+    path.setPosition(0.f, 0.f, 0.f);
+    path.addWaypoint(4.f, 0.f, 0.f);
+    path.advanceAlongPath(2.f, 1.f);
+    expectTrue(path.tickCount() == 1u, "path component tick counted");
+    expectTrue(path.x() > 0.f, "path component advances along waypoints");
+
+    fuse::mechanics::TimerComponent timer("outpost_timer", 0.5f);
+    timer.tick(1.1f);
+    expectTrue(timer.fireCount() == 2u, "timer component fires periodically");
 
     fuse::core::shutdown();
 

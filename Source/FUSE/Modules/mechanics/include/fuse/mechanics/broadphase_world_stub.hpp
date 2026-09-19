@@ -30,16 +30,20 @@ public:
     [[nodiscard]] u32 overlapQueryCount() const { return m_overlapQueryCount; }
     [[nodiscard]] u32 lastOverlapCount() const { return m_lastOverlapCount; }
     [[nodiscard]] u32 aabbQueryCount() const { return m_aabbQueryCount; }
+    [[nodiscard]] u32 raycastQueryCount() const { return m_raycastQueryCount; }
 
     [[nodiscard]] u32 queryOverlaps(BroadphaseProxyFilter filterA, BroadphaseProxyFilter filterB);
     [[nodiscard]] u32 queryAabbOverlaps(float minX, float minY, float minZ, float maxX, float maxY,
                                         float maxZ);
+    [[nodiscard]] u32 queryRaycastStub(float originX, float originY, float originZ, float dirX, float dirY,
+                                       float dirZ, float maxDistance);
 
 private:
     std::vector<BroadphaseWorldBody> m_bodies;
     u32 m_overlapQueryCount = 0;
     u32 m_lastOverlapCount = 0;
     u32 m_aabbQueryCount = 0;
+    u32 m_raycastQueryCount = 0;
 };
 
 } // namespace fuse::mechanics

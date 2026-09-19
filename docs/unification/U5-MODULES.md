@@ -302,6 +302,16 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_mechanics` | GMK `CameraComponent` + `FollowComponent` leaves; `BroadphaseWorldStub` remove/AABB query deepen |
 | `fuse_adventure` | `SkeletalMountStub` bone mount pose; `register_conversation_hooks_from_torquescript()` bridge deepen |
 
+#### Landed wave 15 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | macOS FSEvents backend stub; inotify `IN_DELETE_SELF` deepen; editor tree reload polls inotify first; syntax-tree codegen preferred for import/reload |
+| `fuse_cinematics` | `VActorBridge::apply_shapebase_bone_attach()` bone slot stubs; Qt preview pane follow-up scrub + `bone_name` in scrub sample |
+| `fuse_fx` | `syncPositionsToCpu()` CUDA CPU writeback; `codegen_effects_from_mission_body()` SimObject body codegen |
+| `fuse_mechanics` | GMK `PathComponent` + `TimerComponent` leaves; `BroadphaseWorldStub::queryRaycastStub()` Bullet-style ray deepen |
+| `fuse_adventure` | `SkeletalMountStub` bone-index resolve + offset deepen; conversation VM multi-line dispatch + priority branch selection |
+
 ---
 
 ## 8. Related docs

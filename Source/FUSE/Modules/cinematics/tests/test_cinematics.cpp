@@ -1377,6 +1377,20 @@ void testVActorShapeBaseAttach() {
     expectNear(agent.rollDeg(), 0.f, 0.001f, "cockpit mount applies ShapeBase roll");
 }
 
+void testVActorShapeBaseBoneAttach() {
+    fuse::SceneObject3D agent("agent_3d");
+    agent.setZ(0.f);
+
+    fuse::cinematics::VActorBridge bridge;
+    bridge.bind("agent_3d", &agent);
+    bridge.apply_shapebase_bone_attach("agent_3d", "spine_mount");
+
+    expectTrue(bridge.shapebaseBoneAttachCount() == 1u, "shapebase bone attach counter");
+    expectTrue(bridge.is_runtime_attached("agent_3d"), "bone attach sets runtime attach flag");
+    expectNear(agent.pitchDeg(), -5.f, 0.001f, "bone attach applies pitch");
+    expectNear(agent.z(), 1.2f, 0.001f, "bone attach applies Z offset");
+}
+
 void testMotionTrackPathSampling() {
     fuse::cinematics::MotionTrack track("ActorPath");
     track.set_target_object_id("hero");
@@ -1596,6 +1610,7 @@ int main() {
     testActorTrackMountUnmount();
     testLoadThirtySecondSequenceFromAsset();
     testVActorShapeBaseAttach();
+    testVActorShapeBaseBoneAttach();
     testVActorBridgeDrainCues();
     testOutpostIntro30sStub();
     testHybridTimelineDrive();

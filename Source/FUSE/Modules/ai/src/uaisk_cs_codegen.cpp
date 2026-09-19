@@ -267,7 +267,8 @@ bool importCodegenProfile(std::string_view csModule,
                           BehaviorRuntime& runtime,
                           std::string* errorOut) {
     BehaviorTree tree;
-    if (!codegenTreeFromCs(csModule, csText, tree, errorOut)) {
+    if (!codegenTreeFromSyntaxTree(csModule, csText, tree, errorOut) &&
+        !codegenTreeFromCs(csModule, csText, tree, errorOut)) {
         return false;
     }
     runtime.registerTreeProfile(profileId, tree);
@@ -281,7 +282,8 @@ bool reloadCodegenProfile(std::string_view csModule,
                           TreeReloadPolicy policy,
                           std::string* errorOut) {
     BehaviorTree tree;
-    if (!codegenTreeFromCs(csModule, csText, tree, errorOut)) {
+    if (!codegenTreeFromSyntaxTree(csModule, csText, tree, errorOut) &&
+        !codegenTreeFromCs(csModule, csText, tree, errorOut)) {
         return false;
     }
     runtime.reloadTreeProfile(profileId, tree, policy);

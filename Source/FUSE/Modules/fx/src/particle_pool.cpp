@@ -79,4 +79,18 @@ void ParticlePool::setSlotAlive(u32 slotIndex, bool alive) {
     }
 }
 
+void ParticlePool::setSlotMotion(u32 slotIndex, float px, float py, float pz, float vx, float vy, float vz) {
+    if (slotIndex >= m_slots.size()) {
+        return;
+    }
+
+    ParticleSlot& slot = m_slots[slotIndex];
+    slot.position.x = px;
+    slot.position.y = py;
+    slot.position.z = pz;
+    slot.velocity.x = vx;
+    slot.velocity.y = vy;
+    slot.velocity.z = vz;
+}
+
 } // namespace fuse::fx

@@ -22,6 +22,16 @@ struct ShapeBaseMountOffset {
     MountQuaternion orientation{};
 };
 
+struct ShapeBaseBoneAttach {
+    std::string bone_name;
+    float offset_x = 0.f;
+    float offset_y = 0.f;
+    float offset_z = 0.f;
+    float yaw_deg = 0.f;
+    float pitch_deg = 0.f;
+    float roll_deg = 0.f;
+};
+
 /// Headless VActor mount bridge — maps actor_id strings to SceneObject3D instances.
 class VActorBridge {
 public:
@@ -34,14 +44,18 @@ public:
     void apply_shapebase_attach(const std::string& actor_id,
                               const std::string& mount_point,
                               float mount_yaw_deg = 0.f);
+    /// Apply ShapeBase bone attach offset (VActor bone slot ore without DTS skeleton).
+    void apply_shapebase_bone_attach(const std::string& actor_id, const std::string& bone_name);
     void sync_bound_objects();
     void sync_motion_from_timeline(const Timeline& timeline);
 
     const std::string& mount_point_for(const std::string& actor_id) const;
     ShapeBaseMountOffset mount_offset_for(const std::string& mount_point) const;
+    ShapeBaseBoneAttach bone_attach_for(const std::string& bone_name) const;
     u32 mountCount() const { return m_mountCount; }
     u32 unmountCount() const { return m_unmountCount; }
     u32 shapebaseAttachCount() const { return m_shapebaseAttachCount; }
+    u32 shapebaseBoneAttachCount() const { return m_shapebaseBoneAttachCount; }
     u32 runtimeAttachCount() const { return m_runtimeAttachCount; }
     bool is_runtime_attached(const std::string& actor_id) const;
     u32 syncCount() const { return m_syncCount; }
@@ -54,6 +68,7 @@ private:
         float baseY = 0.f;
         float baseZ = 0.f;
         ShapeBaseMountOffset offset{};
+        std::string boneName;
         bool mounted = false;
         bool runtimeAttached = false;
         float motionX = 0.f;
@@ -66,6 +81,7 @@ private:
     u32 m_mountCount = 0;
     u32 m_unmountCount = 0;
     u32 m_shapebaseAttachCount = 0;
+    u32 m_shapebaseBoneAttachCount = 0;
     u32 m_runtimeAttachCount = 0;
     u32 m_syncCount = 0;
     u32 m_motionSyncCount = 0;

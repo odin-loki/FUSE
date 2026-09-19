@@ -34,12 +34,14 @@ public:
     u32 cudaDispatchCount() const { return m_cudaDispatchCount; }
     u32 cudaSkipCount() const { return m_cudaSkipCount; }
     u32 writebackCount() const { return m_writebackCount; }
+    u32 positionWritebackCount() const { return m_positionWritebackCount; }
     bool cudaEnabled() const { return m_cudaEnabled; }
     bool syncedFromCpu() const { return m_syncedFromCpu; }
     ParticlePoolCudaSkipReason lastCudaSkipReason() const { return m_lastCudaSkipReason; }
 
     void syncFromCpu(const ParticlePool& pool);
     void syncAliveFlagsToCpu(ParticlePool& pool);
+    void syncPositionsToCpu(ParticlePool& pool);
     void tick(const frame::FrameCtx& ctx);
     void cudaDispatchOrSkip(const frame::FrameCtx& ctx);
 
@@ -52,6 +54,7 @@ private:
     u32 m_cudaDispatchCount = 0;
     u32 m_cudaSkipCount = 0;
     u32 m_writebackCount = 0;
+    u32 m_positionWritebackCount = 0;
     u32 m_deviceSsboCapacityBytes = 0;
     u32 m_deviceSsboAllocCount = 0;
     u32 m_deviceSsboReuseCount = 0;

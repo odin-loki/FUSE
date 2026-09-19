@@ -18,6 +18,7 @@ struct ConversationScriptHook {
     u32 minInventoryCount = 0;
     std::string grantItem;
     u32 grantAmount = 0;
+    u32 priority = 0;
 };
 
 /// Dispatches conversation branch hooks into ConversationInteractable (3DAAK script VM stub).
@@ -42,6 +43,10 @@ public:
                                        const std::string& branchId,
                                        InteractContext& ctx,
                                        ConversationInteractable& target);
+
+    [[nodiscard]] bool chooseHighestPriorityBranch(const std::string& npcId,
+                                                   const InteractContext& ctx,
+                                                   std::string& outBranchId) const;
 
     u32 dispatchCount() const { return m_dispatchCount; }
     u32 lineDispatchCount() const { return m_lineDispatchCount; }

@@ -24,6 +24,8 @@ add_library(fuse_mechanics STATIC
     src/move_component.cpp
     src/camera_component.cpp
     src/follow_component.cpp
+    src/path_component.cpp
+    src/timer_component.cpp
     src/broadphase_world_stub.cpp
     src/inventory_provider.cpp
     src/interact_action.cpp
@@ -54,6 +56,8 @@ add_library(fuse_mechanics STATIC
     include/fuse/mechanics/move_component.hpp
     include/fuse/mechanics/camera_component.hpp
     include/fuse/mechanics/follow_component.hpp
+    include/fuse/mechanics/path_component.hpp
+    include/fuse/mechanics/timer_component.hpp
     include/fuse/mechanics/broadphase_world_stub.hpp
     include/fuse/mechanics/inventory_provider.hpp
     include/fuse/mechanics/interact_action.hpp

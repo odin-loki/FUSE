@@ -45,6 +45,7 @@ public:
     void clear();
 
     void setSlotAlive(u32 slotIndex, bool alive);
+    void setSlotMotion(u32 slotIndex, float px, float py, float pz, float vx, float vy, float vz);
 
     const std::vector<ParticleSlot>& slots() const { return m_slots; }
 

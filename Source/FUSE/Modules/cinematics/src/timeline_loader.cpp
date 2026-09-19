@@ -315,9 +315,13 @@ bool scrub_seq_preview(const std::string& text, TimelineMs time_ms, Timeline& ou
                 if (outPreview.mount_point == "cockpit") {
                     outPreview.mount_pitch_deg = -5.f;
                     outPreview.mount_roll_deg = 0.f;
+                    outPreview.bone_name = "spine_mount";
                 } else if (outPreview.mount_point == "turret") {
                     outPreview.mount_pitch_deg = 10.f;
                     outPreview.mount_roll_deg = -15.f;
+                    outPreview.bone_name = "turret_pivot";
+                } else if (!outPreview.mount_point.empty()) {
+                    outPreview.bone_name = outPreview.mount_point;
                 }
                 break;
             }

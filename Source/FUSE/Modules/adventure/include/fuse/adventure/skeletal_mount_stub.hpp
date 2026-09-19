@@ -11,6 +11,7 @@ namespace fuse::adventure {
 
 struct SkeletalBoneMount {
     std::string boneName = "weapon_shoulder";
+    u32 boneIndex = 0;
     f32 offsetX = 0.f;
     f32 offsetY = 0.f;
     f32 offsetZ = 0.f;
@@ -25,6 +26,7 @@ public:
     void setBoneMount(const SkeletalBoneMount& mount) { m_mount = mount; }
     const SkeletalBoneMount& boneMount() const { return m_mount; }
 
+    u32 resolveBoneIndex(const std::string& boneName) const;
     bool applyToMountAnimation(WeaponMountAnimationStub& mountAnim);
     u32 applyCount() const { return m_applyCount; }
 

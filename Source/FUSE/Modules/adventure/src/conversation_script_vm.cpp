@@ -94,15 +94,40 @@ u32 ConversationScriptVm::dispatchAllLines(const std::string& npcId,
 
     u32 dispatched = 0;
     for (const std::string& line : it->second.lines) {
-        (void)line;
+        m_lastLineDispatched = line;
         ++dispatched;
         ++m_lineDispatchCount;
     }
 
     if (dispatchBranch(npcId, branchId, ctx, target)) {
+        if (!it->second.lines.empty()) {
+            m_lastLineDispatched = it->second.lines.back();
+        }
         return dispatched;
     }
     return 0;
+}
+
+bool ConversationScriptVm::chooseHighestPriorityBranch(const std::string& npcId,
+                                                       const InteractContext& ctx,
+                                                       std::string& outBranchId) const {
+    u32 bestPriority = 0;
+    bool found = false;
+    for (const auto& entry : m_hooks) {
+        const ConversationScriptHook& hook = entry.second;
+        if (hook.npcId != npcId) {
+            continue;
+        }
+        if (!canDispatchBranch(npcId, hook.branchId, ctx)) {
+            continue;
+        }
+        if (!found || hook.priority > bestPriority) {
+            bestPriority = hook.priority;
+            outBranchId = hook.branchId;
+            found = true;
+        }
+    }
+    return found;
 }
 
 void registerOutpostConversationScriptHooks(ConversationScriptVm& vm) {

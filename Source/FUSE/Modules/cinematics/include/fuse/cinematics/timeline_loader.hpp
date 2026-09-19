@@ -32,6 +32,7 @@ struct SeqScrubPreview {
     float mount_yaw_deg = 0.f;
     float mount_pitch_deg = 0.f;
     float mount_roll_deg = 0.f;
+    std::string bone_name;
 };
 
 /// Editor scrub stub — load `.seq` text and seek playhead without consuming cues.

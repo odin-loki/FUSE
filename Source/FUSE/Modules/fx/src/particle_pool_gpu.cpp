@@ -79,6 +79,31 @@ void ParticlePoolGpuBackend::syncAliveFlagsToCpu(ParticlePool& pool) {
     ++m_writebackCount;
 }
 
+void ParticlePoolGpuBackend::syncPositionsToCpu(ParticlePool& pool) {
+    if (!m_syncedFromCpu || m_packed.empty()) {
+        return;
+    }
+
+    const u32 count = std::min(m_capacity, static_cast<u32>(pool.slots().size()));
+    usize offset = 0;
+    for (u32 slotIndex = 0; slotIndex < count; ++slotIndex) {
+        float position[3];
+        std::memcpy(position, m_packed.data() + offset, sizeof(float) * 3);
+        offset += sizeof(float) * 3;
+        float velocity[3];
+        std::memcpy(velocity, m_packed.data() + offset, sizeof(float) * 3);
+        offset += sizeof(float) * 3;
+        pool.setSlotMotion(slotIndex, position[0], position[1], position[2], velocity[0], velocity[1],
+                           velocity[2]);
+        offset += sizeof(float) * 2;
+        offset += sizeof(float);
+        offset += sizeof(u32);
+    }
+
+    ++m_positionWritebackCount;
+    ++m_writebackCount;
+}
+
 void ParticlePoolGpuBackend::tick(const frame::FrameCtx& ctx) {
     cudaDispatchOrSkip(ctx);
 }

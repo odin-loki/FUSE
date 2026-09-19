@@ -55,6 +55,29 @@ bool appendSimObjectName(AfxMissionBody& body, const std::string& name) {
     return true;
 }
 
+std::string effectIdForSimObjectName(const std::string& name) {
+    if (name.find("Spark") != std::string::npos || name == "SparkEmitter") {
+        return "spark_burst";
+    }
+    if (name.find("Muzzle") != std::string::npos || name == "MuzzleFlashEmitter") {
+        return "muzzle_flash";
+    }
+    if (name.find("Fireball") != std::string::npos) {
+        return "fireball";
+    }
+    return name;
+}
+
+bool appendSimObjectBody(AfxMissionBody& body, const std::string& name, const std::string& blockText) {
+    for (const auto& existing : body.simObjectBodies) {
+        if (existing.first == name) {
+            return false;
+        }
+    }
+    body.simObjectBodies.push_back({name, blockText});
+    return true;
+}
+
 bool appendHook(std::vector<AfxMissionHook>& hooks, const std::string& functionName) {
     if (functionName == "onSpellCast") {
         hooks.push_back({"AFXDemo_Minimal", "on_spell_cast", "fireball"});
@@ -122,7 +145,15 @@ bool parse_afx_mission_body_from_mis(const std::string& misText, AfxMissionBody&
             const std::size_t paren = line.find('(');
             const std::size_t close = line.find(')', paren);
             if (paren != std::string::npos && close != std::string::npos) {
-                appendSimObjectName(outBody, trim(line.substr(paren + 1, close - paren - 1)));
+                const std::string simName = trim(line.substr(paren + 1, close - paren - 1));
+                appendSimObjectName(outBody, simName);
+                const std::size_t braceOpen = line.find('{', close);
+                if (braceOpen != std::string::npos) {
+                    const std::size_t braceClose = line.rfind('}');
+                    if (braceClose > braceOpen) {
+                        appendSimObjectBody(outBody, simName, trim(line.substr(braceOpen, braceClose - braceOpen + 1)));
+                    }
+                }
             }
             continue;
         }
@@ -164,6 +195,35 @@ bool parse_afx_mission_body_from_mis(const std::string& misText, AfxMissionBody&
     }
 
     return true;
+}
+
+u32 codegen_effects_from_mission_body(const AfxMissionBody& body,
+                                      std::vector<AfxMissionBodyEffect>& outEffects) {
+    outEffects.clear();
+    for (const std::string& simName : body.simObjectNames) {
+        AfxMissionBodyEffect effect;
+        effect.simObjectName = simName;
+        effect.effectId = effectIdForSimObjectName(simName);
+        outEffects.push_back(std::move(effect));
+    }
+    for (const auto& bodyPair : body.simObjectBodies) {
+        bool found = false;
+        for (AfxMissionBodyEffect& effect : outEffects) {
+            if (effect.simObjectName == bodyPair.first) {
+                if (bodyPair.second.find("spark") != std::string::npos) {
+                    effect.effectId = "spark_burst";
+                } else if (bodyPair.second.find("muzzle") != std::string::npos) {
+                    effect.effectId = "muzzle_flash";
+                }
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            outEffects.push_back({bodyPair.first, effectIdForSimObjectName(bodyPair.first)});
+        }
+    }
+    return static_cast<u32>(outEffects.size());
 }
 
 bool load_afx_mission_hooks_from_mis(const std::string& misText,
@@ -241,6 +301,8 @@ bool register_afx_mission_from_mis(const std::string& misText, FxComposer& compo
                                    std::string* errorOut) {
     AfxMissionBody body;
     parse_afx_mission_body_from_mis(misText, body);
+    std::vector<AfxMissionBodyEffect> bodyEffects;
+    codegen_effects_from_mission_body(body, bodyEffects);
 
     std::vector<AfxMissionHook> hooks;
     if (!load_afx_mission_hooks_from_mis(misText, hooks, errorOut)) {
@@ -258,6 +320,15 @@ bool register_afx_mission_from_mis(const std::string& misText, FxComposer& compo
     apply_afx_mission_spell_assignments(misText, hooks);
     vm.registerHooks(hooks);
 
+    for (const AfxMissionBodyEffect& bodyEffect : bodyEffects) {
+        if (bodyEffect.effectId == "spark_burst") {
+            composer.registerEffect(EffectDescriptor::makeSparkBurst());
+        } else if (bodyEffect.effectId == "muzzle_flash") {
+            composer.registerEffect(EffectDescriptor::makeMuzzleFlash());
+        } else if (bodyEffect.effectId == "fireball") {
+            composer.registerSpell(SpellDescriptor::makeFireball());
+        }
+    }
     composer.registerEffect(EffectDescriptor::makeSparkBurst());
     composer.registerEffect(EffectDescriptor::makeMuzzleFlash());
     composer.registerSpell(SpellDescriptor::makeFireball());

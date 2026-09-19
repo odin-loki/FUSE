@@ -4,6 +4,7 @@
 #include <sstream>
 
 #if defined(__linux__)
+#include <cerrno>
 #include <sys/inotify.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -111,7 +112,7 @@ bool createOsFileWatch(std::string_view path, OsFileWatchHandle& outHandle) {
         outHandle.backend = OsFileWatchBackend::StatPoll;
     } else {
         outHandle.watchFd = inotify_add_watch(outHandle.inotifyFd, outHandle.path.c_str(),
-                                              IN_MODIFY | IN_CLOSE_WRITE | IN_MOVED_TO);
+                                              IN_MODIFY | IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE_SELF);
         if (outHandle.watchFd >= 0) {
             outHandle.backend = OsFileWatchBackend::Inotify;
             outHandle.active = true;
@@ -123,6 +124,14 @@ bool createOsFileWatch(std::string_view path, OsFileWatchHandle& outHandle) {
         close(outHandle.inotifyFd);
         outHandle.inotifyFd = -1;
     }
+#elif defined(__APPLE__)
+    // FSEvents stub — stat poll with backend marker (CoreServices not linked in umbrella build).
+    outHandle.backend = OsFileWatchBackend::FSEvents;
+    u64 fileSize = 0;
+    outHandle.lastModifiedNs = statModifiedNs(outHandle.path, fileSize);
+    outHandle.lastSize = fileSize;
+    outHandle.active = true;
+    return true;
 #endif
 
     u64 fileSize = 0;
@@ -148,8 +157,14 @@ bool pollOsFileWatch(OsFileWatchHandle& handle, OsFileWatchStatus& outStatus) {
         const ssize_t bytesRead = read(handle.inotifyFd, buffer, sizeof(buffer));
         if (bytesRead > 0) {
             changed = true;
+        } else if (bytesRead < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+            outStatus.error = "inotify read failed";
         }
         outStatus.backend = OsFileWatchBackend::Inotify;
+    }
+#elif defined(__APPLE__)
+    if (handle.backend == OsFileWatchBackend::FSEvents) {
+        outStatus.backend = OsFileWatchBackend::FSEvents;
     }
 #endif
 
