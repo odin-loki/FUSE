@@ -48,6 +48,18 @@ const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     return "Unknown";
 }
 
+const char* cellCapacityRejectReasonName(CellCapacityRejectReason reason) {
+    switch (reason) {
+    case CellCapacityRejectReason::None:
+        return "None";
+    case CellCapacityRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellCapacityRejectReason::ExceedsOccupancyBudget:
+        return "ExceedsOccupancyBudget";
+    }
+    return "Unknown";
+}
+
 const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
     switch (reason) {
     case BroadphaseRejectReason::None:
@@ -235,7 +247,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        if (wouldSkipShapeCellInsertion(range, maxOccupancy)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -255,7 +267,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+    if (wouldSkipShapeCellInsertion(range, maxOccupancy)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -490,6 +502,13 @@ bool shouldRunRefineBroadphase(
     return preflightRefineBroadphase(bodies, shapes, buffer).canRefine();
 }
 
+bool wouldSkipRefineBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    return canSkipRefineBroadphase(bodies, shapes, buffer);
+}
+
 DedupeBroadphaseRejectReason dedupeBroadphaseRejectReason(const PairBufferSoA& buffer) {
     if (buffer.canSkipSoAIteration()) {
         return DedupeBroadphaseRejectReason::EmptyBuffer;
@@ -518,6 +537,10 @@ bool shouldRunDedupeBroadphase(const PairBufferSoA& buffer) {
 
 bool canSkipDedupeBroadphase(const PairBufferSoA& buffer) {
     return !shouldRunDedupeBroadphase(buffer);
+}
+
+bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer) {
+    return canSkipDedupeBroadphase(buffer);
 }
 
 BroadphaseMergePreflight preflightBroadphaseMerge(
@@ -576,6 +599,10 @@ bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSo
     return preflightBroadphaseMerge(bodies, shapes).canMerge();
 }
 
+bool wouldSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
+    return canSkipBroadphaseMerge(bodies, shapes);
+}
+
 const char* mergePairsIntoBufferRejectReasonName(MergePairsIntoBufferRejectReason reason) {
     switch (reason) {
     case MergePairsIntoBufferRejectReason::None:
@@ -623,6 +650,10 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
     return preflightMergePairsIntoBuffer(pairs, buffer).canMerge();
+}
+
+bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
+    return canSkipMergePairsIntoBuffer(pairs, buffer);
 }
 
 void refineBroadphasePairsParallel(
