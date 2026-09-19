@@ -256,6 +256,80 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Non-mutating manifold-prune skip predicate — mirrors `should_skip_manifold_prune` (B4.3 deepen follow-up pass).
+inline bool would_skip_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f) {
+    return should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+/// Non-mutating manifold-finalize skip predicate — mirrors `can_skip_manifold_finalize` (B4.3 deepen follow-up pass).
+inline bool would_skip_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f) {
+    return can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
+/// Manifold prune preflight with optional reject-reason output (B4.3 deepen follow-up pass).
+inline bool manifold_prune_preflight_ready(
+    const ContactManifold& manifold,
+    ManifoldPruneRejectReason* reason = nullptr,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f) {
+    const ManifoldPrunePreflight preflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return !preflight.can_skip_prune(shallowMinDepth);
+}
+
+/// Manifold prune preflight with reject-reason output (B4.3 deepen follow-up pass).
+inline bool try_preflight_manifold_prune(
+    const ContactManifold& manifold,
+    ManifoldPruneRejectReason& reason,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f) {
+    const ManifoldPrunePreflight preflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    reason = preflight.reason;
+    return !preflight.can_skip_prune(shallowMinDepth);
+}
+
+/// Manifold finalize preflight with optional reject-reason output (B4.3 deepen follow-up pass).
+inline bool manifold_finalize_preflight_ready(
+    const ContactManifold& manifold,
+    ManifoldFinalizeRejectReason* reason = nullptr,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f) {
+    const ManifoldFinalizePreflight preflight =
+        preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return preflight.can_finalize();
+}
+
+/// Manifold finalize preflight with reject-reason output (B4.3 deepen follow-up pass).
+inline bool try_preflight_manifold_finalize(
+    const ContactManifold& manifold,
+    ManifoldFinalizeRejectReason& reason,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f) {
+    const ManifoldFinalizePreflight preflight =
+        preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    reason = preflight.reason;
+    return preflight.can_finalize();
+}
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
