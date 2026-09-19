@@ -25,6 +25,9 @@ u64 hash_bool(bool value) {
 } // namespace
 
 u64 fnv1a64_bytes(const u8* data, usize size) {
+    if (!is_valid_fnv1a64_input(data, size)) {
+        return 0;
+    }
     if (size == 0) {
         return kFnvOffset;
     }

@@ -258,6 +258,8 @@ void testCookCachePruneAllMixedInvalidAndStale() {
 void testFnv1a64BytesEmptyGuard() {
     expectTrue(fuse::project::fnv1a64_bytes(nullptr, 0) == 14695981039346656037ull,
                "zero-size byte hash returns FNV offset basis");
+    expectTrue(fuse::project::fnv1a64_bytes(nullptr, 4u) == 0u,
+               "null data with non-zero size yields zero hash");
 }
 
 void testHashUpstreamDependenciesEmptyPathGuards() {
@@ -456,6 +458,46 @@ void testCookHashPreflightGuards() {
     expectTrue(std::string(fuse::project::cookHashRejectReasonLabel(
                    fuse::project::CookHashRejectReason::EmptyPath)) == "empty_path",
                "reject reason label for empty path");
+
+    const std::string tex_source = writeTempFile("/tmp/fuse_b79_preflight_tex.png", "# preflight tex\n");
+    fuse::project::TextureImportDesc tex;
+    tex.input_path = tex_source;
+    tex.output_path = "/tmp/fuse_b79_preflight_tex.fusetex";
+    expectTrue(fuse::project::preflight_texture_import_hash(tex).ok(), "readable texture import passes preflight");
+
+    const std::string audio_source = writeTempFile("/tmp/fuse_b79_preflight_audio.wav", "# preflight audio\n");
+    fuse::project::AudioImportDesc audio;
+    audio.input_path = audio_source;
+    audio.output_path = "/tmp/fuse_b79_preflight_audio.fuseaudio";
+    expectTrue(fuse::project::preflight_audio_import_hash(audio).ok(), "readable audio import passes preflight");
+
+    fuse::project::CookManifestEntry manifest_entry;
+    manifest_entry.kind = fuse::project::CookAssetKind::Mesh;
+    manifest_entry.source_path = source;
+    manifest_entry.output_path = "/tmp/fuse_b79_preflight_manifest.fusemesh";
+    expectTrue(fuse::project::preflight_manifest_entry_hash(manifest_entry).ok(),
+               "readable manifest entry passes preflight");
+}
+
+void testCookCacheEntryPreflightGuards() {
+    fuse::project::CookCacheEntry invalid;
+    invalid.content_hash = 0;
+    invalid.source_path = "/tmp/fuse_b79_entry_preflight.obj";
+    invalid.output_path = "/tmp/fuse_b79_entry_preflight.fusemesh";
+    expectTrue(!fuse::project::preflight_cook_cache_entry(invalid).ok(),
+               "zero content hash fails cache entry preflight");
+    expectTrue(fuse::project::preflight_cook_cache_entry(invalid).reason ==
+                   fuse::project::CookHashRejectReason::ZeroSourceHash,
+               "zero content hash preflight reason");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_entry_preflight_ok.obj", "# entry preflight\n");
+    fuse::project::CookCacheEntry valid;
+    valid.content_hash = 202;
+    valid.source_path = source;
+    valid.output_path = "/tmp/fuse_b79_entry_preflight_ok.fusemesh";
+    valid.kind = fuse::project::CookAssetKind::Mesh;
+    expectTrue(fuse::project::preflight_cook_cache_entry(valid).ok(),
+               "valid mesh cache entry passes preflight");
 }
 
 void testCookCacheInvalidationProbes() {
@@ -482,6 +524,11 @@ void testCookCacheInvalidationProbes() {
     expectTrue(!cooker.cache().would_invalidate(0), "would_invalidate rejects zero hash");
     expectTrue(!cooker.cache().would_invalidate(seeded.content_hash + 1u),
                "would_invalidate rejects unknown hash");
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source reports seeded entry");
+    expectTrue(!cooker.cache().would_invalidate_source(""), "would_invalidate_source rejects empty path");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path),
+               "would_invalidate_output reports seeded entry");
+    expectTrue(!cooker.cache().would_invalidate_output(""), "would_invalidate_output rejects empty path");
     expectTrue(cooker.cache().count_by_source(source) == 1u, "count_by_source finds seeded entry");
     expectTrue(cooker.cache().count_by_output(desc.output_path) == 1u, "count_by_output finds seeded entry");
     expectTrue(cooker.cache().count_stale_content_for_source(source, seeded.content_hash) == 0u,
@@ -490,12 +537,14 @@ void testCookCacheInvalidationProbes() {
                "count_stale_content with mismatched hash returns one");
 
     writeTempFile(source, "# probe mesh updated\n");
+    expectTrue(cooker.cache().count_stale_entries() == 1u, "count_stale reports content-drift entry");
     expectTrue(cooker.cache().count_prunable_entries() == 1u, "count_prunable reports stale entry");
     expectTrue(cooker.cache().count_invalid_entries() == 0u,
                "count_invalid on structurally valid stale entry returns zero");
 
     const fuse::u32 removed = cooker.cache().prune_stale_entries();
     expectTrue(removed == 1u, "prune removes probed stale entry");
+    expectTrue(cooker.cache().count_stale_entries() == 0u, "count_stale zero after prune");
     expectTrue(cooker.cache().count_prunable_entries() == 0u, "count_prunable zero after prune");
 }
 
@@ -562,6 +611,7 @@ int main() {
     testCookCacheLoadPreservesEntriesWithoutOnDiskSource();
     testCookCachePruneAllMixedInvalidAndStale();
     testCookHashPreflightGuards();
+    testCookCacheEntryPreflightGuards();
     testCookCacheInvalidationProbes();
     testCookCachePruneInvalidEntriesOnLoad();
 

@@ -67,6 +67,10 @@ bool is_prunable_cache_entry_(const CookCacheEntry& entry) {
     return !is_valid_cook_cache_entry(entry) || is_stale_cache_entry_(entry);
 }
 
+bool is_stale_only_cache_entry_(const CookCacheEntry& entry) {
+    return is_valid_cook_cache_entry(entry) && is_stale_cache_entry_(entry);
+}
+
 std::string escapeJson(const std::string& text) {
     std::string out;
     out.reserve(text.size() + 8);
@@ -80,6 +84,48 @@ std::string escapeJson(const std::string& text) {
 }
 
 } // namespace
+
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+    if (!is_valid_cook_cache_path(entry.source_path)) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (!is_valid_cook_cache_path(entry.output_path)) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+
+    switch (entry.kind) {
+    case CookAssetKind::Mesh: {
+        MeshImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_mesh_import_hash(desc);
+    }
+    case CookAssetKind::Texture: {
+        TextureImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_texture_import_hash(desc);
+    }
+    case CookAssetKind::Audio: {
+        AudioImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_audio_import_hash(desc);
+    }
+    case CookAssetKind::Shader:
+        preflight.can_hash = true;
+        preflight.reason = CookHashRejectReason::None;
+        return preflight;
+    }
+    return preflight;
+}
 
 CookCacheEntry* CookCache::find_entry_(u64 content_hash) {
     for (CookCacheEntry& entry : m_entries) {
@@ -348,6 +394,20 @@ bool CookCache::would_invalidate(u64 content_hash) const {
     return find_entry_(content_hash) != nullptr;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) > 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) > 0;
+}
+
+bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
+                                               const std::vector<CookJobDependencyEdge>& edges,
+                                               const std::vector<CookJob>& jobs) const {
+    return count_downstream_of(output_path, edges, jobs) > 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
         return 0;
@@ -497,6 +557,20 @@ u32 CookCache::count_invalid_entries() const {
     u32 count = 0;
     for (const CookCacheEntry& entry : m_entries) {
         if (!is_valid_cook_cache_entry(entry)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 CookCache::count_stale_entries() const {
+    if (m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_stale_only_cache_entry_(entry)) {
             ++count;
         }
     }
