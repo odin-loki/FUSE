@@ -438,6 +438,20 @@ struct FroxelGridLayout {
     static bool tryMapScreenDepthToFroxelIndex(f32 screenX,
                                                u32& outFroxelIndex,
                                                ScreenMappingRejectReason& outReason);
+    /// True when screen X/Y lie outside [0, 1] and would be clamped before mapping.
+    static bool wouldClampScreenCoords(f32 screenX, f32 screenY);
+    /// Screen-depth mapping preflight without writing sample coords.
+    static bool canMapScreenDepthToSampleCoords(f32 screenX,
+                                                f32 screenY,
+                                                f32 viewDepth,
+                                                const FroxelGridDesc& desc,
+                                                const FroxelCameraDesc& camera);
+    /// Screen-depth → froxel index preflight without writing output index.
+    static bool canMapScreenDepthToFroxelIndex(f32 screenX,
+                                               f32 screenY,
+                                               f32 viewDepth,
+                                               const FroxelGridDesc& desc,
+                                               const FroxelCameraDesc& camera);
     /// True when interpolation weights or corner indices would be clamped before sampling.
     static bool wouldClampSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
     /// True when sample coords exceed bounds only through clampable weights or corners.
@@ -1270,6 +1284,7 @@ bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
                                    GridDensityRejectReason& outReason,
 /// Diagnose density validation against the clamped froxel count derived from `desc`.
 /// Diagnose density validation against `desc`; vacuously succeeds when `desc` is empty.
+/// Diagnose grid density validation against clamped `desc`; vacuously succeeds when `desc` is empty.
 /// Diagnose the first density invariant that fails; vacuously succeeds when `desc` is empty.
 bool tryValidateGridDensity(const FroxelDensityGrid& grid,
                             GridDensityRejectReason& outReason,
@@ -1310,6 +1325,10 @@ bool preflightGridDensity(const FroxelDensityGrid& grid,
 bool wouldSkipGridDensityValidation(const FroxelDensityGrid& grid,
 /// Grid density preflight with optional reject-reason diagnostics.
 /// Early-out when grid density validation would fail (B5.11 deepen).
+/// True when non-zero + empty froxel counts partition storage for `desc`.
+/// Non-zero froxel count for `desc`; returns 0 on desc mismatch.
+/// Empty froxel count for `desc`; returns clamped froxel count on desc mismatch.
+/// True when grid is accessible but uniformly at or below `epsilon`.
 /// Read density with guard preflight; returns false when `canLookupAtIndex` would reject the request.
 bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
                              u32 index,
@@ -1534,6 +1553,13 @@ FroxelTrilinearSampleRejectReason classifyTrilinearSampleReject(const FroxelDens
 bool preflightTrilinearSample(const FroxelDensityGrid& grid,
                               FroxelTrilinearSampleRejectReason* reason = nullptr);
 /// Early-out when trilinear sample preflight would reject (B5.11 deepen).
+/// Preflight guard before trilinear density sampling; false on inaccessible grid or hard OOB coords.
+bool canSampleTrilinearAtCoords(const FroxelDensityGrid& grid,
+/// Diagnose trilinear sample preflight; false on inaccessible grid or hard OOB coords.
+bool tryCanSampleTrilinearAtCoords(const FroxelDensityGrid& grid,
+                                   SampleCoordRejectReason& outReason);
+/// True when trilinear sampling would clamp coords or weights before interpolation.
+bool wouldClampTrilinearSample(const FroxelDensityGrid& grid,
 /// Screen-space trilinear density sample; returns 0 when mapping fails or grid is empty.
 f32 sampleDensityAtScreen(const FroxelDensityGrid& grid,
                           const FroxelGridDesc& desc,
@@ -1743,6 +1769,10 @@ bool tryValidateGridDensityForDesc(const FroxelDensityGrid& grid,
                                    GridDensityRejectReason& outReason,
                                    f32 epsilon = 1e-6f);
 /// Guarded populate with reject-reason diagnostics.
+/// True when post-populate storage matches `desc` and density invariants hold for the fill path taken.
+bool validatePopulateResult(const FroxelDensityGrid& grid,
+                            const FroxelGridDesc& desc,
+                            const VolumetricFogParams& params,
 } // namespace froxel_util
 
 /// CPU stub — exponential height falloff density sample (P5 acceptance reference).
