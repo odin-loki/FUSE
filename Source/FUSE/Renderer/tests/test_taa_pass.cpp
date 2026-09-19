@@ -4801,3 +4801,8 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 // --- deepen additive from deepen-b59-taa-guards-7ae2 ---
                "zero-width pass classifyJitterSyncReject still passes for sequence");
+
+// --- deepen additive from deepen-taa-pass-guards-06c4 ---
+    expectTrue(pass->tryPreflightJitterSync(2u, jitterReject), "pass tryPreflightJitterSync passes before init");
+    expectNear(weights.current, 0.4f, 1e-5f, "pass tryCompute steady current weight after warmup");
+    expectNear(weights.history, 0.6f, 1e-5f, "pass tryCompute steady history weight after warmup");
