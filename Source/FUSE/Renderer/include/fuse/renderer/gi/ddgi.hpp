@@ -810,6 +810,20 @@ bool tryPreflightDdgiProbeUpdate(const DDGIDesc& desc,
                                  u32 probe_count,
                                  ProbeUpdateLaunchRejectReason& outReason);
 
+/// Why probe-grid source validation rejected the request (B5.6 deepen).
+enum class ProbeGridSourceRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    ZeroIrradianceRes,
+    InvalidSpacing,
+};
+
+/// Human-readable label for probe-grid source reject reasons (logging / tests).
+const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason);
+
+/// True when a probe-grid source reject reason would block sampling (B5.6 deepen pass).
+bool probeGridSourceRejectReasonIsBlocking(ProbeGridSourceRejectReason reason);
+
 /// Why probe-update scheduling preflight rejected the request (B5.6 deepen).
 enum class ProbeScheduleRejectReason : u8 {
     None = 0,
@@ -1365,6 +1379,10 @@ ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc);
 /// Non-mutating probe-grid-source preflight — returns true when sampling would proceed.
 bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason* reason = nullptr);
 /// Early-out when probe-grid-source preflight would reject — same ordering as `tryValidateProbeGridSource`.
+/// Diagnose why probe-grid source validation would reject; vacuously succeeds on sampleable grids.
+/// Classify probe-grid source rejection — same ordering as `tryValidateProbeGridSource`.
+/// Non-mutating probe-grid source preflight — returns true when sampling would proceed.
+/// Early-out when probe-grid source validation would be rejected.
 bool wouldSkipProbeGridSource(const DDGIDesc& desc);
 /// Early-out when probe irradiance lookup should be skipped for an empty or non-sampleable grid.
 bool shouldSkipProbeGrid(const DDGIDesc& desc);
@@ -1598,9 +1616,10 @@ bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
                                        ProbeTrilinearSampleRejectReason* reason = nullptr);
 bool preflightTrilinearProbeSample(const DDGIDesc& desc,
 /// Build sample coords + trilinear sample preflight without mutating cache.
-bool preflightProbeTrilinearSample(const DDGIDesc& desc,
                                    ProbeSampleCoords* out_coords = nullptr,
 /// Early-out when coord-based trilinear sample preflight would be rejected.
+ProbeTrilinearSampleRejectReason classifyTrilinearProbeIrradianceReject(
+    const DDGIDesc& desc,
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
