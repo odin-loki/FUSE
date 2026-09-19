@@ -751,6 +751,17 @@ bool TaaJitter::tryCurrentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Ve
     return true;
 }
 
+bool TaaJitter::tryCurrentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out,
+                                           TaaJitterGuardRejectReason& reason) const {
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterNdcReject(width, height, m_sequenceLength);
+    reason = reject;
+    if (reject != TaaJitterGuardRejectReason::None) {
+        return false;
+    }
+    out = TaaJitterLayout::haltonNdcOffset(m_index, width, height, m_sequenceLength);
+    return true;
+}
+
 bool TaaJitter::canAdvance() const {
     return TaaJitterLayout::validateSequenceLength(m_sequenceLength);
 
@@ -947,6 +958,9 @@ bool TaaJitter::trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectR
     if (!tryPreflightTaaJitterSync(frameIndex, m_sequenceLength, reason)) {
 bool TaaJitter::trySyncToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason) {
     if (!preflightTaaJitterSync(frameIndex, m_sequenceLength, &reason)) {
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterSyncReject(m_sequenceLength);
+    reason = reject;
+    if (reject != TaaJitterGuardRejectReason::None) {
         return false;
     }
     syncToFrameIndex(frameIndex);
@@ -1006,6 +1020,10 @@ bool TaaJitter::tryAdvanceIfReady(TaaJitterAdvanceBlockReason& outReason) {
 bool TaaJitter::tryAdvanceIfViewportReady(u32 width, u32 height, TaaJitterAdvanceBlockReason& outReason) {
     outReason = classifyTaaJitterAdvanceBlock(width, height, m_sequenceLength);
     if (outReason != TaaJitterAdvanceBlockReason::None) {
+bool TaaJitter::tryAdvanceIfReady(TaaJitterGuardRejectReason& reason) {
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterAdvanceReject(m_sequenceLength);
+    reason = reject;
+    if (reject != TaaJitterGuardRejectReason::None) {
 }
 
 void TaaJitter::advance() {

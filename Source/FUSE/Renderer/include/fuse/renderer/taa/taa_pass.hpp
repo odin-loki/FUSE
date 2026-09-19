@@ -220,6 +220,9 @@ public:
                                          TaaResolveBlendRejectReason& reason) const;
     /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
     bool tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
+    /// True when pass history warm-up is complete (B5.9 deepen).
+    bool preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason = nullptr) const;
+    bool tryPreflightHistoryWarmup(TaaHistoryWarmupBlockReason& reason) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
@@ -292,6 +295,8 @@ public:
     bool shouldSkipJitterAlignment(u32 frameIndex) const;
     /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).
     bool preflightJitterNdc(TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass NDC jitter preflight would reject (B5.9 deepen).
     bool shouldSkipJitterNdc() const;
     /// True when pass jitter can advance for the active sequence (B5.9 deepen).
@@ -597,6 +602,11 @@ public:
     bool shouldSkipResolveFrame(const TaaResolveDesc& desc) const;
     /// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
     bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
+    /// True when resolve skip and blend-weight preflights both pass (B5.9 deepen).
+                               TaaResolveBlendRejectReason* blendReason = nullptr) const;
+    /// Combined resolve-frame preflight with mandatory reject-reason outputs (B5.9 deepen).
+                                  TaaResolveBlendRejectReason& blendReason) const;
+    /// Early-out when resolve skip or blend-weight preflight would reject (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
