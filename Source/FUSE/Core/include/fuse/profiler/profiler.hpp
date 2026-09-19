@@ -1135,6 +1135,26 @@ struct AsyncFlowNestingPreflight {
     bool hasOpenAsyncFlows = false;
 };
 
+/// Read-only scope nesting diagnostics — safe before entering or ending scopes.
+struct ScopeNestingPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    bool balanced = true;
+    bool hasActiveScopes = false;
+};
+
+/// Read-only async-flow nesting diagnostics — safe before flow begin/end.
+struct AsyncFlowPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    u32 openFlowCount = 0;
+    bool balanced = true;
+    bool consistent = true;
+    bool depthDetached = false;
+    bool crossThreadHandoffPending = false;
+    bool hasOpenFlows = false;
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:

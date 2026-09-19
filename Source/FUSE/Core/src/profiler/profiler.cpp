@@ -439,6 +439,7 @@ void assignSkipReason(ProfilerSkipReason* reason, ProfilerSkipReason value) {
         return lhs == rhs;
 
 
+
 } // namespace
 
 bool isBlankEventName(const char* name);
@@ -1914,6 +1915,35 @@ bool wouldSkipSafeChromeTraceExport(ChromeTraceExportSkipReason* reason) {
     return skipReason != ChromeTraceExportSkipReason::None;
 }
 
+bool hasActiveScopes() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool isFlowNestingConsistent() {
+    return flowNestingDepth() == openAsyncFlowCount();
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)
+        || g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(track);
+}
+
+bool wouldSkipChromeTraceExport() {
+    return !enabled() || exportableEventCount() == 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -3099,6 +3129,9 @@ bool tryFindExportableEventByName(const char* name, ProfileEvent& outEvent) {
 
 
 bool tryFindExportableEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+
+
 
 
 
@@ -4387,17 +4420,13 @@ bool tryFindLastEventIndexByName(const char* name, u32& outIndex) {
 bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex) {
     const u32 index = findFirstEventIndexByPhase(phase);
     if (index == kInvalidEventIndex) {
-        outIndex = kInvalidEventIndex;
-        return false;
 
     outIndex = index;
-    return true;
 
 bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex) {
     const u32 index = findLastEventIndexByPhase(phase);
 
 
-bool tryFindFirstEventIndexByName(const char* name, u32& outIndex) {
     const u32 index = findFirstEventIndexByName(name);
 
 
@@ -5055,7 +5084,6 @@ bool tryFirstFlowEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 
-bool tryFindLastEventIndexByName(const char* name, u32& outIndex) {
 
 
 bool tryFindFirstEventIndexByFlowId(u32 flowId, u32& outIndex) {
@@ -5738,12 +5766,8 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 
 
 
-    }
 
 
-    if (index == kInvalidEventIndex) {
-        outIndex = kInvalidEventIndex;
-        return false;
 
 
 
@@ -5758,17 +5782,22 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 
 
 bool tryFindFirstFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex) {
-    const u32 total = eventCount();
-    for (u32 i = 0u; i < total; ++i) {
-        const ProfileEvent& event = eventAt(i);
         if (event.scopeId == flowId && event.phase == phase && isValidEventName(event.name)) {
-            outIndex = i;
 
 
 bool tryFindLastFlowEventIndex(u32 flowId, EventPhase phase, u32& outIndex) {
-    for (u32 i = total; i > 0u; --i) {
-        const ProfileEvent& event = eventAt(i - 1u);
-            outIndex = i - 1u;
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 u32 lastEventIndex() {
@@ -6484,6 +6513,10 @@ u32 ringOverflowEventCount() {
 
 bool hasRingOverflowEvents() {
     return ringOverflowEventCount() > 0u;
+    return preflight;
+}
+
+    AsyncFlowPreflight preflight{};
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
