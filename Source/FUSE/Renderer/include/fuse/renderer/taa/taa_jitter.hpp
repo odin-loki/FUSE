@@ -72,12 +72,18 @@ struct TaaJitterLayout {
     static fuse::math::Vec2 offsetForFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Halton offset for a frame counter only when the sequence is valid (B5.9 deepen).
     static bool offsetForFrameIndexIfReady(u32 frameIndex, u32 sequenceLength, fuse::math::Vec2& out);
+    /// Halton offset for a frame counter with reject-reason diagnostics (B5.9 deepen).
+    static bool tryOffsetForFrameIndexIfReady(u32 frameIndex, u32 sequenceLength, fuse::math::Vec2& out,
+                                              TaaJitterGuardRejectReason& reason);
     /// NDC jitter for a monotonic frame counter (wraps via `frameIndexInSequence`).
     static fuse::math::Vec2 ndcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
                                                    u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// NDC jitter for a frame counter only when viewport and sequence are valid (B5.9 deepen).
     static bool ndcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
                                               fuse::math::Vec2& out);
+    /// NDC jitter for a frame counter with reject-reason diagnostics (B5.9 deepen).
+    static bool tryNdcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
+                                                 fuse::math::Vec2& out, TaaJitterGuardRejectReason& reason);
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
     static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
 };
@@ -91,15 +97,22 @@ public:
     fuse::math::Vec2 currentNdcOffset(u32 width, u32 height) const;
     /// NDC offset only when viewport and sequence are valid; returns false when blocked (B5.9 deepen).
     bool currentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out) const;
+    /// NDC offset with reject-reason diagnostics (B5.9 deepen).
+    bool tryCurrentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out,
+                                    TaaJitterGuardRejectReason& reason) const;
 
     void advance();
     /// Advance only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool advanceIfReady();
+    /// Advance with reject-reason diagnostics (B5.9 deepen).
+    bool tryAdvanceIfReady(TaaJitterGuardRejectReason& reason);
     void reset();
     /// Align jitter state to a monotonic frame counter (wraps with sequence period).
     void syncToFrameIndex(u32 frameIndex);
     /// Sync only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool syncToFrameIndexIfReady(u32 frameIndex);
+    /// Sync with reject-reason diagnostics (B5.9 deepen).
+    bool trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason);
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
 
