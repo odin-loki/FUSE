@@ -4205,3 +4205,30 @@ void testSnapStepFiniteGuards() {
 // --- deepen additive from deepen-gizmo-guards-5805 ---
                    fuse::editor::preflightBeginDrag(nanHit, fuse::editor::GizmoMode::Translate)) ==
                    fuse::editor::preflightUpdateDrag(hit, true, fuse::editor::GizmoAxis::X)) ==
+
+// --- deepen additive from deepen-gizmo-b6-preflights-1d13 ---
+void testPickRejectReasonNonFiniteGuards() {
+    expectTrue(reason == fuse::editor::GizmoPickRejectReason::NonFiniteRay,
+    expectTrue(!fuse::editor::preflightPickReady(nanHit, fuse::editor::GizmoMode::Translate, &reason),
+    expectTrue(reason == fuse::editor::GizmoPickRejectReason::NonFiniteHit,
+                   fuse::editor::GizmoPickRejectReason::NonFiniteHit),
+void testBeginDragRejectReasonNonFiniteGuards() {
+    expectTrue(reason == fuse::editor::GizmoBeginDragRejectReason::NonFiniteHit,
+    expectTrue(!fuse::editor::preflightBeginDragReady(nanRay, transform,
+               "preflightBeginDragReady rejects non-finite ray");
+    expectTrue(reason == fuse::editor::GizmoBeginDragRejectReason::NonFiniteRay,
+    expectTrue(fuse::editor::classifyBeginDragReject(rayPreflight) ==
+               "classifyBeginDragReject maps nonFiniteRay flag");
+                   fuse::editor::GizmoBeginDragRejectReason::NonFiniteRay),
+    expectTrue(!gizmo.preflightBeginDragReady(nanHit), "gizmo preflightBeginDragReady rejects non-finite hit");
+void testUpdateDragRejectReasonNonFiniteGuards() {
+    expectTrue(reason == fuse::editor::GizmoUpdateDragRejectReason::NonFiniteHit,
+    expectTrue(fuse::editor::classifyUpdateDragReject(nanPreflight) ==
+    expectTrue(!gizmo.preflightUpdateDragReady(hit), "gizmo preflightUpdateDragReady rejects non-finite hit");
+               "preflightSnapDragReady rejects invalid step");
+    const fuse::editor::SnapDragPreflight degradedPreflight = fuse::editor::preflightSnapDrag(
+    expectTrue(fuse::editor::preflightSnapDragReady(0.37f, fuse::editor::GizmoMode::Translate, snap) ==
+    expectTrue(gizmo.tryPreflightSnapDrag(0.37f, reason), "gizmo tryPreflightSnapDrag accepts valid delta");
+    testPickRejectReasonNonFiniteGuards();
+    testBeginDragRejectReasonNonFiniteGuards();
+    testUpdateDragRejectReasonNonFiniteGuards();
