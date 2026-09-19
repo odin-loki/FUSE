@@ -216,6 +216,8 @@ void recordEvent(const char* name,
     } else {
         g_droppedEventCount.fetch_add(1u, std::memory_order_acq_rel);
     }
+
+    g_totalEventsWritten.fetch_add(1u, std::memory_order_acq_rel);
 }
 
 const char* chromePhaseToken(EventPhase phase) {
@@ -1152,7 +1154,6 @@ bool isLastEventIndex(u32 index) {
 u32 countEventsWithPhase(EventPhase phase) {
 u32 countEventsByPhase(EventPhase phase) {
     u32 count = 0u;
-    const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
         if (eventAt(i).phase == phase) {
             ++count;
@@ -1196,14 +1197,11 @@ bool tryFindEventByName(const char* name, u32 startIndex, u32& outIndex, Profile
 
     case NestingStateRejectReason::FlowDepthDetached:
         return "flow_depth_detached";
-    return "unknown";
-        }
 
 
 bool tryFindFirstEventWithPhase(EventPhase phase, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexWithPhase(phase);
     if (index == kInvalidEventIndex) {
-        return false;
 
     return tryEventAt(index, outEvent);
 
@@ -1220,6 +1218,15 @@ bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
 
     outPhase = event.phase;
     return true;
+    u32 exportable = 0u;
+            ++exportable;
+    return total - exportable;
+
+u32 totalEventsWritten() {
+    return g_totalEventsWritten.load(std::memory_order_acquire);
+
+bool hasRingWrapped() {
+    return totalEventsWritten() > kRingCapacity;
 
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
@@ -1372,6 +1379,16 @@ u32 countEventsByPhase(EventPhase phase) {
         }
     }
     return count;
+}
+
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventExportable(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return true;
 }
 
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
@@ -1573,6 +1590,7 @@ bool tryFirstExportableEvent(ProfileEvent& outEvent) {
 bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent) {
     const u32 count = eventCount();
     if (reverseIndex >= count) {
+    const u32 index = firstEventIndex();
         outEvent = ProfileEvent{};
         return false;
     }
@@ -1607,6 +1625,11 @@ bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent) {
 
     outEvent = ProfileEvent{};
     return false;
+
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+
+    return tryExportableEventAt(index, outEvent);
 
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
@@ -1696,6 +1719,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.exportableEventCount = exportableEventCount();
     preflight.totalEventsWritten = totalEventsWritten();
     preflight.droppedEventCount = droppedEventCount();
+    preflight.nonExportableEventCount = nonExportableEventCount();
     preflight.frameIndex = frameIndex();
     preflight.openAsyncFlowCount = openAsyncFlowCount();
     preflight.activeScopeNestingDepth = scopeNestingDepth();
@@ -1715,6 +1739,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.remainingEventCapacity = remainingEventCapacity();
     preflight.rejectedInvalidNameCount = rejectedInvalidNameCount();
     preflight.orphanAsyncFlowEndCount = orphanAsyncFlowEndCount();
+    preflight.hasRingWrapped = hasRingWrapped();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
@@ -1963,6 +1988,12 @@ const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason rea
 
 bool canExportChromeTrace() {
     return preflightChromeTraceExport().canExportTrace();
+}
+
+void reconcileDetachedFlowDepth() {
+    if (isFlowDepthDetached() && openAsyncFlowCount() == 0u) {
+        threadLocalFlowNestingDepth() = 0u;
+    }
 }
 
 void reset() {
