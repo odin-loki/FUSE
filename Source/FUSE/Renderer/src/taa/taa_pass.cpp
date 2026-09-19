@@ -697,3 +697,8 @@ bool TaaPass::preflightHistoryWarmupAndReuse(u32 observedGeneration, TaaHistoryR
     if (!preflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), &local)) {
     if (!preflightTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength(), &local)) {
     return !preflightJitterSyncAndNdc(frameIndex);
+
+// --- deepen additive from deepen-b59-taa-guards-aded ---
+    if (!tryPreflightTaaJitterAdvance(m_jitter.sequenceLength(), reason)) {
+        reason = TaaJitterGuardRejectReason::InvalidSequence;
+    if (!tryPreflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), reason)) {

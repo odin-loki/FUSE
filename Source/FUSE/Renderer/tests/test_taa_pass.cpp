@@ -4579,3 +4579,14 @@ void testTaaPassTryPreflightAndCompositeGuards() {
                "pass preflightHistoryWarmupAndReuse passes after warmup");
     expectTrue(!zeroPass->preflightJitterSyncAndNdc(0u, &jitterReason),
                "zero-width pass preflightJitterSyncAndNdc fails");
+
+// --- deepen additive from deepen-b59-taa-guards-aded ---
+void testTaaPassHistoryWarmupPreflight() {
+    expectTrue(!pass->preflightHistoryWarmup(&reason), "pass warmup preflight fails before init");
+    expectTrue(!pass->tryPreflightHistoryReadyForResolve(reason),
+    expectTrue(pass->tryPreflightHistoryReadyForResolve(reason),
+    expectTrue(!pass->preflightHistoryWarmup(&reason), "pass warmup preflight fails before first resolve");
+    expectTrue(pass->preflightHistoryWarmup(&reason), "pass warmup preflight passes after resolve");
+    expectTrue(pass->preflightJitterAdvance(&jitterReject), "pass preflightJitterAdvance passes before init");
+    expectTrue(pass->preflightResolve(resolveDesc, &skipReason), "pass preflightResolve passes before warmup");
+    testTaaPassHistoryWarmupPreflight();
