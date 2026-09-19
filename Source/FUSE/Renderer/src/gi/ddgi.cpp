@@ -2823,3 +2823,41 @@ ProbeTrilinearSampleRejectReason classifyTrilinearProbeIrradianceReject(const DD
         classifyTrilinearProbeIrradianceReject(desc, world_position, cache, cache_count);
     const bool ok = tryCanLaunchProbeTraceKernel(params, reject);
     const bool ok = tryCanLaunchProbeBlendKernel(params, reject);
+
+// --- deepen additive from deepen-ddgi-b56-guards-df48 ---
+    return classifyProbeTrilinearSampleRejectAtCoords(desc, coords, cache, cache_count);
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleRejectAtCoords(const DDGIDesc& desc,
+const char* ddgiHostKernelLaunchRejectReasonLabel(DdgiHostKernelLaunchRejectReason reason) {
+    case DdgiHostKernelLaunchRejectReason::None:
+    case DdgiHostKernelLaunchRejectReason::EmptyGrid:
+    case DdgiHostKernelLaunchRejectReason::NullProbeIndices:
+    case DdgiHostKernelLaunchRejectReason::ZeroUpdateCount:
+    case DdgiHostKernelLaunchRejectReason::ZeroRaysPerProbe:
+    case DdgiHostKernelLaunchRejectReason::OutOfRangeProbeIndex:
+bool ddgiHostKernelLaunchRejectReasonIsBlocking(DdgiHostKernelLaunchRejectReason reason) {
+    return reason != DdgiHostKernelLaunchRejectReason::None;
+DdgiHostKernelLaunchRejectReason classifyDdgiHostKernelLaunchReject(const DDGIDesc& desc,
+    gi::ProbeKernelRejectReason kernelReason = gi::ProbeKernelRejectReason::None;
+    if (!gi::tryCanLaunchProbeTraceKernel(params, kernelReason)) {
+        case gi::ProbeKernelRejectReason::ZeroUpdateCount:
+            return DdgiHostKernelLaunchRejectReason::ZeroUpdateCount;
+        case gi::ProbeKernelRejectReason::NullProbeIndices:
+            return DdgiHostKernelLaunchRejectReason::NullProbeIndices;
+        case gi::ProbeKernelRejectReason::ZeroRaysPerProbe:
+            return DdgiHostKernelLaunchRejectReason::ZeroRaysPerProbe;
+        case gi::ProbeKernelRejectReason::None:
+        return DdgiHostKernelLaunchRejectReason::EmptyGrid;
+    ProbeUpdateLaunchRejectReason launchReason = ProbeUpdateLaunchRejectReason::None;
+        if (launchReason == ProbeUpdateLaunchRejectReason::OutOfRangeProbeIndex) {
+            return DdgiHostKernelLaunchRejectReason::OutOfRangeProbeIndex;
+    return DdgiHostKernelLaunchRejectReason::None;
+bool preflightDdgiHostKernelLaunch(const DDGIDesc& desc,
+                                   DdgiHostKernelLaunchRejectReason* reason) {
+    const DdgiHostKernelLaunchRejectReason reject = classifyDdgiHostKernelLaunchReject(desc, params);
+    return !ddgiHostKernelLaunchRejectReasonIsBlocking(reject);
+bool tryPreflightDdgiHostKernelLaunch(const DDGIDesc& desc,
+                                      DdgiHostKernelLaunchRejectReason& reason) {
+    reason = classifyDdgiHostKernelLaunchReject(desc, params);
+    return !ddgiHostKernelLaunchRejectReasonIsBlocking(reason);
+bool wouldSkipDdgiHostKernelLaunch(const DDGIDesc& desc, const gi::DDGIKernelParams& params) {
+    return !preflightDdgiHostKernelLaunch(desc, params);

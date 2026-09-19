@@ -908,3 +908,15 @@ bool preflightProbeTrilinearSample(const DDGIDesc& desc,
 
 // --- deepen additive from deepen-ddgi-guards-3160 ---
 ProbeTrilinearSampleRejectReason classifyTrilinearProbeIrradianceReject(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-b56-guards-df48 ---
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleRejectAtCoords(const DDGIDesc& desc,
+enum class DdgiHostKernelLaunchRejectReason : u8 {
+const char* ddgiHostKernelLaunchRejectReasonLabel(DdgiHostKernelLaunchRejectReason reason);
+bool ddgiHostKernelLaunchRejectReasonIsBlocking(DdgiHostKernelLaunchRejectReason reason);
+DdgiHostKernelLaunchRejectReason classifyDdgiHostKernelLaunchReject(const DDGIDesc& desc,
+bool preflightDdgiHostKernelLaunch(const DDGIDesc& desc,
+                                   DdgiHostKernelLaunchRejectReason* reason = nullptr);
+bool tryPreflightDdgiHostKernelLaunch(const DDGIDesc& desc,
+                                      DdgiHostKernelLaunchRejectReason& reason);
+bool wouldSkipDdgiHostKernelLaunch(const DDGIDesc& desc, const gi::DDGIKernelParams& params);

@@ -3725,3 +3725,32 @@ void testKernelPerPassPreflight() {
     expectTrue(!fuse::renderer::gi::preflightProbeBlendKernelLaunch(zeroCount, &reason),
                "preflightProbeBlendKernelLaunch rejects zero update count");
     testKernelPerPassPreflight();
+
+// --- deepen additive from deepen-ddgi-b56-guards-df48 ---
+void testDdgiThirdLayerPreflightGuards() {
+               "tryPreflightProbeScheduleAtRate rejects zero rate");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleRejectAtCoords(
+               "classifyProbeTrilinearSampleRejectAtCoords none for valid coords");
+    expectTrue(fuse::renderer::classifyDdgiHostKernelLaunchReject(desc, kernelParams) ==
+                   fuse::renderer::DdgiHostKernelLaunchRejectReason::None,
+               "classifyDdgiHostKernelLaunchReject none for valid params");
+    expectTrue(fuse::renderer::preflightDdgiHostKernelLaunch(desc, kernelParams),
+               "preflightDdgiHostKernelLaunch succeeds for valid params");
+    expectTrue(!fuse::renderer::wouldSkipDdgiHostKernelLaunch(desc, kernelParams),
+               "wouldSkipDdgiHostKernelLaunch false for valid params");
+    fuse::renderer::DdgiHostKernelLaunchRejectReason hostReason =
+        fuse::renderer::DdgiHostKernelLaunchRejectReason::None;
+    expectTrue(fuse::renderer::tryPreflightDdgiHostKernelLaunch(desc, kernelParams, hostReason),
+               "tryPreflightDdgiHostKernelLaunch succeeds for valid params");
+    expectTrue(hostReason == fuse::renderer::DdgiHostKernelLaunchRejectReason::None,
+               "tryPreflightDdgiHostKernelLaunch reports no reject reason on success");
+    expectTrue(std::strcmp(fuse::renderer::ddgiHostKernelLaunchRejectReasonLabel(hostReason), "none") == 0,
+    expectTrue(fuse::renderer::classifyDdgiHostKernelLaunchReject(desc, oobParams) ==
+                   fuse::renderer::DdgiHostKernelLaunchRejectReason::OutOfRangeProbeIndex,
+               "classifyDdgiHostKernelLaunchReject out_of_range_probe_index");
+    expectTrue(fuse::renderer::wouldSkipDdgiHostKernelLaunch(desc, oobParams),
+               "wouldSkipDdgiHostKernelLaunch true for OOB indices");
+    expectTrue(fuse::renderer::classifyDdgiHostKernelLaunchReject(desc, zeroRays) ==
+                   fuse::renderer::DdgiHostKernelLaunchRejectReason::ZeroRaysPerProbe,
+               "classifyDdgiHostKernelLaunchReject zero_rays_per_probe");
+    testDdgiThirdLayerPreflightGuards();
