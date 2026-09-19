@@ -885,3 +885,6 @@ bool tryValidateScheduledCacheIndices(const DDGIDesc& desc,
 // --- deepen additive from deepen-ddgi-guards-ba83 ---
 ProbeTrilinearSampleRejectReason classifyTrilinearProbeSampleReject(const DDGIDesc& desc,
 bool preflightTrilinearProbeIrradiance(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-914b ---
+bool preflightTrilinearProbeSampleAtCoords(const DDGIDesc& desc,

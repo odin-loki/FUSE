@@ -2764,3 +2764,16 @@ bool preflightTrilinearProbeIrradiance(const DDGIDesc& desc,
     return classifyProbeTraceKernelReject(params);
     const ProbeKernelRejectReason reject = classifyProbeTraceKernelReject(params);
     const ProbeKernelRejectReason reject = classifyProbeBlendKernelReject(params);
+
+// --- deepen additive from deepen-ddgi-guards-914b ---
+    return classifyProbeTrilinearSampleReject(desc, coords, cache, cache_count);
+bool preflightTrilinearProbeSampleAtCoords(const DDGIDesc& desc,
+        classifyProbeTrilinearSampleReject(desc, world_position, cache, cache_count);
+    return !preflightTrilinearProbeSampleAtCoords(desc, coords, cache, cache_count);
+    return !preflightTrilinearProbeSample(desc, world_position, cache, cache_count);
+    const ProbeScheduleRejectReason reject = classifyProbeScheduleRejectAtRate(
+    return classifyProbeKernelReject(params);
+bool preflightProbeTraceKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason) {
+bool preflightProbeBlendKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason) {
+bool populateAndPreflightDDGIKernelParams(DDGIKernelParams& params,
+    return preflightProbeKernelLaunch(params, reason);

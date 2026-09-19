@@ -3523,3 +3523,28 @@ void testPerKernelPreflightGuards() {
     testTrilinearSamplePreflightGuards();
     testProbeScheduleAtRatePreflightGuards();
     testPerKernelPreflightGuards();
+
+// --- deepen additive from deepen-ddgi-guards-914b ---
+    expectTrue(fuse::renderer::gi::classifyProbeBlendKernelReject(zeroRays) ==
+               "classifyProbeBlendKernelReject zero_rays_per_probe");
+    expectTrue(fuse::renderer::gi::preflightProbeTraceKernelLaunch(kernelParams),
+               "preflightProbeTraceKernelLaunch succeeds for valid params");
+    expectTrue(fuse::renderer::gi::preflightProbeBlendKernelLaunch(kernelParams),
+               "preflightProbeBlendKernelLaunch succeeds for valid params");
+    expectTrue(!fuse::renderer::gi::preflightProbeTraceKernelLaunch(zeroRays),
+               "preflightProbeTraceKernelLaunch rejects zero rays");
+    fuse::renderer::gi::DDGIKernelParams populatedPreflight{};
+    expectTrue(fuse::renderer::gi::populateAndPreflightDDGIKernelParams(
+                   populatedPreflight, desc, validIndices, 2u, 99u),
+               "populateAndPreflightDDGIKernelParams succeeds for valid launch");
+    expectTrue(populatedPreflight.frame_seed == 99u,
+               "populateAndPreflightDDGIKernelParams sets frame_seed");
+               "tryScheduleProbeUpdatesAtRate zero rate reports zero_probes_per_frame");
+               "classifyProbeTrilinearSampleReject none for valid coords");
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearProbeSampleAtCoords(
+               "preflightTrilinearProbeSampleAtCoords succeeds for valid coords");
+               "preflightTrilinearProbeSample succeeds for interior world position");
+               "wouldSkipTrilinearProbeSampleAtCoords false for valid coords");
+               "classifyProbeTrilinearSampleReject null cache from world position");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, oobIndices, cache.data(), 8u) ==
+               "classifyProbeTrilinearSampleReject invalid_sample_coords");
