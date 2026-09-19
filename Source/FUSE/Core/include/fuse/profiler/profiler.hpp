@@ -24,6 +24,40 @@ enum class CounterValueKind : u8 {
     Float,
 };
 
+/// Why an event name failed validation — read-only guard for empty/null names.
+enum class EventNameRejectReason : u8 {
+    None = 0,
+    Null,
+    Empty,
+};
+
+/// Why an event lookup preflight rejected the request.
+enum class EventLookupRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    OutOfRange,
+    NotExportable,
+};
+
+/// Why profiler nesting/async state is unbalanced.
+enum class NestingStateRejectReason : u8 {
+    None = 0,
+    ActiveScope,
+    ActiveFlowNesting,
+    OpenAsyncFlows,
+    FlowDepthDetached,
+    CrossThreadFlowHandoffPending,
+};
+
+/// Why chrome trace safe export preflight rejected the request.
+enum class ChromeTraceExportRejectReason : u8 {
+    None = 0,
+    ProfilerDisabled,
+    UnbalancedNesting,
+    FlowDepthDetached,
+    CrossThreadFlowHandoffPending,
+};
+
 struct ProfileEvent {
     const char* name = nullptr;
     u64 timestampNs = 0;
@@ -48,6 +82,8 @@ struct ChromeTraceExportPreflight {
     u32 activeFlowNestingDepth = 0;
     u32 maxScopeNestingDepth = 0;
     u32 maxFlowNestingDepth = 0;
+    u32 firstExportableEventIndex = kInvalidEventIndex;
+    u32 lastExportableEventIndex = kInvalidEventIndex;
     bool profilerDisabled = false;
     bool bufferEmpty = false;
     bool scopeNestingUnbalanced = false;
@@ -62,6 +98,7 @@ struct ChromeTraceExportPreflight {
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+    bool canExportNonEmptyTrace() const { return canExport() && hasExportableEvents(); }
     bool canExportSafely() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
     }
@@ -104,12 +141,20 @@ bool isFlowNestingBalanced();
 bool hasUnbalancedNesting();
 bool isFlowDepthDetached();
 bool isCrossThreadFlowHandoffPending();
+bool hasActiveScope();
+bool hasActiveAsyncFlowNesting();
 
 bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
 bool isValidEventName(const char* name);
+EventNameRejectReason eventNameRejectReason(const char* name);
+const char* eventNameRejectReasonLabel(EventNameRejectReason reason);
+bool wouldRecordEvent(const char* name);
+bool canBeginAsyncFlow(const char* name);
+bool canEndAsyncFlow(const char* name);
+bool canSampleCounter(const char* track);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
@@ -118,18 +163,32 @@ u32 exportableEventCount();
 bool isEventExportable(u32 index);
 u32 firstEventIndex();
 u32 lastEventIndex();
+u32 firstExportableEventIndex();
+u32 lastExportableEventIndex();
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 countEventsByName(const char* name);
+EventLookupRejectReason eventLookupRejectReason(u32 index);
+EventLookupRejectReason exportableEventLookupRejectReason(u32 index);
+const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
+bool tryFirstExportableEvent(ProfileEvent& outEvent);
+bool tryLastExportableEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
+NestingStateRejectReason nestingStateRejectReason();
+const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason);
+ChromeTraceExportRejectReason chromeTraceExportRejectReason();
+const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason);
 ChromeTraceExportPreflight preflightChromeTraceExport();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
