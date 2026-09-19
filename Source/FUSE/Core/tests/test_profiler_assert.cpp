@@ -3571,3 +3571,22 @@ void testChromeTraceExportPreflightUncleanNesting() {
     expectTrue(openPreflight.flowNestingUnbalanced, "preflight marks unmatched flow as unbalanced");
 void testMixedBlankAndValidNameGuards() {
     testChromeTraceExportPreflightUncleanNesting();
+
+// --- deepen additive from deepen-profiler-b16-guards-33c5 ---
+void testWouldRecordEventGuard() {
+void testHasActiveScopeAndFlowDepthGuards() {
+void testChromeTraceExportPreflightBufferFullAndWarnings() {
+    expectTrue(!emptyPreflight.bufferFull, "preflight bufferFull false on reset");
+    expectTrue(emptyPreflight.invalidNameEventCount == 0u, "preflight invalidNameEventCount zero on reset");
+    expectTrue(!emptyPreflight.canExportWithContent(), "preflight canExportWithContent false on empty buffer");
+    expectTrue(emptyPreflight.canExport(), "preflight canExport true when enabled on empty buffer");
+    const fuse::profiler::ChromeTraceExportPreflight fullPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(fullPreflight.bufferFull, "preflight marks buffer full");
+    expectTrue(fullPreflight.eventCount == fuse::profiler::ringCapacity(),
+    expectTrue(fullPreflight.exportableEventCount == fuse::profiler::ringCapacity(),
+    expectTrue(fullPreflight.canExportWithContent(), "preflight canExportWithContent true when buffer full");
+    expectTrue(!fullPreflight.hasExportWarnings(), "full balanced buffer has no export warnings");
+    const fuse::profiler::ChromeTraceExportPreflight warningPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(warningPreflight.hasExportWarnings(), "preflight export warnings with open async flow");
+    expectTrue(warningPreflight.hasOpenAsyncFlows, "preflight marks open flows in warning state");
+    testChromeTraceExportPreflightBufferFullAndWarnings();

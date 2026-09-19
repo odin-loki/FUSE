@@ -419,3 +419,6 @@ AsyncFlowPreflight preflightAsyncFlowEnd(const char* name);
 
 // --- deepen additive from deepen-b16-profiler-guards-cad0 ---
 bool tryEventAtPhase(u32 index, EventPhase expectedPhase, ProfileEvent& outEvent);
+
+// --- deepen additive from deepen-profiler-b16-guards-33c5 ---
+bool wouldRecordEvent(const char* name);
