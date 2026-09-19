@@ -4424,3 +4424,10 @@ void testTaaPassTryPreflightAndClassifyWrappers() {
                "pass tryPreflightJitterSync passes after sync");
                "pass tryPreflightJitterAdvance passes after init");
                "pass tryPreflightJitterAdvance reason is None after init");
+
+// --- deepen additive from deepen-b59-taa-pass-guards-cc65 ---
+void testTaaPassTryAndClassifyGuards() {
+    expectTrue(pass->tryPreflightJitterSync(6u, jitterReason), "pass tryPreflightJitterSync passes before init");
+               "pass classifyResolveBlendReject passes before init");
+    expectTrue(pass->tryPreflightJitterSync(9u, jitterReason), "pass tryPreflightJitterSync passes after sync");
+    expectTrue(pass->tryPreflightJitterAdvance(jitterReason), "pass tryPreflightJitterAdvance still passes");
