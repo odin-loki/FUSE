@@ -2648,6 +2648,7 @@ bool finalize_contact_manifold_if_needed_with_preflight(
 
 
 
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {

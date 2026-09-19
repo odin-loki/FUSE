@@ -1595,4 +1595,6 @@ bool should_run_compute_friction_tangents(const ContactManifold& manifold, f32 e
 
 
 
+            manifold.frictionBasis = {};
+
 } // namespace fuse::physics::narrowphase
