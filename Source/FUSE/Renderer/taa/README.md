@@ -59,6 +59,12 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::historyInvalidateGeneration()` — current history invalidate epoch
 - `TaaPass::stampObservedHistoryGeneration(desc)` — stamp observed generation from pass history
 - `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter
+- `TaaHistoryWarmupBlockReason` / `classifyTaaHistoryWarmupBlock` / `preflightTaaHistoryWarmup` — warm-up preflight guards
+- `taaHistoryWarmupComplete` / `taaHistoryWarmupBlockReasonLabel` — warm-up completion and labels
+- `TaaJitter::advanceIfAlignedToFrameIndex(frame)` / `preflightTaaJitterAlignment` — advance only when jitter is synced
+- `TaaPass::advanceJitterIfAligned(frame)` / `preflightJitterAlignment` — pass-level jitter alignment guards
+- `TaaResolveDescPreflight` / `preflightTaaResolveDesc` — combined resolve skip + blend-weight preflight
+- `TaaResolve::preflightDesc` / `TaaPass::preflightResolveDesc` / `TaaPass::preflightHistoryWarmup` — pass/resolve wrappers
 
 ## Pipeline (stub)
 

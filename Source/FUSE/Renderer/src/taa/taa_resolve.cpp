@@ -246,6 +246,32 @@ bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistor
     return reject == TaaResolveBlendRejectReason::None;
 }
 
+bool preflightTaaResolveDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                             TaaResolveDescPreflight* result) {
+    TaaResolveDescPreflight local{};
+    local.skip_reason = classifyTaaResolveSkip(desc, history);
+    if (taaResolveSkipReasonIsBlocking(local.skip_reason)) {
+        if (result != nullptr) {
+            *result = local;
+        }
+        return false;
+    }
+
+    local.blend_reject_reason = classifyTaaResolveBlendReject(desc, history);
+    if (local.blend_reject_reason != TaaResolveBlendRejectReason::None) {
+        if (result != nullptr) {
+            *result = local;
+        }
+        return false;
+    }
+
+    local.passes = true;
+    if (result != nullptr) {
+        *result = local;
+    }
+    return true;
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
         return false;
@@ -305,6 +331,11 @@ bool TaaResolve::wouldSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& h
         *reason = skip;
     }
     return taaResolveSkipReasonIsBlocking(skip);
+}
+
+bool TaaResolve::preflightDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                               TaaResolveDescPreflight* result) const {
+    return preflightTaaResolveDesc(desc, history, result);
 }
 
 bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, void* /*cudaStream*/) {
