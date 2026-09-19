@@ -65,6 +65,29 @@ struct IslandDispatchBatchResult {
     u32 attemptedCount() const { return solvedCount + skippedCount; }
 };
 
+/// Per-island warm-start outcome (skip vs seed) for parallel batch stubs.
+struct IslandWarmStartResult {
+    bool warmed = false;
+    bool skipped = false;
+    u32 islandIndex = ContactIslandGraph::invalidIsland;
+};
+
+/// Aggregate warm-start counts for graph-level batch guards.
+struct IslandWarmStartStats {
+    u32 totalIslands = 0;
+    u32 warmStartableCount = 0;
+    u32 emptyCount = 0;
+    u32 noPriorDataCount = 0;
+};
+
+/// Graph-level warm-start preflight for selective per-island seeding.
+struct IslandWarmStartGraphPreflight {
+    IslandWarmStartStats stats{};
+    bool skipped = false;
+
+    bool can_warm_start() const { return !skipped && stats.warmStartableCount > 0u; }
+};
+
 /// Warm-start preflight for per-island lambda seeding (parallel-safe selective seed).
 struct IslandWarmStartPreflight {
     u32 ownedDistanceCount = 0;
@@ -495,6 +518,9 @@ IslandSolveJob extract_island(const ContactIslandGraph& graph, u32 islandIndex);
 /// Batch extract all island jobs (parallel dispatch prep stub).
 std::vector<IslandSolveJob> extract_island_jobs(const ContactIslandGraph& graph);
 
+/// Keep only jobs that pass `should_solve_island` (parallel dispatch prep stub).
+std::vector<IslandSolveJob> filter_dispatchable_jobs(const std::vector<IslandSolveJob>& jobs);
+
 /// Summarize constrained vs empty islands for dispatch prep and early-out guards.
 IslandSolveStats compute_island_solve_stats(const ContactIslandGraph& graph);
 
@@ -750,6 +776,20 @@ bool warm_start_island_lambdas_guarded(SolverWorkBuffers& workBuffers,
                                        const std::vector<f32>& priorDistanceLambdas,
                                        const std::vector<f32>& priorContactLambdas = {});
 
+/// Guarded warm-start by island index; returns false for out-of-range, empty, or no-prior islands.
+bool warm_start_island_lambdas_by_index_guarded(SolverWorkBuffers& workBuffers,
+                                                const ContactIslandGraph& graph,
+                                                u32 islandIndex,
+                                                const std::vector<f32>& priorDistanceLambdas,
+                                                const std::vector<f32>& priorContactLambdas = {});
+
+/// Guarded warm-start with explicit skip/seed outcome.
+IslandWarmStartResult warm_start_island_lambdas_result(SolverWorkBuffers& workBuffers,
+                                                       const ContactIslandGraph& graph,
+                                                       u32 islandIndex,
+                                                       const std::vector<f32>& priorDistanceLambdas,
+                                                       const std::vector<f32>& priorContactLambdas = {});
+
 /// Graph-level guarded warm-start across all islands; returns islands actually seeded.
 u32 warm_start_graph_lambdas_guarded(SolverWorkBuffers& workBuffers,
                                      const ContactIslandGraph& graph,
@@ -765,10 +805,6 @@ bool warm_start_island_lambdas_by_index_guarded(SolverWorkBuffers& workBuffers,
 
 /// Guarded warm-start with explicit skip/seed outcome.
 IslandWarmStartResult warm_start_island_lambdas_result(SolverWorkBuffers& workBuffers,
-                                                       const ContactIslandGraph& graph,
-                                                       u32 islandIndex,
-                                                       const std::vector<f32>& priorDistanceLambdas,
-                                                       const std::vector<f32>& priorContactLambdas = {});
 
 /// Batch guarded warm-start over warm-startable islands; returns count seeded.
 /// Batch guarded warm-start over all warm-startable islands; returns count seeded.
