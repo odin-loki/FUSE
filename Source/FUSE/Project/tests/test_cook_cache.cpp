@@ -1068,3 +1068,14 @@ void testCookHashPreflightDeepenGuards() {
     expectTrue(zero_combine.reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
     expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_probe_out.fusemesh"),
     expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_probe.obj", 42u),
+
+// --- deepen additive from deepen-b79-cooker-hash-ff33 ---
+void testCookHashPreflightFnvAndManifestCook() {
+    const fuse::project::CookHashPreflight null_data = fuse::project::preflight_fnv1a64_bytes(nullptr, 4u);
+    const fuse::project::CookHashPreflight valid_bytes = fuse::project::preflight_fnv1a64_bytes(&byte, 1u);
+    const fuse::project::CookHashPreflight empty_bytes = fuse::project::preflight_fnv1a64_bytes(nullptr, 0u);
+    const fuse::project::CookHashPreflight cook_preflight =
+    const fuse::project::CookHashPreflight no_dep_preflight =
+    expectTrue(!cooker.cache().would_invalidate_source(""), "empty source path would_invalidate guarded");
+    expectTrue(!cooker.cache().would_invalidate_output(""), "empty output path would_invalidate guarded");
+    testCookHashPreflightFnvAndManifestCook();

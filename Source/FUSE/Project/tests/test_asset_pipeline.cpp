@@ -1983,3 +1983,6 @@ void testCookerReconcileEstimatorGuards() {
 // --- deepen additive from deepen-b79-cooker-hash-1e9d ---
     entryA.output_path = "/tmp/fuse_b79_est_stale_a.fusemesh";
     entryB.output_path = "/tmp/fuse_b79_est_stale_b.fusemesh";
+
+// --- deepen additive from deepen-b79-cooker-hash-ff33 ---
+               "would_invalidate_downstream_of true on repopulated chain cache");

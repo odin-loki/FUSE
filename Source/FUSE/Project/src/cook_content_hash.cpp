@@ -497,3 +497,7 @@ CookHashPreflight preflight_cacheable_cook_key(u64 source_hash, u64 upstream_has
 CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry, const CookManifest& manifest) {
     const CookHashPreflight source_preflight = preflight_manifest_entry_hash(entry);
             preflight.reason = CookHashRejectReason::UnknownDependencyOutput;
+
+// --- deepen additive from deepen-b79-cooker-hash-ff33 ---
+CookHashPreflight preflight_manifest_cook_hash(const CookManifestEntry& entry, const CookManifest& manifest) {
+    CookHashPreflight preflight = preflight_manifest_entry_hash(entry);
