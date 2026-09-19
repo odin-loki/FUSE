@@ -1079,3 +1079,9 @@ bool cluster_util::tryCanLookupCluster(const ClusterGridSoA& grid,
         outReason = ClusterLookupRejectReason::OutOfRangeCluster;
     return tryLookupClusterLights(grid, clusterIdx, outLights, outCount, reason);
     if (!tryCanLookupCluster(grid, clusterIdx, outReason)) {
+
+// --- deepen additive from deepen-b5-clustered-lights-a6e2 ---
+    if (!tryCanLookupAtCoord(grid, desc, outReason)) {
+    ClusterScreenMappingRejectReason reason = ClusterScreenMappingRejectReason::None;
+    return tryMapScreenDepthToClusterIndex(screenX, screenY, viewDepth, desc, camera, outClusterIndex, reason);
+    return tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights, maxLightsPerCluster, outDropped,

@@ -1723,3 +1723,23 @@ void testClusterDirectLookupGuards() {
     expectTrue(reason == fuse::renderer::GridRebuildRejectReason::None, "matching rebuild reports no reject reason");
     expectTrue(reason == fuse::renderer::GridRebuildRejectReason::None, "zero cluster count reports no reject reason");
     testClusterLookupAtCoordRejectReasons();
+
+// --- deepen additive from deepen-b5-clustered-lights-a6e2 ---
+void testClusterScreenMappingRejectGuards() {
+               "tryMapScreenDepth accepts in-range depth");
+               "tryMapScreenDepth rejects empty grid");
+               "tryMapScreenDepth rejects depth above far plane");
+               "tryMapScreenDepth rejects invalid camera");
+               "tryCanRebuild vacuously succeeds for zero cluster count");
+    expectTrue(dropped == 0u, "tryRebuild drops nothing when within capacity");
+               "tryRebuild grid passes population validation");
+               "tryRebuild rejects invalid preflight");
+    expectTrue(rejectedDropped == 0u, "tryRebuild zeroes dropped count on failure");
+               "tryRebuildForDesc succeeds on valid preflight");
+    expectTrue(descDropped == 0u, "tryRebuildForDesc drops nothing when within capacity");
+               "tryRebuildForDesc grid passes population validation");
+void testClusterCoordLookupPreflightGuards() {
+    expectTrue(fuse::renderer::cluster_util::tryCanLookupAtCoord(grid, desc, coordReason),
+    expectTrue(!fuse::renderer::cluster_util::tryCanLookupAtCoord(emptyGrid, desc, coordReason),
+void testClusterPopulationForDescGuards() {
+    testClusterCoordLookupPreflightGuards();
