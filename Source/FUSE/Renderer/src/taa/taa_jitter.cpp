@@ -426,3 +426,6 @@ TaaJitterFramePreflight preflightTaaJitterFrame(u32 frameIndex, u32 width, u32 h
 
 // --- deepen additive from deepen-b59-taa-guards-804f ---
 bool TaaJitterLayout::tryNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height, fuse::math::Vec2& out,
+
+// --- deepen additive from deepen-b59-taa-guards-48f5 ---
+    return preflightTaaJitterSync(0u, sequenceLength);

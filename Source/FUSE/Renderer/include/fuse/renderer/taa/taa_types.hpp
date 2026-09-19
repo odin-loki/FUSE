@@ -393,3 +393,6 @@ struct TaaFrameGuardPreflight {
     TaaHistoryWarmupPreflight history{};
     TaaResolveBlendPreflight blend{};
 TaaFrameGuardPreflight preflightTaaFrameGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+
+// --- deepen additive from deepen-b59-taa-guards-48f5 ---
+                                    TaaResolveBlendRejectReason& blendReason);

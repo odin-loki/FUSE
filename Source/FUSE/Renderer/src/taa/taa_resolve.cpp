@@ -706,3 +706,7 @@ TaaFrameGuardPreflight preflightTaaFrameGuards(const TaaResolveDesc& desc, const
     TaaFrameGuardPreflight preflight{};
     preflight.history = preflightTaaHistoryWarmup(history, observedGeneration);
     preflight.blend = preflightTaaResolveBlendFrame(desc, history);
+
+// --- deepen additive from deepen-b59-taa-guards-48f5 ---
+    if (!preflightTaaHistoryReuse(history, observedGeneration, reuseReason)) {
+    return preflightTaaResolveTemporal(desc, history, &reuseReason, &blendReason);

@@ -3946,3 +3946,11 @@ void testTaaPassTryAndShouldSkipPreflights() {
     testJitterShouldSkipAndTryNdcPreflights();
     testResolveShouldSkipAndTryPreflights();
     testTaaPassTryAndShouldSkipPreflights();
+
+// --- deepen additive from deepen-b59-taa-guards-48f5 ---
+void testHistoryWarmupCompleteGuards() {
+    expectTrue(fuse::renderer::tryPreflightTaaResolveTemporal(desc, history, reuseReason, blendReason),
+               "tryPreflightTaaResolveTemporal passes after warmup");
+    expectTrue(!fuse::renderer::tryPreflightTaaResolveTemporal(desc, history, reuseReason, blendReason),
+               "tryPreflightTaaResolveTemporal fails for stale generation");
+    expectTrue(!pass->preflightTemporalResolve(resolveDesc),

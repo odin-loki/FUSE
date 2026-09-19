@@ -572,3 +572,6 @@ TaaResolveBlendPreflight TaaPass::preflightResolveBlendFrame(const TaaResolveDes
     return preflightTaaResolveBlendFrame(desc, m_history);
 TaaFrameGuardPreflight TaaPass::preflightFrameGuards(const TaaResolveDesc& desc, u32 observedGeneration) const {
     return preflightTaaFrameGuards(desc, m_history, observedGeneration);
+
+// --- deepen additive from deepen-b59-taa-guards-48f5 ---
+bool TaaPass::preflightTemporalResolve(const TaaResolveDesc& desc, TaaHistoryReuseBlockReason* reuseReason,

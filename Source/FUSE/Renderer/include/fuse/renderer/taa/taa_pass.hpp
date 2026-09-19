@@ -313,3 +313,6 @@ void addTaaPassToGraph(RenderGraph& graph);
     TaaHistoryWarmupPreflight preflightHistoryWarmup(u32 observedGeneration) const;
     TaaResolveBlendPreflight preflightResolveBlendFrame(const TaaResolveDesc& desc) const;
     TaaFrameGuardPreflight preflightFrameGuards(const TaaResolveDesc& desc, u32 observedGeneration) const;
+
+// --- deepen additive from deepen-b59-taa-guards-48f5 ---
+    bool preflightTemporalResolve(const TaaResolveDesc& desc, TaaHistoryReuseBlockReason* reuseReason = nullptr,
