@@ -1591,6 +1591,47 @@ void testCookManifestCacheHitsOnSecondRun() {
 
 } // namespace
 
+void testCookCachePreflightAndReconcileEstimators() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_est_a.obj", "# est a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_est_b.obj", "# est b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_est_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_est_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "estimator test seeds cache");
+
+    const auto lookup_preflight =
+        fuse::project::preflight_cook_cache_lookup(cooker.cache(), batch.records[0].content_hash);
+    expectTrue(lookup_preflight.would_hit(), "pipeline preflight sees cached entry");
+    expectTrue(cooker.cache().stats().hits == 0u, "pipeline preflight does not bump hit stats");
+
+    const auto clean_estimate = cooker.estimate_stale_dependency_hashes(manifest);
+    expectTrue(!clean_estimate.would_reconcile(), "clean cache reconcile estimate is empty");
+
+    writeTempFile(sourceA, "# est a revised\n");
+    const auto stale_estimate = cooker.estimate_stale_dependency_hashes(manifest);
+    expectTrue(stale_estimate.would_reconcile(), "stale upstream reconcile estimate is non-empty");
+    expectTrue(stale_estimate.stale_upstream_entries >= 1u,
+               "stale upstream reconcile estimate counts entries");
+
+    const fuse::u32 reconciled = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(reconciled >= stale_estimate.total_entries(),
+               "reconcile invalidation matches or exceeds estimate");
+}
+
 int main() {
     fuse::core::initialize();
 
@@ -1648,6 +1689,7 @@ int main() {
     testCookCacheRoundTrip();
     testCookCacheEmptyKeyPaths();
     testCookDirtyInvalidatesCache();
+    testCookCachePreflightAndReconcileEstimators();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

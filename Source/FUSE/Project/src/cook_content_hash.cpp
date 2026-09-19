@@ -92,6 +92,38 @@ u64 hash_upstream_dependencies(const std::vector<std::string>& dependency_output
     return hash;
 }
 
+CookCacheKeyPreflight preflight_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    CookCacheKeyPreflight preflight;
+    preflight.zero_source_hash = source_hash == 0;
+    return preflight;
+}
+
+namespace {
+
+CookImportHashPreflight preflight_import_paths(const std::string& input_path, const std::string& output_path) {
+    CookImportHashPreflight preflight;
+    preflight.empty_input_path = input_path.empty();
+    preflight.empty_output_path = output_path.empty();
+    if (!preflight.empty_input_path && !preflight.empty_output_path) {
+        preflight.unreadable_source = hash_file_content(input_path) == 0;
+    }
+    return preflight;
+}
+
+} // namespace
+
+CookImportHashPreflight preflight_mesh_import(const MeshImportDesc& desc) {
+    return preflight_import_paths(desc.input_path, desc.output_path);
+}
+
+CookImportHashPreflight preflight_texture_import(const TextureImportDesc& desc) {
+    return preflight_import_paths(desc.input_path, desc.output_path);
+}
+
+CookImportHashPreflight preflight_audio_import(const AudioImportDesc& desc) {
+    return preflight_import_paths(desc.input_path, desc.output_path);
+}
+
 u64 combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     if (source_hash == 0) {
         return 0;

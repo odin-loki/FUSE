@@ -407,6 +407,126 @@ void testCookCacheLoadPreservesEntriesWithoutOnDiskSource() {
     expectTrue(loaded.contains(101u), "absent-source entry remains addressable after load");
 }
 
+void testCookCacheLookupPreflightGuards() {
+    fuse::project::CookCache cache;
+
+    const auto zero_preflight = fuse::project::preflight_cook_cache_lookup(cache, 0u);
+    expectTrue(zero_preflight.zero_key, "lookup preflight marks zero key");
+    expectTrue(zero_preflight.should_skip(), "zero-key lookup preflight should skip");
+    expectTrue(!zero_preflight.would_hit(), "zero-key lookup preflight would not hit");
+
+    const auto empty_preflight = fuse::project::preflight_cook_cache_lookup(cache, 77u);
+    expectTrue(empty_preflight.empty_cache, "lookup preflight marks empty cache");
+    expectTrue(empty_preflight.would_miss(), "empty cache lookup preflight would miss");
+
+    fuse::project::CookCacheEntry entry;
+    entry.content_hash = 77u;
+    entry.source_path = "/tmp/fuse_b79_preflight_lookup.obj";
+    entry.output_path = "/tmp/fuse_b79_preflight_lookup.fusemesh";
+    cache.store(entry);
+
+    const auto hit_preflight = fuse::project::preflight_cook_cache_lookup(cache, 77u);
+    expectTrue(hit_preflight.can_lookup(), "valid key passes lookup preflight");
+    expectTrue(hit_preflight.would_hit(), "seeded entry would hit in preflight");
+    expectTrue(cache.stats().hits == 0u, "lookup preflight does not touch hit stats");
+}
+
+void testCookCacheStorePreflightGuards() {
+    fuse::project::CookCacheEntry invalid;
+    invalid.content_hash = 0;
+    invalid.source_path = "/tmp/fuse_b79_preflight_store.obj";
+    invalid.output_path = "/tmp/fuse_b79_preflight_store.fusemesh";
+
+    const auto zero_preflight = fuse::project::preflight_cook_cache_store(invalid);
+    expectTrue(zero_preflight.zero_key, "store preflight marks zero key");
+    expectTrue(zero_preflight.should_skip(), "zero-key store preflight should skip");
+
+    fuse::project::CookCacheEntry empty_source = invalid;
+    empty_source.content_hash = 88u;
+    empty_source.source_path = "";
+    const auto empty_source_preflight = fuse::project::preflight_cook_cache_store(empty_source);
+    expectTrue(empty_source_preflight.empty_source_path, "store preflight marks empty source path");
+    expectTrue(empty_source_preflight.should_skip(), "empty source store preflight should skip");
+
+    fuse::project::CookCache cache;
+    cache.store(empty_source);
+    expectTrue(cache.entry_count() == 0u, "preflight-rejected store does not mutate cache");
+}
+
+void testCookImportHashPreflightGuards() {
+    fuse::project::MeshImportDesc missing;
+    missing.input_path = "/tmp/fuse_b79_preflight_missing.obj";
+    missing.output_path = "/tmp/fuse_b79_preflight_missing.fusemesh";
+    const auto unreadable = fuse::project::preflight_mesh_import(missing);
+    expectTrue(unreadable.unreadable_source, "missing source fails import hash preflight");
+    expectTrue(unreadable.should_skip(), "unreadable source import preflight should skip");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_preflight_ok.obj", "# preflight ok\n");
+    fuse::project::MeshImportDesc valid;
+    valid.input_path = source;
+    valid.output_path = "/tmp/fuse_b79_preflight_ok.fusemesh";
+    const auto ok = fuse::project::preflight_mesh_import(valid);
+    expectTrue(ok.can_hash(), "readable source passes import hash preflight");
+    expectTrue(fuse::project::preflight_cook_cache_key(0u, 42u).zero_source_hash,
+               "cache key preflight marks zero source hash");
+    expectTrue(fuse::project::preflight_cook_cache_key(99u, 42u).can_fold(),
+               "valid source hash passes cache key preflight");
+}
+
+void testCookCacheInvalidationProbes() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_probe_a.obj", "# probe a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_probe_b.obj", "# probe b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_probe_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_probe_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
+    expectTrue(batch.ok, "probe test seeds cache");
+    expectTrue(cooker.cache().entry_count() == 2u, "probe test has two cached entries");
+
+    const fuse::u64 hits_before = cooker.cache().stats().hits;
+    const fuse::u32 direct_probe = cooker.cache().probe_invalidate_source(sourceA);
+    expectTrue(direct_probe == 1u, "probe counts direct source entry");
+    expectTrue(cooker.cache().stats().hits == hits_before, "probe does not touch cache stats");
+
+    writeTempFile(sourceA, "# probe a revised\n");
+    const fuse::u32 stale_probe =
+        cooker.cache().probe_stale_content_for_source(sourceA, batch.records[0].content_hash + 1u);
+    expectTrue(stale_probe == 1u, "probe counts stale content entry");
+
+    const auto upstream_probe = cooker.probe_upstream_dependency(manifest, sourceA);
+    expectTrue(upstream_probe.would_invalidate(), "upstream probe reports invalidation scope");
+    expectTrue(upstream_probe.direct_entries >= 1u, "upstream probe counts direct entries");
+    expectTrue(upstream_probe.downstream_entries >= 1u, "upstream probe counts downstream cascade");
+
+    const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
+    expectTrue(removed >= upstream_probe.total_entries(),
+               "actual invalidation matches or exceeds probe estimate");
+
+    cooker.cook_manifest(manifest);
+    writeTempFile(sourceA, "# probe a reconcile\n");
+    const auto estimate = cooker.estimate_stale_dependency_hashes(manifest);
+    expectTrue(estimate.would_reconcile(), "reconcile estimate reports stale upstream hashes");
+    expectTrue(!estimate.stale_source_paths.empty(), "reconcile estimate lists stale sources");
+    expectTrue(estimate.stale_upstream_entries >= 1u, "reconcile estimate counts stale upstream entries");
+
+    const fuse::u32 reconciled = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(reconciled >= estimate.total_entries(),
+               "actual reconcile matches or exceeds estimate");
+}
+
 void testCookCachePruneInvalidEntriesOnLoad() {
     const std::string source = writeTempFile("/tmp/fuse_b79_prune_load_valid.obj", "# prune load valid\n");
     fuse::project::MeshImportDesc desc;
@@ -470,6 +590,10 @@ int main() {
     testCookCacheLoadPreservesEntriesWithoutOnDiskSource();
     testCookCachePruneAllMixedInvalidAndStale();
     testCookCachePruneInvalidEntriesOnLoad();
+    testCookCacheLookupPreflightGuards();
+    testCookCacheStorePreflightGuards();
+    testCookImportHashPreflightGuards();
+    testCookCacheInvalidationProbes();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
