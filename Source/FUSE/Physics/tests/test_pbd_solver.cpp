@@ -3578,3 +3578,34 @@ void testDispatchSolveIslandSleepGuarded() {
     testPreflightWakeOnImpulseGuards();
     testPreflightIslandBodyPartition();
     testPreflightConstraintIterations();
+
+// --- deepen additive from deepen-pbd-island-guards-5425 ---
+    expectTrue(!should_skip_island_build(4), "should not skip build with positive body count");
+    const IslandBuildPreflight zeroPreflight = preflight_island_build(0, contacts, constraints);
+    expectTrue(zeroPreflight.zeroBodies, "zero body count flagged");
+    expectTrue(zeroPreflight.skipped, "zero body build preflight skipped");
+    expectTrue(!zeroPreflight.can_build(), "zero body count cannot build");
+void testBuildIslandGraphGuarded() {
+void testIslandSleepSolvePreflight() {
+    const IslandSleepSolvePreflight sleepingPreflight =
+    expectTrue(sleepingPreflight.stats.sleepingCount == 2u, "sleep preflight counts sleeping bodies");
+    expectTrue(sleepingPreflight.stats.awakeDynamicCount == 0u, "sleep preflight sees no awake dynamics");
+    expectTrue(sleepingPreflight.allDynamicSleeping, "all dynamic bodies marked sleeping");
+    expectTrue(!sleepingPreflight.can_solve(), "sleeping island cannot solve");
+    const IslandSleepSolvePreflight awakePreflight =
+    expectTrue(awakePreflight.skipped, "sleep preflight skips empty island");
+    expectTrue(should_skip_sleeping_island_solve_index(graph, graph.islandCount() + 1u, bodies),
+void testIslandWakePreflight() {
+    const IslandWakePreflight preflight =
+    expectTrue(!should_skip_island_sleep_detection(graph.island(0), bodies),
+    expectTrue(should_skip_island_sleep_detection(graph.island(0), staticBodies),
+void testSolveIslandJobPreflightGuards() {
+    const IslandSolveJobPreflight invalidDt =
+    expectTrue(sleepingPreflight.sleep.allDynamicSleeping, "solve job preflight sees sleeping island");
+    expectTrue(!sleepingPreflight.can_solve(), "solve job preflight blocks all-sleeping island");
+    expectTrue(should_skip_solve_island_job_preflight(graph.island(0), bodies, 1.f / 60.f),
+               "should_skip_solve_island_job_preflight on sleeping island");
+    expectTrue(awakePreflight.can_solve(), "solve job preflight allows awake island");
+    testIslandSleepSolvePreflight();
+    testIslandWakePreflight();
+    testSolveIslandJobPreflightGuards();
