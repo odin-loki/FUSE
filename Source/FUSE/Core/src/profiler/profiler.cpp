@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace fuse::profiler {
@@ -335,6 +336,26 @@ bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
 
+namespace {
+
+bool isAsyncFlowPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+}
+
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    if (!isValidEventName(name) || !isValidEventName(event.name)) {
+        return false;
+    }
+
+    return std::strcmp(event.name, name) == 0;
+}
+
+bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
+    return isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name);
+}
+
+} // namespace
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return isValidEventName(event.name);
 }
@@ -406,6 +427,50 @@ bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
     return true;
 }
 
+bool tryFirstEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByName(name);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return true;
+}
+
+bool tryLastEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByName(name);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return true;
+}
+
+bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByFlowId(flowId);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return true;
+}
+
+bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByFlowId(flowId);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return true;
+}
+
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
     if (index == kInvalidEventIndex) {
@@ -462,6 +527,110 @@ u32 countEventsByPhase(EventPhase phase) {
         }
     }
     return count;
+}
+
+u32 findFirstEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (eventNameMatches(event, name)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (eventNameMatches(event, name)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (eventNameMatches(event, name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 findFirstEventIndexByFlowId(u32 flowId) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (eventMatchesFlowId(event, flowId)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByFlowId(u32 flowId) {
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (eventMatchesFlowId(event, flowId)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByFlowId(u32 flowId) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (eventMatchesFlowId(event, flowId)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 openAsyncFlowCountForId(u32 flowId) {
+    u32 openStarts = 0u;
+    u32 finishes = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (!eventMatchesFlowId(event, flowId)) {
+            continue;
+        }
+
+        if (event.phase == EventPhase::FlowStart) {
+            ++openStarts;
+        } else if (event.phase == EventPhase::FlowFinish) {
+            ++finishes;
+        }
+    }
+
+    return openStarts > finishes ? openStarts - finishes : 0u;
+}
+
+bool isAsyncFlowOpen(u32 flowId) {
+    return openAsyncFlowCountForId(flowId) > 0u;
 }
 
 u32 lastEventIndex() {
