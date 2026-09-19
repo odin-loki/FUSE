@@ -397,6 +397,57 @@ FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     return cellOccupancyRejectReason(range, maxCells) == expected;
 }
 
+/// Cell-capacity reject reason via broadphase params (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReasonForParams(
+    const CellRange3& range,
+    const SpatialHashParams& params) {
+    return cellOccupancyRejectReason(range, params.maxCellOccupancy);
+}
+
+FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReasonForParams(
+    const CellRange2& range,
+    const SpatialHashParams& params) {
+    return cellOccupancyRejectReason(range, params.maxCellOccupancy);
+}
+
+/// Cell-capacity preflight via broadphase params (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancyForParams(
+    const CellRange3& range,
+    const SpatialHashParams& params) {
+    return preflightCellOccupancy(range, params.maxCellOccupancy);
+}
+
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancyForParams(
+    const CellRange2& range,
+    const SpatialHashParams& params) {
+    return preflightCellOccupancy(range, params.maxCellOccupancy);
+}
+
+/// Non-mutating shape cell-occupancy predicate via params (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellOccupancyIteration(
+    const CellRange3& range,
+    const SpatialHashParams& params) {
+    return preflightCellOccupancyForParams(range, params).canIterate();
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellOccupancyIteration(
+    const CellRange2& range,
+    const SpatialHashParams& params) {
+    return preflightCellOccupancyForParams(range, params).canIterate();
+}
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellOccupancyIteration(
+    const CellRange3& range,
+    const SpatialHashParams& params) {
+    return !shouldRunShapeCellOccupancyIteration(range, params);
+}
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellOccupancyIteration(
+    const CellRange2& range,
+    const SpatialHashParams& params) {
+    return !shouldRunShapeCellOccupancyIteration(range, params);
+}
+
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
@@ -704,6 +755,8 @@ struct MergePairsIntoBufferPreflight {
     MergePairsIntoBufferRejectReason reason = MergePairsIntoBufferRejectReason::None;
     bool emptyPairs = false;
     bool bufferFull = false;
+    u32 pairCount = 0;
+    u32 remainingCapacity = 0;
 
     bool canMerge() const { return reason == MergePairsIntoBufferRejectReason::None; }
 };
