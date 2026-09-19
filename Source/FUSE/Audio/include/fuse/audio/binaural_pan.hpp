@@ -578,7 +578,6 @@ HrtfPanPathRejectReason hrtf_pan_path_reject_reason(bool hrtf_enabled, const Vec
 bool hrtf_pan_path_rejects_for_reason(bool hrtf_enabled, const Vec3& rel_listener,
                                       HrtfPanPathRejectReason expected);
 /// Human-readable label for pan-path reject reasons (B7.2 deepen follow-up).
-const char* hrtf_pan_path_reject_reason_label(HrtfPanPathRejectReason reason);
 
 /// Classify why HRTF pan routing bypasses spatial pan (B7.2 deepen follow-up).
 /// Human-readable label for pan-path reject reasons (B7.2 deepen).
@@ -586,6 +585,7 @@ const char* hrtf_pan_path_reject_reason_label(HrtfPanPathRejectReason reason);
 /// Classify why HRTF pan routing would bypass spatial pan (B7.2 deepen).
 HrtfPanPathRejectReason classify_hrtf_pan_path_reject(bool hrtf_enabled, const Vec3& rel_listener);
 /// Returns true when \c hrtf_pan_path_reject_reason matches \p expected (B7.2 deepen follow-up).
+
 
 /// Pan-path preflight diagnostics — read-only guard bundle (B7.2 deepen).
 struct HrtfPanPathPreflight {
@@ -1401,7 +1401,6 @@ bool hrtf_attenuation_coupling_rejects_for_reason(HrtfPanPath path, float distan
 /// Why attenuation-coupling preflight skipped spatial narrowing (B7.2 deepen follow-up).
 
 /// Human-readable label for attenuation-coupling reject reasons (B7.2 deepen follow-up).
-const char* hrtf_attenuation_coupling_reject_reason_label(HrtfAttenuationCouplingRejectReason reason);
 
 /// Classify why attenuation coupling would skip spatial narrowing (B7.2 deepen follow-up).
 HrtfAttenuationCouplingRejectReason classify_hrtf_attenuation_coupling_reject(
@@ -1411,6 +1410,8 @@ HrtfAttenuationCouplingRejectReason classify_hrtf_attenuation_coupling_reject(
 /// Human-readable label for attenuation-coupling reject reasons (B7.2 deepen).
 
 /// Classify why distance/occlusion coupling would skip narrowing (B7.2 deepen).
+
+
 
 
 
@@ -1488,6 +1489,7 @@ bool try_preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_at
                                           const BinauralPanParams& params = {});
 
                                               float occlusion_gain,
+
 
 
 
@@ -2071,6 +2073,8 @@ HrtfBinauralPreflight preflight_hrtf_binaural(bool hrtf_enabled, const AudioList
 
 bool try_preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
                                   float distance_attenuation, float occlusion_gain,
+
+
 
 
 
