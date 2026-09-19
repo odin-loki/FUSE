@@ -34,11 +34,18 @@ enum class ProbeKernelRejectReason : u8 {
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
 const char* probeKernelRejectReasonLabel(ProbeKernelRejectReason reason);
 
+/// Classify why a CUDA probe-kernel launch preflight would reject (B5.6 deepen).
+ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params);
+
+/// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Preflight guard before probe trace kernel launch.
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
 /// Diagnose why probe trace launch preflight would reject.
 bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
+/// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 /// Preflight guard before probe blend kernel launch.
 bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
 /// Diagnose why probe blend launch preflight would reject.
