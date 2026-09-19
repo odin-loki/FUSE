@@ -124,6 +124,13 @@ struct AsyncFlowEndPreflight {
 
 
 
+};
+
+    bool profilerDisabled = false;
+    bool invalidName = false;
+
+
+
 
 /// Read-only nesting/async-flow state preflight — safe before export or frame teardown.
 struct NestingStatePreflight {
@@ -1946,6 +1953,11 @@ NestingPreflight preflightNesting();
 bool wouldSkipChromeTraceExportCleanly();
 
 /// Non-mutating recording predicates — same guards as scope/flow/counter stubs (B1.6 deepen follow-up).
+
+bool wouldSkipProfileScope(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowBegin(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowEnd(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipCounterSample(const char* track, ProfileRecordSkipReason* reason = nullptr);
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();

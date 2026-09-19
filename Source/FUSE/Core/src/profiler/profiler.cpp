@@ -2257,6 +2257,9 @@ ProfileRecordSkipReason classifyProfileRecordSkip(const char* name, bool require
     if (requireOpenAsyncFlow && g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u) {
         return ProfileRecordSkipReason::NoOpenAsyncFlow;
 
+
+
+
 bool wouldSkipProfileRecord(const char* name,
                             bool requireOpenAsyncFlow,
                             ProfileRecordSkipReason* reason) {
@@ -2369,6 +2372,9 @@ InvalidEventNameReason classifyEventName(const char* name) {
     return classifyEventName(name) == InvalidEventNameReason::Null;
 
     return classifyEventName(name) == InvalidEventNameReason::Empty;
+    }
+
+} // namespace
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
@@ -3562,7 +3568,6 @@ bool tryFirstFlowStartById(u32 flowId, ProfileEvent& outEvent) {
 
 
 
-    return tryExportableEventAt(index, outEvent);
 
 
 
@@ -4003,6 +4008,12 @@ bool tryFindAsyncFlowFinishIndex(u32 flowId, u32& outIndex) {
 
     u32 index = kInvalidEventIndex;
     if (!tryFindLastEventIndexByName(name, index)) {
+
+
+
+
+
+
 
 
 u32 firstEventIndex() {
@@ -5826,6 +5837,14 @@ bool tryLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
     if (!tryFindLastEventIndexByPhase(phase, index)) {
 
 
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -6542,7 +6561,25 @@ bool hasRingOverflowEvents() {
     return preflight;
 }
 
-    AsyncFlowPreflight preflight{};
+
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+
+
+NestingStatePreflight preflightNestingState() {
+    NestingStatePreflight preflight{};
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    preflight.openAsyncFlowCount = openAsyncFlowCount();
+    preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
+    preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+
+
+
+
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
