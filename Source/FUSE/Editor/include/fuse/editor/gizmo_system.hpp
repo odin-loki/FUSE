@@ -1141,3 +1141,8 @@ bool tryPreflightSnap(GizmoMode mode, const GizmoSnapSettings& settings, SnapPre
                                              BeginDragPreflight& out,
     [[nodiscard]] bool tryPreflightUpdateDrag(const GizmoHitTest& hit, UpdateDragPreflight& out,
     [[nodiscard]] bool tryPreflightEndDrag(EndDragPreflight& out,
+
+// --- deepen additive from deepen-gizmo-preflights-8404 ---
+struct PhaseActionPreflight {
+PhaseActionPreflight preflightPhaseAction(const GizmoHitTest& hit, bool dragging,
+    [[nodiscard]] PhaseActionPreflight preflightPhaseAction(const GizmoHitTest& hit) const;

@@ -3724,3 +3724,18 @@ void testClassifyRejectFromPreflights() {
     const fuse::editor::BeginDragPreflight nanRayBegin = fuse::editor::preflightBeginDrag(
     expectTrue(!fuse::editor::preflightInteraction(hit, false, fuse::editor::GizmoAxis::None,
     expectTrue(!gizmo.preflightInteraction(hit).canBegin(),
+
+// --- deepen additive from deepen-gizmo-preflights-8404 ---
+void testPhaseActionPreflight() {
+    const fuse::editor::PhaseActionPreflight idleAction = fuse::editor::preflightPhaseAction(
+    const fuse::editor::PhaseActionPreflight activeAction = fuse::editor::preflightPhaseAction(
+    const fuse::editor::PhaseActionPreflight outOfBoundsAction = fuse::editor::preflightPhaseAction(
+    const fuse::editor::PhaseActionPreflight degradedAction = fuse::editor::preflightPhaseAction(
+    const fuse::editor::PhaseActionPreflight gizmoAction = gizmo.preflightPhaseAction(hit);
+void testInteractionPreflightPhaseSnapHelpers() {
+    const fuse::editor::InteractionPreflight blockedUpdate = fuse::editor::preflightInteraction(
+    const fuse::editor::EndInteractionPreflight endPreflight = fuse::editor::preflightEndInteraction(
+    expectTrue(!endPreflight.snapWillApply(),
+    expectTrue(endPreflight.snapDegraded(), "end interaction marks snapDegraded when step invalid");
+    testPhaseActionPreflight();
+    testInteractionPreflightPhaseSnapHelpers();
