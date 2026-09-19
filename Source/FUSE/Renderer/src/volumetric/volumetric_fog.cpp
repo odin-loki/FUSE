@@ -1708,3 +1708,11 @@ bool FroxelGridLayout::canPreflightTileCoords(u32 tileX, u32 tileY, u32 sliceZ, 
     case DensityLookupRejectReason::CoordOutOfRange:
     if (!tryCanLookupAtIndex(grid, desc, FroxelGridLayout::froxelIndexClamped(tileX, tileY, sliceZ, desc), outReason)) {
         outReason = DensityLookupRejectReason::CoordOutOfRange;
+
+// --- deepen additive from deepen-b511-froxel-guards-b0a8 ---
+    return tryCanSampleAtCoords(grid, desc, coords, reason) &&
+           reason == SampleCoordRejectReason::None &&
+    if (reason == SampleCoordRejectReason::EmptyGrid || reason == SampleCoordRejectReason::OutOfBounds) {
+        outReason = lookupReason == DensityLookupRejectReason::EmptyGrid ||
+                            lookupReason == DensityLookupRejectReason::EmptyStorage
+    const bool canFill = tryCanPopulateFromAnalyticFog(desc, camera, params, reason);

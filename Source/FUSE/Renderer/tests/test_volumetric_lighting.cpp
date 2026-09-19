@@ -2406,3 +2406,15 @@ void testFroxelCoordLookupScreenSampleAndPopulateReasonGuards() {
                "trySampleDensityAtCoord with reason succeeds for clampable OOB coords");
     expectNear(coordSample, 2.f, 1e-5f, "trySampleDensityAtCoord with reason clamps OOB coords");
     expectTrue(populated.matchesDesc(desc), "tryPopulate with reason allocates matching grid");
+
+// --- deepen additive from deepen-b511-froxel-guards-b0a8 ---
+void testFroxelCoordLookupScreenSampleAndDescGuards() {
+    expectTrue(std::strcmp(fuse::renderer::screenMappingRejectReasonLabel(mapReason), "depth_out_of_range") == 0,
+    expectTrue(fuse::renderer::froxel_util::wouldSkipFroxelSample(grid, desc, hardOob),
+               "wouldSkipFroxelSample true for hard OOB coords");
+    expectTrue(fuse::renderer::froxel_util::wouldSkipFroxelSample(grid, desc, hardOob, &sampleReason),
+               "wouldSkipFroxelSample reports reason for hard OOB coords");
+    expectTrue(!fuse::renderer::froxel_util::wouldSkipFroxelSample(grid, desc, warnWeights),
+               "wouldSkipFroxelSample false when weights will be clamped");
+    expectTrue(fuse::renderer::froxel_util::classifyFroxelSampleReject(grid, desc, warnWeights) ==
+               "classifyFroxelSampleReject reports invalid_weights for clampable weights");
