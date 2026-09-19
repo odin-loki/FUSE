@@ -4622,3 +4622,6 @@ void testTaaPassHistoryWarmupPreflight() {
                "pass classifyJitterSyncReject uses fallback sequence length");
     expectTrue(invalidPass->tryPreflightJitterSync(2u, jitterReject),
                "pass tryPreflightJitterSync succeeds after invalid desc fallback");
+
+// --- deepen additive from deepen-b59-taa-pass-guards-3123 ---
+               "pass tryPreflightResolveBlendWeights reason is None before warmup");
