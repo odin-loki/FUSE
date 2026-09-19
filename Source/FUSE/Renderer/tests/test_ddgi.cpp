@@ -2941,3 +2941,18 @@ void testClassifyAndSkipGuards() {
     expectTrue(!fuse::renderer::gi::wouldSkipProbeTraceKernel(kernelParams),
     expectTrue(!fuse::renderer::gi::wouldSkipProbeBlendKernel(kernelParams),
     expectTrue(fuse::renderer::gi::classifyProbeKernelReject(nullIndices) ==
+
+// --- deepen additive from deepen-ddgi-guards-ea5f ---
+void testProbeScheduleCapacityGuards() {
+    expectTrue(fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(desc, inBounds, reason),
+               "tryPreflightProbeSampleCoords succeeds for in-bounds coords");
+    expectTrue(fuse::renderer::ProbeGridLayout::canPreflightProbeSampleCoords(desc, inBounds),
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(empty, inBounds, reason),
+void testCacheIndexClampAndReadRejectReasons() {
+               "tryRead with reason succeeds for in-range index");
+    expectNear(irradiance.x, 0.25f, 1e-5f, "tryRead with reason returns stored irradiance x");
+               "tryRead with reason rejects undersized cache");
+void testProbeKernelWouldSkipGuards() {
+               "wouldSkip true for null probe indices trace");
+               "wouldSkip true for null probe indices blend");
+    testCacheIndexClampAndReadRejectReasons();

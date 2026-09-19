@@ -2517,3 +2517,10 @@ ProbeSampleCoordsRejectReason classifyProbeSampleCoordsReject(const DDGIDesc& de
     return outReason == ProbeKernelRejectReason::None;
     return classifyProbeKernelReject(params) == ProbeKernelRejectReason::None;
     return classifyProbeKernelReject(params) != ProbeKernelRejectReason::None;
+
+// --- deepen additive from deepen-ddgi-guards-ea5f ---
+bool wouldClampCacheIndex(u32 probe_index, const DDGIDesc& desc) {
+    ProbeScheduleRejectReason schedule_reason = ProbeScheduleRejectReason::None;
+    ddgi_util::tryScheduleProbeUpdates(frame_index,
+    ProbeUpdateLaunchRejectReason launch_reason = ProbeUpdateLaunchRejectReason::None;
+    m_last_update.kernel_launched = tryLaunch_ddgi_probe_update(
