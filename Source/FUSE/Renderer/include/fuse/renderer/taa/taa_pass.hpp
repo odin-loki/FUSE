@@ -260,6 +260,7 @@ public:
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
     /// Compute expected resolve blend weights with reject-reason diagnostics (B5.9 deepen).
     /// Classify why pass resolve blend weights would be rejected (B5.9 deepen).
+                                       TaaResolveBlendRejectReason& reason) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
@@ -397,6 +398,7 @@ public:
     /// Classify why pass jitter advance would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterAdvanceReject() const;
     /// Classify why pass NDC jitter would be rejected (B5.9 deepen).
+    /// True when pass jitter sequence can advance (B5.9 deepen).
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).
