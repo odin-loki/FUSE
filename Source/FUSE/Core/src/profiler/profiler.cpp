@@ -1323,3 +1323,8 @@ bool tryEventAtPhase(u32 index, EventPhase phase, ProfileEvent& outEvent) {
 // --- deepen additive from deepen-b16-profiler-guards-6796 ---
 bool tryRecordedEventAt(u32 index, ProfileEvent& outEvent) {
     if (!tryRecordedEventAt(index, outEvent)) {
+
+// --- deepen additive from deepen-b16-profiler-guards-61a8 ---
+bool tryFirstEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
+bool tryLastEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
+bool tryFindEventByName(const char* name, u32& outIndex) {

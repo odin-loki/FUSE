@@ -3728,3 +3728,39 @@ void testChromeTraceExportPreflightDisabledWithEvents() {
 void testChromeTraceExportPreflightUnbalancedAfterReset() {
     testChromeTraceExportPreflightDisabledWithEvents();
     testChromeTraceExportPreflightUnbalancedAfterReset();
+
+// --- deepen additive from deepen-b16-profiler-guards-61a8 ---
+void testCountEventsOfPhaseGuard() {
+void testFirstAndLastEventIndexOfPhaseGuard() {
+void testTryFirstAndLastEventOfPhaseGuard() {
+    expectTrue(!fuse::profiler::tryFirstEventOfPhase(fuse::profiler::EventPhase::Begin, outEvent),
+               "tryFirstEventOfPhase false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryFirstEventOfPhase clears output on empty buffer");
+    expectTrue(!fuse::profiler::tryLastEventOfPhase(fuse::profiler::EventPhase::End, outEvent),
+               "tryLastEventOfPhase false on empty buffer");
+    expectTrue(fuse::profiler::tryFirstEventOfPhase(fuse::profiler::EventPhase::Begin, outEvent),
+               "tryFirstEventOfPhase true after recording");
+               "tryFirstEventOfPhase copies matching begin event");
+    expectTrue(fuse::profiler::tryLastEventOfPhase(fuse::profiler::EventPhase::End, outEvent),
+               "tryLastEventOfPhase true after recording");
+               "tryLastEventOfPhase copies end phase");
+    expectTrue(!fuse::profiler::tryFindEventByName(nullptr, outIndex),
+    expectTrue(!fuse::profiler::tryFindEventByName("", outIndex),
+    expectTrue(!fuse::profiler::tryFindEventByName("missing", outIndex),
+    expectTrue(fuse::profiler::tryFindEventByName("find_me", outIndex),
+               "tryFindEventByName finds first matching scope name");
+    expectTrue(outIndex == 0u, "tryFindEventByName returns begin index");
+               "tryFindEventByName index points at begin event");
+    expectTrue(fuse::profiler::tryFindEventByName("find_counter", outIndex),
+               "tryFindEventByName finds counter track name");
+    expectTrue(outIndex == 1u, "tryFindEventByName returns counter index");
+               "tryFindEventByName false for absent name");
+void testChromeTraceExportPreflightBufferFullAndCleanExport() {
+    expectTrue(openPreflight.canExport(), "preflight still allows export with open flow");
+    expectTrue(!openPreflight.canExportCleanly(), "preflight canExportCleanly false with open flow");
+    expectTrue(closedPreflight.canExportCleanly(), "preflight canExportCleanly after flow closes");
+void testChromeTraceExportPreflightDetachedFlowNotClean() {
+    const fuse::profiler::ChromeTraceExportPreflight reconciledPreflight =
+    expectTrue(reconciledPreflight.canExportCleanly(),
+    testChromeTraceExportPreflightBufferFullAndCleanExport();
+    testChromeTraceExportPreflightDetachedFlowNotClean();
