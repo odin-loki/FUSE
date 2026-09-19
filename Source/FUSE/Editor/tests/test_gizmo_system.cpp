@@ -4416,3 +4416,7 @@ void testEndDragInteractionRejectReasonGuards() {
     testBeginDragInteractionRejectReasonGuards();
     testUpdateDragInteractionRejectReasonGuards();
     testEndDragInteractionRejectReasonGuards();
+
+// --- deepen additive from deepen-gizmo-b6-guards-30c7 ---
+    fuse::editor::GizmoBeginDragRejectReason beginRayReason =
+    expectTrue(beginRayReason == fuse::editor::GizmoBeginDragRejectReason::NonFiniteRay,
