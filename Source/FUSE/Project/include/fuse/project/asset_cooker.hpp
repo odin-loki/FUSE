@@ -222,7 +222,7 @@ public:
     /// Deduplicated stale dependency sources from upstream-hash reconcile (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_dependency_sources(
         const CookManifest& manifest) const;
-        const CookManifest& manifest, const std::string& changed_source) const;
+    /// True when `count_stale_dependency_invalidation` would remove at least one entry (B7.9 deepen).
     /// Read-only prune reconcile probe — mirrors `CookCache::estimate_prune_removals` (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_reconcile() const;
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).

@@ -1277,6 +1277,30 @@ bool CookCache::would_invalidate_all() const {
     return !m_entries.empty();
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) != 0;
+}
+
+bool CookCache::would_invalidate_stale_upstream_hashes(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    return count_stale_upstream_hashes(source_upstream_by_path) != 0;
+}
+
+bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
+                                               const std::vector<CookJobDependencyEdge>& edges,
+                                               const std::vector<CookJob>& jobs) const {
+    return count_downstream_of(output_path, edges, jobs) != 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
 
@@ -3128,58 +3152,60 @@ std::vector<std::string> CookCache::probe_invalid_entry_sources() const {
     for (const CookCacheEntry& entry : m_entries) {
         if (is_valid_cook_cache_entry(entry)) {
             continue;
-        }
 
         bool already_recorded = false;
         for (const std::string& recorded : invalid_sources) {
             if (recorded == entry.source_path) {
                 already_recorded = true;
                 break;
-            }
-        }
         if (!already_recorded && is_valid_cook_cache_path(entry.source_path)) {
             invalid_sources.push_back(entry.source_path);
-        }
-    }
     return invalid_sources;
-}
 
 u32 CookCache::count_unique_stale_upstream_sources(
     const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
     const std::vector<std::string> stale_sources = probe_stale_upstream_sources(source_upstream_by_path);
     if (stale_sources.empty()) {
         return 0;
-    }
 
     std::vector<std::string> unique_sources;
     for (const std::string& source_path : stale_sources) {
         append_unique_source_(unique_sources, source_path);
-    }
     return static_cast<u32>(unique_sources.size());
-}
 
 bool CookCache::would_invalidate_source(const std::string& source_path) const {
     return count_by_source(source_path) != 0;
-}
 
 bool CookCache::would_invalidate_output(const std::string& output_path) const {
     return count_by_output(output_path) != 0;
-}
 
 bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
                                                           u64 current_content_hash) const {
     return count_stale_content_for_source(source_path, current_content_hash) != 0;
-}
 
 bool CookCache::would_invalidate_stale_upstream_hashes(
-    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
     return count_stale_upstream_hashes(source_upstream_by_path) != 0;
-}
 
 bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
                                                const std::vector<CookJobDependencyEdge>& edges,
                                                const std::vector<CookJob>& jobs) const {
     return count_downstream_of(output_path, edges, jobs) != 0;
+std::vector<std::string> CookCache::probe_unique_stale_upstream_sources(
+    for (const std::string& source_path : probe_stale_upstream_sources(source_upstream_by_path)) {
+    return unique_sources;
+
+CookCacheEntryPreflight CookCache::preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookCacheEntryPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    if (entry.source_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+    if (entry.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+
+    preflight.can_store = true;
+    preflight.reason = CookHashRejectReason::None;
 }
 
 bool CookCache::contains(u64 content_hash) const {

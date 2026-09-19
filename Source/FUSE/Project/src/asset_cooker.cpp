@@ -478,6 +478,11 @@ bool AssetCooker::would_reconcile_invalidate(const CookManifest& manifest) const
             append_unique_upstream_source_(sources, source_path);
 }
 
+bool AssetCooker::would_upstream_invalidate(const CookManifest& manifest,
+                                          const std::string& changed_source) const {
+    return count_upstream_invalidation(manifest, changed_source) != 0;
+}
+
 std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
     const CookManifest& manifest, const std::string& changed_source) const {
     if (!is_valid_cook_cache_path(changed_source)) {
@@ -569,6 +574,12 @@ u32 AssetCooker::estimate_reconcile_invalidation(const CookManifest& manifest) c
 
                                             const std::string& changed_source) const {
     return count_upstream_invalidation(manifest, changed_source) != 0;
+
+
+        for (const std::string& downstream_source :
+             m_cache.probe_downstream_sources(job.output_path, graph.edges(), graph.jobs())) {
+                if (recorded == downstream_source) {
+                sources.push_back(downstream_source);
 
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
     return estimate_stale_dependency_invalidation(manifest);
@@ -809,6 +820,10 @@ std::vector<std::string> AssetCooker::probe_stale_dependency_sources(const CookM
     return m_cache.probe_unique_stale_upstream_sources(source_upstream);
 }
 
+bool AssetCooker::would_stale_dependency_invalidate(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) != 0;
+}
+
 CookCachePruneEstimate AssetCooker::estimate_prune_reconcile() const {
     return m_cache.estimate_prune_removals();
 }
@@ -982,22 +997,12 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_closure(
             append_unique(sources, path);
 
 
-        }
-    return estimate;
 
-bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
-                                              const std::string& changed_source) const {
 
 std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(const CookManifest& manifest,
-    if (!is_valid_cook_cache_path(changed_source)) {
-        return {};
 
-    CookJobGraph graph;
-    graph.build_from_manifest(manifest);
 
     auto append_unique = [&](const std::string& path) {
-            return;
-        for (const std::string& recorded : sources) {
 
     append_unique(changed_source);
             for (const std::string& probed :

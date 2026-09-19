@@ -156,6 +156,14 @@ struct CookCacheInvalidationSurface {
     [[nodiscard]] u32 reconcile_total() const { return prunable_entries; }
 };
 
+/// Read-only cache-entry store preflight — mirrors `store` structural guards (B7.9 deepen).
+struct CookCacheEntryPreflight {
+    bool can_store = false;
+    CookHashRejectReason reason = CookHashRejectReason::None;
+
+    [[nodiscard]] bool ok() const { return can_store; }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -656,7 +664,6 @@ public:
     [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
                                                                  u64 current_content_hash) const;
     [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
                                                       const std::vector<CookJobDependencyEdge>& edges,
                                                       const std::vector<CookJob>& jobs) const;
@@ -682,8 +689,6 @@ public:
     /// Structurally valid entries whose recomputed key differs — excludes invalid records (B7.9 deepen).
 
     /// Read-only `invalidate_*` presence probes — guarded like `would_invalidate` (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
-    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
     /// Source paths that `invalidate_downstream_of` would touch — one push per matching entry (B7.9 deepen).
     /// Entries `prune_all` would remove — zero when cache is empty or clean (B7.9 deepen).
     [[nodiscard]] u32 count_prune_all() const;
@@ -727,10 +732,7 @@ public:
     /// Source paths with stale content keys — read-only `prune_stale_entries` probe (B7.9 deepen).
 
     /// Read-only invalidation probes — mirror `invalidate_*` without mutating stats (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
-    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_upstream_sources(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     /// Deduplicated upstream stale sources — one entry per matching source path (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources_deduplicated(
     /// Invalidation reconcile breakdown without mutating stats (B7.9 deepen).
@@ -740,6 +742,7 @@ public:
         u64 current_content_hash = 0,
     /// True when `estimate_invalidation_removals(...).total()` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_invalidate_any(
+    /// Deduplicated source paths whose stored upstream hash differs — mirrors `invalidate_stale_upstream_hashes` (B7.9 deepen).
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
@@ -759,6 +762,8 @@ public:
 
     [[nodiscard]] CookCacheStorePreflight preflight_store(const CookCacheEntry& entry) const;
     [[nodiscard]] CookCacheLookupPreflight preflight_lookup(u64 content_hash) const;
+    /// Structural store preflight for cache records — read-only, no stats mutation (B7.9 deepen).
+    [[nodiscard]] static CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 
 private:
     [[nodiscard]] CookCacheEntry* find_entry_(u64 content_hash);
