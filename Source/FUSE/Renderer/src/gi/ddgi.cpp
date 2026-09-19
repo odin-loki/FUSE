@@ -2783,3 +2783,13 @@ bool preflightTrilinearProbeSampleAtWorldPosition(const DDGIDesc& desc,
     ProbeKernelRejectReason reject = ProbeKernelRejectReason::None;
     tryCanLaunchProbeTraceKernel(params, reject);
     tryCanLaunchProbeBlendKernel(params, reject);
+
+// --- deepen additive from deepen-ddgi-b56-guards-a1e1 ---
+    reason = classifyProbeScheduleRejectAtRate(probe_count, probes_per_frame, max_indices, out_indices, out_count);
+    reason = classifyProbeTrilinearSampleReject(desc, world_position, cache, cache_count);
+bool preflightTrilinearDirectionalProbeSample(const DDGIDesc& desc,
+    return preflightTrilinearProbeSample(desc, world_position, cache, cache_count, reason);
+bool tryPreflightTrilinearDirectionalProbeSample(const DDGIDesc& desc,
+    return tryPreflightTrilinearProbeSample(desc, world_position, cache, cache_count, reason);
+bool wouldSkipTrilinearDirectionalProbeSample(const DDGIDesc& desc,
+    return wouldSkipTrilinearProbeSample(desc, world_position, cache, cache_count);

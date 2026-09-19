@@ -3571,3 +3571,37 @@ void testDdgiDeepenFollowUpGuards() {
     expectTrue(!fuse::renderer::gi::preflightProbeBlendKernel(zeroRays, &kernelReason),
                "preflightProbeBlendKernel rejects zero rays per probe");
                "preflightProbeBlendKernel zero rays reports zero_rays_per_probe reason");
+
+// --- deepen additive from deepen-ddgi-b56-guards-a1e1 ---
+void testDdgiTrilinearPreflightGuards() {
+               "classifyProbeTrilinearSampleReject none for valid world position");
+               "preflightTrilinearProbeSample succeeds for valid sample");
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearDirectionalProbeSample(
+               "preflightTrilinearDirectionalProbeSample succeeds for valid sample");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearDirectionalProbeSample(
+               "wouldSkipTrilinearDirectionalProbeSample false for valid sample");
+    expectTrue(fuse::renderer::ddgi_util::tryPreflightTrilinearDirectionalProbeSample(
+               "tryPreflightTrilinearDirectionalProbeSample succeeds for valid sample");
+               "classifyProbeTrilinearSampleReject null cache");
+    expectTrue(!fuse::renderer::ddgi_util::tryPreflightTrilinearProbeSample(
+               "tryPreflightTrilinearProbeSample rejects null cache");
+               "null cache tryPreflight reports null_cache reason");
+               "classifyProbeTrilinearSampleReject undersized cache");
+               "wouldSkipTrilinearProbeSample true for undersized cache");
+               "classifyProbeTrilinearSampleReject empty grid");
+               "wouldSkipTrilinearProbeSample true for empty grid");
+void testDdgiMandatoryPreflightGuards() {
+               "tryPreflightProbeSchedule reports no reject reason");
+    expectTrue(fuse::renderer::ddgi_util::tryPreflightProbeScheduleAtRate(
+               "tryPreflightProbeScheduleAtRate succeeds for valid rate");
+               "tryPreflightCacheIndexLookup succeeds for valid index");
+               "tryPreflightCacheIndexLookup rejects null cache");
+               "tryPreflightDdgiProbeUpdate reports no reject reason");
+    expectTrue(!fuse::renderer::tryPreflightDdgiProbeUpdate(desc, nullptr, 1u, launchReason),
+               "tryPreflightDdgiProbeUpdate rejects null indices");
+               "tryPreflightDdgiProbeUpdate reports null_indices reason");
+               "tryPreflightProbeKernelLaunch reports no reject reason");
+    expectTrue(!fuse::renderer::gi::tryPreflightProbeKernelLaunch(kernelParams, kernelReason),
+               "tryPreflightProbeKernelLaunch rejects zero rays per probe");
+    testDdgiTrilinearPreflightGuards();
+    testDdgiMandatoryPreflightGuards();
