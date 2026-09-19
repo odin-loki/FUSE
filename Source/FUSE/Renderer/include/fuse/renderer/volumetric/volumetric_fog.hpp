@@ -790,6 +790,9 @@ bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 /// True when a populate reject reason would block meaningful fill (B5.11 deepen pass).
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
+/// True when a populate reject reason would block meaningful fill (B5.11 deepen pass).
+bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
+
 /// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
 enum class DensityLookupRejectReason : u8 {
     None = 0,
@@ -908,6 +911,7 @@ bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReas
 
 
 /// True when a density-lookup reject reason blocks guarded lookup (B5.11 deepen).
+
 
 
 
@@ -2019,6 +2023,29 @@ FroxelPopulateRejectReason classifyPopulateReject(const FroxelGridDesc& desc,
                                                   const VolumetricFogParams& params);
 /// Non-mutating populate preflight — returns true when meaningful fill would proceed.
 /// Non-mutating populate preflight — returns true when analytic fill would proceed.
+/// Classify why density lookup preflight would reject — same ordering as `tryCanLookupAtIndex`.
+DensityLookupRejectReason classifyDensityLookupReject(const FroxelDensityGrid& grid,
+                                                      const FroxelGridDesc& desc,
+                                                      u32 index);
+/// Non-mutating density lookup preflight — returns true when lookup would proceed.
+bool preflightDensityLookup(const FroxelDensityGrid& grid,
+                            u32 index,
+                            DensityLookupRejectReason* reason = nullptr);
+/// Classify why trilinear sample preflight would reject — same ordering as `tryCanTrilinearSampleAtCoords`.
+FroxelTrilinearSampleRejectReason classifyFroxelTrilinearSampleReject(const FroxelDensityGrid& grid,
+                                                                      const FroxelSampleCoords& coords);
+/// Non-mutating trilinear sample preflight — returns true when sampling would proceed.
+bool preflightFroxelTrilinearSample(const FroxelDensityGrid& grid,
+                                     const FroxelSampleCoords& coords,
+                                     FroxelTrilinearSampleRejectReason* reason = nullptr);
+/// Classify why grid density validation would reject — same ordering as `tryValidateGridDensity`.
+GridDensityRejectReason classifyGridDensityReject(const FroxelDensityGrid& grid,
+                                                  f32 epsilon = 1e-6f);
+/// Non-mutating grid density preflight — returns true when validation would succeed.
+bool preflightGridDensity(const FroxelDensityGrid& grid,
+                          GridDensityRejectReason* reason = nullptr,
+/// Classify why analytic populate would reject — same ordering as `tryCanPopulateFromAnalyticFog`.
+/// Non-mutating populate preflight — returns true when populate would proceed.
 bool preflightFroxelPopulate(const FroxelGridDesc& desc,
                              const FroxelCameraDesc& camera,
                              const VolumetricFogParams& params,
