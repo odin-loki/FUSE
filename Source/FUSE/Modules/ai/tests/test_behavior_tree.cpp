@@ -1628,3 +1628,8 @@ void testParallelRequireAgentGuard() {
 
 // --- deepen additive from deepen-u5-ai-bt-guards-86d4 ---
 void testGuardSpatialRadiusValidLeaf() {
+
+// --- deepen additive from deepen-u5-ai-bt-guards-c886 ---
+void testGuardAllyRadiusValidLeaf() {
+void testParallelRequireValidRadiusGuard() {
+void testParallelExtendedGuardTextLoader() {
