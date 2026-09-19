@@ -229,10 +229,53 @@ void compute_friction_tangents_if_needed(ContactManifold& manifold, f32 epsilon)
     manifold.buildFrictionBasis();
 }
 
+const char* friction_basis_rebuild_reject_reason_name(FrictionBasisRebuildRejectReason reason) {
+    switch (reason) {
+    case FrictionBasisRebuildRejectReason::None:
+        return "None";
+    case FrictionBasisRebuildRejectReason::EmptyManifold:
+        return "EmptyManifold";
+    case FrictionBasisRebuildRejectReason::NoValidNormal:
+        return "NoValidNormal";
+    case FrictionBasisRebuildRejectReason::CanReuseCached:
+        return "CanReuseCached";
+    }
+    return "Unknown";
+}
+
+FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    if (manifold.empty()) {
+        return FrictionBasisRebuildRejectReason::EmptyManifold;
+    }
+    if (!manifold.hasValidNormal()) {
+        return FrictionBasisRebuildRejectReason::NoValidNormal;
+    }
+    if (can_skip_friction_basis_rebuild(manifold, epsilon)) {
+        return FrictionBasisRebuildRejectReason::CanReuseCached;
+    }
+    return FrictionBasisRebuildRejectReason::None;
+}
+
+bool friction_basis_rebuild_rejects_for_reason(
+    const ContactManifold& manifold,
+    FrictionBasisRebuildRejectReason expected,
+    f32 epsilon) {
+    return friction_basis_rebuild_reject_reason(manifold, epsilon) == expected;
+}
+
+bool should_run_friction_basis_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon) {
+    return !should_skip_friction_basis_preflight(manifold, epsilon);
+}
+
 FrictionBasisPreflight preflight_friction_basis_rebuild(
     const ContactManifold& manifold,
     f32 epsilon) {
     FrictionBasisPreflight preflight{};
+    preflight.reason = friction_basis_rebuild_reject_reason(manifold, epsilon);
     if (should_skip_friction_tangents(manifold)) {
         preflight.skipped = true;
         return preflight;

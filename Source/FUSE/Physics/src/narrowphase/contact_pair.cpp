@@ -430,7 +430,9 @@ bool generate_contact_manifold(ContactManifold& manifold) {
         return false;
     }
 
-    manifold.pruneContactPoints();
+    if (should_run_manifold_prune(manifold)) {
+        manifold.pruneContactPoints();
+    }
     if (manifold.empty()) {
         manifold.clear();
         return false;
@@ -468,7 +470,7 @@ void compute_friction_tangents(ContactManifold& manifold) {
         return;
     }
 
-    if (has_cached_friction_basis(manifold)) {
+    if (should_skip_friction_basis_preflight(manifold)) {
         return;
     }
 
@@ -567,6 +569,21 @@ bool has_dispatchable_contact_pair(
         return false;
     }
     return count_dispatchable_contact_pairs(pairs, bodies, shapes) > 0u;
+}
+
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected) {
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
+}
+
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase
