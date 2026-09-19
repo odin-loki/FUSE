@@ -292,4 +292,11 @@ bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilo
     return rebuild_friction_basis_if_needed(manifold, epsilon);
 }
 
+bool compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon) {
+    if (rebuild_friction_basis_with_preflight(manifold, epsilon)) {
+        return manifold.hasFrictionBasis();
+    }
+    return false;
+}
+
 } // namespace fuse::physics::narrowphase

@@ -204,6 +204,16 @@ bool is_plane_plane_contact_pair(
     const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes);
 
+/// Returns true when both shapes resolve to capsule types (B4.5 deepen pass).
+bool is_capsule_capsule_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when one shape is a box and the other is a capsule (B4.5 deepen pass).
+bool is_box_capsule_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
 /// Const preflight for narrowphase batch dispatch (B4.5 deepen follow-up pass).
 struct NarrowphaseBatchPreflight {
     u32 pairCount = 0u;
@@ -223,6 +233,28 @@ NarrowphaseBatchPreflight preflight_narrowphase_batch(
 /// Returns true when batch preflight reports no dispatchable pairs (B4.5 deepen follow-up pass).
 bool narrowphase_batch_rejects_all(
     const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Combined base+deepen reject reason for additive preflight (B4.5 deepen pass).
+ContactPairRejectReason contact_pair_union_reject_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Const preflight merging base and deepen pair guards (B4.5 deepen pass).
+struct ContactPairUnionPreflight {
+    ContactPairRejectReason baseReason = ContactPairRejectReason::None;
+    ContactPairRejectReason deepenReason = ContactPairRejectReason::None;
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+
+    bool can_dispatch() const { return !rejected; }
+};
+
+/// Populate union preflight without running shape dispatch (B4.5 deepen pass).
+ContactPairUnionPreflight preflight_contact_pair_union(
+    const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 

@@ -528,6 +528,18 @@ bool finalize_contact_manifold_with_preflight(
     return generate_contact_manifold(manifold);
 }
 
+bool finalize_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    if (manifold.valid && manifold.hasFrictionBasis()) {
+        return true;
+    }
+    return finalize_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};
     if (index >= pointCount) {

@@ -194,6 +194,9 @@ void runNarrowphaseIntoBuffer(
     const CollisionShapeSoA& shapes,
     ContactBufferSoA& buffer);
 
+/// Returns true when narrowphase buffer compaction/clamp can be skipped after dispatch (B4.5 deepen pass).
+bool should_skip_narrowphase_buffer_pass(const ContactBufferSoA& buffer);
+
 /// CPU stub of the CUDA narrow-phase dispatch (B4.3).
 std::vector<ContactManifold> runNarrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
