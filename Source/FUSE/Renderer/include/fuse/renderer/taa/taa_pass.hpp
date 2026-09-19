@@ -317,6 +317,7 @@ public:
     /// Early-out when combined resolve temporal-blend preflight would reject (B5.9 deepen).
     bool shouldSkipResolveTemporalBlend(const TaaResolveDesc& desc) const;
     bool resolveBlendReady(const TaaResolveDesc& desc) const;
+    /// Classify why pass jitter sync would be rejected (B5.9 deepen).
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSync(u32 frameIndex) const;
     /// Sync jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
@@ -395,6 +396,7 @@ public:
     /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
     /// Classify why pass jitter advance would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterAdvanceReject() const;
+    /// Classify why pass NDC jitter would be rejected (B5.9 deepen).
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).
@@ -758,6 +760,8 @@ public:
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc,
     /// Resolve-frame preflight with mandatory skip/blend reject-reason output (B5.9 deepen).
     /// Early-out when resolve-frame preflight would skip or reject blend weights (B5.9 deepen).
+    /// Classify why resolve would skip (B5.9 deepen).
+    TaaResolveSkipReason classifyResolveSkip(const TaaResolveDesc& desc) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
