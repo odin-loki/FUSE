@@ -103,6 +103,62 @@ void ScriptConsole::clearOutput() {
     m_output.clear();
 }
 
+const std::string& ScriptConsole::peek_repeat_line() const {
+    static const std::string kEmpty;
+    return can_repeat() ? m_lastExecutedLine : kEmpty;
+}
+
+bool ScriptConsole::is_meta_command(const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+        return false;
+    }
+
+    return isMetaCommand(std::string(name));
+}
+
+bool ScriptConsole::can_resolve(const char* partial) const {
+    if (partial == nullptr) {
+        return false;
+    }
+
+    const std::string trimmed = trim(partial);
+    if (trimmed.empty()) {
+        return false;
+    }
+
+    return !m_commands.unique_prefix_match(trimmed.c_str()).empty();
+}
+
+std::string ScriptConsole::try_resolve_command(const char* partial) const {
+    if (partial == nullptr) {
+        return {};
+    }
+
+    const std::string trimmed = trim(partial);
+    if (trimmed.empty()) {
+        return {};
+    }
+
+    return m_commands.unique_prefix_match(trimmed.c_str());
+}
+
+bool ScriptConsole::is_resolve_ambiguous(const char* partial) const {
+    if (partial == nullptr) {
+        return false;
+    }
+
+    const std::string trimmed = trim(partial);
+    if (trimmed.empty()) {
+        return false;
+    }
+
+    if (m_commands.has_command(trimmed.c_str())) {
+        return false;
+    }
+
+    return m_commands.commands_with_prefix(trimmed.c_str()).size() > 1;
+}
+
 void ScriptConsole::appendOutput_(const std::string& text) {
     if (text.empty()) {
         return;
@@ -227,6 +283,7 @@ void ScriptConsole::registerBuiltIns_() {
 
         const std::string partial = trim(args);
         const std::string resolved = console.m_commands.unique_prefix_match(partial.c_str());
+        const std::string resolved = console.try_resolve_command(partial.c_str());
         if (!resolved.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, resolved};
         }

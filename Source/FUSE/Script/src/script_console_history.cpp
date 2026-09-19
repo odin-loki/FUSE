@@ -165,6 +165,9 @@ const std::string& ScriptConsoleHistoryBuffer::navigation_entry() const {
     if (!is_navigating()) {
         return kEmpty;
     return at(static_cast<u32>(m_navigationCursor));
+bool ScriptConsoleHistoryBuffer::is_at_navigation_end() const {
+
+bool ScriptConsoleHistoryBuffer::is_navigating() const {
 }
 
 u32 ScriptConsoleHistoryBuffer::ringIndex_(u32 offset) const {

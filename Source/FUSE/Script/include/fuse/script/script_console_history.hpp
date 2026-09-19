@@ -41,6 +41,10 @@ public:
     [[nodiscard]] bool is_navigating() const {
         return m_size > 0 && m_navigationCursor >= 0 && m_navigationCursor < static_cast<s32>(m_size);
     }
+    /// True when recall cursor is at the live-input position (past newest entry).
+    [[nodiscard]] bool is_at_navigation_end() const;
+    /// True when the user has scrolled up into prior history entries.
+    [[nodiscard]] bool is_navigating() const;
 
 private:
     [[nodiscard]] u32 ringIndex_(u32 offset) const;
