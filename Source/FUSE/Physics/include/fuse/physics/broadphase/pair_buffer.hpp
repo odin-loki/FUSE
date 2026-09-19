@@ -628,6 +628,7 @@ PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
 
 
 
+
 enum class PairBufferSortRejectReason : u8 {
     None = 0,
     EmptyBuffer,
@@ -671,6 +672,10 @@ enum class PairBufferSortRejectReason : u8 {
     bool singlePair = false;
 
 /// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+
+
+
+
 
 
 
@@ -785,7 +790,6 @@ struct PairSlotPreflight {
     bool exceedsBufferCapacity = false;
 
     bool canPrepare() const { return !skipped; }
-};
 
 PairSlotPreflight preflightPairSlots(u32 slotCount, const PairBufferSoA& buffer);
 
@@ -814,20 +818,12 @@ PairBufferCompactAndClampRejectReason pairBufferCompactAndClampRejectReason(cons
 
 
 
-enum class PairBufferCompactAndClampRejectReason : u8 {
-    None = 0,
-    EmptyBuffer,
-    NoWorkNeeded,
-
-const char* pairBufferCompactAndClampRejectReasonName(PairBufferCompactAndClampRejectReason reason);
 
 
 
-PairBufferCompactAndClampRejectReason pairBufferCompactAndClampRejectReason(const PairBufferSoA& buffer);
 
-/// Returns true when `pairBufferCompactAndClampRejectReason` matches `expected` (B4.2 deepen pass).
+
 bool pairBufferCompactAndClampRejectsForReason(
-    const PairBufferSoA& buffer,
     PairBufferCompactAndClampRejectReason expected);
 
 /// Read-only compact-and-clamp diagnostics — no mutation (B4.2 deepen pass).
@@ -838,12 +834,10 @@ struct PairBufferCompactAndClampPreflight {
     bool needsCompactAndClamp() const { return reason == PairBufferCompactAndClampRejectReason::None; }
     bool emptyBuffer = false;
 
-};
 
 PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer);
 
 /// Non-mutating compact-and-clamp skip predicate — inverse of `needsCompactAndClamp` (B4.2 deepen pass).
-    bool emptyBuffer = false;
     bool noWorkNeeded = false;
 
     bool needsWork() const { return reason == PairBufferCompactAndClampRejectReason::None; }
@@ -857,7 +851,6 @@ bool shouldRunPairBufferCompactAndClamp(const PairBufferSoA& buffer);
 
 /// Why pair-buffer slot write would reject (B4.2 deepen follow-up pass).
 
-/// Human-readable label for pair-buffer write-slot reject reasons (logging / tests).
 
 
 /// Returns true when `pairBufferWriteSlotRejectReason` matches `expected` (B4.2 deepen follow-up pass).
@@ -1140,7 +1133,6 @@ bool canSkipPairBufferClamp(const PairBufferSoA& buffer);
 
 /// Non-mutating compact+clamp launch predicate — mirrors `preflightPairBufferCompactAndClamp` (B4.2 deepen pass).
 
-/// Returns true when `pairBufferCompactAndClampRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 
 /// Read-only compact+clamp diagnostics — no mutation (B4.2 deepen follow-up pass).
     bool alreadyCompactAndWithinCapacity = false;
@@ -1230,12 +1222,13 @@ bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
 
 
 
-};
 
 
 /// Non-mutating compact-and-clamp skip predicate — inverse of `shouldRunPairBufferCompactAndClamp`.
 
 /// Non-mutating compact-and-clamp predicate — mirrors `preflightPairBufferCompactAndClamp`.
+
+
 
 
 
