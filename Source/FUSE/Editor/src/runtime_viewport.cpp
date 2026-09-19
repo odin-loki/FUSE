@@ -76,13 +76,16 @@ void RuntimeViewportHook::setProjectRoot(std::string root) {
 }
 
 void RuntimeViewportHook::setExternalSurfaceHandle(void* vkSurface, u32 width, u32 height,
-                                                   const char* handoffSource, bool qtStubSurface) {
+                                                   const char* handoffSource, bool qtStubSurface,
+                                                   bool qtRealSurface, void* qtVkInstance) {
     m_surfaceHandoff.nativeSurface = vkSurface;
     m_surfaceHandoff.width = width > 0 ? width : m_panel.width();
     m_surfaceHandoff.height = height > 0 ? height : m_panel.height();
     m_surfaceHandoff.pending = vkSurface != nullptr;
     m_surfaceHandoff.consumed = false;
     m_surfaceHandoff.qtStubSurface = qtStubSurface;
+    m_surfaceHandoff.qtRealSurface = qtRealSurface;
+    m_surfaceHandoff.qtVkInstance = qtVkInstance;
     m_surfaceHandoff.handoffSource = handoffSource;
 
 #if defined(FUSE_VULKAN_BACKEND)

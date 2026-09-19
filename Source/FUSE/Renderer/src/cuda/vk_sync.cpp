@@ -313,6 +313,32 @@ bool FrameSyncPair::advanceJobLane(void* cudaStream, u64 frameIndex) {
     return signalJobLaneComplete(cudaStream, frameIndex);
 }
 
+FrameSyncLoadStressResult stressFrameSyncUnderLoad(FrameSyncPair& pair, void* vkDevice,
+                                                   void* cudaStream, u32 frameCount) {
+    FrameSyncLoadStressResult result{};
+    if (frameCount == 0u) {
+        result.finalProgress = pair.progress;
+        return result;
+    }
+
+    for (u32 i = 0; i < frameCount; ++i) {
+        const u64 frameIndex = static_cast<u64>(i) + 1u;
+        ++result.framesAttempted;
+
+        const bool renderSignaled = pair.signalRenderLane(vkDevice, frameIndex);
+        const bool jobWaited = pair.waitJobLaneOnRenderSignal(cudaStream, frameIndex);
+        const bool jobSignaled = pair.signalJobLaneComplete(cudaStream, frameIndex);
+        const bool renderWaited = pair.waitRenderLane(vkDevice, frameIndex);
+
+        if (!pair.driverWired() || (renderSignaled && jobWaited && jobSignaled && renderWaited)) {
+            ++result.framesCompleted;
+        }
+    }
+
+    result.finalProgress = pair.progress;
+    return result;
+}
+
 FrameSyncPair FrameSyncPair::create(void* vkDevice, void* vkPhysicalDevice) {
     FrameSyncPair pair{};
     pair.vkToCuda = SharedTimeline::create(vkDevice, vkPhysicalDevice);

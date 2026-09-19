@@ -26,7 +26,8 @@ public:
 
     /// Queue an external `VkSurfaceKHR` for Track B `SwapchainDesc` wiring (Qt/U6 follow-up).
     void setExternalSurfaceHandle(void* vkSurface, u32 width, u32 height,
-                                  const char* handoffSource = nullptr, bool qtStubSurface = false);
+                                  const char* handoffSource = nullptr, bool qtStubSurface = false,
+                                  bool qtRealSurface = false, void* qtVkInstance = nullptr);
     void setPendingQtStubSurface(bool qtStubSurface) { m_pendingQtStubSurface = qtStubSurface; }
     bool pendingQtStubSurface() const { return m_pendingQtStubSurface; }
     const ViewportSwapchainHandoff& swapchainHandoff() const { return m_surfaceHandoff; }

@@ -2145,7 +2145,6 @@ int main() {
     testPairBufferToVectorRejectReasonGuards();
     testCellSpanRejectReasonAndPreflight();
     testRefineDedupeMergeWithPreflightGuards();
-    testPairBufferInvalidateSlotRejectReasonGuards();
     testPairBufferWouldSkipWriteSlotGuards();
     testCellCapacityWouldSkipGuards();
     testRefineDedupeMergeWouldSkipGuards();

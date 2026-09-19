@@ -645,4 +645,3 @@ void InterestPriorityQueue::heapify_down_(u32 index) {
 }
 
 } // namespace fuse::net
-

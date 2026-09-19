@@ -233,4 +233,3 @@ ReconcileResult InputHistoryBuffer::reconcile_authoritative(u32 frame, const Pla
 }
 
 } // namespace fuse::net
-

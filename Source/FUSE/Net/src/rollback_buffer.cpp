@@ -195,4 +195,3 @@ ReconcileResult RollbackBuffer::reconcile_remote_input(u32 frame, const PlayerIn
 }
 
 } // namespace fuse::net
-

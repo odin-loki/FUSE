@@ -32,4 +32,14 @@ InteropFillResult fillInteropTexture(const InteropFillDesc& desc);
 /// Job-lane path: waits on `FrameSyncPair`, fills, signals completion; uses `submit_cuda`.
 InteropFillResult submitInteropFillJob(const InteropFillDesc& desc);
 
+/// Batch stub-path exercise for CI (WP-06i) — counts stub vs ok without requiring handles.
+struct InteropFillLoadStressResult {
+    u32 attempts = 0;
+    u32 stubPaths = 0;
+    u32 failures = 0;
+    u32 successes = 0;
+};
+
+[[nodiscard]] InteropFillLoadStressResult stressInteropFillUnderLoad(u32 iterations);
+
 } // namespace fuse::renderer::cuda

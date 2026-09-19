@@ -642,7 +642,22 @@ spirv-val Source/FUSE/Renderer/shaders/fixtures/composite.frag.spv
 | `composite.frag.spv` regen | **Done (local)** | Regenerated with `glslangValidator` when tooling available; checked-in fixture updated |
 | Lavapipe + `demo_hybrid_hud` | **Done** | Headless ICD tests unchanged |
 
-**Deferred (post–WP-06h):** real Qt `QVulkanInstance` / `VkSurfaceKHR` creation; composite SPIR-V regen on CI runner; full timeline frame flow profiled under load.
+**Deferred (post–WP-06h):** ~~real Qt `QVulkanInstance` / `VkSurfaceKHR` creation~~ → WP-06i `QVulkanInstance` bootstrap with winId fallback; composite SPIR-V regen on CI runner; ~~full timeline frame flow profiled under load~~ → WP-06i `stressFrameSyncUnderLoad` / `stressInteropFillUnderLoad` stubs.
+
+---
+
+## WP-06i deliverables (Qt QVulkanInstance progress + CUDA/timeline load stubs)
+
+| Deliverable | Status | Notes |
+|-------------|--------|-------|
+| `ViewportVulkanSurfaceResult` + `createViewportVulkanSurfaceFromWinId` | **Done** | Qt6 Gui path via `QVulkanInstance::createSurface`; headless CI falls back to winId stub |
+| `ViewportSwapchainHandoff::qtRealSurface` | **Done** | Distinguishes real Qt surface from WP-06h winId stub |
+| `stressFrameSyncUnderLoad` | **Done** | Multi-frame `FrameSyncProgress` counters; driver ops when wired |
+| `stressInteropFillUnderLoad` | **Done** | Batch interop-fill stub-path exercise for CI |
+| Lavapipe `RUN_SERIAL` ICD tests | **Done** | `ctest -j` no longer races parallel `VkInstance` creation |
+| Build hygiene (`test_profiler_assert`, `fuse_cinematics`) | **Done** | Restored corrupted deepen merges; `cue_preview` API fix |
+
+**Deferred (post–WP-06i):** full Qt viewport embed with consumed swapchain recreate; driver-wired timeline stress on NVIDIA CI; composite SPIR-V regen on CI runner.
 
 ---
 

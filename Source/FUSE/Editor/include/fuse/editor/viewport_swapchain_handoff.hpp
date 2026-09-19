@@ -17,6 +17,8 @@ struct ViewportSwapchainHandoff {
     bool pending = false;
     bool consumed = false;
     bool qtStubSurface = false;
+    bool qtRealSurface = false;
+    void* qtVkInstance = nullptr;
     const char* handoffSource = nullptr;
 #if defined(FUSE_VULKAN_BACKEND)
     fuse::renderer::SurfaceDesc surface{};

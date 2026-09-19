@@ -61,4 +61,15 @@ struct FrameSyncPair {
     bool advanceJobLane(void* cudaStream, u64 frameIndex);
 };
 
+/// Multi-frame bookkeeping stress (WP-06i) — always updates `progress` counters; driver ops
+/// succeed only when `driverWired()`.
+struct FrameSyncLoadStressResult {
+    u32 framesAttempted = 0;
+    u32 framesCompleted = 0;
+    FrameSyncProgress finalProgress{};
+};
+
+[[nodiscard]] FrameSyncLoadStressResult stressFrameSyncUnderLoad(FrameSyncPair& pair, void* vkDevice,
+                                                                 void* cudaStream, u32 frameCount);
+
 } // namespace fuse::renderer::cuda

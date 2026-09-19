@@ -217,7 +217,8 @@ std::string exportChromeTraceJson();
 #define FUSE_PROFILE_COUNTER(track, value) ((void)0)
 #define FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME(track, value) ((void)0)
 #else
-#define FUSE_PROFILE_SCOPE_IMPL(line, name) ::fuse::profiler::ProfileScope _fuse_profile_scope_##line(name)
+#define FUSE_PROFILE_SCOPE_IMPL2(line, name) ::fuse::profiler::ProfileScope _fuse_profile_scope_##line(name)
+#define FUSE_PROFILE_SCOPE_IMPL(line, name) FUSE_PROFILE_SCOPE_IMPL2(line, name)
 #define FUSE_PROFILE_SCOPE(name) FUSE_PROFILE_SCOPE_IMPL(__LINE__, name)
 #define FUSE_PROFILE_ASYNC_FLOW_BEGIN(name, flowId) ::fuse::profiler::beginAsyncFlow(name, flowId)
 #define FUSE_PROFILE_ASYNC_FLOW_END(name, flowId) ::fuse::profiler::endAsyncFlow(name, flowId)

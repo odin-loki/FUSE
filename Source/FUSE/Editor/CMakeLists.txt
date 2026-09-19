@@ -13,6 +13,7 @@ set(FUSE_EDITOR_API_SOURCES
     src/runtime_viewport.cpp
     src/runtime_embed_session.cpp
     src/viewport_swapchain_wiring.cpp
+    src/viewport_vulkan_surface.cpp
     src/gizmo_system.cpp
     src/hierarchy_model.cpp
     src/material_editor_panel.cpp
@@ -55,6 +56,7 @@ set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/sdf_sculpt_panel.hpp
     include/fuse/editor/undo_stack.hpp
     include/fuse/editor/viewport_panel.hpp
+    include/fuse/editor/viewport_vulkan_surface.hpp
 )
 
 add_library(fuse_editor_api STATIC
@@ -83,6 +85,13 @@ if(FUSE_BUILD_VULKAN)
     target_link_libraries(fuse_editor_api PUBLIC fuse_rhi fuse_hybrid)
     if(FUSE_VULKAN_BACKEND)
         target_compile_definitions(fuse_editor_api PUBLIC FUSE_VULKAN_BACKEND=1)
+    endif()
+    find_package(Qt6 QUIET COMPONENTS Gui)
+    if(Qt6_FOUND AND TARGET Qt6::Gui)
+        target_sources(fuse_editor_api PRIVATE src/viewport_vulkan_surface_qt.cpp)
+        target_link_libraries(fuse_editor_api PRIVATE Qt6::Gui)
+        target_compile_definitions(fuse_editor_api PRIVATE FUSE_HAS_QT_VULKAN=1)
+        message(STATUS "FUSE: fuse_editor_api Qt6 Gui Vulkan surface bootstrap enabled")
     endif()
 endif()
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/fx/afx_mission_hooks.hpp>
+#include <fuse/fx/particle_pool_gpu.hpp>
 #include <fuse/fx/fx_composer.hpp>
 #include <fuse/fx/particle_pool_gpu.hpp>
 #include <fuse/frame/frame_ctx.hpp>

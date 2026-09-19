@@ -160,4 +160,27 @@ InteropFillResult submitInteropFillJob(const InteropFillDesc& desc) {
     return jobResult;
 }
 
+InteropFillLoadStressResult stressInteropFillUnderLoad(u32 iterations) {
+    InteropFillLoadStressResult result{};
+    InteropFillDesc desc{};
+    desc.exportedMemoryHandle = reinterpret_cast<void*>(0x10);
+    desc.allocationSize = 4096;
+    desc.width = 64;
+    desc.height = 64;
+
+    for (u32 i = 0; i < iterations; ++i) {
+        ++result.attempts;
+        const InteropFillResult fill = fillInteropTexture(desc);
+        if (fill.ok) {
+            ++result.successes;
+        } else if (fill.stubPath) {
+            ++result.stubPaths;
+        } else {
+            ++result.failures;
+        }
+    }
+
+    return result;
+}
+
 } // namespace fuse::renderer::cuda

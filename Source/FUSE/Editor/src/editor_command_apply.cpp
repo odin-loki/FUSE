@@ -1,4 +1,5 @@
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/viewport_vulkan_surface.hpp>
 
 #include <fuse/ai/agent_entity_bind.hpp>
 #include <fuse/ecs/components/light.hpp>
@@ -177,12 +178,14 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         const u64 handleValue = std::strtoull(command.propertyValue.c_str(), nullptr, 10);
         const u32 width = host.runtimeViewport().panel().width();
         const u32 height = host.runtimeViewport().panel().height();
-        RuntimeViewportHook& viewport = host.runtimeViewport();
-        const bool qtStubSurface = viewport.pendingQtStubSurface();
-        viewport.setExternalSurfaceHandle(
-            reinterpret_cast<void*>(handleValue), width, height,
-            qtStubSurface ? "qt_winid_stub" : "qvulkan_instance_surface", qtStubSurface);
-        viewport.setPendingQtStubSurface(qtStubSurface);
+        ViewportVulkanSurfaceResult surfaceResult =
+            createViewportVulkanSurfaceFromWinId(handleValue, width, height);
+        const bool useStubPath = host.runtimeViewport().pendingQtStubSurface() || surfaceResult.stubPath;
+        host.runtimeViewport().setExternalSurfaceHandle(
+            surfaceResult.vkSurface, width, height,
+            useStubPath ? "qt_winid_stub" : "qt_vulkan_instance",
+            useStubPath, !useStubPath && !surfaceResult.stubPath, surfaceResult.vkInstance);
+        host.runtimeViewport().setPendingQtStubSurface(useStubPath);
         return true;
     }
 

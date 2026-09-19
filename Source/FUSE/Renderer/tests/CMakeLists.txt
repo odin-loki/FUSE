@@ -1,23 +1,39 @@
 set(FUSE_VULKAN_TEST_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+set(FUSE_VULKAN_ICD_LOCK_FILE "${CMAKE_BINARY_DIR}/fuse_vulkan_icd.lock")
+set(FUSE_VULKAN_ICD_LOCK_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/run_vulkan_icd_locked.sh")
+file(TOUCH "${FUSE_VULKAN_ICD_LOCK_FILE}")
+file(WRITE "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
+"#!/usr/bin/env bash\nset -euo pipefail\nexec flock -x \"${FUSE_VULKAN_ICD_LOCK_FILE}\" \"$@\"\n")
+file(CHMOD "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+
+set(_fuse_vulkan_icd_tests
+    fuse_vulkan_bootstrap
+    fuse_vulkan_swapchain
+    fuse_rhi_present_path_stub
+    fuse_rhi_queue_submit
+    fuse_pipeline_cache
+    fuse_vulkan_phase2_integration
+    fuse_vulkan_resources
+    fuse_graphics_pipeline
+    fuse_renderer_bootstrap
+)
 
 add_executable(fuse_vulkan_bootstrap test_vulkan_bootstrap.cpp)
 target_link_libraries(fuse_vulkan_bootstrap PRIVATE fuse_rhi)
-add_test(NAME fuse_vulkan_bootstrap COMMAND fuse_vulkan_bootstrap)
-set_tests_properties(fuse_vulkan_bootstrap PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
+add_test(NAME fuse_vulkan_bootstrap COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_vulkan_bootstrap>")
 
 add_executable(fuse_vulkan_swapchain test_vulkan_swapchain.cpp)
 target_link_libraries(fuse_vulkan_swapchain PRIVATE fuse_rhi)
-add_test(NAME fuse_vulkan_swapchain COMMAND fuse_vulkan_swapchain)
+add_test(NAME fuse_vulkan_swapchain COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_vulkan_swapchain>")
 
 add_executable(fuse_rhi_present_path_stub test_rhi_present_path_stub.cpp)
 target_link_libraries(fuse_rhi_present_path_stub PRIVATE fuse_rhi)
-add_test(NAME fuse_rhi_present_path_stub COMMAND fuse_rhi_present_path_stub)
-set_tests_properties(fuse_rhi_present_path_stub PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
+add_test(NAME fuse_rhi_present_path_stub COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_rhi_present_path_stub>")
 
 add_executable(fuse_rhi_queue_submit test_rhi_queue_submit.cpp)
 target_link_libraries(fuse_rhi_queue_submit PRIVATE fuse_rhi)
-add_test(NAME fuse_rhi_queue_submit COMMAND fuse_rhi_queue_submit)
-set_tests_properties(fuse_rhi_queue_submit PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
+add_test(NAME fuse_rhi_queue_submit COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_rhi_queue_submit>")
 
 add_executable(fuse_rhi_resource_destroy_order test_rhi_resource_destroy_order.cpp)
 target_link_libraries(fuse_rhi_resource_destroy_order PRIVATE fuse_rhi)
@@ -25,7 +41,7 @@ add_test(NAME fuse_rhi_resource_destroy_order COMMAND fuse_rhi_resource_destroy_
 
 add_executable(fuse_vulkan_resources test_vulkan_resources.cpp)
 target_link_libraries(fuse_vulkan_resources PRIVATE fuse_rhi)
-add_test(NAME fuse_vulkan_resources COMMAND fuse_vulkan_resources)
+add_test(NAME fuse_vulkan_resources COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_vulkan_resources>")
 
 add_executable(fuse_bindless_descriptors test_bindless_descriptors.cpp)
 target_link_libraries(fuse_bindless_descriptors PRIVATE fuse_rhi)
@@ -36,8 +52,7 @@ target_link_libraries(fuse_pipeline_cache PRIVATE fuse_rhi)
 target_compile_definitions(fuse_pipeline_cache PRIVATE
     FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
 )
-add_test(NAME fuse_pipeline_cache COMMAND fuse_pipeline_cache)
-set_tests_properties(fuse_pipeline_cache PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
+add_test(NAME fuse_pipeline_cache COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_pipeline_cache>")
 
 add_executable(fuse_shader_pipeline test_shader_pipeline.cpp)
 target_link_libraries(fuse_shader_pipeline PRIVATE fuse_rhi)
@@ -55,7 +70,7 @@ target_link_libraries(fuse_graphics_pipeline PRIVATE fuse_rhi)
 target_compile_definitions(fuse_graphics_pipeline PRIVATE
     FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
 )
-add_test(NAME fuse_graphics_pipeline COMMAND fuse_graphics_pipeline)
+add_test(NAME fuse_graphics_pipeline COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_graphics_pipeline>")
 
 add_executable(fuse_render_graph test_render_graph.cpp)
 target_link_libraries(fuse_render_graph PRIVATE fuse_rhi)
@@ -67,12 +82,11 @@ add_test(NAME fuse_composite_pass COMMAND fuse_composite_pass)
 
 add_executable(fuse_renderer_bootstrap test_renderer_bootstrap.cpp)
 target_link_libraries(fuse_renderer_bootstrap PRIVATE fuse_rhi)
-add_test(NAME fuse_renderer_bootstrap COMMAND fuse_renderer_bootstrap)
+add_test(NAME fuse_renderer_bootstrap COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_renderer_bootstrap>")
 
 add_executable(fuse_vulkan_phase2_integration test_vulkan_phase2_integration.cpp)
 target_link_libraries(fuse_vulkan_phase2_integration PRIVATE fuse_rhi)
-add_test(NAME fuse_vulkan_phase2_integration COMMAND fuse_vulkan_phase2_integration)
-set_tests_properties(fuse_vulkan_phase2_integration PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
+add_test(NAME fuse_vulkan_phase2_integration COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_vulkan_phase2_integration>")
 
 add_executable(fuse_gbuffer test_gbuffer.cpp)
 target_link_libraries(fuse_gbuffer PRIVATE fuse_rhi)
@@ -117,3 +131,9 @@ add_test(NAME fuse_volumetric_lighting_b511 COMMAND fuse_volumetric_lighting)
 add_executable(fuse_phase5_deferred_integration test_phase5_deferred_integration.cpp)
 target_link_libraries(fuse_phase5_deferred_integration PRIVATE fuse_rhi)
 add_test(NAME fuse_phase5_deferred_integration COMMAND fuse_phase5_deferred_integration)
+
+foreach(_fuse_vulkan_test IN LISTS _fuse_vulkan_icd_tests)
+    if(TEST ${_fuse_vulkan_test})
+        set_tests_properties(${_fuse_vulkan_test} PROPERTIES ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}")
+    endif()
+endforeach()

@@ -1006,4 +1006,3 @@ bool SnapshotHistoryRing::apply_delta_and_store(u32 base_frame, const SnapshotDe
 }
 
 } // namespace fuse::net
-

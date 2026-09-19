@@ -108,6 +108,40 @@ void testFrameSyncProgressStub() {
     pair.destroy(nullptr);
 }
 
+void testFrameSyncLoadStressStub() {
+    fuse::renderer::cuda::FrameSyncPair pair =
+        fuse::renderer::cuda::FrameSyncPair::create(nullptr, nullptr);
+
+    const fuse::renderer::cuda::FrameSyncLoadStressResult stress =
+        fuse::renderer::cuda::stressFrameSyncUnderLoad(pair, nullptr, nullptr, 8u);
+
+    expectTrue(stress.framesAttempted == 8u, "stress attempts requested frame count");
+    expectTrue(stress.framesCompleted == 8u, "stub build completes bookkeeping for each frame");
+    expectTrue(stress.finalProgress.renderLaneSignals == 8u, "render lane signals scale with load");
+    expectTrue(stress.finalProgress.jobLaneWaits == 8u, "job lane waits scale with load");
+    expectTrue(stress.finalProgress.jobLaneSignals == 8u, "job lane signals scale with load");
+    expectTrue(stress.finalProgress.renderLaneWaits == 8u, "render lane waits scale with load");
+    expectTrue(stress.finalProgress.frameIndex == 8u, "final progress tracks last frame index");
+
+    pair.destroy(nullptr);
+}
+
+void testInteropFillLoadStressStub() {
+    const fuse::renderer::cuda::InteropFillLoadStressResult stress =
+        fuse::renderer::cuda::stressInteropFillUnderLoad(16u);
+
+    expectTrue(stress.attempts == 16u, "interop fill stress runs all iterations");
+#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
+    if (fuse::renderer::cuda::interopFillAvailable()) {
+        std::printf("SKIP: interop fill runtime available — load stress needs exported handle\n");
+        return;
+    }
+#endif
+    expectTrue(stress.stubPaths == 16u, "CI stub path counts every iteration");
+    expectTrue(stress.successes == 0u, "CI stub path has no successes without exported handle");
+    expectTrue(stress.failures == 0u, "stub path is not counted as hard failure");
+}
+
 void testInteropFillStub() {
     fuse::renderer::cuda::InteropFillDesc desc{};
     desc.exportedMemoryHandle = reinterpret_cast<void*>(0x10);
@@ -181,6 +215,8 @@ int main() {
     testSharedTimelineStub();
     testFrameSyncPairStub();
     testFrameSyncProgressStub();
+    testFrameSyncLoadStressStub();
+    testInteropFillLoadStressStub();
     testInteropFillStub();
     testStreamManagerStub();
 

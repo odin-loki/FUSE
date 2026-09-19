@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/viewport_vulkan_surface.hpp>
 #include <fuse/editor/ai_tree_profile_picker.hpp>
 #include <fuse/editor/cinematics_seq_import.hpp>
 #include <fuse/editor/feature_pane_bridge.hpp>
@@ -418,6 +419,21 @@ void testRuntimeViewportSurfaceHandoffStub() {
 #endif
 }
 
+void testViewportVulkanSurfaceBootstrapStub() {
+    const fuse::editor::ViewportVulkanSurfaceResult result =
+        fuse::editor::createViewportVulkanSurfaceFromWinId(4242u, 800u, 450u);
+
+    expectTrue(result.valid, "viewport Vulkan bootstrap returns valid result on CI");
+    expectTrue(result.stubPath, "headless bootstrap uses winId stub path");
+    expectTrue(result.vkSurface == reinterpret_cast<void*>(static_cast<uintptr_t>(4242u)),
+               "winId encoded as opaque surface handle");
+    expectTrue(result.message != nullptr, "bootstrap exposes honest message");
+
+    fuse::editor::ViewportVulkanSurfaceResult mutableResult = result;
+    fuse::editor::destroyViewportVulkanSurface(mutableResult);
+    expectTrue(!mutableResult.valid, "destroy clears bootstrap result");
+}
+
 void testRuntimeViewportQtSurfaceHandoffCommand() {
     fuse::editor::EditorHost host;
 
@@ -552,6 +568,7 @@ int main() {
     testRuntimeViewportLoadsProjectRoot();
     testRuntimeViewportSurfaceHandoffStub();
     testRuntimeViewportQtSurfaceHandoffCommand();
+    testViewportVulkanSurfaceBootstrapStub();
     testRuntimeViewportHookTicksWithProject();
     testAiTreeProfilePickerPostsCommand();
     testAiAgentEntityBindingPostsCommand();

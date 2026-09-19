@@ -100,8 +100,6 @@ void testExternalSurfaceWiring() {
 }
 
 void testPresentPathThroughHybridBootstrap() {
-    fuse::core::initialize();
-
     fuse::hybrid::HybridRendererBootstrapDesc desc{};
     desc.presentable.backend = fuse::hybrid::PresentableBackend::Headless;
     desc.presentable.vsyncMode = fuse::renderer::VsyncMode::Fifo;
@@ -141,7 +139,6 @@ void testPresentPathThroughHybridBootstrap() {
                "desktop GLFW present gate OFF by default");
 
     runtime->shutdown();
-    fuse::core::shutdown();
 }
 
 void testVsyncModeOnPresentableDesc() {
@@ -156,8 +153,6 @@ void testVsyncModeOnPresentableDesc() {
 }
 
 void testHybridBootstrapHeadlessPresentable() {
-    fuse::core::initialize();
-
     fuse::hybrid::HybridRendererBootstrapDesc desc{};
     desc.presentable.backend = fuse::hybrid::PresentableBackend::Headless;
     desc.renderer.rhi.bootstrap.instance.enableValidation = false;
@@ -169,12 +164,13 @@ void testHybridBootstrapHeadlessPresentable() {
     expectTrue(!runtime->status().presentableSurface, "CI headless path has no WSI surface");
 
     runtime->shutdown();
-    fuse::core::shutdown();
 }
 
 } // namespace
 
 int main() {
+    fuse::core::initialize();
+
     testDesktopPresentGateDefaultOff();
     testNullWsiBackendScaffold();
     testGameWindowStub();
@@ -183,6 +179,8 @@ int main() {
     testVsyncModeOnPresentableDesc();
     testPresentPathThroughHybridBootstrap();
     testHybridBootstrapHeadlessPresentable();
+
+    fuse::core::shutdown();
 
     if (g_failures == 0) {
         std::printf("fuse_hybrid_vulkan_presentable: all checks passed\n");

@@ -4,6 +4,7 @@
 #include <fuse/cinematics/camera_track.hpp>
 #include <fuse/cinematics/hybrid_timeline_drive.hpp>
 #include <fuse/cinematics/cue_payload.hpp>
+#include <fuse/cinematics/cue_preview.hpp>
 #include <fuse/cinematics/cue_queue.hpp>
 #include <fuse/cinematics/event_track.hpp>
 #include <fuse/cinematics/interpolate.hpp>

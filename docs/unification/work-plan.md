@@ -123,7 +123,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Mobile** | Hybrid demo runs on iOS **or** Android device/sim; respect surface loss / background |
 | **Exit** | Demo: 3D clear + spinning 2D sprite one window (desktop + one mobile); TSan clean on cull path |
 | **Deps** | WP-05, WP-03 |
-| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B bindless composite GPU blit ✅ (WP-06f); CUDA interop/GLFW present/U6 surface handoff ✅ (WP-06g); CUDA interop fill + frame-sync progress + Qt surface stub ✅ (WP-06h) — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
+| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B bindless composite GPU blit ✅ (WP-06f); CUDA interop/GLFW present/U6 surface handoff ✅ (WP-06g); CUDA interop fill + frame-sync progress + Qt surface stub ✅ (WP-06h); Qt `QVulkanInstance` bootstrap + load-stress stubs ✅ (WP-06i) — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
 
 ---
 
@@ -215,6 +215,19 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Exit** | `fuse_cuda_interop` interop fill + frame-sync progress tests; `fuse_editor_host` Qt surface handoff command; `RhiContext` wires fill + frame sync on submit; headless CI unchanged |
 | **Deps** | WP-06g |
 | **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06h |
+
+---
+
+### WP-06i — Track B Qt QVulkanInstance progress + CUDA/timeline load stubs
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M |
+| **Scope** | `QVulkanInstance::createSurface` bootstrap with winId fallback (`viewport_vulkan_surface.*`); `ViewportSwapchainHandoff::qtRealSurface`; `stressFrameSyncUnderLoad` + `stressInteropFillUnderLoad`; Lavapipe ICD tests `RUN_SERIAL`; build hygiene — restore corrupted `test_profiler_assert.cpp`, fix `cue_preview` + deepen-trim fallout |
+| **MT note** | UI posts winId; game thread consumes handoff; CUDA stress stubs remain job-lane safe |
+| **Exit** | `fuse_editor_host` viewport Vulkan bootstrap test; `fuse_cuda_interop` load-stress tests; parallel `ctest -j` Lavapipe targets green; `fuse_cinematics` builds |
+| **Deps** | WP-06h |
+| **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06i |
 
 ---
 
@@ -342,7 +355,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U2 incremental — expand Engine probe + SimObject/StringTable route; U6 Qt External GPU viewport (real `QVulkanInstance` handoff + null WSI headless path); U7 link Assimp/BC7/OGG when vendored (hooks landed); Track B post–WP-06h (full Qt `VkSurfaceKHR`, timeline frame flow under load).
+**Next:** U2 incremental — expand Engine probe + SimObject/StringTable route; U6 Qt External GPU viewport (real `QVulkanInstance` handoff + null WSI headless path); U7 link Assimp/BC7/OGG when vendored; Track B post–WP-06i (full Qt embed teardown, driver-wired timeline stress on toolkit CI).
 
 ---
 
