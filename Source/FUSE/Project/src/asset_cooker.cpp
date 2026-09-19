@@ -285,6 +285,20 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
     return sources;
 u32 AssetCooker::prune_stale_cache() {
     return m_cache.prune_all();
+CookCacheInvalidationProbe AssetCooker::probe_upstream_dependency(const CookManifest& manifest,
+    return m_cache.probe_upstream_invalidation(changed_source, graph.edges(), graph.jobs());
+
+AssetCooker::CookDependencyReconcileEstimate AssetCooker::estimate_stale_dependency_hashes(
+    const CookManifest& manifest) const {
+
+
+    CookDependencyReconcileEstimate estimate;
+    estimate.stale_source_paths = m_cache.probe_stale_upstream_hashes(source_upstream);
+    estimate.stale_upstream_entries = m_cache.probe_stale_upstream_hash_entries(source_upstream);
+
+    for (const std::string& stale_source : estimate.stale_source_paths) {
+                estimate.downstream_cascade_entries +=
+                    m_cache.probe_downstream_of(job.output_path, graph.edges(), graph.jobs());
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

@@ -76,6 +76,36 @@ struct CookCachePruneEstimate {
 
 /// Valid entry whose stored key no longer matches recomputed source content (B7.9 deepen).
 [[nodiscard]] bool is_stale_cook_cache_entry(const CookCacheEntry& entry);
+/// Preflight cache lookup without mutating hit/miss stats (B7.9 deepen).
+struct CookCacheLookupPreflight {
+    bool zero_key = false;
+    bool empty_cache = false;
+    bool has_entry = false;
+
+    [[nodiscard]] bool can_lookup() const { return !zero_key; }
+    [[nodiscard]] bool would_hit() const { return can_lookup() && has_entry; }
+    [[nodiscard]] bool would_miss() const { return can_lookup() && !has_entry; }
+    [[nodiscard]] bool should_skip() const { return !can_lookup(); }
+};
+
+/// Preflight cache store without mutating entries (B7.9 deepen).
+struct CookCacheStorePreflight {
+    bool empty_source_path = false;
+    bool empty_output_path = false;
+
+    [[nodiscard]] bool can_store() const {
+        return !zero_key && !empty_source_path && !empty_output_path;
+    [[nodiscard]] bool should_skip() const { return !can_store(); }
+
+/// Non-mutating invalidation scope estimate (B7.9 deepen).
+struct CookCacheInvalidationProbe {
+    u32 direct_entries = 0;
+    u32 downstream_entries = 0;
+    std::vector<std::string> stale_source_paths;
+
+    [[nodiscard]] u32 total_entries() const { return direct_entries + downstream_entries; }
+    [[nodiscard]] bool would_invalidate() const {
+        return total_entries() > 0 || !stale_source_paths.empty();
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -152,6 +182,27 @@ public:
     /// True when valid records have drifted from their recomputed content hash.
     /// Count of invalid or stale records that `prune_all` would remove — zero on empty cache.
 
+    /// Count entries that `invalidate_source` would remove — no mutation (B7.9 deepen).
+    [[nodiscard]] u32 probe_invalidate_source(const std::string& source_path) const;
+    /// Count entries that `invalidate_stale_content_for_source` would remove — no mutation (B7.9 deepen).
+    [[nodiscard]] u32 probe_stale_content_for_source(const std::string& source_path,
+                                                     u64 current_content_hash) const;
+    /// List source paths that `invalidate_stale_upstream_hashes` would drop — no mutation (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Count entries that `invalidate_stale_upstream_hashes` would drop — no mutation (B7.9 deepen).
+    [[nodiscard]] u32 probe_stale_upstream_hash_entries(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Count entries that `invalidate_downstream_of` would remove — no mutation (B7.9 deepen).
+    [[nodiscard]] u32 probe_downstream_of(const std::string& output_path,
+                                          const std::vector<CookJobDependencyEdge>& edges,
+                                          const std::vector<CookJob>& jobs) const;
+    /// Aggregate probe for upstream invalidation plus downstream cascade — no mutation (B7.9 deepen).
+    [[nodiscard]] CookCacheInvalidationProbe probe_upstream_invalidation(
+        const std::string& changed_source,
+        const std::vector<CookJobDependencyEdge>& edges,
+        const std::vector<CookJob>& jobs) const;
+
     [[nodiscard]] bool contains(u64 content_hash) const;
 
     void clear();
@@ -169,5 +220,11 @@ private:
     std::vector<CookCacheEntry> m_entries;
     CookCacheStats m_stats;
 };
+
+/// Preflight cache lookup without mutating hit/miss stats (B7.9 deepen).
+[[nodiscard]] CookCacheLookupPreflight preflight_cook_cache_lookup(const CookCache& cache, u64 content_hash);
+
+/// Preflight cache store without mutating entries (B7.9 deepen).
+[[nodiscard]] CookCacheStorePreflight preflight_cook_cache_store(const CookCacheEntry& entry);
 
 } // namespace fuse::project
