@@ -391,6 +391,7 @@ struct CookCacheInvalidationEstimate {
     [[nodiscard]] bool ok() const { return can_store; }
     [[nodiscard]] bool should_skip() const { return !can_store; }
 
+/// Structural + kind-aware source preflight for cache records — mirrors `store` guards (B7.9 deepen).
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -801,6 +802,17 @@ public:
         const std::string& output_path = {},
         u64 current_content_hash = 0,
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path = {}) const;
+
+    /// Read-only invalidation would_* probes — mirror `invalidate_*` guards (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                    const std::vector<CookJobDependencyEdge>& edges,
+                                                    const std::vector<CookJob>& jobs) const;
+    /// Content hashes `invalidate_source` would remove — one push per matching entry (B7.9 deepen).
+    [[nodiscard]] std::vector<u64> probe_invalidation_hashes_for_source(const std::string& source_path) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

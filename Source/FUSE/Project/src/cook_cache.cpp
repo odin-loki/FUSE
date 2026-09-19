@@ -214,6 +214,14 @@ CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) 
     preflight.can_store = true;
     if (entry.kind == CookAssetKind::Shader) {
 
+    }
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+    case CookAssetKind::Shader: {
+        CookHashPreflight preflight;
+        return preflight;
+
+    preflight.reason = CookHashRejectReason::SourceUnreadable;
 }
 
 CookCacheEntry* CookCache::find_entry_(u64 content_hash) {
@@ -3428,12 +3436,14 @@ bool CookCache::would_invalidate_output(const std::string& output_path) const {
     return count_by_output(output_path) != 0;
 
 
+
 bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
                                                           u64 current_content_hash) const {
     return count_stale_content_for_source(source_path, current_content_hash) != 0;
 
 bool CookCache::would_invalidate_stale_upstream_hashes(
     return count_stale_upstream_hashes(source_upstream_by_path) != 0;
+}
 
 bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
                                                const std::vector<CookJobDependencyEdge>& edges,
@@ -3502,6 +3512,17 @@ bool CookCache::would_invalidate_any(const std::string& source_path, const std::
     return estimate_invalidation_removals(source_path, output_path, current_content_hash,
                                           source_upstream_by_path)
                .total() != 0;
+}
+
+std::vector<u64> CookCache::probe_invalidation_hashes_for_source(const std::string& source_path) const {
+    if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
+        return {};
+
+    std::vector<u64> hashes;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.source_path == source_path) {
+            hashes.push_back(entry.content_hash);
+    return hashes;
 }
 
 bool CookCache::contains(u64 content_hash) const {

@@ -5789,6 +5789,61 @@ void testCookCacheWouldInvalidateProbes() {
     const std::string source = writeTempFile("/tmp/fuse_b79_would_inv_mesh.obj", "# would inv\n");
     desc.output_path = "/tmp/fuse_b79_would_inv_mesh.fusemesh";
 
+void testCookCacheEntryPreflightGuards() {
+    fuse::project::CookCacheEntry invalid;
+    invalid.source_path = "/tmp/fuse_b79_entry_preflight.obj";
+    invalid.output_path = "/tmp/fuse_b79_entry_preflight.fusemesh";
+    expectTrue(!fuse::project::preflight_cook_cache_entry(invalid).ok(),
+               "zero content hash fails cache entry preflight");
+    expectTrue(fuse::project::preflight_cook_cache_entry(invalid).reason ==
+                   fuse::project::CookHashRejectReason::ZeroSourceHash,
+               "zero content hash preflight reason");
+
+    invalid.content_hash = 42;
+    invalid.source_path = "";
+                   fuse::project::CookHashRejectReason::EmptyInputPath,
+               "empty source path fails cache entry preflight");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_entry_preflight_ok.obj", "# entry preflight\n");
+    valid.content_hash = 42;
+    valid.output_path = "/tmp/fuse_b79_entry_preflight_ok.fusemesh";
+    valid.kind = fuse::project::CookAssetKind::Mesh;
+    expectTrue(fuse::project::preflight_cook_cache_entry(valid).ok(),
+               "valid mesh cache entry passes preflight");
+
+    valid.kind = fuse::project::CookAssetKind::Shader;
+               "shader cache entry passes structural preflight");
+
+void testCookHashPreflightManifestCookKey() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_manifest_key.obj", "# manifest key\n");
+
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_manifest_key.fusemesh";
+    manifest.assets.push_back(entry);
+
+    expectTrue(fuse::project::preflight_manifest_cook_key(entry, manifest).ok(),
+               "manifest cook key preflight ok for readable source");
+
+    entry.source_path = "";
+    expectTrue(!fuse::project::preflight_manifest_cook_key(entry, manifest).ok(),
+               "empty source fails manifest cook key preflight");
+
+    entry.dependencies = {""};
+    const fuse::project::CookHashPreflight all_empty_deps =
+        fuse::project::preflight_manifest_cook_key(entry, manifest);
+    expectTrue(!all_empty_deps.ok(), "all-empty dependency list fails manifest cook key preflight");
+    expectTrue(all_empty_deps.reason == fuse::project::CookHashRejectReason::EmptyDependencyList,
+               "all-empty dependency list preflight reason");
+
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_source.obj", 42u),
+    expectTrue(cache.probe_invalidation_hashes_for_source("/tmp/fuse_b79_would_source.obj").empty(),
+               "probe_invalidation_hashes on empty cache is empty");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_would_mesh.obj", "# would mesh\n");
+    desc.output_path = "/tmp/fuse_b79_would_mesh.fusemesh";
+
     expectTrue(seeded.ok, "seed cook for would_invalidate probes ok");
 
     expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source reports seeded entry");
@@ -5871,6 +5926,10 @@ void testCookCacheEntryPreflightGuards() {
     shader_entry.kind = fuse::project::CookAssetKind::Shader;
     shader_entry.output_path = "/tmp/fuse_b79_entry_preflight.fuseshader";
     expectTrue(!fuse::project::preflight_cook_cache_entry(shader_entry).ok(), "shader entry fails preflight");
+    const std::vector<fuse::u64> probed = cooker.cache().probe_invalidation_hashes_for_source(source);
+    expectTrue(probed.size() == 1u, "probe_invalidation_hashes finds one hash");
+    expectTrue(probed[0] == seeded.content_hash, "probed hash matches seeded entry");
+
     writeTempFile(source, "# would mesh updated\n");
     const fuse::u64 updated_hash = fuse::project::hash_mesh_import(desc);
     expectTrue(updated_hash != seeded.content_hash, "source change yields new content hash");
@@ -6048,6 +6107,7 @@ int main() {
     testCookCacheEntryPreflightGuards();
     testCookHashPreflightMtimeGuards();
     testCookHashShouldSkipGuards();
+    testCookHashPreflightManifestCookKey();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

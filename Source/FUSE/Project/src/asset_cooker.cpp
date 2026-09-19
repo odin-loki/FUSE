@@ -977,6 +977,8 @@ CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(
 
 
 
+
+
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
 
@@ -1125,6 +1127,8 @@ bool AssetCooker::would_stale_dependency_invalidate(const CookManifest& manifest
 
 bool AssetCooker::should_skip_reconcile_invalidation(const CookManifest& manifest) const {
     return estimate_reconcile_invalidation(manifest).should_skip();
+        }
+    return estimate;
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
