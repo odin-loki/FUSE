@@ -320,6 +320,35 @@ GizmoInteractionPhase interactionPhase(bool dragging) {
     return dragging ? GizmoInteractionPhase::Dragging : GizmoInteractionPhase::Idle;
 }
 
+bool isFiniteValue(f32 value) {
+    return std::isfinite(value);
+}
+
+bool isRayFinite(const GizmoRay& ray) {
+    return isFiniteValue(ray.origin.x) && isFiniteValue(ray.origin.y) &&
+           isFiniteValue(ray.origin.z) && isFiniteValue(ray.direction.x) &&
+           isFiniteValue(ray.direction.y) && isFiniteValue(ray.direction.z);
+}
+
+bool isHitTestFinite(const GizmoHitTest& hit) {
+    return isFiniteValue(hit.screenX) && isFiniteValue(hit.screenY) &&
+           isFiniteValue(hit.viewportWidth) && isFiniteValue(hit.viewportHeight);
+}
+
+bool isAxisValidForMode(GizmoAxis axis, GizmoMode mode) {
+    if (axis == GizmoAxis::None) {
+        return false;
+    }
+    if (axis == GizmoAxis::Uniform) {
+        return mode == GizmoMode::Scale;
+    }
+    return true;
+}
+
+bool isDragDeltaFinite(f32 delta) {
+    return isFiniteValue(delta);
+}
+
 bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings) {
     return isSnapEnabled(mode, settings) && !isSnapStepValid(mode, settings);
 }
@@ -356,13 +385,14 @@ bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings) {
     return isSnapEnabled(mode, settings) && isSnapStepValid(mode, settings);
 }
 
-bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings) {
-    return isSnapEnabled(mode, settings) && !isSnapStepValid(mode, settings);
-}
-
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
                             GizmoSpace space, f32 axisLength, f32 pickRadius) {
     PickPreflight preflight{};
+    if (!isRayFinite(ray)) {
+        preflight.nonFiniteRay = true;
+        return preflight;
+    }
+
     if (isRayEmpty(ray)) {
         preflight.emptyRay = true;
         return preflight;
@@ -386,6 +416,11 @@ PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform
 
 PickPreflight preflightPick(const GizmoHitTest& hit, GizmoMode mode) {
     PickPreflight preflight{};
+    if (!isHitTestFinite(hit)) {
+        preflight.nonFiniteHit = true;
+        return preflight;
+    }
+
     if (isHitTestDimensionsInvalid(hit)) {
         preflight.invalidDimensions = true;
         return preflight;
@@ -484,6 +519,11 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
         return preflight;
     }
 
+    if (!isHitTestFinite(hit)) {
+        preflight.nonFiniteHit = true;
+        return preflight;
+    }
+
     if (isHitTestDimensionsInvalid(hit)) {
         preflight.invalidDimensions = true;
     } else if (isHitTestEmpty(hit)) {
@@ -500,6 +540,11 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
                                         const GizmoSnapSettings& settings) {
     UpdateDragPreflight preflight = preflightUpdateDrag(hit, dragging, activeAxis);
     if (!preflight.canUpdate()) {
+        return preflight;
+    }
+
+    if (!isAxisValidForMode(activeAxis, mode)) {
+        preflight.invalidAxisForMode = true;
         return preflight;
     }
 
@@ -529,6 +574,8 @@ EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode
 
     if (activeAxis == GizmoAxis::None) {
         preflight.invalidActiveAxis = true;
+    } else if (!isAxisValidForMode(activeAxis, mode)) {
+        preflight.invalidAxisForMode = true;
     }
 
     if (isSnapDegraded(mode, settings)) {
@@ -787,6 +834,7 @@ BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform&
 
     const PickPreflight pick = preflightPick(ray, transform, mode, space, axisLength, pickRadius);
     preflight.emptyRay = pick.emptyRay;
+    preflight.nonFiniteRay = pick.nonFiniteRay;
     preflight.invalidPickConfig = pick.invalidPickConfig;
     preflight.pickMiss = pick.pickMiss;
     if (!pick.canPick()) {
@@ -818,6 +866,7 @@ BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
 
     const PickPreflight pick = preflightPick(hit, mode);
     preflight.emptyHit = pick.emptyHit;
+    preflight.nonFiniteHit = pick.nonFiniteHit;
     preflight.invalidDimensions = pick.invalidDimensions;
     preflight.outOfBounds = pick.outOfBounds;
     preflight.screenMiss = pick.screenMiss;
