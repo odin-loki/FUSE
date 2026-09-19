@@ -243,7 +243,6 @@ bool hasProbeBlendKernelSurfaces(const DDGIKernelParams& params);
 bool tryValidateProbeBlendKernelSurfaces(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
 /// Unified preflight guard before probe trace/blend kernel launch.
-bool canLaunchDdgiKernelParams(const DDGIKernelParams& params);
 /// Diagnose why unified kernel launch preflight would reject.
 bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
@@ -257,7 +256,6 @@ bool tryCanLaunchProbeTraceKernelWithSurfaces(const DDGIKernelParams& params,
 bool canLaunchProbeBlendKernelWithSurfaces(const DDGIKernelParams& params);
 /// Diagnose why blend launch with GPU surfaces would reject.
 bool tryCanLaunchProbeBlendKernelWithSurfaces(const DDGIKernelParams& params,
-                                              ProbeKernelRejectReason& outReason);
 
 /// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
