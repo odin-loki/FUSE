@@ -4,12 +4,32 @@
 
 namespace fuse::physics::narrowphase {
 
+NarrowphaseRunPreflight preflightNarrowphaseRun(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflight_run_narrowphase(pairs, bodies, shapes);
+}
+
+bool canSkipNarrowphaseRun(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return can_skip_narrowphase_run(pairs, bodies, shapes);
+}
+
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     ContactBufferSoA& buffer) {
-    const u32 pairCount = static_cast<u32>(pairs.size());
+    const NarrowphaseRunPreflight runPreflight = preflight_run_narrowphase(pairs, bodies, shapes);
+    if (runPreflight.canSkip) {
+        buffer.preparePairSlots(0u);
+        return;
+    }
+
+    const u32 pairCount = runPreflight.pairCount;
     buffer.preparePairSlots(pairCount);
 
     // Per-pair slots are job-safe (disjoint writes). Serial dispatch on the CPU stub avoids
@@ -17,12 +37,12 @@ void runNarrowphaseIntoBuffer(
     // under core::initialize(); the slot layout matches the future parallel_for kernel path.
     for (u32 pairIndex = 0; pairIndex < pairCount; ++pairIndex) {
         ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
-        if (generate_contact_manifold(manifold)) {
-            buffer.writeSlot(pairIndex, manifold);
+        if (finalize_contact_manifold_with_preflight(manifold)) {
+            write_contact_buffer_slot_with_preflight(buffer, pairIndex, manifold);
         }
     }
 
-    buffer.compactAndClamp();
+    compact_and_clamp_contact_buffer_with_preflight(buffer);
 }
 
 std::vector<ContactManifold> runNarrowphase(
