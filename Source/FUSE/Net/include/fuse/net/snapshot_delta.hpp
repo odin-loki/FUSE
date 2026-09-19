@@ -314,3 +314,6 @@ private:
     [[nodiscard]] bool would_mutate_state() const { return !empty_delta && can_apply(); }
     [[nodiscard]] bool should_skip_apply() const { return ring_empty || !has_baseline || skipped; }
 [[nodiscard]] SnapshotDeltaPreflight preflight_delta_masks(const SnapshotDelta& delta);
+
+// --- deepen additive from deepen-b74-snapshot-delta-preflight-mask-guards-5203 ---
+[[nodiscard]] bool should_skip_verified_apply(const GameSnapshot& base, const SnapshotDelta& delta);

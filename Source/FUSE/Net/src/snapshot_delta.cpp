@@ -1015,3 +1015,6 @@ SnapshotDeltaPreflight preflight_delta_masks(const SnapshotDelta& delta) {
     SnapshotDeltaPreflight result = preflight_delta_masks(delta);
     return preflight.can_apply() && preflight.should_skip_apply();
     return preflight_apply_delta(base_frame, delta).should_skip_apply();
+
+// --- deepen additive from deepen-b74-snapshot-delta-preflight-mask-guards-5203 ---
+bool should_skip_verified_apply(const GameSnapshot& base, const SnapshotDelta& delta) {

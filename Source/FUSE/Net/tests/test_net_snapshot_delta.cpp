@@ -606,3 +606,9 @@ void run_snapshot_delta_tests() {
     const fuse::net::SnapshotDeltaPreflight bad_mask_only_preflight =
     expectTrue(empty_verified.should_skip_apply(), "verified empty delta result should_skip_apply");
     expectTrue(!verified.should_skip_apply(), "verified patch result should not skip apply");
+
+// --- deepen additive from deepen-b74-snapshot-delta-preflight-mask-guards-5203 ---
+    const fuse::net::SnapshotDeltaPreflight duplicate_preflight =
+    expectTrue(fuse::net::should_skip_verified_apply(base, bad_checksum_delta),
+    expectTrue(!fuse::net::should_skip_verified_apply(base, patch_delta),
+    const fuse::net::SnapshotHistoryPreflight frame_mismatch_preflight =
