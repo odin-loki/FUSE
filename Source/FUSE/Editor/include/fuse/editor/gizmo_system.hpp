@@ -830,6 +830,13 @@ bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode);
 /// Non-mutating end-drag predicate — rejects when no drag is active (B6.4 deepen pass).
 bool canEndDrag(bool dragging);
 
+/// Non-mutating update-drag predicate — same guards as `preflightUpdateDrag` (B6.4 deepen pass).
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging);
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode);
+
+/// Non-mutating end-drag predicate — rejects when no drag is active (B6.4 deepen pass).
+bool canEndDrag(bool dragging);
+
 /// Screen-space dead-zone check before axis pick (B6.4 deepen).
 bool isScreenHitMiss(const GizmoHitTest& hit, GizmoMode mode);
 GizmoTransform snapTransform(const GizmoTransform& transform, GizmoMode mode,

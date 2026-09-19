@@ -995,6 +995,34 @@ SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings,
         preflight.noChange = true;
 
 
+namespace {
+
+bool gizmoTransformNear(const GizmoTransform& a, const GizmoTransform& b, f32 tolerance) {
+    return std::fabs(a.posX - b.posX) <= tolerance && std::fabs(a.posY - b.posY) <= tolerance &&
+           std::fabs(a.posZ - b.posZ) <= tolerance && std::fabs(a.rotX - b.rotX) <= tolerance &&
+           std::fabs(a.rotY - b.rotY) <= tolerance && std::fabs(a.rotZ - b.rotZ) <= tolerance &&
+           std::fabs(a.rotW - b.rotW) <= tolerance && std::fabs(a.scaleX - b.scaleX) <= tolerance &&
+           std::fabs(a.scaleY - b.scaleY) <= tolerance && std::fabs(a.scaleZ - b.scaleZ) <= tolerance;
+}
+
+} // namespace
+
+SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings,
+                            const GizmoTransform& transform) {
+    SnapPreflight preflight = preflightSnap(mode, settings);
+    if (!preflight.canApply()) {
+        return preflight;
+    }
+
+    GizmoTransform snapped{};
+    if (trySnapTransform(transform, mode, settings, snapped) &&
+        gizmoTransformNear(transform, snapped, kEpsilon)) {
+        preflight.noChange = true;
+    }
+
+    return preflight;
+}
+
 bool trySnapTransform(const GizmoTransform& transform, GizmoMode mode,
                       const GizmoSnapSettings& settings, GizmoTransform& out) {
     out = transform;
@@ -1008,6 +1036,10 @@ f32 trySnapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& setting
         return delta;
     return snapValue(delta, mode, settings);
 
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging) {
+    return preflightUpdateDrag(hit, dragging, GizmoMode::Translate);
+}
+
 UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode) {
     UpdateDragPreflight preflight{};
     if (!dragging) {
@@ -1017,6 +1049,10 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging, 
     if (isHitTestEmpty(hit)) {
         preflight.emptyHit = true;
         return preflight;
+    }
+
+    if (isScreenHitMiss(hit, mode)) {
+        preflight.screenMiss = true;
     }
 
     if (isScreenHitMiss(hit, mode)) {
@@ -1108,6 +1144,26 @@ EndDragPreflight preflightEndDrag(bool dragging) {
         preflight.notDragging = true;
     }
     return preflight;
+}
+
+bool canEndDrag(bool dragging) {
+    return preflightEndDrag(dragging).canEnd();
+}
+
+EndDragPreflight preflightEndDrag(bool dragging) {
+    EndDragPreflight preflight{};
+    if (!dragging) {
+        preflight.notDragging = true;
+    }
+    return preflight;
+}
+
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging) {
+    return preflightUpdateDrag(hit, dragging).canUpdate();
+}
+
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode) {
+    return preflightUpdateDrag(hit, dragging, mode).canUpdate();
 }
 
 bool canEndDrag(bool dragging) {
@@ -1952,10 +2008,9 @@ EndDragPreflight GizmoSystem::preflightEndDrag() const {
 
 bool GizmoSystem::canEndDrag() const {
     return fuse::editor::canEndDrag(m_dragging);
-}
 
-bool GizmoSystem::canUpdateDrag(const GizmoHitTest& hit) const {
     return fuse::editor::canUpdateDrag(hit, m_dragging);
+
 }
 
 bool GizmoSystem::tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out) {
