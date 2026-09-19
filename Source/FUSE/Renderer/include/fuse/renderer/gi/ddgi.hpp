@@ -1078,6 +1078,9 @@ bool preflightTrilinearProbeSampleAtCoords(const DDGIDesc& desc,
 /// Non-mutating trilinear sample preflight at probe coords — returns true when sample would proceed.
 /// Build coords from world position and run trilinear sample preflight (B5.6 deepen pass).
 bool preflightTrilinearProbeSampleAtWorldPosition(const DDGIDesc& desc,
+/// Classify why coord-based probe trilinear sampling would reject — same ordering as `tryCanSampleAtProbeCoords`.
+/// Non-mutating coord-based trilinear sample preflight — returns true when sampling would proceed.
+/// Build sample coords + trilinear preflight without mutating cache (B5.6 deepen pass).
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1226,6 +1229,8 @@ bool wouldClampCacheIndexCoord(const DDGIDesc& desc, u32 x, u32 y, u32 z);
 /// Early-out when cache-index lookup would be rejected (B5.6 deepen pass).
 /// True when cache-index lookup would proceed (B5.6 deepen pass).
 bool cacheIndexLookupReady(const DDGIDesc& desc,
+/// Non-mutating cache-index preflight — index/count only; null-cache not diagnosed.
+                               CacheIndexRejectReason* reason = nullptr);
 /// True when `probe_index` exceeds the valid probe range on a non-empty grid.
 bool wouldClampProbeIndexForLookup(u32 probe_index, const DDGIDesc& desc);
 /// Minimum irradiance cache entries required for full-grid sampling; 0 on empty grid.
@@ -1498,6 +1503,10 @@ bool preflightProbeSchedule(u32 probe_count,
                             u32 max_indices,
                             const u32* out_indices,
                             u32* out_count,
+                                      u32 probes_per_frame,
+                                      ProbeScheduleRejectReason& outReason);
+/// Classify why rate-aware probe scheduling would be rejected — same ordering as `tryCanScheduleProbeUpdatesAtRate`.
+                                                            u32* out_count);
 /// Schedule probe updates with reject-reason diagnostics; false when preflight rejects.
 bool canScheduleProbeUpdates(u32 probe_count,
 bool wouldSkipProbeSchedule(u32 probe_count,
@@ -1530,6 +1539,7 @@ bool tryScheduleProbeUpdates(u32 frame_index,
                              u32* out_count,
                              ProbeScheduleRejectReason& outReason);
 /// Rate-aware schedule with reject-reason diagnostics; false when preflight rejects (B5.6 deepen pass).
+/// Schedule probe updates with rate-aware preflight; false when preflight rejects.
 bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
                                    u32 probe_count,
                                    u32 probes_per_frame,
