@@ -995,3 +995,19 @@ bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
 HrtfIrPreflight preflight_hrtf_ir_stub(const HrtfIrStub& ir) {
 HrtfPanPathPreflight preflight_hrtf_pan_path_guarded(bool hrtf_enabled, const HrtfIrStub& ir,
 HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling_for_path(
+
+// --- deepen additive from deepen-b72-hrtf-preflight-guards-df8b ---
+    case HrtfIrRejectReason::Empty:
+    case HrtfIrRejectReason::Malformed:
+        return HrtfIrRejectReason::Malformed;
+        return HrtfIrRejectReason::Empty;
+    const HrtfIrRejectReason reject = classify_hrtf_ir_reject(ir);
+    return reject == HrtfIrRejectReason::None;
+HrtfPanPathRejectReason classify_hrtf_pan_path_reject(bool hrtf_enabled, const Vec3& rel_listener) {
+        return HrtfPanPathRejectReason::Disabled;
+    const HrtfPanPathRejectReason reject = classify_hrtf_pan_path_reject(hrtf_enabled, rel_listener);
+    return reject == HrtfPanPathRejectReason::None;
+    const HrtfAttenuationCouplingRejectReason reject =
+    return reject == HrtfAttenuationCouplingRejectReason::None;
+HrtfBinauralPanPreflight preflight_hrtf_binaural_pan(bool hrtf_enabled, const HrtfIrStub& ir,
+    HrtfBinauralPanPreflight preflight{};

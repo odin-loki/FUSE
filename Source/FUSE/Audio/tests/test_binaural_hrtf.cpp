@@ -1486,3 +1486,27 @@ void testPreflightHrtfSpatialPan() {
         fuse::audio::HrtfAttenuationCouplingPreflightReject::None;
     expectTrue(reject == fuse::audio::HrtfAttenuationCouplingPreflightReject::None,
     expectTrue(reject == fuse::audio::HrtfAttenuationCouplingPreflightReject::BypassPath,
+
+// --- deepen additive from deepen-b72-hrtf-preflight-guards-df8b ---
+    expectTrue(empty_preflight.rejectReason == fuse::audio::HrtfIrRejectReason::Empty,
+    expectTrue(valid_preflight.rejectReason == fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(malformed_preflight.rejectReason == fuse::audio::HrtfIrRejectReason::Malformed,
+    fuse::audio::HrtfIrRejectReason reason = fuse::audio::HrtfIrRejectReason::Empty;
+    expectTrue(reason == fuse::audio::HrtfIrRejectReason::Empty, "bool IR preflight reports Empty");
+    expectTrue(reason == fuse::audio::HrtfIrRejectReason::None, "bool IR preflight reports None");
+    expectTrue(spatial.rejectReason == fuse::audio::HrtfPanPathRejectReason::None,
+    expectTrue(disabled.rejectReason == fuse::audio::HrtfPanPathRejectReason::Disabled,
+    expectTrue(co_located.rejectReason == fuse::audio::HrtfPanPathRejectReason::CoLocated,
+    expectTrue(narrow.rejectReason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+    expectTrue(unity.rejectReason == fuse::audio::HrtfAttenuationCouplingRejectReason::UnityAttenuation,
+    expectTrue(bypass.rejectReason == fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath,
+    const fuse::audio::HrtfAttenuationCouplingPreflight resolved =
+void testHrtfBinauralPanCombinedPreflight() {
+    const fuse::audio::HrtfBinauralPanPreflight spatial =
+    const fuse::audio::HrtfBinauralPanPreflight bypass =
+    expectTrue(bypass.panPath.rejectReason == fuse::audio::HrtfPanPathRejectReason::Disabled,
+    const fuse::audio::HrtfBinauralPanPreflight empty_ir =
+void testHrtfPreflightRejectReasonLabels() {
+                               fuse::audio::HrtfIrRejectReason::Empty),
+    testHrtfBinauralPanCombinedPreflight();
+    testHrtfPreflightRejectReasonLabels();

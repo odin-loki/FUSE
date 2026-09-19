@@ -673,3 +673,12 @@ enum class HrtfPanPathSkipReason : u8 {
 HrtfPanPathPreflight preflight_hrtf_pan_path_guarded(bool hrtf_enabled, const HrtfIrStub& ir,
 enum class HrtfAttenuationCouplingSkipReason : u8 {
 HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling_for_path(
+
+// --- deepen additive from deepen-b72-hrtf-preflight-guards-df8b ---
+    HrtfIrRejectReason rejectReason = HrtfIrRejectReason::Empty;
+    bool can_use_convolution() const { return rejectReason == HrtfIrRejectReason::None; }
+    HrtfPanPathRejectReason rejectReason = HrtfPanPathRejectReason::Disabled;
+    HrtfAttenuationCouplingRejectReason rejectReason = HrtfAttenuationCouplingRejectReason::BypassPath;
+                                         HrtfAttenuationCouplingRejectReason* reason);
+struct HrtfBinauralPanPreflight {
+HrtfBinauralPanPreflight preflight_hrtf_binaural_pan(bool hrtf_enabled, const HrtfIrStub& ir,
