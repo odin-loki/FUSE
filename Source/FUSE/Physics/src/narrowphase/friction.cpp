@@ -292,4 +292,28 @@ bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilo
     return rebuild_friction_basis_if_needed(manifold, epsilon);
 }
 
+bool friction_basis_is_stale_but_rebuildable(const ContactManifold& manifold, f32 epsilon) {
+    if (should_skip_friction_tangents(manifold)) {
+        return false;
+    }
+    return friction_basis_is_stale(manifold, epsilon);
+}
+
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (!should_normalize_contact_normal_before_friction(manifold, lengthEpsilon)) {
+        return false;
+    }
+    const f32 normalLength = manifold.contactNormal.length();
+    if (normalLength <= 1e-8f) {
+        return false;
+    }
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    return true;
+}
+
+bool rebuild_friction_basis_after_normalize_with_preflight(ContactManifold& manifold, f32 epsilon) {
+    normalize_contact_normal_if_needed(manifold, epsilon);
+    return rebuild_friction_basis_with_preflight(manifold, epsilon);
+}
+
 } // namespace fuse::physics::narrowphase

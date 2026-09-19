@@ -226,4 +226,22 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Returns true when extended deepen preflight allows dispatch (B4.6 deepen pass).
+bool should_dispatch_contact_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_with_deepen_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Collect pairs that pass extended deepen preflight without mutating input (B4.6 deepen pass).
+std::vector<broadphase::CandidatePair> filter_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase
