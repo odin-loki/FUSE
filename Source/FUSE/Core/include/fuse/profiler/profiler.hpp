@@ -410,6 +410,30 @@ struct ChromeTraceExportPreflight {
     bool hasNestingCleanupPending() const {
         return hasUnbalancedNesting() || flowDepthDetached || crossThreadFlowHandoffPending;
     }
+    bool wouldSkipExport() const { return profilerDisabled; }
+    bool wouldSkipSafeExport() const { return !canExportSafely(); }
+};
+
+/// Read-only scope nesting diagnostics — safe to call before `FUSE_PROFILE_SCOPE`.
+struct ScopeNestingPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    bool balanced = true;
+
+    bool hasUnbalancedNesting() const { return !balanced; }
+};
+
+/// Read-only async-flow diagnostics — safe to call before `FUSE_PROFILE_ASYNC_FLOW_*`.
+struct AsyncFlowPreflight {
+    u32 activeDepth = 0;
+    u32 maxDepth = 0;
+    u32 openCount = 0;
+    bool balanced = true;
+    bool depthDetached = false;
+    bool crossThreadHandoffPending = false;
+    bool hasOpenFlows = false;
+
+    bool hasUnbalancedNesting() const { return !balanced; }
 };
 
 /// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
@@ -1434,6 +1458,10 @@ ScopeRecordingPreflight preflightScopeRecording(const char* name);
 AsyncFlowBeginPreflight preflightAsyncFlowBegin(const char* name);
 AsyncFlowEndPreflight preflightAsyncFlowEnd(const char* name);
 CounterRecordingPreflight preflightCounterRecording(const char* track);
+
+bool wouldSkipScope(const char* name);
+bool wouldSkipCounter(const char* track);
+bool wouldSkipChromeTraceExport();
 
 ChromeTraceExportPreflight preflightChromeTraceExport();
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);

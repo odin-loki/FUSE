@@ -387,6 +387,13 @@ void assignSkipReason(AsyncFlowEndSkipReason* reason, AsyncFlowEndSkipReason val
 void assignSkipReason(CounterSampleSkipReason* reason, CounterSampleSkipReason value) {
 
 void assignSkipReason(ChromeTraceExportSkipReason* reason, ChromeTraceExportSkipReason value) {
+bool isNonEmptyEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+
+    if (!isNonEmptyEventName(name) || !isNonEmptyEventName(event.name)) {
+
+
+    return isFlowPhase(event.phase) && event.scopeId == flowId;
 }
 
 } // namespace
@@ -4701,6 +4708,25 @@ bool eventNameMatches(const char* eventName, const char* searchName) {
 
 
 
+
+
+
+
+
+        if (eventFlowIdMatches(event, flowId) && isValidEventName(event.name)) {
+
+
+
+
+
+
+
+bool tryFirstFlowEvent(u32 flowId, ProfileEvent& outEvent) {
+
+
+bool tryLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -4886,7 +4912,6 @@ ProfileScopePreflight preflightProfileScope(const char* name) {
     preflight.profilerDisabled = !enabled();
     preflight.invalidName = !isValidEventName(name);
     return preflight;
-}
 
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name) {
     AsyncFlowBeginPreflight preflight{};
@@ -4963,9 +4988,7 @@ void reconcileDetachedFlowDepth() {
         return NestingStateRejectReason::ActiveFlowNesting;
 
 const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason) {
-    switch (reason) {
     case NestingStateRejectReason::None:
-        return "none";
     case NestingStateRejectReason::ActiveScope:
         return "active_scope";
     case NestingStateRejectReason::ActiveFlowNesting:
@@ -4973,10 +4996,7 @@ const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason) {
     case NestingStateRejectReason::OpenAsyncFlows:
         return "open_async_flows";
     case NestingStateRejectReason::FlowDepthDetached:
-        return "flow_depth_detached";
     case NestingStateRejectReason::CrossThreadFlowHandoffPending:
-        return "cross_thread_flow_handoff_pending";
-    return "unknown";
 
 ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
     if (!enabled()) {
@@ -4990,9 +5010,7 @@ ChromeTraceExportRejectReason chromeTraceExportRejectReason() {
 const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason reason) {
     case ChromeTraceExportRejectReason::None:
     case ChromeTraceExportRejectReason::ProfilerDisabled:
-        return "profiler_disabled";
     case ChromeTraceExportRejectReason::UnbalancedNesting:
-        return "unbalanced_nesting";
     case ChromeTraceExportRejectReason::FlowDepthDetached:
     case ChromeTraceExportRejectReason::CrossThreadFlowHandoffPending:
 
@@ -5006,6 +5024,21 @@ NestingAsyncFlowPreflight preflightNestingAndAsyncFlow() {
 AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 flowId) {
     preflight.orphanFinish = openAsyncFlowCount() == 0u;
     (void)flowId;
+bool wouldSkipScope(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+
+bool wouldSkipAsyncFlowEnd(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)
+        || g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+
+bool wouldSkipCounter(const char* track) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(track);
+
+bool wouldSkipChromeTraceExport() {
+    return !enabled();
+
 ScopeNestingPreflight preflightScopeNesting() {
     ScopeNestingPreflight preflight{};
     preflight.activeDepth = scopeNestingDepth();
@@ -5021,6 +5054,10 @@ AsyncFlowPreflight preflightAsyncFlow() {
     preflight.activeDepth = flowNestingDepth();
     preflight.maxDepth = maxFlowNestingDepth();
     preflight.openFlowCount = openAsyncFlowCount();
+    return preflight;
+}
+
+    AsyncFlowPreflight preflight{};
     preflight.balanced = isFlowNestingBalanced();
     preflight.depthDetached = isFlowDepthDetached();
     preflight.crossThreadHandoffPending = isCrossThreadFlowHandoffPending();
@@ -5161,6 +5198,8 @@ bool wouldSkipChromeTraceExport(ChromeTraceExportSkipReason* reason) {
 
 bool wouldSkipChromeTraceExportSafely(ChromeTraceExportSkipReason* reason) {
     const ChromeTraceExportSkipReason skipReason = chromeTraceExportSafeSkipReason();
+    return preflight;
+}
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
