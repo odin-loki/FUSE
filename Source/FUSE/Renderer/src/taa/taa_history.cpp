@@ -238,3 +238,6 @@ TaaHistoryReuseRejectReason classifyTaaHistoryReuseReject(const TaaHistoryBuffer
 bool tryTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration, TaaHistoryReuseRejectReason* reason) {
     const TaaHistoryReuseRejectReason reject = classifyTaaHistoryReuseReject(history, observedGeneration);
     return reject == TaaHistoryReuseRejectReason::None;
+
+// --- deepen additive from deepen-b59-taa-guards-94db ---
+bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration) {

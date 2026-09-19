@@ -240,3 +240,6 @@ const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
 // --- deepen additive from deepen-b59-taa-guards-f9b0 ---
 TaaResolveBlendPreflight preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 bool taaResolveBlendPreflightValid(const TaaResolveBlendPreflight& preflight);
+
+// --- deepen additive from deepen-b59-taa-guards-94db ---
+bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
