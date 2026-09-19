@@ -560,3 +560,34 @@ bool ContactBufferSoA::writeSlotWithPreflight(u32 slot, const ContactManifold& m
 // --- deepen additive from b4-narrowphase-deepen-guards-5d1f ---
     if (clampPreflight.reason == ContactBufferClampRejectReason::EmptyBuffer) {
     if (clampPreflight.reason == ContactBufferClampRejectReason::WithinCapacity) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-8a17 ---
+const char* contact_buffer_compact_reject_reason_name(ContactBufferCompactRejectReason reason) {
+ContactBufferCompactRejectReason contact_buffer_compact_reject_reason(const ContactBufferSoA& buffer) {
+ContactBufferCompactPreflight preflight_contact_buffer_compact(const ContactBufferSoA& buffer) {
+const char* contact_buffer_compact_and_clamp_reject_reason_name(ContactBufferCompactAndClampRejectReason reason) {
+    case ContactBufferCompactAndClampRejectReason::None:
+    case ContactBufferCompactAndClampRejectReason::EmptyBuffer:
+    case ContactBufferCompactAndClampRejectReason::NoWork:
+ContactBufferCompactAndClampRejectReason contact_buffer_compact_and_clamp_reject_reason(
+        return ContactBufferCompactAndClampRejectReason::EmptyBuffer;
+            return ContactBufferCompactAndClampRejectReason::None;
+        return ContactBufferCompactAndClampRejectReason::NoWork;
+    ContactBufferCompactAndClampRejectReason expected) {
+ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer) {
+    ContactBufferCompactAndClampPreflight preflight{};
+    preflight.emptyBuffer = preflight.reason == ContactBufferCompactAndClampRejectReason::EmptyBuffer;
+    preflight.noWork = preflight.reason == ContactBufferCompactAndClampRejectReason::NoWork;
+const char* contact_buffer_friction_build_reject_reason_name(ContactBufferFrictionBuildRejectReason reason) {
+    case ContactBufferFrictionBuildRejectReason::None:
+    case ContactBufferFrictionBuildRejectReason::EmptyBuffer:
+    case ContactBufferFrictionBuildRejectReason::NoValidSlots:
+ContactBufferFrictionBuildRejectReason contact_buffer_friction_build_reject_reason(const ContactBufferSoA& buffer) {
+        return ContactBufferFrictionBuildRejectReason::EmptyBuffer;
+        return ContactBufferFrictionBuildRejectReason::NoValidSlots;
+    return ContactBufferFrictionBuildRejectReason::None;
+    ContactBufferFrictionBuildRejectReason expected) {
+ContactBufferFrictionBuildPreflight preflight_contact_buffer_friction_build(const ContactBufferSoA& buffer) {
+    ContactBufferFrictionBuildPreflight preflight{};
+    preflight.emptyBuffer = preflight.reason == ContactBufferFrictionBuildRejectReason::EmptyBuffer;
+    preflight.noValidSlots = preflight.reason == ContactBufferFrictionBuildRejectReason::NoValidSlots;

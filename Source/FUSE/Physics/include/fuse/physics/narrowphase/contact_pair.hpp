@@ -344,3 +344,12 @@ ContactPairBatchDeepenPreflight preflight_contact_pair_batch_deepen(
 
 // --- deepen additive from b4-narrowphase-deepen-guards-5d1f ---
 ContactPairRejectReason first_contact_pair_deepen_reject_in_batch(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-8a17 ---
+enum class NarrowphaseBatchRejectReason : u8 {
+    NarrowphaseBatchRejectReason reason = NarrowphaseBatchRejectReason::None;
+    bool can_skip() const { return reason != NarrowphaseBatchRejectReason::None; }
+    bool can_run() const { return reason == NarrowphaseBatchRejectReason::None && can_dispatch(); }
+const char* narrowphase_batch_reject_reason_name(NarrowphaseBatchRejectReason reason);
+NarrowphaseBatchRejectReason narrowphase_batch_reject_reason(
+    NarrowphaseBatchRejectReason expected);

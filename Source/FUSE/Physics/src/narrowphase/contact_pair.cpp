@@ -815,3 +815,14 @@ ContactPairBatchDeepenPreflight preflight_contact_pair_batch_deepen(
 ContactPairRejectReason first_contact_pair_deepen_reject_in_batch(
         const ContactPairRejectReason reason = contact_pair_deepen_reject_reason(pair, bodies, shapes);
         if (reason == ContactPairRejectReason::None) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-8a17 ---
+const char* narrowphase_batch_reject_reason_name(NarrowphaseBatchRejectReason reason) {
+    case NarrowphaseBatchRejectReason::None:
+    case NarrowphaseBatchRejectReason::EmptyPairList:
+    case NarrowphaseBatchRejectReason::AllRejected:
+NarrowphaseBatchRejectReason narrowphase_batch_reject_reason(
+        return NarrowphaseBatchRejectReason::EmptyPairList;
+        return NarrowphaseBatchRejectReason::AllRejected;
+    return NarrowphaseBatchRejectReason::None;
+    NarrowphaseBatchRejectReason expected) {

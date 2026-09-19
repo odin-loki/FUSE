@@ -181,3 +181,24 @@ bool should_skip_contact_buffer_write(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-7d67 ---
     bool writeSlotWithPreflight(u32 slot, const ContactManifold& manifold);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-8a17 ---
+const char* contact_buffer_compact_reject_reason_name(ContactBufferCompactRejectReason reason);
+ContactBufferCompactRejectReason contact_buffer_compact_reject_reason(const ContactBufferSoA& buffer);
+ContactBufferCompactPreflight preflight_contact_buffer_compact(const ContactBufferSoA& buffer);
+enum class ContactBufferCompactAndClampRejectReason : u8 {
+const char* contact_buffer_compact_and_clamp_reject_reason_name(ContactBufferCompactAndClampRejectReason reason);
+ContactBufferCompactAndClampRejectReason contact_buffer_compact_and_clamp_reject_reason(
+    ContactBufferCompactAndClampRejectReason expected);
+struct ContactBufferCompactAndClampPreflight {
+    ContactBufferCompactAndClampRejectReason reason = ContactBufferCompactAndClampRejectReason::None;
+    bool needsCompactAndClamp() const { return reason == ContactBufferCompactAndClampRejectReason::None; }
+ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer);
+enum class ContactBufferFrictionBuildRejectReason : u8 {
+const char* contact_buffer_friction_build_reject_reason_name(ContactBufferFrictionBuildRejectReason reason);
+ContactBufferFrictionBuildRejectReason contact_buffer_friction_build_reject_reason(const ContactBufferSoA& buffer);
+    ContactBufferFrictionBuildRejectReason expected);
+struct ContactBufferFrictionBuildPreflight {
+    ContactBufferFrictionBuildRejectReason reason = ContactBufferFrictionBuildRejectReason::None;
+    bool needsFrictionBuild() const { return reason == ContactBufferFrictionBuildRejectReason::None; }
+ContactBufferFrictionBuildPreflight preflight_contact_buffer_friction_build(const ContactBufferSoA& buffer);

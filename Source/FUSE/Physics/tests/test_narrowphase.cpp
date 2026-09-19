@@ -2696,3 +2696,19 @@ void testRunNarrowphaseDeepenPreflightDispatch() {
 // --- deepen additive from b4-narrowphase-deepen-guards-5d1f ---
             buffer, 4u, valid, fuse::physics::narrowphase::ContactBufferWriteRejectReason::InvalidSlot),
             allInvalid, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::AllInvalid),
+
+// --- deepen additive from b4-narrowphase-deepen-guards-8a17 ---
+        "can_skip deepen dispatch mirrors should_skip for sleeping pair");
+            fuse::physics::narrowphase::NarrowphaseBatchRejectReason::None),
+            fuse::physics::narrowphase::NarrowphaseBatchRejectReason::AllRejected),
+            fuse::physics::narrowphase::NarrowphaseBatchRejectReason::EmptyPairList),
+    expectTrue(batchPreflight.can_run(), "batch preflight can_run with dispatchable pair");
+void testManifoldPruneFinalizePassGuards() {
+void testFrictionBasisRebuildPassGuards() {
+void testContactBufferCompactClampPassGuards() {
+            buffer, fuse::physics::narrowphase::ContactBufferCompactRejectReason::EmptyBuffer),
+void testContactBufferFrictionBuildPassGuards() {
+            buffer, fuse::physics::narrowphase::ContactBufferFrictionBuildRejectReason::EmptyBuffer),
+    const auto compactAndClampPreflight =
+        compactAndClampPreflight.reason ==
+            fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::NoWork,
