@@ -17,6 +17,56 @@ f32 TaaJitterLayout::halton(u32 index, u32 base) {
     return result;
 }
 
+const char* taaJitterGuardRejectReasonLabel(TaaJitterGuardRejectReason reason) {
+    switch (reason) {
+    case TaaJitterGuardRejectReason::None:
+        return "none";
+    case TaaJitterGuardRejectReason::InvalidSequence:
+        return "invalid_sequence";
+    case TaaJitterGuardRejectReason::InvalidViewport:
+        return "invalid_viewport";
+    }
+    return "unknown";
+}
+
+TaaJitterGuardRejectReason classifyTaaJitterSyncReject(u32 sequenceLength) {
+    if (!TaaJitterLayout::validateSequenceLength(sequenceLength)) {
+        return TaaJitterGuardRejectReason::InvalidSequence;
+    }
+    return TaaJitterGuardRejectReason::None;
+}
+
+TaaJitterGuardRejectReason classifyTaaJitterNdcReject(u32 width, u32 height, u32 sequenceLength) {
+    const TaaJitterGuardRejectReason syncReject = classifyTaaJitterSyncReject(sequenceLength);
+    if (syncReject != TaaJitterGuardRejectReason::None) {
+        return syncReject;
+    }
+    if (!TaaJitterLayout::validateViewportDimensions(width, height)) {
+        return TaaJitterGuardRejectReason::InvalidViewport;
+    }
+    return TaaJitterGuardRejectReason::None;
+}
+
+bool preflightTaaJitterSync(u32 /*frameIndex*/, u32 sequenceLength, TaaJitterGuardRejectReason* reason) {
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterSyncReject(sequenceLength);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaJitterGuardRejectReason::None;
+}
+
+bool tryPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterGuardRejectReason& reason) {
+    return preflightTaaJitterSync(frameIndex, sequenceLength, &reason);
+}
+
+bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason* reason) {
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterNdcReject(width, height, sequenceLength);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaJitterGuardRejectReason::None;
+}
+
 bool TaaJitterLayout::validateSequenceLength(u32 length) {
     return length > 0u && length <= kTaaMaxJitterSequenceLength;
 }
@@ -114,6 +164,14 @@ fuse::math::Vec2 TaaJitter::currentNdcOffset(u32 width, u32 height) const {
         return {};
     }
     return TaaJitterLayout::haltonNdcOffset(m_index, width, height, m_sequenceLength);
+}
+
+bool TaaJitter::currentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out) const {
+    if (!canProduceNdcOffset(width, height)) {
+        return false;
+    }
+    out = TaaJitterLayout::haltonNdcOffset(m_index, width, height, m_sequenceLength);
+    return true;
 }
 
 bool TaaJitter::canAdvance() const {
