@@ -398,6 +398,8 @@ public:
     bool shouldSkipSyncToFrameIndex(u32 frameIndex) const;
     /// Early-out when NDC jitter production would be rejected (B5.9 deepen).
     bool shouldSkipNdcOffset(u32 width, u32 height) const;
+    bool shouldSkipSync(u32 frameIndex) const;
+    bool shouldSkipNdc(u32 width, u32 height) const;
     /// Monotonic frame counter — incremented by `advance`, set by `syncToFrameIndex`, cleared by `reset`.
     u32 monotonicFrameIndex() const { return m_monotonicFrame; }
     /// True when jitter state matches the expected monotonic frame counter (B5.9 deepen).

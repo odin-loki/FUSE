@@ -187,6 +187,7 @@ bool taaJitterNdcReady(u32 width, u32 height, u32 sequenceLength) {
     return preflightTaaJitterNdc(width, height, sequenceLength);
 
 
+
 bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason* reason) {
     const TaaJitterGuardRejectReason reject = classifyTaaJitterNdcReject(width, height, sequenceLength);
     if (reason != nullptr) {
@@ -715,6 +716,9 @@ bool TaaJitter::shouldSkipSyncToFrameIndex(u32 frameIndex) const {
 
 bool TaaJitter::shouldSkipNdcOffset(u32 width, u32 height) const {
     return shouldSkipTaaJitterNdc(width, height, m_sequenceLength);
+bool TaaJitter::shouldSkipSync(u32 frameIndex) const {
+
+bool TaaJitter::shouldSkipNdc(u32 width, u32 height) const {
 
 bool TaaJitter::isAlignedToFrameIndex(u32 frameIndex) const {
     return m_monotonicFrame == frameIndex &&
