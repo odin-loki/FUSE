@@ -460,3 +460,7 @@ bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupPhase* phase) const {
     return preflightTaaHistoryWarmup(m_history, phase);
                                             TaaResolveBlendRejectReason* blendReason,
     return preflightTaaResolveTemporalBlend(desc, m_history, blendReason, reuseReason);
+
+// --- deepen additive from deepen-b59-taa-guards-d966 ---
+bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupState* state) const {
+    return preflightTaaHistoryWarmup(m_history, state);

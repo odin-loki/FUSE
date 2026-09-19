@@ -549,3 +549,6 @@ bool preflightTaaResolveGuards(const TaaResolveDesc& desc, const TaaHistoryBuffe
                                       TaaResolveBlendRejectReason* blendReason,
     const bool blendPasses = preflightTaaResolveBlendWeights(desc, history, blendReason);
     const bool reusePasses = preflightTaaHistoryReuse(history, observedGeneration, reuseReason);
+
+// --- deepen additive from deepen-b59-taa-guards-d966 ---
+                              TaaResolveSkipReason* skipReason, TaaResolveBlendRejectReason* blendReason) {

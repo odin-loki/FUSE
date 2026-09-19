@@ -3273,3 +3273,14 @@ void testResolveTemporalBlendPreflight() {
     expectTrue(pass->preflightHistoryWarmup(), "pass warmup preflight passes after resolve");
     expectTrue(pass->preflightResolveTemporalBlend(desc, &blendReason, &reuseReason),
     testResolveTemporalBlendPreflight();
+
+// --- deepen additive from deepen-b59-taa-guards-d966 ---
+void testHistoryWarmupStateGuards() {
+    expectTrue(!fuse::renderer::preflightTaaHistoryWarmup(emptyHistory, &state),
+    expectTrue(!fuse::renderer::preflightTaaHistoryWarmup(history, &state),
+    expectTrue(fuse::renderer::preflightTaaHistoryWarmup(history, &state),
+void testJitterFrameIndexSlotDriftGuards() {
+void testResolveBlendModeGuards() {
+void testTaaPassWarmupBlendAndJitterDriftGuards() {
+    expectTrue(!pass->preflightHistoryWarmup(&warmupState),
+    expectTrue(pass->preflightHistoryWarmup(&warmupState), "pass warmup preflight passes after resolve");

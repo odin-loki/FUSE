@@ -275,3 +275,6 @@ bool preflightTaaHistoryReuseForDesc(const TaaResolveDesc& desc, const TaaHistor
 // --- deepen additive from deepen-b59-taa-guards-3c58 ---
 bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupPhase* phase) {
     return preflightTaaHistoryWarmup(history) && preflightTaaHistoryReuse(history, observedGeneration);
+
+// --- deepen additive from deepen-b59-taa-guards-d966 ---
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupState* state) {
