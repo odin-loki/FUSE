@@ -605,6 +605,78 @@ std::vector<std::string> CookCache::probe_downstream_sources(
     return sources;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
+u32 CookCache::count_stale_upstream_sources(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    return static_cast<u32>(probe_stale_upstream_sources_deduplicated(source_upstream_by_path).size());
+}
+
+std::vector<std::string> CookCache::probe_stale_upstream_sources_deduplicated(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    if (m_entries.empty() || source_upstream_by_path.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> stale_sources;
+    for (const auto& pair : source_upstream_by_path) {
+        const std::string& source_path = pair.first;
+        if (!is_valid_cook_cache_path(source_path)) {
+            continue;
+        }
+        const u64 current_upstream = pair.second;
+
+        bool stale = false;
+        for (const CookCacheEntry& entry : m_entries) {
+            if (entry.source_path == source_path && entry.upstream_hash != current_upstream) {
+                stale = true;
+                break;
+            }
+        }
+        if (stale) {
+            append_unique_source_(stale_sources, source_path);
+        }
+    }
+    return stale_sources;
+}
+
+CookCacheInvalidationEstimate CookCache::estimate_invalidation_removals(
+    const std::string& source_path, const std::string& output_path, u64 current_content_hash,
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    CookCacheInvalidationEstimate estimate;
+    if (m_entries.empty()) {
+        return estimate;
+    }
+
+    if (is_valid_cook_cache_path(source_path)) {
+        estimate.by_source_path = count_by_source(source_path);
+        if (is_valid_cook_cache_key(current_content_hash)) {
+            estimate.stale_content = count_stale_content_for_source(source_path, current_content_hash);
+        }
+    }
+
+    if (is_valid_cook_cache_path(output_path)) {
+        estimate.by_output_path = count_by_output(output_path);
+    }
+
+    estimate.stale_upstream = count_stale_upstream_hashes(source_upstream_by_path);
+    return estimate;
+}
+
+bool CookCache::would_invalidate_any(const std::string& source_path, const std::string& output_path,
+                                     u64 current_content_hash,
+                                     const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    return estimate_invalidation_removals(source_path, output_path, current_content_hash,
+                                          source_upstream_by_path)
+               .total() != 0;
+}
+
 bool CookCache::contains(u64 content_hash) const {
     if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {
         return false;

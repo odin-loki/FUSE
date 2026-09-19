@@ -596,6 +596,90 @@ void testCookHashPreflightFnvAndCombineGuards() {
                "combine cache key preflight ok for valid fold");
 }
 
+void testCookHashPreflightMtimeAndDependencyGuards() {
+    const fuse::project::CookHashPreflight empty_mtime = fuse::project::preflight_file_mtime_ns("");
+    expectTrue(!empty_mtime.ok(), "empty path fails mtime preflight");
+    expectTrue(empty_mtime.reason == fuse::project::CookHashRejectReason::EmptyPath,
+               "empty path mtime preflight reason");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_preflight_mtime.obj", "# mtime preflight\n");
+    expectTrue(fuse::project::preflight_file_mtime_ns(source).ok(), "readable path passes mtime preflight");
+
+    const fuse::project::CookHashPreflight zero_combine = fuse::project::preflight_fnv1a64_combine(0, 42u);
+    expectTrue(!zero_combine.ok(), "zero left operand fails combine preflight");
+    expectTrue(zero_combine.reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+               "zero left combine preflight reason");
+    expectTrue(fuse::project::preflight_fnv1a64_combine(99u, 0).ok(), "non-zero left passes combine preflight");
+
+    fuse::project::CookManifest manifest;
+    expectTrue(!fuse::project::preflight_upstream_dependency_path("", manifest).ok(),
+               "empty dependency path fails preflight");
+    expectTrue(fuse::project::preflight_upstream_dependency_path("/tmp/fuse_b79_missing_dep.fusemesh", manifest)
+                       .reason == fuse::project::CookHashRejectReason::UnresolvedDependency,
+               "unknown dependency path fails preflight");
+
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_preflight_dep.fusemesh";
+    manifest.assets.push_back(entry);
+
+    expectTrue(fuse::project::preflight_upstream_dependency_path(entry.output_path, manifest).ok(),
+               "resolved dependency path passes preflight");
+    expectTrue(fuse::project::preflight_upstream_dependencies_hash({entry.output_path}, manifest).ok(),
+               "upstream list preflight resolves manifest dependency");
+
+    expectTrue(std::string(fuse::project::cookHashRejectReasonLabel(
+                   fuse::project::CookHashRejectReason::UnresolvedDependency)) == "unresolved_dependency",
+               "reject reason label for unresolved dependency");
+}
+
+void testCookCacheInvalidationEstimateGuards() {
+    fuse::project::CookCache cache;
+    const fuse::project::CookCacheInvalidationEstimate empty =
+        cache.estimate_invalidation_removals("/tmp/fuse_b79_est_source.obj", "/tmp/fuse_b79_est_output.fusemesh",
+                                             42u, {{" /tmp/fuse_b79_est_source.obj", 1u}});
+    expectTrue(empty.total() == 0u, "empty cache invalidation estimate is zero");
+    expectTrue(!cache.would_invalidate_any("/tmp/fuse_b79_est_source.obj"), "empty cache would_invalidate_any false");
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_est_source.obj"),
+               "would_invalidate_source false on empty cache");
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_est_output.fusemesh"),
+               "would_invalidate_output false on empty cache");
+    expectTrue(cache.count_stale_upstream_sources({{"/tmp/fuse_b79_est_source.obj", 1u}}) == 0u,
+               "deduplicated stale upstream count zero on empty cache");
+    expectTrue(cache.probe_stale_upstream_sources_deduplicated({{"/tmp/fuse_b79_est_source.obj", 1u}}).empty(),
+               "deduplicated stale upstream probe empty on empty cache");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_est_inv.obj", "# est inv\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_est_inv.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for invalidation estimate ok");
+
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source true for seeded entry");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path),
+               "would_invalidate_output true for seeded entry");
+    expectTrue(!cooker.cache().would_invalidate_source(""), "empty source path guarded");
+    expectTrue(!cooker.cache().would_invalidate_output(""), "empty output path guarded");
+
+    const fuse::project::CookCacheInvalidationEstimate estimate =
+        cooker.cache().estimate_invalidation_removals(source, desc.output_path, seeded.content_hash);
+    expectTrue(estimate.by_source_path == 1u, "estimate counts source-path entries");
+    expectTrue(estimate.by_output_path == 1u, "estimate counts output-path entries");
+    expectTrue(estimate.stale_content == 0u, "matching content hash yields zero stale-content estimate");
+    expectTrue(cooker.cache().would_invalidate_any(source, desc.output_path, seeded.content_hash),
+               "would_invalidate_any true for populated cache");
+
+    writeTempFile(source, "# est inv revised\n");
+    const fuse::u64 revised_hash = seeded.content_hash + 1u;
+    const fuse::project::CookCacheInvalidationEstimate stale =
+        cooker.cache().estimate_invalidation_removals(source, "", revised_hash);
+    expectTrue(stale.stale_content == 1u, "stale content estimate reports mismatched hash");
+}
+
 void testCookCachePruneInvalidEntriesOnLoad() {
     const std::string source = writeTempFile("/tmp/fuse_b79_prune_load_valid.obj", "# prune load valid\n");
     fuse::project::MeshImportDesc desc;
@@ -660,9 +744,11 @@ int main() {
     testCookCachePruneAllMixedInvalidAndStale();
     testCookHashPreflightGuards();
     testCookHashPreflightFnvAndCombineGuards();
+    testCookHashPreflightMtimeAndDependencyGuards();
     testCookCacheInvalidationProbes();
     testCookCachePruneReconcileEstimateGuards();
     testCookCacheProbeStaleContentSources();
+    testCookCacheInvalidationEstimateGuards();
     testCookCachePruneInvalidEntriesOnLoad();
 
     fuse::core::shutdown();
