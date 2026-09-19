@@ -1092,6 +1092,77 @@ void testTryEndDragGuards() {
     expectTrue(result.axis == fuse::editor::GizmoAxis::X, "tryEndDrag records active axis");
 }
 
+void testBeginDragPreflightAxisAndSnap() {
+    fuse::editor::GizmoTransform transform{};
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    const fuse::editor::BeginDragPreflight rayPreflight = fuse::editor::preflightBeginDrag(
+        xRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius);
+    expectTrue(rayPreflight.canBegin, "begin preflight accepts valid ray pick");
+    expectTrue(rayPreflight.axis == fuse::editor::GizmoAxis::X,
+               "begin preflight resolves ray pick axis");
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    const fuse::editor::BeginDragPreflight screenPreflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate);
+    expectTrue(screenPreflight.canBegin, "begin preflight accepts valid screen hit");
+    expectTrue(screenPreflight.axis == fuse::editor::GizmoAxis::X,
+               "begin preflight resolves screen pick axis");
+
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+    const fuse::editor::BeginDragPreflight degradedPreflight = fuse::editor::preflightBeginDrag(
+        hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(degradedPreflight.canBegin,
+               "begin preflight still allows drag when snap step invalid");
+    expectTrue(degradedPreflight.snapDegraded, "begin preflight marks snap degraded");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::BeginDragPreflight validSnapPreflight = fuse::editor::preflightBeginDrag(
+        hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!validSnapPreflight.snapDegraded, "valid snap clears snapDegraded on begin");
+
+    expectTrue(fuse::editor::canBeginDrag(hit, fuse::editor::GizmoMode::Translate, snap),
+               "canBeginDrag with settings accepts valid screen hit");
+}
+
+void testUpdateDragScreenMissPreflight() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+
+    hit.screenX = 50.f;
+    hit.screenY = 50.f;
+    const fuse::editor::UpdateDragPreflight deadZonePreflight = fuse::editor::preflightUpdateDrag(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, {});
+    expectTrue(deadZonePreflight.canUpdate(),
+               "update preflight still allows drag in translate dead zone");
+    expectTrue(deadZonePreflight.screenMiss, "update preflight marks translate dead zone");
+
+    const fuse::editor::UpdateDragPreflight gizmoPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(gizmoPreflight.canUpdate(), "gizmo update preflight allows dead-zone cursor");
+    expectTrue(gizmoPreflight.screenMiss, "gizmo update preflight marks screen miss");
+
+    hit.screenX = 30.f;
+    hit.screenY = 50.f;
+    const fuse::editor::UpdateDragPreflight axisPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(axisPreflight.canUpdate(), "gizmo update preflight accepts axis-band cursor");
+    expectTrue(!axisPreflight.screenMiss, "axis-band cursor clears screenMiss");
+    gizmo.endDrag();
+}
+
 void testDirtyFlagOnEndDrag() {
     fuse::editor::GizmoSystem gizmo;
     fuse::editor::CommandStack commandStack;
@@ -1159,6 +1230,8 @@ int main() {
     testEndDragPreflightGuards();
     testCanEndDragGuards();
     testTryEndDragGuards();
+    testBeginDragPreflightAxisAndSnap();
+    testUpdateDragScreenMissPreflight();
     testDirtyFlagOnEndDrag();
 
     if (g_failures != 0) {
