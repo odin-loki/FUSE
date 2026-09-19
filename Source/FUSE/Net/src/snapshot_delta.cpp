@@ -1006,3 +1006,6 @@ bool SnapshotHistoryRing::apply_delta_and_store(u32 base_frame, const SnapshotDe
 }
 
 } // namespace fuse::net
+
+// --- deepen additive from deepen-snapshot-delta-preflight-c635 ---
+bool should_skip_redundant_empty_apply(const GameSnapshot& base, const SnapshotDelta& delta) {

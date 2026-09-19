@@ -305,3 +305,6 @@ private:
 };
 
 } // namespace fuse::net
+
+// --- deepen additive from deepen-snapshot-delta-preflight-c635 ---
+[[nodiscard]] bool should_skip_redundant_empty_apply(const GameSnapshot& base, const SnapshotDelta& delta);

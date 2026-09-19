@@ -591,3 +591,9 @@ void run_snapshot_delta_tests() {
 }
 
 } // namespace fuse::net::tests
+
+// --- deepen additive from deepen-snapshot-delta-preflight-c635 ---
+    const fuse::net::SnapshotDeltaPreflight bad_target_frame_preflight =
+    expectTrue(fuse::net::should_skip_redundant_empty_apply(base, empty_delta),
+    expectTrue(fuse::net::should_skip_delta_apply(frame_only_empty_delta),
+    const fuse::net::SnapshotHistoryPreflight stored_target_preflight =
