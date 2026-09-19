@@ -1276,3 +1276,17 @@ void testAttenuationCouplingPreflight() {
 void testAttenuationCouplingMappingSkipGuard() {
     testHrtfPanPreflight();
     testAttenuationCouplingPreflight();
+
+// --- deepen additive from hrtf-preflight-guards-9323 ---
+    const fuse::audio::HrtfIrPreflight zero_length = fuse::audio::preflight_hrtf_ir(null_length);
+    const fuse::audio::HrtfPanPathPreflight convolution =
+    const fuse::audio::HrtfPanPathPreflight ild_stub =
+    const fuse::audio::HrtfPanPathPreflight bypass =
+    const fuse::audio::HrtfPanPathPreflight no_ir =
+    const fuse::audio::HrtfAttenuationCouplingPreflight spatial =
+    const fuse::audio::HrtfAttenuationCouplingPreflight distance_blend =
+void testHrtfSpatialPanPreflight() {
+    const fuse::audio::HrtfSpatialPanPreflight active =
+    const fuse::audio::HrtfSpatialPanPreflight bypass =
+    const fuse::audio::HrtfSpatialPanPreflight unity =
+    testHrtfSpatialPanPreflight();

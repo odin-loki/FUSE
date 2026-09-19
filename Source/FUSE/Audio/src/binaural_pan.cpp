@@ -842,3 +842,20 @@ bool should_skip_hrtf_attenuation_coupling_mapping(float distance_attenuation,
 HrtfAttenuationCouplingPreflight preflight_hrtf_coupled_pan(bool hrtf_enabled,
     const HrtfPanPreflight pan_preflight = preflight_hrtf_pan(hrtf_enabled, ir, rel_listener);
     if (should_skip_hrtf_attenuation_coupling_mapping(distance_attenuation, occlusion_gain)) {
+
+// --- deepen additive from hrtf-preflight-guards-9323 ---
+bool HrtfIrPreflight::can_use_convolution() const {
+bool HrtfIrPreflight::should_fallback_to_ild_itd() const {
+bool HrtfIrPreflight::ready_for_stub() const {
+bool HrtfPanPathPreflight::can_apply_spatial_pan() const {
+bool HrtfPanPathPreflight::should_bypass() const {
+bool HrtfPanPathPreflight::ready_for_stub() const {
+    preflight.skip_spatial_pan = should_skip_hrtf_spatial_pan(preflight.path);
+bool HrtfAttenuationCouplingPreflight::can_apply_coupling() const {
+bool HrtfAttenuationCouplingPreflight::ready_for_stub() const {
+    preflight.skip_coupling = should_skip_hrtf_attenuation_coupling(path);
+bool HrtfSpatialPanPreflight::can_apply_spatial_pan() const {
+bool HrtfSpatialPanPreflight::can_apply_attenuation_coupling() const {
+bool HrtfSpatialPanPreflight::ready_for_stub() const {
+HrtfSpatialPanPreflight preflight_hrtf_spatial_pan(bool hrtf_enabled, const HrtfIrStub& ir,
+    HrtfSpatialPanPreflight preflight{};

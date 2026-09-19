@@ -568,3 +568,13 @@ HrtfPanPreflight preflight_hrtf_pan(bool hrtf_enabled, const HrtfIrStub& ir,
 HrtfPanPreflight preflight_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
 bool should_skip_hrtf_attenuation_coupling_mapping(float distance_attenuation,
 HrtfAttenuationCouplingPreflight preflight_hrtf_coupled_pan(bool hrtf_enabled,
+
+// --- deepen additive from hrtf-preflight-guards-9323 ---
+[[nodiscard]] HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir);
+[[nodiscard]] HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+[[nodiscard]] HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
+[[nodiscard]] HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
+struct HrtfSpatialPanPreflight {
+    HrtfPanPathPreflight pan{};
+    HrtfAttenuationCouplingPreflight coupling{};
+[[nodiscard]] HrtfSpatialPanPreflight preflight_hrtf_spatial_pan(
