@@ -192,4 +192,30 @@ bool has_dispatchable_contact_pair(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen pass follow-up).
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Inverse of `should_skip_contact_pair_deepen_dispatch` (B4.4 deepen pass follow-up).
+bool is_dispatchable_contact_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Run shape dispatch with extended deepen preflight reject checks (B4.4 deepen pass follow-up).
+/// Does not alter `detect_contacts_pair`; base path may still dispatch sleeping/trigger pairs.
+ContactManifold detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Copy pairs that pass extended deepen preflight (B4.4 deepen pass follow-up).
+std::vector<broadphase::CandidatePair> filter_dispatchable_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase

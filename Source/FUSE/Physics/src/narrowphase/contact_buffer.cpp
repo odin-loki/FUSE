@@ -51,6 +51,42 @@ void ContactBufferSoA::preparePairSlots(u32 pairCount) {
     tangent2.assign(pairCount, {});
 }
 
+ContactBufferWritePreflight preflight_contact_buffer_write(
+    u32 slot,
+    const ContactBufferSoA& buffer,
+    const ContactManifold& manifold) {
+    ContactBufferWritePreflight preflight{};
+    if (slot >= buffer.pairSlotCount) {
+        preflight.skipped = true;
+        preflight.outOfRangeSlot = true;
+        return preflight;
+    }
+    if (!manifold.valid) {
+        preflight.invalidManifold = true;
+        return preflight;
+    }
+    if (manifold.bodyA == manifold.bodyB) {
+        preflight.selfPair = true;
+        return preflight;
+    }
+    return preflight;
+}
+
+bool should_skip_contact_buffer_write(
+    u32 slot,
+    const ContactBufferSoA& buffer,
+    const ContactManifold& manifold) {
+    return !preflight_contact_buffer_write(slot, buffer, manifold).can_write();
+}
+
+bool ContactBufferSoA::writeSlotIfValid(u32 slot, const ContactManifold& manifold) {
+    if (!preflight_contact_buffer_write(slot, *this, manifold).can_write()) {
+        return false;
+    }
+    writeSlot(slot, manifold);
+    return true;
+}
+
 void ContactBufferSoA::writeSlot(u32 slot, const ContactManifold& manifold) {
     if (slot >= pairSlotCount || !manifold.valid || manifold.bodyA == manifold.bodyB) {
         return;

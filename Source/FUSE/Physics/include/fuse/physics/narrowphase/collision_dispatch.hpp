@@ -200,4 +200,18 @@ std::vector<ContactManifold> runNarrowphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Narrowphase dispatch with extended deepen pair-reject preflight (B4.4 deepen pass follow-up).
+/// Does not alter `runNarrowphaseIntoBuffer`; valid base-path pairs are unchanged on that entry.
+void runNarrowphaseIntoBufferDeepen(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer);
+
+/// Vector-return deepen dispatch stub mirroring `runNarrowphase` (B4.4 deepen pass follow-up).
+std::vector<ContactManifold> runNarrowphaseDeepen(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase

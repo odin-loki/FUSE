@@ -191,6 +191,23 @@ bool can_skip_manifold_finalize(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Normalize `contactNormal` in place when `needsNormalNormalization` (B4.4 deepen pass follow-up).
+void normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Prune using `preflight_manifold_prune` / `should_skip_manifold_prune`; returns true when points remain (B4.4 deepen pass follow-up).
+bool prune_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Finalize using `preflight_manifold_finalize` / `generate_contact_manifold_if_needed` (B4.4 deepen pass follow-up).
+bool finalize_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

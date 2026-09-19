@@ -47,8 +47,33 @@ struct ContactBufferSoA {
     ContactManifold manifoldAt(u32 index) const;
     std::vector<ContactManifold> toVector() const;
 
+    /// Write only when `preflight_contact_buffer_write` allows (B4.4 deepen pass follow-up).
+    bool writeSlotIfValid(u32 slot, const ContactManifold& manifold);
+
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
 };
+
+/// Const preflight for contact-buffer slot write (B4.4 deepen pass follow-up).
+struct ContactBufferWritePreflight {
+    bool skipped = false;
+    bool outOfRangeSlot = false;
+    bool invalidManifold = false;
+    bool selfPair = false;
+
+    bool can_write() const { return !skipped && !outOfRangeSlot && !invalidManifold && !selfPair; }
+};
+
+/// Populate write preflight without mutating buffer slots (B4.4 deepen pass follow-up).
+ContactBufferWritePreflight preflight_contact_buffer_write(
+    u32 slot,
+    const ContactBufferSoA& buffer,
+    const ContactManifold& manifold);
+
+/// Returns true when `writeSlot` / `writeSlotIfValid` would reject (B4.4 deepen pass follow-up).
+bool should_skip_contact_buffer_write(
+    u32 slot,
+    const ContactBufferSoA& buffer,
+    const ContactManifold& manifold);
 
 } // namespace fuse::physics::narrowphase

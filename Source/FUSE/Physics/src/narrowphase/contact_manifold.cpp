@@ -1,5 +1,7 @@
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 
+#include <fuse/physics/narrowphase/friction.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -412,6 +414,63 @@ bool can_skip_manifold_finalize(
     f32 frictionEpsilon) {
     return !preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)
                 .can_finalize();
+}
+
+void normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (!manifold.needsNormalNormalization(lengthEpsilon)) {
+        return;
+    }
+    const f32 normalLength = manifold.contactNormal.length();
+    if (normalLength > 1e-8f) {
+        manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    }
+}
+
+bool prune_contact_manifold_if_needed(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    if (should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)) {
+        return !manifold.empty();
+    }
+
+    if (!manifold.pruneContactPointsIfNeeded(separationEpsilon, duplicateEpsilon)) {
+        return false;
+    }
+
+    if (shallowMinDepth > 0.f) {
+        return manifold.pruneShallowPenetrationsIfNeeded(shallowMinDepth);
+    }
+
+    return !manifold.empty();
+}
+
+bool finalize_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    if (can_skip_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)) {
+        return false;
+    }
+
+    if (!prune_contact_manifold_if_needed(manifold, separationEpsilon, duplicateEpsilon)) {
+        manifold.clear();
+        return false;
+    }
+
+    normalize_contact_normal_if_needed(manifold, frictionEpsilon);
+    compute_friction_tangents_with_preflight(manifold, frictionEpsilon);
+
+    if (!manifold.hasFrictionBasis()) {
+        manifold.clear();
+        return false;
+    }
+
+    manifold.syncLegacyFields();
+    manifold.valid = true;
+    return true;
 }
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
