@@ -4111,4 +4111,134 @@ bool wouldSkipPairBufferWriteSlot(
     return reject != PairBufferWriteSlotRejectReason::None;
 }
 
+const char* pairBufferInvalidateSlotRejectReasonName(PairBufferInvalidateSlotRejectReason reason) {
+    switch (reason) {
+    case PairBufferInvalidateSlotRejectReason::None:
+        return "None";
+    case PairBufferInvalidateSlotRejectReason::OutOfRangeSlot:
+        return "OutOfRangeSlot";
+    case PairBufferInvalidateSlotRejectReason::AlreadyInvalid:
+        return "AlreadyInvalid";
+    }
+    return "Unknown";
+}
+
+PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const PairBufferSoA& buffer, u32 slot) {
+    if (slot >= buffer.validFlags.size()) {
+        return PairBufferInvalidateSlotRejectReason::OutOfRangeSlot;
+    }
+    if (buffer.validFlags[slot] == 0u) {
+        return PairBufferInvalidateSlotRejectReason::AlreadyInvalid;
+    }
+    return PairBufferInvalidateSlotRejectReason::None;
+}
+
+bool pairBufferInvalidateSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    PairBufferInvalidateSlotRejectReason expected) {
+    return pairBufferInvalidateSlotRejectReason(buffer, slot) == expected;
+}
+
+PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
+    PairBufferInvalidateSlotPreflight preflight{};
+    preflight.reason = pairBufferInvalidateSlotRejectReason(buffer, slot);
+    preflight.outOfRangeSlot = preflight.reason == PairBufferInvalidateSlotRejectReason::OutOfRangeSlot;
+    preflight.alreadyInvalid = preflight.reason == PairBufferInvalidateSlotRejectReason::AlreadyInvalid;
+    return preflight;
+}
+
+bool canSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
+    return !preflightPairBufferInvalidateSlot(buffer, slot).canInvalidate();
+}
+
+bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
+    return preflightPairBufferInvalidateSlot(buffer, slot).canInvalidate();
+}
+
+bool wouldSkipPairBufferInvalidateSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    PairBufferInvalidateSlotRejectReason* reason) {
+    const PairBufferInvalidateSlotPreflight preflight = preflightPairBufferInvalidateSlot(buffer, slot);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return !preflight.canInvalidate();
+}
+
+const char* pairBufferSlotReservationRejectReasonName(PairBufferSlotReservationRejectReason reason) {
+    switch (reason) {
+    case PairBufferSlotReservationRejectReason::None:
+        return "None";
+    case PairBufferSlotReservationRejectReason::ZeroSlots:
+        return "ZeroSlots";
+    case PairBufferSlotReservationRejectReason::ExceedsCapacity:
+        return "ExceedsCapacity";
+    }
+    return "Unknown";
+}
+
+PairBufferSlotReservationRejectReason pairBufferSlotReservationRejectReason(
+    const PairBufferSoA& buffer,
+    u32 slotCount) {
+    if (slotCount == 0u) {
+        return PairBufferSlotReservationRejectReason::ZeroSlots;
+    }
+    if (buffer.maxCapacity > 0u && slotCount > buffer.maxCapacity) {
+        return PairBufferSlotReservationRejectReason::ExceedsCapacity;
+    }
+    return PairBufferSlotReservationRejectReason::None;
+}
+
+bool pairBufferSlotReservationRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slotCount,
+    PairBufferSlotReservationRejectReason expected) {
+    return pairBufferSlotReservationRejectReason(buffer, slotCount) == expected;
+}
+
+PairBufferSlotReservationPreflight preflightPairBufferSlotReservation(
+    const PairBufferSoA& buffer,
+    u32 slotCount) {
+    PairBufferSlotReservationPreflight preflight{};
+    preflight.requestedSlots = slotCount;
+    preflight.reason = pairBufferSlotReservationRejectReason(buffer, slotCount);
+    preflight.zeroSlots = preflight.reason == PairBufferSlotReservationRejectReason::ZeroSlots;
+    preflight.exceedsCapacity = preflight.reason == PairBufferSlotReservationRejectReason::ExceedsCapacity;
+    return preflight;
+}
+
+bool canSkipPairBufferSlotReservation(const PairBufferSoA& buffer, u32 slotCount) {
+    return !preflightPairBufferSlotReservation(buffer, slotCount).canReserve();
+}
+
+bool shouldRunPairBufferSlotReservation(const PairBufferSoA& buffer, u32 slotCount) {
+    return preflightPairBufferSlotReservation(buffer, slotCount).canReserve();
+}
+
+bool wouldSkipPairBufferSlotReservation(
+    const PairBufferSoA& buffer,
+    u32 slotCount,
+    PairBufferSlotReservationRejectReason* reason) {
+    const PairBufferSlotReservationPreflight preflight = preflightPairBufferSlotReservation(buffer, slotCount);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return !preflight.canReserve();
+}
+
+bool wouldSkipPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB,
+    PairBufferWriteSlotRejectReason* reason) {
+    const PairBufferWriteSlotPreflight preflight = preflightPairBufferWriteSlot(buffer, slot, idxA, idxB);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return !preflight.canWrite();
+}
+
 } // namespace fuse::physics::broadphase
