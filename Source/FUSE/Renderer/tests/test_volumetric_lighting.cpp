@@ -3509,3 +3509,9 @@ void testFroxelClassifyAndBlockingGuards() {
                "preflightScreenMapping returns mapped coords on success");
                "preflightScreenMapping returns in-range sample coords");
                "classifyFroxelPopulateReject empty_desc");
+
+// --- deepen additive from froxel-volumetric-b511-deepen-b4e6 ---
+               "classifyScreenDepthMappingReject none for valid mapping");
+               "preflightScreenDepthToSampleCoords succeeds for valid mapping");
+               "preflightDensityLookupAtIndex succeeds for clampable OOB index");
+               "classifyFroxelPopulateReject invalid_camera");

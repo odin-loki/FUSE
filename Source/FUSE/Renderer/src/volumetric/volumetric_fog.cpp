@@ -2245,3 +2245,6 @@ bool preflightPopulate(const FroxelGridDesc& desc,
     outReason = classifyDensityLookupRejectAtCoord(grid, desc, tileX, tileY, sliceZ);
     const DensityLookupRejectReason lookupReason = classifyDensityLookupReject(grid, desc, 0u);
     if (densityLookupRejectReasonIsBlocking(lookupReason)) {
+
+// --- deepen additive from froxel-volumetric-b511-deepen-b4e6 ---
+    return mapped && !screenMappingRejectReasonIsBlocking(rejectReason);
