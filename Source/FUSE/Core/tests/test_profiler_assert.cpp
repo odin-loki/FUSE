@@ -4416,3 +4416,11 @@ void testHasActiveScopeAndFlowNestingGuards() {
 // --- deepen additive from profiler-deepen-guards-fd14 ---
     expectTrue(!fuse::profiler::tryFindLastEventByFlowId(flowId, outEvent),
                "tryFindLastEventByFlowId false on empty buffer");
+
+// --- deepen additive from profiler-name-flow-lookup-preflight-e5cc ---
+void testUnpairedFlowLookupAndPreflight() {
+    expectTrue(!closedPreflight.hasUnpairedFlowEvents, "preflight clears unpaired flow flag after end");
+    expectTrue(closedPreflight.flowStartEventCount == 1u, "preflight keeps flow start count after end");
+    expectTrue(closedPreflight.flowFinishEventCount == 1u, "preflight counts flow finish after end");
+    expectTrue(closedPreflight.canExportSafely(), "paired flow can export safely");
+    testUnpairedFlowLookupAndPreflight();
