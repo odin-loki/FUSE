@@ -311,6 +311,10 @@ bool isFlowDepthDetached() {
     return flowNestingDepth() != openAsyncFlowCount();
 }
 
+bool isFlowOpenCountAttached() {
+    return !isFlowDepthDetached();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -350,6 +354,27 @@ bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
 }
 
+u32 countEventsWithPhase(EventPhase phase) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 findFirstEventIndexWithPhase(EventPhase phase) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
     return kEmpty;
@@ -367,6 +392,15 @@ const ProfileEvent& eventAt(u32 index) {
     return g_events[ringIndex];
 }
 
+const char* eventNameAt(u32 index) {
+    if (!isEventIndexValid(index)) {
+        return nullptr;
+    }
+
+    const ProfileEvent& event = eventAt(index);
+    return isValidEventName(event.name) ? event.name : nullptr;
+}
+
 bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     if (!isEventIndexValid(index)) {
         outEvent = ProfileEvent{};
@@ -375,6 +409,17 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
 
     outEvent = eventAt(index);
     return isValidProfileEvent(outEvent);
+}
+
+bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
+    ProfileEvent event{};
+    if (!tryEventAt(index, event)) {
+        outPhase = EventPhase::Begin;
+        return false;
+    }
+
+    outPhase = event.phase;
+    return true;
 }
 
 bool tryFirstEvent(ProfileEvent& outEvent) {
@@ -430,6 +475,11 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.bufferFull = isBufferFull();
+    preflight.scopeBeginEventCount = countEventsWithPhase(EventPhase::Begin);
+    preflight.scopeEndEventCount = countEventsWithPhase(EventPhase::End);
+    preflight.asyncFlowStartEventCount = countEventsWithPhase(EventPhase::FlowStart);
+    preflight.asyncFlowFinishEventCount = countEventsWithPhase(EventPhase::FlowFinish);
     return preflight;
 }
 
