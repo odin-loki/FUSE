@@ -4301,3 +4301,26 @@ void testChromeTraceExportPreflightRecordedNesting() {
     expectTrue(!orphanPreflight.canExportSafely(),
     expectTrue(fuse::profiler::tryFirstEventByName("valid_name_lookup", counterEvent),
     testChromeTraceExportPreflightRecordedNesting();
+
+// --- deepen additive from deepen-b16-profiler-name-flow-guards-7257 ---
+void testTryFindFirstEventByNameGuard() {
+    expectTrue(outEvent.name == nullptr, "tryFindFirstEventByName clears output for null name");
+    expectTrue(fuse::profiler::tryFindFirstEventByName("named_counter", outEvent),
+               "tryFindFirstEventByName true for recorded counter");
+               "tryFindFirstEventByName copies counter phase");
+    expectTrue(outEvent.counterIntValue == 8, "tryFindFirstEventByName copies counter value");
+void testTryFindFirstEventByFlowIdGuard() {
+               "tryFindFirstEventByFlowId true for open flow start");
+               "tryFindFirstEventByFlowId copies flow name");
+               "tryFindFirstEventByFlowId still finds flow after finish");
+               "tryFindFirstEventByFlowId keeps first flow event after finish");
+void testFlowIdOpenAndUnpairedGuards() {
+    expectTrue(!emptyPreflight.hasUnpairedAsyncFlowEvents,
+    expectTrue(emptyPreflight.unpairedAsyncFlowIdCount == 0u,
+    expectTrue(!emptyPreflight.hasFlowEventImbalances(),
+    expectTrue(openPreflight.unpairedAsyncFlowIdCount == 1u,
+    expectTrue(openPreflight.hasFlowEventImbalances(),
+    expectTrue(openPreflight.hasOpenAsyncFlows, "preflight still tracks open async flows");
+    expectTrue(!closedPreflight.hasUnpairedAsyncFlowEvents,
+    expectTrue(closedPreflight.unpairedAsyncFlowIdCount == 0u,
+    expectTrue(!closedPreflight.hasFlowEventImbalances(),
