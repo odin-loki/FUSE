@@ -580,3 +580,15 @@ CookHashPreflight preflight_audio_import_cook_key(const AudioImportDesc& desc, u
 CookHashPreflight preflight_mesh_import_cache_key(const MeshImportDesc& desc, u64 upstream_hash) {
 CookHashPreflight preflight_texture_import_cache_key(const TextureImportDesc& desc, u64 upstream_hash) {
 CookHashPreflight preflight_audio_import_cache_key(const AudioImportDesc& desc, u64 upstream_hash) {
+
+// --- deepen additive from deepen-b79-cooker-hash-478e ---
+bool tryPreflightMeshImportHash(const MeshImportDesc& desc, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_mesh_import_hash(desc);
+bool tryPreflightTextureImportHash(const TextureImportDesc& desc, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_texture_import_hash(desc);
+bool tryPreflightAudioImportHash(const AudioImportDesc& desc, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_audio_import_hash(desc);
+bool tryPreflightManifestEntryHash(const CookManifestEntry& entry, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_manifest_entry_hash(entry);
+bool tryPreflightCookCacheEntry(const CookCacheEntry& entry, CookHashRejectReason& reason) {
+    const CookHashPreflight preflight = preflight_cook_cache_entry(entry);

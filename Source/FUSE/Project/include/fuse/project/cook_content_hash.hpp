@@ -201,3 +201,11 @@ struct CookFnvInputPreflight {
 [[nodiscard]] CookHashPreflight preflight_mesh_import_cache_key(const MeshImportDesc& desc, u64 upstream_hash = 0);
 [[nodiscard]] CookHashPreflight preflight_texture_import_cache_key(const TextureImportDesc& desc,
 [[nodiscard]] CookHashPreflight preflight_audio_import_cache_key(const AudioImportDesc& desc, u64 upstream_hash = 0);
+
+// --- deepen additive from deepen-b79-cooker-hash-478e ---
+[[nodiscard]] bool tryPreflightMeshImportHash(const MeshImportDesc& desc, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightTextureImportHash(const TextureImportDesc& desc, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightAudioImportHash(const AudioImportDesc& desc, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightManifestEntryHash(const CookManifestEntry& entry, CookHashRejectReason& reason);
+[[nodiscard]] bool tryPreflightCookCacheEntry(const CookCacheEntry& entry, CookHashRejectReason& reason);
+[[nodiscard]] inline bool shouldSkipManifestEntryHash(const CookManifestEntry& entry) {

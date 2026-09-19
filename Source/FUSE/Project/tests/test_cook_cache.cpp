@@ -1367,3 +1367,31 @@ void testCookHashImportCacheKeyPreflight() {
 
 // --- deepen additive from deepen-b79-cooker-hash-would-probes-69b7 ---
     expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, refreshed_hash),
+
+// --- deepen additive from deepen-b79-cooker-hash-478e ---
+void testCookHashTryPreflightAndShouldSkipGuards() {
+    expectTrue(!fuse::project::tryPreflightMeshImportHash(empty_mesh, reason),
+               "tryPreflightMeshImportHash rejects empty input");
+    expectTrue(reason == fuse::project::CookHashRejectReason::EmptyInputPath,
+               "tryPreflightMeshImportHash empty input reason");
+    expectTrue(fuse::project::tryPreflightMeshImportHash(mesh, reason),
+               "tryPreflightMeshImportHash accepts readable mesh");
+    expectTrue(fuse::project::tryPreflightTextureImportHash(tex, reason),
+               "tryPreflightTextureImportHash accepts readable texture");
+    expectTrue(fuse::project::tryPreflightAudioImportHash(audio, reason),
+               "tryPreflightAudioImportHash accepts readable audio");
+    expectTrue(fuse::project::tryPreflightManifestEntryHash(entry, reason),
+               "tryPreflightManifestEntryHash accepts readable entry");
+    expectTrue(!fuse::project::shouldSkipManifestEntryHash(entry),
+               "shouldSkipManifestEntryHash false for readable entry");
+    expectTrue(fuse::project::tryPreflightCookCacheEntry(cache_entry, reason),
+               "tryPreflightCookCacheEntry accepts readable cache entry");
+    expectTrue(!fuse::project::tryPreflightCookCacheEntry(invalid_entry, reason),
+               "tryPreflightCookCacheEntry rejects zero hash");
+    expectTrue(reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+               "tryPreflightCookCacheEntry zero hash reason");
+    const fuse::project::CookHashPreflight entry_preflight =
+               "would_invalidate_stale_content false on empty cache");
+               "would_invalidate_stale_upstream false on empty cache");
+               "would_invalidate_downstream false on empty cache");
+    testCookHashTryPreflightAndShouldSkipGuards();

@@ -2067,3 +2067,6 @@ void testCookerReconcileEstimatorGuards() {
 
 // --- deepen additive from b79-cooker-hash-deepen-6979 ---
                "would_invalidate_stale_upstream true when upstream hash mismatches");
+
+// --- deepen additive from deepen-b79-cooker-hash-478e ---
+void testCookerUpstreamEstimateAndWouldGuards() {
