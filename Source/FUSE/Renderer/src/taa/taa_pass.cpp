@@ -680,3 +680,12 @@ bool TaaPass::preflightJitterFrame(u32 frameIndex, TaaJitterGuardRejectReason* r
     if (!preflightJitterSync(frameIndex, &localReason)) {
     return preflightJitterNdc(reason);
     return !preflightJitterFrame(frameIndex);
+
+// --- deepen additive from deepen-b59-taa-guards-0a2f ---
+        reason = classifyTaaJitterSyncReject(m_jitter.sequenceLength());
+        reason = classifyTaaJitterAdvanceReject(m_jitter.sequenceLength());
+    return preflightHistoryWarmup(&reason);
+    if (!preflightTaaResolve(desc, m_history, skipReason)) {
+            *blendReason = TaaResolveBlendRejectReason::None;
+    return preflightTaaResolveBlendWeights(desc, m_history, blendReason);
+    return preflightResolveFrame(desc, &skipReason, &blendReason);

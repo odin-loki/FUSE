@@ -4557,3 +4557,12 @@ void testTaaPassTryPreflightAndCompositeGuards() {
     expectTrue(!pass->tryPreflightHistoryReuse(resolveDesc.observed_history_generation, reuseReason),
                "pass tryPreflightHistoryReuse fails with current generation after invalidate");
                "pass tryPreflightHistoryReuse reason is NotWarm after invalidate with current generation");
+
+// --- deepen additive from deepen-b59-taa-guards-0a2f ---
+               "resolve tryPreflight reason is NotReady before init");
+    expectTrue(pass->tryPreflightJitterSync(6u, jitterReason), "tryPreflightJitterSync passes before init");
+               "tryPreflightJitterSync reject reason is None before init");
+    expectTrue(pass->tryPreflightJitterNdc(jitterReason), "tryPreflightJitterNdc passes before init");
+    expectTrue(!pass->preflightResolveFrame(resolveDesc, &skipReason, &blendReason),
+               "preflightResolveFrame fails with invalid dimensions");
+               "preflightResolveFrame skip reason is InvalidDimensions");
