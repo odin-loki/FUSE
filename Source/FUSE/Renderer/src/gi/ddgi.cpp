@@ -3372,3 +3372,7 @@ bool tryLaunch_ddgi_probe_kernels(const DDGIKernelParams& params,
     const bool ok = tryValidateProbeGridSource(volume, desc, reject);
     const bool ok = tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, reject);
         tryCanScheduleProbeUpdatesAtRate(probe_count, probes_per_frame, max_indices, out_indices, out_count, reject);
+
+// --- deepen additive from ddgi-deepen-guards-c072 ---
+    return preflightProbeGridSource(desc);
+        *reason = ProbeScheduleRejectReason::None;

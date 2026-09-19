@@ -4800,3 +4800,15 @@ void testTrilinearCachePreflights() {
                "tryLaunch_probe_kernels null indices reports null_probe_indices reason");
     testWouldSkipProbeSampleCoordPreflight();
     testTrilinearCachePreflights();
+
+// --- deepen additive from ddgi-deepen-guards-c072 ---
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeGridSource(zeroSpacing),
+               "wouldSkipProbeGridSource true for zero spacing");
+               "build coords for sample-coord wouldSkip test");
+               "preflightTrilinearProbeIrradiance succeeds on full cache");
+               "wouldSkipTrilinearProbeSample false on full cache");
+               "wouldSkipTrilinearProbeSampleAtCoords false on valid coords");
+               "wouldSkipTrilinearProbeSample true on undersized cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipTrilinearDirectionalProbeSample(
+               "wouldSkipTrilinearDirectionalProbeSample true for null cache");
+               "preflightTrilinearDirectionalProbeIrradiance succeeds on full cache");
