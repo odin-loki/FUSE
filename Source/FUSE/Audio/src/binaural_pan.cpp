@@ -1993,3 +1993,15 @@ bool try_preflight_hrtf_pan_path_convolution(bool hrtf_enabled, const HrtfIrStub
                                              const Vec3& rel_listener, HrtfIrRejectReason& reason) {
 HrtfPanPathRejectReason classify_hrtf_binaural_spatial_reject(const HrtfBinauralPreflight& preflight) {
                                                const Vec3& rel_listener, HrtfIrRejectReason* reason) {
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-d95a ---
+bool should_skip_hrtf_ir_ready(const HrtfIrStub& ir) {
+bool should_skip_hrtf_pan_path_ready(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_pan_path_ready(bool hrtf_enabled, const Vec3& rel_listener) {
+bool should_skip_hrtf_attenuation_coupling_ready(HrtfPanPath path, float distance_attenuation,
+bool should_skip_hrtf_binaural_ready(bool hrtf_enabled, const HrtfIrStub& ir,
+bool should_skip_hrtf_binaural_ready(bool hrtf_enabled, const Vec3& rel_listener,
+                                      HrtfConvolutionRejectReason* reason) {
+bool try_preflight_hrtf_convolution(bool hrtf_enabled, const HrtfIrStub& ir,
+                                    const Vec3& rel_listener, HrtfConvolutionRejectReason& reason) {
+bool should_skip_hrtf_convolution_ready(bool hrtf_enabled, const HrtfIrStub& ir,

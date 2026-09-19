@@ -2363,3 +2363,27 @@ void testHrtfRejectReasonMirrorsExistingPreflights() {
     fuse::audio::HrtfAttenuationCouplingRejectReason narrow_reason =
     expectTrue(narrow_reason == fuse::audio::HrtfAttenuationCouplingRejectReason::UnityAttenuation,
     expectTrue(narrow_reason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-d95a ---
+    expectTrue(fuse::audio::should_skip_hrtf_ir_ready(empty),
+               "should_skip_hrtf_ir_ready true for empty IR");
+    reason = fuse::audio::HrtfIrRejectReason::NullSamples;
+void testHrtfPanPathRejectReasonCoLocated() {
+    expectTrue(fuse::audio::should_skip_hrtf_pan_path_ready(true, valid, co_located),
+               "should_skip_hrtf_pan_path_ready true when co-located");
+    expectTrue(!fuse::audio::should_skip_hrtf_attenuation_coupling_ready(
+    expectTrue(fuse::audio::should_skip_hrtf_binaural_ready(false, valid, offset, 0.1f, 0.1f),
+               "should_skip_hrtf_binaural_ready true when disabled");
+void testHrtfConvolutionRejectReasonGuards() {
+    fuse::audio::HrtfConvolutionRejectReason reason =
+        fuse::audio::HrtfConvolutionRejectReason::None;
+    expectTrue(reason == fuse::audio::HrtfConvolutionRejectReason::None,
+    expectTrue(reason == fuse::audio::HrtfConvolutionRejectReason::EmptyIr,
+    expectTrue(reason == fuse::audio::HrtfConvolutionRejectReason::MalformedIr,
+    expectTrue(reason == fuse::audio::HrtfConvolutionRejectReason::HrtfDisabled,
+    expectTrue(fuse::audio::should_skip_hrtf_convolution_ready(true, empty, offset),
+               "should_skip_hrtf_convolution_ready true for empty IR");
+void testHrtfPanPathRejectReasonNoIrOverload() {
+    testHrtfPanPathRejectReasonCoLocated();
+    testHrtfConvolutionRejectReasonGuards();
+    testHrtfPanPathRejectReasonNoIrOverload();
