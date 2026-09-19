@@ -30,6 +30,18 @@ u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history) {
     return taaHistoryNeedsWarmup(history) ? 1u : 0u;
 }
 
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return !taaHistoryNeedsWarmup(history);
+}
+
+bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history) {
+    return taaHistoryNeedsWarmup(history);
+}
+
+bool taaHistoryWarmupReady(const TaaHistoryBuffer& history) {
+    return history.isReady() && taaHistoryWarmupComplete(history);
+}
+
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
                               TaaHistoryReuseBlockReason* reason) {
     const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlock(history, observedGeneration);
@@ -59,6 +71,10 @@ bool TaaHistoryBuffer::canReuseHistory() const {
 
 u32 TaaHistoryBuffer::warmupFramesRemaining() const {
     return taaHistoryWarmupFramesRemaining(*this);
+}
+
+bool TaaHistoryBuffer::warmupComplete() const {
+    return taaHistoryWarmupComplete(*this);
 }
 
 bool TaaHistoryBuffer::reuseReady(u32 observedGeneration) const {
