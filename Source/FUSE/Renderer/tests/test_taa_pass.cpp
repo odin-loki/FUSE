@@ -3435,3 +3435,51 @@ void testTaaPassWarmupAndTemporalPreflight() {
     expectTrue(pass->preflightResolveTemporal(resolveDesc), "pass temporal preflight passes after warmup");
     testPreflightTaaResolveTemporal();
     testTaaPassWarmupAndTemporalPreflight();
+
+// --- deepen additive from deepen-b59-taa-guards-614c ---
+void testWouldSkipAndTryHistoryReuseGuards() {
+    expectTrue(fuse::renderer::wouldSkipTaaHistoryReuse(emptyHistory, 0u),
+               "wouldSkip true for empty history");
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryReuse(emptyHistory, 0u, reason),
+               "tryPreflight reason is NotReady for empty history");
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for wouldSkip history reuse test");
+    expectTrue(history.init(resources, historyDesc), "history ready for wouldSkip reuse test");
+    expectTrue(fuse::renderer::wouldSkipTaaHistoryReuse(history, 0u),
+               "wouldSkip true for unwarmed history");
+    expectTrue(!fuse::renderer::wouldSkipTaaHistoryReuse(history, 0u),
+               "wouldSkip false for warmed history");
+               "tryPreflight succeeds for warmed history");
+               "wouldSkip true after invalidate");
+               "tryPreflight fails after invalidate");
+               "tryPreflight reason is StaleGeneration after invalidate");
+void testWouldRejectAndTryResolveBlendGuards() {
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for wouldReject blend test");
+    expectTrue(history.init(resources, historyDesc), "history ready for wouldReject blend test");
+    expectTrue(!fuse::renderer::wouldRejectTaaResolveBlendWeights(desc, history),
+               "tryPreflight blend succeeds for warmup weights");
+               "tryPreflight blend succeeds after warmup");
+    expectTrue(TaaJitterLayout::classifyTaaJitterSyncReject(5u, 8u) ==
+    expectTrue(TaaJitterLayout::classifyTaaJitterSyncReject(0u, 0u) ==
+    expectTrue(!TaaJitterLayout::wouldSkipSyncToFrameIndex(5u, 8u),
+               "wouldSkip false for valid sequence");
+    expectTrue(TaaJitterLayout::wouldSkipSyncToFrameIndex(0u, 0u),
+               "wouldSkip true for invalid sequence");
+    expectTrue(!jitter.wouldSkipSyncToFrameIndex(5u), "jitter wouldSkip false for valid sequence");
+    expectTrue(jitter.trySyncToFrameIndexIfReady(5u, syncReason), "trySync succeeds for valid sequence");
+               "trySync reason is None on success");
+    expectTrue(jitter.isAlignedToFrameIndex(5u), "jitter aligned after trySync");
+    expectTrue(fallbackJitter.wouldSkipSyncToFrameIndex(3u) == false,
+    expectTrue(fallbackJitter.trySyncToFrameIndexIfReady(3u, syncReason),
+               "trySync succeeds after fallback to default length");
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for pass wouldSkip/try test");
+    expectTrue(pass->init(resources), "TaaPass initialized for wouldSkip/try test");
+    expectTrue(pass->wouldSkipHistoryReuse(0u), "pass wouldSkip history reuse before warmup");
+    expectTrue(!pass->wouldSkipJitterSync(5u), "pass wouldSkip jitter sync false for valid sequence");
+               "pass tryPreflight history reuse fails before warmup");
+               "pass tryPreflight reuse reason is NotWarm before warmup");
+    expectTrue(!pass->wouldRejectResolveBlendWeights(resolveDesc),
+               "pass tryPreflight blend succeeds before first resolve");
+    expectTrue(pass->trySyncJitterToFrameIndex(4u, syncReason), "pass trySync jitter succeeds");
+    expectTrue(pass->jitterAlignedToFrameIndex(4u), "pass jitter aligned after trySync");
+    expectTrue(!pass->wouldSkipHistoryReuse(0u), "pass wouldSkip history reuse false after warmup");
+               "pass tryPreflight history reuse succeeds after warmup");

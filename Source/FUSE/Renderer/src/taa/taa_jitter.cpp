@@ -378,3 +378,12 @@ bool trySyncJitterToFrameIndexIfReady(TaaJitter& jitter, u32 frameIndex, TaaJitt
 bool preflightTaaJitterSync(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
     if (!preflightSyncToFrameIndex(frameIndex, width, height, &blockReason)) {
 bool TaaJitter::preflightSyncToFrameIndex(u32 frameIndex, u32 width, u32 height,
+
+// --- deepen additive from deepen-b59-taa-guards-614c ---
+TaaJitterSyncRejectReason TaaJitterLayout::classifyTaaJitterSyncReject(u32 /*frameIndex*/, u32 sequenceLength) {
+bool TaaJitterLayout::wouldSkipSyncToFrameIndex(u32 frameIndex, u32 sequenceLength) {
+    return classifyTaaJitterSyncReject(frameIndex, sequenceLength) != TaaJitterSyncRejectReason::None;
+bool TaaJitter::trySyncToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason& outReason) {
+    outReason = TaaJitterLayout::classifyTaaJitterSyncReject(frameIndex, m_sequenceLength);
+bool TaaJitter::wouldSkipSyncToFrameIndex(u32 frameIndex) const {
+    return TaaJitterLayout::wouldSkipSyncToFrameIndex(frameIndex, m_sequenceLength);

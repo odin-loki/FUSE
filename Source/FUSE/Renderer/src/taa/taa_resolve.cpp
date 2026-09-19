@@ -599,3 +599,6 @@ bool preflightTaaResolveTemporal(const TaaResolveDesc& desc, const TaaHistoryBuf
     if (!preflightTaaResolveBlendWeights(desc, history, blendReason)) {
         return preflightTaaResolveHistoryReuse(desc, history, reuseReason);
     if (!preflightTaaResolveBlendWeights(desc, history, nullptr)) {
+
+// --- deepen additive from deepen-b59-taa-guards-614c ---
+bool wouldRejectTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {

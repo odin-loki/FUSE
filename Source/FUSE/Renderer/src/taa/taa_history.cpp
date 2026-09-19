@@ -289,3 +289,6 @@ bool tryCanBeginTemporalReuse(const TaaHistoryBuffer& history, u32 observedGener
 // --- deepen additive from deepen-b59-taa-guards-9737 ---
 bool tryPreflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
 bool wouldInvalidateHistoryIfStale(const TaaHistoryBuffer& history, u32 observedGeneration) {
+
+// --- deepen additive from deepen-b59-taa-guards-614c ---
+bool wouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration) {

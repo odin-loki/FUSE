@@ -322,3 +322,7 @@ bool preflightTaaResolveHistoryReuse(const TaaResolveDesc& desc, const TaaHistor
 
 // --- deepen additive from deepen-b59-taa-guards-0400 ---
 bool preflightTaaResolveTemporal(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+
+// --- deepen additive from deepen-b59-taa-guards-614c ---
+bool wouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
+bool wouldRejectTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
