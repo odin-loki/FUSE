@@ -702,3 +702,7 @@ bool TaaPass::preflightHistoryWarmupAndReuse(u32 observedGeneration, TaaHistoryR
     if (!tryPreflightTaaJitterAdvance(m_jitter.sequenceLength(), reason)) {
         reason = TaaJitterGuardRejectReason::InvalidSequence;
     if (!tryPreflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), reason)) {
+
+// --- deepen additive from deepen-b59-taa-guards-58fa ---
+bool TaaPass::preflightHistoryReadyForResolve(TaaHistoryReuseBlockReason* reason) const {
+    return tryPreflightTaaHistoryReadyForResolve(m_history, *reason);

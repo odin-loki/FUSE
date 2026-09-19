@@ -378,3 +378,6 @@ void addTaaPassToGraph(RenderGraph& graph);
 
 // --- deepen additive from deepen-b59-taa-pass-guards-5ca7 ---
     bool preflightHistoryWarmupAndReuse(u32 observedGeneration,
+
+// --- deepen additive from deepen-b59-taa-guards-58fa ---
+    bool preflightHistoryReadyForResolve(TaaHistoryReuseBlockReason* reason = nullptr) const;

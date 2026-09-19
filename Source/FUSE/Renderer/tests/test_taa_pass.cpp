@@ -4610,3 +4610,15 @@ void testTaaPassHistoryWarmupPreflight() {
 
 // --- deepen additive from deepen-b59-taa-try-preflights-c552 ---
     expectTrue(pass->tryPreflightJitterSync(3u, jitterReject), "pass tryPreflightJitterSync passes before init");
+
+// --- deepen additive from deepen-b59-taa-guards-58fa ---
+    expectTrue(pass->preflightJitterAdvance(), "pass preflightJitterAdvance passes for valid sequence");
+    expectTrue(!pass->preflightHistoryReadyForResolve(&reuseReason),
+               "pass preflightHistoryReadyForResolve fails before init");
+               "pass preflightHistoryReadyForResolve reason is NotReady before init");
+    expectTrue(pass->tryComputeExpectedResolveBlendWeights(resolveDesc, blendWeights, blendReason),
+               "pass tryComputeExpectedResolveBlendWeights warmup current weight is 1");
+    expectTrue(invalidPass->classifyJitterSyncReject() ==
+               "pass classifyJitterSyncReject uses fallback sequence length");
+    expectTrue(invalidPass->tryPreflightJitterSync(2u, jitterReject),
+               "pass tryPreflightJitterSync succeeds after invalid desc fallback");
