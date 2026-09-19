@@ -798,6 +798,9 @@ bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 /// True when a populate reject reason would block meaningful fill (B5.11 deepen pass).
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
+/// True when a populate reject reason would block meaningful fill (B5.11 deepen pass).
+bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
+
 /// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
 enum class DensityLookupRejectReason : u8 {
     None = 0,
@@ -916,6 +919,7 @@ bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReas
 
 
 /// True when a density-lookup reject reason blocks guarded lookup (B5.11 deepen).
+
 
 
 
@@ -1044,6 +1048,10 @@ bool preflightDensityLookupAtIndex(const FroxelDensityGrid& grid,
 /// Non-mutating coord lookup preflight — returns true when lookup would proceed.
 /// Classify why index lookup preflight would reject — same ordering as `tryCanLookupAtIndex`.
 /// Classify why coord lookup preflight would reject — same ordering as `tryCanLookupAtCoord`.
+/// Classify index-based density lookup rejection — same ordering as `tryCanLookupAtIndex`.
+/// Classify tile/slice coord density lookup rejection — same ordering as `tryCanLookupAtCoord`.
+/// Non-mutating density lookup preflight — returns true when lookup would proceed.
+/// Non-mutating coord density lookup preflight — returns true when lookup would proceed.
 /// Diagnose why lookup preflight would reject; vacuously succeeds on accessible grids.
 bool tryCanLookupAtIndex(const FroxelDensityGrid& grid,
                          DensityLookupRejectReason& outReason);
@@ -1294,6 +1302,9 @@ FroxelTrilinearSampleRejectReason classifyFroxelTrilinearSampleReject(const Frox
 /// Non-mutating trilinear sample preflight — returns true when sampling would proceed.
                                     FroxelTrilinearSampleRejectReason* reason = nullptr);
 bool preflightDensityTrilinearSample(const FroxelDensityGrid& grid,
+/// Classify trilinear sample rejection — same ordering as `tryCanTrilinearSampleAtCoords`.
+FroxelTrilinearSampleRejectReason classifyTrilinearSampleReject(const FroxelDensityGrid& grid,
+bool preflightTrilinearSample(const FroxelDensityGrid& grid,
 /// Diagnose why trilinear sample preflight would reject; warns on clampable weights.
 bool tryCanTrilinearSampleAtCoords(const FroxelDensityGrid& grid,
                                    FroxelTrilinearSampleRejectReason& outReason);
@@ -1550,6 +1561,7 @@ GridDensityRejectReason classifyGridDensityReject(const FroxelDensityGrid& grid,
                           GridDensityRejectReason* reason = nullptr);
 /// Classify the first density invariant that fails — same ordering as `tryValidateGridDensity`.
 /// Non-mutating grid density preflight — returns true when validation would succeed.
+/// Classify grid density validation rejection — same ordering as `tryValidateGridDensity`.
 /// Diagnose the first density invariant that fails; vacuously succeeds when `desc` is empty.
 bool tryValidateGridDensity(const FroxelDensityGrid& grid,
                             GridDensityRejectReason& outReason,
@@ -1982,9 +1994,11 @@ FroxelPopulateRejectReason classifyFroxelPopulateReject(const FroxelGridDesc& de
 /// Non-mutating populate preflight — returns true when meaningful fill would proceed.
 /// Non-mutating populate preflight — returns true when populate would write non-zero density.
 bool preflightFroxelPopulate(const FroxelGridDesc& desc,
-                             const FroxelCameraDesc& camera,
                              const VolumetricFogParams& params,
                              FroxelPopulateRejectReason* reason = nullptr);
+/// Classify analytic populate rejection — same ordering as `tryCanPopulateFromAnalyticFog`.
+FroxelPopulateRejectReason classifyPopulateReject(const FroxelGridDesc& desc,
+bool preflightPopulate(const FroxelGridDesc& desc,
 /// Diagnose why analytic populate would skip meaningful fill.
 bool tryCanPopulateFromAnalyticFog(const FroxelGridDesc& desc,
                                    const VolumetricFogParams& params,
