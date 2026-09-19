@@ -622,6 +622,22 @@ struct ContactIslandGraph {
 
     /// True when a constraint references the same body on both ends.
     static bool is_self_contact(u32 bodyA, u32 bodyB);
+    /// True when `bodyIndex` is in range for union-find partitioning.
+    static bool partitionBodyInRange(u32 bodyCount, u32 bodyIndex);
+
+    /// True when both contact body indices are in range for partitioning.
+    static bool contactPartitionInRange(u32 bodyCount, const narrowphase::ContactManifold& contact);
+
+    /// True when both distance-constraint body indices are in range for partitioning.
+    static bool distancePartitionInRange(u32 bodyCount, const DistanceConstraint& constraint);
+
+    /// Count valid contacts whose body indices are in range for partitioning.
+    static u32 countUnionableContacts(u32 bodyCount,
+                                      const std::vector<narrowphase::ContactManifold>& contacts);
+
+    /// Count distance constraints whose body indices are in range for partitioning.
+    static u32 countUnionableDistanceConstraints(u32 bodyCount,
+                                                 const std::vector<DistanceConstraint>& constraints);
 
 private:
     void unionBodies(u32 a, u32 b);
