@@ -30,15 +30,34 @@ configure_file(
     @ONLY
 )
 
-target_sources(fuse_t3d_legacy PRIVATE
+set(_fuse_t3d_legacy_engine_sources
     src/engine_probe/platform_stub.cpp
     src/engine_probe/bitmap_probe_smoke.cpp
+    src/engine_probe/engine_probe_batch_smoke.cpp
     "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/bitmapUtils.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/ies/ies_loader.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/util/md5.cpp"
 )
+
+target_sources(fuse_t3d_legacy PRIVATE ${_fuse_t3d_legacy_engine_sources})
 
 target_include_directories(fuse_t3d_legacy PRIVATE
     "${CMAKE_SOURCE_DIR}/Engine/source"
     "${_fuse_t3d_legacy_engine_dir}"
+)
+
+# Per-TU include roots — do NOT add Engine/core/util globally (shadows system <endian.h>).
+set(_fuse_t3d_legacy_md5_cpp "${CMAKE_SOURCE_DIR}/Engine/source/core/util/md5.cpp")
+set(_fuse_t3d_legacy_ies_cpp "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/ies/ies_loader.cpp")
+set_source_files_properties(
+    ${_fuse_t3d_legacy_md5_cpp}
+    PROPERTIES
+        INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/Engine/source/core/util"
+)
+set_source_files_properties(
+    ${_fuse_t3d_legacy_ies_cpp}
+    PROPERTIES
+        INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/ies"
 )
 
 # C++17 drops the legacy `linux` macro; types.gcc.h needs LINUX for types.posix.h (dsize_t, FileTime).
@@ -49,4 +68,4 @@ target_compile_definitions(fuse_t3d_legacy PRIVATE
     FUSE_T3D_LEGACY_ENGINE_PROBE=1
 )
 
-message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (bitmapUtils extrude/convert + platform_stub)")
+message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (bitmapUtils + ies_loader + md5 + platform_stub)")

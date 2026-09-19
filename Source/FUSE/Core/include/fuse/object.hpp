@@ -39,6 +39,18 @@ public:
     u32 legacyId() const { return m_legacyId; }
     void setLegacyId(u32 id) { m_legacyId = id; }
 
+    /// Torque class tag (e.g. StaticShape) — distinct from greenfield `typeName()`.
+    const std::string& legacyClassName() const { return m_legacyClassName; }
+    void setLegacyClassName(std::string name) { m_legacyClassName = std::move(name); }
+
+    /// Torque internal/object name when different from display `name()`.
+    const std::string& legacyInternalName() const { return m_legacyInternalName; }
+    void setLegacyInternalName(std::string name) { m_legacyInternalName = std::move(name); }
+
+    /// Parent SimObject internal name — hierarchy wiring deferred; stored for round-trip.
+    const std::string& legacyParentName() const { return m_legacyParentName; }
+    void setLegacyParentName(std::string name) { m_legacyParentName = std::move(name); }
+
     virtual const char* typeName() const { return "Object"; }
 
 protected:
@@ -50,6 +62,9 @@ private:
     std::vector<Object*> m_children;
     Handle<Object> m_handle = Handle<Object>::invalid();
     u32 m_legacyId = 0;
+    std::string m_legacyClassName;
+    std::string m_legacyInternalName;
+    std::string m_legacyParentName;
 };
 
 } // namespace fuse

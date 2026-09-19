@@ -196,6 +196,8 @@ void runSimObjectBridgeSmoke() {
     check(fuse::legacy::t3d::exportSimObject(imported3d, exported3d), "t3d SimObject bridge export");
     check(exported3d.simObjectId == 101u, "t3d SimObject bridge legacyId");
     check(exported3d.name == "Spawn", "t3d SimObject bridge name");
+    check(exported3d.className == "StaticShape", "t3d SimObject bridge className");
+    check(exported3d.internalName == "spawnPoint1", "t3d SimObject bridge internalName");
     check(exported3d.x > 2.9f && exported3d.x < 3.1f, "t3d SimObject bridge x");
 
     fuse::legacy::LegacySimObjectStub t2dLegacy{};
@@ -213,6 +215,15 @@ void runSimObjectBridgeSmoke() {
     check(fuse::legacy::t2d::exportSimObject(imported2d, exported2d), "t2d SimObject bridge export");
     check(exported2d.simObjectId == 55u, "t2d SimObject bridge legacyId");
     check(exported2d.layer == 2, "t2d SimObject bridge layer");
+    check(exported2d.className == "t2dSceneObject", "t2d SimObject bridge className");
+    check(exported2d.internalName == "playerSprite", "t2d SimObject bridge internalName");
+
+    t3dLegacy.parentName = "MissionGroup";
+    fuse::SceneObject3D parented("parented");
+    check(fuse::legacy::t3d::importSimObject(t3dLegacy, parented), "t3d SimObject bridge parentName import");
+    fuse::legacy::LegacySimObjectStub parentedOut{};
+    check(fuse::legacy::t3d::exportSimObject(parented, parentedOut), "t3d SimObject bridge parentName export");
+    check(parentedOut.parentName == "MissionGroup", "t3d SimObject bridge parentName round-trip");
 }
 
 void runImageCompressSmoke() {
@@ -293,6 +304,11 @@ int main() {
 
         const float halfOne = fuse::legacy::t3d::engineProbe::convertHalfFloatSmoke(0x3C00u);
         check(halfOne > 0.9f && halfOne < 1.1f, "engine probe convertHalfToFloat near 1.0");
+
+        check(fuse::legacy::t3d::engineProbe::iesLoadEmptySmoke(),
+              "engine probe ies_loader rejects empty input");
+        const fuse::u32 md5Sum = fuse::legacy::t3d::engineProbe::md5DigestSmoke("fuse_u2_probe");
+        check(md5Sum != 0u, "engine probe md5 digest non-zero");
     }
 #endif
 

@@ -104,18 +104,25 @@ No parallel tick; no cross-thread legacy calls (per [architecture-parallel.md](.
 | `Con::` logging + variables + paths + data | ✅ **33/33** APIs per dimension | class/command registration (`addCommand`, …) deferred to U3 |
 | `StringTable` | ✅ shim singleton per dimension | Route to FUSE core table (U3 / R14) |
 | Scene adapter stub | ✅ `LegacySceneObjectStub` ↔ `SceneObject2D/3D` | U3 `sim_object_bridge` slice landed (below) |
-| SimObject bridge (U3 slice) | ✅ `LegacySimObjectStub` ↔ `fuse::Object` + scene nodes | First real `SimObject` `.cpp` batch still blocked |
+| SimObject bridge (U3 slice) | ✅ `LegacySimObjectStub` ↔ `fuse::Object` + scene nodes | `className` / `internalName` / `parentName` / `layer` round-trip; first real `SimObject` `.cpp` batch still blocked |
 | StringTable quarantine | ✅ owned-copy `StringInternTable` per dimension | Route to FUSE core intern (U3 / R14) |
 | Image mip compress | ✅ `compressMipsParallel` (squish + `parallel_for`) | `imageUtils.cpp` call-site swap deferred — Engine batch blocked (below) |
-| Engine `.cpp` probe | ✅ **opt-in** `-DFUSE_T3D_LEGACY_ENGINE_PROBE=ON` | `bitmapUtils.cpp` extrude + RGB→5551 + half-float; `platform_stub` (`dMem*`, `dMalloc`) |
+| Engine `.cpp` probe | ✅ **opt-in** `-DFUSE_T3D_LEGACY_ENGINE_PROBE=ON` | Batch 1: `bitmapUtils.cpp`; batch 2: `ies_loader.cpp`, `md5.cpp`; `platform_stub` (`dMem*`, `dMalloc`) |
 | Full `SimObject` | ⏳ **blocked** | 122-header closure, `IMPLEMENT_CONOBJECT`, Gui/Con/sim pulls, T2D `SimObject` ODR — **not** force-linking `simObject.cpp` |
 | Gui / script VM | ⏳ blocked | See §3 table |
 
 **SimObject blocker detail (unchanged):** T3D `simObject.cpp` (3,550 LOC) transitively pulls `console.cpp`, `simManager.cpp`, `guiInspector.h`, TorqueScript registration, and `sim/netObject.h`. T2D declares an identical `class SimObject : public ConsoleObject` — linking both trees exports colliding vtables. **Unblock path:** U3 `fuse::Object` extraction + single-console-host or curated adapter slice, not raw `simObject.cpp` drop-in.
 
-**Engine probe detail:** Smallest collision-free T3D candidate is `gfx/bitmap/bitmapUtils.cpp`. Under `-std=c++17` GCC drops the legacy `linux` macro; probe compile adds `-DLINUX=1` so `types.gcc.h` pulls `types.posix.h` (`dsize_t`, `FileTime`). Quarantine `platform_stub.cpp` supplies `Float_Inf`, `dMem*`, and `dMalloc`/`dFree`/`dRealloc` (allocator quarantine for future gfx batches). Smoke calls `engineProbe::bitmapExtrude5551Smoke()`, `bitmapConvertRGB5551Smoke()`, and `convertHalfFloatSmoke()` when probe flag is ON.
+**Engine probe detail:** Curated T3D `.cpp` batches compile under `-DFUSE_T3D_LEGACY_ENGINE_PROBE=ON` with quarantine stubs — no `simObject.cpp`, no full `platform/` tree.
 
-**SimObject bridge detail (U3 slice, no `simObject.cpp`):** `fuse/legacy/sim_object_bridge.hpp` defines `LegacySimObjectStub` (identity + transform distilled from Torque `SimObject`). Per-dimension `importSimObject` / `exportSimObject` compose `bridgeToObject` with existing scene adapters — reduces ODR pressure vs linking dual Engine `SimObject` trees. Smoke exercises T2D/T3D round-trip on main thread.
+| Batch | Engine sources | Smoke |
+|-------|----------------|-------|
+| 1 | `gfx/bitmap/bitmapUtils.cpp` | extrude5551, RGB→5551, half-float |
+| 2 | `gfx/bitmap/loaders/ies/ies_loader.cpp`, `core/util/md5.cpp` | empty IES reject, MD5 digest |
+
+Under `-std=c++17` GCC drops the legacy `linux` macro; probe compile adds `-DLINUX=1` so `types.gcc.h` pulls `types.posix.h` (`dsize_t`, `FileTime`). Quarantine `platform_stub.cpp` supplies `Float_Inf`, `dMem*`, and `dMalloc`/`dFree`/`dRealloc`. Next batch candidates: `hashFunction.cpp` (needs `String` stub), `commonSwizzles.cpp` (needs `FrameAllocator` stub), `ddsFile.cpp` (blocked on `Con::` / `gBitmap` closure).
+
+**SimObject bridge detail (U3 slice, no `simObject.cpp`):** `fuse/legacy/sim_object_bridge.hpp` defines `LegacySimObjectStub` (identity + transform distilled from Torque `SimObject`). `bridgeToObject` / `bridgeFromObject` propagate `legacyClassName`, `legacyInternalName`, `legacyParentName` on `fuse::Object` plus `layer` on `SceneObject2D`. Per-dimension `importSimObject` / `exportSimObject` compose with scene adapters — reduces ODR pressure vs linking dual Engine `SimObject` trees. Smoke exercises T2D/T3D round-trip on main thread.
 
 ---
 

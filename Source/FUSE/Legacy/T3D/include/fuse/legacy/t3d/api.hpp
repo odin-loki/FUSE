@@ -60,6 +60,8 @@ namespace engineProbe {
 void bitmapExtrude5551Smoke(const void* srcMip, void* mip, u32 srcHeight, u32 srcWidth);
 void bitmapConvertRGB5551Smoke(u8* rgb, u32 pixels);
 float convertHalfFloatSmoke(u16 half);
+bool iesLoadEmptySmoke();
+u32 md5DigestSmoke(const char* text);
 } // namespace engineProbe
 #endif
 

@@ -11,7 +11,7 @@ target_include_directories(fuse_legacy_common
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_legacy_common PUBLIC fuse_core)
+target_link_libraries(fuse_legacy_common PUBLIC fuse_core fuse_world2d)
 target_compile_features(fuse_legacy_common PUBLIC cxx_std_17)
 
 add_subdirectory(T3D)
