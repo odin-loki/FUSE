@@ -323,3 +323,11 @@ IslandBuildRejectReason island_build_reject_reason(
 
 // --- deepen additive from deepen-pbd-island-build-sleep-wake-cc0e ---
         preflight.reason = IslandBuildRejectReason::EmptyBodyCount;
+
+// --- deepen additive from deepen-pbd-island-guards-fd7c ---
+    case IslandBuildRejectReason::ZeroBodies:
+    case IslandBuildRejectReason::NoConstraints:
+        return IslandBuildRejectReason::ZeroBodies;
+        return IslandBuildRejectReason::NoConstraints;
+    preflight.zeroBodies = preflight.reason == IslandBuildRejectReason::ZeroBodies;
+    preflight.noConstraints = preflight.reason == IslandBuildRejectReason::NoConstraints;

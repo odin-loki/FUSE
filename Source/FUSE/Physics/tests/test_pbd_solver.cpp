@@ -3717,3 +3717,32 @@ void testWakeIslandBodiesGuarded() {
     expectTrue(activePreflight.can_solve(), "active island can constraint-solve");
     const IslandConstraintSolvePreflight invalidDtPreflight = preflight_island_constraint_solve(
 void testSolveIslandJobGuarded() {
+
+// --- deepen additive from deepen-pbd-island-guards-fd7c ---
+    expectTrue(zeroBodies.reason == IslandBuildRejectReason::ZeroBodies,
+    expectTrue(island_build_rejects_for_reason(0, contacts, constraints, IslandBuildRejectReason::ZeroBodies),
+    const IslandBuildPreflight noConstraints = preflight_island_build(3, {}, {});
+    expectTrue(noConstraints.reason == IslandBuildRejectReason::NoConstraints,
+    const IslandBuildPreflight constrained = preflight_island_build(2, contacts, constraints);
+    expectTrue(constrained.reason == IslandBuildRejectReason::None,
+void testPreflightIslandSolveBodiesSleepGuards() {
+    const IslandSolveBodyPreflight sleepingPreflight =
+    expectTrue(sleepingPreflight.allSleeping, "solve preflight flags all-sleeping island");
+    expectTrue(should_skip_island_solve_for_sleep(bodies, graph.island(constrainedIndex)),
+    const IslandSolveBodyPreflight awakePreflight =
+    expectTrue(awakePreflight.can_solve(), "mixed island can solve with awake dynamic body");
+    expectTrue(!should_skip_island_solve_for_sleep(bodies, graph.island(constrainedIndex)),
+               "should_skip false when island has awake dynamic body");
+    expectTrue(should_skip_island_solve_job_for_sleep(job, bodies, graph.island(constrainedIndex)),
+               "should_skip_island_solve_job_for_sleep on all-sleeping island");
+void testDispatchSolveIslandWithBodyGuards() {
+    expectTrue(sleepPreflight.can_sleep(), "sleep preflight allows low-velocity contact island");
+    expectTrue(sleepPreflight.dynamicCount == 2u, "sleep preflight counts dynamic bodies");
+    const IslandSleepPreflight invalidDt =
+    expectTrue(should_skip_island_sleep(graph.island(islandA), 0.f),
+               "should_skip_island_sleep on invalid dt");
+    expectTrue(wakePreflight.should_wake(), "wake preflight sees above-threshold velocity");
+    expectTrue(wakePreflight.aboveThresholdCount == 1u,
+void testSleepWakeIslandGuardedBatch() {
+    const IslandSleepGraphPreflight graphSleep =
+    testPreflightIslandSolveBodiesSleepGuards();
