@@ -90,10 +90,6 @@ u32 currentFlowNestingDepth() {
     return threadLocalFlowNestingDepth();
 }
 
-bool isValidEventName(const char* name) {
-    return name != nullptr && name[0] != '\0';
-}
-
 std::string formatCounterArgsJson(const ProfileEvent& event) {
     std::string args = "\"args\":{\"value\":";
     if (event.counterKind == CounterValueKind::Float) {
@@ -249,6 +245,10 @@ void setEnabled(bool enabled) {
     g_enabled.store(enabled, std::memory_order_release);
 }
 
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 void beginFrame() {
     g_frameIndex.fetch_add(1u, std::memory_order_acq_rel);
 }
@@ -263,6 +263,10 @@ u32 frameIndex() {
 
 u32 eventCount() {
     return g_eventCount.load(std::memory_order_acquire);
+}
+
+u32 ringBufferCapacity() {
+    return kRingCapacity;
 }
 
 u32 maxNestingDepth() {
@@ -318,7 +322,7 @@ bool isEventIndexValid(u32 index) {
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return event.name != nullptr;
+    return isValidEventName(event.name);
 }
 
 const ProfileEvent& eventAt(u32 index) {
@@ -344,6 +348,16 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     return isValidProfileEvent(outEvent);
 }
 
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -355,6 +369,21 @@ const ProfileEvent& lastEvent() {
         return eventAt(0);
     }
     return eventAt(index);
+}
+
+bool canExportChromeTrace() {
+    return preflightChromeTraceExport().canExport();
+}
+
+ChromeTraceExportPreflight preflightChromeTraceExport() {
+    ChromeTraceExportPreflight preflight{};
+    preflight.emptyBuffer = isBufferEmpty();
+    preflight.unbalancedScopeNesting = !isScopeNestingBalanced();
+    preflight.unbalancedFlowNesting = !isFlowNestingBalanced();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.bufferTruncated = isBufferFull();
+    preflight.profilerDisabled = !enabled();
+    return preflight;
 }
 
 void reset() {
