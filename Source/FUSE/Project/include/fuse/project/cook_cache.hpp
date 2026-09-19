@@ -750,6 +750,9 @@ public:
     [[nodiscard]] const CookCacheStats& stats() const { return m_stats; }
     [[nodiscard]] usize entry_count() const { return m_entries.size(); }
 
+    /// Structural + source readability preflight for cache records (B7.9 deepen).
+    [[nodiscard]] CookHashPreflight preflight_store_entry(const CookCacheEntry& entry) const;
+
     bool save(const std::string& path) const;
     bool load(const std::string& path);
 

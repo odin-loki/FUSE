@@ -147,6 +147,14 @@ struct CookCacheUpstreamInvalidateEstimate {
     [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
 };
 
+/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
+struct CookUpstreamInvalidationEstimate {
+    u32 direct_source_entries = 0;
+    u32 downstream_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
+};
+
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
 class AssetCooker {
 public:
@@ -188,9 +196,10 @@ public:
     [[nodiscard]] u32 count_output_invalidation(const CookManifest& manifest,
                                                 const std::string& changed_output) const;
     /// Structured upstream invalidation breakdown for incremental planning (B7.9 deepen).
-    /// Upstream invalidation breakdown — direct source entries plus downstream dependents (B7.9 deepen).
     /// True when `count_upstream_invalidation` is non-zero — guarded on empty `changed_source` (B7.9 deepen).
     [[nodiscard]] bool would_upstream_invalidate(const CookManifest& manifest,
+    /// Upstream invalidation breakdown — mirrors `count_upstream_invalidation` (B7.9 deepen).
+    /// Source paths `invalidate_upstream_dependency` would touch — deduplicated (B7.9 deepen).
     /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
     [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
     /// True when `invalidate_stale_dependency_hashes` would remove at least one entry (B7.9 deepen).
