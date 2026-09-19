@@ -3531,3 +3531,8 @@ void testFrictionTangentComputeDeepenPassGuards() {
 void testRunNarrowphaseBufferPreflightGuards() {
     testContactBufferWriteSlotPreflightGuards();
     testRunNarrowphaseBufferPreflightGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-7827 ---
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight can dispatch valid batch");
+    expectTrue(!dispatchPreflight.can_skip(), "dispatch preflight does not skip valid batch");
+void testManifoldFrictionDeepenPassFollowUpGuards() {
