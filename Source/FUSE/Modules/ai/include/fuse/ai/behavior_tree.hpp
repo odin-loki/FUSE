@@ -137,6 +137,9 @@ public:
     /// Same patrol demo built through NodeRegistry load path.
     static BehaviorTree makePatrolWhenNearTargetFromRegistry();
 
+    /// Single `gb.action.move_toward` root for hybrid 3D agent drive (GuideBot ore).
+    static BehaviorTree makeMoveTowardDemoTree(float moveSpeed = 1.f);
+
 private:
     BehaviorTickResult tickNode(u32 nodeIndex,
                                 u32 agentIndex,

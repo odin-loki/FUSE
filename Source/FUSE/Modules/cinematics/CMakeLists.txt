@@ -10,6 +10,7 @@ add_library(fuse_cinematics STATIC
     src/event_track.cpp
     src/motion_track.cpp
     src/actor_track.cpp
+    src/hybrid_timeline_drive.cpp
     src/cue_queue.cpp
     src/group.cpp
     src/playhead.cpp
@@ -26,6 +27,7 @@ add_library(fuse_cinematics STATIC
     include/fuse/cinematics/event_track.hpp
     include/fuse/cinematics/motion_track.hpp
     include/fuse/cinematics/actor_track.hpp
+    include/fuse/cinematics/hybrid_timeline_drive.hpp
     include/fuse/cinematics/cue_payload.hpp
     include/fuse/cinematics/cue_queue.hpp
     include/fuse/cinematics/group.hpp

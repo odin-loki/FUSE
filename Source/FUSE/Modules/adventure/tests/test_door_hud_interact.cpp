@@ -52,6 +52,18 @@ void testHudPromptInteractable() {
     expectTrue(lever.promptShownCount() == 1u, "hud prompt increments show count");
 }
 
+void testShowHudPromptHelper() {
+    fuse::adventure::HudPromptInteractable lever("Press E to activate");
+    fuse::adventure::InteractionSystem system;
+
+    fuse::adventure::InteractContext ctx;
+    ctx.actorName = "player";
+
+    const std::string prompt = system.showHudPrompt(ctx, lever);
+    expectTrue(prompt == "Press E to activate", "showHudPrompt returns HUD text");
+    expectTrue(lever.promptShownCount() == 1u, "showHudPrompt increments show count");
+}
+
 } // namespace
 
 int main() {
@@ -59,6 +71,7 @@ int main() {
 
     testDoorInteractable();
     testHudPromptInteractable();
+    testShowHudPromptHelper();
 
     fuse::core::shutdown();
 

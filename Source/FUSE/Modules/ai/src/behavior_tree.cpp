@@ -593,4 +593,14 @@ BehaviorTree BehaviorTree::makePatrolWhenNearTargetFromRegistry() {
     return tree;
 }
 
+BehaviorTree BehaviorTree::makeMoveTowardDemoTree(float moveSpeed) {
+    const std::vector<NodeLoadSpec> specs = {
+        {"gb.action.move_toward", moveSpeed, 0, 0, {}, {}},
+    };
+
+    BehaviorTree tree;
+    loadTreeFromSpecs(specs, 0, tree);
+    return tree;
+}
+
 } // namespace fuse::ai

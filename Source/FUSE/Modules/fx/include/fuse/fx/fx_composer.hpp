@@ -60,6 +60,9 @@ public:
     /// Queue effect playback, advance casts, cull residuals, and tick missiles (no GPU work yet).
     void tick(const frame::FrameCtx& ctx = {});
 
+    /// Register spark/muzzle/fireball descriptors used by hybrid + demo_fx vertical slices.
+    bool registerDemoVerticalSlice();
+
     u32 tickCount() const { return m_tickCount; }
 
 private:

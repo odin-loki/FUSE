@@ -285,6 +285,13 @@ void testMissilePipeline() {
     expectTrue(pipeline.completedCount() == 1u, "missile completion counted");
 }
 
+void testRegisterDemoVerticalSlice() {
+    fuse::fx::FxComposer composer;
+    expectTrue(composer.registerDemoVerticalSlice(), "demo vertical slice registers");
+    expectTrue(composer.effectCount() == 2u, "spark + muzzle registered");
+    expectTrue(composer.findSpell("fireball") != nullptr, "fireball spell registered");
+}
+
 void testParticlePoolTick() {
     fuse::fx::ParticlePool pool(4);
     expectTrue(pool.spawn({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.5f), "particle spawns");
@@ -310,6 +317,7 @@ int main() {
     testFireballPhaseProgression();
     testSocketConstraintRemap();
     testMissilePipeline();
+    testRegisterDemoVerticalSlice();
     testParticlePoolTick();
     fuse::core::shutdown();
 

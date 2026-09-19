@@ -1,12 +1,8 @@
-#include <fuse/ai/behavior_runtime.hpp>
-#include <fuse/ai/behavior_tree.hpp>
+#include "hybrid_module_gates.hpp"
+
 #include <fuse/core/init.hpp>
-#include <fuse/dimension/world_handle.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/log/logger.hpp>
-#include <fuse/world2d/scene_object_2d.hpp>
-#include <fuse/world2d/world_2d.hpp>
-#include <fuse/world3d/world_3d.hpp>
 
 #if defined(FUSE_HAS_VULKAN_RHI)
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
@@ -16,9 +12,6 @@
 #include <cstdlib>
 
 namespace {
-
-constexpr int kFrameCount = 60;
-constexpr float kDt = 1.f / 60.f;
 
 int g_failures = 0;
 
@@ -32,7 +25,7 @@ void check(bool condition, const char* message) {
 } // namespace
 
 int main() {
-    fuse::log::info("demo_hybrid_hud: U4 hybrid frame (software placeholder renderer — no real GL yet)");
+    fuse::log::info("demo_hybrid_hud: U4 hybrid frame + U5 prestarter §10 module gates");
 
     check(fuse::core::initialize(), "fuse_core initialize");
 
@@ -47,46 +40,16 @@ int main() {
     fuse::hybrid::HybridComposer composer;
 #endif
 
-    fuse::world2d::World2D world2D;
-    fuse::world3d::World3D world3D;
-    fuse::SceneObject2D hudSprite("hud_sprite");
-
-    hudSprite.setPosition(0.f, 0.f);
-    hudSprite.setLayer(10);
-    world2D.addSprite(&hudSprite);
-    world3D.setClearColor(0.1f, 0.15f, 0.25f);
-
-    const fuse::dimension::WorldHandle worldHandle(1u, 1u);
-    world2D.loadWorld(worldHandle);
-    world3D.loadWorld(worldHandle);
-
-    composer.attachWorld2D(&world2D);
-    composer.attachWorld3D(&world3D);
-
-    fuse::ai::BehaviorRuntime aiRuntime;
-    aiRuntime.setTree(fuse::ai::BehaviorTree::makePatrolWhenNearTarget());
-    fuse::ai::AgentBinding hudAgent{};
-    hudAgent.x = 0.f;
-    hudAgent.y = 0.f;
-    hudAgent.targetX = 2.f;
-    hudAgent.targetY = 0.f;
-    aiRuntime.addAgent(hudAgent);
+    fuse::hybrid::gates::State gateState;
+    fuse::hybrid::gates::setup(gateState, composer);
 
     fuse::frame::FrameCtx ctx;
-    for (int frame = 0; frame < kFrameCount; ++frame) {
-        ctx.dt = kDt;
-        ctx.time = static_cast<float>(frame) * kDt;
+    for (int frame = 0; frame < fuse::hybrid::gates::kFrameCount; ++frame) {
+        ctx.dt = fuse::hybrid::gates::kDt;
+        ctx.time = static_cast<float>(frame) * fuse::hybrid::gates::kDt;
         ctx.frameIndex = static_cast<fuse::u32>(frame);
 
-#if defined(FUSE_HAS_VULKAN_RHI)
-        runtime->tick(ctx);
-#else
-        composer.tick(ctx);
-#endif
-
-        aiRuntime.buildSnapshots();
-        aiRuntime.evaluate(ctx);
-        aiRuntime.commit();
+        fuse::hybrid::gates::tickFrame(gateState, composer, ctx);
 
 #if defined(FUSE_HAS_VULKAN_RHI)
         runtime->render(ctx);
@@ -95,18 +58,11 @@ int main() {
 #endif
     }
 
-    check(composer.frameCount() == static_cast<fuse::u32>(kFrameCount), "all frames ticked");
-    check(aiRuntime.tickCount() == static_cast<fuse::u32>(kFrameCount), "fuse_ai module ticked each frame");
-    check(aiRuntime.blackboard().flag(0, 0), "fuse_ai patrol flag set for near HUD agent");
-    check(world2D.readSnapshot().sprites().size() == 1u, "2D snapshot built via hierarchy fillSnapshotSoA");
-    check(world2D.readTransformSoA().object.size() == 1u, "2D transform SoA filled for parallel cull");
-    check(world2D.readSnapshot().visibleCount() == 1u, "parallel cull kept HUD sprite visible");
-    check(world3D.readSnapshot().objects().empty(), "3D snapshot has no drawable objects (clear-only path)");
-    check(composer.renderer().sample(160, 120) > 0, "3D clear colour present");
-    check(composer.renderer().sample(172, 132) > 0, "spinning 2D sprite visible");
+    const fuse::hybrid::gates::VerifyResult result = fuse::hybrid::gates::verify(gateState, composer);
+    check(result.ok, result.message != nullptr ? result.message : "U5 module gates verified");
 
     fuse::log::info("demo_hybrid_hud: rendered %d frames at %ux%u (RGBA software buffer)",
-                    kFrameCount,
+                    fuse::hybrid::gates::kFrameCount,
                     composer.renderer().width(),
                     composer.renderer().height());
     fuse::log::info("demo_hybrid_hud: real GL/Vulkan presentation deferred to Track B RHI");

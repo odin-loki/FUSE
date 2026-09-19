@@ -1,5 +1,7 @@
 #include <fuse/cinematics/audio_track.hpp>
+#include <fuse/cinematics/actor_track.hpp>
 #include <fuse/cinematics/camera_track.hpp>
+#include <fuse/cinematics/hybrid_timeline_drive.hpp>
 #include <fuse/cinematics/cue_payload.hpp>
 #include <fuse/cinematics/cue_queue.hpp>
 #include <fuse/cinematics/event_track.hpp>
@@ -1273,6 +1275,35 @@ void testActorTrackMountUnmount() {
     expectTrue(track.kind() == fuse::cinematics::TrackKind::Actor, "actor track kind");
 }
 
+void testHybridTimelineDrive() {
+    fuse::cinematics::Timeline timeline;
+    timeline.playhead().set_duration_ms(1'000);
+    fuse::cinematics::TrackGroup& group = timeline.add_group("Hybrid");
+    fuse::cinematics::SpriteTrack& spriteTrack = group.add_sprite_track("sprite");
+    spriteTrack.add_keyframe({0, 0.f, 0.f, 1.f});
+    spriteTrack.add_keyframe({1'000, 20.f, 10.f, 1.f});
+    spriteTrack.sort_keyframes();
+
+    fuse::cinematics::CameraTrack& cameraTrack = group.add_camera_track("camera");
+    fuse::cinematics::CameraKeyframe start{};
+    start.time_ms = 0;
+    start.position = {0.f, 0.f, 5.f};
+    start.field_of_view = 60.f;
+    fuse::cinematics::CameraKeyframe end{};
+    end.time_ms = 1'000;
+    end.position = {0.f, 40.f, 10.f};
+    end.field_of_view = 90.f;
+    cameraTrack.add_keyframe(start);
+    cameraTrack.add_keyframe(end);
+    cameraTrack.sort_keyframes();
+
+    timeline.scrub_to(500, false);
+    const fuse::cinematics::HybridTimelineSample sample =
+        fuse::cinematics::sample_hybrid_timeline_drive(timeline);
+    expectNear(sample.spriteX, 10.f, 1e-3f, "hybrid drive samples sprite x");
+    expectTrue(sample.clearG > 0.15f, "hybrid drive samples camera clear tint");
+}
+
 void testMotionTrackPathSampling() {
     fuse::cinematics::MotionTrack track("ActorPath");
     track.set_target_object_id("hero");
@@ -1371,6 +1402,7 @@ int main() {
     testSpriteTrackSampling();
     testPropertyTrackSampling();
     testActorTrackMountUnmount();
+    testHybridTimelineDrive();
     testMotionTrackPathSampling();
     testTimelineContentSpan();
     testPlayheadScrub();

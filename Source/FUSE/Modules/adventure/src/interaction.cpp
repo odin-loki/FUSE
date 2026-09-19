@@ -35,4 +35,11 @@ std::string InteractionSystem::promptFor(const IInteractable& target) const {
     return {};
 }
 
+std::string InteractionSystem::showHudPrompt(InteractContext& ctx, IInteractable& target) {
+    if (examine(ctx, target) != InteractResult::Examined) {
+        return {};
+    }
+    return promptFor(target);
+}
+
 } // namespace fuse::adventure

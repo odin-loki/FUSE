@@ -4,6 +4,7 @@ add_library(fuse_mechanics STATIC
     src/component.cpp
     src/health_component.cpp
     src/trigger_zone.cpp
+    src/toggle_component.cpp
     src/inventory_provider.cpp
     src/interact_action.cpp
     src/interactable.cpp
@@ -13,6 +14,7 @@ add_library(fuse_mechanics STATIC
     include/fuse/mechanics/component.hpp
     include/fuse/mechanics/health_component.hpp
     include/fuse/mechanics/trigger_zone.hpp
+    include/fuse/mechanics/toggle_component.hpp
     include/fuse/mechanics/inventory_provider.hpp
     include/fuse/mechanics/interact_action.hpp
     include/fuse/mechanics/interactable.hpp

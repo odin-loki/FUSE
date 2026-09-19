@@ -18,6 +18,9 @@ public:
 
     /// Return HUD prompt text when target is a HudPromptInteractable, else empty.
     std::string promptFor(const IInteractable& target) const;
+
+    /// Examine/show HUD prompt and return prompt text (3DAAK interface hint flow).
+    std::string showHudPrompt(InteractContext& ctx, IInteractable& target);
 };
 
 } // namespace fuse::adventure

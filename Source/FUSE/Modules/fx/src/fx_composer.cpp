@@ -82,6 +82,14 @@ bool FxComposer::beginCast(const std::string& spellId, const CastBinding& bindin
     return true;
 }
 
+bool FxComposer::registerDemoVerticalSlice() {
+    bool ok = true;
+    ok &= registerEffect(EffectDescriptor::makeSparkBurst());
+    ok &= registerEffect(EffectDescriptor::makeMuzzleFlash());
+    ok &= registerSpell(SpellDescriptor::makeFireball());
+    return ok;
+}
+
 void FxComposer::tick(const frame::FrameCtx& ctx) {
     const float dt = (ctx.dt > 0.f) ? ctx.dt : (1.f / 60.f);
     m_effectTimeline.tick(dt);

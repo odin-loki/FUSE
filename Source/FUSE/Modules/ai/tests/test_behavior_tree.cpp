@@ -224,6 +224,12 @@ void testMoveTowardRuntimeCommit() {
     expectNear(runtime.bindings()[0].y, 0.f, 1e-4f, "move toward y unchanged on axis-aligned path");
 }
 
+void testMoveTowardDemoTreeFactory() {
+    const fuse::ai::BehaviorTree tree = fuse::ai::BehaviorTree::makeMoveTowardDemoTree(0.25f);
+    expectTrue(tree.nodeCount() == 1u, "move toward demo tree has one node");
+    expectTrue(tree.node(0).kind == fuse::ai::NodeKind::ActionMoveToward, "demo tree root is move toward");
+}
+
 void testGuideBotMoveTowardLeaf() {
     const std::vector<fuse::ai::NodeLoadSpec> specs = {
         {"gb.action.move_toward", 1.f, 2, 1, {"aiMovement.cs"}, {}},
@@ -1784,6 +1790,7 @@ int main() {
     testLoopDecorator();
     testSucceedAlwaysDecorator();
     testMoveTowardRuntimeCommit();
+    testMoveTowardDemoTreeFactory();
     testGuideBotMoveTowardLeaf();
     testMonitorDecorator();
     testWaitLeaf();
