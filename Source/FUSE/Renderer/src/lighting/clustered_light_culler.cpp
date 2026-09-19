@@ -106,6 +106,20 @@ const char* clusterRebuildRejectReasonLabel(ClusterRebuildRejectReason reason) {
         return "count_mismatch";
     case GridRebuildRejectReason::DescMismatch:
         return "desc_mismatch";
+const char* clusterScreenMappingRejectReasonLabel(ClusterScreenMappingRejectReason reason) {
+    case ClusterScreenMappingRejectReason::None:
+    case ClusterScreenMappingRejectReason::EmptyGrid:
+    case ClusterScreenMappingRejectReason::InvalidCamera:
+        return "invalid_camera";
+    case ClusterScreenMappingRejectReason::DepthOutOfRange:
+        return "depth_out_of_range";
+    }
+    return "unknown";
+
+const char* lightGridRebuildRejectReasonLabel(LightGridRebuildRejectReason reason) {
+    case LightGridRebuildRejectReason::None:
+    case LightGridRebuildRejectReason::EmptyGrid:
+    case LightGridRebuildRejectReason::CountMismatch:
     }
     return "unknown";
 }
@@ -300,6 +314,10 @@ bool cluster_util::canLookupAtCoord(const ClusterGridSoA& grid,
                                       u32 /*tileY*/,
                                       u32 /*sliceZ*/) {
     return canLookupAtIndex(grid, desc, 0u);
+bool cluster_util::tryCanLookupAtCoord(const ClusterGridSoA& grid,
+                                        u32 /*sliceZ*/,
+                                        ClusterLookupRejectReason& outReason) {
+    return tryCanLookupAtIndex(grid, desc, 0u, outReason);
 }
 
 bool cluster_util::tryCanLookupAtIndex(const ClusterGridSoA& grid,
@@ -1133,53 +1151,40 @@ bool ClusterLightGridLayout::shouldSkipRebuildLightGrid(const ClusterDesc& desc,
 
 
 
-        return false;
-    }
 
-    outReason = GridRebuildRejectReason::None;
-    return true;
 
-bool ClusterLightGridLayout::shouldSkipLightGridRebuild(const ClusterDesc& desc, u32 clusterCount) {
-    return !canRebuildLightGrid(desc, clusterCount);
 bool ClusterLightGridLayout::tryCanRebuildLightGridForDesc(const ClusterDesc& desc,
-                                                            GridRebuildRejectReason& outReason) {
-    const u32 clusterCount = ClusterDesc::clampCounts(desc).clusterCount();
     return tryCanRebuildLightGrid(desc, clusterCount, outReason);
 
-    GridRebuildRejectReason reason = GridRebuildRejectReason::None;
     return !tryCanRebuildLightGrid(desc, clusterCount, reason);
         outReason = ClusterRebuildRejectReason::CountMismatch;
 
-    outReason = ClusterRebuildRejectReason::None;
 
 bool ClusterLightGridLayout::shouldSkipClusterRebuild(const ClusterDesc& desc, u32 clusterCount) {
-    ClusterRebuildRejectReason reason = ClusterRebuildRejectReason::None;
 
 u32 ClusterLightGridLayout::tryRebuildLightGridForDesc(ClusterGridSoA& grid,
-                                                        const ClusterDesc& desc,
-                                                        const std::vector<std::vector<u32>>& perClusterLights,
                                                         ClusterRebuildRejectReason& outReason,
                                                         u32 maxLightsPerCluster) {
-    if (ClusterGridLayout::isEmptyGrid(desc)) {
         for (const std::vector<u32>& clusterLights : perClusterLights) {
             if (!clusterLights.empty()) {
-                outReason = ClusterRebuildRejectReason::EmptyGrid;
-                return 0u;
 
     if (!tryCanRebuildLightGrid(desc, clusterCount, outReason)) {
 
     return rebuildLightGridForDesc(grid, desc, perClusterLights, maxLightsPerCluster);
-}
 
-    return clusterCount != 0u && !canRebuildLightGrid(desc, clusterCount);
 
 bool ClusterLightGridLayout::shouldSkipLightGridRebuild(const ClusterDesc& desc) {
     return ClusterGridLayout::shouldSkipClusterGrid(desc);
 
-bool ClusterGridLayout::shouldSkipClusterGrid(const ClusterDesc& desc) {
-    return isEmptyGrid(desc);
 
     return clusterCount > 0u && !canRebuildLightGrid(desc, clusterCount);
+    LightGridRebuildRejectReason reason = LightGridRebuildRejectReason::None;
+
+                                                     LightGridRebuildRejectReason& outReason) {
+        outReason = LightGridRebuildRejectReason::None;
+        outReason = LightGridRebuildRejectReason::EmptyGrid;
+        outReason = LightGridRebuildRejectReason::CountMismatch;
+
 }
 
 bool ClusterGridLayout::isEmptyGrid(const ClusterDesc& desc) {
@@ -1295,6 +1300,7 @@ bool ClusterGridLayout::tryMapScreenDepthToClusterIndex(f32 screenX,
                                                         f32 screenY,
                                                         f32 viewDepth,
                                                         const ClusterDesc& desc,
+                                                        const ClusterCameraDesc& camera,
                                                         u32& outClusterIndex,
                                                         ClusterScreenMappingRejectReason& outReason) {
     if (isEmptyGrid(desc)) {
@@ -1322,7 +1328,6 @@ bool ClusterGridLayout::tryMapScreenDepthToClusterIndex(f32 screenX,
                                                          f32 viewDepth,
                                                          const ClusterDesc& desc,
                                                          const ClusterCameraDesc& camera,
-                                                         u32& outClusterIndex) {
                                                          u32& outClusterIndex,
                                                          ClusterScreenMappingRejectReason& outReason) {
     if (isEmptyGrid(desc)) {
@@ -1331,9 +1336,6 @@ bool ClusterGridLayout::tryMapScreenDepthToClusterIndex(f32 screenX,
     }
     if (camera.nearPlane <= 0.f || camera.farPlane <= camera.nearPlane) {
         outReason = ClusterScreenMappingRejectReason::InvalidCamera;
-        return false;
-    }
-    if (viewDepth < camera.nearPlane || viewDepth > camera.farPlane) {
     if (shouldSkipScreenDepthMapping(desc, camera, viewDepth)) {
         outReason = ClusterScreenMappingRejectReason::DepthOutOfRange;
         return false;
@@ -1456,6 +1458,10 @@ bool ClusterLightGridLayout::tryRebuildLightGridForDesc(ClusterGridSoA& grid,
 
     outDropped = rebuildLightGridForDesc(grid, desc, perClusterLights, maxLightsPerCluster);
     outReason = GridRebuildRejectReason::None;
+bool ClusterLightGridLayout::tryRebuildLightGrid(ClusterGridSoA& grid,
+                                                  u32 clusterCount,
+    LightGridRebuildRejectReason reason = LightGridRebuildRejectReason::None;
+    return tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights, maxLightsPerCluster, outDropped, reason);
 
 bool ClusterLightGridLayout::tryRebuildLightGrid(ClusterGridSoA& grid,
                                                   const ClusterDesc& desc,
@@ -1464,6 +1470,7 @@ bool ClusterLightGridLayout::tryRebuildLightGrid(ClusterGridSoA& grid,
                                                   u32 maxLightsPerCluster,
                                                   u32& outDropped,
                                                   GridRebuildRejectReason& outReason) {
+                                                  LightGridRebuildRejectReason& outReason) {
     if (!tryCanRebuildLightGrid(desc, clusterCount, outReason)) {
         outDropped = 0u;
         return false;
@@ -1482,7 +1489,6 @@ u32 ClusterLightGridLayout::tryRebuildLightGrid(ClusterGridSoA& grid,
     GridRebuildRejectReason reason = GridRebuildRejectReason::None;
     if (!tryCanRebuildLightGrid(desc, clusterCount, reason)) {
         return 0u;
-    }
 
     return rebuildLightGrid(grid, clusterCount, perClusterLights, maxLightsPerCluster);
 
@@ -1499,6 +1505,8 @@ bool ClusterLightGridLayout::tryRebuildLightGridForDesc(ClusterGridSoA& grid,
     const u32 clusterCount = ClusterDesc::clampCounts(desc).clusterCount();
     return tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights, maxLightsPerCluster, outDropped,
                                outReason);
+
+    outReason = LightGridRebuildRejectReason::None;
 
 u32 ClusterLightGridLayout::rebuildLightGrid(ClusterGridSoA& grid,
     grid.lightList.clear();
