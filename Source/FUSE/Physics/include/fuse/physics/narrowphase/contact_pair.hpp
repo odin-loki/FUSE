@@ -47,6 +47,8 @@ enum class ContactPairRejectReason : u8 {
     MeshShapePair,
     BoxThinPair,
     NoDispatchPath,
+    UnsupportedMeshPair,
+    DegeneratePlaneNormal,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -1219,6 +1221,11 @@ bool is_undispatched_shape_pair(
 /// Run shape dispatch only when extended deepen preflight allows (B4.6 deepen pass).
 ContactManifold detect_contacts_pair_deepen(
     const RigidBodySoA& bodies,
+/// Returns true when either shape is an SdfMesh or Voxel type (B4.6 deepen pass).
+bool is_mesh_shape_contact_pair(
+
+/// Returns true when either plane shape has a zero-length normal (B4.6 deepen pass).
+bool is_degenerate_plane_normal_pair(
 
 /// Const preflight for narrowphase batch dispatch (B4.5 deepen follow-up pass).
 struct NarrowphaseBatchPreflight {
@@ -1753,21 +1760,20 @@ bool should_run_narrowphase_pair_dispatch(
 
 /// Shape dispatch guarded by deepen preflight; invalid manifold when rejected (B4.6 deepen pass).
 ContactManifold detect_contacts_pair_with_deepen_preflight(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Run shape dispatch for one pair after extended deepen preflight (B4.6 deepen follow-up pass).
 ContactManifold detect_contacts_pair_deepen(
-    const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Returns true when `preflight_narrowphase_batch` reports the expected dispatchable count (B4.6 deepen follow-up pass).
 bool narrowphase_batch_has_dispatchable_count(
     const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     u32 expectedCount);
+/// Count pairs whose deepen reject reason matches `expected` (B4.6 deepen pass).
+u32 count_contact_pairs_rejected_for_reason(
+    ContactPairRejectReason expected);
+
+/// Returns true when every pair in the batch matches `expected` deepen reject reason (B4.6 deepen pass).
+bool narrowphase_batch_all_reject_for_reason(
 
 } // namespace fuse::physics::narrowphase

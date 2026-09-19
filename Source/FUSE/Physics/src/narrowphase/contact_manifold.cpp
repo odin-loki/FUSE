@@ -457,6 +457,8 @@ ManifoldPruneRejectReason manifold_prune_reject_reason(
     if (!manifold.hasValidNormal()) {
         return ManifoldPruneRejectReason::InvalidNormal;
         return ManifoldPruneRejectReason::NonUnitNormal;
+    if (manifold.pointCount > kMaxContactPointsPerManifold) {
+        return ManifoldPruneRejectReason::ExceedsMaxPoints;
     }
     if (manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon)) {
         return ManifoldPruneRejectReason::WouldBeEmptyAfterPrune;
@@ -618,6 +620,22 @@ bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEps
     const f32 normalLength = manifold.contactNormal.length();
     manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
     return true;
+}
+
+bool is_contact_manifold_finalized(
+    const ContactManifold& manifold,
+    f32 lengthEpsilon,
+    f32 frictionEpsilon) {
+    if (!manifold.valid || manifold.empty()) {
+        return false;
+    }
+    if (!manifold.hasValidNormal() || manifold.hasNonUnitNormal(lengthEpsilon)) {
+        return false;
+    }
+    if (!manifold.hasPenetratingPoints()) {
+        return false;
+    }
+    return can_skip_friction_basis_rebuild(manifold, frictionEpsilon);
 }
 
 const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason) {
@@ -930,6 +948,8 @@ bool prune_contact_manifold_if_needed(
         return "MissingFrictionBasis";
     case ManifoldFinalizeRejectReason::NeedsNormalNormalize:
         return "NeedsNormalNormalize";
+    case ManifoldFinalizeRejectReason::AlreadyFinalized:
+        return "AlreadyFinalized";
     }
     return "Unknown";
 }
@@ -1021,6 +1041,9 @@ bool manifold_finalize_rejects_for_reason(
     ManifoldFinalizeRejectReason expected,
     f32 separationEpsilon,
     f32 duplicateEpsilon) {
+    if (expected == ManifoldFinalizeRejectReason::AlreadyFinalized) {
+        return is_contact_manifold_finalized(manifold, 1e-4f, 1e-4f);
+    }
     return manifold_finalize_reject_reason(manifold, separationEpsilon, duplicateEpsilon) == expected;
 }
 
@@ -2550,6 +2573,9 @@ bool normalize_contact_normal(ContactManifold& manifold, f32 lengthEpsilon) {
 bool can_skip_normalize_contact_normal(const ContactManifold& manifold, f32 lengthEpsilon) {
 
 
+
+
+    if (is_contact_manifold_finalized(manifold, frictionEpsilon, frictionEpsilon)) {
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {
     static const ContactPoint empty{};

@@ -468,6 +468,7 @@ enum class ManifoldFinalizeRejectReason : u8 {
     AllSeparatedAfterPrune,
     MissingFrictionBasis,
     NeedsNormalNormalize,
+    AlreadyFinalized,
 };
 
 /// Human-readable label for manifold finalize reject reasons (B4.5 deepen follow-up pass).
@@ -1454,6 +1455,14 @@ bool can_skip_normalize_contact_normal(
 /// Finalize only when preflight allows; no-op when finalize should be skipped (B4.6 deepen pass).
 
 /// Generate manifold only when preflight allows; no-op otherwise (B4.6 deepen follow-up pass).
+/// Normalize the contact normal when non-unit; returns true when normalization applied (B4.6 deepen pass).
+
+/// Prune only when preflight reports work; no-op when prune can be skipped (B4.6 deepen pass).
+
+/// Finalize only when not already valid with friction basis; no-op otherwise (B4.6 deepen pass).
+
+/// Returns true when manifold is valid with unit normal and orthonormal friction basis (B4.6 deepen pass).
+bool is_contact_manifold_finalized(
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

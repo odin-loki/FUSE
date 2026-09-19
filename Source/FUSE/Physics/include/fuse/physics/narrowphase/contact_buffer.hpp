@@ -384,6 +384,11 @@ struct ContactBufferSoA {
     /// True when compact+clamp would leave the buffer unchanged (B4.6 deepen follow-up pass).
     bool canSkipCompactAndClamp() const;
     /// Count valid flags in prepared slot storage before compaction (B4.6 deepen follow-up pass).
+    /// Returns true when the pair slot holds a valid contact (B4.6 deepen pass).
+    bool hasValidPairSlot(u32 slot) const;
+
+    /// Returns true when compact would be a no-op (B4.6 deepen pass).
+    bool canSkipBufferCompact() const;
 
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }

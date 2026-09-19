@@ -846,5 +846,12 @@ bool can_skip_compute_friction_tangents(
 void normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
 
 /// Compute friction tangents only when preflight allows; returns false when skipped (B4.6 deepen follow-up pass).
+/// Diagnose stale cached basis without blocking rebuild (B4.6 deepen pass).
+FrictionBasisRejectReason friction_basis_stale_reject_reason(
+
+/// Build friction tangents via preflight-guarded rebuild (B4.6 deepen pass).
+
+/// Clear friction basis only when stale; returns true when invalidated (B4.6 deepen pass).
+bool invalidate_friction_basis_if_stale(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
