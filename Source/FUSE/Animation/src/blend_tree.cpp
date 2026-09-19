@@ -29,6 +29,8 @@ void output_bind_pose_soa(const Skeleton& skel, PoseSoA& out) {
     out = PoseSoA::from_bind_pose(skel);
 
 void output_bind_pose(const Skeleton& skel, Pose& out) {
+
+
     out = Pose::make_bind_pose(skel);
 }
 
@@ -730,6 +732,14 @@ bool AnimStateMachine::can_transition(const char* from, const char* to) const {
     return transition_condition_passes(static_cast<u32>(fromIndex), static_cast<u32>(toIndex));
 }
 
+s32 AnimStateMachine::find_named_transition_index(const char* from, const char* to) const {
+    const s32 fromIndex = find_state_index(from);
+    const s32 toIndex = find_state_index(to);
+    if (fromIndex < 0 || toIndex < 0) {
+        return -1;
+    }
+    return find_transition_index(static_cast<u32>(fromIndex), static_cast<u32>(toIndex));
+
 bool AnimStateMachine::is_valid_transition(u32 from_state, u32 to_state) const {
     if (!is_valid_state(from_state) || !is_valid_state(to_state) || from_state == to_state) {
         return false;
@@ -739,6 +749,10 @@ bool AnimStateMachine::is_valid_transition(u32 from_state, u32 to_state) const {
 
 bool AnimStateMachine::is_transition_index_valid(u32 transition_index) const {
     return transition_index < transitions.size();
+
+
+bool AnimStateMachine::can_take_transition(u32 from_state, u32 to_state) const {
+    return is_valid_transition(from_state, to_state) && transition_condition_passes(from_state, to_state);
 }
 
 f32 AnimStateMachine::remaining_crossfade_time() const {
@@ -1110,7 +1124,7 @@ void AnimStateMachine::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
             is_transitioning = false;
             blend_time = 0.f;
             blend_from_pose = out;
-            if (active_state < states.size() && states[active_state].on_enter) {
+            if (states[active_state].on_enter) {
                 states[active_state].on_enter();
             }
         }

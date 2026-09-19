@@ -247,7 +247,10 @@ bool pose_soa_has_valid_layout(const PoseSoA& pose, const Skeleton& skel) {
 }
 
 bool pose_soa_has_valid_layout(const PoseSoA& pose, const Skeleton& skel) {
-    return skel.bone_count > 0 && pose.bone_count == skel.bone_count;
+    if (skel.bone_count == 0 || skel.bones.empty()) {
+        return pose.bone_count == 0;
+
+    return pose.bone_count == skel.bone_count && pose_soa_columns_valid(pose);
 }
 
 void ensure_pose_soa_bind_fallback(PoseSoA& pose, const Skeleton& skel) {
@@ -257,6 +260,11 @@ void ensure_pose_soa_bind_fallback(PoseSoA& pose, const Skeleton& skel) {
 }
 
 void reset_pose_soa_to_bind(PoseSoA& pose, const Skeleton& skel) {
+    if (skel.bones.empty()) {
+        pose.clear();
+        return;
+    }
+
     pose = PoseSoA::from_bind_pose(skel);
 }
 
