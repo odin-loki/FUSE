@@ -4165,3 +4165,28 @@ void testFroxelDeepenGuardPredicates() {
                "classifyFroxelSampleReject invalid_weights for clampable weights");
                "classifyFroxelSampleReject out_of_bounds for hard OOB tile coord");
                "preflightFroxelSample rejects hard OOB tile coord");
+
+// --- deepen additive from deepen-froxel-volumetric-guards-e872 ---
+void testFroxelGuardClassifyPreflightAndIsBlocking() {
+    expectTrue(fuse::renderer::preflightScreenMappingReady(0.5f, 0.5f, 10.f, desc, camera, &mapReason),
+               "preflightScreenMappingReady reports none reject reason on success");
+    expectTrue(fuse::renderer::classifySampleCoordReject(hardOob, desc) ==
+    expectTrue(fuse::renderer::preflightSampleCoordsReady(inBounds, desc, &sampleReason),
+               "preflightSampleCoordsReady reports none reject reason on success");
+    expectTrue(!fuse::renderer::preflightSampleCoordsReady(hardOob, desc, &sampleReason),
+    expectTrue(fuse::renderer::classifyDensityLookupRejectAtCoord(grid, desc, 1u, 1u, 2u) ==
+    expectTrue(fuse::renderer::preflightDensityLookupReady(grid, desc, 0u, &lookupReason),
+               "preflightDensityLookupReady reports none reject reason on success");
+               "preflightDensityLookupReady still succeeds for clampable OOB index");
+               "preflightDensityLookupReady reports index_out_of_range warning for OOB index");
+    expectTrue(fuse::renderer::preflightDensityLookupAtCoordReady(grid, desc, 1u, 1u, 2u, &lookupReason),
+    expectTrue(fuse::renderer::preflightTrilinearSampleReady(grid, desc, inBounds, &trilinearReason),
+               "preflightTrilinearSampleReady reports none reject reason on success");
+    expectTrue(fuse::renderer::preflightTrilinearSampleReady(grid, desc, warnWeights, &trilinearReason),
+               "preflightTrilinearSampleReady reports clampable_weights warning");
+    expectTrue(!fuse::renderer::preflightTrilinearSampleReady(grid, desc, hardOob, &trilinearReason),
+    expectTrue(fuse::renderer::preflightGridDensityReady(grid, desc, &densityReason),
+               "preflightGridDensityReady reports none reject reason on success");
+    expectTrue(fuse::renderer::preflightFroxelPopulateReady(desc, camera, params, &populateReason),
+               "preflightFroxelPopulateReady reports none reject reason on success");
+    testFroxelGuardClassifyPreflightAndIsBlocking();
