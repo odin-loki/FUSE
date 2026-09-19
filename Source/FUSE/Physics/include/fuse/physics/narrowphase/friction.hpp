@@ -1045,5 +1045,12 @@ inline bool wouldSkipFrictionBasisRebuild(
     if (wouldSkipFrictionBasisRebuild(manifold, nullptr, epsilon)) {
 
 inline bool tryComputeFrictionTangents(ContactManifold& manifold, f32 epsilon = 1e-4f) {
+/// Alias for `should_skip_friction_basis_preflight` (B4.6 deepen pass).
+
+/// Rebuild friction tangents only when preflight allows; returns false when skipped (B4.6 deepen pass).
+
+/// Build friction tangents only when basis refresh is needed; no-op when skipped (B4.6 deepen pass).
+inline void tryComputeFrictionTangents(ContactManifold& manifold, f32 epsilon = 1e-4f) {
+    if (!wouldSkipFrictionBasisRebuild(manifold, epsilon)) {
 
 } // namespace fuse::physics::narrowphase

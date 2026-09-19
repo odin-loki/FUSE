@@ -1741,6 +1741,11 @@ inline bool tryPruneContactManifold(
 /// Finalize only when preflight allows; returns false when skipped (B4.6 deepen pass).
 inline bool tryFinalizeContactManifold(
     if (wouldSkipManifoldFinalize(manifold, nullptr, separationEpsilon, duplicateEpsilon, frictionEpsilon)) {
+/// Alias for `should_skip_manifold_prune` (B4.6 deepen pass).
+
+/// Alias for `can_skip_manifold_finalize` (B4.6 deepen pass).
+
+
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

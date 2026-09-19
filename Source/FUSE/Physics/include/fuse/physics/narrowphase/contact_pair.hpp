@@ -2026,6 +2026,7 @@ FUSE_PHYSICS_INLINE bool can_skip_detect_contacts_pair(
 /// Non-mutating pair-dispatch skip predicate — mirrors `should_skip_contact_pair_dispatch` (B4.5 deepen follow-up pass).
 inline bool wouldSkipContactPairDispatch(
 inline bool would_skip_contact_pair_dispatch(
+/// Alias for `should_skip_contact_pair_dispatch` (B4.6 deepen pass).
     const CollisionShapeSoA& shapes) {
     return should_skip_contact_pair_dispatch(pair, bodies, shapes);
 }
@@ -2232,6 +2233,18 @@ inline bool tryDetectContactsPairDeepen(
 
 /// Finalize manifold only when `can_finalize_contact_manifold` passes; no-op otherwise (B4.6 deepen pass).
 inline bool tryGenerateContactManifoldIfNeeded(ContactManifold& manifold) {
+/// Alias for `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+}
+
+/// Alias for `can_skip_narrowphase` (B4.6 deepen pass).
+inline bool wouldSkipNarrowphaseBatch(
+
+/// Detect contacts only when pair preflight allows; returns invalid manifold when skipped (B4.6 deepen pass).
+
+/// Finalize manifold only when `can_finalize_contact_manifold` passes; returns false when skipped (B4.6 deepen pass).
     return generate_contact_manifold_if_needed(manifold);
 }
 
