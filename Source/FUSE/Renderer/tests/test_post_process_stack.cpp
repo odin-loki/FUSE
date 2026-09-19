@@ -1026,3 +1026,6 @@ int main() {
 
 // --- deepen additive from deepen-b510-tonemap-exposure-guards-1c90 ---
 void testMeterUtilEmptyGuards() {
+
+// --- deepen additive from deepen-b510-tonemap-exposure-guards-269c ---
+void testHistogramAccumulateInvalidParamsGuard() {
