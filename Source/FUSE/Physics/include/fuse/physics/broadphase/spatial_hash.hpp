@@ -167,6 +167,20 @@ FUSE_PHYSICS_INLINE BroadphasePreflight preflightBroadphase(
     return preflight;
 }
 
+/// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflightBroadphase(bodies, shapes).canRun();
+}
+
+/// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
+}
+
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
 FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
     return cellSize > 0.f ? cellSize : 1.f;
@@ -335,6 +349,7 @@ struct CellOccupancyPreflight {
     bool emptyRange = false;
     bool exceedsBudget = false;
     u32 occupancyCount = 0;
+    u32 budgetRemaining = 0;
 
     bool canIterate() const { return reason == CellOccupancyRejectReason::None; }
 };
@@ -345,6 +360,7 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRang
     preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
     preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
     return preflight;
 }
 
@@ -354,6 +370,7 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRang
     preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
     preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
+    preflight.budgetRemaining = occupancyBudgetRemaining(range, maxCells);
     return preflight;
 }
 
@@ -577,6 +594,7 @@ struct RefineBroadphasePreflight {
     bool emptyBuffer = false;
     bool emptyInput = false;
     bool noValidPairs = false;
+    u32 validPairCount = 0;
 
     bool canRefine() const { return reason == RefineBroadphaseRejectReason::None; }
 };
@@ -657,6 +675,8 @@ struct BroadphaseMergePreflight {
     BroadphaseMergeRejectReason reason = BroadphaseMergeRejectReason::None;
     bool emptyPlaneBodies = false;
     bool emptyDynamicBodies = false;
+    u32 planeBodyCount = 0;
+    u32 dynamicBodyCount = 0;
 
     bool canMerge() const { return reason == BroadphaseMergeRejectReason::None; }
 };
