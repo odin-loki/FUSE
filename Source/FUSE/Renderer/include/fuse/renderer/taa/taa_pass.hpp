@@ -86,6 +86,9 @@ public:
     /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// Sync jitter with mandatory reject-reason output when preflight rejects (B5.9 deepen).
+    /// Classify why jitter sync to a frame counter would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
+    /// Sync jitter only when preflight passes; fills reject reason on failure (B5.9 deepen).
     bool trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason);
     /// True when pass jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
     bool jitterAlignedToFrameIndex(u32 frameIndex) const;
@@ -293,7 +296,6 @@ public:
     bool preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason = nullptr) const;
     bool tryPreflightHistoryWarmup(TaaHistoryWarmupBlockReason& reason) const;
     /// True when pass history warm-up preflight passes (B5.9 deepen).
-    bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
     /// Compute expected resolve blend weights with reject-reason diagnostics (B5.9 deepen).
     /// Classify why pass resolve blend weights would be rejected (B5.9 deepen).
     /// True when pass history buffers are allocated and ready for resolve (B5.9 deepen).
@@ -960,6 +962,8 @@ public:
     /// Pass resolve preflight with mandatory skip-reason output (B5.9 deepen).
     /// True when resolve preflight passes without mutating history (B5.9 deepen).
     /// Classify why pass resolve would skip (B5.9 deepen).
+    /// Classify why resolve would skip — same ordering as `wouldSkipResolve` (B5.9 deepen).
+    TaaResolveSkipReason classifyResolveSkip(const TaaResolveDesc& desc) const;
     /// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
     bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
     /// Stamp `observed_history_generation` from pass history when still at the no-guard sentinel.
