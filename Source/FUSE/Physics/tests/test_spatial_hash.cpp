@@ -3704,3 +3704,6 @@ void testCellShapeInsertRejectReasonGuards() {
         fuse::physics::broadphase::preflightCellCapacityInsert(0u, 2u, planeRange, 4u);
     expectTrue(!planePreflight.canInsert(), "2D cell-capacity insert preflight rejects over budget");
     expectTrue(planePreflight.exceedsBudget, "2D cell-capacity insert preflight marks exceedsBudget");
+
+// --- deepen additive from deepen-b4-broadphase-guards-06ce ---
+                 fuse::physics::broadphase::CellCapacityInsertRejectReason::ExceedsOccupancyBudget),

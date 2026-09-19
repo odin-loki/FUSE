@@ -1460,3 +1460,8 @@ CellShapeInsertPreflight preflightShapeCellInsert(
 
 // --- deepen additive from deepen-b4-broadphase-guards-0d2e ---
     return preflightCellPairGeneration(occupants).pairSlotCount;
+
+// --- deepen additive from deepen-b4-broadphase-guards-06ce ---
+    case CellCapacityInsertRejectReason::ExceedsOccupancyBudget:
+        return CellCapacityInsertRejectReason::ExceedsOccupancyBudget;
+        preflight.reason == CellCapacityInsertRejectReason::ExceedsOccupancyBudget;
