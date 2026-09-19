@@ -443,6 +443,45 @@ TaaResolveBlendPreflight preflightTaaResolveBlendForDesc(const TaaResolveDesc& d
     return preflight;
 }
 
+bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history) {
+    return history.needsWarmup();
+}
+
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return history.isReady() && history.hasValidHistory();
+}
+
+TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlock(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    if (!history.isReady()) {
+        return TaaHistoryReuseBlockReason::NotReady;
+    }
+    if (history.needsWarmup()) {
+        return TaaHistoryReuseBlockReason::NeedsWarmup;
+    }
+    if (history.isHistoryStale(observedGeneration)) {
+        return TaaHistoryReuseBlockReason::StaleGeneration;
+    }
+    return TaaHistoryReuseBlockReason::None;
+}
+
+bool taaHistoryReuseBlocked(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return classifyTaaHistoryReuseBlock(history, observedGeneration) != TaaHistoryReuseBlockReason::None;
+}
+
+const char* taaHistoryReuseBlockReasonLabel(TaaHistoryReuseBlockReason reason) {
+    switch (reason) {
+    case TaaHistoryReuseBlockReason::None:
+        return "none";
+    case TaaHistoryReuseBlockReason::NotReady:
+        return "not_ready";
+    case TaaHistoryReuseBlockReason::NeedsWarmup:
+        return "needs_warmup";
+    case TaaHistoryReuseBlockReason::StaleGeneration:
+        return "stale_generation";
+    }
+    return "unknown";
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
     if (taaResolveBypassesHistoryGenerationGuard(desc)) {
@@ -451,6 +490,44 @@ bool taaParamsRequireClamping(const TAAParams& raw) {
     const TAAParams clamped = clampTaaParams(raw);
     return raw.blend_factor != clamped.blend_factor || raw.velocity_rejection != clamped.velocity_rejection ||
            raw.depth_rejection != clamped.depth_rejection || raw.clamp_gamma != clamped.clamp_gamma;
+}
+
+TaaResolveBlendPreflight preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    TaaResolveBlendPreflight preflight{};
+    if (!history.isReady()) {
+        return preflight;
+    }
+
+    const bool firstFrame = !history.hasValidHistory();
+    preflight.first_frame = firstFrame;
+    preflight.history_reuse = taaResolveCanReuseHistory(desc, history);
+    preflight.weights = computeTaaBlendWeights(firstFrame, desc.params);
+    preflight.valid = taaBlendWeightsValid(preflight.weights);
+    return preflight;
+}
+
+bool taaResolveBlendPreflightValid(const TaaResolveBlendPreflight& preflight) {
+    return preflight.valid;
+}
+
+bool taaResolveWouldBlendHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    const TaaResolveBlendPreflight preflight = preflightTaaResolveBlend(desc, history);
+    return preflight.valid && !preflight.first_frame && preflight.history_reuse &&
+           preflight.weights.history > 0.f;
+}
+
+bool taaResolveBlendConsistentWithHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    const TaaResolveBlendPreflight preflight = preflightTaaResolveBlend(desc, history);
+    if (!preflight.valid) {
+        return false;
+    }
+    if (preflight.first_frame != !history.hasValidHistory()) {
+        return false;
+    }
+    if (preflight.first_frame) {
+        return preflight.weights.current >= 1.f - 1e-5f && preflight.weights.history <= 1e-5f;
+    }
+    return taaHistoryBlendAllowed(false, history) == preflight.history_reuse;
 }
 
 bool taaResolveRequiresVelocity(const TAAParams& params) {
