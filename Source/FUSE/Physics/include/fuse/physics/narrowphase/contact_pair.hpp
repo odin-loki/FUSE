@@ -1980,6 +1980,16 @@ struct ContactPairDetectPreflight {
 
 /// Populate detect preflight without running shape dispatch (B4.6 deepen pass).
 ContactPairDetectPreflight preflight_detect_contacts_pair(
+/// Count pairs rejected by extended deepen preflight (B4.6 deepen follow-up pass).
+u32 count_rejected_contact_pairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when narrowphase batch dispatch should run (B4.6 deepen follow-up pass).
+bool should_run_narrowphase_batch(
+
+/// Run shape dispatch only when extended deepen preflight allows (B4.6 deepen follow-up pass).
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);

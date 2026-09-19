@@ -1589,4 +1589,8 @@ bool can_skip_rebuild_friction_basis_with_preflight(const ContactManifold& manif
 bool should_run_rebuild_friction_basis_with_preflight(const ContactManifold& manifold, f32 epsilon) {
     return !can_skip_rebuild_friction_basis_with_preflight(manifold, epsilon);
 
+bool should_run_compute_friction_tangents(const ContactManifold& manifold, f32 epsilon) {
+    return !can_skip_compute_friction_tangents(manifold, epsilon);
+
+
 } // namespace fuse::physics::narrowphase

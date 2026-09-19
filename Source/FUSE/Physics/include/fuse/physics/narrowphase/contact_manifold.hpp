@@ -466,6 +466,7 @@ bool can_skip_manifold_prune(
     f32 shallowMinDepth = 0.f);
 
 /// Non-mutating prune predicate — inverse of `can_skip_manifold_prune` (B4.6 deepen follow-up pass).
+/// Returns true when manifold prune should run (B4.6 deepen follow-up pass).
 bool should_run_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
@@ -804,6 +805,13 @@ bool should_run_manifold_finalize(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
+
+/// Returns true when manifold finalize should run (B4.6 deepen follow-up pass).
+bool should_run_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
 
 /// Prune only when preflight reports in-place pruning is possible; returns true when points remain (B4.5 deepen follow-up pass).
 bool prune_contact_manifold_with_preflight(

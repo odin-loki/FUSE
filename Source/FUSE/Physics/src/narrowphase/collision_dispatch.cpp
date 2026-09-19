@@ -329,6 +329,7 @@ std::vector<ContactManifold> runNarrowphase(
 }
 
 NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
+NarrowphaseDispatchPreflight preflight_run_narrowphase_into_buffer(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
@@ -429,14 +430,23 @@ NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
     return !preflight_narrowphase_pair_slot(pair, bodies, shapes, pairs, pairIndex).can_dispatch();
 bool can_skip_narrowphase_second(
     return !has_dispatchable_contact_pair_second(pairs, bodies, shapes);
-        }
 
 
 bool can_skip_narrowphase_into_buffer(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return narrowphase_batch_rejects_all(pairs, bodies, shapes);
+    preflight.canSkipBufferPass = buffer.canSkipSoAIteration() && preflight.batch.can_skip();
+
+bool can_skip_run_narrowphase_into_buffer(
+    const CollisionShapeSoA& shapes,
+    const ContactBufferSoA& buffer) {
+    return preflight_run_narrowphase_into_buffer(pairs, bodies, shapes, buffer).can_skip();
+
+void run_narrowphase_into_buffer_with_preflight(
+    if (can_skip_run_narrowphase_into_buffer(pairs, bodies, shapes, buffer)) {
+        buffer.clear();
+    runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
 }
 
 } // namespace fuse::physics::narrowphase
