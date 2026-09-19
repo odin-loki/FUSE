@@ -463,3 +463,13 @@ ContactIslandGraph::BuildPreflight ContactIslandGraph::preflightBuild(
         preflight.reason = BuildRejectReason::OutOfRangeContactBodies;
         preflight.reason = BuildRejectReason::OutOfRangeDistanceBodies;
     return !preflightBuild(bodyCount, contacts, distanceConstraints).can_build();
+
+// --- deepen additive from deepen-pbd-island-pipeline-guards-9e7f ---
+    case IslandBuildRejectReason::EmptyInputs:
+    case IslandBuildRejectReason::OutOfRangeContact:
+    case IslandBuildRejectReason::OutOfRangeDistance:
+            return IslandBuildRejectReason::OutOfRangeContact;
+            return IslandBuildRejectReason::OutOfRangeDistance;
+        return IslandBuildRejectReason::EmptyInputs;
+ContactIslandGraphBuildPreflight preflight_contact_island_graph_build(
+    preflight.skipped = preflight.reason == IslandBuildRejectReason::EmptyInputs;

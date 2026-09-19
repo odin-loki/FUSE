@@ -1714,3 +1714,23 @@ IslandPipelineSolvePreflight preflight_pipeline_solve_island_by_index(
 bool should_skip_pipeline_solve_island(const ContactIslandGraph::Island& island,
 IslandPipelineDispatchPreflight preflight_pipeline_dispatch(
 bool should_skip_pipeline_dispatch(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-pipeline-guards-9e7f ---
+enum class IslandSolveRejectReason : u8 {
+const char* island_solve_reject_reason_name(IslandSolveRejectReason reason);
+IslandSolveRejectReason island_solve_reject_reason(
+    IslandSolveRejectReason expected);
+struct IslandExtendedSolvePreflight {
+    IslandSolveRejectReason reason = IslandSolveRejectReason::None;
+    bool can_solve() const { return !skipped && reason == IslandSolveRejectReason::None; }
+IslandExtendedSolvePreflight preflight_island_extended_solve(
+bool should_skip_island_extended_solve(
+enum class IslandPipelineRejectReason : u8 {
+const char* island_pipeline_reject_reason_name(IslandPipelineRejectReason reason);
+IslandPipelineRejectReason island_pipeline_reject_reason(const ContactIslandGraph& graph,
+                                        IslandPipelineRejectReason expected);
+struct IslandPipelinePreflight {
+    IslandPipelineRejectReason reason = IslandPipelineRejectReason::None;
+    bool can_dispatch() const { return !skipped && reason == IslandPipelineRejectReason::None; }
+IslandPipelinePreflight preflight_island_pipeline_dispatch(const ContactIslandGraph& graph,
+bool should_skip_island_pipeline_dispatch(const ContactIslandGraph& graph,

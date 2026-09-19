@@ -196,3 +196,6 @@ IslandGraphBuildRejectReason island_graph_build_reject_reason(
     struct BuildPreflight {
         BuildRejectReason reason = BuildRejectReason::None;
     static BuildPreflight preflightBuild(
+
+// --- deepen additive from deepen-pbd-island-pipeline-guards-9e7f ---
+ContactIslandGraphBuildPreflight preflight_contact_island_graph_build(

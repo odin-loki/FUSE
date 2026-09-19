@@ -2824,3 +2824,43 @@ bool should_skip_pipeline_dispatch(const ContactIslandGraph& graph,
         const IslandPipelineSolvePreflight preflight = preflight_pipeline_solve_island(
     const IslandPipelineSolvePreflight preflight =
     const IslandPipelineDispatchPreflight preflight = preflight_pipeline_dispatch(
+
+// --- deepen additive from deepen-pbd-island-pipeline-guards-9e7f ---
+    const IslandExtendedSolvePreflight preflight =
+const char* island_solve_reject_reason_name(IslandSolveRejectReason reason) {
+    case IslandSolveRejectReason::None:
+    case IslandSolveRejectReason::EmptyIsland:
+    case IslandSolveRejectReason::InvalidDt:
+    case IslandSolveRejectReason::StaleConstraintRefs:
+    case IslandSolveRejectReason::NoMovableBodies:
+    case IslandSolveRejectReason::AllSleeping:
+IslandSolveRejectReason island_solve_reject_reason(
+        return IslandSolveRejectReason::EmptyIsland;
+        return IslandSolveRejectReason::InvalidDt;
+        return IslandSolveRejectReason::AllSleeping;
+        return IslandSolveRejectReason::StaleConstraintRefs;
+        return IslandSolveRejectReason::NoMovableBodies;
+    return IslandSolveRejectReason::None;
+    IslandSolveRejectReason expected) {
+IslandExtendedSolvePreflight preflight_island_extended_solve(
+    IslandExtendedSolvePreflight preflight{};
+    preflight.skipped = preflight.reason != IslandSolveRejectReason::None;
+bool should_skip_island_extended_solve(
+const char* island_pipeline_reject_reason_name(IslandPipelineRejectReason reason) {
+    case IslandPipelineRejectReason::None:
+    case IslandPipelineRejectReason::InvalidDt:
+    case IslandPipelineRejectReason::NoDispatchableIslands:
+    case IslandPipelineRejectReason::AllIslandsSleeping:
+IslandPipelineRejectReason island_pipeline_reject_reason(const ContactIslandGraph& graph,
+        return IslandPipelineRejectReason::InvalidDt;
+        return IslandPipelineRejectReason::NoDispatchableIslands;
+    if (should_skip_island_sleep_solve_graph(graph, bodies)) {
+        return IslandPipelineRejectReason::AllIslandsSleeping;
+    return IslandPipelineRejectReason::None;
+                                        IslandPipelineRejectReason expected) {
+IslandPipelinePreflight preflight_island_pipeline_dispatch(const ContactIslandGraph& graph,
+    IslandPipelinePreflight preflight{};
+    preflight.skipped = preflight.reason != IslandPipelineRejectReason::None;
+bool should_skip_island_pipeline_dispatch(const ContactIslandGraph& graph,
+    if (should_skip_island_extended_solve(island, bodies, contacts, distanceConstraints, dt)) {
+    const IslandPipelinePreflight preflight = preflight_island_pipeline_dispatch(graph, bodies, dt);

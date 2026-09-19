@@ -5018,3 +5018,31 @@ void testPreflightPipelineDispatchGuards() {
                "should_skip pipeline dispatch on invalid dt");
 void testDispatchPipelineSolveIslandGuards() {
     testPreflightPipelineDispatchGuards();
+
+// --- deepen additive from deepen-pbd-island-pipeline-guards-9e7f ---
+void testContactIslandGraphBuildRejectReasons() {
+                   IslandBuildRejectReason::OutOfRangeContact,
+    expectTrue(island_build_reject_reason(0, {}, {}) == IslandBuildRejectReason::EmptyInputs,
+    expectTrue(std::strcmp(island_build_reject_reason_name(IslandBuildRejectReason::OutOfRangeContact),
+void testIslandExtendedSolvePreflightGuards() {
+    const IslandExtendedSolvePreflight mixedPreflight = preflight_island_extended_solve(
+    expectTrue(mixedPreflight.can_solve(), "extended solve preflight allows mixed island");
+    expectTrue(mixedPreflight.reason == IslandSolveRejectReason::None,
+    const IslandExtendedSolvePreflight sleepingPreflight = preflight_island_extended_solve(
+    expectTrue(!sleepingPreflight.can_solve(), "extended solve preflight rejects all-sleeping island");
+    expectTrue(sleepingPreflight.reason == IslandSolveRejectReason::AllSleeping,
+    expectTrue(should_skip_island_extended_solve(
+               "should_skip extended solve on all-sleeping island");
+                                               IslandSolveRejectReason::AllSleeping),
+void testIslandPipelineDispatchGuards() {
+    const IslandPipelinePreflight preflight = preflight_island_pipeline_dispatch(graph, bodies, dt);
+    expectTrue(preflight.reason == IslandPipelineRejectReason::None, "pipeline preflight has no reject reason");
+    expectTrue(!should_skip_island_pipeline_dispatch(graph, bodies, dt),
+                   IslandPipelineRejectReason::InvalidDt,
+    expectTrue(island_pipeline_rejects_for_reason(graph, bodies, 0.f, IslandPipelineRejectReason::InvalidDt),
+    expectTrue(std::strcmp(island_pipeline_reject_reason_name(IslandPipelineRejectReason::AllIslandsSleeping),
+                   IslandPipelineRejectReason::AllIslandsSleeping,
+    expectTrue(should_skip_island_pipeline_dispatch(graph, bodies, dt),
+               "should_skip pipeline dispatch when all islands sleeping");
+    testContactIslandGraphBuildRejectReasons();
+    testIslandExtendedSolvePreflightGuards();
