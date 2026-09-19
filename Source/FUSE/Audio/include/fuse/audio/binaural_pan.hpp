@@ -1366,3 +1366,6 @@ HrtfPanPathConvolveRejectReason classify_hrtf_pan_path_convolve_reject(
     bool is_bypass() const { return panPath.should_skip(); }
 bool try_preflight_hrtf_binaural_convolve(bool hrtf_enabled, const HrtfIrStub& ir,
 HrtfBinauralRejectReason classify_hrtf_binaural_convolve_reject(const HrtfBinauralPreflight& preflight);
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-701c ---
+bool hrtf_binaural_preflight_rejects_for_reason(const HrtfBinauralPreflight& preflight,

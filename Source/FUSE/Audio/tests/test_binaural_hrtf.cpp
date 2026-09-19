@@ -2637,3 +2637,8 @@ void testHrtfBinauralCompositeRejectReasonWrappers() {
         fuse::audio::HrtfPanPathConvolveRejectReason::None;
     expectTrue(convolve_reason == fuse::audio::HrtfPanPathConvolveRejectReason::EmptyIr,
     expectTrue(stub_preflight.convolveReason == fuse::audio::HrtfBinauralRejectReason::EmptyIr,
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-701c ---
+    expectTrue(!stub_preflight.should_skip(), "ILD/ITD stub preflight is not skipped");
+    expectTrue(unity_preflight.should_skip(), "unity preflight skips coupling");
+    expectTrue(bypass_preflight.should_skip(), "HrtfDisabled composite preflight should_skip");

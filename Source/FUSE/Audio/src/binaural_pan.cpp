@@ -2239,3 +2239,6 @@ HrtfBinauralRejectReason classify_hrtf_binaural_convolve_reject(
     const HrtfBinauralRejectReason convolve_reason = classify_hrtf_binaural_convolve_reject(preflight);
     if (convolve_reason != HrtfBinauralRejectReason::None) {
 bool try_preflight_hrtf_binaural_convolve(bool hrtf_enabled, const HrtfIrStub& ir,
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-701c ---
+bool hrtf_binaural_preflight_rejects_for_reason(const HrtfBinauralPreflight& preflight,
