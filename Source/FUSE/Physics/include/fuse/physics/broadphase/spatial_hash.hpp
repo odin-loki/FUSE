@@ -117,6 +117,20 @@ FUSE_PHYSICS_INLINE bool canSkipBroadphase(
     return canSkipBroadphasePairGeneration(bodies, shapes);
 }
 
+/// Non-mutating broadphase predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !canSkipBroadphasePairGeneration(bodies, shapes);
+}
+
+/// Non-mutating broadphase predicate — mirrors `preflightBroadphase` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return shouldRunBroadphasePairGeneration(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,
@@ -670,6 +684,38 @@ bool canSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA&
 
 /// Non-mutating merge predicate — mirrors `preflightBroadphaseMerge` (B4.2 deepen pass).
 bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
+
+/// Why per-cell pair slot generation would early-out (B4.2 deepen pass).
+enum class BroadphaseCellPairRejectReason : u8 {
+    None = 0,
+    ZeroSlots,
+};
+
+/// Human-readable label for cell-pair reject reasons (logging / tests).
+const char* broadphaseCellPairRejectReasonName(BroadphaseCellPairRejectReason reason);
+
+/// Diagnose why cell-pair slot generation would skip; vacuously succeeds when slots exist.
+BroadphaseCellPairRejectReason broadphaseCellPairRejectReason(u32 totalCellSlots);
+
+/// Returns true when `broadphaseCellPairRejectReason` matches `expected` (B4.2 deepen pass).
+bool broadphaseCellPairRejectsForReason(u32 totalCellSlots, BroadphaseCellPairRejectReason expected);
+
+/// Read-only cell-pair slot diagnostics — no mutation (B4.2 deepen pass).
+struct BroadphaseCellPairPreflight {
+    BroadphaseCellPairRejectReason reason = BroadphaseCellPairRejectReason::None;
+    bool zeroSlots = false;
+    u32 totalCellSlots = 0;
+
+    bool canGenerate() const { return reason == BroadphaseCellPairRejectReason::None; }
+};
+
+BroadphaseCellPairPreflight preflightBroadphaseCellPairs(u32 totalCellSlots);
+
+/// Non-mutating cell-pair skip predicate — inverse of `shouldRunBroadphaseCellPairGeneration`.
+bool canSkipBroadphaseCellPairGeneration(u32 totalCellSlots);
+
+/// Non-mutating cell-pair predicate — mirrors `preflightBroadphaseCellPairs` (B4.2 deepen pass).
+bool shouldRunBroadphaseCellPairGeneration(u32 totalCellSlots);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(
