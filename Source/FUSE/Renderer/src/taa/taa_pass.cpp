@@ -532,3 +532,9 @@ bool TaaPass::wouldSkipResolveBlend(const TaaResolveDesc& desc) const {
 
 // --- deepen additive from deepen-b59-taa-guards-6ba7 ---
 bool TaaPass::preflightHistoryWarmup(TaaHistoryReuseBlockReason* reason) const {
+
+// --- deepen additive from deepen-b59-taa-guards-e107 ---
+bool TaaPass::tryCurrentJitterNdcIfReady(fuse::math::Vec2& out, TaaJitterGuardRejectReason& reason) const {
+    return m_jitter.tryCurrentNdcOffsetIfReady(m_desc.width, m_desc.height, out, reason);
+bool TaaPass::trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason) {
+    if (!m_jitter.trySyncToFrameIndexIfReady(frameIndex, reason)) {

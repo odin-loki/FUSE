@@ -3621,3 +3621,40 @@ void testResolveTemporalPreflightGuards() {
     expectTrue(!pass->preflightHistoryWarmup(), "pass warmup preflight fails before init");
     expectTrue(pass->preflightJitterNdc(), "pass jitter NDC preflight passes before init");
     expectTrue(!zeroPass->preflightJitterNdc(), "zero-width pass jitter NDC preflight fails");
+
+// --- deepen additive from deepen-b59-taa-guards-e107 ---
+                               fuse::renderer::TaaHistoryWarmupRejectReason::NeedsWarmup),
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryWarmup(emptyHistory, warmupReason),
+    expectTrue(!fuse::renderer::tryPreflightTaaHistoryWarmup(history, warmupReason),
+               "tryPreflightTaaHistoryWarmup fails before warmup");
+    expectTrue(warmupReason == fuse::renderer::TaaHistoryWarmupRejectReason::NeedsWarmup,
+    expectTrue(fuse::renderer::tryPreflightTaaHistoryWarmup(history, warmupReason),
+    expectTrue(warmupReason == fuse::renderer::TaaHistoryWarmupRejectReason::None,
+void testJitterNdcShouldSkipAndTryGuards() {
+               "tryPreflightTaaJitterNdc fails for zero width");
+    expectTrue(TaaJitterLayout::tryNdcOffsetForFrameIndex(3u, 128u, 128u, 8u, ndcOut, rejectReason),
+               "tryNdcOffsetForFrameIndex passes for valid inputs");
+    expectNear(ndcOut.x, expected.x, 1e-6f, "tryNdcOffsetForFrameIndex X matches ndcOffsetForFrameIndex");
+    expectNear(ndcOut.y, expected.y, 1e-6f, "tryNdcOffsetForFrameIndex Y matches ndcOffsetForFrameIndex");
+    expectTrue(!TaaJitterLayout::tryNdcOffsetForFrameIndex(3u, 0u, 128u, 8u, ndcOut, rejectReason),
+               "tryNdcOffsetForFrameIndex fails for zero width");
+    expectTrue(jitter.tryCurrentNdcOffsetIfReady(128u, 128u, ndcOut, rejectReason),
+               "tryCurrentNdcOffsetIfReady passes for valid viewport");
+    expectNear(ndcOut.x, direct.x, 1e-6f, "tryCurrentNdcOffsetIfReady X matches currentNdcOffset");
+    expectTrue(!jitter.tryCurrentNdcOffsetIfReady(0u, 128u, ndcOut, rejectReason),
+               "tryCurrentNdcOffsetIfReady fails for zero width");
+    expectTrue(jitter.trySyncToFrameIndexIfReady(11u, rejectReason),
+               "trySyncToFrameIndexIfReady passes for valid sequence");
+    expectTrue(jitter.isAlignedToFrameIndex(11u), "jitter aligned after trySyncToFrameIndexIfReady");
+void testResolveBlendWeightsIfReadyGuards() {
+    expectTrue(!pass->preflightHistoryWarmup(), "pass preflightHistoryWarmup fails before first resolve");
+    expectTrue(pass->preflightJitterNdc(), "pass preflightJitterNdc passes for valid viewport");
+    expectTrue(pass->tryCurrentJitterNdcIfReady(jitterNdc, jitterReject),
+               "pass tryCurrentJitterNdcIfReady succeeds for valid viewport");
+               "pass tryCurrentJitterNdcIfReady reject reason is None");
+    expectTrue(pass->trySyncJitterToFrameIndexIfReady(7u, jitterReject),
+void testTaaPassWarmupAndJitterPreflightWrappers() {
+    expectTrue(!pass->preflightHistoryWarmup(&warmupReason), "pass warmup preflight fails before init");
+    expectTrue(!pass->preflightHistoryWarmup(&warmupReason), "pass warmup preflight fails after init");
+    expectTrue(!zeroPass->preflightJitterNdc(&jitterReject), "zero-width pass preflightJitterNdc fails");
+    testTaaPassWarmupAndJitterPreflightWrappers();

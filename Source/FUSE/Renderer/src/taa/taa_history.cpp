@@ -318,3 +318,8 @@ bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWar
 
 // --- deepen additive from deepen-b59-taa-guards-6ba7 ---
 bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason& reason) {
+
+// --- deepen additive from deepen-b59-taa-guards-e107 ---
+    case TaaHistoryWarmupRejectReason::NeedsWarmup:
+        return TaaHistoryWarmupRejectReason::NeedsWarmup;
+    return classifyTaaHistoryWarmupReject(history) == TaaHistoryWarmupRejectReason::None;

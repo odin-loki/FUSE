@@ -621,3 +621,8 @@ bool tryPreflightTaaResolveTemporal(const TaaResolveDesc& desc, const TaaHistory
     reason = classifyTaaResolveTemporalReject(desc, history);
     return reason == TaaResolveTemporalRejectReason::None;
     return !preflightTaaResolveTemporal(desc, history);
+
+// --- deepen additive from deepen-b59-taa-guards-e107 ---
+    TaaResolveBlendRejectReason rejectReason = TaaResolveBlendRejectReason::None;
+    if (!tryComputeTaaResolveBlendWeights(desc, history, outWeights, rejectReason)) {
+        *reason = TaaResolveBlendRejectReason::None;
