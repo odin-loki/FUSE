@@ -199,6 +199,79 @@ bool TaaPass::shouldSkipResolve(const TaaResolveDesc& desc) const {
     return shouldSkipTaaResolve(desc, m_history);
 }
 
+bool TaaPass::tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const {
+    return tryPreflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), reason);
+}
+
+bool TaaPass::tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const {
+    return tryPreflightTaaJitterNdc(m_desc.width, m_desc.height, m_jitter.sequenceLength(), reason);
+}
+
+bool TaaPass::tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const {
+    return tryPreflightTaaJitterAdvance(m_jitter.sequenceLength(), reason);
+}
+
+bool TaaPass::preflightJitterAdvance(TaaJitterGuardRejectReason* reason) const {
+    return preflightTaaJitterAdvance(m_jitter.sequenceLength(), reason);
+}
+
+bool TaaPass::shouldSkipJitterAdvance() const {
+    return shouldSkipTaaJitterAdvance(m_jitter.sequenceLength());
+}
+
+bool TaaPass::tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const {
+    return tryPreflightTaaHistoryReuse(m_history, observedGeneration, reason);
+}
+
+bool TaaPass::tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& reason) const {
+    return tryPreflightTaaHistoryReadyForResolve(m_history, reason);
+}
+
+bool TaaPass::tryPreflightResolveBlendWeights(const TaaResolveDesc& desc,
+                                              TaaResolveBlendRejectReason& reason) const {
+    return tryPreflightTaaResolveBlendWeights(desc, m_history, reason);
+}
+
+bool TaaPass::tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
+                                            TaaResolveBlendRejectReason& reason) const {
+    return tryComputeTaaResolveBlendWeights(desc, m_history, outWeights, reason);
+}
+
+bool TaaPass::tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const {
+    return tryPreflightTaaResolve(desc, m_history, reason);
+}
+
+bool TaaPass::preflightResolveFrame(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason,
+                                    TaaResolveBlendRejectReason* blendReason) const {
+    TaaResolveSkipReason localSkip = TaaResolveSkipReason::None;
+    if (!tryPreflightTaaResolve(desc, m_history, localSkip)) {
+        if (skipReason != nullptr) {
+            *skipReason = localSkip;
+        }
+        return false;
+    }
+
+    TaaResolveBlendRejectReason localBlend = TaaResolveBlendRejectReason::None;
+    if (!preflightTaaResolveBlendWeights(desc, m_history, &localBlend)) {
+        if (blendReason != nullptr) {
+            *blendReason = localBlend;
+        }
+        return false;
+    }
+
+    if (skipReason != nullptr) {
+        *skipReason = TaaResolveSkipReason::None;
+    }
+    if (blendReason != nullptr) {
+        *blendReason = TaaResolveBlendRejectReason::None;
+    }
+    return true;
+}
+
+bool TaaPass::shouldSkipResolveFrame(const TaaResolveDesc& desc) const {
+    return !preflightResolveFrame(desc);
+}
+
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
     return m_resolve.wouldSkip(desc, m_history, reason);
 }
