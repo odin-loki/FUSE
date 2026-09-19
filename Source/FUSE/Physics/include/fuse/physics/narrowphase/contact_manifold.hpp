@@ -132,6 +132,7 @@ enum class ManifoldPruneRejectReason : u8 {
     None = 0,
     EmptyManifold,
     AllSeparated,
+    ExceedsMaxPoints,
 };
 
 /// Human-readable label for manifold prune reject reasons (B4.5 deepen follow-up pass).
@@ -196,6 +197,7 @@ enum class ManifoldFinalizeRejectReason : u8 {
     InvalidNormal,
     NoPenetratingPoints,
     AllSeparatedAfterPrune,
+    MissingFrictionBasis,
 };
 
 /// Human-readable label for manifold finalize reject reasons (B4.5 deepen follow-up pass).
@@ -255,6 +257,12 @@ bool finalize_contact_manifold_with_preflight(
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
+
+/// Returns true when `generate_contact_manifold` would early-out (B4.6 deepen pass).
+bool can_skip_generate_contact_manifold(const ContactManifold& manifold);
+
+/// Finalize only when `can_finalize_contact_manifold` passes; no-op otherwise (B4.6 deepen pass).
+bool generate_contact_manifold_with_preflight(ContactManifold& manifold);
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

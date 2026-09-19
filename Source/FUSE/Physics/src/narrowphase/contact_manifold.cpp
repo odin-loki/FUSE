@@ -348,6 +348,8 @@ const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason) 
         return "EmptyManifold";
     case ManifoldPruneRejectReason::AllSeparated:
         return "AllSeparated";
+    case ManifoldPruneRejectReason::ExceedsMaxPoints:
+        return "ExceedsMaxPoints";
     }
     return "Unknown";
 }
@@ -361,6 +363,9 @@ ManifoldPruneRejectReason manifold_prune_reject_reason(
     }
     if (manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon)) {
         return ManifoldPruneRejectReason::AllSeparated;
+    }
+    if (manifold.pointCount > kMaxContactPointsPerManifold) {
+        return ManifoldPruneRejectReason::ExceedsMaxPoints;
     }
     return ManifoldPruneRejectReason::None;
 }
@@ -419,6 +424,8 @@ const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason re
         return "NoPenetratingPoints";
     case ManifoldFinalizeRejectReason::AllSeparatedAfterPrune:
         return "AllSeparatedAfterPrune";
+    case ManifoldFinalizeRejectReason::MissingFrictionBasis:
+        return "MissingFrictionBasis";
     }
     return "Unknown";
 }
@@ -524,6 +531,17 @@ bool finalize_contact_manifold_with_preflight(
             manifold.clear();
             return false;
         }
+    }
+    return generate_contact_manifold_with_preflight(manifold);
+}
+
+bool can_skip_generate_contact_manifold(const ContactManifold& manifold) {
+    return !can_finalize_contact_manifold(manifold);
+}
+
+bool generate_contact_manifold_with_preflight(ContactManifold& manifold) {
+    if (!can_finalize_contact_manifold(manifold)) {
+        return false;
     }
     return generate_contact_manifold(manifold);
 }
