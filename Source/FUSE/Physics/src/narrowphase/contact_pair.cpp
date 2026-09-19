@@ -855,3 +855,7 @@ bool should_skip_contact_pair_dispatch_preflight(
 // --- deepen additive from b4-narrowphase-deepen-guards-ed7c ---
     if (baseReason == ContactPairRejectReason::UnsupportedShapePair &&
 bool should_skip_narrowphase_batch(
+
+// --- deepen additive from deepen-fuse-b4-narrowphase-0ba7 ---
+    case ContactPairRejectReason::BothPlanes:
+        return ContactPairRejectReason::BothPlanes;

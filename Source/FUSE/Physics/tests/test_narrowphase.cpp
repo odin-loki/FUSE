@@ -3017,3 +3017,25 @@ void testContactPairPlanePlaneDeepenGuards() {
         "should_skip_narrowphase_batch true when all pairs rejected");
 void testFinalizeContactManifoldIfNeededGuard() {
 void testFrictionBasisStaleRejectGuards() {
+
+// --- deepen additive from deepen-fuse-b4-narrowphase-0ba7 ---
+    expectTrue(buffer.slotIsValid(0u), "writeSlotWithPreflight marks slot valid");
+        "writeSlotWithPreflight rejects self pair");
+        fuse::physics::narrowphase::should_skip_contact_buffer_write(buffer, 1u, invalid),
+        "should_skip rejects invalid manifold");
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_contact_buffer_compaction(buffer);
+    const auto needsPreflight = fuse::physics::narrowphase::preflight_contact_buffer_compaction(buffer);
+    expectTrue(needsPreflight.needsCompaction(), "compaction preflight needs work with hole");
+    const auto allValidPreflight = fuse::physics::narrowphase::preflight_contact_buffer_compaction(buffer);
+    expectTrue(allValidPreflight.allValid, "compaction preflight all-valid after compact");
+    expectTrue(withinPreflight.withinCapacity, "clamp preflight within capacity before overflow");
+    const auto needsClampPreflight = fuse::physics::narrowphase::preflight_contact_buffer_clamp(overflowBuffer);
+    expectTrue(needsClampPreflight.needsClamp(), "clamp preflight needs work when over capacity");
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_contact_buffer_compact_and_clamp(buffer);
+    const auto noWorkPreflight = fuse::physics::narrowphase::preflight_contact_buffer_compact_and_clamp(buffer);
+    expectTrue(noWorkPreflight.noWork, "compact-and-clamp preflight no-work when clean");
+void testContactPairBothPlanesDeepenGuard() {
+            fuse::physics::narrowphase::ContactPairRejectReason::BothPlanes,
+void testManifoldNormalizeAndPruneIfNeededGuards() {
+void testFrictionTangentsWithPreflightGuard() {
+    testFrictionTangentsWithPreflightGuard();
