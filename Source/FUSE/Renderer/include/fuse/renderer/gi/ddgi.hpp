@@ -863,6 +863,7 @@ struct ProbeGridLayout {
     static bool buildProbeSampleCoordsIfReady(const DDGIDesc& desc,
                                               const fuse::math::Vec3& world_position,
                                               ProbeSampleCoords& out_coords);
+    /// Early-out when grid-only sample-coord preflight would be rejected (B5.6 deepen pass).
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -1032,16 +1033,11 @@ bool preflightProbeTrilinearSample(const DDGIDesc& desc,
 bool preflightTrilinearProbeIrradiance(const DDGIDesc& desc,
 /// Early-out when coord-based probe trilinear sampling would be rejected.
 bool wouldSkipProbeTrilinearSample(const DDGIDesc& desc,
-                                   const ProbeSampleCoords& coords,
-                                   const IrradianceCacheEntry* cache,
-                                   u32 cache_count);
 /// Early-out when coord-based probe trilinear sampling would be rejected — includes diagnostics.
-                                   u32 cache_count,
                                    ProbeTrilinearSampleRejectReason& outReason);
 /// Early-out when coord-based probe sample preflight would reject.
 bool wouldSkipCanSampleAtProbeCoords(const DDGIDesc& desc,
 /// Classify why coord-based probe trilinear sampling preflight would reject (B5.6 deepen).
-ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDesc& desc,
 /// Early-out when world-position trilinear sampling would be rejected (B5.6 deepen).
 bool shouldSkipTrilinearProbeSample(const DDGIDesc& desc,
 /// Early-out when directional trilinear sampling would be rejected (B5.6 deepen).
@@ -1086,7 +1082,6 @@ u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_
 ProbeTrilinearSampleRejectReason classifyTrilinearProbeSampleReject(const DDGIDesc& desc,
 /// Classify why world-position trilinear preflight would reject.
 /// Non-mutating trilinear sample preflight — returns true when lookup would proceed.
-bool preflightTrilinearProbeIrradiance(const DDGIDesc& desc,
 /// Early-out when trilinear sample preflight would reject.
 bool wouldSkipTrilinearProbeIrradiance(const DDGIDesc& desc,
 /// Classify why coord-based trilinear sampling would reject — same ordering as `tryCanSampleAtProbeCoords`.
@@ -1101,10 +1096,8 @@ bool preflightTrilinearProbeSampleAtCoords(const DDGIDesc& desc,
 /// Build coords from world position and run trilinear sample preflight (B5.6 deepen pass).
 bool preflightTrilinearProbeSampleAtWorldPosition(const DDGIDesc& desc,
 /// Classify why coord-based probe trilinear sampling would reject — same ordering as `tryCanSampleAtProbeCoords`.
-/// Non-mutating coord-based trilinear sample preflight — returns true when sampling would proceed.
 /// Build sample coords + trilinear preflight without mutating cache (B5.6 deepen pass).
 /// Classify why world-position trilinear sampling would reject — same ordering as `tryTrilinearProbeIrradiance`.
-/// Non-mutating world-position trilinear sample preflight — returns true when sampling would proceed.
 /// Non-mutating directional trilinear sample preflight — returns true when sampling would proceed.
 bool preflightTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
                                                   const fuse::math::Vec3& direction,
@@ -1117,6 +1110,10 @@ bool wouldSkipTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
 /// Classify why world-position trilinear sample preflight would reject.
 /// Early-out when trilinear probe sample would be rejected — same ordering as `tryCanSampleAtProbeCoords`.
 /// Early-out when world-position trilinear probe sample would be rejected.
+ProbeTrilinearSampleRejectReason classifyTrilinearProbeIrradianceReject(const DDGIDesc& desc,
+/// Non-mutating coord-based trilinear sample preflight — returns true when sample would proceed.
+/// Non-mutating world-position trilinear sample preflight — returns true when sample would proceed.
+/// Early-out when world-position trilinear sample would be rejected.
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1591,6 +1588,7 @@ ProbeScheduleRejectReason classifyProbeScheduleReject(u32 probe_count,
                                                       u32* out_count);
 /// Classify why rate-aware probe scheduling would be rejected.
 /// Classify why rate-aware probe scheduling would be rejected — same ordering as `tryCanScheduleProbeUpdatesAtRate`.
+/// Classify why rate-aware probe scheduling would reject — same ordering as `tryCanScheduleProbeUpdatesAtRate`.
 ProbeScheduleRejectReason classifyProbeScheduleRejectAtRate(u32 probe_count,
                                                             u32 probes_per_frame,
                                                             u32 max_indices,
@@ -1632,19 +1630,12 @@ bool shouldSkipProbeSchedule(u32 probe_count,
 /// Schedule probe updates with rate-aware reject-reason diagnostics; false when preflight rejects.
 ProbeScheduleRejectReason classifyProbeScheduleAtRateReject(u32 probe_count,
 /// Schedule probe updates at rate with reject-reason diagnostics; false when preflight rejects.
-                                  u32 probes_per_frame,
-                                  u32 max_indices,
-                                  const u32* out_indices,
 bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
                                    u32 probe_count,
-                                   u32 probes_per_frame,
                                    u32* out_indices,
-                                   u32 max_indices,
                                    ProbeScheduleRejectReason& outReason);
 /// Rate-aware schedule preflight with mandatory reject-reason output (B5.6 deepen pass).
 bool tryPreflightProbeScheduleAtRate(u32 probe_count,
-                                     const u32* out_indices,
-                                   u32* out_count,
 /// True when output capacity would cap scheduled probes below `probes_per_frame`.
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Early-out when probe scheduling would be rejected — same ordering as `tryScheduleProbeUpdates`.
