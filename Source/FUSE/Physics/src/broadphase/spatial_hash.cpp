@@ -1131,3 +1131,6 @@ RefineDedupeBroadphasePreflight preflightRefineDedupeBroadphase(
         preflight.reason = MergeBroadphaseRejectReason::EmptyPlaneBodies;
         preflight.reason = MergeBroadphaseRejectReason::EmptyDynamicBodies;
         preflight.reason = MergeBroadphaseRejectReason::None;
+
+// --- deepen additive from deepen-b4-broadphase-guards-14d5 ---
+    if (preflightPairBufferClamp(buffer).needsClamp()) {

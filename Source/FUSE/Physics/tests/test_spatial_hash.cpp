@@ -2866,3 +2866,11 @@ void testPairBufferRejectReasonAndSkipGuards() {
     expectTrue(clampPreflight.clamp.needsClamp(),
     expectTrue(clampPreflight.needsWork(), "overflow buffer needs compact-and-clamp work");
     testPairBufferRejectReasonAndSkipGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-14d5 ---
+    expectTrue(emptyPreflight.emptyBuffer, "empty buffer compact+clamp preflight marks empty");
+    expectTrue(!emptyPreflight.needsWork(), "empty buffer compact+clamp preflight needs no work");
+    expectTrue(compactionPreflight.needsCompaction, "invalid slot requests compaction work");
+    expectTrue(compactionPreflight.needsWork(), "invalid slot compact+clamp preflight needs work");
+    expectTrue(clampPreflight.needsClamp, "overflow buffer compact+clamp preflight needs clamp");
+void testPairBufferSkipHelperGuards() {
