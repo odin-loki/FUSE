@@ -556,3 +556,7 @@ bool should_skip_contact_buffer_write(
 
 // --- deepen additive from deepen-b4-narrowphase-guards-7d67 ---
 bool ContactBufferSoA::writeSlotWithPreflight(u32 slot, const ContactManifold& manifold) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-5d1f ---
+    if (clampPreflight.reason == ContactBufferClampRejectReason::EmptyBuffer) {
+    if (clampPreflight.reason == ContactBufferClampRejectReason::WithinCapacity) {

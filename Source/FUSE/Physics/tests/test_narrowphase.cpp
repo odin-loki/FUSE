@@ -2692,3 +2692,7 @@ void testRunNarrowphaseDeepenPreflightDispatch() {
     fuse::physics::narrowphase::runNarrowphaseIntoBufferWithDeepenPreflight(mixedPairs, bodies, shapes, buffer);
     testFrictionBasisDeepenPassPreflightWrappers();
     testRunNarrowphaseDeepenPreflightDispatch();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-5d1f ---
+            buffer, 4u, valid, fuse::physics::narrowphase::ContactBufferWriteRejectReason::InvalidSlot),
+            allInvalid, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::AllInvalid),

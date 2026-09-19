@@ -810,3 +810,8 @@ ContactPairBatchDeepenPreflight preflight_contact_pair_batch_deepen(
 // --- deepen additive from deepen-b4-narrowphase-guards-7d67 ---
     const ContactPairDeepenPreflight preflight = preflight_contact_pair_deepen(pair, bodies, shapes);
         if (!should_skip_contact_pair_deepen_dispatch(pairs[i], bodies, shapes)) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-5d1f ---
+ContactPairRejectReason first_contact_pair_deepen_reject_in_batch(
+        const ContactPairRejectReason reason = contact_pair_deepen_reject_reason(pair, bodies, shapes);
+        if (reason == ContactPairRejectReason::None) {
