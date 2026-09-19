@@ -189,6 +189,18 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
     return "unknown";
 }
 
+CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
+    CookHashPreflight preflight;
+    if (!is_valid_fnv1a64_input(data, size)) {
+        preflight.reason = CookHashRejectReason::NullData;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
 CookHashPreflight preflight_file_content_hash(const std::string& path) {
     CookHashPreflight preflight;
     if (path.empty()) {
