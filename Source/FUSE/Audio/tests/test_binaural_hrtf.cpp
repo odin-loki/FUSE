@@ -1510,3 +1510,11 @@ void testHrtfPreflightRejectReasonLabels() {
                                fuse::audio::HrtfIrRejectReason::Empty),
     testHrtfBinauralPanCombinedPreflight();
     testHrtfPreflightRejectReasonLabels();
+
+// --- deepen additive from deepen-hrtf-preflights-bb6d ---
+    expectTrue(null_preflight.reason == fuse::audio::HrtfIrRejectReason::NullSamples,
+    expectTrue(malformed_preflight.skips_convolution() == fuse::audio::should_skip_hrtf_convolution(malformed),
+    expectTrue(disabled.reject_reason == fuse::audio::HrtfPanPathRejectReason::Disabled,
+                                                             fuse::audio::HrtfPanPathRejectReason::Disabled),
+    expectTrue(co_located_preflight.reject_reason == fuse::audio::HrtfPanPathRejectReason::CoLocated,
+    expectTrue(stub.reject_reason == fuse::audio::HrtfPanPathRejectReason::None,

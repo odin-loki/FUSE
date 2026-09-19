@@ -1011,3 +1011,9 @@ HrtfPanPathRejectReason classify_hrtf_pan_path_reject(bool hrtf_enabled, const V
     return reject == HrtfAttenuationCouplingRejectReason::None;
 HrtfBinauralPanPreflight preflight_hrtf_binaural_pan(bool hrtf_enabled, const HrtfIrStub& ir,
     HrtfBinauralPanPreflight preflight{};
+
+// --- deepen additive from deepen-hrtf-preflights-bb6d ---
+        preflight.reason = HrtfIrRejectReason::ZeroLength;
+        preflight.reason = HrtfIrRejectReason::NullSamples;
+        preflight.reject_reason = HrtfPanPathRejectReason::Disabled;
+        preflight.reject_reason = HrtfPanPathRejectReason::CoLocated;

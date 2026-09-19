@@ -682,3 +682,6 @@ HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling_for_path(
                                          HrtfAttenuationCouplingRejectReason* reason);
 struct HrtfBinauralPanPreflight {
 HrtfBinauralPanPreflight preflight_hrtf_binaural_pan(bool hrtf_enabled, const HrtfIrStub& ir,
+
+// --- deepen additive from deepen-hrtf-preflights-bb6d ---
+    bool can_convolve() const { return reason == HrtfIrRejectReason::None; }
