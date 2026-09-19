@@ -4340,3 +4340,9 @@ void testDdgiKernelUpdatePreflightGuards() {
     expectTrue(fuse::renderer::gi::preflightPopulatedProbeKernelLaunch(
                "preflightPopulatedProbeKernelLaunch succeeds for valid params");
     expectTrue(populated.frame_seed == 99u, "preflightPopulatedProbeKernelLaunch sets frame_seed");
+
+// --- deepen additive from deepen-b56-ddgi-guards-f8af ---
+               "classifyProbeGridSourceReject not_sampleable for zero irradiance_res");
+                               fuse::renderer::ProbeGridSourceRejectReason::NotSampleable),
+    expectTrue(fuse::renderer::ddgi_util::classifyTrilinearProbeSampleReject(desc, built, cache.data(), 8u) ==
+               "classifyTrilinearProbeSampleReject none for valid sample");

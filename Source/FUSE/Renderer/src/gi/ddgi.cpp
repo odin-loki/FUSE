@@ -3144,3 +3144,7 @@ bool wouldSkipDdgiKernelUpdate(const DDGIDesc& desc,
 // --- deepen additive from deepen-ddgi-b56-guards-8377 ---
 bool wouldSkipProbeSample(const DDGIDesc& desc,
 bool preflightPopulatedProbeKernelLaunch(DDGIKernelParams& params,
+
+// --- deepen additive from deepen-b56-ddgi-guards-f8af ---
+        return ProbeGridSourceRejectReason::NotSampleable;
+    const ProbeTrilinearSampleRejectReason reject = classifyTrilinearProbeSampleReject(desc, coords, cache, cache_count);
