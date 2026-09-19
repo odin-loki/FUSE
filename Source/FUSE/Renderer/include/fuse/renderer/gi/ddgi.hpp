@@ -1060,6 +1060,13 @@ bool preflightCacheIndexLookup(const DDGIDesc& desc,
                                CacheIndexRejectReason* reason = nullptr);
 /// Probes that would be scheduled after capacity/probe-count caps (B5.6 deepen pass).
 u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
+/// Classify why coord-based probe trilinear preflight would reject.
+ProbeTrilinearSampleRejectReason classifyTrilinearProbeSampleReject(const DDGIDesc& desc,
+/// Classify why world-position trilinear preflight would reject.
+/// Non-mutating trilinear sample preflight — returns true when lookup would proceed.
+bool preflightTrilinearProbeIrradiance(const DDGIDesc& desc,
+/// Early-out when trilinear sample preflight would reject.
+bool wouldSkipTrilinearProbeIrradiance(const DDGIDesc& desc,
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1523,6 +1530,27 @@ bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
 ProbeScheduleRejectReason classifyProbeScheduleReject(u32 probe_count,
                                                       const u32* out_indices,
                                                       u32* out_count);
+/// Classify why rate-aware probe scheduling would be rejected.
+ProbeScheduleRejectReason classifyProbeScheduleRejectAtRate(u32 probe_count,
+                                                            u32 probes_per_frame,
+                                                            u32 max_indices,
+                                                            const u32* out_indices,
+                                                            u32* out_count);
+/// Non-mutating rate-aware schedule preflight — returns true when scheduling would proceed.
+bool preflightProbeScheduleAtRate(u32 probe_count,
+                                  u32 probes_per_frame,
+                                  u32 max_indices,
+                                  const u32* out_indices,
+                                  u32* out_count,
+                                  ProbeScheduleRejectReason* reason = nullptr);
+/// Schedule probe updates with rate-aware reject-reason diagnostics; false when preflight rejects.
+bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
+                                   u32 probe_count,
+                                   u32 probes_per_frame,
+                                   u32* out_indices,
+                                   u32 max_indices,
+                                   u32* out_count,
+                                   ProbeScheduleRejectReason& outReason);
 /// Non-mutating schedule preflight — returns true when scheduling would proceed.
 bool preflightProbeSchedule(u32 probe_count,
                             ProbeScheduleRejectReason* reason = nullptr);

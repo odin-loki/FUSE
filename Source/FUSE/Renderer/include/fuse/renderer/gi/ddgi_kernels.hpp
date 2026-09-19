@@ -102,6 +102,10 @@ bool probeKernelRejectReasonIsBlocking(ProbeKernelRejectReason reason);
 ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params);
 /// Classify kernel launch rejection including grid index validation — same ordering as grid-aware preflight.
 ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params, const DDGIDesc& desc);
+/// Classify why probe trace kernel launch would reject.
+ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
+/// Classify why probe blend kernel launch would reject.
+ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 
 /// Early-out when either probe kernel launch would be rejected.
 bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
@@ -122,6 +126,10 @@ bool shouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
 bool preflightProbeKernelLaunch(const DDGIKernelParams& params,
                                 const DDGIDesc& desc,
                                 ProbeKernelRejectReason* reason = nullptr);
+/// Non-mutating probe trace kernel preflight — returns true when trace launch would proceed.
+bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
+/// Non-mutating probe blend kernel preflight — returns true when blend launch would proceed.
+bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
 /// Populate kernel params from desc + scheduled indices without changing launch guards.
 void populateDDGIKernelParams(DDGIKernelParams& params,
