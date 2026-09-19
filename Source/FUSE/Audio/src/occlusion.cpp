@@ -75,6 +75,13 @@ bool is_unity_occlusion_attenuation(const OcclusionAttenuation& attenuation) {
 
 OcclusionAttenuation make_unity_occlusion_attenuation() {
     return {1.f, 1.f};
+        && !is_fully_occluded_occlusion(source_occlusion)
+
+bool is_clear_blocker_factor(float blocker_factor) {
+    return std::clamp(blocker_factor, 0.f, 1.f) <= 0.f;
+
+bool is_full_blocker_factor(float blocker_factor) {
+    return std::clamp(blocker_factor, 0.f, 1.f) >= 1.f;
 }
 
 bool segment_intersects_aabb(const Vec3& start, const Vec3& end, const AABB& box) {
@@ -202,11 +209,16 @@ float combine_occlusion_visibility(float source_occlusion, float blocker_factor)
     const float visibility = clamp_occlusion_visibility(source_occlusion);
     const float blocked = std::clamp(blocker_factor, 0.f, 1.f);
     if (should_skip_combine_occlusion_visibility(visibility, blocked)) {
+    if (is_clear_blocker_factor(blocker_factor)) {
         return visibility;
     }
-    if (blocked >= 1.f) {
+    if (is_full_blocker_factor(blocker_factor)) {
         return 0.f;
     }
+    if (is_fully_occluded_occlusion(visibility)) {
+        return 0.f;
+    }
+    const float blocked = std::clamp(blocker_factor, 0.f, 1.f);
     return visibility * (1.f - blocked);
 }
 
@@ -218,6 +230,11 @@ float compute_effective_visibility(const Vec3& listener, const Vec3& source,
         return is_fully_occluded_occlusion(visibility) ? 0.f : visibility;
     }
     if (should_skip_blockers_visibility(listener, source, blockers, blocker_count)) {
+    if (!should_evaluate_occlusion_blockers(listener, source, blockers, blocker_count,
+                                            visibility)) {
+        if (has_occlusion_blockers(blockers, blocker_count)
+            && is_fully_occluded_occlusion(visibility)) {
+            return 0.f;
         return visibility;
     if (should_skip_occlusion_blocker_eval(listener, source, blockers, blocker_count, visibility)) {
     }

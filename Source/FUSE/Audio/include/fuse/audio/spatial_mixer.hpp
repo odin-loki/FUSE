@@ -25,6 +25,7 @@ public:
     void clear_occlusion_blockers();
 
     /// True when at least one blocker AABB is registered for occlusion evaluation.
+    /// True when at least one world-space blocker AABB is registered.
     bool has_occlusion_blockers() const;
 
     /// Effective visibility [0, 1] from per-source occlusion and registered blockers.

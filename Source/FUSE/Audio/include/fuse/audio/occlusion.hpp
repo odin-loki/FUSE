@@ -54,6 +54,14 @@ bool should_skip_occlusion_blocker_eval(const Vec3& listener, const Vec3& source
                                         const AABB* blockers, u32 blocker_count,
                                         float source_occlusion);
 
+/// Combined guard — true when segment-vs-AABB blocker evaluation should run.
+
+/// True when blocker_factor is at or below zero after clamping.
+bool is_clear_blocker_factor(float blocker_factor);
+
+/// True when blocker_factor is at or above unity after clamping.
+bool is_full_blocker_factor(float blocker_factor);
+
 /// Map visibility [0, 1] to a gain multiplier. Fully occluded sources retain `min_gain`.
 float evaluate_occlusion_gain(float visibility, const OcclusionParams& params = {});
 

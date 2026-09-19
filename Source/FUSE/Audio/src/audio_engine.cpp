@@ -153,9 +153,9 @@ void AudioEngine::apply_reverb_(std::vector<float>& stereo_buffer, u32 frames,
     }
 
     const ReverbZoneBlend blend =
-        blend_reverb_zones(listener_pos, zone_params.data(),
-                           static_cast<u32>(zone_params.size()));
-    if (blend.active_zone_count == 0) {
+        compute_listener_reverb_blend(listener_pos, zone_params.data(),
+                                      static_cast<u32>(zone_params.size()));
+    if (should_skip_reverb_wet_mix(blend)) {
         return;
     }
 
