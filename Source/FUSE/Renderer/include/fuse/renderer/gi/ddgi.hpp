@@ -358,6 +358,11 @@ enum class ProbeGridSourceRejectReason : u8 {
     OutOfRangeIndex,
     OutOfRangeCoord,
     IndexCoordMismatch,
+/// Why probe-grid source preflight rejected the descriptor (B5.6 deepen pass).
+    InvalidSpacing,
+    ZeroIrradianceRes,
+    ZeroDepthRes,
+    ZeroRaysPerProbe,
 };
 
 /// Human-readable label for probe-grid source reject reasons (logging / tests).
@@ -391,6 +396,19 @@ bool probeCoordRejectReasonIsBlocking(ProbeCoordRejectReason reason);
 
 /// True when a probe-index reject reason would block lookup (B5.6 deepen pass).
 bool probeIndexRejectReasonIsBlocking(ProbeIndexRejectReason reason);
+/// True when a probe-grid source reject reason would block use (B5.6 deepen pass).
+
+/// Classify why probe-grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc);
+
+/// Diagnose why probe-grid source preflight would reject; vacuously succeeds on valid descriptors.
+bool tryValidateProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason& outReason);
+
+/// Non-mutating probe-grid source preflight — returns true when descriptor is usable.
+bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason* reason = nullptr);
+
+/// Early-out when probe-grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
+bool wouldSkipProbeGridSource(const DDGIDesc& desc);
 
 /// Why probe sample coord validation rejected the request (B5.6 deepen).
 enum class ProbeSampleCoordsRejectReason : u8 {
@@ -1111,6 +1129,8 @@ struct ProbeGridLayout {
                                              const ProbeSampleCoords& coords,
     /// True when sample coords would require clamp/normalize before sampling (B5.6 deepen pass).
     static bool wouldClampProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Early-out when sample-coord preflight would reject — same ordering as `tryPreflightProbeSampleCoords`.
+    static bool wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Grid-only sample-coord preflight — ignores cache; soft-fails on clampable coords.
     static bool tryPreflightProbeSampleCoords(const DDGIDesc& desc,
                                               const ProbeSampleCoords& coords,
@@ -1662,6 +1682,9 @@ ProbeTrilinearSampleRejectReason classifyTrilinearProbeIrradianceReject(
 /// Early-out when trilinear sample preflight would be rejected — same ordering as `tryCanSampleAtProbeCoords`.
 bool wouldSkipTrilinearProbeSampleAtCoords(const DDGIDesc& desc,
 /// Early-out when world-position trilinear sample preflight would be rejected.
+/// Early-out when a DDGI sample request would be rejected before lookup.
+bool wouldSkipProbeSample(const DDGIDesc& desc,
+                          const DDGISampleRequest& request,
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1868,6 +1891,8 @@ bool preflightTrilinearProbeSample(const DDGIDesc& desc,
 bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
 /// Non-mutating cache-index preflight without null-cache check — returns true when lookup would proceed.
 /// Non-mutating cache-index preflight without cache pointer — count-only guard.
+/// Non-mutating cache-index preflight without null-cache check — count-only overload.
+/// Early-out when irradiance read at index would be rejected — includes null-cache check.
 /// True when `probe_index` exceeds the valid probe range on a non-empty grid.
 bool wouldClampProbeIndexForLookup(u32 probe_index, const DDGIDesc& desc);
 /// Minimum irradiance cache entries required for full-grid sampling; 0 on empty grid.
