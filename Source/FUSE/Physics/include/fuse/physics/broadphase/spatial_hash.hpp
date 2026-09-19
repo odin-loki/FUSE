@@ -1208,3 +1208,11 @@ BroadphaseMergeRejectReason broadphaseMergeRejectReason(
 // --- deepen additive from deepen-b4-broadphase-guards-c0a6 ---
 CellOccupancyPreflight preflightCellOccupancy(const CellRange3& range, u32 maxCells);
 CellOccupancyPreflight preflightCellOccupancy(const CellRange2& range, u32 maxCells);
+
+// --- deepen additive from deepen-b4-broadphase-guards-9b1a ---
+enum class MergeBroadphaseRejectReason : u8 {
+const char* mergeBroadphaseRejectReasonName(MergeBroadphaseRejectReason reason);
+MergeBroadphaseRejectReason mergeBroadphaseRejectReason(
+    MergeBroadphaseRejectReason expected);
+    MergeBroadphaseRejectReason reason = MergeBroadphaseRejectReason::None;
+    bool canMerge() const { return reason == MergeBroadphaseRejectReason::None; }

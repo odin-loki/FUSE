@@ -819,3 +819,17 @@ bool should_skip_pair_buffer_compaction(const PairBufferSoA& buffer) {
 
 // --- deepen additive from deepen-b4-broadphase-guards-bd20 ---
 bool pairBufferCompactionRejectsForReason(const PairBufferSoA& buffer, PairBufferCompactionRejectReason expected) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-9b1a ---
+    const PairBufferPushPreflight pushPreflight = preflightPairBufferPush(*this, idxA, idxB);
+    if (!pushPreflight.canPush()) {
+        if (pushPreflight.atCapacity) {
+    if (compactionPreflight.emptyBuffer) {
+    if (!compactionPreflight.needsCompaction()) {
+    const PairBufferClampPreflight clampPreflight = preflightPairBufferClamp(*this);
+    if (!clampPreflight.needsClamp()) {
+    const PairBufferCompactionPreflight compactionPreflight = preflightPairBufferCompaction(buffer);
+    const PairBufferClampPreflight clampPreflight = preflightPairBufferClamp(buffer);
+    preflight.emptyBuffer = compactionPreflight.emptyBuffer;
+    preflight.needsCompaction = compactionPreflight.needsCompaction();
+    preflight.needsClamp = clampPreflight.needsClamp();

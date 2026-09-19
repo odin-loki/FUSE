@@ -2721,3 +2721,21 @@ void testCellOccupancyCanSkipIterationGuards() {
     expectTrue(emptyPreflight.canSkipAll(), "empty buffer skips compact-and-clamp");
     const fuse::physics::broadphase::PairBufferCompactAndClampPreflight compactionOnly =
     const fuse::physics::broadphase::PairBufferCompactAndClampPreflight bothNeeded =
+
+// --- deepen additive from deepen-b4-broadphase-guards-9b1a ---
+void testMergeBroadphaseRejectReasonGuards() {
+             static_cast<fuse::u32>(fuse::physics::broadphase::MergeBroadphaseRejectReason::EmptyPlaneBodies),
+                   fuse::physics::broadphase::MergeBroadphaseRejectReason::EmptyPlaneBodies),
+                               fuse::physics::broadphase::MergeBroadphaseRejectReason::EmptyDynamicBodies),
+             static_cast<fuse::u32>(fuse::physics::broadphase::MergeBroadphaseRejectReason::EmptyDynamicBodies),
+             static_cast<fuse::u32>(fuse::physics::broadphase::MergeBroadphaseRejectReason::None),
+void testPairBufferSortAndCompactionSkipGuards() {
+    expectTrue(emptyPreflight.canSkip(), "empty buffer compact-and-clamp preflight can skip");
+    const fuse::physics::broadphase::PairBufferCompactAndClampPreflight compactionPreflight =
+    expectTrue(compactionPreflight.needsCompaction, "slot buffer needs compaction");
+    expectTrue(!compactionPreflight.needsClamp, "slot buffer without max capacity skips clamp");
+    const fuse::physics::broadphase::PairBufferClampPreflight overflowClampPreflight =
+    expectTrue(overflowClampPreflight.needsClamp(), "overflow buffer needs post-compact clamp");
+    const fuse::physics::broadphase::CellOccupancyPreflight emptyRangePreflight =
+    expectEq(static_cast<fuse::u32>(emptyRangePreflight.reason),
+    testMergeBroadphaseRejectReasonGuards();

@@ -1094,3 +1094,15 @@ CellOccupancyPreflight preflightCellOccupancy(const CellRange3& range, u32 maxCe
     preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
 CellOccupancyPreflight preflightCellOccupancy(const CellRange2& range, u32 maxCells) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-9b1a ---
+const char* mergeBroadphaseRejectReasonName(MergeBroadphaseRejectReason reason) {
+    case MergeBroadphaseRejectReason::None:
+    case MergeBroadphaseRejectReason::EmptyPlaneBodies:
+    case MergeBroadphaseRejectReason::EmptyDynamicBodies:
+MergeBroadphaseRejectReason mergeBroadphaseRejectReason(
+        return MergeBroadphaseRejectReason::EmptyPlaneBodies;
+        return MergeBroadphaseRejectReason::EmptyDynamicBodies;
+    return MergeBroadphaseRejectReason::None;
+    MergeBroadphaseRejectReason expected) {
+    preflight.reason = mergeBroadphaseRejectReason(bodies, shapes);
