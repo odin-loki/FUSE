@@ -695,6 +695,23 @@ bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings) {
     return hit.screenX < 0.f || hit.screenX > hit.viewportWidth || hit.screenY < 0.f ||
 bool isScreenHitOutOfBounds(const GizmoHitTest& hit) {
 
+bool isGizmoScalarFinite(f32 value) {
+    return std::isfinite(value);
+}
+
+bool isRayNonFinite(const GizmoRay& ray) {
+    return !isGizmoScalarFinite(ray.origin.x) || !isGizmoScalarFinite(ray.origin.y) ||
+           !isGizmoScalarFinite(ray.origin.z) || !isGizmoScalarFinite(ray.direction.x) ||
+           !isGizmoScalarFinite(ray.direction.y) || !isGizmoScalarFinite(ray.direction.z);
+
+bool isHitTestNonFinite(const GizmoHitTest& hit) {
+    return !isGizmoScalarFinite(hit.screenX) || !isGizmoScalarFinite(hit.screenY) ||
+           !isGizmoScalarFinite(hit.viewportWidth) || !isGizmoScalarFinite(hit.viewportHeight);
+
+bool isSnapSettingsNonFinite(const GizmoSnapSettings& settings) {
+    return !isGizmoScalarFinite(settings.gridSize) ||
+           !isGizmoScalarFinite(settings.angleStepDegrees) ||
+           !isGizmoScalarFinite(settings.scaleGridStep);
 }
 
 bool isHitTestInBounds(const GizmoHitTest& hit) {
@@ -812,6 +829,8 @@ bool isSnapStepValid(GizmoMode mode, const GizmoSnapSettings& settings) {
 bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings) {
     return isSnapEnabled(mode, settings) && isSnapStepValid(mode, settings);
     return preflightSnap(mode, settings).canApply;
+    return isSnapEnabled(mode, settings) && isSnapStepValid(mode, settings) &&
+           !isSnapSettingsNonFinite(settings);
 }
 
 bool isScreenHitOutOfBounds(const GizmoHitTest& hit) {
@@ -1307,6 +1326,9 @@ bool isHitTestNonFinite(const GizmoHitTest& hit) {
 bool isRayNormalized(const GizmoRay& ray) {
     const f32 len = ray.direction.length();
     return std::fabs(len - 1.f) <= kEpsilon;
+    return isSnapEnabled(mode, settings) &&
+           (!isSnapStepValid(mode, settings) || isSnapSettingsNonFinite(settings));
+}
 
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
     PickPreflight preflight{};
@@ -1315,6 +1337,7 @@ PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform
         preflight.nonFiniteRay = true;
     if (isRayDirectionNonFinite(ray)) {
     if (!isRayFinite(ray)) {
+        preflight.nonFinite = true;
         return preflight;
     }
 
@@ -1367,6 +1390,7 @@ PickPreflight preflightPick(const GizmoHitTest& hit, GizmoMode mode) {
         preflight.nonFiniteInput = true;
     if (!isHitTestFinite(hit)) {
         preflight.nonFiniteHit = true;
+        preflight.nonFinite = true;
         return preflight;
     }
 
@@ -1470,6 +1494,10 @@ bool snapRejectsForReason(GizmoMode mode, const GizmoSnapSettings& settings,
 SnapPreflight preflightSnap(GizmoMode mode, const GizmoSnapSettings& settings) {
     SnapPreflight preflight{};
     preflight.step = snapStepForMode(mode, settings);
+    if (isSnapSettingsNonFinite(settings)) {
+        preflight.nonFiniteSettings = true;
+    }
+
     if (!isSnapEnabled(mode, settings)) {
         preflight.snapDisabled = true;
         return preflight;
@@ -2323,7 +2351,9 @@ UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging,
         return preflight;
     }
 
-    if (isHitTestDimensionsInvalid(hit)) {
+    if (isHitTestNonFinite(hit)) {
+        preflight.nonFinite = true;
+    } else if (isHitTestDimensionsInvalid(hit)) {
         preflight.invalidDimensions = true;
     } else if (isHitTestNonFinite(hit)) {
         preflight.nonFiniteInput = true;
@@ -3029,6 +3059,7 @@ BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform&
     preflight.nonFiniteRay = pick.nonFiniteRay;
     preflight.invalidPickConfig = pick.invalidPickConfig;
     preflight.nonFiniteInput = pick.nonFiniteInput;
+    preflight.nonFinite = pick.nonFinite;
     preflight.pickMiss = pick.pickMiss;
     preflight.axis = pick.axis;
     applyPickToBeginDragPreflight(pick, preflight);
@@ -3070,6 +3101,7 @@ BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform&
     preflight.invalidDimensions = pick.invalidDimensions;
     preflight.invalidCoordinates = pick.invalidCoordinates;
     preflight.nonFiniteScreen = pick.nonFiniteScreen;
+    preflight.nonFinite = pick.nonFinite;
     preflight.outOfBounds = pick.outOfBounds;
     preflight.nonFiniteInput = pick.nonFiniteInput;
     preflight.screenMiss = pick.screenMiss;
