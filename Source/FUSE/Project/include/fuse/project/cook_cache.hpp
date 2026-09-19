@@ -81,6 +81,39 @@ public:
     u32 prune_all();
     /// True when invalid or stale records are present — `prune_*` would remove at least one (B7.9 deepen).
     [[nodiscard]] bool has_prunable_entries() const;
+    /// Cardinality probe — how many entries `prune_all` would remove (B7.9 deepen).
+    [[nodiscard]] u32 count_prunable_entries() const;
+    /// Non-mutating probe mirroring `invalidate_stale_content_for_source` (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
+                                                     u64 current_content_hash) const;
+    /// Non-mutating probe mirroring `invalidate_source` (B7.9 deepen).
+    [[nodiscard]] u32 count_source_entries(const std::string& source_path) const;
+    /// Non-mutating probe mirroring `invalidate_downstream_of` (B7.9 deepen).
+    [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
+                                          const std::vector<CookJobDependencyEdge>& edges,
+                                          const std::vector<CookJob>& jobs) const;
+    /// Non-mutating reconcile estimator — entries whose stored upstream hash differs (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_upstream_entries(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+
+    /// Why a cache lookup preflight rejected or missed (B7.9 deepen).
+    enum class LookupRejectReason : u8 {
+        None = 0,
+        ZeroKey,
+        EmptyCache,
+        NotFound,
+    };
+    /// Non-mutating lookup preflight — does not touch hit/miss stats (B7.9 deepen).
+    [[nodiscard]] CookCacheLookup preflight_lookup(u64 content_hash,
+                                                   LookupRejectReason* reason = nullptr) const;
+    /// Why a cache store preflight rejected the entry (B7.9 deepen).
+    enum class StoreRejectReason : u8 {
+        None = 0,
+        InvalidEntry,
+    };
+    /// Non-mutating store preflight — valid entries return true (B7.9 deepen).
+    [[nodiscard]] bool preflight_store(const CookCacheEntry& entry,
+                                       StoreRejectReason* reason = nullptr) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
