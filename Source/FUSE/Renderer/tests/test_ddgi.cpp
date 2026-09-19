@@ -2808,3 +2808,21 @@ void testProbeKernelSurfacePreflights() {
     testWorldToProbeGridCoordPreflight();
     testCacheIndexNullCachePreflight();
     testProbeKernelSurfacePreflights();
+
+// --- deepen additive from deepen-b56-ddgi-guards-1017 ---
+    expectTrue(fuse::renderer::ddgi_util::tryValidateProbeSchedule(2048u, 64u, indices, 8u, &count, reason),
+               "tryValidateProbeSchedule succeeds for valid inputs");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeSchedule(2048u, 64u, indices, 8u, &count),
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeSchedule(2048u, 64u, nullptr, 8u, &count, reason),
+               "tryValidateProbeSchedule rejects null indices");
+    expectTrue(std::strcmp(fuse::renderer::probeScheduleRejectReasonLabel(reason), "null_indices") == 0,
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeSchedule(2048u, 64u, indices, 8u, nullptr, reason),
+               "tryValidateProbeSchedule rejects null count");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeSchedule(0u, 64u, indices, 8u, &count, reason),
+               "tryValidateProbeSchedule rejects zero probe count");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateProbeSchedule(2048u, 64u, indices, 0u, &count, reason),
+               "tryValidateProbeSchedule rejects zero max indices");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(0u, 64u, indices, 8u, &count),
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, built) ==
+               "wouldSkip matches isProbeSampleCoordsOutOfRange");
+               "wouldSkipProbeBlendKernel true for null probe indices");

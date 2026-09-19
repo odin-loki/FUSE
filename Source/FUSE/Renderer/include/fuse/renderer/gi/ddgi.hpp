@@ -808,3 +808,6 @@ bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index);
     static bool tryWorldToProbeGridCoord(const DDGIDesc& desc,
 bool wouldClampCacheLookupIndex(u32 probe_index, const DDGIDesc& desc);
 bool tryProbeWorldPosition(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-b56-ddgi-guards-1017 ---
+bool tryValidateProbeSchedule(u32 probe_count,

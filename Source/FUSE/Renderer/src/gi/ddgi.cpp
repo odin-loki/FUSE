@@ -2431,3 +2431,7 @@ bool tryCanLaunchProbeBlendKernelWithSurfaces(const DDGIKernelParams& params, Pr
         outReason = ProbeKernelRejectReason::NullIrradianceAtlas;
         outReason = ProbeKernelRejectReason::NullDepthAtlas;
     return tryCanLaunchProbeBlendKernelWithSurfaces(params, reason);
+
+// --- deepen additive from deepen-b56-ddgi-guards-1017 ---
+bool tryValidateProbeSchedule(u32 probe_count,
+    return tryValidateProbeSchedule(probe_count, probes_per_frame, out_indices, max_indices, out_count, reason);
