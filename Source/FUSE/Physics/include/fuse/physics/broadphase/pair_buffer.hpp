@@ -474,3 +474,7 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
 // --- deepen additive from deepen-b4-broadphase-guards-9072 ---
     bool wouldTruncate = false;
 PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingPairCount);
+
+// --- deepen additive from deepen-b4-broadphase-guards-cbb3 ---
+    PairBufferCompactionPreflight compaction{};
+    PairBufferClampPreflight clamp{};

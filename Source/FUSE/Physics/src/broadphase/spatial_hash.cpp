@@ -1125,3 +1125,9 @@ RefineDedupeBroadphasePreflight preflightRefineDedupeBroadphase(
     const RefineDedupeBroadphasePreflight preflight = preflightRefineDedupeBroadphase(bodies, shapes, buffer);
         preflight.reason = BroadphaseMergeRejectReason::NoPlaneBodies;
         preflight.reason = BroadphaseMergeRejectReason::NoDynamicBodies;
+
+// --- deepen additive from deepen-b4-broadphase-guards-cbb3 ---
+    if (mergePreflight.canMerge()) {
+        preflight.reason = MergeBroadphaseRejectReason::EmptyPlaneBodies;
+        preflight.reason = MergeBroadphaseRejectReason::EmptyDynamicBodies;
+        preflight.reason = MergeBroadphaseRejectReason::None;

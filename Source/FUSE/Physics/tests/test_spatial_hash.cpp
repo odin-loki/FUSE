@@ -2850,3 +2850,19 @@ void testRefineAndMergeRejectReasonGuards() {
 // --- deepen additive from b4-broadphase-deepen-guards-f2a3 ---
 void testRefineBroadphaseShouldRunGuard() {
     expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferDedupeRejectReasonName(
+
+// --- deepen additive from deepen-b4-broadphase-guards-cbb3 ---
+void testCanSkipCellOccupancyIterationGuards() {
+void testPairBufferRejectReasonAndSkipGuards() {
+                 fuse::physics::broadphase::pairBufferCompactionRejectReason(compactionBuffer)),
+                 fuse::physics::broadphase::pairBufferSortRejectReason(sortBuffer)),
+    expectTrue(!emptyPreflight.needsWork(), "empty buffer compact-and-clamp preflight needs no work");
+    expectTrue(compactionPreflight.compaction.needsCompaction(),
+    expectTrue(!compactionPreflight.clamp.needsClamp(),
+    expectTrue(compactionPreflight.needsWork(), "invalid slot buffer needs compact-and-clamp work");
+    const fuse::physics::broadphase::PairBufferCompactAndClampPreflight clampPreflight =
+        fuse::physics::broadphase::preflightPairBufferCompactAndClamp(overflowBuffer);
+    expectTrue(!clampPreflight.compaction.needsCompaction(),
+    expectTrue(clampPreflight.clamp.needsClamp(),
+    expectTrue(clampPreflight.needsWork(), "overflow buffer needs compact-and-clamp work");
+    testPairBufferRejectReasonAndSkipGuards();

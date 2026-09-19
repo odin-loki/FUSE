@@ -856,3 +856,8 @@ PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u
 
 // --- deepen additive from deepen-b4-broadphase-guards-f83b ---
     return !preflightPairBufferPush(buffer, idxA, idxB).canPush();
+
+// --- deepen additive from deepen-b4-broadphase-guards-cbb3 ---
+    preflight.compaction = preflightPairBufferCompaction(buffer);
+    preflight.clamp = preflightPairBufferClamp(buffer);
+    return !preflightPairBufferCompactAndClamp(buffer).needsWork();
