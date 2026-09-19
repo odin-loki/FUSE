@@ -67,6 +67,40 @@ bool is_prunable_cache_entry_(const CookCacheEntry& entry) {
     return !is_valid_cook_cache_entry(entry) || is_stale_cache_entry_(entry);
 }
 
+bool output_exists_for_entry_(const CookCacheEntry& entry) {
+    std::error_code ec;
+    return std::filesystem::exists(std::filesystem::path(entry.output_path), ec);
+}
+
+} // namespace
+
+CookCacheEntryPreflight preflight_cache_entry(const CookCacheEntry& entry) {
+    CookCacheEntryPreflight result;
+    result.zero_key = !is_valid_cook_cache_key(entry.content_hash);
+    result.empty_path = !is_valid_cook_cache_path(entry.source_path) ||
+                        !is_valid_cook_cache_path(entry.output_path);
+    result.structurally_valid = is_valid_cook_cache_entry(entry);
+    result.shader_kind = entry.kind == CookAssetKind::Shader;
+
+    if (!result.structurally_valid) {
+        return result;
+    }
+
+    result.source_missing = !source_exists_for_entry_(entry);
+    result.output_missing = !output_exists_for_entry_(entry);
+    result.stale_content = is_stale_cache_entry_(entry);
+    return result;
+}
+
+bool is_valid_cook_cache_entry_on_disk(const CookCacheEntry& entry) {
+    if (!is_valid_cook_cache_entry(entry)) {
+        return false;
+    }
+    return output_exists_for_entry_(entry);
+}
+
+namespace {
+
 std::string escapeJson(const std::string& text) {
     std::string out;
     out.reserve(text.size() + 8);
@@ -186,6 +220,29 @@ u32 CookCache::invalidate_downstream_of(const std::string& output_path,
     }
 
     return removed;
+}
+
+std::vector<std::string> CookCache::probe_stale_upstream_sources(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    if (m_entries.empty() || source_upstream_by_path.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> stale_sources;
+    for (const auto& pair : source_upstream_by_path) {
+        const std::string& source_path = pair.first;
+        if (!is_valid_cook_cache_path(source_path)) {
+            continue;
+        }
+        const u64 current_upstream = pair.second;
+
+        for (const CookCacheEntry& entry : m_entries) {
+            if (entry.source_path == source_path && entry.upstream_hash != current_upstream) {
+                stale_sources.push_back(source_path);
+            }
+        }
+    }
+    return stale_sources;
 }
 
 std::vector<std::string> CookCache::invalidate_stale_upstream_hashes(
@@ -329,16 +386,96 @@ u32 CookCache::prune_all() {
 }
 
 bool CookCache::has_prunable_entries() const {
+    return count_prunable_entries() > 0;
+}
+
+u32 CookCache::count_prunable_entries() const {
     if (m_entries.empty()) {
-        return false;
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_prunable_cache_entry_(entry)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+CookCachePruneEstimate CookCache::estimate_prune_all() const {
+    CookCachePruneEstimate estimate;
+    if (m_entries.empty()) {
+        return estimate;
     }
 
     for (const CookCacheEntry& entry : m_entries) {
-        if (is_prunable_cache_entry_(entry)) {
-            return true;
+        if (!is_valid_cook_cache_entry(entry)) {
+            ++estimate.invalid_entries;
+        } else if (is_stale_cache_entry_(entry)) {
+            ++estimate.stale_entries;
         }
     }
-    return false;
+    return estimate;
+}
+
+u32 CookCache::count_stale_upstream_entries(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    if (m_entries.empty() || source_upstream_by_path.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const auto& pair : source_upstream_by_path) {
+        const std::string& source_path = pair.first;
+        if (!is_valid_cook_cache_path(source_path)) {
+            continue;
+        }
+        const u64 current_upstream = pair.second;
+
+        for (const CookCacheEntry& entry : m_entries) {
+            if (entry.source_path == source_path && entry.upstream_hash != current_upstream) {
+                ++count;
+            }
+        }
+    }
+    return count;
+}
+
+u32 CookCache::count_downstream_entries(const std::string& output_path,
+                                         const std::vector<CookJobDependencyEdge>& edges,
+                                         const std::vector<CookJob>& jobs) const {
+    if (!is_valid_cook_cache_path(output_path) || m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (entry.source_path == output_path) {
+            ++count;
+        }
+    }
+
+    for (const CookJobDependencyEdge& edge : edges) {
+        const CookJob* from_job = find_job_by_id(jobs, edge.from_job_id);
+        if (!from_job || from_job->output_path != output_path) {
+            continue;
+        }
+
+        const CookJob* to_job = find_job_by_id(jobs, edge.to_job_id);
+        if (!to_job) {
+            continue;
+        }
+
+        for (const CookCacheEntry& entry : m_entries) {
+            if (entry.source_path == to_job->source_path) {
+                ++count;
+            }
+        }
+        count += count_downstream_entries(to_job->output_path, edges, jobs);
+    }
+
+    return count;
 }
 
 bool CookCache::contains(u64 content_hash) const {
