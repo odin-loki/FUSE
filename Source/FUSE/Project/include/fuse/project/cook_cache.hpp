@@ -54,6 +54,51 @@ struct CookCachePruneEstimate {
            is_valid_cook_cache_path(entry.output_path);
 }
 
+/// Read-only store preflight — structural guards plus kind-specific source hash checks (B7.9 deepen).
+[[nodiscard]] inline CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        CookHashPreflight preflight;
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+    if (entry.source_path.empty()) {
+        CookHashPreflight preflight;
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (entry.output_path.empty()) {
+        CookHashPreflight preflight;
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+    switch (entry.kind) {
+    case CookAssetKind::Mesh: {
+        MeshImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_mesh_import_hash(desc);
+    }
+    case CookAssetKind::Texture: {
+        TextureImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_texture_import_hash(desc);
+    }
+    case CookAssetKind::Audio: {
+        AudioImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_audio_import_hash(desc);
+    }
+    case CookAssetKind::Shader: {
+        CookHashPreflight preflight;
+        preflight.reason = CookHashRejectReason::SourceUnreadable;
+        return preflight;
+    }
+    }
+    return {};
+}
+
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     return is_valid_cook_cache_key(combine_cook_cache_key(source_hash, upstream_hash));
@@ -92,6 +137,20 @@ public:
 
     /// Read-only invalidation probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] bool would_invalidate(u64 content_hash) const;
+    /// True when `invalidate_source` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    /// True when `invalidate_output` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    /// True when `invalidate_stale_content_for_source` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+    /// True when `invalidate_stale_upstream_hashes` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// True when `invalidate_downstream_of` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                      const std::vector<CookJobDependencyEdge>& edges,
+                                                      const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
