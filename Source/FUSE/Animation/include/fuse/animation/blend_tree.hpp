@@ -286,6 +286,19 @@ struct AnimStateMachine : BlendNode {
     /// True when both state indices are valid, distinct, and a transition edge exists.
     bool is_valid_transition_edge(u32 from_state, u32 to_state) const;
 
+    /// True when both states are registered, distinct, and an edge exists between them.
+    bool is_valid_transition(u32 from_state, u32 to_state) const;
+
+    /// True when `is_valid_transition` passes and the edge condition passes (or is unset).
+    bool can_take_transition(u32 from_state, u32 to_state) const;
+
+    /// True when any outgoing edge from `from_state` has a passing condition.
+
+    /// Source state for the `transition_index`-th registered edge, or -1 when out of range.
+
+    /// Destination state for the `transition_index`-th registered edge, or -1 when out of range.
+
+    /// Blend duration for the `transition_index`-th registered edge, or -1 when out of range.
 };
 
 } // namespace fuse::animation
