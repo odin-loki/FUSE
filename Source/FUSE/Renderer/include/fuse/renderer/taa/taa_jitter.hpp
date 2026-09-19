@@ -28,9 +28,24 @@ bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitt
                              TaaJitterGuardRejectReason* reason = nullptr);
 /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
 bool tryPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter sync preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterSync(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// True when NDC jitter can be produced for viewport and sequence (B5.9 deepen).
 bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
                             TaaJitterGuardRejectReason* reason = nullptr);
+/// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason& reason);
+/// Early-out when NDC jitter preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Classify why jitter advance would be rejected (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterAdvanceReject(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// True when jitter can advance for the given sequence (B5.9 deepen).
+bool preflightTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                                 TaaJitterGuardRejectReason* reason = nullptr);
+/// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterAdvance(u32 sequenceLength, TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter advance preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterAdvance(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -55,9 +70,14 @@ struct TaaJitterLayout {
                                             u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Halton offset for a monotonic frame counter (wraps via `frameIndexInSequence`).
     static fuse::math::Vec2 offsetForFrameIndex(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// Halton offset for a frame counter only when the sequence is valid (B5.9 deepen).
+    static bool offsetForFrameIndexIfReady(u32 frameIndex, u32 sequenceLength, fuse::math::Vec2& out);
     /// NDC jitter for a monotonic frame counter (wraps via `frameIndexInSequence`).
     static fuse::math::Vec2 ndcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
                                                    u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// NDC jitter for a frame counter only when viewport and sequence are valid (B5.9 deepen).
+    static bool ndcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
+                                              fuse::math::Vec2& out);
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
     static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
 };
