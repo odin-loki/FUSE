@@ -3166,3 +3166,27 @@ void testFrictionBasisShouldRunAndComputePreflightGuards() {
             fuse::physics::narrowphase::ContactBufferCompactRejectReason::NoWork,
             buffer, fuse::physics::narrowphase::ContactBufferCompactRejectReason::NoWork),
     testFrictionBasisShouldRunAndComputePreflightGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-01df ---
+    const auto basePreflight =
+    expectTrue(basePreflight.can_dispatch(), "base detect preflight allows valid pair");
+    expectTrue(!basePreflight.usesDeepenReject, "base detect preflight does not use deepen reject");
+    expectTrue(!deepenPreflight.can_dispatch(), "deepen detect preflight rejects both-sleeping pair");
+    expectTrue(deepenPreflight.usesDeepenReject, "deepen detect preflight records deepen path");
+        fuse::physics::narrowphase::should_skip_detect_contacts_pair(
+        "should_skip_detect flags self pair");
+void testContactBufferWriteCompactPreflightGuards() {
+    const auto compactPreflight = fuse::physics::narrowphase::preflight_contact_buffer_compact(buffer);
+    expectTrue(compactPreflight.can_compact(), "compact preflight allows buffer with valid slot");
+    expectTrue(buffer.compactWithPreflight() == 1u, "compactWithPreflight gathers valid slot");
+            empty, fuse::physics::narrowphase::ContactBufferCompactRejectReason::AllInvalid),
+    expectTrue(empty.compactWithPreflight() == 0u, "compactWithPreflight clears all-invalid buffer");
+                fuse::physics::narrowphase::ContactBufferCompactRejectReason::AllInvalid),
+    clampBuffer.writeSlotWithPreflight(0u, shallow);
+    clampBuffer.writeSlotWithPreflight(1u, deep);
+        clampBuffer.compactAndClampWithPreflight() == 1u,
+        "compactAndClampWithPreflight compacts then clamps");
+void testManifoldNormalizeAndChainFinalizeGuards() {
+void testFrictionBasisComputeWithPreflightGuards() {
+    testContactBufferWriteCompactPreflightGuards();
+    testFrictionBasisComputeWithPreflightGuards();

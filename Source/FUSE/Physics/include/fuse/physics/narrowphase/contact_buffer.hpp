@@ -291,3 +291,7 @@ bool writeContactSlotWithPreflight(
 // --- deepen additive from b4-narrowphase-deepen-pass-6859 ---
 ContactBufferFrictionPreflight preflight_buffer_friction_rebuild(
 bool should_skip_buffer_friction_rebuild(const ContactBufferSoA& buffer, f32 epsilon = 1e-4f);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-01df ---
+    bool can_write() const { return canWrite && reason == ContactBufferWriteRejectReason::None; }
+    bool can_compact() const { return canCompact && reason == ContactBufferCompactRejectReason::None; }

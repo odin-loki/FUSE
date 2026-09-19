@@ -404,3 +404,7 @@ NarrowphaseDispatchRejectReason narrowphase_dispatch_reject_reason(
     NarrowphaseDispatchRejectReason reason = NarrowphaseDispatchRejectReason::None;
     bool can_dispatch() const { return reason == NarrowphaseDispatchRejectReason::None && dispatchableCount > 0u; }
     bool can_skip() const { return reason != NarrowphaseDispatchRejectReason::None || dispatchableCount == 0u; }
+
+// --- deepen additive from b4-narrowphase-deepen-guards-01df ---
+ContactPairDispatchPreflight preflight_detect_contacts_pair(
+bool should_skip_detect_contacts_pair(

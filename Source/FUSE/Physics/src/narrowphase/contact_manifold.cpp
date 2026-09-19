@@ -808,3 +808,8 @@ bool should_skip_manifold_beyond_prune(
 // --- deepen additive from b4-narrowphase-deepen-guards-68a1 ---
     case ManifoldPruneRejectReason::InvalidNormal:
         return ManifoldPruneRejectReason::InvalidNormal;
+
+// --- deepen additive from b4-narrowphase-deepen-guards-01df ---
+    if (prunePreflight.reason == ManifoldPruneRejectReason::AllSeparated) {
+    if (prunePreflight.reason == ManifoldPruneRejectReason::EmptyManifold) {
+    if (!prunePreflight.can_skip_prune(shallowMinDepth)) {

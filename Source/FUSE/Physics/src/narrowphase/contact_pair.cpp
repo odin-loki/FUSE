@@ -899,3 +899,9 @@ NarrowphaseDispatchRejectReason narrowphase_dispatch_reject_reason(
         return NarrowphaseDispatchRejectReason::AllPairsRejected;
     return NarrowphaseDispatchRejectReason::None;
     NarrowphaseDispatchRejectReason expected) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-01df ---
+    const NarrowphaseBatchPreflight preflight = preflight_narrowphase_batch(pairs, bodies, shapes);
+ContactPairDispatchPreflight preflight_detect_contacts_pair(
+bool should_skip_detect_contacts_pair(
+    if (should_skip_detect_contacts_pair(pair, bodies, shapes, useDeepenReject)) {
