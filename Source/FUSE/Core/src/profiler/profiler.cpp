@@ -324,6 +324,9 @@ bool isBufferFull() {
 }
 
 bool isEventIndexValid(u32 index) {
+    if (index == kInvalidEventIndex) {
+        return false;
+    }
     return index < eventCount();
 }
 
@@ -356,7 +359,7 @@ const ProfileEvent& emptyProfileEvent() {
 }
 
 const ProfileEvent& eventAt(u32 index) {
-    if (!isEventIndexValid(index)) {
+    if (index == kInvalidEventIndex || !isEventIndexValid(index)) {
         return emptyProfileEvent();
     }
 
@@ -426,6 +429,8 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.maxScopeNestingDepth = maxNestingDepth();
     preflight.maxFlowNestingDepth = maxFlowNestingDepth();
     preflight.bufferEmpty = isBufferEmpty();
+    preflight.bufferFull = isBufferFull();
+    preflight.ringCapacity = ringCapacity();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
