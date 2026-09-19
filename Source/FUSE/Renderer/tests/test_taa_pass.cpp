@@ -4791,3 +4791,6 @@ void testTaaPassTryClassifyGuardWrappers() {
     expectTrue(zeroPass->classifyJitterNdcReject() == jitterReject,
                "zero-width pass classifyJitterNdcReject matches tryPreflightJitterNdc");
                "pass classifyResolveSkip matches tryPreflightResolve for invalid dimensions");
+
+// --- deepen additive from deepen-b59-taa-pass-guards-5dd5 ---
+               "pass tryPreflightResolveBlendWeights passes before init warmup");
