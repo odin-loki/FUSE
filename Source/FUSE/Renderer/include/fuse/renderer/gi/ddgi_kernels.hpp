@@ -53,6 +53,14 @@ void populateDDGIKernelParams(DDGIKernelParams& params,
                               u32 probe_count,
                               u64 frame_seed = 0);
 
+/// Populate kernel params and run non-mutating launch preflight (B5.6 deepen pass).
+bool preflightDDGIKernelParams(DDGIKernelParams& params,
+                               const DDGIDesc& desc,
+                               const u32* probe_indices,
+                               u32 probe_count,
+                               u64 frame_seed = 0,
+                               ProbeKernelRejectReason* reason = nullptr);
+
 /// Preflight guard before probe trace kernel launch.
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
 /// Diagnose why probe trace launch preflight would reject.

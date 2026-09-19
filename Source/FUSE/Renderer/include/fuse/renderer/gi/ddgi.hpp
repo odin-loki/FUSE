@@ -9,6 +9,11 @@
 
 namespace fuse::renderer {
 
+namespace gi {
+struct DDGIKernelParams;
+enum class ProbeKernelRejectReason : u8;
+} // namespace gi
+
 /// 3D probe grid dimensions (B5.6 — P5 §5.6).
 struct DDGIGridDims {
     u32 x = 16;
@@ -179,6 +184,24 @@ enum class ProbeTrilinearSampleRejectReason : u8 {
 /// Human-readable label for trilinear sample reject reasons (logging / tests).
 const char* probeTrilinearSampleRejectReasonLabel(ProbeTrilinearSampleRejectReason reason);
 
+/// True when a trilinear sample reject reason would block lookup (B5.6 deepen pass).
+bool probeTrilinearSampleRejectReasonIsBlocking(ProbeTrilinearSampleRejectReason reason);
+
+/// Why a probe grid cannot serve as an irradiance sampling source (B5.6 deepen).
+enum class ProbeGridSourceRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    ZeroSpacing,
+    ZeroIrradianceRes,
+    MismatchedProbeCount,
+};
+
+/// Human-readable label for probe-grid source reject reasons (logging / tests).
+const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason);
+
+/// True when a probe-grid source reject reason would block sampling (B5.6 deepen pass).
+bool probeGridSourceRejectReasonIsBlocking(ProbeGridSourceRejectReason reason);
+
 /// Human-readable label for cache-index reject reasons (logging / tests).
 const char* cacheIndexRejectReasonLabel(CacheIndexRejectReason reason);
 
@@ -210,6 +233,18 @@ bool preflightDdgiProbeUpdate(const DDGIDesc& desc,
                               const u32* probe_indices,
                               u32 probe_count,
                               ProbeUpdateLaunchRejectReason* reason = nullptr);
+/// Non-mutating host launch + kernel preflight — returns true when both would proceed.
+bool preflightDdgiProbeUpdatePipeline(const DDGIDesc& desc,
+                                        const u32* probe_indices,
+                                        u32 probe_count,
+                                        const gi::DDGIKernelParams& kernel_params,
+                                        ProbeUpdateLaunchRejectReason* host_reason = nullptr,
+                                        gi::ProbeKernelRejectReason* kernel_reason = nullptr);
+/// Early-out when host launch or kernel preflight would reject the update pipeline.
+bool wouldSkipDdgiProbeUpdatePipeline(const DDGIDesc& desc,
+                                      const u32* probe_indices,
+                                      u32 probe_count,
+                                      const gi::DDGIKernelParams& kernel_params);
 
 /// Why probe-update scheduling preflight rejected the request (B5.6 deepen).
 enum class ProbeScheduleRejectReason : u8 {
@@ -359,8 +394,30 @@ bool validateProbeBorderCounts(const ProbeBorderCounts& counts);
 bool validateProbeBorderCountsForGrid(const DDGIDesc& desc);
 /// True when the probe grid can participate in spatial irradiance sampling.
 bool canSampleProbeGrid(const DDGIDesc& desc);
+/// Diagnose why `desc` cannot serve as a probe irradiance source; vacuously succeeds when sampleable.
+bool tryValidateProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason& outReason);
+/// Diagnose probe-grid source preflight including allocated probe count.
+bool tryValidateProbeGridSource(const DDGIDesc& desc,
+                                u32 probe_count,
+                                ProbeGridSourceRejectReason& outReason);
+/// Diagnose probe-grid source preflight from combined probe data.
+bool tryValidateProbeGridSource(const ProbeData& data, ProbeGridSourceRejectReason& outReason);
+/// Classify why probe-grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc);
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc, u32 probe_count);
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const ProbeData& data);
+/// Non-mutating probe-grid source preflight — returns true when sampling would proceed.
+bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason* reason = nullptr);
+bool preflightProbeGridSource(const DDGIDesc& desc,
+                              u32 probe_count,
+                              ProbeGridSourceRejectReason* reason = nullptr);
+bool preflightProbeGridSource(const ProbeData& data, ProbeGridSourceRejectReason* reason = nullptr);
 /// Early-out when probe irradiance lookup should be skipped for an empty or non-sampleable grid.
 bool shouldSkipProbeGrid(const DDGIDesc& desc);
+/// Early-out when probe-grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
+bool wouldSkipProbeGridSource(const DDGIDesc& desc);
+bool wouldSkipProbeGridSource(const DDGIDesc& desc, u32 probe_count);
+bool wouldSkipProbeGridSource(const ProbeData& data);
 /// Early-out when probe cache lookup should be skipped (empty grid, null cache, or undersized storage).
 bool shouldSkipProbeLookup(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 cache_count);
 /// True when `cache` is allocated and sized for every probe in `desc`.
@@ -376,6 +433,22 @@ bool tryCanSampleAtProbeCoords(const DDGIDesc& desc,
                                const IrradianceCacheEntry* cache,
                                u32 cache_count,
                                ProbeTrilinearSampleRejectReason& outReason);
+/// Classify why coord-based probe trilinear sampling would reject.
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDesc& desc,
+                                                                    const ProbeSampleCoords& coords,
+                                                                    const IrradianceCacheEntry* cache,
+                                                                    u32 cache_count);
+/// Non-mutating coord-based trilinear sample preflight — returns true when sampling would proceed.
+bool preflightProbeTrilinearSample(const DDGIDesc& desc,
+                                   const ProbeSampleCoords& coords,
+                                   const IrradianceCacheEntry* cache,
+                                   u32 cache_count,
+                                   ProbeTrilinearSampleRejectReason* reason = nullptr);
+/// Early-out when coord-based trilinear sampling would be rejected.
+bool wouldSkipProbeTrilinearSample(const DDGIDesc& desc,
+                                   const ProbeSampleCoords& coords,
+                                   const IrradianceCacheEntry* cache,
+                                   u32 cache_count);
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               const IrradianceCacheEntry* cache,
@@ -426,6 +499,11 @@ CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
 /// Non-mutating cache-index preflight — returns true when lookup would proceed.
 bool preflightCacheIndexLookup(const DDGIDesc& desc,
                                const IrradianceCacheEntry* cache,
+                               u32 probe_index,
+                               u32 cache_count,
+                               CacheIndexRejectReason* reason = nullptr);
+/// Non-mutating cache-index preflight without cache pointer — index + length only.
+bool preflightCacheIndexLookup(const DDGIDesc& desc,
                                u32 probe_index,
                                u32 cache_count,
                                CacheIndexRejectReason* reason = nullptr);
@@ -490,12 +568,25 @@ ProbeScheduleRejectReason classifyProbeScheduleReject(u32 probe_count,
                                                       u32 max_indices,
                                                       const u32* out_indices,
                                                       u32* out_count);
+/// Classify why rate-aware probe scheduling would be rejected.
+ProbeScheduleRejectReason classifyProbeScheduleRejectAtRate(u32 probe_count,
+                                                            u32 probes_per_frame,
+                                                            u32 max_indices,
+                                                            const u32* out_indices,
+                                                            u32* out_count);
 /// Non-mutating schedule preflight — returns true when scheduling would proceed.
 bool preflightProbeSchedule(u32 probe_count,
                             u32 max_indices,
                             const u32* out_indices,
                             u32* out_count,
                             ProbeScheduleRejectReason* reason = nullptr);
+/// Non-mutating rate-aware schedule preflight — returns true when scheduling would proceed.
+bool preflightProbeScheduleAtRate(u32 probe_count,
+                                  u32 probes_per_frame,
+                                  u32 max_indices,
+                                  const u32* out_indices,
+                                  u32* out_count,
+                                  ProbeScheduleRejectReason* reason = nullptr);
 /// True when output capacity would cap scheduled probes below `probes_per_frame`.
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 fuse::math::Vec3 blendIrradiance(const fuse::math::Vec3& previous,
@@ -522,6 +613,22 @@ bool tryTrilinearProbeIrradiance(const DDGIDesc& desc,
                                  u32 cache_count,
                                  fuse::math::Vec3& out_irradiance,
                                  ProbeTrilinearSampleRejectReason& outReason);
+/// Classify why world-position trilinear sampling would reject.
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDesc& desc,
+                                                                    const fuse::math::Vec3& world_position,
+                                                                    const IrradianceCacheEntry* cache,
+                                                                    u32 cache_count);
+/// Non-mutating world-position trilinear sample preflight.
+bool preflightTrilinearProbeIrradiance(const DDGIDesc& desc,
+                                       const fuse::math::Vec3& world_position,
+                                       const IrradianceCacheEntry* cache,
+                                       u32 cache_count,
+                                       ProbeTrilinearSampleRejectReason* reason = nullptr);
+/// Early-out when world-position trilinear sampling would be rejected.
+bool wouldSkipTrilinearProbeIrradiance(const DDGIDesc& desc,
+                                       const fuse::math::Vec3& world_position,
+                                       const IrradianceCacheEntry* cache,
+                                       u32 cache_count);
 /// Directional octahedral bilinear sample within one probe cache entry (CPU stub).
 fuse::math::Vec3 sampleDirectionalIrradianceAtProbe(const IrradianceCacheEntry& entry,
                                                   const fuse::math::Vec3& direction,
