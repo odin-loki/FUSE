@@ -3187,3 +3187,14 @@ bool wouldClampCacheIndexLookupCoord(const DDGIDesc& desc, u32 x, u32 y, u32 z) 
             outReason = ProbeGridSourceRejectReason::DescProbeDataMismatch;
 bool tryValidateProbeGridSourceForSampling(const ProbeGridSource& source,
     if (!tryValidateProbeGridSource(source, outReason)) {
+
+// --- deepen additive from deepen-ddgi-guards-b85d ---
+    case ProbeGridRejectReason::InvalidSpacing:
+    case ProbeGridRejectReason::ZeroIrradianceRes:
+ProbeGridRejectReason classifyProbeGridReject(const DDGIDesc& desc) {
+        return ProbeGridRejectReason::ZeroIrradianceRes;
+        return ProbeGridRejectReason::InvalidSpacing;
+bool preflightProbeGrid(const DDGIDesc& desc, ProbeGridRejectReason* reason) {
+bool wouldSkipProbeGrid(const DDGIDesc& desc) {
+    tryPreflightProbeTrilinearSample(desc, coords, cache, cache_count, reason);
+    return !tryPreflightProbeTrilinearSample(desc, coords, cache, cache_count, reason);

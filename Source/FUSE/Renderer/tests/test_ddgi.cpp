@@ -4432,3 +4432,27 @@ void testDdgiKernelUpdatePreflightGuards() {
                "preflightProbeScheduleAtRate rejects zero probes per frame");
     expectTrue(fuse::renderer::gi::classifyProbeBlendKernelReject(zeroCount) ==
                "classifyProbeBlendKernelReject zero update count");
+
+// --- deepen additive from deepen-ddgi-guards-b85d ---
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridReject(desc) ==
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeGrid(desc),
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeGrid(desc),
+               "wouldSkipProbeGrid false for sampleable grid");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridReject(empty) ==
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeGrid(empty),
+               "wouldSkipProbeGrid true for empty grid");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridReject(zeroRes) ==
+                   fuse::renderer::ProbeGridRejectReason::ZeroIrradianceRes,
+               "classifyProbeGridReject zero_irradiance_res");
+                               fuse::renderer::ProbeGridRejectReason::ZeroIrradianceRes),
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridReject(badSpacing) ==
+                   fuse::renderer::ProbeGridRejectReason::InvalidSpacing,
+               "classifyProbeGridReject invalid_spacing");
+                               fuse::renderer::ProbeGridRejectReason::InvalidSpacing),
+               "preflightProbeTrilinearSample succeeds on accessible grid");
+               "tryPreflightProbeTrilinearSample warns but succeeds for clampable weights");
+    expectTrue(!fuse::renderer::ddgi_util::tryPreflightProbeTrilinearSample(
+               "tryPreflightProbeTrilinearSample rejects hard OOB indices");
+    expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::InvalidSampleCoords,
+    expectTrue(fuse::renderer::probeTrilinearSampleRejectReasonIsBlocking(trilinearReason),
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeTrilinearSampleReject(desc, hardOob, cache.data(), 8u) ==
