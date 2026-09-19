@@ -4,6 +4,28 @@
 
 namespace fuse::physics::narrowphase {
 
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphasePairSlotPreflight preflight{};
+    if (should_skip_contact_pair_dispatch(pair, bodies, shapes)) {
+        preflight.skipped = true;
+        preflight.pairRejected = true;
+        return preflight;
+    }
+
+    preflight.canDispatch = true;
+    return preflight;
+}
+
+bool should_skip_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !preflight_narrowphase_pair_slot(pair, bodies, shapes).can_process();
+}
+
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
@@ -33,6 +55,7 @@ void runNarrowphaseIntoBuffer(
         if (finalize_contact_manifold_with_preflight(manifold)) {
         const broadphase::CandidatePair& pair = pairs[pairIndex];
         if (should_skip_contact_pair_dispatch(pair, bodies, shapes)) {
+        if (should_skip_narrowphase_pair_slot(pair, bodies, shapes)) {
 
         ContactManifold manifold = detect_contacts_pair(pair, bodies, shapes);
         if (generate_contact_manifold(manifold)) {

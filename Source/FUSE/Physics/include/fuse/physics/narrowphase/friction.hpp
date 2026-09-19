@@ -219,16 +219,13 @@ bool should_run_friction_basis_rebuild(
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
 struct FrictionBasisPreflight {
     FrictionBasisRejectReason reason = FrictionBasisRejectReason::None;
-enum class FrictionBasisRebuildRejectReason : u8 {
 
 /// Human-readable label for friction-basis rebuild reject reasons (logging / tests).
-const char* friction_basis_rebuild_reject_reason_name(FrictionBasisRebuildRejectReason reason);
 
-FrictionBasisRebuildRejectReason friction_basis_rebuild_reject_reason(
 
 /// Returns true when `friction_basis_rebuild_reject_reason` matches `expected` (B4.4 deepen pass).
-bool friction_basis_rebuild_rejects_for_reason(
-    FrictionBasisRebuildRejectReason expected,
+
+    CanReuseCached,
 
     FrictionBasisRebuildRejectReason reason = FrictionBasisRebuildRejectReason::None;
     bool skipped = false;
@@ -585,14 +582,15 @@ FrictionBasisNormalizePreflight preflight_friction_basis_normalize_rebuild(
 /// Non-mutating skip predicate for combined normalize/rebuild (B4.4 deepen pass).
 bool should_skip_friction_basis_normalize_rebuild(
 /// Diagnose why rebuild would skip; vacuously succeeds when rebuild may proceed.
-    const ContactManifold& manifold,
-    f32 epsilon = 1e-4f);
 
 
-/// Non-mutating rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 deepen pass).
-bool should_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 /// Non-mutating rebuild skip predicate — mirrors `should_skip_friction_basis_preflight` (B4.4 deepen pass).
 bool can_skip_friction_basis_rebuild_dispatch(const ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+
+/// Returns true when `friction_basis_rebuild_reject_reason` matches `expected` (B4.4 deepen guard pass).
+
+/// Non-mutating rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 deepen guard pass).
 
 } // namespace fuse::physics::narrowphase

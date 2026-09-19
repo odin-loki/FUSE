@@ -624,6 +624,9 @@ bool generate_contact_manifold(ContactManifold& manifold) {
     }
 
     manifold.pruneAndRetainPenetrating();
+    if (should_run_manifold_prune(manifold)) {
+        manifold.pruneContactPoints();
+    }
     if (manifold.empty()) {
     if (!manifold.pruneContactPointsIfNeeded()) {
     const ManifoldFinalizePreflight finalizePreflight = preflight_manifold_finalize(manifold);
@@ -665,6 +668,14 @@ void compute_friction_tangents(ContactManifold& manifold) {
     }
 
     rebuild_friction_basis_with_preflight(manifold);
+    if (should_skip_friction_basis_preflight(manifold)) {
+        return;
+    }
+
+    const f32 normalLength = manifold.contactNormal.length();
+    if (std::fabs(normalLength - 1.f) > 1e-4f) {
+        manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    manifold.buildFrictionBasis();
 
 ContactPairPreflight preflight_contact_pair(
     const broadphase::CandidatePair& pair,
@@ -1673,6 +1684,21 @@ bool can_skip_contact_pair_deepen_dispatch(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
+bool contact_pair_deepen_rejects_for_reason(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected) {
+    return contact_pair_deepen_reject_reason(pair, bodies, shapes) == expected;
+}
+
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase

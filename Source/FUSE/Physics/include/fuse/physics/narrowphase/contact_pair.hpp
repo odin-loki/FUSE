@@ -1013,8 +1013,6 @@ bool should_run_contact_pair_deepen_dispatch(
 /// Count pairs rejected by extended deepen preflight (B4.4 deepen pass).
 u32 count_rejected_contact_pairs(
     const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Const batch preflight for narrowphase pair dispatch (B4.5 deepen follow-up).
 struct NarrowphasePairBatchPreflight {
@@ -1031,11 +1029,8 @@ NarrowphasePairBatchPreflight preflight_narrowphase_pairs(
 /// Run shape dispatch only when deepen preflight allows; invalid manifold otherwise (B4.5 deepen follow-up).
 
 
-/// Non-mutating narrowphase predicate — inverse of `can_skip_narrowphase` (B4.4 deepen pass).
 bool should_run_narrowphase_dispatch(
 
-ContactManifold detect_contacts_pair_if_needed(
-    const broadphase::CandidatePair& pair,
 /// Returns true when both resolved shapes are planes (B4.4 deepen pass).
 bool is_plane_plane_contact_pair(
 
@@ -1081,15 +1076,11 @@ struct NarrowphaseBatchPreflight {
     bool canSkip = false;
 
     bool has_dispatchable() const { return dispatchableCount > 0u; }
-};
 
 /// Populate batch narrowphase preflight without running shape dispatch (B4.4 deepen pass).
 NarrowphaseBatchPreflight preflight_narrowphase_batch(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
-/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen pass).
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen guard pass).
 bool contact_pair_deepen_rejects_for_reason(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
@@ -1114,18 +1105,15 @@ NarrowphaseBatchPreflight preflight_narrowphase_batch(
 
 /// Non-mutating batch skip predicate — inverse of `has_dispatchable_contact_pair` (B4.4 deepen pass).
 bool narrowphase_batch_all_rejected(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen pass).
 bool contact_pair_deepen_rejects_for_reason(
     const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     ContactPairRejectReason expected);
 
 /// Non-mutating deepen dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.4 deepen pass).
+/// Non-mutating deepen dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.4 deepen guard pass).
 bool should_run_contact_pair_deepen_dispatch(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,

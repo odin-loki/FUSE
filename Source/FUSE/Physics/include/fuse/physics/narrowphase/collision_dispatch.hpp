@@ -223,7 +223,22 @@ NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
 
 /// Non-mutating dispatch skip predicate — mirrors `can_skip_narrowphase` (B4.4 deepen pass).
 bool can_skip_narrowphase_dispatch(
-    const std::vector<broadphase::CandidatePair>& pairs,
+/// Read-only narrowphase pair-slot diagnostics — no mutation (B4.4 deepen guard pass).
+struct NarrowphasePairSlotPreflight {
+    bool pairRejected = false;
+    bool canDispatch = false;
+    bool canFinalize = false;
+    bool needsFrictionBasis = false;
+
+    bool can_process() const { return !skipped && canDispatch; }
+
+/// Populate pair-slot preflight without running shape dispatch (B4.4 deepen guard pass).
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating pair-slot skip predicate — mirrors base pair reject only (B4.4 deepen guard pass).
+bool should_skip_narrowphase_pair_slot(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
