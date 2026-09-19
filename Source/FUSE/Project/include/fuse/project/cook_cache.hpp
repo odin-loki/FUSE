@@ -871,6 +871,20 @@ public:
     [[nodiscard]] CookCacheLookupPreflight preflight_lookup(u64 content_hash) const;
     /// Structural store preflight for cache records — read-only, no stats mutation (B7.9 deepen).
     [[nodiscard]] static CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+    /// True when `invalidate(hash)` would be a no-op — guarded on zero hash or missing entry (B7.9 deepen).
+    [[nodiscard]] static bool should_skip_invalidate(u64 content_hash, const CookCache& cache);
+    [[nodiscard]] static bool should_skip_invalidate_source(const std::string& source_path,
+                                                            const CookCache& cache);
+    [[nodiscard]] static bool should_skip_invalidate_output(const std::string& output_path,
+    [[nodiscard]] static bool should_skip_invalidate_stale_content_for_source(
+        const std::string& source_path, u64 current_content_hash, const CookCache& cache);
+    [[nodiscard]] static bool should_skip_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path, const CookCache& cache);
+    [[nodiscard]] static bool should_skip_invalidate_downstream_of(
+        const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
+        const std::vector<CookJob>& jobs, const CookCache& cache);
+    /// True when `prune_all` would be a no-op — mirrors `has_prunable_entries` (B7.9 deepen).
+    [[nodiscard]] static bool should_skip_prune_all(const CookCache& cache);
 
 private:
     [[nodiscard]] CookCacheEntry* find_entry_(u64 content_hash);

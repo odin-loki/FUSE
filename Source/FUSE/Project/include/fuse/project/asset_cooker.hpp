@@ -158,14 +158,9 @@ struct CookUpstreamInvalidateEstimate {
 
     [[nodiscard]] bool should_skip() const { return !would_reconcile(); }
 
-};
 
-/// Read-only upstream invalidation breakdown for a changed source (B7.9 deepen).
-struct CookCacheUpstreamReconcileEstimate {
-    u32 direct_source_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
+
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -458,6 +453,9 @@ public:
     [[nodiscard]] inline bool should_skip_upstream_invalidation(const CookManifest& manifest,
                                                               const std::string& changed_source) const {
         return !would_upstream_invalidation(manifest, changed_source);
+    /// True when reconcile invalidation would be a no-op on the current cache (B7.9 deepen).
+    /// True when `invalidate_upstream_dependency` would remove no entries (B7.9 deepen).
+    /// True when `invalidate_stale_dependency_hashes` would remove no entries (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
