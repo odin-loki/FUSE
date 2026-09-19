@@ -4670,3 +4670,20 @@ void testTaaPassTryClassifyGuardWrappers() {
 // --- deepen additive from deepen-taa-pass-guards-8135 ---
                "pass tryPreflightResolve passes for valid resolve desc");
                "pass tryPreflightResolve fails for zero width");
+
+// --- deepen additive from deepen-b59-taa-pass-wrappers-7eb0 ---
+    expectTrue(pass->trySyncJitterToFrameIndexIfReady(4u, jitterReason),
+               "pass trySyncJitterToFrameIndexIfReady succeeds before init");
+    expectTrue(pass->tryAdvanceJitterIfReady(jitterReason), "pass tryAdvanceJitterIfReady succeeds before init");
+    expectTrue(zeroPass->classifyJitterNdcReject() == fuse::renderer::TaaJitterGuardRejectReason::InvalidViewport,
+    expectTrue(zeroPass->trySyncJitterToFrameIndexIfReady(0u, jitterReason),
+               "zero-width pass trySync still valid for sequence");
+               "zero-width pass trySync reject reason is None for valid sequence");
+    expectTrue(invalidSeqPass->classifyJitterSyncReject() == fuse::renderer::TaaJitterGuardRejectReason::None,
+               "fallback sequence pass classifyJitterSyncReject is None");
+    expectTrue(invalidSeqPass->tryPreflightJitterAdvance(jitterReason),
+               "fallback sequence pass tryPreflightJitterAdvance passes");
+    expectTrue(invalidSeqPass->tryAdvanceJitterIfReady(jitterReason),
+               "fallback sequence pass tryAdvanceJitterIfReady passes");
+    expectTrue(invalidSeqPass->trySyncJitterToFrameIndexIfReady(0u, jitterReason),
+               "fallback sequence pass trySyncJitterToFrameIndexIfReady passes");
