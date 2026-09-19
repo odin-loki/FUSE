@@ -1220,3 +1220,9 @@ int main() {
     std::fprintf(stderr, "test_binaural_hrtf: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b72-hrtf-pan-guards-e91a ---
+               "should_skip mirrors is_hrtf_pan_bypassed for Bypass");
+    expectTrue(!fuse::audio::should_skip_hrtf_pan_path(fuse::audio::HrtfPanPath::IldItdStub),
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling(1.f, 1.f),
+    expectTrue(!fuse::audio::should_skip_hrtf_attenuation_coupling(0.2f, 1.f),

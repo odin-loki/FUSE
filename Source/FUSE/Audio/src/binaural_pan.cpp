@@ -798,3 +798,9 @@ void apply_binaural_pan_to_sample_from_preflight(float mono, const HrtfBinauralP
 }
 
 } // namespace fuse::audio
+
+// --- deepen additive from deepen-b72-hrtf-pan-guards-e91a ---
+bool should_skip_hrtf_attenuation_coupling(float distance_attenuation, float occlusion_gain,
+    if (should_skip_hrtf_attenuation_coupling(distance_attenuation, occlusion_gain, coupling,
+    if (!should_skip_hrtf_pan_path(path)
+        && !should_skip_hrtf_attenuation_coupling(distance_attenuation, occlusion_gain, coupling,
