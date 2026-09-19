@@ -36,12 +36,22 @@ bool should_skip_hrtf_convolution(const HrtfIrStub& ir);
 /// True when IR samples are non-null but length is zero (malformed stub).
 bool is_nonnull_zero_length_hrtf_ir(const HrtfIrStub& ir);
 
+/// Why empty-IR preflight rejected convolution dispatch (B7.2 deepen).
+enum class HrtfIrRejectReason : u8 {
+    None = 0,
+    MalformedIr,
+    NullSamples,
+    ZeroLength,
+    EmptyIr,
+};
+
 /// Empty-IR preflight diagnostics — read-only guard bundle (B7.2 deepen).
 struct HrtfIrPreflight {
     bool emptyIr = false;
     bool nullSamples = false;
     bool zeroLength = false;
     bool malformedIr = false;
+    HrtfIrRejectReason reason = HrtfIrRejectReason::None;
 
     bool can_convolve() const { return !emptyIr && !malformedIr; }
 
@@ -58,6 +68,20 @@ bool can_convolve_hrtf_ir(const HrtfIrPreflight& preflight);
 /// Non-mutating skip predicate — mirrors \c HrtfIrPreflight::should_skip_convolution.
 bool should_skip_hrtf_ir_convolution(const HrtfIrPreflight& preflight);
 
+const char* hrtf_ir_reject_reason_label(HrtfIrRejectReason reason);
+
+/// Classify the dominant empty-IR reject reason from a preflight bundle.
+HrtfIrRejectReason classify_hrtf_ir_reject(const HrtfIrPreflight& preflight);
+
+/// True when an IR reject reason blocks convolution dispatch.
+bool hrtf_ir_reject_reason_blocks_convolution(HrtfIrRejectReason reason);
+
+/// IR convolution preflight with optional reject-reason output (B7.2 deepen).
+bool preflight_hrtf_ir_ready(const HrtfIrStub& ir, HrtfIrRejectReason* reason = nullptr);
+
+/// IR convolution preflight with mandatory reject-reason output (B7.2 deepen).
+bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason& reason);
+
 /// HRTF pan routing — empty IR uses ILD/ITD stub; convolution deferred until IR wired.
 enum class HrtfPanPath {
     Bypass,
@@ -71,6 +95,13 @@ HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const
 /// Select pan path when no IR is wired (ILD/ITD stub or bypass).
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener);
 
+/// Why pan-path preflight rejected spatial pan (B7.2 deepen).
+enum class HrtfPanPathRejectReason : u8 {
+    None = 0,
+    HrtfDisabled,
+    CoLocated,
+};
+
 /// Pan-path preflight diagnostics — read-only guard bundle (B7.2 deepen).
 struct HrtfPanPathPreflight {
     HrtfPanPath path = HrtfPanPath::Bypass;
@@ -78,6 +109,7 @@ struct HrtfPanPathPreflight {
     bool coLocated = false;
     bool emptyIr = false;
     bool skipped = false;
+    HrtfPanPathRejectReason reason = HrtfPanPathRejectReason::None;
 
     bool can_spatial_pan() const { return !skipped && path != HrtfPanPath::Bypass; }
     bool can_convolve() const { return can_spatial_pan() && path == HrtfPanPath::Convolution; }
@@ -107,6 +139,30 @@ bool should_skip_hrtf_pan_path_preflight(const HrtfPanPathPreflight& preflight);
 
 /// True when pan-path preflight selects ILD/ITD stub (empty IR fallback).
 bool uses_ild_itd_stub_hrtf_pan_path(const HrtfPanPathPreflight& preflight);
+
+const char* hrtf_pan_path_reject_reason_label(HrtfPanPathRejectReason reason);
+
+/// Classify the dominant pan-path reject reason from a preflight bundle.
+HrtfPanPathRejectReason classify_hrtf_pan_path_reject(const HrtfPanPathPreflight& preflight);
+
+/// True when a pan-path reject reason blocks spatial pan.
+bool hrtf_pan_path_reject_reason_blocks_spatial_pan(HrtfPanPathRejectReason reason);
+
+/// Pan-path spatial-pan preflight with optional reject-reason output (B7.2 deepen).
+bool preflight_hrtf_pan_path_ready(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+                                   HrtfPanPathRejectReason* reason = nullptr);
+
+/// Pan-path spatial-pan preflight when no IR is wired (B7.2 deepen).
+bool preflight_hrtf_pan_path_ready(bool hrtf_enabled, const Vec3& rel_listener,
+                                   HrtfPanPathRejectReason* reason = nullptr);
+
+/// Pan-path spatial-pan preflight with mandatory reject-reason output (B7.2 deepen).
+bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+                                 HrtfPanPathRejectReason& reason);
+
+/// Pan-path spatial-pan preflight when no IR is wired (B7.2 deepen).
+bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
+                                 HrtfPanPathRejectReason& reason);
 
 /// True when a resolved pan path bypasses HRTF (disabled or co-located).
 bool is_hrtf_pan_bypassed(HrtfPanPath path);
@@ -296,12 +352,20 @@ bool should_skip_hrtf_attenuation_coupling(HrtfPanPath path);
 bool should_narrow_hrtf_spatial_image(HrtfPanPath path, float distance_attenuation,
                                       float occlusion_gain);
 
+/// Why attenuation-coupling preflight rejected spatial image narrowing (B7.2 deepen).
+enum class HrtfAttenuationCouplingRejectReason : u8 {
+    None = 0,
+    BypassPath,
+    UnityAttenuation,
+};
+
 /// Attenuation-coupling preflight diagnostics — read-only guard bundle (B7.2 deepen).
 struct HrtfAttenuationCouplingPreflight {
     bool bypassPath = false;
     bool unityAttenuation = false;
     bool skipped = false;
     float spatialBlend = 1.f;
+    HrtfAttenuationCouplingRejectReason reason = HrtfAttenuationCouplingRejectReason::None;
 
     bool can_narrow() const { return !skipped; }
 
@@ -320,6 +384,29 @@ bool can_narrow_hrtf_spatial_image(const HrtfAttenuationCouplingPreflight& prefl
 
 /// Non-mutating skip predicate — mirrors \c HrtfAttenuationCouplingPreflight::should_skip.
 bool should_skip_hrtf_attenuation_coupling_preflight(const HrtfAttenuationCouplingPreflight& preflight);
+
+const char* hrtf_attenuation_coupling_reject_reason_label(HrtfAttenuationCouplingRejectReason reason);
+
+/// Classify the dominant attenuation-coupling reject reason from a preflight bundle.
+HrtfAttenuationCouplingRejectReason classify_hrtf_attenuation_coupling_reject(
+    const HrtfAttenuationCouplingPreflight& preflight);
+
+/// True when an attenuation-coupling reject reason blocks spatial image narrowing.
+bool hrtf_attenuation_coupling_reject_reason_blocks_narrowing(
+    HrtfAttenuationCouplingRejectReason reason);
+
+/// Attenuation-coupling preflight with optional reject-reason output (B7.2 deepen).
+bool preflight_hrtf_attenuation_coupling_ready(HrtfPanPath path, float distance_attenuation,
+                                               float occlusion_gain,
+                                               const HrtfAttenuationCoupling& coupling = {},
+                                               const BinauralPanParams& params = {},
+                                               HrtfAttenuationCouplingRejectReason* reason = nullptr);
+
+/// Attenuation-coupling preflight with mandatory reject-reason output (B7.2 deepen).
+bool try_preflight_hrtf_attenuation_coupling(
+    HrtfPanPath path, float distance_attenuation, float occlusion_gain,
+    HrtfAttenuationCouplingRejectReason& reason, const HrtfAttenuationCoupling& coupling = {},
+    const BinauralPanParams& params = {});
 
 /// True when a spatial blend preserves full L/R separation.
 bool is_unity_hrtf_spatial_blend(float blend, float epsilon = 1e-5f);
@@ -375,11 +462,38 @@ BinauralPanGains compute_binaural_pan_gains_coupled_for_path(HrtfPanPath path,
                                                               const HrtfAttenuationCoupling& coupling = {},
                                                               const BinauralPanParams& params = {});
 
+/// Why composite binaural/HRTF preflight rejected the primary spatial path (B7.2 deepen).
+enum class HrtfBinauralRejectReason : u8 {
+    None = 0,
+    HrtfDisabled,
+    CoLocated,
+    MalformedIr,
+    EmptyIr,
+    UnityAttenuation,
+};
+
+/// Why composite binaural/HRTF preflight rejected convolution dispatch (B7.2 deepen).
+enum class HrtfBinauralConvolutionRejectReason : u8 {
+    None = 0,
+    HrtfDisabled,
+    CoLocated,
+    MalformedIr,
+    EmptyIr,
+};
+
+/// Why composite binaural/HRTF preflight rejected spatial image narrowing (B7.2 deepen).
+enum class HrtfBinauralNarrowingRejectReason : u8 {
+    None = 0,
+    BypassPath,
+    UnityAttenuation,
+};
+
 /// Composite binaural/HRTF preflight — bundles empty-IR, pan-path, and attenuation-coupling guards (B7.2 deepen).
 struct HrtfBinauralPreflight {
     HrtfIrPreflight ir{};
     HrtfPanPathPreflight panPath{};
     HrtfAttenuationCouplingPreflight attenuationCoupling{};
+    HrtfBinauralRejectReason reason = HrtfBinauralRejectReason::None;
 
     HrtfPanPath path() const { return panPath.path; }
 
@@ -442,6 +556,55 @@ bool should_skip_hrtf_binaural_convolution(const HrtfBinauralPreflight& prefligh
 
 /// True when composite preflight selects ILD/ITD stub (empty IR fallback).
 bool uses_ild_itd_stub_hrtf_binaural(const HrtfBinauralPreflight& preflight);
+
+const char* hrtf_binaural_reject_reason_label(HrtfBinauralRejectReason reason);
+const char* hrtf_binaural_convolution_reject_reason_label(HrtfBinauralConvolutionRejectReason reason);
+const char* hrtf_binaural_narrowing_reject_reason_label(HrtfBinauralNarrowingRejectReason reason);
+
+/// Classify the dominant composite binaural reject reason from a preflight bundle.
+HrtfBinauralRejectReason classify_hrtf_binaural_reject(const HrtfBinauralPreflight& preflight);
+
+/// Classify convolution reject reason from a composite binaural preflight bundle.
+HrtfBinauralConvolutionRejectReason classify_hrtf_binaural_convolution_reject(
+    const HrtfBinauralPreflight& preflight);
+
+/// Classify narrowing reject reason from a composite binaural preflight bundle.
+HrtfBinauralNarrowingRejectReason classify_hrtf_binaural_narrowing_reject(
+    const HrtfBinauralPreflight& preflight);
+
+/// True when a composite reject reason blocks spatial pan.
+bool hrtf_binaural_reject_reason_blocks_spatial_pan(HrtfBinauralRejectReason reason);
+
+/// True when a composite reject reason blocks convolution dispatch.
+bool hrtf_binaural_reject_reason_blocks_convolution(HrtfBinauralRejectReason reason);
+
+/// Composite binaural spatial-pan preflight with optional reject-reason output (B7.2 deepen).
+bool preflight_hrtf_binaural_ready(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+                                   float distance_attenuation, float occlusion_gain,
+                                   const HrtfAttenuationCoupling& coupling = {},
+                                   const BinauralPanParams& params = {},
+                                   HrtfBinauralRejectReason* reason = nullptr);
+
+/// Composite binaural spatial-pan preflight when no IR is wired (B7.2 deepen).
+bool preflight_hrtf_binaural_ready(bool hrtf_enabled, const Vec3& rel_listener,
+                                   float distance_attenuation, float occlusion_gain,
+                                   const HrtfAttenuationCoupling& coupling = {},
+                                   const BinauralPanParams& params = {},
+                                   HrtfBinauralRejectReason* reason = nullptr);
+
+/// Composite binaural spatial-pan preflight with mandatory reject-reason output (B7.2 deepen).
+bool try_preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+                                 float distance_attenuation, float occlusion_gain,
+                                 HrtfBinauralRejectReason& reason,
+                                 const HrtfAttenuationCoupling& coupling = {},
+                                 const BinauralPanParams& params = {});
+
+/// Composite binaural spatial-pan preflight when no IR is wired (B7.2 deepen).
+bool try_preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
+                                 float distance_attenuation, float occlusion_gain,
+                                 HrtfBinauralRejectReason& reason,
+                                 const HrtfAttenuationCoupling& coupling = {},
+                                 const BinauralPanParams& params = {});
 
 /// Apply pan + coupling using a preflight bundle (read-only guards; valid paths unchanged).
 BinauralPanGains compute_binaural_pan_gains_from_preflight(const HrtfBinauralPreflight& preflight,
