@@ -1183,3 +1183,7 @@ HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_coupling(
     if (ir_reason != HrtfIrRejectReason::None) {
     if (coupling_reason == HrtfAttenuationCouplingRejectReason::BypassPath) {
     if (coupling_reason == HrtfAttenuationCouplingRejectReason::UnityAttenuation) {
+
+// --- deepen additive from deepen-b72-hrtf-reject-reason-preflights-d99c ---
+    const HrtfPanPathRejectReason panReason = hrtf_pan_path_reject_reason(hrtf_enabled, rel_listener);
+    preflight.rejected = preflight.reason != HrtfBinauralRejectReason::None;
