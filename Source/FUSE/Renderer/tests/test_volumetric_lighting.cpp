@@ -2930,3 +2930,18 @@ void testFroxelTrilinearAndDensityLookupGuards() {
     expectTrue(!fuse::renderer::froxel_util::tryLookupDensityFromScreen(
                "tryLookupDensityFromScreen rejects empty storage");
                "tryLookupDensityFromScreen rejects depth below near plane");
+
+// --- deepen additive from deepen-b511-froxel-guards-13b8 ---
+void testFroxelTrilinearStrictLookupAndPopulateGuards() {
+    expectTrue(fuse::renderer::froxel_util::tryCanLookupAtIndexStrict(grid, desc, 5u, lookupReason),
+    expectTrue(!fuse::renderer::froxel_util::tryCanLookupAtIndexStrict(grid, desc, 999u, lookupReason),
+    expectTrue(fuse::renderer::froxel_util::canPreflightTrilinearDensitySample(grid, desc, inBounds),
+    expectTrue(fuse::renderer::froxel_util::canPreflightTrilinearDensitySample(grid, desc, warnWeights),
+    expectTrue(!fuse::renderer::froxel_util::canPreflightTrilinearDensitySample(grid, desc, hardOob),
+    expectTrue(fuse::renderer::froxel_util::tryPreflightTrilinearDensitySample(grid, desc, inBounds, sampleReason),
+               "tryPreflightTrilinearDensitySample succeeds for in-bounds coords");
+               "trySampleDensityTrilinear with reason rejects hard OOB coords");
+    expectNear(rejectedTrilinear, 0.f, 1e-6f, "trySampleDensityTrilinear with reason zeroes output on hard OOB rejection");
+    expectTrue(fuse::renderer::froxel_util::tryValidatePopulateResult(populated, desc, camera, params, populateReason),
+    expectTrue(fuse::renderer::froxel_util::tryValidatePopulateResult(skipped, desc, camera, zeroDensity, populateReason),
+    expectTrue(!fuse::renderer::froxel_util::tryValidatePopulateResult(mismatched, desc, camera, params, populateReason),

@@ -777,3 +777,11 @@ SampleCoordRejectReason classifyTrilinearSampleReject(const FroxelDensityGrid& g
 
 // --- deepen additive from deepen-froxel-volumetric-guards-b511-453e ---
 bool tryLookupDensityFromScreen(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-b511-froxel-guards-13b8 ---
+bool tryCanLookupAtIndexStrict(const FroxelDensityGrid& grid,
+bool tryCanLookupAtCoordStrict(const FroxelDensityGrid& grid,
+bool wouldClampTrilinearDensitySample(const FroxelDensityGrid& grid,
+bool canPreflightTrilinearDensitySample(const FroxelDensityGrid& grid,
+bool tryPreflightTrilinearDensitySample(const FroxelDensityGrid& grid,
+bool tryValidatePopulateResult(const FroxelDensityGrid& grid,

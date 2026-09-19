@@ -1998,3 +1998,20 @@ SampleCoordRejectReason classifyTrilinearSampleReject(const FroxelDensityGrid& g
     if (!tryPreflightTrilinearSample(grid, desc, coords, trilinearReason)) {
     if (trilinearReason == FroxelTrilinearSampleRejectReason::InvalidSampleCoords) {
 bool tryLookupDensityFromScreen(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-b511-froxel-guards-13b8 ---
+bool tryCanLookupAtIndexStrict(const FroxelDensityGrid& grid,
+    return tryCanLookupAtIndexStrict(grid, desc, index, reason);
+bool tryCanLookupAtCoordStrict(const FroxelDensityGrid& grid,
+    return tryCanLookupAtCoordStrict(grid, desc, tileX, tileY, sliceZ, reason);
+    return FroxelGridLayout::canPreflightSampleCoords(coords, desc);
+bool tryPreflightTrilinearDensitySample(const FroxelDensityGrid& grid,
+bool canPreflightTrilinearDensitySample(const FroxelDensityGrid& grid,
+    return tryPreflightTrilinearDensitySample(grid, desc, coords, reason);
+    return !canPreflightTrilinearDensitySample(grid, desc, coords);
+bool wouldClampTrilinearDensitySample(const FroxelDensityGrid& grid,
+    if (!tryPreflightTrilinearDensitySample(grid, desc, coords, outReason)) {
+    if (!trySampleDensityTrilinear(grid, desc, coords, outDensity, sampleReason)) {
+bool tryValidatePopulateResult(const FroxelDensityGrid& grid,
+    FroxelPopulateRejectReason populateReason = FroxelPopulateRejectReason::None;
+    if (!tryCanPopulateFromAnalyticFog(desc, camera, params, populateReason)) {
