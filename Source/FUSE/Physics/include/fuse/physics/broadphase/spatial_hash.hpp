@@ -45,15 +45,17 @@ FUSE_PHYSICS_INLINE CandidatePairRejectReason candidatePairRejectReason(
     }
     if (bodyCount > 0u && (bodyA >= bodyCount || bodyB >= bodyCount)) {
         return CandidatePairRejectReason::OutOfRangeBody;
-    }
     return CandidatePairRejectReason::None;
-}
 
-FUSE_PHYSICS_INLINE CandidatePairRejectReason candidatePairRejectReason(
     const CandidatePair& pair,
-    u32 bodyCount = 0u) {
     return candidatePairRejectReason(pair.bodyA, pair.bodyB, bodyCount);
-}
+/// Diagnostic reason a broadphase candidate pair is rejected (B4.2 deepen follow-up).
+enum class CandidateRejectReason : u8 {
+    AabbSeparated,
+    BufferFull,
+
+/// Human-readable label for candidate reject reasons (logging / tests).
+const char* candidateRejectReasonLabel(CandidateRejectReason reason);
 
 /// Empty-pair guard: true when both indices refer to the same body.
 FUSE_PHYSICS_INLINE bool isEmptyCandidatePair(u32 bodyA, u32 bodyB) {
@@ -82,40 +84,26 @@ FUSE_PHYSICS_INLINE bool candidatePairRejectsForReason(
     return candidatePairRejectReason(bodyA, bodyB, bodyCount) == expected;
 }
 
-FUSE_PHYSICS_INLINE bool candidatePairRejectsForReason(
     const CandidatePair& pair,
-    u32 bodyCount,
-    CandidatePairRejectReason expected) {
     return candidatePairRejectsForReason(pair.bodyA, pair.bodyB, bodyCount, expected);
-}
 
 /// Empty-set guard: true when broadphase has no bodies or no collision shapes.
 FUSE_PHYSICS_INLINE bool isEmptyBroadphaseInput(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return bodies.count() == 0u || shapes.count() == 0u;
-}
 
 /// Singleton-set guard: true when fewer than two bodies or shapes can emit any pair.
 FUSE_PHYSICS_INLINE bool isSingletonBroadphaseInput(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return bodies.count() < 2u || shapes.count() < 2u;
-}
 
 /// True when spatial-hash pair generation cannot emit pairs (empty or singleton stub).
 FUSE_PHYSICS_INLINE bool canSkipBroadphasePairGeneration(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return isEmptyBroadphaseInput(bodies, shapes) || isSingletonBroadphaseInput(bodies, shapes);
-}
 
 /// True when the broadphase pipeline may early-out before hash build (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool canSkipBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return canSkipBroadphasePairGeneration(bodies, shapes);
-}
 
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
@@ -129,24 +117,17 @@ const char* broadphaseRejectReasonName(BroadphaseRejectReason reason);
 
 /// Diagnose why broadphase would skip; vacuously succeeds on populated scenes.
 FUSE_PHYSICS_INLINE BroadphaseRejectReason broadphaseRejectReason(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     if (isEmptyBroadphaseInput(bodies, shapes)) {
         return BroadphaseRejectReason::EmptyInput;
-    }
     if (isSingletonBroadphaseInput(bodies, shapes)) {
         return BroadphaseRejectReason::SingletonInput;
-    }
     return BroadphaseRejectReason::None;
-}
 
 /// Returns true when `broadphaseRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool broadphaseRejectsForReason(
-    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     BroadphaseRejectReason expected) {
     return broadphaseRejectReason(bodies, shapes) == expected;
-}
 
 /// Read-only broadphase launch diagnostics — no mutation (B4.2 deepen follow-up).
 struct BroadphasePreflight {
@@ -155,36 +136,46 @@ struct BroadphasePreflight {
     bool singletonInput = false;
 
     bool canRun() const { return reason == BroadphaseRejectReason::None; }
-};
 
 FUSE_PHYSICS_INLINE BroadphasePreflight preflightBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     BroadphasePreflight preflight{};
     preflight.reason = broadphaseRejectReason(bodies, shapes);
     preflight.emptyInput = preflight.reason == BroadphaseRejectReason::EmptyInput;
     preflight.singletonInput = preflight.reason == BroadphaseRejectReason::SingletonInput;
     return preflight;
-}
 
 /// Non-mutating broadphase predicate — inverse of `canSkipBroadphase` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool shouldRunBroadphase(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return preflightBroadphase(bodies, shapes).canRun();
-}
 
 /// Non-mutating pair-generation predicate — inverse of `canSkipBroadphasePairGeneration` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return !canSkipBroadphasePairGeneration(bodies, shapes);
-}
 
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
 FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
     return cellSize > 0.f ? cellSize : 1.f;
-}
+/// Returns the first reject reason for a pair index pair, or `None` when generation may proceed.
+FUSE_PHYSICS_INLINE CandidateRejectReason candidatePairRejectReason(u32 bodyA, u32 bodyB, u32 bodyCount = 0u) {
+    if (isEmptyCandidatePair(bodyA, bodyB)) {
+        return CandidateRejectReason::SelfPair;
+    if (bodyCount > 0u && (bodyA >= bodyCount || bodyB >= bodyCount)) {
+        return CandidateRejectReason::OutOfRangeBody;
+    return CandidateRejectReason::None;
+
+FUSE_PHYSICS_INLINE CandidateRejectReason candidatePairRejectReason(const CandidatePair& pair, u32 bodyCount = 0u) {
+    return candidatePairRejectReason(pair.bodyA, pair.bodyB, bodyCount);
+
+/// Convenience inverse of `candidatePairRejectReason` — true when the pair must be skipped.
+FUSE_PHYSICS_INLINE bool isRejectedCandidatePair(u32 bodyA, u32 bodyB, u32 bodyCount = 0u) {
+    return candidatePairRejectReason(bodyA, bodyB, bodyCount) != CandidateRejectReason::None;
+
+FUSE_PHYSICS_INLINE bool isRejectedCandidatePair(const CandidatePair& pair, u32 bodyCount = 0u) {
+    return isRejectedCandidatePair(pair.bodyA, pair.bodyB, bodyCount);
+
+/// Returns the first reject reason including AABB refine (sphere-expanded AABB overlap stub).
+CandidateRejectReason candidatePairRejectReason(
+    const CollisionShapeSoA& shapes);
 
 /// Clamp hash table size to at least one bucket (broadphase stub guard).
 FUSE_PHYSICS_INLINE u32 clampTableSize(u32 tableSize) {
@@ -225,123 +216,73 @@ FUSE_PHYSICS_INLINE bool isEmptyCellRange(const CellRange3& range) {
 
 FUSE_PHYSICS_INLINE bool isEmptyCellRange(const CellRange2& range) {
     return range.minCell.x > range.maxCell.x || range.minCell.y > range.maxCell.y;
-}
 
 /// Per-axis inclusive cell span for occupancy budgeting stubs.
 FUSE_PHYSICS_INLINE ivec3 cellSpanPerAxis(const CellRange3& range) {
     if (isEmptyCellRange(range)) {
         return {};
-    }
     return {
         range.maxCell.x - range.minCell.x + 1,
         range.maxCell.y - range.minCell.y + 1,
         range.maxCell.z - range.minCell.z + 1,
     };
-}
 
 FUSE_PHYSICS_INLINE ivec2 cellSpanPerAxis(const CellRange2& range) {
-    if (isEmptyCellRange(range)) {
-        return {};
-    }
-    return {
-        range.maxCell.x - range.minCell.x + 1,
-        range.maxCell.y - range.minCell.y + 1,
-    };
-}
 
 /// Occupancy cell count stub for budgeting (0 when the range is empty).
 FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange3& range) {
-    if (isEmptyCellRange(range)) {
         return 0u;
-    }
     const ivec3 span = cellSpanPerAxis(range);
     return static_cast<u32>(span.x) * static_cast<u32>(span.y) * static_cast<u32>(span.z);
-}
 
 FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange2& range) {
-    if (isEmptyCellRange(range)) {
-        return 0u;
-    }
     const ivec2 span = cellSpanPerAxis(range);
     return static_cast<u32>(span.x) * static_cast<u32>(span.y);
-}
 
 /// True when `maxCells == 0` (unlimited occupancy budget stub).
 FUSE_PHYSICS_INLINE bool isUnboundedCellOccupancyBudget(u32 maxCells) {
     return maxCells == 0u;
-}
 
 /// Cell-capacity guard: true when occupancy exceeds `maxCells` (0 = unlimited budget).
 FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange3& range, u32 maxCells) {
     if (isUnboundedCellOccupancyBudget(maxCells)) {
         return false;
-    }
     return estimateCellOccupancyCount(range) > maxCells;
-}
 
 FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange2& range, u32 maxCells) {
-    if (isUnboundedCellOccupancyBudget(maxCells)) {
-        return false;
-    }
-    return estimateCellOccupancyCount(range) > maxCells;
-}
 
 /// Inverse of `exceedsCellOccupancyBudget` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyWithinBudget(const CellRange3& range, u32 maxCells) {
     return !exceedsCellOccupancyBudget(range, maxCells);
-}
 
 FUSE_PHYSICS_INLINE bool cellOccupancyWithinBudget(const CellRange2& range, u32 maxCells) {
-    return !exceedsCellOccupancyBudget(range, maxCells);
-}
 
 /// Remaining occupancy slots before `maxCells` is exceeded (unlimited when `maxCells == 0`).
 FUSE_PHYSICS_INLINE u32 occupancyBudgetRemaining(const CellRange3& range, u32 maxCells) {
     if (isUnboundedCellOccupancyBudget(maxCells) || isEmptyCellRange(range)) {
         return maxCells;
-    }
     const u32 occupancy = estimateCellOccupancyCount(range);
     return occupancy >= maxCells ? 0u : maxCells - occupancy;
-}
 
 FUSE_PHYSICS_INLINE u32 occupancyBudgetRemaining(const CellRange2& range, u32 maxCells) {
-    if (isUnboundedCellOccupancyBudget(maxCells) || isEmptyCellRange(range)) {
-        return maxCells;
-    }
-    const u32 occupancy = estimateCellOccupancyCount(range);
-    return occupancy >= maxCells ? 0u : maxCells - occupancy;
-}
 
 /// Why cell occupancy iteration preflight rejected the range (B4.2 deepen follow-up).
 enum class CellOccupancyRejectReason : u8 {
     None = 0,
     EmptyRange,
     ExceedsBudget,
-};
 
 /// Human-readable label for cell-occupancy reject reasons (logging / tests).
 const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason);
 
 /// Diagnose why cell occupancy iteration would reject; vacuously succeeds on valid ranges.
 FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReason(const CellRange3& range, u32 maxCells) {
-    if (isEmptyCellRange(range)) {
         return CellOccupancyRejectReason::EmptyRange;
-    }
     if (exceedsCellOccupancyBudget(range, maxCells)) {
         return CellOccupancyRejectReason::ExceedsBudget;
-    }
     return CellOccupancyRejectReason::None;
-}
 
 FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReason(const CellRange2& range, u32 maxCells) {
-    if (isEmptyCellRange(range)) {
-        return CellOccupancyRejectReason::EmptyRange;
-    }
-    if (exceedsCellOccupancyBudget(range, maxCells)) {
-        return CellOccupancyRejectReason::ExceedsBudget;
-    }
-    return CellOccupancyRejectReason::None;
-}
 
 /// Cell-capacity preflight for shape occupancy iteration (B4.2 deepen follow-up).
 struct CellOccupancyPreflight {
@@ -351,7 +292,6 @@ struct CellOccupancyPreflight {
     u32 occupancyCount = 0;
 
     bool canIterate() const { return reason == CellOccupancyRejectReason::None; }
-};
 
 FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRange3& range, u32 maxCells) {
     CellOccupancyPreflight preflight{};
@@ -360,34 +300,20 @@ FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRang
     preflight.occupancyCount = estimateCellOccupancyCount(range);
     preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
     return preflight;
-}
 
 FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightCellOccupancy(const CellRange2& range, u32 maxCells) {
-    CellOccupancyPreflight preflight{};
-    preflight.reason = cellOccupancyRejectReason(range, maxCells);
-    preflight.emptyRange = preflight.reason == CellOccupancyRejectReason::EmptyRange;
-    preflight.occupancyCount = estimateCellOccupancyCount(range);
-    preflight.exceedsBudget = preflight.reason == CellOccupancyRejectReason::ExceedsBudget;
-    return preflight;
-}
 
 /// Non-mutating cell-occupancy skip predicate — inverse of `canIterate` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
     return !preflightCellOccupancy(range, maxCells).canIterate();
-}
 
 FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
-    return !preflightCellOccupancy(range, maxCells).canIterate();
-}
 
 /// Non-mutating cell-occupancy predicate — mirrors `preflightCellOccupancy` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool shouldRunCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
     return preflightCellOccupancy(range, maxCells).canIterate();
-}
 
 FUSE_PHYSICS_INLINE bool shouldRunCellOccupancyIteration(const CellRange2& range, u32 maxCells) {
-    return preflightCellOccupancy(range, maxCells).canIterate();
-}
 
 /// Early-out when cell-occupancy preflight would reject — same ordering as `canSkipCellOccupancyIteration` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
@@ -397,42 +323,36 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
     const CellOccupancyRejectReason reject = cellOccupancyRejectReason(range, maxCells);
     if (reason != nullptr) {
         *reason = reject;
-    }
     return reject != CellOccupancyRejectReason::None;
-}
 
-FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(
     const CellRange2& range,
-    u32 maxCells,
-    CellOccupancyRejectReason* reason = nullptr) {
-    const CellOccupancyRejectReason reject = cellOccupancyRejectReason(range, maxCells);
-    if (reason != nullptr) {
-        *reason = reject;
-    }
-    return reject != CellOccupancyRejectReason::None;
-}
 
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
-    const CellRange3& range,
-    u32 maxCells,
     CellOccupancyRejectReason expected) {
     return cellOccupancyRejectReason(range, maxCells) == expected;
-}
 
-FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
-    const CellRange2& range,
-    u32 maxCells,
-    CellOccupancyRejectReason expected) {
-    return cellOccupancyRejectReason(range, maxCells) == expected;
-}
 
 /// True when any axis span exceeds `maxSpanPerAxis` (0 = unlimited span budget).
 FUSE_PHYSICS_INLINE bool exceedsCellSpanPerAxis(const CellRange3& range, u32 maxSpanPerAxis) {
     if (maxSpanPerAxis == 0u || isEmptyCellRange(range)) {
-        return false;
-    }
-    const ivec3 span = cellSpanPerAxis(range);
+/// Clamp cell size to a positive value (broadphase stub guard).
+FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
+    return cellSize > 0.f ? cellSize : 1.f;
+
+/// Per-axis inclusive cell span for a 3D range.
+FUSE_PHYSICS_INLINE ivec3 cellSpan3(const CellRange3& range) {
+        range.maxCell.x - range.minCell.x,
+        range.maxCell.y - range.minCell.y,
+        range.maxCell.z - range.minCell.z,
+
+/// Per-axis inclusive cell span for a 2D range.
+FUSE_PHYSICS_INLINE ivec2 cellSpan2(const CellRange2& range) {
+
+/// True when any axis span exceeds `maxSpanPerAxis` (0 = unlimited).
+FUSE_PHYSICS_INLINE bool cellSpanExceedsClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    if (maxSpanPerAxis == 0u) {
+    const ivec3 span = cellSpan3(range);
     return span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis) ||
            span.z > static_cast<s32>(maxSpanPerAxis);
 }
@@ -443,16 +363,12 @@ FUSE_PHYSICS_INLINE bool exceedsCellSpanPerAxis(const CellRange2& range, u32 max
     }
     const ivec2 span = cellSpanPerAxis(range);
     return span.x > static_cast<s32>(maxSpanPerAxis) || span.y > static_cast<s32>(maxSpanPerAxis);
-}
 
 /// Inverse of `exceedsCellSpanPerAxis` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellSpanWithinPerAxisLimit(const CellRange3& range, u32 maxSpanPerAxis) {
     return !exceedsCellSpanPerAxis(range, maxSpanPerAxis);
-}
 
 FUSE_PHYSICS_INLINE bool cellSpanWithinPerAxisLimit(const CellRange2& range, u32 maxSpanPerAxis) {
-    return !exceedsCellSpanPerAxis(range, maxSpanPerAxis);
-}
 
 /// Why per-axis cell-span clamp would modify the range (B4.2 deepen follow-up pass).
 enum class CellSpanRejectReason : u8 {
@@ -468,22 +384,11 @@ const char* cellSpanRejectReasonName(CellSpanRejectReason reason);
 FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange3& range, u32 maxSpanPerAxis) {
     if (isEmptyCellRange(range)) {
         return CellSpanRejectReason::EmptyRange;
-    }
     if (exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
         return CellSpanRejectReason::ExceedsSpan;
-    }
     return CellSpanRejectReason::None;
-}
 
 FUSE_PHYSICS_INLINE CellSpanRejectReason cellSpanRejectReason(const CellRange2& range, u32 maxSpanPerAxis) {
-    if (isEmptyCellRange(range)) {
-        return CellSpanRejectReason::EmptyRange;
-    }
-    if (exceedsCellSpanPerAxis(range, maxSpanPerAxis)) {
-        return CellSpanRejectReason::ExceedsSpan;
-    }
-    return CellSpanRejectReason::None;
-}
 
 /// Returns true when `cellSpanRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellSpanRejectsForReason(
@@ -491,14 +396,8 @@ FUSE_PHYSICS_INLINE bool cellSpanRejectsForReason(
     u32 maxSpanPerAxis,
     CellSpanRejectReason expected) {
     return cellSpanRejectReason(range, maxSpanPerAxis) == expected;
-}
 
-FUSE_PHYSICS_INLINE bool cellSpanRejectsForReason(
     const CellRange2& range,
-    u32 maxSpanPerAxis,
-    CellSpanRejectReason expected) {
-    return cellSpanRejectReason(range, maxSpanPerAxis) == expected;
-}
 
 /// Cell-span preflight for occupancy iteration clamp (B4.2 deepen follow-up pass).
 struct CellSpanPreflight {
@@ -508,7 +407,6 @@ struct CellSpanPreflight {
     ivec3 spanPerAxis{};
 
     bool withinLimit() const { return reason == CellSpanRejectReason::None; }
-};
 
 FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan(const CellRange3& range, u32 maxSpanPerAxis) {
     CellSpanPreflight preflight{};
@@ -517,87 +415,45 @@ FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan(const CellRange3& range,
     preflight.exceedsSpan = preflight.reason == CellSpanRejectReason::ExceedsSpan;
     preflight.spanPerAxis = cellSpanPerAxis(range);
     return preflight;
-}
 
 FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpan2D(const CellRange2& range, u32 maxSpanPerAxis) {
-    CellSpanPreflight preflight{};
-    preflight.reason = cellSpanRejectReason(range, maxSpanPerAxis);
-    preflight.emptyRange = preflight.reason == CellSpanRejectReason::EmptyRange;
-    preflight.exceedsSpan = preflight.reason == CellSpanRejectReason::ExceedsSpan;
-    const ivec2 span = cellSpanPerAxis(range);
     preflight.spanPerAxis = {span.x, span.y, 1};
-    return preflight;
-}
 
 /// Non-mutating span-clamp skip predicate — true when clamp would be a no-op (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool canSkipCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
     if (maxSpanPerAxis == 0u) {
         return true;
-    }
     return cellSpanRejectReason(range, maxSpanPerAxis) != CellSpanRejectReason::ExceedsSpan;
-}
 
 FUSE_PHYSICS_INLINE bool canSkipCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
-    if (maxSpanPerAxis == 0u) {
-        return true;
-    }
-    return cellSpanRejectReason(range, maxSpanPerAxis) != CellSpanRejectReason::ExceedsSpan;
-}
 
 /// Non-mutating span-clamp predicate — true when per-axis span exceeds the budget (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
     return cellSpanRejectReason(range, maxSpanPerAxis) == CellSpanRejectReason::ExceedsSpan;
-}
 
 FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
-    return cellSpanRejectReason(range, maxSpanPerAxis) == CellSpanRejectReason::ExceedsSpan;
-}
 
 /// Early-out when cell-span clamp preflight would reject iteration — same ordering as `canSkipCellSpanClamp` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(
-    const CellRange3& range,
-    u32 maxSpanPerAxis,
     CellSpanRejectReason* reason = nullptr) {
     const CellSpanRejectReason reject = cellSpanRejectReason(range, maxSpanPerAxis);
     if (reason != nullptr) {
         *reason = reject;
-    }
-    if (maxSpanPerAxis == 0u) {
-        return false;
-    }
     return reject == CellSpanRejectReason::ExceedsSpan;
-}
 
-FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(
-    const CellRange2& range,
-    u32 maxSpanPerAxis,
-    CellSpanRejectReason* reason = nullptr) {
-    const CellSpanRejectReason reject = cellSpanRejectReason(range, maxSpanPerAxis);
-    if (reason != nullptr) {
-        *reason = reject;
-    }
-    if (maxSpanPerAxis == 0u) {
-        return false;
-    }
-    return reject == CellSpanRejectReason::ExceedsSpan;
-}
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
 FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
-}
 
 /// Per-cell pair-count stub from unique occupant count (alias for cell-pair gen budgeting).
 FUSE_PHYSICS_INLINE u32 estimateCellPairCount(u32 uniqueOccupantCount) {
     return estimatePairCountForUniqueBodies(uniqueOccupantCount);
-}
 
 /// Why per-cell pair generation would early-out (B4.2 deepen pass).
 enum class CellPairGenRejectReason : u8 {
-    None = 0,
     EmptyCell,
     SingletonOccupant,
-};
 
 /// Human-readable label for cell-pair generation reject reasons (logging / tests).
 const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason);
@@ -606,17 +462,13 @@ const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason);
 FUSE_PHYSICS_INLINE CellPairGenRejectReason cellPairGenRejectReason(u32 uniqueOccupantCount) {
     if (uniqueOccupantCount == 0u) {
         return CellPairGenRejectReason::EmptyCell;
-    }
     if (uniqueOccupantCount < 2u) {
         return CellPairGenRejectReason::SingletonOccupant;
-    }
     return CellPairGenRejectReason::None;
-}
 
 /// Returns true when `cellPairGenRejectReason` matches `expected` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool cellPairGenRejectsForReason(u32 uniqueOccupantCount, CellPairGenRejectReason expected) {
     return cellPairGenRejectReason(uniqueOccupantCount) == expected;
-}
 
 /// Read-only per-cell pair-generation diagnostics — no mutation (B4.2 deepen pass).
 struct CellPairGenPreflight {
@@ -627,7 +479,6 @@ struct CellPairGenPreflight {
     u32 pairCount = 0;
 
     bool canGenerate() const { return reason == CellPairGenRejectReason::None; }
-};
 
 /// Count unique body indices in a hash-cell occupant list (cell-pair gen budgeting stub).
 u32 countUniqueCellOccupants(const std::vector<u32>& occupants);
@@ -642,10 +493,8 @@ bool shouldRunCellPairGeneration(const std::vector<u32>& occupants);
 
 /// Why shape→cell insertion would early-out (B4.2 deepen pass).
 enum class ShapeCellInsertRejectReason : u8 {
-    None = 0,
     OutOfRangeBody,
     OccupancySkipped,
-};
 
 /// Human-readable label for shape cell-insert reject reasons (logging / tests).
 const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason);
@@ -660,10 +509,6 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReason(
 
 /// Returns true when `shapeCellInsertRejectReason` matches `expected` (B4.2 deepen pass).
 bool shapeCellInsertRejectsForReason(
-    u32 shapeIndex,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const SpatialHashParams& params,
     bool use2D,
     ShapeCellInsertRejectReason expected);
 
@@ -675,37 +520,23 @@ struct ShapeCellInsertPreflight {
     u32 occupancyCount = 0;
 
     bool canInsert() const { return reason == ShapeCellInsertRejectReason::None; }
-};
 
 ShapeCellInsertPreflight preflightShapeCellInsert(
-    u32 shapeIndex,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const SpatialHashParams& params,
-    bool use2D);
 
 /// Non-mutating shape→cell insert skip predicate — inverse of `canInsert` (B4.2 deepen pass).
 bool canSkipShapeCellInsert(
-    u32 shapeIndex,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const SpatialHashParams& params,
-    bool use2D);
 
 /// Non-mutating shape→cell insert predicate — mirrors `preflightShapeCellInsert` (B4.2 deepen pass).
 bool shouldRunShapeCellInsert(
-    u32 shapeIndex,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const SpatialHashParams& params,
-    bool use2D);
 
 /// Clamp broadphase params to safe stub defaults (positive cell size, at least one bucket).
 FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashParams params) {
     params.cellSize = clampCellSize(params.cellSize);
     params.tableSize = clampTableSize(params.tableSize);
     return params;
-}
+
+FUSE_PHYSICS_INLINE bool cellSpanExceedsClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+    const ivec2 span = cellSpan2(range);
 
 /// Limit per-axis cell span from the range center (CUDA occupancy iteration guard stub).
 FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerAxis) {
