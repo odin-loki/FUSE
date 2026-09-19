@@ -3778,6 +3778,20 @@ bool preflightCacheIndexLookup(const DDGIDesc& desc,
                                   CacheIndexRejectReason& outReason) {
     return tryValidateCacheIndex(desc, cache, probe_index, cache_count, outReason);
 
+bool areTrilinearCornerCacheIndicesValid(const DDGIDesc& desc,
+                                         const ProbeSampleCoords& coords,
+    const auto index_valid = [&](u32 x, u32 y, u32 z) -> bool {
+        const ProbeGridCoord probe_coord{x, y, z};
+        const u32 index = ProbeGridLayout::probeIndexFromCoord(desc, probe_coord);
+        if (index == UINT32_MAX) {
+        return isCacheIndexValid(desc, index, cache_count);
+    };
+
+    return index_valid(coords.x0, coords.y0, coords.z0) && index_valid(coords.x1, coords.y0, coords.z0) &&
+           index_valid(coords.x0, coords.y1, coords.z0) && index_valid(coords.x1, coords.y1, coords.z0) &&
+           index_valid(coords.x0, coords.y0, coords.z1) && index_valid(coords.x1, coords.y0, coords.z1) &&
+           index_valid(coords.x0, coords.y1, coords.z1) && index_valid(coords.x1, coords.y1, coords.z1);
+
 bool wouldClampProbeIndexForLookup(u32 probe_index, const DDGIDesc& desc) {
     return !ProbeGridLayout::isEmptyGrid(desc) && ProbeGridLayout::isProbeIndexOutOfRange(probe_index, desc);
 }
@@ -4475,6 +4489,7 @@ bool tryPreflightProbeSchedule(u32 probe_count,
 
 bool tryPreflightProbeScheduleAtRate(u32 probe_count,
     reason = classifyProbeScheduleRejectAtRate(probe_count, probes_per_frame, max_indices, out_indices, out_count);
+
 }
 
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices) {
@@ -4813,6 +4828,56 @@ ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDe
                                                   : ProbeTrilinearSampleRejectReason::NotSampleable;
     }
     return classifyProbeTrilinearSampleReject(desc, coords, cache, cache_count);
+}
+
+bool preflightTrilinearProbeSample(const DDGIDesc& desc,
+                                   const fuse::math::Vec3& world_position,
+                                   const IrradianceCacheEntry* cache,
+                                   u32 cache_count,
+                                   ProbeTrilinearSampleRejectReason* reason) {
+    const ProbeTrilinearSampleRejectReason reject =
+        classifyProbeTrilinearSampleReject(desc, world_position, cache, cache_count);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return !probeTrilinearSampleRejectReasonIsBlocking(reject);
+}
+
+bool tryPreflightTrilinearProbeSample(const DDGIDesc& desc,
+                                      const fuse::math::Vec3& world_position,
+                                      const IrradianceCacheEntry* cache,
+                                      u32 cache_count,
+                                      ProbeTrilinearSampleRejectReason& reason) {
+    reason = classifyProbeTrilinearSampleReject(desc, world_position, cache, cache_count);
+    return !probeTrilinearSampleRejectReasonIsBlocking(reason);
+}
+
+bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
+                                   const fuse::math::Vec3& world_position,
+                                   const IrradianceCacheEntry* cache,
+                                   u32 cache_count) {
+    return !preflightTrilinearProbeSample(desc, world_position, cache, cache_count);
+}
+
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleReject(const DDGIDesc& desc,
+                                                                    const fuse::math::Vec3& world_position,
+                                                                    const IrradianceCacheEntry* cache,
+                                                                    u32 cache_count) {
+    ProbeSampleCoords coords{};
+    if (!ProbeGridLayout::buildProbeSampleCoords(desc, world_position, coords)) {
+        return ProbeGridLayout::isEmptyGrid(desc) ? ProbeTrilinearSampleRejectReason::EmptyGrid
+                                                 : ProbeTrilinearSampleRejectReason::NotSampleable;
+    }
+    return classifyProbeTrilinearSampleRejectAtCoords(desc, coords, cache, cache_count);
+}
+
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleRejectAtCoords(const DDGIDesc& desc,
+                                                                            const ProbeSampleCoords& coords,
+                                                                            const IrradianceCacheEntry* cache,
+                                                                            u32 cache_count) {
+    ProbeTrilinearSampleRejectReason reason = ProbeTrilinearSampleRejectReason::None;
+    tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
+    return reason;
 }
 
 bool preflightTrilinearProbeSample(const DDGIDesc& desc,
@@ -6524,6 +6589,80 @@ void DDGI::releaseResources() {
         m_resources->destroyBuffer(m_volume.probe_offsets);
     }
     m_volume = {};
+}
+
+const char* ddgiHostKernelLaunchRejectReasonLabel(DdgiHostKernelLaunchRejectReason reason) {
+    switch (reason) {
+    case DdgiHostKernelLaunchRejectReason::None:
+        return "none";
+    case DdgiHostKernelLaunchRejectReason::EmptyGrid:
+        return "empty_grid";
+    case DdgiHostKernelLaunchRejectReason::NullProbeIndices:
+        return "null_probe_indices";
+    case DdgiHostKernelLaunchRejectReason::ZeroUpdateCount:
+        return "zero_update_count";
+    case DdgiHostKernelLaunchRejectReason::ZeroRaysPerProbe:
+        return "zero_rays_per_probe";
+    case DdgiHostKernelLaunchRejectReason::OutOfRangeProbeIndex:
+        return "out_of_range_probe_index";
+    }
+    return "unknown";
+}
+
+bool ddgiHostKernelLaunchRejectReasonIsBlocking(DdgiHostKernelLaunchRejectReason reason) {
+    return reason != DdgiHostKernelLaunchRejectReason::None;
+}
+
+DdgiHostKernelLaunchRejectReason classifyDdgiHostKernelLaunchReject(const DDGIDesc& desc,
+                                                                    const gi::DDGIKernelParams& params) {
+    gi::ProbeKernelRejectReason kernelReason = gi::ProbeKernelRejectReason::None;
+    if (!gi::tryCanLaunchProbeTraceKernel(params, kernelReason)) {
+        switch (kernelReason) {
+        case gi::ProbeKernelRejectReason::ZeroUpdateCount:
+            return DdgiHostKernelLaunchRejectReason::ZeroUpdateCount;
+        case gi::ProbeKernelRejectReason::NullProbeIndices:
+            return DdgiHostKernelLaunchRejectReason::NullProbeIndices;
+        case gi::ProbeKernelRejectReason::ZeroRaysPerProbe:
+            return DdgiHostKernelLaunchRejectReason::ZeroRaysPerProbe;
+        case gi::ProbeKernelRejectReason::None:
+            break;
+        }
+    }
+
+    if (ProbeGridLayout::isEmptyGrid(desc)) {
+        return DdgiHostKernelLaunchRejectReason::EmptyGrid;
+    }
+
+    ProbeUpdateLaunchRejectReason launchReason = ProbeUpdateLaunchRejectReason::None;
+    if (!tryCanLaunchDdgiProbeUpdate(
+            desc, params.probe_indices_to_update, params.probe_update_count, launchReason)) {
+        if (launchReason == ProbeUpdateLaunchRejectReason::OutOfRangeProbeIndex) {
+            return DdgiHostKernelLaunchRejectReason::OutOfRangeProbeIndex;
+        }
+    }
+
+    return DdgiHostKernelLaunchRejectReason::None;
+}
+
+bool preflightDdgiHostKernelLaunch(const DDGIDesc& desc,
+                                   const gi::DDGIKernelParams& params,
+                                   DdgiHostKernelLaunchRejectReason* reason) {
+    const DdgiHostKernelLaunchRejectReason reject = classifyDdgiHostKernelLaunchReject(desc, params);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return !ddgiHostKernelLaunchRejectReasonIsBlocking(reject);
+}
+
+bool tryPreflightDdgiHostKernelLaunch(const DDGIDesc& desc,
+                                      const gi::DDGIKernelParams& params,
+                                      DdgiHostKernelLaunchRejectReason& reason) {
+    reason = classifyDdgiHostKernelLaunchReject(desc, params);
+    return !ddgiHostKernelLaunchRejectReasonIsBlocking(reason);
+}
+
+bool wouldSkipDdgiHostKernelLaunch(const DDGIDesc& desc, const gi::DDGIKernelParams& params) {
+    return !preflightDdgiHostKernelLaunch(desc, params);
 }
 
 } // namespace fuse::renderer

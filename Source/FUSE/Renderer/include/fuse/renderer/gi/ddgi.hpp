@@ -9,6 +9,10 @@
 
 namespace fuse::renderer {
 
+namespace gi {
+struct DDGIKernelParams;
+}
+
 /// 3D probe grid dimensions (B5.6 — P5 §5.6).
 struct DDGIGridDims {
     u32 x = 16;
@@ -1266,6 +1270,9 @@ bool cacheIndexLookupReady(const DDGIDesc& desc,
                                CacheIndexRejectReason* reason = nullptr);
                                   CacheIndexRejectReason& outReason);
 /// Non-mutating cache-index preflight — index + length only (ignores null-cache).
+/// True when all eight trilinear corner probe indices pass cache-index preflight.
+bool areTrilinearCornerCacheIndicesValid(const DDGIDesc& desc,
+                                         const ProbeSampleCoords& coords,
 /// True when `probe_index` exceeds the valid probe range on a non-empty grid.
 bool wouldClampProbeIndexForLookup(u32 probe_index, const DDGIDesc& desc);
 /// Minimum irradiance cache entries required for full-grid sampling; 0 on empty grid.
@@ -1611,6 +1618,8 @@ bool preflightProbeSchedule(u32 probe_count,
                             ProbeScheduleRejectReason* reason = nullptr);
 /// Classify why rate-aware probe scheduling would reject — same ordering as `tryCanScheduleProbeUpdatesAtRate`.
 /// Classify why rate-aware probe scheduling would be rejected — same ordering as `tryCanScheduleProbeUpdatesAtRate`.
+/// Classify why rate-aware probe scheduling would be rejected — same ordering as
+/// `tryCanScheduleProbeUpdatesAtRate`.
 ProbeScheduleRejectReason classifyProbeScheduleRejectAtRate(u32 probe_count,
                                                             u32 probes_per_frame,
                                                             u32 max_indices,
@@ -1636,6 +1645,9 @@ bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
                                    ProbeScheduleRejectReason& outReason);
 /// Rate-aware schedule preflight with mandatory reject-reason output (B5.6 deepen pass).
 bool tryPreflightProbeScheduleAtRate(u32 probe_count,
+                                  u32 probes_per_frame,
+                                  u32 max_indices,
+                                  const u32* out_indices,
 /// True when output capacity would cap scheduled probes below `probes_per_frame`.
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Early-out when probe scheduling would be rejected — same ordering as `tryScheduleProbeUpdates`.
@@ -1712,6 +1724,10 @@ bool tryPreflightTrilinearProbeSample(const DDGIDesc& desc,
                                       ProbeTrilinearSampleRejectReason& reason);
 /// Early-out when trilinear sample preflight would reject.
 bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
+/// Classify why trilinear probe sampling would reject at a world position.
+/// Classify why trilinear probe sampling would reject at explicit sample coords.
+ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleRejectAtCoords(const DDGIDesc& desc,
+/// Non-mutating trilinear sample preflight at a world position.
 /// Directional octahedral bilinear sample within one probe cache entry (CPU stub).
 fuse::math::Vec3 sampleDirectionalIrradianceAtProbe(const IrradianceCacheEntry& entry,
                                                   const fuse::math::Vec3& direction,
@@ -1869,5 +1885,38 @@ bool tryLaunch_ddgi_probe_update(const DDGIDesc& desc,
                                  u32 probe_count,
                                  void* cuda_stream,
                                  ProbeUpdateLaunchRejectReason& outReason);
+
+/// Why combined host desc+kernel launch preflight rejected (B5.6 deepen pass).
+enum class DdgiHostKernelLaunchRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    NullProbeIndices,
+    ZeroUpdateCount,
+    ZeroRaysPerProbe,
+    OutOfRangeProbeIndex,
+};
+
+/// Human-readable label for combined host kernel launch reject reasons (logging / tests).
+const char* ddgiHostKernelLaunchRejectReasonLabel(DdgiHostKernelLaunchRejectReason reason);
+
+/// True when a combined host kernel launch reject reason would block launch (B5.6 deepen pass).
+bool ddgiHostKernelLaunchRejectReasonIsBlocking(DdgiHostKernelLaunchRejectReason reason);
+
+/// Classify combined host launch rejection — kernel params first, then desc grid/indices.
+DdgiHostKernelLaunchRejectReason classifyDdgiHostKernelLaunchReject(const DDGIDesc& desc,
+                                                                    const gi::DDGIKernelParams& params);
+
+/// Non-mutating combined host kernel launch preflight — returns true when launch would proceed.
+bool preflightDdgiHostKernelLaunch(const DDGIDesc& desc,
+                                   const gi::DDGIKernelParams& params,
+                                   DdgiHostKernelLaunchRejectReason* reason = nullptr);
+
+/// Combined host kernel launch preflight with mandatory reject-reason output (B5.6 deepen pass).
+bool tryPreflightDdgiHostKernelLaunch(const DDGIDesc& desc,
+                                      const gi::DDGIKernelParams& params,
+                                      DdgiHostKernelLaunchRejectReason& reason);
+
+/// Early-out when combined host desc+kernel launch would be rejected.
+bool wouldSkipDdgiHostKernelLaunch(const DDGIDesc& desc, const gi::DDGIKernelParams& params);
 
 } // namespace fuse::renderer

@@ -219,6 +219,9 @@ bool preflightProbeTraceKernelLaunch(const DDGIKernelParams& params, ProbeKernel
 /// Non-mutating probe blend kernel launch preflight — returns true when blend would proceed.
 bool preflightProbeBlendKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
+/// Kernel launch preflight with mandatory reject-reason output (B5.6 deepen pass).
+bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& reason);
+
 /// Populate kernel params from desc + scheduled indices without changing launch guards.
 void populateDDGIKernelParams(DDGIKernelParams& params,
                               const DDGIDesc& desc,
