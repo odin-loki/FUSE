@@ -3522,3 +3522,19 @@ void testCountAndFindEventsByPhaseGuard() {
     expectTrue(detachedPreflight.flowDepthDetached, "preflight marks detached flow for export warning");
     testEventNamePreflightGuard();
     testAsyncFlowPreflightGuard();
+
+// --- deepen additive from deepen-fuse-b16-profiler-ddbd ---
+    expectTrue(!fuse::profiler::tryExportableEventAt(3u, outEvent),
+               "tryFirstExportableEvent copies first begin phase");
+               "tryLastExportableEvent copies last end phase");
+void testRingWrapAndBufferFullGuards() {
+void testChromeTraceExportPreflightCanSafelyExport() {
+        expectTrue(activePreflight.canExport(), "preflight canExport inside active scope");
+        expectTrue(!activePreflight.canSafelyExport(),
+    const fuse::profiler::ChromeTraceExportPreflight balancedPreflight =
+    expectTrue(balancedPreflight.canSafelyExport(),
+    expectTrue(balancedPreflight.nonExportableEventCount == 0u,
+    expectTrue(!balancedPreflight.bufferFull, "preflight bufferFull false with few events");
+    expectTrue(!balancedPreflight.hasRingWrapped, "preflight hasRingWrapped false with few events");
+    expectTrue(!openFlowPreflight.canSafelyExport(),
+    testChromeTraceExportPreflightCanSafelyExport();
