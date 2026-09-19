@@ -3863,3 +3863,23 @@ void testDdgiTrilinearAndGridPreflightGuards() {
                "wouldSkipCacheIndexLookupAtCoord true for invalid coord");
     expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, nullptr, validCoord, 8u),
                "wouldSkipCacheIndexLookupAtCoord true for null cache");
+
+// --- deepen additive from deepen-b56-ddgi-guards-50ea ---
+void testDdgiTrilinearDeepenGuards() {
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(desc, coords),
+    expectTrue(fuse::renderer::ddgi_util::tryTrilinearSampleAtProbeCoords(
+               "tryTrilinearSampleAtProbeCoords succeeds for valid inputs");
+    expectTrue(!fuse::renderer::probeTrilinearSampleRejectReasonIsBlocking(reason),
+               "wouldSkipProbeTrilinearSample false for valid inputs");
+               "classifyProbeTrilinearSampleReject none for valid inputs");
+               "preflightProbeTrilinearSample succeeds for valid inputs");
+               "tryTrilinearSampleAtProbeCoords soft-passes clampable weights");
+    expectTrue(reason == fuse::renderer::ProbeTrilinearSampleRejectReason::ClampableWeights,
+    expectTrue(std::strcmp(fuse::renderer::probeTrilinearSampleRejectReasonLabel(reason), "clampable_weights") == 0,
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, oobWeights, cache.data(), 8u),
+               "wouldSkipProbeTrilinearSample false for clampable weights");
+    expectTrue(!fuse::renderer::ddgi_util::tryTrilinearSampleAtProbeCoords(
+               "tryTrilinearSampleAtProbeCoords rejects null cache");
+    expectTrue(fuse::renderer::probeTrilinearSampleRejectReasonIsBlocking(reason),
+    expectTrue(fuse::renderer::ddgi_util::tryTrilinearProbeIrradianceAtCoords(
+               "tryTrilinearProbeIrradianceAtCoords succeeds on full cache");

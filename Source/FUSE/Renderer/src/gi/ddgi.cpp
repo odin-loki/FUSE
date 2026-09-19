@@ -2905,3 +2905,17 @@ bool ProbeGridLayout::wouldSkipProbeGridAccess(const DDGIDesc& desc) {
 // --- deepen additive from deepen-ddgi-guards-4831 ---
 bool ProbeGridLayout::tryClampProbeGridCoord(const DDGIDesc& desc,
 bool ProbeGridLayout::wouldSkipProbeCoordPreflight(const DDGIDesc& desc, const ProbeGridCoord& coord) {
+
+// --- deepen additive from deepen-b56-ddgi-guards-50ea ---
+    case ProbeTrilinearSampleRejectReason::ClampableWeights:
+    return tryTrilinearSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
+bool tryTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
+    ProbeSampleCoordsRejectReason sampleReason = ProbeSampleCoordsRejectReason::None;
+    if (!ProbeGridLayout::tryPreflightProbeSampleCoords(desc, coords, sampleReason)) {
+    if (sampleReason == ProbeSampleCoordsRejectReason::OutOfRangeWeights ||
+        sampleReason == ProbeSampleCoordsRejectReason::UnorderedCorners) {
+        outReason = ProbeTrilinearSampleRejectReason::ClampableWeights;
+    return !tryTrilinearSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
+    tryTrilinearSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
+bool tryTrilinearProbeIrradianceAtCoords(const DDGIDesc& desc,
+    if (!tryTrilinearSampleAtProbeCoords(desc, coords, cache, cache_count, outReason)) {

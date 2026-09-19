@@ -940,3 +940,7 @@ bool probeGridRejectReasonIsBlocking(ProbeGridRejectReason reason);
 // --- deepen additive from deepen-ddgi-guards-4831 ---
     static bool tryClampProbeGridCoord(const DDGIDesc& desc,
     static bool wouldSkipProbeCoordPreflight(const DDGIDesc& desc, const ProbeGridCoord& coord);
+
+// --- deepen additive from deepen-b56-ddgi-guards-50ea ---
+bool tryTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
+bool tryTrilinearProbeIrradianceAtCoords(const DDGIDesc& desc,
