@@ -1527,3 +1527,23 @@ void testHrtfPreflightRejectReasonLabels() {
     expectTrue(bypass.should_skip_coupling(), "bypass path skips coupling");
     expectTrue(unity.should_skip_coupling(), "unity attenuation skips coupling");
                "preflight can_apply_coupling inverts should_skip_hrtf_spatial_blend");
+
+// --- deepen additive from deepen-hrtf-preflights-0f68 ---
+void testEmptyHrtfIrPreflight() {
+    const fuse::audio::EmptyHrtfIrPreflight empty_preflight =
+        fuse::audio::preflightEmptyHrtfIr(empty);
+    const fuse::audio::EmptyHrtfIrPreflight valid_preflight =
+        fuse::audio::preflightEmptyHrtfIr(valid);
+    const fuse::audio::EmptyHrtfIrPreflight malformed_preflight =
+        fuse::audio::preflightEmptyHrtfIr(malformed);
+    const fuse::audio::EmptyHrtfIrPreflight null_preflight =
+        fuse::audio::preflightEmptyHrtfIr(null_samples_nonzero_length);
+        fuse::audio::preflightHrtfPanPath(false, valid, offset);
+        fuse::audio::preflightHrtfPanPath(true, valid, co_located);
+        fuse::audio::preflightHrtfPanPath(true, empty, offset);
+        fuse::audio::preflightHrtfPanPath(true, valid, offset);
+        fuse::audio::preflightHrtfPanPath(true, offset);
+        fuse::audio::preflightHrtfAttenuationCoupling(fuse::audio::HrtfPanPath::Bypass, 0.1f,
+        fuse::audio::preflightHrtfAttenuationCoupling(fuse::audio::HrtfPanPath::Convolution, 1.f,
+        fuse::audio::preflightHrtfAttenuationCoupling(fuse::audio::HrtfPanPath::IldItdStub, 0.2f,
+    testEmptyHrtfIrPreflight();

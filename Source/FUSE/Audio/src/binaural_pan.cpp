@@ -1017,3 +1017,12 @@ HrtfBinauralPanPreflight preflight_hrtf_binaural_pan(bool hrtf_enabled, const Hr
         preflight.reason = HrtfIrRejectReason::NullSamples;
         preflight.reject_reason = HrtfPanPathRejectReason::Disabled;
         preflight.reject_reason = HrtfPanPathRejectReason::CoLocated;
+
+// --- deepen additive from deepen-hrtf-preflights-0f68 ---
+EmptyHrtfIrPreflight preflightEmptyHrtfIr(const HrtfIrStub& ir) {
+    EmptyHrtfIrPreflight preflight;
+    return preflightEmptyHrtfIr(ir).hasIr();
+HrtfPanPathPreflight preflightHrtfPanPath(bool hrtf_enabled, const HrtfIrStub& ir,
+HrtfPanPathPreflight preflightHrtfPanPath(bool hrtf_enabled, const Vec3& rel_listener) {
+    return preflightHrtfPanPath(hrtf_enabled, make_empty_hrtf_ir(), rel_listener);
+HrtfAttenuationCouplingPreflight preflightHrtfAttenuationCoupling(

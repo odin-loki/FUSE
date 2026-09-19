@@ -690,3 +690,10 @@ HrtfBinauralPanPreflight preflight_hrtf_binaural_pan(bool hrtf_enabled, const Hr
     [[nodiscard]] bool should_skip_convolution() const { return !can_convolve(); }
     [[nodiscard]] bool should_skip_spatial_pan() const { return !can_apply_spatial_pan(); }
     [[nodiscard]] bool should_skip_coupling() const { return !can_apply_coupling(); }
+
+// --- deepen additive from deepen-hrtf-preflights-0f68 ---
+struct EmptyHrtfIrPreflight {
+EmptyHrtfIrPreflight preflightEmptyHrtfIr(const HrtfIrStub& ir);
+HrtfPanPathPreflight preflightHrtfPanPath(bool hrtf_enabled, const HrtfIrStub& ir,
+HrtfPanPathPreflight preflightHrtfPanPath(bool hrtf_enabled, const Vec3& rel_listener);
+HrtfAttenuationCouplingPreflight preflightHrtfAttenuationCoupling(
