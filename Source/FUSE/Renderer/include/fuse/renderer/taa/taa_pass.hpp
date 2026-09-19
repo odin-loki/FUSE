@@ -246,6 +246,7 @@ public:
     /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
     /// Advance jitter with mandatory reject-reason output when preflight rejects (B5.9 deepen).
+    /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
     /// Expected blend weights for the next resolve (B5.9 deepen).
     TaaBlendWeights expectedResolveBlendWeights(const TaaResolveDesc& desc) const;
     /// True when resolve would sample warmed history this frame (B5.9 deepen).
@@ -305,7 +306,8 @@ public:
     /// True when pass history buffers are warmed and temporal reuse is allowed (B5.9 deepen).
     /// Early-out when pass history warmup/reuse preflight would reject (B5.9 deepen).
     bool shouldSkipHistoryWarmupAndReuse(u32 observedGeneration) const;
-                                       TaaResolveBlendRejectReason& reason) const;
+    bool tryComputeExpectedResolveBlendWeights(const TaaResolveDesc& desc,
+                                               TaaBlendWeights& outWeights,
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     /// Early-out when resolve preflight would bail (B5.9 deepen).
