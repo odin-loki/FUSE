@@ -441,6 +441,7 @@ public:
     bool preflightJitterNdc(TaaJitterGuardRejectReason* reason = nullptr) const;
     /// True when jitter sync and NDC preflights both pass (B5.9 deepen).
     /// NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass NDC jitter preflight would reject (B5.9 deepen).
     bool shouldSkipJitterNdc() const;
@@ -538,6 +539,7 @@ public:
     /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
     bool tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
     /// Classify why resolve would skip (B5.9 deepen).
+    /// Classify why resolve would skip for this pass (B5.9 deepen).
     TaaResolveSkipReason classifyResolveSkip(const TaaResolveDesc& desc) const;
     /// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
     bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
