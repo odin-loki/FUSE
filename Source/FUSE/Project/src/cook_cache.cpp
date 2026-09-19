@@ -2523,6 +2523,24 @@ bool CookCache::should_skip_prune_all() const {
     return !would_prune_all();
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) != 0;
+}
+
+bool CookCache::would_invalidate_stale_upstream_hashes(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const {
+    return count_stale_upstream_hashes(source_upstream_by_path) != 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
 
@@ -3218,6 +3236,7 @@ void append_unique_source_(std::vector<std::string>& sources, const std::string&
     sources.push_back(source_path);
 
 
+
 } // namespace
 
 std::vector<std::string> CookCache::probe_stale_upstream_sources(
@@ -3280,7 +3299,6 @@ void append_unique_source_path_(std::vector<std::string>& sources, const std::st
 u32 CookCache::count_unique_stale_upstream_sources(
     return static_cast<u32>(probe_unique_stale_upstream_sources(source_upstream_by_path).size());
 
-std::vector<std::string> CookCache::probe_stale_upstream_sources_unique(
 
     std::vector<std::string> stale_sources;
     for (const auto& pair : source_upstream_by_path) {
@@ -3488,7 +3506,6 @@ bool CookCache::probe_stale_content_for_source(const std::string& source_path) c
 
 u32 CookCache::count_stale_upstream_sources(
     return static_cast<u32>(probe_stale_upstream_sources(source_upstream_by_path).size());
-        }
 
 namespace {
 

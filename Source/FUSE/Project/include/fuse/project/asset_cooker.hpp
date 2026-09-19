@@ -498,11 +498,11 @@ public:
     /// True when combined reconcile invalidation can be skipped (B7.9 deepen).
 
     /// True when reconcile invalidation probes report nothing to remove — mirrors estimators (B7.9 deepen).
-    [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
-                                                         const std::string& changed_source) const;
-    [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
-    [[nodiscard]] bool should_skip_prune_reconcile() const;
-    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
+    /// True when reconcile invalidation planning would be a no-op (B7.9 deepen).
+    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest,
+                                                          const std::string& changed_source = "") const;
+    /// True when prune reconcile would remove nothing (B7.9 deepen).
+    /// True when upstream invalidation planning would be a no-op (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
