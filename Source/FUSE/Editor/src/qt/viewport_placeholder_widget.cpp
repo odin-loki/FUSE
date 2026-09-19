@@ -6,6 +6,9 @@
 #include <QPainter>
 #include <QPalette>
 #include <QResizeEvent>
+#include <QShowEvent>
+
+#include <string>
 
 namespace fuse::editor::qt {
 
@@ -40,6 +43,26 @@ void ViewportPlaceholderWidget::postViewportResize() {
     heightCmd.propertyName = "viewport.height";
     heightCmd.propertyValue = std::to_string(static_cast<unsigned>(size.height()));
     m_host.postFromUi(std::move(heightCmd));
+}
+
+void ViewportPlaceholderWidget::postVulkanSurfaceHandoffStub() {
+    const QSize size = this->size();
+    if (size.width() <= 0 || size.height() <= 0) {
+        return;
+    }
+
+    postViewportResize();
+
+    EditorCommand surfaceCmd;
+    surfaceCmd.kind = CommandKind::SetProperty;
+    surfaceCmd.propertyName = "viewport.vk_surface_handle";
+    surfaceCmd.propertyValue = std::to_string(static_cast<unsigned long long>(winId()));
+    m_host.postFromUi(std::move(surfaceCmd));
+}
+
+void ViewportPlaceholderWidget::showEvent(QShowEvent* event) {
+    QWidget::showEvent(event);
+    postVulkanSurfaceHandoffStub();
 }
 
 void ViewportPlaceholderWidget::resizeEvent(QResizeEvent* event) {

@@ -1,6 +1,6 @@
 # Track B — Vulkan Bootstrap (B2.1–B2.10) + CUDA Ray March (B2.7)
 
-**Status:** WP-06b ✅ B2.1 bootstrap + B2.2 swapchain/frame ring + **WP-06c ✅ real `vkQueueSubmit` + honest headless present sink** + **WP-06d ✅ `vkCmdBeginRenderPass` graph encode + bindless pool + null/GLFW WSI scaffold** + **WP-06e ✅ graph `vkCmdPipelineBarrier` + bindless `vkUpdateDescriptorSets` + pipeline cache disk I/O + swapchain FB present pass scaffold** + **WP-06f ✅ bindless composite GPU blit + CUDA interop/timeline honest stubs** + **WP-06g ✅ CUDA interop import deepen + composite CUDA texture path + GLFW present gate + U6 `SwapchainDesc` handoff** + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
+**Status:** WP-06b ✅ B2.1 bootstrap + B2.2 swapchain/frame ring + **WP-06c ✅ real `vkQueueSubmit` + honest headless present sink** + **WP-06d ✅ `vkCmdBeginRenderPass` graph encode + bindless pool + null/GLFW WSI scaffold** + **WP-06e ✅ graph `vkCmdPipelineBarrier` + bindless `vkUpdateDescriptorSets` + pipeline cache disk I/O + swapchain FB present pass scaffold** + **WP-06f ✅ bindless composite GPU blit + CUDA interop/timeline honest stubs** + **WP-06g ✅ CUDA interop import deepen + composite CUDA texture path + GLFW present gate + U6 `SwapchainDesc` handoff** + **WP-06h ✅ CUDA interop fill kernel + frame-sync progress + Qt surface stub + composite SPIR-V regen docs** + B2.3 resource/bindless scaffolding + B2.4 shader scaffold + B2.5 command buffer / render graph scaffolding + B2.6 CUDA/interop stubs + B2.7 SDF ray-march CUDA path scaffolding + B2.8 rasterisation pipeline scaffold + B2.9 composite pass scaffold + B2.10 renderer init & main-loop glue + **B2.11 Phase 2 deliverables & integration test suite**  
 **Master plan:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2.1–B2.5, §B2.6, §B2.7, §B2.8, §B2.9, §B2.10  
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
@@ -522,7 +522,7 @@ Portable invariant unchanged: job code emits `RenderCommandList`; platform modul
 | `fuse_rhi_queue_submit` | Real `vkQueueSubmit` on frame ring; headless semaphores-off path; RHI + present-path mirror |
 | `fuse_hybrid_tests` | Existing U4 software renderer regressions |
 | `fuse_cuda_jobs` | `submit_cuda` hook signals counter without CUDA toolkit |
-| `fuse_cuda_interop` | Vulkan/CUDA import + timeline stubs degrade on CI |
+| `fuse_cuda_interop` | Vulkan/CUDA import + timeline/frame-sync progress + interop fill stub tests |
 | `fuse_ray_march_stub` | CPU sphere hit distance, `submit_cuda` counter signal, ray-march job wiring |
 | `fuse_screen_space_effects_stub` | SSAO/SSR/SSGI CPU reference samples, launches, `submit_*_job` counter signal — see [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) |
 
@@ -616,9 +616,33 @@ ctest --test-dir build --output-on-failure -R 'fuse_vulkan|fuse_shader_pipeline|
 | `RuntimeViewportHook` → `SwapchainDesc` handoff | **Done (stub)** | `setExternalSurfaceHandle` + `buildSwapchainDescHandoff`; consumed on game thread (`fuse_editor_host`) |
 | Lavapipe + `demo_hybrid_hud` | **Done** | Headless present sink unchanged when gate OFF |
 
-**Deferred (post–WP-06g):** CUDA kernel fill into interop texture; Editor Qt native `VkSurfaceKHR` creation; full frame sync pair exercised across job lane + render thread.
+**Deferred (post–WP-06g):** ~~CUDA kernel fill into interop texture~~ → WP-06h `interop_fill.cu` + job-lane path; ~~Editor Qt native `VkSurfaceKHR` creation~~ → WP-06h winId stub handoff; ~~full frame sync pair exercised across job lane + render thread~~ → WP-06h `FrameSyncProgress` counters.
 
-**Regenerate locally when glslang available:** `composite.frag` → `composite.frag.spv` (CUDA texture sampling branch).
+**Regenerate locally when glslang available:** `composite.frag` → `composite.frag.spv` (CUDA texture sampling branch). WP-06h regen:
+
+```bash
+sudo apt install glslang-tools   # when missing
+glslangValidator -V Source/FUSE/Renderer/shaders/fixtures/composite.frag \
+  -o Source/FUSE/Renderer/shaders/fixtures/composite.frag.spv
+spirv-val Source/FUSE/Renderer/shaders/fixtures/composite.frag.spv
+```
+
+---
+
+## WP-06h deliverables (CUDA interop fill + frame-sync progress + Qt surface stub)
+
+| Deliverable | Status | Notes |
+|-------------|--------|-------|
+| `interop_fill.cu` CUDA kernel | **Done (when toolkit)** | `surf2Dwrite` solid fill into imported interop surface; stub path when no toolkit |
+| `fillInteropTexture` / `submitInteropFillJob` | **Done** | Sync + job-lane paths; honest `InteropFillResult::stubPath` on CI |
+| `CompositeGpuPath::fillCudaInteropTexture` | **Done** | Exports Vulkan memory handle; fills before composite encode |
+| `FrameSyncPair` + `FrameSyncProgress` | **Done** | Render/job lane signal/wait counters; driver-wired timelines when device supports |
+| `RhiContext` frame-sync wiring | **Done** | `signalRenderLane` → job-lane fill → `waitRenderLane` on submit |
+| Qt `viewport.vk_surface_handle` handoff | **Done (stub)** | `ViewportPlaceholderWidget::showEvent` posts winId; headless-safe opaque handle |
+| `composite.frag.spv` regen | **Done (local)** | Regenerated with `glslangValidator` when tooling available; checked-in fixture updated |
+| Lavapipe + `demo_hybrid_hud` | **Done** | Headless ICD tests unchanged |
+
+**Deferred (post–WP-06h):** real Qt `QVulkanInstance` / `VkSurfaceKHR` creation; composite SPIR-V regen on CI runner; full timeline frame flow profiled under load.
 
 ---
 
@@ -700,6 +724,9 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] B2.6 follow-up: interop/timeline honest stubs + tests that skip cleanly (WP-06f)
 - [x] B2.6 follow-up: `cudaImportExternalMemory` + timeline export/import when handles/device present (WP-06g)
 - [x] B2.6 follow-up: composite CUDA texture bindless path with honest placeholder (WP-06g)
+- [x] B2.6 follow-up: CUDA interop fill kernel + job-lane path (WP-06h)
+- [x] B2.6 follow-up: `FrameSyncPair` progress across render + job lanes (WP-06h)
+- [x] Editor viewport → Qt winId stub `VkSurfaceKHR` handoff (WP-06h)
 - [ ] Replace `PlaceholderRenderer` present path incrementally — keep software fallback for headless CI
 - [x] Own Hybrid presentable path stubs — `PlatformWindow` (null/GLFW), `VulkanPresentable`, `HybridRendererBootstrap` wiring
 - [x] Null/GLFW desktop WSI scaffold — `window_wsi.hpp`, `FUSE_PLATFORM_WINDOW_GLFW` (OFF in CI; headless Lavapipe stays green)
@@ -707,7 +734,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] B2.3 resource deepen — stub/VMA alloc stats, destroy-order teardown, `fuse_rhi_resource_destroy_order` (see [TRACK-B-RHI.md](./TRACK-B-RHI.md))
 - [x] B2.5 render graph deepen — pass dependency edges, resource lifetime stubs, compile-order tests
 - [x] Editor viewport → `SwapchainDesc.surface` handoff stub (`RuntimeViewportHook`, WP-06g)
-- [ ] Editor Qt native surface (`U6` viewport) → real `VkSurfaceKHR` into handoff
+- [ ] Editor Qt native surface (`U6` viewport) → real `VkSurfaceKHR` into handoff (WP-06h posted winId stub only)
 - [ ] Android Vulkan WSI + MoltenVK macOS module
 
 ---

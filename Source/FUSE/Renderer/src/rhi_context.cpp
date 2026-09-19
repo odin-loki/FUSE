@@ -22,7 +22,12 @@ std::string fixturePath(const char* name) {
 RhiContext::RhiContext(std::unique_ptr<VulkanBootstrap> bootstrap, const Desc& desc)
     : m_bootstrap(std::move(bootstrap)), m_desc(desc) {}
 
-RhiContext::~RhiContext() = default;
+RhiContext::~RhiContext() {
+    if (m_frameSyncInitialized && m_bootstrap && m_bootstrap->device() != nullptr) {
+        m_frameSync.destroy(m_bootstrap->device()->nativeHandle());
+        m_frameSyncInitialized = false;
+    }
+}
 
 std::unique_ptr<RhiContext> RhiContext::create(const Desc& desc) {
     auto bootstrap = VulkanBootstrap::create(desc.bootstrap);
@@ -85,6 +90,21 @@ void RhiContext::ensureCompositeGpuPath() {
     m_compositeGpuPath = CompositeGpuPath::create(*device, compositeDesc);
 }
 
+void RhiContext::ensureFrameSyncPair() {
+    if (m_frameSyncInitialized) {
+        return;
+    }
+
+    VulkanDevice* device = m_bootstrap ? m_bootstrap->device() : nullptr;
+    if (device == nullptr || !device->isValid()) {
+        return;
+    }
+
+    m_frameSync = fuse::renderer::cuda::FrameSyncPair::create(device->nativeHandle(),
+                                                              device->nativePhysicalDevice());
+    m_frameSyncInitialized = true;
+}
+
 bool RhiContext::beginFrame(u32 frameIndex) {
     if (!platform::requireGpuContextThread()) {
         return false;
@@ -126,6 +146,7 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
 
         ensureCompositePass();
         ensureCompositeGpuPath();
+        ensureFrameSyncPair();
         const float compositeBlend =
             m_compositePass ? m_compositePass->blendForFrame(commands) : m_desc.composite.defaultBlend;
 
@@ -161,7 +182,14 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
         }
 
         if (m_compositeGpuPath && m_compositeGpuPath->isReady() && m_rasterPath != nullptr) {
+            VulkanDevice* compositeDevice = m_bootstrap ? m_bootstrap->device() : nullptr;
             (void)m_compositeGpuPath->ensureCudaInteropTexture();
+            if (m_frameSyncInitialized) {
+                (void)m_frameSync.signalRenderLane(
+                    compositeDevice != nullptr ? compositeDevice->nativeHandle() : nullptr, frameIndex);
+            }
+            (void)m_compositeGpuPath->fillCudaInteropTexture(
+                m_frameSyncInitialized ? &m_frameSync : nullptr, frameIndex, true);
             m_compositeGpuPath->registerRasterSource(m_rasterPath->colorViewHandle());
             if (presentTargetsReady && encodeContextStorage.presentRenderPass != nullptr) {
                 m_compositeGpuPath->ensurePresentPipeline(encodeContextStorage.presentRenderPass);

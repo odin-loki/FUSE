@@ -2,16 +2,19 @@
 
 #include <fuse/jobs/cuda_jobs.hpp>
 
-#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
-#include <cuda_runtime.h>
+#if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#endif
+
+#if defined(FUSE_HAS_CUDA)
+#include <cuda_runtime.h>
 #endif
 
 namespace fuse::renderer::cuda {
 
 namespace {
 
-#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
+#if defined(FUSE_VULKAN_BACKEND)
 bool physicalDeviceSupportsTimelineSemaphores(VkPhysicalDevice physicalDevice) {
     VkPhysicalDeviceVulkan12Features features12{};
     features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
@@ -21,7 +24,9 @@ bool physicalDeviceSupportsTimelineSemaphores(VkPhysicalDevice physicalDevice) {
     vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
     return features12.timelineSemaphore != VK_FALSE;
 }
+#endif
 
+#if defined(FUSE_HAS_CUDA)
 cudaExternalSemaphoreHandleType externalSemaphoreHandleType() {
 #if defined(_WIN32)
     return cudaExternalSemaphoreHandleTypeOpaqueWin32;
@@ -197,6 +202,115 @@ bool SharedTimeline::waitCuda(void* cudaStream, u64 waitValue) const {
     (void)waitValue;
     return false;
 #endif
+}
+
+bool SharedTimeline::signalCuda(void* cudaStream, u64 newValue) const {
+    if (!valid || !driverWired || cudaSemaphore == nullptr) {
+        return false;
+    }
+
+#if defined(FUSE_HAS_CUDA)
+    cudaExternalSemaphoreSignalParams signalParams{};
+    signalParams.params.fence.value = newValue;
+    const cudaStream_t stream = cudaStream != nullptr ? static_cast<cudaStream_t>(cudaStream) : 0;
+    const cudaError_t err = cudaSignalExternalSemaphoresAsync(
+        &static_cast<cudaExternalSemaphore_t>(cudaSemaphore), &signalParams, 1, stream);
+    return err == cudaSuccess;
+#else
+    (void)cudaStream;
+    (void)newValue;
+    return false;
+#endif
+}
+
+bool SharedTimeline::waitVulkan(void* vkDevice, u64 waitValue) const {
+    if (!valid || !driverWired || vkDevice == nullptr || vkSemaphore == nullptr) {
+        return false;
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    VkSemaphoreWaitInfo waitInfo{};
+    waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+    waitInfo.semaphoreCount = 1;
+    const VkSemaphore semaphore = static_cast<VkSemaphore>(vkSemaphore);
+    waitInfo.pSemaphores = &semaphore;
+    waitInfo.pValues = &waitValue;
+    return vkWaitSemaphores(static_cast<VkDevice>(vkDevice), &waitInfo, UINT64_MAX) == VK_SUCCESS;
+#else
+    (void)waitValue;
+    return false;
+#endif
+}
+
+namespace {
+
+u64 timelineValueForFrame(u64 frameIndex, u64 laneOffset) {
+    return frameIndex * 2u + laneOffset;
+}
+
+} // namespace
+
+bool FrameSyncPair::signalRenderLane(void* vkDevice, u64 frameIndex) {
+    progress.frameIndex = frameIndex;
+    progress.vkToCudaValue = timelineValueForFrame(frameIndex, 1u);
+    ++progress.renderLaneSignals;
+
+    if (!driverWired()) {
+        return false;
+    }
+
+    const bool signaled = vkToCuda.signalVulkan(vkDevice, progress.vkToCudaValue);
+    if (signaled) {
+        vkToCuda.value = progress.vkToCudaValue;
+    }
+    return signaled;
+}
+
+bool FrameSyncPair::waitJobLaneOnRenderSignal(void* cudaStream, u64 frameIndex) {
+    progress.frameIndex = frameIndex;
+    ++progress.jobLaneWaits;
+
+    if (!driverWired()) {
+        return false;
+    }
+
+    const u64 waitValue = timelineValueForFrame(frameIndex, 1u);
+    return vkToCuda.waitCuda(cudaStream, waitValue);
+}
+
+bool FrameSyncPair::signalJobLaneComplete(void* cudaStream, u64 frameIndex) {
+    progress.frameIndex = frameIndex;
+    progress.cudaToVkValue = timelineValueForFrame(frameIndex, 2u);
+    ++progress.jobLaneSignals;
+
+    if (!driverWired()) {
+        return false;
+    }
+
+    const bool signaled = cudaToVk.signalCuda(cudaStream, progress.cudaToVkValue);
+    if (signaled) {
+        cudaToVk.value = progress.cudaToVkValue;
+    }
+    return signaled;
+}
+
+bool FrameSyncPair::waitRenderLane(void* vkDevice, u64 frameIndex) {
+    progress.frameIndex = frameIndex;
+    ++progress.renderLaneWaits;
+
+    if (!driverWired()) {
+        return false;
+    }
+
+    const u64 waitValue = timelineValueForFrame(frameIndex, 2u);
+    return cudaToVk.waitVulkan(vkDevice, waitValue);
+}
+
+bool FrameSyncPair::advanceJobLane(void* cudaStream, u64 frameIndex) {
+    if (!waitJobLaneOnRenderSignal(cudaStream, frameIndex)) {
+        return false;
+    }
+    return signalJobLaneComplete(cudaStream, frameIndex);
 }
 
 FrameSyncPair FrameSyncPair::create(void* vkDevice, void* vkPhysicalDevice) {

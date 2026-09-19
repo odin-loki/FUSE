@@ -1,6 +1,7 @@
 #include <fuse/renderer/vk/composite_gpu_path.hpp>
 
 #include <fuse/renderer/cuda/interop.hpp>
+#include <fuse/renderer/cuda/interop_fill.hpp>
 #include <fuse/renderer/resources.hpp>
 #include <fuse/renderer/shader/shader_module.hpp>
 #include <fuse/renderer/vk/graphics_pipeline.hpp>
@@ -50,6 +51,46 @@ u32 findMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryProp
         }
     }
     return 0;
+}
+
+bool exportDeviceMemoryHandle(VkDevice device, VkDeviceMemory memory, void*& outHandle) {
+#if defined(_WIN32)
+    using GetMemoryFn = PFN_vkGetMemoryWin32HandleKHR;
+    const char* fnName = "vkGetMemoryWin32HandleKHR";
+    VkExternalMemoryHandleTypeFlagBits handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+#else
+    using GetMemoryFn = PFN_vkGetMemoryFdKHR;
+    const char* fnName = "vkGetMemoryFdKHR";
+    VkExternalMemoryHandleTypeFlagBits handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+#endif
+
+    auto getHandle = reinterpret_cast<GetMemoryFn>(vkGetDeviceProcAddr(device, fnName));
+    if (getHandle == nullptr) {
+        return false;
+    }
+
+#if defined(_WIN32)
+    HANDLE winHandle = nullptr;
+    VkMemoryGetWin32HandleInfoKHR handleInfo{};
+    handleInfo.sType = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR;
+    handleInfo.memory = memory;
+    handleInfo.handleType = handleType;
+    if (getHandle(device, &handleInfo, &winHandle) != VK_SUCCESS || winHandle == nullptr) {
+        return false;
+    }
+    outHandle = winHandle;
+#else
+    int fd = -1;
+    VkMemoryGetFdInfoKHR fdInfo{};
+    fdInfo.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
+    fdInfo.memory = memory;
+    fdInfo.handleType = handleType;
+    if (getHandle(device, &fdInfo, &fd) != VK_SUCCESS || fd < 0) {
+        return false;
+    }
+    outHandle = reinterpret_cast<void*>(static_cast<intptr_t>(fd));
+#endif
+    return true;
 }
 #endif
 
@@ -197,6 +238,11 @@ bool CompositeGpuPath::ensureCudaInteropTexture() {
     m_cudaImage = image;
     m_cudaImageMemory = memory;
     m_cudaImageView = view;
+    m_cudaAllocationSize = memRequirements.size;
+    m_cudaExportedHandle = nullptr;
+    if (!exportDeviceMemoryHandle(vkDevice, memory, m_cudaExportedHandle)) {
+        m_stats.message = "cuda interop memory export unavailable — fill uses stub path";
+    }
 
     if (!registerCudaSource(view)) {
         return false;
@@ -207,6 +253,50 @@ bool CompositeGpuPath::ensureCudaInteropTexture() {
 #else
     m_stats.cudaTexturePlaceholder = true;
     m_stats.message = "cuda interop texture unavailable in stub build";
+    return false;
+#endif
+}
+
+bool CompositeGpuPath::fillCudaInteropTexture(fuse::renderer::cuda::FrameSyncPair* frameSync, u64 frameIndex,
+                                              bool useJobLane) {
+    m_stats.cudaFillAttempted = true;
+    m_stats.lastFrameSyncIndex = frameIndex;
+
+#if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_HAS_CUDA)
+    if (!m_stats.pipelineReady || m_cudaExportedHandle == nullptr || m_cudaAllocationSize == 0) {
+        m_stats.cudaFillStubPath = true;
+        m_stats.cudaFillOk = false;
+        if (m_stats.message.empty()) {
+            m_stats.message = "cuda interop fill skipped — texture export unavailable";
+        }
+        return false;
+    }
+
+    fuse::renderer::cuda::InteropFillDesc fillDesc{};
+    fillDesc.exportedMemoryHandle = m_cudaExportedHandle;
+    fillDesc.allocationSize = m_cudaAllocationSize;
+    fillDesc.width = m_desc.width;
+    fillDesc.height = m_desc.height;
+    fillDesc.frameSync = frameSync;
+    fillDesc.frameIndex = frameIndex;
+
+    const fuse::renderer::cuda::InteropFillResult fillResult =
+        useJobLane ? fuse::renderer::cuda::submitInteropFillJob(fillDesc)
+                   : fuse::renderer::cuda::fillInteropTexture(fillDesc);
+
+    m_stats.cudaFillStubPath = fillResult.stubPath;
+    m_stats.cudaFillOk = fillResult.ok;
+    if (fillResult.reason != nullptr) {
+        m_stats.message = fillResult.reason;
+    }
+    return fillResult.ok;
+#else
+    (void)frameSync;
+    (void)frameIndex;
+    (void)useJobLane;
+    m_stats.cudaFillStubPath = true;
+    m_stats.cudaFillOk = false;
+    m_stats.message = "cuda interop fill unavailable in stub build";
     return false;
 #endif
 }
@@ -484,6 +574,8 @@ void CompositeGpuPath::shutdown() {
     m_cudaImageView = nullptr;
     m_cudaImage = nullptr;
     m_cudaImageMemory = nullptr;
+    m_cudaExportedHandle = nullptr;
+    m_cudaAllocationSize = 0;
 #endif
 
     m_presentPipeline.reset();

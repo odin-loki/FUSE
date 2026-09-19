@@ -16,6 +16,8 @@ struct ViewportSwapchainHandoff {
     u32 height = 0;
     bool pending = false;
     bool consumed = false;
+    bool qtStubSurface = false;
+    const char* handoffSource = nullptr;
 #if defined(FUSE_VULKAN_BACKEND)
     fuse::renderer::SurfaceDesc surface{};
     fuse::renderer::SwapchainDesc swapchainDesc{};

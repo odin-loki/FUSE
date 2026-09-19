@@ -8,6 +8,7 @@
 #include <fuse/renderer/vk/queue_submit.hpp>
 #include <fuse/renderer/vk/composite_gpu_path.hpp>
 #include <fuse/renderer/vk/raster_path.hpp>
+#include <fuse/renderer/cuda/vk_sync.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -63,6 +64,10 @@ public:
     const RasterPathStats& lastRasterStats() const { return m_lastRasterStats; }
     const CompositePassStats& lastCompositeStats() const { return m_lastCompositeStats; }
     const CompositeGpuPathStats& lastCompositeGpuStats() const { return m_lastCompositeGpuStats; }
+    const fuse::renderer::cuda::FrameSyncProgress& lastFrameSyncProgress() const {
+        return m_frameSync.lastProgress();
+    }
+    bool frameSyncDriverWired() const { return m_frameSync.driverWired(); }
 
 private:
     explicit RhiContext(std::unique_ptr<VulkanBootstrap> bootstrap, const Desc& desc);
@@ -70,6 +75,7 @@ private:
     void ensureRasterPath();
     void ensureCompositePass();
     void ensureCompositeGpuPath();
+    void ensureFrameSyncPair();
 
     std::unique_ptr<VulkanBootstrap> m_bootstrap;
     Desc m_desc;
@@ -79,6 +85,8 @@ private:
     RasterPathStats m_lastRasterStats{};
     CompositePassStats m_lastCompositeStats{};
     CompositeGpuPathStats m_lastCompositeGpuStats{};
+    fuse::renderer::cuda::FrameSyncPair m_frameSync{};
+    bool m_frameSyncInitialized = false;
     RenderGraph m_renderGraph;
     CommandBufferRecorder m_commandRecorder;
     u32 m_submittedFrames = 0;

@@ -65,6 +65,7 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/vk/swapchain.hpp
     include/fuse/renderer/vk/swapchain_util.hpp
     include/fuse/renderer/cuda/interop.hpp
+    include/fuse/renderer/cuda/interop_fill.hpp
     include/fuse/renderer/cuda/vk_sync.hpp
     include/fuse/renderer/cuda/stream_manager.hpp
 )
@@ -129,6 +130,7 @@ set(FUSE_RHI_SOURCES
     src/vk/swapchain.cpp
     src/vk/swapchain_util.cpp
     src/cuda/interop.cpp
+    src/cuda/interop_fill.cpp
     src/cuda/vk_sync.cpp
     src/cuda/stream_manager.cpp
 )
@@ -172,6 +174,8 @@ endif()
 if(FUSE_CUDA_BACKEND)
     target_compile_definitions(fuse_rhi PUBLIC FUSE_HAS_CUDA=1)
     target_link_libraries(fuse_rhi PUBLIC CUDA::cudart)
+    target_sources(fuse_rhi PRIVATE kernels/interop_fill.cu)
+    set_target_properties(fuse_rhi PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 endif()
 
 if(FUSE_ENABLE_GLFW_PRESENT)

@@ -8,6 +8,10 @@
 #include <memory>
 #include <string>
 
+namespace fuse::renderer::cuda {
+struct FrameSyncPair;
+}
+
 namespace fuse::renderer {
 
 struct CompositeGpuPathDesc {
@@ -22,9 +26,13 @@ struct CompositeGpuPathStats {
     bool bindlessBound = false;
     bool cudaTextureActive = false;
     bool cudaTexturePlaceholder = true;
+    bool cudaFillAttempted = false;
+    bool cudaFillOk = false;
+    bool cudaFillStubPath = false;
     u32 framesEncoded = 0;
     u32 rasterTextureIndex = UINT32_MAX;
     u32 cudaTextureIndex = UINT32_MAX;
+    u64 lastFrameSyncIndex = 0;
     std::string message;
 };
 
@@ -49,6 +57,10 @@ public:
 
     /// Attempts to allocate/export a CUDA-writable image when interop is available.
     bool ensureCudaInteropTexture();
+
+    /// Fills the interop texture via CUDA kernel (honest stub when toolkit/interop absent).
+    bool fillCudaInteropTexture(fuse::renderer::cuda::FrameSyncPair* frameSync, u64 frameIndex,
+                                bool useJobLane = false);
 
     /// Ensures a present-target pipeline exists when swapchain present render pass is available.
     bool ensurePresentPipeline(void* presentRenderPass);
@@ -84,6 +96,8 @@ private:
     void* m_cudaImage = nullptr;
     void* m_cudaImageMemory = nullptr;
     void* m_cudaImageView = nullptr;
+    void* m_cudaExportedHandle = nullptr;
+    u64 m_cudaAllocationSize = 0;
 #endif
 };
 

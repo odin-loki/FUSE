@@ -20,17 +20,45 @@ struct SharedTimeline {
     bool signalVulkan(void* vkDevice, u64 newValue) const;
     /// CUDA timeline wait — real `cudaWaitExternalSemaphoresAsync` when driver-wired.
     bool waitCuda(void* cudaStream, u64 waitValue) const;
+    /// CUDA timeline signal — real `cudaSignalExternalSemaphoresAsync` when driver-wired.
+    bool signalCuda(void* cudaStream, u64 newValue) const;
+    /// Vulkan timeline wait — real `vkWaitSemaphores` when driver-wired.
+    bool waitVulkan(void* vkDevice, u64 waitValue) const;
+};
+
+/// Cross-lane progress for render thread ↔ CUDA job lane (WP-06h).
+struct FrameSyncProgress {
+    u64 frameIndex = 0;
+    u64 vkToCudaValue = 0;
+    u64 cudaToVkValue = 0;
+    u32 renderLaneSignals = 0;
+    u32 jobLaneWaits = 0;
+    u32 jobLaneSignals = 0;
+    u32 renderLaneWaits = 0;
 };
 
 struct FrameSyncPair {
     SharedTimeline vkToCuda{};
     SharedTimeline cudaToVk{};
+    FrameSyncProgress progress{};
 
     static FrameSyncPair create(void* vkDevice, void* vkPhysicalDevice = nullptr);
     void destroy(void* vkDevice);
 
     bool valid() const { return vkToCuda.valid || cudaToVk.valid; }
     bool driverWired() const { return vkToCuda.driverWired || cudaToVk.driverWired; }
+    const FrameSyncProgress& lastProgress() const { return progress; }
+
+    /// Render thread: CUDA jobs may consume frame `frameIndex` after this signal.
+    bool signalRenderLane(void* vkDevice, u64 frameIndex);
+    /// Job lane: wait for render signal, then run CUDA work for `frameIndex`.
+    bool waitJobLaneOnRenderSignal(void* cudaStream, u64 frameIndex);
+    /// Job lane: signal CUDA completion for `frameIndex`.
+    bool signalJobLaneComplete(void* cudaStream, u64 frameIndex);
+    /// Render thread: wait for CUDA before composite sampling.
+    bool waitRenderLane(void* vkDevice, u64 frameIndex);
+    /// Convenience — job lane wait + signal in one call.
+    bool advanceJobLane(void* cudaStream, u64 frameIndex);
 };
 
 } // namespace fuse::renderer::cuda

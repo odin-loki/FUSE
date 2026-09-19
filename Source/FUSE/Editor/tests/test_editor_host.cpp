@@ -389,6 +389,49 @@ void testRuntimeViewportSurfaceHandoffStub() {
 #endif
 }
 
+void testRuntimeViewportQtSurfaceHandoffCommand() {
+    fuse::editor::EditorHost host;
+
+    fuse::editor::EditorCommand widthCmd;
+    widthCmd.kind = fuse::editor::CommandKind::SetProperty;
+    widthCmd.propertyName = "viewport.width";
+    widthCmd.propertyValue = "800";
+    host.postFromUi(std::move(widthCmd));
+
+    fuse::editor::EditorCommand heightCmd;
+    heightCmd.kind = fuse::editor::CommandKind::SetProperty;
+    heightCmd.propertyName = "viewport.height";
+    heightCmd.propertyValue = "450";
+    host.postFromUi(std::move(heightCmd));
+
+    host.gameTick();
+
+    fuse::editor::EditorCommand surfaceCmd;
+    surfaceCmd.kind = fuse::editor::CommandKind::SetProperty;
+    surfaceCmd.propertyName = "viewport.vk_surface_handle";
+    surfaceCmd.propertyValue = "4242";
+    host.postFromUi(std::move(surfaceCmd));
+
+    host.gameTick();
+
+    expectTrue(host.runtimeViewport().swapchainHandoff().qtStubSurface,
+               "Qt stub surface flag set on handoff");
+    expectTrue(host.runtimeViewport().swapchainHandoff().handoffSource != nullptr,
+               "handoff source string present");
+    expectTrue(host.runtimeViewport().swapchainHandoff().nativeSurface ==
+                   reinterpret_cast<void*>(static_cast<uintptr_t>(4242u)),
+               "opaque Qt winId encoded as stub VkSurfaceKHR handle");
+    expectTrue(host.runtimeViewport().swapchainHandoff().width == 800u,
+               "Qt handoff preserves viewport width");
+    expectTrue(host.runtimeViewport().swapchainHandoff().height == 450u,
+               "Qt handoff preserves viewport height");
+#if defined(FUSE_VULKAN_BACKEND)
+    const fuse::renderer::SwapchainDesc desc = host.runtimeViewport().buildSwapchainDescHandoff();
+    expectTrue(desc.surface.kind == fuse::renderer::SurfaceKind::External,
+               "Qt stub handoff builds external swapchain desc");
+#endif
+}
+
 void testRuntimeViewportHookTicksWithProject() {
     fuse::editor::EditorHost host;
 
@@ -464,6 +507,7 @@ int main() {
     testHostUndoDeleteViaQueue();
     testRuntimeViewportLoadsProjectRoot();
     testRuntimeViewportSurfaceHandoffStub();
+    testRuntimeViewportQtSurfaceHandoffCommand();
     testRuntimeViewportHookTicksWithProject();
     testAiTreeProfilePickerPostsCommand();
     testCinematicsSeqImportPostsAsset();

@@ -89,6 +89,15 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         return true;
     }
 
+    if (command.propertyName == "viewport.vk_surface_handle") {
+        const u64 handleValue = std::strtoull(command.propertyValue.c_str(), nullptr, 10);
+        const u32 width = host.runtimeViewport().panel().width();
+        const u32 height = host.runtimeViewport().panel().height();
+        host.runtimeViewport().setExternalSurfaceHandle(reinterpret_cast<void*>(handleValue), width,
+                                                        height, "qt_winid_stub", true);
+        return true;
+    }
+
     if (command.propertyName == "ai.tree_profile_id") {
         host.setSelectedAiTreeProfileId(
             static_cast<u32>(std::strtoul(command.propertyValue.c_str(), nullptr, 10)));

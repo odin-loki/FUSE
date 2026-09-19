@@ -16,11 +16,26 @@
 namespace fuse::editor {
 
 #if defined(FUSE_VULKAN_BACKEND)
-struct RuntimeViewportHook::HeadlessGpuStub {
+struct RuntimeViewportHeadlessGpuStub {
     std::unique_ptr<fuse::renderer::RhiContext> context;
     u32 submittedFrames = 0;
 };
+
+RuntimeViewportHeadlessGpuStub* asHeadlessGpuStub(void* stub) {
+    return static_cast<RuntimeViewportHeadlessGpuStub*>(stub);
+}
+
+const RuntimeViewportHeadlessGpuStub* asHeadlessGpuStub(const void* stub) {
+    return static_cast<const RuntimeViewportHeadlessGpuStub*>(stub);
+}
 #endif
+
+RuntimeViewportHook::~RuntimeViewportHook() {
+#if defined(FUSE_VULKAN_BACKEND)
+    delete asHeadlessGpuStub(m_headlessGpuStub);
+    m_headlessGpuStub = nullptr;
+#endif
+}
 
 void RuntimeViewportHook::requestResize(u32 width, u32 height) {
     std::lock_guard<std::mutex> lock(m_resizeMutex);
@@ -54,12 +69,15 @@ void RuntimeViewportHook::setProjectRoot(std::string root) {
     m_surfaceHandoff = {};
 }
 
-void RuntimeViewportHook::setExternalSurfaceHandle(void* vkSurface, u32 width, u32 height) {
+void RuntimeViewportHook::setExternalSurfaceHandle(void* vkSurface, u32 width, u32 height,
+                                                   const char* handoffSource, bool qtStubSurface) {
     m_surfaceHandoff.nativeSurface = vkSurface;
     m_surfaceHandoff.width = width > 0 ? width : m_panel.width();
     m_surfaceHandoff.height = height > 0 ? height : m_panel.height();
     m_surfaceHandoff.pending = vkSurface != nullptr;
     m_surfaceHandoff.consumed = false;
+    m_surfaceHandoff.qtStubSurface = qtStubSurface;
+    m_surfaceHandoff.handoffSource = handoffSource;
 
 #if defined(FUSE_VULKAN_BACKEND)
     m_surfaceHandoff.surface.kind = fuse::renderer::SurfaceKind::External;
@@ -196,27 +214,27 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 /*dt*/)
     ++m_embedSession.headlessPresentTicks;
 
 #if defined(FUSE_VULKAN_BACKEND)
-    if (!m_headlessGpu) {
-        m_headlessGpu = std::make_unique<HeadlessGpuStub>();
+    RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    if (gpu == nullptr) {
+        m_headlessGpuStub = new RuntimeViewportHeadlessGpuStub();
+        gpu = asHeadlessGpuStub(m_headlessGpuStub);
     }
 
-    if (!m_embedSession.headlessGpuReady && m_headlessGpu->context == nullptr) {
+    if (!m_embedSession.headlessGpuReady && gpu->context == nullptr) {
         fuse::renderer::RhiContext::Desc desc{};
         desc.bootstrap.instance.enableValidation = false;
         desc.enableRasterPath = false;
         desc.enableCompositePass = false;
-        m_headlessGpu->context = fuse::renderer::RhiContext::create(desc);
-        if (m_headlessGpu->context != nullptr &&
-            m_headlessGpu->context->bootstrap().status().deviceReady) {
+        gpu->context = fuse::renderer::RhiContext::create(desc);
+        if (gpu->context != nullptr && gpu->context->bootstrap().status().deviceReady) {
             m_embedSession.headlessGpuReady = true;
         }
     }
 
-    if (m_embedSession.headlessGpuReady && m_headlessGpu->context != nullptr) {
+    if (m_embedSession.headlessGpuReady && gpu->context != nullptr) {
         fuse::renderer::RenderCommandList commands;
-        if (m_headlessGpu->context->beginFrame(0) &&
-            m_headlessGpu->context->submitFrame(commands, 0)) {
-            ++m_headlessGpu->submittedFrames;
+        if (gpu->context->beginFrame(0) && gpu->context->submitFrame(commands, 0)) {
+            ++gpu->submittedFrames;
         }
     }
 

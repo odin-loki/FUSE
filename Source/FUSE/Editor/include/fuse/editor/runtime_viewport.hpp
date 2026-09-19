@@ -17,12 +17,16 @@ class EditorHost;
 /// UI thread posts dimensions; game thread ticks the embedded viewport hook.
 class RuntimeViewportHook {
 public:
+    RuntimeViewportHook() = default;
+    ~RuntimeViewportHook();
+
     void requestResize(u32 width, u32 height);
     void setProjectLabel(std::string label);
     void setProjectRoot(std::string root);
 
     /// Queue an external `VkSurfaceKHR` for Track B `SwapchainDesc` wiring (Qt/U6 follow-up).
-    void setExternalSurfaceHandle(void* vkSurface, u32 width, u32 height);
+    void setExternalSurfaceHandle(void* vkSurface, u32 width, u32 height,
+                                  const char* handoffSource = nullptr, bool qtStubSurface = false);
     const ViewportSwapchainHandoff& swapchainHandoff() const { return m_surfaceHandoff; }
 #if defined(FUSE_VULKAN_BACKEND)
     fuse::renderer::SwapchainDesc buildSwapchainDescHandoff() const;
@@ -59,8 +63,7 @@ private:
     ViewportSwapchainHandoff m_surfaceHandoff{};
 
 #if defined(FUSE_VULKAN_BACKEND)
-    struct HeadlessGpuStub;
-    std::unique_ptr<HeadlessGpuStub> m_headlessGpu;
+    void* m_headlessGpuStub = nullptr;
 #endif
 };
 

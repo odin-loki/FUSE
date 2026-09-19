@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/renderer/cuda/interop.hpp>
+#include <fuse/renderer/cuda/interop_fill.hpp>
 #include <fuse/renderer/cuda/stream_manager.hpp>
 #include <fuse/renderer/cuda/vk_sync.hpp>
 
@@ -83,6 +84,60 @@ void testFrameSyncPairStub() {
 #endif
 }
 
+void testFrameSyncProgressStub() {
+    fuse::renderer::cuda::FrameSyncPair pair =
+        fuse::renderer::cuda::FrameSyncPair::create(nullptr, nullptr);
+
+    expectTrue(pair.signalRenderLane(nullptr, 3u) == pair.driverWired(),
+               "signalRenderLane succeeds only when driver-wired");
+    expectTrue(pair.lastProgress().renderLaneSignals == 1u, "render lane signal counted");
+    expectTrue(pair.lastProgress().frameIndex == 3u, "progress tracks frame index");
+
+    expectTrue(pair.waitJobLaneOnRenderSignal(nullptr, 3u) == pair.driverWired(),
+               "job lane wait succeeds only when driver-wired");
+    expectTrue(pair.lastProgress().jobLaneWaits == 1u, "job lane wait counted");
+
+    expectTrue(pair.signalJobLaneComplete(nullptr, 3u) == pair.driverWired(),
+               "job lane signal succeeds only when driver-wired");
+    expectTrue(pair.lastProgress().jobLaneSignals == 1u, "job lane signal counted");
+
+    expectTrue(pair.waitRenderLane(nullptr, 3u) == pair.driverWired(),
+               "render lane wait succeeds only when driver-wired");
+    expectTrue(pair.lastProgress().renderLaneWaits == 1u, "render lane wait counted");
+
+    pair.destroy(nullptr);
+}
+
+void testInteropFillStub() {
+    fuse::renderer::cuda::InteropFillDesc desc{};
+    desc.exportedMemoryHandle = reinterpret_cast<void*>(0x10);
+    desc.allocationSize = 4096;
+    desc.width = 64;
+    desc.height = 64;
+
+#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
+    if (fuse::renderer::cuda::interopFillAvailable()) {
+        std::printf("SKIP: interop fill runtime available — needs real exported handle\n");
+        return;
+    }
+#endif
+
+    expectTrue(!fuse::renderer::cuda::interopFillAvailable(),
+               "CI stub build has no interop fill runtime");
+
+    const fuse::renderer::cuda::InteropFillResult syncFill =
+        fuse::renderer::cuda::fillInteropTexture(desc);
+    expectTrue(!syncFill.ok, "sync interop fill fails without runtime");
+    expectTrue(syncFill.stubPath, "sync interop fill reports stub path");
+    expectTrue(syncFill.reason != nullptr, "sync interop fill exposes reason");
+
+    const fuse::renderer::cuda::InteropFillResult jobFill =
+        fuse::renderer::cuda::submitInteropFillJob(desc);
+    expectTrue(!jobFill.ok, "job-lane interop fill fails without runtime");
+    expectTrue(jobFill.stubPath, "job-lane interop fill reports stub path");
+    expectTrue(jobFill.reason != nullptr, "job-lane interop fill exposes reason");
+}
+
 void testInteropReasonStrings() {
 #if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
     if (fuse::renderer::cuda::interopAvailable()) {
@@ -125,6 +180,8 @@ int main() {
     testInteropReasonStrings();
     testSharedTimelineStub();
     testFrameSyncPairStub();
+    testFrameSyncProgressStub();
+    testInteropFillStub();
     testStreamManagerStub();
 
     fuse::core::shutdown();
