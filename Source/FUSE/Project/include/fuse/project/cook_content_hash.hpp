@@ -37,6 +37,9 @@ struct CookHashPreflight {
     return size == 0 || data != nullptr;
 }
 
+/// Read-only FNV input preflight — mirrors `is_valid_fnv1a64_input` without hashing (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size);
+
 /// Last-write-time in nanoseconds; returns 0 when the path is missing or unreadable.
 [[nodiscard]] u64 file_mtime_ns(const std::string& path);
 

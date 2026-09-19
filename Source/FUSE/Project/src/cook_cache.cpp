@@ -81,6 +81,25 @@ std::string escapeJson(const std::string& text) {
 
 } // namespace
 
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        CookHashPreflight preflight;
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+    if (entry.source_path.empty()) {
+        CookHashPreflight preflight;
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (entry.output_path.empty()) {
+        CookHashPreflight preflight;
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+    return preflight_file_content_hash(entry.source_path);
+}
+
 CookCacheEntry* CookCache::find_entry_(u64 content_hash) {
     for (CookCacheEntry& entry : m_entries) {
         if (entry.content_hash == content_hash) {
@@ -348,6 +367,19 @@ bool CookCache::would_invalidate(u64 content_hash) const {
     return find_entry_(content_hash) != nullptr;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) > 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) > 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) > 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
         return 0;
@@ -435,6 +467,62 @@ std::vector<std::string> CookCache::probe_stale_upstream_sources(
         }
     }
     return stale_sources;
+}
+
+std::vector<std::string> CookCache::probe_stale_content_sources() const {
+    if (m_entries.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> stale_sources;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (!is_stale_cache_entry_(entry)) {
+            continue;
+        }
+        if (!is_valid_cook_cache_entry(entry)) {
+            continue;
+        }
+        stale_sources.push_back(entry.source_path);
+    }
+    return stale_sources;
+}
+
+CookCachePruneEstimate CookCache::estimate_prune_reconciliation() const {
+    CookCachePruneEstimate estimate;
+    if (m_entries.empty()) {
+        return estimate;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+        if (!is_valid_cook_cache_entry(entry)) {
+            ++estimate.invalid_entries;
+        } else if (is_stale_cache_entry_(entry)) {
+            ++estimate.stale_entries;
+        }
+    }
+    return estimate;
+}
+
+CookCacheStaleUpstreamEstimate CookCache::estimate_stale_upstream_reconciliation(
+    const std::vector<std::pair<std::string, u64>>& source_upstream_by_path,
+    const std::vector<CookJobDependencyEdge>& edges,
+    const std::vector<CookJob>& jobs) const {
+    CookCacheStaleUpstreamEstimate estimate;
+    if (m_entries.empty() || source_upstream_by_path.empty()) {
+        return estimate;
+    }
+
+    estimate.stale_upstream = count_stale_upstream_hashes(source_upstream_by_path);
+    const std::vector<std::string> stale_sources = probe_stale_upstream_sources(source_upstream_by_path);
+    for (const std::string& stale_source : stale_sources) {
+        for (const CookJob& job : jobs) {
+            if (job.source_path == stale_source) {
+                estimate.downstream_cascade += count_downstream_of(job.output_path, edges, jobs);
+                break;
+            }
+        }
+    }
+    return estimate;
 }
 
 namespace {
