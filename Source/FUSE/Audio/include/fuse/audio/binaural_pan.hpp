@@ -637,3 +637,9 @@ enum class HrtfAttenuationCouplingPreflightRejectReason : u8 {
 bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
                                  HrtfPanPreflightRejectReason* reason = nullptr);
                                              HrtfAttenuationCouplingPreflightRejectReason* reason =
+
+// --- deepen additive from deepen-b72-hrtf-pan-empty-ir-guards-e7fc ---
+enum class HrtfIrRejectReason {
+enum class HrtfPanPathSkipReason {
+enum class HrtfAttenuationCouplingSkipReason {
+bool should_skip_hrtf_attenuation_coupling_apply(HrtfPanPath path, float distance_attenuation,

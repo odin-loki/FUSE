@@ -1443,3 +1443,11 @@ void testPreflightHrtfSpatialPan() {
     expectTrue(reason == fuse::audio::HrtfAttenuationCouplingPreflightRejectReason::None,
     expectTrue(reason == fuse::audio::HrtfAttenuationCouplingPreflightRejectReason::BypassPath,
         reason == fuse::audio::HrtfAttenuationCouplingPreflightRejectReason::UnityAttenuation,
+
+// --- deepen additive from deepen-b72-hrtf-pan-empty-ir-guards-e7fc ---
+    expectTrue(valid_preflight.reason == fuse::audio::HrtfIrRejectReason::None,
+    expectTrue(empty_preflight.reason == fuse::audio::HrtfIrRejectReason::NullSamples,
+    const fuse::audio::HrtfPanPathPreflight spatial =
+    const fuse::audio::HrtfPanPathPreflight co_located =
+    expectTrue(fuse::audio::should_skip_hrtf_attenuation_coupling_apply(
+    expectTrue(!fuse::audio::should_skip_hrtf_attenuation_coupling_apply(

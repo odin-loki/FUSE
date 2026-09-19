@@ -950,3 +950,9 @@ bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
             *reason = HrtfAttenuationCouplingPreflightRejectReason::BypassPath;
             *reason = HrtfAttenuationCouplingPreflightRejectReason::UnityAttenuation;
         *reason = HrtfAttenuationCouplingPreflightRejectReason::None;
+
+// --- deepen additive from deepen-b72-hrtf-pan-empty-ir-guards-e7fc ---
+    const HrtfIrRejectReason reason = hrtf_ir_reject_reason(ir);
+    if (reason == HrtfIrRejectReason::None) {
+bool should_skip_hrtf_attenuation_coupling_apply(HrtfPanPath path, float distance_attenuation,
+    const HrtfAttenuationCouplingPreflight preflight =
