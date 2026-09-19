@@ -530,6 +530,13 @@ const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason) 
     case FrictionBasisRejectReason::ValidCachedBasis:
         return "ValidCachedBasis";
     return "Unknown";
+    case FrictionBasisRejectReason::EmptyManifold:
+        return "EmptyManifold";
+    case FrictionBasisRejectReason::InvalidNormal:
+        return "InvalidNormal";
+    case FrictionBasisRejectReason::StaleBasis:
+        return "StaleBasis";
+    }
 
 FrictionBasisRejectReason friction_basis_reject_reason(
     const ContactManifold& manifold,
@@ -704,6 +711,18 @@ bool should_skip_warm_start_friction(
     return !preflight_warm_start_friction(manifold, impulseEpsilon, basisEpsilon).can_warm_start();
 bool rebuild_friction_basis_preflight_dispatch(ContactManifold& manifold, f32 epsilon) {
 
+    if (manifold.empty()) {
+        return FrictionBasisRejectReason::EmptyManifold;
+    }
+        return FrictionBasisRejectReason::InvalidNormal;
+    if (friction_basis_is_stale(manifold, epsilon)) {
+        return FrictionBasisRejectReason::StaleBasis;
+
+    const ContactManifold& manifold,
+    f32 epsilon) {
+
+bool can_skip_friction_basis_preflight(
+    return should_skip_friction_basis_preflight(manifold, epsilon);
 }
 
 } // namespace fuse::physics::narrowphase

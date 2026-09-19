@@ -786,23 +786,17 @@ struct NarrowphasePairBatchStats {
 
 /// Count dispatchable vs rejected pairs without running shape dispatch (B4.5 deepen follow-up).
 NarrowphasePairBatchStats compute_narrowphase_pair_stats(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Run shape dispatch with extended deepen reject guards (B4.4 deepen follow-up pass).
 /// Does not alter `detect_contacts_pair`; use for additive preflight dispatch only.
 /// Run shape dispatch only when base preflight allows; invalid manifold otherwise (B4.4 deepen follow-up pass).
 ContactManifold detect_contacts_pair_if_valid(
     const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Run shape dispatch only when extended deepen preflight allows (B4.4 deepen follow-up pass).
 ContactManifold detect_contacts_pair_deepen(
 /// Convenience count of pairs that pass deepen preflight (B4.5 deepen follow-up).
 u32 count_dispatchable_contact_pairs(
-    const std::vector<broadphase::CandidatePair>& pairs,
 
 /// Const batch preflight for narrowphase pair dispatch (B4.5 deepen follow-up).
 struct NarrowphasePairBatchPreflight {
@@ -812,14 +806,50 @@ struct NarrowphasePairBatchPreflight {
 
     bool can_skip_batch() const { return allRejected; }
     bool can_dispatch_any() const { return hasDispatchable; }
-};
 
 /// Populate batch pair preflight without running shape dispatch (B4.5 deepen follow-up).
 NarrowphasePairBatchPreflight preflight_narrowphase_pairs(
 
 /// Run shape dispatch only when deepen preflight allows; invalid manifold otherwise (B4.5 deepen follow-up).
 ContactManifold detect_contacts_pair_if_needed(
-    const broadphase::CandidatePair& pair,
+/// Count pairs that pass extended deepen preflight (B4.4 deepen follow-up pass).
+
+/// Count pairs rejected by extended deepen preflight (B4.4 deepen follow-up pass).
+u32 count_rejected_contact_pairs_deepen(
+
+/// Why narrowphase batch dispatch would early-out (B4.4 deepen follow-up pass).
+enum class NarrowphaseRejectReason : u8 {
+    None = 0,
+    EmptyPairList,
+    AllPairsRejected,
+
+/// Human-readable label for narrowphase batch reject reasons (logging / tests).
+const char* narrowphase_reject_reason_name(NarrowphaseRejectReason reason);
+
+/// Diagnose why narrowphase batch would skip; vacuously succeeds when dispatch may proceed.
+NarrowphaseRejectReason narrowphase_reject_reason(
+
+/// Returns true when `narrowphase_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+bool narrowphase_rejects_for_reason(
+    const CollisionShapeSoA& shapes,
+    NarrowphaseRejectReason expected);
+
+/// Read-only narrowphase batch diagnostics — no mutation (B4.4 deepen follow-up pass).
+struct NarrowphasePreflight {
+    NarrowphaseRejectReason reason = NarrowphaseRejectReason::None;
+    bool emptyPairList = false;
+    bool allPairsRejected = false;
+    u32 totalPairs = 0;
+    u32 dispatchablePairs = 0;
+    u32 rejectedPairs = 0;
+
+    bool can_dispatch() const { return reason == NarrowphaseRejectReason::None; }
+
+/// Populate narrowphase batch preflight without running shape dispatch (B4.4 deepen follow-up pass).
+NarrowphasePreflight preflight_narrowphase(
+
+/// Non-mutating narrowphase skip predicate — mirrors `can_skip_narrowphase` (B4.4 deepen follow-up pass).
+bool can_skip_narrowphase_preflight(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
