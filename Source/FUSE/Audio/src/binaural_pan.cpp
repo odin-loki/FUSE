@@ -810,3 +810,6 @@ bool should_skip_hrtf_attenuation_coupling(float distance_attenuation, float occ
     if (!should_skip_hrtf_convolution(ir)) {
     return !should_skip_hrtf_attenuation_coupling(path);
     if (should_skip_hrtf_attenuation_coupling(path)) {
+
+// --- deepen additive from deepen-b72-hrtf-pan-empty-ir-guards-3df6 ---
+    if (should_skip_hrtf_spatial_pan(path)) {

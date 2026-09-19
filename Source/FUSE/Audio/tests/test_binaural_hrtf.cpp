@@ -1242,3 +1242,8 @@ void testSpatialBlendSkipGuards() {
 
 // --- deepen additive from deepen-b72-hrtf-pan-empty-ir-guards-7a97 ---
                "should_skip matches should_bypass");
+
+// --- deepen additive from deepen-b72-hrtf-pan-empty-ir-guards-3df6 ---
+void testEmptyIrFallbackAndNormalizeGuards() {
+void testNonUnityAndPreserveSpatialImageGuards() {
+void testGuardedSpatialBlendHelper() {
