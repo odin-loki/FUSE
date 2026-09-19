@@ -238,6 +238,10 @@ CookCacheInvalidationProbe AssetCooker::probe_upstream_dependency(const CookMani
     return m_cache.probe_upstream_invalidation(changed_source, graph.edges(), graph.jobs());
 
 AssetCooker::CookDependencyReconcileEstimate AssetCooker::estimate_stale_dependency_hashes(
+    return estimate_stale_dependency_invalidation(manifest);
+}
+
+u32 AssetCooker::estimate_stale_dependency_invalidation(const CookManifest& manifest) const {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
 

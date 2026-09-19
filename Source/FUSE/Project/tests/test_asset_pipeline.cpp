@@ -1703,6 +1703,7 @@ void testCookerStaleDependencyReconcileEstimatorParity() {
                    cooker.estimate_stale_dependency_invalidation(manifest),
                "count and estimate stale dependency invalidation agree on fresh cache");
 
+    writeTempFile(sourceA, "# est chain a revised\n");
     const fuse::u32 estimate = cooker.estimate_stale_dependency_invalidation(manifest);
     expectTrue(estimate >= 1u, "stale dependency estimate is non-zero after upstream change");
 
@@ -1745,6 +1746,7 @@ void testCookerStaleDependencyReconcileEstimatorParity() {
                "remaining upstream entry is content-stale after source revision");
     expectTrue(!cooker.cache().contains(cooked.records[1].content_hash),
                "downstream entry removed by dependency-hash reconcile");
+    expectTrue(cooker.estimate_stale_dependency_invalidation(manifest) == 0u,
 }
 
 void testCookerInvalidationCountProbes() {

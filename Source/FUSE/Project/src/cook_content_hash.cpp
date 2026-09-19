@@ -705,45 +705,29 @@ CookHashPreflight preflight_cacheable_cook_cache_key(u64 source_hash, u64 upstre
     if (combine_cook_cache_key(source_hash, upstream_hash) == 0) {
         preflight.reason = CookHashRejectReason::NonCacheableKey;
         return preflight;
-    }
 
     preflight.can_hash = true;
     preflight.reason = CookHashRejectReason::None;
-    return preflight;
-}
 
 CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
-    CookHashPreflight preflight;
     if (!is_valid_fnv1a64_input(data, size)) {
         preflight.reason = CookHashRejectReason::NullData;
-        return preflight;
-    }
 
-    preflight.can_hash = true;
-    preflight.reason = CookHashRejectReason::None;
-    return preflight;
-}
 
 CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry& entry,
                                                        const CookManifest& manifest) {
     const CookHashPreflight entry_preflight = preflight_manifest_entry_hash(entry);
     if (!entry_preflight.can_hash) {
         return entry_preflight;
-    }
 
     bool has_non_empty_dependency = false;
     for (const std::string& dependency : entry.dependencies) {
         if (!dependency.empty()) {
             has_non_empty_dependency = true;
             break;
-        }
-    }
     if (!has_non_empty_dependency) {
-        return entry_preflight;
-    }
 
     return preflight_upstream_dependencies_hash(entry.dependencies, manifest);
-}
 
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {

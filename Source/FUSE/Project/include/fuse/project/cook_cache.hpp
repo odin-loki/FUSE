@@ -149,6 +149,8 @@ struct CookCacheReconcileEstimate {
     preflight.reason = CookHashRejectReason::None;
 /// Read-only store preflight — mirrors `store` guards plus source readability (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+    }
+        return preflight;
 
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
@@ -384,6 +386,7 @@ public:
     [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
     [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
     [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
 
     /// Reconcile estimators — non-mutating mirrors of `prune_*` (B7.9 deepen).
     [[nodiscard]] u32 estimate_prune_stale_entries() const;
@@ -482,9 +485,6 @@ public:
     [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
     [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
                                                                u64 current_content_hash) const;
-    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
-                                                      const std::vector<CookJobDependencyEdge>& edges,
-                                                      const std::vector<CookJob>& jobs) const;
     /// Source paths whose stored content keys differ from on-disk recompute — one push per matching entry (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_content_sources() const;
 
@@ -492,22 +492,15 @@ public:
     [[nodiscard]] u32 probe_invalidate_source(const std::string& source_path) const;
     /// Count entries that `invalidate_stale_content_for_source` would remove — no mutation (B7.9 deepen).
     [[nodiscard]] u32 probe_stale_content_for_source(const std::string& source_path,
-                                                     u64 current_content_hash) const;
     /// Unique source paths with stale upstream hashes — no mutation (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_hashes(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     /// Count entries that `invalidate_stale_upstream_hashes` would drop — no mutation (B7.9 deepen).
     [[nodiscard]] u32 probe_stale_upstream_hash_entries(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     /// Count entries that `invalidate_downstream_of` would remove — no mutation (B7.9 deepen).
     [[nodiscard]] u32 probe_downstream_of(const std::string& output_path,
-                                          const std::vector<CookJobDependencyEdge>& edges,
-                                          const std::vector<CookJob>& jobs) const;
     /// Aggregate probe for upstream invalidation plus downstream cascade — no mutation (B7.9 deepen).
     [[nodiscard]] CookCacheInvalidationProbe probe_upstream_invalidation(
         const std::string& changed_source,
-        const std::vector<CookJobDependencyEdge>& edges,
-        const std::vector<CookJob>& jobs) const;
     /// Split invalid vs stale prune counts — no mutation (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_removals() const;
 

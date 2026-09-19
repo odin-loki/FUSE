@@ -668,6 +668,59 @@ void testCookCacheEntryPreflightGuards() {
                "empty output cache entry preflight reason");
 }
 
+void testCookHashPreflightFnv1a64Guard() {
+    const fuse::project::CookHashPreflight null_data =
+        fuse::project::preflight_fnv1a64_bytes(nullptr, 4u);
+    expectTrue(!null_data.ok(), "null data with non-zero size fails fnv1a64 preflight");
+    expectTrue(null_data.reason == fuse::project::CookHashRejectReason::NullData,
+               "null data preflight reason is NullData");
+
+    const fuse::project::CookHashPreflight empty_data =
+        fuse::project::preflight_fnv1a64_bytes(nullptr, 0);
+    expectTrue(empty_data.ok(), "zero-size fnv1a64 preflight passes with null pointer");
+    expectTrue(fuse::project::preflight_fnv1a64_bytes(nullptr, 0).ok(),
+               "zero-size fnv1a64 preflight is stable");
+
+    const char payload[] = "hash";
+    const fuse::project::CookHashPreflight valid_data =
+        fuse::project::preflight_fnv1a64_bytes(reinterpret_cast<const fuse::u8*>(payload),
+                                               sizeof(payload) - 1);
+    expectTrue(valid_data.ok(), "non-null fnv1a64 preflight passes for valid buffer");
+}
+
+void testCookCacheEntryPreflightGuards() {
+    fuse::project::CookCacheEntry valid;
+    valid.content_hash = 201;
+    valid.source_path = "/tmp/fuse_b79_entry_preflight.obj";
+    valid.output_path = "/tmp/fuse_b79_entry_preflight.fusemesh";
+    expectTrue(fuse::project::preflight_cook_cache_entry(valid).ok(),
+               "valid cache entry passes preflight");
+
+    fuse::project::CookCacheEntry zero_key = valid;
+    zero_key.content_hash = 0;
+    expectTrue(!fuse::project::preflight_cook_cache_entry(zero_key).ok(),
+               "zero content hash fails cache entry preflight");
+    expectTrue(fuse::project::preflight_cook_cache_entry(zero_key).reason ==
+                   fuse::project::CookHashRejectReason::ZeroSourceHash,
+               "zero key cache entry preflight reason");
+
+    fuse::project::CookCacheEntry empty_source = valid;
+    empty_source.source_path = "";
+    expectTrue(!fuse::project::preflight_cook_cache_entry(empty_source).ok(),
+               "empty source path fails cache entry preflight");
+    expectTrue(fuse::project::preflight_cook_cache_entry(empty_source).reason ==
+                   fuse::project::CookHashRejectReason::EmptyInputPath,
+               "empty source cache entry preflight reason");
+
+    fuse::project::CookCacheEntry empty_output = valid;
+    empty_output.output_path = "";
+    expectTrue(!fuse::project::preflight_cook_cache_entry(empty_output).ok(),
+               "empty output path fails cache entry preflight");
+    expectTrue(fuse::project::preflight_cook_cache_entry(empty_output).reason ==
+                   fuse::project::CookHashRejectReason::EmptyOutputPath,
+               "empty output cache entry preflight reason");
+}
+
 void testCookHashPreflightGuards() {
     expectTrue(!fuse::project::is_valid_fnv1a64_input(nullptr, 4u),
                "null data with non-zero size fails FNV input validation");
@@ -969,6 +1022,49 @@ void testCookCacheEntryPreflightGuards() {
     expectTrue(fuse::project::preflight_audio_import_hash(audio).ok(),
 
     manifest_entry.output_path = "/tmp/fuse_b79_preflight_entry.fusemesh";
+}
+
+void testCookCacheReconcileEstimators() {
+    fuse::project::CookCache cache;
+    const fuse::project::CookCacheReconcileEstimate empty_estimate = cache.estimate_reconcile();
+    expectTrue(empty_estimate.invalid_entries == 0u, "empty cache reconcile invalid count is zero");
+    expectTrue(empty_estimate.stale_entries == 0u, "empty cache reconcile stale count is zero");
+    expectTrue(empty_estimate.prunable_entries == 0u, "empty cache reconcile prunable count is zero");
+    expectTrue(cache.estimate_prune_all() == 0u, "estimate_prune_all on empty cache is zero");
+    expectTrue(cache.estimate_prune_stale_entries() == 0u,
+               "estimate_prune_stale on empty cache is zero");
+    expectTrue(cache.estimate_prune_invalid_entries() == 0u,
+               "estimate_prune_invalid on empty cache is zero");
+    expectTrue(cache.count_stale_entries() == 0u, "count_stale on empty cache is zero");
+
+    const std::string source = writeTempFile("/tmp/fuse_b79_reconcile_mesh.obj", "# reconcile v1\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_reconcile_mesh.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for reconcile estimators ok");
+
+    const fuse::project::CookCacheReconcileEstimate fresh_estimate = cooker.cache().estimate_reconcile();
+    expectTrue(fresh_estimate.invalid_entries == 0u, "fresh cache reconcile invalid count is zero");
+    expectTrue(fresh_estimate.stale_entries == 0u, "fresh cache reconcile stale count is zero");
+    expectTrue(fresh_estimate.prunable_entries == 0u, "fresh cache reconcile prunable count is zero");
+    expectTrue(cooker.cache().estimate_prune_all() == 0u, "estimate_prune_all on fresh cache is zero");
+
+    writeTempFile(source, "# reconcile v2\n");
+    const fuse::project::CookCacheReconcileEstimate stale_estimate = cooker.cache().estimate_reconcile();
+    expectTrue(stale_estimate.stale_entries == 1u, "stale reconcile reports one stale entry");
+    expectTrue(stale_estimate.prunable_entries == 1u, "stale reconcile reports one prunable entry");
+    expectTrue(cooker.cache().count_stale_entries() == 1u, "count_stale reports one stale entry");
+    expectTrue(cooker.cache().estimate_prune_stale_entries() == 1u,
+               "estimate_prune_stale matches count_stale");
+
+    const fuse::u32 removed = cooker.cache().prune_all();
+    expectTrue(removed == stale_estimate.prunable_entries,
+               "prune_all removes reconcile-estimated prunable count");
+    expectTrue(cooker.cache().estimate_reconcile().prunable_entries == 0u,
+               "reconcile prunable count zero after prune");
 }
 
 void testCookCacheInvalidationProbes() {
