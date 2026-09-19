@@ -644,6 +644,7 @@ public:
     [[nodiscard]] CookHashPreflight preflight_store_entry(const CookCacheEntry& entry) const;
     /// True when `prune_all` would be a no-op — inverse of `would_prune_all` (B7.9 deepen).
     /// True when prune reconcile can be skipped — mirrors `!would_prune_all()` (B7.9 deepen).
+    /// True when prune reconcile can be skipped — inverse of `would_prune_all` (B7.9 deepen).
     [[nodiscard]] bool should_skip_prune_reconcile() const;
     /// Deduplicated source paths whose stored keys are stale on disk (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_content_sources() const;
