@@ -190,6 +190,29 @@ bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReu
     return reason == TaaHistoryReuseBlockReason::None;
 }
 
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason* reason) {
+    if (history.isReady() && history.hasValidHistory()) {
+        if (reason != nullptr) {
+            *reason = TaaHistoryReuseBlockReason::None;
+        }
+        return true;
+    }
+    if (!history.isReady()) {
+        if (reason != nullptr) {
+            *reason = TaaHistoryReuseBlockReason::NotReady;
+        }
+        return false;
+    }
+    if (reason != nullptr) {
+        *reason = TaaHistoryReuseBlockReason::NotWarm;
+    }
+    return false;
+}
+
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason& reason) {
+    return preflightTaaHistoryWarmup(history, &reason);
+}
+
 bool shouldSkipTaaHistoryResolve(const TaaHistoryBuffer& history) {
     return !taaHistoryReadyForResolve(history);
 
@@ -220,6 +243,19 @@ bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReu
     return reason == TaaHistoryReuseBlockReason::None;
 }
 
+bool preflightTaaHistoryReadyForResolve(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason* reason) {
+    if (history.isReady()) {
+        if (reason != nullptr) {
+            *reason = TaaHistoryReuseBlockReason::None;
+        }
+        return true;
+    }
+    if (reason != nullptr) {
+        *reason = TaaHistoryReuseBlockReason::NotReady;
+    }
+    return false;
+}
+
 bool tryPreflightTaaHistoryReadyForResolve(const TaaHistoryBuffer& history,
                                            TaaHistoryReuseBlockReason& reason) {
     if (!history.isReady()) {
@@ -238,215 +274,115 @@ const char* taaHistoryWarmupBlockReasonLabel(TaaHistoryWarmupBlockReason reason)
         return "needs_warmup";
     }
     return "unknown";
-}
 
 TaaHistoryWarmupBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history) {
-    if (!history.isReady()) {
         return TaaHistoryWarmupBlockReason::NotReady;
-    }
     if (!history.hasValidHistory()) {
         return TaaHistoryWarmupBlockReason::NeedsWarmup;
-    }
     return TaaHistoryWarmupBlockReason::None;
-}
 
 bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
     return classifyTaaHistoryWarmupBlock(history) == TaaHistoryWarmupBlockReason::None;
-}
 
 bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason* reason) {
     const TaaHistoryWarmupBlockReason block = classifyTaaHistoryWarmupBlock(history);
     if (reason != nullptr) {
         *reason = block;
-    }
     return block == TaaHistoryWarmupBlockReason::None;
-}
 
 bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason& reason) {
     reason = classifyTaaHistoryWarmupBlock(history);
     return reason == TaaHistoryWarmupBlockReason::None;
-}
 
 TaaHistoryReuseBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history) {
-    if (!history.isReady()) {
         return TaaHistoryReuseBlockReason::NotReady;
-    }
-    if (!history.hasValidHistory()) {
         return TaaHistoryReuseBlockReason::NotWarm;
-    }
     return TaaHistoryReuseBlockReason::None;
-}
 
-bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
     return classifyTaaHistoryWarmupBlock(history) == TaaHistoryReuseBlockReason::None;
-}
 
 bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason* reason) {
     const TaaHistoryReuseBlockReason block = classifyTaaHistoryWarmupBlock(history);
-    if (reason != nullptr) {
-        *reason = block;
-    }
     return block == TaaHistoryReuseBlockReason::None;
-}
 
 bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason& reason) {
-    reason = classifyTaaHistoryWarmupBlock(history);
     return reason == TaaHistoryReuseBlockReason::None;
-}
 
 const char* taaHistoryWarmupRejectReasonLabel(TaaHistoryWarmupRejectReason reason) {
-    switch (reason) {
     case TaaHistoryWarmupRejectReason::None:
-        return "none";
     case TaaHistoryWarmupRejectReason::NotReady:
-        return "not_ready";
     case TaaHistoryWarmupRejectReason::Incomplete:
         return "incomplete";
-    }
-    return "unknown";
-}
 
 TaaHistoryWarmupRejectReason classifyTaaHistoryWarmupReject(const TaaHistoryBuffer& history) {
-    if (!history.isReady()) {
         return TaaHistoryWarmupRejectReason::NotReady;
-    }
-    if (!history.hasValidHistory()) {
         return TaaHistoryWarmupRejectReason::Incomplete;
-    }
     return TaaHistoryWarmupRejectReason::None;
-}
 
-bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
     return classifyTaaHistoryWarmupReject(history) == TaaHistoryWarmupRejectReason::None;
-}
 
 bool preflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history,
                                          TaaHistoryWarmupRejectReason* reason) {
     const TaaHistoryWarmupRejectReason reject = classifyTaaHistoryWarmupReject(history);
-    if (reason != nullptr) {
         *reason = reject;
-    }
     return reject == TaaHistoryWarmupRejectReason::None;
-}
 
 bool tryPreflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history,
                                           TaaHistoryWarmupRejectReason& reason) {
     reason = classifyTaaHistoryWarmupReject(history);
     return reason == TaaHistoryWarmupRejectReason::None;
-}
 
 bool shouldSkipTaaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
     return !preflightTaaHistoryWarmupComplete(history);
-}
 
 const char* taaHistoryWarmupStateLabel(TaaHistoryWarmupState state) {
     switch (state) {
     case TaaHistoryWarmupState::NotReady:
-        return "not_ready";
     case TaaHistoryWarmupState::NeedsWarmup:
-        return "needs_warmup";
     case TaaHistoryWarmupState::Complete:
         return "complete";
-    }
-    return "unknown";
-}
 
 TaaHistoryWarmupState classifyTaaHistoryWarmupState(const TaaHistoryBuffer& history) {
-    if (!history.isReady()) {
         return TaaHistoryWarmupState::NotReady;
-    }
     if (history.needsWarmup()) {
         return TaaHistoryWarmupState::NeedsWarmup;
-    }
     return TaaHistoryWarmupState::Complete;
-}
 
-bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
     return classifyTaaHistoryWarmupState(history) == TaaHistoryWarmupState::Complete;
-}
 
 bool preflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history, TaaHistoryWarmupState* state) {
     const TaaHistoryWarmupState warmupState = classifyTaaHistoryWarmupState(history);
     if (state != nullptr) {
         *state = warmupState;
-    }
     return warmupState == TaaHistoryWarmupState::Complete;
-}
 
 bool tryPreflightTaaHistoryWarmupComplete(const TaaHistoryBuffer& history, TaaHistoryWarmupState& state) {
     state = classifyTaaHistoryWarmupState(history);
     return state == TaaHistoryWarmupState::Complete;
-}
 
-bool shouldSkipTaaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
-    return !preflightTaaHistoryWarmupComplete(history);
-}
 
 bool preflightTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration,
                                          TaaHistoryReuseBlockReason* reason) {
     return preflightTaaHistoryReuse(history, observedGeneration, reason);
-}
 
 bool tryPreflightTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration,
                                             TaaHistoryReuseBlockReason& reason) {
     return tryPreflightTaaHistoryReuse(history, observedGeneration, reason);
-}
 
 bool shouldSkipTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32 observedGeneration) {
     return shouldSkipTaaHistoryReuse(history, observedGeneration);
-}
 
-const char* taaHistoryWarmupBlockReasonLabel(TaaHistoryWarmupBlockReason reason) {
-    switch (reason) {
-    case TaaHistoryWarmupBlockReason::None:
-        return "none";
-    case TaaHistoryWarmupBlockReason::NotReady:
-        return "not_ready";
-    case TaaHistoryWarmupBlockReason::NeedsWarmup:
-        return "needs_warmup";
-    }
-    return "unknown";
-}
 
-TaaHistoryWarmupBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history) {
-    if (!history.isReady()) {
-        return TaaHistoryWarmupBlockReason::NotReady;
-    }
-    if (history.needsWarmup()) {
-        return TaaHistoryWarmupBlockReason::NeedsWarmup;
-    }
-    return TaaHistoryWarmupBlockReason::None;
-}
 
-bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
-    return classifyTaaHistoryWarmupBlock(history) == TaaHistoryWarmupBlockReason::None;
-}
 
-bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason* reason) {
-    const TaaHistoryWarmupBlockReason block = classifyTaaHistoryWarmupBlock(history);
-    if (reason != nullptr) {
-        *reason = block;
-    }
-    return block == TaaHistoryWarmupBlockReason::None;
-}
 
-bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason& reason) {
-    reason = classifyTaaHistoryWarmupBlock(history);
-    return reason == TaaHistoryWarmupBlockReason::None;
-}
 
 bool preflightTaaHistoryTemporalSample(const TaaHistoryBuffer& history, u32 observedGeneration,
-                                       TaaHistoryReuseBlockReason* reason) {
-    return preflightTaaHistoryReuse(history, observedGeneration, reason);
-}
 
 bool tryPreflightTaaHistoryTemporalSample(const TaaHistoryBuffer& history, u32 observedGeneration,
-                                          TaaHistoryReuseBlockReason& reason) {
-    return tryPreflightTaaHistoryReuse(history, observedGeneration, reason);
-}
 
 bool shouldSkipTaaHistoryTemporalSample(const TaaHistoryBuffer& history, u32 observedGeneration) {
-    return shouldSkipTaaHistoryReuse(history, observedGeneration);
+    return preflightTaaHistoryReadyForResolve(history, &reason);
 }
 
 bool TaaHistoryBuffer::readyForResolve() const {

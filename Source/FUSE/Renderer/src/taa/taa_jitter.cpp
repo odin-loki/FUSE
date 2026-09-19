@@ -571,6 +571,38 @@ bool shouldSkipTaaJitterSyncAndNdc(u32 frameIndex, u32 width, u32 height, u32 se
     return !preflightTaaJitterSyncAndNdc(frameIndex, width, height, sequenceLength);
 }
 
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(u32 frameIndex, u32 monotonicFrame, u32 slot,
+                                                            u32 sequenceLength) {
+    const TaaJitterGuardRejectReason syncReject = classifyTaaJitterSyncReject(sequenceLength);
+    if (syncReject != TaaJitterGuardRejectReason::None) {
+        return syncReject;
+    }
+    if (monotonicFrame != frameIndex ||
+        !TaaJitterLayout::jitterSlotMatchesFrameIndex(frameIndex, slot, sequenceLength)) {
+        return TaaJitterGuardRejectReason::MisalignedFrame;
+    }
+    return TaaJitterGuardRejectReason::None;
+}
+
+bool preflightTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot, u32 sequenceLength,
+                                 TaaJitterGuardRejectReason* reason) {
+    const TaaJitterGuardRejectReason reject =
+        classifyTaaJitterAlignmentReject(frameIndex, monotonicFrame, slot, sequenceLength);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == TaaJitterGuardRejectReason::None;
+}
+
+bool tryPreflightTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot, u32 sequenceLength,
+                                    TaaJitterGuardRejectReason& reason) {
+    return preflightTaaJitterAlignment(frameIndex, monotonicFrame, slot, sequenceLength, &reason);
+}
+
+bool shouldSkipTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot, u32 sequenceLength) {
+    return !preflightTaaJitterAlignment(frameIndex, monotonicFrame, slot, sequenceLength);
+}
+
 bool TaaJitterLayout::validateSequenceLength(u32 length) {
     return length > 0u && length <= kTaaMaxJitterSequenceLength;
 }

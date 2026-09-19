@@ -225,6 +225,9 @@ public:
                                       TaaResolveBlendRejectReason* reason = nullptr) const;
     /// Classify why resolve blend weights would be rejected (B5.9 deepen).
     TaaResolveBlendRejectReason classifyResolveBlendReject(const TaaResolveDesc& desc) const;
+    /// True when pass history is warmed and ready for temporal reuse (B5.9 deepen).
+    bool preflightHistoryWarmup(TaaHistoryReuseBlockReason* reason = nullptr) const;
+    /// History warmup preflight with mandatory reject-reason output (B5.9 deepen).
     /// Resolve blend preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc,
                                          TaaResolveBlendRejectReason& reason) const;
@@ -234,6 +237,7 @@ public:
     bool preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason = nullptr) const;
     bool tryPreflightHistoryWarmup(TaaHistoryWarmupBlockReason& reason) const;
     bool preflightHistoryWarmup(TaaHistoryReuseBlockReason* reason = nullptr) const;
+                                       TaaResolveBlendRejectReason& reason) const;
     /// Early-out when resolve blend-weight preflight would reject (B5.9 deepen).
     bool shouldSkipResolveBlend(const TaaResolveDesc& desc) const;
     bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc, TaaResolveBlendRejectReason& reason) const;
@@ -305,8 +309,6 @@ public:
     bool preflightJitterSlot(u32 slot, TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Early-out when pass jitter slot preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSlot(u32 slot) const;
-    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
-    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// Jitter alignment preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterAlignment(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
@@ -323,6 +325,7 @@ public:
     bool preflightJitterSyncAndNdc(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Early-out when combined pass jitter sync + NDC preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSyncAndNdc(u32 frameIndex) const;
+    /// True when pass jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
     /// True when pass jitter can produce NDC offsets for the configured viewport (B5.9 deepen).
     bool preflightJitterNdc(TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
@@ -341,6 +344,9 @@ public:
     bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
+    /// True when pass jitter can advance for the configured sequence (B5.9 deepen).
+    /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).
@@ -373,6 +379,10 @@ public:
     bool shouldSkipHistoryResolve() const;
     /// History resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& reason) const;
+    /// Preflight resolve without mutating history (B5.9 deepen).
+    bool preflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;
+    /// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
+    bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
     /// Early-out when resolve preflight would skip (B5.9 deepen).
     /// Classify why resolve would skip — same ordering as `wouldSkipResolve` (B5.9 deepen).
     TaaResolveSkipReason classifyResolveSkip(const TaaResolveDesc& desc) const;

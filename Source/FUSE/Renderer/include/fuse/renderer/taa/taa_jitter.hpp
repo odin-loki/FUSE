@@ -243,6 +243,7 @@ bool preflightTaaJitterSyncAndNdc(u32 /*frameIndex*/, u32 width, u32 height,
 bool tryPreflightTaaJitterSyncAndNdc(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
 /// Early-out when combined jitter sync + NDC preflight would reject (B5.9 deepen).
 bool shouldSkipTaaJitterSyncAndNdc(u32 frameIndex, u32 width, u32 height,
+/// Classify why jitter alignment to a frame counter would be rejected (B5.9 deepen).
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {

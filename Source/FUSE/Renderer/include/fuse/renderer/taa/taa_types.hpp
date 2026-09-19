@@ -339,8 +339,13 @@ bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryReu
 /// True when history no longer needs warm-up (B5.9 deepen).
 bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
 /// Classify why history warm-up preflight would reject (B5.9 deepen).
+/// True when history is warmed and ready for temporal reuse (B5.9 deepen).
+/// History warmup preflight with mandatory reject-reason output (B5.9 deepen).
 /// Early-out when history buffers are not allocated and ready for resolve (B5.9 deepen).
 bool shouldSkipTaaHistoryResolve(const TaaHistoryBuffer& history);
+/// True when history buffers are allocated and ready for resolve (B5.9 deepen).
+bool preflightTaaHistoryReadyForResolve(const TaaHistoryBuffer& history,
+                                        TaaHistoryReuseBlockReason* reason = nullptr);
 /// History resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
 bool tryPreflightTaaHistoryReadyForResolve(const TaaHistoryBuffer& history,
 /// True when history is allocated and the warm-up frame has completed (B5.9 deepen).
