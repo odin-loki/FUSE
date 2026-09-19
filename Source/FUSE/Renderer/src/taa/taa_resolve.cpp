@@ -538,3 +538,8 @@ bool preflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHisto
     return reject == TaaResolveTemporalRejectReason::None;
 bool canPreflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     return preflightTaaResolveTemporalBlend(desc, history);
+
+// --- deepen additive from deepen-b59-taa-guards-1d2e ---
+bool taaResolveBlendRejectReasonIsBlocking(TaaResolveBlendRejectReason reason) {
+    return reason != TaaResolveBlendRejectReason::None;
+bool preflightTaaResolveGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,

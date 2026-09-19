@@ -157,3 +157,8 @@ bool canPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDe
     bool preflightSyncToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason* reason = nullptr) const;
     TaaJitterNdcRejectReason classifyNdcReject(u32 width, u32 height) const;
     bool preflightCurrentNdcOffset(u32 width, u32 height, TaaJitterNdcRejectReason* reason = nullptr) const;
+
+// --- deepen additive from deepen-b59-taa-guards-1d2e ---
+bool taaJitterSyncBlockReasonIsBlocking(TaaJitterSyncBlockReason reason);
+bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncBlockReason* reason = nullptr);
+    bool preflightSync(u32 frameIndex, TaaJitterSyncBlockReason* reason = nullptr) const;

@@ -337,3 +337,8 @@ TaaJitterNdcRejectReason TaaJitter::classifyNdcReject(u32 width, u32 height) con
     return classifyTaaJitterNdcReject(width, height, m_sequenceLength);
 bool TaaJitter::preflightCurrentNdcOffset(u32 width, u32 height, TaaJitterNdcRejectReason* reason) const {
     return preflightTaaJitterNdc(width, height, m_sequenceLength, reason);
+
+// --- deepen additive from deepen-b59-taa-guards-1d2e ---
+bool taaJitterSyncBlockReasonIsBlocking(TaaJitterSyncBlockReason reason) {
+bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncBlockReason* reason) {
+bool TaaJitter::preflightSync(u32 frameIndex, TaaJitterSyncBlockReason* reason) const {

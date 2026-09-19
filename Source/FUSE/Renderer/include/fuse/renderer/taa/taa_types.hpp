@@ -278,3 +278,9 @@ TaaResolveTemporalRejectReason classifyTaaResolveTemporalReject(const TaaResolve
 bool preflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                       TaaResolveTemporalRejectReason* reason = nullptr);
 bool canPreflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+
+// --- deepen additive from deepen-b59-taa-guards-1d2e ---
+bool taaHistoryReuseBlockReasonIsBlocking(TaaHistoryReuseBlockReason reason);
+bool preflightTaaHistoryReuseForDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+bool taaResolveBlendRejectReasonIsBlocking(TaaResolveBlendRejectReason reason);
+bool preflightTaaResolveGuards(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,

@@ -3220,3 +3220,32 @@ void testTaaPassResolveFrameAndJitterGuards() {
     expectTrue(!pass->preflightJitterSync(99u, &jitterReason), "pass jitter sync preflight fails when drifted");
     expectTrue(pass->preflightJitterSync(99u, &jitterReason), "pass jitter sync preflight passes after sync");
     testResolveFramePreflightGuards();
+
+// --- deepen additive from deepen-b59-taa-guards-1d2e ---
+    expectTrue(!fuse::renderer::taaHistoryReuseBlockReasonIsBlocking(
+    expectTrue(fuse::renderer::taaHistoryReuseBlockReasonIsBlocking(
+    expectTrue(!fuse::renderer::taaResolveBlendRejectReasonIsBlocking(
+    expectTrue(fuse::renderer::taaResolveBlendRejectReasonIsBlocking(
+    expectTrue(!fuse::renderer::taaJitterSyncBlockReasonIsBlocking(
+    expectTrue(fuse::renderer::taaJitterSyncBlockReasonIsBlocking(
+void testPreflightTaaHistoryReuseForDesc() {
+    expectTrue(!fuse::renderer::preflightTaaHistoryReuseForDesc(desc, emptyHistory, &reason),
+    expectTrue(!fuse::renderer::preflightTaaHistoryReuseForDesc(desc, history, &reason),
+    expectTrue(fuse::renderer::preflightTaaHistoryReuseForDesc(desc, history, &reason),
+void testPreflightTaaResolveGuards() {
+    expectTrue(fuse::renderer::preflightTaaResolveGuards(desc, history, &skipReason, &blendReason),
+    expectTrue(!fuse::renderer::preflightTaaResolveGuards(desc, history, &skipReason, &blendReason),
+void testJitterSyncPreflightHelpers() {
+    expectTrue(fuse::renderer::preflightTaaJitterSync(5u, 8u, &reason),
+    expectTrue(!fuse::renderer::preflightTaaJitterSync(0u, 0u, &reason),
+    expectTrue(jitter.preflightSync(4u, &reason), "jitter instance preflight sync passes");
+    expectTrue(fallbackJitter.preflightSync(2u, &reason), "fallback jitter preflight sync succeeds after fallback");
+    expectTrue(pass->preflightJitterSync(2u), "pass jitter sync preflight passes when aligned");
+void testTaaPassResolveGuardsPreflight() {
+    expectTrue(!pass->preflightHistoryReuseForDesc(resolveDesc, &reuseReason),
+    expectTrue(pass->preflightResolveGuards(resolveDesc, &skipReason, &blendReason),
+    expectTrue(pass->preflightHistoryReuseForDesc(resolveDesc, &reuseReason),
+    testPreflightTaaHistoryReuseForDesc();
+    testPreflightTaaResolveGuards();
+    testJitterSyncPreflightHelpers();
+    testTaaPassResolveGuardsPreflight();
