@@ -3989,3 +3989,21 @@ void testTryLastExportableEventGuard() {
                "tryLastExportableEvent ignores empty-name counter attempts");
                "tryLastExportableEvent still returns last valid end after empty-name attempt");
 void testReconcilePendingFlowHandoffGuard() {
+
+// --- deepen additive from deepen-b16-profiler-guards-a835 ---
+void testFirstLastExportableEventIndexGuard() {
+void testTryFirstLastExportableEventGuard() {
+               "tryFirstExportableEvent true for begin event");
+               "tryLastExportableEvent true for end event");
+void testHasActiveProfilingNestingGuard() {
+void testChromeTraceExportPreflightCleanExportFlags() {
+    expectTrue(emptyPreflight.canExportCleanly(), "empty balanced buffer can export cleanly");
+    expectTrue(!emptyPreflight.hasActiveProfilingNesting,
+    expectTrue(emptyPreflight.droppedEventCount == 0u, "empty preflight dropped count is zero");
+        expectTrue(activePreflight.hasActiveProfilingNesting,
+    expectTrue(closedPreflight.canExportCleanly(), "balanced trace can export cleanly");
+    const fuse::profiler::ChromeTraceExportPreflight overflowPreflight =
+    expectTrue(overflowPreflight.ringBufferFull, "overflow preflight marks ring buffer full");
+    expectTrue(overflowPreflight.droppedEventCount == 1u, "overflow preflight reports dropped events");
+    expectTrue(!overflowPreflight.canExportCleanly(), "overflow preflight blocks clean export");
+    testChromeTraceExportPreflightCleanExportFlags();
