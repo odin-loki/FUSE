@@ -137,6 +137,24 @@ bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observedGeneratio
 bool taaHistoryReadyForResolve(const TaaHistoryBuffer& history);
 /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
 u32 taaHistoryWarmupFramesRemaining(const TaaHistoryBuffer& history);
+/// True when history is allocated and no longer needs warm-up (B5.9 deepen follow-up).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+
+/// Read-only history warm-up diagnostics — no mutation (B5.9 deepen follow-up).
+struct TaaHistoryWarmupPreflight {
+    bool history_ready = false;
+    bool needs_warmup = true;
+    u32 warmup_frames_remaining = 1u;
+
+    [[nodiscard]] bool isWarmed() const { return history_ready && !needs_warmup; }
+    [[nodiscard]] bool canReuseHistory() const { return isWarmed(); }
+};
+/// Populate warm-up diagnostics without mutating history (B5.9 deepen follow-up).
+TaaHistoryWarmupPreflight preflightTaaHistoryWarmup(const TaaHistoryBuffer& history);
+/// Warm-up preflight with mandatory output (B5.9 deepen follow-up).
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupPreflight& out);
+/// Early-out when history still needs warm-up before temporal reuse (B5.9 deepen follow-up).
+bool shouldSkipTaaHistoryWarmup(const TaaHistoryBuffer& history);
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
@@ -160,6 +178,17 @@ bool shouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffe
 /// Compute resolve blend weights with reject-reason diagnostics (B5.9 deepen).
 bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                       TaaBlendWeights& outWeights, TaaResolveBlendRejectReason& reason);
+
+/// Read-only resolve blend diagnostics — no mutation (B5.9 deepen follow-up).
+struct TaaResolveBlendPreflight {
+    TaaBlendWeights weights{};
+    TaaResolveBlendRejectReason reject_reason = TaaResolveBlendRejectReason::None;
+    bool can_apply = false;
+
+    [[nodiscard]] bool appliesHistoryBlend() const { return weights.history > 1e-5f; }
+};
+/// Populate resolve blend diagnostics without mutating history (B5.9 deepen follow-up).
+TaaResolveBlendPreflight preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
