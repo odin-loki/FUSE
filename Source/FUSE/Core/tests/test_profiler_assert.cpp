@@ -3590,3 +3590,15 @@ void testChromeTraceExportPreflightBufferFullAndWarnings() {
     expectTrue(warningPreflight.hasExportWarnings(), "preflight export warnings with open async flow");
     expectTrue(warningPreflight.hasOpenAsyncFlows, "preflight marks open flows in warning state");
     testChromeTraceExportPreflightBufferFullAndWarnings();
+
+// --- deepen additive from deepen-b16-profiler-guards-3fb8 ---
+void testFirstLastEventIndexGuards() {
+void testEmptyNameScopeInsideValidScopeGuard() {
+void testChromeTraceExportPreflightCapacityAndExportability() {
+    expectTrue(emptyPreflight.remainingCapacity == fuse::profiler::ringCapacity(),
+    expectTrue(emptyPreflight.allEventsExportable, "preflight allEventsExportable on empty buffer");
+    expectTrue(emptyPreflight.readyForExport(), "preflight readyForExport on empty enabled buffer");
+    expectTrue(!emptyPreflight.hasOrphanAsyncFlowEnds, "preflight hasOrphanAsyncFlowEnds false on reset");
+void testChromeTraceExportPreflightOrphanFlowEnds() {
+    testChromeTraceExportPreflightCapacityAndExportability();
+    testChromeTraceExportPreflightOrphanFlowEnds();
