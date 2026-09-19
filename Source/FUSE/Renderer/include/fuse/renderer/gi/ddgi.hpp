@@ -190,6 +190,18 @@ enum class ProbeUpdateLaunchRejectReason : u8 {
 /// Human-readable label for probe-update launch reject reasons (logging / tests).
 const char* probeUpdateLaunchRejectReasonLabel(ProbeUpdateLaunchRejectReason reason);
 
+/// Why probe round-robin scheduling preflight rejected the request (B5.6 deepen).
+enum class ProbeScheduleRejectReason : u8 {
+    None = 0,
+    NullOutputIndices,
+    NullOutputCount,
+    ZeroProbeCount,
+    ZeroMaxIndices,
+};
+
+/// Human-readable label for probe-schedule reject reasons (logging / tests).
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
+
 /// CPU-side octahedral direction encoding for probe irradiance atlas tiles (B5.6 deepen).
 /// Mirrors `GBufferEncoding` and the deferred-shade probe sampling path.
 struct DdgiIrradianceEncoding {
@@ -256,6 +268,8 @@ struct ProbeGridLayout {
     static bool isValidProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// True when sample coords exceed grid bounds or interpolation weights are outside [0, 1].
     static bool isProbeSampleCoordsOutOfRange(const DDGIDesc& desc, const ProbeSampleCoords& coords);
+    /// Early-out when sample-coord validation would reject — same ordering as `isValidProbeSampleCoords`.
+    static bool wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Diagnose why sample-coord validation would reject; vacuously succeeds on valid coords.
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
@@ -339,6 +353,19 @@ bool tryValidateCacheIndex(const DDGIDesc& desc,
                            u32 probe_index,
                            u32 cache_count,
                            CacheIndexRejectReason& outReason);
+/// Diagnose why cache-index preflight would reject, including null-cache detection.
+bool tryValidateCacheIndex(const DDGIDesc& desc,
+                           const IrradianceCacheEntry* cache,
+                           u32 probe_index,
+                           u32 cache_count,
+                           CacheIndexRejectReason& outReason);
+/// Early-out when cache-index lookup would be rejected — same ordering as `isCacheIndexValid`.
+bool wouldSkipCacheIndexLookup(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
+/// Early-out when cache-index lookup would be rejected, including null-cache detection.
+bool wouldSkipCacheIndexLookup(const DDGIDesc& desc,
+                               const IrradianceCacheEntry* cache,
+                               u32 probe_index,
+                               u32 cache_count);
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
 bool isValidSampleRequest(const DDGIDesc& desc,
                           const DDGISampleRequest& request,
@@ -356,6 +383,18 @@ void scheduleProbeUpdates(u32 frame_index,
                           u32* out_indices,
                           u32 max_indices,
                           u32* out_count);
+/// Preflight guard before probe round-robin scheduling.
+bool canScheduleProbeUpdates(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
+/// Early-out when probe scheduling would be rejected — same ordering as `canScheduleProbeUpdates`.
+bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
+/// Diagnose why probe scheduling preflight would reject; vacuously succeeds when schedulable.
+bool tryScheduleProbeUpdates(u32 frame_index,
+                             u32 probe_count,
+                             u32 probes_per_frame,
+                             u32* out_indices,
+                             u32 max_indices,
+                             u32* out_count,
+                             ProbeScheduleRejectReason& outReason);
 fuse::math::Vec3 blendIrradiance(const fuse::math::Vec3& previous,
                                  const fuse::math::Vec3& incoming,
                                  f32 hysteresis);
