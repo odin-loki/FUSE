@@ -54,6 +54,9 @@ private:
     bool m_active = false;
 };
 
+/// Returns true for non-null, non-empty scope/flow/counter names.
+bool isValidEventName(const char* name);
+
 bool enabled();
 void setEnabled(bool enabled);
 
@@ -72,6 +75,39 @@ bool hasOpenAsyncFlows();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
 
+/// Snapshot of scope/async nesting and open-flow guard state (read-only introspection).
+struct NestingIntrospection {
+    u32 scopeDepth = 0;
+    u32 flowDepth = 0;
+    u32 maxScopeDepth = 0;
+    u32 maxFlowDepth = 0;
+    u32 openAsyncFlowCount = 0;
+    bool scopeBalanced = true;
+    bool flowBalanced = true;
+    bool hasOpenAsyncFlows = false;
+};
+NestingIntrospection nestingIntrospection();
+
+/// Returns true when scope, flow, and open-async-flow guards are all clean.
+bool isNestingStateClean();
+
+/// Read-only chrome export diagnostics — no mutation.
+struct ChromeTraceExportPreflight {
+    bool profilerDisabled = false;
+    bool emptyBuffer = false;
+    bool unbalancedScopeNesting = false;
+    bool unbalancedFlowNesting = false;
+    bool hasOpenAsyncFlows = false;
+    u32 eventCount = 0;
+    u32 frameIndex = 0;
+
+    bool canExport() const { return true; }
+    bool isClean() const {
+        return !unbalancedScopeNesting && !unbalancedFlowNesting && !hasOpenAsyncFlows;
+    }
+};
+ChromeTraceExportPreflight preflightChromeTraceExport();
+
 bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
@@ -80,6 +116,7 @@ bool isValidProfileEvent(const ProfileEvent& event);
 u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
+bool tryLastEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
