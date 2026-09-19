@@ -450,3 +450,6 @@ bool should_skip_friction_basis_normalize_rebuild(
 // --- deepen additive from deepen-b4-narrowphase-guards-b130 ---
     case FrictionBasisRebuildRejectReason::CanReuseCached:
         return FrictionBasisRebuildRejectReason::CanReuseCached;
+
+// --- deepen additive from b4-narrowphase-guard-pass-0376 ---
+        return FrictionBasisRebuildRejectReason::InvalidNormal;

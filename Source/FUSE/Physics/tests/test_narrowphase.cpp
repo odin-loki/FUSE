@@ -2565,3 +2565,16 @@ void testManifoldPruneFinalizeRejectReasonGuards() {
             buffer, fuse::physics::narrowphase::ContactBufferClampRejectReason::EmptyBuffer),
             buffer, 0u, invalid, fuse::physics::narrowphase::ContactBufferWriteRejectReason::InvalidManifold),
     testManifoldPruneFinalizeRejectReasonGuards();
+
+// --- deepen additive from b4-narrowphase-guard-pass-0376 ---
+void testContactPairDeepenDispatchSkipGuards() {
+                fuse::physics::narrowphase::ManifoldPruneRejectReason::AllClean),
+            clean, fuse::physics::narrowphase::ManifoldPruneRejectReason::AllClean),
+            withBasis, fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::CanReuse),
+void testContactBufferWriteRejectReasonGuards() {
+            buffer, 9u, valid, fuse::physics::narrowphase::ContactBufferWriteRejectReason::InvalidSlot),
+void testContactBufferCompactionRejectReasonGuards() {
+            buffer, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::AllInvalid),
+void testRunNarrowphaseDeepenIntoBufferGuards() {
+    testContactBufferWriteRejectReasonGuards();
+    testContactBufferCompactionRejectReasonGuards();

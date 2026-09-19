@@ -735,3 +735,7 @@ bool should_skip_manifold_prune_finalize(
 // --- deepen additive from b4-narrowphase-deepen-guards-4d64 ---
     case ManifoldPruneRejectReason::AllValid:
         return ManifoldPruneRejectReason::AllValid;
+
+// --- deepen additive from b4-narrowphase-guard-pass-0376 ---
+    case ManifoldPruneRejectReason::AllClean:
+        return ManifoldPruneRejectReason::AllClean;

@@ -507,3 +507,6 @@ ContactBufferClampPreflight preflightContactBufferClamp(const ContactBufferSoA& 
 
 // --- deepen additive from b4-narrowphase-deepen-guards-4d64 ---
     if (!preflightContactBufferClamp(*this).needsClamp()) {
+
+// --- deepen additive from b4-narrowphase-guard-pass-0376 ---
+    const ContactBufferWritePreflight preflight = preflight_contact_buffer_write(*this, slot, manifold);
