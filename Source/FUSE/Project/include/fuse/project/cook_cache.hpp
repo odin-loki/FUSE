@@ -476,7 +476,6 @@ public:
     [[nodiscard]] bool would_invalidate_stale_content(const std::string& source_path,
     [[nodiscard]] bool would_invalidate_stale_upstream(
     /// True when `invalidate_all` would remove at least one entry (B7.9 deepen).
-    [[nodiscard]] bool would_invalidate_all() const;
     /// True when `invalidate_source` would remove at least one entry (B7.9 deepen).
     /// True when `invalidate_output` would remove at least one entry (B7.9 deepen).
     /// True when `invalidate_stale_content_for_source` would remove entries (B7.9 deepen).
@@ -486,8 +485,10 @@ public:
         const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
     /// True when `invalidate_stale_content_for_source` would remove at least one entry (B7.9 deepen).
     /// True when `invalidate_stale_upstream_hashes` would remove at least one entry (B7.9 deepen).
-    /// Read-only mirror of `invalidate_source` — true when at least one entry matches (B7.9 deepen).
-    /// Read-only mirror of `invalidate_output` — true when at least one entry matches (B7.9 deepen).
+    /// True when `invalidate` would be a no-op — guarded on zero hash (B7.9 deepen).
+    [[nodiscard]] bool should_skip_invalidate(u64 content_hash) const;
+    /// True when `prune_all` would be a no-op (B7.9 deepen).
+    [[nodiscard]] bool should_skip_prune() const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,

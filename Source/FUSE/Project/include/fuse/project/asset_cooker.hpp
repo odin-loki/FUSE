@@ -439,6 +439,17 @@ public:
     /// True when `estimate_reconcile_invalidation` reports nothing to reconcile (B7.9 deepen).
     [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
 
+    /// True when upstream invalidation would be a no-op — guarded on empty `changed_source` (B7.9 deepen).
+    [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
+                                                         const std::string& changed_source) const;
+    /// True when stale dependency-hash reconcile would be a no-op (B7.9 deepen).
+    [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
+    /// True when combined reconcile invalidation would be a no-op (B7.9 deepen).
+    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
+    /// True when upstream invalidation would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_upstream(const CookManifest& manifest,
+                                                 const std::string& changed_source) const;
+
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
 
