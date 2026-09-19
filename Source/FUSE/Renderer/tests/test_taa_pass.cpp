@@ -9452,7 +9452,8 @@ void testTaaPassTryClassifyGuardWrappers() {
                "pass tryPreflightHistoryReadyForResolve reason is NotReady before init");
 
 
-        fuse::renderer::TaaJitterGuardRejectReason::None;
+
+
 
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
                "pass tryPreflightHistoryReuse fails before init");
@@ -10386,6 +10387,15 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
 
 
 
+               "pass classifyJitterSyncReject is None before init");
+               "pass classifyJitterNdcReject is None before init");
+    expectTrue(pass->tryPreflightJitterSync(4u, jitterReject),
+               "pass tryPreflightJitterSync reject reason is None before init");
+               "pass tryPreflightJitterNdc reject reason is None before init");
+
+
+
+
 
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -10749,6 +10759,10 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
     expectNear(weights.current, 1.f, 1e-5f, "pass tryCompute warmup current weight is full");
     expectNear(weights.history, 0.f, 1e-5f, "pass tryCompute warmup history weight is zero");
 
+
+    expectTrue(pass->tryPreflightResolveBlendWeights(resolveDesc, blendReject),
+               "pass tryPreflightResolveBlendWeights passes after init");
+    expectTrue(!pass->shouldSkipResolve(resolveDesc), "pass should not skip valid resolve after init");
     expectTrue(pass->resolveFrame(resolveDesc), "initial resolve warms pass history");
 
     expectTrue(pass->tryPreflightHistoryReuse(0u, reuseReason),
@@ -10797,6 +10811,9 @@ void testTaaPassDeepenAlignmentAndTemporalBlend() {
 
     expectNear(weights.current, 0.3f, 1e-5f, "pass tryCompute steady current weight");
     expectNear(weights.history, 0.7f, 1e-5f, "pass tryCompute steady history weight");
+
+
+    expectTrue(pass->tryComputeResolveBlendWeights(resolveDesc, weights, blendReject),
 
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
                "pass tryPreflightHistoryReuse fails after invalidate");
