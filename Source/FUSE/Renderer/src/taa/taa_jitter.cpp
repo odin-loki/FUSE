@@ -344,7 +344,6 @@ bool TaaJitterLayout::jitterSyncMatches(u32 observedFrameIndex, u32 expectedFram
     return frameIndexInSequence(observedFrameIndex, sequenceLength) ==
            frameIndexInSequence(expectedFrameIndex, sequenceLength);
 bool TaaJitterLayout::slotMatchesMonotonicFrame(u32 slot, u32 frameIndex, u32 sequenceLength) {
-}
 
 bool TaaJitterLayout::fillHaltonSequence(u32 length, fuse::math::Vec2* out) {
     if (out == nullptr || !validateSequenceLength(length)) {
@@ -627,6 +626,26 @@ bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
            TaaJitterLayout::monotonicFrameMatchesSlot(frameIndex, m_index, m_sequenceLength);
 
            TaaJitterLayout::jitterIndexMatchesFrameIndex(frameIndex, m_index, m_sequenceLength);
+const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason) {
+    case TaaJitterSyncBlockReason::None:
+    case TaaJitterSyncBlockReason::InvalidSequence:
+    case TaaJitterSyncBlockReason::DriftedFromFrame:
+        return "drifted_from_frame";
+
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(const TaaJitter& jitter, u32 frameIndex) {
+    if (!jitter.canSyncToFrameIndex(frameIndex)) {
+        return TaaJitterSyncBlockReason::InvalidSequence;
+    if (!jitter.isAlignedToFrameIndex(frameIndex)) {
+        return TaaJitterSyncBlockReason::DriftedFromFrame;
+    return TaaJitterSyncBlockReason::None;
+
+bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, TaaJitterSyncBlockReason* reason) {
+    const TaaJitterSyncBlockReason block = classifyTaaJitterSyncBlock(jitter, frameIndex);
+        *reason = block;
+    return block == TaaJitterSyncBlockReason::None;
+
+bool taaJitterNeedsResyncToFrameIndex(const TaaJitter& jitter, u32 frameIndex) {
+    return classifyTaaJitterSyncBlock(jitter, frameIndex) == TaaJitterSyncBlockReason::DriftedFromFrame;
 }
 
 } // namespace fuse::renderer

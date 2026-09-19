@@ -26,6 +26,12 @@ bool taaResolveWillReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuff
 /// Preflight resolve blend weights without mutating history (B5.9 deepen).
 bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                               TaaBlendWeights* weights = nullptr);
+/// True when resolve request passes all skip preflight guards (B5.9 deepen).
+/// Sanitize desc and return whether resolve can proceed (B5.9 deepen).
+/// True when resolve skip and blend-weight preflights both pass (B5.9 deepen).
+bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveSkipReason* skipReason = nullptr,
+                              TaaResolveBlendRejectReason* blendReason = nullptr);
 /// Classify why resolve would skip — same ordering as `TaaResolve::wouldSkip` (B5.9 deepen).
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// Stamp observed generation then classify — convenience preflight for resolve callers.

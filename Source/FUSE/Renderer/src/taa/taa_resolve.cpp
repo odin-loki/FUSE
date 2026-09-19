@@ -138,6 +138,7 @@ bool canAttemptTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& hi
 
 
 
+
 bool prepareTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     sanitizeTaaResolveDesc(desc, history);
     return canAttemptTaaResolve(desc, history);
@@ -151,9 +152,7 @@ bool taaResolveWillReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuff
     const TAAParams params = clampTaaParams(desc.params);
     const f32 effectiveBlend =
         computeEffectiveBlend(firstFrame, taaResolveCanReuseHistory(desc, history), params);
-}
 
-        return false;
     const f32 effectiveBlend = computeEffectiveBlend(false, true, params);
     return taaBlendUsesHistory(effectiveBlend);
 
@@ -161,13 +160,23 @@ bool taaResolveWillReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuff
 bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                               TaaBlendWeights* weights) {
     if (!preflightTaaResolve(desc, history)) {
-    const bool firstFrame = !history.hasValidHistory();
     const bool historyReusable = taaResolveCanReuseHistory(desc, history);
     const TaaBlendWeights blendWeights =
         computeTaaBlendWeightsWithReuseGuard(firstFrame, historyReusable, clampTaaParams(desc.params));
     if (weights != nullptr) {
         *weights = blendWeights;
     return taaBlendWeightsValid(blendWeights);
+
+
+bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaResolveSkipReason* skipReason,
+                              TaaResolveBlendRejectReason* blendReason) {
+    if (!preflightTaaResolve(desc, history, skipReason)) {
+        if (blendReason != nullptr) {
+            *blendReason = TaaResolveBlendRejectReason::None;
+    return preflightTaaResolveBlendWeights(desc, history, blendReason);
+
+    return taaResolveCanReuseHistory(desc, history) && taaResolveAppliesHistoryBlend(desc, history);
 
 void sanitizeTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     normalizeTaaParams(desc.params);
@@ -1008,6 +1017,10 @@ bool taaBlendUsesHistory(f32 effective_blend) {
 
 bool taaBlendSkipsHistoryReuse(f32 effective_blend) {
     return effective_blend >= 1.f;
+
+
+
+
 
 TaaBlendWeights computeTaaBlendWeightsWithReuseGuard(bool firstFrame, bool historyReusable,
                                                      const TAAParams& params) {

@@ -6,6 +6,13 @@
 
 namespace fuse::renderer {
 
+/// Why jitter sync to a monotonic frame counter is blocked (B5.9 deepen).
+enum class TaaJitterSyncBlockReason : u8 {
+    None = 0,
+    InvalidSequence,
+    DriftedFromFrame,
+};
+
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
 
@@ -280,5 +287,10 @@ const char* taaJitterSyncBlockReasonLabel(TaaJitterSyncBlockReason reason);
 TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(const TaaJitter& jitter, u32 frameIndex);
 /// True when jitter is aligned to `frameIndex` and the sequence is valid (B5.9 deepen).
 bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, TaaJitterSyncBlockReason* reason = nullptr);
+/// True when jitter can align to `frameIndex` without drift (B5.9 deepen).
+bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex,
+                            TaaJitterSyncBlockReason* reason = nullptr);
+/// True when jitter monotonic counter or slot differs from `frameIndex` (B5.9 deepen).
+bool taaJitterNeedsResyncToFrameIndex(const TaaJitter& jitter, u32 frameIndex);
 
 } // namespace fuse::renderer

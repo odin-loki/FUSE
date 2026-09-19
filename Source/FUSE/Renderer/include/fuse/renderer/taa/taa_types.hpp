@@ -133,6 +133,10 @@ bool taaUsesWarmupBlend(bool first_frame);
 bool taaBlendUsesHistory(f32 effective_blend);
 /// True when effective blend ignores history (warm-up / stale / full-current weight).
 /// True when effective blend ignores history (warm-up / full-current weight).
+/// Blend weight with explicit history-reuse guard — forces 1.0 when history cannot be sampled (B5.9 deepen).
+/// True when warm-up path forces full current-frame weight (no history reuse) (B5.9 deepen).
+/// True when effective blend samples history (strictly below full-current weight) (B5.9 deepen).
+/// True when effective blend ignores history (warm-up / stale / full-current weight) (B5.9 deepen).
 bool taaBlendSkipsHistoryReuse(f32 effective_blend);
 /// History contribution weight — complement of `effectiveBlend`, clamped to [0, 1].
 f32 computeHistoryBlend(f32 effectiveBlend);
@@ -273,15 +277,8 @@ bool preflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHis
                                           TaaHistoryReuseBlockReason* reason = nullptr);
 
 /// Why history warm-up blocks temporal reuse (B5.9 deepen).
-enum class TaaHistoryWarmupBlockReason : u8 {
-    None = 0,
-    NotReady,
     NeedsWarmup,
-};
-/// Human-readable label for history warm-up block reasons (B5.9 deepen).
-const char* taaHistoryWarmupBlockReasonLabel(TaaHistoryWarmupBlockReason reason);
 /// Classify why history warm-up blocks temporal reuse (B5.9 deepen).
-TaaHistoryWarmupBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history);
 /// True when history is allocated and warmed for temporal reuse (B5.9 deepen).
 bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history,
                                TaaHistoryWarmupBlockReason* reason = nullptr);
@@ -289,6 +286,8 @@ bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history,
 bool canPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history);
 /// True when resolve may apply a non-zero history blend this frame (B5.9 deepen).
 bool taaHistoryTemporalBlendReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// True when history targets are warmed and ready for temporal reuse (B5.9 deepen).
+/// True when history has completed warm-up preflight (B5.9 deepen).
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
