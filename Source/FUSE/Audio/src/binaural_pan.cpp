@@ -1335,3 +1335,10 @@ HrtfBinauralRejectReason classify_hrtf_binaural_attenuation_reject(
     if (reject == HrtfAttenuationCouplingRejectReason::UnityAttenuation) {
 bool hrtf_binaural_reject_reason_is_pan_blocking(HrtfBinauralRejectReason reason) {
 bool hrtf_binaural_reject_reason_is_convolution_blocking(HrtfBinauralRejectReason reason) {
+
+// --- deepen additive from deepen-b7-2-hrtf-guards-219a ---
+HrtfBinauralRejectReason map_pan_path_reject(HrtfPanPathRejectReason reason) {
+HrtfBinauralRejectReason map_ir_reject(HrtfIrRejectReason reason) {
+HrtfBinauralRejectReason map_coupling_reject(HrtfAttenuationCouplingRejectReason reason) {
+    preflight.panRejectReason = classify_hrtf_binaural_pan_reject(hrtf_enabled, rel_listener);
+    reason = out.panRejectReason;

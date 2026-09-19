@@ -1889,3 +1889,15 @@ void testHrtfBinauralRejectReasonPreflights() {
     expectTrue(unity_preflight.attenuationRejectReason
     expectTrue(try_preflight.panRejectReason == fuse::audio::HrtfBinauralRejectReason::None,
     expectTrue(try_preflight.panRejectReason
+
+// --- deepen additive from deepen-b7-2-hrtf-guards-219a ---
+    const fuse::audio::HrtfPanPathPreflight empty_ir_preflight =
+    expectTrue(empty_ir_preflight.rejectReason == fuse::audio::HrtfPanPathRejectReason::None,
+    const fuse::audio::HrtfBinauralPreflight composite =
+    expectTrue(composite.panRejectReason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(composite.convolutionRejectReason == fuse::audio::HrtfBinauralRejectReason::EmptyIr,
+    expectTrue(composite.couplingRejectReason == fuse::audio::HrtfBinauralRejectReason::None,
+    const fuse::audio::HrtfBinauralPreflight unity =
+    expectTrue(unity.convolutionRejectReason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(unity.couplingRejectReason
+    expectTrue(out.panRejectReason == reason,
