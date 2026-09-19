@@ -158,6 +158,9 @@ bool isHitTestValid(const GizmoHitTest& hit);
 /// Convenience inverse of `isRayEmpty` / `isHitTestEmpty` (B6.4 deepen — empty-ray guards).
 
 /// Normalize ray direction; returns false when the ray is empty (B6.4 deepen — empty-ray guard).
+/// Convenience inverse of `isRayEmpty` / `isHitTestEmpty` (B6.4 deepen follow-up — pick guard).
+
+/// Normalize ray direction; returns false when the ray is empty (B6.4 deepen follow-up — pick guard).
 bool normalizeRay(GizmoRay& ray);
 
 /// True when axis length and pick radius are positive (B6.4 deepen pass).
@@ -221,6 +224,14 @@ SnapDragPreflight preflightSnapDrag(f32 delta, GizmoMode mode, const GizmoSnapSe
 /// Guarded transform snap — returns false when snap cannot apply (B6.4 deepen follow-up).
 bool trySnapTransform(const GizmoTransform& transform, GizmoMode mode,
                       const GizmoSnapSettings& settings, GizmoTransform& out);
+
+/// Guarded scalar snap — returns false when snap cannot apply (B6.4 deepen follow-up — snap guard).
+bool trySnapValue(f32 value, GizmoMode mode, const GizmoSnapSettings& settings, f32& out);
+
+/// Component-wise snap helpers (B6.4 deepen follow-up — snap guard).
+math::Vec3 snapPosition(const math::Vec3& position, const GizmoSnapSettings& settings);
+math::Vec3 snapEulerRadians(const math::Vec3& eulerRadians, const GizmoSnapSettings& settings);
+math::Vec3 snapScaleVec(const math::Vec3& scale, const GizmoSnapSettings& settings);
 
 /// Mode-aware drag-delta snap with step validation (B6.4 deepen follow-up).
 f32 trySnapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
@@ -448,8 +459,23 @@ bool canEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
 /// Read-only drag-update diagnostics — no mutation (B6.4 deepen pass).
     bool canUpdate = false;
     bool emptyHit = false;
-    /// Snap is enabled but the mode step is unusable — update still applies (B6.4 deepen pass).
     bool snapDegraded = false;
+    bool screenMiss = false;
+    bool noActiveAxis = false;
+
+        return !notDragging && !emptyHit && !screenMiss && !noActiveAxis;
+    }
+
+                                        GizmoMode mode = GizmoMode::Translate,
+
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoMode mode,
+                   GizmoAxis activeAxis);
+
+/// Read-only end-drag diagnostics — no mutation (B6.4 deepen follow-up).
+    bool notDragging = false;
+
+
+EndDragPreflight preflightEndDrag(bool dragging);
 
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       f32 pickRadius, bool alreadyDragging = false);
@@ -885,11 +911,8 @@ public:
     /// Guarded end-drag — returns false when preflight rejects (B6.4 deepen pass).
     bool tryEndDrag(GizmoResult& out);
     /// Guarded update-drag — returns false when preflight rejects the hit (B6.4 deepen follow-up).
-    bool tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out);
     /// Non-mutating update-drag predicate — rejects inactive drag and empty viewport (B6.4 deepen follow-up).
-    [[nodiscard]] bool canUpdateDrag(const GizmoHitTest& hit) const;
     /// Read-only update-drag diagnostics — same guards as `canUpdateDrag` (B6.4 deepen follow-up).
-    [[nodiscard]] UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit) const;
     GizmoResult endDrag();
     /// Cancel an active drag without committing transform changes (B6.4 deepen follow-up).
     void cancelDrag();
@@ -902,7 +925,6 @@ public:
                                         GizmoPickRejectReason& reason) const;
     [[nodiscard]] bool tryPreflightPick(const GizmoHitTest& hit,
     [[nodiscard]] bool shouldSkipPick(const GizmoRay& ray,
-                                      const GizmoTransform& transform) const;
     [[nodiscard]] bool shouldSkipPick(const GizmoHitTest& hit) const;
 
     /// Snap preflight with optional reject-reason output (B6.4 deepen pass).
@@ -966,6 +988,8 @@ public:
     [[nodiscard]] bool shouldSkipEndDrag() const;
     /// Cancel an active drag without dirty marking (B6.4 deepen — begin-drag guards).
     /// Cancel an active drag without dirty marking (B6.4 deepen pass).
+    /// Guarded drag update — returns false on empty viewport / screen miss (B6.4 deepen follow-up).
+    /// Cancel an active drag without dirty marking (B6.4 deepen follow-up).
 
     bool isDragging() const { return m_dragging; }
     bool canBeginDrag(const GizmoHitTest& hit, const GizmoTransform& transform) const;
