@@ -954,3 +954,10 @@ bool probeGridCoordRejectReasonIsBlocking(ProbeGridCoordRejectReason reason);
     static ProbeGridCoordRejectReason classifyProbeCoordReject(const DDGIDesc& desc, const ProbeGridCoord& coord);
                                     ProbeGridCoordRejectReason* reason = nullptr);
 bool wouldSkipProbeLookup(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 cache_count);
+
+// --- deepen additive from deepen-ddgi-guards-39f0 ---
+    static bool tryValidateProbeIndex(const DDGIDesc& desc, u32 probe_index, ProbeGridRejectReason& outReason);
+                                      ProbeGridRejectReason& outReason);
+    static ProbeGridRejectReason classifyProbeCoordReject(const DDGIDesc& desc, const ProbeGridCoord& coord);
+    static bool wouldSkipProbeIndex(const DDGIDesc& desc, u32 probe_index);
+    static bool wouldSkipProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);

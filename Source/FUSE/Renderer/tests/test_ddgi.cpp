@@ -3931,3 +3931,32 @@ void testDdgiKernelGridAwarePreflightGuards() {
     expectTrue(!fuse::renderer::gi::preflightProbeKernelLaunch(validParams, empty),
                "preflightProbeKernelLaunch grid-aware rejects empty grid");
     testDdgiKernelGridAwarePreflightGuards();
+
+// --- deepen additive from deepen-ddgi-guards-39f0 ---
+               "classifyProbeIndexReject none for valid index");
+               "preflightProbeIndex succeeds for valid index");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeIndex(desc, 3u),
+               "wouldSkipProbeIndex false for valid index");
+    expectTrue(!fuse::renderer::probeGridRejectReasonIsBlocking(fuse::renderer::ProbeGridRejectReason::None),
+                   fuse::renderer::ProbeGridRejectReason::OutOfRangeIndex,
+               "classifyProbeIndexReject out_of_range_index");
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeIndex(desc, 99u),
+               "wouldSkipProbeIndex true for OOB index");
+                               fuse::renderer::ProbeGridRejectReason::OutOfRangeIndex),
+                   fuse::renderer::ProbeGridRejectReason::OutOfRangeCoord,
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeCoord(desc, invalidCoord),
+               "wouldSkipProbeCoord true for OOB coord");
+                   fuse::renderer::ProbeGridRejectReason::OutOfRangeCoord),
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeIndexReject(empty, 0u) ==
+               "classifyProbeIndexReject empty_grid");
+    fuse::renderer::ProbeGridRejectReason gridReason = fuse::renderer::ProbeGridRejectReason::None;
+    expectTrue(fuse::renderer::ProbeGridLayout::tryValidateProbeIndex(desc, 7u, gridReason),
+               "tryValidateProbeIndex succeeds for last index");
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryValidateProbeCoord(empty, validCoord, gridReason),
+               "tryValidateProbeCoord rejects empty grid");
+    expectTrue(gridReason == fuse::renderer::ProbeGridRejectReason::EmptyGrid,
+               "classifyProbeTrilinearSampleReject empty grid from world position");
+               "classifyProbeTrilinearSampleReject not_sampleable from world position");
+    expectTrue(!fuse::renderer::gi::preflightProbeBlendKernel(zeroRays),
+               "preflightProbeBlendKernel rejects zero rays");
+               "wouldSkipProbeSampleCoords true for hard OOB indices");

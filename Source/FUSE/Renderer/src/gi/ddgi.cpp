@@ -2943,3 +2943,19 @@ bool wouldSkipProbeLookup(const DDGIDesc& desc, const IrradianceCacheEntry* cach
     if (ProbeGridLayout::wouldSkipProbeCoordPreflight(desc, coord)) {
     return wouldSkipCacheIndexLookup(desc, cache, index, cache_count);
     return tryTrilinearProbeIrradianceAtCoords(desc, coords, cache, cache_count, out_irradiance, outReason);
+
+// --- deepen additive from deepen-ddgi-guards-39f0 ---
+    case ProbeGridRejectReason::OutOfRangeIndex:
+    case ProbeGridRejectReason::OutOfRangeCoord:
+bool ProbeGridLayout::tryValidateProbeIndex(const DDGIDesc& desc,
+                                            ProbeGridRejectReason& outReason) {
+        outReason = ProbeGridRejectReason::EmptyGrid;
+        outReason = ProbeGridRejectReason::OutOfRangeIndex;
+    outReason = ProbeGridRejectReason::None;
+        outReason = ProbeGridRejectReason::OutOfRangeCoord;
+    ProbeGridRejectReason reason = ProbeGridRejectReason::None;
+    tryValidateProbeIndex(desc, probe_index, reason);
+bool ProbeGridLayout::wouldSkipProbeIndex(const DDGIDesc& desc, u32 probe_index) {
+    return !preflightProbeIndex(desc, probe_index);
+bool ProbeGridLayout::wouldSkipProbeCoord(const DDGIDesc& desc, const ProbeGridCoord& coord) {
+    return !preflightProbeCoord(desc, coord);
