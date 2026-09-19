@@ -4744,3 +4744,8 @@ void testTaaPassTryClassifyGuardWrappers() {
     expectTrue(invalidSeqPass->trySyncJitterToFrameIndex(0u, jitterReason),
                "pass trySyncJitterToFrameIndex passes after jitter fallback");
                "pass classifyJitterNdcReject fails for zero width");
+
+// --- deepen additive from deepen-b59-taa-pass-try-classify-f7a9 ---
+               "pass tryPreflightResolve passes after init and warmup");
+               "pass tryPreflightJitterAdvance passes with fallback sequence length");
+               "pass tryPreflightJitterAdvance reject reason is None with fallback sequence");
