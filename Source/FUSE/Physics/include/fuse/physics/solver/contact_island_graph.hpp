@@ -621,9 +621,6 @@ IslandBuildInputScan scan_island_build_inputs(
 
 /// Summarize build inputs without mutating a graph.
 IslandGraphBuildStats count_island_graph_build_input(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// True when scan reports no out-of-range body references.
 bool island_build_inputs_safe(const IslandBuildInputScan& scan);
@@ -632,15 +629,23 @@ bool island_build_inputs_safe(const IslandBuildInputScan& scan);
 bool can_partition_island_build_inputs(u32 bodyCount, const IslandBuildInputScan& scan);
 /// Const preflight for island graph build dispatch.
 IslandGraphBuildPreflight preflight_contact_island_graph_build(
-    u32 bodyCount,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Returns true when island graph build should be skipped before mutation.
 bool should_skip_contact_island_graph_build(
 
 /// True when both body indices are in range for union during graph build.
 bool island_build_body_pair_in_range(u32 bodyCount, u32 bodyA, u32 bodyB);
+/// Input coverage for island graph build (out-of-range and self-ref body-index guards).
+    u32 selfReferencingContactCount = 0;
+    u32 selfReferencingDistanceCount = 0;
+
+
+        return stats.outOfRangeContactBodyCount > 0u || stats.outOfRangeDistanceBodyCount > 0u ||
+               stats.selfReferencingContactCount > 0u || stats.selfReferencingDistanceCount > 0u;
+
+
+/// Post-build partition summary for empty vs constrained island guards.
+struct IslandGraphPartitionStats {
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -710,6 +715,23 @@ struct ContactIslandGraph {
 
     /// True when both body indices are in range for union during graph build.
     static bool bodiesInRange(u32 bodyCount, u32 bodyA, u32 bodyB);
+    /// Islands with no contacts or distance constraints.
+    u32 emptyIslandCount() const;
+
+    /// Summarize constrained vs empty islands after build.
+    IslandGraphPartitionStats computePartitionStats() const;
+
+    /// Preflight build inputs; sets `skipped` when nothing can partition.
+    static IslandGraphBuildPreflight preflightBuildInputs(
+        u32 bodyCount,
+        const std::vector<narrowphase::ContactManifold>& contacts,
+        const std::vector<DistanceConstraint>& distanceConstraints);
+
+    /// Early-out guard when build inputs cannot form any constrained partition.
+    static bool shouldSkipBuild(u32 bodyCount,
+
+    /// Guarded build; returns false and clears the graph when preflight rejects inputs.
+    bool buildGuarded(u32 bodyCount,
 
     static constexpr u32 invalidIsland = ~0u;
 

@@ -992,6 +992,66 @@ bool should_skip_contact_island_graph_build(
     return !preflight_contact_island_graph_build(bodyCount, contacts, distanceConstraints).can_build();
 }
 
+IslandGraphBuildPreflight ContactIslandGraph::preflightBuildInputs(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandGraphBuildPreflight preflight{};
+    preflight.stats.bodyCount = bodyCount;
+    preflight.stats.contactSlotCount = static_cast<u32>(contacts.size());
+    preflight.stats.distanceSlotCount = static_cast<u32>(distanceConstraints.size());
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (contact.valid) {
+            ++preflight.stats.validContactCount;
+        }
+        const bool inRange = contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+        if (inRange) {
+            ++preflight.stats.inRangeContactCount;
+            if (contact.valid && contact.bodyA == contact.bodyB) {
+                ++preflight.stats.selfReferencingContactCount;
+            }
+        } else if (contact.valid) {
+            ++preflight.stats.outOfRangeContactBodyCount;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        const bool inRange = constraint.bodyA < bodyCount && constraint.bodyB < bodyCount;
+        if (inRange) {
+            ++preflight.stats.inRangeDistanceCount;
+            if (constraint.bodyA == constraint.bodyB) {
+                ++preflight.stats.selfReferencingDistanceCount;
+            }
+        } else {
+            ++preflight.stats.outOfRangeDistanceBodyCount;
+        }
+    }
+
+    preflight.skipped = bodyCount == 0u && preflight.stats.inRangeContactCount == 0u &&
+                        preflight.stats.inRangeDistanceCount == 0u;
+    return preflight;
+}
+
+bool ContactIslandGraph::shouldSkipBuild(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    return !preflightBuildInputs(bodyCount, contacts, distanceConstraints).can_build();
+}
+
+bool ContactIslandGraph::buildGuarded(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    if (shouldSkipBuild(bodyCount, contacts, distanceConstraints)) {
+        clear();
+        return false;
+    }
+    build(bodyCount, contacts, distanceConstraints);
+    return true;
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
@@ -1316,13 +1376,24 @@ void ContactIslandGraph::build_guarded(u32 bodyCount,
 }
 
 u32 ContactIslandGraph::constrainedIslandCount() const {
-    u32 count = 0;
+    return computePartitionStats().constrainedCount;
+}
+
+u32 ContactIslandGraph::emptyIslandCount() const {
+    return computePartitionStats().emptyCount;
+}
+
+IslandGraphPartitionStats ContactIslandGraph::computePartitionStats() const {
+    IslandGraphPartitionStats stats{};
+    stats.totalIslands = islandCount();
     for (const Island& island : islands_) {
-        if (!island.isEmpty()) {
-            ++count;
+        if (island.isEmpty()) {
+            ++stats.emptyCount;
+        } else {
+            ++stats.constrainedCount;
         }
     }
-    return count;
+    return stats;
 }
 
 u32 ContactIslandGraph::bodyIsland(u32 bodyIndex) const {
