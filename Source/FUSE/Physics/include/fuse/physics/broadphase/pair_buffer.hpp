@@ -211,6 +211,26 @@ struct PairBufferPushPreflight {
     bool canPush() const { return reason == PairBufferPushRejectReason::None; }
 };
 
+/// Why pair-buffer push would reject (B4.2 deepen pass).
+enum class PairBufferPushRejectReason : u8 {
+    None = 0,
+    InvalidPair,
+    AtCapacity,
+};
+
+/// Human-readable label for pair-buffer push reject reasons (logging / tests).
+const char* pairBufferPushRejectReasonName(PairBufferPushRejectReason reason);
+
+/// Diagnose why push would reject; vacuously succeeds when push may proceed.
+PairBufferPushRejectReason pairBufferPushRejectReason(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+
+/// Returns true when `pairBufferPushRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferPushRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 idxA,
+    u32 idxB,
+    PairBufferPushRejectReason expected);
+
 PairBufferPushPreflight preflightPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
 
 /// Why pair-buffer compaction would early-out (B4.2 deepen pass).
@@ -277,6 +297,7 @@ struct PairBufferMergePreflight {
 
 PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingPairCount);
 
+
 /// Read-only compaction diagnostics — no mutation (B4.2 deepen follow-up).
 /// Why pair-buffer compaction would early-out (B4.2 deepen follow-up pass).
 enum class PairBufferCompactionRejectReason : u8 {
@@ -302,6 +323,24 @@ struct PairBufferCompactionPreflight {
     bool allValid = false;
 
     bool needsCompaction() const { return reason == PairBufferCompactionRejectReason::None; }
+
+/// Why pair-buffer compaction would early-out (B4.2 deepen pass).
+enum class PairBufferCompactionRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    AllValid,
+};
+
+/// Human-readable label for pair-buffer compaction reject reasons (logging / tests).
+const char* pairBufferCompactionRejectReasonName(PairBufferCompactionRejectReason reason);
+
+/// Diagnose why compaction would skip; vacuously succeeds when compaction may proceed.
+PairBufferCompactionRejectReason pairBufferCompactionRejectReason(const PairBufferSoA& buffer);
+
+/// Returns true when `pairBufferCompactionRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferCompactionRejectsForReason(
+    const PairBufferSoA& buffer,
+    PairBufferCompactionRejectReason expected);
 
 PairBufferCompactionPreflight preflightPairBufferCompaction(const PairBufferSoA& buffer);
 
@@ -377,6 +416,7 @@ bool pairBufferClampRejectsForReason(const PairBufferSoA& buffer, PairBufferClam
 
 
 
+
 /// Read-only max-capacity clamp diagnostics — no mutation (B4.2 deepen follow-up).
 /// Why pair-buffer clamp would early-out (B4.2 deepen follow-up pass).
 enum class PairBufferClampRejectReason : u8 {
@@ -401,6 +441,24 @@ struct PairBufferClampPreflight {
 
     bool needsClamp() const { return reason == PairBufferClampRejectReason::None; }
 };
+
+/// Why pair-buffer max-capacity clamp would early-out (B4.2 deepen pass).
+enum class PairBufferClampRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    WithinCapacity,
+};
+
+/// Human-readable label for pair-buffer clamp reject reasons (logging / tests).
+const char* pairBufferClampRejectReasonName(PairBufferClampRejectReason reason);
+
+/// Diagnose why clamp would skip; vacuously succeeds when clamp may proceed.
+PairBufferClampRejectReason pairBufferClampRejectReason(const PairBufferSoA& buffer);
+
+/// Returns true when `pairBufferClampRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferClampRejectsForReason(
+    const PairBufferSoA& buffer,
+    PairBufferClampRejectReason expected);
 
 PairBufferClampPreflight preflightPairBufferClamp(const PairBufferSoA& buffer);
 
@@ -464,6 +522,7 @@ bool pairBufferDedupeRejectsForReason(const PairBufferSoA& buffer, PairBufferDed
 
 /// Non-mutating clamp skip predicate — inverse of `PairBufferClampPreflight::needsClamp` (B4.2 deepen pass).
 
+
 /// Read-only dedupe diagnostics at the SoA layer — no mutation (B4.2 deepen follow-up pass).
 struct PairBufferDedupePreflight {
     PairBufferDedupeRejectReason reason = PairBufferDedupeRejectReason::None;
@@ -483,6 +542,24 @@ struct PairBufferDedupePreflight {
 
 
 };
+
+/// Why pair-buffer dedupe would early-out (B4.2 deepen pass).
+enum class PairBufferDedupeRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    SinglePair,
+};
+
+/// Human-readable label for pair-buffer dedupe reject reasons (logging / tests).
+const char* pairBufferDedupeRejectReasonName(PairBufferDedupeRejectReason reason);
+
+/// Diagnose why SoA dedupe would skip; vacuously succeeds when dedupe may proceed.
+PairBufferDedupeRejectReason pairBufferDedupeRejectReason(const PairBufferSoA& buffer);
+
+/// Returns true when `pairBufferDedupeRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferDedupeRejectsForReason(
+    const PairBufferSoA& buffer,
+    PairBufferDedupeRejectReason expected);
 
 PairBufferDedupePreflight preflightPairBufferDedupe(const PairBufferSoA& buffer);
 
@@ -522,6 +599,24 @@ struct PairBufferSortPreflight {
     PairBufferSortRejectReason reason = PairBufferSortRejectReason::None;
 
     bool needsSort() const { return reason == PairBufferSortRejectReason::None; }
+
+/// Why pair-buffer canonical sort would early-out (B4.2 deepen pass).
+enum class PairBufferSortRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    SinglePair,
+};
+
+/// Human-readable label for pair-buffer sort reject reasons (logging / tests).
+const char* pairBufferSortRejectReasonName(PairBufferSortRejectReason reason);
+
+/// Diagnose why sort would skip; vacuously succeeds when sort may proceed.
+PairBufferSortRejectReason pairBufferSortRejectReason(const PairBufferSoA& buffer);
+
+/// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen pass).
+bool pairBufferSortRejectsForReason(
+    const PairBufferSoA& buffer,
+    PairBufferSortRejectReason expected);
 
 PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer);
 
@@ -834,8 +929,15 @@ BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
 
 
 /// Non-mutating sort skip predicate — inverse of `preflightPairBufferSort` (B4.2 deepen pass).
-};
 
-PairBufferCompactAndClampPreflight preflightPairBufferCompactAndClamp(const PairBufferSoA& buffer);
+
+
+    PairBufferCompactionPreflight compaction{};
+    PairBufferClampPreflight clamp{};
+
+    bool needsWork() const { return compaction.needsCompaction() || clamp.needsClamp(); }
+
+
+/// Non-mutating compact-and-clamp skip predicate — true when both sub-passes are no-ops (B4.2 deepen pass).
 
 } // namespace fuse::physics::broadphase
