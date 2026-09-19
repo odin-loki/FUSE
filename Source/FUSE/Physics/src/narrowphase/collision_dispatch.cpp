@@ -4,6 +4,20 @@
 
 namespace fuse::physics::narrowphase {
 
+NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
+    const std::vector<broadphase::CandidatePair>& pairs) {
+    NarrowphaseBufferDispatchPreflight preflight{};
+    preflight.pairCount = static_cast<u32>(pairs.size());
+    preflight.emptyPairList = pairs.empty();
+    preflight.canFinalizeBuffer = !preflight.emptyPairList;
+    return preflight;
+}
+
+bool can_skip_narrowphase_buffer_finalize(
+    const std::vector<broadphase::CandidatePair>& pairs) {
+    return preflight_narrowphase_buffer_dispatch(pairs).emptyPairList;
+}
+
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
