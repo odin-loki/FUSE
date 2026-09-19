@@ -118,6 +118,29 @@ u32 pruneInvalidCandidatePairs(std::vector<CandidatePair>& pairs, u32 bodyCount)
     return static_cast<u32>(pairs.size());
 }
 
+BroadphasePreflight preflight_broadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    BroadphasePreflight preflight{};
+    preflight.bodyCount = bodies.count();
+    preflight.shapeCount = shapes.count();
+    preflight.emptyInput = isEmptyBroadphaseInput(bodies, shapes);
+    preflight.skipped = preflight.emptyInput;
+    return preflight;
+}
+
+BroadphaseRefinePreflight preflight_broadphase_refine(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer) {
+    BroadphaseRefinePreflight preflight{};
+    preflight.pairCount = buffer.activeCount;
+    preflight.emptyInput = isEmptyBroadphaseInput(bodies, shapes);
+    preflight.emptyBuffer = buffer.canSkipRefine();
+    preflight.skipped = preflight.emptyInput || preflight.emptyBuffer;
+    return preflight;
+}
+
 namespace {
 
 constexpr u32 kBuildGrainSize = 8u;
@@ -338,6 +361,10 @@ void populateShapeCells(
 
         if (isEmptyCellRange(range) || exceedsCellOccupancyBudget(range, occupancyBudget)) {
         if (canSkipShapeCellInsertion(range, maxOccupancy)) {
+        const ShapeCellOccupancyPreflight occupancyPreflight =
+            preflight_shape_cell_occupancy(range, maxSpan);
+        if (!occupancyPreflight.can_insert()) {
+        if (isEmptyCellRange(range)) {
             return;
         }
         if (params.maxCellOccupancyPerShape > 0u) {
@@ -365,6 +392,11 @@ void populateShapeCells(
     }
     if (isEmptyCellRange(range) || exceedsCellOccupancyBudget(range, occupancyBudget)) {
     if (canSkipShapeCellInsertion(range, maxOccupancy)) {
+    const ShapeCellOccupancyPreflight occupancyPreflight = preflight_shape_cell_occupancy(range, maxSpan);
+    if (!occupancyPreflight.can_insert()) {
+        return;
+    }
+    if (isEmptyCellRange(range)) {
         return;
     }
     if (params.maxCellOccupancyPerShape > 0u) {
@@ -398,6 +430,8 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 
 void dedupeBuffer(PairBufferSoA& buffer) {
     if (!shouldRunDedupeBroadphase(buffer) || !shouldRunPairBufferDedupe(buffer)) {
+    const PairBufferSoA::DedupePreflight preflight = buffer.preflight_dedupe();
+    if (!preflight.needs_dedupe()) {
         return;
     }
 
@@ -468,6 +502,8 @@ void runBroadphaseIntoBufferInternal(
     if (isEmptyBroadphaseInput(bodies, shapes)) {
     if (canSkipBroadphase(bodies.count(), shapes.count())) {
     if (canSkipBroadphase(bodies, shapes)) {
+    const BroadphasePreflight preflight = preflight_broadphase(bodies, shapes);
+    if (!preflight.can_run()) {
         return;
     }
 
@@ -565,6 +601,8 @@ void refineBroadphasePairsParallelImpl(
     if (shouldSkipBroadphaseRefine(buffer.activeCount, buffer.pairSlotCount, bodies.count(), shapes.count())) {
     if (buffer.canSkipRefine() || !buffer.hasValidPairs() || canSkipBroadphase(bodies, shapes)) {
     if (canSkipBroadphaseRefine(bodies, shapes, buffer)) {
+    const BroadphaseRefinePreflight preflight = preflight_broadphase_refine(bodies, shapes, buffer);
+    if (!preflight.can_refine()) {
         return;
     }
 
