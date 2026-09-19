@@ -778,3 +778,19 @@ bool tryPreflightTaaResolveBlendPolicy(const TaaResolveDesc& desc, const TaaHist
 bool tryPreflightTaaResolveCombined(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
     if (taaResolveSkipReasonIsBlocking(skipReason)) {
     return tryPreflightTaaResolveBlendPolicy(desc, history, blendReason);
+
+// --- deepen additive from deepen-taa-b59-guards-61db ---
+const char* taaResolveTemporalBlendRejectReasonLabel(TaaResolveTemporalBlendRejectReason reason) {
+    case TaaResolveTemporalBlendRejectReason::None:
+    case TaaResolveTemporalBlendRejectReason::HistoryReuseBlocked:
+    case TaaResolveTemporalBlendRejectReason::BlendWeightsInvalid:
+TaaResolveTemporalBlendRejectReason classifyTaaResolveTemporalBlendReject(const TaaResolveDesc& desc,
+    if (blendReject != TaaResolveBlendRejectReason::None) {
+        return TaaResolveTemporalBlendRejectReason::BlendWeightsInvalid;
+        return TaaResolveTemporalBlendRejectReason::HistoryReuseBlocked;
+    return TaaResolveTemporalBlendRejectReason::None;
+                                      TaaResolveTemporalBlendRejectReason* reason) {
+    const TaaResolveTemporalBlendRejectReason reject = classifyTaaResolveTemporalBlendReject(desc, history);
+    return reject == TaaResolveTemporalBlendRejectReason::None;
+                                           TaaResolveTemporalBlendRejectReason& reason) {
+    return reason == TaaResolveTemporalBlendRejectReason::None;

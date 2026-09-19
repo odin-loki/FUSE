@@ -506,3 +506,23 @@ bool preflightTaaJitterSyncAlignment(u32 frameIndex, u32 slot, u32 sequenceLengt
 bool tryPreflightTaaJitterSyncAlignment(u32 frameIndex, u32 slot, u32 sequenceLength,
     return preflightTaaJitterSyncAlignment(frameIndex, slot, sequenceLength, &reason);
     return !preflightTaaJitterSyncAlignment(frameIndex, slot, sequenceLength);
+
+// --- deepen additive from deepen-taa-b59-guards-61db ---
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(u32 frameIndex, u32 monotonicFrame, u32 slot,
+bool preflightTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot, u32 sequenceLength,
+        classifyTaaJitterAlignmentReject(frameIndex, monotonicFrame, slot, sequenceLength);
+bool tryPreflightTaaJitterAlignment(u32 frameIndex, u32 monotonicFrame, u32 slot, u32 sequenceLength,
+    return preflightTaaJitterAlignment(frameIndex, monotonicFrame, slot, sequenceLength, &reason);
+    return !preflightTaaJitterAlignment(frameIndex, monotonicFrame, slot, sequenceLength);
+TaaJitterGuardRejectReason classifyTaaJitterSyncAndNdcReject(u32 width, u32 height, u32 sequenceLength) {
+    return classifyTaaJitterNdcReject(width, height, sequenceLength);
+bool preflightTaaJitterSyncAndNdc(u32 /*frameIndex*/, u32 width, u32 height, u32 sequenceLength,
+    const TaaJitterGuardRejectReason reject = classifyTaaJitterSyncAndNdcReject(width, height, sequenceLength);
+bool tryPreflightTaaJitterSyncAndNdc(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
+    return preflightTaaJitterSyncAndNdc(frameIndex, width, height, sequenceLength, &reason);
+    return !preflightTaaJitterSyncAndNdc(frameIndex, width, height, sequenceLength);
+    reason = classifyTaaJitterSyncReject(m_sequenceLength);
+    if (reason != TaaJitterGuardRejectReason::None) {
+    reason = TaaJitterGuardRejectReason::None;
+bool TaaJitter::preflightAlignmentToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason* reason) const {
+    return preflightTaaJitterAlignment(frameIndex, m_monotonicFrame, m_index, m_sequenceLength, reason);
