@@ -1012,6 +1012,12 @@ PickSnapPreflight preflightPickSnap(const GizmoRay& ray, const GizmoTransform& t
 PickSnapPreflight preflightPickSnap(const GizmoHitTest& hit, GizmoMode mode,
                                     const GizmoSnapSettings& settings);
 
+/// Non-mutating pick-snap predicate — same guards as `preflightPickSnap` (B6.4 deepen pass).
+bool canPickSnap(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                 GizmoSpace space, f32 axisLength, f32 pickRadius,
+                 const GizmoSnapSettings& settings);
+bool canPickSnap(const GizmoHitTest& hit, GizmoMode mode, const GizmoSnapSettings& settings);
+
 BeginInteractionPreflight preflightBeginInteraction(
     const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode, GizmoSpace space,
     f32 axisLength, f32 pickRadius, const GizmoSnapSettings& settings, bool alreadyDragging = false);
@@ -1019,12 +1025,28 @@ BeginInteractionPreflight preflightBeginInteraction(const GizmoHitTest& hit, Giz
                                                     const GizmoSnapSettings& settings,
                                                     bool alreadyDragging = false);
 
+/// Non-mutating begin-interaction predicate — same guards as `preflightBeginInteraction` (B6.4 deepen pass).
+bool canBeginInteraction(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                         GizmoSpace space, f32 axisLength, f32 pickRadius,
+                         const GizmoSnapSettings& settings, bool alreadyDragging = false);
+bool canBeginInteraction(const GizmoHitTest& hit, GizmoMode mode,
+                         const GizmoSnapSettings& settings, bool alreadyDragging = false);
+
 UpdateInteractionPreflight preflightUpdateInteraction(const GizmoHitTest& hit, bool dragging,
                                                       GizmoAxis activeAxis, GizmoMode mode,
                                                       const GizmoSnapSettings& settings);
 
 EndInteractionPreflight preflightEndInteraction(bool dragging, GizmoAxis activeAxis,
                                                 GizmoMode mode, const GizmoSnapSettings& settings);
+/// Non-mutating update-interaction predicate — same guards as `preflightUpdateInteraction` (B6.4 deepen pass).
+bool canUpdateInteraction(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+
+EndInteractionPreflight preflightEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                                                const GizmoSnapSettings& settings);
+
+/// Non-mutating end-interaction predicate — same guards as `preflightEndInteraction` (B6.4 deepen pass).
+bool canEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                     const GizmoSnapSettings& settings);
 
 InteractionPreflight preflightInteraction(const GizmoHitTest& hit, bool dragging,
                                           GizmoAxis activeAxis, GizmoMode mode,
@@ -1554,13 +1576,26 @@ public:
     [[nodiscard]] PickSnapPreflight preflightPickSnap(const GizmoRay& ray,
     /// Combined begin-drag + snap diagnostics (B6.4 deepen pass).
     [[nodiscard]] BeginInteractionPreflight preflightBeginInteraction(
+                                                       const GizmoTransform& transform) const;
+    /// Non-mutating pick-snap predicate — same guards as `preflightPickSnap` (B6.4 deepen pass).
+    [[nodiscard]] bool canPickSnap(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canPickSnap(const GizmoRay& ray, const GizmoTransform& transform) const;
+        const GizmoHitTest& hit) const;
+        const GizmoRay& ray, const GizmoTransform& transform) const;
+    /// Non-mutating begin-interaction predicate — same guards as `preflightBeginInteraction` (B6.4 deepen pass).
+    [[nodiscard]] bool canBeginInteraction(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canBeginInteraction(const GizmoRay& ray,
     /// Combined update-drag + snap diagnostics (B6.4 deepen pass).
     [[nodiscard]] UpdateInteractionPreflight preflightUpdateInteraction(
                                                        const GizmoTransform& transform) const;
         const GizmoHitTest& hit) const;
         const GizmoRay& ray, const GizmoTransform& transform) const;
+    /// Non-mutating update-interaction predicate — same guards as `preflightUpdateInteraction` (B6.4 deepen pass).
+    [[nodiscard]] bool canUpdateInteraction(const GizmoHitTest& hit) const;
     /// Combined end-drag + snap diagnostics (B6.4 deepen pass).
     [[nodiscard]] EndInteractionPreflight preflightEndInteraction() const;
+    /// Non-mutating end-interaction predicate — same guards as `preflightEndInteraction` (B6.4 deepen pass).
+    [[nodiscard]] bool canEndInteraction() const;
     /// Combined interaction diagnostics for the active drag phase (B6.4 deepen pass).
     [[nodiscard]] InteractionPreflight preflightInteraction(const GizmoHitTest& hit) const;
     [[nodiscard]] InteractionPreflight preflightInteraction(
