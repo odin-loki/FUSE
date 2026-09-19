@@ -310,6 +310,16 @@ u32 countUnbalancedFlowPairsInBuffer() {
         if (entry.second.first != entry.second.second) {
             ++unbalanced;
     return unbalanced;
+bool isAsyncFlowPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    if (!isValidEventName(name) || !isValidEventName(event.name)) {
+        return false;
+    return std::strcmp(event.name, name) == 0;
+
+bool isExportableFlowEvent(const ProfileEvent& event, u32 flowId) {
+    return isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name);
 }
 
 } // namespace
@@ -1062,6 +1072,79 @@ bool hasActiveScope() {
 
 bool hasActiveAsyncFlowNesting() {
     return flowNestingDepth() > 0u;
+}
+
+bool isAsyncFlowIdPaired(u32 flowId) {
+    u32 startCount = 0u;
+    u32 finishCount = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (!isExportableFlowEvent(event, flowId)) {
+            continue;
+        }
+        if (event.phase == EventPhase::FlowStart) {
+            ++startCount;
+        } else {
+            ++finishCount;
+        }
+    }
+    return startCount == finishCount;
+}
+
+bool hasUnpairedAsyncFlowsInBuffer() {
+    return unpairedAsyncFlowIdCount() > 0u;
+}
+
+u32 unpairedAsyncFlowIdCount() {
+    u32 unpairedCount = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (!isAsyncFlowPhase(event.phase) || !isValidEventName(event.name)) {
+            continue;
+        }
+
+        const u32 flowId = event.scopeId;
+        bool seen = false;
+        for (u32 j = 0u; j < i; ++j) {
+            const ProfileEvent& prior = eventAt(j);
+            if (isAsyncFlowPhase(prior.phase) && prior.scopeId == flowId) {
+                seen = true;
+                break;
+            }
+        }
+        if (seen) {
+            continue;
+        }
+
+        if (!isAsyncFlowIdPaired(flowId)) {
+            ++unpairedCount;
+        }
+    }
+    return unpairedCount;
+}
+
+bool isScopeNameBalancedInBuffer(const char* name) {
+    if (!isValidEventName(name)) {
+        return true;
+    }
+
+    u32 beginCount = 0u;
+    u32 endCount = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (!eventNameMatches(event, name)) {
+            continue;
+        }
+        if (event.phase == EventPhase::Begin) {
+            ++beginCount;
+        } else if (event.phase == EventPhase::End) {
+            ++endCount;
+        }
+    }
+    return beginCount == endCount;
 }
 
 bool hasEvents() {
@@ -1962,6 +2045,9 @@ bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByFlowId(flowId);
+
+
+
 
 
 bool tryFirstEvent(ProfileEvent& outEvent) {
@@ -3091,6 +3177,15 @@ bool isFlowIdBalanced(u32 flowId) {
 
 
 
+
+
+
+
+
+        if (isExportableFlowEvent(event, flowId)) {
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -3679,32 +3774,11 @@ NestingConsistencyPreflight preflightNestingConsistency() {
     preflight.orphanFlowEndCount = orphanFlowEndCount();
     preflight.recordedScopePairingConsistent = isRecordedScopePairingConsistent();
     preflight.recordedFlowPairingConsistent = isRecordedAsyncFlowPairingConsistent();
-    return preflight;
-}
 
-ProfileScopePreflight preflightProfileScope(const char* name) {
-    ProfileScopePreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowBeginPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
-    return preflight;
-}
 
-AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
-    AsyncFlowEndPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
-    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
-        && !preflight.wouldUnderflowOpenCount;
+    preflight.unpairedAsyncFlowIdCount = unpairedAsyncFlowIdCount();
+    preflight.hasUnpairedAsyncFlowsInBuffer = preflight.unpairedAsyncFlowIdCount > 0u;
     return preflight;
 }
 

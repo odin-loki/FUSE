@@ -217,6 +217,8 @@ struct ChromeTraceExportPreflight {
     bool recordedScopePairingConsistent = true;
     bool recordedFlowPairingConsistent = true;
     u32 orphanScopeEndCount = 0;
+    bool hasUnpairedAsyncFlowsInBuffer = false;
+    u32 unpairedAsyncFlowIdCount = 0;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -230,8 +232,12 @@ struct ChromeTraceExportPreflight {
         return hasPairedScopeEventsInBuffer() && hasPairedFlowEventsInBuffer();
     bool hasInconsistentRecordedNesting() const {
         return !recordedScopePairingConsistent || !recordedFlowPairingConsistent;
+    bool hasExportBlockers() const {
+        return profilerDisabled || hasUnbalancedNesting() || flowDepthDetached
+            || crossThreadFlowHandoffPending || hasUnpairedAsyncFlowsInBuffer || hasInvalidNameEvents;
+    }
     bool canExportSafely() const {
-        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
+        return canExport() && !hasExportBlockers();
     }
     bool canExportSafely() const {
         return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending
@@ -718,6 +724,10 @@ bool hasActiveProfilingNesting();
 bool hasNestedAsyncFlowContext();
 bool hasActiveScopes();
 bool isFlowNestingConsistent();
+bool isAsyncFlowIdPaired(u32 flowId);
+bool hasUnpairedAsyncFlowsInBuffer();
+u32 unpairedAsyncFlowIdCount();
+bool isScopeNameBalancedInBuffer(const char* name);
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();
