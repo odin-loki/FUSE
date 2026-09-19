@@ -97,6 +97,7 @@ public:
     bool viewportMatchesResolve(const TaaResolveDesc& desc) const;
     bool needsHistoryWarmup() const { return m_history.needsWarmup(); }
     /// True when pass history is warmed and may be temporally reused (B5.9 deepen).
+    /// True when pass history is warmed and no longer needs a warm-up frame (B5.9 deepen).
     bool historyWarmupComplete() const;
     /// Frames remaining before pass history may be temporally reused (B5.9 deepen).
     u32 warmupFramesRemaining() const;
@@ -359,6 +360,8 @@ public:
     bool jitterNdcReady() const;
     /// True when expected resolve blend weights pass validation and reuse policy (B5.9 deepen).
     bool resolveBlendReady(const TaaResolveDesc& desc) const;
+    bool preflightHistoryWarmup(TaaHistoryWarmupRejectReason* reason = nullptr) const;
+    /// Early-out when pass history warm-up should be skipped (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

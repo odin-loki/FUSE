@@ -37,6 +37,7 @@ public:
     /// True until the first successful resolve warms the ping-pong targets.
     bool needsWarmup() const { return !m_validity.hasValidHistory; }
     /// True when history targets are allocated and warmed for temporal reuse (B5.9 deepen).
+    /// True when history is warmed and no longer needs a warm-up frame (B5.9 deepen).
     bool warmupComplete() const;
     /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
     u32 warmupFramesRemaining() const;

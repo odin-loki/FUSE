@@ -127,6 +127,9 @@ bool shouldSkipTaaJitterSync(u32 frameIndex, u32 sequenceLength = kTaaDefaultJit
 bool taaJitterSyncReady(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// True when NDC jitter can be produced for viewport and sequence (B5.9 deepen).
 bool taaJitterNdcReady(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+bool tryPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterGuardRejectReason& reason);
+/// Early-out when NDC jitter preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
