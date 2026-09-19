@@ -26,6 +26,18 @@ struct TaaPassStats {
     std::string message;
 };
 
+/// Composite temporal guard verdict for one frame (B5.9 deepen).
+struct TaaPassTemporalGuardVerdict {
+    bool jitterSyncOk = false;
+    bool jitterNdcOk = false;
+    bool historyWarmupComplete = false;
+    bool historyReuseOk = false;
+    bool resolveBlendOk = false;
+    TaaJitterGuardRejectReason jitterReject = TaaJitterGuardRejectReason::None;
+    TaaHistoryReuseBlockReason historyReject = TaaHistoryReuseBlockReason::None;
+    TaaResolveBlendRejectReason blendReject = TaaResolveBlendRejectReason::None;
+};
+
 /// B5.9 temporal anti-aliasing pass scaffold — jitter, history, and resolve wiring.
 class TaaPass {
 public:
@@ -393,6 +405,7 @@ public:
     bool preflightJitterAlignment(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Early-out when pass jitter alignment preflight would reject (B5.9 deepen).
     bool shouldSkipJitterAlignment(u32 frameIndex) const;
+    /// True when pass jitter can advance without blocking (B5.9 deepen).
     /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
@@ -411,6 +424,26 @@ public:
     TaaJitterGuardRejectReason classifyJitterAdvanceReject() const;
     /// Classify why pass NDC jitter would be rejected (B5.9 deepen).
     /// True when pass jitter sequence can advance (B5.9 deepen).
+    /// History reuse preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason& reason) const;
+    /// History resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& reason) const;
+    /// Resolve blend preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc,
+                                           TaaResolveBlendRejectReason& reason) const;
+    /// Compute expected blend weights with reject-reason diagnostics (B5.9 deepen).
+    bool tryComputeResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
+    /// Full resolve preflight with mandatory skip-reason output (B5.9 deepen).
+    bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
+    /// Evaluate jitter sync, history warmup/reuse, and resolve-blend preflights (B5.9 deepen).
+    void evaluateTemporalGuards(u32 frameIndex, const TaaResolveDesc& desc, u32 observedGeneration,
+                                TaaPassTemporalGuardVerdict& verdict) const;
+    /// True when all temporal guards pass (B5.9 deepen).
+    bool preflightTemporalGuards(u32 frameIndex, const TaaResolveDesc& desc, u32 observedGeneration,
+                                 TaaPassTemporalGuardVerdict* verdict = nullptr) const;
+    /// Early-out when any temporal guard would reject (B5.9 deepen).
+    bool shouldSkipTemporalGuards(u32 frameIndex, const TaaResolveDesc& desc,
+                                  u32 observedGeneration) const;
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).
