@@ -888,3 +888,14 @@ NarrowphaseBeyondBatchPreflight preflight_narrowphase_beyond_batch(
 ContactPairSlotPreflight preflight_contact_pair_slot(
     ContactPairSlotPreflight preflight{};
     const ContactPairSlotPreflight preflight =
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d666 ---
+const char* narrowphase_dispatch_reject_reason_name(NarrowphaseDispatchRejectReason reason) {
+    case NarrowphaseDispatchRejectReason::None:
+    case NarrowphaseDispatchRejectReason::EmptyPairList:
+    case NarrowphaseDispatchRejectReason::AllPairsRejected:
+NarrowphaseDispatchRejectReason narrowphase_dispatch_reject_reason(
+        return NarrowphaseDispatchRejectReason::EmptyPairList;
+        return NarrowphaseDispatchRejectReason::AllPairsRejected;
+    return NarrowphaseDispatchRejectReason::None;
+    NarrowphaseDispatchRejectReason expected) {

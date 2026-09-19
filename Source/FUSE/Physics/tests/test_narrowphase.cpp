@@ -3138,3 +3138,18 @@ void testNarrowphasePairSlotPass2Guards() {
     expectTrue(!swappedPreflight.can_dispatch(), "pair slot preflight rejects non-canonical pair");
         fuse::physics::narrowphase::should_skip_narrowphase_pair_slot(pairs[1], bodies, shapes, pairs, 1u),
         swappedPreflight.pair.reason ==
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d666 ---
+void testShouldRunContactPairDispatchGuards() {
+void testNarrowphaseDispatchRejectReasonGuards() {
+            fuse::physics::narrowphase::NarrowphaseDispatchRejectReason::EmptyPairList),
+            fuse::physics::narrowphase::NarrowphaseDispatchRejectReason::AllPairsRejected),
+        batchPreflight.reason ==
+            fuse::physics::narrowphase::NarrowphaseDispatchRejectReason::AllPairsRejected,
+    expectTrue(!batchPreflight.can_dispatch(), "batch preflight cannot dispatch all-rejected list");
+            buffer, fuse::physics::narrowphase::ContactBufferCompactRejectReason::AllValid),
+            clean, fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::NoWork),
+void testShouldRunManifoldPruneGuards() {
+void testShouldRunFrictionBasisRebuildGuards() {
+        "should_skip_friction_basis_preflight true with valid cached basis");
+    testNarrowphaseDispatchRejectReasonGuards();

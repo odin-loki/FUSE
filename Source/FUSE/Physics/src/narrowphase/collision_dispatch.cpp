@@ -116,3 +116,6 @@ NarrowphaseBufferFinalizePreflight preflight_narrowphase_buffer_finalize(const C
 
 // --- deepen additive from deepen-b4-narrowphase-guards-56fd ---
         if (should_skip_contact_pair_beyond_dispatch(pairs[pairIndex], bodies, shapes)) {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d666 ---
+        NarrowphaseDispatchRejectReason::EmptyPairList) {

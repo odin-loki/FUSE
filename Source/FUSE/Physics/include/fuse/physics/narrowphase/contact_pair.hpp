@@ -395,3 +395,12 @@ struct ContactPairSlotPreflight {
     ContactPairPreflight base{};
     ContactPairDeepenPassPreflight deepenPass{};
 ContactPairSlotPreflight preflight_contact_pair_slot(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-d666 ---
+enum class NarrowphaseDispatchRejectReason : u8 {
+const char* narrowphase_dispatch_reject_reason_name(NarrowphaseDispatchRejectReason reason);
+NarrowphaseDispatchRejectReason narrowphase_dispatch_reject_reason(
+    NarrowphaseDispatchRejectReason expected);
+    NarrowphaseDispatchRejectReason reason = NarrowphaseDispatchRejectReason::None;
+    bool can_dispatch() const { return reason == NarrowphaseDispatchRejectReason::None && dispatchableCount > 0u; }
+    bool can_skip() const { return reason != NarrowphaseDispatchRejectReason::None || dispatchableCount == 0u; }
