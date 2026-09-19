@@ -4690,3 +4690,6 @@ void testTaaPassTryClassifyGuardWrappers() {
 
 // --- deepen additive from deepen-taa-pass-guards-8544 ---
                "pass classifyResolveBlendReject passes after warmup");
+
+// --- deepen additive from deepen-taa-pass-guards-55b4 ---
+    expectTrue(pass->tryPreflightResolve(resolveDesc, skipReason), "pass tryPreflightResolve passes after init");
