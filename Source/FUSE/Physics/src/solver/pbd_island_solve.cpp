@@ -3188,3 +3188,9 @@ IslandSleepSolveRejectPreflight preflight_island_sleep_solve_reject(const Contac
 // --- deepen additive from deepen-pbd-island-reject-reasons-32d9 ---
         preflight.reason = IslandSolveJobRejectReason::EmptyIsland;
         preflight.reason = IslandSolveRejectReason::NoDispatchableIslands;
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-a2cc ---
+    case IslandSolveRejectReason::OutOfRangeIsland:
+        preflight.reason = IslandSolveRejectReason::OutOfRangeRefs;
+        preflight.reason = IslandDispatchRejectReason::EmptyGraph;
+        preflight.reason = IslandWakeRejectReason::NoWakeTarget;

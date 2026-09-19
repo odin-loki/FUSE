@@ -5567,3 +5567,15 @@ void testIslandSleepWakeRejectReasons() {
     expectTrue(sleepingWake.reason == IslandWakeRejectReason::NoMixedSleepState,
     const IslandConstraintSolvePreflight staleSolve = preflight_island_constraint_solve(
     expectTrue(staleSolve.reason == IslandConstraintSolveRejectReason::NoMovableBodies,
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-a2cc ---
+    const IslandDispatchPreflight dispatchPreflight = preflight_island_dispatch(graph, dt);
+    expectTrue(dispatchPreflight.can_dispatch(), "dispatch preflight can dispatch constrained graph");
+    expectTrue(invalidDtPreflight.invalidDt, "dispatch preflight flags invalid dt");
+    expectTrue(emptySolve.reason == IslandDispatchRejectReason::EmptyGraph,
+    const IslandSolveJobPreflight invalidJobPreflight = preflight_solve_island_job(job, 0.f);
+    expectTrue(invalidJobPreflight.reason == IslandSolveRejectReason::InvalidDt,
+    expectTrue(solvePreflight.bodies.reason == IslandSolveRejectReason::NoMovableBodies,
+    expectTrue(mixedSleep.reason == IslandSleepRejectReason::AllSleeping,
+    expectTrue(outOfRangeSleep.reason == IslandSleepRejectReason::OutOfRangeIsland,
+    const IslandWakePreflight noWake = preflight_island_wake(graph.island(mixedIsland), bodies);
