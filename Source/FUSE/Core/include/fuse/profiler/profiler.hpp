@@ -526,6 +526,8 @@ bool hasActiveScope();
 bool hasActiveAsyncFlowNesting();
 u32 flowDepthMismatch();
 bool reconcileDetachedFlowDepth();
+bool canEndAsyncFlow();
+void reconcileDetachedFlowNestingDepth();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();
@@ -606,6 +608,8 @@ u32 lastEventIndexByPhase(EventPhase phase);
 u32 findFirstEventIndexByPhase(EventPhase phase);
 u32 findLastEventIndexByPhase(EventPhase phase);
 u32 findFirstEventIndexByName(const char* name);
+bool tryFindEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFirstEventOfPhase(EventPhase phase, ProfileEvent& outEvent);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);

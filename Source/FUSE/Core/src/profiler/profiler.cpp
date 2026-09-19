@@ -867,6 +867,23 @@ bool reconcileDetachedFlowDepth() {
     return true;
 }
 
+bool canEndAsyncFlow() {
+    return enabled() && openAsyncFlowCount() > 0u;
+}
+
+void reconcileDetachedFlowNestingDepth() {
+    if (!isFlowDepthDetached()) {
+        return;
+    }
+
+    u32& depth = threadLocalFlowNestingDepth();
+    const u32 openCount = openAsyncFlowCount();
+    while (depth > openCount) {
+        popFlowNestingDepth();
+        depth = threadLocalFlowNestingDepth();
+    }
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -953,9 +970,9 @@ bool isBlankEventName(const char* name) {
             break;
         default:
             return false;
-        }
-    }
-    return true;
+bool isValidEventName(const char* name) {
+
+        if (*cursor != ' ' && *cursor != '\t' && *cursor != '\n' && *cursor != '\r') {
 }
 
 bool isFirstEventIndex(u32 index) {
@@ -1963,6 +1980,50 @@ u32 lastExportableEventIndex() {
         }
     }
     return kInvalidEventIndex;
+}
+
+u32 lastExportableEventIndex() {
+    const u32 count = eventCount();
+    for (u32 i = count; i > 0u; --i) {
+        const u32 index = i - 1u;
+        if (isEventExportable(index)) {
+            return index;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+bool tryFindEventByName(const char* name, ProfileEvent& outEvent) {
+    if (!isValidEventName(name)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.name != nullptr && std::string(event.name) == name) {
+            outEvent = event;
+            return isValidProfileEvent(outEvent);
+        }
+    }
+
+    outEvent = ProfileEvent{};
+    return false;
+}
+
+bool tryFirstEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.phase == phase && isValidProfileEvent(event)) {
+            outEvent = event;
+            return true;
+        }
+    }
+
+    outEvent = ProfileEvent{};
+    return false;
 }
 
 const ProfileEvent& lastEvent() {
