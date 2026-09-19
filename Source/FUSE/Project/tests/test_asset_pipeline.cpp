@@ -2022,3 +2022,6 @@ void testCookerReconcileEstimatorGuards() {
     expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash + 1u),
                "would_invalidate_stale_content mirrors count probe after change");
                "would_invalidate_stale_upstream mirrors count probe");
+
+// --- deepen additive from deepen-cooker-hash-b79-2ae1 ---
+               "empty output path would_invalidate_downstream is guarded");

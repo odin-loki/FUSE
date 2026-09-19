@@ -1146,3 +1146,9 @@ void testCookCachePreflightEntryGuards() {
     expectTrue(zero_key.reason == fuse::project::CookHashRejectReason::InvalidCacheKey,
                    fuse::project::CookHashRejectReason::InvalidCacheKey)) == "invalid_cache_key",
     testCookCachePreflightEntryGuards();
+
+// --- deepen additive from deepen-cooker-hash-b79-2ae1 ---
+    expectTrue(seeded.ok, "seed cook for would_invalidate path probes ok");
+void testCookHashPreflightCacheEntryGuards() {
+    expectTrue(zero_preflight.reason == fuse::project::CookHashRejectReason::InvalidCacheKey,
+    testCookHashPreflightCacheEntryGuards();

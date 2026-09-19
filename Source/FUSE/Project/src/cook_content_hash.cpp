@@ -525,3 +525,6 @@ CookHashPreflight preflight_manifest_entry_with_dependencies_hash(const CookMani
 
 // --- deepen additive from deepen-b79-cooker-hash-guards-3cee ---
     case CookHashRejectReason::InvalidCacheKey:
+
+// --- deepen additive from deepen-cooker-hash-b79-2ae1 ---
+        preflight.reason = CookHashRejectReason::InvalidCacheKey;
