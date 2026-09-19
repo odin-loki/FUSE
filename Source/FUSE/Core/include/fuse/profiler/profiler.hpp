@@ -410,6 +410,8 @@ bool isNestingStateClean();
 /// True when scope/flow nesting is balanced and no async flows remain open.
 bool isProfilerGuardStateBalanced();
 
+/// Preflight for scope/async-flow/counter name strings — rejects null and empty names.
+
 bool hasEvents();
 bool hasExportableEvents();
 bool hasOpenAsyncFlows();
@@ -493,6 +495,7 @@ bool tryFindFirstFlowEvent(u32 flowId, ProfileEvent& outEvent);
 bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent);
 bool tryEventAt(u32 index, ProfileEvent& out);
 /// Safe ring-buffer lookup — returns false and clears `outEvent` when the index is invalid.
+bool isLastEventIndexValid();
 const ProfileEvent& lastEvent();
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
@@ -680,6 +683,8 @@ ChromeTraceExportRejectReason chromeTraceExportRejectReason();
 
 /// Export preflights — export is always safe to invoke; these diagnose content/readiness.
 bool hasExportableEvents();
+/// Export preflights — true when chrome JSON would include at least one trace event.
+bool isChromeTraceExportEmpty();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();

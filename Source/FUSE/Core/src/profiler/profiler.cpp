@@ -549,6 +549,14 @@ bool isProfilerGuardStateBalanced() {
     return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
 }
 
+bool isProfilerGuardStateBalanced() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
+}
+
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -955,6 +963,8 @@ u32 lastEventIndex() {
 
 bool tryFirstEvent(ProfileEvent& outEvent) {
     return tryEventAt(0u, outEvent);
+bool isLastEventIndexValid() {
+    return lastEventIndex() != kInvalidEventIndex;
 }
 
 bool tryLastEvent(ProfileEvent& outEvent) {
@@ -1143,6 +1153,14 @@ bool isExportEmpty() {
     preflight.unbalancedScopeNesting = !isScopeNestingBalanced();
     preflight.unbalancedFlowNesting = !isFlowNestingBalanced();
     preflight.bufferTruncated = isBufferFull();
+    for (u32 i = 0u; i < count; ++i) {
+        if (isValidEventName(eventAt(i).name)) {
+
+bool hasExportableEvents() {
+    return exportableEventCount() > 0u;
+
+bool isChromeTraceExportEmpty() {
+    return !hasExportableEvents();
 
 void reset() {
     const std::lock_guard<std::mutex> lock(g_exportMutex);
