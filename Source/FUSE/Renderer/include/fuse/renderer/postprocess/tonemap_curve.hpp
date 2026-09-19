@@ -69,6 +69,9 @@ bool tonemap_curve_is_usable(const TonemapCurveParams& params, f32 white_input =
 bool tonemap_curve_can_apply(const TonemapCurveParams& params);
 /// True when curve params and endpoint anchors are ready for application (B5.10 deepen).
 bool tonemap_curve_ready_to_apply(const TonemapCurveParams& params, f32 white_input = 1.f, f32 epsilon = 1e-4f);
+/// True when a curve can be applied (disabled curves always pass) (B5.10 deepen).
+/// True when a per-channel curve output stays in display range (B5.10 deepen).
+bool tonemap_curve_channel_in_display_range(f32 channel, f32 epsilon = 1e-4f);
 /// True when black/white anchors stay in display range with positive span (B5.10 deepen).
 bool tonemap_curve_endpoints_valid(const TonemapCurveEndpoints& endpoints, f32 epsilon = 1e-4f);
 /// True when endpoint input anchors are ordered and non-negative (B5.10 deepen).
