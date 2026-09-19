@@ -3554,3 +3554,19 @@ void testTaaPassCombinedPreflightGuards() {
     expectTrue(pass->tryPreflightJitterSync(3u, jitterReject), "pass tryPreflightJitterSync passes");
     expectTrue(!zeroPass->preflightJitterNdc(&jitterReject),
     testTaaPassCombinedPreflightGuards();
+
+// --- deepen additive from deepen-b59-taa-guards-bd40 ---
+void testTaaDeepenDiagnosticGuardOverloads() {
+               "wouldSkip alias matches shouldSkip for empty history");
+               "shouldSkip and wouldSkip agree for empty history");
+               "wouldSkip alias passes for warmed history");
+    expectTrue(!fuse::renderer::wouldSkipTaaResolveBlend(desc, history),
+               "wouldSkip alias passes for steady blend");
+    expectTrue(fuse::renderer::wouldSkipTaaResolveBlend(desc, history) ==
+               "wouldSkip and shouldSkip agree for resolve blend");
+    expectTrue(fuse::renderer::tryPreflightTaaJitterNdc(128u, 128u, 8u, jitterReason),
+    expectTrue(!fuse::renderer::tryPreflightTaaJitterNdc(0u, 128u, 8u, jitterReason),
+    expectTrue(pass->wouldSkipHistoryReuse(0u), "pass wouldSkipHistoryReuse before warmup");
+    expectTrue(!pass->wouldSkipResolveBlend(resolveDesc), "pass wouldSkipResolveBlend before warmup resolve");
+    expectTrue(!pass->wouldSkipHistoryReuse(0u), "pass wouldSkipHistoryReuse after warmup");
+    expectTrue(!pass->wouldSkipResolveBlend(resolveDesc), "pass wouldSkipResolveBlend after warmup");

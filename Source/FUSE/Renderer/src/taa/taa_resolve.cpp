@@ -607,3 +607,6 @@ bool wouldRejectTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHist
     const bool resolveOk = preflightTaaResolve(desc, history, skipReason);
     const bool blendOk = preflightTaaResolveBlendWeights(desc, history, blendReason);
     return !preflightTaaResolveFrame(desc, history);
+
+// --- deepen additive from deepen-b59-taa-guards-bd40 ---
+bool wouldSkipTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
