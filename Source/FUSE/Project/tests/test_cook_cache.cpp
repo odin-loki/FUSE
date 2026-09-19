@@ -1333,3 +1333,9 @@ void testCookHashPreflightManifestWithUpstream() {
     expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_would_source.obj", 1u}}),
     expectTrue(!cooker.cache().would_invalidate_source(""), "empty source would_invalidate guarded");
     expectTrue(!cooker.cache().would_invalidate_output(""), "empty output would_invalidate guarded");
+
+// --- deepen additive from b79-cooker-hash-deepen-d85c ---
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, recomputed),
+               "recomputed hash makes would_invalidate_stale_content true for stale entry");
+void testCookHashManifestWithUpstreamPreflight() {
+    testCookHashManifestWithUpstreamPreflight();
