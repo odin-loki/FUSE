@@ -3233,3 +3233,22 @@ void testChromeTraceExportPreflightNestingWarnings() {
     expectTrue(detachedPreflight.hasUnbalancedNesting(),
     testChromeTraceExportPreflightRingSaturated();
     testChromeTraceExportPreflightNestingWarnings();
+
+// --- deepen additive from deepen-b16-profiler-guards-739f ---
+void testEventIndexBoundaryGuards() {
+void testTryEventPhaseAtGuard() {
+    expectTrue(!fuse::profiler::tryEventPhaseAt(0u, phase), "tryEventPhaseAt false on empty buffer");
+    expectTrue(fuse::profiler::tryEventPhaseAt(0u, phase), "tryEventPhaseAt true for begin event");
+    expectTrue(phase == fuse::profiler::EventPhase::Begin, "tryEventPhaseAt copies begin phase");
+    expectTrue(fuse::profiler::tryEventPhaseAt(1u, phase), "tryEventPhaseAt true for end event");
+    expectTrue(phase == fuse::profiler::EventPhase::End, "tryEventPhaseAt copies end phase");
+    expectTrue(!fuse::profiler::tryEventPhaseAt(2u, phase), "tryEventPhaseAt false past event count");
+void testCountEventsByPhaseGuard() {
+void testCanEndAsyncFlowGuard() {
+void testHasActiveScopesAndFlowsGuards() {
+void testRingBufferOverflowGuards() {
+void testNonExportableEventCountGuard() {
+void testChromeTraceExportPreflightExportWarnings() {
+        const fuse::profiler::ChromeTraceExportPreflight activeScope = fuse::profiler::preflightChromeTraceExport();
+    const fuse::profiler::ChromeTraceExportPreflight closed = fuse::profiler::preflightChromeTraceExport();
+    testChromeTraceExportPreflightExportWarnings();
