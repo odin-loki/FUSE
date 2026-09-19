@@ -1314,6 +1314,8 @@ bool canLookupAtCoord(const FroxelDensityGrid& grid,
 /// Classify density lookup rejection — same ordering as `tryCanLookupAtIndex` (B5.11 deepen).
 /// Non-mutating density lookup preflight — returns true when lookup would proceed (B5.11 deepen).
 /// Non-mutating coord lookup preflight; returns true when lookup would not block.
+DensityLookupRejectReason classifyDensityLookupCoordReject(const FroxelDensityGrid& grid,
+bool preflightDensityLookupCoord(const FroxelDensityGrid& grid,
 /// Diagnose why coord lookup preflight would reject; vacuously succeeds on accessible grids.
 bool tryCanLookupAtCoord(const FroxelDensityGrid& grid,
                          const FroxelGridDesc& desc,
@@ -1865,6 +1867,7 @@ GridDensityRejectReason classifyGridDensityReject(const FroxelDensityGrid& grid,
 /// Classify grid-density validation rejection — same ordering as `tryValidateGridDensity`.
 /// Grid-density validation preflight without mutating storage (B5.11 deepen).
 /// Non-mutating grid-density preflight; returns true when validation would not block.
+/// Non-mutating grid-density preflight — returns true when validation would pass.
 /// Diagnose the first density invariant that fails; vacuously succeeds when `desc` is empty.
 bool tryValidateGridDensity(const FroxelDensityGrid& grid,
                             GridDensityRejectReason& outReason,
