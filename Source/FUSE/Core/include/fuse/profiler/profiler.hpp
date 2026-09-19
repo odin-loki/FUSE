@@ -450,3 +450,6 @@ NestingStateRejectReason nestingStateRejectReason();
 
 // --- deepen additive from deepen-fuse-b16-profiler-e55b ---
 bool tryFindLastEventIndexByName(const char* name, u32& outIndex);
+
+// --- deepen additive from deepen-b16-profiler-guards-5b61 ---
+EventLookupRejectReason exportableEventLookupRejectReason(u32 index);

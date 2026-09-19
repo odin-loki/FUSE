@@ -3871,3 +3871,24 @@ void testChromeTraceExportPreflightBufferPairs() {
     expectTrue(!closedPreflight.scopePairImbalancedInBuffer,
     expectTrue(!closedPreflight.flowPairImbalancedInBuffer,
     testChromeTraceExportPreflightBufferPairs();
+
+// --- deepen additive from deepen-b16-profiler-guards-5b61 ---
+void testEventNameRejectReasonGuard() {
+    expectTrue(fuse::profiler::eventNameRejectReason("scope")
+                   fuse::profiler::EventNameRejectReason::Null)) == "null",
+                   fuse::profiler::EventNameRejectReason::Empty)) == "empty",
+void testWouldRecordAndCanBeginEndGuards() {
+    expectTrue(outEvent.name == nullptr, "tryFirstExportableEvent clears output on empty buffer");
+void testEventLookupRejectReasonGuard() {
+    expectTrue(fuse::profiler::eventLookupRejectReason(0u)
+               "eventLookupRejectReason marks empty buffer");
+    expectTrue(fuse::profiler::exportableEventLookupRejectReason(99u)
+               "eventLookupRejectReason none for valid begin");
+    expectTrue(fuse::profiler::exportableEventLookupRejectReason(1u)
+               "eventLookupRejectReason out-of-range past event count");
+                   fuse::profiler::EventLookupRejectReason::NotExportable)) == "not_exportable",
+void testHasActiveScopeAndFlowNestingGuard() {
+void testChromeTraceExportRejectReasonGuard() {
+    testEventNameRejectReasonGuard();
+    testEventLookupRejectReasonGuard();
+    testChromeTraceExportRejectReasonGuard();

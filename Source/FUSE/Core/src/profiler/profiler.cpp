@@ -1368,3 +1368,18 @@ NestingStateRejectReason nestingStateRejectReason() {
 // --- deepen additive from deepen-fuse-b16-profiler-e55b ---
 bool tryFindLastEventIndexByName(const char* name, u32& outIndex) {
         if (tryExportableEventAt(i - 1u, outEvent)) {
+
+// --- deepen additive from deepen-b16-profiler-guards-5b61 ---
+        return EventLookupRejectReason::NotExportable;
+EventLookupRejectReason exportableEventLookupRejectReason(u32 index) {
+    case EventLookupRejectReason::NotExportable:
+        return NestingStateRejectReason::ActiveScope;
+        return NestingStateRejectReason::CrossThreadFlowHandoffPending;
+        return NestingStateRejectReason::ActiveFlowNesting;
+    case NestingStateRejectReason::ActiveScope:
+    case NestingStateRejectReason::ActiveFlowNesting:
+    case NestingStateRejectReason::CrossThreadFlowHandoffPending:
+        return ChromeTraceExportRejectReason::CrossThreadFlowHandoffPending;
+        return ChromeTraceExportRejectReason::UnbalancedNesting;
+    case ChromeTraceExportRejectReason::UnbalancedNesting:
+    case ChromeTraceExportRejectReason::CrossThreadFlowHandoffPending:
