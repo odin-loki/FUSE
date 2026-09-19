@@ -1706,6 +1706,14 @@ const char* islandBuildRejectReasonName(IslandBuildRejectReason reason);
 
 /// Diagnose why build would reject; vacuously succeeds when build may proceed.
 IslandBuildRejectReason island_build_reject_reason(
+    EmptyInput,
+    OutOfRangeContactRef,
+    OutOfRangeDistanceRef,
+
+/// Human-readable label for island-build reject reasons (logging / tests).
+
+/// Diagnose why build would skip; vacuously succeeds when build may proceed.
+IslandBuildRejectReason islandBuildRejectReason(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -1755,6 +1763,29 @@ bool can_skip_island_build_for_reason(u32 bodyCount,
 
 /// Non-mutating build predicate — mirrors `preflight_island_build` (B4.4 deepen follow-up pass).
 bool should_run_island_build(u32 bodyCount,
+/// Returns true when `islandBuildRejectReason` matches `expected` (B4.4 deepen follow-up pass).
+bool islandBuildRejectsForReason(u32 bodyCount,
+                                 const std::vector<narrowphase::ContactManifold>& contacts,
+
+/// Read-only island-build diagnostics with reject reason — no mutation (B4.4 deepen follow-up).
+struct IslandBuildRejectPreflight {
+    IslandBuildRejectReason reason = IslandBuildRejectReason::None;
+    IslandBuildPreflight build{};
+    bool emptyInput = false;
+    bool unsafeContactRefs = false;
+    bool unsafeDistanceRefs = false;
+
+    bool can_build() const { return reason == IslandBuildRejectReason::None && build.can_build(); }
+};
+
+IslandBuildRejectPreflight preflight_island_build_reject(
+    u32 bodyCount,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+bool canSkipIslandBuild(u32 bodyCount,
+
+/// Non-mutating build predicate — mirrors `preflight_island_build_reject` (B4.4 deepen follow-up pass).
+bool shouldRunIslandBuild(u32 bodyCount,
 
 /// Body participation for one island constraint solve (sleep/static/movable guards).
 struct IslandSolveBodiesPreflight {
@@ -1878,6 +1909,13 @@ const char* island_constraint_solve_reject_reason_name(IslandConstraintSolveReje
 
 /// Diagnose why constraint solve would skip; vacuously succeeds when solve may proceed (B4.4 deepen follow-up pass).
 IslandConstraintSolveRejectReason island_constraint_solve_reject_reason(
+/// Why island constraint solve would reject (B4.4 deepen follow-up pass).
+};
+
+/// Human-readable label for island constraint-solve reject reasons (logging / tests).
+
+/// Diagnose why constraint solve would skip; vacuously succeeds when solve may proceed.
+IslandConstraintSolveRejectReason islandConstraintSolveRejectReason(
     const ContactIslandGraph::Island& island,
     const RigidBodySoA& bodies,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -2042,7 +2080,6 @@ struct IslandConstraintSolveGraphStats {
 
     u32 noMovableBodiesCount = 0;
     u32 noInRangeRefsCount = 0;
-};
 
 /// Graph-level constraint-solve preflight for selective per-island solve dispatch.
 struct IslandConstraintSolveGraphPreflight {
@@ -2060,35 +2097,16 @@ struct IslandFullSolvePreflight {
     IslandConstraintSolvePreflight constraint{};
 
     bool can_solve() const { return !skipped && job.can_dispatch() && constraint.can_solve(); }
-    bool has_solveable_islands() const { return !skipped && stats.solveableCount > 0u; }
-};
 
-/// Aggregate constraint-solve counts for graph-level batch guards.
-struct IslandConstraintSolveGraphStats {
-    u32 totalIslands = 0;
-    u32 solveableCount = 0;
-    u32 allSleepingCount = 0;
-    u32 noMovableBodiesCount = 0;
     u32 staleRefsCount = 0;
-    u32 emptyCount = 0;
-};
 
-/// Graph-level constraint-solve preflight for selective per-island solve dispatch.
-struct IslandConstraintSolveGraphPreflight {
-    IslandConstraintSolveGraphStats stats{};
-    bool skipped = false;
 
-    bool can_solve() const { return !skipped && stats.solveableCount > 0u; }
-};
 
 /// Combined constraint solve + timestep preflight for one island dispatch.
 struct IslandConstraintSolveDispatchPreflight {
-    IslandConstraintSolvePreflight solve{};
     bool invalidDt = false;
-    bool skipped = false;
 
     bool can_solve() const { return !skipped && !invalidDt && solve.can_solve(); }
-};
 
 /// Non-mutating constraint-solve skip predicate — inverse of `can_solve` (B4.4 deepen follow-up pass).
 bool can_skip_island_constraint_solve_for_reason(
@@ -2098,21 +2116,12 @@ bool can_skip_island_constraint_solve_for_reason(
     const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Non-mutating constraint-solve predicate — mirrors `preflight_island_constraint_solve` (B4.4 deepen follow-up pass).
-bool should_run_island_constraint_solve(
-    const ContactIslandGraph::Island& island,
-    const RigidBodySoA& bodies,
-    const std::vector<narrowphase::ContactManifold>& contacts,
-    const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Why island sleep preflight would skip constraint solve (B4.4 deepen follow-up pass).
-enum class IslandSleepRejectReason : u8 {
     None = 0,
     EmptyIsland,
     AllSleeping,
-};
 
-/// Human-readable label for island sleep reject reasons (B4.4 deepen follow-up pass).
-const char* island_sleep_reject_reason_name(IslandSleepRejectReason reason);
 
 /// Diagnose why island sleep preflight would skip solve; vacuously succeeds when solve may proceed (B4.4 deepen follow-up pass).
 IslandSleepRejectReason island_sleep_reject_reason(const ContactIslandGraph::Island& island,
@@ -2120,8 +2129,24 @@ IslandSleepRejectReason island_sleep_reject_reason(const ContactIslandGraph::Isl
 
 /// Returns true when `island_sleep_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
 bool island_sleep_rejects_for_reason(const ContactIslandGraph::Island& island,
-                                     const RigidBodySoA& bodies,
                                      IslandSleepRejectReason expected);
+/// Returns true when `islandConstraintSolveRejectReason` matches `expected` (B4.4 deepen follow-up pass).
+bool islandConstraintSolveRejectsForReason(const ContactIslandGraph::Island& island,
+
+/// Read-only constraint-solve diagnostics with reject reason — no mutation (B4.4 deepen follow-up).
+struct IslandConstraintSolveRejectPreflight {
+    bool emptyIsland = false;
+    bool staleRefs = false;
+    bool noMovableBodies = false;
+
+    bool can_solve() const { return reason == IslandConstraintSolveRejectReason::None && solve.can_solve(); }
+
+IslandConstraintSolveRejectPreflight preflight_island_constraint_solve_reject(
+
+bool canSkipIslandConstraintSolve(const ContactIslandGraph::Island& island,
+
+/// Non-mutating constraint-solve predicate — mirrors reject preflight (B4.4 deepen follow-up pass).
+bool shouldRunIslandConstraintSolve(const ContactIslandGraph::Island& island,
 
 /// Per-island sleep state for solve early-out stubs.
 struct IslandSleepPreflight {
@@ -3016,6 +3041,146 @@ struct IslandBatchWakeResult {
 
     bool any_woke() const { return wokeCount > 0u; }
 };
+
+/// Why per-island sleep solve early-out would not apply (B4.4 deepen follow-up pass).
+enum class IslandSleepRejectReason : u8 {
+    None = 0,
+    EmptyIsland,
+    OutOfRangeIndex,
+    HasActiveDynamics,
+};
+
+/// Human-readable label for island-sleep reject reasons (logging / tests).
+const char* islandSleepRejectReasonName(IslandSleepRejectReason reason);
+
+/// Diagnose why sleep preflight cannot skip solve; `None` when all dynamics are sleeping.
+IslandSleepRejectReason islandSleepRejectReason(const ContactIslandGraph::Island& island,
+                                                const RigidBodySoA& bodies);
+
+/// Returns true when `islandSleepRejectReason` matches `expected` (B4.4 deepen follow-up pass).
+bool islandSleepRejectsForReason(const ContactIslandGraph::Island& island,
+                                 const RigidBodySoA& bodies,
+                                 IslandSleepRejectReason expected);
+
+/// Read-only sleep-solve diagnostics with reject reason — no mutation (B4.4 deepen follow-up).
+struct IslandSleepRejectPreflight {
+    IslandSleepRejectReason reason = IslandSleepRejectReason::None;
+    IslandSleepPreflight sleep{};
+    bool emptyIsland = false;
+    bool hasActiveDynamics = false;
+
+    bool can_skip_solve() const { return reason == IslandSleepRejectReason::None && sleep.can_skip_solve(); }
+};
+
+IslandSleepRejectPreflight preflight_island_sleep_reject(const ContactIslandGraph::Island& island,
+                                                         const RigidBodySoA& bodies);
+
+IslandSleepRejectPreflight preflight_island_sleep_reject_by_index(const ContactIslandGraph& graph,
+                                                                  u32 islandIndex,
+                                                                  const RigidBodySoA& bodies);
+
+/// Why per-island wake would reject (B4.4 deepen follow-up pass).
+enum class IslandWakeRejectReason : u8 {
+    None = 0,
+    EmptyIsland,
+    OutOfRangeIndex,
+    NoMixedSleepState,
+    NoActiveDynamic,
+};
+
+/// Human-readable label for island-wake reject reasons (logging / tests).
+const char* islandWakeRejectReasonName(IslandWakeRejectReason reason);
+
+/// Diagnose why wake would skip; vacuously succeeds when wake may proceed.
+IslandWakeRejectReason islandWakeRejectReason(const ContactIslandGraph::Island& island,
+                                              const RigidBodySoA& bodies);
+
+/// Returns true when `islandWakeRejectReason` matches `expected` (B4.4 deepen follow-up pass).
+bool islandWakeRejectsForReason(const ContactIslandGraph::Island& island,
+                                const RigidBodySoA& bodies,
+                                IslandWakeRejectReason expected);
+
+/// Read-only wake diagnostics with reject reason — no mutation (B4.4 deepen follow-up).
+struct IslandWakeRejectPreflight {
+    IslandWakeRejectReason reason = IslandWakeRejectReason::None;
+    IslandWakePreflight wake{};
+    bool emptyIsland = false;
+    bool noMixedSleepState = false;
+    bool noActiveDynamic = false;
+
+    bool should_wake_sleepers() const {
+        return reason == IslandWakeRejectReason::None && wake.should_wake_sleepers();
+    }
+};
+
+IslandWakeRejectPreflight preflight_island_wake_reject(const ContactIslandGraph::Island& island,
+                                                       const RigidBodySoA& bodies);
+
+IslandWakeRejectPreflight preflight_island_wake_reject_by_index(const ContactIslandGraph& graph,
+                                                                u32 islandIndex,
+                                                                const RigidBodySoA& bodies);
+
+/// Why graph-level sleep batching would reject solve dispatch (B4.4 deepen follow-up pass).
+enum class IslandSleepGraphRejectReason : u8 {
+    None = 0,
+    AllSleepingOrEmpty,
+};
+
+const char* islandSleepGraphRejectReasonName(IslandSleepGraphRejectReason reason);
+
+IslandSleepGraphRejectReason islandSleepGraphRejectReason(const ContactIslandGraph& graph,
+                                                          const RigidBodySoA& bodies);
+
+bool islandSleepGraphRejectsForReason(const ContactIslandGraph& graph,
+                                      const RigidBodySoA& bodies,
+                                      IslandSleepGraphRejectReason expected);
+
+struct IslandSleepGraphRejectPreflight {
+    IslandSleepGraphRejectReason reason = IslandSleepGraphRejectReason::None;
+    IslandSleepGraphPreflight sleep{};
+    bool allSleepingOrEmpty = false;
+
+    bool has_solveable_islands() const {
+        return reason == IslandSleepGraphRejectReason::None && sleep.has_solveable_islands();
+    }
+};
+
+IslandSleepGraphRejectPreflight preflight_island_sleep_graph_reject(const ContactIslandGraph& graph,
+                                                                    const RigidBodySoA& bodies);
+
+bool canSkipIslandSleepSolveGraph(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
+
+bool shouldRunIslandSleepSolveGraph(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
+
+/// Why graph-level wake batching would reject (B4.4 deepen follow-up pass).
+enum class IslandWakeGraphRejectReason : u8 {
+    None = 0,
+    NoWakeableIslands,
+};
+
+const char* islandWakeGraphRejectReasonName(IslandWakeGraphRejectReason reason);
+
+IslandWakeGraphRejectReason islandWakeGraphRejectReason(const ContactIslandGraph& graph,
+                                                        const RigidBodySoA& bodies);
+
+bool islandWakeGraphRejectsForReason(const ContactIslandGraph& graph,
+                                     const RigidBodySoA& bodies,
+                                     IslandWakeGraphRejectReason expected);
+
+struct IslandWakeGraphRejectPreflight {
+    IslandWakeGraphRejectReason reason = IslandWakeGraphRejectReason::None;
+    IslandWakeGraphPreflight wake{};
+    bool noWakeableIslands = false;
+
+    bool can_wake() const { return reason == IslandWakeGraphRejectReason::None && wake.can_wake(); }
+};
+
+IslandWakeGraphRejectPreflight preflight_island_wake_graph_reject(const ContactIslandGraph& graph,
+                                                                  const RigidBodySoA& bodies);
+
+bool canSkipIslandWakeGraph(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
+
+bool shouldRunIslandWakeGraph(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
 
 /// Aggregate contact-impulse warm-start counts for graph-level batch guards.
 struct IslandContactImpulseWarmStartStats {

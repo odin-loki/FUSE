@@ -895,5 +895,27 @@ bool distance_body_indices_in_range(const DistanceConstraint& constraint, u32 bo
 
 /// True when `bodyA` and `bodyB` refer to the same body index (degenerate pair).
 bool constraint_pair_is_degenerate(u32 bodyA, u32 bodyB);
+/// Why body union would reject during island graph build (B4.4 deepen follow-up pass).
+enum class IslandUnionRejectReason : u8 {
+    OutOfRangeBodyA,
+    OutOfRangeBodyB,
+
+/// Human-readable label for island-union reject reasons (logging / tests).
+const char* islandUnionRejectReasonName(IslandUnionRejectReason reason);
+
+/// Diagnose why union would skip; vacuously succeeds when union may proceed.
+IslandUnionRejectReason islandUnionRejectReason(u32 bodyCount, u32 bodyA, u32 bodyB);
+
+/// Returns true when `islandUnionRejectReason` matches `expected` (B4.4 deepen follow-up pass).
+bool islandUnionRejectsForReason(u32 bodyCount, u32 bodyA, u32 bodyB, IslandUnionRejectReason expected);
+
+/// Non-mutating union predicate — inverse of `islandUnionRejectReason` (B4.4 deepen follow-up pass).
+bool bodies_in_union_range(u32 bodyCount, u32 bodyA, u32 bodyB);
+
+/// Non-mutating build-range predicate for valid contacts (B4.4 deepen follow-up pass).
+bool contact_in_island_build_range(u32 bodyCount, const narrowphase::ContactManifold& contact);
+
+/// Non-mutating build-range predicate for distance constraints (B4.4 deepen follow-up pass).
+bool distance_in_island_build_range(u32 bodyCount, const DistanceConstraint& constraint);
 
 } // namespace fuse::physics
