@@ -2321,3 +2321,8 @@ SampleCoordRejectReason FroxelGridLayout::classifyFroxelSampleCoordsReject(const
 // --- deepen additive from deepen-froxel-volumetrics-b511-997a ---
 ScreenMappingRejectReason FroxelGridLayout::classifyScreenDepthToSampleCoordsReject(
     const SampleCoordRejectReason sampleReject = FroxelGridLayout::classifySampleCoordReject(coords, desc);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-9af2 ---
+    outReason = classifyScreenDepthMappingReject(screenX, screenY, viewDepth, desc, camera);
+    const DensityLookupRejectReason baseReason = classifyDensityLookupReject(grid, desc, 0u);
+    if (densityLookupRejectReasonIsBlocking(baseReason)) {
