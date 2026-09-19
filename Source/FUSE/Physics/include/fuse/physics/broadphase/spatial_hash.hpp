@@ -1701,6 +1701,9 @@ bool broadphaseMergeRejectsForReason(
 
 
 
+
+
+
     const CollisionShapeSoA& shapes,
     BroadphaseMergeRejectReason expected);
 
@@ -1797,6 +1800,12 @@ bool shouldRunBroadphaseMerge(
 bool canSkipBroadphaseMerge(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
+
+/// Non-mutating merge predicate — inverse of `preflightBroadphaseMerge().canMerge()`.
+bool canSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
+
+/// Non-mutating merge predicate — mirrors `preflightBroadphaseMerge().canMerge()`.
+bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(

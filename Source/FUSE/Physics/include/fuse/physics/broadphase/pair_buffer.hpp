@@ -77,6 +77,10 @@ struct PairBufferSoA {
     /// True when no duplicate canonical pairs are present (B4.2 deepen follow-up).
     bool isDuplicateFree() const;
     /// True when sort+unique dedupe pass would be a no-op (B4.2 deepen follow-up).
+    /// Buffer-only refine guard: empty buffer or no valid pairs (B4.2 deepen follow-up pass).
+    /// True when canonical sort would leave pair order unchanged (B4.2 deepen follow-up pass).
+    /// True when no duplicate canonical pairs are present (B4.2 deepen follow-up pass).
+    /// True when sort+unique dedupe pass would be a no-op (B4.2 deepen follow-up pass).
     bool canSkipDedupePass() const;
     /// True when slot storage has no invalid flags (compact is a no-op).
     bool canSkipCompaction() const;
@@ -128,6 +132,7 @@ struct PairBufferSoA {
     u32 compact();
     void sortCanonical();
     /// Sort only when `canSkipSortCanonical` is false (B4.2 deepen follow-up).
+    /// Sort only when `canSkipSortCanonical` is false (B4.2 deepen follow-up pass).
     void sortCanonicalIfNeeded();
     u32 applyMaxCapacityClamp();
     u32 compactAndClamp();
@@ -143,6 +148,7 @@ struct PairBufferSoA {
 
 /// Why pair-buffer push would reject (B4.2 deepen pass).
 /// Why a pair-buffer push would be rejected (B4.2 deepen pass).
+/// Why pair-buffer push would reject a candidate pair (B4.2 deepen follow-up pass).
 enum class PairBufferPushRejectReason : u8 {
     None = 0,
     InvalidPair,
@@ -157,6 +163,8 @@ const char* pairBufferPushRejectReasonName(PairBufferPushRejectReason reason);
 PairBufferPushRejectReason pairBufferPushRejectReason(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
 
 /// Returns true when `pairBufferPushRejectReason` matches `expected` (B4.2 deepen pass).
+
+/// Returns true when `pairBufferPushRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 bool pairBufferPushRejectsForReason(
     const PairBufferSoA& buffer,
     u32 idxA,
@@ -199,6 +207,7 @@ enum class PairBufferCompactionRejectReason : u8 {
     EmptyBuffer,
     AllValid,
     None = 0,
+/// Why pair-buffer compaction would early-out (B4.2 deepen follow-up pass).
 };
 
 /// Human-readable label for pair-buffer compaction reject reasons (logging / tests).
@@ -212,6 +221,9 @@ PairBufferCompactionRejectReason pairBufferCompactionRejectReason(const PairBuff
 bool pairBufferCompactionRejectsForReason(
     const PairBufferSoA& buffer,
     PairBufferCompactionRejectReason expected);
+
+/// Returns true when `pairBufferCompactionRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+bool pairBufferCompactionRejectsForReason(const PairBufferSoA& buffer, PairBufferCompactionRejectReason expected);
 
 /// Read-only compaction diagnostics — no mutation (B4.2 deepen follow-up).
 /// Why pair-buffer compaction would early-out (B4.2 deepen follow-up pass).
@@ -261,6 +273,7 @@ enum class PairBufferClampRejectReason : u8 {
 
 /// Non-mutating compaction skip predicate — mirrors `PairBufferSoA::canSkipCompaction` inversion (B4.2 deepen pass).
 
+/// Why pair-buffer max-capacity clamp would early-out (B4.2 deepen follow-up pass).
 
 /// Human-readable label for pair-buffer clamp reject reasons (logging / tests).
 const char* pairBufferClampRejectReasonName(PairBufferClampRejectReason reason);
@@ -274,6 +287,8 @@ bool pairBufferClampRejectsForReason(const PairBufferSoA& buffer, PairBufferClam
 
 
 /// Non-mutating compaction skip predicate — inverse of `preflightPairBufferCompaction().needsCompaction()`.
+
+/// Returns true when `pairBufferClampRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 
 /// Read-only max-capacity clamp diagnostics — no mutation (B4.2 deepen follow-up).
 /// Why pair-buffer clamp would early-out (B4.2 deepen follow-up pass).
@@ -294,6 +309,7 @@ bool pairBufferClampRejectsForReason(const PairBufferSoA& buffer, PairBufferClam
 
 struct PairBufferClampPreflight {
     PairBufferClampRejectReason reason = PairBufferClampRejectReason::None;
+    bool emptyBuffer = false;
     bool withinCapacity = false;
 
     bool needsClamp() const { return reason == PairBufferClampRejectReason::None; }
