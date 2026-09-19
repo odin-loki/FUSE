@@ -2758,3 +2758,47 @@ void testPairBufferSkipPredicateGuards() {
     expectEq(static_cast<fuse::u32>(overBudgetPreflight.reason),
     expectTrue(overBudgetPreflight.exceedsBudget, "over-budget preflight marks exceedsBudget");
     testPairBufferCompactionClampRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-7162 ---
+void testCellSpanClampPreflightGuards() {
+                 fuse::physics::broadphase::cellSpanRejectReason(wideRange, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanRejectReason::ExceedsSpanClamp),
+                               fuse::physics::broadphase::CellSpanRejectReason::ExceedsSpanClamp),
+        fuse::physics::broadphase::preflightCellSpanClamp(smallRange, 8u);
+    expectTrue(spanPreflight.canIterate(), "small span preflight accepts range");
+    expectTrue(!spanPreflight.exceedsSpanClamp, "small span preflight does not exceed clamp");
+    expectEq(spanPreflight.spanPerAxis.x, 4, "span preflight reports per-axis span");
+                   inverted, 4u, fuse::physics::broadphase::CellSpanRejectReason::EmptyRange),
+void testPairBufferWriteSlotAndPreparePreflights() {
+    const fuse::physics::broadphase::PairBufferWriteSlotPreflight validWrite =
+        fuse::physics::broadphase::preflightPairBufferWriteSlot(buffer, 0u, 0u, 1u);
+    const fuse::physics::broadphase::PairBufferWriteSlotPreflight invalidPair =
+        fuse::physics::broadphase::preflightPairBufferWriteSlot(buffer, 1u, 2u, 2u);
+    const fuse::physics::broadphase::PairBufferWriteSlotPreflight outOfRange =
+        fuse::physics::broadphase::preflightPairBufferWriteSlot(buffer, 4u, 0u, 2u);
+    const fuse::physics::broadphase::PairBufferPrepareSlotsPreflight zeroSlots =
+        fuse::physics::broadphase::preflightPairBufferPrepareSlots(0u);
+void testPairBufferMergeAndDuplicateGuards() {
+    const fuse::physics::broadphase::PairBufferMergePreflight atCapacity =
+        fuse::physics::broadphase::preflightPairBufferMerge(buffer, 2u);
+    const fuse::physics::broadphase::PairBufferMergePreflight partialAccept =
+        fuse::physics::broadphase::preflightPairBufferMerge(openBuffer, 3u);
+void testRefineDedupeBroadphasePreflightGuards() {
+    const fuse::physics::broadphase::RefineDedupeBroadphasePreflight emptyPreflight =
+        fuse::physics::broadphase::preflightRefineDedupeBroadphase(bodies, shapes, buffer);
+    expectTrue(!emptyPreflight.canRefine(), "combined preflight cannot refine empty scene");
+    expectTrue(!emptyPreflight.needsDedupe(), "combined preflight does not need dedupe when empty");
+    const fuse::physics::broadphase::RefineDedupeBroadphasePreflight duplicatePreflight =
+    expectTrue(duplicatePreflight.canRefine(), "combined preflight can refine valid scene");
+    expectTrue(duplicatePreflight.hasDuplicatePairs, "combined preflight detects duplicate pairs");
+    expectTrue(duplicatePreflight.needsDedupe(), "combined preflight needs dedupe when duplicates exist");
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseMergeRejectReason::NoPlaneBodies),
+                               fuse::physics::broadphase::BroadphaseMergeRejectReason::NoDynamicBodies),
+                   bodies, shapes, fuse::physics::broadphase::BroadphaseMergeRejectReason::NoDynamicBodies),
+    expectTrue(mergePreflight.canMerge(), "merge preflight accepts plane plus dynamic scene");
+    expectEq(mergePreflight.estimatedMergePairs, 1u, "merge preflight estimates dynamic-plane pair count");
+    const fuse::physics::broadphase::BroadphaseMergeIntoBufferPreflight mergeIntoBuffer =
+        fuse::physics::broadphase::preflightBroadphaseMergeIntoBuffer(bodies, shapes, buffer, 1u);
+    testCellSpanClampPreflightGuards();
+    testPairBufferWriteSlotAndPreparePreflights();
+    testRefineDedupeBroadphasePreflightGuards();

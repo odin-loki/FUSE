@@ -833,3 +833,15 @@ bool pairBufferCompactionRejectsForReason(const PairBufferSoA& buffer, PairBuffe
     preflight.emptyBuffer = compactionPreflight.emptyBuffer;
     preflight.needsCompaction = compactionPreflight.needsCompaction();
     preflight.needsClamp = clampPreflight.needsClamp();
+
+// --- deepen additive from deepen-b4-broadphase-guards-7162 ---
+    if (!preflightPairBufferPrepareSlots(slotCount).canPrepare()) {
+    return !preflightPairBufferSort(*this).needsSort();
+PairBufferPrepareSlotsPreflight preflightPairBufferPrepareSlots(u32 slotCount) {
+    PairBufferPrepareSlotsPreflight preflight{};
+PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingCount) {
+    PairBufferMergePreflight preflight{};
+BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
+    BroadphaseMergeIntoBufferPreflight preflight{};
+    preflight.merge = preflightBroadphaseMerge(bodies, shapes);
+    preflight.buffer = preflightPairBufferMerge(buffer, incomingPairCount);

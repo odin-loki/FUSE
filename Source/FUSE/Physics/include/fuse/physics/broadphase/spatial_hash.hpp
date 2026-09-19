@@ -1219,3 +1219,13 @@ MergeBroadphaseRejectReason mergeBroadphaseRejectReason(
 
 // --- deepen additive from deepen-b4-broadphase-guards-a79d ---
 FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellOccupancyPreflight& preflight) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-7162 ---
+        return CellSpanRejectReason::ExceedsSpanClamp;
+FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+        cellSpanRejectReason(range, maxSpanPerAxis) == CellSpanRejectReason::ExceedsSpanClamp;
+FUSE_PHYSICS_INLINE CellSpanPreflight preflightCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+struct RefineDedupeBroadphasePreflight {
+    RefineBroadphasePreflight refine{};
+    DedupeBroadphasePreflight dedupe{};
+RefineDedupeBroadphasePreflight preflightRefineDedupeBroadphase(

@@ -1109,3 +1109,19 @@ MergeBroadphaseRejectReason mergeBroadphaseRejectReason(
 
 // --- deepen additive from deepen-b4-broadphase-guards-a79d ---
         if (canSkipCellOccupancyIteration(preflightCellOccupancy(range, maxOccupancy))) {
+
+// --- deepen additive from deepen-b4-broadphase-guards-7162 ---
+    case CellSpanRejectReason::ExceedsSpanClamp:
+    case BroadphaseMergeRejectReason::NoPlaneBodies:
+    case BroadphaseMergeRejectReason::NoDynamicBodies:
+    const PairBufferMergePreflight mergePreflight =
+        preflightPairBufferMerge(buffer, static_cast<u32>(pairs.size()));
+    if (!mergePreflight.canMergeAny()) {
+        if (accepted >= mergePreflight.acceptedCount) {
+RefineDedupeBroadphasePreflight preflightRefineDedupeBroadphase(
+    RefineDedupeBroadphasePreflight preflight{};
+    preflight.refine = preflightRefineBroadphase(bodies, shapes, buffer);
+    preflight.dedupe = preflightDedupeBroadphase(buffer);
+    const RefineDedupeBroadphasePreflight preflight = preflightRefineDedupeBroadphase(bodies, shapes, buffer);
+        preflight.reason = BroadphaseMergeRejectReason::NoPlaneBodies;
+        preflight.reason = BroadphaseMergeRejectReason::NoDynamicBodies;
