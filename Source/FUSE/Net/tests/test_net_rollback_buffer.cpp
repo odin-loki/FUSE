@@ -113,15 +113,19 @@ void run_rollback_buffer_tests() {
     fuse::net::RollbackBuffer preflight_wrap;
     preflight_wrap.init(4);
     for (fuse::u32 frame = 0; frame < 5; ++frame) {
-        fuse::net::GameSnapshot snap{};
-        snap.frame = frame;
         preflight_wrap.store_snapshot(frame, snap);
-    }
     const fuse::net::ReconcileRollbackPreflight wrap_preflight = preflight_wrap.preflight_remote_reconcile(4u);
     expectTrue(wrap_preflight.can_reconcile(), "preflight_remote_reconcile accepts newest wrapped frame");
     expectTrue(wrap_preflight.has_snapshot, "preflight_remote_reconcile sees wrapped snapshot");
     expectTrue(!preflight_wrap.should_skip_reconcile(4u), "should_skip false for wrapped newest frame");
     expectTrue(preflight_wrap.should_skip_reconcile(0u), "should_skip true for evicted wrapped frame");
+    fuse::net::RollbackBuffer zero_capacity;
+    zero_capacity.init(4);
+    zero_capacity.clear();
+    expectTrue(!zero_capacity.has_capacity(), "cleared rollback buffer reports no capacity");
+    expectTrue(zero_capacity.empty(), "cleared rollback buffer reports empty");
+    zero_capacity.store_snapshot(0, frame0);
+    expectTrue(!zero_capacity.has_frame(0u), "zero-capacity buffer rejects snapshot store");
 }
 
 } // namespace fuse::net::tests

@@ -83,6 +83,18 @@ struct ReconcileRollbackPreflight {
     bool has_local_prediction = false;
 
         return capacity_ok && !buffer_empty && frame_in_window && has_snapshot;
+    bool buffer_capacity_ok = false;
+    /// True when `input.frame` matches the reconcile `frame` argument.
+    bool input_frame_ok = true;
+
+        return buffer_capacity_ok && frame_in_window && input_frame_ok;
+
+/// Preflight checks before reconciling remote input against rollback-buffer predictions (B7.4 deepen follow-up).
+    /// True when `remote.frame` matches the reconcile `frame` argument.
+
+        return buffer_capacity_ok && frame_in_window && input_frame_ok && has_snapshot;
+
+[[nodiscard]] bool input_frame_matches(u32 frame, const PlayerInput& input);
 
 /// True when `frame` is within the input history ring (or history is empty with non-zero capacity).
 [[nodiscard]] bool can_reconcile_input_frame(const InputHistoryBuffer& history, u32 frame);
@@ -117,6 +129,18 @@ struct ReconcileRollbackPreflight {
 /// True when reconcile would return early without recording input (B7.4 deepen follow-up).
 
 /// True when rollback reconcile would return early without recording remote input (B7.4 deepen follow-up).
+[[nodiscard]] InputReconcilePreflight preflight_reconcile_input(const InputHistoryBuffer& history, u32 frame,
+                                                                  const PlayerInput& input);
+
+/// Preflight reconcile against rollback-buffer predictions without mutating the ring (B7.4 deepen follow-up).
+[[nodiscard]] RollbackReconcilePreflight preflight_reconcile_rollback(const RollbackBuffer& buffer, u32 frame,
+                                                                         const PlayerInput& remote);
+
+/// True when reconcile guards fail and the call would be a no-op (B7.4 deepen follow-up).
+[[nodiscard]] bool should_skip_input_reconcile(const InputHistoryBuffer& history, u32 frame, const PlayerInput& input);
+
+/// True when rollback reconcile guards fail and the call would be a no-op (B7.4 deepen follow-up).
+[[nodiscard]] bool should_skip_rollback_reconcile(const RollbackBuffer& buffer, u32 frame, const PlayerInput& remote);
 
 /// Records authoritative input and compares it against the predicted local history (B7.4 stub).
 [[nodiscard]] ReconcileResult reconcile_predicted_input(InputHistoryBuffer& history, u32 frame,

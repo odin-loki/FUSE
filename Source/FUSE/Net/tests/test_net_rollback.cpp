@@ -53,6 +53,54 @@ void run_rollback_tests() {
     future.frame = rollback.current_frame() + 4;
     expectTrue(!rollback.apply_remote_input(future), "future remote input rejected");
 
+    const fuse::u32 advance_end_frame = rollback.current_frame() + 6;
+    for (fuse::u32 frame = rollback.current_frame(); frame < advance_end_frame; ++frame) {
+        fuse::net::PlayerInput advance{};
+        advance.frame = frame;
+        advance.axis_lx = 100;
+        rollback.set_local_input(advance);
+        rollback.tick(dt);
+    }
+
+    // --- RollbackManager input-buffer and frame guards (B7.4 deepen follow-up) ---
+    expectTrue(rollback.has_input_buffer(), "rollback manager reports input buffer ready");
+    expectTrue(rollback.can_set_local_input(late_remote) == false,
+               "can_set_local_input rejects non-current frame");
+
+    fuse::net::PlayerInput current_local{};
+    current_local.frame = rollback.current_frame();
+    current_local.axis_lx = 500;
+    expectTrue(rollback.can_set_local_input(current_local), "can_set_local_input accepts current frame");
+    const fuse::u32 store_frame = rollback.current_frame();
+    rollback.set_local_input(current_local);
+    rollback.tick(dt);
+    expectTrue(rollback.buffer().has_local_input(store_frame),
+               "set_local_input stores input for ticked frame");
+
+    fuse::net::PlayerInput wrong_local{};
+    wrong_local.frame = rollback.current_frame() + 1;
+    wrong_local.axis_lx = 500;
+    rollback.set_local_input(wrong_local);
+    expectTrue(!rollback.buffer().has_local_input(wrong_local.frame),
+               "set_local_input ignores non-current frame");
+
+    fuse::net::PlayerInput too_old{};
+    too_old.frame = 0;
+    too_old.player_id = 2;
+    too_old.axis_lx = 20000;
+    expectTrue(!rollback.can_apply_remote_input(too_old),
+               "can_apply_remote_input rejects input beyond rollback window");
+    expectTrue(!rollback.apply_remote_input(too_old),
+               "apply_remote_input rejects input beyond rollback window");
+
+    fuse::net::RollbackManager destroyed_buffer;
+    destroyed_buffer.init(4);
+    destroyed_buffer.bind_registry(&registry);
+    destroyed_buffer.destroy();
+    expectTrue(!destroyed_buffer.has_input_buffer(), "destroyed manager has no input buffer");
+    expectTrue(!destroyed_buffer.can_set_local_input(current_local),
+               "can_set_local_input false without input buffer");
+
     registry.destroy();
     rollback.destroy();
 }
