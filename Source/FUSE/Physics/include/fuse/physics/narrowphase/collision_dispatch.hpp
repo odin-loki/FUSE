@@ -200,4 +200,27 @@ std::vector<ContactManifold> runNarrowphase(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Read-only narrowphase pair-slot diagnostics — no mutation (B4.4 deepen guard pass).
+struct NarrowphasePairSlotPreflight {
+    bool skipped = false;
+    bool pairRejected = false;
+    bool canDispatch = false;
+    bool canFinalize = false;
+    bool needsFrictionBasis = false;
+
+    bool can_process() const { return !skipped && canDispatch; }
+};
+
+/// Populate pair-slot preflight without running shape dispatch (B4.4 deepen guard pass).
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating pair-slot skip predicate — mirrors base pair reject only (B4.4 deepen guard pass).
+bool should_skip_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase
