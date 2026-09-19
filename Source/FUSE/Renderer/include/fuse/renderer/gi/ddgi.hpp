@@ -276,6 +276,8 @@ struct ProbeGridLayout {
     static bool tryValidateProbeSampleCoords(const DDGIDesc& desc,
                                              const ProbeSampleCoords& coords,
                                              ProbeSampleCoordsRejectReason& outReason);
+    /// Early-out when sample-coord validation would be rejected — same ordering as `tryValidateProbeSampleCoords`.
+    static bool wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Build trilinear corner indices/weights from a world position; false when grid is empty.
     static bool buildProbeSampleCoords(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
@@ -336,12 +338,22 @@ bool tryCanSampleAtProbeCoords(const DDGIDesc& desc,
                                const IrradianceCacheEntry* cache,
                                u32 cache_count,
                                ProbeTrilinearSampleRejectReason& outReason);
+/// Early-out when coord-based probe trilinear sampling would be rejected — same ordering as `tryCanSampleAtProbeCoords`.
+bool wouldSkipTrilinearProbeSampleAtCoords(const DDGIDesc& desc,
+                                           const ProbeSampleCoords& coords,
+                                           const IrradianceCacheEntry* cache,
+                                           u32 cache_count);
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               const IrradianceCacheEntry* cache,
                               u32 cache_count,
                               u32 probe_index,
                               fuse::math::Vec3& out_irradiance);
+/// Early-out when cache-index irradiance read would be rejected — same ordering as `tryReadIrradianceAtIndex`.
+bool wouldSkipReadIrradianceAtIndex(const DDGIDesc& desc,
+                                    const IrradianceCacheEntry* cache,
+                                    u32 cache_count,
+                                    u32 probe_index);
 /// Minimum irradiance-cache entries for trilinear sampling; 0 when the grid is not sampleable.
 u32 requiredCacheCount(const DDGIDesc& desc);
 /// True when `cache_count` covers every probe in `desc`.

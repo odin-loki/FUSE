@@ -44,6 +44,11 @@ bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
 /// Diagnose why probe blend launch preflight would reject.
 bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
+/// Early-out when probe trace kernel launch would be rejected — same ordering as `tryCanLaunchProbeTraceKernel`.
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
+/// Early-out when probe blend kernel launch would be rejected — same ordering as `tryCanLaunchProbeBlendKernel`.
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
+
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
 /// Launch probe trace kernel with reject-reason diagnostics; false when preflight rejects.
