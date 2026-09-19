@@ -126,6 +126,9 @@ public:
     /// Guarded panel refresh — no-op when nothing is dirty (B6.7 deepen).
     bool tryMarkPanelRefreshed();
 
+    /// Guarded panel refresh — no-op when nothing is dirty (B6.7 deepen).
+    bool tryMarkPanelRefreshed();
+
     /// Guarded refresh/dirty helpers — no-op when unbound or property id invalid (B6.7 deepen follow-up).
     bool tryRefreshFromEditState(const MaterialEditState& state);
     [[nodiscard]] bool tryIsPropertyDirty(MaterialPropertyId id) const;

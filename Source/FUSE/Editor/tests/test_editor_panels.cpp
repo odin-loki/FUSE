@@ -767,6 +767,7 @@ void testMaterialPropertyBindingDirtyMaskGuards() {
     fuse::editor::MaterialPropertyBinding binding;
     expectTrue(!binding.hasAnyPropertyDirty(), "unbound binding has no dirty properties");
     expectTrue(binding.propertyDirtyMask() == 0u, "unbound dirty mask is zero");
+    expectTrue(binding.dirtyPropertyMask() == 0u, "unbound dirtyPropertyMask is zero");
     expectTrue(binding.dirtyPropertyCount() == 0u, "unbound dirty count is zero");
     expectTrue(!binding.canClearPropertyDirty(fuse::editor::MaterialPropertyId::Roughness),
                "cannot clear dirty on clean binding");
@@ -812,6 +813,9 @@ void testMaterialPropertyBindingRefreshGuards() {
     fuse::editor::MaterialEditState state{};
 
     expectTrue(!binding.canRefreshFromEditState(), "unbound binding cannot refresh");
+    state.roughness = 0.8f;
+
+    expectTrue(!binding.tryRefreshFromEditState(state), "tryRefresh rejects unbound binding");
 
     binding.tryBind(0u, 1u, state);
     expectTrue(binding.canRefreshFromEditState(), "bound binding can refresh");

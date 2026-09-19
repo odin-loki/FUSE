@@ -70,6 +70,9 @@ public:
     /// Panel refresh guard — binding reports pending refresh (B6.7 deepen).
     [[nodiscard]] bool canRefreshPanel() const { return needsPanelRefresh(); }
 
+    /// Panel refresh guard — binding reports pending refresh (B6.7 deepen).
+    [[nodiscard]] bool canRefreshPanel() const { return needsPanelRefresh(); }
+
     /// Early-out when catalog empty, unselected, or binding cannot post (B6.7 deepen follow-up).
     [[nodiscard]] bool shouldSkipPropertyEdit() const;
 
