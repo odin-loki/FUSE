@@ -168,6 +168,16 @@ const char* probeSpatialSampleRejectReasonLabel(ProbeSpatialSampleRejectReason r
         return "invalid_sample_coords";
     case ProbeSpatialSampleRejectReason::UndersizedCache:
     case ProbeSpatialSampleRejectReason::NullCache:
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason) {
+    case ProbeScheduleRejectReason::None:
+    case ProbeScheduleRejectReason::NullIndices:
+        return "null_indices";
+    case ProbeScheduleRejectReason::NullCount:
+        return "null_count";
+    case ProbeScheduleRejectReason::ZeroProbeCount:
+        return "zero_probe_count";
+    case ProbeScheduleRejectReason::ZeroMaxIndices:
+        return "zero_max_indices";
     }
     return "unknown";
 }
@@ -613,6 +623,10 @@ bool ProbeGridLayout::areProbeSampleCoordsInBounds(const DDGIDesc& desc, const P
     const auto inRange = [](u32 value, u32 max_value) { return value <= max_value; };
     return inRange(coords.x0, max_x) && inRange(coords.x1, max_x) && inRange(coords.y0, max_y) &&
            inRange(coords.y1, max_y) && inRange(coords.z0, max_z) && inRange(coords.z1, max_z);
+}
+
+bool ProbeGridLayout::wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
+    return isProbeSampleCoordsOutOfRange(desc, coords);
 }
 
 bool ProbeGridLayout::wouldSkipProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords) {
@@ -2400,6 +2414,13 @@ bool canScheduleProbeUpdates(u32 probe_count, u32 max_indices, const u32* out_in
 
 
 bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count) {
+bool tryValidateProbeSchedule(u32 probe_count,
+    (void)probes_per_frame;
+        outReason = ProbeScheduleRejectReason::NullIndices;
+        outReason = ProbeScheduleRejectReason::NullCount;
+
+    return tryValidateProbeSchedule(probe_count, probes_per_frame, out_indices, max_indices, out_count, reason);
+
 
 void scheduleProbeUpdates(u32 frame_index,
                           u32* out_count) {
@@ -3569,6 +3590,14 @@ bool canLaunchDdgiKernelParams(const DDGIKernelParams& params) {
 
 bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason) {
     return tryCanLaunchProbeTraceKernel(params, outReason);
+}
+
+bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeTraceKernel(params);
+}
+
+bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params) {
+    return !canLaunchProbeBlendKernel(params);
 }
 
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream) {

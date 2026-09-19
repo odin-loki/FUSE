@@ -435,6 +435,18 @@ enum class ProbeScheduleRejectReason : u8 {
 /// Human-readable label for probe-schedule reject reasons (logging / tests).
 const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
 
+/// Why probe round-robin scheduling preflight rejected the request (B5.6 deepen).
+enum class ProbeScheduleRejectReason : u8 {
+    None = 0,
+    NullIndices,
+    NullCount,
+    ZeroProbeCount,
+    ZeroMaxIndices,
+};
+
+/// Human-readable label for probe-schedule reject reasons (logging / tests).
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
+
 /// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
 enum class ProbeUpdateLaunchRejectReason : u8 {
     NullIndices,
@@ -1016,6 +1028,13 @@ const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
 bool tryCanScheduleProbeUpdates(u32 probe_count,
 /// Early-out when probe scheduling would be rejected — same ordering as `canScheduleProbeUpdates`.
 bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, u32* out_count);
+bool tryValidateProbeSchedule(u32 probe_count,
+                              u32 probes_per_frame,
+                              const u32* out_count,
+/// Preflight guard before probe round-robin scheduling.
+bool canScheduleProbeUpdates(u32 probe_count,
+                             const u32* out_count);
+bool wouldSkipProbeSchedule(u32 probe_count,
 void scheduleProbeUpdates(u32 frame_index,
                           u32 probe_count,
                           u32 probes_per_frame,
