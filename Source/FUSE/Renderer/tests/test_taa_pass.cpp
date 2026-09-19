@@ -4846,3 +4846,10 @@ void testTaaPassTryClassifyGuardWrappers() {
                "pass classifyJitterSyncReject matches free function");
                "pass classifyResolveBlendReject matches free function");
     expectTrue(invalidJitterPass->tryPreflightJitterSync(0u, jitterReject),
+
+// --- deepen additive from deepen-taa-pass-try-classify-f236 ---
+               "pass tryPreflightJitterSync matches free function after init");
+               "pass tryPreflightJitterSync reject reason matches free function");
+               "pass classifyJitterSyncReject still valid for zero-width viewport");
+    expectTrue(zeroPass->tryPreflightJitterSync(2u, jitterReject),
+               "pass tryPreflightJitterSync still valid for zero-width viewport");
