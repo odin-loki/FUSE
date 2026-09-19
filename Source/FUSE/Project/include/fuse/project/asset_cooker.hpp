@@ -148,3 +148,6 @@ private:
 
 // --- deepen additive from deepen-b79-cooker-hash-should-skip-ee5c ---
     [[nodiscard]] bool would_invalidate() const { return total() != 0; }
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-b1bc ---
+    [[nodiscard]] bool should_skip_reconcile() const { return total() == 0; }

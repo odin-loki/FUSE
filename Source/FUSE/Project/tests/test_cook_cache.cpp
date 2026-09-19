@@ -2053,3 +2053,9 @@ void testCookCachePruneReconcileShouldSkipGuards() {
     expectTrue(!cooker.cache().should_skip_prune_stale(), "stale entry should not skip prune_stale");
     expectTrue(cooker.cache().should_skip_prune_invalid(), "structurally valid stale entry skips prune_invalid");
     expectTrue(!estimate.should_skip(), "prune estimate should not skip on stale entry");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-b1bc ---
+    expectTrue(fuse::project::preflight_mesh_import_hash(mesh).should_skip() ==
+               "should_skip_mesh mirrors preflight struct method");
+               "should_skip upstream deps rejects empty list");
+    expectTrue(!estimate.should_skip_prune(), "stale shader entry should not skip prune");
