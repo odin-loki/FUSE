@@ -25,6 +25,8 @@ std::atomic<u32> g_eventCount{0};
 std::atomic<u32> g_maxNestingDepth{0};
 std::atomic<u32> g_maxFlowNestingDepth{0};
 std::atomic<u32> g_openAsyncFlowCount{0};
+std::atomic<u32> g_orphanAsyncFlowEndCount{0};
+std::atomic<u32> g_rejectedInvalidNameCount{0};
 
 std::mutex g_exportMutex;
 
@@ -222,9 +224,20 @@ const char* chromeCategory(EventPhase phase) {
 
 bool isValidEventName(const char* name);
 
+void recordRejectedInvalidName() {
+    g_rejectedInvalidNameCount.fetch_add(1u, std::memory_order_acq_rel);
+}
+
+void recordOrphanAsyncFlowEnd() {
+    g_orphanAsyncFlowEndCount.fetch_add(1u, std::memory_order_acq_rel);
+}
+
 ProfileScope::ProfileScope(const char* name)
     : m_name(name),
       m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
+    if (g_enabled.load(std::memory_order_acquire) && !isValidEventName(name)) {
+        recordRejectedInvalidName();
+    }
     if (m_active) {
         m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
         m_nestingDepth = pushNestingDepth();
@@ -293,6 +306,27 @@ u32 openAsyncFlowCount() {
 
 bool hasOpenAsyncFlows() {
     return openAsyncFlowCount() > 0u;
+}
+
+u32 orphanAsyncFlowEndCount() {
+    return g_orphanAsyncFlowEndCount.load(std::memory_order_acquire);
+}
+
+bool hasOrphanAsyncFlowEnds() {
+    return orphanAsyncFlowEndCount() > 0u;
+}
+
+u32 rejectedInvalidNameCount() {
+    return g_rejectedInvalidNameCount.load(std::memory_order_acquire);
+}
+
+bool hasRejectedInvalidNames() {
+    return rejectedInvalidNameCount() > 0u;
+}
+
+u32 remainingEventCapacity() {
+    const u32 count = eventCount();
+    return count >= kRingCapacity ? 0u : kRingCapacity - count;
 }
 
 bool isScopeNestingBalanced() {
@@ -397,6 +431,51 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 }
 
+bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent) {
+    const u32 count = eventCount();
+    if (reverseIndex >= count) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(count - 1u - reverseIndex, outEvent);
+}
+
+u32 findEventIndex(EventPhase phase, u32 startIndex) {
+    const u32 count = eventCount();
+    for (u32 i = startIndex; i < count; ++i) {
+        if (eventAt(i).phase == phase) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByPhase(EventPhase phase) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventAt(i).phase == phase) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.scopeId == scopeId && isValidProfileEvent(event)) {
+            outEvent = event;
+            return true;
+        }
+    }
+
+    outEvent = ProfileEvent{};
+    return false;
+}
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -425,11 +504,17 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.activeFlowNestingDepth = flowNestingDepth();
     preflight.maxScopeNestingDepth = maxNestingDepth();
     preflight.maxFlowNestingDepth = maxFlowNestingDepth();
+    preflight.remainingEventCapacity = remainingEventCapacity();
+    preflight.rejectedInvalidNameCount = rejectedInvalidNameCount();
+    preflight.orphanAsyncFlowEndCount = orphanAsyncFlowEndCount();
     preflight.bufferEmpty = isBufferEmpty();
+    preflight.bufferFull = isBufferFull();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.hasRejectedInvalidNames = hasRejectedInvalidNames();
+    preflight.hasOrphanAsyncFlowEnds = hasOrphanAsyncFlowEnds();
     return preflight;
 }
 
@@ -443,6 +528,8 @@ void reset() {
     g_maxNestingDepth.store(0u, std::memory_order_release);
     g_maxFlowNestingDepth.store(0u, std::memory_order_release);
     g_openAsyncFlowCount.store(0u, std::memory_order_release);
+    g_orphanAsyncFlowEndCount.store(0u, std::memory_order_release);
+    g_rejectedInvalidNameCount.store(0u, std::memory_order_release);
     threadLocalNestingDepth() = 0u;
     threadLocalFlowNestingDepth() = 0u;
 }
@@ -452,7 +539,11 @@ u32 nextFlowId() {
 }
 
 void beginAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (!isValidEventName(name)) {
+        recordRejectedInvalidName();
         return;
     }
 
@@ -466,11 +557,16 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 }
 
 void endAsyncFlow(const char* name, u32 flowId) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
+    if (!g_enabled.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (!isValidEventName(name)) {
+        recordRejectedInvalidName();
         return;
     }
 
     if (g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u) {
+        recordOrphanAsyncFlowEnd();
         return;
     }
 
@@ -486,7 +582,11 @@ void endAsyncFlow(const char* name, u32 flowId) {
 }
 
 void sampleCounter(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (!isValidEventName(track)) {
+        recordRejectedInvalidName();
         return;
     }
 
@@ -502,7 +602,11 @@ void sampleCounter(const char* track, s64 value) {
 }
 
 void sampleCounterFloat(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (!isValidEventName(track)) {
+        recordRejectedInvalidName();
         return;
     }
 
@@ -518,7 +622,11 @@ void sampleCounterFloat(const char* track, f64 value) {
 }
 
 void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (!isValidEventName(track)) {
+        recordRejectedInvalidName();
         return;
     }
 
@@ -534,7 +642,11 @@ void sampleCounterSnapshotAtFrame(const char* track, s64 value) {
 }
 
 void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(track)) {
+    if (!g_enabled.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (!isValidEventName(track)) {
+        recordRejectedInvalidName();
         return;
     }
 

@@ -48,12 +48,18 @@ struct ChromeTraceExportPreflight {
     u32 activeFlowNestingDepth = 0;
     u32 maxScopeNestingDepth = 0;
     u32 maxFlowNestingDepth = 0;
+    u32 remainingEventCapacity = 0;
+    u32 rejectedInvalidNameCount = 0;
+    u32 orphanAsyncFlowEndCount = 0;
     bool profilerDisabled = false;
     bool bufferEmpty = false;
+    bool bufferFull = false;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
     bool flowDepthDetached = false;
+    bool hasRejectedInvalidNames = false;
+    bool hasOrphanAsyncFlowEnds = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -92,6 +98,11 @@ u32 scopeNestingDepth();
 u32 flowNestingDepth();
 u32 openAsyncFlowCount();
 bool hasOpenAsyncFlows();
+u32 orphanAsyncFlowEndCount();
+bool hasOrphanAsyncFlowEnds();
+u32 rejectedInvalidNameCount();
+bool hasRejectedInvalidNames();
+u32 remainingEventCapacity();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
 bool hasUnbalancedNesting();
@@ -112,6 +123,10 @@ const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
+bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent);
+u32 findEventIndex(EventPhase phase, u32 startIndex = 0u);
+u32 countEventsByPhase(EventPhase phase);
+bool tryFindEventByScopeId(u32 scopeId, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
