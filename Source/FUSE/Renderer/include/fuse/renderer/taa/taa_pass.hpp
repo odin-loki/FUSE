@@ -434,6 +434,7 @@ public:
     /// History resolve-readiness preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightHistoryReadyForResolve(TaaHistoryReuseBlockReason& reason) const;
     /// Classify why pass jitter sync would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
     /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
@@ -526,6 +527,7 @@ public:
     /// Advance jitter only when preflight passes; returns false when blocked (B5.9 deepen).
     /// Pass jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
     bool preflightJitterAdvance(TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Classify why pass NDC jitter would be rejected (B5.9 deepen).
     /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
     /// Early-out when pass jitter advance preflight would reject (B5.9 deepen).
