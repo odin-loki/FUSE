@@ -4723,3 +4723,14 @@ void testPreflightIslandSleepWakeDispatch() {
 void testDispatchSolveIslandWithSleepWakeGuards() {
 void testDispatchAllIslandsWithSleepWakeGuards() {
     testPreflightIslandSleepWakeDispatch();
+
+// --- deepen additive from deepen-pbd-island-guards-3d4d ---
+    const IslandSolveDispatchPreflight mixedPreflight = preflight_island_solve_dispatch(
+    expectTrue(!mixedPreflight.skipped, "solve dispatch preflight does not skip mixed island");
+    expectTrue(!should_skip_island_solve_dispatch(graph.island(mixedIsland), bodies, contacts, constraints),
+               "should_skip false for mixed solveable island");
+    const IslandSolveDispatchPreflight sleepingPreflight = preflight_island_solve_dispatch(
+    expectTrue(sleepingPreflight.sleep.can_skip_solve(), "all-sleeping island can skip solve");
+    expectTrue(should_skip_island_solve_dispatch(graph.island(sleepingIsland), bodies, contacts, constraints),
+void testDispatchSolveIslandGuardedWakesAndSolves() {
+void testDispatchAllIslandsGuardedBatch() {

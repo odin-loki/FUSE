@@ -2621,3 +2621,6 @@ IslandSleepWakeDispatchPreflight preflight_island_sleep_wake_dispatch(const Cont
     IslandSleepWakeDispatchPreflight preflight{};
 bool should_skip_island_sleep_wake_dispatch(const ContactIslandGraph& graph,
     const IslandSleepWakeDispatchPreflight preflight = preflight_island_sleep_wake_dispatch(graph, bodies, dt);
+
+// --- deepen additive from deepen-pbd-island-guards-3d4d ---
+    const IslandSolveDispatchPreflight preflight = preflight_island_solve_dispatch(
