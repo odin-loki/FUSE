@@ -1019,3 +1019,14 @@ void testCookFnvInputPreflight() {
     const fuse::project::CookFnvInputPreflight empty_preflight =
     testCookCacheLookupStorePreflights();
     testCookFnvInputPreflight();
+
+// --- deepen additive from deepen-b79-cooker-hash-be66 ---
+void testCookHashPreflightDeepenGuards() {
+    const fuse::project::CookHashPreflight null_bytes = fuse::project::preflight_fnv1a64_bytes(nullptr, 4u);
+    const fuse::project::CookHashPreflight zero_source =
+    expectTrue(zero_source.reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+                   fuse::project::CookHashRejectReason::NonCacheableCombinedKey)) == "non_cacheable_combined_key",
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_deepen_probe.obj"),
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_deepen_probe.fusemesh"),
+    expectTrue(!cooker.cache().would_invalidate_source(""), "empty source path would_invalidate is false");
+    testCookHashPreflightDeepenGuards();

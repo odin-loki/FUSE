@@ -1965,3 +1965,7 @@ void testCookCachePreflightAndReconcileEstimators() {
 // --- deepen additive from deepen-b79-cooker-hash-preflight-6a72 ---
     expectTrue(probe.would_invalidate(), "upstream probe reports invalidation scope");
     expectTrue(!empty_probe.would_invalidate(), "empty changed source upstream probe is zero");
+
+// --- deepen additive from deepen-b79-cooker-hash-be66 ---
+    entryA.output_path = "/tmp/fuse_b79_probe_up_a.fusemesh";
+    entryB.output_path = "/tmp/fuse_b79_probe_up_b.fusemesh";
