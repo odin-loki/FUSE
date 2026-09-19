@@ -1198,3 +1198,6 @@ bool should_skip_shape_cell_insertion_2d(const CellRange2& range, u32 maxCells);
 // --- deepen additive from deepen-b4-broadphase-guards-4311 ---
 const char* broadphaseMergeRejectReasonName(BroadphaseMergeRejectReason reason);
 BroadphaseMergeRejectReason broadphaseMergeRejectReason(
+
+// --- deepen additive from deepen-b4-broadphase-guards-8d3f ---
+    return cellOccupancyRejectReason(range, maxCells) != CellOccupancyRejectReason::None;

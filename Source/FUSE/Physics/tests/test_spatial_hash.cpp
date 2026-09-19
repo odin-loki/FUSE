@@ -2687,3 +2687,18 @@ void testCellOccupancyPreflightReasonField() {
     const fuse::physics::broadphase::PairBufferClampPreflight preflight =
         fuse::physics::broadphase::preflightPairBufferClamp(overflowBuffer);
     testCellOccupancyPreflightReasonField();
+
+// --- deepen additive from deepen-b4-broadphase-guards-8d3f ---
+void testShouldRunRefineBroadphaseGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::broadphaseMergeRejectReason(bodies, shapes)),
+                   bodies, shapes, fuse::physics::broadphase::BroadphaseMergeRejectReason::EmptyDynamicBodies),
+void testPairBufferRejectReasonGuards() {
+                   buffer, 2u, 3u, fuse::physics::broadphase::PairBufferPushRejectReason::AtCapacity),
+    const fuse::physics::broadphase::PairBufferPushPreflight pushPreflight =
+    expectEq(static_cast<fuse::u32>(pushPreflight.reason),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferCompactionRejectReason(slotBuffer)),
+                   slotBuffer, fuse::physics::broadphase::PairBufferCompactionRejectReason::AllValid),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferClampRejectReason(clampBuffer)),
+    expectTrue(fuse::physics::broadphase::pairBufferDedupeRejectsForReason(
+                   dedupeBuffer, fuse::physics::broadphase::PairBufferDedupeRejectReason::EmptyBuffer),
+    testPairBufferRejectReasonGuards();
