@@ -1241,3 +1241,9 @@ bool should_skip_island_solve_all_inactive(const RigidBodySoA& bodies,
 IslandSolveWorkPreflight preflight_island_solve_work(const RigidBodySoA& bodies,
 IslandConstraintIndexPreflight preflight_island_constraint_indices(
 IslandConstraintIndexPreflight preflight_island_constraint_indices_by_index(
+
+// --- deepen additive from deepen-pbd-island-guards-88d5 ---
+struct IslandDispatchJobBatchPreflight {
+    IslandDispatchPreflight graph{};
+IslandDispatchJobBatchPreflight preflight_dispatchable_island_jobs(const ContactIslandGraph& graph,
+bool should_skip_dispatchable_island_jobs(const std::vector<IslandSolveJob>& jobs, f32 dt);

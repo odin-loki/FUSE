@@ -3362,3 +3362,27 @@ void testIslandInactiveAndConstraintPreflights() {
     testPreflightSleepPassGuards();
     testPreflightWakeCandidatesGuards();
     testIslandInactiveAndConstraintPreflights();
+
+// --- deepen additive from deepen-pbd-island-guards-88d5 ---
+void testPreflightDispatchableIslandJobs() {
+    const IslandDispatchJobBatchPreflight validPreflight = preflight_dispatchable_island_jobs(graph, jobs, dt);
+    expectTrue(!validPreflight.skipped, "job batch preflight does not skip dispatchable jobs");
+    expectTrue(validPreflight.can_dispatch(), "job batch preflight can dispatch constrained jobs");
+    expectTrue(validPreflight.jobCount == jobs.size(), "job batch preflight records job count");
+    expectTrue(!should_skip_dispatchable_island_jobs(jobs, dt),
+               "should_skip false for dispatchable job batch with valid dt");
+    const IslandDispatchJobBatchPreflight invalidDtPreflight =
+    expectTrue(invalidDtPreflight.graph.invalidDt, "job batch preflight rejects invalid dt");
+    expectTrue(!invalidDtPreflight.can_dispatch(), "job batch preflight cannot dispatch with invalid dt");
+    expectTrue(should_skip_dispatchable_island_jobs(jobs, 0.f),
+               "should_skip_dispatchable_island_jobs on invalid dt");
+    expectTrue(should_skip_dispatchable_island_jobs(emptyJobs, dt),
+               "should_skip_dispatchable_island_jobs on empty job list");
+    const IslandDispatchJobBatchPreflight emptyPreflight =
+    expectTrue(emptyPreflight.skipped, "job batch preflight skips empty job list");
+               "should_skip false for impulse graph with valid dt");
+    expectTrue(invalidDtPreflight.invalidDt, "impulse graph preflight rejects invalid dt");
+    expectTrue(should_skip_warm_start_combined_island_index(graph, graph.bodyIsland(0), 0.f),
+               "should_skip_warm_start_combined_island_index on invalid dt");
+               "should_skip false for combined graph with valid dt");
+    testPreflightDispatchableIslandJobs();
