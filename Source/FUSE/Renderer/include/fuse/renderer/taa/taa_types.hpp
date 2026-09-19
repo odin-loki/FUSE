@@ -333,3 +333,6 @@ const char* taaHistoryWarmupRejectReasonLabel(TaaHistoryWarmupRejectReason reaso
 TaaHistoryWarmupRejectReason classifyTaaHistoryWarmupReject(const TaaHistoryBuffer& history);
 bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupRejectReason* reason = nullptr);
 bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupRejectReason& reason);
+
+// --- deepen additive from deepen-b59-taa-guards-3780 ---
+bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason& reason);

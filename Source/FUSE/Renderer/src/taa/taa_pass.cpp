@@ -514,3 +514,7 @@ bool TaaPass::trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReaso
 
 // --- deepen additive from deepen-b59-taa-guards-ceb9 ---
 bool TaaPass::preflightHistoryWarmup(TaaHistoryWarmupRejectReason* reason) const {
+
+// --- deepen additive from deepen-b59-taa-guards-3780 ---
+bool TaaPass::tryPreflightHistoryWarmup(TaaHistoryWarmupBlockReason& reason) const {
+    return tryPreflightTaaHistoryWarmup(m_history, reason);

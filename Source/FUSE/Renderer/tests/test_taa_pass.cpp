@@ -3529,3 +3529,22 @@ void testTaaPassSkipReadyAndTryPreflights() {
     expectTrue(pass->preflightJitterNdc(&jitterReject), "pass preflightJitterNdc passes");
     expectNear(weights.current, 0.15f, 1e-5f, "pass tryCompute steady current weight");
     testTaaPassSkipReadyAndTryPreflights();
+
+// --- deepen additive from deepen-b59-taa-guards-3780 ---
+               "tryPreflight warmup fails for unwarmed history");
+               "tryPreflight warmup reason is NeedsWarmup");
+    expectTrue(fuse::renderer::tryPreflightTaaHistoryWarmup(history, reason),
+               "tryPreflight warmup passes for warmed history");
+               "tryPreflight warmup reason is None for warmed history");
+void testResolvePreflightShouldSkip() {
+               "tryPreflightTaaResolve passes for valid resolve");
+               "tryPreflightTaaResolve rejects invalid dimensions");
+    expectTrue(!pass->tryPreflightHistoryWarmup(warmupReason),
+               "pass tryPreflightHistoryWarmup fails before resolve");
+               "pass tryPreflightHistoryWarmup reason is NeedsWarmup");
+    expectTrue(pass->tryPreflightResolve(resolveDesc, skipReason), "pass tryPreflightResolve passes");
+    expectTrue(pass->tryPreflightHistoryWarmup(warmupReason), "pass tryPreflightHistoryWarmup passes");
+               "pass tryPreflightHistoryWarmup reason is None after resolve");
+    expectTrue(!zeroPass->tryPreflightJitterNdc(jitterReject),
+    expectTrue(jitterReject == fuse::renderer::TaaJitterGuardRejectReason::InvalidViewport,
+    testResolvePreflightShouldSkip();
