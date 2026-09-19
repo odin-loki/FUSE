@@ -2030,12 +2030,18 @@ void testCookCacheUpstreamInvalidationEstimate() {
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
     entryA.output_path = "/tmp/fuse_b79_est_up_a.fusemesh";
+void testCookerStaleDependencyReconcileEstimator() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_reconcile_a.obj", "# reconcile a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_reconcile_b.obj", "# reconcile b\n");
+
+    entryA.output_path = "/tmp/fuse_b79_reconcile_a.fusemesh";
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
     entryB.output_path = "/tmp/fuse_b79_est_up_b.fusemesh";
+    entryB.output_path = "/tmp/fuse_b79_reconcile_b.fusemesh";
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
@@ -2090,6 +2096,38 @@ void testCookCachePruneEstimateMatchesPrune() {
 
     expectTrue(removed >= stale_estimate.upstream_stale_entries,
                "actual reconcile removes at least estimated upstream stale entries");
+    const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
+    expectTrue(cooked.ok, "manifest cook for reconcile estimator ok");
+    expectTrue(cooker.count_stale_dependency_invalidation(manifest) == 0u,
+               "fresh cache stale reconcile count is zero");
+
+    writeTempFile(sourceA, "# reconcile a revised\n");
+    const fuse::u32 estimated = cooker.count_stale_dependency_invalidation(manifest);
+    expectTrue(estimated >= 1u, "upstream change raises stale reconcile estimate");
+
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= estimated, "stale reconcile invalidation removes at least estimated count");
+               "stale reconcile count zero after invalidation");
+}
+
+void testCookerPruneReconcileEstimator() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_prune_est.obj", "# prune est v1\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_prune_est.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for prune estimator ok");
+    expectTrue(cooker.count_prune_invalidation() == 0u, "fresh cache prune estimate is zero");
+
+    writeTempFile(source, "# prune est v2\n");
+    expectTrue(cooker.count_prune_invalidation() == 1u, "stale entry raises prune estimate");
+    expectTrue(cooker.count_prune_invalidation() == cooker.cache().count_prune_all(),
+               "cooker prune estimate matches cache count_prune_all");
+    expectTrue(cooker.count_prune_invalidation() == cooker.cache().prune_all(),
+               "prune estimate matches prune_all removal count");
+    expectTrue(cooker.count_prune_invalidation() == 0u, "prune estimate zero after reconcile");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -2297,6 +2335,8 @@ int main() {
     testCookCacheReconcileEstimators();
     testCookStaleDependencyHashReconcileEstimate();
     testCookerReconcileEstimators();
+    testCookerStaleDependencyReconcileEstimator();
+    testCookerPruneReconcileEstimator();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

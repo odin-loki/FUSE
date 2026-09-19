@@ -406,6 +406,10 @@ AssetCooker::CookDependencyReconcileEstimate AssetCooker::estimate_stale_depende
     return removed;
 }
 
+u32 AssetCooker::count_prune_invalidation() const {
+    return m_cache.count_prune_all();
+}
+
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
     if (manifest.assets.empty() || m_cache.empty()) {
     if (m_cache.empty() || manifest.assets.empty()) {

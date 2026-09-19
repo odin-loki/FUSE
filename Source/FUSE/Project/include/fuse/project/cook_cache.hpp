@@ -438,6 +438,8 @@ public:
     [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
     [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
     /// Source paths that `invalidate_downstream_of` would touch — one push per matching entry (B7.9 deepen).
+    /// Entries `prune_all` would remove — zero when cache is empty or clean (B7.9 deepen).
+    [[nodiscard]] u32 count_prune_all() const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

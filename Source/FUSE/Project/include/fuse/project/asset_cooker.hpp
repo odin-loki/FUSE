@@ -118,6 +118,8 @@ public:
     [[nodiscard]] bool would_reconcile_stale_dependencies(const CookManifest& manifest) const;
     /// Read-only stale-content reconcile probe across manifest job sources (B7.9 deepen).
     [[nodiscard]] u32 count_stale_content_invalidation(const CookManifest& manifest) const;
+    /// Read-only prune reconcile probe — entries `CookCache::prune_all` would drop (B7.9 deepen).
+    [[nodiscard]] u32 count_prune_invalidation() const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
