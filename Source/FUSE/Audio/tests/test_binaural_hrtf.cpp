@@ -1645,3 +1645,31 @@ void testHrtfBinauralRejectReasonClassifiers() {
     expectTrue(reason == fuse::audio::HrtfBinauralRejectReason::HrtfDisabled,
     expectTrue(stub_preflight.ir.reason == fuse::audio::HrtfIrRejectReason::NullSamples,
                    fuse::audio::HrtfBinauralRejectReason::EmptyIr)) == "empty_ir",
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-1115 ---
+void testHrtfIrRejectReasonPreflight() {
+    expectTrue(fuse::audio::hrtf_ir_reject_reason(empty) == fuse::audio::HrtfIrRejectReason::NullSamples,
+    expectTrue(fuse::audio::hrtf_ir_rejects_for_reason(empty, fuse::audio::HrtfIrRejectReason::NullSamples),
+    expectTrue(!fuse::audio::hrtf_ir_rejects_for_reason(valid, fuse::audio::HrtfIrRejectReason::EmptyIr),
+void testHrtfPanPathRejectReasonPreflight() {
+                   true, co_located, fuse::audio::HrtfPanPathRejectReason::CoLocated),
+    const fuse::audio::HrtfPanPathPreflight spatial_preflight =
+    expectTrue(spatial_preflight.reason == fuse::audio::HrtfPanPathRejectReason::None,
+    expectTrue(bypass_preflight.reason == fuse::audio::HrtfPanPathRejectReason::HrtfDisabled,
+void testHrtfAttenuationCouplingRejectReasonPreflight() {
+                   fuse::audio::HrtfAttenuationCouplingRejectReason::BypassPath)) == "bypass_path",
+void testHrtfBinauralRejectReasonPreflight() {
+                   false, offset, fuse::audio::HrtfBinauralRejectReason::HrtfDisabled),
+                   true, co_located, fuse::audio::HrtfBinauralRejectReason::CoLocated),
+    const fuse::audio::HrtfBinauralPreflight spatial_preflight =
+    expectTrue(spatial_preflight.reason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(spatial_preflight.ir.reason == fuse::audio::HrtfIrRejectReason::NullSamples,
+    expectTrue(spatial_preflight.panPath.reason == fuse::audio::HrtfPanPathRejectReason::None,
+               "should_skip_hrtf_binaural mirrors composite reject reason");
+    const fuse::audio::HrtfBinauralPreflight unity_preflight =
+    expectTrue(unity_preflight.reason == fuse::audio::HrtfBinauralRejectReason::None,
+                   fuse::audio::HrtfBinauralRejectReason::HrtfDisabled)) == "hrtf_disabled",
+    testHrtfIrRejectReasonPreflight();
+    testHrtfPanPathRejectReasonPreflight();
+    testHrtfAttenuationCouplingRejectReasonPreflight();
+    testHrtfBinauralRejectReasonPreflight();
