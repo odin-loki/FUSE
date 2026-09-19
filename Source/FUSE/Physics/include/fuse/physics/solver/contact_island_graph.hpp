@@ -151,6 +151,14 @@ bool is_valid_island_build_body_count(u32 bodyCount,
 /// Preflight island graph build without mutating graph state (B4.4 deepen follow-up).
 
 /// Early-out when build inputs reference out-of-range body indices (B4.4 deepen follow-up).
+/// Reject counts for invalid body indices during island graph build (B4.4 deepen).
+struct IslandBuildRejectCounts {
+    u32 invalidContactPairCount = 0;
+    u32 invalidDistancePairCount = 0;
+
+/// Preflight diagnostics for island graph build (B4.4 deepen).
+    IslandBuildRejectCounts rejects{};
+
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -175,6 +183,7 @@ struct ContactIslandGraph {
                       const std::vector<DistanceConstraint>& distanceConstraints);
     /// Build only when preflight passes; clears the graph when build is skipped (B4.4 deepen follow-up).
     void build_guarded(u32 bodyCount,
+    /// Guarded build that skips invalid contact/distance body indices before union-find.
 
     void clear();
 
@@ -230,6 +239,7 @@ bool contact_references_valid_bodies(const narrowphase::ContactManifold& contact
 bool distance_constraint_references_valid_bodies(const DistanceConstraint& constraint, u32 bodyCount);
 
 /// Preflight island graph build; sets `skipped` when bodyCount is zero.
+/// Preflight island graph build; counts invalid contacts and out-of-range body indices.
 IslandBuildPreflight preflight_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -240,5 +250,11 @@ bool should_skip_island_build(u32 bodyCount);
 
 /// Guarded build entry: clears graph and returns false when preflight rejects inputs.
 bool build_island_graph_guarded(ContactIslandGraph& graph,
+/// Early-out guard when body count is zero.
+
+/// True when every contact and distance constraint references in-range body indices.
+bool island_build_inputs_valid(u32 bodyCount,
+                               const std::vector<narrowphase::ContactManifold>& contacts,
+                               const std::vector<DistanceConstraint>& distanceConstraints);
 
 } // namespace fuse::physics

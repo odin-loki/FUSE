@@ -11,6 +11,8 @@
 
 namespace fuse::physics {
 
+struct SolverParams;
+
 /// Lightweight view for parallel island dispatch (B4.4 deepen).
 struct IslandSolveJob {
     u32 islandIndex = ContactIslandGraph::invalidIsland;
@@ -106,6 +108,66 @@ struct FrameWarmStartPreflight {
     u32 distanceSlotCount = 0;
     u32 contactSlotCount = 0;
 
+
+/// Orphaned constraint index counts for one island (B4.4 deepen).
+struct IslandConstraintIndexPreflight {
+    u32 ownedContactCount = 0;
+    u32 ownedDistanceCount = 0;
+    u32 orphanedContactIndexCount = 0;
+    u32 orphanedDistanceIndexCount = 0;
+    bool skipped = false;
+
+    bool has_orphans() const {
+        return orphanedContactIndexCount > 0u || orphanedDistanceIndexCount > 0u;
+    }
+
+    bool can_solve() const { return !skipped && !has_orphans(); }
+};
+
+/// Sleep/mobility diagnostics for one island (B4.4 deepen).
+struct IslandSleepPreflight {
+    u32 bodyCount = 0;
+    u32 sleepingBodyCount = 0;
+    u32 staticBodyCount = 0;
+    u32 movableBodyCount = 0;
+    bool allSleeping = false;
+    bool noMovableBodies = false;
+    bool skipped = false;
+
+    bool can_solve() const { return !skipped && !allSleeping && movableBodyCount > 0u; }
+};
+
+/// Wake-on-impulse preflight for one body (B4.4 deepen).
+struct WakeOnImpulsePreflight {
+    f32 forceMagnitudeSq = 0.f;
+    f32 torqueMagnitudeSq = 0.f;
+    bool sleeping = false;
+    bool shouldWake = false;
+    bool skipped = false;
+
+    bool can_wake() const { return !skipped && shouldWake; }
+};
+
+/// Body-partition diagnostics across all islands (B4.4 deepen).
+struct IslandBodyPartitionPreflight {
+    u32 totalIslands = 0;
+    u32 totalBodySlots = 0;
+    u32 duplicateBodyCount = 0;
+    bool partitionValid = true;
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && partitionValid; }
+};
+
+/// Constraint-iteration preflight for solver params (B4.4 deepen).
+struct ConstraintIterationPreflight {
+    u32 iterations = 0;
+    f32 residualTolerance = 0.f;
+    bool zeroIterations = false;
+    bool skipped = false;
+
+    bool can_iterate() const { return !skipped && !zeroIterations; }
+};
 
 /// Combined dispatch preflight (graph + timestep guard).
 struct IslandDispatchPreflight {
@@ -1092,6 +1154,55 @@ IslandConstraintIndexPreflight preflight_island_constraint_indices(
 IslandConstraintIndexPreflight preflight_island_constraint_indices_by_index(
     const ContactIslandGraph& graph,
     u32 islandIndex,
+/// True when the body carries `RB_SLEEPING`.
+bool is_body_sleeping(const RigidBodySoA& bodies, u32 bodyIndex);
+
+/// True when the body is static or kinematic.
+bool is_body_static_or_kinematic(const RigidBodySoA& bodies, u32 bodyIndex);
+
+/// True when the body can receive constraint corrections (non-static, awake).
+bool body_has_effective_mass(const RigidBodySoA& bodies, u32 bodyIndex);
+
+/// True when every dynamic body in the island is sleeping.
+bool island_all_bodies_sleeping(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies);
+
+/// True when at least one body in the island can move under constraints.
+bool island_has_movable_bodies(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies);
+
+/// True when at least one non-static, non-sleeping body is in the island.
+bool island_has_awake_dynamic_bodies(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies);
+
+/// Preflight orphaned contact/distance indices for one island.
+
+/// Preflight sleep/mobility for one island; sets `skipped` for empty islands.
+IslandSleepPreflight preflight_sleeping_island(const ContactIslandGraph::Island& island,
+                                               const RigidBodySoA& bodies);
+
+/// Preflight sleep/mobility by island index; out-of-range indices are marked skipped.
+IslandSleepPreflight preflight_sleeping_island_by_index(const ContactIslandGraph& graph,
+
+/// Early-out guard when every dynamic body in the island is sleeping.
+bool should_skip_sleeping_island_solve(const ContactIslandGraph::Island& island,
+
+/// Early-out guard combining job validity and sleeping-island preflight.
+bool should_skip_sleeping_island_solve_job(const IslandSolveJob& job,
+
+/// Preflight wake-on-impulse for one body; out-of-range indices are marked skipped.
+WakeOnImpulsePreflight preflight_wake_on_impulse(const RigidBodySoA& bodies,
+                                                 u32 bodyIndex,
+                                                 f32 wakeEpsilonSq = 1e-8f);
+
+/// True when a sleeping body should wake from applied force/torque above epsilon.
+bool should_wake_body_on_impulse(const RigidBodySoA& bodies,
+
+/// Preflight body-partition validity across all islands (diagnostic).
+IslandBodyPartitionPreflight preflight_island_body_partition(const ContactIslandGraph& graph);
+
+/// Preflight constraint-iteration params; sets `skipped` when iterations is zero.
+ConstraintIterationPreflight preflight_constraint_iterations(const SolverParams& params);
+
+/// Early-out guard when constraint iterations are zero.
+bool should_skip_constraint_iterations(const SolverParams& params);
 
 /// True when dt is positive for island constraint solve passes.
 bool is_valid_island_solve_dt(f32 dt);
@@ -1278,6 +1389,8 @@ u32 dispatch_dispatchable_island_jobs(RigidBodySoA& bodies,
 
 /// Batch guarded dispatch over pre-filtered jobs with explicit skip/solve counts.
 IslandBatchDispatchResult dispatch_dispatchable_island_jobs_result(
+/// Guarded dispatch entry that also skips fully sleeping islands.
+bool dispatch_solve_island_sleep_guarded(RigidBodySoA& bodies,
 
 /// Guarded dispatch entry: skips out-of-range, empty, and null-island jobs.
 bool dispatch_solve_island(RigidBodySoA& bodies,
