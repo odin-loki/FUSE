@@ -164,6 +164,13 @@ bool should_skip_manifold_prune(
     f32 duplicateEpsilon = 1e-4f,
     f32 shallowMinDepth = 0.f);
 
+/// Non-mutating prune predicate — inverse of `should_skip_manifold_prune` (B4.4 deepen guard pass).
+bool should_run_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
 /// Const preflight for manifold finalize dispatch (B4.4 deepen follow-up).
 struct ManifoldFinalizePreflight {
     bool skipped = false;
@@ -186,6 +193,13 @@ ManifoldFinalizePreflight preflight_manifold_finalize(
 
 /// Returns true when finalize should be skipped for this manifold (B4.4 deepen follow-up).
 bool can_skip_manifold_finalize(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
+/// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.4 deepen guard pass).
+bool should_run_manifold_finalize(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,

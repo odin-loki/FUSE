@@ -4,6 +4,7 @@
 #include <fuse/physics/config.hpp>
 #include <fuse/physics/math.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
+#include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
@@ -186,6 +187,32 @@ ContactManifold collideBoxBox(
     u32 idxB);
 
 struct ContactBufferSoA;
+
+/// Const preflight for one narrowphase pair slot dispatch (B4.4 deepen guard pass).
+struct NarrowphasePairSlotPreflight {
+    ContactPairPreflight pairPreflight{};
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && pairPreflight.can_dispatch(); }
+};
+
+/// Populate pair-slot preflight without running shape dispatch (B4.4 deepen guard pass).
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when narrowphase should skip this pair slot before dispatch (B4.4 deepen guard pass).
+bool should_skip_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Non-mutating pair-slot predicate — inverse of `should_skip_narrowphase_pair_slot` (B4.4 deepen guard pass).
+bool should_run_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.
 void runNarrowphaseIntoBuffer(

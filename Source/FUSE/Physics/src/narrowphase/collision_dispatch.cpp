@@ -4,6 +4,30 @@
 
 namespace fuse::physics::narrowphase {
 
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphasePairSlotPreflight preflight{};
+    preflight.pairPreflight = preflight_contact_pair(pair, bodies, shapes);
+    preflight.skipped = !preflight.pairPreflight.can_dispatch();
+    return preflight;
+}
+
+bool should_skip_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !preflight_narrowphase_pair_slot(pair, bodies, shapes).can_dispatch();
+}
+
+bool should_run_narrowphase_pair_slot(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_narrowphase_pair_slot(pair, bodies, shapes);
+}
+
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
@@ -16,6 +40,10 @@ void runNarrowphaseIntoBuffer(
     // scheduler reference-capture flakes seen when stacking parallel broadphase + narrowphase
     // under core::initialize(); the slot layout matches the future parallel_for kernel path.
     for (u32 pairIndex = 0; pairIndex < pairCount; ++pairIndex) {
+        if (should_skip_narrowphase_pair_slot(pairs[pairIndex], bodies, shapes)) {
+            continue;
+        }
+
         ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
         if (generate_contact_manifold(manifold)) {
             buffer.writeSlot(pairIndex, manifold);
