@@ -7657,7 +7657,6 @@ void testSnapDragRejectReasonGuards() {
                                                 fuse::editor::GizmoMode::Translate, snap),
                "shouldSkipSnapDrag true for infinity delta");
 
-    snap.gridSize = 0.5f;
     fuse::editor::GizmoSystem gizmo;
     gizmo.setSnapSettings(snap);
     expectTrue(gizmo.preflightSnapDragReady(0.37f), "gizmo preflightSnapDragReady accepts valid delta");
