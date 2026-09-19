@@ -1105,3 +1105,9 @@ std::string exportChromeTraceJson() {
 }
 
 } // namespace fuse::profiler
+
+// --- deepen additive from deepen-b16-profiler-c977 ---
+ProfilerRecordPreflight preflightRecord(const char* name) {
+    ProfilerRecordPreflight preflight{};
+ProfilerExportPreflight preflightChromeTraceExport() {
+    ProfilerExportPreflight preflight{};

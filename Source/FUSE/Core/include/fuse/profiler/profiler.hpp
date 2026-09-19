@@ -291,3 +291,9 @@ std::string exportChromeTraceJson();
 #define FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME(track, value) \
     ::fuse::profiler::sampleCounterSnapshotAtFrameDispatch(track, value)
 #endif
+
+// --- deepen additive from deepen-b16-profiler-c977 ---
+struct ProfilerRecordPreflight {
+struct ProfilerExportPreflight {
+ProfilerRecordPreflight preflightRecord(const char* name);
+ProfilerExportPreflight preflightChromeTraceExport();

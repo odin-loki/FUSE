@@ -2533,3 +2533,47 @@ void testNullNameScopeGuard() {
 
 // --- deepen additive from deepen-b16-profiler-guards-2e20 ---
 void testOpenAsyncFlowCountGuards() {
+
+// --- deepen additive from deepen-b16-profiler-c977 ---
+void testIsNonEmptyProfileNameGuard() {
+    const fuse::profiler::ProfilerRecordPreflight nullPreflight = fuse::profiler::preflightRecord(nullptr);
+    expectTrue(!nullPreflight.name_valid, "preflight rejects null name");
+    expectTrue(!nullPreflight.can_record_scope(), "preflight blocks null scope name");
+    const fuse::profiler::ProfilerRecordPreflight emptyPreflight = fuse::profiler::preflightRecord("");
+    expectTrue(!emptyPreflight.name_valid, "preflight rejects empty name");
+    expectTrue(!emptyPreflight.can_record_counter(), "preflight blocks empty counter track");
+    const fuse::profiler::ProfilerRecordPreflight validPreflight = fuse::profiler::preflightRecord("scope");
+    expectTrue(validPreflight.profiler_enabled, "preflight sees enabled profiler");
+    expectTrue(validPreflight.name_valid, "preflight accepts valid name");
+    expectTrue(validPreflight.can_record_async_flow(), "preflight allows valid async flow name");
+void testEmptyNameScopeFlowAndCounterGuards() {
+    expectTrue(fuse::profiler::tryEventAt(0u, outEvent), "tryEventAt succeeds for first event");
+    expectTrue(std::string(outEvent.name) == "try_scope", "tryEventAt copies event name");
+    expectTrue(!fuse::profiler::tryEventAt(99u, outEvent), "tryEventAt false for out-of-range index");
+    expectTrue(fuse::profiler::tryLastEvent(lastEvent), "tryLastEvent succeeds after recording");
+    expectTrue(lastEvent.phase == fuse::profiler::EventPhase::End, "tryLastEvent returns most recent end");
+    expectTrue(std::string(lastEvent.name) == "try_scope", "tryLastEvent preserves scope name");
+void testPreflightChromeTraceExport() {
+    const fuse::profiler::ProfilerExportPreflight emptyPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(!emptyPreflight.has_events, "empty export preflight has no events");
+    expectTrue(!emptyPreflight.can_export(), "empty export preflight cannot export");
+    expectTrue(emptyPreflight.event_count == 0u, "empty export preflight event count is zero");
+    expectTrue(emptyPreflight.dropped_event_count == 0u, "empty export preflight dropped count is zero");
+    expectTrue(!emptyPreflight.buffer_full, "empty export preflight buffer is not full");
+    const fuse::profiler::ProfilerExportPreflight recordedPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(recordedPreflight.has_events, "recorded export preflight has events");
+    expectTrue(recordedPreflight.can_export(), "recorded export preflight can export");
+    expectTrue(recordedPreflight.event_count == 2u, "recorded export preflight reports event count");
+void testDisabledRecordPreflight() {
+    const fuse::profiler::ProfilerRecordPreflight disabledPreflight = fuse::profiler::preflightRecord("scope");
+    expectTrue(!disabledPreflight.profiler_enabled, "disabled profiler preflight reports disabled");
+    expectTrue(disabledPreflight.name_valid, "disabled profiler preflight still validates name");
+    expectTrue(!disabledPreflight.can_record_scope(), "disabled profiler preflight blocks scope");
+    expectTrue(!disabledPreflight.can_record_counter(), "disabled profiler preflight blocks counter");
+    const fuse::profiler::ProfilerExportPreflight overflowPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(overflowPreflight.buffer_full, "overflow preflight reports full buffer");
+    expectTrue(overflowPreflight.dropped_event_count == 1u, "overflow preflight reports dropped count");
+    expectTrue(overflowPreflight.can_export(), "full buffer still has exportable events");
+void testHasOpenAsyncFlowsGuard() {
+    testPreflightChromeTraceExport();
+    testDisabledRecordPreflight();
