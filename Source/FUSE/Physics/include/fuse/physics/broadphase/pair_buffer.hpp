@@ -36,6 +36,10 @@ struct PairBufferSoA {
     bool canSkipSoAIteration() const { return activeCount == 0u && pairSlotCount == 0u; }
     /// True when at most one canonical pair is present (dedupe is a no-op).
     bool canSkipDedupe() const { return canSkipSoAIteration() || activeCount <= 1u; }
+    /// True when canonical sort would be a no-op (B4.2 deepen follow-up pass).
+    bool canSkipPairBufferSort() const;
+    /// True when at least two valid slots share the same canonical pair (B4.2 deepen follow-up pass).
+    bool hasDuplicateCanonicalPairs() const;
     /// True when slot storage has no invalid flags (compact is a no-op).
     bool canSkipCompaction() const;
     /// Count valid flags in prepared slot storage before compaction.
@@ -113,5 +117,55 @@ struct PairBufferSortPreflight {
 };
 
 PairBufferSortPreflight preflightPairBufferSort(const PairBufferSoA& buffer);
+
+/// Read-only slot-write diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferWriteSlotPreflight {
+    bool outOfRangeSlot = false;
+    bool invalidPair = false;
+
+    bool canWrite() const { return !outOfRangeSlot && !invalidPair; }
+};
+
+PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 idxA,
+    u32 idxB);
+
+/// Read-only slot-prepare diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferPrepareSlotsPreflight {
+    bool zeroSlots = false;
+
+    bool canPrepare() const { return !zeroSlots; }
+};
+
+PairBufferPrepareSlotsPreflight preflightPairBufferPrepareSlots(u32 slotCount);
+
+/// Read-only merge-into-buffer diagnostics — no mutation (B4.2 deepen follow-up pass).
+struct PairBufferMergePreflight {
+    bool emptyIncoming = false;
+    bool atCapacity = false;
+    u32 acceptedCount = 0;
+    u32 rejectedCount = 0;
+
+    bool canMergeAny() const { return !emptyIncoming && !atCapacity; }
+};
+
+PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u32 incomingCount);
+
+/// Merge preflight including pair-buffer capacity diagnostics (B4.2 deepen follow-up pass).
+struct BroadphaseMergeIntoBufferPreflight {
+    BroadphaseMergePreflight merge{};
+    PairBufferMergePreflight buffer{};
+    u32 incomingPairCount = 0;
+
+    bool canMergeAny() const { return merge.canMerge() && buffer.canMergeAny(); }
+};
+
+BroadphaseMergeIntoBufferPreflight preflightBroadphaseMergeIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer,
+    u32 incomingPairCount);
 
 } // namespace fuse::physics::broadphase
