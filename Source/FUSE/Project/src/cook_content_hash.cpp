@@ -647,3 +647,6 @@ bool should_skip_fnv1a64_bytes(const u8* data, usize size) {
 // --- deepen additive from deepen-b79-hash-should-skip-4ba0 ---
 bool should_skip_hash_preflight(const CookHashPreflight& preflight) {
     return preflight.should_skip();
+
+// --- deepen additive from deepen-b79-cooker-hash-928b ---
+bool should_skip_cache_lookup(u64 content_hash) {

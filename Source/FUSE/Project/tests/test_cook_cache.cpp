@@ -2059,3 +2059,10 @@ void testCookCachePruneReconcileShouldSkipGuards() {
                "should_skip_mesh mirrors preflight struct method");
                "should_skip upstream deps rejects empty list");
     expectTrue(!estimate.should_skip_prune(), "stale shader entry should not skip prune");
+
+// --- deepen additive from deepen-b79-cooker-hash-928b ---
+               "should_skip_upstream_dependencies_hash for empty list");
+               "preflight should_skip matches standalone mesh skip guard");
+    expectTrue(preflight.should_skip() == !preflight.ok(), "preflight should_skip is inverse of ok");
+    expectTrue(fuse::project::should_skip_cache_lookup(0), "should_skip_cache_lookup for zero hash");
+    expectTrue(!fuse::project::should_skip_cache_lookup(42u), "should_skip_cache_lookup false for valid hash");
