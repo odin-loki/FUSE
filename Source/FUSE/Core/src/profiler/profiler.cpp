@@ -311,6 +311,10 @@ bool isFlowDepthDetached() {
     return flowNestingDepth() != openAsyncFlowCount();
 }
 
+bool isCrossThreadFlowHandoffPending() {
+    return isFlowDepthDetached() && flowNestingDepth() > 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -333,6 +337,21 @@ bool isValidEventName(const char* name) {
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return isValidEventName(event.name);
+}
+
+bool isProfileEventSentinel(const ProfileEvent& event) {
+    return event.name == nullptr && event.timestampNs == 0u && event.scopeId == 0u
+        && event.phase == EventPhase::Begin;
+}
+
+u32 invalidNameEventCount() {
+    const u32 total = eventCount();
+    const u32 exportable = exportableEventCount();
+    return total >= exportable ? total - exportable : 0u;
+}
+
+bool hasInvalidNameEvents() {
+    return invalidNameEventCount() > 0u;
 }
 
 u32 exportableEventCount() {
@@ -377,6 +396,16 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     return isValidProfileEvent(outEvent);
 }
 
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventExportable(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return true;
+}
+
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
     if (index == kInvalidEventIndex) {
@@ -399,6 +428,40 @@ bool tryLastEvent(ProfileEvent& outEvent) {
 
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
+}
+
+u32 findFirstEventIndexByPhase(EventPhase phase) {
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.phase == phase && isValidEventName(event.name)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByPhase(EventPhase phase) {
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (event.phase == phase && isValidEventName(event.name)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByPhase(EventPhase phase) {
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.phase == phase && isValidEventName(event.name)) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 u32 lastEventIndex() {
@@ -430,6 +493,10 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.invalidNameEventCount = invalidNameEventCount();
+    preflight.ringBufferFull = isBufferFull();
+    preflight.hasInvalidNameEvents = hasInvalidNameEvents();
+    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
     return preflight;
 }
 
@@ -565,7 +632,7 @@ std::string exportChromeTraceJson() {
 
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.name == nullptr) {
+        if (!isValidEventName(event.name)) {
             continue;
         }
 
