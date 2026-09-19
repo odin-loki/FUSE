@@ -642,3 +642,25 @@ u32 ContactBufferSoA::compactAndClampWithPreflight() {
 
 // --- deepen additive from deepen-b4-narrowphase-9067 ---
     const ContactBufferCompactAndClampPreflight preflight = preflight_contact_buffer_compact_and_clamp(*this);
+
+// --- deepen additive from b4-narrowphase-deepen-e124 ---
+    if (!preflightContactBufferFrictionBases(*this).needsRebuild()) {
+const char* contactBufferFrictionBasesRejectReasonName(ContactBufferFrictionBasesRejectReason reason) {
+    case ContactBufferFrictionBasesRejectReason::None:
+    case ContactBufferFrictionBasesRejectReason::EmptyBuffer:
+    case ContactBufferFrictionBasesRejectReason::NoValidSlots:
+ContactBufferFrictionBasesRejectReason contactBufferFrictionBasesRejectReason(const ContactBufferSoA& buffer) {
+        return ContactBufferFrictionBasesRejectReason::EmptyBuffer;
+        return ContactBufferFrictionBasesRejectReason::NoValidSlots;
+    return ContactBufferFrictionBasesRejectReason::None;
+    ContactBufferFrictionBasesRejectReason expected) {
+    return contactBufferFrictionBasesRejectReason(buffer) == expected;
+ContactBufferFrictionBasesPreflight preflightContactBufferFrictionBases(const ContactBufferSoA& buffer) {
+    ContactBufferFrictionBasesPreflight preflight{};
+    preflight.reason = contactBufferFrictionBasesRejectReason(buffer);
+    preflight.emptyBuffer = preflight.reason == ContactBufferFrictionBasesRejectReason::EmptyBuffer;
+    preflight.noValidSlots = preflight.reason == ContactBufferFrictionBasesRejectReason::NoValidSlots;
+    return !preflightContactBufferFrictionBases(buffer).needsRebuild();
+    return preflightContactBufferFrictionBases(buffer).needsRebuild();
+bool buildContactBufferFrictionBasesWithPreflight(ContactBufferSoA& buffer) {
+    const ContactBufferFrictionBasesPreflight preflight = preflightContactBufferFrictionBases(buffer);

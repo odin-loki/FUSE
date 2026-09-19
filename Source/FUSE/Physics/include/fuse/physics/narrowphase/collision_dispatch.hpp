@@ -235,3 +235,7 @@ void runNarrowphaseIntoBufferWithPreflight(
 // --- deepen additive from deepen-b4-narrowphase-9067 ---
 struct NarrowphaseIntoBufferPreflight {
 NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
+
+// --- deepen additive from b4-narrowphase-deepen-e124 ---
+NarrowphaseIntoBufferPreflight preflightNarrowphaseIntoBuffer(
+bool should_skip_narrowphase_into_buffer(

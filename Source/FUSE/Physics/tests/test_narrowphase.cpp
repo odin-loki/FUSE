@@ -2839,3 +2839,26 @@ void testManifoldGenerateWithPreflightGuards() {
                 fuse::physics::narrowphase::ManifoldPruneRejectReason::ExceedsMaxPoints),
     testNarrowphaseIntoBufferPreflightGuards();
     testManifoldGenerateWithPreflightGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-e124 ---
+    const auto compactionPreflight = fuse::physics::narrowphase::preflightContactBufferCompaction(buffer);
+        fuse::physics::narrowphase::preflightContactBufferCompactAndClamp(empty).reason ==
+            fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::EmptyBuffer,
+    const auto frictionPreflight = fuse::physics::narrowphase::preflightContactBufferFrictionBases(buffer);
+    expectTrue(frictionPreflight.needsRebuild(), "friction-bases preflight needs rebuild with valid slots");
+        fuse::physics::narrowphase::buildContactBufferFrictionBasesWithPreflight(buffer),
+        "buildFrictionBasesWithPreflight rebuilds tangents");
+        fuse::physics::narrowphase::preflightNarrowphaseIntoBuffer(emptyPairs, bodies, shapes);
+    expectTrue(emptyPreflight.emptyPairs, "into-buffer preflight marks empty pair list");
+        fuse::physics::narrowphase::should_skip_narrowphase_into_buffer(emptyPairs, bodies, shapes),
+        "should_skip_into_buffer on empty pair list");
+        fuse::physics::narrowphase::preflightNarrowphaseIntoBuffer(validPairs, bodies, shapes);
+    expectTrue(validPreflight.can_run(), "into-buffer preflight can run with valid pairs");
+    expectTrue(validPreflight.dispatchableCount == 1u, "into-buffer preflight counts dispatchable pair");
+    const auto slotPreflight = fuse::physics::narrowphase::preflight_narrowphase_pair_slot(
+    expectTrue(!slotPreflight.can_dispatch(), "pair-slot preflight rejects self pair");
+        slotPreflight.reason == fuse::physics::narrowphase::ContactPairRejectReason::SelfPair,
+        fuse::physics::narrowphase::should_skip_narrowphase_pair_slot(0u, {bodyA, bodyA}, bodies, shapes),
+        "should_skip_pair_slot on self pair");
+void testFrictionBasisEnsureWithPreflight() {
+    testFrictionBasisEnsureWithPreflight();

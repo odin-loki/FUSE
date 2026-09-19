@@ -229,3 +229,14 @@ void buildContactBufferFrictionTangentBasesWithPreflight(ContactBufferSoA& buffe
     bool needs_compaction() const { return reason == ContactBufferCompactionRejectReason::None; }
     bool needs_clamp() const { return reason == ContactBufferClampRejectReason::None; }
     bool can_rebuild() const { return reason == ContactBufferFrictionBasisRejectReason::None; }
+
+// --- deepen additive from b4-narrowphase-deepen-e124 ---
+enum class ContactBufferFrictionBasesRejectReason : u8 {
+const char* contactBufferFrictionBasesRejectReasonName(ContactBufferFrictionBasesRejectReason reason);
+ContactBufferFrictionBasesRejectReason contactBufferFrictionBasesRejectReason(const ContactBufferSoA& buffer);
+    ContactBufferFrictionBasesRejectReason expected);
+struct ContactBufferFrictionBasesPreflight {
+    ContactBufferFrictionBasesRejectReason reason = ContactBufferFrictionBasesRejectReason::None;
+    bool needsRebuild() const { return reason == ContactBufferFrictionBasesRejectReason::None; }
+ContactBufferFrictionBasesPreflight preflightContactBufferFrictionBases(const ContactBufferSoA& buffer);
+bool buildContactBufferFrictionBasesWithPreflight(ContactBufferSoA& buffer);

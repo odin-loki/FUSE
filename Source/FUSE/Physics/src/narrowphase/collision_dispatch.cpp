@@ -95,3 +95,12 @@ void runNarrowphaseIntoBufferWithPreflight(
         if (!should_skip_narrowphase_pair_slot(pair, bodies, shapes)) {
 NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
     NarrowphaseIntoBufferPreflight preflight{};
+
+// --- deepen additive from b4-narrowphase-deepen-e124 ---
+NarrowphaseIntoBufferPreflight preflightNarrowphaseIntoBuffer(
+        const NarrowphaseBatchPreflight batchPreflight = preflight_narrowphase_batch(pairs, bodies, shapes);
+        preflight.dispatchableCount = batchPreflight.dispatchableCount;
+bool should_skip_narrowphase_into_buffer(
+    return !preflightNarrowphaseIntoBuffer(pairs, bodies, shapes).can_run();
+    const NarrowphaseIntoBufferPreflight preflight = preflightNarrowphaseIntoBuffer(pairs, bodies, shapes);
+        if (should_skip_narrowphase_pair_slot(pairIndex, pairs[pairIndex], bodies, shapes)) {
