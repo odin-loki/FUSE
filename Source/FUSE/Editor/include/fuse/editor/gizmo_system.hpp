@@ -2465,8 +2465,6 @@ enum class GizmoPickRejectReason : u8 {
     EmptyRay,
     NonFiniteHit,
     EmptyHit,
-    NonFiniteRay,
-    NonFiniteHit,
     InvalidPickConfig,
     InvalidDimensions,
     OutOfBounds,
@@ -2515,8 +2513,6 @@ enum class GizmoBeginDragRejectReason : u8 {
     EmptyRay,
     NonFiniteHit,
     EmptyHit,
-    NonFiniteRay,
-    NonFiniteHit,
     InvalidPickConfig,
     InvalidDimensions,
     OutOfBounds,
@@ -2533,7 +2529,6 @@ enum class GizmoUpdateDragRejectReason : u8 {
     InvalidActiveAxis,
     NonFiniteHit,
     EmptyHit,
-    NonFiniteHit,
     InvalidDimensions,
     OutOfBounds,
 
@@ -2754,21 +2749,12 @@ enum class GizmoSnapDragRejectReason : u8 {
     InvalidStep,
 };
 
-/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
-enum class GizmoSnapDragRejectReason : u8 {
-    None = 0,
-    DeltaNonFinite,
-    SnapDisabled,
-    InvalidStep,
-};
-
 const char* gizmoPickRejectReasonLabel(GizmoPickRejectReason reason);
 const char* gizmoSnapRejectReasonLabel(GizmoSnapRejectReason reason);
 const char* gizmoSnapDragRejectReasonLabel(GizmoSnapDragRejectReason reason);
 const char* gizmoBeginDragRejectReasonLabel(GizmoBeginDragRejectReason reason);
 const char* gizmoUpdateDragRejectReasonLabel(GizmoUpdateDragRejectReason reason);
 const char* gizmoEndDragRejectReasonLabel(GizmoEndDragRejectReason reason);
-const char* gizmoSnapDragRejectReasonLabel(GizmoSnapDragRejectReason reason);
 
 GizmoPickRejectReason classifyPickReject(const PickPreflight& preflight);
 GizmoSnapRejectReason classifySnapReject(const SnapPreflight& preflight);
@@ -2780,6 +2766,14 @@ GizmoSnapDragRejectReason classifySnapDragReject(const SnapDragPreflight& prefli
 GizmoBeginDragRejectReason classifyBeginInteractionReject(const BeginInteractionPreflight& preflight);
 GizmoUpdateDragRejectReason classifyUpdateInteractionReject(const UpdateInteractionPreflight& preflight);
 GizmoEndDragRejectReason classifyEndInteractionReject(const EndInteractionPreflight& preflight);
+
+/// Interaction preflight reject classifiers — compose drag-phase guards (B6.4 deepen pass).
+GizmoBeginDragRejectReason classifyBeginDragInteractionReject(
+    const BeginDragInteractionPreflight& preflight);
+GizmoUpdateDragRejectReason classifyUpdateDragInteractionReject(
+    const UpdateDragInteractionPreflight& preflight);
+GizmoEndDragRejectReason classifyEndDragInteractionReject(
+    const EndDragInteractionPreflight& preflight);
 
 /// Pick preflight with optional reject-reason output (B6.4 deepen pass).
 bool preflightPickReady(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -2926,6 +2920,24 @@ bool tryPreflightEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode m
                                 GizmoEndDragRejectReason& reason);
 bool shouldSkipEndInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
                               const GizmoSnapSettings& settings);
+bool preflightBeginDragInteractionReady(const GizmoHitTest& hit, GizmoMode mode,
+                                        const GizmoSnapSettings& settings,
+                                        GizmoBeginDragRejectReason* reason = nullptr,
+                                        bool alreadyDragging = false);
+bool tryPreflightBeginDragInteraction(const GizmoRay& ray, const GizmoTransform& transform,
+                                      GizmoMode mode, GizmoSpace space, f32 axisLength,
+                                      f32 pickRadius, const GizmoSnapSettings& settings,
+bool tryPreflightBeginDragInteraction(const GizmoHitTest& hit, GizmoMode mode,
+bool shouldSkipBeginDragInteraction(const GizmoRay& ray, const GizmoTransform& transform,
+bool shouldSkipBeginDragInteraction(const GizmoHitTest& hit, GizmoMode mode,
+
+                                           const GizmoSnapSettings& settings, f32 delta,
+bool tryPreflightUpdateDragInteraction(const GizmoHitTest& hit, bool dragging,
+bool shouldSkipUpdateDragInteraction(const GizmoHitTest& hit, bool dragging,
+                                       const GizmoSnapSettings& settings, f32 delta);
+
+bool tryPreflightEndDragInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+bool shouldSkipEndDragInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
 
 /// Screen-space dead-zone check before axis pick (B6.4 deepen).
 bool isScreenHitMiss(const GizmoHitTest& hit, GizmoMode mode);
@@ -3447,6 +3459,39 @@ public:
         GizmoEndDragRejectReason* reason = nullptr) const;
     [[nodiscard]] bool tryPreflightEndInteraction(GizmoEndDragRejectReason& reason) const;
     [[nodiscard]] bool shouldSkipEndInteraction() const;
+
+    /// Begin-drag interaction preflight with optional reject-reason output (B6.4 deepen pass).
+    [[nodiscard]] bool preflightBeginDragInteractionReady(
+        const GizmoHitTest& hit, GizmoBeginDragRejectReason* reason = nullptr) const;
+    [[nodiscard]] bool preflightBeginDragInteractionReady(
+        const GizmoRay& ray, const GizmoTransform& transform,
+        GizmoBeginDragRejectReason* reason = nullptr) const;
+    [[nodiscard]] bool tryPreflightBeginDragInteraction(const GizmoHitTest& hit,
+                                                        GizmoBeginDragRejectReason& reason) const;
+    [[nodiscard]] bool tryPreflightBeginDragInteraction(
+        const GizmoRay& ray, const GizmoTransform& transform,
+        GizmoBeginDragRejectReason& reason) const;
+    [[nodiscard]] bool shouldSkipBeginDragInteraction(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool shouldSkipBeginDragInteraction(const GizmoRay& ray,
+                                                      const GizmoTransform& transform) const;
+
+    /// Update-drag interaction preflight with optional reject-reason output (B6.4 deepen pass).
+    [[nodiscard]] bool preflightUpdateDragInteractionReady(
+        const GizmoHitTest& hit, GizmoUpdateDragRejectReason* reason = nullptr) const;
+    [[nodiscard]] bool preflightUpdateDragInteractionReady(
+        const GizmoHitTest& hit, f32 delta, GizmoUpdateDragRejectReason* reason = nullptr) const;
+    [[nodiscard]] bool tryPreflightUpdateDragInteraction(const GizmoHitTest& hit,
+                                                         GizmoUpdateDragRejectReason& reason) const;
+    [[nodiscard]] bool tryPreflightUpdateDragInteraction(
+        const GizmoHitTest& hit, f32 delta, GizmoUpdateDragRejectReason& reason) const;
+    [[nodiscard]] bool shouldSkipUpdateDragInteraction(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool shouldSkipUpdateDragInteraction(const GizmoHitTest& hit, f32 delta) const;
+
+    /// End-drag interaction preflight with optional reject-reason output (B6.4 deepen pass).
+    [[nodiscard]] bool preflightEndDragInteractionReady(
+        GizmoEndDragRejectReason* reason = nullptr) const;
+    [[nodiscard]] bool tryPreflightEndDragInteraction(GizmoEndDragRejectReason& reason) const;
+    [[nodiscard]] bool shouldSkipEndDragInteraction() const;
 
     bool isDragging() const { return m_dragging; }
     bool canBeginDrag(const GizmoHitTest& hit, const GizmoTransform& transform) const;
