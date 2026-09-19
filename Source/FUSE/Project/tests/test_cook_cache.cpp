@@ -1128,3 +1128,21 @@ void testCookHashPreflightCacheableAndManifestDeps() {
     const fuse::project::CookHashPreflight empty_source = cache.preflight_cook_cache_entry(invalid);
     const fuse::project::CookHashPreflight empty_output = cache.preflight_cook_cache_entry(invalid);
     const fuse::project::CookHashPreflight valid = cache.preflight_cook_cache_entry(invalid);
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-3cee ---
+void testCookCacheWouldInvalidateSourceOutputGuards() {
+    expectTrue(!cache.would_invalidate_source(""), "would_invalidate_source rejects empty path");
+    expectTrue(!cache.would_invalidate_output(""), "would_invalidate_output rejects empty path");
+    expectTrue(!cache.would_invalidate_stale_content_for_source("", 42u),
+               "would_invalidate_stale_content rejects empty source");
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_stale.obj", 0u),
+               "would_invalidate_stale_content rejects zero hash");
+    expectTrue(!cache.would_invalidate_stale_upstream_hashes({}),
+               "would_invalidate_stale_upstream on empty list is false");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path), "would_invalidate_output finds seeded entry");
+               "would_invalidate_stale_content false for matching hash");
+               "would_invalidate_stale_content true for mismatched hash");
+void testCookCachePreflightEntryGuards() {
+    expectTrue(zero_key.reason == fuse::project::CookHashRejectReason::InvalidCacheKey,
+                   fuse::project::CookHashRejectReason::InvalidCacheKey)) == "invalid_cache_key",
+    testCookCachePreflightEntryGuards();

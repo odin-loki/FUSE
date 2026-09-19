@@ -522,3 +522,6 @@ CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry&
     case CookHashRejectReason::InvalidCacheEntry:
     const CookHashPreflight fold_preflight = preflight_combine_cook_cache_key(source_hash, upstream_hash);
 CookHashPreflight preflight_manifest_entry_with_dependencies_hash(const CookManifestEntry& entry,
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-3cee ---
+    case CookHashRejectReason::InvalidCacheKey:

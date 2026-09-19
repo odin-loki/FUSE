@@ -387,3 +387,6 @@ bool AssetCooker::would_invalidate_upstream(const CookManifest& manifest,
 
 // --- deepen additive from deepen-b79-cooker-hash-c0c4 ---
     return estimate_upstream_invalidation(manifest, changed_source).would_invalidate();
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-3cee ---
+    if (m_cache.would_invalidate_source(changed_source)) {

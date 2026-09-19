@@ -2012,3 +2012,13 @@ void testCookerReconcileEstimatorGuards() {
                "empty output path would_invalidate_downstream_of is guarded");
     expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes(source_upstream),
                "would_invalidate_stale_upstream true after upstream content change");
+
+// --- deepen additive from deepen-b79-cooker-hash-guards-3cee ---
+    expectTrue(seeded.ok, "seed cook for would_invalidate mirror ok");
+    expectTrue(cooker.cache().would_invalidate(seeded.content_hash) ==
+               "would_invalidate agrees with contains");
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source true when seeded");
+    expectTrue(cooker.cache().would_invalidate_output(desc.output_path), "would_invalidate_output true when seeded");
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, seeded.content_hash + 1u),
+               "would_invalidate_stale_content mirrors count probe after change");
+               "would_invalidate_stale_upstream mirrors count probe");
