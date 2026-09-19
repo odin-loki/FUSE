@@ -278,3 +278,6 @@ struct ContactBufferFrictionRebuildPreflight {
     ContactBufferFrictionRebuildRejectReason reason = ContactBufferFrictionRebuildRejectReason::None;
     bool needsRebuild() const { return reason == ContactBufferFrictionRebuildRejectReason::None; }
 ContactBufferFrictionRebuildPreflight preflightContactBufferFrictionRebuild(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-e78a ---
+bool writeContactSlotWithPreflight(

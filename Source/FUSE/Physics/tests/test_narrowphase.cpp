@@ -3039,3 +3039,12 @@ void testContactPairBothPlanesDeepenGuard() {
 void testManifoldNormalizeAndPruneIfNeededGuards() {
 void testFrictionTangentsWithPreflightGuard() {
     testFrictionTangentsWithPreflightGuard();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-e78a ---
+        fuse::physics::narrowphase::writeContactSlotWithPreflight(buffer, 0u, valid),
+        !fuse::physics::narrowphase::writeContactSlotWithPreflight(buffer, 1u, invalid),
+void testContactPairDeepenRejectedGuards() {
+void testGenerateContactManifoldWithPreflightGuard() {
+void testComputeFrictionTangentsWithPreflightGuard() {
+    testGenerateContactManifoldWithPreflightGuard();
+    testComputeFrictionTangentsWithPreflightGuard();

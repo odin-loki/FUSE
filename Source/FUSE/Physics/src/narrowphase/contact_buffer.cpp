@@ -730,3 +730,6 @@ ContactBufferFrictionRebuildPreflight preflightContactBufferFrictionRebuild(
     preflight.allOrthonormal = preflight.reason == ContactBufferFrictionRebuildRejectReason::AllOrthonormal;
     return !preflightContactBufferFrictionRebuild(buffer, epsilon).needsRebuild();
     return preflightContactBufferFrictionRebuild(buffer, epsilon).needsRebuild();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-e78a ---
+bool writeContactSlotWithPreflight(
