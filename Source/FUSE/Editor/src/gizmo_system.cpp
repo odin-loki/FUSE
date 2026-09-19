@@ -1098,6 +1098,22 @@ bool canEndDrag(bool dragging) {
     return preflightEndDrag(dragging).canEnd();
 }
 
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging) {
+    return preflightUpdateDrag(hit, dragging).canUpdate();
+}
+
+EndDragPreflight preflightEndDrag(bool dragging) {
+    EndDragPreflight preflight{};
+    if (!dragging) {
+        preflight.notDragging = true;
+    }
+    return preflight;
+}
+
+bool canEndDrag(bool dragging) {
+    return preflightEndDrag(dragging).canEnd();
+}
+
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       GizmoMode mode, GizmoSpace space, f32 axisLength,
                                       f32 pickRadius, bool alreadyDragging) {
@@ -1938,6 +1954,53 @@ bool GizmoSystem::canEndDrag() const {
     return fuse::editor::canEndDrag(m_dragging);
 }
 
+bool GizmoSystem::canUpdateDrag(const GizmoHitTest& hit) const {
+    return fuse::editor::canUpdateDrag(hit, m_dragging);
+}
+
+bool GizmoSystem::tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out) {
+    out = {};
+    if (!preflightUpdateDrag(hit).canUpdate()) {
+        return false;
+    }
+
+    m_lastHit = hit;
+    m_currentTransform = applySnapping_(applyAxisDelta_(hit, m_startTransform));
+
+    out.active = true;
+    out.changed = true;
+    out.axis = m_activeAxis;
+    out.transform = m_currentTransform;
+    return true;
+}
+
+EndDragPreflight GizmoSystem::preflightEndDrag() const {
+    return fuse::editor::preflightEndDrag(m_dragging);
+}
+
+bool GizmoSystem::canEndDrag() const {
+    return fuse::editor::canEndDrag(m_dragging);
+}
+
+bool GizmoSystem::tryEndDrag(GizmoResult& out) {
+    out = {};
+    if (!preflightEndDrag().canEnd()) {
+        return false;
+    }
+
+    m_currentTransform = applySnapping_(m_currentTransform);
+    markDirty_();
+
+    out.active = false;
+    out.changed = true;
+    out.axis = m_activeAxis;
+    out.transform = m_currentTransform;
+
+    m_dragging = false;
+    m_activeAxis = GizmoAxis::None;
+    return true;
+}
+
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
     GizmoResult result;
     if (!tryBeginDrag(hit, current, result)) {
@@ -2060,7 +2123,6 @@ bool GizmoSystem::tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out) {
     out.axis = m_activeAxis;
     out.transform = m_currentTransform;
     return true;
-}
 
 GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
     GizmoResult result;
@@ -2082,22 +2144,11 @@ BeginDragPreflight GizmoSystem::preflightBeginDrag(const GizmoHitTest& hit,
 BeginDragPreflight GizmoSystem::preflightBeginDrag(const GizmoRay& ray,
     return fuse::editor::preflightBeginDrag(ray, current, m_mode, m_space, kAxisLength,
                                             kPickRadius);
-}
 
-bool GizmoSystem::tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out) {
-    out = {};
     if (!preflightUpdateDrag(hit).canUpdate()) {
         return false;
 
-    m_currentTransform = applySnapping_(applyAxisDelta_(hit, m_startTransform));
-    m_lastHit = hit;
 
-    out.active = true;
-    out.changed = true;
-    out.axis = m_activeAxis;
-    out.transform = m_currentTransform;
-    return true;
-        return result;
 
 EndDragPreflight GizmoSystem::preflightEndDrag() const {
     return fuse::editor::preflightEndDrag(m_dragging);
@@ -2114,14 +2165,10 @@ GizmoResult GizmoSystem::endDrag() {
     if (!preflightEndDrag().canEnd()) {
         return result;
     }
-    return result;
-}
 
 bool GizmoSystem::tryEndDrag(GizmoResult& out) {
     out = {};
-    if (!preflightEndDrag().canEnd()) {
         return false;
-    }
 
     m_currentTransform = applySnapping_(m_currentTransform);
     markDirty_();
@@ -2134,14 +2181,11 @@ bool GizmoSystem::tryEndDrag(GizmoResult& out) {
     m_dragging = false;
     m_activeAxis = GizmoAxis::None;
     return true;
-}
 
 void GizmoSystem::cancelDrag() {
     if (!m_dragging) {
         return;
 
-    m_dragging = false;
-    m_activeAxis = GizmoAxis::None;
     m_startTransform = {};
     m_currentTransform = {};
     m_lastHit = {};

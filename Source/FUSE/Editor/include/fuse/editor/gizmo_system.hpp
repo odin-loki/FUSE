@@ -517,6 +517,21 @@ struct EndDragPreflight {
 };
 
 
+/// Non-mutating update-drag predicate — same guards as `preflightUpdateDrag` (B6.4 deepen pass).
+bool canUpdateDrag(const GizmoHitTest& hit, bool dragging);
+
+/// Read-only end-drag diagnostics — no mutation (B6.4 deepen pass).
+struct EndDragPreflight {
+    bool notDragging = false;
+
+    bool canEnd() const { return !notDragging; }
+};
+
+EndDragPreflight preflightEndDrag(bool dragging);
+
+/// Non-mutating end-drag predicate — rejects inactive drags (B6.4 deepen pass).
+bool canEndDrag(bool dragging);
+
 BeginDragPreflight preflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
                                       f32 pickRadius, bool alreadyDragging = false);
                                       f32 pickRadius, const GizmoSnapSettings& settings,
@@ -929,6 +944,7 @@ public:
     [[nodiscard]] EndDragPreflight preflightEndDrag() const;
     /// Non-mutating end-drag predicate — rejects when no drag is active (B6.4 deepen pass).
     [[nodiscard]] bool canEndDrag() const;
+    /// Guarded update-drag — returns false when drag is inactive or hit is empty (B6.4 deepen pass).
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
@@ -974,6 +990,7 @@ public:
     /// Non-mutating update-drag predicate — rejects inactive drag and empty viewport (B6.4 deepen follow-up).
     /// Read-only update-drag diagnostics — same guards as `canUpdateDrag` (B6.4 deepen follow-up).
     /// Guarded end-drag — returns false when no drag is active (B6.4 deepen pass).
+    /// Guarded end-drag — returns false when drag is inactive (B6.4 deepen pass).
     GizmoResult endDrag();
     /// Cancel an active drag without committing transform changes (B6.4 deepen follow-up).
     void cancelDrag();
