@@ -256,6 +256,9 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Normalize the contact normal when non-unit; returns true when normalization ran (B4.6 deepen pass).
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
