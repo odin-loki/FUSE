@@ -1234,6 +1234,93 @@ void testCrossThreadFlowPreservesOpenCountGuard() {
                "cross-thread finish records worker tid");
 }
 
+void testEventNameValidPreflight() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(!fuse::profiler::isEventNameValid(nullptr), "null name fails preflight");
+    expectTrue(!fuse::profiler::isEventNameValid(""), "empty name fails preflight");
+    expectTrue(fuse::profiler::isEventNameValid("valid_scope"), "non-empty name passes preflight");
+
+    expectTrue(!fuse::profiler::isValidProfileEvent(fuse::profiler::ProfileEvent{}),
+               "default ProfileEvent fails validity check");
+    fuse::profiler::ProfileEvent emptyNameEvent{};
+    emptyNameEvent.name = "";
+    expectTrue(!fuse::profiler::isValidProfileEvent(emptyNameEvent),
+               "empty-string ProfileEvent fails validity check");
+    fuse::profiler::ProfileEvent validEvent{};
+    validEvent.name = "valid";
+    expectTrue(fuse::profiler::isValidProfileEvent(validEvent),
+               "named ProfileEvent passes validity check");
+}
+
+void testTryLastEventGuard() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    fuse::profiler::ProfileEvent outEvent{};
+    expectTrue(!fuse::profiler::tryLastEvent(outEvent), "tryLastEvent false on empty buffer");
+    expectTrue(outEvent.name == nullptr, "tryLastEvent clears output on empty buffer");
+
+    {
+        FUSE_PROFILE_SCOPE("last_scope");
+    }
+
+    expectTrue(fuse::profiler::tryLastEvent(outEvent), "tryLastEvent true after recording");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastEvent copies last end phase");
+    expectTrue(outEvent.name != nullptr && std::string(outEvent.name) == "last_scope",
+               "tryLastEvent copies last scope name");
+
+    fuse::profiler::reset();
+    expectTrue(!fuse::profiler::tryLastEvent(outEvent), "tryLastEvent false after reset");
+}
+
+void testExportPreflightGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::isChromeTraceExportEmpty(), "reset leaves export preflight empty");
+    expectTrue(!fuse::profiler::hasExportableEvents(), "reset leaves no exportable events");
+    expectTrue(fuse::profiler::exportChromeTraceJson().find("\"traceEvents\":[]") != std::string::npos,
+               "empty export preflight matches empty traceEvents");
+
+    {
+        FUSE_PROFILE_SCOPE("export_preflight_scope");
+    }
+
+    expectTrue(fuse::profiler::hasExportableEvents(), "recorded scope yields exportable events");
+    expectTrue(!fuse::profiler::isChromeTraceExportEmpty(), "export preflight false after recording");
+    expectTrue(fuse::profiler::exportChromeTraceJson().find("\"name\":\"export_preflight_scope\"")
+                   != std::string::npos,
+               "export preflight allows named scope export");
+
+    fuse::profiler::reset();
+    expectTrue(fuse::profiler::isChromeTraceExportEmpty(), "reset restores empty export preflight");
+}
+
+void testGuardStateBalancedIntrospection() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::isGuardStateBalanced(), "reset leaves composite guard state balanced");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+    {
+        FUSE_PROFILE_SCOPE("guard_outer");
+        expectTrue(!fuse::profiler::isGuardStateBalanced(), "active scope reports unbalanced guard state");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("guard_flow", flowId);
+        expectTrue(!fuse::profiler::isGuardStateBalanced(), "open flow keeps guard state unbalanced");
+        FUSE_PROFILE_ASYNC_FLOW_END("guard_flow", flowId);
+        expectTrue(!fuse::profiler::isGuardStateBalanced(), "open scope keeps guard state unbalanced");
+    }
+    expectTrue(fuse::profiler::isGuardStateBalanced(), "closed scope and flow restore balanced guard state");
+
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("unmatched_flow", flowId);
+    expectTrue(!fuse::profiler::isGuardStateBalanced(), "unmatched flow leaves guard state unbalanced");
+    fuse::profiler::reset();
+    expectTrue(fuse::profiler::isGuardStateBalanced(), "reset restores composite guard state balance");
+}
+
 void testVerifyMacro() {
     resetState();
     fuse::assertion::setSuppressAbortForTests(true);
@@ -1309,6 +1396,10 @@ int main() {
     testTryEventAtGuard();
     testResetRestoresNestingBalance();
     testCrossThreadFlowPreservesOpenCountGuard();
+    testEventNameValidPreflight();
+    testTryLastEventGuard();
+    testExportPreflightGuards();
+    testGuardStateBalancedIntrospection();
     testFatalHandlerHook();
     testVerifyMacro();
 

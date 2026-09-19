@@ -71,6 +71,10 @@ u32 openAsyncFlowCount();
 bool hasOpenAsyncFlows();
 bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
+bool isGuardStateBalanced();
+
+/// Preflight for scope/flow/counter names before recording (rejects null and empty strings).
+bool isEventNameValid(const char* name);
 
 bool hasEvents();
 bool isBufferEmpty();
@@ -80,8 +84,14 @@ bool isValidProfileEvent(const ProfileEvent& event);
 u32 lastEventIndex();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
+bool tryLastEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
+
+/// True when at least one buffered event has a valid name for chrome export.
+bool hasExportableEvents();
+/// True when chrome export would emit zero trace events (empty buffer or no valid names).
+bool isChromeTraceExportEmpty();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();

@@ -301,6 +301,10 @@ bool isFlowNestingBalanced() {
     return flowNestingDepth() == 0u;
 }
 
+bool isGuardStateBalanced() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -318,7 +322,11 @@ bool isEventIndexValid(u32 index) {
 }
 
 bool isValidProfileEvent(const ProfileEvent& event) {
-    return event.name != nullptr;
+    return isValidEventName(event.name);
+}
+
+bool isEventNameValid(const char* name) {
+    return isValidEventName(name);
 }
 
 const ProfileEvent& eventAt(u32 index) {
@@ -342,6 +350,30 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
 
     outEvent = eventAt(index);
     return isValidProfileEvent(outEvent);
+}
+
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
+bool hasExportableEvents() {
+    const u32 count = eventCount();
+    for (u32 i = 0; i < count; ++i) {
+        if (isValidProfileEvent(eventAt(i))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool isChromeTraceExportEmpty() {
+    return !hasExportableEvents();
 }
 
 u32 lastEventIndex() {
@@ -489,7 +521,7 @@ std::string exportChromeTraceJson() {
 
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.name == nullptr) {
+        if (!isValidEventName(event.name)) {
             continue;
         }
 
