@@ -2666,3 +2666,18 @@ void testRunNarrowphaseDeepenPreflightGuards() {
     testFrictionBasisRebuildUsingPreflightGuards();
     testContactBufferWritePreflightGuards();
     testRunNarrowphaseDeepenPreflightGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-c6ee ---
+void testContactPairDeepenDispatchGuards() {
+    expectTrue(validPreflight.can_write(), "write preflight allows valid manifold");
+    expectTrue(!selfPreflight.can_write(), "write preflight rejects self pair");
+    expectTrue(selfPreflight.selfPair, "write preflight flags self pair");
+        fuse::physics::narrowphase::should_skip_contact_buffer_write(1u, buffer, selfPair),
+        "should_skip_contact_buffer_write on self pair");
+    const auto invalidPreflight =
+    expectTrue(!invalidPreflight.can_write(), "write preflight rejects invalid manifold");
+    expectTrue(invalidPreflight.invalidManifold, "write preflight flags invalid manifold");
+void testManifoldFinalizeWithPreflightGuards() {
+void testFrictionBasisRebuildWithPreflightGuards() {
+    testManifoldFinalizeWithPreflightGuards();
+    testFrictionBasisRebuildWithPreflightGuards();
