@@ -417,5 +417,7 @@ bool should_skip_narrowphase_dispatch(
 
 /// True when all pairs are rejected by second-layer deepen preflight or the pair list is empty (B4.6 narrowphase deepen pass).
 bool can_skip_narrowphase_second(
+/// Job-safe narrowphase with deepen pair-reject guards and finalize preflight (B4.6 deepen pass).
+void runNarrowphaseIntoBufferWithDeepenGuards(
 
 } // namespace fuse::physics::narrowphase

@@ -599,6 +599,27 @@ bool should_run_manifold_prune(
     return !should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
 }
 
+bool should_run_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    return !should_skip_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (!manifold.hasValidNormal()) {
+        return false;
+    }
+    if (!manifold.needsNormalNormalization(lengthEpsilon)) {
+        return false;
+    }
+
+    const f32 normalLength = manifold.contactNormal.length();
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    return true;
+}
+
 const char* manifold_finalize_reject_reason_name(ManifoldFinalizeRejectReason reason) {
     switch (reason) {
     case ManifoldFinalizeRejectReason::None:

@@ -451,6 +451,16 @@ bool should_run_manifold_prune(
     f32 duplicateEpsilon = 1e-4f,
     f32 shallowMinDepth = 0.f);
 
+/// Non-mutating prune predicate — inverse of `should_skip_manifold_prune` (B4.6 deepen pass).
+bool should_run_manifold_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 shallowMinDepth = 0.f);
+
+/// Normalize the contact normal when non-unit; returns true when normalization applied (B4.6 deepen pass).
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
 /// Why manifold finalize would early-out (B4.5 deepen follow-up pass).
 enum class ManifoldFinalizeRejectReason : u8 {
     InvalidNormal,
