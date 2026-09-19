@@ -890,3 +890,15 @@ bool ContactBufferSoA::applyWarmStartStubWithPreflight(u32 slot, ContactManifold
     return ContactBufferFrictionTangentRejectReason::AllOrthonormal;
 ContactBufferFrictionTangentPreflight preflight_contact_buffer_friction_tangent_bases(
     preflight.allOrthonormal = preflight.reason == ContactBufferFrictionTangentRejectReason::AllOrthonormal;
+
+// --- deepen additive from deepen-b4-narrowphase-guards-bfb5 ---
+const char* contact_buffer_build_friction_reject_reason_name(ContactBufferBuildFrictionRejectReason reason) {
+    case ContactBufferBuildFrictionRejectReason::None:
+    case ContactBufferBuildFrictionRejectReason::EmptyBuffer:
+ContactBufferBuildFrictionRejectReason contact_buffer_build_friction_reject_reason(
+        return ContactBufferBuildFrictionRejectReason::EmptyBuffer;
+    return ContactBufferBuildFrictionRejectReason::None;
+    ContactBufferBuildFrictionRejectReason expected) {
+ContactBufferBuildFrictionPreflight preflight_contact_buffer_build_friction(const ContactBufferSoA& buffer) {
+    ContactBufferBuildFrictionPreflight preflight{};
+    preflight.emptyBuffer = preflight.reason == ContactBufferBuildFrictionRejectReason::EmptyBuffer;

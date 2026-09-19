@@ -591,3 +591,13 @@ FUSE_PHYSICS_INLINE ContactBufferTangentBasisPreflight preflight_contact_buffer_
     u32 applyMaxCapacityClampWithPreflight();
     bool applyWarmStartStubWithPreflight(u32 slot, ContactManifold& manifold) const;
 ContactBufferFrictionTangentPreflight preflight_contact_buffer_friction_tangent_bases(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-bfb5 ---
+enum class ContactBufferBuildFrictionRejectReason : u8 {
+const char* contact_buffer_build_friction_reject_reason_name(ContactBufferBuildFrictionRejectReason reason);
+ContactBufferBuildFrictionRejectReason contact_buffer_build_friction_reject_reason(
+    ContactBufferBuildFrictionRejectReason expected);
+struct ContactBufferBuildFrictionPreflight {
+    ContactBufferBuildFrictionRejectReason reason = ContactBufferBuildFrictionRejectReason::None;
+    bool can_build() const { return reason == ContactBufferBuildFrictionRejectReason::None; }
+ContactBufferBuildFrictionPreflight preflight_contact_buffer_build_friction(const ContactBufferSoA& buffer);

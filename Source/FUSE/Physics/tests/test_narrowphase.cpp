@@ -3493,3 +3493,9 @@ void testManifoldFinalizeAfterPruneGuards() {
 void testFrictionBasisPreflightWrapperGuards() {
     testContactPairDeepenPreflightDetectGuards();
     testFrictionBasisPreflightWrapperGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-bfb5 ---
+            fuse::physics::narrowphase::ContactBufferWriteSlotRejectReason::None),
+            buffer, fuse::physics::narrowphase::ContactBufferToVectorRejectReason::None),
+void testManifoldPruneFinalizeFollowUpCanSkipGuards() {
+void testFrictionBasisFollowUpCanSkipGuards() {
