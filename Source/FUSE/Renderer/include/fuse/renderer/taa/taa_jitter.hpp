@@ -14,10 +14,13 @@ enum class TaaJitterGuardRejectReason : u8 {
     None = 0,
     InvalidSequence,
     InvalidViewport,
+    MisalignedFrame,
 };
 
 /// Human-readable label for jitter guard reject reasons (B5.9 deepen).
 const char* taaJitterGuardRejectReasonLabel(TaaJitterGuardRejectReason reason);
+/// True when a jitter guard reject reason would block the guarded operation (B5.9 deepen).
+bool taaJitterGuardRejectReasonIsBlocking(TaaJitterGuardRejectReason reason);
 /// Classify why jitter sync to a frame counter would be rejected (B5.9 deepen).
 TaaJitterGuardRejectReason classifyTaaJitterSyncReject(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
 /// Classify why NDC jitter production would be rejected (B5.9 deepen).
@@ -122,5 +125,16 @@ private:
     u32 m_index = 0;
     u32 m_monotonicFrame = 0;
 };
+
+/// Classify why jitter alignment to a frame counter would be rejected (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterAlignmentReject(const TaaJitter& jitter, u32 frameIndex);
+/// True when jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
+bool preflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex,
+                                  TaaJitterGuardRejectReason* reason = nullptr);
+/// Jitter alignment preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex,
+                                     TaaJitterGuardRejectReason& reason);
+/// Early-out when jitter alignment preflight would reject (B5.9 deepen).
+bool shouldSkipTaaJitterAlignment(const TaaJitter& jitter, u32 frameIndex);
 
 } // namespace fuse::renderer
