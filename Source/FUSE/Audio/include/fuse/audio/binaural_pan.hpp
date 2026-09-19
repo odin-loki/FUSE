@@ -1405,3 +1405,7 @@ bool preflight_hrtf_binaural_narrow_ready(const HrtfBinauralPreflight& preflight
                                           HrtfBinauralNarrowRejectReason* reason = nullptr);
 bool try_preflight_hrtf_binaural_narrow(const HrtfBinauralPreflight& preflight,
                                           HrtfBinauralNarrowRejectReason& reason);
+
+// --- deepen additive from b72-hrtf-reject-reason-wrappers-dacb ---
+bool try_preflight_hrtf_pan_path_spatial(bool hrtf_enabled, const HrtfIrStub& ir,
+bool try_preflight_hrtf_pan_path_spatial(bool hrtf_enabled, const Vec3& rel_listener,
