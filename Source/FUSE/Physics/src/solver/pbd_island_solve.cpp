@@ -2689,3 +2689,12 @@ bool should_skip_island_pre_solve(const ContactIslandGraph::Island& island,
 IslandPreSolveGraphPreflight preflight_island_pre_solve_graph(
     IslandPreSolveGraphPreflight preflight{};
     const IslandPreSolvePreflight preflight = preflight_island_pre_solve(
+
+// --- deepen additive from deepen-pbd-island-guards-7f84 ---
+    return island_sleep_reject_reason(island, bodies) == IslandSleepRejectReason::AllSleeping;
+    return island_wake_reject_reason(island, bodies) != IslandWakeRejectReason::None;
+    case IslandBuildRejectReason::OutOfRangeContact:
+    case IslandBuildRejectReason::OutOfRangeDistance:
+        return IslandBuildRejectReason::OutOfRangeContact;
+        return IslandBuildRejectReason::OutOfRangeDistance;
+    return island_sleep_reject_reason(island, bodies) != IslandSleepRejectReason::None;

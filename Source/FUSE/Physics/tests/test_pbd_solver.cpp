@@ -4828,3 +4828,10 @@ void testPreflightIslandPreSolvePipeline() {
     expectTrue(graphPreflight.stats.allSleepingCount == 1u, "graph pre-solve counts all-sleeping island");
     testPreflightIslandConstraintSolveDispatch();
     testPreflightIslandPreSolvePipeline();
+
+// --- deepen additive from deepen-pbd-island-guards-7f84 ---
+    expectTrue(island_build_rejects_for_reason(4, contacts, constraints, IslandBuildRejectReason::OutOfRangeContact),
+                                                     constraints) == IslandConstraintSolveRejectReason::None,
+    const IslandConstraintSolvePreflight indexPreflight = preflight_island_constraint_solve_by_index(
+    expectTrue(indexPreflight.reason == IslandConstraintSolveRejectReason::NoMovableBodies,
+    expectTrue(!indexPreflight.can_solve(), "index constraint-solve preflight cannot solve all-sleeping island");
