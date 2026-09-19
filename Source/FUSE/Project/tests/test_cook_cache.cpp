@@ -1049,3 +1049,7 @@ void testCookHashPreflightDeepenGuards() {
     expectTrue(!cache.would_invalidate_stale_upstream_hashes({{"/tmp/fuse_b79_would_upstream.obj", 1u}}),
     expectTrue(!cooker.cache().would_invalidate_stale_upstream_hashes({{source, 0u}}),
     expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes({{source, 1u}}),
+
+// --- deepen additive from deepen-b79-cooker-hash-645a ---
+               "would_invalidate_stale_content false when hash matches");
+               "would_invalidate_stale_content true when hash mismatches");
