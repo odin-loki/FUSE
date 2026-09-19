@@ -538,3 +538,7 @@ bool TaaPass::tryCurrentJitterNdcIfReady(fuse::math::Vec2& out, TaaJitterGuardRe
     return m_jitter.tryCurrentNdcOffsetIfReady(m_desc.width, m_desc.height, out, reason);
 bool TaaPass::trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason) {
     if (!m_jitter.trySyncToFrameIndexIfReady(frameIndex, reason)) {
+
+// --- deepen additive from deepen-taa-b59-guards-ea2b ---
+bool TaaPass::preflightTemporalBlend(const TaaResolveDesc& desc, TaaHistoryReuseBlockReason* reuseReason,
+    return preflightTaaTemporalBlend(desc, m_history, reuseReason, blendReason);

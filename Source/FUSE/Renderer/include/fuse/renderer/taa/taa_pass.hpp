@@ -288,3 +288,6 @@ void addTaaPassToGraph(RenderGraph& graph);
 // --- deepen additive from deepen-b59-taa-guards-e107 ---
     bool tryCurrentJitterNdcIfReady(fuse::math::Vec2& out, TaaJitterGuardRejectReason& reason) const;
     bool trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterGuardRejectReason& reason);
+
+// --- deepen additive from deepen-taa-b59-guards-ea2b ---
+    bool preflightTemporalBlend(const TaaResolveDesc& desc,

@@ -3658,3 +3658,14 @@ void testTaaPassWarmupAndJitterPreflightWrappers() {
     expectTrue(!pass->preflightHistoryWarmup(&warmupReason), "pass warmup preflight fails after init");
     expectTrue(!zeroPass->preflightJitterNdc(&jitterReject), "zero-width pass preflightJitterNdc fails");
     testTaaPassWarmupAndJitterPreflightWrappers();
+
+// --- deepen additive from deepen-taa-b59-guards-ea2b ---
+void testHistoryIsWarmedGuard() {
+void testTemporalBlendPreflight() {
+    expectTrue(!fuse::renderer::preflightTaaTemporalBlend(desc, history, &reuseReason, &blendReason),
+    expectTrue(fuse::renderer::preflightTaaTemporalBlend(desc, history, &reuseReason, &blendReason),
+void testTaaPassTemporalAndJitterPreflights() {
+    expectTrue(!pass->preflightTemporalBlend(resolveDesc, &reuseReason, &blendReason),
+    expectTrue(pass->preflightTemporalBlend(resolveDesc, &reuseReason, &blendReason),
+    testTemporalBlendPreflight();
+    testTaaPassTemporalAndJitterPreflights();
