@@ -2226,6 +2226,7 @@ struct CellPairGenPreflight {
 
 
 
+
 };
 
 /// Count unique body indices in a hash-cell occupant list (cell-pair gen budgeting stub).
@@ -2377,6 +2378,8 @@ bool shouldRunCellCapacityInsert(
 
 
 };
+
+
 
 
 

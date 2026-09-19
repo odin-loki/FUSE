@@ -2184,6 +2184,7 @@ PairBufferWriteRejectReason pairBufferWriteRejectReason(
 
 /// Diagnose why write would reject; vacuously succeeds when write may proceed.
 
+
     const PairBufferSoA& buffer,
     u32 slot,
     u32 idxA,
@@ -2312,6 +2313,7 @@ PairBufferWritePreflight preflightPairBufferWrite(
 
 
 
+
     const PairBufferSoA& buffer,
     u32 slot,
     u32 idxA,
@@ -2424,6 +2426,8 @@ enum class PairBufferInvalidateSlotRejectReason : u8 {
 
 /// Why pair-buffer slot invalidate would reject (B4.2 deepen follow-up pass).
 
+
+
 /// Human-readable label for pair-buffer invalidate-slot reject reasons (logging / tests).
 const char* pairBufferInvalidateSlotRejectReasonName(PairBufferInvalidateSlotRejectReason reason);
 
@@ -2439,6 +2443,7 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(
 
 /// Returns true when `pairBufferInvalidateSlotRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 
+    const PairBufferSoA& buffer,
     u32 slot,
     PairBufferInvalidateSlotRejectReason expected);
 
@@ -2457,6 +2462,7 @@ struct PairBufferInvalidateSlotPreflight {
 
 
 
+};
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
 
