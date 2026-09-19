@@ -4521,3 +4521,9 @@ void testTaaPassTryPreflightAndCompositeGuards() {
                "tryPreflightResolve fails with invalid dimensions");
                "tryPreflightResolve skip reason is InvalidDimensions");
     testTaaPassTryPreflightAndCompositeGuards();
+
+// --- deepen additive from deepen-b59-taa-try-classify-guards-505f ---
+    expectTrue(pass->tryPreflightJitterSync(4u, jitterReject), "pass tryPreflightJitterSync passes before init");
+    expectTrue(pass->tryPreflightJitterAdvance(jitterReject), "pass tryPreflightJitterAdvance passes before init");
+    expectTrue(zeroSeqPass->classifyJitterSyncReject() ==
+    expectTrue(!zeroWidthPass->tryPreflightJitterNdc(jitterReject),
