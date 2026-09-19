@@ -382,6 +382,43 @@ FUSE_PHYSICS_INLINE bool shouldRunCellOccupancyIteration(const CellRange2& range
     return preflightCellOccupancy(range, maxCells).canIterate();
 }
 
+/// Shape hash-insert preflight — occupancy gate for `populateShapeCells` (B4.2 deepen pass).
+struct ShapeCellHashInsertPreflight {
+    CellOccupancyPreflight occupancy{};
+
+    bool canInsert() const { return occupancy.canIterate(); }
+};
+
+FUSE_PHYSICS_INLINE ShapeCellHashInsertPreflight preflightShapeCellHashInsert(const CellRange3& range, u32 maxCells) {
+    ShapeCellHashInsertPreflight preflight{};
+    preflight.occupancy = preflightCellOccupancy(range, maxCells);
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE ShapeCellHashInsertPreflight preflightShapeCellHashInsert2D(const CellRange2& range, u32 maxCells) {
+    ShapeCellHashInsertPreflight preflight{};
+    preflight.occupancy = preflightCellOccupancy(range, maxCells);
+    return preflight;
+}
+
+/// Non-mutating shape hash-insert skip predicate — inverse of `canInsert` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipShapeCellHashInsert(const CellRange3& range, u32 maxCells) {
+    return !preflightShapeCellHashInsert(range, maxCells).canInsert();
+}
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellHashInsert(const CellRange2& range, u32 maxCells) {
+    return !preflightShapeCellHashInsert2D(range, maxCells).canInsert();
+}
+
+/// Non-mutating shape hash-insert predicate — mirrors `populateShapeCells` occupancy gate (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellHashInsert(const CellRange3& range, u32 maxCells) {
+    return preflightShapeCellHashInsert(range, maxCells).canInsert();
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellHashInsert(const CellRange2& range, u32 maxCells) {
+    return preflightShapeCellHashInsert2D(range, maxCells).canInsert();
+}
+
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     const CellRange3& range,
@@ -856,11 +893,11 @@ bool refineBroadphasePairsParallelWithPreflight(
     const CollisionShapeSoA& shapes,
     PairBufferSoA& buffer);
 
-/// Dedupe pair buffer only when `preflightDedupeBroadphase` allows (B4.2 deepen follow-up pass).
-void dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer);
+/// Dedupe pair buffer only when `preflightDedupeBroadphase` allows; returns false when skipped (B4.2 deepen pass).
+bool dedupeBroadphasePairBufferWithPreflight(PairBufferSoA& buffer);
 
-/// Merge candidate pairs into buffer only when `preflightMergePairsIntoBuffer` allows (B4.2 deepen follow-up pass).
-void mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer);
+/// Merge candidate pairs into buffer only when `preflightMergePairsIntoBuffer` allows; returns false when skipped (B4.2 deepen pass).
+bool mergePairsIntoBufferWithPreflight(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer);
 
 /// CPU stub of the CUDA broad-phase pipeline (B4.2).
 /// Phase 1 jobifies shape→cell insertion; phase 2 jobifies per-cell candidate generation
