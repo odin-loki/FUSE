@@ -685,6 +685,7 @@ bool preflightProbeTrilinearSample(const DDGIDesc& desc,
 
 /// Why the probe grid cannot act as an irradiance sample source (B5.6 deepen pass).
 
+
 /// Human-readable label for probe-grid source reject reasons (logging / tests).
 const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason);
 
@@ -1645,6 +1646,7 @@ bool preflightProbeGridSource(const ProbeData& data, ProbeGridSourceRejectReason
 /// Early-out when probe-grid source preflight would reject — same ordering as `tryValidateProbeGridSource`.
 bool wouldSkipProbeGridSource(const DDGIDesc& desc, u32 probe_count);
 bool wouldSkipProbeGridSource(const ProbeData& data);
+/// Early-out when probe-grid source preflight would be rejected — same ordering as `preflightProbeGridSource`.
 /// Early-out when probe cache lookup should be skipped (empty grid, null cache, or undersized storage).
 bool shouldSkipProbeLookup(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 cache_count);
 /// Early-out when any probe cache lookup would be rejected — same ordering as `shouldSkipProbeLookup`.
@@ -2151,6 +2153,7 @@ bool preflightCacheIndexLookupAtCoord(const DDGIDesc& desc,
 /// True when `coord` exceeds grid bounds on a non-empty grid.
 bool wouldClampCacheIndexCoordForLookup(const DDGIDesc& desc, const ProbeGridCoord& coord);
 /// Non-mutating cache-index preflight without a cache pointer — index/capacity only.
+/// Non-mutating cache-index preflight without cache pointer — index + count only.
 /// True when `probe_index` exceeds the valid probe range on a non-empty grid.
 bool wouldClampProbeIndexForLookup(u32 probe_index, const DDGIDesc& desc);
 /// Minimum irradiance cache entries required for full-grid sampling; 0 on empty grid.
