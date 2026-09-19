@@ -2,7 +2,7 @@
 
 **Phase:** U7 content / converters  
 **Date:** 2026-09-19  
-**Status:** `project.json` v1 + `.fuselevel` v2 hierarchy + T3D wiring stubs + T2D toybox convert + cook encoder hooks (honest stubs)
+**Status:** `project.json` v1 + `.fuselevel` v2 hierarchy + T2D runtime bridge + BC7 mode-6 cook encoder + encoder hooks (honest stubs)
 
 ---
 
@@ -15,6 +15,7 @@ FUSE projects are directories containing a versioned `project.json` manifest. Th
 | Manifest loader | `fuse/project/loader.hpp` | Parse `project.json` from directory or file |
 | T3D mission importer | `fuse/project/importer.hpp` | `.mis` → World3D placeholder + `T3DMissionExtract` (SimObjects, materials, datablocks) |
 | T2D module importer | `fuse/project/importer.hpp` | `main.cs` / `.cs` → World2D placeholder + `T2DModuleExtract` scene-node stubs |
+| T2D runtime bridge | `fuse/project/t2d_module_bridge.hpp` | `bridgeT2DModuleToRuntime` → `World2D` sprites from toybox extract |
 | Field extractors | `fuse/project/importer_extract.hpp` | Shared parsers for mission/module text |
 | World converter | `fuse/project/world_converter.hpp` | `.mis` / `.cs` → `.fuselevel` (hierarchy-aware) |
 | Asset cook stub writers | `Tools/FUSE/Cook/` (`fuse_cook_stubs`) | `FUSEMESH_STUB` / `FUSETEX_STUB` / `FUSEAUDIO_STUB` placeholder outputs |
@@ -152,7 +153,8 @@ Exit `0` on success; prints one line per registered world / convert note.
 | Test | Target |
 |------|--------|
 | `fuse_project_tests` | Manifest parse, schema rejection, T3D/T2D importer stubs |
-| `fuse_world_converter_tests` | `.mis` hierarchy + datablock wiring stubs; T2D toybox hierarchy |
+| `fuse_world_converter_tests` | `.mis` hierarchy + datablock wiring stubs; T2D toybox hierarchy + `bridgeT2DModuleToRuntime` |
+| `fuse_bc7_encoder` | BC7 mode-6 block encode/decode + `FUSETEX_BC7` cook writer |
 | `fuse_world2d_fuselevel_bridge` | T2D `.fuselevel` → `World2D::loadWorld` bridge |
 | `fuse_scene_wire_stub` | `__fuse.wire|*` entity name parser |
 | `fuse_scene_b37_b39` | Serialiser v1/v2 + hierarchy round-trip |
@@ -172,7 +174,7 @@ Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed
 | Writer | Hook | Output marker |
 |--------|------|---------------|
 | `write_mesh_stub` | Assimp (`FUSE_HAS_ASSIMP`) — passes `input_path` | `FUSEMESH_STUB` |
-| `write_texture_stub` | STB decode (`FUSE_HAS_STB_IMAGE`) + optional BC7 (`FUSE_HAS_BC7_ENCODER`) | `FUSETEX_STUB` |
+| `write_texture_stub` | STB decode (`FUSE_HAS_STB_IMAGE`) + in-house BC7 mode-6 (`FUSE_HAS_INHOUSE_BC7_ENCODER`) | `FUSETEX_STUB` / `FUSETEX_BC7` |
 | `write_audio_stub` | OGG Vorbis (`FUSE_HAS_OGG_VORBIS`) — WAV sniff stub when linked | `FUSEAUDIO_STUB` |
 
 `fuselevel_cook_stub.*` populates `hierarchyLinks` from `ConvertResult::wiringStubCount` on `--fuselevel` cooks.
@@ -186,14 +188,14 @@ Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed
 | `fuse::scene::applyWireBindingsFromScene` | One-shot: populate table from scene, create ECS entities for non-wire objects, apply bindings |
 | `World2D::setProjectWorldSource` | `loadWorld()` resolves `projectRoot + defaultWorld2D` when no explicit fuselevel path is set |
 
-Cook encoder hooks (`fuse_cook_stubs`): vendored Assimp fallback when system `libassimp-dev` is absent; STB RGBA decode + `bc7_blocks`/`bc7_bytes` estimates; OGG when `libvorbisenc` is linked (apt `libvorbis-dev` when available).
+Cook encoder hooks (`fuse_cook_stubs`): vendored Assimp fallback when system `libassimp-dev` is absent; STB RGBA decode + in-house BC7 mode-6 block payload (`fuse/cook/bc7_encoder.hpp`); optional ispc_texcomp when `third_party/ispc_texcomp` is present; OGG when `libvorbisenc` is linked.
 
 CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_assets_b79`.
 
 ## 11. Deferred (honest backlog)
 
-- Real BC7 block encoder (ispc_texcomp or GPU compressor) replacing RGBA passthrough estimates
+- ispc_texcomp-quality BC7/BC5 compression replacing mode-6 solid-block stub
 - libvorbisenc system package on CI images (runtime libs present; dev headers optional today)
-- T2D toybox → full runtime module bridge beyond `.fuselevel` populate
+- T2D toybox runtime parity (physics, layers, composite sprites beyond sprite bridge)
 - Asset path remapping via VFS mounts ([vfs-mount-plan.md](./vfs-mount-plan.md))
 - `project.json` `workerCap` override for `computeWorkerCount()`

@@ -2,7 +2,7 @@
 
 **Phase:** U6 / WP-08 vertical slice  
 **Date:** 2026-09-19  
-**Status:** Inspector + coalesced UI property undo + headless runtime embed (null WSI / optional Vulkan submit)
+**Status:** Inspector + coalesced UI property undo + runtime embed with `PresentPath` deepen (headless-safe null WSI)
 
 ---
 

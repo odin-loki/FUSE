@@ -39,6 +39,8 @@ void testRuntimeEmbedSessionCounters() {
     expectTrue(session.headlessPresentTicks >= 1u, "embed session records headless present ticks");
     expectTrue(!session.wsiBackendName.empty(), "embed session records active WSI backend");
     expectTrue(session.usesHeadlessGpuPath, "embed session marks null WSI headless GPU path in CI");
+    expectTrue(session.wsiPresentPathTicks >= 1u || session.headlessPresentTicks >= 1u,
+               "embed session records WSI present path ticks");
 #if defined(FUSE_VULKAN_BACKEND)
     if (session.headlessGpuReady) {
         expectTrue(session.submittedFrames >= 1u, "headless GPU path submits frames when device ready");

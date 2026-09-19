@@ -1,6 +1,8 @@
 add_library(fuse_cook_stubs STATIC
+    src/bc7_encoder.cpp
     src/cook_stub_writer.cpp
     src/cook_stb_image.cpp
+    include/fuse/cook/bc7_encoder.hpp
     include/fuse/cook/cook_stub_writer.hpp
 )
 
@@ -13,6 +15,7 @@ target_include_directories(fuse_cook_stubs
 
 target_link_libraries(fuse_cook_stubs PUBLIC fuse_core)
 target_compile_features(fuse_cook_stubs PUBLIC cxx_std_17)
+target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_INHOUSE_BC7_ENCODER=1)
 
 set(FUSE_ENGINE_STB_DIR "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/stb")
 if(EXISTS "${FUSE_ENGINE_STB_DIR}/stb_image.h")
@@ -61,4 +64,8 @@ find_path(FUSE_BC7_ENCODER_INCLUDE NAMES ispc_texcomp.h
 if(FUSE_BC7_ENCODER_INCLUDE)
     target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_BC7_ENCODER=1)
     target_include_directories(fuse_cook_stubs PRIVATE "${FUSE_BC7_ENCODER_INCLUDE}")
+endif()
+
+if(FUSE_BUILD_CORE_TESTS)
+    add_subdirectory(tests)
 endif()

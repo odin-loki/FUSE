@@ -14,8 +14,11 @@
 #include <vector>
 
 #if defined(FUSE_VULKAN_BACKEND)
+#include <fuse/frame/frame_ctx.hpp>
+#include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/render_command_list.hpp>
+#include <fuse/renderer/vk/present_path.hpp>
 #endif
 
 namespace fuse::editor {
@@ -23,6 +26,7 @@ namespace fuse::editor {
 #if defined(FUSE_VULKAN_BACKEND)
 struct RuntimeViewportHeadlessGpuStub {
     std::unique_ptr<fuse::renderer::RhiContext> context;
+    std::unique_ptr<fuse::hybrid::HybridRendererBootstrap> hybrid;
     u32 submittedFrames = 0;
     bool externalSwapchainWired = false;
 };
@@ -233,7 +237,7 @@ void RuntimeViewportHook::mirrorEditorEntities_(EditorHost& host) {
     m_embedded = true;
 }
 
-void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 /*dt*/) {
+void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
     if (!m_embedded) {
         return;
     }
@@ -250,6 +254,25 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 /*dt*/)
         gpu = asHeadlessGpuStub(m_headlessGpuStub);
     }
 
+    if (!m_embedSession.wsiPresentPathReady && gpu->hybrid == nullptr) {
+        fuse::hybrid::HybridRendererBootstrapDesc bootstrapDesc{};
+        bootstrapDesc.presentable.backend = fuse::hybrid::PresentableBackend::Headless;
+        bootstrapDesc.presentable.swapchainWidth = m_panel.width() > 0 ? m_panel.width() : 640u;
+        bootstrapDesc.presentable.swapchainHeight = m_panel.height() > 0 ? m_panel.height() : 480u;
+        bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = false;
+        bootstrapDesc.renderer.rhi.bootstrap.createSwapchain = true;
+        if (m_surfaceHandoff.nativeSurface != nullptr) {
+            bootstrapDesc.presentable.swapchainWidth = m_surfaceHandoff.width;
+            bootstrapDesc.presentable.swapchainHeight = m_surfaceHandoff.height;
+            bootstrapDesc.renderer.rhi.bootstrap.swapchain = buildSwapchainDescHandoff();
+        }
+        gpu->hybrid = fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
+        if (gpu->hybrid != nullptr && gpu->hybrid->isReady()) {
+            m_embedSession.wsiPresentPathReady = true;
+            m_embedSession.headlessGpuReady = true;
+        }
+    }
+
     if (!m_embedSession.headlessGpuReady && gpu->context == nullptr) {
         fuse::renderer::RhiContext::Desc desc{};
         desc.bootstrap.instance.enableValidation = false;
@@ -261,16 +284,39 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 /*dt*/)
         }
     }
 
+    if (m_embedSession.wsiPresentPathReady && gpu->hybrid != nullptr) {
+        fuse::renderer::PresentPath* presentPath = gpu->hybrid->presentPath();
+        if (presentPath != nullptr) {
+            if (presentPath->waitInFlightFence()) {
+                presentPath->acquireImage();
+                presentPath->markReadyToPresent();
+                if (presentPath->presentImage()) {
+                    ++m_embedSession.wsiPresentPathTicks;
+                    ++gpu->submittedFrames;
+                    m_embedSession.submittedFrames = gpu->submittedFrames;
+                }
+                if (presentPath->status().presentSkippedNoWsiCount >
+                    m_embedSession.presentSkippedNoWsiCount) {
+                    m_embedSession.presentSkippedNoWsiCount =
+                        presentPath->status().presentSkippedNoWsiCount;
+                }
+            }
+            return;
+        }
+    }
+
     if (m_embedSession.headlessGpuReady && gpu->context != nullptr) {
         fuse::renderer::RenderCommandList commands;
         if (gpu->context->beginFrame(0) && gpu->context->submitFrame(commands, 0)) {
             ++gpu->submittedFrames;
             m_embedSession.submittedFrames = gpu->submittedFrames;
+            ++m_embedSession.wsiPresentPathTicks;
         }
     }
 
 #else
     (void)host;
+    (void)dt;
 #endif
 }
 

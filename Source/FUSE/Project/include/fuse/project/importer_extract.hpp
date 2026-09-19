@@ -33,8 +33,8 @@ struct T3DMissionExtract {
 struct T2DSceneNodeStub {
     std::string className;
     std::string objectName;
-    s32 depth = 0;
     std::string position;
+    s32 depth = 0;
 };
 
 struct T2DModuleExtract {

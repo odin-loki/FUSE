@@ -19,7 +19,7 @@ add_executable(fuse_cook_dependency_graph_tests
 )
 
 target_link_libraries(fuse_project_tests PRIVATE fuse_project fuse_core)
-target_link_libraries(fuse_world_converter_tests PRIVATE fuse_world_converter fuse_core)
+target_link_libraries(fuse_world_converter_tests PRIVATE fuse_world_converter fuse_world2d fuse_core)
 target_link_libraries(fuse_asset_pipeline_tests PRIVATE fuse_project fuse_core)
 target_link_libraries(fuse_cook_cache_tests PRIVATE fuse_project fuse_core)
 target_link_libraries(fuse_cook_dependency_graph_tests PRIVATE fuse_project fuse_core)

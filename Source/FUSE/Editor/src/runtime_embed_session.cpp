@@ -9,11 +9,21 @@ void RuntimeEmbedSession::reset() {
     worldEntityCount = 0;
     mirroredEditorEntityCount = 0;
     headlessPresentTicks = 0;
+    wsiPresentPathTicks = 0;
+    presentSkippedNoWsiCount = 0;
     surfaceHandoffCount = 0;
     submittedFrames = 0;
     worldLoaded = false;
     headlessGpuReady = false;
     usesHeadlessGpuPath = false;
+    wsiPresentPathReady = false;
+    swapchainWiringAttempts = 0;
+    swapchainWiringReady = 0;
+    wireDatablockEntries = 0;
+    wireMaterialEntries = 0;
+    wireEcsMaterialApplied = 0;
+    wireEcsSpawnApplied = 0;
+    usesExternalSwapchain = false;
     surfaceHandoffPending = false;
     surfaceHandoffConsumed = false;
 }

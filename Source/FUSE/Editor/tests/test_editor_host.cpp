@@ -392,6 +392,9 @@ void testRuntimeViewportLoadsProjectRoot() {
     expectTrue(host.runtimeViewport().projectRoot() == projectRoot, "project root stored on viewport hook");
     expectTrue(host.runtimeViewport().embedSession().headlessPresentTicks >= 1u,
                "headless present stub ticks while embedded");
+    expectTrue(host.runtimeViewport().embedSession().wsiPresentPathTicks >= 1u ||
+                   host.runtimeViewport().embedSession().headlessPresentTicks >= 1u,
+               "present path ticks while embedded");
 }
 
 void testRuntimeViewportSurfaceHandoffStub() {

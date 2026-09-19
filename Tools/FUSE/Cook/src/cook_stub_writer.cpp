@@ -1,8 +1,11 @@
 #include <fuse/cook/cook_stub_writer.hpp>
 
+#include <fuse/cook/bc7_encoder.hpp>
+
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 #if defined(FUSE_HAS_ASSIMP)
 #include <assimp/Importer.hpp>
@@ -142,6 +145,51 @@ CookStubWriteResult tryCookTextureBc7(const std::string& input_path, const std::
         return result;
     }
 
+#if defined(FUSE_HAS_INHOUSE_BC7_ENCODER)
+    std::vector<u8> blocks;
+    const Bc7EncodeResult encoded =
+        encode_bc7_rgba8(pixels, static_cast<u32>(width), static_cast<u32>(height), blocks);
+    stbi_image_free(pixels);
+    if (!encoded.ok) {
+        CookStubWriteResult result;
+        result.note = encoded.note;
+        return result;
+    }
+
+    std::ostringstream header;
+    header << "FUSETEX_BC7\n";
+    header << "hook=bc7_mode6\n";
+    header << "compression=" << compression << "\n";
+    header << "width=" << encoded.width << "\n";
+    header << "height=" << encoded.height << "\n";
+    header << "blocks=" << encoded.blockCount << "\n";
+    header << "mipmaps=" << (mipmaps ? "on" : "off") << "\n";
+    header << "mode=6\n";
+    header << "DATA\n";
+
+    std::string payload = header.str();
+    payload.append(reinterpret_cast<const char*>(blocks.data()),
+                   static_cast<std::size_t>(blocks.size()));
+
+    std::error_code ec;
+    const std::filesystem::path parent = std::filesystem::path(output_path).parent_path();
+    if (!parent.empty()) {
+        std::filesystem::create_directories(parent, ec);
+    }
+
+    std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
+    CookStubWriteResult written;
+    if (!out) {
+        written.note = "unable to write BC7 texture output";
+        return written;
+    }
+    out.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+    written.ok = out.good();
+    written.byteCount = static_cast<u32>(payload.size());
+    written.note = written.ok ? ("bc7 encoded, blocks=" + std::to_string(encoded.blockCount))
+                              : "bc7 write failed";
+    return written;
+#else
     const u32 blockWidth = static_cast<u32>((width + 3) / 4);
     const u32 blockHeight = static_cast<u32>((height + 3) / 4);
     const u32 bc7Blocks = blockWidth * blockHeight;
@@ -169,6 +217,7 @@ CookStubWriteResult tryCookTextureBc7(const std::string& input_path, const std::
         written.note = "texture rgba decode cooked";
     }
     return written;
+#endif
 #else
     (void)input_path;
     (void)output_path;
@@ -242,11 +291,92 @@ CookStubWriteResult write_mesh_stub(const std::string& input_path, const std::st
     return writeTextStub(output_path, payload.str());
 }
 
+CookStubWriteResult write_texture_bc7_encoded(const std::string& output_path,
+                                              const std::string& source_path, bool mipmaps) {
+#if defined(FUSE_HAS_INHOUSE_BC7_ENCODER)
+    if (!source_path.empty()) {
+        const CookStubWriteResult decoded =
+            tryCookTextureBc7(source_path, output_path, "BC7", mipmaps);
+        if (decoded.ok) {
+            return decoded;
+        }
+    }
+
+    CookStubWriteResult result;
+    Bc7RgbaImage working = source_path.empty() ? Bc7RgbaImage{} : synthesize_rgba_from_source(source_path);
+    if (working.rgba.empty()) {
+        working.width = 4u;
+        working.height = 4u;
+        working.rgba = {200, 64, 32, 255, 200, 64, 32, 255, 200, 64, 32, 255, 200, 64, 32, 255};
+    }
+
+    std::vector<u8> blocks;
+    const Bc7EncodeResult encoded =
+        encode_bc7_rgba8(working.rgba.data(), working.width, working.height, blocks);
+    if (!encoded.ok) {
+        result.note = encoded.note;
+        return result;
+    }
+
+    std::ostringstream header;
+    header << "FUSETEX_BC7\n";
+    header << "width=" << encoded.width << "\n";
+    header << "height=" << encoded.height << "\n";
+    header << "blocks=" << encoded.blockCount << "\n";
+    header << "mipmaps=" << (mipmaps ? "on" : "off") << "\n";
+    header << "mode=6\n";
+    header << "DATA\n";
+
+    std::string payload = header.str();
+    payload.append(reinterpret_cast<const char*>(blocks.data()),
+                   static_cast<std::size_t>(blocks.size()));
+
+    std::error_code ec;
+    const std::filesystem::path parent = std::filesystem::path(output_path).parent_path();
+    if (!parent.empty()) {
+        std::filesystem::create_directories(parent, ec);
+    }
+
+    std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        result.note = "unable to write BC7 texture output";
+        return result;
+    }
+
+    out.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+    result.ok = out.good();
+    result.byteCount = static_cast<u32>(payload.size());
+    result.note = result.ok ? ("bc7 encoded, blocks=" + std::to_string(encoded.blockCount)) : "bc7 write failed";
+    return result;
+#else
+    (void)output_path;
+    (void)source_path;
+    (void)mipmaps;
+    return unavailableHook("bc7");
+#endif
+}
+
 CookStubWriteResult write_texture_stub(const std::string& input_path, const std::string& output_path,
                                        const char* compression, bool mipmaps) {
-    const CookStubWriteResult hook = tryCookTextureBc7(input_path, output_path, compression, mipmaps);
-    if (hook.ok) {
-        return hook;
+    if (compression != nullptr && std::string(compression) == "BC7") {
+        const CookStubWriteResult bc7 = tryCookTextureBc7(input_path, output_path, compression, mipmaps);
+        if (bc7.ok) {
+            return bc7;
+        }
+        const CookStubWriteResult fallback = write_texture_bc7_encoded(output_path, input_path, mipmaps);
+        if (fallback.ok) {
+            return fallback;
+        }
+    }
+
+    CookStubWriteResult hook{};
+    if (!input_path.empty()) {
+        hook = tryCookTextureBc7(input_path, output_path, compression, mipmaps);
+        if (hook.ok) {
+            return hook;
+        }
+    } else {
+        hook.note = "missing_input_path";
     }
 
     std::ostringstream payload;

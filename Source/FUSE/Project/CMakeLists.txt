@@ -48,7 +48,9 @@ target_compile_features(fuse_project PUBLIC cxx_std_17)
 
 add_library(fuse_world_converter STATIC
     src/world_converter.cpp
+    src/t2d_module_bridge.cpp
     include/fuse/project/world_converter.hpp
+    include/fuse/project/t2d_module_bridge.hpp
 )
 
 add_library(fuse::world_converter ALIAS fuse_world_converter)
@@ -58,7 +60,7 @@ target_include_directories(fuse_world_converter
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_world_converter PUBLIC fuse_project fuse_scene)
+target_link_libraries(fuse_world_converter PUBLIC fuse_project fuse_scene fuse_world2d fuse_t2d_legacy)
 target_compile_features(fuse_world_converter PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_CORE_TESTS)

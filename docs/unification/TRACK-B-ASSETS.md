@@ -144,7 +144,8 @@ ctest --test-dir build --output-on-failure -R fuse_assets_b79
 ## Next
 
 - [ ] Wire Assimp/meshoptimizer for mesh cooks
-- [ ] BC7/BC5 texture compression path
+- [x] BC7 mode-6 block encoder stub (`fuse/cook/bc7_encoder.hpp`, `FUSETEX_BC7` cook output)
+- [ ] ispc_texcomp-quality BC7/BC5 texture compression path
 - [ ] OGG encode + normalise for audio
 - [ ] Shader offline SPIR-V batch (`compile_all`)
 - [ ] Qt cook UI sharing `ImportPipeline`

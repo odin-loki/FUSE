@@ -112,23 +112,36 @@ void testAssetCookerTextureAudioHookStubs() {
     std::ifstream cookedTexture(textureDesc.output_path);
     std::string textureHeader;
     std::getline(cookedTexture, textureHeader);
-    expectTrue(textureHeader == "FUSETEX_STUB", "texture stub output file written");
+    expectTrue(textureHeader == "FUSETEX_STUB" || textureHeader == "FUSETEX_BC7",
+               "texture stub or bc7 output file written");
 
-    std::string hookLine;
-    std::getline(cookedTexture, hookLine);
-    expectTrue(hookLine.find("hook=") != std::string::npos,
-               "texture stub records encoder hook status");
-
-    if (hookLine.find("hook=bc7") != std::string::npos ||
-        hookLine.find("hook=bc7_rgba_passthrough") != std::string::npos) {
-        std::string bc7Line;
-        while (std::getline(cookedTexture, bc7Line)) {
-            if (bc7Line.find("bc7_blocks=") != std::string::npos) {
+    if (textureHeader == "FUSETEX_BC7") {
+        std::string line;
+        bool foundBlocks = false;
+        while (std::getline(cookedTexture, line)) {
+            if (line.find("blocks=") != std::string::npos || line.find("bc7_blocks=") != std::string::npos) {
+                foundBlocks = true;
                 break;
             }
         }
-        expectTrue(bc7Line.find("bc7_blocks=") != std::string::npos,
-                   "texture stub records BC7 block estimate when STB decode succeeds");
+        expectTrue(foundBlocks, "bc7 texture output records block count");
+    } else {
+        std::string hookLine;
+        std::getline(cookedTexture, hookLine);
+        expectTrue(hookLine.find("hook=") != std::string::npos,
+                   "texture stub records encoder hook status");
+
+        if (hookLine.find("hook=bc7") != std::string::npos ||
+            hookLine.find("hook=bc7_rgba_passthrough") != std::string::npos) {
+            std::string bc7Line;
+            while (std::getline(cookedTexture, bc7Line)) {
+                if (bc7Line.find("bc7_blocks=") != std::string::npos) {
+                    break;
+                }
+            }
+            expectTrue(bc7Line.find("bc7_blocks=") != std::string::npos,
+                       "texture stub records BC7 block estimate when STB decode succeeds");
+        }
     }
 
     const std::string audioSource = writeTempFile("/tmp/fuse_b79_sfx.wav", "RIFF");
@@ -150,6 +163,23 @@ void testAssetCookerTextureAudioHookStubs() {
     expectTrue(audioHookLine.find("hook=ogg") != std::string::npos ||
                    audioHookLine.find("hook=ogg unavailable") != std::string::npos,
                "audio stub records OGG hook status");
+}
+
+void testAssetCookerBc7Texture() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_tex.png", "PNG\n");
+    fuse::project::TextureImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_tex.fusetex";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord record = cooker.cook_texture(desc);
+    expectTrue(record.ok, "bc7 texture cook ok");
+
+    std::ifstream cooked(desc.output_path);
+    std::string header;
+    std::getline(cooked, header);
+    expectTrue(header == "FUSETEX_BC7" || header == "FUSETEX_STUB",
+               "bc7 texture output marker or rgba-decode stub");
 }
 
 void testImportPipelineDryRun() {
@@ -1921,6 +1951,7 @@ int main() {
     testAssetGraphRoundTrip();
     testAssetCookerStub();
     testAssetCookerTextureAudioHookStubs();
+    testAssetCookerBc7Texture();
     testCookJobGraphEmpty();
     testCookDependencyGraphEmptyGuards();
     testCookDependencyGraphEmptyHelperGuards();

@@ -14,6 +14,8 @@ struct RuntimeEmbedSession {
     u32 worldEntityCount = 0;
     u32 mirroredEditorEntityCount = 0;
     u32 headlessPresentTicks = 0;
+    u32 wsiPresentPathTicks = 0;
+    u32 presentSkippedNoWsiCount = 0;
     u32 surfaceHandoffCount = 0;
     u32 swapchainWiringAttempts = 0;
     u32 swapchainWiringReady = 0;
@@ -26,6 +28,7 @@ struct RuntimeEmbedSession {
     bool worldLoaded = false;
     bool headlessGpuReady = false;
     bool usesHeadlessGpuPath = false;
+    bool wsiPresentPathReady = false;
     bool surfaceHandoffPending = false;
     bool surfaceHandoffConsumed = false;
 

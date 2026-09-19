@@ -264,7 +264,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | In-process PIE; UI thread vs game thread command queue; one feature pane |
 | **Deps** | WP-06, WP-05 |
-| **Status** | 🚧 Wave 6: Qt winId stub short-circuit + wire table stats on world load; headless runtime embed — [U6-EDITOR.md](./U6-EDITOR.md) |
+| **Status** | 🚧 Wave 8: `PresentPath` deepen on `RuntimeViewportHook` (headless-safe); live Qt swapchain deferred — [U6-EDITOR.md](./U6-EDITOR.md) |
 
 ---
 
@@ -275,7 +275,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | `project.json`, importers, cookers under `Tools/FUSE/` |
 | **Deps** | WP-06 |
-| **Status** | 🚧 Wave 6: wire runtime bind + `setProjectWorldSource` + STB texture decode cook path — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
+| **Status** | 🚧 Wave 8: T2D runtime bridge + in-house BC7 mode-6 encoder (`FUSETEX_BC7`) — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
 
 ---
 

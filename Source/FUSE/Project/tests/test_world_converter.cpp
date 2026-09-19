@@ -1,6 +1,8 @@
 #include <fuse/core/init.hpp>
+#include <fuse/project/t2d_module_bridge.hpp>
 #include <fuse/project/world_converter.hpp>
 #include <fuse/scene/serialiser.hpp>
+#include <fuse/world2d/world_2d.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -149,6 +151,54 @@ void testConvertT3DDatablockWiringStubs() {
     expectTrue(wireCount >= 2u, "wire stub entities round-trip in fuselevel");
 }
 
+void testConvertT2DModuleHierarchy() {
+    const std::string module = writeTempFile(
+        "/tmp/fuse_convert_t2d_hierarchy.cs",
+        "module \"SpriteToy\";\n"
+        "new SceneToy() {\n"
+        "  new SpritePlayer(Player) {\n"
+        "    position = \"10 20\";\n"
+        "  };\n"
+        "};\n");
+    const std::string output = "/tmp/fuse_convert_t2d_hierarchy.fuselevel";
+
+    const fuse::project::ConvertResult result =
+        fuse::project::convertT2DModuleToFuselevel(module, output);
+
+    expectTrue(result.status == fuse::project::ConvertStatus::Ok, "t2d hierarchy convert ok");
+    expectTrue(result.entityCount >= 2u, "t2d hierarchy produced nested entities");
+
+    fuse::scene::Scene loaded;
+    const fuse::scene::SerialiseResult loadResult = fuse::scene::SceneSerialiser::load(output, loaded);
+    expectTrue(loadResult.status == fuse::scene::SerialiseStatus::Ok, "t2d hierarchy fuselevel loads");
+
+    bool foundChildWithParent = false;
+    for (const fuse::scene::SceneEntity& entity : loaded.entities()) {
+        if (entity.name == "Player" && entity.parentIndex >= 0) {
+            foundChildWithParent = true;
+            expectTrue(loaded.entities()[static_cast<std::size_t>(entity.parentIndex)].name == "SceneToy",
+                       "sprite player parent is SceneToy");
+        }
+    }
+    expectTrue(foundChildWithParent, "t2d hierarchy parent indices preserved");
+}
+
+void testT2DModuleRuntimeBridge() {
+    const std::string module = writeTempFile(
+        "/tmp/fuse_t2d_bridge.cs",
+        "module \"SpriteToy\";\n"
+        "new SceneToy() {\n"
+        "  new SpritePlayer(Player) { position = \"4 8\"; };\n"
+        "};\n");
+
+    fuse::world2d::World2D world;
+    const fuse::project::T2DRuntimeBridgeResult bridged =
+        fuse::project::bridgeT2DModuleToRuntime(world, module);
+
+    expectTrue(bridged.ok, "t2d runtime bridge ok");
+    expectTrue(bridged.spriteCount >= 1u, "t2d runtime bridge populated sprites");
+}
+
 } // namespace
 
 int main() {
@@ -156,7 +206,9 @@ int main() {
     testConvertT3DMissionHierarchy();
     testConvertT3DMissionToFuselevel();
     testConvertT2DModuleToFuselevel();
+    testConvertT2DModuleHierarchy();
     testConvertT3DDatablockWiringStubs();
+    testT2DModuleRuntimeBridge();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
