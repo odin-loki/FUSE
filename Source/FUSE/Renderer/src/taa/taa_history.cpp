@@ -258,3 +258,8 @@ bool preflightTaaJitterSync(u32 /*frameIndex*/, u32 width, u32 height, u32 seque
 
 // --- deepen additive from deepen-b59-taa-guards-117f ---
 bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmupBlockReason* reason) {
+
+// --- deepen additive from deepen-fuse-b59-taa-cd32 ---
+bool canPreflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration) {
+bool canPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history) {
+    return preflightTaaHistoryWarmup(history);

@@ -217,3 +217,14 @@ void addTaaPassToGraph(RenderGraph& graph);
     bool preflightHistoryReuseForResolve(const TaaResolveDesc& desc,
     bool preflightResolveFrame(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason = nullptr,
                                TaaResolveBlendRejectReason* blendRejectReason = nullptr) const;
+
+// --- deepen additive from deepen-fuse-b59-taa-cd32 ---
+    TaaJitterSyncRejectReason classifyJitterSyncReject(u32 frameIndex) const;
+    bool preflightJitterSync(u32 frameIndex, TaaJitterSyncRejectReason* reason = nullptr) const;
+    bool canPreflightHistoryReuse(u32 observedGeneration) const;
+    bool canPreflightHistoryWarmup() const;
+    bool canPreflightResolveBlendWeights(const TaaResolveDesc& desc) const;
+    bool tryExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& out,
+    bool preflightResolveTemporalBlend(const TaaResolveDesc& desc,
+                                       TaaResolveTemporalRejectReason* reason = nullptr) const;
+    bool canPreflightResolveTemporalBlend(const TaaResolveDesc& desc) const;

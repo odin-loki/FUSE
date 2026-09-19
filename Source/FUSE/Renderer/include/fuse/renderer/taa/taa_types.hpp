@@ -267,3 +267,14 @@ bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWarmup
 bool preflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
 bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                TaaResolveBlendRejectReason* blendRejectReason = nullptr);
+
+// --- deepen additive from deepen-fuse-b59-taa-cd32 ---
+bool canPreflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
+bool canPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history);
+bool canPreflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+enum class TaaResolveTemporalRejectReason : u8 {
+const char* taaResolveTemporalRejectReasonLabel(TaaResolveTemporalRejectReason reason);
+TaaResolveTemporalRejectReason classifyTaaResolveTemporalReject(const TaaResolveDesc& desc,
+bool preflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                      TaaResolveTemporalRejectReason* reason = nullptr);
+bool canPreflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);

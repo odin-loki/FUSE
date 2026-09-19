@@ -308,3 +308,32 @@ bool TaaJitter::preflightSync(u32 frameIndex, u32 width, u32 height, TaaJitterSy
 
 // --- deepen additive from deepen-b59-taa-guards-117f ---
 bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, TaaJitterSyncBlockReason* reason) {
+
+// --- deepen additive from deepen-fuse-b59-taa-cd32 ---
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 /*frameIndex*/, u32 sequenceLength) {
+        return TaaJitterSyncRejectReason::InvalidSequence;
+bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncRejectReason* reason) {
+    const TaaJitterSyncRejectReason reject = classifyTaaJitterSyncReject(frameIndex, sequenceLength);
+bool canPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength) {
+    return preflightTaaJitterSync(frameIndex, sequenceLength);
+const char* taaJitterNdcRejectReasonLabel(TaaJitterNdcRejectReason reason) {
+    case TaaJitterNdcRejectReason::None:
+    case TaaJitterNdcRejectReason::InvalidSequence:
+    case TaaJitterNdcRejectReason::InvalidViewport:
+TaaJitterNdcRejectReason classifyTaaJitterNdcReject(u32 width, u32 height, u32 sequenceLength) {
+        return TaaJitterNdcRejectReason::InvalidSequence;
+        return TaaJitterNdcRejectReason::InvalidViewport;
+    return TaaJitterNdcRejectReason::None;
+bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength, TaaJitterNdcRejectReason* reason) {
+    const TaaJitterNdcRejectReason reject = classifyTaaJitterNdcReject(width, height, sequenceLength);
+    return reject == TaaJitterNdcRejectReason::None;
+bool canPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength) {
+    return preflightTaaJitterNdc(width, height, sequenceLength);
+TaaJitterSyncRejectReason TaaJitter::classifySyncReject(u32 frameIndex) const {
+    return classifyTaaJitterSyncReject(frameIndex, m_sequenceLength);
+bool TaaJitter::preflightSyncToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason* reason) const {
+    return preflightTaaJitterSync(frameIndex, m_sequenceLength, reason);
+TaaJitterNdcRejectReason TaaJitter::classifyNdcReject(u32 width, u32 height) const {
+    return classifyTaaJitterNdcReject(width, height, m_sequenceLength);
+bool TaaJitter::preflightCurrentNdcOffset(u32 width, u32 height, TaaJitterNdcRejectReason* reason) const {
+    return preflightTaaJitterNdc(width, height, m_sequenceLength, reason);

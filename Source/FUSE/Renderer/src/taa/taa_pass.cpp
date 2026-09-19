@@ -422,3 +422,23 @@ bool TaaPass::preflightHistoryReuseForResolve(const TaaResolveDesc& desc,
 bool TaaPass::preflightResolveFrame(const TaaResolveDesc& desc, TaaResolveSkipReason* skipReason,
                                     TaaResolveBlendRejectReason* blendRejectReason) const {
     return preflightTaaResolveFrame(desc, m_history, skipReason, blendRejectReason);
+
+// --- deepen additive from deepen-fuse-b59-taa-cd32 ---
+    return m_jitter.preflightSyncToFrameIndex(frameIndex);
+TaaJitterSyncRejectReason TaaPass::classifyJitterSyncReject(u32 frameIndex) const {
+    return m_jitter.classifySyncReject(frameIndex);
+bool TaaPass::preflightJitterSync(u32 frameIndex, TaaJitterSyncRejectReason* reason) const {
+    return m_jitter.preflightSyncToFrameIndex(frameIndex, reason);
+bool TaaPass::canPreflightHistoryReuse(u32 observedGeneration) const {
+    return canPreflightTaaHistoryReuse(m_history, observedGeneration);
+bool TaaPass::canPreflightHistoryWarmup() const {
+    return canPreflightTaaHistoryWarmup(m_history);
+bool TaaPass::canPreflightResolveBlendWeights(const TaaResolveDesc& desc) const {
+    return canPreflightTaaResolveBlendWeights(desc, m_history);
+bool TaaPass::tryExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& out,
+    return tryComputeTaaResolveBlendWeights(desc, m_history, out, reason);
+bool TaaPass::preflightResolveTemporalBlend(const TaaResolveDesc& desc,
+                                            TaaResolveTemporalRejectReason* reason) const {
+    return preflightTaaResolveTemporalBlend(desc, m_history, reason);
+bool TaaPass::canPreflightResolveTemporalBlend(const TaaResolveDesc& desc) const {
+    return canPreflightTaaResolveTemporalBlend(desc, m_history);

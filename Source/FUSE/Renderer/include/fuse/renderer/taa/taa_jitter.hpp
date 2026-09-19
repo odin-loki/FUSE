@@ -142,3 +142,18 @@ bool taaJitterSyncPreflight(const TaaJitter& jitter, u32 frameIndex, u32 width, 
 
 // --- deepen additive from deepen-b59-taa-guards-117f ---
 bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, TaaJitterSyncBlockReason* reason = nullptr);
+
+// --- deepen additive from deepen-fuse-b59-taa-cd32 ---
+enum class TaaJitterSyncRejectReason : u8 {
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 /*frameIndex*/, u32 sequenceLength);
+bool canPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+enum class TaaJitterNdcRejectReason : u8 {
+const char* taaJitterNdcRejectReasonLabel(TaaJitterNdcRejectReason reason);
+TaaJitterNdcRejectReason classifyTaaJitterNdcReject(u32 width, u32 height,
+                             TaaJitterNdcRejectReason* reason = nullptr);
+bool canPreflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    TaaJitterSyncRejectReason classifySyncReject(u32 frameIndex) const;
+    bool preflightSyncToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason* reason = nullptr) const;
+    TaaJitterNdcRejectReason classifyNdcReject(u32 width, u32 height) const;
+    bool preflightCurrentNdcOffset(u32 width, u32 height, TaaJitterNdcRejectReason* reason = nullptr) const;

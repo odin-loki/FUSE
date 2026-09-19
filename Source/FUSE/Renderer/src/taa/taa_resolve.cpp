@@ -516,3 +516,25 @@ bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer
         if (blendRejectReason != nullptr) {
             *blendRejectReason = TaaResolveBlendRejectReason::None;
     return preflightTaaResolveBlendWeights(desc, history, blendRejectReason);
+
+// --- deepen additive from deepen-fuse-b59-taa-cd32 ---
+bool canPreflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolveBlendWeights(desc, history);
+                                      TaaBlendWeights& out, TaaResolveBlendRejectReason* reason) {
+    if (!preflightTaaResolveBlendWeights(desc, history, reason)) {
+const char* taaResolveTemporalRejectReasonLabel(TaaResolveTemporalRejectReason reason) {
+    case TaaResolveTemporalRejectReason::None:
+    case TaaResolveTemporalRejectReason::HistoryReuseBlocked:
+    case TaaResolveTemporalRejectReason::BlendWeightsRejected:
+TaaResolveTemporalRejectReason classifyTaaResolveTemporalReject(const TaaResolveDesc& desc,
+    if (!preflightTaaHistoryReuse(history, observedGeneration)) {
+        return TaaResolveTemporalRejectReason::HistoryReuseBlocked;
+    if (!preflightTaaResolveBlendWeights(desc, history)) {
+        return TaaResolveTemporalRejectReason::BlendWeightsRejected;
+    return TaaResolveTemporalRejectReason::None;
+bool preflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                      TaaResolveTemporalRejectReason* reason) {
+    const TaaResolveTemporalRejectReason reject = classifyTaaResolveTemporalReject(desc, history);
+    return reject == TaaResolveTemporalRejectReason::None;
+bool canPreflightTaaResolveTemporalBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolveTemporalBlend(desc, history);
