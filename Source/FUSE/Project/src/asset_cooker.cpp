@@ -245,14 +245,39 @@ CookCachePruneEstimate AssetCooker::estimate_prune_reconcile() const {
     return m_cache.estimate_prune_removals();
 }
 
-CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(const CookManifest& manifest) const {
+CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(
+    const CookManifest& manifest, const std::string& changed_source) const {
     CookCacheReconcileEstimate estimate;
     estimate.stale_dependency_entries = count_stale_dependency_invalidation(manifest);
+    if (is_valid_cook_cache_path(changed_source)) {
+        estimate.upstream_invalidation_entries = count_upstream_invalidation(manifest, changed_source);
+    }
 
     const CookCachePruneEstimate prune = m_cache.estimate_prune_removals();
     estimate.prune_invalid_entries = prune.invalid_entries;
     estimate.prune_stale_entries = prune.stale_entries;
     return estimate;
+}
+
+bool AssetCooker::should_skip_reconcile_invalidation(const CookManifest& manifest,
+                                                     const std::string& changed_source) const {
+    return estimate_reconcile_invalidation(manifest, changed_source).should_skip();
+}
+
+bool AssetCooker::should_skip_prune_reconcile() const {
+    return estimate_prune_reconcile().should_skip();
+}
+
+bool AssetCooker::should_skip_stale_dependency_invalidation(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) == 0;
+}
+
+bool AssetCooker::should_skip_upstream_invalidation(const CookManifest& manifest,
+                                                    const std::string& changed_source) const {
+    if (!is_valid_cook_cache_path(changed_source)) {
+        return true;
+    }
+    return count_upstream_invalidation(manifest, changed_source) == 0;
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
