@@ -4991,3 +4991,58 @@ void testWouldSkipProfilerGuards() {
     expectTrue(fuse::profiler::wouldSkipCounterSample("valid_counter")
                        || fuse::profiler::preflightProfileScope("valid_counter").invalidName),
                "wouldSkipCounterSample agrees with counter name guards");
+
+// --- deepen additive from deepen-b16-profiler-guards-5803 ---
+               "wouldSkip false for valid scope name when enabled");
+void testWouldSkipAsyncFlowGuards() {
+               "wouldSkip end true with no open flows");
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowEnd("open_flow"),
+               "wouldSkip end false with matching open flow");
+               "wouldSkip end true for empty name even with open flow");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("open_flow"),
+               "wouldSkip end true when profiler disabled");
+void testWouldSkipCounterGuards() {
+    expectTrue(fuse::profiler::wouldSkipCounterFloatSample(""),
+               "wouldSkip float counter true for empty track");
+    expectTrue(fuse::profiler::wouldSkipCounterSnapshotAtFrame(nullptr),
+               "wouldSkip snapshot counter true for null track");
+    expectTrue(fuse::profiler::wouldSkipCounterFloatSnapshotAtFrame(""),
+               "wouldSkip float snapshot counter true for empty track");
+    expectTrue(!fuse::profiler::wouldSkipCounterSample("budget_track"),
+               "wouldSkip counter false for valid track when enabled");
+    expectTrue(fuse::profiler::wouldSkipCounterSample("budget_track"),
+    if (!fuse::profiler::wouldSkipProfileScope(nullptr)) {
+    if (!fuse::profiler::wouldSkipAsyncFlowBegin("")) {
+    if (!fuse::profiler::wouldSkipCounterSample(nullptr)) {
+               "wouldSkip guards prevent invalid-name recording");
+               "wouldSkip false allows valid scope recording");
+void testPreflightScopeNesting() {
+    expectTrue(resetPreflight.canRecord(), "scope preflight can record on reset");
+    expectTrue(resetPreflight.balanced, "scope preflight balanced on reset");
+    expectTrue(resetPreflight.activeDepth == 0u, "scope preflight active depth zero on reset");
+    expectTrue(resetPreflight.canEnterScope("outer"), "scope preflight allows valid scope name");
+    expectTrue(!resetPreflight.canEnterScope(""), "scope preflight rejects empty scope name");
+        expectTrue(!activePreflight.balanced, "scope preflight unbalanced inside active scope");
+        expectTrue(activePreflight.activeDepth == 1u, "scope preflight reports active scope depth");
+        expectTrue(activePreflight.maxDepth == 1u, "scope preflight reports max scope depth");
+    expectTrue(closedPreflight.balanced, "scope preflight balanced after scope end");
+    expectTrue(closedPreflight.activeDepth == 0u, "scope preflight active depth clears after scope end");
+void testPreflightAsyncFlow() {
+    expectTrue(resetPreflight.canRecord(), "async preflight can record on reset");
+    expectTrue(resetPreflight.balanced, "async preflight balanced on reset");
+    expectTrue(!resetPreflight.hasOpenFlows, "async preflight has no open flows on reset");
+    expectTrue(!resetPreflight.canEndFlow("orphan"), "async preflight blocks orphan end");
+    expectTrue(openPreflight.hasOpenFlows, "async preflight marks open flow");
+    expectTrue(openPreflight.openFlowCount == 1u, "async preflight open flow count is one");
+    expectTrue(!openPreflight.balanced, "async preflight unbalanced with open flow");
+    expectTrue(openPreflight.canBeginFlow("nested_flow"), "async preflight allows nested begin");
+    expectTrue(openPreflight.canEndFlow("preflight_flow"), "async preflight allows paired end");
+    expectTrue(closedPreflight.balanced, "async preflight balanced after flow end");
+    expectTrue(!closedPreflight.hasOpenFlows, "async preflight clears open flows after end");
+void testPreflightAsyncFlowCrossThreadHandoff() {
+    expectTrue(fuse::profiler::tryFindFirstEventByFlowId(flowId, flowStart),
+    expectTrue(flowStart.scopeId == flowId, "tryFindFirstEventByFlowId copies flow id");
+    expectTrue(fuse::profiler::tryFindLastEventByFlowId(flowId, flowFinish),
+    testPreflightScopeNesting();
+    testPreflightAsyncFlow();
+    testPreflightAsyncFlowCrossThreadHandoff();

@@ -527,3 +527,8 @@ bool wouldSkipChromeTraceExportSafely(ProfileSkipReason* reason = nullptr);
 // --- deepen additive from b16-profiler-deepen-guards-6464 ---
 bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId);
 bool wouldSkipEndAsyncFlow(const char* name, u32 flowId);
+
+// --- deepen additive from deepen-b16-profiler-guards-5803 ---
+bool wouldSkipCounterFloatSample(const char* track);
+bool wouldSkipCounterSnapshotAtFrame(const char* track);
+bool wouldSkipCounterFloatSnapshotAtFrame(const char* track);

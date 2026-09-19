@@ -1466,3 +1466,12 @@ bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId) {
     return !preflightBeginAsyncFlow(name, flowId).canBegin;
 bool wouldSkipEndAsyncFlow(const char* name, u32 flowId) {
     return !preflightEndAsyncFlow(name, flowId).canEnd;
+
+// --- deepen additive from deepen-b16-profiler-guards-5803 ---
+    return wouldSkipProfileScope(name);
+    return wouldSkipProfileScope(name)
+    return wouldSkipProfileScope(track);
+bool wouldSkipCounterFloatSample(const char* track) {
+    return wouldSkipCounterSample(track);
+bool wouldSkipCounterSnapshotAtFrame(const char* track) {
+bool wouldSkipCounterFloatSnapshotAtFrame(const char* track) {
