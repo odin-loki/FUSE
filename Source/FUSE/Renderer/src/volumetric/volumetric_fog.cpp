@@ -1434,3 +1434,18 @@ void addVolumetricFogPassToGraph(RenderGraph& graph, const RGTextureAccess* dept
 }
 
 } // namespace fuse::renderer
+
+// --- deepen additive from deepen-froxel-density-guards-1bcd ---
+const char* densityGridRejectReasonLabel(DensityGridRejectReason reason) {
+    case DensityGridRejectReason::None:
+    case DensityGridRejectReason::EmptyGridDesc:
+    case DensityGridRejectReason::DescMismatch:
+    case DensityGridRejectReason::CountPartitionMismatch:
+bool tryValidateDensityCounts(const FroxelDensityGrid& grid,
+                            DensityGridRejectReason& outReason,
+        outReason = DensityGridRejectReason::None;
+        outReason = DensityGridRejectReason::EmptyGridDesc;
+        outReason = DensityGridRejectReason::DescMismatch;
+        outReason = DensityGridRejectReason::CountPartitionMismatch;
+    DensityGridRejectReason reason = DensityGridRejectReason::None;
+    return tryValidateDensityCounts(grid, desc, reason, epsilon);

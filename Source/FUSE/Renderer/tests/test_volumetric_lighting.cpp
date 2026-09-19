@@ -1787,3 +1787,20 @@ int main() {
 
 // --- deepen additive from deepen-b511-froxel-density-guards-7755 ---
 void testFroxelValidateGridDensityAndAccessGuards() {
+
+// --- deepen additive from deepen-froxel-density-guards-1bcd ---
+void testFroxelDensityAccessGuardsAndValidation() {
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 0u, sampledDensity),
+    expectTrue(fuse::renderer::froxel_util::tryWriteDensityAtIndex(grid, desc, 5u, 3.5f),
+    expectTrue(fuse::renderer::froxel_util::trySampleDensityAtIndex(grid, desc, 5u, writtenDensity),
+    fuse::renderer::DensityGridRejectReason reason = fuse::renderer::DensityGridRejectReason::None;
+    expectTrue(fuse::renderer::froxel_util::tryValidateDensityCounts(grid, desc, reason),
+    expectTrue(reason == fuse::renderer::DensityGridRejectReason::None, "valid grid reports no reject reason");
+    expectTrue(fuse::renderer::froxel_util::tryValidateDensityCounts(emptyGrid, zeroDesc, reason),
+    expectTrue(reason == fuse::renderer::DensityGridRejectReason::None,
+    expectTrue(!fuse::renderer::froxel_util::tryValidateDensityCounts(emptyGrid, desc, reason),
+    expectTrue(reason == fuse::renderer::DensityGridRejectReason::EmptyGridDesc,
+    expectTrue(std::string(fuse::renderer::densityGridRejectReasonLabel(reason)) == "empty_grid_desc",
+    expectTrue(!fuse::renderer::froxel_util::tryValidateDensityCounts(grid, mismatched, reason),
+    expectTrue(reason == fuse::renderer::DensityGridRejectReason::DescMismatch,
+    expectTrue(std::string(fuse::renderer::densityGridRejectReasonLabel(reason)) == "desc_mismatch",
