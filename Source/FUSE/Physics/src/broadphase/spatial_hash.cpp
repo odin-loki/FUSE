@@ -960,3 +960,22 @@ std::vector<CandidatePair> runBroadphase2D(
 }
 
 } // namespace fuse::physics::broadphase
+
+// --- deepen additive from deepen-b4-broadphase-guards-fcb2 ---
+const char* candidateRejectReasonLabel(CandidateRejectReason reason) {
+    case CandidateRejectReason::None:
+    case CandidateRejectReason::SelfPair:
+    case CandidateRejectReason::OutOfRangeBody:
+    case CandidateRejectReason::AabbSeparated:
+    case CandidateRejectReason::BufferFull:
+CandidateRejectReason candidatePairRejectReasonImpl(
+    const CandidateRejectReason indexReason = candidatePairRejectReason(pair, bodies.count());
+    if (indexReason != CandidateRejectReason::None) {
+        return CandidateRejectReason::AabbSeparated;
+    return CandidateRejectReason::None;
+    return candidatePairRejectReasonImpl({bodyA, bodyB}, bodies, shapes) == CandidateRejectReason::None;
+        const CandidateRejectReason rejectReason =
+            candidatePairRejectReasonImpl({bodyA, bodyB}, bodies, shapes);
+        if (rejectReason != CandidateRejectReason::None) {
+            buffer.lastRejectReason = rejectReason;
+CandidateRejectReason candidatePairRejectReason(

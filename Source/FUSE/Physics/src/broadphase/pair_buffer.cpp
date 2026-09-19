@@ -774,3 +774,10 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
 }
 
 } // namespace fuse::physics::broadphase
+
+// --- deepen additive from deepen-b4-broadphase-guards-fcb2 ---
+    lastRejectReason = CandidateRejectReason::None;
+    const CandidateRejectReason rejectReason = candidatePairRejectReason(idxA, idxB);
+    if (rejectReason != CandidateRejectReason::None) {
+        lastRejectReason = rejectReason;
+        lastRejectReason = CandidateRejectReason::BufferFull;

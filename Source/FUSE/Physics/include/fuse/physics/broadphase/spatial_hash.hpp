@@ -1102,3 +1102,14 @@ std::vector<CandidatePair> runBroadphase2D(
     const SpatialHashParams& params);
 
 } // namespace fuse::physics::broadphase
+
+// --- deepen additive from deepen-b4-broadphase-guards-fcb2 ---
+enum class CandidateRejectReason : u8 {
+const char* candidateRejectReasonLabel(CandidateRejectReason reason);
+FUSE_PHYSICS_INLINE CandidateRejectReason candidatePairRejectReason(u32 bodyA, u32 bodyB, u32 bodyCount = 0u) {
+        return CandidateRejectReason::SelfPair;
+        return CandidateRejectReason::OutOfRangeBody;
+    return CandidateRejectReason::None;
+FUSE_PHYSICS_INLINE CandidateRejectReason candidatePairRejectReason(const CandidatePair& pair, u32 bodyCount = 0u) {
+    return candidatePairRejectReason(bodyA, bodyB, bodyCount) != CandidateRejectReason::None;
+CandidateRejectReason candidatePairRejectReason(

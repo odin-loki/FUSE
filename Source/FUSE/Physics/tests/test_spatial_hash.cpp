@@ -2248,3 +2248,22 @@ int main() {
     std::fprintf(stderr, "fuse_physics_broadphase_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b4-broadphase-guards-fcb2 ---
+void testCandidateRejectReasonGuards() {
+        fuse::physics::broadphase::candidatePairRejectReason(1u, 1u) ==
+            fuse::physics::broadphase::CandidateRejectReason::SelfPair,
+        fuse::physics::broadphase::candidatePairRejectReason(0u, 2u, 2u) ==
+            fuse::physics::broadphase::CandidateRejectReason::OutOfRangeBody,
+        fuse::physics::broadphase::candidatePairRejectReason(0u, 1u, 2u) ==
+            fuse::physics::broadphase::CandidateRejectReason::None,
+        fuse::physics::broadphase::candidatePairRejectReason({0u, 1u}, bodies, shapes) ==
+            fuse::physics::broadphase::CandidateRejectReason::AabbSeparated,
+        fuse::physics::broadphase::candidatePairRejectReason({0u, 0u}, bodies, shapes) ==
+    expectTrue(std::strcmp(fuse::physics::broadphase::candidateRejectReasonLabel(
+                               fuse::physics::broadphase::CandidateRejectReason::BufferFull),
+void testPairBufferRejectReasonTracking() {
+    expectTrue(buffer.lastRejectReason == fuse::physics::broadphase::CandidateRejectReason::SelfPair,
+    expectTrue(buffer.lastRejectReason == fuse::physics::broadphase::CandidateRejectReason::BufferFull,
+    testCandidateRejectReasonGuards();
+    testPairBufferRejectReasonTracking();
