@@ -865,3 +865,6 @@ bool CookCache::would_invalidate_stale_upstream(
 // --- deepen additive from deepen-b79-cooker-hash-83b8 ---
 bool CookCache::would_invalidate_all() const {
     return estimate_invalidate_all_removals().would_invalidate_all();
+
+// --- deepen additive from deepen-b79-cooker-hash-111a ---
+CookHashPreflight CookCache::preflight_cook_cache_entry(const CookCacheEntry& entry) const {

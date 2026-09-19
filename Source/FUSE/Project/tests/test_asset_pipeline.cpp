@@ -2006,3 +2006,9 @@ void testCookerReconcileEstimatorGuards() {
     entryB.output_path = "/tmp/fuse_b79_reconcile_chain_b.fusemesh";
         cooker.cache().probe_downstream_sources(entryA.output_path, graph.edges(), graph.jobs());
     expectTrue(downstream[0] == entryA.output_path,
+
+// --- deepen additive from deepen-b79-cooker-hash-111a ---
+               "would_invalidate_downstream_of true for chain producer");
+               "empty output path would_invalidate_downstream_of is guarded");
+    expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes(source_upstream),
+               "would_invalidate_stale_upstream true after upstream content change");

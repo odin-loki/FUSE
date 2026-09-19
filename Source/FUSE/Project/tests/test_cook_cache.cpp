@@ -1120,3 +1120,11 @@ void testCookHashPreflightFnvAndManifestCook() {
     expectTrue(empty_output.reason == fuse::project::CookHashRejectReason::EmptyOutputPath,
 void testCookHashPreflightCacheableAndManifestDeps() {
     testCookHashPreflightCacheableAndManifestDeps();
+
+// --- deepen additive from deepen-b79-cooker-hash-111a ---
+    expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, revised_hash),
+               "would_invalidate_stale_content true when current hash differs from stored");
+    const fuse::project::CookHashPreflight zero_key = cache.preflight_cook_cache_entry(invalid);
+    const fuse::project::CookHashPreflight empty_source = cache.preflight_cook_cache_entry(invalid);
+    const fuse::project::CookHashPreflight empty_output = cache.preflight_cook_cache_entry(invalid);
+    const fuse::project::CookHashPreflight valid = cache.preflight_cook_cache_entry(invalid);
