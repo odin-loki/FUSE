@@ -115,4 +115,31 @@ bool should_skip_friction_basis_preflight(
     const ContactManifold& manifold,
     f32 epsilon = 1e-4f);
 
+/// Why friction-basis rebuild would early-out (B4.4 deepen follow-up pass).
+enum class FrictionBasisRejectReason : u8 {
+    None = 0,
+    EmptyManifold,
+    InvalidNormal,
+    StaleBasis,
+};
+
+/// Human-readable label for friction-basis reject reasons (logging / tests).
+const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason);
+
+/// Diagnose why friction-basis rebuild would skip; vacuously succeeds when rebuild may proceed.
+FrictionBasisRejectReason friction_basis_reject_reason(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Returns true when `friction_basis_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+bool friction_basis_rejects_for_reason(
+    const ContactManifold& manifold,
+    FrictionBasisRejectReason expected,
+    f32 epsilon = 1e-4f);
+
+/// Non-mutating friction preflight skip predicate — mirrors `should_skip_friction_basis_preflight` (B4.4 deepen follow-up pass).
+bool can_skip_friction_basis_preflight(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
 } // namespace fuse::physics::narrowphase
