@@ -351,3 +351,9 @@ bool should_skip_manifold_prune_finalize(
 // --- deepen additive from deepen-b4-narrowphase-guards-754b ---
 struct ManifoldProcessPreflight {
 ManifoldProcessPreflight preflight_manifold_process(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-68c9 ---
+enum class ManifoldShallowPruneRejectReason : u8 {
+const char* manifold_shallow_prune_reject_reason_name(ManifoldShallowPruneRejectReason reason);
+ManifoldShallowPruneRejectReason manifold_shallow_prune_reject_reason(
+    ManifoldShallowPruneRejectReason expected,

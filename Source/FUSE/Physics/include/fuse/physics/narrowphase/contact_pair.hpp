@@ -353,3 +353,8 @@ enum class NarrowphaseBatchRejectReason : u8 {
 const char* narrowphase_batch_reject_reason_name(NarrowphaseBatchRejectReason reason);
 NarrowphaseBatchRejectReason narrowphase_batch_reject_reason(
     NarrowphaseBatchRejectReason expected);
+
+// --- deepen additive from b4-narrowphase-deepen-guards-68c9 ---
+struct NarrowphaseRunPreflight {
+    NarrowphaseBatchPreflight batch{};
+NarrowphaseRunPreflight preflight_run_narrowphase(

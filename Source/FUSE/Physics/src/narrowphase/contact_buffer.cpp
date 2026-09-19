@@ -603,3 +603,6 @@ ContactBufferCompactAndClampPreflight preflightContactBufferCompactAndClamp(cons
     preflight.reason = contactBufferCompactAndClampRejectReason(buffer);
     return !preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp();
     return preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-68c9 ---
+    const ContactBufferCompactionPreflight preflight = preflight_contact_buffer_compaction(buffer);

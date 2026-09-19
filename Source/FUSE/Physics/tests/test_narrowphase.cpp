@@ -2726,3 +2726,30 @@ void testContactBufferCompactAndClampPreflightGuards() {
     testContactBufferCompactionPreflightGuards();
     testContactBufferClampPreflightGuards();
     testContactBufferCompactAndClampPreflightGuards();
+
+// --- deepen additive from b4-narrowphase-deepen-guards-68c9 ---
+        invalidSlotPreflight.reason ==
+            fuse::physics::narrowphase::ContactBufferWriteRejectReason::InvalidSlot,
+    const auto compactionPreflight = fuse::physics::narrowphase::preflight_contact_buffer_compaction(packed);
+    expectTrue(compactionPreflight.allValid, "compaction preflight marks all-valid slots");
+void testContactBufferCompactionClampPreflights() {
+    expectTrue(clampPreflight.needsClamp(), "clamp preflight requests overflow truncation");
+    const auto noWorkPreflight = fuse::physics::narrowphase::preflight_contact_buffer_compact_and_clamp(packed);
+        noWorkPreflight.reason ==
+void testNarrowphaseRunPreflightGuards() {
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_run_narrowphase(emptyPairs, bodies, shapes);
+    expectTrue(emptyPreflight.emptyInput, "run preflight marks empty input");
+    expectTrue(emptyPreflight.canSkip, "run preflight can skip empty input");
+        fuse::physics::narrowphase::preflightNarrowphaseRun(validPairs, bodies, shapes);
+    expectTrue(validPreflight.can_run(), "run preflight can run with valid pairs");
+    expectTrue(validPreflight.batch.dispatchableCount == 1u, "run preflight carries batch dispatchable count");
+    expectTrue(!deepenRejected.valid, "deepen preflight dispatch rejects both-sleeping pair");
+void testManifoldShallowPrunePreflightGuards() {
+            fuse::physics::narrowphase::ManifoldShallowPruneRejectReason::EmptyManifold,
+            fuse::physics::narrowphase::ManifoldShallowPruneRejectReason::NoShallowPoints,
+                fuse::physics::narrowphase::ManifoldShallowPruneRejectReason::NoShallowPoints),
+void testFrictionComputeTangentsPreflightGuard() {
+    testContactBufferCompactionClampPreflights();
+    testNarrowphaseRunPreflightGuards();
+    testManifoldShallowPrunePreflightGuards();
+    testFrictionComputeTangentsPreflightGuard();

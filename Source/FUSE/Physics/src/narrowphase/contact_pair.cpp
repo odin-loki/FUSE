@@ -826,3 +826,7 @@ NarrowphaseBatchRejectReason narrowphase_batch_reject_reason(
         return NarrowphaseBatchRejectReason::AllRejected;
     return NarrowphaseBatchRejectReason::None;
     NarrowphaseBatchRejectReason expected) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-68c9 ---
+NarrowphaseRunPreflight preflight_run_narrowphase(
+    NarrowphaseRunPreflight preflight{};

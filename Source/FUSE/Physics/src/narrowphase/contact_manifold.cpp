@@ -743,3 +743,15 @@ bool should_skip_manifold_prune_finalize(
 // --- deepen additive from deepen-b4-narrowphase-guards-754b ---
 ManifoldProcessPreflight preflight_manifold_process(
     ManifoldProcessPreflight process{};
+
+// --- deepen additive from b4-narrowphase-deepen-guards-68c9 ---
+const char* manifold_shallow_prune_reject_reason_name(ManifoldShallowPruneRejectReason reason) {
+    case ManifoldShallowPruneRejectReason::None:
+    case ManifoldShallowPruneRejectReason::EmptyManifold:
+    case ManifoldShallowPruneRejectReason::NoShallowPoints:
+ManifoldShallowPruneRejectReason manifold_shallow_prune_reject_reason(
+        return ManifoldShallowPruneRejectReason::EmptyManifold;
+        return ManifoldShallowPruneRejectReason::NoShallowPoints;
+    return ManifoldShallowPruneRejectReason::None;
+    ManifoldShallowPruneRejectReason expected,
+    if (manifold_shallow_prune_reject_reason(manifold, minDepth) != ManifoldShallowPruneRejectReason::None) {

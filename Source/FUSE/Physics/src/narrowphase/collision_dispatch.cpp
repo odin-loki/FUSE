@@ -79,3 +79,9 @@ void runNarrowphaseIntoBufferWithDeepenPreflight(
 
 // --- deepen additive from b4-narrowphase-deepen-guards-5d1f ---
 std::vector<ContactManifold> runNarrowphaseWithDeepenPreflight(
+
+// --- deepen additive from b4-narrowphase-deepen-guards-68c9 ---
+NarrowphaseRunPreflight preflightNarrowphaseRun(
+    const NarrowphaseRunPreflight runPreflight = preflight_run_narrowphase(pairs, bodies, shapes);
+    if (runPreflight.canSkip) {
+    const u32 pairCount = runPreflight.pairCount;
