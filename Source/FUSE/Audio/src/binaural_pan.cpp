@@ -1569,3 +1569,11 @@ bool should_skip_hrtf_binaural_preflight(bool hrtf_enabled, const Vec3& rel_list
         : preflight.panPath.reason == HrtfPanPathRejectReason::CoLocated
             ? HrtfBinauralRejectReason::CoLocated
             : HrtfBinauralRejectReason::None;
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-e6c1 ---
+bool hrtf_pan_path_matches_preflight(HrtfPanPath path, const HrtfPanPathPreflight& preflight) {
+HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_pan_path(HrtfPanPathRejectReason reason) {
+HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_attenuation(
+HrtfBinauralRejectReason hrtf_binaural_skip_reject_reason(bool hrtf_enabled,
+HrtfBinauralRejectReason hrtf_binaural_convolution_reject_reason(const HrtfIrStub& ir) {
+HrtfBinauralRejectReason hrtf_binaural_attenuation_reject_reason(

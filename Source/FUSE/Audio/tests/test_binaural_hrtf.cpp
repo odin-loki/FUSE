@@ -2114,3 +2114,10 @@ void testRejectReasonMirrorsExistingPreflights() {
 void testHrtfRejectReasonMirrorsExistingPreflights() {
                "preflight_hrtf_binaural_ready mirrors should_skip_hrtf_binaural inverse");
     testHrtfRejectReasonMirrorsExistingPreflights();
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-e6c1 ---
+                   empty, fuse::audio::HrtfBinauralRejectReason::NullSamples),
+    expectTrue(preflight.convolutionReason == fuse::audio::HrtfBinauralRejectReason::NullSamples,
+    expectTrue(preflight.attenuationReason == fuse::audio::HrtfBinauralRejectReason::None,
+        fuse::audio::hrtf_binaural_reject_reason_from_ir(fuse::audio::HrtfIrRejectReason::MalformedIr)
+            fuse::audio::hrtf_binaural_reject_reason_name(fuse::audio::HrtfBinauralRejectReason::BypassPath),
