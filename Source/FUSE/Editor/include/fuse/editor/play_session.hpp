@@ -205,3 +205,6 @@ private:
 
 // --- deepen additive from deepen-b6-pie-maxsteps-dirty-snapshot-eb47 ---
     DirtySnapshotPreflight preflightDirtySnapshotRestore() const;
+
+// --- deepen additive from deepen-pie-fixed-step-dirty-snapshot-guards-38fb ---
+    VariableTickPreflight preflightTick(f32 dt, const PlayModePhysicsState& physics) const;

@@ -1078,3 +1078,11 @@ void testPlaySessionDirtySnapshotPreflight() {
     const fuse::editor::DirtySnapshotPreflight afterStop = session.preflightDirtySnapshotRestore();
     testPlaySessionFixedStepPreflightMaxSteps();
     testPlaySessionDirtySnapshotPreflight();
+
+// --- deepen additive from deepen-pie-fixed-step-dirty-snapshot-guards-38fb ---
+void testPlaySessionZeroDtInactiveTickGuard() {
+    fuse::editor::VariableTickPreflight zeroPreflight = session.preflightTick(0.f, physics);
+    expectTrue(zeroPreflight.skipped, "preflightTick skips zero dt");
+    fuse::editor::VariableTickPreflight activePreflight = session.preflightTick(0.016f, physics);
+    expectTrue(!activePreflight.skipped, "preflightTick allows positive dt while playing");
+    expectTrue(activePreflight.wouldSimulate, "positive dt preflight would simulate");
