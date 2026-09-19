@@ -363,3 +363,7 @@ bool tryPreflightTaaHistoryForTemporalBlend(const TaaHistoryBuffer& history, u32
 // --- deepen additive from deepen-taa-b59-guards-61db ---
 bool preflightTaaHistoryTemporalSample(const TaaHistoryBuffer& history, u32 observedGeneration,
 bool tryPreflightTaaHistoryTemporalSample(const TaaHistoryBuffer& history, u32 observedGeneration,
+
+// --- deepen additive from deepen-b59-taa-guards-1db7 ---
+bool preflightTaaHistoryReadyForResolve(const TaaHistoryBuffer& history, TaaHistoryReuseBlockReason* reason) {
+    return preflightTaaHistoryReadyForResolve(history, &reason);

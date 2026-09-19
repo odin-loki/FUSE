@@ -363,3 +363,6 @@ void addTaaPassToGraph(RenderGraph& graph);
                                        TaaResolveTemporalBlendRejectReason* reason = nullptr) const;
     bool preflightJitterSyncAndNdc(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
     bool preflightHistoryTemporalSample(u32 observedGeneration,
+
+// --- deepen additive from deepen-b59-taa-guards-1db7 ---
+    bool preflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason = nullptr) const;

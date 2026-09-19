@@ -652,3 +652,9 @@ bool TaaPass::preflightHistoryTemporalSample(u32 observedGeneration,
 
 // --- deepen additive from deepen-b59-taa-guards-258a ---
     if (!m_jitter.tryAdvanceIfReady(reason)) {
+
+// --- deepen additive from deepen-b59-taa-guards-1db7 ---
+    return preflightTaaJitterAlignment(frameIndex, m_jitter.monotonicFrameIndex(), m_jitter.index(),
+    return tryPreflightTaaJitterAlignment(frameIndex, m_jitter.monotonicFrameIndex(), m_jitter.index(),
+bool TaaPass::preflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
+    return preflightTaaResolve(desc, m_history, reason);

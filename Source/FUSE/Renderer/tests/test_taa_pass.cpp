@@ -4324,3 +4324,19 @@ void testResolveFramePreflight() {
                "tryPreflightHistoryReadyForResolve passes after init");
     testJitterTryIfReadyWithRejectReason();
     testResolveFramePreflight();
+
+// --- deepen additive from deepen-b59-taa-guards-1db7 ---
+    expectTrue(fuse::renderer::tryPreflightTaaJitterAlignment(5u, jitter.monotonicFrameIndex(), jitter.index(), 8u,
+               "tryPreflightTaaJitterAlignment passes for synced jitter");
+               "tryPreflightTaaJitterAlignment reject reason is None");
+               "tryPreflightTaaHistoryWarmup reason is NotReady for empty history");
+    expectTrue(fuse::renderer::preflightTaaHistoryReadyForResolve(history, &reason),
+    expectTrue(pass->tryPreflightJitterSync(0u, jitterReason), "pass tryPreflightJitterSync passes before init");
+    expectTrue(pass->tryPreflightJitterNdc(jitterReason), "pass tryPreflightJitterNdc passes before init");
+    expectTrue(pass->tryPreflightJitterAdvance(jitterReason), "pass tryPreflightJitterAdvance passes before init");
+    expectTrue(pass->tryPreflightJitterAlignment(4u, jitterReason),
+               "pass tryPreflightHistoryWarmup reason is NotWarm before resolve");
+    expectTrue(pass->preflightResolve(resolveDesc, &skipReason), "pass preflightResolve passes before warmup resolve");
+               "pass tryPreflightResolve passes before warmup resolve");
+               "pass tryComputeResolveBlendWeights passes before warmup resolve");
+               "pass tryPreflightHistoryReuse fails before warmup resolve");

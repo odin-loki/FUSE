@@ -446,3 +446,6 @@ const char* taaResolveTemporalBlendRejectReasonLabel(TaaResolveTemporalBlendReje
 TaaResolveTemporalBlendRejectReason classifyTaaResolveTemporalBlendReject(const TaaResolveDesc& desc,
                                       TaaResolveTemporalBlendRejectReason* reason = nullptr);
                                            TaaResolveTemporalBlendRejectReason& reason);
+
+// --- deepen additive from deepen-b59-taa-guards-1db7 ---
+bool preflightTaaHistoryReadyForResolve(const TaaHistoryBuffer& history,
