@@ -879,3 +879,12 @@ bool should_skip_contact_pair_beyond_dispatch(
 NarrowphaseBeyondBatchPreflight preflight_narrowphase_beyond_batch(
     NarrowphaseBeyondBatchPreflight preflight{};
     if (should_skip_contact_pair_beyond_dispatch(pair, bodies, shapes)) {
+
+// --- deepen additive from b4-narrowphase-deepen-pass-6859 ---
+    case ContactPairRejectReason::NonCanonicalPair:
+    case ContactPairRejectReason::DuplicatePairInBatch:
+        return ContactPairRejectReason::NonCanonicalPair;
+        return ContactPairRejectReason::DuplicatePairInBatch;
+ContactPairSlotPreflight preflight_contact_pair_slot(
+    ContactPairSlotPreflight preflight{};
+    const ContactPairSlotPreflight preflight =

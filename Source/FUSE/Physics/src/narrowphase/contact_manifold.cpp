@@ -800,3 +800,7 @@ ManifoldBeyondPrunePreflight preflight_manifold_beyond_prune(
         preflight.reason = ManifoldPruneRejectReason::ExceedsMaxPoints;
 bool should_skip_manifold_beyond_prune(
     const ManifoldBeyondPrunePreflight preflight =
+
+// --- deepen additive from b4-narrowphase-deepen-pass-6859 ---
+    case ManifoldPruneRejectReason::NeedsNormalNormalize:
+    if (expected == ManifoldPruneRejectReason::NeedsNormalNormalize) {

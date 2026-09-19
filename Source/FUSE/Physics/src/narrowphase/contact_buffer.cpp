@@ -743,3 +743,9 @@ bool ContactBufferSoA::writeSlotIfPreflight(u32 slot, const ContactManifold& man
 
 // --- deepen additive from deepen-b4-narrowphase-guards-56fd ---
         if (should_skip_friction_basis_beyond_rebuild(manifold, epsilon)) {
+
+// --- deepen additive from b4-narrowphase-deepen-pass-6859 ---
+    return should_skip_buffer_friction_rebuild(*this, epsilon);
+    if (should_skip_buffer_friction_rebuild(*this, epsilon)) {
+ContactBufferFrictionPreflight preflight_buffer_friction_rebuild(
+bool should_skip_buffer_friction_rebuild(const ContactBufferSoA& buffer, f32 epsilon) {

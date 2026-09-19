@@ -389,3 +389,9 @@ ContactPairBeyondDeepenPreflight preflight_contact_pair_beyond(
 bool should_skip_contact_pair_beyond_dispatch(
 struct NarrowphaseBeyondBatchPreflight {
 NarrowphaseBeyondBatchPreflight preflight_narrowphase_beyond_batch(
+
+// --- deepen additive from b4-narrowphase-deepen-pass-6859 ---
+struct ContactPairSlotPreflight {
+    ContactPairPreflight base{};
+    ContactPairDeepenPassPreflight deepenPass{};
+ContactPairSlotPreflight preflight_contact_pair_slot(

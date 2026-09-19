@@ -287,3 +287,7 @@ bool writeContactSlotWithPreflight(
 
 // --- deepen additive from deepen-b4-narrowphase-2570 ---
     bool needs_compact_and_clamp() const { return reason == ContactBufferCompactAndClampRejectReason::None; }
+
+// --- deepen additive from b4-narrowphase-deepen-pass-6859 ---
+ContactBufferFrictionPreflight preflight_buffer_friction_rebuild(
+bool should_skip_buffer_friction_rebuild(const ContactBufferSoA& buffer, f32 epsilon = 1e-4f);

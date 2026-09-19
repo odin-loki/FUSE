@@ -3110,3 +3110,31 @@ void testFrictionBasisBeyondRebuildGuards() {
     expectTrue(stalePreflight.stale, "beyond friction preflight flags stale basis");
         !fuse::physics::narrowphase::should_skip_friction_basis_beyond_rebuild(stale),
 void testRunNarrowphaseBeyondAndBufferGuards() {
+
+// --- deepen additive from b4-narrowphase-deepen-pass-6859 ---
+void testContactPairDeepenPass2RejectGuards() {
+            fuse::physics::narrowphase::ContactPairRejectReason::NonCanonicalPair,
+            fuse::physics::narrowphase::ContactPairRejectReason::DuplicatePairInBatch,
+    expectTrue(!deepenPassPreflight.can_dispatch(), "deepen pass preflight rejects duplicate pair");
+        deepenPassPreflight.reason ==
+    expectTrue(slotPreflight.can_dispatch(), "slot preflight allows first canonical pair");
+        slotPreflight.reason == fuse::physics::narrowphase::ContactPairRejectReason::None,
+                fuse::physics::narrowphase::ContactPairRejectReason::NonCanonicalPair),
+                fuse::physics::narrowphase::ContactPairRejectReason::DuplicatePairInBatch),
+void testManifoldPruneFinalizePass2Guards() {
+            unnormalized, fuse::physics::narrowphase::ManifoldPruneRejectReason::NeedsNormalNormalize),
+            capped, fuse::physics::narrowphase::ManifoldPruneRejectReason::ExceedsMaxPoints),
+                fuse::physics::narrowphase::ManifoldPruneRejectReason::NeedsNormalNormalize),
+void testFrictionBasisPass2RejectGuards() {
+void testContactBufferFrictionPass2Guards() {
+    const auto emptyPreflight = fuse::physics::narrowphase::preflight_buffer_friction_rebuild(empty);
+    expectTrue(emptyPreflight.skipped, "empty buffer friction preflight skipped");
+        fuse::physics::narrowphase::should_skip_buffer_friction_rebuild(empty),
+        fuse::physics::narrowphase::should_skip_buffer_friction_rebuild(buffer),
+void testNarrowphasePairSlotPass2Guards() {
+    expectTrue(validPreflight.can_dispatch(), "pair slot preflight allows canonical pair");
+        !fuse::physics::narrowphase::should_skip_narrowphase_pair_slot(pairs[0], bodies, shapes, pairs, 0u),
+    const auto swappedPreflight =
+    expectTrue(!swappedPreflight.can_dispatch(), "pair slot preflight rejects non-canonical pair");
+        fuse::physics::narrowphase::should_skip_narrowphase_pair_slot(pairs[1], bodies, shapes, pairs, 1u),
+        swappedPreflight.pair.reason ==

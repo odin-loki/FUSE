@@ -504,3 +504,6 @@ bool should_skip_friction_basis_beyond_rebuild(
     const FrictionBasisBeyondPreflight preflight =
     if (should_skip_friction_basis_beyond_rebuild(manifold, epsilon)) {
         if (friction_basis_reject_reason(manifold) != FrictionBasisRejectReason::None) {
+
+// --- deepen additive from b4-narrowphase-deepen-pass-6859 ---
+    return should_skip_friction_basis_preflight(normalized, epsilon);

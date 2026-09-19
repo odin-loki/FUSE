@@ -247,3 +247,6 @@ bool should_skip_narrowphase_dispatch(
 // --- deepen additive from deepen-narrowphase-b4-guards-61f0 ---
 struct NarrowphaseBufferFinalizePreflight {
 NarrowphaseBufferFinalizePreflight preflight_narrowphase_buffer_finalize(const ContactBufferSoA& buffer);
+
+// --- deepen additive from b4-narrowphase-deepen-pass-6859 ---
+    ContactPairSlotPreflight pair{};
