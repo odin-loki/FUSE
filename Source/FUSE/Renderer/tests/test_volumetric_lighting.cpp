@@ -4005,3 +4005,14 @@ void testFroxelBlockingClassifyAndPreflightGuards() {
     expectTrue(!fuse::renderer::densityLookupRejectReasonIsBlocking(DensityLookupRejectReason::None),
                "preflightGridDensity rejects undersized grid");
     testFroxelBlockingClassifyAndPreflightGuards();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-5991 ---
+void testFroxelDeepenPreflightAndClassifyGuards() {
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookup(grid, desc, 1u, 1u, 2u),
+               "preflightDensityLookup succeeds for in-range coords");
+               "classifyFroxelSampleReject none for in-bounds coords");
+               "preflightFroxelSample succeeds for in-bounds coords");
+               "classifyFroxelSampleReject out_of_bounds for hard OOB coords");
+    expectTrue(!fuse::renderer::froxel_util::preflightFroxelSample(grid, desc, hardOob),
+               "preflightFroxelSample rejects hard OOB coords");
+    testFroxelDeepenPreflightAndClassifyGuards();

@@ -2381,3 +2381,6 @@ bool FroxelGridLayout::preflightMapScreenDepthToSampleCoords(f32 screenX,
 ScreenMappingRejectReason FroxelGridLayout::classifyScreenMappingFroxelIndexReject(f32 screenX,
 bool FroxelGridLayout::preflightMapScreenDepthToFroxelIndex(f32 screenX,
 bool preflightTrilinearSampleAtCoords(const FroxelDensityGrid& grid,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-5991 ---
+    const bool ok = tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, rejectReason);
