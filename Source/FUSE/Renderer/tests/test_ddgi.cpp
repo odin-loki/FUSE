@@ -3223,3 +3223,23 @@ void testPreflightProbeKernels() {
     expectTrue(std::strcmp(fuse::renderer::probeUpdateLaunchRejectReasonLabel(reason), "duplicate_probe_index") == 0,
     expectTrue(fuse::renderer::wouldSkipDdgiProbeUpdate(desc, duplicateIndices, 2u),
                "wouldSkip true for duplicate probe indices");
+
+// --- deepen additive from deepen-ddgi-guards-2134 ---
+void testClassifyProbeSampleCoordsReject() {
+    expectTrue(fuse::renderer::ProbeGridLayout::classifyProbeSampleCoordsReject(empty, built) ==
+void testClassifyCacheIndexReject() {
+               "wouldSkipRead false for valid cache read");
+               "wouldSkipRead true for null cache");
+    expectTrue(fuse::renderer::ddgi_util::classifyCacheIndexReject(desc, cache.data(), 99u, 8u) ==
+               "wouldSkipRead true for OOB probe index");
+               "wouldSkipRead true when cache undersized for grid");
+    expectTrue(fuse::renderer::ddgi_util::tryValidateScheduledProbeIndices(desc, indices, count, launchReason),
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateScheduledProbeIndices(desc, oobIndices, 2u, launchReason),
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateScheduledProbeIndices(desc, nullptr, 2u, launchReason),
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, coords, cache.data(), 8u),
+               "wouldSkipProbeTrilinearSample false for accessible grid");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, coords, nullptr, 8u),
+               "wouldSkipProbeTrilinearSample true for null cache");
+               "wouldSkipProbeTrilinearSample true for undersized cache");
+    expectTrue(fuse::renderer::wouldSkipDdgiProbeUpdate(desc, validIndices, 2u),
+               "wouldSkip trace true for null probe indices");

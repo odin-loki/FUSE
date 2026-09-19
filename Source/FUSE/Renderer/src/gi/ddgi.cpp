@@ -2620,3 +2620,7 @@ bool wouldSkipScheduledProbeUpdate(const DDGIDesc& desc, const u32* probe_indice
 bool wouldSkipTrilinearSampleAtCoords(const DDGIDesc& desc,
     return wouldSkipTrilinearSampleAtCoords(desc, coords, cache, cache_count);
                 outReason = ProbeUpdateLaunchRejectReason::DuplicateProbeIndex;
+
+// --- deepen additive from deepen-ddgi-guards-2134 ---
+    return classifyCacheIndexReject(desc, cache, probe_index, cache_count) != CacheIndexRejectReason::None;
+    if (classifyCacheIndexReject(desc, cache, probe_index, cache_count) != CacheIndexRejectReason::None) {
