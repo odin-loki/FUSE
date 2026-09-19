@@ -1627,3 +1627,10 @@ struct MergeBroadphasePushPreflight {
     MergeBroadphasePushRejectReason reason = MergeBroadphasePushRejectReason::None;
     bool canPush() const { return reason == MergeBroadphasePushRejectReason::None; }
 MergeBroadphasePushPreflight preflightMergeBroadphasePush(
+
+// --- deepen additive from deepen-b4-broadphase-guards-217b ---
+    bool wouldTruncate = false;
+    ShapeCellInsertRejectReason expected,
+    bool passesRefine() const { return reason == RefinePairSlotRejectReason::None; }
+        return reason == RefinePairSlotRejectReason::InvalidPair ||
+               reason == RefinePairSlotRejectReason::Separated;

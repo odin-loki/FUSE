@@ -1624,3 +1624,16 @@ MergeBroadphasePushPreflight preflightMergeBroadphasePush(
     preflight.bufferFull = preflight.reason == MergeBroadphasePushRejectReason::BufferFull;
     return !preflightMergeBroadphasePush(buffer, bodyA, bodyB).canPush();
     return preflightMergeBroadphasePush(buffer, bodyA, bodyB).canPush();
+
+// --- deepen additive from deepen-b4-broadphase-guards-217b ---
+            preflightRefinePairSlot(pairIndex, bodies, shapes, buffer);
+        if (!slotPreflight.shouldInvalidate()) {
+    case ShapeCellInsertRejectReason::ExceedsOccupancy:
+            return ShapeCellInsertRejectReason::ExceedsOccupancy;
+    ShapeCellInsertRejectReason expected,
+    preflight.exceedsOccupancy = preflight.reason == ShapeCellInsertRejectReason::ExceedsOccupancy;
+    case RefinePairSlotRejectReason::Separated:
+        return RefinePairSlotRejectReason::Separated;
+    return refinePairSlotRejectReason(pairIndex, bodies, shapes, buffer) == expected;
+    preflight.reason = refinePairSlotRejectReason(pairIndex, bodies, shapes, buffer);
+    preflight.separated = preflight.reason == RefinePairSlotRejectReason::Separated;

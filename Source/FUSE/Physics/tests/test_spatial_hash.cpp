@@ -3955,3 +3955,25 @@ void testMergeBroadphasePushPreflightGuards() {
         fuse::physics::broadphase::preflightMergeBroadphasePush(buffer, 2u, 3u);
     testRefinePairSlotPreflightGuards();
     testMergeBroadphasePushPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-217b ---
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(rangeBuffer, 2u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertRejectReason::ExceedsOccupancy),
+                               fuse::physics::broadphase::ShapeCellInsertRejectReason::ExceedsOccupancy),
+    const fuse::physics::broadphase::ShapeCellInsertPreflight smallPreflight =
+        fuse::physics::broadphase::preflightShapeCellInsert(1u, bodies, shapes, params);
+    expectTrue(smallPreflight.canInsert(), "small sphere insert preflight can insert");
+void testRefinePairSlotRejectReasonGuards() {
+    expectTrue(fuse::physics::broadphase::preflightRefinePairSlot(0u, bodies, shapes, buffer).passesRefine(),
+             static_cast<fuse::u32>(fuse::physics::broadphase::RefinePairSlotRejectReason::Separated),
+    expectTrue(fuse::physics::broadphase::preflightRefinePairSlot(1u, bodies, shapes, buffer).shouldInvalidate(),
+                               fuse::physics::broadphase::RefinePairSlotRejectReason::Separated),
+void testMergePairsIntoBufferExtendedPreflightGuards() {
+    const fuse::physics::broadphase::MergePairsIntoBufferPreflight truncatePreflight =
+    expectTrue(truncatePreflight.canMerge(), "merge preflight still allows merge when truncate is diagnostic only");
+    expectTrue(truncatePreflight.wouldTruncate,
+    const fuse::physics::broadphase::MergePairsIntoBufferPreflight mixedPreflight =
+        fuse::physics::broadphase::preflightMergePairsIntoBuffer(mixedPairs, buffer);
+    expectEq(mixedPreflight.invalidPairCount, 1u, "merge preflight reports invalid pair count");
+    testRefinePairSlotRejectReasonGuards();
+    testMergePairsIntoBufferExtendedPreflightGuards();
