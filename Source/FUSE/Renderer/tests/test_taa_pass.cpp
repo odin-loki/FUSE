@@ -4839,3 +4839,10 @@ void testTaaPassTryClassifyGuardWrappers() {
     expectTrue(invalidJitterPass->classifyJitterSyncReject() ==
     expectTrue(invalidJitterPass->tryPreflightJitterSync(5u, jitterReject),
                "pass tryPreflightJitterSync reject reason is None after invalid desc fallback");
+
+// --- deepen additive from b59-taa-pass-try-classify-b52d ---
+               "pass tryPreflightResolveBlendWeights reject reason is None before first resolve");
+               "pass tryPreflightHistoryWarmup passes after warmup");
+               "pass classifyJitterSyncReject matches free function");
+               "pass classifyResolveBlendReject matches free function");
+    expectTrue(invalidJitterPass->tryPreflightJitterSync(0u, jitterReject),
