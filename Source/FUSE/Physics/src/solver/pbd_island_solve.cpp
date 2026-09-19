@@ -2245,3 +2245,12 @@ bool should_skip_island_solve_refs(const ContactIslandGraph::Island& island,
         if (islandPreflight.should_wake()) {
     if (should_skip_island_body_refs(island, bodies)) {
     if (should_skip_island_solve_for_sleep(island, bodies)) {
+
+// --- deepen additive from deepen-pbd-island-guards-2105 ---
+IslandSolveBodiesPreflight preflight_island_solve_bodies_by_index(const ContactIslandGraph& graph,
+        const IslandSleepPreflight islandSleep = preflight_island_sleep(island, bodies);
+        if (!should_skip_sleeping_island_solve(island, bodies)) {
+IslandSolvePreflightCombined preflight_island_solve_combined(
+    IslandSolvePreflightCombined preflight{};
+    if (should_skip_sleeping_island_solve(island, bodies) ||
+        should_skip_island_solve_bodies(island, bodies)) {

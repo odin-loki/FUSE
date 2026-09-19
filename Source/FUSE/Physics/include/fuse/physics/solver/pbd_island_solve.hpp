@@ -1397,3 +1397,8 @@ struct IslandSolveRefsPreflight {
     IslandConstraintRefsPreflight constraints{};
 IslandSolveRefsPreflight preflight_island_solve_refs(
 bool should_skip_island_solve_refs(const ContactIslandGraph::Island& island,
+
+// --- deepen additive from deepen-pbd-island-guards-2105 ---
+IslandSolveBodiesPreflight preflight_island_solve_bodies_by_index(const ContactIslandGraph& graph,
+struct IslandSolvePreflightCombined {
+IslandSolvePreflightCombined preflight_island_solve_combined(

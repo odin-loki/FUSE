@@ -352,3 +352,8 @@ IslandBuildRejectReason island_build_reject_reason(
         return IslandBuildRejectReason::ZeroBodyCount;
             return IslandBuildRejectReason::OutOfRangeContactBodies;
             return IslandBuildRejectReason::OutOfRangeDistanceBodies;
+
+// --- deepen additive from deepen-pbd-island-guards-2105 ---
+        preflight.reason = IslandBuildRejectReason::ZeroBodies;
+        preflight.reason = IslandBuildRejectReason::OutOfRangeBodies;
+    const IslandBuildPreflight preflight = preflight_island_graph_build(bodyCount, contacts, distanceConstraints);
