@@ -44,6 +44,8 @@ enum class ContactPairRejectReason : u8 {
     DuplicatePairInBatch,
     BothNoGravity,
     BothCcd,
+    MeshShapePair,
+    BoxThinPair,
 };
 
 /// Human-readable label for diagnostics and test assertions (B4.3 deepen pass).
@@ -1576,6 +1578,18 @@ struct ContactPairDeepenPassPreflight {
 /// Const preflight for `detect_contacts_pair` guarded dispatch (B4.6 deepen follow-up pass).
 struct ContactPairDispatchPreflight {
     bool usesDeepenReject = false;
+/// Returns true when either shape resolves to mesh/voxel types (B4.6 narrowphase deepen pass).
+bool is_mesh_shape_contact_pair(
+
+/// Returns true when either box shape has a positive but near-zero extent (B4.6 narrowphase deepen pass).
+bool is_box_thin_shape_pair(
+    f32 thinExtentEpsilon = 1e-4f);
+
+/// Extended reject reason including plane-plane and mesh/thin-box pairs (B4.6 narrowphase deepen pass).
+ContactPairRejectReason contact_pair_deepen_second_reject_reason(
+
+/// Const preflight with second-layer plane/mesh/thin-box reject checks (B4.6 narrowphase deepen pass).
+struct ContactPairDeepenSecondPreflight {
 
     bool can_dispatch() const { return !rejected; }
 };
@@ -1635,13 +1649,16 @@ bool narrowphase_batch_deepen_rejects_all(
     const CollisionShapeSoA& shapes);
 
 /// Non-mutating pair-dispatch predicate — inverse of `should_skip_contact_pair_dispatch` (B4.6 deepen pass).
-bool should_run_contact_pair_dispatch(
+/// Populate second-layer pair preflight without running shape dispatch (B4.6 narrowphase deepen pass).
+ContactPairDeepenSecondPreflight preflight_contact_pair_deepen_second(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
 /// Non-mutating deepen-dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
 bool should_run_contact_pair_deepen_dispatch(
+/// Returns true when second-layer preflight rejects this pair (B4.6 narrowphase deepen pass).
+bool should_skip_contact_pair_deepen_second_dispatch(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1654,17 +1671,38 @@ bool should_run_narrowphase(
 
 /// Non-mutating batch-dispatch predicate — inverse of `NarrowphaseBatchPreflight::can_skip` (B4.6 deepen pass).
 bool should_run_narrowphase_batch(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
 ContactManifold detect_contacts_pair_deepen(
     const broadphase::CandidatePair& pair,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes);
 
 /// Finalize manifold with prune+finalize preflight gates (B4.6 deepen pass).
 bool generate_contact_manifold_deepen(ContactManifold& manifold);
+/// Returns true when `contact_pair_deepen_second_reject_reason` matches `expected` (B4.6 narrowphase deepen pass).
+bool contact_pair_deepen_second_rejects_for_reason(
+    const CollisionShapeSoA& shapes,
+    ContactPairRejectReason expected);
+
+/// Count pairs that pass second-layer deepen preflight (B4.6 narrowphase deepen pass).
+u32 count_dispatchable_contact_pairs_second(
+
+/// True when at least one pair passes second-layer deepen preflight (B4.6 narrowphase deepen pass).
+bool has_dispatchable_contact_pair_second(
+
+/// Const preflight for second-layer narrowphase batch dispatch (B4.6 narrowphase deepen pass).
+struct NarrowphaseBatchSecondPreflight {
+    u32 pairCount = 0u;
+    u32 dispatchableCount = 0u;
+    u32 rejectedCount = 0u;
+
+    bool can_dispatch() const { return dispatchableCount > 0u; }
+    bool can_skip() const { return pairCount == 0u || dispatchableCount == 0u; }
+};
+
+/// Populate second-layer batch preflight without running shape dispatch (B4.6 narrowphase deepen pass).
+NarrowphaseBatchSecondPreflight preflight_narrowphase_batch_second(
+
+/// Returns true when second-layer batch preflight reports no dispatchable pairs (B4.6 narrowphase deepen pass).
+bool narrowphase_batch_second_rejects_all(
 
 } // namespace fuse::physics::narrowphase

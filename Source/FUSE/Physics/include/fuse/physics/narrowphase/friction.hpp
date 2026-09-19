@@ -811,5 +811,18 @@ bool normalize_and_rebuild_friction_basis(ContactManifold& manifold, f32 epsilon
 
 /// Returns true when friction-basis rebuild should run for this manifold (B4.6 deepen pass).
 
+/// Normalize the contact normal before friction rebuild when non-unit (B4.6 narrowphase deepen pass).
+
+/// Diagnose why second-layer friction-basis rebuild would skip (B4.6 narrowphase deepen pass).
+FrictionBasisRejectReason friction_basis_second_reject_reason(
+
+/// Returns true when `friction_basis_second_reject_reason` matches `expected` (B4.6 narrowphase deepen pass).
+bool friction_basis_second_rejects_for_reason(
+
+/// Returns true when second-layer friction-basis rebuild should be skipped (B4.6 narrowphase deepen pass).
+bool should_skip_friction_basis_second_preflight(
+
+/// Rebuild friction tangents using second-layer preflight; returns false when skipped (B4.6 narrowphase deepen pass).
+bool rebuild_friction_basis_second_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

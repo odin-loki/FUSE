@@ -415,4 +415,7 @@ bool should_skip_narrowphase_dispatch(
 
 /// Returns true when narrowphase should skip this pair slot before dispatch (B4.6 deepen pass).
 
+/// True when all pairs are rejected by second-layer deepen preflight or the pair list is empty (B4.6 narrowphase deepen pass).
+bool can_skip_narrowphase_second(
+
 } // namespace fuse::physics::narrowphase

@@ -911,6 +911,11 @@ bool should_skip_manifold_finalize(
 
 /// Returns true when manifold prune would be a no-op (B4.5 deepen follow-up).
 bool should_skip_manifold_prune(
+/// Normalize `contactNormal` when non-unit; returns true when normalization applied (B4.6 narrowphase deepen pass).
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f);
+
+/// Diagnose why second-layer manifold prune would skip (B4.6 narrowphase deepen pass).
+ManifoldPruneRejectReason manifold_prune_second_reject_reason(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f);
@@ -1406,6 +1411,29 @@ bool prune_and_finalize_contact_manifold(
 
 
 
+/// Returns true when `manifold_prune_second_reject_reason` matches `expected` (B4.6 narrowphase deepen pass).
+bool manifold_prune_second_rejects_for_reason(
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f);
+
+/// Returns true when second-layer manifold prune should be skipped (B4.6 narrowphase deepen pass).
+bool can_skip_manifold_prune_second(
+
+/// Prune using second-layer preflight; returns true when points remain (B4.6 narrowphase deepen pass).
+bool prune_contact_manifold_second_with_preflight(
+
+/// Diagnose why second-layer manifold finalize would skip (B4.6 narrowphase deepen pass).
+ManifoldFinalizeRejectReason manifold_finalize_second_reject_reason(
+
+/// Returns true when `manifold_finalize_second_reject_reason` matches `expected` (B4.6 narrowphase deepen pass).
+bool manifold_finalize_second_rejects_for_reason(
+
+/// Returns true when second-layer finalize should be skipped (B4.6 narrowphase deepen pass).
+bool can_skip_manifold_finalize_second(
+
+/// Finalize using second-layer preflight; no-op otherwise (B4.6 narrowphase deepen pass).
+bool finalize_contact_manifold_second_with_preflight(
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

@@ -342,6 +342,8 @@ NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
     preflight.skipped = !preflight.pair.can_dispatch();
 
     return !preflight_narrowphase_pair_slot(pair, bodies, shapes, pairs, pairIndex).can_dispatch();
+bool can_skip_narrowphase_second(
+    return !has_dispatchable_contact_pair_second(pairs, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase
