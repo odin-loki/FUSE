@@ -162,6 +162,7 @@ struct ChromeTraceExportPreflight {
     bool hasOpenAsyncFlows = false;
     bool flowDepthDetached = false;
     u32 invalidNameEventCount = 0;
+    u32 nonExportableEventCount = 0;
     bool ringBufferFull = false;
     bool hasInvalidNameEvents = false;
     bool crossThreadFlowHandoffPending = false;
@@ -216,6 +217,7 @@ struct ChromeTraceExportPreflight {
     bool hasBufferPairImbalance() const { return scopePairImbalancedInBuffer || flowPairImbalancedInBuffer; }
             && !hasBufferPairImbalance() && !hasDroppedEvents && !hasInvalidNameEvents;
             && !ringBufferFull;
+            && !hasInvalidNameEvents && !ringBufferFull;
     }
     bool canExportNonEmpty() const { return canExport() && hasExportableEvents(); }
     bool hasExportWarnings() const {
@@ -771,6 +773,7 @@ const char* eventNameRejectReasonLabel(EventNameRejectReason reason);
 bool wouldRecordEvent(const char* name);
 bool canSampleCounter(const char* track);
 bool isWhitespaceOnlyEventName(const char* name);
+bool isBlankEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
@@ -831,11 +834,14 @@ EventLookupRejectReason exportableEventLookupRejectReason(u32 index);
 bool tryFindEventIndexByName(const char* name, u32& outIndex);
 u32 findFirstEventIndexByScopeId(u32 scopeId);
 u32 countEventsByScopeId(u32 scopeId);
+u32 exportableFirstEventIndex();
+u32 exportableLastEventIndex();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
 bool peekEventAt(u32 index, ProfileEvent& outEvent);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
+bool tryEventAtPhase(u32 index, EventPhase phase, ProfileEvent& outEvent);
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 bool tryEventPhaseAt(u32 index, EventPhase& outPhase);
 bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
@@ -866,6 +872,8 @@ bool tryFindFirstEventIndexByPhase(EventPhase phase, u32& outIndex);
 bool tryFindLastEventIndexByPhase(EventPhase phase, u32& outIndex);
 bool tryFindFirstEventIndexByName(const char* name, u32& outIndex);
 bool tryFindLastEventIndexByName(const char* name, u32& outIndex);
+bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
+bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 ProfilerRecordPreflight preflightRecord(const char* name);
 ProfilerExportPreflight preflightChromeTraceExport();
