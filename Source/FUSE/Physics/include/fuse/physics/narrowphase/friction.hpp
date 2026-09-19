@@ -462,5 +462,21 @@ bool friction_basis_rejects_for_reason(
 
 /// Non-mutating friction preflight skip predicate — mirrors `should_skip_friction_basis_preflight` (B4.4 deepen follow-up pass).
 bool can_skip_friction_basis_preflight(
+/// Const preflight for ensure/rebuild dispatch (B4.4 deepen follow-up pass).
+struct FrictionBasisEnsurePreflight {
+    bool needsEnsure = false;
+
+    bool can_skip_ensure() const { return skipped || canReuse; }
+
+/// Populate ensure preflight without mutating the manifold (B4.4 deepen follow-up pass).
+FrictionBasisEnsurePreflight preflight_friction_basis_ensure(
+
+/// Returns true when ensure should be skipped (B4.4 deepen follow-up pass).
+bool can_skip_friction_basis_ensure(
+
+/// Build or reuse basis only when preflight requires it (B4.4 deepen follow-up pass).
+
+/// Rebuild basis using preflight gate; returns false when tangents should be skipped (B4.4 deepen follow-up pass).
+bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
