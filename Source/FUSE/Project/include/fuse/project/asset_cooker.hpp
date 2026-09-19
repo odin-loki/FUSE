@@ -185,6 +185,7 @@ struct CookUpstreamInvalidateEstimate {
     /// True when reconcile invalidation can be skipped — mirrors early-out on fresh cache (B7.9 deepen).
     /// True when no reconcile invalidation work is needed — mirrors `total() == 0` (B7.9 deepen).
     /// True when no dependency or prune reconcile work is pending (B7.9 deepen).
+    /// True when reconcile invalidation should be skipped — no stale deps or prunable entries (B7.9 deepen).
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -256,8 +257,12 @@ public:
     /// Deduplicated source paths `invalidate_stale_dependency_hashes` would touch (B7.9 deepen).
     /// True when stale dependency hashes would invalidate cache entries (B7.9 deepen).
     /// True when `count_upstream_invalidation` is non-zero (B7.9 deepen).
+    /// True when `invalidate_upstream_dependency` would remove entries — guarded on empty `changed_source` (B7.9 deepen).
+    /// True when `invalidate_stale_dependency_hashes` would remove entries (B7.9 deepen).
     /// Read-only prune reconcile probe — mirrors `CookCache::estimate_prune_removals` (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_reconcile() const;
+    /// True when prune reconcile should be skipped — mirrors `CookCache::should_skip_prune_reconcile` (B7.9 deepen).
+    [[nodiscard]] bool should_skip_prune_reconcile() const;
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
     /// When `changed_source` is non-empty, includes `upstream_invalidation_entries`.
     [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile_invalidation(
@@ -542,6 +547,7 @@ public:
     /// True when `estimate_prune_reconcile` reports no pending prune work (B7.9 deepen).
 
     /// Read-only upstream invalidation skip probes — mirror `invalidate_*` guards (B7.9 deepen).
+    /// True when reconcile invalidation should be skipped — mirrors `CookCacheReconcileEstimate::should_skip` (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

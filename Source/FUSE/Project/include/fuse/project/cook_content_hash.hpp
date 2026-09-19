@@ -950,4 +950,24 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] bool should_skip_fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
+/// True when file content hashing should be skipped — mirrors `preflight_file_content_hash` (B7.9 deepen).
+[[nodiscard]] bool should_skip_file_content_hash(const std::string& path);
+/// True when mesh import hashing should be skipped — mirrors `preflight_mesh_import_hash` (B7.9 deepen).
+[[nodiscard]] bool should_skip_mesh_import_hash(const MeshImportDesc& desc);
+/// True when texture import hashing should be skipped — mirrors `preflight_texture_import_hash` (B7.9 deepen).
+[[nodiscard]] bool should_skip_texture_import_hash(const TextureImportDesc& desc);
+/// True when audio import hashing should be skipped — mirrors `preflight_audio_import_hash` (B7.9 deepen).
+[[nodiscard]] bool should_skip_audio_import_hash(const AudioImportDesc& desc);
+/// True when manifest entry hashing should be skipped — mirrors `preflight_manifest_entry_hash` (B7.9 deepen).
+[[nodiscard]] bool should_skip_manifest_entry_hash(const CookManifestEntry& entry);
+/// True when upstream dependency hashing should be skipped — mirrors `preflight_upstream_dependencies_hash` (B7.9 deepen).
+[[nodiscard]] bool should_skip_upstream_dependencies_hash(
+    const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
+/// True when cook cache key folding should be skipped — mirrors `preflight_cook_cache_key` (B7.9 deepen).
+[[nodiscard]] bool should_skip_cook_cache_key(u64 source_hash, u64 upstream_hash);
+/// True when FNV-1a byte hashing should be skipped — mirrors `preflight_fnv1a64_bytes` (B7.9 deepen).
+[[nodiscard]] bool should_skip_fnv1a64_bytes(const u8* data, usize size);
+/// True when combined cache key folding should be skipped — mirrors `preflight_combine_cook_cache_key` (B7.9 deepen).
+[[nodiscard]] bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+
 } // namespace fuse::project

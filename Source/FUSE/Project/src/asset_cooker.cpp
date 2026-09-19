@@ -630,6 +630,7 @@ bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
 
     return count_upstream_invalidation(manifest, changed_source) > 0;
 
+
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
     return estimate_stale_dependency_invalidation(manifest);
 
@@ -945,6 +946,11 @@ CookCachePruneEstimate AssetCooker::estimate_prune_reconcile() const {
 
 CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(
     const CookManifest& manifest, const std::string& changed_source) const {
+bool AssetCooker::should_skip_prune_reconcile() const {
+    return m_cache.should_skip_prune_reconcile();
+}
+
+CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(const CookManifest& manifest) const {
     CookCacheReconcileEstimate estimate;
     estimate.stale_dependency_entries = count_stale_dependency_invalidation(manifest);
     if (is_valid_cook_cache_path(changed_source)) {
@@ -1362,6 +1368,7 @@ bool AssetCooker::should_skip_reconcile_invalidation(const CookManifest& manifes
 
 
     return m_cache.should_skip_prune();
+
 
 
 
