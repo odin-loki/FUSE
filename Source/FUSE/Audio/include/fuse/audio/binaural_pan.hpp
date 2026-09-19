@@ -844,3 +844,6 @@ HrtfPanPathRejectReason classify_hrtf_pan_path_reject(bool hrtf_enabled, const H
 const char* hrtfAttenuationCouplingRejectReasonLabel(HrtfAttenuationCouplingRejectReason reason);
 const char* hrtfBinauralRejectReasonLabel(HrtfBinauralRejectReason reason);
     bool rejected() const { return reason != HrtfBinauralRejectReason::None; }
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-4c1f ---
+bool is_blocking_hrtf_binaural_reject_reason(HrtfBinauralRejectReason reason);

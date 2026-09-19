@@ -1244,3 +1244,32 @@ HrtfPanPathRejectReason classify_hrtf_pan_path_reject(bool hrtf_enabled, const H
                                       const Vec3& rel_listener, HrtfPanPathRejectReason expected) {
 const char* hrtfAttenuationCouplingRejectReasonLabel(HrtfAttenuationCouplingRejectReason reason) {
 const char* hrtfBinauralRejectReasonLabel(HrtfBinauralRejectReason reason) {
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-4c1f ---
+    preflight.malformedIr = preflight.reason == HrtfIrRejectReason::MalformedIr;
+    preflight.emptyIr = preflight.reason != HrtfIrRejectReason::None;
+    preflight.bypassPath = preflight.reason == HrtfAttenuationCouplingRejectReason::BypassPath;
+    case HrtfBinauralRejectReason::PanBypassDisabled:
+    case HrtfBinauralRejectReason::PanBypassCoLocated:
+    case HrtfBinauralRejectReason::ConvolutionEmptyIr:
+    case HrtfBinauralRejectReason::ConvolutionMalformedIr:
+    case HrtfBinauralRejectReason::NarrowingBypassPath:
+    case HrtfBinauralRejectReason::NarrowingUnityAttenuation:
+bool is_blocking_hrtf_binaural_reject_reason(HrtfBinauralRejectReason reason) {
+    return reason == HrtfBinauralRejectReason::PanBypassDisabled
+        || reason == HrtfBinauralRejectReason::PanBypassCoLocated;
+    const HrtfPanPathRejectReason panReject =
+    if (panReject == HrtfPanPathRejectReason::HrtfDisabled) {
+        return HrtfBinauralRejectReason::PanBypassDisabled;
+    if (panReject == HrtfPanPathRejectReason::CoLocated) {
+        return HrtfBinauralRejectReason::PanBypassCoLocated;
+    const HrtfIrRejectReason irReject = classify_hrtf_ir_reject(ir);
+    if (irReject == HrtfIrRejectReason::MalformedIr) {
+        return HrtfBinauralRejectReason::ConvolutionMalformedIr;
+    if (irReject == HrtfIrRejectReason::EmptyIr) {
+        return HrtfBinauralRejectReason::ConvolutionEmptyIr;
+    const HrtfAttenuationCouplingRejectReason narrowingReject =
+    if (narrowingReject == HrtfAttenuationCouplingRejectReason::BypassPath) {
+        return HrtfBinauralRejectReason::NarrowingBypassPath;
+    if (narrowingReject == HrtfAttenuationCouplingRejectReason::UnityAttenuation) {
+        return HrtfBinauralRejectReason::NarrowingUnityAttenuation;

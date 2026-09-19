@@ -1852,3 +1852,10 @@ void testHrtfBinauralRejectReasonPreflights() {
     testHrtfPanPathRejectReasonPreflights();
     testHrtfAttenuationCouplingRejectReasonPreflights();
     testHrtfBinauralRejectReasonPreflights();
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-4c1f ---
+    expectTrue(preflight.reason == fuse::audio::HrtfIrRejectReason::EmptyIr,
+                               fuse::audio::HrtfBinauralRejectReason::PanBypassDisabled),
+                   fuse::audio::HrtfBinauralRejectReason::ConvolutionEmptyIr),
+    expectTrue(preflight.reason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(preflight.ir.reason == fuse::audio::HrtfIrRejectReason::None,
