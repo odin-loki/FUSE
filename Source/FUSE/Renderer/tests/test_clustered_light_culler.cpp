@@ -1659,3 +1659,21 @@ void testClusterScreenDepthLookupGuards() {
                                                                            tryCoordCount, coordReason),
     expectTrue(coordReason == fuse::renderer::ClusterLookupRejectReason::None,
     expectTrue(coordReason == fuse::renderer::ClusterLookupRejectReason::EmptyStorage,
+
+// --- deepen additive from deepen-clustered-light-guards-4eab ---
+    expectTrue(reason == fuse::renderer::GridRebuildRejectReason::None, "zero count reports no reject reason");
+    expectTrue(reason == fuse::renderer::GridRebuildRejectReason::DescMismatch,
+    expectTrue(std::strcmp(fuse::renderer::gridRebuildRejectReasonLabel(reason), "desc_mismatch") == 0,
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryCanRebuildLightGrid(zeroDesc, 4u, reason),
+               "tryRebuildForDesc succeeds on matching desc");
+    expectTrue(dropped == 0u, "tryRebuildForDesc reports zero dropped lights");
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryRebuildLightGrid(rejectedGrid, desc, clusterCount + 1u,
+               "tryRebuild rejects oversized cluster count");
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryRebuildLightGridForDesc(emptyDescGrid, zeroDesc,
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryRebuildLightGrid(explicitCountGrid, zeroDesc, 4u,
+               "tryRebuild rejects explicit non-zero count on empty desc");
+void testClusterScreenDepthMappingGuards() {
+               "tryMap succeeds for in-range screen depth");
+    expectTrue(clusterIndex < desc.clusterCount(), "tryMap cluster index in bounds");
+               "tryMap rejects depth below near plane");
+               "tryMap rejects empty grid");

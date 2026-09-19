@@ -1055,3 +1055,8 @@ bool cluster_util::tryLookupClusterLightsAtScreenDepth(const ClusterGridSoA& gri
         outReason = ClusterRebuildRejectReason::EmptyGrid;
         outReason = ClusterRebuildRejectReason::CountMismatch;
                                                         ClusterRebuildRejectReason& outReason,
+
+// --- deepen additive from deepen-clustered-light-guards-4eab ---
+    case GridRebuildRejectReason::DescMismatch:
+        outReason = GridRebuildRejectReason::DescMismatch;
+    return tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights, maxLightsPerCluster, outLightsDropped,
