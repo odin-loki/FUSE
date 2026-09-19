@@ -393,6 +393,7 @@ struct BeginDragPreflight {
     bool alreadyDragging = false;
     GizmoAxis axis = GizmoAxis::None;
     /// Snap is enabled but the mode step is unusable — begin still applies (B6.4 deepen pass follow-up).
+    /// Snap is enabled but the mode step is unusable — begin still applies (B6.4 deepen follow-up).
     bool snapDegraded = false;
 };
 
@@ -1228,6 +1229,10 @@ GizmoInteractionPreflight preflightInteraction(const GizmoRay& ray, const GizmoT
 GizmoInteractionPreflight preflightInteraction(const GizmoHitTest& hit, GizmoMode mode,
                                                bool dragging, GizmoAxis activeAxis,
 BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode, bool alreadyDragging,
+};
+
+                                               GizmoMode mode, GizmoSpace space, f32 axisLength,
+                                               const GizmoSnapSettings& settings);
 
 /// Pick axis with empty-hit guards — returns false when pick misses (B6.4 deepen follow-up).
 bool tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
