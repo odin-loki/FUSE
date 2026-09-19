@@ -99,6 +99,10 @@ const char* gridRebuildRejectReasonLabel(GridRebuildRejectReason reason) {
     case GridRebuildRejectReason::ClusterCountMismatch:
         return "cluster_count_mismatch";
     case GridRebuildRejectReason::CountMismatch:
+const char* clusterRebuildRejectReasonLabel(ClusterRebuildRejectReason reason) {
+    case ClusterRebuildRejectReason::None:
+    case ClusterRebuildRejectReason::EmptyGrid:
+    case ClusterRebuildRejectReason::CountMismatch:
         return "count_mismatch";
     }
     return "unknown";
@@ -222,6 +226,11 @@ bool cluster_util::shouldSkipClusterRebuild(const ClusterDesc& desc, u32 cluster
 
 bool cluster_util::shouldSkipLightGridPopulation(const ClusterDesc& desc) {
     return ClusterGridLayout::isEmptyGrid(desc);
+
+bool cluster_util::shouldSkipClusterPopulation(const ClusterGridSoA& grid, const ClusterDesc& desc) {
+    const u32 clusterCount = ClusterDesc::clampCounts(desc).clusterCount();
+    if (clusterCount == 0u) {
+    return !isGridAccessible(grid, desc);
 
 bool cluster_util::canLookupAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 /*index*/) {
     return isGridAccessible(grid, desc);
@@ -609,6 +618,47 @@ bool cluster_util::tryLookupClusterLightsAtCoord(const ClusterGridSoA& grid,
     return true;
 }
 
+u32 cluster_util::lookupClusterLightsAtScreenDepth(const ClusterGridSoA& grid,
+                                                    const ClusterDesc& desc,
+                                                    const ClusterCameraDesc& camera,
+                                                    f32 screenX,
+                                                    f32 screenY,
+                                                    f32 viewDepth,
+                                                    std::vector<u32>& outLights) {
+    if (!canLookupAtIndex(grid, desc, 0u)) {
+        outLights.clear();
+        return 0u;
+
+    u32 clusterIndex = 0u;
+    if (!ClusterGridLayout::mapScreenDepthToClusterIndex(screenX, screenY, viewDepth, desc, camera, clusterIndex)) {
+
+    return lookupClusterLights(grid, clusterIndex, outLights);
+
+u32 cluster_util::clusterLightCountAtScreenDepth(const ClusterGridSoA& grid,
+                                                  f32 viewDepth) {
+
+
+    return clusterLightCount(grid, clusterIndex);
+
+bool cluster_util::tryLookupClusterLightsAtScreenDepth(const ClusterGridSoA& grid,
+                                                        std::vector<u32>& outLights,
+                                                        u32& outCount) {
+    ClusterLookupRejectReason reason = ClusterLookupRejectReason::None;
+    return tryLookupClusterLightsAtScreenDepth(grid, desc, camera, screenX, screenY, viewDepth, outLights, outCount,
+                                               reason);
+
+                                                        u32& outCount,
+                                                        ClusterLookupRejectReason& outReason) {
+    if (!tryCanLookupAtIndex(grid, desc, 0u, outReason)) {
+        outCount = 0u;
+        return false;
+
+        outReason = ClusterLookupRejectReason::None;
+
+    outCount = lookupClusterLights(grid, clusterIndex, outLights);
+    return true;
+}
+
 bool cluster_util::tryLookupClusterLightsFromScreen(const ClusterGridSoA& grid,
                                                      const ClusterDesc& desc,
                                                      const ClusterCameraDesc& camera,
@@ -880,7 +930,6 @@ bool ClusterLightGridLayout::canRebuildLightGrid(const ClusterDesc& desc, u32 cl
 
 bool ClusterLightGridLayout::shouldSkipLightGridRebuild(const ClusterDesc& desc, u32 clusterCount) {
     return !canRebuildLightGrid(desc, clusterCount);
-}
 
 bool ClusterLightGridLayout::tryCanRebuildLightGrid(const ClusterDesc& desc,
                                                        u32 clusterCount,
@@ -888,6 +937,11 @@ bool ClusterLightGridLayout::tryCanRebuildLightGrid(const ClusterDesc& desc,
     const u32 expectedCount = ClusterDesc::clampCounts(desc).clusterCount();
     if (clusterCount == 0u) {
         outReason = GridRebuildRejectReason::None;
+
+    ClusterRebuildRejectReason reason = ClusterRebuildRejectReason::None;
+
+                                                     ClusterRebuildRejectReason& outReason) {
+        outReason = ClusterRebuildRejectReason::None;
         return true;
     if (ClusterGridLayout::isEmptyGrid(desc)) {
         outReason = GridRebuildRejectReason::EmptyGrid;
@@ -961,6 +1015,7 @@ bool ClusterLightGridLayout::tryCanRebuildLightGrid(const ClusterDesc& desc,
         outReason = GridRebuildRejectReason::None;
         return true;
     if (ClusterGridLayout::isEmptyGrid(desc)) {
+        outReason = ClusterRebuildRejectReason::EmptyGrid;
         return false;
     }
 
@@ -973,7 +1028,6 @@ bool ClusterLightGridLayout::tryCanRebuildLightGrid(const ClusterDesc& desc,
 
     outReason = GridRebuildRejectReason::None;
     return true;
-}
 
 bool ClusterLightGridLayout::shouldSkipLightGridRebuild(const ClusterDesc& desc, u32 clusterCount) {
     return !canRebuildLightGrid(desc, clusterCount);
@@ -981,10 +1035,30 @@ bool ClusterLightGridLayout::tryCanRebuildLightGridForDesc(const ClusterDesc& de
                                                             GridRebuildRejectReason& outReason) {
     const u32 clusterCount = ClusterDesc::clampCounts(desc).clusterCount();
     return tryCanRebuildLightGrid(desc, clusterCount, outReason);
-}
 
     GridRebuildRejectReason reason = GridRebuildRejectReason::None;
     return !tryCanRebuildLightGrid(desc, clusterCount, reason);
+        outReason = ClusterRebuildRejectReason::CountMismatch;
+
+    outReason = ClusterRebuildRejectReason::None;
+
+bool ClusterLightGridLayout::shouldSkipClusterRebuild(const ClusterDesc& desc, u32 clusterCount) {
+    ClusterRebuildRejectReason reason = ClusterRebuildRejectReason::None;
+
+u32 ClusterLightGridLayout::tryRebuildLightGridForDesc(ClusterGridSoA& grid,
+                                                        const ClusterDesc& desc,
+                                                        const std::vector<std::vector<u32>>& perClusterLights,
+                                                        ClusterRebuildRejectReason& outReason,
+                                                        u32 maxLightsPerCluster) {
+    if (ClusterGridLayout::isEmptyGrid(desc)) {
+        for (const std::vector<u32>& clusterLights : perClusterLights) {
+            if (!clusterLights.empty()) {
+                outReason = ClusterRebuildRejectReason::EmptyGrid;
+                return 0u;
+
+    if (!tryCanRebuildLightGrid(desc, clusterCount, outReason)) {
+
+    return rebuildLightGridForDesc(grid, desc, perClusterLights, maxLightsPerCluster);
 }
 
 bool ClusterGridLayout::isEmptyGrid(const ClusterDesc& desc) {
