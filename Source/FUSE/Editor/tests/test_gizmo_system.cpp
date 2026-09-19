@@ -1891,6 +1891,150 @@ void testCanInteractionPredicates() {
     gizmo.endDrag();
 }
 
+void testInteractionPreflightSnapRouting() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::InteractionPreflight idleDegraded = fuse::editor::preflightInteraction(
+        hit, false, fuse::editor::GizmoAxis::None, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(idleDegraded.snapDegraded(), "idle interaction marks snap degraded on begin path");
+    expectTrue(!idleDegraded.snapWillApplyOnPhase(),
+               "idle interaction reports snap will not apply with invalid step");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::InteractionPreflight idleValid = fuse::editor::preflightInteraction(
+        hit, false, fuse::editor::GizmoAxis::None, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!idleValid.snapDegraded(), "valid snap clears degraded on idle interaction");
+    expectTrue(idleValid.snapWillApplyOnPhase(),
+               "idle interaction reports snap will apply with valid step");
+
+    snap.gridSize = 0.f;
+    const fuse::editor::InteractionPreflight activeDegraded = fuse::editor::preflightInteraction(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(activeDegraded.snapDegraded(),
+               "dragging interaction marks snap degraded on update path");
+    expectTrue(!activeDegraded.snapWillApplyOnPhase(),
+               "dragging interaction reports snap will not apply with invalid step");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::InteractionPreflight activeValid = fuse::editor::preflightInteraction(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!activeValid.snapDegraded(), "valid snap clears degraded on dragging interaction");
+    expectTrue(activeValid.snapWillApplyOnPhase(),
+               "dragging interaction reports snap will apply with valid step");
+}
+
+void testModeChangePreflightGuards() {
+    const fuse::editor::ModeChangePreflight unchanged = fuse::editor::preflightModeChange(
+        fuse::editor::GizmoMode::Translate, fuse::editor::GizmoMode::Translate, false);
+    expectTrue(unchanged.unchanged, "mode preflight marks unchanged mode");
+    expectTrue(!unchanged.canChange(), "mode preflight rejects unchanged mode");
+    expectTrue(!unchanged.wouldCancelDrag, "unchanged mode does not cancel drag");
+
+    const fuse::editor::ModeChangePreflight idleChange = fuse::editor::preflightModeChange(
+        fuse::editor::GizmoMode::Translate, fuse::editor::GizmoMode::Rotate, false);
+    expectTrue(idleChange.canChange(), "mode preflight accepts mode change while idle");
+    expectTrue(!idleChange.wouldCancelDrag, "idle mode change does not cancel drag");
+
+    const fuse::editor::ModeChangePreflight draggingChange = fuse::editor::preflightModeChange(
+        fuse::editor::GizmoMode::Translate, fuse::editor::GizmoMode::Rotate, true);
+    expectTrue(draggingChange.canChange(), "mode preflight accepts mode change while dragging");
+    expectTrue(draggingChange.wouldCancelDrag,
+               "mode preflight marks drag cancellation while dragging");
+
+    const fuse::editor::ModeChangePreflight cyclePreflight =
+        fuse::editor::preflightCycleMode(fuse::editor::GizmoMode::Scale, true);
+    expectTrue(cyclePreflight.canChange(), "cycle preflight accepts mode cycle while dragging");
+    expectTrue(cyclePreflight.wouldCancelDrag, "cycle preflight marks drag cancellation");
+
+    expectTrue(fuse::editor::canChangeMode(fuse::editor::GizmoMode::Translate,
+                                           fuse::editor::GizmoMode::Rotate, false),
+               "canChangeMode accepts valid mode change");
+    expectTrue(!fuse::editor::canChangeMode(fuse::editor::GizmoMode::Translate,
+                                            fuse::editor::GizmoMode::Translate, false),
+               "canChangeMode rejects unchanged mode");
+    expectTrue(fuse::editor::canCycleMode(fuse::editor::GizmoMode::Rotate, false),
+               "canCycleMode accepts cycle while idle");
+
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+
+    const fuse::editor::ModeChangePreflight gizmoPreflight =
+        gizmo.preflightModeChange(fuse::editor::GizmoMode::Rotate);
+    expectTrue(gizmoPreflight.wouldCancelDrag, "gizmo mode preflight marks drag cancellation");
+    expectTrue(gizmo.canChangeMode(fuse::editor::GizmoMode::Rotate),
+               "gizmo canChangeMode accepts new mode");
+    expectTrue(!gizmo.canChangeMode(fuse::editor::GizmoMode::Translate),
+               "gizmo canChangeMode rejects unchanged mode");
+    expectTrue(gizmo.canCycleMode(), "gizmo canCycleMode accepts cycle");
+    expectTrue(gizmo.preflightCycleMode().wouldCancelDrag,
+               "gizmo cycle preflight marks drag cancellation");
+    gizmo.endDrag();
+}
+
+void testCanActOnPhaseGuards() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    expectTrue(fuse::editor::canActOnPhase(hit, false, fuse::editor::GizmoAxis::None,
+                                           fuse::editor::GizmoMode::Translate, snap),
+               "canActOnPhase accepts begin while idle");
+    expectTrue(fuse::editor::canActOnPhase(hit, true, fuse::editor::GizmoAxis::X,
+                                           fuse::editor::GizmoMode::Translate, snap),
+               "canActOnPhase accepts update while dragging with valid hit");
+
+    hit.screenX = -5.f;
+    expectTrue(!fuse::editor::canActOnPhase(hit, true, fuse::editor::GizmoAxis::X,
+                                            fuse::editor::GizmoMode::Translate, snap),
+               "canActOnPhase rejects update when hit is out of bounds");
+
+    hit.screenX = 30.f;
+    expectTrue(fuse::editor::canActOnPhase(hit, true, fuse::editor::GizmoAxis::X,
+                                           fuse::editor::GizmoMode::Translate, snap),
+               "canActOnPhase accepts update while dragging");
+
+    fuse::editor::GizmoTransform transform{};
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    expectTrue(fuse::editor::canActOnPhase(xRay, transform, false, fuse::editor::GizmoAxis::None,
+                                           fuse::editor::GizmoMode::Translate,
+                                           fuse::editor::GizmoSpace::World,
+                                           fuse::editor::GizmoSystem::kAxisLength,
+                                           fuse::editor::GizmoSystem::kPickRadius, snap),
+               "canActOnPhase accepts ray begin while idle");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    hit.screenX = 10.f;
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo canActOnPhase accepts begin while idle");
+    expectTrue(gizmo.canActOnPhase(xRay, transform),
+               "gizmo canActOnPhase accepts ray begin while idle");
+
+    gizmo.beginDrag(hit, transform);
+    hit.screenX = 30.f;
+    expectTrue(gizmo.canActOnPhase(hit), "gizmo canActOnPhase accepts update while dragging");
+    gizmo.endDrag();
+}
+
 } // namespace
 
 int main() {
@@ -1952,6 +2096,9 @@ int main() {
     testIsSnapDegradedHelper();
     testInteractionPhaseRouting();
     testCanInteractionPredicates();
+    testInteractionPreflightSnapRouting();
+    testModeChangePreflightGuards();
+    testCanActOnPhaseGuards();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test failure(s)\n", g_failures);
