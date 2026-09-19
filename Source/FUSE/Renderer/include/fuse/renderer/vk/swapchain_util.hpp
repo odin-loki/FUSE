@@ -28,12 +28,24 @@ inline bool shouldSkipAcquireForEmptySwapchain(const VulkanSwapchain* swapchain)
     return swapchain == nullptr || isSwapchainEmpty(*swapchain);
 }
 
+/// Compile-time gate: desktop GLFW `vkQueuePresentKHR` path (OFF in headless CI by default).
+bool desktopGlfwPresentEnabled();
+
+/// Runtime: display + GLFW WSI available and desktop present gate is ON.
+bool desktopGlfwPresentRuntimeReady();
+
 /// True when present should succeed without calling vkQueuePresentKHR.
 inline bool shouldEarlyOutEmptyPresent(const VulkanSwapchain* swapchain,
                                        u32 imageIndex,
                                        const FrameManager* frameManager) {
-    return swapchain == nullptr || isSwapchainEmpty(*swapchain) || isEmptyAcquireResult(imageIndex) ||
-           frameManager == nullptr || !frameManager->isReady();
+    if (swapchain == nullptr || isSwapchainEmpty(*swapchain) || isEmptyAcquireResult(imageIndex) ||
+        frameManager == nullptr || !frameManager->isReady()) {
+        return true;
+    }
+    if (desktopGlfwPresentRuntimeReady() && isSwapchainPresentable(*swapchain)) {
+        return false;
+    }
+    return true;
 }
 
 /// Returns true when a resize request matches already-queued pending dimensions.

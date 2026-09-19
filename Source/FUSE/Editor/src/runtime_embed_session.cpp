@@ -8,8 +8,11 @@ void RuntimeEmbedSession::reset() {
     worldEntityCount = 0;
     mirroredEditorEntityCount = 0;
     headlessPresentTicks = 0;
+    surfaceHandoffCount = 0;
     worldLoaded = false;
     headlessGpuReady = false;
+    surfaceHandoffPending = false;
+    surfaceHandoffConsumed = false;
 }
 
 } // namespace fuse::editor

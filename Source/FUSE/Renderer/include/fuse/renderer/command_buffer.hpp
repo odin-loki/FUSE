@@ -58,6 +58,7 @@ struct VkFrameEncodeContext {
     void* compositeVertexBuffer = nullptr;
     void* bindlessDescriptorSet = nullptr;
     u32 rasterTextureBindlessIndex = 0;
+    u32 cudaTextureBindlessIndex = UINT32_MAX;
     u32 compositeWidth = 0;
     u32 compositeHeight = 0;
     float compositeBlend = 0.5f;

@@ -51,7 +51,46 @@ void RuntimeViewportHook::setProjectRoot(std::string root) {
     m_embedSession.reset();
     m_embedSession.projectRoot = std::move(root);
     m_embedded = false;
+    m_surfaceHandoff = {};
 }
+
+void RuntimeViewportHook::setExternalSurfaceHandle(void* vkSurface, u32 width, u32 height) {
+    m_surfaceHandoff.nativeSurface = vkSurface;
+    m_surfaceHandoff.width = width > 0 ? width : m_panel.width();
+    m_surfaceHandoff.height = height > 0 ? height : m_panel.height();
+    m_surfaceHandoff.pending = vkSurface != nullptr;
+    m_surfaceHandoff.consumed = false;
+
+#if defined(FUSE_VULKAN_BACKEND)
+    m_surfaceHandoff.surface.kind = fuse::renderer::SurfaceKind::External;
+    m_surfaceHandoff.surface.nativeSurface = vkSurface;
+    m_surfaceHandoff.swapchainDesc.surface = m_surfaceHandoff.surface;
+    m_surfaceHandoff.swapchainDesc.width = m_surfaceHandoff.width;
+    m_surfaceHandoff.swapchainDesc.height = m_surfaceHandoff.height;
+#endif
+
+    m_embedSession.surfaceHandoffPending = m_surfaceHandoff.pending;
+    m_embedSession.surfaceHandoffConsumed = false;
+    if (m_surfaceHandoff.pending) {
+        ++m_embedSession.surfaceHandoffCount;
+    }
+}
+
+#if defined(FUSE_VULKAN_BACKEND)
+fuse::renderer::SwapchainDesc RuntimeViewportHook::buildSwapchainDescHandoff() const {
+    fuse::renderer::SwapchainDesc desc = m_surfaceHandoff.swapchainDesc;
+    if (desc.width == 0) {
+        desc.width = m_panel.width();
+    }
+    if (desc.height == 0) {
+        desc.height = m_panel.height();
+    }
+    if (desc.surface.kind != fuse::renderer::SurfaceKind::External) {
+        desc.surface.kind = fuse::renderer::SurfaceKind::Headless;
+    }
+    return desc;
+}
+#endif
 
 void RuntimeViewportHook::applyPendingResize_() {
     u32 width = 0;
@@ -180,6 +219,7 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 /*dt*/)
             ++m_headlessGpu->submittedFrames;
         }
     }
+
 #else
     (void)host;
 #endif
@@ -198,6 +238,14 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
     }
 
     m_panel.tick(dt);
+
+    if (m_surfaceHandoff.pending) {
+        m_surfaceHandoff.pending = false;
+        m_surfaceHandoff.consumed = true;
+        m_embedSession.surfaceHandoffPending = false;
+        m_embedSession.surfaceHandoffConsumed = true;
+    }
+
     tickHeadlessPresentStub_(host, dt);
     ++m_runtimeTickCount;
 }

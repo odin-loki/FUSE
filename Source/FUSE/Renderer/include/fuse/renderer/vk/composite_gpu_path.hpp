@@ -20,8 +20,11 @@ struct CompositeGpuPathDesc {
 struct CompositeGpuPathStats {
     bool pipelineReady = false;
     bool bindlessBound = false;
+    bool cudaTextureActive = false;
+    bool cudaTexturePlaceholder = true;
     u32 framesEncoded = 0;
     u32 rasterTextureIndex = UINT32_MAX;
+    u32 cudaTextureIndex = UINT32_MAX;
     std::string message;
 };
 
@@ -40,6 +43,12 @@ public:
 
     /// Registers the raster color view for bindless sampling; call after RasterPath is ready.
     bool registerRasterSource(void* imageView);
+
+    /// Registers a CUDA-interop Vulkan image view; when unavailable composite keeps placeholder colour.
+    bool registerCudaSource(void* imageView);
+
+    /// Attempts to allocate/export a CUDA-writable image when interop is available.
+    bool ensureCudaInteropTexture();
 
     /// Ensures a present-target pipeline exists when swapchain present render pass is available.
     bool ensurePresentPipeline(void* presentRenderPass);
@@ -71,6 +80,10 @@ private:
     void* m_sampler = nullptr;
     BindlessSlotHandle m_samplerSlot{};
     BindlessSlotHandle m_rasterTextureSlot{};
+    BindlessSlotHandle m_cudaTextureSlot{};
+    void* m_cudaImage = nullptr;
+    void* m_cudaImageMemory = nullptr;
+    void* m_cudaImageView = nullptr;
 #endif
 };
 

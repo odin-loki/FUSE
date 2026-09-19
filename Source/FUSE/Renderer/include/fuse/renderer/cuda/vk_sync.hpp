@@ -10,20 +10,27 @@ struct SharedTimeline {
     void* cudaSemaphore = nullptr;
     u64 value = 0;
     bool valid = false;
+    bool driverWired = false;
     const char* message = nullptr;
 
-    static SharedTimeline create(void* vkDevice);
+    static SharedTimeline create(void* vkDevice, void* vkPhysicalDevice = nullptr);
     void destroy(void* vkDevice);
 
-    /// Vulkan timeline signal stub — returns false until full B2.6 driver wiring.
+    /// Vulkan timeline signal — real `vkSignalSemaphore` when driver-wired, otherwise false.
     bool signalVulkan(void* vkDevice, u64 newValue) const;
-    /// CUDA timeline wait stub — returns false until full B2.6 driver wiring.
+    /// CUDA timeline wait — real `cudaWaitExternalSemaphoresAsync` when driver-wired.
     bool waitCuda(void* cudaStream, u64 waitValue) const;
 };
 
 struct FrameSyncPair {
     SharedTimeline vkToCuda{};
     SharedTimeline cudaToVk{};
+
+    static FrameSyncPair create(void* vkDevice, void* vkPhysicalDevice = nullptr);
+    void destroy(void* vkDevice);
+
+    bool valid() const { return vkToCuda.valid || cudaToVk.valid; }
+    bool driverWired() const { return vkToCuda.driverWired || cudaToVk.driverWired; }
 };
 
 } // namespace fuse::renderer::cuda

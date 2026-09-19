@@ -2,6 +2,7 @@
 
 #include <fuse/editor/runtime_embed_session.hpp>
 #include <fuse/editor/viewport_panel.hpp>
+#include <fuse/editor/viewport_swapchain_handoff.hpp>
 #include <fuse/types.hpp>
 
 #include <memory>
@@ -19,6 +20,13 @@ public:
     void requestResize(u32 width, u32 height);
     void setProjectLabel(std::string label);
     void setProjectRoot(std::string root);
+
+    /// Queue an external `VkSurfaceKHR` for Track B `SwapchainDesc` wiring (Qt/U6 follow-up).
+    void setExternalSurfaceHandle(void* vkSurface, u32 width, u32 height);
+    const ViewportSwapchainHandoff& swapchainHandoff() const { return m_surfaceHandoff; }
+#if defined(FUSE_VULKAN_BACKEND)
+    fuse::renderer::SwapchainDesc buildSwapchainDescHandoff() const;
+#endif
 
     void tick(EditorHost& host, f32 dt);
 
@@ -48,6 +56,7 @@ private:
     bool m_embedded = false;
     u32 m_runtimeTickCount = 0;
     std::string m_lastProjectLabel;
+    ViewportSwapchainHandoff m_surfaceHandoff{};
 
 #if defined(FUSE_VULKAN_BACKEND)
     struct HeadlessGpuStub;

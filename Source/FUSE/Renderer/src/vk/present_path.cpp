@@ -9,6 +9,7 @@ namespace fuse::renderer {
 PresentPath::PresentPath(VulkanBootstrap& bootstrap, PresentPathDesc desc)
     : m_bootstrap(bootstrap), m_desc(desc) {
     m_status.vsyncMode = desc.vsyncMode;
+    m_status.desktopPresentEnabled = desktopGlfwPresentEnabled();
     refreshDimensions();
 }
 
@@ -189,6 +190,11 @@ bool PresentPath::presentImage() {
     FrameManager* frameManager = m_bootstrap.frameManager();
     VulkanSwapchain* swapchain = m_bootstrap.swapchain();
 
+    const bool realPresentEligible =
+        desktopGlfwPresentRuntimeReady() && swapchain != nullptr && isSwapchainPresentable(*swapchain) &&
+        !isEmptyAcquireResult(m_status.acquiredImageIndex) && frameManager != nullptr &&
+        frameManager->isReady();
+
     bool presented = false;
     if (shouldEarlyOutEmptyPresent(swapchain, m_status.acquiredImageIndex, frameManager)) {
         presented = true;
@@ -196,6 +202,9 @@ bool PresentPath::presentImage() {
     } else {
         const FrameSyncData& slot = frameManager->current();
         presented = swapchain->present(slot.renderFinished, m_status.acquiredImageIndex);
+        if (presented && realPresentEligible) {
+            ++m_status.realPresentCallCount;
+        }
     }
 
     m_status.presentAttempted = true;
@@ -205,18 +214,19 @@ bool PresentPath::presentImage() {
     }
 
     ++m_status.presentedFrames;
+    const bool headlessSink = !realPresentEligible;
     m_status.acquiredImageIndex = UINT32_MAX;
     m_status.fenceWaited = false;
     m_status.acquireAttempted = false;
     m_status.presentAttempted = false;
     m_status.state = PresentPathState::Presented;
-    if (m_status.headless || isEmptyAcquireResult(m_status.acquiredImageIndex)) {
+    if (headlessSink) {
         ++m_status.presentSkippedNoWsiCount;
         m_status.message = m_status.lastQueueSubmitOk
                                ? "Headless present sink (vkQueueSubmit done, no WSI)"
                                : "Headless present stub (no queue submit)";
     } else {
-        m_status.message = "Swapchain image presented";
+        m_status.message = "Swapchain image presented via vkQueuePresentKHR";
     }
     return true;
 }

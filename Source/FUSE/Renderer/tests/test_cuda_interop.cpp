@@ -20,7 +20,7 @@ void expectTrue(bool condition, const char* message) {
 void testInteropUnavailableOnCi() {
 #if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
     if (fuse::renderer::cuda::interopAvailable()) {
-        std::printf("INFO: CUDA+Vulkan interop runtime available — import still stubbed\n");
+        std::printf("INFO: CUDA+Vulkan interop runtime available\n");
     } else {
         std::printf("SKIP: toolkit present but interop runtime unavailable\n");
     }
@@ -35,7 +35,7 @@ void testInteropUnavailableOnCi() {
 
     const fuse::renderer::cuda::CudaBufferImport bufferImport =
         fuse::renderer::cuda::import_vulkan_buffer(bufferDesc);
-    expectTrue(!bufferImport.ok, "buffer import stub returns failure");
+    expectTrue(!bufferImport.ok, "buffer import without exported handle returns failure");
     expectTrue(bufferImport.devicePtr == nullptr, "buffer import stub leaves pointer null");
     expectTrue(bufferImport.reason != nullptr, "buffer import stub exposes reason");
 
@@ -47,23 +47,46 @@ void testInteropUnavailableOnCi() {
 
     const fuse::renderer::cuda::CudaSurfaceImport surfaceImport =
         fuse::renderer::cuda::import_vulkan_image(imageDesc);
-    expectTrue(!surfaceImport.ok, "image import stub returns failure");
+    expectTrue(!surfaceImport.ok, "image import without exported handle returns failure");
     expectTrue(surfaceImport.reason != nullptr, "image import stub exposes reason");
 }
 
 void testSharedTimelineStub() {
     const fuse::renderer::cuda::SharedTimeline timeline =
-        fuse::renderer::cuda::SharedTimeline::create(nullptr);
+        fuse::renderer::cuda::SharedTimeline::create(nullptr, nullptr);
+#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
+    if (timeline.driverWired) {
+        expectTrue(timeline.valid, "SharedTimeline valid when driver wired");
+        expectTrue(timeline.signalVulkan(nullptr, 1u) == false,
+                   "signalVulkan requires valid VkDevice handle");
+    } else {
+        expectTrue(!timeline.valid, "SharedTimeline invalid without device handles");
+    }
+#else
     expectTrue(!timeline.valid, "SharedTimeline stub is invalid until full B2.6");
-    expectTrue(timeline.message != nullptr, "SharedTimeline stub exposes honest message");
-    expectTrue(!timeline.signalVulkan(nullptr, 1u), "signalVulkan stub returns false");
-    expectTrue(!timeline.waitCuda(nullptr, 1u), "waitCuda stub returns false");
+#endif
+    expectTrue(timeline.message != nullptr, "SharedTimeline exposes honest message");
+    expectTrue(!timeline.waitCuda(nullptr, 1u), "waitCuda returns false when invalid");
+}
+
+void testFrameSyncPairStub() {
+    const fuse::renderer::cuda::FrameSyncPair pair =
+        fuse::renderer::cuda::FrameSyncPair::create(nullptr, nullptr);
+#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
+    if (pair.driverWired()) {
+        expectTrue(pair.valid(), "FrameSyncPair valid when timelines driver-wired");
+    } else {
+        expectTrue(!pair.valid(), "FrameSyncPair invalid without Vulkan device");
+    }
+#else
+    expectTrue(!pair.valid(), "FrameSyncPair invalid in stub build");
+#endif
 }
 
 void testInteropReasonStrings() {
 #if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
     if (fuse::renderer::cuda::interopAvailable()) {
-        std::printf("SKIP: interop runtime available — import still stubbed\n");
+        std::printf("SKIP: interop runtime available — reason is None\n");
         return;
     }
 #endif
@@ -101,6 +124,7 @@ int main() {
     testInteropUnavailableOnCi();
     testInteropReasonStrings();
     testSharedTimelineStub();
+    testFrameSyncPairStub();
     testStreamManagerStub();
 
     fuse::core::shutdown();

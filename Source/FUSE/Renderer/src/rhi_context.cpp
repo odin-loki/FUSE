@@ -161,6 +161,7 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
         }
 
         if (m_compositeGpuPath && m_compositeGpuPath->isReady() && m_rasterPath != nullptr) {
+            (void)m_compositeGpuPath->ensureCudaInteropTexture();
             m_compositeGpuPath->registerRasterSource(m_rasterPath->colorViewHandle());
             if (presentTargetsReady && encodeContextStorage.presentRenderPass != nullptr) {
                 m_compositeGpuPath->ensurePresentPipeline(encodeContextStorage.presentRenderPass);

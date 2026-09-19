@@ -1,5 +1,6 @@
 #include <fuse/renderer/vk/composite_gpu_path.hpp>
 
+#include <fuse/renderer/cuda/interop.hpp>
 #include <fuse/renderer/resources.hpp>
 #include <fuse/renderer/shader/shader_module.hpp>
 #include <fuse/renderer/vk/graphics_pipeline.hpp>
@@ -9,6 +10,10 @@
 
 #include <array>
 #include <cstring>
+
+#if defined(FUSE_HAS_CUDA)
+#include <cuda_runtime.h>
+#endif
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
@@ -61,6 +66,149 @@ std::unique_ptr<CompositeGpuPath> CompositeGpuPath::create(VulkanDevice& device,
 
 CompositeGpuPath::~CompositeGpuPath() {
     shutdown();
+}
+
+bool CompositeGpuPath::registerCudaSource(void* imageView) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_stats.pipelineReady || !bindlessNativeHandleReady(imageView)) {
+        m_stats.cudaTexturePlaceholder = true;
+        m_stats.message = "composite bindless cuda registration skipped";
+        return false;
+    }
+
+    fuse::renderer::Texture texture{};
+    texture.view = imageView;
+    texture.desc.width = m_desc.width;
+    texture.desc.height = m_desc.height;
+    texture.desc.format = GpuFormat::R8G8B8A8Unorm;
+    texture.desc.cudaInterop = true;
+
+    if (m_cudaTextureSlot.isValid()) {
+        m_bindless.unregisterSlot(m_cudaTextureSlot);
+    }
+
+    m_cudaTextureSlot = m_bindless.registerTextureSlot(texture, false);
+    if (!m_cudaTextureSlot.isValid()) {
+        m_stats.cudaTexturePlaceholder = true;
+        m_stats.message = "composite cuda bindless slot failed";
+        return false;
+    }
+
+    m_stats.cudaTextureIndex = m_cudaTextureSlot.index;
+    m_stats.cudaTextureActive = true;
+    m_stats.cudaTexturePlaceholder = false;
+    m_stats.message = "composite cuda texture registered in bindless heap";
+    return true;
+#else
+    (void)imageView;
+    return false;
+#endif
+}
+
+bool CompositeGpuPath::ensureCudaInteropTexture() {
+#if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_HAS_CUDA)
+    if (!m_stats.pipelineReady || m_device == nullptr || !m_device->isValid()) {
+        m_stats.cudaTexturePlaceholder = true;
+        return false;
+    }
+    if (m_cudaTextureSlot.isValid()) {
+        return m_stats.cudaTextureActive;
+    }
+    if (!fuse::renderer::cuda::interopAvailable()) {
+        m_stats.cudaTexturePlaceholder = true;
+        m_stats.message = "cuda interop unavailable — composite uses placeholder colour";
+        return false;
+    }
+
+    auto vkDevice = static_cast<VkDevice>(m_device->nativeHandle());
+    auto physicalDevice = static_cast<VkPhysicalDevice>(m_device->nativePhysicalDevice());
+
+    VkExternalMemoryImageCreateInfo externalImageInfo{};
+    externalImageInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+#if defined(_WIN32)
+    externalImageInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+#else
+    externalImageInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+#endif
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.pNext = &externalImageInfo;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    imageInfo.extent = {m_desc.width, m_desc.height, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VkExportMemoryAllocateInfo exportAllocInfo{};
+    exportAllocInfo.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+#if defined(_WIN32)
+    exportAllocInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+#else
+    exportAllocInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+#endif
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.pNext = &exportAllocInfo;
+
+    VkImage image = VK_NULL_HANDLE;
+    if (vkCreateImage(vkDevice, &imageInfo, nullptr, &image) != VK_SUCCESS) {
+        m_stats.message = "cuda interop image creation failed";
+        return false;
+    }
+
+    VkMemoryRequirements memRequirements{};
+    vkGetImageMemoryRequirements(vkDevice, image, &memRequirements);
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex =
+        findMemoryType(physicalDevice, memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    if (vkAllocateMemory(vkDevice, &allocInfo, nullptr, &memory) != VK_SUCCESS) {
+        vkDestroyImage(vkDevice, image, nullptr);
+        m_stats.message = "cuda interop image memory allocation failed";
+        return false;
+    }
+    vkBindImageMemory(vkDevice, image, memory, 0);
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    VkImageView view = VK_NULL_HANDLE;
+    if (vkCreateImageView(vkDevice, &viewInfo, nullptr, &view) != VK_SUCCESS) {
+        vkFreeMemory(vkDevice, memory, nullptr);
+        vkDestroyImage(vkDevice, image, nullptr);
+        m_stats.message = "cuda interop image view creation failed";
+        return false;
+    }
+
+    m_cudaImage = image;
+    m_cudaImageMemory = memory;
+    m_cudaImageView = view;
+
+    if (!registerCudaSource(view)) {
+        return false;
+    }
+
+    m_stats.message = "cuda interop texture allocated for composite sampling";
+    return true;
+#else
+    m_stats.cudaTexturePlaceholder = true;
+    m_stats.message = "cuda interop texture unavailable in stub build";
+    return false;
+#endif
 }
 
 bool CompositeGpuPath::registerRasterSource(void* imageView) {
@@ -127,6 +275,8 @@ void CompositeGpuPath::fillEncodeContext(VkFrameEncodeContext& context, float bl
 
     context.compositeBlend = blend;
     context.rasterTextureBindlessIndex = m_stats.rasterTextureIndex;
+    context.cudaTextureBindlessIndex =
+        m_stats.cudaTextureActive ? m_stats.cudaTextureIndex : UINT32_MAX;
     context.bindlessDescriptorSet = m_bindless.descriptorSetHandle();
     context.compositePipelineLayout = m_pipelineLayout->nativeHandle();
     context.compositeVertexBuffer = m_vertexBuffer;
@@ -317,7 +467,23 @@ void CompositeGpuPath::shutdown() {
     m_vertexBuffer = nullptr;
     m_vertexMemory = nullptr;
     m_rasterTextureSlot = {};
+    m_cudaTextureSlot = {};
     m_samplerSlot = {};
+    if (m_device != nullptr && m_device->isValid()) {
+        auto vkDevice = static_cast<VkDevice>(m_device->nativeHandle());
+        if (m_cudaImageView != nullptr) {
+            vkDestroyImageView(vkDevice, static_cast<VkImageView>(m_cudaImageView), nullptr);
+        }
+        if (m_cudaImage != nullptr) {
+            vkDestroyImage(vkDevice, static_cast<VkImage>(m_cudaImage), nullptr);
+        }
+        if (m_cudaImageMemory != nullptr) {
+            vkFreeMemory(vkDevice, static_cast<VkDeviceMemory>(m_cudaImageMemory), nullptr);
+        }
+    }
+    m_cudaImageView = nullptr;
+    m_cudaImage = nullptr;
+    m_cudaImageMemory = nullptr;
 #endif
 
     m_presentPipeline.reset();

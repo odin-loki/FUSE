@@ -450,7 +450,7 @@ void CommandBufferRecorder::encodeCompositePass(float blend) {
     } pushConstants{};
     pushConstants.blendFactor = blend;
     pushConstants.rasterTexIndex = m_encodeContext->rasterTextureBindlessIndex;
-    pushConstants.cudaTexIndex = 0u;
+    pushConstants.cudaTexIndex = m_encodeContext->cudaTextureBindlessIndex;
     vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(pushConstants), &pushConstants);
 

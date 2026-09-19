@@ -4,6 +4,10 @@
 #include <fuse/editor/ai_tree_profile_picker.hpp>
 #include <fuse/editor/cinematics_seq_import.hpp>
 #include <fuse/editor/feature_pane_bridge.hpp>
+
+#if defined(FUSE_VULKAN_BACKEND)
+#include <fuse/renderer/vk/swapchain.hpp>
+#endif
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -360,6 +364,31 @@ void testRuntimeViewportLoadsProjectRoot() {
                "headless present stub ticks while embedded");
 }
 
+void testRuntimeViewportSurfaceHandoffStub() {
+    fuse::editor::EditorHost host;
+
+    host.runtimeViewport().setExternalSurfaceHandle(reinterpret_cast<void*>(0x2000), 960, 540);
+    host.gameTick();
+
+    expectTrue(host.runtimeViewport().swapchainHandoff().pending == false,
+               "surface handoff consumed after game tick");
+    expectTrue(host.runtimeViewport().embedSession().surfaceHandoffConsumed,
+               "embed session records consumed handoff");
+    expectTrue(host.runtimeViewport().embedSession().surfaceHandoffCount == 1u,
+               "surface handoff counted once");
+    expectTrue(host.runtimeViewport().swapchainHandoff().width == 960u,
+               "handoff width preserved on stub path");
+    expectTrue(host.runtimeViewport().swapchainHandoff().height == 540u,
+               "handoff height preserved on stub path");
+#if defined(FUSE_VULKAN_BACKEND)
+    const fuse::renderer::SwapchainDesc desc = host.runtimeViewport().buildSwapchainDescHandoff();
+    expectTrue(desc.width == 960u, "handoff swapchain width preserved");
+    expectTrue(desc.height == 540u, "handoff swapchain height preserved");
+    expectTrue(desc.surface.kind == fuse::renderer::SurfaceKind::External,
+               "handoff surface kind external when handle provided");
+#endif
+}
+
 void testRuntimeViewportHookTicksWithProject() {
     fuse::editor::EditorHost host;
 
@@ -434,6 +463,7 @@ int main() {
     testInspectorSectionsThroughBridge();
     testHostUndoDeleteViaQueue();
     testRuntimeViewportLoadsProjectRoot();
+    testRuntimeViewportSurfaceHandoffStub();
     testRuntimeViewportHookTicksWithProject();
     testAiTreeProfilePickerPostsCommand();
     testCinematicsSeqImportPostsAsset();

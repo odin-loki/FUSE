@@ -123,7 +123,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Mobile** | Hybrid demo runs on iOS **or** Android device/sim; respect surface loss / background |
 | **Exit** | Demo: 3D clear + spinning 2D sprite one window (desktop + one mobile); TSan clean on cull path |
 | **Deps** | WP-05, WP-03 |
-| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B bindless composite GPU blit ✅ (WP-06f) — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
+| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B bindless composite GPU blit ✅ (WP-06f); CUDA interop/GLFW present/U6 surface handoff ✅ (WP-06g) — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
 
 ---
 
@@ -189,6 +189,19 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Exit** | `fuse_vulkan_phase2_integration` asserts `vulkanCompositeDrawCount`; `fuse_cuda_interop` reason strings + timeline stubs; `demo_hybrid_hud` PASS headless |
 | **Deps** | WP-06e |
 | **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06f |
+
+---
+
+### WP-06g — Track B CUDA interop deepen + GLFW present + U6 surface handoff
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M |
+| **Scope** | Strengthen `cudaImportExternalMemory` / `SharedTimeline` toward real driver imports when toolkit+extensions present (skip-clean otherwise); CUDA texture bindless path in composite when interop available (shader placeholder honest otherwise); `FUSE_ENABLE_GLFW_PRESENT` gate for `vkQueuePresentKHR` when display+GLFW; `RuntimeViewportHook` → `SwapchainDesc.surface` handoff stubs (U6); keep Lavapipe + `demo_hybrid_hud` green |
+| **MT note** | Interop/composite on render thread; editor handoff posted from UI, consumed on game thread |
+| **Exit** | `fuse_cuda_interop` FrameSyncPair + import reason tests; `fuse_hybrid_vulkan_presentable` desktop-present gate; `fuse_editor_host` surface handoff; headless CI unchanged |
+| **Deps** | WP-06f |
+| **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06g |
 
 ---
 
@@ -316,7 +329,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U2 incremental — expand Engine probe (gfx/platform stubs), SimObject adapter → first curated `.cpp` batch, StringTable route to FUSE core; U6 Qt GPU viewport when display-free CI path exists; U7 real cook encoders + T3D datablock wiring; Track B post–WP-06f (`vkQueuePresentKHR` desktop GLFW, Editor Qt surface, `cudaImportExternalMemory`).
+**Next:** U2 incremental — expand Engine probe (gfx/platform stubs), SimObject adapter → first curated `.cpp` batch, StringTable route to FUSE core; U6 Qt GPU viewport embed (Qt native surface → consumed handoff); U7 real cook encoders + T3D datablock wiring; Track B post–WP-06g (full CUDA kernel fill into interop texture, Editor Qt `VkSurfaceKHR` wiring).
 
 ---
 

@@ -13,8 +13,11 @@ struct RuntimeEmbedSession {
     u32 worldEntityCount = 0;
     u32 mirroredEditorEntityCount = 0;
     u32 headlessPresentTicks = 0;
+    u32 surfaceHandoffCount = 0;
     bool worldLoaded = false;
     bool headlessGpuReady = false;
+    bool surfaceHandoffPending = false;
+    bool surfaceHandoffConsumed = false;
 
     void reset();
 };
