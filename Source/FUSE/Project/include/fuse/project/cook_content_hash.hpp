@@ -236,3 +236,17 @@ struct CookFnvInputPreflight {
 [[nodiscard]] bool should_skip_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
 [[nodiscard]] bool should_skip_cook_cache_key(u64 source_hash, u64 upstream_hash);
 [[nodiscard]] bool should_skip_fnv1a64_bytes(const u8* data, usize size);
+
+// --- deepen additive from deepen-b79-cooker-hash-e9a4 ---
+[[nodiscard]] inline bool should_skip_file_content_hash(const std::string& path) {
+    return preflight_file_content_hash(path).should_skip();
+[[nodiscard]] inline bool should_skip_mesh_import_hash(const MeshImportDesc& desc) {
+    return preflight_mesh_import_hash(desc).should_skip();
+[[nodiscard]] inline bool should_skip_texture_import_hash(const TextureImportDesc& desc) {
+    return preflight_texture_import_hash(desc).should_skip();
+[[nodiscard]] inline bool should_skip_audio_import_hash(const AudioImportDesc& desc) {
+    return preflight_audio_import_hash(desc).should_skip();
+[[nodiscard]] inline bool should_skip_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    return preflight_cook_cache_key(source_hash, upstream_hash).should_skip();
+[[nodiscard]] inline bool should_skip_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    return preflight_cacheable_cook_cache_key(source_hash, upstream_hash).should_skip();

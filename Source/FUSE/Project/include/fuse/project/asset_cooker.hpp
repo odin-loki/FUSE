@@ -134,3 +134,7 @@ private:
 
 // --- deepen additive from deepen-b79-cooker-hash-should-skip-fa40 ---
     [[nodiscard]] bool should_skip_prune_reconcile() const;
+
+// --- deepen additive from deepen-b79-cooker-hash-e9a4 ---
+    [[nodiscard]] inline bool should_skip_reconcile_invalidation(const CookManifest& manifest) const {
+    [[nodiscard]] inline bool should_skip_upstream_invalidation(const CookManifest& manifest,

@@ -2128,3 +2128,8 @@ void testCookerShouldSkipReconcileGuards() {
                "would_invalidate_upstream still true before invalidation");
                "would_invalidate_stale_dependency false after stale invalidation");
     expectTrue(!cooker.should_skip_prune_reconcile(),
+
+// --- deepen additive from deepen-b79-cooker-hash-e9a4 ---
+    expectTrue(cooker.should_skip_reconcile_invalidation(manifest), "fresh cache should_skip_reconcile is true");
+               "should_skip_upstream true for empty changed source");
+               "should_skip_reconcile false after upstream change");

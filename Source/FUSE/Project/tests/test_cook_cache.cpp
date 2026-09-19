@@ -1564,3 +1564,18 @@ void testCookCacheShouldSkipAndWouldInvalidateGuards() {
     expectTrue(!cache.should_skip_store(valid), "should_skip_store allows valid entry");
     expectTrue(cooker.cache().would_invalidate_stale_content_for_source(source, new_hash),
                "would_invalidate_stale_content true after source change with new hash");
+
+// --- deepen additive from deepen-b79-cooker-hash-e9a4 ---
+    expectTrue(!fuse::project::should_skip_texture_import_hash(tex),
+               "should_skip rejects zero source cache key preflight");
+    expectTrue(fuse::project::should_skip_prune(cache), "should_skip_prune on empty cache is true");
+    expectTrue(fuse::project::should_skip_invalidate(42u, cache),
+    expectTrue(!fuse::project::should_skip_invalidate_source(cooker.cache(), source),
+               "should_skip_invalidate_source false when entry exists");
+    expectTrue(fuse::project::should_skip_store_cache_entry(zero_entry),
+               "should_skip_store rejects zero-hash entry");
+    expectTrue(!fuse::project::should_skip_store_cache_entry(valid),
+    expectTrue(fuse::project::should_skip_store_cache_entry(zero_hash),
+    expectTrue(!cooker.cache().would_invalidate_stale_upstream_hashes({}),
+               "empty upstream pair list would_invalidate_stale_upstream is false");
+    expectTrue(!fuse::project::preflight_shader_entry_hash(shader).should_skip(),
