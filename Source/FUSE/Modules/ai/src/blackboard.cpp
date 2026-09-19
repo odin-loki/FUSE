@@ -144,4 +144,12 @@ bool BlackboardView::isFlagSet(u32 agentIndex, u32 flagIndex) const {
     return isBound() && isAgentValid(agentIndex) && !isFlagEmpty(agentIndex, flagIndex);
 }
 
+bool BlackboardView::isFlagSlotValid(u32 flagIndex) const {
+    return m_board ? m_board->isFlagSlotValid(flagIndex) : false;
+}
+
+bool BlackboardView::isScalarSlotValid(u32 slotIndex) const {
+    return m_board ? m_board->isScalarSlotValid(slotIndex) : false;
+}
+
 } // namespace fuse::ai

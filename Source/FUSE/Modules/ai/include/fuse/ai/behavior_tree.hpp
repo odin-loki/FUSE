@@ -54,6 +54,7 @@ enum class NodeKind {
     GuardBlackboardFlagEmpty,
     GuardBlackboardFlagSet,
     GuardBlackboardEmpty,
+    GuardBlackboardNonempty,
     GuardBlackboardAgentValid,
     GuardBlackboardFlagSet,
     GuardBlackboardScalarSet,
@@ -95,7 +96,12 @@ struct ParallelPolicy {
     /// When true, fail immediately when the agent index is out of range for the blackboard.
     /// When true, fail immediately when the parallel node's `threshold` is not a valid ally radius.
     bool requireValidAllyRadius = false;
+    /// When true, fail immediately when `threshold` is set but not a valid finite ally radius.
+    bool requireValidRadius = false;
 };
+
+[[nodiscard]] bool parallel_policy_has_guards(const ParallelPolicy& policy);
+[[nodiscard]] bool parallel_policy_is_valid(const ParallelPolicy& policy, u32 childCount = 2);
 
 /// Flat behavior-tree node — ore analogue: BadBehaviour composite/decorator/leaf nodes.
 /// Ore: third_party/addons/BadBehaviour/Engine/source/BadBehavior/

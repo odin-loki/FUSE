@@ -109,6 +109,7 @@ void testRegistryBuiltinNodes() {
     expectTrue(registry.hasFactory("bb.guard.blackboard_flag_empty"), "bb.guard.blackboard_flag_empty registered");
     expectTrue(registry.hasFactory("bb.guard.blackboard_flag_set"), "bb.guard.blackboard_flag_set registered");
     expectTrue(registry.hasFactory("bb.guard.blackboard_empty"), "bb.guard.blackboard_empty registered");
+    expectTrue(registry.hasFactory("bb.guard.blackboard_nonempty"), "bb.guard.blackboard_nonempty registered");
     expectTrue(registry.hasFactory("bb.guard.blackboard_agent_valid"), "bb.guard.blackboard_agent_valid registered");
     expectTrue(registry.hasFactory("bb.guard.ally_context"), "bb.guard.ally_context registered");
     expectTrue(registry.hasFactory("bb.guard.valid_ally_radius"), "bb.guard.valid_ally_radius registered");
@@ -124,6 +125,7 @@ void testRegistryBuiltinNodes() {
     expectTrue(registry.hasFactory("bb.guard.blackboard_agent_valid"), "bb.guard.blackboard_agent_valid registered");
     expectTrue(registry.hasFactory("bb.guard.ally_radius_valid"), "bb.guard.ally_radius_valid registered");
     expectTrue(registry.registeredTypeIds().size() >= 28u, "registry exposes built-in type ids");
+    expectTrue(registry.registeredTypeIds().size() >= 30u, "registry exposes built-in type ids");
 }
 
 void testInverterDecorator() {
@@ -1014,6 +1016,50 @@ void testGuardBlackboardFlagEmptyLeaf() {
                "flag empty guard fails with unbound view");
 }
 
+void testParallelPolicyHelpers() {
+    fuse::ai::ParallelPolicy policy;
+    expectTrue(!fuse::ai::parallel_policy_has_guards(policy),
+               "default parallel policy has no guards");
+    expectTrue(fuse::ai::parallel_policy_is_valid(policy, 2u),
+               "default parallel policy is valid for two children");
+
+    policy.requireNonEmptyBoard = true;
+    expectTrue(fuse::ai::parallel_policy_has_guards(policy),
+               "parallel policy reports configured guards");
+    policy.successThreshold = 3;
+    expectTrue(!fuse::ai::parallel_policy_is_valid(policy, 2u),
+               "parallel policy rejects impossible success threshold");
+}
+
+void testGuardBlackboardNonemptyLeaf() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.guard.blackboard_nonempty", 0.f, 0, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, tree), "blackboard nonempty guard loads");
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult populated =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(populated.status == fuse::ai::BehaviorStatus::Success,
+               "blackboard nonempty guard succeeds when agents are allocated");
+
+    const fuse::ai::BehaviorTickResult unbound =
+        tree.tick(0, agent, fuse::ai::BlackboardView());
+    expectTrue(unbound.status == fuse::ai::BehaviorStatus::Failure,
+               "blackboard nonempty guard fails with unbound view");
+
+    board.resize(0);
+    const fuse::ai::BehaviorTickResult empty =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(empty.status == fuse::ai::BehaviorStatus::Failure,
+               "blackboard nonempty guard fails when agent count is zero");
+}
+
 void testGuardBlackboardEmptyLeaf() {
     const std::vector<fuse::ai::NodeLoadSpec> specs = {
         {"bb.guard.blackboard_empty", 0.f, 0, 1, {}, {}},
@@ -1587,6 +1633,102 @@ void testParallelRequireNonEmptyBoardGuard() {
         tree.tick(0, agent, fuse::ai::BlackboardView());
     expectTrue(empty.status == fuse::ai::BehaviorStatus::Failure,
                "parallel require-nonempty-board guard fails with unbound view");
+
+    board.resize(0);
+    const fuse::ai::BehaviorTickResult zeroAgents =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(zeroAgents.status == fuse::ai::BehaviorStatus::Failure,
+               "parallel require-nonempty-board guard fails with zero agents");
+    expectTrue(!zeroAgents.wroteFlag,
+               "parallel require-nonempty-board guard skips children on empty board");
+}
+
+void testParallelRequireValidRadiusGuard() {
+    fuse::ai::ParallelPolicy policy;
+    policy.requireValidRadius = true;
+
+    auto makeRadiusParallelTree = [&](float threshold) {
+        fuse::ai::BehaviorTree tree;
+        tree.addNode({fuse::ai::NodeKind::ActionSetFlag, 0.f, 0, 1, 0, 0});
+        tree.addNode({fuse::ai::NodeKind::ActionSetFlag, 0.f, 1, 1, 0, 0});
+        fuse::ai::BehaviorNode parallel;
+        parallel.kind = fuse::ai::NodeKind::Parallel;
+        parallel.childA = 0;
+        parallel.childB = 1;
+        parallel.threshold = threshold;
+        parallel.parallelPolicy = policy;
+        tree.addNode(std::move(parallel));
+        tree.setRoot(2);
+        return tree;
+    };
+
+    const fuse::ai::BehaviorTree validTree = makeRadiusParallelTree(5.f);
+    const fuse::ai::BehaviorTree invalidTree = makeRadiusParallelTree(0.f);
+
+    fuse::ai::AgentSnapshot agent;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BehaviorTickResult valid =
+        validTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(valid.status == fuse::ai::BehaviorStatus::Success,
+               "parallel require-radius guard succeeds with positive threshold");
+
+    const fuse::ai::BehaviorTickResult invalid =
+        invalidTree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(invalid.status == fuse::ai::BehaviorStatus::Failure,
+               "parallel require-radius guard fails with zero threshold");
+    expectTrue(!invalid.wroteFlag,
+               "parallel require-radius guard skips children on invalid radius");
+}
+
+void testSpatialLeavesFailOnInvalidRadius() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.condition.allies_in_radius", 0.f, 0, 1, {}, {}},
+        {"bb.action.allies_count", 0.f, 0, 1, {}, {}},
+    };
+
+    fuse::ai::BehaviorTree radiusTree;
+    fuse::ai::BehaviorTree countTree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 0, radiusTree), "zero-radius condition loads");
+    expectTrue(fuse::ai::loadTreeFromSpecs({specs[1]}, 0, countTree), "zero-radius count loads");
+
+    fuse::ai::AgentSnapshot agent;
+    agent.teamId = 1;
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const std::vector<fuse::ai::AllyCandidate> allies = makeTestAllies();
+    fuse::ai::BehaviorEvalContext ctx;
+    ctx.allies = &allies;
+
+    const fuse::ai::BehaviorTickResult radiusResult =
+        radiusTree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(radiusResult.status == fuse::ai::BehaviorStatus::Failure,
+               "allies_in_radius fails when radius is not finite");
+
+    const fuse::ai::BehaviorTickResult countResult =
+        countTree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(countResult.status == fuse::ai::BehaviorStatus::Failure,
+               "allies_count fails when radius is not finite");
+}
+
+void testBlackboardViewSlotValidity() {
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    const fuse::ai::BlackboardView view(board);
+    expectTrue(view.isFlagSlotValid(0), "flag slot zero is valid");
+    expectTrue(view.isScalarSlotValid(fuse::ai::Blackboard::kMaxScalars - 1),
+               "last scalar slot is valid");
+    expectTrue(!view.isFlagSlotValid(fuse::ai::Blackboard::kMaxFlags),
+               "out-of-range flag slot is invalid");
+    expectTrue(!view.isScalarSlotValid(fuse::ai::Blackboard::kMaxScalars),
+               "out-of-range scalar slot is invalid");
+
+    const fuse::ai::BlackboardView unbound;
+    expectTrue(!unbound.isFlagSlotValid(0), "unbound view rejects flag slot lookup");
+    expectTrue(!unbound.isScalarSlotValid(0), "unbound view rejects scalar slot lookup");
 }
 
 void testParallelGuardTextLoader() {
@@ -1595,6 +1737,7 @@ bb.action.set_flag flag=0
 bb.action.set_flag flag=1
 bb.parallel children=0,1 require_board=1 require_allies=1 require_agent=1 require_nonempty_board=1
 bb.parallel children=0,1 require_board=1 require_allies=1 require_agent=1
+bb.parallel children=0,1 require_board=1 require_allies=1 require_agent=1 require_nonempty_board=1 require_radius=1 threshold=8
 root=2
 )";
 
@@ -1605,6 +1748,8 @@ root=2
     expectTrue(tree.node(2).parallelPolicy.requireAllyContext, "text loader sets require_allies");
     expectTrue(tree.node(2).parallelPolicy.requireValidAgent, "text loader sets require_agent");
     expectTrue(tree.node(2).parallelPolicy.requireNonEmptyBoard, "text loader sets require_nonempty_board");
+    expectTrue(tree.node(2).parallelPolicy.requireValidRadius, "text loader sets require_radius");
+    expectTrue(tree.node(2).threshold == 8.f, "text loader preserves parallel radius threshold");
 }
 
 void testNoAlliesInRadiusConditionLeaf() {
@@ -2022,6 +2167,8 @@ int main() {
     testSpatialLeavesFailWithEmptyAllies();
     testEmptyBlackboardViewReadsFalse();
     testBlackboardIsEmptyGuard();
+    testParallelPolicyHelpers();
+    testGuardBlackboardNonemptyLeaf();
     testGuardBlackboardBoundLeaf();
     testGuardBlackboardScalarEmptyLeaf();
     testGuardBlackboardFlagEmptyLeaf();
@@ -2042,6 +2189,9 @@ int main() {
     testParallelRequireAlliesGuard();
     testParallelRequireValidAgentGuard();
     testParallelRequireNonEmptyBoardGuard();
+    testParallelRequireValidRadiusGuard();
+    testSpatialLeavesFailOnInvalidRadius();
+    testBlackboardViewSlotValidity();
     testParallelGuardTextLoader();
     testNoAlliesInRadiusConditionLeaf();
     testNearestAllyDistanceActionLeaf();

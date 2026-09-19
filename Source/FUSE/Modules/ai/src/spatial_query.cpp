@@ -41,6 +41,14 @@ bool is_valid_radius_policy(const RadiusFilterPolicy& policy) {
 
 u32 effective_min_count(const RadiusFilterPolicy& policy) {
     return policy.minCount > 0 ? policy.minCount : 1u;
+bool is_finite_ally_radius(float radius) {
+    return radius > 0.f;
+
+bool is_unlimited_radius(float radius) {
+    return radius <= 0.f;
+
+bool radius_filter_policy_is_valid(const RadiusFilterPolicy& policy) {
+    return is_finite_ally_radius(policy.radius);
 }
 
 float effective_radius(const RadiusFilterPolicy& policy) {
