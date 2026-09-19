@@ -371,6 +371,24 @@ bool tryCanBeginTemporalReuse(const TaaHistoryBuffer& history, u32 observedGener
 /// History reuse preflight using `TaaResolveDesc::observed_history_generation` (B5.9 deepen).
 bool preflightTaaResolveHistoryReuse(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
 
+/// Why history warm-up blocks temporal reuse (B5.9 deepen).
+enum class TaaHistoryWarmupBlockReason : u8 {
+    None = 0,
+    NotReady,
+    NeedsWarmup,
+};
+/// Human-readable label for history warm-up block reasons (B5.9 deepen).
+const char* taaHistoryWarmupBlockReasonLabel(TaaHistoryWarmupBlockReason reason);
+/// Classify why history warm-up blocks temporal reuse (B5.9 deepen).
+TaaHistoryWarmupBlockReason classifyTaaHistoryWarmupBlock(const TaaHistoryBuffer& history);
+/// True when history is allocated and warmed for temporal reuse (B5.9 deepen).
+bool preflightTaaHistoryWarmup(const TaaHistoryBuffer& history,
+                               TaaHistoryWarmupBlockReason* reason = nullptr);
+/// Convenience wrapper — true when `preflightTaaHistoryWarmup` would pass (B5.9 deepen).
+bool canPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history);
+/// True when resolve may apply a non-zero history blend this frame (B5.9 deepen).
+bool taaHistoryTemporalBlendReady(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {
     InvalidWeights,
@@ -545,6 +563,8 @@ bool canPreflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHis
 enum class TaaResolveTemporalRejectReason : u8 {
     HistoryReuseBlocked,
     BlendWeightsRejected,
+    None = 0,
+};
 /// Human-readable label for resolve temporal-blend reject reasons (B5.9 deepen).
 const char* taaResolveTemporalRejectReasonLabel(TaaResolveTemporalRejectReason reason);
 /// Classify why resolve temporal-blend preflight would reject (B5.9 deepen).

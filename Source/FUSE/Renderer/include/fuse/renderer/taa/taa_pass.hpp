@@ -266,6 +266,7 @@ public:
     bool canPreflightResolveBlendWeights(const TaaResolveDesc& desc) const;
     /// Fill `out` only when blend-weight preflight passes (B5.9 deepen).
     bool tryExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& out,
+                                        TaaResolveBlendRejectReason* reason = nullptr) const;
     /// True when history reuse and blend-weight preflights both pass (B5.9 deepen).
     bool preflightResolveTemporalBlend(const TaaResolveDesc& desc,
                                        TaaResolveTemporalRejectReason* reason = nullptr) const;

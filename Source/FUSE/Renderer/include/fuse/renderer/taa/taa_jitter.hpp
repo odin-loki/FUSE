@@ -115,6 +115,9 @@ TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(u32 /*frameIndex*/, u32 widt
 bool preflightTaaJitterSync(u32 frameIndex, u32 width, u32 height,
                             u32 sequenceLength = kTaaDefaultJitterSequenceLength,
                             TaaJitterSyncBlockReason* reason = nullptr);
+    None = 0,
+    InvalidSequence,
+};
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {

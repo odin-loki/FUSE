@@ -25,6 +25,7 @@ TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 /*frameIndex*/, u32 se
     }
     return TaaJitterSyncRejectReason::None;
     if (!TaaJitterLayout::canSyncToFrameIndex(0u, sequenceLength)) {
+}
 
 bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncRejectReason* reason) {
     const TaaJitterSyncRejectReason reject = classifyTaaJitterSyncReject(frameIndex, sequenceLength);
@@ -34,6 +35,8 @@ bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncRej
 
 bool canPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength) {
     return preflightTaaJitterSync(frameIndex, sequenceLength);
+    }
+
 
 const char* taaJitterNdcRejectReasonLabel(TaaJitterNdcRejectReason reason) {
     switch (reason) {
@@ -103,6 +106,13 @@ TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(u32 /*frameIndex*/, u32 widt
 bool preflightTaaJitterSync(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
                             TaaJitterSyncBlockReason* reason) {
     const TaaJitterSyncBlockReason block = classifyTaaJitterSyncBlock(frameIndex, width, height, sequenceLength);
+    }
+
+    if (!TaaJitterLayout::validateSequenceLength(sequenceLength)) {
+
+    if (reason != nullptr) {
+        *reason = reject;
+
 
 f32 TaaJitterLayout::halton(u32 index, u32 base) {
     if (base < 2u) {
@@ -600,6 +610,21 @@ bool TaaJitter::advanceIfAlignedToFrameIndex(u32 frameIndex) {
     }
     advance();
     return true;
+TaaJitterSyncRejectReason TaaJitter::classifySyncReject(u32 frameIndex) const {
+    return classifyTaaJitterSyncReject(frameIndex, m_sequenceLength);
+
+bool TaaJitter::preflightSyncToFrameIndex(u32 frameIndex, TaaJitterSyncRejectReason* reason) const {
+    return preflightTaaJitterSync(frameIndex, m_sequenceLength, reason);
+
+TaaJitterNdcRejectReason TaaJitter::classifyNdcReject(u32 width, u32 height) const {
+    return classifyTaaJitterNdcReject(width, height, m_sequenceLength);
+
+bool TaaJitter::preflightCurrentNdcOffset(u32 width, u32 height, TaaJitterNdcRejectReason* reason) const {
+    return preflightTaaJitterNdc(width, height, m_sequenceLength, reason);
+
+bool TaaJitter::isAlignedToFrameIndex(u32 frameIndex) const {
+    return m_monotonicFrame == frameIndex &&
+           TaaJitterLayout::jitterSlotMatchesFrameIndex(frameIndex, m_index, m_sequenceLength);
 }
 
 TaaJitterSyncRejectReason TaaJitter::classifySyncReject(u32 frameIndex) const {
