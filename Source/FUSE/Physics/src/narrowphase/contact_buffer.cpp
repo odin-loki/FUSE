@@ -425,3 +425,38 @@ ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSo
     ContactBufferClampPreflight preflight{};
 ContactBufferFrictionPreflight preflight_contact_buffer_friction_rebuild(
     ContactBufferFrictionPreflight preflight{};
+
+// --- deepen additive from deepen-b4-narrowphase-guard-pass-9852 ---
+    const ContactBufferWritePreflight writePreflight = preflight_contact_buffer_write(*this, slot, manifold);
+    if (!writePreflight.canWrite()) {
+    const ContactBufferCompactionPreflight compactionPreflight = preflight_contact_buffer_compaction(*this);
+    if (compactionPreflight.reason == ContactBufferCompactionRejectReason::EmptyBuffer) {
+    if (compactionPreflight.reason == ContactBufferCompactionRejectReason::AllValid) {
+const char* contact_buffer_write_reject_reason_name(ContactBufferWriteRejectReason reason) {
+    case ContactBufferWriteRejectReason::None:
+    case ContactBufferWriteRejectReason::OutOfRangeSlot:
+    case ContactBufferWriteRejectReason::InvalidManifold:
+    case ContactBufferWriteRejectReason::SelfPair:
+ContactBufferWriteRejectReason contact_buffer_write_reject_reason(
+        return ContactBufferWriteRejectReason::OutOfRangeSlot;
+        return ContactBufferWriteRejectReason::InvalidManifold;
+        return ContactBufferWriteRejectReason::SelfPair;
+    return ContactBufferWriteRejectReason::None;
+    ContactBufferWriteRejectReason expected) {
+    preflight.outOfRangeSlot = preflight.reason == ContactBufferWriteRejectReason::OutOfRangeSlot;
+    preflight.invalidManifold = preflight.reason == ContactBufferWriteRejectReason::InvalidManifold;
+    preflight.selfPair = preflight.reason == ContactBufferWriteRejectReason::SelfPair;
+    case ContactBufferCompactionRejectReason::AllValid:
+        return ContactBufferCompactionRejectReason::AllValid;
+    preflight.allValid = preflight.reason == ContactBufferCompactionRejectReason::AllValid;
+const char* contact_buffer_clamp_reject_reason_name(ContactBufferClampRejectReason reason) {
+    case ContactBufferClampRejectReason::None:
+    case ContactBufferClampRejectReason::EmptyBuffer:
+    case ContactBufferClampRejectReason::WithinCapacity:
+ContactBufferClampRejectReason contact_buffer_clamp_reject_reason(const ContactBufferSoA& buffer) {
+        return ContactBufferClampRejectReason::EmptyBuffer;
+        return ContactBufferClampRejectReason::WithinCapacity;
+    return ContactBufferClampRejectReason::None;
+    ContactBufferClampRejectReason expected) {
+    preflight.emptyBuffer = preflight.reason == ContactBufferClampRejectReason::EmptyBuffer;
+    preflight.withinCapacity = preflight.reason == ContactBufferClampRejectReason::WithinCapacity;

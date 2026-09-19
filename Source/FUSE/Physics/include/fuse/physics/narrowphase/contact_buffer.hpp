@@ -133,3 +133,17 @@ struct ContactBufferClampPreflight {
 ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer);
 struct ContactBufferFrictionPreflight {
 ContactBufferFrictionPreflight preflight_contact_buffer_friction_rebuild(
+
+// --- deepen additive from deepen-b4-narrowphase-guard-pass-9852 ---
+enum class ContactBufferWriteRejectReason : u8 {
+const char* contact_buffer_write_reject_reason_name(ContactBufferWriteRejectReason reason);
+ContactBufferWriteRejectReason contact_buffer_write_reject_reason(
+    ContactBufferWriteRejectReason expected);
+    ContactBufferWriteRejectReason reason = ContactBufferWriteRejectReason::None;
+    bool canWrite() const { return reason == ContactBufferWriteRejectReason::None; }
+enum class ContactBufferClampRejectReason : u8 {
+const char* contact_buffer_clamp_reject_reason_name(ContactBufferClampRejectReason reason);
+ContactBufferClampRejectReason contact_buffer_clamp_reject_reason(const ContactBufferSoA& buffer);
+    ContactBufferClampRejectReason expected);
+    ContactBufferClampRejectReason reason = ContactBufferClampRejectReason::None;
+    bool needsClamp() const { return reason == ContactBufferClampRejectReason::None; }

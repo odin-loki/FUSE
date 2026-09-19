@@ -2479,3 +2479,25 @@ void testFrictionBasisRebuildRejectReasonGuards() {
                 fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::Skipped),
     testContactPairDeepenPassRejectReasonGuards();
     testFrictionBasisRebuildRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-narrowphase-guard-pass-9852 ---
+void testContactBufferWriteRejectGuards() {
+            buffer, 0u, valid, fuse::physics::narrowphase::ContactBufferWriteRejectReason::None),
+            buffer, 0u, selfPair, fuse::physics::narrowphase::ContactBufferWriteRejectReason::SelfPair),
+            buffer, 1u, invalid, fuse::physics::narrowphase::ContactBufferWriteRejectReason::InvalidManifold),
+            buffer, 99u, valid, fuse::physics::narrowphase::ContactBufferWriteRejectReason::OutOfRangeSlot),
+                fuse::physics::narrowphase::ContactBufferWriteRejectReason::SelfPair),
+void testContactBufferCompactionClampRejectGuards() {
+            buffer, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::EmptyBuffer),
+            buffer, fuse::physics::narrowphase::ContactBufferCompactionRejectReason::AllValid),
+            buffer, fuse::physics::narrowphase::ContactBufferClampRejectReason::None),
+            buffer, fuse::physics::narrowphase::ContactBufferClampRejectReason::WithinCapacity),
+                fuse::physics::narrowphase::ContactBufferClampRejectReason::WithinCapacity),
+            clean, fuse::physics::narrowphase::ManifoldPruneRejectReason::CleanManifold),
+            separated, fuse::physics::narrowphase::ManifoldFinalizeRejectReason::NoPenetratingPoints),
+void testContactPairShouldRunDispatchGuards() {
+void testFrictionBasisRebuildRejectGuards() {
+            empty, fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::EmptyManifold),
+            noNormal, fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::NoValidNormal),
+            withBasis, fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::CanReuseBasis),
+                fuse::physics::narrowphase::FrictionBasisRebuildRejectReason::CanReuseBasis),
