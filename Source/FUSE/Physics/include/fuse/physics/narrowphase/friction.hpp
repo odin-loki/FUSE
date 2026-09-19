@@ -103,6 +103,7 @@ enum class FrictionBasisRejectReason : u8 {
     None = 0,
     EmptyManifold,
     InvalidNormal,
+    StaleBasis,
 };
 
 /// Human-readable label for friction-basis reject reasons (B4.5 deepen follow-up pass).
@@ -110,6 +111,11 @@ const char* friction_basis_reject_reason_name(FrictionBasisRejectReason reason);
 
 /// Diagnose why friction-basis rebuild would skip; vacuously succeeds when rebuild may proceed (B4.5 deepen follow-up pass).
 FrictionBasisRejectReason friction_basis_reject_reason(const ContactManifold& manifold);
+
+/// Diagnose beyond friction-basis rebuild state including stale cached frames (B4.6 deepen pass).
+FrictionBasisRejectReason friction_basis_beyond_reject_reason(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
 
 /// Returns true when `friction_basis_reject_reason` matches `expected` (B4.5 deepen follow-up pass).
 bool friction_basis_rejects_for_reason(
@@ -147,5 +153,40 @@ bool should_normalize_contact_normal_before_friction(
 
 /// Rebuild friction tangents only when preflight allows; returns false when skipped (B4.5 deepen follow-up pass).
 bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Normalize contact normal before friction rebuild when needed; returns false when invalid (B4.6 deepen pass).
+bool normalize_contact_normal_before_friction_if_needed(
+    ContactManifold& manifold,
+    f32 lengthEpsilon = 1e-4f);
+
+/// Const preflight for beyond friction-basis rebuild dispatch (B4.6 deepen pass).
+struct FrictionBasisBeyondPreflight {
+    FrictionBasisRejectReason reason = FrictionBasisRejectReason::None;
+    bool skipped = false;
+    bool stale = false;
+    bool needsNormalNormalize = false;
+    bool canReuse = false;
+    bool needsRebuild = false;
+
+    bool can_skip_rebuild() const {
+        return skipped || reason != FrictionBasisRejectReason::None || canReuse;
+    }
+};
+
+/// Populate beyond friction-basis preflight without mutating the manifold (B4.6 deepen pass).
+FrictionBasisBeyondPreflight preflight_friction_basis_beyond_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Returns true when beyond friction-basis rebuild should be skipped (B4.6 deepen pass).
+bool should_skip_friction_basis_beyond_rebuild(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f);
+
+/// Rebuild friction tangents only when beyond preflight allows (B4.6 deepen pass).
+bool rebuild_friction_basis_beyond_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Rebuild friction tangents only when beyond preflight allows; no-op otherwise (B4.6 deepen pass).
+void compute_friction_tangents_beyond_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

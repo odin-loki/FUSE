@@ -348,6 +348,8 @@ const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason) 
         return "EmptyManifold";
     case ManifoldPruneRejectReason::AllSeparated:
         return "AllSeparated";
+    case ManifoldPruneRejectReason::ExceedsMaxPoints:
+        return "ExceedsMaxPoints";
     }
     return "Unknown";
 }
@@ -524,6 +526,108 @@ bool finalize_contact_manifold_with_preflight(
             manifold.clear();
             return false;
         }
+    }
+    return generate_contact_manifold(manifold);
+}
+
+bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon) {
+    if (!manifold.hasValidNormal()) {
+        return false;
+    }
+    if (!manifold.needsNormalNormalization(lengthEpsilon)) {
+        return true;
+    }
+
+    const f32 normalLength = manifold.contactNormal.length();
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    return manifold.hasValidNormal();
+}
+
+ManifoldBeyondPrunePreflight preflight_manifold_beyond_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    ManifoldBeyondPrunePreflight preflight{};
+    const ManifoldPrunePreflight basePreflight =
+        preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    preflight.reason = basePreflight.reason;
+    if (preflight.reason != ManifoldPruneRejectReason::None) {
+        preflight.skipped = true;
+        return preflight;
+    }
+
+    preflight.needsNormalNormalize = manifold.needsNormalNormalization();
+    preflight.exceedsMaxPoints = manifold.pointCount > kMaxContactPointsPerManifold;
+    if (preflight.exceedsMaxPoints) {
+        preflight.reason = ManifoldPruneRejectReason::ExceedsMaxPoints;
+    }
+    return preflight;
+}
+
+bool should_skip_manifold_beyond_prune(
+    const ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    const ManifoldBeyondPrunePreflight preflight =
+        preflight_manifold_beyond_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    if (preflight.skipped) {
+        return true;
+    }
+    return preflight.can_skip_prune(shallowMinDepth) &&
+           !preflight_manifold_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth)
+                .needs_pruning();
+}
+
+bool prune_contact_manifold_beyond_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 shallowMinDepth) {
+    const ManifoldBeyondPrunePreflight preflight =
+        preflight_manifold_beyond_prune(manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+    if (preflight.reason == ManifoldPruneRejectReason::AllSeparated) {
+        manifold.clear();
+        return false;
+    }
+    if (preflight.reason == ManifoldPruneRejectReason::EmptyManifold) {
+        return false;
+    }
+
+    normalize_contact_normal_if_needed(manifold);
+    if (preflight.exceedsMaxPoints) {
+        manifold.pruneToMaxPoints(kMaxContactPointsPerManifold);
+    }
+    return prune_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, shallowMinDepth);
+}
+
+bool finalize_contact_manifold_beyond_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    const ManifoldFinalizePreflight preflight =
+        preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+    if (!preflight.can_finalize()) {
+        return false;
+    }
+
+    normalize_contact_normal_if_needed(manifold, frictionEpsilon);
+    if (preflight.needsPruning || preflight.needsNormalNormalize) {
+        if (!prune_contact_manifold_beyond_preflight(
+                manifold, separationEpsilon, duplicateEpsilon)) {
+            manifold.clear();
+            return false;
+        }
+    }
+    return generate_contact_manifold(manifold);
+}
+
+bool finalize_contact_manifold_if_needed(ContactManifold& manifold) {
+    if (!can_finalize_contact_manifold(manifold)) {
+        return false;
     }
     return generate_contact_manifold(manifold);
 }
