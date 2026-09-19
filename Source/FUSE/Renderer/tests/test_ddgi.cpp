@@ -4106,3 +4106,32 @@ void testKernelPreflightDeepenGuards() {
 // --- deepen additive from deepen-ddgi-b56-guards-3cf8 ---
     expectTrue(fuse::renderer::ddgi_util::classifyTrilinearSampleReject(desc, invalid, cache.data(), 8u) ==
                "classifyTrilinearSampleReject invalid_sample_coords");
+
+// --- deepen additive from deepen-ddgi-guards-aca0 ---
+void testDdgiDeepenPassGuards() {
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(desc, cache.data(), 8u) ==
+               "classifyProbeGridSourceReject none for accessible grid");
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeGridSource(desc, cache.data(), 8u),
+               "preflightProbeGridSource succeeds for accessible grid");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeGridSource(desc, cache.data(), 8u),
+               "wouldSkipProbeGridSource false for accessible grid");
+                   fuse::renderer::ProbeGridSourceRejectReason::None),
+                   fuse::renderer::ProbeGridSourceRejectReason::NullCache),
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(desc, nullptr, 8u) ==
+                   fuse::renderer::ProbeGridSourceRejectReason::NullCache,
+               "classifyProbeGridSourceReject null cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeGridSource(desc, nullptr, 8u),
+               "wouldSkipProbeGridSource true for null cache");
+                               fuse::renderer::ProbeGridSourceRejectReason::UndersizedCache),
+    expectTrue(fuse::renderer::ddgi_util::tryCanTrilinearSampleAtProbeCoords(
+               "tryCanTrilinearSampleAtProbeCoords succeeds on accessible grid");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, built, cache.data(), 8u),
+               "tryCanTrilinearSampleAtProbeCoords succeeds for clampable weights");
+    expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::ClampableWeights,
+    expectTrue(fuse::renderer::ddgi_util::tryValidateCacheIndexAtCoord(desc, cache.data(), validCoord, 8u, cacheReason),
+               "tryValidateCacheIndexAtCoord succeeds for valid coord");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(desc, cache.data(), oobCoord, 8u),
+               "wouldSkipCacheIndexLookupAtCoord false for clampable OOB coord");
+    expectNear(coordIrradiance.x, 5.f, 1e-5f, "tryReadIrradianceAtCoord returns stored irradiance");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexLookupAtCoord(empty, cache.data(), validCoord, 8u),
+               "wouldSkipCacheIndexLookupAtCoord true on empty grid");

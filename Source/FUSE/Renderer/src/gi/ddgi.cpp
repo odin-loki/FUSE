@@ -3054,3 +3054,22 @@ bool tryPreflightProbeTrilinearSample(const DDGIDesc& desc,
     return !probeScheduleRejectReasonIsBlocking(outReason);
     outReason = classifyProbeScheduleRejectAtRate(
     return !probeKernelRejectReasonIsBlocking(outReason);
+
+// --- deepen additive from deepen-ddgi-guards-aca0 ---
+    case ProbeGridSourceRejectReason::NullCache:
+    case ProbeGridSourceRejectReason::UndersizedCache:
+    tryValidateProbeGridSource(desc, cache, cache_count, reason);
+        outReason = ProbeGridSourceRejectReason::NullCache;
+        outReason = ProbeGridSourceRejectReason::UndersizedCache;
+bool wouldSkipProbeGridSource(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 cache_count) {
+    return !tryValidateProbeGridSource(desc, cache, cache_count, reason);
+    const ProbeGridSourceRejectReason reject = classifyProbeGridSourceReject(desc, cache, cache_count);
+    return tryCanTrilinearSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
+bool tryCanTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
+    ProbeGridSourceRejectReason sourceReason = ProbeGridSourceRejectReason::None;
+    if (!tryValidateProbeGridSource(desc, cache, cache_count, sourceReason)) {
+    if (sampleReason == ProbeSampleCoordsRejectReason::OutOfRangeWeights) {
+    return !tryCanTrilinearSampleAtProbeCoords(desc, coords, cache, cache_count, reason);
+bool tryValidateCacheIndexAtCoord(const DDGIDesc& desc,
+    return tryValidateCacheIndexAtCoord(desc, coord, cache_count, outReason);
+bool wouldClampCacheIndexLookupCoord(const DDGIDesc& desc, const ProbeGridCoord& coord) {

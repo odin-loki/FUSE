@@ -995,3 +995,9 @@ bool probeCoordRejectReasonIsBlocking(ProbeCoordRejectReason reason);
     static bool preflightProbeIndexFromCoord(const DDGIDesc& desc,
     static bool wouldSkipProbeIndexFromCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
 bool tryPreflightProbeTrilinearSample(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-aca0 ---
+bool wouldSkipProbeGridSource(const DDGIDesc& desc, const IrradianceCacheEntry* cache, u32 cache_count);
+bool tryCanTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
+bool tryValidateCacheIndexAtCoord(const DDGIDesc& desc,
+bool wouldClampCacheIndexLookupCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
