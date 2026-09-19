@@ -1264,3 +1264,9 @@ BroadphaseShapeInsertPreflight preflightBroadphaseShapeInsert(
     case MergePairsIntoBufferRejectReason::AllInvalidPairs:
         return MergePairsIntoBufferRejectReason::AllInvalidPairs;
     preflight.allInvalidPairs = preflight.reason == MergePairsIntoBufferRejectReason::AllInvalidPairs;
+
+// --- deepen additive from deepen-b4-broadphase-guards-f861 ---
+    case CellSpanClampRejectReason::WithinSpan:
+const char* broadphasePairSlotRejectReasonName(BroadphasePairSlotRejectReason reason) {
+    case BroadphasePairSlotRejectReason::None:
+    case BroadphasePairSlotRejectReason::ZeroPairSlots:

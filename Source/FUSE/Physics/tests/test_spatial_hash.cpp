@@ -3282,3 +3282,27 @@ void testMergePairsAllInvalidPreflightGuards() {
         fuse::physics::broadphase::preflightMergePairsIntoBuffer(invalidPairs, buffer);
     testBroadphaseShapeInsertPreflightGuards();
     testMergePairsAllInvalidPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-f861 ---
+    const fuse::physics::broadphase::PairBufferWriteSlotPreflight validPreflight =
+    expectTrue(validPreflight.canWrite(), "writeSlot preflight accepts valid slot");
+                               fuse::physics::broadphase::CellSpanClampRejectReason::WithinSpan),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellSpanClampRejectReason::WithinSpan),
+    expectTrue(emptyPreflight.emptyRange, "span-clamp preflight marks empty range");
+    expectTrue(!emptyPreflight.canClamp(), "span-clamp preflight cannot clamp empty range");
+                   planeRange, 4u, fuse::physics::broadphase::CellSpanClampRejectReason::WithinSpan),
+void testBroadphasePairSlotRejectReasonGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::broadphasePairSlotRejectReason(0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphasePairSlotRejectReason::ZeroPairSlots),
+    expectTrue(fuse::physics::broadphase::broadphasePairSlotRejectsForReason(
+                   0u, fuse::physics::broadphase::BroadphasePairSlotRejectReason::ZeroPairSlots),
+    expectTrue(std::strcmp(fuse::physics::broadphase::broadphasePairSlotRejectReasonName(
+                               fuse::physics::broadphase::BroadphasePairSlotRejectReason::ZeroPairSlots),
+    const fuse::physics::broadphase::BroadphasePairSlotPreflight zeroPreflight =
+        fuse::physics::broadphase::preflightBroadphasePairSlots(0u);
+    expectTrue(zeroPreflight.zeroPairSlots, "pair-slot preflight marks zero slots");
+    expectTrue(!zeroPreflight.canWriteSlots(), "pair-slot preflight cannot write zero slots");
+    const fuse::physics::broadphase::BroadphasePairSlotPreflight validPreflight =
+        fuse::physics::broadphase::preflightBroadphasePairSlots(4u);
+    expectTrue(validPreflight.canWriteSlots(), "pair-slot preflight accepts non-zero slots");
+    testBroadphasePairSlotRejectReasonGuards();

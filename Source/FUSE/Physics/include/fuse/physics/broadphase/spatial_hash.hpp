@@ -1343,3 +1343,23 @@ struct BroadphaseShapeInsertPreflight {
     BroadphaseShapeInsertRejectReason reason = BroadphaseShapeInsertRejectReason::None;
     bool canInsert() const { return reason == BroadphaseShapeInsertRejectReason::None; }
 BroadphaseShapeInsertPreflight preflightBroadphaseShapeInsert(
+
+// --- deepen additive from deepen-b4-broadphase-guards-f861 ---
+        return CellSpanClampRejectReason::WithinSpan;
+    preflight.withinSpan = preflight.reason == CellSpanClampRejectReason::WithinSpan;
+enum class BroadphasePairSlotRejectReason : u8 {
+const char* broadphasePairSlotRejectReasonName(BroadphasePairSlotRejectReason reason);
+FUSE_PHYSICS_INLINE BroadphasePairSlotRejectReason broadphasePairSlotRejectReason(u32 totalCellSlots) {
+        return BroadphasePairSlotRejectReason::ZeroPairSlots;
+    return BroadphasePairSlotRejectReason::None;
+FUSE_PHYSICS_INLINE bool broadphasePairSlotRejectsForReason(u32 totalCellSlots, BroadphasePairSlotRejectReason expected) {
+    return broadphasePairSlotRejectReason(totalCellSlots) == expected;
+struct BroadphasePairSlotPreflight {
+    BroadphasePairSlotRejectReason reason = BroadphasePairSlotRejectReason::None;
+    bool canWriteSlots() const { return reason == BroadphasePairSlotRejectReason::None; }
+FUSE_PHYSICS_INLINE BroadphasePairSlotPreflight preflightBroadphasePairSlots(u32 totalCellSlots) {
+    BroadphasePairSlotPreflight preflight{};
+    preflight.reason = broadphasePairSlotRejectReason(totalCellSlots);
+    preflight.zeroPairSlots = preflight.reason == BroadphasePairSlotRejectReason::ZeroPairSlots;
+    return !preflightBroadphasePairSlots(totalCellSlots).canWriteSlots();
+    return preflightBroadphasePairSlots(totalCellSlots).canWriteSlots();
