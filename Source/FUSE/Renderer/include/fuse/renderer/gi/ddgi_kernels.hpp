@@ -144,6 +144,7 @@ bool shouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Early-out when probe trace kernel launch would be rejected — includes reject-reason diagnostics.
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// Early-out when probe trace kernel launch would be rejected.
 
 /// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
 bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
@@ -312,6 +313,7 @@ bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelReject
 /// True when probe blend kernel launch preflight passes (B5.6 deepen).
 /// Early-out when probe trace kernel launch would be rejected (B5.6 deepen).
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
+/// Early-out when probe blend kernel launch would be rejected.
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
