@@ -253,7 +253,6 @@ bool isValidEventName(const char* name) {
 EventNameRejectReason diagnoseEventNameRejectReason(const char* name) {
     if (name == nullptr) {
         return EventNameRejectReason::Null;
-    }
     if (name[0] == '\0') {
         return EventNameRejectReason::Empty;
     return EventNameRejectReason::None;
@@ -640,6 +639,10 @@ bool isValidProfilerName(const char* name) {
     return isValidEventName(name);
 }
 
+bool isValidEventName(const char* name) {
+    return name != nullptr && name[0] != '\0';
+}
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return isValidEventName(event.name);
 
@@ -772,6 +775,9 @@ const ProfileEvent& eventAt(u32 index) {
 
 
 
+
+
+    const u32 count = eventCount();
     const u32 head = g_writeHead.load(std::memory_order_acquire);
     const u32 start = head >= count ? head - count : 0u;
     const u32 ringIndex = (start + index) % kRingCapacity;
@@ -968,6 +974,16 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     return tryEventAt(index, outEvent);
 }
 
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -1018,6 +1034,10 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.activeFlowNestingDepth = flowNestingDepth();
     preflight.maxScopeNestingDepth = maxNestingDepth();
     preflight.maxFlowNestingDepth = maxFlowNestingDepth();
+    for (u32 i = 0u; i < preflight.eventCount; ++i) {
+        if (isValidEventName(eventAt(i).name)) {
+            ++preflight.exportableEventCount;
+        }
     preflight.bufferEmpty = isBufferEmpty();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
@@ -1173,6 +1193,7 @@ bool hasExportableEvents() {
 
 bool isChromeTraceExportEmpty() {
     return !hasExportableEvents();
+
 
 
 void reset() {

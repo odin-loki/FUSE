@@ -286,6 +286,8 @@ enum class ChromeTraceExportRejectReason : u8 {
     bool isTraceComplete() const {
         return !unbalancedScopeNesting && !unbalancedFlowNesting && !hasOpenAsyncFlows;
 
+
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
