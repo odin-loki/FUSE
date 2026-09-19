@@ -1,5 +1,7 @@
 #include <fuse/project/cook_content_hash.hpp>
 
+#include <fuse/project/cook_cache.hpp>
+
 #include <filesystem>
 #include <fstream>
 
@@ -185,6 +187,10 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "empty_dependency_list";
     case CookHashRejectReason::ZeroSourceHash:
         return "zero_source_hash";
+    case CookHashRejectReason::InvalidCacheEntry:
+        return "invalid_cache_entry";
+    case CookHashRejectReason::UnsupportedAssetKind:
+        return "unsupported_asset_kind";
     }
     return "unknown";
 }
@@ -321,6 +327,41 @@ CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
 CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     (void)upstream_hash;
     return preflight_cook_cache_key(source_hash, upstream_hash);
+}
+
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_entry(entry)) {
+        preflight.reason = CookHashRejectReason::InvalidCacheEntry;
+        return preflight;
+    }
+
+    switch (entry.kind) {
+    case CookAssetKind::Mesh: {
+        MeshImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_mesh_import_hash(desc);
+    }
+    case CookAssetKind::Texture: {
+        TextureImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_texture_import_hash(desc);
+    }
+    case CookAssetKind::Audio: {
+        AudioImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        return preflight_audio_import_hash(desc);
+    }
+    case CookAssetKind::Shader:
+        preflight.reason = CookHashRejectReason::UnsupportedAssetKind;
+        return preflight;
+    }
+
+    preflight.reason = CookHashRejectReason::UnsupportedAssetKind;
+    return preflight;
 }
 
 u64 hash_manifest_entry(const CookManifestEntry& entry) {

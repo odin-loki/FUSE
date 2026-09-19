@@ -38,6 +38,17 @@ struct CookCachePruneEstimate {
     [[nodiscard]] u32 total() const { return invalid_entries + stale_entries; }
 };
 
+/// Read-only invalidation reconcile breakdown — stale upstream plus prune buckets (B7.9 deepen).
+struct CookCacheInvalidationEstimate {
+    u32 stale_upstream_entries = 0;
+    u32 prune_invalid_entries = 0;
+    u32 prune_stale_entries = 0;
+
+    [[nodiscard]] u32 total() const {
+        return stale_upstream_entries + prune_invalid_entries + prune_stale_entries;
+    }
+};
+
 /// Zero is reserved — empty or unreadable source keys must not enter the cache.
 [[nodiscard]] inline bool is_valid_cook_cache_key(u64 content_hash) {
     return content_hash != 0;
@@ -92,6 +103,15 @@ public:
 
     /// Read-only invalidation probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] bool would_invalidate(u64 content_hash) const;
+    [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
+    [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                  u64 current_content_hash) const;
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    [[nodiscard]] bool would_invalidate_downstream_of(const std::string& output_path,
+                                                      const std::vector<CookJobDependencyEdge>& edges,
+                                                      const std::vector<CookJob>& jobs) const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
@@ -107,6 +127,9 @@ public:
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_invalid_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;
+    /// Combined stale-upstream + prune reconcile breakdown without mutating stats (B7.9 deepen).
+    [[nodiscard]] CookCacheInvalidationEstimate estimate_invalidation_reconcile(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     /// Prune reconcile breakdown without mutating stats (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_removals() const;
     /// True when `estimate_prune_removals().total()` is non-zero (B7.9 deepen).
