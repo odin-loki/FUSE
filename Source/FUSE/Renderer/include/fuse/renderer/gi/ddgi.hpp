@@ -374,6 +374,7 @@ enum class ProbeTrilinearSampleRejectReason : u8 {
     ClampableSampleCoords,
     UndersizedCache,
     NullCache,
+    ClampableWeights,
 };
 
 /// Human-readable label for trilinear sample reject reasons (logging / tests).
@@ -1177,6 +1178,12 @@ ProbeTrilinearSampleRejectReason classifyTrilinearProbeIrradianceReject(const DD
 /// Early-out when trilinear sampling would be rejected.
 /// Classify why trilinear sample preflight would reject — same ordering as `tryCanSampleAtProbeCoords`.
 /// Early-out when trilinear probe sampling would be rejected — same ordering as `tryCanSampleAtProbeCoords`.
+/// Preflight guard before trilinear probe sampling; soft-fails on clampable weights.
+bool canTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
+/// Diagnose why trilinear sample preflight would reject; warns on clampable weights.
+bool tryTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
+/// Early-out when trilinear probe sampling would be rejected — same ordering as `tryTrilinearSampleAtProbeCoords`.
+/// Classify why trilinear sample preflight would reject — same ordering as `tryTrilinearSampleAtProbeCoords`.
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1284,6 +1291,8 @@ bool wouldSkipCacheIndexLookup(const DDGIDesc& desc,
 /// Early-out when coord-based cache-index lookup would be rejected.
 bool wouldSkipCacheIndexLookupAtCoord(const DDGIDesc& desc,
                                       const ProbeGridCoord& coord,
+                                      const IrradianceCacheEntry* cache,
+                                      u32 cache_count);
 /// Classify why cache-index preflight would reject — same ordering as `tryValidateCacheIndex`.
 CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
 /// Non-mutating cache-index preflight — returns true when lookup would proceed.
@@ -1820,6 +1829,10 @@ ProbeTrilinearSampleRejectReason classifyProbeTrilinearSampleRejectAtCoords(cons
 /// Non-mutating trilinear sample preflight at built sample coords — returns true when sampling would proceed.
 /// Non-mutating trilinear sample preflight from a world position — returns true when sampling would proceed.
 /// Early-out when trilinear probe sampling would be rejected — same ordering as `preflightTrilinearProbeSample`.
+/// Trilinear sample at pre-built coords with guard preflight and reject-reason diagnostics.
+bool tryTrilinearProbeIrradianceAtCoords(const DDGIDesc& desc,
+                                         fuse::math::Vec3& out_irradiance,
+                                         ProbeTrilinearSampleRejectReason& outReason);
 /// Directional octahedral bilinear sample within one probe cache entry (CPU stub).
 fuse::math::Vec3 sampleDirectionalIrradianceAtProbe(const IrradianceCacheEntry& entry,
                                                   const fuse::math::Vec3& direction,
