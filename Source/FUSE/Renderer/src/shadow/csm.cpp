@@ -489,81 +489,38 @@ bool CascadedShadowMapLayout::needsCascadeSplitClamp(const CascadedShadowMapDesc
         if (split < 0.f || split > 1.f) {
             return true;
         }
-    }
     return false;
-}
 
 bool CascadedShadowMapLayout::needsCascadeSplitMonotonicityRepair(const CascadedShadowMapDesc& desc) {
     f32 previousSplit = -1.f;
-    for (u32 cascade = 0; cascade < kCascadeCount; ++cascade) {
-        const f32 split = desc.cascadeSplits[cascade];
         if (split < previousSplit) {
-            return true;
-        }
         previousSplit = split;
-    }
-    return false;
-}
 
 bool CascadedShadowMapLayout::needsLastCascadeSplitPin(const CascadedShadowMapDesc& desc) {
     return !splitFractionNearOne(desc.cascadeSplits[kCascadeCount - 1u]);
-}
 
 bool CascadedShadowMapLayout::needsCascadeSplitSanitization(const CascadedShadowMapDesc& desc) {
     return needsCascadeSplitClamp(desc) || needsCascadeSplitMonotonicityRepair(desc) ||
            needsLastCascadeSplitPin(desc);
-}
 
-bool CascadedShadowMapLayout::needsCascadeSplitClamp(const CascadedShadowMapDesc& desc) {
-    for (u32 cascade = 0; cascade < kCascadeCount; ++cascade) {
-        const f32 split = desc.cascadeSplits[cascade];
-        if (split < 0.f || split > 1.f) {
-            return true;
-        }
-    }
-    return false;
-}
 
-bool CascadedShadowMapLayout::needsCascadeSplitMonotonicityRepair(const CascadedShadowMapDesc& desc) {
-    f32 previousSplit = -1.f;
-    for (u32 cascade = 0; cascade < kCascadeCount; ++cascade) {
-        const f32 split = desc.cascadeSplits[cascade];
-        if (split < previousSplit) {
-            return true;
-        }
-        previousSplit = split;
-    }
-    return false;
-}
 
-bool CascadedShadowMapLayout::needsLastCascadeSplitPin(const CascadedShadowMapDesc& desc) {
-    return !splitFractionNearOne(desc.cascadeSplits[kCascadeCount - 1u]);
-}
 
 bool CascadedShadowMapLayout::needsCascadeSplitSanitize(const CascadedShadowMapDesc& desc) {
-    return needsCascadeSplitClamp(desc) || needsCascadeSplitMonotonicityRepair(desc) ||
-           needsLastCascadeSplitPin(desc);
-}
 
 void CascadedShadowMapLayout::sanitizeCascadeSplits(CascadedShadowMapDesc& desc) {
     if (!needsCascadeSplitSanitize(desc)) {
         return;
-    }
 
     if (needsCascadeSplitClamp(desc)) {
         clampCascadeSplitFractions(desc);
-    }
     if (needsCascadeSplitMonotonicityRepair(desc)) {
         enforceCascadeSplitMonotonicity(desc);
-    }
     if (needsLastCascadeSplitPin(desc)) {
         pinLastCascadeSplit(desc);
-    }
-}
 
 void CascadedShadowMapLayout::sanitizeCascadedShadowMapDesc(CascadedShadowMapDesc& desc) {
     sanitizeCascadeSplits(desc);
-}
 
 void CascadedShadowMapLayout::populateCascadeSplitsSanitized(const CascadeSplitParams& params,
                                                              const ShadowCameraParams& camera,
@@ -574,6 +531,15 @@ bool CascadedShadowMapLayout::preflightCascadeSplits(const CascadedShadowMapDesc
     return !cascadeSplitsNeedSanitize(desc) && validateClampedCascadeSplits(desc);
 void CascadedShadowMapLayout::sanitizeCascadeSplitsIfNeeded(CascadedShadowMapDesc& desc) {
     if (needsCascadeSplitSanitization(desc)) {
+void CascadedShadowMapLayout::sanitizeCascadeSplitClampIfNeeded(CascadedShadowMapDesc& desc) {
+
+void CascadedShadowMapLayout::sanitizeCascadeSplitMonotonicityIfNeeded(CascadedShadowMapDesc& desc) {
+
+void CascadedShadowMapLayout::sanitizeCascadeSplitPinIfNeeded(CascadedShadowMapDesc& desc) {
+
+    sanitizeCascadeSplitClampIfNeeded(desc);
+    sanitizeCascadeSplitMonotonicityIfNeeded(desc);
+    sanitizeCascadeSplitPinIfNeeded(desc);
 }
 
 bool CascadedShadowMapLayout::validateCascadeRanges(const CascadedShadowMapDesc& desc,
@@ -765,6 +731,10 @@ CascadeShadowBypassReason CascadeLightSpaceLayout::classifyCascadeShadowBypass(
     if (isEmptyCameraCascadeGuardActive(camera)) {
         return CascadeShadowBypassReason::EmptyCameraDepthRange;
     return CascadeShadowBypassReason::None;
+bool CascadeLightSpaceLayout::shouldBypassCascadeShadowBuildForEmptyLight(
+
+bool CascadeLightSpaceLayout::shouldBypassCascadeShadowBuildForEmptyCamera(
+    const ShadowCameraParams& camera) {
 
 bool CascadeLightSpaceLayout::shouldBypassAllCascadeShadowBuilds(const ShadowCameraParams& camera,
     return cascadeShadowBypassReasonIsBlocking(classifyCascadeShadowBypass(camera, lightDirection));
@@ -801,6 +771,33 @@ bool CascadeLightSpaceLayout::isEmptyFrustumCascadeShadowGuard(u32 cascadeIndex,
 bool CascadeLightSpaceLayout::isDegenerateRangeCascadeShadowGuard(u32 cascadeIndex,
     const CascadeRange range = CascadedShadowMapLayout::computeCascadeRange(cascadeIndex, desc, camera);
     return isDegenerateCascadeRange(range, camera);
+    return shouldBypassCascadeShadowBuildForEmptyLight(lightDirection) ||
+           shouldBypassCascadeShadowBuildForEmptyCamera(camera);
+}
+
+CascadeShadowBypassReason CascadeLightSpaceLayout::classifyCascadeShadowBypass(
+    const ShadowCameraParams& camera,
+    const fuse::math::Vec3& lightDirection) {
+    if (shouldBypassCascadeShadowBuildForEmptyLight(lightDirection)) {
+        return CascadeShadowBypassReason::EmptyLightDirection;
+    if (shouldBypassCascadeShadowBuildForEmptyCamera(camera)) {
+        return CascadeShadowBypassReason::EmptyCameraDepthRange;
+    return CascadeShadowBypassReason::None;
+
+bool CascadeLightSpaceLayout::shouldSkipCascadeShadowBuildForEmptyFrustum(
+    u32 cascadeIndex,
+    const CascadedShadowMapDesc& desc,
+    const ShadowCameraParams& camera) {
+    return CascadedShadowMapLayout::isEmptyCascadeFrustum(cascadeIndex, desc, camera);
+
+bool CascadeLightSpaceLayout::shouldSkipCascadeShadowBuildForDegenerateRange(
+
+CascadeShadowSkipReason CascadeLightSpaceLayout::classifyCascadeShadowPerCascadeSkip(
+    if (shouldSkipCascadeShadowBuildForEmptyFrustum(cascadeIndex, desc, camera)) {
+        return CascadeShadowSkipReason::EmptyCascadeFrustum;
+    if (shouldSkipCascadeShadowBuildForDegenerateRange(cascadeIndex, desc, camera)) {
+        return CascadeShadowSkipReason::DegenerateCascadeRange;
+    return CascadeShadowSkipReason::None;
 }
 
 CascadeShadowSkipReason CascadeLightSpaceLayout::classifyCascadeShadowSkip(
@@ -841,9 +838,10 @@ CascadeShadowSkipReason classifyCascadeShadowSkip(u32 cascadeIndex,
     if (isEmptyFrustumCascadeShadowGuard(cascadeIndex, desc, camera)) {
     if (isDegenerateRangeCascadeShadowGuard(cascadeIndex, desc, camera)) {
         return CascadeShadowSkipReason::DegenerateCascadeRange;
-    }
 
-    return CascadeShadowSkipReason::None;
+    if (shouldBypassCascadeShadowBuildForEmptyLight(lightDirection)) {
+    if (shouldBypassCascadeShadowBuildForEmptyCamera(camera)) {
+    return classifyCascadeShadowPerCascadeSkip(cascadeIndex, desc, camera);
 }
 
 bool CascadeLightSpaceLayout::wouldSkipCascadeShadowBuild(u32 cascadeIndex,
@@ -954,6 +952,9 @@ bool CascadeShadowDataLayout::preflightPopulateCascadeShadowData(const CascadedS
             *reason = CascadeShadowSkipReason::DegenerateCascadeRange;
 
     return CascadeLightSpaceLayout::countValidCascadeMatrixSlots(desc, camera, lightDirection, cascadeCount) > 0u;
+bool cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason reason) {
+    return reason != CascadeShadowBypassReason::None;
+
 const char* cascadeShadowBypassReasonLabel(CascadeShadowBypassReason reason) {
     switch (reason) {
     case CascadeShadowBypassReason::None:
@@ -979,23 +980,17 @@ const char* cascadeShadowSkipReasonLabel(CascadeShadowSkipReason reason) {
         return "empty_cascade_frustum";
     case CascadeShadowSkipReason::DegenerateCascadeRange:
         return "degenerate_cascade_range";
-    return "unknown";
 }
 
 
 void recordCascadeShadowSkip(CascadeShadowSkipCounts& counts, CascadeShadowSkipReason reason) {
-    switch (reason) {
-    case CascadeShadowSkipReason::None:
         break;
-    case CascadeShadowSkipReason::EmptyLightDirection:
         ++counts.emptyLight;
         ++counts.total;
-    case CascadeShadowSkipReason::EmptyCameraDepthRange:
         ++counts.emptyCamera;
-    case CascadeShadowSkipReason::EmptyCascadeFrustum:
         ++counts.emptyFrustum;
-    case CascadeShadowSkipReason::DegenerateCascadeRange:
         ++counts.degenerateRange;
+
 
 
 bool cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason reason) {
@@ -1012,6 +1007,19 @@ bool cascadeShadowSkipReasonIsGlobal(CascadeShadowSkipReason reason) {
     case CascadeShadowSkipReason::DegenerateCascadeRange:
         return false;
     }
+
+bool cascadeShadowSkipReasonIsPerCascade(CascadeShadowSkipReason reason) {
+    switch (reason) {
+    case CascadeShadowSkipReason::EmptyCascadeFrustum:
+    case CascadeShadowSkipReason::DegenerateCascadeRange:
+        return true;
+    case CascadeShadowSkipReason::None:
+    case CascadeShadowSkipReason::EmptyLightDirection:
+    case CascadeShadowSkipReason::EmptyCameraDepthRange:
+        return false;
+    }
+    return false;
+}
 
 const char* cascadeShadowSkipReasonLabel(CascadeShadowSkipReason reason) {
         return "none";
