@@ -2339,3 +2339,11 @@ bool preflightFroxelDensityLookupAtCoord(const FroxelDensityGrid& grid,
 GridDensityRejectReason classifyFroxelGridDensityReject(const FroxelDensityGrid& grid,
 bool preflightFroxelGridDensity(const FroxelDensityGrid& grid,
     const GridDensityRejectReason reject = classifyFroxelGridDensityReject(grid, desc, epsilon);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-45a3 ---
+bool preflightScreenDepthToSampleCoords(f32 screenX,
+    return ok && !screenMappingRejectReasonIsBlocking(rejectReason);
+bool preflightScreenDepthToFroxelIndex(f32 screenX,
+    const bool ok = FroxelGridLayout::tryMapScreenDepthToFroxelIndex(
+    const bool ok = tryPreflightSampleCoords(coords, desc, rejectReason);
+    return ok && !sampleCoordRejectReasonIsBlocking(rejectReason);

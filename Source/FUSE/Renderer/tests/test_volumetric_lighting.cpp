@@ -3838,3 +3838,14 @@ void testFroxelRejectClassifyAndPreflightGuards() {
                "preflightSampleCoords agrees with canPreflightSampleCoords");
                "preflightDensityLookup agrees with canLookupAtIndex on accessible grid");
                "preflightFroxelPopulate agrees with canPopulateFromAnalyticFog");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-45a3 ---
+    expectTrue(fuse::renderer::preflightScreenDepthToSampleCoords(0.5f, 0.5f, 10.f, desc, camera),
+               "preflightScreenDepthToSampleCoords succeeds for in-range depth");
+    expectTrue(fuse::renderer::preflightScreenDepthToFroxelIndex(
+               "preflightScreenDepthToFroxelIndex succeeds for in-range depth");
+    expectTrue(mappedIndex < desc.froxelCount(), "preflightScreenDepthToFroxelIndex returns valid index");
+    expectTrue(!fuse::renderer::preflightScreenDepthToSampleCoords(0.5f, 0.5f, 10.f, zeroDesc, camera),
+               "preflightFroxelSampleCoords still succeeds for clampable weights");
+               "classifyFroxelSampleCoordsReject out_of_bounds for hard OOB tile");
+               "preflightFroxelSampleCoords rejects hard OOB tile");
