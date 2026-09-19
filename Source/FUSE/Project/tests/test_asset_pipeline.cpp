@@ -1649,6 +1649,39 @@ void testCookerReconcileEstimateProbes() {
                "changed upstream entry remains stale for prune reconcile");
 }
 
+void testCookerReconcileShouldSkipHelpers() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_skip_reconcile.obj", "# skip reconcile\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_skip_reconcile.fusemesh";
+    manifest.assets.push_back(entry);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for should_skip reconcile ok");
+
+    const fuse::project::CookCacheReconcileEstimate fresh = cooker.estimate_reconcile_invalidation(manifest);
+    expectTrue(fresh.should_skip(), "fresh reconcile estimate should_skip");
+    expectTrue(cooker.should_skip_reconcile_invalidation(manifest),
+               "cooker should_skip_reconcile_invalidation on fresh cache");
+    expectTrue(fuse::project::should_skip_reconcile_invalidation(fresh),
+               "free should_skip_reconcile_invalidation mirrors struct method");
+    expectTrue(cooker.should_skip_prune_reconcile(), "should_skip_prune_reconcile on fresh cache");
+
+    writeTempFile(source, "# skip reconcile revised\n");
+    const fuse::project::CookCacheReconcileEstimate stale = cooker.estimate_reconcile_invalidation(manifest);
+    expectTrue(!stale.should_skip(), "stale reconcile estimate does not should_skip");
+    expectTrue(!cooker.should_skip_reconcile_invalidation(manifest),
+               "cooker should_skip_reconcile_invalidation false after upstream change");
+    expectTrue(!cooker.should_skip_prune_reconcile(),
+               "should_skip_prune_reconcile false when stale entry present");
+
+    expectTrue(cooker.cache().would_invalidate_source(source),
+               "would_invalidate_source true for stale upstream entry");
+}
+
 void testCookCacheDownstreamSourceProbe() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_downstream_a.obj", "# downstream a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_downstream_b.obj", "# downstream b\n");
@@ -1789,6 +1822,7 @@ int main() {
     testCookDirtyInvalidatesCache();
     testCookerInvalidationCountProbes();
     testCookerReconcileEstimateProbes();
+    testCookerReconcileShouldSkipHelpers();
     testCookCacheDownstreamSourceProbe();
 
     fuse::core::shutdown();
