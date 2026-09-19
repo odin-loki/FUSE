@@ -9,6 +9,84 @@
 
 namespace fuse::physics::narrowphase {
 
+struct ContactBufferSoA;
+
+/// Why contact-buffer compaction would early-out (B4.6 deepen pass).
+enum class ContactBufferCompactRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    NoWork,
+};
+
+/// Human-readable label for contact-buffer compact reject reasons (B4.6 deepen pass).
+const char* contact_buffer_compact_reject_reason_name(ContactBufferCompactRejectReason reason);
+
+/// Diagnose why contact-buffer compact would skip; vacuously succeeds when compact may proceed (B4.6 deepen pass).
+ContactBufferCompactRejectReason contact_buffer_compact_reject_reason(const ContactBufferSoA& buffer);
+
+/// Returns true when `contact_buffer_compact_reject_reason` matches `expected` (B4.6 deepen pass).
+bool contact_buffer_compact_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferCompactRejectReason expected);
+
+/// Read-only compact diagnostics — no mutation (B4.6 deepen pass).
+struct ContactBufferCompactPreflight {
+    ContactBufferCompactRejectReason reason = ContactBufferCompactRejectReason::None;
+    bool emptyBuffer = false;
+    bool noWork = false;
+
+    bool needsCompaction() const { return reason == ContactBufferCompactRejectReason::None; }
+};
+
+/// Populate compact preflight without mutating the buffer (B4.6 deepen pass).
+ContactBufferCompactPreflight preflight_contact_buffer_compact(const ContactBufferSoA& buffer);
+
+/// Non-mutating compact skip predicate — inverse of `needsCompaction` (B4.6 deepen pass).
+bool can_skip_contact_buffer_compact(const ContactBufferSoA& buffer);
+
+/// Non-mutating compact predicate — mirrors `preflight_contact_buffer_compact` (B4.6 deepen pass).
+bool should_run_contact_buffer_compact(const ContactBufferSoA& buffer);
+
+/// Why contact-buffer compact-and-clamp would early-out (B4.6 deepen pass).
+enum class ContactBufferCompactAndClampRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    NoWork,
+};
+
+/// Human-readable label for contact-buffer compact-and-clamp reject reasons (B4.6 deepen pass).
+const char* contact_buffer_compact_and_clamp_reject_reason_name(ContactBufferCompactAndClampRejectReason reason);
+
+/// Diagnose why compact-and-clamp would skip; vacuously succeeds when work may proceed (B4.6 deepen pass).
+ContactBufferCompactAndClampRejectReason contact_buffer_compact_and_clamp_reject_reason(
+    const ContactBufferSoA& buffer);
+
+/// Returns true when `contact_buffer_compact_and_clamp_reject_reason` matches `expected` (B4.6 deepen pass).
+bool contact_buffer_compact_and_clamp_rejects_for_reason(
+    const ContactBufferSoA& buffer,
+    ContactBufferCompactAndClampRejectReason expected);
+
+/// Read-only compact-and-clamp diagnostics — no mutation (B4.6 deepen pass).
+struct ContactBufferCompactAndClampPreflight {
+    ContactBufferCompactAndClampRejectReason reason = ContactBufferCompactAndClampRejectReason::None;
+    bool emptyBuffer = false;
+    bool noWork = false;
+
+    bool needsCompactAndClamp() const {
+        return reason == ContactBufferCompactAndClampRejectReason::None;
+    }
+};
+
+/// Populate compact-and-clamp preflight without mutating the buffer (B4.6 deepen pass).
+ContactBufferCompactAndClampPreflight preflight_contact_buffer_compact_and_clamp(
+    const ContactBufferSoA& buffer);
+
+/// Non-mutating compact-and-clamp skip predicate (B4.6 deepen pass).
+bool can_skip_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer);
+
+/// Non-mutating compact-and-clamp predicate (B4.6 deepen pass).
+bool should_run_contact_buffer_compact_and_clamp(const ContactBufferSoA& buffer);
+
 /// SoA contact storage with clear/reuse for frame-to-frame narrowphase output (B4.3 deepen).
 struct ContactBufferSoA {
     std::vector<vec3> contactPoints;

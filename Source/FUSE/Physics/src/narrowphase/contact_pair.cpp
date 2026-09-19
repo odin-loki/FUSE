@@ -234,6 +234,8 @@ const char* contact_pair_reject_reason_name(ContactPairRejectReason reason) {
         return "AnyTrigger";
     case ContactPairRejectReason::BothMassless:
         return "BothMassless";
+    case ContactPairRejectReason::BothPlane:
+        return "BothPlane";
     }
     return "Unknown";
 }
@@ -436,16 +438,13 @@ bool generate_contact_manifold(ContactManifold& manifold) {
         return false;
     }
 
-    if (!manifold.hasValidNormal()) {
+    if (!normalize_contact_normal_if_needed(manifold)) {
         manifold.clear();
         return false;
     }
 
-    const f32 normalLength = manifold.contactNormal.length();
-    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
-
     manifold.syncLegacyFields();
-    compute_friction_tangents(manifold);
+    compute_friction_tangents_with_preflight(manifold);
     if (!manifold.hasFrictionBasis()) {
         manifold.clear();
         return false;
@@ -501,6 +500,10 @@ ContactPairRejectReason contact_pair_deepen_reject_reason(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     const ContactPairRejectReason baseReason = contact_pair_reject_reason(pair, bodies, shapes);
+    if (baseReason == ContactPairRejectReason::UnsupportedShapePair &&
+        is_plane_plane_contact_pair(pair, shapes)) {
+        return ContactPairRejectReason::BothPlane;
+    }
     if (baseReason != ContactPairRejectReason::None) {
         return baseReason;
     }
@@ -607,6 +610,20 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
     return preflight_narrowphase_batch(pairs, bodies, shapes).can_skip();
+}
+
+bool should_run_contact_pair_deepen_dispatch(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
+bool should_run_narrowphase_batch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !narrowphase_batch_rejects_all(pairs, bodies, shapes);
 }
 
 } // namespace fuse::physics::narrowphase
