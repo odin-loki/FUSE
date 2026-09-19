@@ -4198,3 +4198,16 @@ void testScheduledCacheIndexGuards() {
                "classifyProbeKernelRejectForDesc out_of_range_probe_index for OOB indices");
     expectTrue(fuse::renderer::gi::wouldSkipProbeKernelLaunchForDesc(desc, oobParams),
                "wouldSkipProbeKernelLaunchForDesc true for OOB indices");
+
+// --- deepen additive from deepen-ddgi-guards-b468 ---
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(desc) ==
+               "classifyProbeGridSourceReject none for sampleable grid");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(empty) ==
+               "classifyProbeGridSourceReject empty_grid");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(zeroRes) ==
+               "classifyProbeGridSourceReject zero_irradiance_res");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(badSpacing) ==
+               "classifyProbeGridSourceReject invalid_spacing");
+               "build coords for deepen-pass sample-coord wouldSkip test");
+    expectTrue(!fuse::renderer::gi::preflightProbeTraceKernelLaunch(zeroCount),
+    expectTrue(!fuse::renderer::gi::preflightProbeBlendKernelLaunch(zeroCount),

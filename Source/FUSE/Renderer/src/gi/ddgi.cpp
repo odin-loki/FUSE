@@ -3097,3 +3097,10 @@ bool wouldSkipScheduledCacheIndices(const DDGIDesc& desc,
     return !preflightScheduledCacheIndices(desc, cache, probe_indices, probe_count, cache_count);
     if (!tryCanLaunchProbeTraceKernel(params, reason)) {
                 return ProbeKernelRejectReason::OutOfRangeProbeIndex;
+
+// --- deepen additive from deepen-ddgi-guards-b468 ---
+    return !tryValidateProbeGridSource(desc, reason);
+    return tryValidateProbeGridSource(desc, reason);
+    return !preflightTrilinearProbeIrradiance(desc, world_position, cache, cache_count, &reason);
+        reject = ProbeGridLayout::isEmptyGrid(desc) ? ProbeTrilinearSampleRejectReason::EmptyGrid
+    } else if (!tryCanSampleAtProbeCoords(desc, coords, cache, cache_count, reject)) {
