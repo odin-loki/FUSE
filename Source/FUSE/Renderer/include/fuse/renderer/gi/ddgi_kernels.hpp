@@ -34,6 +34,25 @@ enum class ProbeKernelRejectReason : u8 {
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
 const char* probeKernelRejectReasonLabel(ProbeKernelRejectReason reason);
 
+/// True when a kernel reject reason would block launch (B5.6 deepen pass).
+bool probeKernelRejectReasonIsBlocking(ProbeKernelRejectReason reason);
+
+/// Classify why probe kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
+ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params);
+
+/// Early-out when either probe kernel launch would be rejected.
+bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
+
+/// Non-mutating kernel launch preflight — returns true when both kernels would proceed.
+bool preflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
+
+/// Populate kernel params from desc + scheduled indices without changing launch guards.
+void populateDDGIKernelParams(DDGIKernelParams& params,
+                              const DDGIDesc& desc,
+                              const u32* probe_indices,
+                              u32 probe_count,
+                              u64 frame_seed = 0);
+
 /// Preflight guard before probe trace kernel launch.
 bool canLaunchProbeTraceKernel(const DDGIKernelParams& params);
 /// Diagnose why probe trace launch preflight would reject.
