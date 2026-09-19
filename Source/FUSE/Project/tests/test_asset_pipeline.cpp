@@ -1994,3 +1994,9 @@ void testCookerReconcileEstimatorGuards() {
                "would_invalidate_upstream false for empty changed source");
     expectTrue(!cooker.would_invalidate_upstream(manifest, sourceA),
                "would_invalidate_upstream false after upstream invalidation");
+
+// --- deepen additive from deepen-b79-cooker-hash-c0c4 ---
+               "would_invalidate_upstream_dependency true for seeded chain");
+               "would_invalidate_upstream_dependency false for empty source");
+    expectTrue(!fresh_reconcile.would_invalidate(), "fresh cache would not reconcile");
+    expectTrue(stale_reconcile.would_invalidate(), "stale reconcile would invalidate");

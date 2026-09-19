@@ -102,3 +102,6 @@ private:
 
 // --- deepen additive from deepen-b79-cooker-hash-3e1a ---
     [[nodiscard]] bool would_invalidate_upstream(const CookManifest& manifest,
+
+// --- deepen additive from deepen-b79-cooker-hash-c0c4 ---
+    [[nodiscard]] bool would_invalidate() const { return total() > 0; }

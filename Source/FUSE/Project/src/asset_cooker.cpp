@@ -384,3 +384,6 @@ CookBatchResult AssetCooker::cook_dirty(AssetGraph& graph, const std::string& pr
 
 // --- deepen additive from deepen-b79-cooker-hash-3e1a ---
 bool AssetCooker::would_invalidate_upstream(const CookManifest& manifest,
+
+// --- deepen additive from deepen-b79-cooker-hash-c0c4 ---
+    return estimate_upstream_invalidation(manifest, changed_source).would_invalidate();
