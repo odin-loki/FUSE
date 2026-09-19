@@ -122,6 +122,8 @@ struct CookCacheKeyPreflight {
     [[nodiscard]] bool can_combine() const { return !zero_source_hash; }
     [[nodiscard]] bool should_skip() const { return !can_combine(); }
     /// True when hashing should be skipped — mirrors net preflight `should_skip` (B7.9 deepen).
+    /// Non-mutating skip predicate — mirrors \c ok() inversion (B7.9 deepen).
+    [[nodiscard]] bool should_skip_hash() const { return !can_hash; }
 };
 
 /// True when hash preflight succeeded — mirrors `CookHashPreflight::ok()` (B7.9 deepen).
@@ -488,5 +490,18 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
     return preflight_cook_cache_key(source_hash, upstream_hash).should_skip();
 [[nodiscard]] inline bool should_skip_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     return preflight_cacheable_cook_cache_key(source_hash, upstream_hash).should_skip();
+
+/// Non-mutating skip predicate — mirrors \c CookHashPreflight::should_skip_hash (B7.9 deepen).
+[[nodiscard]] inline bool should_skip_cook_hash_preflight(const CookHashPreflight& preflight) {
+    return preflight.should_skip_hash();
+}
+
+[[nodiscard]] bool should_skip_mesh_import_hash(const MeshImportDesc& desc);
+[[nodiscard]] bool should_skip_texture_import_hash(const TextureImportDesc& desc);
+[[nodiscard]] bool should_skip_audio_import_hash(const AudioImportDesc& desc);
+[[nodiscard]] bool should_skip_manifest_entry_hash(const CookManifestEntry& entry);
+[[nodiscard]] bool should_skip_upstream_dependencies_hash(
+    const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
+[[nodiscard]] bool should_skip_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
 } // namespace fuse::project

@@ -405,18 +405,19 @@ enum class CookCacheRejectReason : u8 {
 
 
 const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason);
-};
 
 /// Read-only store preflight — mirrors `is_valid_cook_cache_entry` guards (B7.9 deepen).
-struct CookCacheEntryPreflight {
-    bool can_store = false;
     CookCacheRejectReason reason = CookCacheRejectReason::None;
 
-    [[nodiscard]] bool ok() const { return can_store; }
 
 const char* cookCacheRejectReasonLabel(CookCacheRejectReason reason);
 
-[[nodiscard]] CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
+/// True when `store` would no-op — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
+[[nodiscard]] inline bool should_skip_cache_store(const CookCacheEntry& entry) {
+
+/// True when `lookup` would miss without recording stats — zero key or empty cache (B7.9 deepen).
+[[nodiscard]] inline bool should_skip_cache_lookup_key(u64 content_hash) {
+    return !is_valid_cook_cache_key(content_hash);
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
@@ -494,6 +495,8 @@ public:
     /// True when `store` would reject the entry — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
     [[nodiscard]] bool should_skip_store(const CookCacheEntry& entry) const;
     [[nodiscard]] bool would_invalidate_all() const;
+    /// True when `lookup` would miss for a valid key — does not touch hit/miss stats (B7.9 deepen).
+    [[nodiscard]] bool should_skip_cache_lookup(u64 content_hash) const;
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,

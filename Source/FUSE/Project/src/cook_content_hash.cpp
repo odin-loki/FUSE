@@ -2084,6 +2084,32 @@ CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry
     return preflight_upstream_dependencies_hash(entry.dependencies, manifest);
 }
 
+bool should_skip_mesh_import_hash(const MeshImportDesc& desc) {
+    return should_skip_cook_hash_preflight(preflight_mesh_import_hash(desc));
+}
+
+bool should_skip_texture_import_hash(const TextureImportDesc& desc) {
+    return should_skip_cook_hash_preflight(preflight_texture_import_hash(desc));
+}
+
+bool should_skip_audio_import_hash(const AudioImportDesc& desc) {
+    return should_skip_cook_hash_preflight(preflight_audio_import_hash(desc));
+}
+
+bool should_skip_manifest_entry_hash(const CookManifestEntry& entry) {
+    return should_skip_cook_hash_preflight(preflight_manifest_entry_hash(entry));
+}
+
+bool should_skip_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
+                                            const CookManifest& manifest) {
+    return should_skip_cook_hash_preflight(
+        preflight_upstream_dependencies_hash(dependency_output_paths, manifest));
+}
+
+bool should_skip_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    return should_skip_cook_hash_preflight(preflight_cook_cache_key(source_hash, upstream_hash));
+}
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;

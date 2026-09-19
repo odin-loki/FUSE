@@ -2932,6 +2932,48 @@ void testCookerShouldSkipAndWouldInvalidateHelpers() {
                "reconcile estimate should_skip matches cooker helper");
 }
 
+void testCookerWouldInvalidateHelpers() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_would_reconcile_a.obj", "# would reconcile a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_would_reconcile_b.obj", "# would reconcile b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry_a;
+    entry_a.kind = fuse::project::CookAssetKind::Mesh;
+    entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_would_reconcile_a.fusemesh";
+    manifest.assets.push_back(entry_a);
+
+    fuse::project::CookManifestEntry entry_b;
+    entry_b.kind = fuse::project::CookAssetKind::Mesh;
+    entry_b.source_path = source_b;
+    entry_b.output_path = "/tmp/fuse_b79_would_reconcile_b.fusemesh";
+    entry_b.dependencies.push_back(entry_a.output_path);
+    manifest.assets.push_back(entry_b);
+
+    fuse::project::AssetCooker cooker;
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would_* helpers ok");
+    expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would not reconcile");
+    expectTrue(!cooker.would_prune_reconcile(), "fresh cache would not prune reconcile");
+    expectTrue(!cooker.would_stale_dependency_invalidate(manifest),
+               "fresh cache would not stale-dependency invalidate");
+    expectTrue(cooker.would_upstream_invalidate(manifest, source_a),
+               "would_upstream_invalidate true for seeded chain head");
+    expectTrue(!cooker.would_upstream_invalidate(manifest, ""),
+               "would_upstream_invalidate guards empty changed source");
+    expectTrue(!cooker.would_upstream_invalidate(manifest, "/tmp/fuse_b79_missing_would.obj"),
+               "would_upstream_invalidate false for unknown source");
+
+    writeTempFile(source_a, "# would reconcile a revised\n");
+    expectTrue(cooker.would_stale_dependency_invalidate(manifest),
+               "would_stale_dependency_invalidate true after upstream change");
+    expectTrue(cooker.would_reconcile_invalidation(manifest),
+               "would_reconcile_invalidation true after upstream change");
+    expectTrue(cooker.would_prune_reconcile(), "would_prune_reconcile true after upstream change");
+    expectTrue(cooker.would_reconcile_invalidation(manifest)
+                   == (cooker.estimate_reconcile_invalidation(manifest).total() != 0),
+               "would_reconcile_invalidation mirrors estimate total");
+}
+
 void testCookerReconcileEstimateProbes() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_reconcile_a.obj", "# reconcile a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_reconcile_b.obj", "# reconcile b\n");
@@ -4571,6 +4613,7 @@ int main() {
     testCookerWouldInvalidationProbes();
     testCookerUpstreamInvalidationSourceProbe();
     testCookerShouldSkipAndWouldInvalidateHelpers();
+    testCookerWouldInvalidateHelpers();
     testCookerReconcileEstimateProbes();
     testCookerUpstreamReconcileProbes();
     testCookerWouldReconcileAndUpstreamProbe();

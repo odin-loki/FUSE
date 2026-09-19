@@ -1067,7 +1067,6 @@ std::vector<std::string> AssetCooker::probe_reconcile_sources(const CookManifest
     std::vector<std::string> sources;
 CookUpstreamInvalidateEstimate AssetCooker::estimate_upstream_invalidation(
     CookUpstreamInvalidateEstimate estimate;
-}
 
 
     CookJobGraph graph;
@@ -1137,8 +1136,6 @@ CookCacheInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
 
 
 
-    std::vector<std::string> sources;
-    }
 
 
         const std::vector<std::string> downstream =
@@ -1300,14 +1297,9 @@ bool AssetCooker::should_skip_prune_reconcile() const {
 bool AssetCooker::would_invalidate_upstream_dependency(const CookManifest& manifest,
 
 bool AssetCooker::would_invalidate_stale_dependency_hashes(const CookManifest& manifest) const {
-            bool already_recorded = false;
-            for (const std::string& recorded : sources) {
-                if (recorded == source_path) {
-                    already_recorded = true;
-                    break;
-                }
-            if (!already_recorded) {
-                sources.push_back(source_path);
+
+
+
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
