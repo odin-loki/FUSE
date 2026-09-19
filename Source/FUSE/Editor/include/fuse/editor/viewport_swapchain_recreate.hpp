@@ -23,6 +23,15 @@ struct ViewportSwapchainRecreateResult {
     const char* note = nullptr;
 };
 
+/// Result of a headless-safe present cycle on a consumed viewport swapchain handoff.
+struct ViewportSwapchainPresentResult {
+    bool attempted = false;
+    bool presented = false;
+    bool headlessHonest = false;
+    u32 presentSkippedNoWsiCount = 0;
+    const char* note = nullptr;
+};
+
 /// Drain in-flight GPU work before viewport `RhiContext` teardown (Lavapipe flake reduction).
 void drainViewportGpuContext(fuse::renderer::RhiContext& context);
 
@@ -34,5 +43,14 @@ void drainViewportGpuContext(fuse::renderer::RhiContext& context);
 /// Apply a queued viewport resize immediately (fence-waits first). Headless-honest on CI.
 [[nodiscard]] ViewportSwapchainRecreateResult applyViewportPendingSwapchainRecreate(
     fuse::renderer::RhiContext& context, std::unique_ptr<fuse::renderer::PresentPath>& presentPath);
+
+/// Run acquire → ready → present on an existing viewport present path (headless-safe sink on CI).
+[[nodiscard]] ViewportSwapchainPresentResult presentViewportSwapchainFrame(
+    fuse::renderer::PresentPath& presentPath);
+
+/// Apply pending recreate, then present when the editor handoff was consumed (U6 embed path).
+[[nodiscard]] ViewportSwapchainRecreateResult applyViewportPendingSwapchainRecreateAndPresent(
+    fuse::renderer::RhiContext& context, std::unique_ptr<fuse::renderer::PresentPath>& presentPath,
+    bool handoffConsumed, ViewportSwapchainPresentResult* outPresent = nullptr);
 
 } // namespace fuse::editor

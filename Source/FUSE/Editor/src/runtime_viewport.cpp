@@ -160,6 +160,7 @@ void RuntimeViewportHook::applyPendingResize_() {
 #if defined(FUSE_VULKAN_BACKEND)
         RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
         if (gpu != nullptr) {
+            const bool handoffConsumed = m_surfaceHandoff.consumed || gpu->externalSwapchainWired;
             fuse::renderer::PresentPath* presentPath =
                 gpu->hybrid != nullptr ? gpu->hybrid->presentPath() : nullptr;
             if (presentPath != nullptr) {
@@ -170,6 +171,19 @@ void RuntimeViewportHook::applyPendingResize_() {
                 if (presentPath->recreateSwapchain()) {
                     ++m_embedSession.swapchainRecreateCount;
                 }
+                if (handoffConsumed) {
+                    const ViewportSwapchainPresentResult present =
+                        presentViewportSwapchainFrame(*presentPath);
+                    if (present.attempted) {
+                        ++m_embedSession.consumedSwapchainPresentTicks;
+                        if (present.presented) {
+                            ++m_embedSession.swapchainPresentAfterRecreateCount;
+                        }
+                        if (present.presentSkippedNoWsiCount > m_embedSession.presentSkippedNoWsiCount) {
+                            m_embedSession.presentSkippedNoWsiCount = present.presentSkippedNoWsiCount;
+                        }
+                    }
+                }
             } else if (gpu->context != nullptr) {
                 const ViewportSwapchainRecreateResult queued = requestViewportSwapchainRecreate(
                     *gpu->context, gpu->fallbackPresentPath, appliedWidth, appliedHeight);
@@ -177,10 +191,22 @@ void RuntimeViewportHook::applyPendingResize_() {
                     ++m_embedSession.swapchainRecreateAttempts;
                 }
 
+                ViewportSwapchainPresentResult present{};
                 const ViewportSwapchainRecreateResult applied =
-                    applyViewportPendingSwapchainRecreate(*gpu->context, gpu->fallbackPresentPath);
+                    applyViewportPendingSwapchainRecreateAndPresent(*gpu->context,
+                                                                    gpu->fallbackPresentPath,
+                                                                    handoffConsumed, &present);
                 if (applied.recreated) {
                     ++m_embedSession.swapchainRecreateCount;
+                }
+                if (present.attempted) {
+                    ++m_embedSession.consumedSwapchainPresentTicks;
+                    if (present.presented) {
+                        ++m_embedSession.swapchainPresentAfterRecreateCount;
+                    }
+                    if (present.presentSkippedNoWsiCount > m_embedSession.presentSkippedNoWsiCount) {
+                        m_embedSession.presentSkippedNoWsiCount = present.presentSkippedNoWsiCount;
+                    }
                 }
             }
         }
@@ -315,6 +341,12 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
         if (gpu->hybrid != nullptr && gpu->hybrid->isReady()) {
             m_embedSession.wsiPresentPathReady = true;
             m_embedSession.headlessGpuReady = true;
+#if defined(FUSE_HAS_VULKAN_RHI)
+            if (m_surfaceHandoff.consumed && !m_surfaceHandoff.qtStubSurface) {
+                syncHybridBootstrapFromConsumedHandoff(*gpu->hybrid, m_surfaceHandoff);
+                gpu->hybrid->composer().setSoftwarePlaceholderEnabled(false);
+            }
+#endif
         }
     }
 
@@ -339,6 +371,11 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
                     ++m_embedSession.wsiPresentPathTicks;
                     ++gpu->submittedFrames;
                     m_embedSession.submittedFrames = gpu->submittedFrames;
+#if defined(FUSE_HAS_VULKAN_RHI)
+                    if (m_surfaceHandoff.consumed && !m_surfaceHandoff.qtStubSurface) {
+                        gpu->hybrid->composer().setSoftwarePlaceholderEnabled(false);
+                    }
+#endif
                 }
                 if (presentPath->status().presentSkippedNoWsiCount >
                     m_embedSession.presentSkippedNoWsiCount) {
@@ -417,6 +454,11 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
                 gpu->externalSwapchainWired = true;
                 m_embedSession.usesHeadlessGpuPath = false;
             }
+#if defined(FUSE_HAS_VULKAN_RHI)
+            if (gpu->hybrid != nullptr && m_surfaceHandoff.consumed) {
+                syncHybridBootstrapFromConsumedHandoff(*gpu->hybrid, m_surfaceHandoff);
+            }
+#endif
         } else {
             m_surfaceHandoff.pending = false;
             m_surfaceHandoff.consumed = true;

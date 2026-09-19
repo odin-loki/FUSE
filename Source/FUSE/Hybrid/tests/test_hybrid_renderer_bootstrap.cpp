@@ -71,10 +71,40 @@ void testHybridBootstrapInitShutdownOrder() {
     fuse::core::shutdown();
 }
 
+void testHybridComposerSoftwarePlaceholderToggle() {
+    fuse::core::initialize();
+
+    fuse::hybrid::HybridRendererBootstrapDesc desc{};
+    desc.renderer.rhi.bootstrap.instance.enableValidation = false;
+
+    auto runtime = fuse::hybrid::HybridRendererBootstrap::create(desc);
+    expectTrue(runtime != nullptr, "HybridRendererBootstrap allocated for placeholder toggle");
+    expectTrue(runtime->composer().softwarePlaceholderEnabled(), "software placeholder enabled by default");
+
+    runtime->composer().setSoftwarePlaceholderEnabled(false);
+    expectTrue(!runtime->composer().softwarePlaceholderEnabled(), "software placeholder can be disabled");
+
+    fuse::frame::FrameCtx ctx;
+    ctx.frameIndex = 2u;
+    runtime->runFrame(ctx);
+
+    expectTrue(runtime->composer().renderer().pixelCount() == 0u,
+               "disabled software placeholder skips RGBA buffer writes");
+
+#if defined(FUSE_HAS_VULKAN_RHI)
+    expectTrue(runtime->composer().lastCommandList().commandCount() > 0u,
+               "RHI mirror still records when software placeholder disabled");
+#endif
+
+    runtime->shutdown();
+    fuse::core::shutdown();
+}
+
 } // namespace
 
 int main() {
     testHybridBootstrapInitShutdownOrder();
+    testHybridComposerSoftwarePlaceholderToggle();
 
     if (g_failures == 0) {
         std::printf("fuse_hybrid_renderer_bootstrap: all checks passed\n");

@@ -572,6 +572,12 @@ void testRuntimeViewportSwapchainRecreateAfterHandoff() {
                "resize after handoff updates panel width");
     expectTrue(host.runtimeViewport().embedSession().swapchainRecreateAttempts >= 1u,
                "resize after handoff queues swapchain recreate");
+#if defined(FUSE_VULKAN_BACKEND)
+    if (host.runtimeViewport().embedSession().headlessGpuReady) {
+        expectTrue(host.runtimeViewport().embedSession().consumedSwapchainPresentTicks >= 1u,
+                   "consumed handoff present cycle after resize recreate");
+    }
+#endif
 }
 
 void testRuntimeViewportHookTicksWithProject() {

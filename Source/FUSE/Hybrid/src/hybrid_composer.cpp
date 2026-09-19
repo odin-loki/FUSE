@@ -114,19 +114,25 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
     ensureRhiContext();
 #endif
 
-    m_renderer.beginFrame(320, 240);
+    if (m_softwarePlaceholderEnabled) {
+        m_renderer.beginFrame(320, 240);
+    }
 
     if (m_world3D && m_flags.enable3D) {
         m_world3D->render(ctx);
         const float clearR = m_world3D->clearColorR();
         const float clearG = m_world3D->clearColorG();
         const float clearB = m_world3D->clearColorB();
-        m_renderer.clear3D(clearR, clearG, clearB);
+        if (m_softwarePlaceholderEnabled) {
+            m_renderer.clear3D(clearR, clearG, clearB);
+        }
 #if defined(FUSE_HAS_VULKAN_RHI)
         recordClear3D(clearR, clearG, clearB);
 #endif
     } else {
-        m_renderer.clear3D(0.f, 0.f, 0.f);
+        if (m_softwarePlaceholderEnabled) {
+            m_renderer.clear3D(0.f, 0.f, 0.f);
+        }
 #if defined(FUSE_HAS_VULKAN_RHI)
         recordClear3D(0.f, 0.f, 0.f);
 #endif
@@ -140,7 +146,9 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
             if (!cmd.visible) {
                 continue;
             }
-            m_renderer.drawSprite2D(cmd.x, cmd.y, cmd.rotation, 255, 200, 64);
+            if (m_softwarePlaceholderEnabled) {
+                m_renderer.drawSprite2D(cmd.x, cmd.y, cmd.rotation, 255, 200, 64);
+            }
 #if defined(FUSE_HAS_VULKAN_RHI)
             recordSprite2D(cmd.x, cmd.y, cmd.rotation, 255, 200, 64);
 #endif
@@ -148,7 +156,9 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
     }
 
     if (m_flags.enableUI) {
-        m_renderer.drawSprite2D(0.f, -90.f, 0.f, 255, 255, 255);
+        if (m_softwarePlaceholderEnabled) {
+            m_renderer.drawSprite2D(0.f, -90.f, 0.f, 255, 255, 255);
+        }
 #if defined(FUSE_HAS_VULKAN_RHI)
         recordSprite2D(0.f, -90.f, 0.f, 255, 255, 255);
 #endif

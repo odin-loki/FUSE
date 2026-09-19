@@ -123,7 +123,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Mobile** | Hybrid demo runs on iOS **or** Android device/sim; respect surface loss / background |
 | **Exit** | Demo: 3D clear + spinning 2D sprite one window (desktop + one mobile); TSan clean on cull path |
 | **Deps** | WP-05, WP-03 |
-| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B bindless composite GPU blit ✅ (WP-06f); CUDA interop/GLFW present/U6 surface handoff ✅ (WP-06g); CUDA interop fill + frame-sync progress + Qt surface stub ✅ (WP-06h); Qt `QVulkanInstance` bootstrap + load-stress stubs ✅ (WP-06i); Lavapipe teardown hardening + Qt embed/timeline stress ✅ (WP-06j); Lavapipe tune + composite SPIR-V regen + viewport swapchain recreate stubs ✅ (WP-06k) — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
+| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B bindless composite GPU blit ✅ (WP-06f); CUDA interop/GLFW present/U6 surface handoff ✅ (WP-06g); CUDA interop fill + frame-sync progress + Qt surface stub ✅ (WP-06h); Qt `QVulkanInstance` bootstrap + load-stress stubs ✅ (WP-06i); Lavapipe teardown hardening + Qt embed/timeline stress ✅ (WP-06j); Lavapipe tune + composite SPIR-V regen + viewport swapchain recreate stubs ✅ (WP-06k); spirv-val regen gate + consumed swapchain present + PlaceholderRenderer toggle ✅ (WP-06l) — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
 
 ---
 
@@ -257,6 +257,19 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 
 ---
 
+### WP-06l — Track B spirv-val regen gate + consumed swapchain present + PlaceholderRenderer toggle
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M |
+| **Scope** | `spirv-val` gate on `fuse_regen_shader_fixtures` when available; deepen viewport recreate toward consumed swapchain present (`presentViewportSwapchainFrame` after handoff); `HybridComposer::setSoftwarePlaceholderEnabled` scoped embed progress; keep serial `ctest -j1` green for Vulkan targets |
+| **MT note** | Viewport resize posted from UI; recreate + present on game thread only |
+| **Exit** | `fuse_editor_host` + `fuse_editor_runtime_embed` consumed-present-after-recreate tests; `fuse_hybrid_renderer_bootstrap` software-placeholder toggle test; Lavapipe ICD tests stable under `ctest -j1` |
+| **Deps** | WP-06k |
+| **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06l |
+
+---
+
 ### WP-07 — U5 Feature modules (parallel per module)
 
 | Field | Value |
@@ -381,7 +394,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U2 incremental — expand Engine probe + SimObject/StringTable route; U6 full Qt `VkSurfaceKHR` present under real WSI (wave 9: `QVulkanWindow` probe landed); U7 ispc_texcomp BC7 + libvorbisenc on CI images; Track B post–WP-06k (real Qt viewport swapchain present on display, driver-wired timeline stress on NVIDIA CI).
+**Next:** U2 incremental — expand Engine probe + SimObject/StringTable route; U6 full Qt `VkSurfaceKHR` present under real WSI (wave 9: `QVulkanWindow` probe landed); U7 ispc_texcomp BC7 + libvorbisenc on CI images; Track B post–WP-06l (real Qt viewport `vkQueuePresentKHR` on display, driver-wired timeline stress on NVIDIA CI).
 
 ---
 

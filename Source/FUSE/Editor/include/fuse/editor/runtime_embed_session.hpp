@@ -21,6 +21,8 @@ struct RuntimeEmbedSession {
     u32 swapchainWiringReady = 0;
     u32 swapchainRecreateAttempts = 0;
     u32 swapchainRecreateCount = 0;
+    u32 swapchainPresentAfterRecreateCount = 0;
+    u32 consumedSwapchainPresentTicks = 0;
     u32 wireDatablockEntries = 0;
     u32 wireMaterialEntries = 0;
     u32 wireEcsMaterialApplied = 0;

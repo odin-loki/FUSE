@@ -76,6 +76,8 @@ void testRuntimeViewportSwapchainRecreateStub() {
     if (session.headlessGpuReady) {
         expectTrue(session.swapchainRecreateCount >= 1u,
                    "headless viewport swapchain recreate applied when GPU ready");
+        expectTrue(session.consumedSwapchainPresentTicks >= 1u,
+                   "consumed swapchain present cycle after recreate when GPU ready");
     }
 #endif
     expectTrue(host.runtimeViewport().panel().width() == 1024u, "final viewport width applied");

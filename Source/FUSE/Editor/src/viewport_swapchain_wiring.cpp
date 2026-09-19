@@ -8,6 +8,10 @@
 #include <fuse/renderer/vk/swapchain_util.hpp>
 #endif
 
+#if defined(FUSE_HAS_VULKAN_RHI)
+#include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
+#endif
+
 namespace fuse::editor {
 
 ViewportSwapchainWiringResult wireExternalSwapchainFromHandoff(fuse::renderer::RhiContext& context,
@@ -72,5 +76,35 @@ ViewportSwapchainWiringResult wireExternalSwapchainFromHandoff(fuse::renderer::R
 
     return result;
 }
+
+#if defined(FUSE_HAS_VULKAN_RHI)
+void syncHybridBootstrapFromConsumedHandoff(fuse::hybrid::HybridRendererBootstrap& hybrid,
+                                            const ViewportSwapchainHandoff& handoff) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!handoff.consumed || handoff.nativeSurface == nullptr || handoff.qtStubSurface) {
+        return;
+    }
+
+    fuse::renderer::RhiContext* context = hybrid.rendererBootstrap().rhiContext();
+    if (context == nullptr) {
+        return;
+    }
+
+    fuse::renderer::SwapchainDesc desc = handoff.swapchainDesc;
+    if (desc.width == 0) {
+        desc.width = handoff.width > 0 ? handoff.width : 640u;
+    }
+    if (desc.height == 0) {
+        desc.height = handoff.height > 0 ? handoff.height : 480u;
+    }
+    desc.surface.kind = fuse::renderer::SurfaceKind::External;
+    desc.surface.nativeSurface = handoff.nativeSurface;
+    context->bootstrap().ensureSwapchain(desc);
+#else
+    (void)hybrid;
+    (void)handoff;
+#endif
+}
+#endif
 
 } // namespace fuse::editor

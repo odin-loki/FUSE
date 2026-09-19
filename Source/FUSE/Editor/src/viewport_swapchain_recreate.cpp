@@ -93,4 +93,45 @@ ViewportSwapchainRecreateResult applyViewportPendingSwapchainRecreate(
     return result;
 }
 
+ViewportSwapchainPresentResult presentViewportSwapchainFrame(
+    fuse::renderer::PresentPath& presentPath) {
+    ViewportSwapchainPresentResult result{};
+
+#if defined(FUSE_VULKAN_BACKEND)
+    result.attempted = true;
+    if (!presentPath.waitInFlightFence()) {
+        result.note = "present cycle blocked by in-flight fence";
+        return result;
+    }
+
+    presentPath.acquireImage();
+    presentPath.markReadyToPresent();
+    result.presented = presentPath.presentImage();
+    const fuse::renderer::PresentPathStatus& status = presentPath.status();
+    result.headlessHonest = status.headless;
+    result.presentSkippedNoWsiCount = status.presentSkippedNoWsiCount;
+    result.note = result.presented
+                      ? (status.headless ? "headless viewport present sink consumed"
+                                         : "viewport swapchain present consumed")
+                      : status.message.c_str();
+#else
+    (void)presentPath;
+    result.note = "vulkan backend disabled";
+#endif
+
+    return result;
+}
+
+ViewportSwapchainRecreateResult applyViewportPendingSwapchainRecreateAndPresent(
+    fuse::renderer::RhiContext& context, std::unique_ptr<fuse::renderer::PresentPath>& presentPath,
+    bool handoffConsumed, ViewportSwapchainPresentResult* outPresent) {
+    ViewportSwapchainRecreateResult recreate =
+        applyViewportPendingSwapchainRecreate(context, presentPath);
+    if (outPresent != nullptr && handoffConsumed && presentPath != nullptr &&
+        (recreate.recreated || !recreate.deferred)) {
+        *outPresent = presentViewportSwapchainFrame(*presentPath);
+    }
+    return recreate;
+}
+
 } // namespace fuse::editor

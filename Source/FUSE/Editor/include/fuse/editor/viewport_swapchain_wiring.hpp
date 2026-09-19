@@ -7,6 +7,10 @@ namespace fuse::renderer {
 class RhiContext;
 }
 
+namespace fuse::hybrid {
+class HybridRendererBootstrap;
+}
+
 namespace fuse::editor {
 
 /// Result of attempting to wire an editor viewport surface into Track B swapchain bootstrap.
@@ -22,5 +26,12 @@ struct ViewportSwapchainWiringResult {
 /// Headless-safe: invalid/null surfaces fall back without crashing.
 ViewportSwapchainWiringResult wireExternalSwapchainFromHandoff(fuse::renderer::RhiContext& context,
                                                                ViewportSwapchainHandoff& handoff);
+
+#if defined(FUSE_HAS_VULKAN_RHI)
+class HybridRendererBootstrap;
+/// After handoff wiring, mirror the external swapchain desc into hybrid bootstrap (headless-safe).
+void syncHybridBootstrapFromConsumedHandoff(fuse::hybrid::HybridRendererBootstrap& hybrid,
+                                            const ViewportSwapchainHandoff& handoff);
+#endif
 
 } // namespace fuse::editor
