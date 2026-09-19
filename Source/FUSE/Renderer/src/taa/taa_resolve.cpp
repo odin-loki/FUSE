@@ -497,3 +497,6 @@ TaaResolveBlendPreflightRejectReason diagnoseTaaResolveBlendPreflight(const TaaR
                               TaaResolveBlendPreflightRejectReason* reason) {
     const TaaResolveBlendPreflightRejectReason reject = diagnoseTaaResolveBlendPreflight(desc, history);
     return reject == TaaResolveBlendPreflightRejectReason::None;
+
+// --- deepen additive from deepen-taa-b59-guards-f7b5 ---
+bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,

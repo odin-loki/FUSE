@@ -3086,3 +3086,11 @@ void testPreflightTaaResolveBlend() {
     expectTrue(!pass->preflightHistoryReuse(0u), "pass reuse preflight false before warmup");
     expectTrue(pass->preflightResolveBlend(resolveDesc, &rejectReason),
     expectTrue(pass->preflightHistoryReuse(0u), "pass reuse preflight true after warmup");
+
+// --- deepen additive from deepen-taa-b59-guards-f7b5 ---
+void testTaaPassPreflightAndSyncGuards() {
+    expectTrue(pass->preflightResolveBlend(resolveDesc), "pass blend preflight passes on warmup frame");
+    expectTrue(pass->preflightHistoryReuse(0u, &reuseReason), "pass reuse preflight passes after warmup");
+    expectTrue(pass->preflightResolveBlend(resolveDesc), "pass blend preflight passes after warmup");
+    expectTrue(pass->preflightHistoryReuse(0u), "pass reuse still valid with current generation");
+    testTaaPassPreflightAndSyncGuards();

@@ -402,3 +402,6 @@ bool TaaPass::preflightHistoryReuse(u32 observedGeneration) const {
     return m_history.preflightReuse(observedGeneration);
                                     TaaResolveBlendPreflightRejectReason* reason) const {
     return preflightTaaResolveBlend(desc, m_history, reason);
+
+// --- deepen additive from deepen-taa-b59-guards-f7b5 ---
+bool TaaPass::preflightResolveBlend(const TaaResolveDesc& desc) const {
