@@ -244,3 +244,8 @@ bool should_skip_occlusion_blocker_eval(const Vec3& listener, const Vec3& source
     if (should_skip_blocker_evaluation(listener, source)) {
 bool should_skip_occlusion_blocker_evaluation(const AABB* blockers, u32 blocker_count,
     if (should_skip_occlusion_blocker_evaluation(blockers, blocker_count, listener, source, 1.f)) {
+
+// --- deepen additive from deepen-b72-audio-occlusion-77d8 ---
+bool should_skip_occlusion_from_blockers(const Vec3& listener, const Vec3& source,
+    if (should_skip_combine_occlusion_visibility(source_occlusion, blocker_factor)) {
+    if (should_skip_occlusion_from_blockers(listener, source, source_occlusion, blockers,
