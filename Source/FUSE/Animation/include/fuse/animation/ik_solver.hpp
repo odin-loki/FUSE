@@ -43,6 +43,16 @@ namespace fuse::animation {
                                             u32 end_bone,
                                             const Skeleton& skel);
 
+/// Returns false when `bone_indices` has fewer than two entries, any index is out of range,
+/// indices repeat, or consecutive bones are not parent→child in the skeleton hierarchy.
+[[nodiscard]] bool is_contiguous_bone_chain(const std::vector<u32>& bone_indices, const Skeleton& skel);
+
+/// True when `pose` has no bones, mismatched bone count, or undersized world-transform buffer.
+[[nodiscard]] bool needs_pose_bind_fallback(const Pose& pose, const Skeleton& skel);
+
+/// Seed `pose` from skeleton bind pose when it is empty or mismatched.
+void ensure_pose_bind_fallback(Pose& pose, const Skeleton& skel);
+
 /// Clamp `target` to the reachable sphere defined by segment lengths and `reach_epsilon`.
 [[nodiscard]] vec3 clamp_two_bone_target(const vec3& root,
                                           const vec3& target,
@@ -75,7 +85,16 @@ struct FABRIKChain {
     /// Returns false when the pose is empty or any chain bone index is out of range for the pose buffer.
     [[nodiscard]] bool has_valid_pose(const Pose& pose) const;
 
-    /// Returns false when `has_valid_chain` is false.
+    /// SoA variant of `has_valid_pose`.
+    [[nodiscard]] bool has_valid_pose(const PoseSoA& pose) const;
+
+    /// True when any consecutive chain bone pair has near-zero segment length in the current pose.
+    [[nodiscard]] bool has_degenerate_segments(const Pose& pose) const;
+
+    /// True when `has_valid_chain`, `has_valid_pose`, and `!has_degenerate_segments` all hold.
+    [[nodiscard]] bool can_solve(const Pose& pose, const Skeleton& skel) const;
+
+    /// Returns false when `has_valid_chain` is false or `can_solve` is false after bind-pose fallback.
     [[nodiscard]] bool solve(Pose& pose, const Skeleton& skel);
 };
 
@@ -107,6 +126,12 @@ struct TwoBoneIK {
 
     /// Pole vector after zero/parallel fallback relative to the current root→target direction.
     [[nodiscard]] vec3 effective_pole_vector(const Pose& pose) const;
+
+    /// True when `has_valid_chain`, `has_valid_pose`, and `!has_degenerate_segments` all hold.
+    [[nodiscard]] bool can_solve(const Pose& pose, const Skeleton& skel) const;
+
+    /// SoA variant of `can_solve`.
+    [[nodiscard]] bool can_solve(const PoseSoA& pose, const Skeleton& skel) const;
 
     /// Closed-form two-bone IK (O(1)). Solves in-place on the current pose; returns false when invalid.
     bool solve(Pose& pose, const Skeleton& skel);
