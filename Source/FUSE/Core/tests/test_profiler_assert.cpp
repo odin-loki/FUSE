@@ -3026,3 +3026,18 @@ void testUnbalancedFlowNestingExportPreflight() {
     testEventLookupPreflightStubs();
     testOpenAsyncFlowCrossThreadPreflight();
     testUnbalancedFlowNestingExportPreflight();
+
+// --- deepen additive from deepen-b16-profiler-export-preflights-d715 ---
+void testRingBufferCapacityGuard() {
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastEvent returns last end event");
+               "tryLastEvent copies last event name");
+void testChromeTraceExportPreflightUnbalancedScopeNesting() {
+    const fuse::profiler::ChromeTraceExportPreflight afterEnd = fuse::profiler::preflightChromeTraceExport();
+void testChromeTraceExportPreflightOpenAsyncFlows() {
+void testChromeTraceExportPreflightUnbalancedFlowNesting() {
+    expectTrue(fuse::profiler::preflightChromeTraceExport().isTraceComplete(),
+void testChromeTraceExportPreflightAfterValidCapture() {
+    testChromeTraceExportPreflightUnbalancedScopeNesting();
+    testChromeTraceExportPreflightOpenAsyncFlows();
+    testChromeTraceExportPreflightUnbalancedFlowNesting();
+    testChromeTraceExportPreflightAfterValidCapture();
