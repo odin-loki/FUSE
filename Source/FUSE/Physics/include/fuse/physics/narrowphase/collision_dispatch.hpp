@@ -464,5 +464,7 @@ NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
 
 /// Returns true when narrowphase into buffer should run pair dispatch (B4.5 deepen pass).
 bool should_run_narrowphase_into_buffer(
+/// True when narrowphase pair dispatch can be skipped entirely (empty pair list) (B4.6 deepen pass).
+bool can_skip_narrowphase_dispatch(const std::vector<broadphase::CandidatePair>& pairs);
 
 } // namespace fuse::physics::narrowphase

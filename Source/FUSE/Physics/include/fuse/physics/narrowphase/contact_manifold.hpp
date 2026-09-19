@@ -1474,6 +1474,9 @@ bool is_contact_manifold_finalized(
 /// Finalize only when not already finalized; no-op when `is_finalized_contact_manifold` passes (B4.6 deepen pass).
 bool finalize_contact_manifold_if_not_finalized(
 
+/// Prune only when preflight reports work; returns true when points remain (B4.6 deepen pass).
+
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }
