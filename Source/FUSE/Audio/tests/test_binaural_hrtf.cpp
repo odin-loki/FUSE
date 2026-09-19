@@ -1783,3 +1783,13 @@ void testHrtfRejectReasonPreflights() {
     expectTrue(malformed_preflight.reason == fuse::audio::HrtfBinauralRejectReason::MalformedIr,
     const fuse::audio::HrtfBinauralPreflight ideal_preflight =
     expectTrue(ideal_preflight.reason == fuse::audio::HrtfBinauralRejectReason::None,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-5710 ---
+void testHrtfIrRejectReason() {
+void testHrtfPanPathRejectReason() {
+void testHrtfAttenuationCouplingRejectReason() {
+void testHrtfBinauralRejectReason() {
+    testHrtfIrRejectReason();
+    testHrtfPanPathRejectReason();
+    testHrtfAttenuationCouplingRejectReason();
+    testHrtfBinauralRejectReason();

@@ -1178,3 +1178,8 @@ HrtfBinauralRejectReason compute_hrtf_binaural_reject_reason(
 HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_pan(HrtfPanPathRejectReason reason) {
 HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_ir(HrtfIrRejectReason reason) {
 HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_coupling(
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-5710 ---
+    if (ir_reason != HrtfIrRejectReason::None) {
+    if (coupling_reason == HrtfAttenuationCouplingRejectReason::BypassPath) {
+    if (coupling_reason == HrtfAttenuationCouplingRejectReason::UnityAttenuation) {
