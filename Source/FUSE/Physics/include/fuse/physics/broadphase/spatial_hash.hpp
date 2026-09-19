@@ -1529,3 +1529,9 @@ FUSE_PHYSICS_INLINE CellPairGenPreflight preflightCellPairGen(u32 uniqueOccupant
     return static_cast<CellCapacityInsertRejectReason>(
         static_cast<u8>(cellOccupancyRejectReason(range, maxCells)));
     const CellOccupancyPreflight occupancy = preflightCellOccupancy(range, maxCells);
+
+// --- deepen additive from deepen-b4-broadphase-guards-b5b2 ---
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflightShapeCellOccupancy(
+    return preflightCellOccupancy(range, params.maxCellOccupancy);
+    return !preflightShapeCellOccupancy(range, params).canIterate();
+    return preflightShapeCellOccupancy(range, params).canIterate();

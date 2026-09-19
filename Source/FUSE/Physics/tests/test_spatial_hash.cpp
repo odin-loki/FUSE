@@ -3754,3 +3754,16 @@ void testCellShapeInsertRejectReasonGuards() {
     expectEq(insertPreflight.occupancyCount, 8u, "cell-capacity insert preflight reports occupancy count");
         fuse::physics::broadphase::preflightCellCapacityInsert(planeRange, 10u);
     expectTrue(planePreflight.canInsert(), "2D cell-capacity insert preflight accepts valid range");
+
+// --- deepen additive from deepen-b4-broadphase-guards-b5b2 ---
+                 fuse::physics::broadphase::PairBufferWriteSlotRejectReason::UnpreparedBuffer),
+                 fuse::physics::broadphase::pairBufferWriteSlotRejectReason(buffer, 3u, 0u, 1u)),
+                 fuse::physics::broadphase::pairBufferWriteSlotRejectReason(buffer, 0u, 2u, 2u)),
+void testShapeCellOccupancyPreflightGuards() {
+    const fuse::physics::broadphase::CellOccupancyPreflight withinPreflight =
+        fuse::physics::broadphase::preflightShapeCellOccupancy(validRange, params);
+    expectTrue(withinPreflight.canIterate(), "shape cell occupancy preflight accepts within budget");
+    const fuse::physics::broadphase::CellOccupancyPreflight overPreflight =
+    expectTrue(!overPreflight.canIterate(), "shape cell occupancy preflight rejects over budget");
+    expectTrue(overPreflight.exceedsBudget, "shape cell occupancy preflight marks exceedsBudget");
+    testShapeCellOccupancyPreflightGuards();
