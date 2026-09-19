@@ -444,3 +444,10 @@ inline bool tryRayHitsAabb(const AABB& box, const Vec3& origin, const Vec3& dire
 inline bool tryRayIntersectAabb(const AABB& box, const Vec3& origin, const Vec3& direction, f32& t) {
     return box.tryRayIntersect(origin, direction, t);
     return fuse::math::tryClipPolygonAgainstPlane(plane, input, inputCount, output, maxOutput, outCount,
+
+// --- deepen additive from deepen-b14-math-guards-e324 ---
+    return fuse::math::tryTransformAabb(matrix.toScalar(), box, out);
+inline bool tryTransposeUpper3x3(const fuse::math::Mat4& matrix, Mat3& out, f32 epsilon = 1e-4f) {
+    return fuse::math::tryTransposeUpper3x3(matrix, out, epsilon);
+inline bool tryRayIntersectPlaneClamped(const Vec4& plane, const Vec3& origin, const Vec3& direction, f32 tMin,
+    return fuse::math::tryRayIntersectPlaneClamped(plane, origin, direction, tMin, tMax, t, epsilon);

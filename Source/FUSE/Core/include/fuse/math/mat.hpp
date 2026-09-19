@@ -461,3 +461,6 @@ inline bool tryExtractTranslation(const Mat4& matrix, Vec3& translation, f32 eps
 
 // --- deepen additive from deepen-b14-math-rigid-mat4-plane-guards-a428 ---
 inline bool tryExtractTranslation(const Mat4& matrix, Vec3& out, f32 epsilon = 1e-5f) {
+
+// --- deepen additive from deepen-b14-math-guards-e324 ---
+inline bool tryTransposeUpper3x3(const Mat4& matrix, Mat3& out, f32 epsilon = 1e-4f) {

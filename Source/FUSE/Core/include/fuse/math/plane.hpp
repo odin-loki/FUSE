@@ -274,3 +274,6 @@ inline bool tryClipPolygonAgainstPlane(const Vec4& plane, const Vec3* input, u32
 }
 
 } // namespace fuse::math
+
+// --- deepen additive from deepen-b14-math-guards-e324 ---
+inline bool tryRayIntersectPlaneClamped(const Vec4& plane, const Vec3& origin, const Vec3& direction, f32 tMin,

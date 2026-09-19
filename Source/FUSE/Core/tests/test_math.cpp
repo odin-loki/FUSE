@@ -1402,3 +1402,49 @@ void testSimdTryGuardParity() {
     expectTrue(fuse::math::simd::tryClassifyAabb(plane, box, simdSide), "simd tryClassifyAabb succeeds");
     expectTrue(fuse::math::tryTransformAabb(rigid, box, scalarOut), "scalar tryTransformAabb succeeds");
     expectTrue(fuse::math::simd::tryTransformAabb(rigid, box, simdOut), "simd tryTransformAabb succeeds");
+
+// --- deepen additive from deepen-b14-math-guards-e324 ---
+    expectTrue(fuse::math::tryTransposeUpper3x3(rotation, transposed), "tryTransposeUpper3x3 accepts rotation");
+    expectNear(transposed.data[0], expected.data[0], 1e-4f, "tryTransposeUpper3x3 matches transposeUpper3x3");
+    expectNear(transposed.data[4], expected.data[4], 1e-4f, "tryTransposeUpper3x3 diagonal matches");
+    expectNear(transposed.data[8], expected.data[8], 1e-4f, "tryTransposeUpper3x3 zz matches");
+    expectTrue(!fuse::math::tryTransposeUpper3x3(scaled, rejected),
+               "tryTransposeUpper3x3 rejects uniform-scale upper block");
+    expectTrue(fuse::math::tryTransformAabb(translate, local, transformed),
+               "tryTransformAabb succeeds for valid box");
+    expectTrue(!fuse::math::tryTransformAabb(translate, empty, emptyOut),
+    expectTrue(emptyOut.isEmpty(), "tryTransformAabb writes empty box on early-out");
+    expectTrue(fuse::math::tryRayIntersect(local, {-3.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, t),
+    expectTrue(!fuse::math::tryRayIntersect(local, {-3.f, 2.f, 0.f}, {1.f, 0.f, 0.f}, t),
+    expectTrue(!fuse::math::tryMakePlaneFromNormalAndPoint({0.f, 0.f, 0.f}, {1.f, 2.f, 3.f}, rejected),
+               "tryMakePlaneFromNormalAndPoint rejects zero normal");
+    expectTrue(fuse::math::tryRayIntersectPlaneClamped(yPlane, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.f, 10.f, t),
+               "tryRayIntersectPlaneClamped hits within segment");
+    expectNear(t, 2.f, 1e-5f, "tryRayIntersectPlaneClamped parametric distance");
+    expectTrue(!fuse::math::tryRayIntersectPlaneClamped(yPlane, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 3.f, 10.f, t),
+               "tryRayIntersectPlaneClamped rejects segment before hit");
+    expectTrue(!fuse::math::tryRayIntersectPlaneClamped(yPlane, {0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.f, 10.f, t),
+               "tryRayIntersectPlaneClamped rejects parallel ray");
+    expectTrue(!fuse::math::tryRayIntersectPlaneClamped(degenerate, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.f, 10.f,
+               "tryRayIntersectPlaneClamped early-outs on degenerate plane");
+    expectTrue(!fuse::math::tryClassifyAabb(yPlane, empty, side),
+               "tryClassifyAabb early-outs on empty AABB");
+    expectTrue(fuse::math::tryClassifyAabb(yPlane, crossing, side),
+               "tryClassifyAabb still classifies valid box");
+void testSimdDeepenGuardParity() {
+    expectTrue(fuse::math::tryTransformAabb(translate, box, scalarOut),
+    expectTrue(fuse::math::simd::tryTransformAabb(simdTranslate, box, simdOut),
+    expectTrue(!fuse::math::simd::tryTransformAabb(simdTranslate, empty, simdOut),
+               "simd tryTransformAabb early-outs on empty box");
+    expectTrue(fuse::math::tryTransposeUpper3x3(rotation, scalarTranspose),
+               "scalar tryTransposeUpper3x3 succeeds");
+    expectTrue(fuse::math::simd::tryTransposeUpper3x3(rotation, simdTranspose),
+               "simd tryTransposeUpper3x3 succeeds");
+                   "simd tryTransposeUpper3x3 matches scalar");
+    expectTrue(fuse::math::tryMakePlaneFromNormalAndPoint({0.f, 2.f, 0.f}, {0.f, 1.f, 0.f}, scalarPlane),
+    expectTrue(fuse::math::simd::tryMakePlaneFromNormalAndPoint({0.f, 2.f, 0.f}, {0.f, 1.f, 0.f}, simdPlane),
+    expectTrue(fuse::math::tryRayIntersectPlaneClamped(scalarPlane, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.f, 10.f,
+               "scalar tryRayIntersectPlaneClamped succeeds");
+    expectTrue(fuse::math::simd::tryRayIntersectPlaneClamped(simdPlane, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.f,
+               "simd tryRayIntersectPlaneClamped succeeds");
+    expectNear(simdHitT, scalarHitT, 1e-5f, "simd tryRayIntersectPlaneClamped matches scalar");
