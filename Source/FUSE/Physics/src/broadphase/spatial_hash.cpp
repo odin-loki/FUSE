@@ -3026,6 +3026,7 @@ bool wouldSkipDedupeBroadphase(const PairBufferSoA& buffer) {
 
 
 
+
 BroadphaseMergePreflight preflightBroadphaseMerge(
     const RigidBodySoA& bodies,
     BroadphaseMergePreflight preflight{};
@@ -3119,6 +3120,7 @@ BroadphaseMergeScan scanBroadphaseMergeBodies(
     preflight.planeBodyCount = static_cast<u32>(uniquePlaneBodies.size());
     preflight.dynamicBodyCount = static_cast<u32>(uniqueDynamicBodies.size());
     preflight.estimatedMergePairs = preflight.planeBodyCount * preflight.dynamicBodyCount;
+
 
 
 
@@ -3528,6 +3530,17 @@ bool wouldSkipBroadphaseMerge(
         *reason = rejectReason;
     }
     return rejectReason != BroadphaseMergeRejectReason::None;
+}
+
+bool wouldSkipBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason* reason) {
+    const BroadphaseMergePreflight preflight = preflightBroadphaseMerge(bodies, shapes);
+    if (reason != nullptr) {
+        *reason = preflight.reason;
+    }
+    return !preflight.canMerge();
 }
 
 bool wouldSkipBroadphaseMerge(
@@ -4692,6 +4705,8 @@ bool wouldSkipCellOccupancyIteration(
     return !preflight.canIterate();
 bool wouldSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
     return canSkipMergePairsIntoBuffer(pairs, buffer);
+
+
 
 
 
