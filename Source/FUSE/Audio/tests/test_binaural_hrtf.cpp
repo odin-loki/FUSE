@@ -1793,3 +1793,27 @@ void testHrtfBinauralRejectReason() {
     testHrtfPanPathRejectReason();
     testHrtfAttenuationCouplingRejectReason();
     testHrtfBinauralRejectReason();
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-a636 ---
+void testHrtfIrRejectReasons() {
+    expectTrue(!fuse::audio::hrtf_ir_reject_reason_is_blocking(fuse::audio::HrtfIrRejectReason::None),
+    expectTrue(preflight.rejectReason == fuse::audio::HrtfIrRejectReason::NullSamples,
+void testHrtfPanPathRejectReasons() {
+                               fuse::audio::HrtfPanPathRejectReason::EmptyIr),
+    expectTrue(reason == fuse::audio::HrtfPanPathRejectReason::EmptyIr,
+    expectTrue(preflight.spatialRejectReason == fuse::audio::HrtfPanPathRejectReason::None,
+    expectTrue(preflight.convolutionRejectReason == fuse::audio::HrtfPanPathRejectReason::EmptyIr,
+void testHrtfAttenuationCouplingRejectReasons() {
+    expectTrue(preflight.rejectReason == fuse::audio::HrtfAttenuationCouplingRejectReason::None,
+void testHrtfBinauralRejectReasons() {
+    expectTrue(reason == fuse::audio::HrtfBinauralRejectReason::EmptyIr,
+    expectTrue(preflight.spatialRejectReason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(preflight.convolutionRejectReason == fuse::audio::HrtfBinauralRejectReason::EmptyIr,
+    expectTrue(preflight.couplingRejectReason == fuse::audio::HrtfBinauralRejectReason::None,
+    expectTrue(bypass_preflight.spatialRejectReason
+    expectTrue(bypass_preflight.convolutionRejectReason
+    expectTrue(bypass_preflight.couplingRejectReason
+    testHrtfIrRejectReasons();
+    testHrtfPanPathRejectReasons();
+    testHrtfAttenuationCouplingRejectReasons();
+    testHrtfBinauralRejectReasons();

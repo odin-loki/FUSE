@@ -803,3 +803,23 @@ HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const Ve
 HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_pan(HrtfPanPathRejectReason reason);
 HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_ir(HrtfIrRejectReason reason);
 HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_coupling(
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-a636 ---
+bool hrtf_ir_reject_reason_is_blocking(HrtfIrRejectReason reason);
+bool hrtf_pan_path_reject_reason_is_blocking_spatial(HrtfPanPathRejectReason reason);
+bool hrtf_pan_path_reject_reason_is_blocking_convolution(HrtfPanPathRejectReason reason);
+HrtfPanPathRejectReason classify_hrtf_pan_path_spatial_reject(bool hrtf_enabled,
+HrtfPanPathRejectReason classify_hrtf_pan_path_convolution_reject(bool hrtf_enabled,
+    HrtfPanPathRejectReason spatialRejectReason = HrtfPanPathRejectReason::None;
+    HrtfPanPathRejectReason convolutionRejectReason = HrtfPanPathRejectReason::None;
+bool hrtf_attenuation_coupling_reject_reason_is_blocking(HrtfAttenuationCouplingRejectReason reason);
+bool hrtf_binaural_reject_reason_is_blocking_spatial(HrtfBinauralRejectReason reason);
+bool hrtf_binaural_reject_reason_is_blocking_convolution(HrtfBinauralRejectReason reason);
+bool hrtf_binaural_reject_reason_is_blocking_coupling(HrtfBinauralRejectReason reason);
+HrtfBinauralRejectReason classify_hrtf_binaural_spatial_reject(bool hrtf_enabled,
+HrtfBinauralRejectReason classify_hrtf_binaural_convolution_reject(bool hrtf_enabled,
+HrtfBinauralRejectReason classify_hrtf_binaural_coupling_reject(HrtfPanPath path,
+                                     HrtfBinauralRejectReason* reason = nullptr);
+    HrtfBinauralRejectReason spatialRejectReason = HrtfBinauralRejectReason::None;
+    HrtfBinauralRejectReason convolutionRejectReason = HrtfBinauralRejectReason::None;
+    HrtfBinauralRejectReason couplingRejectReason = HrtfBinauralRejectReason::None;

@@ -1187,3 +1187,39 @@ HrtfBinauralRejectReason hrtf_binaural_reject_reason_from_coupling(
 // --- deepen additive from deepen-b72-hrtf-reject-reason-preflights-d99c ---
     const HrtfPanPathRejectReason panReason = hrtf_pan_path_reject_reason(hrtf_enabled, rel_listener);
     preflight.rejected = preflight.reason != HrtfBinauralRejectReason::None;
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-a636 ---
+bool hrtf_ir_reject_reason_is_blocking(HrtfIrRejectReason reason) {
+    return reason != HrtfIrRejectReason::None;
+    case HrtfPanPathRejectReason::EmptyIr:
+bool hrtf_pan_path_reject_reason_is_blocking_spatial(HrtfPanPathRejectReason reason) {
+    return reason == HrtfPanPathRejectReason::HrtfDisabled
+        || reason == HrtfPanPathRejectReason::CoLocated;
+bool hrtf_pan_path_reject_reason_is_blocking_convolution(HrtfPanPathRejectReason reason) {
+    return reason != HrtfPanPathRejectReason::None;
+HrtfPanPathRejectReason classify_hrtf_pan_path_spatial_reject(bool hrtf_enabled,
+HrtfPanPathRejectReason classify_hrtf_pan_path_convolution_reject(bool hrtf_enabled,
+    const HrtfPanPathRejectReason spatial_reject =
+    if (spatial_reject != HrtfPanPathRejectReason::None) {
+        return HrtfPanPathRejectReason::EmptyIr;
+    preflight.spatialRejectReason = classify_hrtf_pan_path_spatial_reject(hrtf_enabled, rel_listener);
+    preflight.convolutionRejectReason =
+bool hrtf_attenuation_coupling_reject_reason_is_blocking(HrtfAttenuationCouplingRejectReason reason) {
+    return reason != HrtfAttenuationCouplingRejectReason::None;
+bool hrtf_binaural_reject_reason_is_blocking_spatial(HrtfBinauralRejectReason reason) {
+    return reason == HrtfBinauralRejectReason::HrtfDisabled
+        || reason == HrtfBinauralRejectReason::CoLocated;
+bool hrtf_binaural_reject_reason_is_blocking_convolution(HrtfBinauralRejectReason reason) {
+    return reason != HrtfBinauralRejectReason::None
+        && reason != HrtfBinauralRejectReason::BypassPath
+        && reason != HrtfBinauralRejectReason::UnityAttenuation;
+bool hrtf_binaural_reject_reason_is_blocking_coupling(HrtfBinauralRejectReason reason) {
+    return reason == HrtfBinauralRejectReason::BypassPath
+        || reason == HrtfBinauralRejectReason::UnityAttenuation;
+HrtfBinauralRejectReason classify_hrtf_binaural_spatial_reject(bool hrtf_enabled,
+HrtfBinauralRejectReason classify_hrtf_binaural_convolution_reject(bool hrtf_enabled,
+HrtfBinauralRejectReason classify_hrtf_binaural_coupling_reject(HrtfPanPath path,
+                                     HrtfBinauralRejectReason* reason) {
+                                      float occlusion_gain, HrtfBinauralRejectReason* reason) {
+    preflight.spatialRejectReason =
+    preflight.couplingRejectReason = classify_hrtf_binaural_coupling_reject(
