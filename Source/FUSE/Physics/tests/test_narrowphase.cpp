@@ -7117,6 +7117,261 @@ void testFinalizeAndFrictionPreflightIfNeededGuards() {
     expectTrue(needsBasis.hasFrictionBasis(), "compute friction with preflight stores orthonormal basis");
 }
 
+void testContactPairDeepenPassRejectGuardsV2() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 dynamicA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 dynamicB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 sleepingA = bodies.addBody({0.f, 2.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    const fuse::u32 sleepingB = bodies.addBody({0.f, 3.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    const fuse::u32 planeA = bodies.addBody({0.f, -1.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
+    const fuse::u32 planeB = bodies.addBody({0.f, -2.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Plane, planeA, {0.f, 1.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Plane, planeB, {0.f, 1.f, 0.f});
+
+    expectTrue(
+        fuse::physics::narrowphase::is_resting_contact_pair({sleepingA, sleepingB}, bodies),
+        "resting guard flags both-sleeping pair");
+    expectTrue(
+        !fuse::physics::narrowphase::is_resting_contact_pair({dynamicA, dynamicB}, bodies),
+        "resting guard allows dynamic pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_deepen_reject_reason({planeA, planeB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::PlanePlane,
+        "deepen reject reason flags plane-plane pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_reject_reason({planeA, planeB}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::UnsupportedShapePair,
+        "base reject reason unchanged for plane-plane pair");
+    expectTrue(
+        fuse::physics::narrowphase::contact_pair_deepen_rejects_for_reason_v2(
+            {planeA, planeB},
+            bodies,
+            shapes,
+            fuse::physics::narrowphase::ContactPairRejectReason::PlanePlane),
+        "deepen rejects_for_reason_v2 matches plane-plane pair");
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> mixedPairs = {
+        {sleepingA, sleepingB},
+        {dynamicA, dynamicB},
+        {planeA, planeB},
+    };
+    const auto filtered =
+        fuse::physics::narrowphase::filter_dispatchable_contact_pairs(mixedPairs, bodies, shapes);
+    expectTrue(filtered.size() == 1u, "filter_dispatchable keeps one dynamic pair");
+    expectTrue(filtered[0].bodyA == dynamicA && filtered[0].bodyB == dynamicB,
+        "filter_dispatchable preserves dynamic pair order");
+
+    const auto summary =
+        fuse::physics::narrowphase::summarize_contact_pair_batch_rejects(mixedPairs, bodies, shapes);
+    expectTrue(summary.pairCount == 3u, "batch summary reports pair count");
+    expectTrue(summary.dispatchableCount == 1u, "batch summary counts dispatchable pairs");
+    expectTrue(summary.planePlaneCount == 1u, "batch summary counts plane-plane rejects");
+    expectTrue(summary.restingCount == 1u, "batch summary counts resting rejects");
+    expectTrue(summary.all_rejected() == false, "batch summary not all rejected with one valid pair");
+
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::contact_pair_reject_reason_name(
+                fuse::physics::narrowphase::ContactPairRejectReason::PlanePlane),
+            "PlanePlane") == 0,
+        "reject reason name resolves PlanePlane");
+}
+
+void testManifoldNormalizeAndFinalizeIfNeededGuards() {
+    fuse::physics::narrowphase::ContactManifold unnormalized{};
+    unnormalized.contactNormal = {0.f, 2.f, 0.f};
+    unnormalized.addPoint({0.f, 0.f, 0.f}, 0.25f);
+    expectTrue(
+        !fuse::physics::narrowphase::can_skip_normalize_contact_manifold_normal(unnormalized),
+        "can_skip_normalize false for scaled normal");
+    expectTrue(
+        fuse::physics::narrowphase::normalize_contact_manifold_normal_if_needed(unnormalized),
+        "normalize_if_needed succeeds for scaled normal");
+    expectNear(unnormalized.contactNormal.length(), 1.f, 1e-4f, "normalize_if_needed produces unit normal");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_normalize_contact_manifold_normal(unnormalized),
+        "can_skip_normalize true after normalization");
+
+    fuse::physics::narrowphase::ContactManifold noNormal{};
+    noNormal.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    expectTrue(
+        !fuse::physics::narrowphase::normalize_contact_manifold_normal(noNormal),
+        "normalize returns false for invalid normal");
+    expectTrue(
+        fuse::physics::narrowphase::manifold_prune_rejects_for_reason(
+            noNormal, fuse::physics::narrowphase::ManifoldPruneRejectReason::InvalidNormal),
+        "prune rejects_for_reason flags invalid normal");
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::manifold_prune_reject_reason_name(
+                fuse::physics::narrowphase::ManifoldPruneRejectReason::InvalidNormal),
+            "InvalidNormal") == 0,
+        "prune reject reason name resolves InvalidNormal");
+
+    fuse::physics::narrowphase::ContactManifold manifold =
+        fuse::physics::narrowphase::collideSphereSphere({0.f, 0.f, 0.f}, 1.f, {1.5f, 0.f, 0.f}, 1.f, 0u, 1u);
+    expectTrue(
+        fuse::physics::narrowphase::finalize_contact_manifold_with_preflight(manifold),
+        "finalize_with_preflight succeeds on detected manifold");
+    expectTrue(
+        fuse::physics::narrowphase::is_finalized_contact_manifold(manifold),
+        "is_finalized true after finalize_with_preflight");
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_finalize_contact_manifold_if_finalized(manifold),
+        "can_skip_finalize true for finalized manifold");
+
+    const auto cachedTangent1 = manifold.frictionBasis.tangent1;
+    expectTrue(
+        fuse::physics::narrowphase::finalize_contact_manifold_if_needed(manifold),
+        "finalize_if_needed no-ops on finalized manifold");
+    expectNear(
+        manifold.frictionBasis.tangent1.x,
+        cachedTangent1.x,
+        1e-4f,
+        "finalize_if_needed preserves cached tangent1");
+}
+
+void testFrictionBasisNormalizeRebuildGuards() {
+    fuse::physics::narrowphase::ContactManifold unnormalized{};
+    unnormalized.contactNormal = {0.f, 2.f, 0.f};
+    unnormalized.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    expectTrue(
+        !fuse::physics::narrowphase::can_skip_normalize_contact_normal_for_friction(unnormalized),
+        "can_skip_normalize_for_friction false for scaled normal");
+    expectTrue(
+        fuse::physics::narrowphase::normalize_contact_normal_for_friction(unnormalized),
+        "normalize_for_friction succeeds for scaled normal");
+    expectNear(unnormalized.contactNormal.length(), 1.f, 1e-4f, "normalize_for_friction produces unit normal");
+
+    expectTrue(
+        fuse::physics::narrowphase::rebuild_friction_basis_with_normalize_if_needed(unnormalized),
+        "rebuild_with_normalize builds missing basis");
+    expectTrue(unnormalized.hasFrictionBasis(), "rebuild_with_normalize stores orthonormal basis");
+
+    const auto cachedTangent1 = unnormalized.frictionBasis.tangent1;
+    expectTrue(
+        fuse::physics::narrowphase::can_skip_friction_basis_rebuild_with_normalize(unnormalized),
+        "can_skip_rebuild_with_normalize true for valid basis");
+    expectTrue(
+        fuse::physics::narrowphase::rebuild_friction_basis_with_normalize_if_needed(unnormalized),
+        "rebuild_with_normalize reuses valid basis");
+    expectNear(
+        unnormalized.frictionBasis.tangent1.x,
+        cachedTangent1.x,
+        1e-4f,
+        "rebuild_with_normalize preserves cached tangent1");
+
+    unnormalized.contactNormal = {1.f, 0.f, 0.f};
+    expectTrue(
+        fuse::physics::narrowphase::friction_basis_is_stale(unnormalized),
+        "stale guard flags basis built for prior normal");
+    expectTrue(
+        !fuse::physics::narrowphase::can_skip_friction_basis_rebuild_with_normalize(unnormalized),
+        "can_skip_rebuild_with_normalize false for stale basis");
+    expectTrue(
+        fuse::physics::narrowphase::rebuild_friction_basis_with_normalize_if_needed(unnormalized),
+        "rebuild_with_normalize refreshes stale basis");
+    expectTrue(
+        fuse::physics::narrowphase::friction_basis_matches_normal(unnormalized),
+        "rebuild_with_normalize matches current normal");
+
+    expectTrue(
+        std::strcmp(
+            fuse::physics::narrowphase::friction_basis_reject_reason_name(
+                fuse::physics::narrowphase::FrictionBasisRejectReason::StaleBasis),
+            "StaleBasis") == 0,
+        "friction reject reason name resolves StaleBasis");
+}
+
+void testContactBufferFrictionRebuildIfNeededGuards() {
+    fuse::physics::narrowphase::ContactBufferSoA buffer;
+    buffer.preparePairSlots(2u);
+
+    fuse::physics::narrowphase::ContactManifold first{};
+    first.valid = true;
+    first.bodyA = 0u;
+    first.bodyB = 1u;
+    first.contactNormal = {0.f, 0.f, 1.f};
+    first.addPoint({0.f, 0.f, 0.f}, 0.1f);
+    first.buildFrictionBasis();
+    buffer.writeSlot(0u, first);
+
+    fuse::physics::narrowphase::ContactManifold second{};
+    second.valid = true;
+    second.bodyA = 2u;
+    second.bodyB = 3u;
+    second.contactNormal = {1.f, 0.f, 0.f};
+    second.addPoint({0.f, 0.f, 0.f}, 0.2f);
+    buffer.writeSlot(1u, second);
+
+    expectTrue(buffer.compact() == 2u, "buffer compacts two manifolds for friction rebuild test");
+    const auto preflightFresh =
+        fuse::physics::narrowphase::preflight_contact_buffer_friction_rebuild(buffer);
+    expectTrue(preflightFresh.can_skip_rebuild(), "buffer preflight can skip fresh orthonormal slots");
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis(
+            {1.f, 0.f, 0.f}, buffer.tangentBasisAt(1u)),
+        "writeSlot stores orthonormal basis for second slot");
+
+    buffer.contactNormals[0] = {1.f, 0.f, 0.f};
+    const auto preflightStale =
+        fuse::physics::narrowphase::preflight_contact_buffer_friction_rebuild(buffer);
+    expectTrue(preflightStale.rebuildCount == 1u, "buffer preflight flags stale slot after normal change");
+    expectTrue(!preflightStale.can_skip_rebuild(), "buffer preflight cannot skip stale slot");
+    expectTrue(buffer.slotFrictionBasisIsStale(0u), "slot stale guard flags mismatched normal");
+
+    buffer.buildFrictionTangentBasesIfNeeded();
+    const auto preflightAfter =
+        fuse::physics::narrowphase::preflight_contact_buffer_friction_rebuild(buffer);
+    expectTrue(preflightAfter.can_skip_rebuild(), "buffer preflight can skip after rebuild_if_needed");
+    expectTrue(
+        !buffer.slotFrictionBasisIsStale(0u),
+        "rebuild_if_needed clears stale flag");
+    buffer.rebuildFrictionTangentBasisAt(0u);
+    expectTrue(
+        !buffer.slotFrictionBasisIsStale(0u),
+        "slot rebuild clears stale flag");
+    expectTrue(
+        fuse::physics::narrowphase::isOrthonormalTangentBasis(
+            {1.f, 0.f, 0.f}, buffer.tangentBasisAt(0u)),
+        "slot rebuild produces orthonormal basis for updated normal");
+}
+
+void testRunNarrowphaseFilteredIntoBufferGuards() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 dynamicA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 dynamicB = bodies.addBody({1.5f, 0.f, 0.f}, 1.f);
+    const fuse::u32 sleepingA = bodies.addBody({0.f, 2.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    const fuse::u32 sleepingB = bodies.addBody({0.f, 3.f, 0.f}, 1.f, fuse::physics::RB_SLEEPING);
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, dynamicB, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingA, {1.f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sleepingB, {1.f, 0.f, 0.f});
+
+    const std::vector<fuse::physics::broadphase::CandidatePair> pairs = {
+        {sleepingA, sleepingB},
+        {dynamicA, dynamicB},
+    };
+
+    fuse::physics::narrowphase::ContactBufferSoA filteredBuffer;
+    fuse::physics::narrowphase::runNarrowphaseFilteredIntoBuffer(pairs, bodies, shapes, filteredBuffer);
+    expectTrue(filteredBuffer.activeCount == 1u, "filtered narrowphase produces one contact");
+    const auto restored = filteredBuffer.manifoldAt(0u);
+    expectTrue(restored.valid, "filtered narrowphase contact is valid");
+    expectTrue(restored.bodyA == dynamicA && restored.bodyB == dynamicB,
+        "filtered narrowphase keeps dynamic pair");
+
+    fuse::physics::narrowphase::ContactBufferSoA unfilteredBuffer;
+    fuse::physics::narrowphase::runNarrowphaseIntoBuffer(pairs, bodies, shapes, unfilteredBuffer);
+    expectTrue(unfilteredBuffer.activeCount == 2u, "unfiltered narrowphase still dispatches sleeping pair");
+}
+
 void testFrictionBasisFollowUpRejectGuards() {
     fuse::physics::narrowphase::ContactManifold empty{};
     expectTrue(
@@ -15538,6 +15793,11 @@ int main() {
     testRunNarrowphaseIfDispatchableGuard();
     testContactBufferGuardedWriteAndCompact();
     testFrictionBasisDeepenGuards();
+    testContactPairDeepenPassRejectGuardsV2();
+    testManifoldNormalizeAndFinalizeIfNeededGuards();
+    testFrictionBasisNormalizeRebuildGuards();
+    testContactBufferFrictionRebuildIfNeededGuards();
+    testRunNarrowphaseFilteredIntoBufferGuards();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_narrowphase_tests: all checks passed\n");

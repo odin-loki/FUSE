@@ -1403,5 +1403,17 @@ bool friction_basis_rejects_for_manifold(
 
     if (rebuild_friction_basis_with_preflight(manifold, epsilon)) {
 
+    if (std::fabs(normalLength - 1.f) <= lengthEpsilon) {
+
+bool can_skip_normalize_contact_normal_for_friction(
+    return !contact_normal_needs_normalize(manifold, lengthEpsilon);
+
+bool rebuild_friction_basis_with_normalize_if_needed(ContactManifold& manifold, f32 epsilon) {
+    if (can_skip_friction_basis_rebuild_with_normalize(manifold, epsilon)) {
+    if (!normalize_contact_normal_for_friction(manifold, epsilon)) {
+
+bool can_skip_friction_basis_rebuild_with_normalize(
+    return can_skip_friction_basis_rebuild(manifold, epsilon) &&
+           can_skip_normalize_contact_normal_for_friction(manifold, epsilon);
 
 } // namespace fuse::physics::narrowphase

@@ -1311,6 +1311,44 @@ bool ContactBufferSoA::buildFrictionTangentBasesWithPreflight() {
 void ContactBufferSoA::buildFrictionTangentBasesIfNeeded() {
     if (!shouldRunContactBufferFrictionRebuild(*this)) {
         return;
+bool ContactBufferSoA::slotFrictionBasisIsStale(u32 slot, f32 epsilon) const {
+    if (slot >= activeCount || validFlags[slot] == 0u) {
+
+    ContactManifold probe{};
+    probe.contactNormal = contactNormals[slot];
+    probe.frictionBasis = {tangent1[slot], tangent2[slot]};
+    probe.addPoint(contactPoints[slot], penetrationDepths[slot]);
+    return friction_basis_is_stale(probe, epsilon);
+
+void ContactBufferSoA::rebuildFrictionTangentBasisAt(u32 slot, f32 epsilon) {
+
+    ContactManifold manifold = manifoldAt(slot);
+    if (rebuild_friction_basis_with_normalize_if_needed(manifold, epsilon)) {
+        tangent1[slot] = manifold.frictionBasis.tangent1;
+        tangent2[slot] = manifold.frictionBasis.tangent2;
+        contactNormals[slot] = manifold.contactNormal;
+
+void ContactBufferSoA::buildFrictionTangentBasesIfNeeded(f32 epsilon) {
+    for (u32 slot = 0u; slot < activeCount; ++slot) {
+        if (validFlags[slot] == 0u) {
+            continue;
+        if (!slotFrictionBasisIsStale(slot, epsilon) &&
+            isOrthonormalTangentBasis(contactNormals[slot], tangentBasisAt(slot), epsilon)) {
+        rebuildFrictionTangentBasisAt(slot, epsilon);
+
+ContactBufferFrictionPreflight preflight_contact_buffer_friction_rebuild(
+    const ContactBufferSoA& buffer,
+    f32 epsilon) {
+    ContactBufferFrictionPreflight preflight{};
+    preflight.activeCount = buffer.activeCount;
+    for (u32 slot = 0u; slot < buffer.activeCount; ++slot) {
+        if (buffer.validFlags[slot] == 0u) {
+        if (buffer.slotFrictionBasisIsStale(slot, epsilon)) {
+            ++preflight.staleCount;
+            ++preflight.rebuildCount;
+        if (!isOrthonormalTangentBasis(
+                buffer.contactNormals[slot], buffer.tangentBasisAt(slot), epsilon)) {
+    return preflight;
 }
 
 TangentBasis ContactBufferSoA::tangentBasisAt(u32 index) const {
