@@ -534,3 +534,6 @@ bool TaaJitterLayout::tryNdcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width
     reason = classifyTaaJitterNdcReject(width, height, sequenceLength);
     reason = classifyTaaJitterNdcReject(width, height, m_sequenceLength);
     if (!tryPreflightTaaJitterAdvance(m_sequenceLength, reason)) {
+
+// --- deepen additive from deepen-b59-taa-guards-0070 ---
+    reason = classifyTaaJitterAdvanceReject(m_sequenceLength);

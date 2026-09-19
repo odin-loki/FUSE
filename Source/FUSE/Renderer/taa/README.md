@@ -189,3 +189,13 @@ Part of `fuse_rhi`. Built with `FUSE_BUILD_CORE=ON`. Tests run when `FUSE_BUILD_
 - `preflightTaaResolveTemporal` / `tryPreflightTaaResolveTemporal` / `shouldSkipTaaResolveTemporal` — combined history-reuse + blend-weight preflight
 - `TaaPass::preflightJitterNdc` / `shouldSkipJitterSync` / `shouldSkipJitterNdc` — pass-level jitter guard wrappers
 - `TaaPass::preflightTemporalResolve` / `shouldSkipTemporalResolve` — pass-level combined temporal preflight
+
+// --- deepen additive from deepen-b59-taa-guards-0070 ---
+- `TaaJitter::trySyncToFrameIndexIfReady(frame, reason)` — sync with reject-reason diagnostics
+- `TaaJitter::tryAdvanceIfReady(reason)` — advance with reject-reason diagnostics
+- `TaaJitter::tryCurrentNdcOffsetIfReady(w, h, out, reason)` — NDC offset with reject-reason diagnostics
+- `taaHistoryWarmupReady(history)` / `preflightTaaHistoryWarmup` / `tryPreflightTaaHistoryWarmup` — warmup preflight guards
+- `taaHistoryResolveReady(history)` / `preflightTaaHistoryReadyForResolve` — resolve-readiness preflight guards
+- `TaaPass::trySyncJitterToFrameIndexIfReady(frame, reason)` / `tryAdvanceJitterIfReady(reason)` — jitter sync/advance with diagnostics
+- `TaaPass::tryPreflightHistoryWarmup` / `tryPreflightHistoryReuse` / `tryPreflightHistoryReadyForResolve` — history guard try-preflights
+- `TaaPass::tryPreflightResolveBlendWeights` / `tryPreflightResolve` — resolve blend and resolve try-preflights

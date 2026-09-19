@@ -4340,3 +4340,28 @@ void testResolveFramePreflight() {
                "pass tryPreflightResolve passes before warmup resolve");
                "pass tryComputeResolveBlendWeights passes before warmup resolve");
                "pass tryPreflightHistoryReuse fails before warmup resolve");
+
+// --- deepen additive from deepen-b59-taa-guards-0070 ---
+void testHistoryWarmupPreflightDeepen() {
+    expectTrue(!fuse::renderer::preflightTaaHistoryReadyForResolve(emptyHistory, &reason),
+               "tryPreflightTaaHistoryWarmup reason is NotWarm for unwarmed history");
+               "tryAdvanceIfReady reject reason is None");
+    expectTrue(jitter.trySyncToFrameIndexIfReady(9u, rejectReason),
+    expectTrue(jitter.monotonicFrameIndex() == 9u, "trySyncToFrameIndexIfReady sets monotonic counter");
+    expectTrue(jitter.isAlignedToFrameIndex(9u), "jitter aligned after trySyncToFrameIndexIfReady");
+    expectTrue(!fuse::renderer::preflightTaaJitterAdvance(0u, &rejectReason),
+               "preflightTaaJitterAdvance rejects invalid sequence");
+               "preflightTaaJitterAdvance reject reason is InvalidSequence");
+    expectTrue(!fuse::renderer::tryPreflightTaaJitterSync(3u, 0u, rejectReason),
+               "tryPreflightTaaJitterSync rejects invalid sequence");
+               "tryPreflightTaaJitterSync reject reason is InvalidSequence");
+void testTaaPassTryPreflightDeepen() {
+    expectTrue(pass->tryPreflightJitterSync(6u, jitterReject), "pass tryPreflightJitterSync passes before init");
+               "pass tryPreflightResolve skip reason is None");
+    expectTrue(pass->trySyncJitterToFrameIndexIfReady(11u, jitterReject),
+    expectTrue(pass->tryAdvanceJitterIfReady(jitterReject), "pass tryAdvanceJitterIfReady succeeds");
+    expectTrue(pass->jitter().index() != jitterIndexBefore, "pass tryAdvanceJitterIfReady advances jitter");
+    expectTrue(pass->tryPreflightHistoryWarmup(reuseReason), "pass tryPreflightHistoryWarmup passes after resolve");
+               "zero-width pass tryPreflightJitterNdc reject reason is InvalidViewport");
+    testHistoryWarmupPreflightDeepen();
+    testTaaPassTryPreflightDeepen();
