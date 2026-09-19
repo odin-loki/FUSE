@@ -809,3 +809,12 @@ bool wouldSkipTrilinearDensitySample(const FroxelDensityGrid& grid,
 bool preflightScreenDensitySample(const FroxelDensityGrid& grid,
 bool wouldSkipScreenDensitySample(const FroxelDensityGrid& grid,
 bool wouldSkipPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-b511-froxel-guards-700f ---
+    static bool preflightScreenDepthMapping(f32 screenX,
+bool wouldSkipFroxelGrid(const FroxelGridDesc& desc);
+bool wouldSkipFroxelLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
+bool wouldSkipFroxelMarch(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon = 1e-6f);
+bool tryCanTrilinearSample(const FroxelDensityGrid& grid,
+FroxelTrilinearSampleRejectReason classifyTrilinearSampleReject(const FroxelDensityGrid& grid,
+ScreenMappingRejectReason classifyScreenDensitySampleReject(const FroxelDensityGrid& grid,

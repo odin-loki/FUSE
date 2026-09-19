@@ -3118,3 +3118,39 @@ void testFroxelPreflightDeepenGuards() {
     expectTrue(fuse::renderer::froxel_util::wouldSkipPopulateFromAnalyticFog(desc, camera, zeroDensity),
                "wouldSkipPopulateFromAnalyticFog true for zero density");
     testFroxelPreflightDeepenGuards();
+
+// --- deepen additive from deepen-b511-froxel-guards-700f ---
+void testFroxelClassifyPreflightAndWouldSkipGuards() {
+    expectTrue(!fuse::renderer::gridDensityRejectReasonIsBlocking(fuse::renderer::GridDensityRejectReason::EmptyDesc),
+                   fuse::renderer::FroxelTrilinearSampleRejectReason::InaccessibleGrid),
+               "classifySampleCoordReject reports none for in-bounds coords");
+    expectTrue(fuse::renderer::FroxelGridLayout::preflightScreenDepthMapping(
+               "preflightScreenDepthMapping succeeds in range");
+               "classifyScreenMappingReject reports none in range");
+    expectTrue(!fuse::renderer::FroxelGridLayout::preflightScreenDepthMapping(
+               "preflightScreenDepthMapping rejects depth below near plane");
+    expectTrue(fuse::renderer::froxel_util::preflightDensityLookup(grid, desc, 5u, &lookupReason),
+    expectTrue(fuse::renderer::froxel_util::classifyDensityLookupReject(grid, desc, 999u) ==
+               "classifyDensityLookupReject reports index_out_of_range for OOB index");
+    expectTrue(fuse::renderer::froxel_util::classifyDensityLookupRejectAtCoord(grid, desc, 3u, 1u, 2u) ==
+               "classifyDensityLookupRejectAtCoord reports none for last valid coords");
+               "preflightGridDensity succeeds on accessible grid");
+               "classifyGridDensityReject reports undersized_storage");
+    expectTrue(fuse::renderer::froxel_util::tryCanTrilinearSample(grid, desc, inBounds, trilinearReason),
+               "tryCanTrilinearSample succeeds on accessible grid");
+               "preflightTrilinearSample succeeds on accessible grid");
+    expectTrue(fuse::renderer::froxel_util::classifyTrilinearSampleReject(emptyGrid, desc, inBounds) ==
+               "classifyTrilinearSampleReject reports inaccessible_grid for empty storage");
+    expectTrue(!fuse::renderer::froxel_util::tryCanTrilinearSample(emptyGrid, desc, hardOob, trilinearReason),
+               "tryCanTrilinearSample rejects inaccessible grid");
+               "preflightScreenDensitySample succeeds on accessible grid");
+    expectTrue(fuse::renderer::froxel_util::classifyScreenDensitySampleReject(
+               "classifyScreenDensitySampleReject reports depth_out_of_range below near plane");
+               "classifyFroxelPopulateReject reports zero_density");
+    expectTrue(fuse::renderer::froxel_util::wouldSkipFroxelGrid(zeroDesc),
+               "wouldSkipFroxelGrid true for empty desc");
+    expectTrue(fuse::renderer::froxel_util::wouldSkipFroxelLookup(emptyGrid, desc),
+               "wouldSkipFroxelLookup true for empty storage");
+    expectTrue(fuse::renderer::froxel_util::wouldSkipFroxelMarch(zeroMarchGrid, desc),
+               "wouldSkipFroxelMarch true for uniformly zero grid");
+    testFroxelClassifyPreflightAndWouldSkipGuards();

@@ -2084,3 +2084,21 @@ bool wouldSkipScreenDensitySample(const FroxelDensityGrid& grid,
     return !preflightScreenDensitySample(grid, desc, camera, screenX, screenY, viewDepth);
 bool wouldSkipPopulateFromAnalyticFog(const FroxelGridDesc& desc,
     return !preflightPopulateFromAnalyticFog(desc, camera, params);
+
+// --- deepen additive from deepen-b511-froxel-guards-700f ---
+bool FroxelGridLayout::preflightScreenDepthMapping(f32 screenX,
+    return !screenMappingRejectReasonIsBlocking(reject);
+    return reason != FroxelTrilinearSampleRejectReason::None;
+bool wouldSkipFroxelGrid(const FroxelGridDesc& desc) {
+bool wouldSkipFroxelLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc) {
+bool wouldSkipFroxelMarch(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, f32 epsilon) {
+    return !tryValidateGridDensity(grid, desc, reason, epsilon);
+bool tryCanTrilinearSample(const FroxelDensityGrid& grid,
+FroxelTrilinearSampleRejectReason classifyTrilinearSampleReject(const FroxelDensityGrid& grid,
+    tryCanTrilinearSample(grid, desc, coords, reason);
+    const FroxelTrilinearSampleRejectReason reject = classifyTrilinearSampleReject(grid, desc, coords);
+    return !tryCanTrilinearSample(grid, desc, coords, reason);
+ScreenMappingRejectReason classifyScreenDensitySampleReject(const FroxelDensityGrid& grid,
+    FroxelGridLayout::tryMapScreenDepthToSampleCoords(screenX, screenY, viewDepth, desc, camera, coords, mapReason);
+        classifyScreenDensitySampleReject(grid, desc, camera, screenX, screenY, viewDepth);
+    return !preflightScreenDensitySample(grid, desc, camera, screenX, screenY, viewDepth, &reason);
