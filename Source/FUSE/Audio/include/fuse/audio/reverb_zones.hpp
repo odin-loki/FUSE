@@ -100,3 +100,6 @@ bool should_skip_reverb_wet_mix(const Vec3& listener, const ReverbZoneParams* zo
 // --- deepen additive from deepen-b72-audio-occlusion-77d8 ---
 bool should_skip_dry_wet_blend(float wet_mix);
 bool should_skip_reverb_wet_convolution(const ReverbZoneBlend& blend);
+
+// --- deepen additive from deepen-b72-audio-occlusion-guards-9580 ---
+bool should_skip_reverb_zone_blend(const Vec3& listener, const ReverbZoneParams* zones,

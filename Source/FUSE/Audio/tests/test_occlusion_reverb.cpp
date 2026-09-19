@@ -329,3 +329,17 @@ void testDryWetBlendGuards() {
     expectTrue(!fuse::audio::should_skip_dry_wet_blend(0.5f), "partial wet mix blends");
     expectTrue(fuse::audio::should_skip_reverb_wet_convolution(dry),
     expectTrue(!fuse::audio::should_skip_reverb_wet_convolution(wet),
+
+// --- deepen additive from deepen-b72-audio-occlusion-guards-9580 ---
+    expectTrue(fuse::audio::should_skip_occlusion_blockers(nullptr, 0),
+    expectTrue(fuse::audio::should_skip_occlusion_blockers(nullptr, 2),
+    expectTrue(fuse::audio::should_skip_occlusion_blockers(&blocker, 0),
+    expectTrue(!fuse::audio::should_skip_occlusion_blockers(&blocker, 1),
+    expectTrue(fuse::audio::should_skip_occlusion_blockers(nullptr, 0)
+               "should_skip is inverse of has_occlusion_blockers");
+               "should_skip is inverse of should_apply for dry blend");
+    expectTrue(fuse::audio::should_skip_reverb_wet_mix(zero_send),
+    expectTrue(fuse::audio::should_skip_reverb_zone_blend(inside, nullptr, 0),
+    expectTrue(fuse::audio::should_skip_reverb_zone_blend(inside, &zone, 0),
+    expectTrue(fuse::audio::should_skip_reverb_zone_blend(outside, &zone, 1),
+    expectTrue(!fuse::audio::should_skip_reverb_zone_blend(inside, &zone, 1),
