@@ -12,6 +12,36 @@
 namespace fuse::physics {
 
 struct SolverParams;
+/// Why island graph build would reject (B4.4 deepen follow-up pass).
+enum class IslandBuildRejectReason : u8 {
+    None = 0,
+    EmptyInput,
+    OutOfRangeRefs,
+};
+
+/// Why graph-level island dispatch would reject (B4.4 deepen follow-up pass).
+enum class IslandDispatchRejectReason : u8 {
+    EmptyGraph,
+    InvalidDt,
+    NonFiniteDt,
+
+/// Why per-island solve job dispatch would reject (B4.4 deepen follow-up pass).
+enum class IslandSolveJobRejectReason : u8 {
+    OutOfRangeIndex,
+    EmptyIsland,
+
+/// Why per-island constraint solve would reject (B4.4 deepen follow-up pass).
+enum class IslandConstraintSolveRejectReason : u8 {
+    NoInRangeRefs,
+    NoMovableBodies,
+
+/// Why per-island sleep solve would skip (B4.4 deepen follow-up pass).
+enum class IslandSleepRejectReason : u8 {
+    AllSleeping,
+
+/// Why per-island wake would skip (B4.4 deepen follow-up pass).
+enum class IslandWakeRejectReason : u8 {
+    NoWakeTarget,
 
 /// Lightweight view for parallel island dispatch (B4.4 deepen).
 struct IslandSolveJob {
@@ -171,6 +201,7 @@ struct ConstraintIterationPreflight {
 
 /// Combined dispatch preflight (graph + timestep guard).
 struct IslandDispatchPreflight {
+    IslandDispatchRejectReason reason = IslandDispatchRejectReason::None;
     IslandSolvePreflight solve{};
     bool invalidDt = false;
 
@@ -1288,6 +1319,7 @@ struct IslandConstraintSolvePreflight {
 
 /// Per-job island dispatch preflight (dt + empty/null job guards).
 struct IslandSolveJobPreflight {
+    IslandSolveJobRejectReason reason = IslandSolveJobRejectReason::None;
     bool invalidDt = false;
     bool skipped = false;
     u32 constraintCount = 0;
@@ -1474,6 +1506,9 @@ const char* island_build_reject_reason_name(IslandBuildRejectReason reason);
 
 
 /// Diagnose why island graph build would skip; vacuously succeeds when build may proceed (B4.4 deepen follow-up pass).
+/// Human-readable label for island-build reject reasons (logging / tests).
+
+/// Diagnose why island graph build would reject; vacuously succeeds when build may proceed.
 IslandBuildRejectReason island_build_reject_reason(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -1616,6 +1651,50 @@ bool island_wake_graph_rejects_for_reason(const ContactIslandGraph& graph,
 /// Returns true when `island_wake_graph_reject_reason` matches `expected`.
                                           IslandWakeGraphRejectReason expected);
 bool island_build_rejects_for_reason(u32 bodyCount,
+
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+
+/// Human-readable label for island-dispatch reject reasons (logging / tests).
+const char* island_dispatch_reject_reason_name(IslandDispatchRejectReason reason);
+
+/// Diagnose why graph-level island dispatch would skip; vacuously succeeds when dispatch may proceed.
+IslandDispatchRejectReason island_dispatch_reject_reason(const ContactIslandGraph& graph, f32 dt);
+
+/// Returns true when `island_dispatch_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+bool island_dispatch_rejects_for_reason(
+    f32 dt,
+    IslandDispatchRejectReason expected);
+
+/// Human-readable label for island-solve-job reject reasons (logging / tests).
+const char* island_solve_job_reject_reason_name(IslandSolveJobRejectReason reason);
+
+/// Diagnose why one island solve job would skip; vacuously succeeds when dispatch may proceed.
+IslandSolveJobRejectReason island_solve_job_reject_reason(const IslandSolveJob& job, f32 dt);
+
+/// Returns true when `island_solve_job_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+bool island_solve_job_rejects_for_reason(
+    const IslandSolveJob& job,
+    IslandSolveJobRejectReason expected);
+
+/// Human-readable label for island-constraint-solve reject reasons (logging / tests).
+
+/// Diagnose why one island constraint solve would skip; vacuously succeeds when solve may proceed.
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Returns true when `island_constraint_solve_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+
+/// Human-readable label for island-sleep reject reasons (logging / tests).
+
+/// Diagnose why one island sleep preflight would skip solve; vacuously succeeds when solve may proceed.
+
+/// Returns true when `island_sleep_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
+
+/// Human-readable label for island-wake reject reasons (logging / tests).
+
+/// Diagnose why one island wake would skip; vacuously succeeds when wake may proceed.
+
+/// Returns true when `island_wake_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
 
 /// Input coverage for island graph build (out-of-range body-index guards).
 struct IslandBuildStats {
@@ -11098,6 +11177,69 @@ IslandBatchDispatchResult dispatch_solveable_islands_result(
 
 /// Guarded pipeline: wake wakeable islands then dispatch solveable islands (B4.4 deepen follow-up).
 IslandBatchDispatchResult dispatch_island_solve_pipeline_guarded(
+    RigidBodySoA& bodies,
+    const ContactIslandGraph& graph,
+    SolverWorkBuffers& workBuffers,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt,
+    f32 contactCompliance,
+    const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
+/// Per-island pipeline dispatch outcome (wake → constraint-solve guards → solve).
+struct IslandPipelineDispatchResult {
+    u32 islandIndex = ContactIslandGraph::invalidIsland;
+    bool wokeSleepers = false;
+    bool solved = false;
+    bool skipped = false;
+    IslandWakeRejectReason wakeReason = IslandWakeRejectReason::None;
+    IslandConstraintSolveRejectReason constraintReason = IslandConstraintSolveRejectReason::None;
+    IslandSolveJobRejectReason dispatchReason = IslandSolveJobRejectReason::None;
+};
+
+/// Batch pipeline dispatch summary for wake → solve guarded iteration.
+struct IslandBatchPipelineDispatchResult {
+    u32 solvedCount = 0;
+    u32 skippedCount = 0;
+    u32 wokeCount = 0;
+    u32 dispatchableCount = 0;
+    bool skipped = false;
+
+    bool any_solved() const { return solvedCount > 0u; }
+};
+
+/// Read-only pipeline dispatch preflight (wake graph + dispatch graph + dt guards).
+struct IslandPipelineDispatchPreflight {
+    IslandDispatchRejectReason dispatchReason = IslandDispatchRejectReason::None;
+    IslandWakeGraphPreflight wake{};
+    IslandDispatchPreflight solve{};
+    bool skipped = false;
+
+    bool can_dispatch() const { return !skipped && dispatchReason == IslandDispatchRejectReason::None; }
+};
+
+/// Populate pipeline dispatch preflight without mutating bodies or graph.
+IslandPipelineDispatchPreflight preflight_island_pipeline_dispatch(const ContactIslandGraph& graph,
+                                                                   const RigidBodySoA& bodies,
+                                                                   f32 dt);
+
+/// Early-out guard when pipeline dispatch would skip every island.
+bool should_skip_island_pipeline_dispatch(const ContactIslandGraph& graph,
+                                          const RigidBodySoA& bodies,
+                                          f32 dt);
+
+/// Guarded per-island pipeline: wake sleepers when needed, then dispatch constraint solve.
+IslandPipelineDispatchResult dispatch_solve_island_pipeline_result(
+    RigidBodySoA& bodies,
+    const ContactIslandGraph& graph,
+    u32 islandIndex,
+    SolverWorkBuffers& workBuffers,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt,
+    f32 contactCompliance,
+    const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
+/// Batch guarded pipeline dispatch over nonsleeping islands; returns summary counts.
+IslandBatchPipelineDispatchResult dispatch_all_islands_pipeline_result(
     RigidBodySoA& bodies,
     const ContactIslandGraph& graph,
     SolverWorkBuffers& workBuffers,
