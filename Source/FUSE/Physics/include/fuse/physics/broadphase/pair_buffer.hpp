@@ -328,6 +328,12 @@ struct PairBufferCompactionPreflight {
 
     bool needsCompaction() const { return reason == PairBufferCompactionRejectReason::None; }
 
+/// Non-mutating push skip predicate — inverse of `preflightPairBufferPush` (B4.2 deepen follow-up pass).
+bool canSkipPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+
+/// Non-mutating push predicate — mirrors `preflightPairBufferPush` (B4.2 deepen follow-up pass).
+bool shouldRunPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB);
+
 /// Why pair-buffer compaction would early-out (B4.2 deepen pass).
 enum class PairBufferCompactionRejectReason : u8 {
     None = 0,
@@ -633,6 +639,8 @@ PairBufferWriteSlotPreflight preflightPairBufferWriteSlot(
 
 
 
+
+/// Why canonical sort would early-out (B4.2 deepen follow-up pass).
 enum class PairBufferSortRejectReason : u8 {
     None = 0,
     EmptyBuffer,
@@ -677,6 +685,9 @@ enum class PairBufferSortRejectReason : u8 {
     bool singlePair = false;
 
 /// Returns true when `pairBufferSortRejectReason` matches `expected` (B4.2 deepen follow-up pass).
+
+
+
 
 
 
@@ -1285,5 +1296,8 @@ bool shouldRunPairBufferDedupe(const PairBufferSoA& buffer);
 /// Non-mutating compact+clamp skip predicate — inverse of `needsWork` (B4.2 deepen pass).
 
 /// Non-mutating compact+clamp predicate — mirrors `preflightPairBufferCompactAndClamp` (B4.2 deepen pass).
+
+/// Non-mutating sort skip predicate — inverse of `preflightPairBufferSort` (B4.2 deepen follow-up pass).
+
 
 } // namespace fuse::physics::broadphase
