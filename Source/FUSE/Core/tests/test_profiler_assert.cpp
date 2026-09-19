@@ -4013,3 +4013,35 @@ void testBlankNameGuards() {
                "tryFirstExportableEvent true for first exportable event");
                "tryLastExportableEvent true for last exportable event");
 void testNestedAsyncFlowContextGuards() {
+
+// --- deepen additive from b16-profiler-deepen-guards-5051 ---
+    expectTrue(!fuse::profiler::tryFindFirstEventIndexByName("missing", outIndex),
+               "tryFindFirstEventIndexByName false on empty buffer");
+               "tryFindFirstEventIndexByName clears output on empty buffer");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByName("name_inner", outIndex),
+               "tryFindFirstEventIndexByName true for inner scope");
+    expectTrue(outIndex == 2u, "tryFindFirstEventIndexByName copies inner begin index");
+void testTryFindEventIndexByPhaseGuard() {
+    expectTrue(!fuse::profiler::tryFindLastEventIndexByPhase(fuse::profiler::EventPhase::End, outIndex),
+               "tryFindLastEventIndexByPhase false on empty buffer");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByPhase(fuse::profiler::EventPhase::FlowStart, outIndex),
+               "tryFindFirstEventIndexByPhase locates flow start");
+    expectTrue(outIndex == 1u, "tryFindFirstEventIndexByPhase copies flow start index");
+    expectTrue(fuse::profiler::tryFindLastEventIndexByPhase(fuse::profiler::EventPhase::Counter, outIndex),
+               "tryFindLastEventIndexByPhase locates counter sample");
+    expectTrue(outIndex == 2u, "tryFindLastEventIndexByPhase copies counter index");
+void testChromeTraceExportPreflightTrimAndOrphanFlags() {
+    expectTrue(!emptyPreflight.exportWouldTrimEvents, "empty preflight does not trim events");
+    expectTrue(!emptyPreflight.hasOnlyExportableEvents, "empty preflight hasOnlyExportableEvents false");
+    expectTrue(emptyPreflight.orphanAsyncFlowEndCount == 0u, "empty preflight orphan count is zero");
+    expectTrue(!emptyPreflight.hasOrphanAsyncFlowEnds, "empty preflight hasOrphanAsyncFlowEnds false");
+    expectTrue(!closedPreflight.exportWouldTrimEvents, "valid trace does not trim events");
+    expectTrue(closedPreflight.hasOnlyExportableEvents, "valid trace hasOnlyExportableEvents true");
+    const fuse::profiler::ChromeTraceExportPreflight orphanPreflight =
+    expectTrue(orphanPreflight.orphanAsyncFlowEndCount == 1u, "preflight reports orphan flow end count");
+    expectTrue(orphanPreflight.hasOrphanAsyncFlowEnds, "preflight marks orphan async flow ends");
+    expectTrue(orphanPreflight.canExportSafely(), "orphan ends alone do not block safe export");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByName("lookup_scope", scopeIndex),
+               "tryFindFirstEventIndexByName succeeds after blank-name attempts");
+    expectTrue(fuse::profiler::tryExportableEventAt(scopeIndex, scopeEvent),
+    testChromeTraceExportPreflightTrimAndOrphanFlags();
