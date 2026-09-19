@@ -3326,3 +3326,14 @@ void testFinalizeContactManifoldIfNeededDeepenGuard() {
             buffer, 5u, valid, fuse::physics::narrowphase::ContactBufferWriteRejectReason::OutOfRangeSlot),
     expectTrue(compactionPreflight.needsCompaction(), "compaction preflight needs work for sparse slots");
 void testContactPairUndispatchedShapeGuards() {
+
+// --- deepen additive from b4-narrowphase-deepen-ffe6 ---
+void testContactBufferGuardHelpers() {
+        fuse::physics::narrowphase::should_skip_contact_buffer_iteration(buffer),
+        "should_skip on empty buffer");
+    expectTrue(emptyPreflight.emptyPairList, "dispatch preflight flags empty pair list");
+    expectTrue(emptyPreflight.canSkipDispatch, "dispatch preflight skips empty pair list");
+    expectTrue(!validPreflight.canSkipDispatch, "dispatch preflight allows valid pair");
+    expectTrue(validPreflight.batch.dispatchableCount == 1u, "dispatch preflight counts dispatchable pair");
+void testManifoldFinalizeIfNotFinalizedGuards() {
+void testFrictionNormalizeAndRebuildGuards() {

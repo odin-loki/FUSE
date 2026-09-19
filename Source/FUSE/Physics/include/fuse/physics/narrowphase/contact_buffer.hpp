@@ -314,3 +314,8 @@ ContactBufferFrictionRebuildRejectReason contact_buffer_friction_rebuild_reject_
     ContactBufferFrictionRebuildRejectReason expected);
     bool can_rebuild() const { return reason == ContactBufferFrictionRebuildRejectReason::None; }
 ContactBufferFrictionRebuildPreflight preflight_contact_buffer_friction_rebuild(
+
+// --- deepen additive from b4-narrowphase-deepen-ffe6 ---
+struct ContactBufferPreflight {
+ContactBufferPreflight preflight_contact_buffer(const ContactBufferSoA& buffer);
+bool should_skip_contact_buffer_iteration(const ContactBufferSoA& buffer);

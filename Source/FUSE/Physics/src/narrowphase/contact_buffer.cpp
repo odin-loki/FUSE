@@ -793,3 +793,8 @@ ContactBufferFrictionRebuildRejectReason contact_buffer_friction_rebuild_reject_
     ContactBufferFrictionRebuildRejectReason expected) {
 ContactBufferFrictionRebuildPreflight preflight_contact_buffer_friction_rebuild(
     preflight.noValidContacts = preflight.reason == ContactBufferFrictionRebuildRejectReason::NoValidContacts;
+
+// --- deepen additive from b4-narrowphase-deepen-ffe6 ---
+ContactBufferPreflight preflight_contact_buffer(const ContactBufferSoA& buffer) {
+    ContactBufferPreflight preflight{};
+bool should_skip_contact_buffer_iteration(const ContactBufferSoA& buffer) {
