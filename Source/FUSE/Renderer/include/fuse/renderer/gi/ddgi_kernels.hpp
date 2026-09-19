@@ -12,6 +12,8 @@ namespace fuse::renderer::gi {
 struct DDGIKernelParams {
     const u32* probe_indices_to_update = nullptr;
     u32 probe_update_count = 0;
+    /// When non-zero, each scheduled probe index is range-checked against [0, probe_grid_count).
+    u32 probe_grid_count = 0;
     const void* probe_world_positions = nullptr;
     void* prev_irradiance_surface = nullptr;
     void* out_radiance_surface = nullptr;
@@ -29,6 +31,7 @@ enum class ProbeKernelRejectReason : u8 {
     ZeroUpdateCount,
     NullProbeIndices,
     ZeroRaysPerProbe,
+    OutOfRangeProbeIndex,
 };
 
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
