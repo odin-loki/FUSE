@@ -2482,3 +2482,24 @@ IslandWakeGraphRejectReason island_wake_graph_reject_reason(const ContactIslandG
     if (preflight.reason == IslandWakeRejectReason::EmptyIsland) {
         preflight.reason == IslandWakeRejectReason::None && preflight.sleepingCount > 0u &&
         preflight.reason = IslandWakeRejectReason::OutOfRangeIslandIndex;
+
+// --- deepen additive from pbd-island-deepen-preflights-1b60 ---
+        preflight.reason = IslandBuildRejectReason::EmptyInput;
+        preflight.reason = IslandBuildRejectReason::OutOfRangeContactRefs;
+        preflight.reason = IslandBuildRejectReason::OutOfRangeDistanceRefs;
+        preflight.reason = IslandSleepSolveRejectReason::EmptyIsland;
+        preflight.reason = IslandSleepSolveRejectReason::AllSleeping;
+        preflight.reason = IslandWakeRejectReason::EmptyIsland;
+        preflight.reason = IslandWakeRejectReason::NoMixedSleepState;
+const char* island_sleep_solve_reject_reason_name(IslandSleepSolveRejectReason reason) {
+        preflight.reason = IslandConstraintSolveRejectReason::EmptyIsland;
+        preflight.reason = IslandConstraintSolveRejectReason::StaleConstraintRefs;
+        preflight.reason = IslandConstraintSolveRejectReason::AllSleeping;
+        preflight.reason = IslandConstraintSolveRejectReason::NoMovableBodies;
+    case IslandConstraintSolveRejectReason::AllSleeping:
+        if (preflight.skipped || preflight.reason == IslandConstraintSolveRejectReason::EmptyIsland) {
+        } else if (preflight.reason == IslandConstraintSolveRejectReason::StaleConstraintRefs) {
+        } else if (preflight.reason == IslandConstraintSolveRejectReason::AllSleeping) {
+        } else if (preflight.reason == IslandConstraintSolveRejectReason::NoMovableBodies) {
+    IslandDispatchDeepenPreflight preflight{};
+    const IslandDispatchDeepenPreflight preflight = preflight_island_dispatch_deepen(

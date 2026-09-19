@@ -1529,3 +1529,10 @@ IslandWakeGraphRejectReason island_wake_graph_reject_reason(const ContactIslandG
     IslandSleepRejectReason reason = IslandSleepRejectReason::None;
     bool can_skip_solve() const { return reason == IslandSleepRejectReason::AllSleeping; }
     bool should_wake_sleepers() const { return reason == IslandWakeRejectReason::None && hasMixedSleepState; }
+
+// --- deepen additive from pbd-island-deepen-preflights-1b60 ---
+    bool can_build() const { return !skipped && reason == IslandBuildRejectReason::None && !has_unsafe_refs(); }
+        return !skipped && reason == IslandConstraintSolveRejectReason::None && refs.can_solve() &&
+const char* island_sleep_solve_reject_reason_name(IslandSleepSolveRejectReason reason);
+        return !skipped && reason == IslandSleepSolveRejectReason::AllSleeping && allSleeping;
+        return !skipped && reason == IslandWakeRejectReason::None && hasMixedSleepState &&

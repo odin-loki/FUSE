@@ -4492,3 +4492,30 @@ void testIslandRejectReasonGuards() {
     expectTrue(solvePreflight.reason == IslandConstraintSolveRejectReason::NoMovableBodies,
                    IslandConstraintSolveRejectReason::OutOfRangeIslandIndex,
     testIslandRejectReasonGuards();
+
+// --- deepen additive from pbd-island-deepen-preflights-1b60 ---
+void testPreflightIslandBuildRejectReasonGuards() {
+                   static_cast<fuse::u32>(IslandBuildRejectReason::OutOfRangeContactRefs),
+    expectTrue(std::strcmp(island_build_reject_reason_name(IslandBuildRejectReason::OutOfRangeContactRefs),
+    ContactIslandGraph withPreflightGraph;
+    expectTrue(build_island_graph_with_preflight(withPreflightGraph, 4, contacts, constraints) ==
+void testPreflightIslandConstraintSolveDeepenGuards() {
+    const IslandConstraintSolvePreflight mixedPreflight = preflight_island_constraint_solve(
+    expectTrue(mixedPreflight.can_solve(), "mixed island passes constraint-solve deepen preflight");
+    expectTrue(static_cast<fuse::u32>(mixedPreflight.reason) ==
+                   static_cast<fuse::u32>(IslandConstraintSolveRejectReason::None),
+    expectTrue(!sleepingPreflight.can_solve(), "all-sleeping island fails constraint-solve deepen preflight");
+                                                          IslandConstraintSolveRejectReason::AllSleeping),
+    const IslandConstraintSolveGraphPreflight graphPreflight =
+    expectTrue(graphPreflight.has_solveable_islands(), "graph constraint-solve preflight has solveable island");
+    expectTrue(graphPreflight.stats.solveableCount == 1u, "graph counts one solveable island");
+                                                          IslandConstraintSolveRejectReason::StaleConstraintRefs),
+    const IslandDispatchDeepenPreflight dispatchPreflight = preflight_island_dispatch_deepen(
+    expectTrue(dispatchPreflight.can_dispatch(), "deepen dispatch preflight accepts mixed island");
+void testPreflightIslandSleepWakeRejectReasonGuards() {
+                                                     IslandSleepSolveRejectReason::AllSleeping),
+    expectTrue(island_wake_reject_reason(graph.island(mixedIsland), bodies) == IslandWakeRejectReason::None,
+                                              IslandWakeRejectReason::NoMixedSleepState),
+    testPreflightIslandBuildRejectReasonGuards();
+    testPreflightIslandConstraintSolveDeepenGuards();
+    testPreflightIslandSleepWakeRejectReasonGuards();
