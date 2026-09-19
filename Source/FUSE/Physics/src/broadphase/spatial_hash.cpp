@@ -932,6 +932,30 @@ const char* shapeCellInsertRejectReasonName(ShapeCellInsertRejectReason reason) 
     return "Unknown";
 }
 
+const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason) {
+    switch (reason) {
+    case CellPairGenRejectReason::None:
+        return "None";
+    case CellPairGenRejectReason::EmptyOccupants:
+        return "EmptyOccupants";
+    case CellPairGenRejectReason::SingletonOccupant:
+        return "SingletonOccupant";
+    }
+    return "Unknown";
+}
+
+const char* cellCapacityInsertRejectReasonName(CellCapacityInsertRejectReason reason) {
+    switch (reason) {
+    case CellCapacityInsertRejectReason::None:
+        return "None";
+    case CellCapacityInsertRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellCapacityInsertRejectReason::ExceedsBudget:
+        return "ExceedsBudget";
+    }
+    return "Unknown";
+}
+
 const char* mergeBroadphaseRejectReasonName(BroadphaseMergeRejectReason reason) {
     switch (reason) {
     case BroadphaseMergeRejectReason::None:
@@ -1139,6 +1163,10 @@ CellPairGenPreflight preflightCellPairGenerationImpl(const std::vector<u32>& occ
     const CellPairGenPreflight preflight = preflightCellPairGenerationImpl(occupants);
     if (!preflight.canGenerate()) {
     return preflight.pairCount;
+    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
+    const u32 bodyCount = static_cast<u32>(uniqueBodies.size());
+    return preflightCellPairGen(bodyCount).pairCount;
+}
 
 void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
     if (!preflightCellPairGenerationImpl(occupants).canGenerate()) {
@@ -1194,6 +1222,10 @@ u32 countPairsForOccupantsInternal(const std::vector<u32>& occupants) {
 
         return;
     }
+    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
+    if (!shouldRunCellPairGeneration(static_cast<u32>(uniqueBodies.size()))) {
+        return;
+    }
     for (usize i = 0; i < uniqueBodies.size(); ++i) {
         for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
             appendPair(out, uniqueBodies[i], uniqueBodies[j]);
@@ -1220,6 +1252,10 @@ void writePairsForCellSlots(
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
     const u32 uniqueCount = static_cast<u32>(uniqueBodies.size());
     if (!shouldRunCellPairGeneration(occupantCount, uniqueCount)) {
+        return;
+    }
+    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
+    if (!shouldRunCellPairGeneration(static_cast<u32>(uniqueBodies.size()))) {
         return;
     }
     u32 slot = slotStart;
