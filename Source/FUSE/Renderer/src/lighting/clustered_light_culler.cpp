@@ -996,3 +996,15 @@ bool ClusterGridLayout::tryClusterIndex(u32 tileX, u32 tileY, u32 sliceZ, const 
 
 // --- deepen additive from deepen-b5-clustered-lights-lookup-population-guards-8337 ---
 bool cluster_util::tryClusterLightCountAtIndex(const ClusterGridSoA& grid,
+
+// --- deepen additive from deepen-b5-clustered-light-guards-a0d3 ---
+const char* gridRebuildRejectReasonLabel(GridRebuildRejectReason reason) {
+    case GridRebuildRejectReason::None:
+    case GridRebuildRejectReason::EmptyGrid:
+    case GridRebuildRejectReason::ClusterCountMismatch:
+    return tryCanLookupAtIndex(grid, desc, 0u, outReason);
+bool ClusterLightGridLayout::tryCanRebuildLightGrid(const ClusterDesc& desc,
+                                                   GridRebuildRejectReason& outReason) {
+        outReason = GridRebuildRejectReason::None;
+        outReason = GridRebuildRejectReason::EmptyGrid;
+        outReason = GridRebuildRejectReason::ClusterCountMismatch;

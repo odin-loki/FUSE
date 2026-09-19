@@ -393,3 +393,9 @@ bool tryLookupClusterLights(const ClusterGridSoA& grid,
 
 // --- deepen additive from deepen-b5-clustered-lights-lookup-population-guards-8337 ---
 bool tryClusterLightCountAtIndex(const ClusterGridSoA& grid,
+
+// --- deepen additive from deepen-b5-clustered-light-guards-a0d3 ---
+enum class GridRebuildRejectReason : u8 {
+const char* gridRebuildRejectReasonLabel(GridRebuildRejectReason reason);
+    static bool tryCanRebuildLightGrid(const ClusterDesc& desc,
+                                       GridRebuildRejectReason& outReason);
