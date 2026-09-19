@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace fuse::profiler {
@@ -216,6 +217,14 @@ const char* chromeCategory(EventPhase phase) {
     default:
         return "cpu";
     }
+}
+
+bool isFlowEventPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+}
+
+bool isValidFlowLookupId(u32 flowId) {
+    return flowId != 0u;
 }
 
 } // namespace
@@ -464,6 +473,158 @@ u32 countEventsByPhase(EventPhase phase) {
     return count;
 }
 
+bool eventNameMatches(const ProfileEvent& event, const char* name) {
+    if (!isValidEventName(name) || !isValidEventName(event.name)) {
+        return false;
+    }
+
+    return std::strcmp(event.name, name) == 0;
+}
+
+u32 findFirstEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (eventNameMatches(event, name)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (eventNameMatches(event, name)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByName(const char* name) {
+    if (!isValidEventName(name)) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        if (eventNameMatches(eventAt(i), name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 findFirstEventIndexByFlowId(u32 flowId) {
+    if (!isValidFlowLookupId(flowId)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isFlowEventPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 findLastEventIndexByFlowId(u32 flowId) {
+    if (!isValidFlowLookupId(flowId)) {
+        return kInvalidEventIndex;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = total; i > 0u; --i) {
+        const ProfileEvent& event = eventAt(i - 1u);
+        if (isFlowEventPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+            return i - 1u;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 countEventsByFlowId(u32 flowId) {
+    if (!isValidFlowLookupId(flowId)) {
+        return 0u;
+    }
+
+    u32 count = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (isFlowEventPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool hasFlowStartEvent(u32 flowId) {
+    if (!isValidFlowLookupId(flowId)) {
+        return false;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.phase == EventPhase::FlowStart && event.scopeId == flowId && isValidEventName(event.name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool hasFlowFinishEvent(u32 flowId) {
+    if (!isValidFlowLookupId(flowId)) {
+        return false;
+    }
+
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.phase == EventPhase::FlowFinish && event.scopeId == flowId && isValidEventName(event.name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool isFlowPairedInBuffer(u32 flowId) {
+    if (!isValidFlowLookupId(flowId)) {
+        return false;
+    }
+
+    u32 startCount = 0u;
+    u32 finishCount = 0u;
+    const u32 total = eventCount();
+    for (u32 i = 0u; i < total; ++i) {
+        const ProfileEvent& event = eventAt(i);
+        if (event.scopeId != flowId || !isValidEventName(event.name)) {
+            continue;
+        }
+
+        if (event.phase == EventPhase::FlowStart) {
+            ++startCount;
+        } else if (event.phase == EventPhase::FlowFinish) {
+            ++finishCount;
+        }
+    }
+    return startCount == 1u && finishCount == 1u;
+}
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     return count > 0u ? count - 1u : kInvalidEventIndex;
@@ -497,6 +658,9 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.ringBufferFull = isBufferFull();
     preflight.hasInvalidNameEvents = hasInvalidNameEvents();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+    preflight.flowStartEventCount = countEventsByPhase(EventPhase::FlowStart);
+    preflight.flowFinishEventCount = countEventsByPhase(EventPhase::FlowFinish);
+    preflight.hasUnpairedFlowEvents = preflight.flowStartEventCount != preflight.flowFinishEventCount;
     return preflight;
 }
 
