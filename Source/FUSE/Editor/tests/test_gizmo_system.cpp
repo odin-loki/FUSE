@@ -4308,3 +4308,15 @@ void testNonFiniteRejectReasonClassification() {
 
 // --- deepen additive from deepen-gizmo-preflights-a361 ---
                "tryPreflightSnapDrag rejects invalid snap step");
+
+// --- deepen additive from deepen-gizmo-preflight-guards-0f6b ---
+void testInvalidDimensionsRejectReasonGuards() {
+    expectTrue(!fuse::editor::preflightPickReady(hit, fuse::editor::GizmoMode::Translate,
+               "preflightPickReady rejects invalid viewport dimensions");
+    expectTrue(pickReason == fuse::editor::GizmoPickRejectReason::InvalidDimensions,
+               "tryPreflightBeginDrag rejects invalid viewport dimensions");
+    expectTrue(beginReason == fuse::editor::GizmoBeginDragRejectReason::InvalidDimensions,
+               "preflightUpdateDragReady rejects invalid viewport dimensions");
+    expectTrue(updateReason == fuse::editor::GizmoUpdateDragRejectReason::InvalidDimensions,
+    expectTrue(gizmo.preflightSnapDragReady(0.37f) ==
+    testInvalidDimensionsRejectReasonGuards();
