@@ -11,6 +11,92 @@
 
 namespace fuse::physics {
 
+/// Reject reason for island graph build inputs (B4.4 deepen, B4.2 parity).
+enum class IslandBuildRejectReason : u8 {
+    None = 0,
+    EmptyInput,
+    OutOfRangeContactBody,
+    OutOfRangeDistanceBody,
+};
+
+const char* islandBuildRejectReasonName(IslandBuildRejectReason reason);
+
+IslandBuildRejectReason islandBuildRejectReason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+bool islandBuildRejectsForReason(u32 bodyCount,
+                                 const std::vector<narrowphase::ContactManifold>& contacts,
+                                 const std::vector<DistanceConstraint>& distanceConstraints,
+                                 IslandBuildRejectReason expected);
+
+/// Reject reason for island constraint-solve preflight (B4.4 deepen, B4.2 parity).
+enum class IslandConstraintSolveRejectReason : u8 {
+    None = 0,
+    EmptyIsland,
+    StaleContactRefs,
+    StaleDistanceRefs,
+    NoMovableBodies,
+    AllSleeping,
+};
+
+const char* islandConstraintSolveRejectReasonName(IslandConstraintSolveRejectReason reason);
+
+IslandConstraintSolveRejectReason islandConstraintSolveRejectReason(
+    const ContactIslandGraph::Island& island,
+    const RigidBodySoA& bodies,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints);
+
+bool islandConstraintSolveRejectsForReason(const ContactIslandGraph::Island& island,
+                                           const RigidBodySoA& bodies,
+                                           const std::vector<narrowphase::ContactManifold>& contacts,
+                                           const std::vector<DistanceConstraint>& distanceConstraints,
+                                           IslandConstraintSolveRejectReason expected);
+
+/// Reject reason for island solve dispatch (B4.4 deepen, B4.2 parity).
+enum class IslandDispatchRejectReason : u8 {
+    None = 0,
+    InvalidDt,
+    NonFiniteDt,
+    EmptyJob,
+    OutOfRangeIsland,
+    NoConstraints,
+    NoDispatchableIslands,
+    AllSleeping,
+    NoMovableBodies,
+    StaleConstraintRefs,
+};
+
+const char* islandDispatchRejectReasonName(IslandDispatchRejectReason reason);
+
+/// Reject reason for island warm-start preflight (B4.4 deepen, B4.2 parity).
+enum class IslandWarmStartRejectReason : u8 {
+    None = 0,
+    EmptyIsland,
+    OutOfRangeIsland,
+    NoPriorData,
+    InvalidDt,
+    NoImpulses,
+};
+
+const char* islandWarmStartRejectReasonName(IslandWarmStartRejectReason reason);
+
+IslandWarmStartRejectReason islandWarmStartRejectReason(const ContactIslandGraph::Island& island,
+                                                        const std::vector<f32>& priorDistanceLambdas,
+                                                        const std::vector<f32>& priorContactLambdas = {});
+
+IslandWarmStartRejectReason islandWarmStartRejectReason(
+    const ContactIslandGraph::Island& island,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    f32 dt);
+
+bool islandWarmStartRejectsForReason(const ContactIslandGraph::Island& island,
+                                     const std::vector<f32>& priorDistanceLambdas,
+                                     const std::vector<f32>& priorContactLambdas,
+                                     IslandWarmStartRejectReason expected);
+
 /// Lightweight view for parallel island dispatch (B4.4 deepen).
 struct IslandSolveJob {
     u32 islandIndex = ContactIslandGraph::invalidIsland;
@@ -40,6 +126,7 @@ struct IslandDispatchResult {
     bool solved = false;
     bool skipped = false;
     u32 islandIndex = ContactIslandGraph::invalidIsland;
+    IslandDispatchRejectReason reason = IslandDispatchRejectReason::None;
 };
 
 /// Per-island warm-start outcome (skip vs seed) for parallel batch stubs.
@@ -181,13 +268,14 @@ struct IslandBuildStats {
 /// Preflight diagnostics for island graph build inputs (B4.4 deepen).
 struct IslandBuildPreflight {
     IslandBuildStats stats{};
+    IslandBuildRejectReason reason = IslandBuildRejectReason::None;
     bool skipped = false;
 
     bool has_unsafe_refs() const {
         return stats.outOfRangeContactBodyCount > 0u || stats.outOfRangeDistanceBodyCount > 0u;
     }
 
-    bool can_build() const { return !skipped && !has_unsafe_refs(); }
+    bool can_build() const { return reason == IslandBuildRejectReason::None && !skipped && !has_unsafe_refs(); }
 };
 
 /// Body participation for one island constraint solve (sleep/static/movable guards).
@@ -206,9 +294,13 @@ struct IslandSolveBodiesPreflight {
 struct IslandConstraintSolvePreflight {
     IslandConstraintRefsPreflight refs{};
     IslandSolveBodiesPreflight bodies{};
+    IslandConstraintSolveRejectReason reason = IslandConstraintSolveRejectReason::None;
     bool skipped = false;
 
-    bool can_solve() const { return !skipped && refs.can_solve() && bodies.can_solve(); }
+    bool can_solve() const {
+        return reason == IslandConstraintSolveRejectReason::None && !skipped && refs.can_solve() &&
+               bodies.can_solve();
+    }
 };
 
 /// Per-island sleep state for solve early-out stubs.
@@ -221,6 +313,17 @@ struct IslandSleepPreflight {
     bool skipped = false;
 
     bool can_skip_solve() const { return !skipped && allSleeping; }
+};
+
+/// Unified per-job dispatch preflight (dt + refs + bodies + sleep guards).
+struct IslandDispatchJobPreflight {
+    IslandSolveJobPreflight job{};
+    IslandConstraintSolvePreflight constraint{};
+    IslandSleepPreflight sleep{};
+    IslandDispatchRejectReason reason = IslandDispatchRejectReason::None;
+    bool skipped = false;
+
+    bool can_dispatch() const { return reason == IslandDispatchRejectReason::None && !skipped; }
 };
 
 /// Per-island wake hint when active dynamics neighbor sleeping bodies.
@@ -340,6 +443,26 @@ IslandSolveJobPreflight preflight_solve_island_job(const IslandSolveJob& job, f3
 
 /// Early-out guard for job-level island dispatch (empty/null job or invalid dt).
 bool should_skip_solve_island_job(const IslandSolveJob& job, f32 dt);
+
+IslandDispatchRejectReason islandDispatchRejectReason(const IslandSolveJob& job, f32 dt);
+
+IslandDispatchRejectReason islandDispatchRejectReason(
+    const IslandSolveJob& job,
+    const RigidBodySoA& bodies,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt);
+
+bool islandDispatchRejectsForReason(const IslandSolveJob& job,
+                                    f32 dt,
+                                    IslandDispatchRejectReason expected);
+
+bool islandDispatchRejectsForReason(const IslandSolveJob& job,
+                                    const RigidBodySoA& bodies,
+                                    const std::vector<narrowphase::ContactManifold>& contacts,
+                                    const std::vector<DistanceConstraint>& distanceConstraints,
+                                    f32 dt,
+                                    IslandDispatchRejectReason expected);
 
 /// Preflight constraint index coverage for one island; sets `skipped` for empty islands.
 IslandConstraintRefsPreflight preflight_island_constraint_refs(
@@ -825,5 +948,43 @@ bool wake_island_sleepers_by_index_guarded(RigidBodySoA& bodies,
 
 /// Batch guarded wake across wakeable islands; returns count of islands activated.
 u32 wake_all_island_sleepers_guarded(RigidBodySoA& bodies, const ContactIslandGraph& graph);
+
+/// Unified per-job dispatch preflight combining dt, constraint refs, body participation, and sleep.
+IslandDispatchJobPreflight preflight_dispatch_island_job(
+    const IslandSolveJob& job,
+    const RigidBodySoA& bodies,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt);
+
+/// Early-out guard for unified per-job dispatch preflight.
+bool should_skip_dispatch_island_job(const IslandSolveJob& job,
+                                     const RigidBodySoA& bodies,
+                                     const std::vector<narrowphase::ContactManifold>& contacts,
+                                     const std::vector<DistanceConstraint>& distanceConstraints,
+                                     f32 dt);
+
+/// Collect island indices that are dispatchable and not all-sleeping (parallel solve prep).
+std::vector<u32> collect_solveable_island_indices(const ContactIslandGraph& graph,
+                                                  const RigidBodySoA& bodies);
+
+/// Guarded dispatch using unified preflight; skips stale refs, immovable bodies, and sleepers.
+bool dispatch_solve_island_job_guarded(RigidBodySoA& bodies,
+                                       const IslandSolveJob& job,
+                                       SolverWorkBuffers& workBuffers,
+                                       const std::vector<DistanceConstraint>& distanceConstraints,
+                                       f32 dt,
+                                       f32 contactCompliance,
+                                       const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
+
+/// Guarded dispatch with explicit skip/solve outcome and reject reason.
+IslandDispatchResult dispatch_solve_island_job_guarded_result(
+    RigidBodySoA& bodies,
+    const IslandSolveJob& job,
+    SolverWorkBuffers& workBuffers,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    f32 dt,
+    f32 contactCompliance,
+    const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
 
 } // namespace fuse::physics
