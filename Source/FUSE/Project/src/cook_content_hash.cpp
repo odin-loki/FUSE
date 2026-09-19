@@ -92,6 +92,97 @@ u64 hash_upstream_dependencies(const std::vector<std::string>& dependency_output
     return hash;
 }
 
+CookHashPreflight preflight_hash_file_content(const std::string& path) {
+    CookHashPreflight result;
+    if (path.empty()) {
+        result.empty_path = true;
+        return result;
+    }
+
+    std::error_code ec;
+    if (!std::filesystem::exists(std::filesystem::path(path), ec)) {
+        result.source_missing = true;
+        return result;
+    }
+
+    result.ok = true;
+    return result;
+}
+
+CookHashPreflight preflight_mesh_import(const MeshImportDesc& desc) {
+    CookHashPreflight result;
+    if (desc.input_path.empty()) {
+        result.empty_input_path = true;
+        return result;
+    }
+    if (desc.output_path.empty()) {
+        result.empty_output_path = true;
+        return result;
+    }
+
+    result = preflight_hash_file_content(desc.input_path);
+    return result;
+}
+
+CookHashPreflight preflight_texture_import(const TextureImportDesc& desc) {
+    CookHashPreflight result;
+    if (desc.input_path.empty()) {
+        result.empty_input_path = true;
+        return result;
+    }
+    if (desc.output_path.empty()) {
+        result.empty_output_path = true;
+        return result;
+    }
+
+    result = preflight_hash_file_content(desc.input_path);
+    return result;
+}
+
+CookHashPreflight preflight_audio_import(const AudioImportDesc& desc) {
+    CookHashPreflight result;
+    if (desc.input_path.empty()) {
+        result.empty_input_path = true;
+        return result;
+    }
+    if (desc.output_path.empty()) {
+        result.empty_output_path = true;
+        return result;
+    }
+
+    result = preflight_hash_file_content(desc.input_path);
+    return result;
+}
+
+CookHashPreflight preflight_manifest_entry(const CookManifestEntry& entry) {
+    CookHashPreflight result;
+    if (entry.source_path.empty()) {
+        result.empty_input_path = true;
+        return result;
+    }
+    if (entry.output_path.empty()) {
+        result.empty_output_path = true;
+        return result;
+    }
+
+    result = preflight_hash_file_content(entry.source_path);
+    if (!result.ok) {
+        return result;
+    }
+
+    for (const std::string& dependency : entry.dependencies) {
+        if (dependency.empty()) {
+            continue;
+        }
+        const CookHashPreflight dependency_preflight = preflight_hash_file_content(dependency);
+        if (!dependency_preflight.ok) {
+            return dependency_preflight;
+        }
+    }
+
+    return result;
+}
+
 u64 combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     if (source_hash == 0) {
         return 0;
