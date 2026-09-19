@@ -295,3 +295,6 @@ bool should_skip_buffer_friction_rebuild(const ContactBufferSoA& buffer, f32 eps
 // --- deepen additive from b4-narrowphase-deepen-guards-01df ---
     bool can_write() const { return canWrite && reason == ContactBufferWriteRejectReason::None; }
     bool can_compact() const { return canCompact && reason == ContactBufferCompactRejectReason::None; }
+
+// --- deepen additive from deepen-b4-narrowphase-guards-5ef6 ---
+ContactBufferFrictionBasisRejectReason contact_buffer_friction_basis_reject_reason(const ContactBufferSoA& buffer);

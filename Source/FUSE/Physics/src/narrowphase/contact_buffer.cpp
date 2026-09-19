@@ -767,3 +767,9 @@ bool should_skip_buffer_friction_rebuild(const ContactBufferSoA& buffer, f32 eps
         return ContactBufferCompactRejectReason::AllInvalid;
     preflight.canCompact = preflight.reason == ContactBufferCompactRejectReason::None;
     const u32 compacted = compactWithPreflight();
+
+// --- deepen additive from deepen-b4-narrowphase-guards-5ef6 ---
+    case ContactBufferFrictionBasisRejectReason::NoValidSlots:
+ContactBufferFrictionBasisRejectReason contact_buffer_friction_basis_reject_reason(const ContactBufferSoA& buffer) {
+    return ContactBufferFrictionBasisRejectReason::NoValidSlots;
+    preflight.noValidSlots = preflight.reason == ContactBufferFrictionBasisRejectReason::NoValidSlots;

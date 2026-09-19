@@ -3201,3 +3201,7 @@ void testContactPairDeepenPassB46Guards() {
                 fuse::physics::narrowphase::ContactPairRejectReason::BothCcd),
 void testManifoldPruneFinalizeB46Guards() {
 void testFrictionBasisB46Guards() {
+
+// --- deepen additive from deepen-b4-narrowphase-guards-5ef6 ---
+            buffer, fuse::physics::narrowphase::ContactBufferFrictionBasisRejectReason::EmptyBuffer),
+            buffer, 1u, manifold, fuse::physics::narrowphase::ContactBufferWriteRejectReason::OutOfRangeSlot),
