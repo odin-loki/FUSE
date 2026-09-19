@@ -282,6 +282,13 @@ bool should_run_manifold_prune(
 enum class ManifoldFinalizeRejectReason : u8 {
     InvalidNormal,
     NoPenetratingPoints,
+/// Why manifold prune would early-out (B4.4 guard pass).
+
+/// Human-readable label for manifold prune reject reasons (B4.4 guard pass).
+
+/// Diagnose why prune would skip; vacuously succeeds when prune may proceed (B4.4 guard pass).
+
+/// Returns true when `manifold_prune_reject_reason` matches `expected` (B4.4 guard pass).
 
 /// Const preflight for manifold prune dispatch (B4.4 deepen pass).
 struct ManifoldPrunePreflight {
@@ -649,6 +656,8 @@ const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason);
 
 /// Diagnose why prune would skip; vacuously succeeds when prune may proceed.
 ManifoldPruneRejectReason manifold_prune_reject_reason(
+/// Non-mutating prune predicate — inverse of `should_skip_manifold_prune` (B4.4 guard pass).
+bool should_run_manifold_prune(
     const ContactManifold& manifold,
     f32 separationEpsilon = 1e-6f,
     f32 duplicateEpsilon = 1e-4f,
@@ -691,6 +700,21 @@ bool can_skip_manifold_prune(
 /// Non-mutating prune predicate — inverse of `can_skip_manifold_prune` (B4.4 deepen pass).
 
 /// Non-mutating prune predicate — inverse of `should_skip_manifold_prune` (B4.4 deepen guard pass).
+/// Why manifold finalize would early-out (B4.4 guard pass).
+    None = 0,
+    EmptyManifold,
+    InvalidNormal,
+    NoPenetratingPoints,
+};
+
+/// Human-readable label for manifold finalize reject reasons (B4.4 guard pass).
+
+/// Diagnose why finalize would skip; vacuously succeeds when finalize may proceed (B4.4 guard pass).
+    const ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+
+/// Returns true when `manifold_finalize_reject_reason` matches `expected` (B4.4 guard pass).
 
 /// Const preflight for manifold finalize dispatch (B4.4 deepen follow-up).
 struct ManifoldFinalizePreflight {
@@ -1126,6 +1150,8 @@ bool should_skip_manifold_prune_finalize(
 
 /// Inverse of `can_skip_manifold_finalize` (B4.4 deepen follow-up pass).
 
+
+/// Non-mutating finalize predicate — inverse of `can_skip_manifold_finalize` (B4.4 guard pass).
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

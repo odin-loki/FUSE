@@ -62,6 +62,7 @@ void runNarrowphaseIntoBuffer(
             continue;
         }
         if (should_skip_narrowphase_pair_slot(pairs[pairIndex], bodies, shapes)) {
+        if (should_skip_contact_pair_dispatch(pairs[pairIndex], bodies, shapes)) {
 
         ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
         if (finalize_contact_manifold_with_preflight(manifold)) {

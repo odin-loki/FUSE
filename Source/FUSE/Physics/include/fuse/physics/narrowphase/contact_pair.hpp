@@ -275,6 +275,10 @@ struct ContactPairRejectPreflight {
     bool isAnyTrigger = false;
     bool isMassless = false;
     bool isDeepenDegenerate = false;
+    bool bothSleeping = false;
+    bool bothKinematic = false;
+    bool anyTrigger = false;
+    bool bothMassless = false;
 
     bool can_dispatch() const { return reason == ContactPairRejectReason::None; }
 };
@@ -1102,6 +1106,7 @@ NarrowphaseBatchPreflight preflight_narrowphase_batch(
 
 /// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 deepen guard pass).
 /// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.5 deepen pass).
+/// Returns true when `contact_pair_deepen_reject_reason` matches `expected` (B4.4 guard pass).
 bool contact_pair_deepen_rejects_for_reason(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
@@ -1162,6 +1167,15 @@ bool is_near_degenerate_shape_pair(
     f32 extentEpsilon = 1e-4f);
 /// Shape dispatch with extended deepen preflight guard; invalid manifold when deepen-rejected (B4.4 deepen follow-up pass).
 ContactManifold detect_contacts_pair_deepen(
+/// Non-mutating pair-dispatch predicate — inverse of `should_skip_contact_pair_dispatch` (B4.4 guard pass).
+bool should_run_contact_pair_dispatch(
+
+/// Non-mutating pair-dispatch skip predicate — mirrors `preflight_contact_pair` (B4.4 guard pass).
+bool can_skip_contact_pair_dispatch(
+
+/// Non-mutating deepen-dispatch predicate — inverse of `should_skip_contact_pair_deepen_dispatch` (B4.4 guard pass).
+
+/// Non-mutating deepen-dispatch skip predicate — mirrors `preflight_contact_pair_deepen` (B4.4 guard pass).
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 

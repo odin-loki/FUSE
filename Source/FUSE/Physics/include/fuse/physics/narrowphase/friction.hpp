@@ -227,6 +227,14 @@ struct FrictionBasisPreflight {
 
     CanReuseCached,
 
+/// Why friction-basis rebuild would early-out (B4.4 guard pass).
+
+/// Human-readable label for friction-basis rebuild reject reasons (B4.4 guard pass).
+
+/// Diagnose why rebuild would skip; vacuously succeeds when rebuild may proceed (B4.4 guard pass).
+
+/// Returns true when `friction_basis_rebuild_reject_reason` matches `expected` (B4.4 guard pass).
+
     FrictionBasisRebuildRejectReason reason = FrictionBasisRebuildRejectReason::None;
     bool skipped = false;
     bool stale = false;
@@ -648,5 +656,6 @@ bool can_skip_friction_basis_rebuild_dispatch(const ContactManifold& manifold, f
 /// Inverse of `should_skip_friction_basis_preflight` (B4.4 deepen follow-up pass).
 
 /// Normalize the contact normal when non-unit; returns true when normalization ran (B4.4 deepen follow-up pass).
+/// Non-mutating rebuild predicate — inverse of `should_skip_friction_basis_preflight` (B4.4 guard pass).
 
 } // namespace fuse::physics::narrowphase

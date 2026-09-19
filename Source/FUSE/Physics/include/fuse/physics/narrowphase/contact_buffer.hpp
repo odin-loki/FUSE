@@ -148,6 +148,11 @@ ContactBufferWriteRejectReason contactBufferWriteRejectReason(
 /// Human-readable label for contact-buffer write reject reasons (B4.5 deepen pass).
 
 /// Diagnose why write would reject; vacuously succeeds when write may proceed (B4.5 deepen pass).
+/// Why contact-buffer write would reject (B4.4 guard pass).
+
+/// Human-readable label for contact-buffer write reject reasons (B4.4 guard pass).
+
+/// Diagnose why write would reject; vacuously succeeds when write may proceed (B4.4 guard pass).
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold);
@@ -176,6 +181,11 @@ bool contactBufferWriteRejectsForReason(
 /// Returns true when `contactBufferWriteRejectReason` matches `expected` (B4.5 deepen pass).
 
 /// Read-only write diagnostics — no mutation (B4.5 deepen pass).
+/// Returns true when `contactBufferWriteRejectReason` matches `expected` (B4.4 guard pass).
+    const ContactBufferSoA& buffer,
+    u32 slot,
+
+/// Read-only write diagnostics — no mutation (B4.4 guard pass).
     bool invalidManifold = false;
     bool selfPair = false;
 
@@ -485,5 +495,46 @@ ContactBufferFrictionPreflight preflight_contact_buffer_friction_tangents(const 
 
 /// Returns true when friction-tangent SoA rebuild should be skipped (B4.4 deepen follow-up pass).
 bool should_skip_contact_buffer_friction_rebuild(const ContactBufferSoA& buffer);
+
+};
+
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold);
+
+/// Why contact-buffer compaction would early-out (B4.4 guard pass).
+enum class ContactBufferCompactionRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+
+/// Human-readable label for contact-buffer compaction reject reasons (B4.4 guard pass).
+
+/// Diagnose why compaction would skip; vacuously succeeds when compaction may proceed (B4.4 guard pass).
+
+/// Returns true when `contactBufferCompactionRejectReason` matches `expected` (B4.4 guard pass).
+
+/// Read-only compaction diagnostics — no mutation (B4.4 guard pass).
+
+
+
+/// Non-mutating compaction skip predicate — inverse of `needsCompaction` (B4.4 guard pass).
+
+/// Non-mutating compaction predicate — mirrors `preflightContactBufferCompaction` (B4.4 guard pass).
+
+/// Why contact-buffer max-capacity clamp would early-out (B4.4 guard pass).
+
+/// Human-readable label for contact-buffer clamp reject reasons (B4.4 guard pass).
+
+/// Diagnose why clamp would skip; vacuously succeeds when clamp may proceed (B4.4 guard pass).
+
+/// Returns true when `contactBufferClampRejectReason` matches `expected` (B4.4 guard pass).
+
+/// Read-only max-capacity clamp diagnostics — no mutation (B4.4 guard pass).
+
+
+
+/// Non-mutating clamp skip predicate — inverse of `needsClamp` (B4.4 guard pass).
+
+/// Non-mutating clamp predicate — mirrors `preflightContactBufferClamp` (B4.4 guard pass).
 
 } // namespace fuse::physics::narrowphase
