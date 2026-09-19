@@ -1076,3 +1076,19 @@ PairBufferAcceptPreflight preflightPairBufferAccept(const PairBufferSoA& buffer,
     case PairBufferInvalidateSlotRejectReason::OutOfSlot:
         return PairBufferInvalidateSlotRejectReason::OutOfSlot;
     preflight.outOfSlot = preflight.reason == PairBufferInvalidateSlotRejectReason::OutOfSlot;
+
+// --- deepen additive from deepen-b4-broadphase-guards-36be ---
+const char* pairBufferSlotInvalidateRejectReasonName(PairBufferSlotInvalidateRejectReason reason) {
+    case PairBufferSlotInvalidateRejectReason::None:
+    case PairBufferSlotInvalidateRejectReason::OutOfRangeSlot:
+PairBufferSlotInvalidateRejectReason pairBufferSlotInvalidateRejectReason(const PairBufferSoA& buffer, u32 slot) {
+        return PairBufferSlotInvalidateRejectReason::OutOfRangeSlot;
+    return PairBufferSlotInvalidateRejectReason::None;
+    PairBufferSlotInvalidateRejectReason expected) {
+    return pairBufferSlotInvalidateRejectReason(buffer, slot) == expected;
+PairBufferSlotInvalidatePreflight preflightPairBufferSlotInvalidate(const PairBufferSoA& buffer, u32 slot) {
+    PairBufferSlotInvalidatePreflight preflight{};
+    preflight.reason = pairBufferSlotInvalidateRejectReason(buffer, slot);
+    preflight.outOfRangeSlot = preflight.reason == PairBufferSlotInvalidateRejectReason::OutOfRangeSlot;
+    return !preflightPairBufferSlotInvalidate(buffer, slot).canInvalidate();
+    return preflightPairBufferSlotInvalidate(buffer, slot).canInvalidate();

@@ -3575,3 +3575,23 @@ void testRefineMergePreflightCountGuards() {
     expectTrue(!dedupePreflight.canDedupe(), "dedupe preflight skips single-pair buffer");
     expectEq(dedupePreflight.pairCount, 1u, "dedupe preflight reports active pair count");
     testRefineMergePreflightCountGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-36be ---
+void testPairBufferSlotInvalidatePreflightGuards() {
+    const fuse::physics::broadphase::PairBufferSlotInvalidatePreflight validInvalidate =
+        fuse::physics::broadphase::preflightPairBufferSlotInvalidate(buffer, 0u);
+    const fuse::physics::broadphase::PairBufferSlotInvalidatePreflight outOfRange =
+        fuse::physics::broadphase::preflightPairBufferSlotInvalidate(buffer, 4u);
+    expectTrue(fuse::physics::broadphase::pairBufferSlotInvalidateRejectsForReason(
+                   fuse::physics::broadphase::PairBufferSlotInvalidateRejectReason::OutOfRangeSlot),
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferSlotInvalidateRejectReasonName(
+    const fuse::physics::broadphase::CellPairGenPreflight singlePreflight =
+        fuse::physics::broadphase::preflightCellPairGen(singleOccupant);
+    expectTrue(singlePreflight.singleOccupant, "single occupant preflight marks single occupant");
+    expectTrue(!singlePreflight.canGenerate(), "single occupant preflight rejects generation");
+    expectEq(singlePreflight.uniqueBodyCount, 1u, "single occupant preflight reports unique body count");
+        fuse::physics::broadphase::preflightCellPairGen(multiOccupants);
+    expectTrue(multiPreflight.canGenerate(), "multi-occupant preflight accepts generation");
+    expectEq(multiPreflight.uniqueBodyCount, 3u, "multi-occupant preflight dedupes unique bodies");
+    expectEq(multiPreflight.pairCount, 3u, "three unique bodies yield three pairs");
+    testPairBufferSlotInvalidatePreflightGuards();
