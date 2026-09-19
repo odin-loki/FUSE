@@ -22,4 +22,11 @@ struct MountQuaternion {
 /// Combine mount-point offset yaw with event yaw (degrees).
 [[nodiscard]] f32 combine_mount_yaw_deg(f32 mount_offset_yaw_deg, f32 event_yaw_deg);
 
+/// Multiply two yaw-only mount quaternions (ShapeBase mount chain ore).
+[[nodiscard]] MountQuaternion multiply_mount_quaternions(const MountQuaternion& lhs, const MountQuaternion& rhs);
+
+/// Apply mount-point offset quaternion to event quaternion.
+[[nodiscard]] MountQuaternion combine_mount_orientation(const MountQuaternion& mount_offset,
+                                                          const MountQuaternion& event_orientation);
+
 } // namespace fuse::cinematics

@@ -54,6 +54,8 @@ public:
 
     const std::string& loadedProject() const { return m_loadedProject; }
     u32 selectedAiTreeProfileId() const { return m_selectedAiTreeProfileId; }
+    u32 selectedAiAgentIndex() const { return m_selectedAiAgentIndex; }
+    u32 aiCodegenReloadCount() const { return m_aiCodegenReloadCount; }
     const std::vector<AiAgentEntityBinding>& aiAgentEntityBindings() const { return m_aiAgentEntityBindings; }
     fuse::ai::BehaviorRuntime& pieBehaviorRuntime() { return m_pieBehaviorRuntime; }
     const fuse::ai::BehaviorRuntime& pieBehaviorRuntime() const { return m_pieBehaviorRuntime; }
@@ -68,7 +70,9 @@ public:
     void gameTick();
     void setLoadedProject(std::string project);
     void setSelectedAiTreeProfileId(u32 profileId);
+    void setSelectedAiAgentIndex(u32 agentIndex);
     void setAiAgentEntityBinding(u32 agentIndex, Handle<Object> entity);
+    bool reloadAiCodegenProfile(u32 profileId, const std::string& uaiskModule, const std::string& csText);
     void setLoadedCinematicsSeqAsset(std::string assetText);
 
     /// Undo/redo property edits recorded on the game-thread `CommandStack`.
@@ -95,6 +99,8 @@ private:
     std::string m_loadedProject;
     std::string m_loadedCinematicsSeqAsset;
     u32 m_selectedAiTreeProfileId = 0;
+    u32 m_selectedAiAgentIndex = 0;
+    u32 m_aiCodegenReloadCount = 0;
     std::vector<AiAgentEntityBinding> m_aiAgentEntityBindings;
     fuse::ai::BehaviorRuntime m_pieBehaviorRuntime;
     u32 m_gameTickCount = 0;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/cinematics/cue_preview.hpp>
+#include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/cinematics/types.hpp>
 #include <fuse/editor/editor_host.hpp>
 
@@ -24,6 +25,8 @@ public:
     bool postImportEmbeddedOutpostIntro();
     [[nodiscard]] std::vector<fuse::cinematics::CuePreviewEntry> previewAtMs(
         fuse::cinematics::TimelineMs timeMs) const;
+    [[nodiscard]] bool scrubPreviewAtMs(fuse::cinematics::TimelineMs timeMs,
+                                        fuse::cinematics::SeqScrubPreview& outPreview) const;
 
 private:
     EditorHost& m_host;

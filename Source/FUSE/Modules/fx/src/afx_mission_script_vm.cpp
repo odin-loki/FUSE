@@ -47,11 +47,23 @@ bool AfxMissionScriptVm::dispatch(const std::string& scriptHook,
         return composer.attach(socket);
     }
 
+    if (hook.scriptHook == "on_tick") {
+        composer.particlePoolGpu().syncFromCpu(composer.particlePool());
+        composer.particlePoolGpu().cudaDispatchOrSkip(ctx);
+        return true;
+    }
+
     return false;
 }
 
 bool AfxMissionScriptVm::dispatchTick(FxComposer& composer, const frame::FrameCtx& ctx) {
     bool dispatched = false;
+    if (m_hooks.count("on_tick") != 0) {
+        dispatched = dispatch("on_tick", composer, ctx) || dispatched;
+        if (dispatched) {
+            ++m_tickDispatchCount;
+        }
+    }
     if (m_hooks.count("on_ambient_fx") != 0) {
         dispatched = dispatch("on_ambient_fx", composer, ctx) || dispatched;
     }
@@ -71,6 +83,7 @@ bool registerAfxTemplateMissionVm(FxComposer& composer, AfxMissionScriptVm& vm) 
     }
 
     hooks.push_back({"AFXDemo_Minimal", "on_impact_fx", "muzzle_flash"});
+    hooks.push_back({"AFXDemo_Minimal", "on_tick", "spark_burst"});
     vm.registerHooks(hooks);
     return true;
 }

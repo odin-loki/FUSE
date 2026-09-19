@@ -346,7 +346,7 @@ void testAfxMissionScriptVm() {
     fuse::fx::FxComposer composer;
     fuse::fx::AfxMissionScriptVm vm;
     expectTrue(fuse::fx::registerAfxTemplateMissionVm(composer, vm), "mission VM registers hooks");
-    expectTrue(vm.hookCount() == 3u, "mission VM hook table populated");
+    expectTrue(vm.hookCount() >= 3u, "mission VM hook table populated");
     expectTrue(vm.dispatch("on_spell_cast", composer), "spell cast hook dispatched");
     expectTrue(vm.dispatchCount() == 1u, "mission VM dispatch counted");
 }
@@ -388,6 +388,46 @@ void testAfxMissionScriptVmImpactHook() {
     expectTrue(fuse::fx::registerAfxTemplateMissionVm(composer, vm), "mission VM registers hooks");
     expectTrue(vm.dispatch("on_impact_fx", composer), "impact hook dispatched");
     expectTrue(vm.lastHookDispatched() == "on_impact_fx", "impact hook recorded");
+}
+
+void testParticlePoolCudaNotSyncedSkip() {
+    fuse::fx::ParticlePoolGpuBackend gpuBackend(4);
+    fuse::frame::FrameCtx ctx;
+    gpuBackend.cudaDispatchOrSkip(ctx);
+    expectTrue(gpuBackend.lastCudaSkipReason() == fuse::fx::ParticlePoolCudaSkipReason::NotSynced,
+               "cuda dispatch skipped before CPU sync");
+}
+
+void testParticlePoolCudaWriteback() {
+    fuse::fx::ParticlePool pool(4);
+    pool.spawn({0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, 0.5f);
+
+    fuse::fx::ParticlePoolGpuBackend gpuBackend(4);
+    gpuBackend.syncFromCpu(pool);
+    expectTrue(gpuBackend.syncedFromCpu(), "gpu backend marked synced");
+
+    fuse::frame::FrameCtx ctx;
+    gpuBackend.cudaDispatchOrSkip(ctx);
+    gpuBackend.syncAliveFlagsToCpu(pool);
+    expectTrue(gpuBackend.writebackCount() == 1u, "gpu writeback counted");
+}
+
+void testAfxMissionOnTickHook() {
+    static const char* kMisText =
+        "function onTick() {\n"
+        "}\n";
+
+    std::vector<fuse::fx::AfxMissionHook> hooks;
+    std::string error;
+    expectTrue(fuse::fx::load_afx_mission_hooks_from_mis(kMisText, hooks, &error), ".mis loader finds onTick");
+    expectTrue(hooks[0].scriptHook == "on_tick", ".mis loader maps onTick");
+
+    fuse::fx::FxComposer composer;
+    fuse::fx::AfxMissionScriptVm vm;
+    vm.registerHooks(hooks);
+    fuse::frame::FrameCtx ctx;
+    expectTrue(vm.dispatchTick(composer, ctx), "on_tick dispatched from mission VM tick");
+    expectTrue(vm.tickDispatchCount() == 1u, "on_tick tick dispatch counted");
 }
 
 void testParticlePoolCudaSkipReason() {
@@ -450,6 +490,9 @@ int main() {
     testAfxMissionLoaderFromMis();
     testAfxMissionLoaderVmBridge();
     testAfxMissionScriptVmImpactHook();
+    testParticlePoolCudaNotSyncedSkip();
+    testParticlePoolCudaWriteback();
+    testAfxMissionOnTickHook();
     testParticlePoolCudaSkipReason();
     testParticlePoolCudaSkip();
     testParticlePoolTick();

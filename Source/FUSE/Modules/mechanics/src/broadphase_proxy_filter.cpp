@@ -6,6 +6,35 @@ BroadphaseProxyGroupMask broadphaseProxyGroupMask(BroadphaseProxyFilter filter) 
     return static_cast<BroadphaseProxyGroupMask>(filter);
 }
 
+BroadphaseProxyDesc makeBroadphaseProxyDesc(BroadphaseProxyFilter filter) {
+    const BroadphaseProxyGroupMask allMask = static_cast<BroadphaseProxyGroupMask>(
+        static_cast<u8>(BroadphaseProxyFilter::Default) | static_cast<u8>(BroadphaseProxyFilter::StaticRigid) |
+        static_cast<u8>(BroadphaseProxyFilter::Character) | static_cast<u8>(BroadphaseProxyFilter::Trigger));
+
+    BroadphaseProxyDesc desc{};
+    desc.filter = filter;
+    desc.group = broadphaseProxyGroupMask(filter);
+    switch (filter) {
+    case BroadphaseProxyFilter::Character:
+        desc.mask = allMask;
+        break;
+    case BroadphaseProxyFilter::Trigger:
+        desc.mask = static_cast<BroadphaseProxyGroupMask>(BroadphaseProxyFilter::Character);
+        break;
+    case BroadphaseProxyFilter::StaticRigid:
+        desc.mask = static_cast<BroadphaseProxyGroupMask>(BroadphaseProxyFilter::Character);
+        break;
+    default:
+        desc.mask = allMask;
+        break;
+    }
+    return desc;
+}
+
+bool broadphaseProxyDescsCollide(const BroadphaseProxyDesc& a, const BroadphaseProxyDesc& b) {
+    return broadphaseProxyMasksCollide(a.group, a.mask, b.group, b.mask);
+}
+
 bool broadphaseProxyMasksCollide(BroadphaseProxyGroupMask groupA,
                                  BroadphaseProxyGroupMask maskA,
                                  BroadphaseProxyGroupMask groupB,

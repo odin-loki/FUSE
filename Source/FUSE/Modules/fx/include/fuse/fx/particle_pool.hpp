@@ -44,6 +44,8 @@ public:
     void tick(const frame::FrameCtx& ctx);
     void clear();
 
+    void setSlotAlive(u32 slotIndex, bool alive);
+
     const std::vector<ParticleSlot>& slots() const { return m_slots; }
 
 private:

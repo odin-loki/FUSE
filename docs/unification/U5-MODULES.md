@@ -262,6 +262,16 @@ Hybrid proof extended: `fuse_hybrid_module_gates_tests` covers UAISK `.cs` parse
 
 Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneObject3D`, UAISK codegen AST, `.mis` mission VM bridge.
 
+#### Landed wave 11 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | `reloadCodegenProfile()` AST→runtime tree hot-reload; picker `postSelectAgent` / `postCodegenReload` / `postBindSelectedEntity`; editor `ai.codegen_reload` command |
+| `fuse_cinematics` | ShapeBase quaternion mount combine in `VActorBridge`; `SeqScrubPreview` sprite/camera/mount samples; `CinematicsSeqImport::scrubPreviewAtMs()` |
+| `fuse_fx` | CUDA `NotSynced` skip + `syncAliveFlagsToCpu()` writeback; TorqueScript `onTick`→`on_tick` mission VM dispatch |
+| `fuse_mechanics` | `AreaComponent` GMK leaf; `BroadphaseProxyDesc` / `makeBroadphaseProxyDesc()` Bullet proxy deepen |
+| `fuse_adventure` | `WeaponGrantPipeline::grantOnPickup()`; conversation VM multi-line peek + inventory grant on branch |
+
 ---
 
 ## 8. Related docs

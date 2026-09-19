@@ -1,15 +1,12 @@
 #pragma once
 
+#include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/ai/behavior_tree.hpp>
 #include <fuse/ai/node_registry.hpp>
 #include <fuse/ai/uaisk_cs_parser.hpp>
 
 #include <string>
 #include <vector>
-
-namespace fuse::ai {
-class BehaviorRuntime;
-}
 
 namespace fuse::ai::uaisk {
 
@@ -57,6 +54,14 @@ struct UaiskCsAst {
                                         std::string_view csText,
                                         u32 profileId,
                                         BehaviorRuntime& runtime,
+                                        std::string* errorOut = nullptr);
+
+/// Codegen from `.cs` and hot-reload an existing runtime profile (UAISK AST → tree reload ore).
+[[nodiscard]] bool reloadCodegenProfile(std::string_view csModule,
+                                        std::string_view csText,
+                                        u32 profileId,
+                                        BehaviorRuntime& runtime,
+                                        TreeReloadPolicy policy = TreeReloadPolicy::PreserveBlackboard,
                                         std::string* errorOut = nullptr);
 
 } // namespace fuse::ai::uaisk

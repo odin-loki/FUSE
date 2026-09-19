@@ -46,6 +46,10 @@ bool appendHook(std::vector<AfxMissionHook>& hooks, const std::string& functionN
         hooks.push_back({"AFXDemo_Minimal", "on_impact_fx", "fireball"});
         return true;
     }
+    if (functionName == "onTick") {
+        hooks.push_back({"AFXDemo_Minimal", "on_tick", "spark_burst"});
+        return true;
+    }
 
     if (functionName.rfind("on", 0) != 0) {
         return false;

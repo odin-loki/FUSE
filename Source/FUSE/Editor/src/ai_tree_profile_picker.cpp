@@ -53,7 +53,19 @@ void AiTreeProfilePicker::postSelectModule(std::string_view uaiskModule) {
     }
 }
 
+void AiTreeProfilePicker::postSelectAgent(u32 agentIndex) {
+    m_selectedAgentIndex = agentIndex;
+    ++m_postCount;
+
+    EditorCommand command;
+    command.kind = CommandKind::SetProperty;
+    command.propertyName = "ai.selected_agent";
+    command.propertyValue = std::to_string(agentIndex);
+    m_host.postFromUi(std::move(command));
+}
+
 void AiTreeProfilePicker::postBindAgentEntity(u32 agentIndex, fuse::Handle<fuse::Object> entity) {
+    m_selectedAgentIndex = agentIndex;
     ++m_postCount;
 
     EditorCommand command;
@@ -62,6 +74,34 @@ void AiTreeProfilePicker::postBindAgentEntity(u32 agentIndex, fuse::Handle<fuse:
     command.propertyValue =
         std::to_string(agentIndex) + ":" + std::to_string(entity.index()) + ":" + std::to_string(entity.generation());
     m_host.postFromUi(std::move(command));
+}
+
+void AiTreeProfilePicker::postBindSelectedEntity() {
+    const fuse::ecs::EntityID selected = m_host.editorState().primarySelection;
+    if (!selected.valid()) {
+        return;
+    }
+
+    const fuse::Handle<fuse::Object> entity(selected.index, selected.generation);
+    postBindAgentEntity(m_selectedAgentIndex, entity);
+}
+
+bool AiTreeProfilePicker::postCodegenReload(std::string_view uaiskModule, std::string_view csText, u32 profileId) {
+    if (uaiskModule.empty() || csText.empty()) {
+        return false;
+    }
+
+    ++m_postCount;
+    m_selectedUaiskModule = std::string(uaiskModule);
+    m_selectedProfileId = profileId;
+
+    EditorCommand command;
+    command.kind = CommandKind::SetProperty;
+    command.propertyName = "ai.codegen_reload";
+    command.propertyValue = "profile=" + std::to_string(profileId) + ";module=" + std::string(uaiskModule) + "\n" +
+                            std::string(csText);
+    m_host.postFromUi(std::move(command));
+    return true;
 }
 
 } // namespace fuse::editor

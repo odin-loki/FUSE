@@ -61,4 +61,22 @@ void ParticlePool::clear() {
     m_activeCount = 0;
 }
 
+void ParticlePool::setSlotAlive(u32 slotIndex, bool alive) {
+    if (slotIndex >= m_slots.size()) {
+        return;
+    }
+
+    ParticleSlot& slot = m_slots[slotIndex];
+    if (slot.alive == alive) {
+        return;
+    }
+
+    slot.alive = alive;
+    if (alive) {
+        ++m_activeCount;
+    } else if (m_activeCount > 0) {
+        --m_activeCount;
+    }
+}
+
 } // namespace fuse::fx

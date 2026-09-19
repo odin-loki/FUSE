@@ -159,4 +159,18 @@ bool importCodegenProfile(std::string_view csModule,
     return true;
 }
 
+bool reloadCodegenProfile(std::string_view csModule,
+                          std::string_view csText,
+                          u32 profileId,
+                          BehaviorRuntime& runtime,
+                          TreeReloadPolicy policy,
+                          std::string* errorOut) {
+    BehaviorTree tree;
+    if (!codegenTreeFromCs(csModule, csText, tree, errorOut)) {
+        return false;
+    }
+    runtime.reloadTreeProfile(profileId, tree, policy);
+    return true;
+}
+
 } // namespace fuse::ai::uaisk

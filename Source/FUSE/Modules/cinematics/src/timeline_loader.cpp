@@ -293,15 +293,29 @@ bool scrub_seq_preview(const std::string& text, TimelineMs time_ms, Timeline& ou
                 continue;
             }
             switch (track->kind()) {
-            case TrackKind::Actor:
+            case TrackKind::Actor: {
                 outPreview.has_actor_events = true;
+                const ActorTrack* actorTrack = static_cast<const ActorTrack*>(track.get());
+                outPreview.mount_yaw_deg = actorTrack->mount_yaw_at(clamped);
                 break;
+            }
             case TrackKind::Motion:
                 outPreview.has_motion_track = true;
                 break;
-            case TrackKind::Camera:
+            case TrackKind::Camera: {
                 outPreview.has_camera_track = true;
+                const CameraTrack* cameraTrack = static_cast<const CameraTrack*>(track.get());
+                outPreview.camera_fov = cameraTrack->sample_at(clamped).field_of_view;
                 break;
+            }
+            case TrackKind::Sprite: {
+                outPreview.has_sprite_track = true;
+                const SpriteTrack* spriteTrack = static_cast<const SpriteTrack*>(track.get());
+                const SpriteSample spriteSample = spriteTrack->sample_at(clamped);
+                outPreview.sprite_x = spriteSample.x;
+                outPreview.sprite_y = spriteSample.y;
+                break;
+            }
             default:
                 break;
             }

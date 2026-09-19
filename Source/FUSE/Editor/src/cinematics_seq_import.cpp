@@ -45,4 +45,15 @@ std::vector<fuse::cinematics::CuePreviewEntry> CinematicsSeqImport::previewAtMs(
     return fuse::cinematics::preview_cues_at(timeline, timeMs);
 }
 
+bool CinematicsSeqImport::scrubPreviewAtMs(fuse::cinematics::TimelineMs timeMs,
+                                           fuse::cinematics::SeqScrubPreview& outPreview) const {
+    if (m_lastAssetText.empty()) {
+        return false;
+    }
+
+    fuse::cinematics::Timeline timeline;
+    std::string error;
+    return fuse::cinematics::scrub_seq_preview(m_lastAssetText, timeMs, timeline, outPreview, &error);
+}
+
 } // namespace fuse::editor

@@ -23,6 +23,11 @@ struct SeqScrubPreview {
     bool has_actor_events = false;
     bool has_motion_track = false;
     bool has_camera_track = false;
+    bool has_sprite_track = false;
+    float sprite_x = 0.f;
+    float sprite_y = 0.f;
+    float camera_fov = 0.f;
+    float mount_yaw_deg = 0.f;
 };
 
 /// Editor scrub stub — load `.seq` text and seek playhead without consuming cues.

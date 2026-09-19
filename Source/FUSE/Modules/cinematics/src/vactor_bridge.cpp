@@ -90,6 +90,10 @@ void VActorBridge::apply_shapebase_attach(const std::string& actor_id,
 
     state.offset = mount_offset_for(mount_point);
     state.offset.yaw_deg = combine_mount_yaw_deg(state.offset.yaw_deg, mount_yaw_deg);
+    const MountQuaternion mountQuat = yaw_deg_to_quaternion(state.offset.yaw_deg);
+    const MountQuaternion eventQuat = yaw_deg_to_quaternion(mount_yaw_deg);
+    state.offset.orientation = combine_mount_orientation(mountQuat, eventQuat);
+    state.offset.yaw_deg = quaternion_to_yaw_deg(state.offset.orientation);
     state.mounted = true;
     ++m_shapebaseAttachCount;
     sync_bound_objects();
@@ -105,8 +109,7 @@ void VActorBridge::sync_bound_objects() {
         state.object->setPosition(state.baseX + state.offset.x + state.motionX,
                                   state.baseY + state.offset.y + state.motionY);
         state.object->setZ(state.baseZ + state.offset.z + state.motionZ);
-        const MountQuaternion mountQuat = yaw_deg_to_quaternion(state.offset.yaw_deg);
-        state.object->setYawDeg(quaternion_to_yaw_deg(mountQuat));
+        state.object->setYawDeg(quaternion_to_yaw_deg(state.offset.orientation));
     }
     ++m_syncCount;
 }

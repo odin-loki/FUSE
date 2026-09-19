@@ -26,18 +26,25 @@ public:
     [[nodiscard]] const AiTreeProfileOption* optionForProfile(u32 profileId) const;
     [[nodiscard]] u32 selectedProfileId() const { return m_selectedProfileId; }
     [[nodiscard]] const std::string& selectedUaiskModule() const { return m_selectedUaiskModule; }
+    [[nodiscard]] u32 selectedAgentIndex() const { return m_selectedAgentIndex; }
     [[nodiscard]] u32 postCount() const { return m_postCount; }
 
     void refreshOptions();
     void postSelectProfile(u32 profileId);
     void postSelectModule(std::string_view uaiskModule);
+    void postSelectAgent(u32 agentIndex);
     void postBindAgentEntity(u32 agentIndex, fuse::Handle<fuse::Object> entity);
+    /// Bind the currently selected agent to the editor's primary entity selection.
+    void postBindSelectedEntity();
+    /// Codegen UAISK `.cs` and hot-reload the mapped profile on the game thread.
+    bool postCodegenReload(std::string_view uaiskModule, std::string_view csText, u32 profileId);
 
 private:
     EditorHost& m_host;
     std::vector<AiTreeProfileOption> m_options;
     u32 m_selectedProfileId = 0;
     std::string m_selectedUaiskModule;
+    u32 m_selectedAgentIndex = 0;
     u32 m_postCount = 0;
 };
 

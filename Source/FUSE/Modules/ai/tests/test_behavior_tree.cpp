@@ -1960,6 +1960,25 @@ void testRuntimeParallelMultiAgentAggregation() {
     scheduler.shutdown();
 }
 
+void testReloadCodegenProfile() {
+    static const char* kCsText =
+        "class PatrolSquad : BehaviorBase {\n"
+        "  behaviorTree = \"patrol_squad.bt\";\n"
+        "}\n";
+
+    fuse::ai::BehaviorRuntime runtime;
+    runtime.registerTreeProfile(1, fuse::ai::BehaviorTree::makeMoveTowardDemoTree(0.1f));
+    runtime.addAgent({});
+    runtime.blackboard().setFlag(0, 2, true);
+
+    std::string error;
+    expectTrue(fuse::ai::uaisk::reloadCodegenProfile("aiBehaviors.cs", kCsText, 1, runtime,
+                                                     fuse::ai::TreeReloadPolicy::PreserveBlackboard, &error),
+               "UAISK codegen reloads runtime profile");
+    expectTrue(runtime.treeProfileCount() == 1u, "reload keeps profile slot count");
+    expectTrue(runtime.blackboard().getFlag(0, 2), "codegen reload preserves blackboard");
+}
+
 void testRuntimeTreeReloadPreservesBlackboard() {
     fuse::ai::BehaviorRuntime runtime;
     runtime.registerTreeProfile(0, fuse::ai::BehaviorTree::makePatrolWhenNearTarget());
@@ -2089,6 +2108,7 @@ int main() {
     testNearestAllyWritesScalarSlot();
     testNearestAllyActionFailsBeyondRadius();
     testParallelSpatialChildStatusAggregation();
+    testReloadCodegenProfile();
     testRuntimeTreeReloadPreservesBlackboard();
     testAgentEntityBindSyncsBindingPosition();
     g_failures += run_spatial_query_tests();

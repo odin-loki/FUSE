@@ -13,6 +13,24 @@ void ConversationScriptVm::registerHook(const ConversationScriptHook& hook) {
     m_hooks[hookKey(hook.npcId, hook.branchId)] = hook;
 }
 
+u32 ConversationScriptVm::branchLineCount(const std::string& npcId, const std::string& branchId) const {
+    const auto it = m_hooks.find(hookKey(npcId, branchId));
+    if (it == m_hooks.end()) {
+        return 0;
+    }
+    return static_cast<u32>(it->second.lines.size());
+}
+
+std::string ConversationScriptVm::peekBranchLine(const std::string& npcId,
+                                                 const std::string& branchId,
+                                                 u32 lineIndex) const {
+    const auto it = m_hooks.find(hookKey(npcId, branchId));
+    if (it == m_hooks.end() || lineIndex >= it->second.lines.size()) {
+        return {};
+    }
+    return it->second.lines[lineIndex];
+}
+
 bool ConversationScriptVm::canDispatchBranch(const std::string& npcId,
                                               const std::string& branchId,
                                               const InteractContext& ctx) const {
@@ -51,6 +69,13 @@ bool ConversationScriptVm::dispatchBranch(const std::string& npcId,
     } else {
         m_lastLineDispatched.clear();
     }
+
+    if (!it->second.grantItem.empty() && ctx.inventory != nullptr && it->second.grantAmount > 0) {
+        ctx.inventory->incInventory(ItemId(it->second.grantItem), it->second.grantAmount);
+        m_lastGrantedItem = it->second.grantItem;
+        ++m_grantCount;
+    }
+
     return target.chooseBranch(ctx, branchId) == InteractResult::Examined;
 }
 
@@ -63,9 +88,11 @@ void registerOutpostConversationScriptHooks(ConversationScriptVm& vm) {
     ConversationScriptHook aggressive{};
     aggressive.npcId = "outpost_guard";
     aggressive.branchId = "aggressive";
-    aggressive.lines = {"Stand down or be fired upon."};
+    aggressive.lines = {"Stand down or be fired upon.", "You may pass — this time."};
     aggressive.requiredItem = "security_pass";
     aggressive.minInventoryCount = 1;
+    aggressive.grantItem = "security_badge";
+    aggressive.grantAmount = 1;
 
     vm.registerHook(polite);
     vm.registerHook(aggressive);

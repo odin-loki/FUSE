@@ -15,6 +15,7 @@ enum class ParticlePoolCudaSkipReason {
     Disabled,
     EmptyPool,
     NoActiveParticles,
+    NotSynced,
 };
 
 /// Packed GPU-ready mirror of CPU ParticlePool slots (B7.7 layout stub).
@@ -29,10 +30,13 @@ public:
     u32 syncCount() const { return m_syncCount; }
     u32 cudaDispatchCount() const { return m_cudaDispatchCount; }
     u32 cudaSkipCount() const { return m_cudaSkipCount; }
+    u32 writebackCount() const { return m_writebackCount; }
     bool cudaEnabled() const { return m_cudaEnabled; }
+    bool syncedFromCpu() const { return m_syncedFromCpu; }
     ParticlePoolCudaSkipReason lastCudaSkipReason() const { return m_lastCudaSkipReason; }
 
     void syncFromCpu(const ParticlePool& pool);
+    void syncAliveFlagsToCpu(ParticlePool& pool);
     void tick(const frame::FrameCtx& ctx);
     void cudaDispatchOrSkip(const frame::FrameCtx& ctx);
 
@@ -44,7 +48,9 @@ private:
     u32 m_syncCount = 0;
     u32 m_cudaDispatchCount = 0;
     u32 m_cudaSkipCount = 0;
+    u32 m_writebackCount = 0;
     bool m_cudaEnabled = false;
+    bool m_syncedFromCpu = false;
     ParticlePoolCudaSkipReason m_lastCudaSkipReason = ParticlePoolCudaSkipReason::None;
     std::vector<u8> m_packed;
 };

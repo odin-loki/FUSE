@@ -3,6 +3,7 @@
 // Ore: Engine/source/Verve/VActor/VActor.h (mount/unmount event signal without ShapeBase)
 
 #include <fuse/cinematics/actor_track.hpp>
+#include <fuse/cinematics/mount_orientation.hpp>
 #include <fuse/cinematics/timeline.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
 
@@ -16,6 +17,7 @@ struct ShapeBaseMountOffset {
     float y = 0.f;
     float z = 0.f;
     float yaw_deg = 0.f;
+    MountQuaternion orientation{};
 };
 
 /// Headless VActor mount bridge — maps actor_id strings to SceneObject3D instances.

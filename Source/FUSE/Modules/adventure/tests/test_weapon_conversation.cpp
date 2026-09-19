@@ -2,6 +2,7 @@
 #include <fuse/adventure/conversation_script_vm.hpp>
 #include <fuse/adventure/interaction.hpp>
 #include <fuse/adventure/inventory.hpp>
+#include <fuse/adventure/weapon_grant_pipeline.hpp>
 #include <fuse/adventure/weapon_pickup_interactable.hpp>
 #include <fuse/adventure/weapon_runtime.hpp>
 #include <fuse/core/init.hpp>
@@ -43,6 +44,20 @@ int main() {
     expectTrue(inventory.activeWeapon().name == "plasma_rifle", "weapon equipped on pickup");
     expectTrue(rifle.consumed(), "weapon pickup consumed");
 
+    fuse::adventure::WeaponPickupInteractable pistol(fuse::adventure::ItemId("sidearm"),
+                                                     fuse::adventure::ItemId("energy_cell"), 12);
+    fuse::adventure::WeaponGrantPipeline grantPipeline;
+    fuse::adventure::WeaponGrantRequest grantRequest{};
+    grantRequest.weapon = fuse::adventure::ItemId("sidearm");
+    grantRequest.ammo = fuse::adventure::ItemId("energy_cell");
+    grantRequest.ammoAmount = 12;
+    grantRequest.stats.damage = 8.f;
+    fuse::adventure::WeaponRuntime grantedRuntime;
+    expectTrue(grantPipeline.grantOnPickup(ctx, pistol, grantRequest, grantedRuntime),
+               "weapon grant pipeline grants pickup");
+    expectTrue(grantPipeline.grantCount() == 1u, "weapon grant pipeline counted");
+    expectTrue(grantedRuntime.stats().damage == 8.f, "weapon grant pipeline wires stats");
+
     fuse::adventure::WeaponRuntime weaponRuntime;
     weaponRuntime.setAmmoType(fuse::adventure::ItemId("energy_cell"));
     fuse::adventure::WeaponStats stats{};
@@ -52,7 +67,8 @@ int main() {
     expectTrue(weaponRuntime.fire(inventory), "weapon runtime fires with ammo");
     expectTrue(weaponRuntime.fireCount() == 1u, "weapon runtime fire counted");
     expectTrue(weaponRuntime.lastDamageDealt() == 25.f, "weapon runtime records damage stat");
-    expectTrue(inventory.getInventory(fuse::adventure::ItemId("energy_cell")) == 19u, "weapon runtime consumes ammo");
+    expectTrue(inventory.getInventory(fuse::adventure::ItemId("energy_cell")) == 31u,
+               "weapon runtime consumes ammo after grant pipeline");
 
     fuse::adventure::ConversationBranch polite;
     polite.id = "polite";
@@ -76,6 +92,20 @@ int main() {
     inventory.incInventory(fuse::adventure::ItemId("security_pass"), 1);
     expectTrue(scriptVm.canDispatchBranch("outpost_guard", "aggressive", ctx),
                "aggressive branch allowed with security pass");
+    expectTrue(scriptVm.branchLineCount("outpost_guard", "aggressive") == 2u,
+               "conversation VM tracks multi-line branch");
+    expectTrue(scriptVm.peekBranchLine("outpost_guard", "aggressive", 1) ==
+                   "You may pass — this time.",
+               "conversation VM peeks branch line");
+    fuse::adventure::ConversationBranch aggressiveBranch;
+    aggressiveBranch.id = "aggressive";
+    aggressiveBranch.lines = {"Stand down."};
+    inventory.setMaxLimit(fuse::adventure::ItemId("security_badge"), 1);
+    fuse::adventure::ConversationInteractable guardAggressive({"Halt."}, {aggressiveBranch});
+    scriptVm.dispatchBranch("outpost_guard", "aggressive", ctx, guardAggressive);
+    expectTrue(scriptVm.grantCount() == 1u, "conversation VM grants item on branch");
+    expectTrue(inventory.hasInventory(fuse::adventure::ItemId("security_badge")),
+               "conversation VM grant item in inventory");
 
     fuse::core::shutdown();
 

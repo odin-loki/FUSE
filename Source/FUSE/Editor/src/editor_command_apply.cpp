@@ -2,6 +2,7 @@
 #include <fuse/editor/viewport_vulkan_surface.hpp>
 
 #include <fuse/ai/agent_entity_bind.hpp>
+#include <fuse/ai/uaisk_cs_codegen.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
@@ -195,6 +196,12 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         return true;
     }
 
+    if (command.propertyName == "ai.selected_agent") {
+        host.setSelectedAiAgentIndex(
+            static_cast<u32>(std::strtoul(command.propertyValue.c_str(), nullptr, 10)));
+        return true;
+    }
+
     if (command.propertyName == "ai.agent_entity") {
         std::istringstream stream(command.propertyValue);
         std::string agentToken;
@@ -210,6 +217,40 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         const u32 entityGeneration = static_cast<u32>(std::strtoul(generationToken.c_str(), nullptr, 10));
         host.setAiAgentEntityBinding(agentIndex, Handle<Object>(entityIndex, entityGeneration));
         return true;
+    }
+
+    if (command.propertyName == "ai.codegen_reload") {
+        const std::size_t headerEnd = command.propertyValue.find('\n');
+        if (headerEnd == std::string::npos) {
+            return false;
+        }
+
+        const std::string header = command.propertyValue.substr(0, headerEnd);
+        const std::string csText = command.propertyValue.substr(headerEnd + 1);
+
+        u32 profileId = 0;
+        std::string uaiskModule;
+        std::istringstream headerStream(header);
+        std::string token;
+        while (std::getline(headerStream, token, ';')) {
+            const std::size_t eq = token.find('=');
+            if (eq == std::string::npos) {
+                continue;
+            }
+            const std::string key = token.substr(0, eq);
+            const std::string value = token.substr(eq + 1);
+            if (key == "profile") {
+                profileId = static_cast<u32>(std::strtoul(value.c_str(), nullptr, 10));
+            } else if (key == "module") {
+                uaiskModule = value;
+            }
+        }
+
+        if (uaiskModule.empty() || csText.empty()) {
+            return false;
+        }
+
+        return host.reloadAiCodegenProfile(profileId, uaiskModule, csText);
     }
 
     if (command.propertyName == "cinematics.seq_asset") {
@@ -359,6 +400,20 @@ void EditorHost::setLoadedProject(std::string project) {
 
 void EditorHost::setSelectedAiTreeProfileId(u32 profileId) {
     m_selectedAiTreeProfileId = profileId;
+}
+
+void EditorHost::setSelectedAiAgentIndex(u32 agentIndex) {
+    m_selectedAiAgentIndex = agentIndex;
+}
+
+bool EditorHost::reloadAiCodegenProfile(u32 profileId, const std::string& uaiskModule, const std::string& csText) {
+    std::string error;
+    if (!fuse::ai::uaisk::reloadCodegenProfile(uaiskModule, csText, profileId, m_pieBehaviorRuntime,
+                                               fuse::ai::TreeReloadPolicy::PreserveBlackboard, &error)) {
+        return false;
+    }
+    ++m_aiCodegenReloadCount;
+    return true;
 }
 
 void EditorHost::setAiAgentEntityBinding(u32 agentIndex, Handle<Object> entity) {

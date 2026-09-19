@@ -40,6 +40,14 @@ int main() {
                    characterGroup),
                "static rigid group/mask rejects trigger");
 
+    const fuse::mechanics::BroadphaseProxyDesc characterDesc =
+        fuse::mechanics::makeBroadphaseProxyDesc(BroadphaseProxyFilter::Character);
+    const fuse::mechanics::BroadphaseProxyDesc triggerDesc =
+        fuse::mechanics::makeBroadphaseProxyDesc(BroadphaseProxyFilter::Trigger);
+    expectTrue(fuse::mechanics::broadphaseProxyDescsCollide(characterDesc, triggerDesc),
+               "proxy desc collision accepts character vs trigger");
+    expectTrue(characterDesc.group == characterGroup, "proxy desc group matches filter mask");
+
     if (g_failures == 0) {
         std::printf("fuse_mechanics_broadphase_proxy_filter: all checks passed\n");
         return EXIT_SUCCESS;

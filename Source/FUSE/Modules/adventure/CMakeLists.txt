@@ -11,6 +11,7 @@ add_library(fuse_adventure STATIC
     src/door_interactable.cpp
     src/weapon_pickup_interactable.cpp
     src/weapon_runtime.cpp
+    src/weapon_grant_pipeline.cpp
     src/hud_prompt_interactable.cpp
     src/mechanics_bridge.cpp
     src/puzzle_gate.cpp
@@ -30,6 +31,7 @@ add_library(fuse_adventure STATIC
     include/fuse/adventure/door_interactable.hpp
     include/fuse/adventure/weapon_pickup_interactable.hpp
     include/fuse/adventure/weapon_runtime.hpp
+    include/fuse/adventure/weapon_grant_pipeline.hpp
     include/fuse/adventure/hud_prompt_interactable.hpp
     include/fuse/adventure/mechanics_bridge.hpp
     include/fuse/adventure/puzzle_gate.hpp

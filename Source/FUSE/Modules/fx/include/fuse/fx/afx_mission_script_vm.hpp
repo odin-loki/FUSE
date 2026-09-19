@@ -21,12 +21,14 @@ public:
     bool dispatchTick(FxComposer& composer, const frame::FrameCtx& ctx = {});
 
     u32 dispatchCount() const { return m_dispatchCount; }
+    u32 tickDispatchCount() const { return m_tickDispatchCount; }
     u32 hookCount() const { return static_cast<u32>(m_hooks.size()); }
     const std::string& lastHookDispatched() const { return m_lastHookDispatched; }
 
 private:
     std::unordered_map<std::string, AfxMissionHook> m_hooks;
     u32 m_dispatchCount = 0;
+    u32 m_tickDispatchCount = 0;
     std::string m_lastHookDispatched;
 };
 

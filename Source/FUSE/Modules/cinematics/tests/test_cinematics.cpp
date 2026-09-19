@@ -1426,6 +1426,7 @@ void testMountOrientationYawQuaternion() {
 void testSeqScrubPreviewStub() {
     static const char* kText =
         "duration_ms=5000\n"
+        "sprite hud 0,0,0,1 5000,10,20,1\n"
         "camera 0,0,0,8,55 5000,0,30,12,70\n"
         "actor agent mount 1000 cockpit 10\n";
     fuse::cinematics::Timeline timeline;
@@ -1437,6 +1438,18 @@ void testSeqScrubPreviewStub() {
     expectTrue(preview.time_ms == 2'500, "seq scrub preview clamps time");
     expectTrue(preview.has_camera_track, "seq scrub preview sees camera track");
     expectTrue(preview.has_actor_events, "seq scrub preview sees actor track");
+    expectTrue(preview.has_sprite_track, "seq scrub preview sees sprite track");
+    expectNear(preview.sprite_x, 5.f, 0.1f, "seq scrub preview samples sprite x");
+    expectNear(preview.camera_fov, 62.5f, 0.5f, "seq scrub preview samples camera fov");
+    expectNear(preview.mount_yaw_deg, 10.f, 0.01f, "seq scrub preview samples mount yaw");
+}
+
+void testMountQuaternionCombine() {
+    const fuse::cinematics::MountQuaternion mount = fuse::cinematics::yaw_deg_to_quaternion(15.f);
+    const fuse::cinematics::MountQuaternion event = fuse::cinematics::yaw_deg_to_quaternion(7.5f);
+    const fuse::cinematics::MountQuaternion combined =
+        fuse::cinematics::combine_mount_orientation(mount, event);
+    expectNear(fuse::cinematics::quaternion_to_yaw_deg(combined), 22.5f, 0.05f, "quaternion mount combine");
 }
 
 void testSeqAssetMotionLoader() {
@@ -1588,6 +1601,7 @@ int main() {
     testCuePreviewMotionCameraSprite();
     testActorMountYawAt();
     testMountOrientationYawQuaternion();
+    testMountQuaternionCombine();
     testSeqScrubPreviewStub();
     testSeqAssetMotionLoader();
     testVActorMotionSync();

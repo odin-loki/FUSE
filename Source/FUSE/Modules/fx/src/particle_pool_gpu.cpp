@@ -53,7 +53,27 @@ void ParticlePoolGpuBackend::syncFromCpu(const ParticlePool& pool) {
         offset += sizeof(u32);
     }
 
+    m_syncedFromCpu = true;
     ++m_syncCount;
+}
+
+void ParticlePoolGpuBackend::syncAliveFlagsToCpu(ParticlePool& pool) {
+    if (!m_syncedFromCpu || m_packed.empty()) {
+        return;
+    }
+
+    const u32 count = std::min(m_capacity, static_cast<u32>(pool.slots().size()));
+    usize offset = 0;
+    for (u32 slotIndex = 0; slotIndex < count; ++slotIndex) {
+        offset += sizeof(float) * 6;
+        offset += sizeof(float) * 2;
+        offset += sizeof(float);
+        const u32 aliveFlag = *reinterpret_cast<const u32*>(m_packed.data() + offset);
+        offset += sizeof(u32);
+        pool.setSlotAlive(slotIndex, aliveFlag != 0u);
+    }
+
+    ++m_writebackCount;
 }
 
 void ParticlePoolGpuBackend::tick(const frame::FrameCtx& ctx) {
@@ -63,6 +83,11 @@ void ParticlePoolGpuBackend::tick(const frame::FrameCtx& ctx) {
 void ParticlePoolGpuBackend::cudaDispatchOrSkip(const frame::FrameCtx& ctx) {
     m_lastCudaSkipReason = ParticlePoolCudaSkipReason::None;
 
+    if (!m_syncedFromCpu) {
+        m_lastCudaSkipReason = ParticlePoolCudaSkipReason::NotSynced;
+        ++m_cudaSkipCount;
+        return;
+    }
     if (!m_cudaEnabled) {
         m_lastCudaSkipReason = ParticlePoolCudaSkipReason::Disabled;
         ++m_cudaSkipCount;

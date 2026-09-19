@@ -533,6 +533,27 @@ void testAiAgentEntityBindingPostsCommand() {
     expectTrue(host.aiAgentEntityBindings()[0].entity.generation() == 1u, "entity generation stored");
 }
 
+void testAiCodegenReloadPostsCommand() {
+    fuse::editor::EditorHost host;
+    fuse::editor::AiTreeProfilePicker picker(host);
+
+    static const char* kCsText =
+        "class PatrolSquad { behaviorTree = \"patrol_squad.bt\"; }\n";
+    expectTrue(picker.postCodegenReload("aiBehaviors.cs", kCsText, 1u), "codegen reload posts command");
+    host.gameTick();
+    expectTrue(host.aiCodegenReloadCount() == 1u, "codegen reload applied on game thread");
+}
+
+void testAiAgentSelectionDeepen() {
+    fuse::editor::EditorHost host;
+    fuse::editor::AiTreeProfilePicker picker(host);
+
+    picker.postSelectAgent(2u);
+    host.gameTick();
+    expectTrue(host.selectedAiAgentIndex() == 2u, "selected agent index applied");
+    expectTrue(picker.selectedAgentIndex() == 2u, "picker tracks selected agent");
+}
+
 void testCinematicsSeqImportPostsAsset() {
     fuse::editor::EditorHost host;
     fuse::editor::CinematicsSeqImport importer(host);
@@ -572,6 +593,8 @@ int main() {
     testRuntimeViewportHookTicksWithProject();
     testAiTreeProfilePickerPostsCommand();
     testAiAgentEntityBindingPostsCommand();
+    testAiCodegenReloadPostsCommand();
+    testAiAgentSelectionDeepen();
     testCinematicsSeqImportPostsAsset();
     fuse::core::shutdown();
 
