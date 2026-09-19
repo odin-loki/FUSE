@@ -2306,3 +2306,10 @@ void testCookerReconcileShouldSkipGuards() {
     expectTrue(!stale.should_skip(), "stale reconcile estimate does not should_skip");
                "estimate should_skip matches should_skip_reconcile_invalidation helper");
                "prune reconcile does not should_skip after upstream content change");
+
+// --- deepen additive from deepen-b79-should-skip-probes-1edf ---
+    expectTrue(cooked.ok, "manifest cook for reconcile should_skip ok");
+               "should_skip upstream invalidation false when chain is cached");
+    expectTrue(removed >= 1u, "stale dependency invalidation runs after should_skip clears");
+               "should_skip stale dependency invalidation after reconcile");
+               "should_skip prune reconcile false when upstream entry is stale");

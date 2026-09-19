@@ -1923,3 +1923,9 @@ void testCookCachePruneReconcileShouldSkipGuards() {
                "downstream would_invalidate true for chain head");
     expectTrue(!cooker.cache().would_invalidate_downstream_of("", graph.edges(), graph.jobs()),
                "empty output path downstream would_invalidate is false");
+
+// --- deepen additive from deepen-b79-should-skip-probes-1edf ---
+    expectTrue(fuse::project::should_skip_cook_cache_key(0, 42u), "should_skip rejects zero cache key");
+    expectTrue(!fuse::project::should_skip_cook_cache_key(99u, 42u), "should_skip allows valid cache key");
+               "would_invalidate_stale_upstream with matching hash is false");
+               "would_invalidate_stale_content true when stored hash differs from current");
