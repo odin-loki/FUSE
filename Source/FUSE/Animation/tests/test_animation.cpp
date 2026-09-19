@@ -2371,3 +2371,8 @@ void testPoseBindFallbackGuards() {
 // --- deepen additive from deepen-b71-animation-ik-d5b3 ---
 void testFabrikEmptySkeletonGuards() {
 void testRetargetIsValidRejectsDuplicates() {
+
+// --- deepen additive from deepen-b71-animation-blend-9cfe ---
+void testSkeletonIsEmptyGuard() {
+void testStateMachineTransitionIndexGuards() {
+void testStateMachineTransitionEdgeGuards() {
