@@ -179,6 +179,10 @@ bool shouldSkipClusterLookup(const ClusterGridSoA& grid, const ClusterDesc& desc
 /// Early-out when clustered cull/lookup should be skipped for an empty desc.
 bool shouldSkipClusterCull(const ClusterDesc& desc);
 bool isClusterGridAccessible(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// True when at least one cluster holds lights; false when storage is empty or inaccessible.
+bool hasAssignedLights(const ClusterGridSoA& grid, const ClusterDesc& desc);
+/// Early-out when the grid is inaccessible or has no assigned lights.
+bool shouldSkipClusterLightLookup(const ClusterGridSoA& grid, const ClusterDesc& desc);
 /// Preflight guard before index-based cluster lookup; false on empty grid or desc mismatch.
 bool canLookupAtIndex(const ClusterGridSoA& grid, const ClusterDesc& desc, u32 index);
 /// Preflight guard before tile/slice coord lookup; false on empty grid or desc mismatch.
@@ -242,6 +246,14 @@ bool tryLookupClusterLightsAtCoord(const ClusterGridSoA& grid,
 /// Screen-depth → cluster lookup; returns false when mapping fails or grid is inaccessible.
 bool tryLookupClusterLightsFromScreen(const ClusterGridSoA& grid,
 /// Lookup with guard preflight; returns false when `canLookupAtCoord` would reject the request.
+/// Lookup at clamped tile/slice coords; returns 0 when grid/desc mismatch or empty.
+u32 lookupClusterLightsAtCoord(const ClusterGridSoA& grid,
+                               const ClusterDesc& desc,
+                               u32 tileX,
+                               u32 tileY,
+                               u32 sliceZ,
+                               std::vector<u32>& outLights);
+/// Lookup with guard preflight at clamped coords; returns false when inaccessible.
                                    const ClusterDesc& desc,
                                    u32 tileX,
                                    u32 tileY,

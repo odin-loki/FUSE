@@ -1046,6 +1046,7 @@ void testValidateGridPopulationDeepen() {
 }
 
 void testClusterGridAccessibleGuard() {
+void testClusterLightGridAccessAndCoordLookupGuards() {
     fuse::renderer::ClusterDesc desc{};
     desc.tilesX = 2;
     desc.tilesY = 2;
@@ -1067,6 +1068,27 @@ void testClusterGridAccessibleGuard() {
                "canLookupAtIndex agrees with isClusterGridAccessible");
     expectTrue(fuse::renderer::cluster_util::canLookupAtCoord(grid, desc, 0u, 0u, 0u),
                "canLookupAtCoord accepts matching grid");
+    expectTrue(fuse::renderer::cluster_util::isLightGridAccessible(grid, desc),
+               "rebuilt grid is accessible");
+    expectTrue(fuse::renderer::cluster_util::hasAssignedLights(grid, desc),
+               "rebuilt grid has assigned lights");
+    expectTrue(!fuse::renderer::cluster_util::shouldSkipClusterLightLookup(grid, desc),
+               "populated grid does not skip lookup");
+
+    fuse::renderer::ClusterGridSoA emptyGrid{};
+    expectTrue(!fuse::renderer::cluster_util::isLightGridAccessible(emptyGrid, desc),
+               "empty storage is not accessible");
+    expectTrue(!fuse::renderer::cluster_util::hasAssignedLights(emptyGrid, desc),
+               "empty storage has no assigned lights");
+    expectTrue(fuse::renderer::cluster_util::shouldSkipClusterLightLookup(emptyGrid, desc),
+               "empty storage skips cluster light lookup");
+
+    fuse::renderer::ClusterDesc zeroDesc{};
+    zeroDesc.tilesX = 0u;
+    expectTrue(!fuse::renderer::cluster_util::isLightGridAccessible(grid, zeroDesc),
+               "zero-dimension desc is not accessible");
+    expectTrue(fuse::renderer::cluster_util::shouldSkipClusterLightLookup(grid, zeroDesc),
+               "zero-dimension desc skips cluster light lookup");
 
     fuse::renderer::ClusterDesc mismatched{};
     mismatched.tilesX = 1;
@@ -1106,6 +1128,24 @@ void testClusterLookupAtCoordGuards() {
     };
     fuse::renderer::ClusterLightGridLayout::rebuildLightGrid(grid, clusterCount, perClusterLights, 2u);
 
+    expectTrue(!fuse::renderer::cluster_util::isLightGridAccessible(grid, mismatched),
+               "desc mismatch is not accessible");
+    expectTrue(fuse::renderer::cluster_util::shouldSkipClusterLightLookup(grid, mismatched),
+               "desc mismatch skips cluster light lookup");
+
+    fuse::renderer::ClusterGridSoA allocatedEmpty{};
+    allocatedEmpty.allocate(desc);
+    expectTrue(fuse::renderer::cluster_util::isLightGridAccessible(allocatedEmpty, desc),
+               "allocated empty grid is accessible");
+    expectTrue(!fuse::renderer::cluster_util::hasAssignedLights(allocatedEmpty, desc),
+               "allocated empty grid has no assigned lights");
+    expectTrue(fuse::renderer::cluster_util::shouldSkipClusterLightLookup(allocatedEmpty, desc),
+               "allocated empty grid skips lookup");
+
+    expectTrue(fuse::renderer::cluster_util::canLookupAtCoord(grid, desc, 0u, 0u, 0u),
+               "canLookupAtCoord accepts matching grid");
+    expectTrue(!fuse::renderer::cluster_util::canLookupAtCoord(emptyGrid, desc, 0u, 0u, 0u),
+               "canLookupAtCoord rejects empty storage");
     expectTrue(fuse::renderer::cluster_util::clusterLightCountAtCoord(grid, desc, 0u, 0u, 0u) == 2u,
                "count at origin coord");
     expectTrue(fuse::renderer::cluster_util::clusterLightCountAtCoord(grid, desc, 1u, 0u, 0u) == 0u,
@@ -1179,19 +1219,13 @@ void testClusterLookupFromScreenGuards() {
     zeroDesc.tilesX = 0u;
     fuse::u32 zeroGridCount = 0u;
     std::vector<fuse::u32> zeroGridLights;
-    expectTrue(!fuse::renderer::cluster_util::tryLookupClusterLightsFromScreen(
                    grid, zeroDesc, camera, 0.5f, 0.5f, 10.f, zeroGridLights, zeroGridCount),
                "screen lookup rejects empty grid desc");
-}
 
 void testTryValidateGridPopulationForDesc() {
-    fuse::renderer::ClusterDesc desc{};
     desc.tilesX = 2;
-    desc.tilesY = 2;
     desc.slicesZ = 1;
 
-    fuse::renderer::ClusterGridSoA grid{};
-    const fuse::u32 clusterCount = desc.clusterCount();
     const std::vector<std::vector<fuse::u32>> perClusterLights = {
         {0u, 1u},
         {},
@@ -1215,12 +1249,41 @@ void testTryValidateGridPopulationForDesc() {
     expectTrue(reason == fuse::renderer::GridPopulationRejectReason::UndersizedGrid,
                "larger desc reports undersized grid reason");
 
-    fuse::renderer::ClusterDesc zeroDesc{};
-    zeroDesc.tilesX = 0u;
     expectTrue(fuse::renderer::cluster_util::tryValidateGridPopulationForDesc(grid, zeroDesc, reason),
                "tryValidateForDesc vacuously accepts empty desc");
-    expectTrue(reason == fuse::renderer::GridPopulationRejectReason::None,
                "empty desc reports no reject reason");
+    expectTrue(fuse::renderer::cluster_util::clusterLightCountAtCoord(grid, mismatched, 0u, 0u, 0u) == 0u,
+               "count at coord rejects desc mismatch");
+
+    std::vector<fuse::u32> originCoordLights;
+    expectTrue(fuse::renderer::cluster_util::lookupClusterLightsAtCoord(grid, desc, 0u, 0u, 0u, originCoordLights) == 2u,
+    expectTrue(originCoordLights.size() == 2u && originCoordLights[0] == 0u && originCoordLights[1] == 1u,
+
+    std::vector<fuse::u32> lastCoordLights;
+    expectTrue(fuse::renderer::cluster_util::lookupClusterLightsAtCoord(grid, desc, 99u, 99u, 99u, lastCoordLights) == 2u,
+    expectTrue(lastCoordLights.size() == 2u && lastCoordLights[0] == 3u && lastCoordLights[1] == 4u,
+
+    fuse::u32 tryCoordCount = 0u;
+    std::vector<fuse::u32> tryCoordLights;
+    expectTrue(fuse::renderer::cluster_util::tryLookupClusterLightsAtCoord(grid, desc, 0u, 0u, 0u, tryCoordLights,
+                                                                            tryCoordCount),
+    expectTrue(tryCoordCount == 2u, "tryLookup at coord reports cluster light count");
+    expectTrue(tryCoordLights.size() == 2u && tryCoordLights[0] == 0u && tryCoordLights[1] == 1u,
+               "tryLookup at coord copies assigned lights");
+
+    fuse::u32 rejectedCoordCount = 0u;
+    std::vector<fuse::u32> rejectedCoordLights;
+                                                                             rejectedCoordLights, rejectedCoordCount),
+    expectTrue(rejectedCoordCount == 0u, "tryLookup at coord zeroes count on guard failure");
+    expectTrue(rejectedCoordLights.empty(), "tryLookup at coord clears output on guard failure");
+
+               "tryValidateGridPopulationForDesc accepts rebuilt grid");
+
+    fuse::renderer::ClusterGridSoA undersized{};
+    undersized.grid.resize(2u);
+    expectTrue(!fuse::renderer::cluster_util::tryValidateGridPopulationForDesc(undersized, desc, reason),
+               "tryValidateGridPopulationForDesc rejects undersized grid");
+               "undersized grid reports undersized reason via desc helper");
 }
 
 void testZeroDimensionClusterGrid() {
@@ -1678,6 +1741,7 @@ int main() {
     testClusterLookupAtCoordGuards();
     testClusterLookupFromScreenGuards();
     testTryValidateGridPopulationForDesc();
+    testClusterLightGridAccessAndCoordLookupGuards();
     testZeroDimensionClusterGrid();
     testCullerInitClampsOversizedDesc();
     testEmptyGridRecordCullPassSkips();
