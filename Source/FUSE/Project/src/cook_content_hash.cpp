@@ -474,3 +474,7 @@ CookHashPreflight preflight_fnv1a64_input(const u8* data, usize size) {
 CookHashPreflight preflight_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     const CookHashPreflight key_preflight = preflight_cook_cache_key(source_hash, upstream_hash);
         preflight.reason = CookHashRejectReason::NonCacheableKey;
+
+// --- deepen additive from deepen-b79-cooker-hash-reconcile-b4f0 ---
+CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry& entry,
+    const CookHashPreflight entry_preflight = preflight_manifest_entry_hash(entry);

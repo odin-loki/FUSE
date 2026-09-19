@@ -994,3 +994,9 @@ void testCookHashPreflightFnv1a64Guard() {
     expectTrue(non_cacheable.reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
     const fuse::project::CookHashPreflight cacheable =
                    fuse::project::CookHashRejectReason::NonCacheableKey)) == "non_cacheable_key",
+
+// --- deepen additive from deepen-b79-cooker-hash-reconcile-b4f0 ---
+                   .reason == fuse::project::CookHashRejectReason::SourceUnreadable,
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_inc_probe.obj"),
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_inc_probe.fusemesh"),
+    expectTrue(!cooker.cache().would_invalidate_source(""), "empty source path probe is false");
