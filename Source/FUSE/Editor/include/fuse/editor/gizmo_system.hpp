@@ -2533,10 +2533,8 @@ enum class GizmoUpdateDragRejectReason : u8 {
     InvalidActiveAxis,
     NonFiniteHit,
     EmptyHit,
-    NonFiniteHit,
     InvalidDimensions,
     OutOfBounds,
-    InvalidActiveAxis,
 
 /// Why snap-drag preflight rejected the request (B6.4 deepen pass).
 enum class GizmoSnapDragRejectReason : u8 {
@@ -2558,7 +2556,7 @@ enum class GizmoSnapDragRejectReason : u8 {
 
 
 
-    NonFiniteHit,
+
 };
 
 /// Why end-drag preflight rejected the request (B6.4 deepen pass).
