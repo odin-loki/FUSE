@@ -109,6 +109,13 @@ enum class CascadeShadowSkipReason : u8 {
     DegenerateCascadeRange = 4,
 };
 
+/// Why every cascade shadow build would be bypassed before per-cascade fitting (B5.5 deepen follow-up).
+enum class CascadeShadowBypassReason : u8 {
+    None = 0,
+    EmptyLightDirection = 1,
+    EmptyCameraDepthRange = 2,
+};
+
 /// Per-reason skipped-cascade breakdown for CPU bookkeeping (B5.5 deepen).
 struct CascadeShadowSkipCounts {
     u32 total = 0;
@@ -208,6 +215,13 @@ struct CascadedShadowMapLayout {
                                                CascadedShadowMapDesc& desc);
     /// Preflight split fractions without mutation — true when sanitize is not required.
     static bool preflightCascadeSplits(const CascadedShadowMapDesc& desc);
+    /// True when any split lies outside [0, 1].
+    /// True when any split is smaller than its predecessor.
+    /// True when the last cascade split is not pinned to 1.0.
+    /// True when any sanitize step would mutate `desc`.
+    static bool needsCascadeSplitSanitization(const CascadedShadowMapDesc& desc);
+    /// Run `sanitizeCascadeSplits` only when `needsCascadeSplitSanitization` is true.
+    static void sanitizeCascadeSplitsIfNeeded(CascadedShadowMapDesc& desc);
     static bool validateCascadeRanges(const CascadedShadowMapDesc& desc, const ShadowCameraParams& camera);
     static CascadeFrustumCorners buildCascadeFrustumCorners(u32 cascadeIndex,
                                                             const CascadedShadowMapDesc& desc,
@@ -271,6 +285,13 @@ struct CascadeLightSpaceLayout {
     static bool isDegenerateCascadeRange(const CascadeRange& range, const ShadowCameraParams& camera);
     static bool isDegenerateLightDirection(const fuse::math::Vec3& lightDirection);
     static bool isEmptyLightDirection(const fuse::math::Vec3& lightDirection);
+    /// Empty-light global guard — true when directional fitting must be bypassed.
+    static bool isEmptyLightCascadeGuardActive(const fuse::math::Vec3& lightDirection);
+    /// Empty-camera global guard — true when cascade depth range is unusable.
+    static bool isEmptyCameraCascadeGuardActive(const ShadowCameraParams& camera);
+    /// Classify the first global bypass reason — empty light wins over empty camera.
+    static CascadeShadowBypassReason classifyCascadeShadowBypass(const ShadowCameraParams& camera,
+                                                                 const fuse::math::Vec3& lightDirection);
     /// True when every cascade should be bypassed before per-cascade fitting.
     static bool shouldBypassAllCascadeShadowBuilds(const ShadowCameraParams& camera,
                                                  const fuse::math::Vec3& lightDirection);
@@ -347,8 +368,8 @@ bool wouldSkipCascadeShadowBuild(u32 cascadeIndex,
                                  CascadeShadowSkipReason* reason = nullptr);
 /// Preflight global cascade shadow build — true when bypass guards would not fire (B5.5 deepen).
 bool preflightCascadeShadowBuild(const ShadowCameraParams& camera,
-                                 const fuse::math::Vec3& lightDirection,
-                                 CascadeShadowSkipReason* reason = nullptr);
+/// Human-readable label for cascade shadow skip reasons (logging / tests).
+const char* cascadeShadowSkipReasonLabel(CascadeShadowSkipReason reason);
 /// True when a cascade shadow skip reason blocks matrix population.
 bool cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason reason);
 /// True when a skip reason applies to every cascade slot (global bypass guards).
@@ -357,5 +378,10 @@ bool cascadeShadowSkipReasonIsGlobal(CascadeShadowSkipReason reason);
 const char* cascadeShadowSkipReasonLabel(CascadeShadowSkipReason reason);
 /// Increment per-reason skip counters for one classified cascade.
 void accumulateCascadeShadowSkipCount(CascadeShadowSkipCounts& counts, CascadeShadowSkipReason reason);
+
+/// Human-readable label for global cascade shadow bypass reasons (logging / tests).
+const char* cascadeShadowBypassReasonLabel(CascadeShadowBypassReason reason);
+/// True when a global bypass reason blocks all cascade matrix population.
+bool cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason reason);
 
 } // namespace fuse::renderer
