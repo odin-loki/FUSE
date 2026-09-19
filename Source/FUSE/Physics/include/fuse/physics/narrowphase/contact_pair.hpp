@@ -114,6 +114,15 @@ ContactManifold detect_contacts_pair(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Run shape dispatch with deepen pair-reject guards; valid pairs unchanged (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Finalize detected manifold with deepen preflight guards (B4.6 deepen pass).
+bool generate_contact_manifold_deepen(ContactManifold& manifold);
+
 /// Preflight guard before finalize: non-empty, unit normal candidate, penetrating points (B4.3 deepen pass).
 bool can_finalize_contact_manifold(const ContactManifold& manifold);
 
