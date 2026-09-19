@@ -413,6 +413,7 @@ bool isGizmoTargetValid(Handle<Object> target);
 bool isRayUnitLength(const GizmoRay& ray);
 /// True when snap is enabled but the mode step is unusable — drag still applies without rounding (B6.4 deepen pass).
 /// Snap enabled but mode step unusable — begin/update/end still apply (B6.4 deepen pass).
+/// True when snap is enabled but the mode step is unusable — drag still applies (B6.4 deepen pass).
 
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
 struct PickPreflight {
@@ -2509,6 +2510,14 @@ enum class GizmoSnapDragRejectReason : u8 {
     DeltaNonFinite,
     SnapDisabled,
     NonFiniteStep,
+    InvalidStep,
+};
+
+/// Why snap-drag preflight rejected the request (B6.4 deepen pass).
+enum class GizmoSnapDragRejectReason : u8 {
+    None = 0,
+    DeltaNonFinite,
+    SnapDisabled,
     InvalidStep,
 };
 
