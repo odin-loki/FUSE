@@ -617,6 +617,11 @@ struct ContactIslandGraph {
     /// True when `islandIndex` is in range for graph accessors (B4.4 deepen follow-up).
     bool islandIndexInRange(u32 islandIndex) const { return islandIndex < islandCount(); }
     /// Guarded build entry; returns false when build inputs fail validation (B4.5 deepen follow-up).
+    /// True when both body indices are in range for graph partition.
+    static bool bodies_in_range(u32 bodyA, u32 bodyB, u32 bodyCount);
+
+    /// True when a constraint references the same body on both ends.
+    static bool is_self_contact(u32 bodyA, u32 bodyB);
 
 private:
     void unionBodies(u32 a, u32 b);
