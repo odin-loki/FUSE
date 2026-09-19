@@ -256,8 +256,38 @@ bool finalize_contact_manifold_with_preflight(
     f32 duplicateEpsilon = 1e-4f,
     f32 frictionEpsilon = 1e-4f);
 
+/// Normalize the contact normal when non-unit; returns true when normalization ran (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE bool normalize_contact_normal_if_needed(ContactManifold& manifold, f32 lengthEpsilon = 1e-4f) {
+    if (!manifold.hasValidNormal()) {
+        return false;
+    }
+    if (!manifold.needsNormalNormalization(lengthEpsilon)) {
+        return false;
+    }
+
+    const f32 normalLength = manifold.contactNormal.length();
+    manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
+    return true;
+}
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
+}
+
+/// Build friction tangents only when preflight allows; no-op when skipped (B4.6 deepen pass).
+FUSE_PHYSICS_INLINE void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon) {
+    if (should_skip_friction_basis_preflight(manifold, epsilon)) {
+        if (friction_basis_reject_reason(manifold) != FrictionBasisRejectReason::None) {
+            invalidate_friction_basis(manifold);
+        }
+        return;
+    }
+
+    if (should_normalize_contact_normal_before_friction(manifold, epsilon)) {
+        normalize_contact_normal_if_needed(manifold, epsilon);
+    }
+
+    compute_friction_tangents_if_needed(manifold, epsilon);
 }
 
 } // namespace fuse::physics::narrowphase
