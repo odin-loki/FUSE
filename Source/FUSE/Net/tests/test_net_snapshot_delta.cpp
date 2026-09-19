@@ -511,6 +511,9 @@ void run_snapshot_delta_tests() {
     expectTrue(!fuse::net::validate_entity_patch_masks(invalid_mask_patch),
                "invalid field mask fails patch validation");
 
+    fuse::net::SnapshotDelta duplicate_index_delta = patch_delta;
+    duplicate_index_delta.entity_patches.push_back(patch_delta.entity_patches[0]);
+    expectTrue(!fuse::net::validate_entity_patch_indices_unique(duplicate_index_delta),
                "duplicate entity index fails uniqueness helper");
     expectTrue(!fuse::net::validate_delta_payload(duplicate_index_delta),
                "duplicate entity index fails delta payload validation");
@@ -757,6 +760,7 @@ void run_snapshot_delta_tests() {
                "verified apply skip guard accepts valid patch delta");
 
     const fuse::net::DeltaApplyResult verified_mask_popcount =
+        fuse::net::apply_snapshot_delta_verified(base, bad_popcount_delta);
     expectTrue(!verified_mask_popcount.mask_popcount_ok,
                "verified apply propagates mask popcount failure");
     expectTrue(verified_mask_popcount.empty_delta == false, "patch delta is not marked empty");

@@ -131,6 +131,7 @@ struct SnapshotDeltaPreflight {
     bool patch_indices_unique_ok = true;
     /// True when `SnapshotDeltaKind::Full` carries non-empty full-state payload bytes.
 
+
                field_masks_ok && patch_indices_unique_ok && full_payload_ok;
     }
 
