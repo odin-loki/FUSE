@@ -108,43 +108,19 @@ ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& p
 ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 
 /// Classify why probe trace kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
-ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
 
 /// Classify why probe blend kernel launch would reject — same ordering as `tryCanLaunchProbeBlendKernel`.
-ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 
-/// Classify why probe trace kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
-ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
 
-/// Classify why probe blend kernel launch would reject — same ordering as `tryCanLaunchProbeBlendKernel`.
-ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 
-/// Classify why probe trace kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
-ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
 
-/// Classify why probe blend kernel launch would reject — same ordering as `tryCanLaunchProbeBlendKernel`.
-ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 
-/// Classify why probe trace kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
-ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
 
-/// Classify why probe blend kernel launch would reject — same ordering as `tryCanLaunchProbeBlendKernel`.
-ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 
-/// Classify why probe trace kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
-ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
 
-/// Classify why probe blend kernel launch would reject — same ordering as `tryCanLaunchProbeBlendKernel`.
-ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 
-/// Classify why probe trace kernel launch would reject — same ordering as `tryCanLaunchProbeTraceKernel`.
-ProbeKernelRejectReason classifyProbeTraceKernelReject(const DDGIKernelParams& params);
 
-/// Classify why probe blend kernel launch would reject — same ordering as `tryCanLaunchProbeBlendKernel`.
-ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 
-/// Classify why probe blend kernel launch would reject — same ordering as `tryCanLaunchProbeBlendKernel`.
-ProbeKernelRejectReason classifyProbeBlendKernelReject(const DDGIKernelParams& params);
 
 /// Early-out when either probe kernel launch would be rejected.
 bool wouldSkipProbeKernelLaunch(const DDGIKernelParams& params);
@@ -186,23 +162,13 @@ bool populateAndPreflightDDGIKernelParams(DDGIKernelParams& params,
 
 /// Non-mutating probe blend kernel preflight — returns true when blend would proceed.
 
-/// Non-mutating probe trace kernel preflight — returns true when trace launch would proceed.
-bool preflightProbeTraceKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
-/// Non-mutating probe blend kernel preflight — returns true when blend launch would proceed.
-bool preflightProbeBlendKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
-/// Non-mutating probe trace kernel preflight — returns true when trace launch would proceed.
-bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
-/// Non-mutating probe blend kernel preflight — returns true when blend launch would proceed.
-bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
 /// Non-mutating probe trace kernel preflight — returns true when launch would proceed.
-bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
 /// Non-mutating probe blend kernel preflight — returns true when launch would proceed.
-bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
 /// Probe trace kernel preflight with mandatory reject-reason output (B5.6 deepen pass).
 bool tryPreflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
@@ -211,49 +177,25 @@ bool tryPreflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRej
 bool tryPreflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
 /// Non-mutating trace kernel launch preflight — returns true when trace would proceed.
-bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
 /// Non-mutating blend kernel launch preflight — returns true when blend would proceed.
-bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
-/// Non-mutating probe trace kernel preflight — returns true when trace launch would proceed.
-bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
-/// Non-mutating probe blend kernel preflight — returns true when blend launch would proceed.
-bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
 /// Non-mutating probe trace kernel launch preflight — returns true when trace would proceed.
-bool preflightProbeTraceKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
 /// Non-mutating probe blend kernel launch preflight — returns true when blend would proceed.
-bool preflightProbeBlendKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
 /// Kernel launch preflight with mandatory reject-reason output (B5.6 deepen pass).
 bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& reason);
 
-/// Non-mutating probe trace kernel preflight — returns true when trace launch would proceed.
-bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
-/// Non-mutating probe blend kernel preflight — returns true when blend launch would proceed.
-bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
-/// Non-mutating probe trace kernel preflight — returns true when trace launch would proceed.
-bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
-/// Non-mutating probe blend kernel preflight — returns true when blend launch would proceed.
-bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
-/// Non-mutating probe trace kernel launch preflight — returns true when trace would proceed.
-bool preflightProbeTraceKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
-/// Non-mutating probe blend kernel launch preflight — returns true when blend would proceed.
-bool preflightProbeBlendKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
-/// Non-mutating probe trace kernel preflight — returns true when trace launch would proceed.
-bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
-/// Non-mutating probe blend kernel preflight — returns true when blend launch would proceed.
-bool preflightProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
 
 /// Populate kernel params from desc + scheduled indices without changing launch guards.
 void populateDDGIKernelParams(DDGIKernelParams& params,
@@ -298,6 +240,21 @@ bool shouldSkipProbeTraceKernel(const DDGIKernelParams& params);
 /// Early-out when probe trace kernel launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
 /// Early-out when probe trace kernel launch would be rejected — includes reject-reason diagnostics.
 bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// Grid-aware preflight guard before probe trace kernel launch.
+bool canLaunchProbeTraceKernel(const DDGIKernelParams& params, const DDGIDesc& desc);
+/// Diagnose why probe trace launch preflight would reject — includes grid index validation.
+bool tryCanLaunchProbeTraceKernel(const DDGIKernelParams& params,
+                                  const DDGIDesc& desc,
+                                  ProbeKernelRejectReason& outReason);
+
+/// Preflight guard before probe blend kernel launch.
+bool canLaunchProbeBlendKernel(const DDGIKernelParams& params);
+/// Grid-aware preflight guard before probe blend kernel launch.
+bool canLaunchProbeBlendKernel(const DDGIKernelParams& params, const DDGIDesc& desc);
+/// Diagnose why probe blend launch preflight would reject.
+bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+/// Diagnose why probe blend launch preflight would reject — includes grid index validation.
+bool tryCanLaunchProbeBlendKernel(const DDGIKernelParams& params,
 /// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
 /// Diagnose probe-world-position readiness for trace launch (B5.6 deepen).
 bool tryPreflightProbeTraceWorldPositions(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);

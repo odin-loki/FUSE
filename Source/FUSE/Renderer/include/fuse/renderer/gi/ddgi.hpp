@@ -1148,6 +1148,9 @@ bool trilinearProbeSampleReady(const DDGIDesc& desc,
 /// Early-out when coord-based trilinear sampling would be rejected.
 /// Non-mutating coord-based trilinear sample preflight — returns true when lookup would proceed.
 /// Build sample coords + cache preflight — returns true when trilinear lookup would proceed.
+/// Classify why trilinear sample preflight would reject — same ordering as `tryCanSampleAtProbeCoords`.
+/// Non-mutating trilinear sample preflight — returns true when lookup would proceed.
+/// Early-out when trilinear probe sampling would be rejected — same ordering as `tryCanSampleAtProbeCoords`.
 /// Diagnose cache-index preflight for every scheduled probe index; vacuously succeeds when all valid.
 bool tryValidateScheduledCacheIndices(const DDGIDesc& desc,
                                       const u32* probe_indices,
@@ -1214,6 +1217,10 @@ bool tryTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
                                    const IrradianceCacheEntry* cache,
                                    ProbeTrilinearSampleRejectReason* reason = nullptr);
                                    u32 cache_count);
+                                      u32 cache_count,
+bool tryValidateScheduledCacheIndices(const DDGIDesc& desc,
+                                      const u32* probe_indices,
+                                      u32 probe_count,
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1382,6 +1389,7 @@ bool cacheIndexLookupReady(const DDGIDesc& desc,
 bool areTrilinearCornerCacheIndicesValid(const DDGIDesc& desc,
                                          const ProbeSampleCoords& coords,
 /// Non-mutating cache-index preflight without cache pointer — returns true when lookup would proceed.
+/// Non-mutating cache-index preflight — returns true when lookup would proceed (no cache pointer).
 /// True when `probe_index` exceeds the valid probe range on a non-empty grid.
 bool wouldClampProbeIndexForLookup(u32 probe_index, const DDGIDesc& desc);
 /// Minimum irradiance cache entries required for full-grid sampling; 0 on empty grid.
@@ -1775,6 +1783,8 @@ bool tryPreflightProbeScheduleAtRate(u32 probe_count,
                                   u32 probes_per_frame,
                                   u32 max_indices,
                                   const u32* out_indices,
+/// Probes that would be scheduled after capacity/probe-count caps (B5.6 deepen pass).
+u32 effectiveScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// True when output capacity would cap scheduled probes below `probes_per_frame`.
 bool wouldClampScheduledProbeCount(u32 probe_count, u32 probes_per_frame, u32 max_indices);
 /// Early-out when probe scheduling would be rejected — same ordering as `tryScheduleProbeUpdates`.
