@@ -2393,3 +2393,6 @@ bool preflightHrtfBinauralReady(bool hrtf_enabled, const Vec3& rel_listener,
     return preflightHrtfBinauralReady(hrtf_enabled, make_empty_hrtf_ir(), rel_listener,
     return preflightHrtfBinauralReady(hrtf_enabled, ir, rel_listener, distance_attenuation,
     return preflightHrtfBinauralReady(hrtf_enabled, rel_listener, distance_attenuation,
+
+// --- deepen additive from b7-2-hrtf-reject-reasons-beaf ---
+HrtfPanPathRejectReason classify_hrtf_pan_path_convolve_reject(const HrtfPanPathPreflight& preflight,
