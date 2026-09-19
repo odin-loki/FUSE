@@ -3357,3 +3357,7 @@ bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridRejectReason* reaso
     case ProbeGridSourceRejectReason::NonPositiveSpacing:
         outReason = ProbeGridSourceRejectReason::NonPositiveSpacing;
 bool tryLaunch_ddgi_probe_kernels(const DDGIKernelParams& params,
+
+// --- deepen additive from deepen-b56-ddgi-guards-6d53 ---
+        return ProbeGridSourceRejectReason::ZeroDepthRes;
+    return !probeGridSourceRejectReasonIsBlocking(classifyProbeGridSourceReject(desc));

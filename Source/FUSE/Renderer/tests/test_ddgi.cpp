@@ -4727,3 +4727,21 @@ void testDdgiDeepenGuardPass2() {
     expectTrue(!fuse::renderer::gi::tryLaunch_ddgi_probe_kernels(nullIndices, nullptr, kernelReason),
                "tryLaunch_ddgi_probe_kernels rejects null indices");
                "tryLaunch_ddgi_probe_kernels reports null_probe_indices");
+
+// --- deepen additive from deepen-b56-ddgi-guards-6d53 ---
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeGridSource(valid),
+               "preflightProbeGridSource succeeds for default desc");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(valid) ==
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(zeroIrradiance) ==
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(zeroDepth) ==
+                   fuse::renderer::ProbeGridSourceRejectReason::ZeroDepthRes),
+               "wouldSkip true for hard OOB indices");
+               "wouldSkip false for clampable weights");
+void testProbeTrilinearPreflightDeepen() {
+    expectTrue(reason == fuse::renderer::ProbeTrilinearSampleRejectReason::ClampableSampleCoords,
+               "tryCanTrilinearSampleAtProbeCoords rejects null cache");
+               "tryScheduleAtRate zero rate reports zero_probes_per_frame reason");
+    expectTrue(fuse::renderer::gi::tryLaunch_probe_kernels(params, nullptr, reason),
+               "tryLaunch_probe_kernels succeeds for valid params");
+               "tryLaunch_probe_kernels rejects zero update count");
+    testProbeTrilinearPreflightDeepen();
