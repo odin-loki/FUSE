@@ -4424,3 +4424,6 @@ void testEndDragInteractionRejectReasonGuards() {
 // --- deepen additive from deepen-gizmo-guards-5ef1 ---
     expectTrue(invalidStepPreflight.isDegraded(),
     expectTrue(!invalidStepPreflight.canApply(), "degraded snap-drag cannot apply");
+
+// --- deepen additive from deepen-gizmo-preflight-guards-6188 ---
+               "tryPreflightSnapDrag accepts valid delta and snap after reset");
