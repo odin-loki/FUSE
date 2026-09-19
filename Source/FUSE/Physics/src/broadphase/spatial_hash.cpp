@@ -158,16 +158,11 @@ std::vector<u32> uniqueOccupants(const std::vector<u32>& occupants) {
 }
 
 u32 countPairsForCell(const std::vector<u32>& occupants) {
-    if (occupants.size() < 2u) {
-        return 0u;
-    }
-    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
-    const u32 bodyCount = static_cast<u32>(uniqueBodies.size());
-    return bodyCount > 1u ? bodyCount * (bodyCount - 1u) / 2u : 0u;
+    return countCellPairSlots(occupants);
 }
 
 void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
-    if (occupants.size() < 2u) {
+    if (!shouldRunCellPairGeneration(occupants)) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -182,7 +177,7 @@ void writePairsForCellSlots(
     const std::vector<u32>& occupants,
     u32 slotStart,
     PairBufferSoA& buffer) {
-    if (occupants.size() < 2u) {
+    if (!shouldRunCellPairGeneration(occupants)) {
         return;
     }
     const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
@@ -223,7 +218,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        if (!shouldRunCellCapacityInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -243,7 +238,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+    if (!shouldRunCellCapacityInsert(bodyIndex, bodies.count(), range, maxOccupancy)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -270,7 +265,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (!shouldRunDedupeBroadphase(buffer)) {
+    if (!shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
@@ -415,11 +410,15 @@ void refineBroadphasePairsParallelImpl(
         const u32 bodyA = buffer.bodyA[pairIndex];
         const u32 bodyB = buffer.bodyB[pairIndex];
         if (!isValidCandidatePair(bodyA, bodyB, bodies.count())) {
-            buffer.invalidateSlot(pairIndex);
+            if (shouldRunPairBufferInvalidate(buffer, pairIndex)) {
+                buffer.invalidateSlot(pairIndex);
+            }
             return;
         }
         if (!pairPassesAabbRefine(bodyA, bodyB, bodies, shapes)) {
-            buffer.invalidateSlot(pairIndex);
+            if (shouldRunPairBufferInvalidate(buffer, pairIndex)) {
+                buffer.invalidateSlot(pairIndex);
+            }
         }
     });
 
@@ -427,6 +426,178 @@ void refineBroadphasePairsParallelImpl(
 }
 
 } // namespace
+
+namespace {
+
+u32 uniqueOccupantCount(const std::vector<u32>& occupants) {
+    std::vector<u32> uniqueBodies = occupants;
+    std::sort(uniqueBodies.begin(), uniqueBodies.end());
+    uniqueBodies.erase(std::unique(uniqueBodies.begin(), uniqueBodies.end()), uniqueBodies.end());
+    return static_cast<u32>(uniqueBodies.size());
+}
+
+} // namespace
+
+const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason) {
+    switch (reason) {
+    case CellPairGenRejectReason::None:
+        return "None";
+    case CellPairGenRejectReason::EmptyOccupants:
+        return "EmptyOccupants";
+    case CellPairGenRejectReason::SingleOccupant:
+        return "SingleOccupant";
+    }
+    return "Unknown";
+}
+
+CellPairGenRejectReason cellPairGenRejectReason(const std::vector<u32>& occupants) {
+    if (occupants.empty()) {
+        return CellPairGenRejectReason::EmptyOccupants;
+    }
+    if (occupants.size() < 2u) {
+        return CellPairGenRejectReason::SingleOccupant;
+    }
+    if (uniqueOccupantCount(occupants) < 2u) {
+        return CellPairGenRejectReason::SingleOccupant;
+    }
+    return CellPairGenRejectReason::None;
+}
+
+bool cellPairGenRejectsForReason(const std::vector<u32>& occupants, CellPairGenRejectReason expected) {
+    return cellPairGenRejectReason(occupants) == expected;
+}
+
+CellPairGenPreflight preflightCellPairGeneration(const std::vector<u32>& occupants) {
+    CellPairGenPreflight preflight{};
+    preflight.reason = cellPairGenRejectReason(occupants);
+    preflight.emptyOccupants = preflight.reason == CellPairGenRejectReason::EmptyOccupants;
+    preflight.singleOccupant = preflight.reason == CellPairGenRejectReason::SingleOccupant;
+    if (preflight.canGenerate()) {
+        preflight.uniqueBodyCount = uniqueOccupantCount(occupants);
+        preflight.pairSlotCount = estimatePairCountForUniqueBodies(preflight.uniqueBodyCount);
+    }
+    return preflight;
+}
+
+bool canSkipCellPairGeneration(const std::vector<u32>& occupants) {
+    return !preflightCellPairGeneration(occupants).canGenerate();
+}
+
+bool shouldRunCellPairGeneration(const std::vector<u32>& occupants) {
+    return preflightCellPairGeneration(occupants).canGenerate();
+}
+
+u32 countCellPairSlots(const std::vector<u32>& occupants) {
+    return preflightCellPairGeneration(occupants).pairSlotCount;
+}
+
+const char* cellCapacityInsertRejectReasonName(CellCapacityInsertRejectReason reason) {
+    switch (reason) {
+    case CellCapacityInsertRejectReason::None:
+        return "None";
+    case CellCapacityInsertRejectReason::OutOfRangeBody:
+        return "OutOfRangeBody";
+    case CellCapacityInsertRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellCapacityInsertRejectReason::ExceedsBudget:
+        return "ExceedsBudget";
+    }
+    return "Unknown";
+}
+
+CellCapacityInsertRejectReason cellCapacityInsertRejectReason(
+    u32 bodyIndex,
+    u32 bodyCount,
+    const CellRange3& range,
+    u32 maxOccupancy) {
+    if (bodyCount > 0u && bodyIndex >= bodyCount) {
+        return CellCapacityInsertRejectReason::OutOfRangeBody;
+    }
+    if (isEmptyCellRange(range)) {
+        return CellCapacityInsertRejectReason::EmptyRange;
+    }
+    if (exceedsCellOccupancyBudget(range, maxOccupancy)) {
+        return CellCapacityInsertRejectReason::ExceedsBudget;
+    }
+    return CellCapacityInsertRejectReason::None;
+}
+
+CellCapacityInsertRejectReason cellCapacityInsertRejectReason(
+    u32 bodyIndex,
+    u32 bodyCount,
+    const CellRange2& range,
+    u32 maxOccupancy) {
+    if (bodyCount > 0u && bodyIndex >= bodyCount) {
+        return CellCapacityInsertRejectReason::OutOfRangeBody;
+    }
+    if (isEmptyCellRange(range)) {
+        return CellCapacityInsertRejectReason::EmptyRange;
+    }
+    if (exceedsCellOccupancyBudget(range, maxOccupancy)) {
+        return CellCapacityInsertRejectReason::ExceedsBudget;
+    }
+    return CellCapacityInsertRejectReason::None;
+}
+
+bool cellCapacityInsertRejectsForReason(
+    u32 bodyIndex,
+    u32 bodyCount,
+    const CellRange3& range,
+    u32 maxOccupancy,
+    CellCapacityInsertRejectReason expected) {
+    return cellCapacityInsertRejectReason(bodyIndex, bodyCount, range, maxOccupancy) == expected;
+}
+
+bool cellCapacityInsertRejectsForReason(
+    u32 bodyIndex,
+    u32 bodyCount,
+    const CellRange2& range,
+    u32 maxOccupancy,
+    CellCapacityInsertRejectReason expected) {
+    return cellCapacityInsertRejectReason(bodyIndex, bodyCount, range, maxOccupancy) == expected;
+}
+
+CellCapacityInsertPreflight preflightCellCapacityInsert(
+    u32 bodyIndex,
+    u32 bodyCount,
+    const CellRange3& range,
+    u32 maxOccupancy) {
+    CellCapacityInsertPreflight preflight{};
+    preflight.reason = cellCapacityInsertRejectReason(bodyIndex, bodyCount, range, maxOccupancy);
+    preflight.outOfRangeBody = preflight.reason == CellCapacityInsertRejectReason::OutOfRangeBody;
+    preflight.emptyRange = preflight.reason == CellCapacityInsertRejectReason::EmptyRange;
+    preflight.exceedsBudget = preflight.reason == CellCapacityInsertRejectReason::ExceedsBudget;
+    return preflight;
+}
+
+CellCapacityInsertPreflight preflightCellCapacityInsert(
+    u32 bodyIndex,
+    u32 bodyCount,
+    const CellRange2& range,
+    u32 maxOccupancy) {
+    CellCapacityInsertPreflight preflight{};
+    preflight.reason = cellCapacityInsertRejectReason(bodyIndex, bodyCount, range, maxOccupancy);
+    preflight.outOfRangeBody = preflight.reason == CellCapacityInsertRejectReason::OutOfRangeBody;
+    preflight.emptyRange = preflight.reason == CellCapacityInsertRejectReason::EmptyRange;
+    preflight.exceedsBudget = preflight.reason == CellCapacityInsertRejectReason::ExceedsBudget;
+    return preflight;
+}
+
+bool canSkipCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy) {
+    return !preflightCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
+}
+
+bool canSkipCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy) {
+    return !preflightCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
+}
+
+bool shouldRunCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange3& range, u32 maxOccupancy) {
+    return preflightCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
+}
+
+bool shouldRunCellCapacityInsert(u32 bodyIndex, u32 bodyCount, const CellRange2& range, u32 maxOccupancy) {
+    return preflightCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
+}
 
 RefineBroadphaseRejectReason refineBroadphaseRejectReason(
     const RigidBodySoA& bodies,
