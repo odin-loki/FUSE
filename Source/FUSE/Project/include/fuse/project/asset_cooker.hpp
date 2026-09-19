@@ -503,6 +503,10 @@ public:
                                                           const std::string& changed_source = "") const;
     /// True when prune reconcile would remove nothing (B7.9 deepen).
     /// True when upstream invalidation planning would be a no-op (B7.9 deepen).
+    /// True when upstream invalidation would remove zero entries — guarded on empty `changed_source` (B7.9 deepen).
+    /// True when stale dependency-hash reconcile would remove zero entries (B7.9 deepen).
+    /// True when prune reconcile would remove zero entries (B7.9 deepen).
+    /// True when combined reconcile invalidation would remove zero entries (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
