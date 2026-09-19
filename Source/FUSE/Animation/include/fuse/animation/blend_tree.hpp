@@ -299,6 +299,11 @@ struct AnimStateMachine : BlendNode {
     /// Destination state for the `transition_index`-th registered edge, or -1 when out of range.
 
     /// Blend duration for the `transition_index`-th registered edge, or -1 when out of range.
+
+    /// True when the `transition_index`-th registered edge has a passing condition.
+
+    /// Global index of the first outgoing edge from `from_state`, or -1 when none exist.
+    s32 first_outgoing_transition_index(u32 from_state) const;
 };
 
 } // namespace fuse::animation
