@@ -152,3 +152,6 @@ bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilo
 bool should_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
+
+// --- deepen additive from deepen-b4-narrowphase-manifold-prune-4828 ---
+bool should_skip_friction_for_manifold(

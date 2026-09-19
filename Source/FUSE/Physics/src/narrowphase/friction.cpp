@@ -303,3 +303,7 @@ bool should_run_friction_basis_rebuild(const ContactManifold& manifold, f32 epsi
 }
 
 } // namespace fuse::physics::narrowphase
+
+// --- deepen additive from deepen-b4-narrowphase-manifold-prune-4828 ---
+bool should_skip_friction_for_manifold(
+    return should_skip_friction_solve(staticFriction, dynamicFriction, normalImpulse, impulseEpsilon);

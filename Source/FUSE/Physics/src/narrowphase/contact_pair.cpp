@@ -623,3 +623,7 @@ bool should_run_narrowphase_batch(
 }
 
 } // namespace fuse::physics::narrowphase
+
+// --- deepen additive from deepen-b4-narrowphase-manifold-prune-4828 ---
+    return contact_pair_reject_reason(pair, bodies, shapes) == ContactPairRejectReason::None;
+const char* contact_pair_reject_reason_label(ContactPairRejectReason reason) {
