@@ -193,6 +193,7 @@ struct CookCacheReconcileEstimate {
 /// Read-only cache-entry hash preflight — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
 /// Read-only cache-entry preflight — mirrors `is_valid_cook_cache_entry` guards (B7.9 deepen).
 /// Read-only cache-entry hash preflight — mirrors `is_valid_cook_cache_entry` guards (B7.9 deepen).
+/// Read-only cache-entry hash preflight — mirrors `store` guards without mutating (B7.9 deepen).
 
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {

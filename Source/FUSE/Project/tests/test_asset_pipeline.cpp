@@ -3166,6 +3166,7 @@ void testCookerWouldReconcileAndUpstreamProbes() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_would_reconcile_a.obj", "# would reconcile a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_would_reconcile_b.obj", "# would reconcile b\n");
 void testCookerUpstreamInvalidationEstimateProbes() {
+void testCookerUpstreamInvalidateEstimateProbes() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_up_est_a.obj", "# up est a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_up_est_b.obj", "# up est b\n");
 
@@ -3285,6 +3286,59 @@ void testCookerWouldReconcileInvalidationProbe() {
     writeTempFile(source, "# would reconcile revised\n");
     expectTrue(cooker.would_reconcile_invalidation(manifest), "stale cache would_reconcile is true");
                "would_reconcile agrees with reconcile estimate");
+
+    expectTrue(cooker.cache().entry_count() == 2u, "two entries seeded for upstream estimate");
+
+    expectTrue(!cooker.would_upstream_invalidate(manifest, ""),
+               "empty changed source would_upstream_invalidate is false");
+    expectTrue(!cooker.would_upstream_invalidate(manifest, "/tmp/fuse_b79_up_est_unknown.obj"),
+               "unknown source would_upstream_invalidate is false");
+    expectTrue(cooker.would_upstream_invalidate(manifest, source_b),
+               "leaf source with cache entry would_upstream_invalidate is true");
+
+    const fuse::project::CookCacheUpstreamInvalidateEstimate estimate =
+    expectTrue(estimate.direct_source_entries == 1u, "upstream estimate counts direct source entry");
+    expectTrue(estimate.downstream_entries == 1u, "upstream estimate counts downstream entry");
+    expectTrue(estimate.total() == 2u, "upstream estimate total matches chain size");
+    expectTrue(cooker.would_upstream_invalidate(manifest, source_a),
+               "producer source would_upstream_invalidate is true");
+
+    const fuse::u32 count_probe = cooker.count_upstream_invalidation(manifest, source_a);
+    expectTrue(count_probe == estimate.total(),
+               "count_upstream_invalidation matches upstream estimate total");
+
+               "fresh cache would_reconcile_invalidation is false");
+
+    writeTempFile(source_a, "# up est a revised\n");
+               "stale upstream makes would_reconcile_invalidation true");
+
+    const fuse::project::CookCacheReconcileEstimate reconcile = cooker.estimate_reconcile_invalidation(manifest);
+    expectTrue(reconcile.total() >= 1u, "reconcile estimate non-zero after upstream change");
+    expectTrue(cooker.would_reconcile_invalidation(manifest) == (reconcile.total() != 0u),
+               "would_reconcile matches reconcile estimate total");
+
+void testCookCacheDownstreamWouldInvalidateProbe() {
+    const std::string source_a = writeTempFile("/tmp/fuse_b79_would_down_a.obj", "# would down a\n");
+    const std::string source_b = writeTempFile("/tmp/fuse_b79_would_down_b.obj", "# would down b\n");
+
+    fuse::project::CookManifestEntry entry_a;
+    entry_a.kind = fuse::project::CookAssetKind::Mesh;
+    entry_a.source_path = source_a;
+    entry_a.output_path = "/tmp/fuse_b79_would_down_a.fusemesh";
+    manifest.assets.push_back(entry_a);
+
+    fuse::project::CookManifestEntry entry_b;
+    entry_b.kind = fuse::project::CookAssetKind::Mesh;
+    entry_b.source_path = source_b;
+    entry_b.output_path = "/tmp/fuse_b79_would_down_b.fusemesh";
+
+
+    expectTrue(cooker.cook_manifest(manifest).ok, "chain cook for downstream would_invalidate ok");
+
+               "empty output path would_invalidate_downstream is guarded");
+               "producer output would_invalidate_downstream is true");
+    expectTrue(cooker.cache().count_downstream_of(entry_a.output_path, graph.edges(), graph.jobs()) == 1u,
+               "downstream count matches dependent entry");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -3519,6 +3573,8 @@ int main() {
     testCookerWouldReconcileAndUpstreamProbes();
     testCookerUpstreamInvalidationEstimateProbes();
     testCookerWouldReconcileInvalidationProbe();
+    testCookerUpstreamInvalidateEstimateProbes();
+    testCookCacheDownstreamWouldInvalidateProbe();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
