@@ -71,9 +71,17 @@ bool shouldRejectEventName(const char* name) {
     if (isWhitespaceOnlyEventName(name)) {
 
 
+
+
 bool isAsyncFlowPhase(EventPhase phase) {
     return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
 }
+
+bool eventNameEquals(const char* lhs, const char* rhs) {
+    if (lhs == nullptr || rhs == nullptr) {
+        return lhs == rhs;
+    }
+    return std::strcmp(lhs, rhs) == 0;
 
 u64 nowNanoseconds() {
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
@@ -2082,12 +2090,10 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 
 ProfileRecordSkipReason classifyProfileRecordSkip(const char* name, bool requireOpenAsyncFlow) {
     if (!g_enabled.load(std::memory_order_acquire)) {
-        return ProfileRecordSkipReason::ProfilerDisabled;
     if (!isValidEventName(name)) {
         return ProfileRecordSkipReason::InvalidName;
     if (requireOpenAsyncFlow && g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u) {
         return ProfileRecordSkipReason::NoOpenAsyncFlow;
-    return ProfileRecordSkipReason::None;
 
 bool wouldSkipProfileRecord(const char* name,
                             bool requireOpenAsyncFlow,
@@ -2135,15 +2141,12 @@ u32 findFirstEventIndexByName(const char* name);
 u32 findLastEventIndexByName(const char* name);
 u32 findFirstEventIndexByFlowId(u32 flowId);
 u32 findLastEventIndexByFlowId(u32 flowId);
-    }
 
 ProfileRecordSkipReason classifyProfileRecordSkip(const char* name) {
     return diagnoseProfileRecordSkipReason(name);
 
 const char* profileRecordSkipReasonLabel(ProfileRecordSkipReason reason) {
-    switch (reason) {
     case ProfileRecordSkipReason::None:
-        return "none";
     case ProfileRecordSkipReason::ProfilerDisabled:
         return "profiler_disabled";
     case ProfileRecordSkipReason::NullName:
@@ -2171,16 +2174,15 @@ bool wouldSkipAsyncFlowEnd(const char* name, ProfileRecordSkipReason* reason) {
     const ProfileRecordSkipReason nameSkipReason = diagnoseProfileRecordSkipReason(name);
     if (nameSkipReason != ProfileRecordSkipReason::None) {
             *reason = nameSkipReason;
-        return true;
 
     if (openAsyncFlowCount() == 0u) {
             *reason = ProfileRecordSkipReason::NoOpenFlows;
 
         *reason = ProfileRecordSkipReason::None;
-    return false;
 
 bool wouldSkipCounterSample(const char* track, ProfileRecordSkipReason* reason) {
     return wouldSkipProfileScope(track, reason);
+
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
@@ -3661,6 +3663,16 @@ bool tryFirstExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 bool tryLastExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -5310,6 +5322,19 @@ bool isFlowIdTracked(u32 flowId) {
 bool eventNameMatches(const char* eventName, const char* queryName) {
     if (!isValidEventName(queryName) || !isValidEventName(eventName)) {
     return std::strcmp(eventName, queryName) == 0;
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -7200,6 +7225,48 @@ bool wouldSkipChromeTraceExport() {
 
 bool wouldSkipChromeTraceExportSafely() {
     return !preflightChromeTraceExport().canExportSafely();
+}
+
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
+    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
+        && !preflight.wouldUnderflowOpenCount;
+    return preflight;
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return !preflightProfileScope(name).canEnter;
+}
+
+bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId) {
+    return !preflightBeginAsyncFlow(name, flowId).canBegin;
+}
+
+bool wouldSkipEndAsyncFlow(const char* name, u32 flowId) {
+    return !preflightEndAsyncFlow(name, flowId).canEnd;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !enabled() || !isValidEventName(track);
 }
 
 void reset() {

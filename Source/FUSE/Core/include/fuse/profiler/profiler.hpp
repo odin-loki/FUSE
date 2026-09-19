@@ -992,6 +992,28 @@ struct AsyncFlowPreflight {
     bool hasOpenFlows = false;
 };
 
+/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
+struct ProfileScopePreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canEnter = false;
+};
+
+/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
+struct AsyncFlowBeginPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool canBegin = false;
+};
+
+/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
+struct AsyncFlowEndPreflight {
+    bool profilerDisabled = false;
+    bool invalidName = false;
+    bool wouldUnderflowOpenCount = false;
+    bool canEnd = false;
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -1462,6 +1484,8 @@ u32 countEventsByName(const char* name);
 u32 findFirstEventIndexByFlowId(u32 flowId);
 u32 findLastEventIndexByFlowId(u32 flowId);
 u32 countEventsByFlowId(u32 flowId);
+u32 orphanAsyncFlowEndCount();
+bool hasOrphanAsyncFlowEnds();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
@@ -1768,6 +1792,7 @@ bool tryExportChromeTraceJson(std::string& outJson, ChromeTraceExportRejectReaso
 EventNameLookupPreflight preflightEventLookupByName(const char* name);
 FlowIdLookupPreflight preflightFlowLookupById(u32 flowId);
 NestingConsistencyPreflight preflightNestingConsistency();
+ProfileScopePreflight preflightProfileScope(const char* name);
 
 /// Preflight skip checks — same ordering as the corresponding record entry points (no mutation).
 bool wouldSkipProfileScope(const char* name);
