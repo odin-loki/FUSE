@@ -31,6 +31,7 @@ struct HrtfIrPreflight {
     bool null_samples = true;
     bool zero_length = true;
     u32 length = 0;
+/// Read-only empty-IR diagnostics (B7.2 deepen follow-up).
 
     [[nodiscard]] bool can_use_convolution() const { return !empty_ir; }
     [[nodiscard]] bool should_fallback_to_stub() const { return empty_ir; }
@@ -41,6 +42,8 @@ struct HrtfIrPreflight {
 
 /// Convenience guard — `preflight_hrtf_ir(ir).can_use_convolution()`.
 [[nodiscard]] bool can_use_hrtf_convolution(const HrtfIrStub& ir);
+
+/// Preflight empty-IR checks without mutating the stub (B7.2 deepen follow-up).
 
 /// True when an HRTF IR stub has non-null, non-empty sample data.
 bool has_hrtf_ir(const HrtfIrStub& ir);
@@ -337,6 +340,16 @@ bool should_skip_hrtf_pan_path(HrtfPanPath path);
 /// Preflight HRTF pan routing without mutating state.
 
 /// Preflight HRTF pan routing when no IR is wired.
+/// Read-only pan-path resolution diagnostics (B7.2 deepen follow-up).
+    bool has_valid_ir = false;
+
+    [[nodiscard]] bool should_bypass() const { return path == HrtfPanPath::Bypass; }
+    [[nodiscard]] bool should_use_ild_itd_stub() const { return path == HrtfPanPath::IldItdStub; }
+    [[nodiscard]] bool should_use_convolution() const { return path == HrtfPanPath::Convolution; }
+
+/// Preflight pan-path resolution without computing gains (B7.2 deepen follow-up).
+
+/// Preflight pan-path resolution when no IR is wired (B7.2 deepen follow-up).
 
 /// True when the resolved path produces a lateral spatial image (not centre bypass).
 bool is_spatial_hrtf_pan_path(HrtfPanPath path);
@@ -776,6 +789,22 @@ struct HrtfSpatialPanPreflight {
     [[nodiscard]] bool should_skip() const { return !will_narrow; }
 
 /// Preflight attenuation coupling without mutating binaural gains.
+/// Read-only attenuation-coupling diagnostics (B7.2 deepen follow-up).
+
+    [[nodiscard]] bool should_skip_coupling() const { return bypass_path || unity_attenuation; }
+    [[nodiscard]] bool should_narrow() const { return spatial_path && !unity_attenuation; }
+    [[nodiscard]] bool can_apply_coupling() const { return should_narrow(); }
+
+/// Preflight attenuation coupling without mutating pan gains (B7.2 deepen follow-up).
+
+/// Combined spatial pan preflight — IR, pan path, and attenuation coupling (B7.2 deepen follow-up).
+    HrtfIrPreflight ir{};
+
+    [[nodiscard]] bool can_apply_spatial_pan() const { return pan.can_apply_spatial_pan(); }
+    [[nodiscard]] bool should_narrow_spatial_image() const { return coupling.should_narrow(); }
+
+/// Preflight spatial pan pipeline without computing gains (B7.2 deepen follow-up).
+[[nodiscard]] HrtfSpatialPanPreflight preflight_hrtf_spatial_pan(bool hrtf_enabled,
 
 /// Combined spatial blend from distance attenuation and occlusion LF gain.
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
