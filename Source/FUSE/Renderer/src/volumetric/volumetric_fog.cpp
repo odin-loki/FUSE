@@ -2209,3 +2209,10 @@ GridDensityRejectReason classifyGridDensityReject(const FroxelDensityGrid& grid,
     tryValidateGridDensity(grid, desc, reason);
                           GridDensityRejectReason* reason) {
     const GridDensityRejectReason reject = classifyGridDensityReject(grid, desc);
+
+// --- deepen additive from froxel-classify-isblocking-guards-e388 ---
+SampleCoordRejectReason FroxelGridLayout::classifyFroxelSampleCoordReject(const FroxelSampleCoords& coords,
+    const SampleCoordRejectReason reject = classifyFroxelSampleCoordReject(coords, desc);
+    const DensityLookupRejectReason reject = classifyDensityLookupReject(grid, desc, tileX, tileY, sliceZ);
+SampleCoordRejectReason classifyFroxelSampleCoordReject(const FroxelDensityGrid& grid,
+    const SampleCoordRejectReason reject = classifyFroxelSampleCoordReject(grid, desc, coords);

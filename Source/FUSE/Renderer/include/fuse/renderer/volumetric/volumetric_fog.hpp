@@ -854,3 +854,7 @@ FroxelPopulateRejectReason classifyPopulateReject(const FroxelGridDesc& desc,
 DensityLookupRejectReason classifyDensityLookupAtCoordReject(const FroxelDensityGrid& grid,
 GridDensityRejectReason classifyGridDensityReject(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
                           GridDensityRejectReason* reason = nullptr);
+
+// --- deepen additive from froxel-classify-isblocking-guards-e388 ---
+    static SampleCoordRejectReason classifyFroxelSampleCoordReject(const FroxelSampleCoords& coords,
+SampleCoordRejectReason classifyFroxelSampleCoordReject(const FroxelDensityGrid& grid,
