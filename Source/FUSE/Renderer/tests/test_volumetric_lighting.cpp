@@ -2860,3 +2860,16 @@ void testFroxelTrilinearAndPopulatePreflightGuards() {
     expectTrue(!fuse::renderer::froxel_util::tryPreflightPopulateFromAnalyticFog(desc, camera, zeroDensity, populateReason),
                "tryPreflightPopulateFromAnalyticFog rejects zero density");
     testFroxelTrilinearAndPopulatePreflightGuards();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-a69f ---
+    expectTrue(fuse::renderer::froxel_util::tryCanLookupForDensitySample(grid, desc, lookupReason),
+               "tryCanLookupForDensitySample succeeds on accessible grid");
+    expectTrue(!fuse::renderer::froxel_util::tryCanLookupForDensitySample(emptyGrid, desc, lookupReason),
+               "tryCanLookupForDensitySample rejects empty storage");
+    expectTrue(!fuse::renderer::froxel_util::wouldRejectSampleCoords(inBounds, desc),
+    expectTrue(fuse::renderer::froxel_util::wouldRejectSampleCoords(hardOob, desc),
+               "tryCanTrilinearSampleAtCoords still succeeds when weights will be clamped");
+    expectTrue(fuse::renderer::froxel_util::tryPreflightPopulateAllocation(desc, populateReason),
+               "tryPreflightPopulateAllocation succeeds for non-empty desc");
+    expectTrue(!fuse::renderer::froxel_util::tryPreflightPopulateAllocation(zeroDesc, populateReason),
+               "tryPreflightPopulateAllocation rejects empty desc");

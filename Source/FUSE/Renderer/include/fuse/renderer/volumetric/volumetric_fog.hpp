@@ -757,3 +757,9 @@ bool wouldSkipDensityLookupAtIndex(const FroxelDensityGrid& grid, const FroxelGr
 bool wouldClampTrilinearSampleCoords(const FroxelDensityGrid& grid,
 bool canPreflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,
 bool tryPreflightPopulateFromAnalyticFog(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-a69f ---
+bool tryCanLookupForDensitySample(const FroxelDensityGrid& grid,
+bool wouldRejectSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
+bool wouldPopulateAllocateWithoutFill(const FroxelGridDesc& desc,
+bool tryPreflightPopulateAllocation(const FroxelGridDesc& desc, FroxelPopulateRejectReason& outReason);
