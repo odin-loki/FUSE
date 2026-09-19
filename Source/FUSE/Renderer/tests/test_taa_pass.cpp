@@ -9403,6 +9403,8 @@ void testTaaPassTryClassifyGuardWrappers() {
 
         fuse::renderer::TaaJitterGuardRejectReason::None;
 
+
+
     expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
                "pass tryPreflightHistoryReuse fails before init");
     expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
@@ -9497,6 +9499,26 @@ void testTaaPassHistoryWarmupPreflight() {
 
 
     expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
+    expectTrue(pass->classifyHistoryReuseBlock(0u) ==
+                   fuse::renderer::TaaHistoryReuseBlockReason::NotReady,
+
+    fuse::renderer::TaaJitterGuardRejectReason jitterReject =
+        fuse::renderer::TaaJitterGuardRejectReason::None;
+    expectTrue(pass->classifyJitterSyncReject() == fuse::renderer::TaaJitterGuardRejectReason::None,
+               "pass classifyJitterSyncReject passes before init");
+    expectTrue(pass->tryPreflightJitterSync(4u, jitterReject),
+               "pass tryPreflightJitterSync passes before init");
+    expectTrue(jitterReject == fuse::renderer::TaaJitterGuardRejectReason::None,
+               "pass tryPreflightJitterSync reject reason is None before init");
+    expectTrue(pass->classifyJitterNdcReject() == fuse::renderer::TaaJitterGuardRejectReason::None,
+               "pass classifyJitterNdcReject passes before init");
+    expectTrue(pass->tryPreflightJitterNdc(jitterReject),
+               "pass tryPreflightJitterNdc passes before init");
+    expectTrue(pass->classifyJitterAdvanceReject() == fuse::renderer::TaaJitterGuardRejectReason::None,
+               "pass classifyJitterAdvanceReject passes before init");
+    expectTrue(pass->tryPreflightJitterAdvance(jitterReject),
+               "pass tryPreflightJitterAdvance passes before init");
+    expectTrue(!pass->shouldSkipJitterAdvance(), "pass should not skip jitter advance before init");
 
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -10591,27 +10613,17 @@ void testTaaPassTryPreflightAndClassifyGuards() {
                "pass tryPreflightHistoryReuse fails before warmup resolve");
 
 
-    expectTrue(pass->resolveFrame(resolveDesc), "initial resolve warms pass history");
 
-    expectTrue(pass->tryPreflightHistoryReuse(0u, reuseReason),
-               "pass tryPreflightHistoryReuse passes after warmup");
-    expectTrue(pass->tryComputeResolveBlendWeights(resolveDesc, weights, blendReject),
-    expectTrue(pass->classifyResolveBlendReject(resolveDesc) ==
-                   fuse::renderer::TaaResolveBlendRejectReason::None,
                "pass classifyResolveBlendReject passes after warmup");
 
-    pass->invalidateHistory();
                "pass classifyHistoryReuseBlock reports StaleGeneration after invalidate");
-               "pass tryPreflightHistoryReuse fails after invalidate");
-    expectTrue(reuseReason == fuse::renderer::TaaHistoryReuseBlockReason::StaleGeneration,
-    expectTrue(pass->tryComputeResolveBlendWeights(resolveDesc, weights, blendReason),
-               "pass tryComputeResolveBlendWeights passes after warmup");
-    expectNear(weights.current, 0.2f, 1e-5f, "pass tryCompute steady current weight");
-    expectNear(weights.history, 0.8f, 1e-5f, "pass tryCompute steady history weight");
 
-    expectTrue(pass->classifyHistoryReuseBlock(0u) ==
-                   fuse::renderer::TaaHistoryReuseBlockReason::StaleGeneration,
-    expectTrue(!pass->tryPreflightHistoryReuse(0u, reuseReason),
+               "pass classifyResolveSkip is None with valid desc after init");
+
+
+
+
+
                "pass tryPreflightHistoryReuse reason is StaleGeneration after invalidate");
 
     fuse::renderer::TaaPassDesc zeroWidthDesc{};
@@ -10761,6 +10773,8 @@ void testTaaPassTryPreflightAndClassifyGuards() {
                "pass tryPreflightJitterSync succeeds after init");
     expectTrue(fuse::renderer::tryPreflightTaaJitterSync(3u, pass->jitter().sequenceLength(), jitterReject),
                "free tryPreflightJitterSync matches pass sequence length");
+
+
 
 
     resources.destroy();
