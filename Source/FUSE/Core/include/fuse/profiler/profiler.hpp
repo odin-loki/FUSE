@@ -178,6 +178,7 @@ u32 nestingDepth();
 u32 ringBufferCapacity();
 
 bool hasEvents();
+bool hasOpenAsyncFlows();
 bool isBufferEmpty();
 
 bool isBufferFull();

@@ -336,6 +336,10 @@ bool hasEvents() {
     return eventCount() > 0u;
 }
 
+bool hasOpenAsyncFlows() {
+    return openAsyncFlowCount() > 0u;
+}
+
 bool isBufferEmpty() {
     return eventCount() == 0u;
 }
@@ -420,7 +424,13 @@ const ProfileEvent& eventAt(u32 index) {
 
 
 
+const ProfileEvent& emptyProfileEvent() {
+    static const ProfileEvent kEmpty{};
+    return kEmpty;
+}
 
+
+    const u32 count = eventCount();
     const u32 head = g_writeHead.load(std::memory_order_acquire);
     const u32 start = head >= count ? head - count : 0u;
     const u32 ringIndex = (start + index) % kRingCapacity;
@@ -830,6 +840,11 @@ void beginAsyncFlow(const char* name, u32 flowId) {
 
 void endAsyncFlow(const char* name, u32 flowId) {
     if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
+    if (name == nullptr) {
+        return;
+    }
+
+    if (!g_enabled.load(std::memory_order_acquire)) {
         return;
     }
 
