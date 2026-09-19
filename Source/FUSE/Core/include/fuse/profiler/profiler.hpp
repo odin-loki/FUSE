@@ -54,10 +54,15 @@ struct ChromeTraceExportPreflight {
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
     bool flowDepthDetached = false;
+    u32 nonExportableEventCount = 0;
+    bool bufferFull = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
+    bool hasNonExportableEvents() const { return nonExportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+    bool canExportCleanTrace() const { return canExport() && !hasUnbalancedNesting() && !flowDepthDetached; }
+    bool wouldExportEmptyTrace() const { return canExport() && exportableEventCount == 0; }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -96,17 +101,26 @@ bool isScopeNestingBalanced();
 bool isFlowNestingBalanced();
 bool hasUnbalancedNesting();
 bool isFlowDepthDetached();
+bool hasResidualFlowNestingDepth();
 
 bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
 bool isEventIndexValid(u32 index);
+bool isBlankEventName(const char* name);
 bool isValidEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 u32 exportableEventCount();
+u32 nonExportableEventCount();
+bool hasNonExportableEvents();
 bool isEventExportable(u32 index);
+bool isFirstEventIndex(u32 index);
+bool isLastEventIndex(u32 index);
 u32 firstEventIndex();
 u32 lastEventIndex();
+u32 countEventsWithPhase(EventPhase phase);
+u32 findFirstEventIndexWithPhase(EventPhase phase);
+bool tryFindFirstEventWithPhase(EventPhase phase, ProfileEvent& outEvent);
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
