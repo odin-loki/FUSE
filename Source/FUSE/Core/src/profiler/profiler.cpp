@@ -328,6 +328,9 @@ NestingAsyncFlowPreflight preflightNestingAndAsyncFlow() {
     preflight.flowDepthDetached = isFlowDepthDetached();
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
     return preflight;
+u32 ringBufferCapacity() {
+    return kRingCapacity;
+}
 
 bool hasEvents() {
     return eventCount() > 0u;

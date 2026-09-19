@@ -175,6 +175,8 @@ bool isCrossThreadFlowHandoffPending();
 NestingAsyncFlowPreflight preflightNestingAndAsyncFlow();
 u32 nestingDepth();
 
+u32 ringBufferCapacity();
+
 bool hasEvents();
 bool isBufferEmpty();
 
