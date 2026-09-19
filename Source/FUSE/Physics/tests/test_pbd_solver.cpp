@@ -4672,3 +4672,21 @@ void testPreflightIslandDispatchSleepGuards() {
     const IslandWakeThenSolvePreflight preflight =
     expectTrue(!should_skip_wake_then_solve_island(graph.island(mixedIsland), bodies, contacts, constraints),
                "should_skip wake-then-solve false for mixed island");
+
+// --- deepen additive from deepen-pbd-island-guards-491a ---
+    const IslandConstraintSolvePreflight preflight = preflight_island_constraint_solve_by_index(
+               "should_skip true for out-of-range island index");
+void testPreflightIslandSolveableGraph() {
+    const IslandSolveableGraphPreflight preflight = preflight_island_solveable_graph(
+               "should_skip false when solveable island exists");
+    const IslandSolveableGraphPreflight allActive = preflight_island_solveable_graph(
+void testOutOfRangeBodyCountInPreflights() {
+    const IslandSolveBodiesPreflight bodiesPreflight = preflight_island_solve_bodies(island, bodies);
+    expectTrue(bodiesPreflight.outOfRangeBodyCount == 1u,
+    expectTrue(bodiesPreflight.inRangeBodyCount == 2u, "solve-bodies preflight counts in-range bodies");
+    const IslandSleepPreflight sleepPreflight = preflight_island_sleep(island, bodies);
+    expectTrue(sleepPreflight.outOfRangeBodyCount == 1u, "sleep preflight counts out-of-range body index");
+    const IslandWakePreflight wakePreflight = preflight_island_wake(island, bodies);
+    expectTrue(wakePreflight.outOfRangeBodyCount == 1u, "wake preflight counts out-of-range body index");
+    testPreflightIslandSolveableGraph();
+    testOutOfRangeBodyCountInPreflights();

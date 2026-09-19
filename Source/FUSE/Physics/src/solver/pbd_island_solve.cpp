@@ -2593,3 +2593,10 @@ IslandWakeThenSolvePreflight preflight_wake_then_solve_island(
 IslandWakeThenSolvePreflight preflight_wake_then_solve_island_by_index(
 bool should_skip_wake_then_solve_island(const ContactIslandGraph::Island& island,
     if (should_skip_wake_then_solve_island(island, bodies, contacts, distanceConstraints)) {
+
+// --- deepen additive from deepen-pbd-island-guards-491a ---
+    const IslandSolveableGraphPreflight preflight =
+        const IslandConstraintSolvePreflight constraintPreflight = preflight_island_constraint_solve(
+        if (!constraintPreflight.refs.can_solve()) {
+        if (!constraintPreflight.bodies.can_solve()) {
+        if (should_skip_island_sleep_solve(*job.island, bodies)) {
