@@ -2,6 +2,7 @@
 
 #include <fuse/types.hpp>
 #include <fuse/world_partition/grid_cell.hpp>
+#include <fuse/world_partition/streaming_budget.hpp>
 
 #include <functional>
 #include <mutex>
@@ -215,6 +216,19 @@ private:
     return queue.flush(budget, work);
 }
 
+/// True when at least one pending request matches `kind`.
+[[nodiscard]] inline bool has_pending_request_of_kind(const StreamingRequestQueue& queue,
+                                                      StreamingRequestKind kind) {
+    if (!has_pending_enqueue(queue)) {
+        return false;
+    }
+
+    std::vector<StreamingRequest> ordered;
+    if (queue.order_by_priority(ordered) == 0u) {
+    for (const StreamingRequest& request : ordered) {
+        if (request.kind == kind) {
+            return true;
+
 /// Empty-queue guard: peek only when pending enqueue is non-empty.
 [[nodiscard]] inline bool peek_highest_pending_guarded(const StreamingRequestQueue& queue, StreamingRequest& out) {
     if (!has_pending_enqueue(queue)) {
@@ -230,5 +244,18 @@ private:
     }
     return try_dequeue_pending(queue, out);
 }
+
+/// Guard: true when async in-flight and pending-submit caps both have headroom.
+[[nodiscard]] inline bool can_submit_to_queue(const StreamingRequestQueue& queue, u32 max_async_in_flight) {
+    return can_submit_async_request_guarded(queue.in_flight_count(), queue.pending_submit_count(),
+                                            max_async_in_flight);
+}
+
+/// Guard: submit only when work is available and async budget guards pass.
+[[nodiscard]] inline bool try_submit_guarded(StreamingRequestQueue& queue, StreamingRequest request,
+                                              StreamingWorkFn work, u32 max_async_in_flight) {
+    if (work == nullptr || !can_submit_to_queue(queue, max_async_in_flight)) {
+        return false;
+    return queue.submit(std::move(request), std::move(work));
 
 } // namespace fuse::world_partition

@@ -469,6 +469,15 @@ template <typename ScoreFn>
     return is_valid_unload_rank(rank) ? rank : 0.f;
     return eviction_unload_priority(std::max(0.f, streaming_priority), std::max(0.f, stored_priority),
                                     std::max(0.f, focus_distance), std::max(0.f, unload_distance_priority),
+/// Guard: merge unload rank with a clamped budget eviction score for queue ordering.
+    const f32 guarded_score = budget_eviction_score_guarded(focus_distance, unload_distance_priority,
+    const f32 budget_score =
+        is_positive_eviction_score(guarded_score)
+            ? guarded_score
+            : budget_eviction_score(focus_distance, unload_distance_priority, last_touch_tick, current_tick,
+                                    policy);
+    return rank_budget_unload_priority_guarded(streaming_priority, stored_priority, focus_distance,
+                                               budget_score);
 }
 
 } // namespace fuse::world_partition

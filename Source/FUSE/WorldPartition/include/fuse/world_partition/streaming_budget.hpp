@@ -109,6 +109,48 @@ enum class EvictionPolicy : u8 {
     return pending < max_pending ? pending : max_pending;
 }
 
+[[nodiscard]] inline bool can_submit_async_request(u32 in_flight, u32 max_async_in_flight) {
+    return max_async_in_flight == 0u || in_flight < max_async_in_flight;
+}
+
+[[nodiscard]] inline u32 async_in_flight_headroom(u32 max_async_in_flight, u32 in_flight) {
+    if (max_async_in_flight == 0u) {
+        return ~0u;
+    }
+    return in_flight < max_async_in_flight ? max_async_in_flight - in_flight : 0u;
+}
+
+[[nodiscard]] inline bool pending_submit_cap_unlimited(u32 max_pending_submits) {
+    return max_pending_submits == 0u;
+}
+
+[[nodiscard]] inline u32 pending_submit_headroom(u32 max_pending_submits, u32 pending_submits) {
+    if (pending_submit_cap_unlimited(max_pending_submits)) {
+        return ~0u;
+    }
+    return pending_submits < max_pending_submits ? max_pending_submits - pending_submits : 0u;
+}
+
+[[nodiscard]] inline bool would_exceed_pending_submit_cap(u32 max_pending_submits, u32 pending_submits) {
+    if (pending_submit_cap_unlimited(max_pending_submits)) {
+        return false;
+    }
+    return pending_submits >= max_pending_submits;
+}
+
+/// True when in-flight plus undrained completions would exceed the pending submit cap.
+[[nodiscard]] inline bool would_exceed_async_budget(u32 in_flight, u32 completed_undrained,
+                                                    u32 max_pending_submits) {
+    return would_exceed_pending_submit_cap(max_pending_submits, in_flight + completed_undrained);
+}
+
+/// Guard async submit when in-flight or buffered completions would exceed the pending cap.
+[[nodiscard]] inline bool can_submit_async_request_guarded(u32 in_flight, u32 pending_submits,
+                                                            u32 max_async_in_flight) {
+    return can_submit_async_request(in_flight, max_async_in_flight) &&
+           !would_exceed_pending_submit_cap(max_async_in_flight, pending_submits);
+}
+
 /// Higher score evicts sooner. Distance policy uses unload distance priority; LRU uses age.
 [[nodiscard]] inline f32 eviction_score_for(f32 unload_distance_priority, u32 last_touch_tick, u32 current_tick,
                                           EvictionPolicy policy) {
