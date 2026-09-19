@@ -2885,3 +2885,10 @@ void testShouldRunPairBufferDedupeAndSortGuards() {
         fuse::physics::broadphase::preflightPairSlots(4u, buffer);
                  fuse::physics::broadphase::PairBufferCompactAndClampRejectReason::NoWorkNeeded),
     expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferCompactAndClampRejectReasonName(
+
+// --- deepen additive from deepen-b4-broadphase-guards-03cf ---
+                                       PairBufferCompactAndClampRejectReason::AlreadyCompactAndWithinCapacity),
+                 fuse::physics::broadphase::pairBufferCompactAndClampRejectReason(slotBuffer)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferCompactAndClampRejectReason::None),
+void testPairBufferDedupeShouldRunGuards() {
+void testBroadphaseShouldRunGuards() {

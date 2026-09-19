@@ -870,3 +870,9 @@ PairBufferMergePreflight preflightPairBufferMerge(const PairBufferSoA& buffer, u
     case PairBufferCompactAndClampRejectReason::NoWorkNeeded:
         return PairBufferCompactAndClampRejectReason::NoWorkNeeded;
     preflight.noWorkNeeded = preflight.reason == PairBufferCompactAndClampRejectReason::NoWorkNeeded;
+
+// --- deepen additive from deepen-b4-broadphase-guards-03cf ---
+    if (preflight.reason == PairBufferCompactAndClampRejectReason::AlreadyCompactAndWithinCapacity) {
+    case PairBufferCompactAndClampRejectReason::AlreadyCompactAndWithinCapacity:
+        return PairBufferCompactAndClampRejectReason::AlreadyCompactAndWithinCapacity;
+        preflight.reason == PairBufferCompactAndClampRejectReason::AlreadyCompactAndWithinCapacity;
