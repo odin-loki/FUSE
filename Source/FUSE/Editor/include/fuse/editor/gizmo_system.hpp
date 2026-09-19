@@ -141,23 +141,28 @@ bool isSnapStepValid(GizmoMode mode, const GizmoSnapSettings& settings);
 /// True when snap is enabled with a usable step for the active mode (B6.4 deepen pass).
 bool canApplySnap(GizmoMode mode, const GizmoSnapSettings& settings);
 
-/// True when snap is enabled but the mode step is unusable (B6.4 deepen pass).
-bool isSnapDegraded(GizmoMode mode, const GizmoSnapSettings& settings);
+/// True when screen coordinates are non-finite (B6.4 deepen pass).
+bool isHitTestCoordinatesInvalid(const GizmoHitTest& hit);
+
+/// True when ray origin or direction contains non-finite values (B6.4 deepen pass).
+bool isRayNonFinite(const GizmoRay& ray);
 
 /// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up — pick guard).
 struct PickPreflight {
     bool emptyRay = false;
+    bool nonFiniteRay = false;
     bool emptyHit = false;
     bool invalidPickConfig = false;
     bool invalidDimensions = false;
+    bool invalidCoordinates = false;
     bool outOfBounds = false;
     bool screenMiss = false;
     bool pickMiss = false;
     GizmoAxis axis = GizmoAxis::None;
 
     bool canPick() const {
-        return !emptyRay && !emptyHit && !invalidPickConfig && !invalidDimensions && !outOfBounds &&
-               !screenMiss && !pickMiss;
+        return !emptyRay && !nonFiniteRay && !emptyHit && !invalidPickConfig && !invalidDimensions &&
+               !invalidCoordinates && !outOfBounds && !screenMiss && !pickMiss;
     }
 };
 
@@ -197,8 +202,10 @@ struct BeginDragPreflight {
     bool canBegin = false;
     bool emptyHit = false;
     bool emptyRay = false;
+    bool nonFiniteRay = false;
     bool invalidPickConfig = false;
     bool invalidDimensions = false;
+    bool invalidCoordinates = false;
     bool outOfBounds = false;
     bool screenMiss = false;
     bool pickMiss = false;
@@ -214,13 +221,15 @@ struct UpdateDragPreflight {
     bool notDragging = false;
     bool emptyHit = false;
     bool invalidDimensions = false;
+    bool invalidCoordinates = false;
     bool outOfBounds = false;
     bool invalidActiveAxis = false;
     /// Snap is enabled but the mode step is unusable — update still applies (B6.4 deepen pass).
     bool snapDegraded = false;
 
     bool canUpdate() const {
-        return !notDragging && !emptyHit && !invalidDimensions && !outOfBounds && !invalidActiveAxis;
+        return !notDragging && !emptyHit && !invalidDimensions && !invalidCoordinates &&
+               !outOfBounds && !invalidActiveAxis;
     }
 };
 
@@ -411,6 +420,13 @@ struct InteractionPreflight {
     }
 };
 
+/// Non-mutating phase-routing predicate — same guards as `InteractionPreflight::canActOnPhase`.
+bool canActOnPhase(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                   const GizmoSnapSettings& settings);
+bool canActOnPhase(const GizmoRay& ray, const GizmoTransform& transform, bool dragging,
+                   GizmoAxis activeAxis, GizmoMode mode, GizmoSpace space, f32 axisLength,
+                   f32 pickRadius, const GizmoSnapSettings& settings);
+
 PickSnapPreflight preflightPickSnap(const GizmoRay& ray, const GizmoTransform& transform,
                                     GizmoMode mode, GizmoSpace space, f32 axisLength,
                                     f32 pickRadius, const GizmoSnapSettings& settings);
@@ -600,6 +616,9 @@ public:
                                            const GizmoTransform& transform) const;
     [[nodiscard]] bool canUpdateInteraction(const GizmoHitTest& hit) const;
     [[nodiscard]] bool canEndInteraction() const;
+    /// Primary action allowed for the active lifecycle phase (B6.4 deepen pass).
+    [[nodiscard]] bool canActOnPhase(const GizmoHitTest& hit) const;
+    [[nodiscard]] bool canActOnPhase(const GizmoRay& ray, const GizmoTransform& transform) const;
     /// Guarded begin-drag — returns false on empty viewport / miss picks (B6.4 deepen follow-up).
     bool tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& current, GizmoResult& out);
     bool tryBeginDrag(const GizmoRay& ray, const GizmoTransform& current, GizmoResult& out);
