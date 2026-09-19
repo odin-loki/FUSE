@@ -1052,3 +1052,19 @@ PairBufferAcceptPairsPreflight preflightPairBufferAcceptPairs(const PairBufferSo
 
 // --- deepen additive from deepen-b4-broadphase-guards-6a82 ---
     return preflightPairBufferWriteSlot(*this, slot, idxA, idxB).canWrite();
+
+// --- deepen additive from deepen-b4-broadphase-guards-e86f ---
+const char* pairBufferAcceptRejectReasonName(PairBufferAcceptRejectReason reason) {
+    case PairBufferAcceptRejectReason::None:
+    case PairBufferAcceptRejectReason::ExceedsCapacity:
+PairBufferAcceptRejectReason pairBufferAcceptRejectReason(const PairBufferSoA& buffer, u32 additionalCount) {
+        return PairBufferAcceptRejectReason::None;
+    return PairBufferAcceptRejectReason::ExceedsCapacity;
+    PairBufferAcceptRejectReason expected) {
+    return pairBufferAcceptRejectReason(buffer, additionalCount) == expected;
+PairBufferAcceptPreflight preflightPairBufferAccept(const PairBufferSoA& buffer, u32 additionalCount) {
+    PairBufferAcceptPreflight preflight{};
+    preflight.reason = pairBufferAcceptRejectReason(buffer, additionalCount);
+    preflight.exceedsCapacity = preflight.reason == PairBufferAcceptRejectReason::ExceedsCapacity;
+    return !preflightPairBufferAccept(buffer, additionalCount).canAccept();
+    return preflightPairBufferAccept(buffer, additionalCount).canAccept();

@@ -3414,3 +3414,41 @@ void testBroadphaseCellSlotRejectReasonGuards() {
     const fuse::physics::broadphase::BroadphaseCellSlotPreflight preflight =
         fuse::physics::broadphase::preflightBroadphaseCellSlots(4u);
     testBroadphaseCellSlotRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-e86f ---
+void testPairBufferAcceptPreflightGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferAcceptRejectReason(buffer, 2u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferAcceptRejectReason::None),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferAcceptRejectReason(buffer, 3u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferAcceptRejectReason::ExceedsCapacity),
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferAcceptRejectReasonName(
+                               fuse::physics::broadphase::PairBufferAcceptRejectReason::ExceedsCapacity),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::pairBufferAcceptRejectReason(buffer, 0u)),
+    const fuse::physics::broadphase::PairBufferAcceptPreflight preflight =
+        fuse::physics::broadphase::preflightPairBufferAccept(buffer, 1u);
+void testCellRangeSpanClampPreflightGuards() {
+                 fuse::physics::broadphase::cellRangeSpanClampRejectReason(wideRange, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellRangeSpanClampRejectReason::UnlimitedSpan),
+                 fuse::physics::broadphase::cellRangeSpanClampRejectReason(inverted, 8u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellRangeSpanClampRejectReason::EmptyRange),
+    expectTrue(fuse::physics::broadphase::cellRangeSpanClampRejectsForReason(
+                   inverted, 8u, fuse::physics::broadphase::CellRangeSpanClampRejectReason::EmptyRange),
+    const fuse::physics::broadphase::CellRangeSpanClampPreflight preflight =
+        fuse::physics::broadphase::preflightCellRangeSpanClamp(wideRange, 8u);
+    expectTrue(std::strcmp(fuse::physics::broadphase::cellRangeSpanClampRejectReasonName(
+                               fuse::physics::broadphase::CellRangeSpanClampRejectReason::UnlimitedSpan),
+    const fuse::physics::broadphase::CellRangeSpanClampPreflight planePreflight =
+        fuse::physics::broadphase::preflightCellRangeSpanClamp(planeRange, 4u);
+    expectTrue(planePreflight.needsClamp(), "2D span-clamp preflight requests clamp for wide range");
+void testBroadphaseCellPairBuildPreflightGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::broadphaseCellPairBuildRejectReason(0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseCellPairBuildRejectReason::NoCellSlots),
+    expectTrue(std::strcmp(fuse::physics::broadphase::broadphaseCellPairBuildRejectReasonName(
+                               fuse::physics::broadphase::BroadphaseCellPairBuildRejectReason::NoCellSlots),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::broadphaseCellPairBuildRejectReason(4u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseCellPairBuildRejectReason::None),
+    const fuse::physics::broadphase::BroadphaseCellPairBuildPreflight preflight =
+        fuse::physics::broadphase::preflightBroadphaseCellPairBuild(2u);
+    testPairBufferAcceptPreflightGuards();
+    testCellRangeSpanClampPreflightGuards();
+    testBroadphaseCellPairBuildPreflightGuards();

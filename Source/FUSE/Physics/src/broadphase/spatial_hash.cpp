@@ -1309,3 +1309,24 @@ BroadphaseCellSlotPreflight preflightBroadphaseCellSlots(u32 totalCellSlots) {
     preflight.zeroSlots = preflight.reason == BroadphaseCellSlotRejectReason::ZeroSlots;
     return !preflightBroadphaseCellSlots(totalCellSlots).canGenerate();
     return preflightBroadphaseCellSlots(totalCellSlots).canGenerate();
+
+// --- deepen additive from deepen-b4-broadphase-guards-e86f ---
+const char* cellRangeSpanClampRejectReasonName(CellRangeSpanClampRejectReason reason) {
+    case CellRangeSpanClampRejectReason::None:
+    case CellRangeSpanClampRejectReason::EmptyRange:
+    case CellRangeSpanClampRejectReason::UnlimitedSpan:
+const char* broadphaseCellPairBuildRejectReasonName(BroadphaseCellPairBuildRejectReason reason) {
+    case BroadphaseCellPairBuildRejectReason::None:
+    case BroadphaseCellPairBuildRejectReason::NoCellSlots:
+    preflight.emptyInput = !preflightBroadphase(bodies, shapes).canRun();
+BroadphaseCellPairBuildRejectReason broadphaseCellPairBuildRejectReason(u32 totalCellSlots) {
+        return BroadphaseCellPairBuildRejectReason::NoCellSlots;
+    return BroadphaseCellPairBuildRejectReason::None;
+bool broadphaseCellPairBuildRejectsForReason(u32 totalCellSlots, BroadphaseCellPairBuildRejectReason expected) {
+    return broadphaseCellPairBuildRejectReason(totalCellSlots) == expected;
+BroadphaseCellPairBuildPreflight preflightBroadphaseCellPairBuild(u32 totalCellSlots) {
+    BroadphaseCellPairBuildPreflight preflight{};
+    preflight.reason = broadphaseCellPairBuildRejectReason(totalCellSlots);
+    preflight.noCellSlots = preflight.reason == BroadphaseCellPairBuildRejectReason::NoCellSlots;
+    return !preflightBroadphaseCellPairBuild(totalCellSlots).canBuild();
+    return preflightBroadphaseCellPairBuild(totalCellSlots).canBuild();

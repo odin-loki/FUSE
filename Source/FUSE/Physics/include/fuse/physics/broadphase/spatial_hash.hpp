@@ -1420,3 +1420,31 @@ struct BroadphaseCellSlotPreflight {
     BroadphaseCellSlotRejectReason reason = BroadphaseCellSlotRejectReason::None;
     bool canGenerate() const { return reason == BroadphaseCellSlotRejectReason::None; }
 BroadphaseCellSlotPreflight preflightBroadphaseCellSlots(u32 totalCellSlots);
+
+// --- deepen additive from deepen-b4-broadphase-guards-e86f ---
+enum class CellRangeSpanClampRejectReason : u8 {
+const char* cellRangeSpanClampRejectReasonName(CellRangeSpanClampRejectReason reason);
+FUSE_PHYSICS_INLINE CellRangeSpanClampRejectReason cellRangeSpanClampRejectReason(
+        return CellRangeSpanClampRejectReason::EmptyRange;
+        return CellRangeSpanClampRejectReason::UnlimitedSpan;
+    return CellRangeSpanClampRejectReason::None;
+    CellRangeSpanClampRejectReason expected) {
+    return cellRangeSpanClampRejectReason(range, maxSpanPerAxis) == expected;
+struct CellRangeSpanClampPreflight {
+    CellRangeSpanClampRejectReason reason = CellRangeSpanClampRejectReason::None;
+    bool needsClamp() const { return reason == CellRangeSpanClampRejectReason::None; }
+FUSE_PHYSICS_INLINE CellRangeSpanClampPreflight preflightCellRangeSpanClamp(
+    CellRangeSpanClampPreflight preflight{};
+    preflight.reason = cellRangeSpanClampRejectReason(range, maxSpanPerAxis);
+    preflight.emptyRange = preflight.reason == CellRangeSpanClampRejectReason::EmptyRange;
+    preflight.unlimitedSpan = preflight.reason == CellRangeSpanClampRejectReason::UnlimitedSpan;
+    return !preflightCellRangeSpanClamp(range, maxSpanPerAxis).needsClamp();
+    return preflightCellRangeSpanClamp(range, maxSpanPerAxis).needsClamp();
+enum class BroadphaseCellPairBuildRejectReason : u8 {
+const char* broadphaseCellPairBuildRejectReasonName(BroadphaseCellPairBuildRejectReason reason);
+BroadphaseCellPairBuildRejectReason broadphaseCellPairBuildRejectReason(u32 totalCellSlots);
+bool broadphaseCellPairBuildRejectsForReason(u32 totalCellSlots, BroadphaseCellPairBuildRejectReason expected);
+struct BroadphaseCellPairBuildPreflight {
+    BroadphaseCellPairBuildRejectReason reason = BroadphaseCellPairBuildRejectReason::None;
+    bool canBuild() const { return reason == BroadphaseCellPairBuildRejectReason::None; }
+BroadphaseCellPairBuildPreflight preflightBroadphaseCellPairBuild(u32 totalCellSlots);
