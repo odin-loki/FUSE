@@ -1771,3 +1771,13 @@ const char* island_job_dispatch_reject_reason_name(IslandJobDispatchRejectReason
 IslandJobDispatchRejectReason island_job_dispatch_reject_reason(const IslandSolveJob& job, f32 dt);
                                             IslandJobDispatchRejectReason expected);
 bool should_skip_island_solve_pipeline(const ContactIslandGraph& graph,
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-d433 ---
+enum class IslandWarmStartRejectReason : u8 {
+const char* islandWarmStartRejectReasonName(IslandWarmStartRejectReason reason);
+IslandWarmStartRejectReason islandWarmStartRejectReason(const ContactIslandGraph::Island& island,
+IslandWarmStartRejectReason islandWarmStartRejectReason(
+                                     IslandWarmStartRejectReason expected);
+        return reason == IslandConstraintSolveRejectReason::None && !skipped && refs.can_solve() &&
+    bool can_dispatch() const { return reason == IslandDispatchRejectReason::None && !skipped; }
+IslandDispatchRejectReason islandDispatchRejectReason(const IslandSolveJob& job, f32 dt);

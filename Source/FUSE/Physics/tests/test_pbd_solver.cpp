@@ -5169,3 +5169,37 @@ void testIslandSolvePipelineDispatchGuards() {
                "should_skip pipeline true for empty graph");
     expectTrue(emptyPipeline.reason == IslandDispatchRejectReason::NoDispatchableIslands,
     testIslandJobDispatchRejectReasonGuards();
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-d433 ---
+    expectTrue(islandBuildRejectsForReason(4, contacts, constraints,
+    expectTrue(islandBuildRejectsForReason(0, {}, {}, IslandBuildRejectReason::EmptyInput),
+    expectTrue(std::strcmp(islandBuildRejectReasonName(IslandBuildRejectReason::OutOfRangeContactBody),
+    expectTrue(preflight.reason == IslandBuildRejectReason::OutOfRangeContactBody,
+    expectTrue(islandDispatchRejectsForReason(invalid, 0.f, IslandDispatchRejectReason::InvalidDt),
+    expectTrue(islandDispatchRejectsForReason(invalid, std::numeric_limits<f32>::quiet_NaN(),
+                                              IslandDispatchRejectReason::NonFiniteDt),
+    expectTrue(islandDispatchRejectReason(job, dt) == IslandDispatchRejectReason::None,
+    expectTrue(invalidResult.reason == IslandDispatchRejectReason::NonFiniteDt,
+    expectTrue(std::strcmp(islandDispatchRejectReasonName(IslandDispatchRejectReason::NonFiniteDt),
+    expectTrue(islandConstraintSolveRejectsForReason(graph.island(sleepingIsland), bodies, contacts, constraints,
+    expectTrue(islandConstraintSolveRejectsForReason(emptyIsland, bodies, contacts, constraints,
+    expectTrue(std::strcmp(islandConstraintSolveRejectReasonName(IslandConstraintSolveRejectReason::AllSleeping),
+void testIslandWarmStartRejectReasonGuards() {
+    expectTrue(islandWarmStartRejectsForReason(graph.island(graph.bodyIsland(0)), {}, {},
+                                               IslandWarmStartRejectReason::NoPriorData),
+    expectTrue(islandWarmStartRejectsForReason(emptyIsland, priorDistance, {},
+                                               IslandWarmStartRejectReason::EmptyIsland),
+    expectTrue(std::strcmp(islandWarmStartRejectReasonName(IslandWarmStartRejectReason::NoPriorData),
+    const IslandDispatchJobPreflight activePreflight =
+    expectTrue(activePreflight.can_dispatch(), "unified preflight dispatches mixed active island");
+    expectTrue(activePreflight.reason == IslandDispatchRejectReason::None,
+    const IslandDispatchJobPreflight sleepingPreflight =
+    expectTrue(!sleepingPreflight.can_dispatch(), "unified preflight skips all-sleeping island");
+    expectTrue(sleepingPreflight.reason == IslandDispatchRejectReason::AllSleeping,
+    expectTrue(should_skip_dispatch_island_job(sleepingJob, bodies, contacts, constraints, dt),
+               "should_skip_dispatch_island_job on all-sleeping island");
+    expectTrue(islandDispatchRejectsForReason(sleepingJob, bodies, contacts, constraints, dt,
+                                              IslandDispatchRejectReason::AllSleeping),
+void testDispatchSolveIslandJobGuarded() {
+    expectTrue(sleepingResult.reason == IslandDispatchRejectReason::AllSleeping,
+    testIslandWarmStartRejectReasonGuards();

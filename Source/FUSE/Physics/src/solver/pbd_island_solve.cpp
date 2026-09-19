@@ -2936,3 +2936,62 @@ IslandJobDispatchRejectReason island_job_dispatch_reject_reason(const IslandSolv
                                             IslandJobDispatchRejectReason expected) {
 bool should_skip_island_solve_pipeline(const ContactIslandGraph& graph,
     const IslandSolvePipelinePreflight preflight = preflight_island_solve_pipeline(graph, bodies, dt);
+
+// --- deepen additive from deepen-pbd-island-reject-reasons-d433 ---
+IslandBuildRejectReason classifyIslandBuildRejectReason(const IslandBuildPreflight& preflight) {
+        return IslandBuildRejectReason::OutOfRangeContactBody;
+        return IslandBuildRejectReason::OutOfRangeDistanceBody;
+IslandConstraintSolveRejectReason classifyIslandConstraintSolveRejectReason(
+    const IslandConstraintSolvePreflight& preflight) {
+            return IslandConstraintSolveRejectReason::StaleContactRefs;
+            return IslandConstraintSolveRejectReason::StaleDistanceRefs;
+IslandDispatchRejectReason classifyIslandDispatchRejectReason(const IslandSolveJobPreflight& jobPreflight,
+    if (jobPreflight.skipped) {
+        return jobPreflight.constraintCount == 0u ? IslandDispatchRejectReason::NoConstraints
+                                                  : IslandDispatchRejectReason::EmptyJob;
+IslandDispatchRejectReason classifyIslandDispatchRejectReason(const IslandDispatchJobPreflight& preflight) {
+    if (preflight.reason != IslandDispatchRejectReason::None) {
+    case IslandBuildRejectReason::OutOfRangeContactBody:
+    case IslandBuildRejectReason::OutOfRangeDistanceBody:
+    case IslandConstraintSolveRejectReason::StaleContactRefs:
+    case IslandConstraintSolveRejectReason::StaleDistanceRefs:
+    case IslandDispatchRejectReason::EmptyJob:
+    case IslandDispatchRejectReason::OutOfRangeIsland:
+    case IslandDispatchRejectReason::NoConstraints:
+    case IslandDispatchRejectReason::AllSleeping:
+    case IslandDispatchRejectReason::NoMovableBodies:
+    case IslandDispatchRejectReason::StaleConstraintRefs:
+const char* islandWarmStartRejectReasonName(IslandWarmStartRejectReason reason) {
+    case IslandWarmStartRejectReason::None:
+    case IslandWarmStartRejectReason::EmptyIsland:
+    case IslandWarmStartRejectReason::OutOfRangeIsland:
+    case IslandWarmStartRejectReason::NoPriorData:
+    case IslandWarmStartRejectReason::InvalidDt:
+    case IslandWarmStartRejectReason::NoImpulses:
+IslandDispatchRejectReason islandDispatchRejectReason(const IslandSolveJob& job, f32 dt) {
+    return classifyIslandDispatchRejectReason(preflight_solve_island_job(job, dt), dt);
+    result.reason = islandDispatchRejectReason(job, dt);
+    if (result.reason != IslandDispatchRejectReason::None) {
+        result.reason = job.constraintCount == 0u ? IslandDispatchRejectReason::NoConstraints
+        result.reason = IslandDispatchRejectReason::OutOfRangeIsland;
+    preflight.reason = classifyIslandBuildRejectReason(preflight);
+    preflight.reason = classifyIslandConstraintSolveRejectReason(preflight);
+        preflight.reason = IslandDispatchRejectReason::InvalidDt;
+        preflight.reason = IslandDispatchRejectReason::NonFiniteDt;
+        preflight.reason = job.constraintCount == 0u ? IslandDispatchRejectReason::NoConstraints
+            preflight.reason = IslandDispatchRejectReason::StaleConstraintRefs;
+            preflight.reason = IslandDispatchRejectReason::AllSleeping;
+            preflight.reason = IslandDispatchRejectReason::NoMovableBodies;
+            preflight.reason = IslandDispatchRejectReason::NoConstraints;
+    result.reason = classifyIslandDispatchRejectReason(preflight);
+    return islandDispatchRejectReason(job, dt) == expected;
+    return islandDispatchRejectReason(job, bodies, contacts, distanceConstraints, dt) == expected;
+IslandWarmStartRejectReason islandWarmStartRejectReason(const ContactIslandGraph::Island& island,
+        return IslandWarmStartRejectReason::EmptyIsland;
+        return IslandWarmStartRejectReason::NoPriorData;
+    return IslandWarmStartRejectReason::None;
+IslandWarmStartRejectReason islandWarmStartRejectReason(
+        return IslandWarmStartRejectReason::InvalidDt;
+        return IslandWarmStartRejectReason::NoImpulses;
+                                     IslandWarmStartRejectReason expected) {
+    return islandWarmStartRejectReason(island, priorDistanceLambdas, priorContactLambdas) == expected;
