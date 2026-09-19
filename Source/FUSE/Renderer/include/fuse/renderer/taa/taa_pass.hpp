@@ -375,6 +375,8 @@ public:
     bool shouldSkipJitterAdvance() const;
     /// Classify why pass jitter sync to a frame counter would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterSyncReject() const;
+    /// Classify why pass jitter sync to `frameIndex` would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterSyncReject(u32 frameIndex) const;
     /// Classify why pass NDC jitter production would be rejected (B5.9 deepen).
     TaaJitterGuardRejectReason classifyJitterNdcReject() const;
     /// Classify why pass jitter advance would be rejected (B5.9 deepen).
@@ -382,6 +384,9 @@ public:
     /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
     bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
+    /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
+    /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
     /// True when pass jitter can sync to `frameIndex` (B5.9 deepen).
     bool preflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason* reason = nullptr) const;
     /// Classify why jitter sync to a frame counter would be rejected (B5.9 deepen).
