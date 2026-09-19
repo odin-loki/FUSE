@@ -469,6 +469,15 @@ bool shouldSkipTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffe
     return !preflightTaaResolveFrame(desc, history);
 }
 
+bool tryPreflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                            TaaResolveSkipReason& reason) {
+    return preflightTaaResolve(desc, history, &reason);
+}
+
+bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return !preflightTaaResolve(desc, history);
+}
+
 TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanAccumulate(history)) {
         return TaaResolveSkipReason::HistoryNotReady;

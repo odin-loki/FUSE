@@ -265,6 +265,7 @@ struct TaaJitterLayout {
                                           fuse::math::Vec2& out, TaaJitterGuardRejectReason& reason);
     /// NDC jitter for a frame counter with guard preflight and reject-reason diagnostics (B5.9 deepen).
     static bool tryComputeNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height, u32 sequenceLength,
+    static bool tryNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height, fuse::math::Vec2& out,
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
     static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
     /// True when `slot` is the expected Halton slot for a monotonic frame counter (B5.9 deepen).

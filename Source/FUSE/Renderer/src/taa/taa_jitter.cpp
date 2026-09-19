@@ -464,6 +464,8 @@ bool TaaJitterLayout::tryComputeNdcOffsetForFrameIndex(u32 frameIndex, u32 width
                                                          u32 sequenceLength, fuse::math::Vec2& out,
                                                          TaaJitterGuardRejectReason& reason) {
     if (!preflightTaaJitterNdc(width, height, sequenceLength, &reason)) {
+bool TaaJitterLayout::tryNdcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height, fuse::math::Vec2& out,
+                                                u32 sequenceLength) {
         return false;
     }
     out = ndcOffsetForFrameIndex(frameIndex, width, height, sequenceLength);

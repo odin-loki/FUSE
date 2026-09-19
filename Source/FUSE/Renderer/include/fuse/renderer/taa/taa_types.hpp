@@ -481,6 +481,8 @@ bool isTaaHistoryWarmupComplete(const TaaHistoryBuffer& history);
 
 /// Combined warm-up + reuse preflight for an observed invalidate epoch (B5.9 deepen).
 TaaHistoryWarmupPreflight preflightTaaHistoryWarmup(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// True when history has completed warm-up and may contribute temporally (B5.9 deepen).
+/// True when history warm-up is complete and ready for temporal contribution (B5.9 deepen).
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {

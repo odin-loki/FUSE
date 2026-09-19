@@ -486,6 +486,15 @@ public:
     TaaFrameGuardPreflight preflightFrameGuards(const TaaResolveDesc& desc, u32 observedGeneration) const;
     bool isHistoryWarmupComplete() const;
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
+    /// History warm-up preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightHistoryWarmup(TaaHistoryReuseBlockReason& reason) const;
+    /// Resolve blend preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightResolveBlendWeights(const TaaResolveDesc& desc,
+                                         TaaResolveBlendRejectReason& reason) const;
+    /// Resolve preflight with mandatory skip-reason output (B5.9 deepen).
+    bool tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const;
+    /// Early-out when resolve preflight would bail before history update (B5.9 deepen).
+    bool shouldSkipResolve(const TaaResolveDesc& desc) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
