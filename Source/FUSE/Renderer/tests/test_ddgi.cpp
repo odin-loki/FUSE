@@ -4622,3 +4622,10 @@ void testProbeSampleCoordPreflightSkip() {
 void testKernelPreflightSplitGuards() {
     testProbeSampleCoordPreflightSkip();
     testKernelPreflightSplitGuards();
+
+// --- deepen additive from deepen-ddgi-guards-d772 ---
+               "tryCanTrilinearSampleAtProbeCoords soft-succeeds on clampable weights");
+    expectTrue(fuse::renderer::ddgi_util::preflightProbeTrilinearSample(desc, warnWeights, cache.data(), 8u),
+               "preflightProbeTrilinearSample succeeds for clampable weights");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoordPreflight(desc, warnWeights),
+void testDdgiScheduleAndKernelDeepenGuards() {
