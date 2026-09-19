@@ -259,6 +259,8 @@ public:
     /// True when `count_upstream_invalidation` is non-zero (B7.9 deepen).
     /// True when `invalidate_upstream_dependency` would remove entries — guarded on empty `changed_source` (B7.9 deepen).
     /// True when `invalidate_stale_dependency_hashes` would remove entries (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_upstream(const CookManifest& manifest,
+    [[nodiscard]] bool would_invalidate_stale_dependencies(const CookManifest& manifest) const;
     /// Read-only prune reconcile probe — mirrors `CookCache::estimate_prune_removals` (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_reconcile() const;
     /// True when prune reconcile should be skipped — mirrors `CookCache::should_skip_prune_reconcile` (B7.9 deepen).
@@ -548,6 +550,8 @@ public:
 
     /// Read-only upstream invalidation skip probes — mirror `invalidate_*` guards (B7.9 deepen).
     /// True when reconcile invalidation should be skipped — mirrors `CookCacheReconcileEstimate::should_skip` (B7.9 deepen).
+    /// True when prune reconcile would be a no-op — mirrors `CookCachePruneEstimate::should_skip` (B7.9 deepen).
+    /// True when reconcile invalidation would be a no-op — mirrors `CookCacheReconcileEstimate::should_skip` (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

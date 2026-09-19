@@ -657,6 +657,7 @@ public:
     /// True when prune reconcile can be skipped — mirrors `prune_all` early-out (B7.9 deepen).
     [[nodiscard]] bool should_skip_prune() const;
     /// True when prune reconcile should be skipped — mirrors `CookCachePruneEstimate::should_skip` (B7.9 deepen).
+    /// True when prune reconcile would be a no-op — mirrors `CookCachePruneEstimate::should_skip` (B7.9 deepen).
     /// Deduplicated source paths whose stored keys are stale on disk (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_content_sources() const;
     /// Source paths `invalidate_downstream_of` would touch — deduplicated (B7.9 deepen).

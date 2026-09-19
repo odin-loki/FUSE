@@ -631,6 +631,8 @@ bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
     return count_upstream_invalidation(manifest, changed_source) > 0;
 
 
+bool AssetCooker::would_invalidate_upstream(const CookManifest& manifest,
+
 u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifest) const {
     return estimate_stale_dependency_invalidation(manifest);
 
@@ -938,6 +940,10 @@ bool AssetCooker::would_stale_dependency_invalidate(const CookManifest& manifest
 
 bool AssetCooker::would_invalidate_stale_dependency_hashes(const CookManifest& manifest) const {
     return count_stale_dependency_invalidation(manifest) > 0;
+}
+
+bool AssetCooker::would_invalidate_stale_dependencies(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) != 0;
 }
 
 CookCachePruneEstimate AssetCooker::estimate_prune_reconcile() const {
@@ -1368,6 +1374,7 @@ bool AssetCooker::should_skip_reconcile_invalidation(const CookManifest& manifes
 
 
     return m_cache.should_skip_prune();
+
 
 
 
