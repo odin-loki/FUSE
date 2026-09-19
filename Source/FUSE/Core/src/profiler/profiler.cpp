@@ -1475,3 +1475,13 @@ bool wouldSkipCounterFloatSample(const char* track) {
     return wouldSkipCounterSample(track);
 bool wouldSkipCounterSnapshotAtFrame(const char* track) {
 bool wouldSkipCounterFloatSnapshotAtFrame(const char* track) {
+
+// --- deepen additive from b16-profiler-deepen-guards-6d64 ---
+AsyncFlowNestingPreflight preflightAsyncFlowNesting() {
+    AsyncFlowNestingPreflight preflight{};
+bool wouldSkipBeginAsyncFlow(const char* name) {
+    return !preflightBeginAsyncFlow(name, 0u).canBegin;
+bool wouldSkipEndAsyncFlow(const char* name) {
+    return !preflightEndAsyncFlow(name, 0u).canEnd;
+bool wouldSkipCounter(const char* track) {
+    return wouldSkipCounter(track);

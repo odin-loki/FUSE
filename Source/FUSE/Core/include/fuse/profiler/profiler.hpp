@@ -532,3 +532,10 @@ bool wouldSkipEndAsyncFlow(const char* name, u32 flowId);
 bool wouldSkipCounterFloatSample(const char* track);
 bool wouldSkipCounterSnapshotAtFrame(const char* track);
 bool wouldSkipCounterFloatSnapshotAtFrame(const char* track);
+
+// --- deepen additive from b16-profiler-deepen-guards-6d64 ---
+struct AsyncFlowNestingPreflight {
+AsyncFlowNestingPreflight preflightAsyncFlowNesting();
+bool wouldSkipBeginAsyncFlow(const char* name);
+bool wouldSkipEndAsyncFlow(const char* name);
+bool wouldSkipCounter(const char* track);

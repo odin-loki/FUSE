@@ -5046,3 +5046,45 @@ void testPreflightAsyncFlowCrossThreadHandoff() {
     testPreflightScopeNesting();
     testPreflightAsyncFlow();
     testPreflightAsyncFlowCrossThreadHandoff();
+
+// --- deepen additive from b16-profiler-deepen-guards-6d64 ---
+void testPreflightNestingGuards() {
+    const fuse::profiler::ScopeNestingPreflight resetScopePreflight =
+    expectTrue(resetScopePreflight.balanced, "reset leaves scope nesting balanced");
+    expectTrue(resetScopePreflight.activeDepth == 0u, "reset leaves active scope depth at zero");
+    const fuse::profiler::AsyncFlowNestingPreflight resetFlowPreflight =
+        fuse::profiler::preflightAsyncFlowNesting();
+    expectTrue(resetFlowPreflight.balanced, "reset leaves flow nesting balanced");
+    expectTrue(resetFlowPreflight.openFlowCount == 0u, "reset leaves open flow count at zero");
+    expectTrue(!resetFlowPreflight.hasOpenAsyncFlows, "reset leaves no open async flows");
+        expectTrue(!activeScopePreflight.balanced, "active scope reports unbalanced nesting");
+        expectTrue(activeScopePreflight.activeDepth == 1u, "active scope depth is one");
+        const fuse::profiler::AsyncFlowNestingPreflight activeFlowPreflight =
+        expectTrue(!activeFlowPreflight.balanced, "open flow reports unbalanced flow nesting");
+        expectTrue(activeFlowPreflight.openFlowCount == 1u, "open flow count tracks begin");
+        expectTrue(activeFlowPreflight.hasOpenAsyncFlows, "open flow preflight marks hasOpenAsyncFlows");
+        expectTrue(activeFlowPreflight.activeFlowDepth == 1u, "active flow depth is one");
+        const fuse::profiler::AsyncFlowNestingPreflight closedFlowPreflight =
+        expectTrue(closedFlowPreflight.balanced, "flow end restores balanced flow nesting");
+        expectTrue(!closedFlowPreflight.hasOpenAsyncFlows, "flow end clears hasOpenAsyncFlows");
+    expectTrue(closedScopePreflight.balanced, "scope end restores balanced nesting");
+    expectTrue(closedScopePreflight.maxDepth == 1u, "max scope depth tracks outer scope");
+    expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow(nullptr),
+    expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow(""),
+               "wouldSkipBeginAsyncFlow true for empty name");
+    expectTrue(!fuse::profiler::wouldSkipBeginAsyncFlow("valid_flow"),
+               "wouldSkipBeginAsyncFlow false for valid name");
+    expectTrue(fuse::profiler::wouldSkipEndAsyncFlow("orphan_flow"),
+    expectTrue(fuse::profiler::wouldSkipCounter(nullptr), "wouldSkipCounter true for null track");
+    expectTrue(fuse::profiler::wouldSkipCounterSnapshotAtFrame(""),
+               "wouldSkipCounterSnapshotAtFrame true for empty track");
+               "wouldSkipCounter false for valid track");
+    expectTrue(!fuse::profiler::wouldSkipEndAsyncFlow("paired_skip_flow"),
+               "wouldSkipEndAsyncFlow false after valid begin");
+    expectTrue(fuse::profiler::wouldSkipProfileScope("ignored"), "wouldSkipProfileScope true when disabled");
+    expectTrue(fuse::profiler::wouldSkipBeginAsyncFlow("ignored"),
+    expectTrue(fuse::profiler::wouldSkipEndAsyncFlow("ignored"),
+               "wouldSkipEndAsyncFlow true when disabled");
+    expectTrue(fuse::profiler::wouldSkipCounter("ignored"), "wouldSkipCounter true when disabled");
+               "wouldSkipProfileScope resumes after re-enable");
+    testPreflightNestingGuards();
