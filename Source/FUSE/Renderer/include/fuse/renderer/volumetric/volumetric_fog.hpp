@@ -763,3 +763,6 @@ bool tryCanLookupForDensitySample(const FroxelDensityGrid& grid,
 bool wouldRejectSampleCoords(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);
 bool wouldPopulateAllocateWithoutFill(const FroxelGridDesc& desc,
 bool tryPreflightPopulateAllocation(const FroxelGridDesc& desc, FroxelPopulateRejectReason& outReason);
+
+// --- deepen additive from deepen-froxel-b511-guards-2eab ---
+bool wouldClampTrilinearSample(const FroxelSampleCoords& coords, const FroxelGridDesc& desc);

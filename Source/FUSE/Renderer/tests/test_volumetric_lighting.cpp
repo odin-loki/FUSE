@@ -2873,3 +2873,17 @@ void testFroxelTrilinearAndPopulatePreflightGuards() {
                "tryPreflightPopulateAllocation succeeds for non-empty desc");
     expectTrue(!fuse::renderer::froxel_util::tryPreflightPopulateAllocation(zeroDesc, populateReason),
                "tryPreflightPopulateAllocation rejects empty desc");
+
+// --- deepen additive from deepen-froxel-b511-guards-2eab ---
+               "tryCanSampleTrilinear succeeds for in-bounds coords");
+               "tryCanSampleTrilinear succeeds when weights will be clamped");
+    expectTrue(std::strcmp(fuse::renderer::froxelTrilinearSampleRejectReasonLabel(trilinearReason), "clampable_weights") ==
+               "trySampleDensityTrilinear with trilinear reason succeeds");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::GridInaccessible,
+               "preflightDensityLookupAtIndex warns on OOB index");
+               "preflightDensityLookupAtCoord warns on OOB coords");
+    expectTrue(!fuse::renderer::froxel_util::preflightDensityLookupAtCoord(emptyGrid, desc, 0u, 0u, 0u, lookupReason),
+               "preflightDensityLookupAtCoord rejects empty storage");
+    expectTrue(fuse::renderer::FroxelGridLayout::tryClampSampleCoords(clampable, desc, sampleReason),
+               "tryClampSampleCoords with reason succeeds for clampable weights");
+    expectTrue(!fuse::renderer::froxel_util::preflightPopulateFromAnalyticFog(desc, camera, zeroDensity, populateReason),

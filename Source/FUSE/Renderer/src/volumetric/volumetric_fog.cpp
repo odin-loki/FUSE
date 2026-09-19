@@ -1921,3 +1921,11 @@ bool wouldRejectSampleCoords(const FroxelSampleCoords& coords, const FroxelGridD
     return !FroxelGridLayout::tryPreflightSampleCoords(coords, desc, reason);
 bool wouldPopulateAllocateWithoutFill(const FroxelGridDesc& desc,
 bool tryPreflightPopulateAllocation(const FroxelGridDesc& desc, FroxelPopulateRejectReason& outReason) {
+
+// --- deepen additive from deepen-froxel-b511-guards-2eab ---
+    if (!tryPreflightSampleCoords(coords, desc, outReason)) {
+    case FroxelTrilinearSampleRejectReason::GridInaccessible:
+bool wouldClampTrilinearSample(const FroxelSampleCoords& coords, const FroxelGridDesc& desc) {
+        outReason = FroxelTrilinearSampleRejectReason::GridInaccessible;
+        outReason = coordReason == SampleCoordRejectReason::EmptyGrid
+                        : FroxelTrilinearSampleRejectReason::InvalidSampleCoords;
