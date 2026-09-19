@@ -582,6 +582,20 @@ bool taaHistoryTemporalBlendReady(const TaaResolveDesc& desc, const TaaHistoryBu
     return taaResolveCanReuseHistory(desc, history) && taaResolveAppliesHistoryBlend(desc, history);
 }
 
+bool wouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return !preflightTaaHistoryReuse(history, observedGeneration);
+}
+
+bool tryPreflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                                 TaaHistoryReuseBlockReason& outReason) {
+    outReason = classifyTaaHistoryReuseBlock(history, observedGeneration);
+    return outReason == TaaHistoryReuseBlockReason::None;
+}
+
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return history.isReady() && history.hasValidHistory();
+}
+
 bool TaaHistoryBuffer::canReuseHistory() const {
     return taaHistoryCanReuse(*this);
 }
