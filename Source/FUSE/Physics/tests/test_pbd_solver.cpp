@@ -3052,3 +3052,35 @@ void testShouldSkipIslandDispatchJobGuard() {
     expectTrue(invalidDtPreflight.invalidDt, "zero dt fails impulse preflight");
     expectTrue(!invalidDtPreflight.can_warm_start(), "impulse warm-start blocked for invalid dt");
 void testWarmStartGraphContactImpulsesGuarded() {
+
+// --- deepen additive from deepen-b4-pbd-island-guards-7571 ---
+void testPreflightContactImpulseGraphGuards() {
+    const IslandContactImpulseWarmStartGraphPreflight graphPreflight =
+    expectTrue(!graphPreflight.skipped, "graph impulse preflight does not skip when warm-startable islands exist");
+    expectTrue(graphPreflight.can_warm_start(), "graph impulse preflight can warm-start with impulse data");
+    expectTrue(graphPreflight.stats.warmStartableCount == graph.constrainedIslandCount(),
+    expectTrue(graphPreflight.stats.emptyCount + graphPreflight.stats.warmStartableCount +
+                       graphPreflight.stats.noImpulseDataCount ==
+                   graphPreflight.stats.totalIslands,
+                   graphPreflight.stats.warmStartableCount,
+    expectTrue(!should_skip_contact_impulse_warm_start_graph(graph, contacts),
+               "should_skip_contact_impulse_warm_start_graph false when islands can seed");
+    expectTrue(should_skip_contact_impulse_warm_start_graph(graph, contacts),
+void testPreflightContactImpulseDispatchGuardsDt() {
+    const IslandContactImpulseDispatchPreflight validPreflight =
+    expectTrue(!validPreflight.skipped, "impulse dispatch preflight does not skip constrained graph");
+    expectTrue(!validPreflight.invalidDt, "impulse dispatch preflight accepts positive dt");
+    expectTrue(validPreflight.can_warm_start(), "impulse dispatch preflight can warm-start with valid dt");
+    expectTrue(!should_skip_contact_impulse_dispatch(graph, contacts, dt),
+               "should_skip_contact_impulse_dispatch false with valid dt");
+    const IslandContactImpulseDispatchPreflight invalidPreflight =
+    expectTrue(invalidPreflight.invalidDt, "impulse dispatch preflight flags invalid dt");
+    expectTrue(!invalidPreflight.can_warm_start(), "impulse dispatch preflight cannot warm-start with invalid dt");
+    expectTrue(should_skip_contact_impulse_dispatch(graph, contacts, 0.f),
+               "should_skip_contact_impulse_dispatch true with invalid dt");
+    const IslandCombinedWarmStartPreflight indexPreflight =
+    expectTrue(!indexPreflight.skipped, "combined index preflight does not skip constrained island");
+    expectTrue(indexPreflight.can_warm_start(), "combined index preflight can warm-start");
+    const IslandCombinedWarmStartPreflight outOfRange =
+    testPreflightContactImpulseGraphGuards();
+    testPreflightContactImpulseDispatchGuardsDt();

@@ -1938,3 +1938,12 @@ IslandCombinedWarmStartPreflight preflight_warm_start_island_combined(
 bool should_skip_island_dispatch_job(const IslandSolveJob& job, f32 dt) {
     return !is_valid_island_solve_dt(dt) || should_skip_island_solve_job(job);
     if (should_skip_island_dispatch_job(job, dt)) {
+
+// --- deepen additive from deepen-b4-pbd-island-guards-7571 ---
+IslandContactImpulseWarmStartGraphPreflight preflight_contact_impulse_warm_start_graph(
+IslandContactImpulseDispatchPreflight preflight_contact_impulse_dispatch(
+    IslandContactImpulseDispatchPreflight preflight{};
+bool should_skip_contact_impulse_warm_start_graph(
+bool should_skip_contact_impulse_dispatch(const ContactIslandGraph& graph,
+    const IslandContactImpulseDispatchPreflight preflight = preflight_contact_impulse_dispatch(graph, contacts, dt);
+IslandCombinedWarmStartPreflight preflight_warm_start_island_combined_by_index(
