@@ -864,3 +864,18 @@ HrtfBinauralRejectReason classify_hrtf_binaural_narrowing_reject(HrtfPanPath pat
 bool hrtf_binaural_preflight_skips_for_reason(const HrtfBinauralPreflight& preflight,
 bool hrtf_binaural_preflight_convolution_rejects_for_reason(const HrtfBinauralPreflight& preflight,
 bool hrtf_binaural_preflight_narrowing_rejects_for_reason(const HrtfBinauralPreflight& preflight,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-2fef ---
+bool is_blocking_hrtf_ir_reject_reason(HrtfIrRejectReason reason);
+HrtfIrPreflight try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason& reason);
+HrtfPanPathRejectReason hrtf_pan_path_reject_reason(bool hrtf_enabled, const HrtfIrStub& ir,
+bool is_blocking_hrtf_pan_path_reject_reason(HrtfPanPathRejectReason reason);
+HrtfPanPathPreflight try_preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+HrtfPanPathPreflight try_preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
+bool is_blocking_hrtf_attenuation_coupling_reject_reason(HrtfAttenuationCouplingRejectReason reason);
+HrtfAttenuationCouplingPreflight try_preflight_hrtf_attenuation_coupling(
+    HrtfAttenuationCouplingRejectReason& reason, const HrtfAttenuationCoupling& coupling = {},
+bool is_blocking_hrtf_binaural_convolution_reject_reason(HrtfBinauralRejectReason reason);
+HrtfBinauralPreflight try_preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir,
+                                                  float occlusion_gain, HrtfBinauralRejectReason& reason,
+HrtfBinauralPreflight try_preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,

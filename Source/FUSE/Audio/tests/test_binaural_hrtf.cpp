@@ -1874,3 +1874,10 @@ void testHrtfBinauralRejectReasonPreflights() {
                    empty_ir_preflight, fuse::audio::HrtfBinauralRejectReason::EmptyIr),
     expectTrue(empty_ir_preflight.convolutionRejectReason
                    unity_preflight, fuse::audio::HrtfBinauralRejectReason::UnityAttenuation),
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-2fef ---
+    const fuse::audio::HrtfIrPreflight preflight = fuse::audio::try_preflight_hrtf_ir(valid, reason);
+                   fuse::audio::HrtfPanPathRejectReason::EmptyIr)) == "empty_ir",
+                   fuse::audio::HrtfBinauralRejectReason::MalformedIr)) == "malformed_ir",
+    fuse::audio::HrtfBinauralRejectReason stub_reason = fuse::audio::HrtfBinauralRejectReason::None;
+    expectTrue(stub_reason == fuse::audio::HrtfBinauralRejectReason::EmptyIr,
