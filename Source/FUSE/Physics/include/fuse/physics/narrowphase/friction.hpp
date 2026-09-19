@@ -148,4 +148,30 @@ bool should_normalize_contact_normal_before_friction(
 /// Rebuild friction tangents only when preflight allows; returns false when skipped (B4.5 deepen follow-up pass).
 bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
+/// Returns true when `compute_friction_tangents` would early-out (B4.6 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool can_skip_compute_friction_tangents(
+    const ContactManifold& manifold,
+    f32 epsilon = 1e-4f) {
+    return should_skip_friction_basis_preflight(manifold, epsilon);
+}
+
+/// Returns true when tangential velocity projection should be skipped (B4.6 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool can_skip_project_tangential_velocity(
+    vec3 relativeVelocity,
+    const TangentBasis& basis,
+    f32 staticFriction = 0.f,
+    f32 dynamicFriction = 0.f,
+    f32 normalImpulse = 0.f,
+    f32 speedThreshold = 1e-6f,
+    f32 impulseEpsilon = 1e-8f) {
+    const vec2 projected = projectTangentialVelocity(relativeVelocity, basis);
+    return should_skip_tangential_velocity_solve(
+        projected,
+        staticFriction,
+        dynamicFriction,
+        normalImpulse,
+        speedThreshold,
+        impulseEpsilon);
+}
+
 } // namespace fuse::physics::narrowphase
