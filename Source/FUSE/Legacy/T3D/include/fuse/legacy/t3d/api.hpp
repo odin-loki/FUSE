@@ -88,6 +88,12 @@ bool stockColorSmoke();
 bool dataChunkerSmoke();
 bool resizeFilterStreamSmoke();
 bool tagDictionarySmoke();
+bool findMatchSmoke();
+bool tokenizerSmoke();
+bool rgb2xyzSmoke();
+bool gbitmapTransparencySmoke();
+bool gbitmapFillWhiteSmoke();
+bool gbitmapExtensionListSmoke();
 } // namespace engineProbe
 #endif
 

@@ -17,6 +17,9 @@
 #include "core/dataChunker.h"
 #include "core/resizeStream.h"
 #include "core/tagDictionary.h"
+#include "core/tokenizer.h"
+#include "core/strings/findMatch.h"
+#include "core/util/rgb2xyz.h"
 
 #include <cstdio>
 #include <cstring>
@@ -202,6 +205,47 @@ bool tagDictionarySmoke() {
         return false;
     }
     return dict.defineToId(kDefine) == 42 && dict.idToDefine(42) == kDefine;
+}
+
+bool findMatchSmoke() {
+    if (!FindMatch::isMatch("*.bmp", "textures/foo.bmp", false)) {
+        return false;
+    }
+    if (FindMatch::isMatch("*.png", "textures/foo.bmp", false)) {
+        return false;
+    }
+
+    FindMatch matcher("test_?.dat", 8);
+    return matcher.findMatch("test_1.dat") && matcher.numMatches() == 1;
+}
+
+bool tokenizerSmoke() {
+    static const char kBuffer[] = "alpha beta gamma";
+    Tokenizer tokenizer;
+    tokenizer.setBuffer(kBuffer, static_cast<U32>(std::strlen(kBuffer)));
+
+    const char* first = tokenizer.getNextToken();
+    if (first == nullptr || std::strcmp(first, "alpha") != 0) {
+        return false;
+    }
+    const char* second = tokenizer.getNextToken();
+    if (second == nullptr || std::strcmp(second, "beta") != 0) {
+        return false;
+    }
+    const char* third = tokenizer.getNextToken();
+    return third != nullptr && std::strcmp(third, "gamma") == 0;
+}
+
+bool rgb2xyzSmoke() {
+    const LinearColorF white(1.0f, 1.0f, 1.0f, 1.0f);
+    const LinearColorF xyz = ConvertRGB::toXYZ(white);
+    if (xyz.green < 0.99f || xyz.green > 1.01f) {
+        return false;
+    }
+
+    const LinearColorF roundTrip = ConvertRGB::fromXYZ(xyz);
+    return roundTrip.red > 0.99f && roundTrip.red < 1.01f && roundTrip.green > 0.99f &&
+           roundTrip.green < 1.01f && roundTrip.blue > 0.99f && roundTrip.blue < 1.01f;
 }
 
 } // namespace fuse::legacy::t3d::engineProbe

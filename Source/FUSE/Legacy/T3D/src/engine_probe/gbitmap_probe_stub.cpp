@@ -307,3 +307,32 @@ bool GBitmap::writeBitmapStream(const String& bmType, Stream& ioStream, U32 comp
     return regInfo->writeStreamFunc(bmType, ioStream, this,
                                     (compressionLevel == U32_MAX) ? regInfo->defaultCompression : compressionLevel);
 }
+
+U32 GBitmap::getSurfaceSize(const U32 mipLevel) const {
+    if (mInternalFormat >= GFXFormatBC1 && mInternalFormat <= GFXFormatBC3) {
+        AssertWarn(false, "GBitmap::getSurfaceSize: compressed formats not supported in probe stub");
+        return 0;
+    }
+    return getWidth(mipLevel) * getHeight(mipLevel) * mBytesPerPixel;
+}
+
+void GBitmap::fillWhite() {
+    for (U32 i = 0; i < getNumFaces(); i++) {
+        dMemset(mFaces[i].getWritableBits(), 255, mFaces[i].getByteSize());
+    }
+    mHasTransparency = false;
+}
+
+String GBitmap::sGetExtensionList() {
+    String list;
+    for (U32 i = 0; i < getRegistrations().size(); i++) {
+        const Registration& reg = getRegistrations()[i];
+        for (U32 j = 0; j < reg.extensions.size(); ++j) {
+            if (list.isNotEmpty()) {
+                list += " ";
+            }
+            list += reg.extensions[j];
+        }
+    }
+    return list;
+}

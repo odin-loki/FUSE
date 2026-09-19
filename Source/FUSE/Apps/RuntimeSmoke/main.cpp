@@ -363,6 +363,18 @@ int main() {
               "engine probe ResizeFilterStream offset window read");
         check(fuse::legacy::t3d::engineProbe::tagDictionarySmoke(),
               "engine probe TagDictionary addEntry/defineToId round-trip");
+        check(fuse::legacy::t3d::engineProbe::findMatchSmoke(),
+              "engine probe FindMatch wildcard isMatch/findMatch");
+        check(fuse::legacy::t3d::engineProbe::tokenizerSmoke(),
+              "engine probe Tokenizer setBuffer/getNextToken");
+        check(fuse::legacy::t3d::engineProbe::rgb2xyzSmoke(),
+              "engine probe ConvertRGB toXYZ/fromXYZ round-trip");
+        check(fuse::legacy::t3d::engineProbe::gbitmapTransparencySmoke(),
+              "engine probe GBitmap checkForTransparency alpha scan");
+        check(fuse::legacy::t3d::engineProbe::gbitmapFillWhiteSmoke(),
+              "engine probe GBitmap fillWhite/getSurfaceSize");
+        check(fuse::legacy::t3d::engineProbe::gbitmapExtensionListSmoke(),
+              "engine probe GBitmap sGetExtensionList includes STB bmp");
     }
 #endif
 

@@ -46,6 +46,7 @@ set(_fuse_t3d_legacy_engine_sources
     src/engine_probe/console_stub.cpp
     src/engine_probe/platform_assert_stub.cpp
     src/engine_probe/gbitmap_probe_stub.cpp
+    src/engine_probe/rgb2xyz_probe_stub.cpp
     src/engine_probe/bitmap_probe_smoke.cpp
     src/engine_probe/engine_probe_batch_smoke.cpp
     src/engine_probe/color_probe_smoke.cpp
@@ -74,6 +75,8 @@ set(_fuse_t3d_legacy_engine_sources
     "${CMAKE_SOURCE_DIR}/Engine/source/core/filterStream.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/core/resizeStream.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/core/tagDictionary.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/strings/findMatch.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/tokenizer.cpp"
 )
 
 # bitmapPng.cpp uses bundled lpng headers (Engine/lib/lpng) + system libpng/zlib.
@@ -145,4 +148,4 @@ set_source_files_properties(
         COMPILE_OPTIONS "-include${_fuse_t3d_legacy_engine_probe_include}/tag_dictionary_prelude.h"
 )
 
-message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-9: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB/PNG + read/writeBitmap stub + crc/bitVector/idGenerator/tDictionary + timeClass/tSignal + color/dataChunker + filterStream/resizeStream/tagDictionary + console shadows + stubs)")
+message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-10: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB/PNG + read/writeBitmap stub + crc/bitVector/idGenerator/tDictionary + timeClass/tSignal + color/dataChunker + filterStream/resizeStream/tagDictionary + findMatch/tokenizer + rgb2xyz stub + gBitmap fillWhite/sGetExtensionList + console shadows + stubs)")

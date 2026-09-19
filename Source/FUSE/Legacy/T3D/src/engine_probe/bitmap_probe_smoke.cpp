@@ -189,4 +189,49 @@ bool readBitmapPathSmoke() {
     return ok && bitmap.getWidth() == 1u && bitmap.getHeight() == 1u;
 }
 
+bool gbitmapTransparencySmoke() {
+    GBitmap opaque;
+    opaque.allocateBitmap(2, 2, false, GFXFormatR8G8B8A8);
+    U8* bits = opaque.getWritableBits();
+    for (U32 i = 0; i < 16; ++i) {
+        bits[i] = 255;
+    }
+    if (opaque.checkForTransparency() || opaque.getHasTransparency()) {
+        return false;
+    }
+
+    GBitmap transparent;
+    transparent.allocateBitmap(1, 1, false, GFXFormatR8G8B8A8);
+    U8* alphaBits = transparent.getWritableBits();
+    alphaBits[0] = 255;
+    alphaBits[1] = 255;
+    alphaBits[2] = 255;
+    alphaBits[3] = 128;
+    return transparent.checkForTransparency() && transparent.getHasTransparency();
+}
+
+bool gbitmapFillWhiteSmoke() {
+    GBitmap bitmap;
+    bitmap.allocateBitmap(2, 2, false, GFXFormatR8G8B8);
+    U8* bits = bitmap.getWritableBits();
+    dMemset(bits, 0, bitmap.getByteSize());
+
+    bitmap.fillWhite();
+    if (bitmap.getHasTransparency()) {
+        return false;
+    }
+    for (U32 i = 0; i < bitmap.getByteSize(); ++i) {
+        if (bits[i] != 255) {
+            return false;
+        }
+    }
+    return bitmap.getSurfaceSize(0) == 2u * 2u * 3u;
+}
+
+bool gbitmapExtensionListSmoke() {
+    bitmapStbRegisterAnchor();
+    const String extensions = GBitmap::sGetExtensionList();
+    return extensions.find("bmp", 0, String::NoCase) != String::NPos;
+}
+
 } // namespace fuse::legacy::t3d::engineProbe
