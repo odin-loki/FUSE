@@ -74,6 +74,28 @@ const char* dedupeBroadphaseRejectReasonName(DedupeBroadphaseRejectReason reason
     return "Unknown";
 }
 
+const char* cellRangeSpanClampRejectReasonName(CellRangeSpanClampRejectReason reason) {
+    switch (reason) {
+    case CellRangeSpanClampRejectReason::None:
+        return "None";
+    case CellRangeSpanClampRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellRangeSpanClampRejectReason::UnlimitedSpan:
+        return "UnlimitedSpan";
+    }
+    return "Unknown";
+}
+
+const char* broadphaseCellPairBuildRejectReasonName(BroadphaseCellPairBuildRejectReason reason) {
+    switch (reason) {
+    case BroadphaseCellPairBuildRejectReason::None:
+        return "None";
+    case BroadphaseCellPairBuildRejectReason::NoCellSlots:
+        return "NoCellSlots";
+    }
+    return "Unknown";
+}
+
 const char* mergeBroadphaseRejectReasonName(BroadphaseMergeRejectReason reason) {
     switch (reason) {
     case BroadphaseMergeRejectReason::None:
@@ -223,7 +245,7 @@ void populateShapeCells(
             const f32 radius = shapeRadius(shapes, shapeIndex);
             range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
         }
-        if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+        if (!shouldRunCellOccupancyIteration(range, maxOccupancy)) {
             return;
         }
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
@@ -243,7 +265,7 @@ void populateShapeCells(
         const f32 radius = shapeRadius(shapes, shapeIndex);
         range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
     }
-    if (canSkipCellOccupancyIteration(range, maxOccupancy)) {
+    if (!shouldRunCellOccupancyIteration(range, maxOccupancy)) {
         return;
     }
     for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
@@ -336,7 +358,7 @@ void runBroadphaseIntoBufferInternal(
     }
 
     buffer.preparePairSlots(totalCellSlots);
-    if (totalCellSlots == 0u) {
+    if (!shouldRunBroadphaseCellPairBuild(totalCellSlots)) {
         return;
     }
 
@@ -393,7 +415,7 @@ void runBroadphaseIntoBufferInternal(
         dedupeBuffer(buffer);
     }
 
-    if (buffer.maxCapacity > 0u) {
+    if (shouldRunPairBufferClamp(buffer)) {
         buffer.applyMaxCapacityClamp();
     }
 }
@@ -435,7 +457,7 @@ RefineBroadphaseRejectReason refineBroadphaseRejectReason(
     if (buffer.canSkipSoAIteration()) {
         return RefineBroadphaseRejectReason::EmptyBuffer;
     }
-    if (canSkipBroadphase(bodies, shapes)) {
+    if (!preflightBroadphase(bodies, shapes).canRun()) {
         return RefineBroadphaseRejectReason::EmptyInput;
     }
     if (!buffer.hasValidPairs()) {
@@ -459,7 +481,7 @@ RefineBroadphasePreflight preflightRefineBroadphase(
     RefineBroadphasePreflight preflight{};
     preflight.emptyBuffer = buffer.canSkipSoAIteration();
     preflight.noValidPairs = !buffer.hasValidPairs();
-    preflight.emptyInput = canSkipBroadphase(bodies, shapes);
+    preflight.emptyInput = !preflightBroadphase(bodies, shapes).canRun();
     preflight.reason = refineBroadphaseRejectReason(bodies, shapes, buffer);
     return preflight;
 }
@@ -611,6 +633,32 @@ bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const 
 
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer) {
     return preflightMergePairsIntoBuffer(pairs, buffer).canMerge();
+}
+
+BroadphaseCellPairBuildRejectReason broadphaseCellPairBuildRejectReason(u32 totalCellSlots) {
+    if (totalCellSlots == 0u) {
+        return BroadphaseCellPairBuildRejectReason::NoCellSlots;
+    }
+    return BroadphaseCellPairBuildRejectReason::None;
+}
+
+bool broadphaseCellPairBuildRejectsForReason(u32 totalCellSlots, BroadphaseCellPairBuildRejectReason expected) {
+    return broadphaseCellPairBuildRejectReason(totalCellSlots) == expected;
+}
+
+BroadphaseCellPairBuildPreflight preflightBroadphaseCellPairBuild(u32 totalCellSlots) {
+    BroadphaseCellPairBuildPreflight preflight{};
+    preflight.reason = broadphaseCellPairBuildRejectReason(totalCellSlots);
+    preflight.noCellSlots = preflight.reason == BroadphaseCellPairBuildRejectReason::NoCellSlots;
+    return preflight;
+}
+
+bool canSkipBroadphaseCellPairBuild(u32 totalCellSlots) {
+    return !preflightBroadphaseCellPairBuild(totalCellSlots).canBuild();
+}
+
+bool shouldRunBroadphaseCellPairBuild(u32 totalCellSlots) {
+    return preflightBroadphaseCellPairBuild(totalCellSlots).canBuild();
 }
 
 void refineBroadphasePairsParallel(
