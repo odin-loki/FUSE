@@ -4406,3 +4406,10 @@ void testTaaPassTryPreflightAndClassifyWrappers() {
 // --- deepen additive from deepen-taa-pass-guards-f637 ---
                "pass classifyResolveBlendReject is None before warmup");
                "pass preflightResolve passes before warmup");
+
+// --- deepen additive from deepen-b59-taa-pass-try-classify-18e8 ---
+               "pass classifyJitterNdcReject passes before init");
+               "pass classifyJitterAdvanceReject passes before init");
+    expectTrue(pass->tryPreflightJitterSync(5u, jitterReason), "pass tryPreflightJitterSync passes before init");
+               "pass classifyResolveBlendReject returns None before init");
+               "pass classifyResolveBlendReject returns None after warmup");
