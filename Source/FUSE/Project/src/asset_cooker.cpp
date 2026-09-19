@@ -224,6 +224,36 @@ u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest
     return removed;
 }
 
+u32 AssetCooker::estimate_stale_dependency_hashes(const CookManifest& manifest) const {
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    if (graph.empty()) {
+        return 0;
+    }
+
+    std::vector<std::pair<std::string, u64>> source_upstream;
+    source_upstream.reserve(graph.jobs().size());
+    for (const CookJob& job : graph.jobs()) {
+        source_upstream.emplace_back(job.source_path, hash_upstream_from_jobs(job, graph.jobs()));
+    }
+
+    u32 estimate = m_cache.estimate_stale_upstream_invalidation(source_upstream);
+    const std::vector<std::string> stale_sources =
+        m_cache.probe_stale_upstream_invalidation_sources(source_upstream);
+
+    for (const std::string& stale_source : stale_sources) {
+        for (const CookJob& job : graph.jobs()) {
+            if (job.source_path == stale_source) {
+                estimate += m_cache.estimate_invalidation_downstream_of(job.output_path, graph.edges(),
+                                                                          graph.jobs());
+                break;
+            }
+        }
+    }
+    return estimate;
+}
+
 CookBatchResult AssetCooker::cook_dirty(AssetGraph& graph, const std::string& project_dir) {
     graph.scan_for_changes();
     const std::vector<std::string> dirty = graph.dirty_assets();
