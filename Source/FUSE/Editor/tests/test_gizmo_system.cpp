@@ -3198,3 +3198,25 @@ void testEndDragUnchangedTransformPreflight() {
     testBeginDragSnapDegradedPreflight();
     testBeginDragOutOfBoundsPreflight();
     testEndDragUnchangedTransformPreflight();
+
+// --- deepen additive from deepen-gizmo-preflight-guards-ff59 ---
+    expectTrue(degradedPreflight.canBegin, "begin preflight still allows drag when snap step invalid");
+    const fuse::editor::BeginDragPreflight rayDegradedPreflight = fuse::editor::preflightBeginDrag(
+    expectTrue(rayDegradedPreflight.canBegin, "ray begin preflight still allows drag");
+    expectTrue(rayDegradedPreflight.snapDegraded, "ray begin preflight marks snap degraded");
+    expectTrue(gizmoPreflight.snapDegraded, "gizmo begin preflight surfaces snap degraded");
+void testUpdateDragScreenMissPreflight() {
+    const fuse::editor::UpdateDragPreflight deadZonePreflight = fuse::editor::preflightUpdateDrag(
+    expectTrue(deadZonePreflight.canUpdate(), "update preflight accepts axis-band hit");
+    const fuse::editor::UpdateDragPreflight screenMissPreflight = fuse::editor::preflightUpdateDrag(
+    const fuse::editor::UpdateDragPreflight uniformPreflight = fuse::editor::preflightUpdateDrag(
+    expectTrue(uniformPreflight.canUpdate(), "scale uniform handle is not a screen miss");
+    expectTrue(gizmoPreflight.screenMiss, "gizmo update preflight marks dead zone");
+    expectNear(gizmo.trySnapDragDelta(0.37f), 0.5f, 0.001f,
+               "gizmo trySnapDragDelta snaps when snap is valid");
+    expectNear(gizmo.trySnapDragDelta(0.37f), 0.37f, 0.001f,
+               "gizmo trySnapDragDelta passthrough when step invalid");
+    expectTrue(degradedPreflight.canUpdate(), "gizmo update preflight still allows drag");
+    expectTrue(degradedPreflight.snapDegraded, "gizmo update preflight marks snap degraded");
+    expectTrue(!degradedPreflight.screenMiss, "axis-band update clears screenMiss");
+    testUpdateDragScreenMissPreflight();

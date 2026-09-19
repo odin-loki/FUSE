@@ -1003,3 +1003,6 @@ EndDragPreflight preflightEndDrag(bool dragging, GizmoMode mode, const GizmoSnap
 
 // --- deepen additive from deepen-b6-gizmo-end-drag-preflight-1fb5 ---
 EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis = GizmoAxis::None);
+
+// --- deepen additive from deepen-gizmo-preflight-guards-ff59 ---
+    [[nodiscard]] f32 trySnapDragDelta(f32 delta) const;

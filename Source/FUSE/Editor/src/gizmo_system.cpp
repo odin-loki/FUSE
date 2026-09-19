@@ -2313,3 +2313,11 @@ EndDragPreflight preflightEndDrag(bool dragging, GizmoAxis activeAxis) {
 // --- deepen additive from deepen-gizmo-preflights-907f ---
     EndDragPreflight preflight = preflightEndDrag(dragging, activeAxis, mode, settings);
     return fuse::editor::preflightEndDrag(m_dragging, m_activeAxis, m_mode, m_snap,
+
+// --- deepen additive from deepen-gizmo-preflight-guards-ff59 ---
+    UpdateDragPreflight preflight = preflightUpdateDrag(hit, dragging, activeAxis, mode);
+    return preflightUpdateDrag(hit, dragging, activeAxis, mode).canUpdate();
+f32 GizmoSystem::trySnapDragDelta(f32 delta) const {
+    return fuse::editor::trySnapDragDelta(delta, m_mode, m_snap);
+    const UpdateDragPreflight preflight = preflightUpdateDrag(hit);
+    const f32 delta = this->trySnapDragDelta(dx + dy);
