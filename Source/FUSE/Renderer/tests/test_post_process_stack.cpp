@@ -1023,3 +1023,6 @@ int main() {
     std::fprintf(stderr, "fuse_post_process_b510: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+// --- deepen additive from deepen-b510-tonemap-exposure-guards-1c90 ---
+void testMeterUtilEmptyGuards() {
