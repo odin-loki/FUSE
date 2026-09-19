@@ -2466,3 +2466,8 @@ GizmoUpdateDragRejectReason GizmoSystem::classifyUpdateDragReject(
 GizmoEndDragRejectReason GizmoSystem::classifyEndDragReject(
     const EndDragPreflight& preflight) const {
     return fuse::editor::classifyEndDragReject(preflight);
+
+// --- deepen additive from gizmo-preflight-guards-8adb ---
+BeginDragPreflight buildBeginDragFromPick_(const PickPreflight& pick, bool alreadyDragging) {
+BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode, bool alreadyDragging,
+    return fuse::editor::preflightInteraction(hit, m_mode, m_snap);

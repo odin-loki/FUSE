@@ -3408,3 +3408,21 @@ void testEndDragRejectReasonClassification() {
     testPickRejectReasonClassification();
     testUpdateDragRejectReasonClassification();
     testEndDragRejectReasonClassification();
+
+// --- deepen additive from gizmo-preflight-guards-8adb ---
+void testScreenOutOfBoundsGuards() {
+    const fuse::editor::PickPreflight rejectPick =
+    expectTrue(!gizmo.tryPickAxis(hit, axis), "tryPickAxis rejects out-of-bounds screen hit");
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate, false, snap);
+    expectTrue(outOfBoundsPreflight.outOfBounds, "begin preflight marks out-of-bounds hit");
+    expectTrue(!outOfBoundsPreflight.canBegin, "begin preflight rejects out-of-bounds hit");
+    expectTrue(degradedPreflight.canBegin, "begin preflight accepts valid hit with degraded snap");
+    expectTrue(!validSnapPreflight.snapDegraded, "valid snap clears begin snapDegraded");
+void testInteractionPreflightGuards() {
+    const fuse::editor::InteractionPreflight deadZoneInteraction =
+        fuse::editor::preflightInteraction(missHit, fuse::editor::GizmoMode::Translate, snap);
+    const fuse::editor::InteractionPreflight invalidSnapInteraction =
+    const fuse::editor::InteractionPreflight gizmoInteraction = gizmo.preflightInteraction(missHit);
+    expectTrue(gizmo.preflightInteraction(xRay, transform).canInteract(),
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears gizmo update snapDegraded");
+    testInteractionPreflightGuards();

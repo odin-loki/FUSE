@@ -1068,3 +1068,9 @@ GizmoEndDragRejectReason classifyEndDragReject(const struct EndDragPreflight& pr
         const UpdateDragPreflight& preflight) const;
     [[nodiscard]] GizmoEndDragRejectReason classifyEndDragReject(
         const EndDragPreflight& preflight) const;
+
+// --- deepen additive from gizmo-preflight-guards-8adb ---
+    PickPreflight pick;
+    SnapPreflight snap;
+BeginDragPreflight preflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode, bool alreadyDragging,
+    [[nodiscard]] InteractionPreflight preflightInteraction(const GizmoRay& ray,
