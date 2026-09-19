@@ -166,6 +166,7 @@ struct ContactManifold {
 
 
 
+
         f32 separationEpsilon = 1e-6f,
         f32 duplicateEpsilon = 1e-4f);
 };

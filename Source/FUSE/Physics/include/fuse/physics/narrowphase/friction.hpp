@@ -55,6 +55,11 @@ bool needs_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon =
 
 /// Epsilon-aware rebuild check: missing basis or no longer aligned with `contactNormal` (B4.3 deepen pass).
 bool needs_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon);
+/// Returns true when `basis` is orthonormal and aligned with `normal` (B4.3 deepen pass).
+bool isValidFrictionBasisForNormal(vec3 normal, const TangentBasis& basis, f32 epsilon = 1e-4f);
+
+/// Alias for `needs_friction_basis_rebuild` (B4.3 deepen pass).
+bool should_rebuild_friction_basis(const ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 /// Clear the manifold friction basis without touching contact points (B4.3 deepen pass).
 void invalidate_friction_basis(ContactManifold& manifold);

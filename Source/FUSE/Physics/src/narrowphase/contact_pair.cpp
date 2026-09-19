@@ -280,6 +280,7 @@ bool is_kinematic_contact_pair(
 }
 
 
+
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies) {
     if (pair.bodyA >= bodies.count() || pair.bodyB >= bodies.count()) {
@@ -681,6 +682,9 @@ bool should_run_narrowphase_batch(
         manifold.contactNormal = manifold.contactNormal * (1.f / normalLength);
     invalidate_friction_basis(manifold);
     manifold.buildFrictionBasis();
+    if (!needs_friction_basis_rebuild(manifold)) {
+
+    (void)ensure_friction_basis(manifold);
 }
 
 } // namespace fuse::physics::narrowphase

@@ -106,6 +106,7 @@ bool needs_friction_basis_rebuild(const ContactManifold& manifold) {
 
     return isValidFrictionBasisForNormal(manifold.contactNormal, manifold.frictionBasis, epsilon);
 
+
 bool needs_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) {
     if (should_skip_friction_tangents(manifold)) {
     return !has_cached_friction_basis(manifold);
@@ -115,6 +116,10 @@ bool needs_friction_basis_rebuild(const ContactManifold& manifold, f32 epsilon) 
         return true;
     return !isValidFrictionBasisForNormal(manifold.contactNormal, manifold.frictionBasis, epsilon);
     return !isValidFrictionBasisForNormal(manifold.contactNormal, manifold.frictionBasis);
+}
+
+bool should_rebuild_friction_basis(const ContactManifold& manifold, f32 epsilon) {
+    return needs_friction_basis_rebuild(manifold, epsilon);
 }
 
 bool should_rebuild_friction_basis(const ContactManifold& manifold, f32 epsilon) {
@@ -190,6 +195,7 @@ bool rebuild_friction_basis_if_needed(ContactManifold& manifold) {
 
     if (!manifold.normalizeContactNormal()) {
         return false;
+
 
     manifold.buildFrictionBasis();
     return manifold.hasFrictionBasis();
