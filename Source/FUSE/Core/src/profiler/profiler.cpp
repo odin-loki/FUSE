@@ -22,6 +22,7 @@ std::atomic<u32> g_nextFlowId{1};
 std::array<ProfileEvent, kRingCapacity> g_events{};
 std::atomic<u32> g_writeHead{0};
 std::atomic<u32> g_eventCount{0};
+std::atomic<u32> g_totalEventsWritten{0};
 std::atomic<u32> g_maxNestingDepth{0};
 std::atomic<u32> g_maxFlowNestingDepth{0};
 std::atomic<u32> g_openAsyncFlowCount{0};
@@ -184,6 +185,8 @@ void recordEvent(const char* name,
         counterSnapshotFrame,
     };
 
+    g_totalEventsWritten.fetch_add(1u, std::memory_order_acq_rel);
+
     const u32 count = g_eventCount.load(std::memory_order_acquire);
     if (count < kRingCapacity) {
         g_eventCount.fetch_add(1u, std::memory_order_acq_rel);
@@ -265,6 +268,20 @@ u32 eventCount() {
 
 u32 ringCapacity() {
     return kRingCapacity;
+}
+
+u32 totalEventsWritten() {
+    return g_totalEventsWritten.load(std::memory_order_acquire);
+}
+
+u32 droppedEventCount() {
+    const u32 written = totalEventsWritten();
+    const u32 retained = eventCount();
+    return written > retained ? written - retained : 0u;
+}
+
+bool isRingSaturated() {
+    return eventCount() >= kRingCapacity;
 }
 
 u32 maxNestingDepth() {
@@ -350,6 +367,27 @@ bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
 }
 
+u32 exportableFirstEventIndex() {
+    const u32 count = eventCount();
+    for (u32 i = 0u; i < count; ++i) {
+        if (isEventExportable(i)) {
+            return i;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
+u32 exportableLastEventIndex() {
+    const u32 count = eventCount();
+    for (u32 i = count; i > 0u; --i) {
+        const u32 index = i - 1u;
+        if (isEventExportable(index)) {
+            return index;
+        }
+    }
+    return kInvalidEventIndex;
+}
+
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
     return kEmpty;
@@ -377,6 +415,16 @@ bool tryEventAt(u32 index, ProfileEvent& outEvent) {
     return isValidProfileEvent(outEvent);
 }
 
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
+    if (!isEventExportable(index)) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    outEvent = eventAt(index);
+    return true;
+}
+
 bool tryFirstEvent(ProfileEvent& outEvent) {
     const u32 index = firstEventIndex();
     if (index == kInvalidEventIndex) {
@@ -395,6 +443,26 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     }
 
     return tryEventAt(index, outEvent);
+}
+
+bool tryFirstExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = exportableFirstEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
+}
+
+bool tryLastExportableEvent(ProfileEvent& outEvent) {
+    const u32 index = exportableLastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryExportableEventAt(index, outEvent);
 }
 
 u32 firstEventIndex() {
@@ -419,6 +487,8 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.profilerDisabled = !enabled();
     preflight.eventCount = eventCount();
     preflight.exportableEventCount = exportableEventCount();
+    preflight.totalEventsWritten = totalEventsWritten();
+    preflight.droppedEventCount = droppedEventCount();
     preflight.frameIndex = frameIndex();
     preflight.openAsyncFlowCount = openAsyncFlowCount();
     preflight.activeScopeNestingDepth = scopeNestingDepth();
@@ -426,6 +496,7 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.maxScopeNestingDepth = maxNestingDepth();
     preflight.maxFlowNestingDepth = maxFlowNestingDepth();
     preflight.bufferEmpty = isBufferEmpty();
+    preflight.ringSaturated = isRingSaturated();
     preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
     preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
@@ -437,6 +508,7 @@ void reset() {
     const std::lock_guard<std::mutex> lock(g_exportMutex);
     g_writeHead.store(0u, std::memory_order_release);
     g_eventCount.store(0u, std::memory_order_release);
+    g_totalEventsWritten.store(0u, std::memory_order_release);
     g_frameIndex.store(0u, std::memory_order_release);
     g_nextScopeId.store(1u, std::memory_order_release);
     g_nextFlowId.store(1u, std::memory_order_release);
@@ -565,7 +637,7 @@ std::string exportChromeTraceJson() {
 
     for (u32 i = 0; i < count; ++i) {
         const ProfileEvent& event = eventAt(i);
-        if (event.name == nullptr) {
+        if (!isValidEventName(event.name)) {
             continue;
         }
 

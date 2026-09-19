@@ -42,6 +42,8 @@ struct ProfileEvent {
 struct ChromeTraceExportPreflight {
     u32 eventCount = 0;
     u32 exportableEventCount = 0;
+    u32 totalEventsWritten = 0;
+    u32 droppedEventCount = 0;
     u32 frameIndex = 0;
     u32 openAsyncFlowCount = 0;
     u32 activeScopeNestingDepth = 0;
@@ -50,6 +52,7 @@ struct ChromeTraceExportPreflight {
     u32 maxFlowNestingDepth = 0;
     bool profilerDisabled = false;
     bool bufferEmpty = false;
+    bool ringSaturated = false;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
     bool hasOpenAsyncFlows = false;
@@ -58,6 +61,7 @@ struct ChromeTraceExportPreflight {
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
     bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+    bool hasNestingWarnings() const { return hasUnbalancedNesting() || flowDepthDetached; }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -85,6 +89,9 @@ void endFrame();
 u32 frameIndex();
 u32 eventCount();
 u32 ringCapacity();
+u32 totalEventsWritten();
+u32 droppedEventCount();
+bool isRingSaturated();
 u32 maxNestingDepth();
 u32 nestingDepth();
 u32 maxFlowNestingDepth();
@@ -105,13 +112,18 @@ bool isValidEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 u32 exportableEventCount();
 bool isEventExportable(u32 index);
+u32 exportableFirstEventIndex();
+u32 exportableLastEventIndex();
 u32 firstEventIndex();
 u32 lastEventIndex();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
+bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
+bool tryFirstExportableEvent(ProfileEvent& outEvent);
+bool tryLastExportableEvent(ProfileEvent& outEvent);
 const ProfileEvent& lastEvent();
 void reset();
 
