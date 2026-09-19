@@ -157,6 +157,13 @@ const char* island_graph_build_reject_reason_name(IslandGraphBuildRejectReason r
 
 /// Diagnose why island graph build would skip; vacuously succeeds when build may proceed.
 IslandGraphBuildRejectReason island_graph_build_reject_reason(
+/// Input coverage for contact-island graph build (out-of-range body-index guards).
+
+/// Preflight diagnostics for contact-island graph build inputs (B4.4 deepen).
+
+
+
+/// Preflight contact-island graph build inputs; sets `skipped` when nothing can partition.
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -668,6 +675,7 @@ bool island_graph_build_rejects_for_reason(
 bool island_body_index_in_range(u32 bodyIndex, u32 bodyCount);
 /// Non-mutating island graph build skip predicate — inverse of `should_run_island_graph_build`.
 bool can_skip_island_graph_build(
+bool should_skip_contact_island_build(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
@@ -731,6 +739,7 @@ struct ContactIslandGraph {
     /// Guarded build; clears and returns false when inputs are empty or unsafe (B4.4 deepen follow-up pass).
     /// Build only when `preflight_contact_island_graph_build` passes; clears and returns false otherwise.
     /// Guarded build; clears and returns false when `island_graph_build_reject_reason` is non-None.
+    /// Guarded build; returns false when preflight skips build or refs are out of range.
 
     void clear();
 
