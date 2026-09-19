@@ -143,6 +143,7 @@ public:
     /// Jitter advance preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const;
     /// True when jitter monotonic frame and slot match `frameIndex` (B5.9 deepen).
+    /// True when pass jitter state matches the given monotonic frame counter (B5.9 deepen).
     bool isJitterSyncedToFrameIndex(u32 frameIndex) const;
     /// True when resolve request passes all preflight guards (B5.9 deepen).
     bool canResolveFrame(const TaaResolveDesc& desc) const;

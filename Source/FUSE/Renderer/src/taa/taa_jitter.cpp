@@ -229,6 +229,7 @@ bool TaaJitterLayout::jitterSyncMatches(u32 observedFrameIndex, u32 expectedFram
     }
     return frameIndexInSequence(observedFrameIndex, sequenceLength) ==
            frameIndexInSequence(expectedFrameIndex, sequenceLength);
+bool TaaJitterLayout::slotMatchesMonotonicFrame(u32 slot, u32 frameIndex, u32 sequenceLength) {
 }
 
 bool TaaJitterLayout::fillHaltonSequence(u32 length, fuse::math::Vec2* out) {
@@ -470,6 +471,7 @@ bool taaJitterSyncPreflight(const TaaJitter& jitter, u32 frameIndex, u32 width, 
     const TaaJitterSyncRejectReason reject = classifyTaaJitterSyncReject(jitter, frameIndex, width, height);
         *reason = reject;
     return reject == TaaJitterSyncRejectReason::None;
+           TaaJitterLayout::slotMatchesMonotonicFrame(m_index, frameIndex, m_sequenceLength);
 }
 
 } // namespace fuse::renderer

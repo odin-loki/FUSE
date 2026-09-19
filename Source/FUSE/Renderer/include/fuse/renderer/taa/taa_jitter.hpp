@@ -101,6 +101,8 @@ struct TaaJitterLayout {
     static bool monotonicFrameMatchesSlot(u32 frameIndex, u32 slot, u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// True when `observedFrameIndex` maps to the same jitter slot as `expectedFrameIndex`.
     static bool jitterSyncMatches(u32 observedFrameIndex, u32 expectedFrameIndex, u32 sequenceLength);
+    /// True when slot index matches the expected slot for a monotonic frame counter (B5.9 deepen).
+    static bool slotMatchesMonotonicFrame(u32 slot, u32 frameIndex,
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
     static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
     /// True when `slot` is the expected Halton slot for a monotonic frame counter (B5.9 deepen).
@@ -148,6 +150,7 @@ public:
     bool slotMatchesMonotonicFrame() const;
     /// True when monotonic frame and slot match `frameIndex` (B5.9 deepen guard).
     /// True when monotonic frame counter and slot index match `frameIndex` (B5.9 deepen).
+    /// True when jitter state matches the given monotonic frame counter (B5.9 deepen).
 
     u32 index() const { return m_index; }
     /// True when monotonic frame counter matches `frameIndex` (B5.9 deepen).

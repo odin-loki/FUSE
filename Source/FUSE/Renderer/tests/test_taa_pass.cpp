@@ -2470,6 +2470,24 @@ void testJitterSyncGuards() {
     expectTrue(!jitter.isSyncedToFrameIndex(13u), "advance clears prior frame sync");
     expectTrue(jitter.isSyncedToFrameIndex(14u), "advance updates monotonic sync");
     expectTrue(jitter.slotMatchesMonotonicFrame(), "advance keeps slot aligned after sync drift");
+    expectTrue(jitter.isSyncedToFrameIndex(0u), "initial jitter synced to frame zero");
+    expectTrue(!jitter.isSyncedToFrameIndex(5u), "initial jitter not synced to frame five");
+
+    jitter.syncToFrameIndex(5u);
+    expectTrue(jitter.isSyncedToFrameIndex(5u), "syncToFrameIndex marks frame as synced");
+    expectTrue(TaaJitterLayout::slotMatchesMonotonicFrame(jitter.index(), 5u, 8u),
+               "slot matches monotonic frame after sync");
+
+    expectTrue(jitter.isSyncedToFrameIndex(6u), "advance keeps monotonic sync");
+    expectTrue(!jitter.isSyncedToFrameIndex(5u), "advance invalidates prior frame sync");
+
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 128;
+    passDesc.height = 128;
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    pass->syncJitterToFrameIndex(11u);
+    expectTrue(pass->isJitterSyncedToFrameIndex(11u), "pass jitter synced after syncJitterToFrameIndex");
+    expectTrue(!pass->isJitterSyncedToFrameIndex(10u), "pass jitter not synced to prior frame");
 }
 
 void testJitterProduceNdcGuards() {
@@ -2601,6 +2619,53 @@ void testResolveWillReuseHistory() {
                "full blend will not reuse history");
     expectTrue(resolve.resolve(desc, history), "full blend resolve succeeds");
     expectTrue(!resolve.lastStats().history_reused, "full blend resolve does not reuse history");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testPreflightTaaResolveBlend() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for resolve blend preflight test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for resolve blend preflight test");
+
+    fuse::renderer::TaaResolveDesc desc{};
+    desc.width = 64;
+    desc.height = 64;
+    desc.surfaces.current_frame = reinterpret_cast<void*>(0x1);
+    desc.surfaces.output = reinterpret_cast<void*>(0x2);
+    desc.params.blend_factor = 0.3f;
+
+    fuse::renderer::TaaBlendWeights weights{};
+    expectTrue(fuse::renderer::preflightTaaResolveBlend(desc, history, &weights),
+               "blend preflight passes unwarmed history");
+    expectNear(weights.current, 1.f, 1e-5f, "blend preflight warmup uses full current weight");
+    expectNear(weights.history, 0.f, 1e-5f, "blend preflight warmup uses zero history weight");
+    expectTrue(fuse::renderer::taaBlendWeightsValid(weights), "blend preflight weights are valid");
+
+    fuse::renderer::TaaResolve resolve;
+    expectTrue(resolve.resolve(desc, history), "initial resolve warms history for blend preflight");
+
+               "blend preflight passes warmed history");
+    expectNear(weights.current, 0.3f, 1e-5f, "blend preflight uses configured current weight");
+    expectNear(weights.history, 0.7f, 1e-5f, "blend preflight uses history complement");
+
+    desc.width = 0;
+    expectTrue(!fuse::renderer::preflightTaaResolveBlend(desc, history, &weights),
+               "blend preflight rejects invalid dimensions");
 
     history.destroy();
     resources.destroy();
@@ -4696,6 +4761,7 @@ int main() {
     testResolveWillReuseHistory();
     testTaaPassResolvePreflight();
     testTaaPassJitterSyncGuards();
+    testPreflightTaaResolveBlend();
     testResolveHistoryBlendStats();
     testHistoryNeedsWarmupGuard();
     testComputeTaaResolveBlendWeights();

@@ -137,12 +137,16 @@ bool canAttemptTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& hi
     return preflightTaaResolve(desc, history);
 
 
+
 bool prepareTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     sanitizeTaaResolveDesc(desc, history);
     return canAttemptTaaResolve(desc, history);
 
 bool taaResolveWillReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaResolveCanReuseHistory(desc, history)) {
+}
+
+        return false;
     const bool firstFrame = !history.hasValidHistory();
     const TAAParams params = clampTaaParams(desc.params);
     const f32 effectiveBlend =
@@ -152,7 +156,18 @@ bool taaResolveWillReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuff
         return false;
     const f32 effectiveBlend = computeEffectiveBlend(false, true, params);
     return taaBlendUsesHistory(effectiveBlend);
-}
+
+
+bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                              TaaBlendWeights* weights) {
+    if (!preflightTaaResolve(desc, history)) {
+    const bool firstFrame = !history.hasValidHistory();
+    const bool historyReusable = taaResolveCanReuseHistory(desc, history);
+    const TaaBlendWeights blendWeights =
+        computeTaaBlendWeightsWithReuseGuard(firstFrame, historyReusable, clampTaaParams(desc.params));
+    if (weights != nullptr) {
+        *weights = blendWeights;
+    return taaBlendWeightsValid(blendWeights);
 
 void sanitizeTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     normalizeTaaParams(desc.params);
@@ -373,7 +388,12 @@ f32 computeHistoryBlend(f32 effectiveBlend) {
     return clampF32(1.f - effectiveBlend, 0.f, 1.f);
 
 TaaBlendWeights computeTaaBlendWeights(bool firstFrame, const TAAParams& params) {
-    const f32 effectiveBlend = computeEffectiveBlend(firstFrame, params);
+    return computeTaaBlendWeightsWithReuseGuard(firstFrame, !firstFrame, params);
+}
+
+TaaBlendWeights computeTaaBlendWeightsWithReuseGuard(bool firstFrame, bool historyReusable,
+                                                     const TAAParams& params) {
+    const f32 effectiveBlend = computeEffectiveBlend(firstFrame, historyReusable, params);
     TaaBlendWeights weights{};
     weights.current = effectiveBlend;
     weights.history = computeHistoryBlend(effectiveBlend);
@@ -861,6 +881,10 @@ const char* taaBlendPreflightRejectReasonLabel(TaaBlendPreflightRejectReason rea
     case TaaBlendPreflightRejectReason::WarmupRequired:
         return "warmup_required";
     case TaaBlendPreflightRejectReason::StaleGeneration:
+
+
+
+
 }
 
 const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason) {
