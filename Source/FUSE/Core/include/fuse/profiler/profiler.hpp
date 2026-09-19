@@ -278,6 +278,17 @@ struct ChromeExportPreflight {
     bool canExport() const { return true; }
 
     bool hasStateWarnings() const {
+/// True when `name` is non-null and non-empty — shared guard for scopes, flows, and counters.
+bool isValidProfileName(const char* name);
+
+/// Read-only chrome trace export diagnostics — no mutation (B1.6 deepen).
+struct ChromeTraceExportPreflight {
+    bool profilerDisabled = false;
+    bool emptyBuffer = false;
+    bool bufferFull = false;
+
+
+    bool hasCorrelationWarnings() const {
         return unbalancedScopeNesting || unbalancedFlowNesting || hasOpenAsyncFlows;
     }
 };
@@ -287,6 +298,9 @@ ChromeExportPreflight preflightChromeExport();
 u32 ringBufferCapacity();
 
 bool isValidProfileName(const char* name);
+ChromeTraceExportPreflight preflightChromeTraceExport();
+bool canExportChromeTrace();
+
 bool hasEvents();
 bool hasExportableEvents();
 bool hasOpenAsyncFlows();
