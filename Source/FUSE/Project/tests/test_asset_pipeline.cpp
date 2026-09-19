@@ -1961,3 +1961,7 @@ void testCookCachePreflightAndReconcileEstimators() {
                "would_invalidate_downstream rejects empty graph");
     expectTrue(cooker.cache().would_invalidate_downstream_of(entryA.output_path, graph.edges(), graph.jobs()),
                "would_invalidate_downstream reports dependent entries");
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-6a72 ---
+    expectTrue(probe.would_invalidate(), "upstream probe reports invalidation scope");
+    expectTrue(!empty_probe.would_invalidate(), "empty changed source upstream probe is zero");

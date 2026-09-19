@@ -1006,3 +1006,16 @@ void testCookHashPreflightFnv1a64Guard() {
     expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_would_inv.obj"),
     expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_would_inv.fusemesh"),
     expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_inv.obj", 42u),
+
+// --- deepen additive from deepen-b79-cooker-hash-preflight-6a72 ---
+void testCookCacheLookupStorePreflights() {
+    const fuse::project::CookCacheLookupPreflight zero_lookup =
+    expectTrue(zero_lookup.should_skip(), "zero-key lookup preflight skips");
+    const fuse::project::CookCacheStorePreflight valid_store =
+    expectTrue(fuse::project::preflight_cook_cache_store(entry).should_skip(),
+void testCookFnvInputPreflight() {
+    const fuse::project::CookFnvInputPreflight null_preflight =
+    expectTrue(null_preflight.should_skip(), "null data with size fails FNV preflight");
+    const fuse::project::CookFnvInputPreflight empty_preflight =
+    testCookCacheLookupStorePreflights();
+    testCookFnvInputPreflight();
