@@ -201,6 +201,8 @@ struct ChromeTraceExportPreflight {
     bool flowPairImbalancedInBuffer = false;
     u32 ignoredAsyncFlowEndCount = 0;
     bool hasIgnoredAsyncFlowEnds = false;
+    bool hasUnpairedScopeEvents = false;
+    bool hasUnpairedAsyncFlowEvents = false;
 
     bool canExport() const { return !profilerDisabled; }
     bool hasExportableEvents() const { return exportableEventCount > 0; }
@@ -215,6 +217,11 @@ struct ChromeTraceExportPreflight {
             && !hasBufferPairImbalance() && !hasDroppedEvents && !hasInvalidNameEvents;
             && !ringBufferFull;
     }
+    bool canExportNonEmpty() const { return canExport() && hasExportableEvents(); }
+    bool hasExportWarnings() const {
+        return hasInvalidNameEvents || hasUnpairedScopeEvents || hasUnpairedAsyncFlowEvents;
+    }
+    bool canExportCleanly() const { return canExportSafely() && !hasExportWarnings(); }
 };
 
 /// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
@@ -566,6 +573,10 @@ bool isProfilerGuardStateBalanced();
 u32 ignoredAsyncFlowEndCount();
 bool hasIgnoredAsyncFlowEnds();
 u32 orphanAsyncFlowEndCount();
+bool hasUnpairedScopeEventsInBuffer();
+bool hasUnpairedAsyncFlowEventsInBuffer();
+u32 scopeBeginEndEventDelta();
+u32 asyncFlowStartFinishEventDelta();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
 bool hasEvents();
@@ -759,6 +770,7 @@ bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId);
 const char* eventNameRejectReasonLabel(EventNameRejectReason reason);
 bool wouldRecordEvent(const char* name);
 bool canSampleCounter(const char* track);
+bool isWhitespaceOnlyEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 u32 invalidNameEventCount();
@@ -826,6 +838,10 @@ bool peekEventAt(u32 index, ProfileEvent& outEvent);
 bool tryEventAt(u32 index, ProfileEvent& outEvent);
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent);
 bool tryEventPhaseAt(u32 index, EventPhase& outPhase);
+bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
+bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent);
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent);
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent);
 bool tryFirstEvent(ProfileEvent& outEvent);
 bool tryLastEvent(ProfileEvent& outEvent);
 bool tryFirstEventByName(const char* name, ProfileEvent& outEvent);

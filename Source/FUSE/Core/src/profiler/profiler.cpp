@@ -1111,6 +1111,19 @@ bool canEndAsyncFlow(const char* name) {
 
 bool canSampleCounter(const char* track) {
     return wouldRecordEvent(track);
+bool isWhitespaceOnlyEventName(const char* name) {
+    if (name == nullptr || name[0] == '\0') {
+
+    for (const char* cursor = name; *cursor != '\0'; ++cursor) {
+        if (!std::isspace(static_cast<unsigned char>(*cursor))) {
+
+bool eventNameMatches(const char* lhs, const char* rhs) {
+    if (lhs == nullptr || rhs == nullptr) {
+        return lhs == rhs;
+    return std::strcmp(lhs, rhs) == 0;
+
+bool isLookupNameValid(const char* name) {
+    return isValidEventName(name);
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     EventNameRejectReason reason = EventNameRejectReason::None;
@@ -1683,16 +1696,13 @@ bool tryEventPhaseAt(u32 index, EventPhase& outPhase) {
 
     outPhase = eventAt(index).phase;
     return true;
-}
 
 bool isFirstEventIndex(u32 index) {
     return hasEvents() && index == firstEventIndex();
-}
 
 bool isLastEventIndex(u32 index) {
     const u32 last = lastEventIndex();
     return last != kInvalidEventIndex && index == last;
-}
 
 u32 countEventsByPhase(EventPhase phase) {
     u32 count = 0u;
@@ -1700,13 +1710,31 @@ u32 countEventsByPhase(EventPhase phase) {
     for (u32 i = 0u; i < total; ++i) {
         if (eventAt(i).phase == phase) {
             ++count;
-        }
-    }
     return count;
-}
 
 bool tryExportableEventAt(u32 index, ProfileEvent& outEvent) {
     if (!isEventExportable(index)) {
+bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByPhase(phase);
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+
+    return tryExportableEventAt(index, outEvent);
+
+bool tryFindLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByPhase(phase);
+
+
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findFirstEventIndexByName(name);
+
+
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
+    const u32 index = findLastEventIndexByName(name);
+
+
+bool tryFirstEvent(ProfileEvent& outEvent) {
+    const u32 index = firstEventIndex();
         outEvent = ProfileEvent{};
         return false;
     }
@@ -2209,6 +2237,27 @@ u32 findLastEventIndexByName(const char* name) {
 
 
 
+bool hasUnpairedScopeEventsInBuffer() {
+    return scopeBeginEndEventDelta() > 0u;
+
+bool hasUnpairedAsyncFlowEventsInBuffer() {
+    return asyncFlowStartFinishEventDelta() > 0u;
+
+u32 scopeBeginEndEventDelta() {
+    const u32 beginCount = countEventsByPhase(EventPhase::Begin);
+    const u32 endCount = countEventsByPhase(EventPhase::End);
+    return beginCount >= endCount ? beginCount - endCount : endCount - beginCount;
+
+u32 asyncFlowStartFinishEventDelta() {
+    const u32 startCount = countEventsByPhase(EventPhase::FlowStart);
+    const u32 finishCount = countEventsByPhase(EventPhase::FlowFinish);
+    return startCount >= finishCount ? startCount - finishCount : finishCount - startCount;
+
+    if (!isLookupNameValid(name)) {
+
+        if (isValidEventName(event.name) && eventNameMatches(event.name, name)) {
+
+
             return i - 1u;
         }
     }
@@ -2218,6 +2267,7 @@ u32 findLastEventIndexByName(const char* name) {
 u32 lastEventIndexByPhase(EventPhase phase) {
 u32 countEventsByName(const char* name) {
     if (!isValidEventName(name)) {
+    if (!isLookupNameValid(name)) {
         return 0u;
     }
 
@@ -2252,7 +2302,6 @@ u32 findFirstEventIndexByScopeId(u32 scopeId) {
 
 u32 countEventsByScopeId(u32 scopeId) {
     u32 count = 0u;
-            ++count;
 
 u32 firstExportableEventIndex() {
         if (isEventExportable(i)) {
@@ -2283,6 +2332,7 @@ u32 findFirstEventIndexByFlowId(u32 flowId) {
 u32 findLastEventIndexByFlowId(u32 flowId) {
 
         const ProfileEvent& event = eventAt(i - 1u);
+        if (isValidEventName(event.name) && eventNameMatches(event.name, name)) {
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -2599,6 +2649,8 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.hasDroppedEvents = preflight.droppedEventCount > 0u;
     preflight.ignoredAsyncFlowEndCount = ignoredAsyncFlowEndCount();
     preflight.hasIgnoredAsyncFlowEnds = hasIgnoredAsyncFlowEnds();
+    preflight.hasUnpairedScopeEvents = hasUnpairedScopeEventsInBuffer();
+    preflight.hasUnpairedAsyncFlowEvents = hasUnpairedAsyncFlowEventsInBuffer();
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
