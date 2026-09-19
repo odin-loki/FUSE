@@ -1604,3 +1604,20 @@ void testClusterCoordLookupRejectReasonAndScreenMapping() {
 void testClusterContiguousOffsetPreflight() {
     expectTrue(reason == fuse::renderer::ClusterLookupRejectReason::None, "accessible coord lookup reports no reason");
     testClusterContiguousOffsetPreflight();
+
+// --- deepen additive from deepen-b5-clustered-lights-e99c ---
+    expectTrue(!fuse::renderer::ClusterLightGridLayout::tryRebuildLightGrid(grid, desc, clusterCount + 1u,
+               "tryRebuild rejects count mismatch");
+    expectTrue(rejectedDropped == 0u, "rejected tryRebuild zeroes dropped count");
+    expectTrue(grid.lightList.size() == preservedListSize, "rejected tryRebuild preserves light list");
+    expectTrue(grid.grid.size() == preservedGridCount, "rejected tryRebuild preserves grid entries");
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights,
+               "tryRebuild accepts matching count");
+    expectTrue(acceptedDropped == 0u, "tryRebuild reports dropped overflow count");
+    expectTrue(grid.lightList.size() == 5u, "tryRebuild repacks flat light list");
+               "tryRebuildForDesc accepts matching desc");
+    expectTrue(forDescDropped == 0u, "tryRebuildForDesc reports dropped overflow count");
+    expectTrue(fuse::renderer::ClusterLightGridLayout::tryRebuildLightGridForDesc(emptyGrid, zeroDesc, perClusterLights,
+    expectTrue(rejectedCoordCount == 0u, "tryCoordLookup with reason zeroes count on failure");
+    expectTrue(rejectedCoordLights.empty(), "tryCoordLookup with reason clears output on failure");
+    expectTrue(std::strcmp(fuse::renderer::clusterLookupRejectReasonLabel(reason), "empty_storage") == 0,

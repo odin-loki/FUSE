@@ -1038,3 +1038,6 @@ bool ClusterLightGridLayout::tryCanRebuildLightGridForDesc(const ClusterDesc& de
 u32 ClusterLightGridLayout::tryRebuildLightGrid(ClusterGridSoA& grid,
 u32 ClusterLightGridLayout::tryRebuildLightGridForDesc(ClusterGridSoA& grid,
     if (!tryCanRebuildLightGridForDesc(desc, reason)) {
+
+// --- deepen additive from deepen-b5-clustered-lights-e99c ---
+    return tryRebuildLightGrid(grid, desc, clusterCount, perClusterLights, maxLightsPerCluster, outDropped);
