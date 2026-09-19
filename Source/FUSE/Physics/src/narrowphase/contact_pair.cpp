@@ -830,3 +830,9 @@ NarrowphaseBatchRejectReason narrowphase_batch_reject_reason(
 // --- deepen additive from b4-narrowphase-deepen-guards-68c9 ---
 NarrowphaseRunPreflight preflight_run_narrowphase(
     NarrowphaseRunPreflight preflight{};
+
+// --- deepen additive from deepen-b4-narrowphase-b46-8196 ---
+ContactPairRejectReason first_contact_pair_deepen_reject_reason(
+        if (reason != ContactPairRejectReason::None) {
+NarrowphaseRunPreflight preflight_narrowphase_run(
+bool should_skip_narrowphase_run(

@@ -606,3 +606,13 @@ ContactBufferCompactAndClampPreflight preflightContactBufferCompactAndClamp(cons
 
 // --- deepen additive from b4-narrowphase-deepen-guards-68c9 ---
     const ContactBufferCompactionPreflight preflight = preflight_contact_buffer_compaction(buffer);
+
+// --- deepen additive from deepen-b4-narrowphase-b46-8196 ---
+void writeContactBufferSlotWithPreflight(
+    if (!preflightContactBufferWrite(buffer, slot, manifold).canWrite()) {
+u32 compactContactBufferWithPreflight(ContactBufferSoA& buffer) {
+    if (!preflightContactBufferCompaction(buffer).needsCompaction()) {
+u32 clampContactBufferWithPreflight(ContactBufferSoA& buffer) {
+    if (!preflightContactBufferClamp(buffer).needsClamp()) {
+u32 compactAndClampContactBufferWithPreflight(ContactBufferSoA& buffer) {
+    if (!preflightContactBufferCompactAndClamp(buffer).needsCompactAndClamp()) {

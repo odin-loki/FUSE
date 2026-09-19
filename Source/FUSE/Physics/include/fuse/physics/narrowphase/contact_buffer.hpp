@@ -207,3 +207,9 @@ ContactBufferFrictionBuildPreflight preflight_contact_buffer_friction_build(cons
 const char* contactBufferCompactAndClampRejectReasonName(ContactBufferCompactAndClampRejectReason reason);
 ContactBufferCompactAndClampRejectReason contactBufferCompactAndClampRejectReason(
 ContactBufferCompactAndClampPreflight preflightContactBufferCompactAndClamp(const ContactBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-narrowphase-b46-8196 ---
+void writeContactBufferSlotWithPreflight(
+u32 compactContactBufferWithPreflight(ContactBufferSoA& buffer);
+u32 clampContactBufferWithPreflight(ContactBufferSoA& buffer);
+u32 compactAndClampContactBufferWithPreflight(ContactBufferSoA& buffer);

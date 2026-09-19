@@ -358,3 +358,8 @@ NarrowphaseBatchRejectReason narrowphase_batch_reject_reason(
 struct NarrowphaseRunPreflight {
     NarrowphaseBatchPreflight batch{};
 NarrowphaseRunPreflight preflight_run_narrowphase(
+
+// --- deepen additive from deepen-b4-narrowphase-b46-8196 ---
+ContactPairRejectReason first_contact_pair_deepen_reject_reason(
+NarrowphaseRunPreflight preflight_narrowphase_run(
+bool should_skip_narrowphase_run(

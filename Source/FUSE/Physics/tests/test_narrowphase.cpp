@@ -2753,3 +2753,33 @@ void testFrictionComputeTangentsPreflightGuard() {
     testNarrowphaseRunPreflightGuards();
     testManifoldShallowPrunePreflightGuards();
     testFrictionComputeTangentsPreflightGuard();
+
+// --- deepen additive from deepen-b4-narrowphase-b46-8196 ---
+    const auto emptyCompactionPreflight =
+    expectTrue(emptyCompactionPreflight.emptyBuffer, "compaction preflight marks empty buffer");
+        !emptyCompactionPreflight.needsCompaction(),
+    const auto invalidWritePreflight =
+        fuse::physics::narrowphase::preflightContactBufferWrite(buffer, 0u, selfPair);
+    expectTrue(!invalidWritePreflight.canWrite(), "write preflight rejects self pair");
+        invalidWritePreflight.reason ==
+    const auto outOfRangeWritePreflight =
+        fuse::physics::narrowphase::preflightContactBufferWrite(buffer, 4u, valid);
+    expectTrue(!outOfRangeWritePreflight.canWrite(), "write preflight rejects out-of-range slot");
+        outOfRangeWritePreflight.reason ==
+    fuse::physics::narrowphase::writeContactBufferSlotWithPreflight(buffer, 0u, valid);
+    fuse::physics::narrowphase::writeContactBufferSlotWithPreflight(buffer, 1u, selfPair);
+    fuse::physics::narrowphase::writeContactBufferSlotWithPreflight(buffer, 1u, deeper);
+    const auto clampPreflight = fuse::physics::narrowphase::preflightContactBufferClamp(buffer);
+    expectTrue(clampPreflight.needsClamp(), "clamp preflight needs clamp when over capacity");
+        fuse::physics::narrowphase::clampContactBufferWithPreflight(buffer) == 1u,
+            buffer, fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::EmptyBuffer),
+        fuse::physics::narrowphase::compactAndClampContactBufferWithPreflight(buffer) == 0u,
+    const auto runPreflight =
+    expectTrue(runPreflight.can_run(), "run preflight can dispatch with one valid pair");
+    expectTrue(runPreflight.batch.dispatchableCount == 1u, "run preflight reports dispatchable count");
+        !fuse::physics::narrowphase::should_skip_narrowphase_run(mixedPairs, bodies, shapes),
+        "should_skip run false when one pair dispatchable");
+        fuse::physics::narrowphase::should_skip_narrowphase_run({{sleepingA, sleepingB}}, bodies, shapes),
+        "should_skip run true when all pairs deepen-rejected");
+        fuse::physics::narrowphase::should_skip_narrowphase_run({}, bodies, shapes),
+        "should_skip run true for empty pair list");
