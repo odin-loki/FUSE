@@ -1291,3 +1291,11 @@ void testCookCacheWouldInvalidateGuards() {
     expectTrue(seeded.ok, "seed cook for would_invalidate guards ok");
     expectTrue(!cooker.cache().would_invalidate_source(""), "empty source would_invalidate is guarded");
     expectTrue(!cooker.cache().would_invalidate(0), "zero hash would_invalidate is guarded");
+
+// --- deepen additive from b79-cooker-hash-guards-89cd ---
+    expectTrue(zero_preflight.reason == fuse::project::CookHashRejectReason::ZeroSourceHash,
+    expectTrue(!cache.would_invalidate_source("/tmp/fuse_b79_would.obj"),
+    expectTrue(!cache.would_invalidate_output("/tmp/fuse_b79_would.fusemesh"),
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would.obj", 42u),
+    expectTrue(!cache.would_invalidate_downstream_of("/tmp/fuse_b79_would.fusemesh", {}, {}),
+               "would_invalidate_stale_content true after source content change");

@@ -560,3 +560,6 @@ CookHashPreflight preflight_import_paths(const std::string& input_path, const st
     case CookHashRejectReason::UnsupportedAssetKind:
         preflight.reason = CookHashRejectReason::UnsupportedAssetKind;
 CookHashPreflight preflight_manifest_entry_with_dependencies(const CookManifestEntry& entry,
+
+// --- deepen additive from b79-cooker-hash-guards-89cd ---
+        preflight.reason = CookHashRejectReason::InvalidCacheEntry;
