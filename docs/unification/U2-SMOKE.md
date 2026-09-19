@@ -14,8 +14,8 @@
 | Component | Target | Role |
 |-----------|--------|------|
 | FUSE core | `fuse_core` | `fuse::core::initialize()`, adaptive job pool |
-| T3D quarantine | `fuse_t3d_legacy` | Prefixed `fuse_t3d_Con_*`, `fuse_t3d_StringTable_*` |
-| T2D quarantine | `fuse_t2d_legacy` | Prefixed `fuse_t2d_Con_*`, `fuse_t2d_StringTable_*` |
+| T3D quarantine | `fuse_t3d_legacy` | Prefixed `fuse_t3d_Con_*` (8 APIs), `fuse_t3d_StringTable_*`, `image::compressMipsParallel` |
+| T2D quarantine | `fuse_t2d_legacy` | Prefixed `fuse_t2d_Con_*` (8 APIs), `fuse_t2d_StringTable_*` |
 
 Both legacy dimensions call `initialize()` / `shutdown()` sequentially on the **game thread** (main), exercising explicit init order without static-init collisions on shared `Con::` / `StringTable` globals.
 
@@ -51,8 +51,9 @@ Source/FUSE/Legacy/T2D/  → fuse_t2d_legacy
 
 Each lib wraps **collision-surface shims** that model the highest-severity symbols from [symbol-collision-report.md](./symbol-collision-report.md):
 
-- `Con::execute`, `Con::printf` → `fuse_t3d_Con_execute`, `fuse_t2d_Con_execute`, …
+- `Con::init`, `Con::execute`, `Con::executef`, `Con::printf`, `Con::errorf`, `Con::warnf`, `Con::getVariable`, `Con::setVariable` → prefixed `fuse_t3d_Con_*` / `fuse_t2d_Con_*`
 - `StringTable` singleton → `fuse_t3d_StringTable_intern`, `fuse_t2d_StringTable_intern`
+- `ImageUtil::ddsCompress` mip loop (Tier A) → `fuse::legacy::t3d::image::compressMipsParallel` via `parallel_for_indices` (WP-11 P1 quarantine route; squish linked, no Engine `.cpp`)
 
 Public C++ API: `fuse/legacy/t3d/api.hpp`, `fuse/legacy/t2d/api.hpp`.
 
@@ -96,16 +97,27 @@ No parallel tick; no cross-thread legacy calls (per [architecture-parallel.md](.
 
 **U2 exit interpretation:** one-process link of **prefixed quarantine libs** + core init is proven; full legacy engine tick is **not** claimed.
 
+### 3.1 Incremental quarantine progress (2026-09-19)
+
+| Surface | Status | Next step |
+|---------|--------|-----------|
+| `Con::` logging + variables | ✅ 8/33 APIs per dimension | `getIntVariable`, `setIntVariable`, `expandPath`, … |
+| `StringTable` | ✅ shim singleton per dimension | Route to FUSE core table (U3 / R14) |
+| Scene adapter stub | ✅ `LegacySceneObjectStub` ↔ `SceneObject3D` | Wire first real `SimObject` batch (U3) |
+| Image mip compress | ✅ `compressMipsParallel` (squish + `parallel_for`) | Land call-site swap in `imageUtils.cpp` when Engine batch compiles |
+| Full `SimObject` / Gui / script VM | ⏳ blocked | See §3 table |
+
 ---
 
 ## 4. Remaining symbol conflicts (trend tracking)
 
-| Metric (U0 baseline) | U2 status |
-|----------------------|-----------|
-| `Con::` collisions (33) | **3 shimmed** per dimension (`execute`, `printf` + intern) — **30 open** |
+| Metric (U0 baseline) | U2 status (2026-09-19) |
+|----------------------|------------------------|
+| `Con::` collisions (33) | **8 shimmed** per dimension (`init`, `execute`, `executef`, `printf`, `errorf`, `warnf`, `getVariable`, `setVariable`) + `StringTable_intern` — **25 open** |
 | Class collisions (311) | **0 merged** — adapters deferred to U3–U5 |
 | Basename collisions (237) | **0 merged** — include isolation via separate libs |
 | IMPLEMENT_CONOBJECT dupes (1) | **Unchanged** (`SimXMLDocument`) |
+| ThreadPool Tier A (image compress) | **1 route** — `image_compress_route.cpp` replaces `CompressJob`/`ThreadPool` pattern in quarantine |
 
 Re-run collision inventory at U3 when first real Engine `.cpp` batches land in quarantine libs.
 

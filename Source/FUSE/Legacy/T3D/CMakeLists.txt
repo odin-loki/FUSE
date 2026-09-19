@@ -1,10 +1,24 @@
 set(FUSE_T3D_LEGACY_PREFIX "fuse_t3d_" CACHE STRING "C symbol prefix for quarantined T3D globals")
 
+add_library(squish STATIC
+    ${CMAKE_SOURCE_DIR}/Engine/lib/squish/squish.cpp
+    ${CMAKE_SOURCE_DIR}/Engine/lib/squish/alpha.cpp
+    ${CMAKE_SOURCE_DIR}/Engine/lib/squish/clusterfit.cpp
+    ${CMAKE_SOURCE_DIR}/Engine/lib/squish/colourblock.cpp
+    ${CMAKE_SOURCE_DIR}/Engine/lib/squish/colourfit.cpp
+    ${CMAKE_SOURCE_DIR}/Engine/lib/squish/colourset.cpp
+    ${CMAKE_SOURCE_DIR}/Engine/lib/squish/maths.cpp
+    ${CMAKE_SOURCE_DIR}/Engine/lib/squish/rangefit.cpp
+    ${CMAKE_SOURCE_DIR}/Engine/lib/squish/singlecolourfit.cpp
+)
+target_include_directories(squish PUBLIC ${CMAKE_SOURCE_DIR}/Engine/lib/squish)
+
 add_library(fuse_t3d_legacy STATIC
     src/console_shim.cpp
     src/string_table_shim.cpp
     src/init.cpp
     src/scene_adapter.cpp
+    src/image_compress_route.cpp
 )
 
 add_library(fuse::t3d_legacy ALIAS fuse_t3d_legacy)
@@ -19,5 +33,5 @@ target_compile_definitions(fuse_t3d_legacy
         FUSE_T3D_LEGACY_PREFIX=${FUSE_T3D_LEGACY_PREFIX}
 )
 
-target_link_libraries(fuse_t3d_legacy PUBLIC fuse_core fuse_legacy_common fuse_world3d)
+target_link_libraries(fuse_t3d_legacy PUBLIC fuse_core fuse_legacy_common fuse_world3d PRIVATE squish)
 target_compile_features(fuse_t3d_legacy PUBLIC cxx_std_17)

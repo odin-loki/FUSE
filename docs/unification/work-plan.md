@@ -193,7 +193,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | S per sprint |
 | **Scope** | Route safe T3D/T2D loops to jobs ([FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) B1.5 table); shrink `_forceAllMainThread` reliance |
 | **Deps** | WP-03 |
-| **Status** | 🚧 Kickoff — [legacy-parallel-audit.md](./legacy-parallel-audit.md) inventories Tier A–D sites; `fuse::legacy::parallel_for` adapter + smoke sum landed; P1 next: `imageUtils.cpp` mip compress |
+| **Status** | 🚧 P1 landed — quarantine `compressMipsParallel` routes Tier A mip loop via `parallel_for_indices`; Engine `imageUtils.cpp` call-site swap deferred to U3 source batch; P2 terrain cell VB next |
 
 ---
 

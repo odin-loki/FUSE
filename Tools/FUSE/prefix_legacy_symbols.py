@@ -183,8 +183,28 @@ SHIM_ROOTS = {
 }
 
 SHIM_REQUIRED_SYMBOLS = {
-    "t3d": ["fuse_t3d_Con_execute", "fuse_t3d_Con_printf", "fuse_t3d_StringTable_intern"],
-    "t2d": ["fuse_t2d_Con_execute", "fuse_t2d_Con_printf", "fuse_t2d_StringTable_intern"],
+    "t3d": [
+        "fuse_t3d_Con_init",
+        "fuse_t3d_Con_execute",
+        "fuse_t3d_Con_executef",
+        "fuse_t3d_Con_printf",
+        "fuse_t3d_Con_errorf",
+        "fuse_t3d_Con_warnf",
+        "fuse_t3d_Con_getVariable",
+        "fuse_t3d_Con_setVariable",
+        "fuse_t3d_StringTable_intern",
+    ],
+    "t2d": [
+        "fuse_t2d_Con_init",
+        "fuse_t2d_Con_execute",
+        "fuse_t2d_Con_executef",
+        "fuse_t2d_Con_printf",
+        "fuse_t2d_Con_errorf",
+        "fuse_t2d_Con_warnf",
+        "fuse_t2d_Con_getVariable",
+        "fuse_t2d_Con_setVariable",
+        "fuse_t2d_StringTable_intern",
+    ],
 }
 
 

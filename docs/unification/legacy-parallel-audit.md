@@ -122,7 +122,7 @@ T2D has **no** `ThreadPool` ([concurrency-inventory.md](./concurrency-inventory.
 | Priority | Dimension | Site | Effort | WP |
 |----------|-----------|------|--------|-----|
 | P0 | FUSE | `fuse::legacy::parallel_for` adapter + smoke sum | S | WP-11 ✅ |
-| P1 | T3D | `imageUtils.cpp` mip compress → `parallel_for_indices` | S | WP-11 |
+| P1 | T3D | `imageUtils.cpp` mip compress → `parallel_for_indices` | S | WP-11 ✅ quarantine route (`image_compress_route.cpp`); Engine call-site swap pending U3 batch |
 | P2 | T3D | Terrain cell VB update (per-cell jobs) | M | WP-11 + U5 |
 | P3 | Both | World2D/3D cull over snapshots | M | WP-06 |
 | P4 | T3D | Retire `ThreadPool` for Tier A | M | WP-11 |
@@ -136,6 +136,7 @@ T2D has **no** `ThreadPool` ([concurrency-inventory.md](./concurrency-inventory.
 |-------|----------------|
 | Adapter compiles | `fuse_legacy_common` linked by `fuse_t3d_legacy` / `fuse_t2d_legacy` |
 | Smoke sum | `fuse_runtime_smoke` — `parallel_for_smoke_sum(0, 100, 10) == 4950` |
+| Mip compress route | `fuse_runtime_smoke` — `compressMipsParallel` on 2 mips, checksum non-zero |
 | Serial parity | `FUSE_JOBS_SINGLE_THREAD=ON` — same checksum as parallel |
 | TSan | `.github/workflows/fuse-tsan-nightly.yml` (post-migration) |
 | Force-main-thread | `_forceAllMainThread=1` — legacy ThreadPool path still works until P4 |

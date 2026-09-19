@@ -5,6 +5,7 @@
 #include <fuse/legacy/parallel_for.hpp>
 #include <fuse/legacy/t2d/api.hpp>
 #include <fuse/legacy/t3d/api.hpp>
+#include <fuse/legacy/t3d/image_compress.hpp>
 #include <fuse/log/logger.hpp>
 
 #if defined(FUSE_HAS_VULKAN_RHI)
@@ -14,6 +15,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <atomic>
+#include <cstring>
+#include <vector>
 
 namespace {
 
@@ -32,6 +35,53 @@ void runJobSmoke() {
         sum.fetch_add(i, std::memory_order_relaxed);
     });
     check(sum.load(std::memory_order_acquire) == 4950u, "parallel_for sum matches serial expectation");
+}
+
+void runLegacyConSmoke() {
+    fuse::legacy::t3d::Con::setVariable("$prefixed", "t3d");
+    fuse::legacy::t2d::Con::setVariable("$prefixed", "t2d");
+    check(std::strcmp(fuse::legacy::t3d::Con::getVariable("$FuseT3D"), "1") == 0, "t3d boot variable set");
+    check(std::strcmp(fuse::legacy::t2d::Con::getVariable("$FuseT2D"), "1") == 0, "t2d boot variable set");
+    check(std::strcmp(fuse::legacy::t3d::Con::getVariable("$prefixed"), "t3d") == 0, "t3d variable round-trip");
+    check(std::strcmp(fuse::legacy::t2d::Con::getVariable("$prefixed"), "t2d") == 0, "t2d variable round-trip");
+
+    fuse::legacy::t3d::Con::warnf("[t3d] warnf shim");
+    fuse::legacy::t2d::Con::warnf("[t2d] warnf shim");
+    fuse::legacy::t3d::Con::errorf("[t3d] errorf shim");
+    fuse::legacy::t2d::Con::errorf("[t2d] errorf shim");
+    fuse::legacy::t3d::Con::executef("echo %s", "T3D executef");
+    fuse::legacy::t2d::Con::executef("echo %s", "T2D executef");
+}
+
+void runImageCompressSmoke() {
+    constexpr fuse::u32 kWidth = 8;
+    constexpr fuse::u32 kHeight = 8;
+    constexpr fuse::u32 kMipCount = 2;
+
+    std::vector<fuse::u8> srcRGBA(kWidth * kHeight * 4, 0xAB);
+    std::vector<fuse::legacy::t3d::image::MipLevel> mips(kMipCount);
+    std::vector<std::vector<fuse::u8>> dstStorage(kMipCount);
+
+    for (fuse::u32 mip = 0; mip < kMipCount; ++mip) {
+        const fuse::u32 mipWidth = kWidth >> mip;
+        const fuse::u32 mipHeight = kHeight >> mip;
+        dstStorage[mip].resize(fuse::legacy::t3d::image::compressedMipByteCount(
+            mipWidth, mipHeight, fuse::legacy::t3d::image::CompressFormat::BC1));
+        mips[mip].srcRGBA = srcRGBA.data();
+        mips[mip].dst = dstStorage[mip].data();
+        mips[mip].width = mipWidth;
+        mips[mip].height = mipHeight;
+    }
+
+    check(fuse::legacy::t3d::image::compressMipsParallel(
+              mips.data(), kMipCount, fuse::legacy::t3d::image::CompressFormat::BC1,
+              fuse::legacy::t3d::image::CompressQuality::Low),
+          "parallel mip compress completes");
+
+    const fuse::u32 checksum =
+        fuse::legacy::t3d::image::compressedMipsChecksum(mips.data(), kMipCount,
+                                                        fuse::legacy::t3d::image::CompressFormat::BC1);
+    check(checksum != 0u, "compressed mip checksum non-zero");
 }
 
 } // namespace
@@ -56,11 +106,15 @@ int main() {
     check(fuse::legacy::t3d::isInitialized(), "t3d legacy running");
     check(fuse::legacy::t2d::isInitialized(), "t2d legacy running");
 
+    runLegacyConSmoke();
+
     fuse::legacy::t3d::Con::execute("echo T3D dimension alive");
     fuse::legacy::t2d::Con::execute("echo T2D dimension alive");
 
     check(fuse::legacy::t3d::stringTableEntryCount() >= 1u, "t3d string table populated");
     check(fuse::legacy::t2d::stringTableEntryCount() >= 1u, "t2d string table populated");
+
+    runImageCompressSmoke();
 
 #if defined(FUSE_HAS_VULKAN_RHI)
     {
