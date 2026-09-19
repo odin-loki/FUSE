@@ -63,6 +63,49 @@ bool should_skip_hrtf_ir_convolution(const HrtfIrPreflight& preflight) {
     return preflight.should_skip_convolution();
 }
 
+const char* hrtf_ir_reject_reason_label(HrtfIrRejectReason reason) {
+    switch (reason) {
+    case HrtfIrRejectReason::None:
+        return "none";
+    case HrtfIrRejectReason::NullSamples:
+        return "null_samples";
+    case HrtfIrRejectReason::ZeroLength:
+        return "zero_length";
+    case HrtfIrRejectReason::MalformedIr:
+        return "malformed_ir";
+    }
+    return "unknown";
+}
+
+HrtfIrRejectReason classify_hrtf_ir_reject(const HrtfIrPreflight& preflight) {
+    if (preflight.can_convolve()) {
+        return HrtfIrRejectReason::None;
+    }
+    if (preflight.malformedIr) {
+        return HrtfIrRejectReason::MalformedIr;
+    }
+    if (preflight.nullSamples) {
+        return HrtfIrRejectReason::NullSamples;
+    }
+    if (preflight.zeroLength) {
+        return HrtfIrRejectReason::ZeroLength;
+    }
+    return HrtfIrRejectReason::NullSamples;
+}
+
+bool preflight_hrtf_ir_ready(const HrtfIrStub& ir, HrtfIrRejectReason* reason) {
+    const HrtfIrRejectReason reject = classify_hrtf_ir_reject(preflight_hrtf_ir(ir));
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == HrtfIrRejectReason::None;
+}
+
+bool try_preflight_hrtf_ir(const HrtfIrStub& ir, HrtfIrRejectReason& reason) {
+    reason = classify_hrtf_ir_reject(preflight_hrtf_ir(ir));
+    return reason == HrtfIrRejectReason::None;
+}
+
 HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
                                              const Vec3& rel_listener) {
     HrtfPanPathPreflight preflight{};
@@ -92,6 +135,57 @@ bool should_skip_hrtf_pan_path_preflight(const HrtfPanPathPreflight& preflight) 
 
 bool uses_ild_itd_stub_hrtf_pan_path(const HrtfPanPathPreflight& preflight) {
     return preflight.uses_ild_itd_stub();
+}
+
+const char* hrtf_pan_path_reject_reason_label(HrtfPanPathRejectReason reason) {
+    switch (reason) {
+    case HrtfPanPathRejectReason::None:
+        return "none";
+    case HrtfPanPathRejectReason::HrtfDisabled:
+        return "hrtf_disabled";
+    case HrtfPanPathRejectReason::CoLocated:
+        return "co_located";
+    }
+    return "unknown";
+}
+
+HrtfPanPathRejectReason classify_hrtf_pan_path_reject(const HrtfPanPathPreflight& preflight) {
+    if (!preflight.skipped) {
+        return HrtfPanPathRejectReason::None;
+    }
+    if (preflight.hrtfDisabled) {
+        return HrtfPanPathRejectReason::HrtfDisabled;
+    }
+    if (preflight.coLocated) {
+        return HrtfPanPathRejectReason::CoLocated;
+    }
+    return HrtfPanPathRejectReason::None;
+}
+
+bool preflight_hrtf_pan_path_ready(bool hrtf_enabled, const HrtfIrStub& ir,
+                                   const Vec3& rel_listener, HrtfPanPathRejectReason* reason) {
+    const HrtfPanPathRejectReason reject =
+        classify_hrtf_pan_path_reject(preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener));
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == HrtfPanPathRejectReason::None;
+}
+
+bool preflight_hrtf_pan_path_ready(bool hrtf_enabled, const Vec3& rel_listener,
+                                   HrtfPanPathRejectReason* reason) {
+    return preflight_hrtf_pan_path_ready(hrtf_enabled, make_empty_hrtf_ir(), rel_listener, reason);
+}
+
+bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+                                 HrtfPanPathRejectReason& reason) {
+    reason = classify_hrtf_pan_path_reject(preflight_hrtf_pan_path(hrtf_enabled, ir, rel_listener));
+    return reason == HrtfPanPathRejectReason::None;
+}
+
+bool try_preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener,
+                                 HrtfPanPathRejectReason& reason) {
+    return try_preflight_hrtf_pan_path(hrtf_enabled, make_empty_hrtf_ir(), rel_listener, reason);
 }
 
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
@@ -395,6 +489,57 @@ bool should_skip_hrtf_attenuation_coupling_preflight(const HrtfAttenuationCoupli
     return preflight.should_skip();
 }
 
+const char* hrtf_attenuation_coupling_reject_reason_label(HrtfAttenuationCouplingRejectReason reason) {
+    switch (reason) {
+    case HrtfAttenuationCouplingRejectReason::None:
+        return "none";
+    case HrtfAttenuationCouplingRejectReason::BypassPath:
+        return "bypass_path";
+    case HrtfAttenuationCouplingRejectReason::UnityAttenuation:
+        return "unity_attenuation";
+    }
+    return "unknown";
+}
+
+HrtfAttenuationCouplingRejectReason classify_hrtf_attenuation_coupling_reject(
+    const HrtfAttenuationCouplingPreflight& preflight) {
+    if (!preflight.skipped) {
+        return HrtfAttenuationCouplingRejectReason::None;
+    }
+    if (preflight.bypassPath) {
+        return HrtfAttenuationCouplingRejectReason::BypassPath;
+    }
+    if (preflight.unityAttenuation) {
+        return HrtfAttenuationCouplingRejectReason::UnityAttenuation;
+    }
+    return HrtfAttenuationCouplingRejectReason::None;
+}
+
+bool preflight_hrtf_attenuation_coupling_ready(HrtfPanPath path, float distance_attenuation,
+                                               float occlusion_gain,
+                                               const HrtfAttenuationCoupling& coupling,
+                                               const BinauralPanParams& params,
+                                               HrtfAttenuationCouplingRejectReason* reason) {
+    const HrtfAttenuationCouplingRejectReason reject = classify_hrtf_attenuation_coupling_reject(
+        preflight_hrtf_attenuation_coupling(path, distance_attenuation, occlusion_gain, coupling,
+                                            params));
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == HrtfAttenuationCouplingRejectReason::None;
+}
+
+bool try_preflight_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
+                                             float occlusion_gain,
+                                             const HrtfAttenuationCoupling& coupling,
+                                             const BinauralPanParams& params,
+                                             HrtfAttenuationCouplingRejectReason& reason) {
+    reason = classify_hrtf_attenuation_coupling_reject(
+        preflight_hrtf_attenuation_coupling(path, distance_attenuation, occlusion_gain, coupling,
+                                            params));
+    return reason == HrtfAttenuationCouplingRejectReason::None;
+}
+
 float compute_hrtf_distance_factor(float distance_attenuation,
                                    const BinauralPanParams& params) {
     const float atten = clamp_hrtf_attenuation(distance_attenuation);
@@ -560,6 +705,168 @@ bool should_skip_hrtf_binaural_convolution(const HrtfBinauralPreflight& prefligh
 
 bool uses_ild_itd_stub_hrtf_binaural(const HrtfBinauralPreflight& preflight) {
     return preflight.uses_ild_itd_stub();
+}
+
+const char* hrtf_binaural_reject_reason_label(HrtfBinauralRejectReason reason) {
+    switch (reason) {
+    case HrtfBinauralRejectReason::None:
+        return "none";
+    case HrtfBinauralRejectReason::HrtfDisabled:
+        return "hrtf_disabled";
+    case HrtfBinauralRejectReason::CoLocated:
+        return "co_located";
+    }
+    return "unknown";
+}
+
+const char* hrtf_binaural_convolve_reject_reason_label(HrtfBinauralConvolveRejectReason reason) {
+    switch (reason) {
+    case HrtfBinauralConvolveRejectReason::None:
+        return "none";
+    case HrtfBinauralConvolveRejectReason::HrtfDisabled:
+        return "hrtf_disabled";
+    case HrtfBinauralConvolveRejectReason::CoLocated:
+        return "co_located";
+    case HrtfBinauralConvolveRejectReason::EmptyIr:
+        return "empty_ir";
+    case HrtfBinauralConvolveRejectReason::MalformedIr:
+        return "malformed_ir";
+    }
+    return "unknown";
+}
+
+const char* hrtf_binaural_narrow_reject_reason_label(HrtfBinauralNarrowRejectReason reason) {
+    switch (reason) {
+    case HrtfBinauralNarrowRejectReason::None:
+        return "none";
+    case HrtfBinauralNarrowRejectReason::BypassPath:
+        return "bypass_path";
+    case HrtfBinauralNarrowRejectReason::UnityAttenuation:
+        return "unity_attenuation";
+    }
+    return "unknown";
+}
+
+HrtfBinauralRejectReason classify_hrtf_binaural_reject(const HrtfBinauralPreflight& preflight) {
+    const HrtfPanPathRejectReason pan_reject = classify_hrtf_pan_path_reject(preflight.panPath);
+    switch (pan_reject) {
+    case HrtfPanPathRejectReason::HrtfDisabled:
+        return HrtfBinauralRejectReason::HrtfDisabled;
+    case HrtfPanPathRejectReason::CoLocated:
+        return HrtfBinauralRejectReason::CoLocated;
+    case HrtfPanPathRejectReason::None:
+    default:
+        return HrtfBinauralRejectReason::None;
+    }
+}
+
+HrtfBinauralConvolveRejectReason classify_hrtf_binaural_convolve_reject(
+    const HrtfBinauralPreflight& preflight) {
+    if (preflight.can_convolve()) {
+        return HrtfBinauralConvolveRejectReason::None;
+    }
+    const HrtfPanPathRejectReason pan_reject = classify_hrtf_pan_path_reject(preflight.panPath);
+    if (pan_reject == HrtfPanPathRejectReason::HrtfDisabled) {
+        return HrtfBinauralConvolveRejectReason::HrtfDisabled;
+    }
+    if (pan_reject == HrtfPanPathRejectReason::CoLocated) {
+        return HrtfBinauralConvolveRejectReason::CoLocated;
+    }
+    const HrtfIrRejectReason ir_reject = classify_hrtf_ir_reject(preflight.ir);
+    if (ir_reject == HrtfIrRejectReason::MalformedIr) {
+        return HrtfBinauralConvolveRejectReason::MalformedIr;
+    }
+    return HrtfBinauralConvolveRejectReason::EmptyIr;
+}
+
+HrtfBinauralNarrowRejectReason classify_hrtf_binaural_narrow_reject(
+    const HrtfBinauralPreflight& preflight) {
+    const HrtfAttenuationCouplingRejectReason coupling_reject =
+        classify_hrtf_attenuation_coupling_reject(preflight.attenuationCoupling);
+    switch (coupling_reject) {
+    case HrtfAttenuationCouplingRejectReason::BypassPath:
+        return HrtfBinauralNarrowRejectReason::BypassPath;
+    case HrtfAttenuationCouplingRejectReason::UnityAttenuation:
+        return HrtfBinauralNarrowRejectReason::UnityAttenuation;
+    case HrtfAttenuationCouplingRejectReason::None:
+    default:
+        return HrtfBinauralNarrowRejectReason::None;
+    }
+}
+
+bool preflight_hrtf_binaural_ready(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+                                   float distance_attenuation, float occlusion_gain,
+                                   const HrtfAttenuationCoupling& coupling,
+                                   const BinauralPanParams& params,
+                                   HrtfBinauralRejectReason* reason) {
+    const HrtfBinauralRejectReason reject = classify_hrtf_binaural_reject(
+        preflight_hrtf_binaural(hrtf_enabled, ir, rel_listener, distance_attenuation, occlusion_gain,
+                                coupling, params));
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == HrtfBinauralRejectReason::None;
+}
+
+bool preflight_hrtf_binaural_ready(bool hrtf_enabled, const Vec3& rel_listener,
+                                   float distance_attenuation, float occlusion_gain,
+                                   const HrtfAttenuationCoupling& coupling,
+                                   const BinauralPanParams& params,
+                                   HrtfBinauralRejectReason* reason) {
+    return preflight_hrtf_binaural_ready(hrtf_enabled, make_empty_hrtf_ir(), rel_listener,
+                                         distance_attenuation, occlusion_gain, coupling, params,
+                                         reason);
+}
+
+bool try_preflight_hrtf_binaural(bool hrtf_enabled, const HrtfIrStub& ir, const Vec3& rel_listener,
+                                 float distance_attenuation, float occlusion_gain,
+                                 const HrtfAttenuationCoupling& coupling,
+                                 const BinauralPanParams& params,
+                                 HrtfBinauralRejectReason& reason) {
+    reason = classify_hrtf_binaural_reject(
+        preflight_hrtf_binaural(hrtf_enabled, ir, rel_listener, distance_attenuation, occlusion_gain,
+                                coupling, params));
+    return reason == HrtfBinauralRejectReason::None;
+}
+
+bool try_preflight_hrtf_binaural(bool hrtf_enabled, const Vec3& rel_listener,
+                                 float distance_attenuation, float occlusion_gain,
+                                 const HrtfAttenuationCoupling& coupling,
+                                 const BinauralPanParams& params,
+                                 HrtfBinauralRejectReason& reason) {
+    return try_preflight_hrtf_binaural(hrtf_enabled, make_empty_hrtf_ir(), rel_listener,
+                                         distance_attenuation, occlusion_gain, coupling, params,
+                                         reason);
+}
+
+bool preflight_hrtf_binaural_convolve_ready(const HrtfBinauralPreflight& preflight,
+                                            HrtfBinauralConvolveRejectReason* reason) {
+    const HrtfBinauralConvolveRejectReason reject = classify_hrtf_binaural_convolve_reject(preflight);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == HrtfBinauralConvolveRejectReason::None;
+}
+
+bool try_preflight_hrtf_binaural_convolve(const HrtfBinauralPreflight& preflight,
+                                          HrtfBinauralConvolveRejectReason& reason) {
+    reason = classify_hrtf_binaural_convolve_reject(preflight);
+    return reason == HrtfBinauralConvolveRejectReason::None;
+}
+
+bool preflight_hrtf_binaural_narrow_ready(const HrtfBinauralPreflight& preflight,
+                                            HrtfBinauralNarrowRejectReason* reason) {
+    const HrtfBinauralNarrowRejectReason reject = classify_hrtf_binaural_narrow_reject(preflight);
+    if (reason != nullptr) {
+        *reason = reject;
+    }
+    return reject == HrtfBinauralNarrowRejectReason::None;
+}
+
+bool try_preflight_hrtf_binaural_narrow(const HrtfBinauralPreflight& preflight,
+                                          HrtfBinauralNarrowRejectReason& reason) {
+    reason = classify_hrtf_binaural_narrow_reject(preflight);
+    return reason == HrtfBinauralNarrowRejectReason::None;
 }
 
 BinauralPanGains compute_binaural_pan_gains_from_preflight(const HrtfBinauralPreflight& preflight,
