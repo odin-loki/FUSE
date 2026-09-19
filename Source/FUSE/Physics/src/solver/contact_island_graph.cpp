@@ -4,6 +4,70 @@
 
 namespace fuse::physics {
 
+const char* island_graph_build_reject_reason_name(IslandGraphBuildRejectReason reason) {
+    switch (reason) {
+    case IslandGraphBuildRejectReason::None:
+        return "None";
+    case IslandGraphBuildRejectReason::EmptyInput:
+        return "EmptyInput";
+    case IslandGraphBuildRejectReason::UnsafeContactRefs:
+        return "UnsafeContactRefs";
+    case IslandGraphBuildRejectReason::UnsafeDistanceRefs:
+        return "UnsafeDistanceRefs";
+    default:
+        return "Unknown";
+    }
+}
+
+IslandGraphBuildRejectReason island_graph_build_reject_reason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    if (bodyCount == 0u && contacts.empty() && distanceConstraints.empty()) {
+        return IslandGraphBuildRejectReason::EmptyInput;
+    }
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (!contact.valid) {
+            continue;
+        }
+        if (contact.bodyA >= bodyCount || contact.bodyB >= bodyCount) {
+            return IslandGraphBuildRejectReason::UnsafeContactRefs;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (constraint.bodyA >= bodyCount || constraint.bodyB >= bodyCount) {
+            return IslandGraphBuildRejectReason::UnsafeDistanceRefs;
+        }
+    }
+
+    return IslandGraphBuildRejectReason::None;
+}
+
+bool island_graph_build_rejects_for_reason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints,
+    IslandGraphBuildRejectReason expected) {
+    return island_graph_build_reject_reason(bodyCount, contacts, distanceConstraints) == expected;
+}
+
+bool can_skip_island_graph_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    return island_graph_build_reject_reason(bodyCount, contacts, distanceConstraints) !=
+           IslandGraphBuildRejectReason::None;
+}
+
+bool should_run_island_graph_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    return !can_skip_island_graph_build(bodyCount, contacts, distanceConstraints);
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
@@ -41,6 +105,17 @@ void ContactIslandGraph::unionBodies(u32 a, u32 b) {
     } else {
         parent_[rootA] = rootB;
     }
+}
+
+bool ContactIslandGraph::build_guarded(u32 bodyCount,
+                                     const std::vector<narrowphase::ContactManifold>& contacts,
+                                     const std::vector<DistanceConstraint>& distanceConstraints) {
+    if (can_skip_island_graph_build(bodyCount, contacts, distanceConstraints)) {
+        clear();
+        return false;
+    }
+    build(bodyCount, contacts, distanceConstraints);
+    return true;
 }
 
 void ContactIslandGraph::build(u32 bodyCount,
