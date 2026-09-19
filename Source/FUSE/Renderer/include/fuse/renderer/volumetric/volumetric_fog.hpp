@@ -888,3 +888,12 @@ bool preflightDensityLookupCoord(const FroxelDensityGrid& grid,
 
 // --- deepen additive from deepen-froxel-volumetrics-b511-997a ---
     static ScreenMappingRejectReason classifyScreenDepthToSampleCoordsReject(f32 screenX,
+
+// --- deepen additive from froxel-volumetric-b511-deepen-ea42 ---
+    static ScreenMappingRejectReason classifyFroxelScreenMappingReject(f32 screenX,
+    static bool preflightFroxelScreenMapping(f32 screenX,
+DensityLookupRejectReason classifyFroxelDensityLookupCoordReject(const FroxelDensityGrid& grid,
+bool preflightFroxelDensityLookup(const FroxelDensityGrid& grid,
+bool preflightFroxelDensityLookupAtCoord(const FroxelDensityGrid& grid,
+GridDensityRejectReason classifyFroxelGridDensityReject(const FroxelDensityGrid& grid,
+bool preflightFroxelGridDensity(const FroxelDensityGrid& grid,

@@ -2326,3 +2326,16 @@ ScreenMappingRejectReason FroxelGridLayout::classifyScreenDepthToSampleCoordsRej
     outReason = classifyScreenDepthMappingReject(screenX, screenY, viewDepth, desc, camera);
     const DensityLookupRejectReason baseReason = classifyDensityLookupReject(grid, desc, 0u);
     if (densityLookupRejectReasonIsBlocking(baseReason)) {
+
+// --- deepen additive from froxel-volumetric-b511-deepen-ea42 ---
+ScreenMappingRejectReason FroxelGridLayout::classifyFroxelScreenMappingReject(f32 screenX,
+bool FroxelGridLayout::preflightFroxelScreenMapping(f32 screenX,
+        classifyFroxelScreenMappingReject(screenX, screenY, viewDepth, desc, camera);
+DensityLookupRejectReason classifyFroxelDensityLookupCoordReject(const FroxelDensityGrid& grid,
+bool preflightFroxelDensityLookup(const FroxelDensityGrid& grid,
+    const DensityLookupRejectReason reject = classifyFroxelDensityLookupReject(grid, desc, index);
+bool preflightFroxelDensityLookupAtCoord(const FroxelDensityGrid& grid,
+        classifyFroxelDensityLookupCoordReject(grid, desc, tileX, tileY, sliceZ);
+GridDensityRejectReason classifyFroxelGridDensityReject(const FroxelDensityGrid& grid,
+bool preflightFroxelGridDensity(const FroxelDensityGrid& grid,
+    const GridDensityRejectReason reject = classifyFroxelGridDensityReject(grid, desc, epsilon);
