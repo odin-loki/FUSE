@@ -189,6 +189,8 @@ struct PickPreflight {
         return !emptyRay && !emptyHit && !nonFiniteRay && !nonFiniteHit && !invalidPickConfig &&
                !invalidDimensions && !outOfBounds && !screenMiss && !pickMiss;
     }
+/// Read-only pick diagnostics — no mutation (B6.4 deepen follow-up).
+    bool canPick = false;
 };
 
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
@@ -231,6 +233,18 @@ math::Vec3 snapScaleVec(const math::Vec3& scale, const GizmoSnapSettings& settin
 /// Non-mutating snap-drag predicate — same guards as `trySnapDragDelta` (B6.4 deepen follow-up).
 bool canSnapDragDelta(GizmoMode mode, const GizmoSnapSettings& settings);
 bool canSnapDragDelta(f32 delta, GizmoMode mode, const GizmoSnapSettings& settings);
+/// Read-only snap diagnostics — no mutation (B6.4 deepen follow-up).
+    bool canApply = false;
+};
+
+
+/// Read-only update-drag diagnostics — no mutation (B6.4 deepen follow-up).
+struct UpdateDragPreflight {
+    bool canUpdate = false;
+    bool notDragging = false;
+    bool emptyHit = false;
+
+UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit, bool dragging);
 
 /// Read-only begin-drag diagnostics — no mutation (B6.4 deepen pass).
 struct BeginDragPreflight {
@@ -773,6 +787,12 @@ public:
     bool tryPickAxis(const GizmoHitTest& hit, GizmoAxis& outAxis) const;
     [[nodiscard]] bool canPickAxis(const GizmoRay& ray, const GizmoTransform& transform) const;
     [[nodiscard]] bool canPickAxis(const GizmoHitTest& hit) const;
+    /// Read-only pick diagnostics — same guards as `canPickAxis` (B6.4 deepen follow-up).
+    [[nodiscard]] PickPreflight preflightPick(const GizmoHitTest& hit) const;
+    [[nodiscard]] PickPreflight preflightPick(const GizmoRay& ray,
+                                              const GizmoTransform& transform) const;
+    /// Read-only snap diagnostics for the active mode (B6.4 deepen follow-up).
+    [[nodiscard]] SnapPreflight preflightSnap() const;
 
     GizmoResult beginDrag(const GizmoHitTest& hit, const GizmoTransform& current);
     GizmoResult beginDrag(const GizmoRay& ray, const GizmoTransform& current);
@@ -856,6 +876,10 @@ public:
     bool tryEndDrag(GizmoResult& out);
     /// Guarded update-drag — returns false when preflight rejects the hit (B6.4 deepen follow-up).
     bool tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out);
+    /// Non-mutating update-drag predicate — rejects inactive drag and empty viewport (B6.4 deepen follow-up).
+    [[nodiscard]] bool canUpdateDrag(const GizmoHitTest& hit) const;
+    /// Read-only update-drag diagnostics — same guards as `canUpdateDrag` (B6.4 deepen follow-up).
+    [[nodiscard]] UpdateDragPreflight preflightUpdateDrag(const GizmoHitTest& hit) const;
     GizmoResult endDrag();
     /// Cancel an active drag without committing transform changes (B6.4 deepen follow-up).
     void cancelDrag();
