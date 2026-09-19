@@ -1406,6 +1406,9 @@ bool AssetCooker::should_skip_reconcile_invalidation(const CookManifest& manifes
     return !should_skip_upstream_invalidation(manifest, changed_source);
 
     return !should_skip_stale_dependency_invalidation(manifest);
+
+
+
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

@@ -573,6 +573,13 @@ public:
                                                             const std::string& changed_source) const;
     [[nodiscard]] bool would_invalidate_stale_dependency_hashes(const CookManifest& manifest) const;
 
+    /// Read-only skip guards — mirror invalidation/reconcile probes (B7.9 deepen).
+    [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
+                                                       const std::string& changed_source) const;
+    [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
+    [[nodiscard]] bool should_skip_prune_reconcile() const;
+    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
+
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
 

@@ -1043,4 +1043,18 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] bool should_skip_fnv1a64_bytes(const u8* data, usize size);
 [[nodiscard]] bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
 
+/// Read-only hash preflight skip guards — mirror `preflight_*` without computing keys (B7.9 deepen).
+[[nodiscard]] bool should_skip_file_content_hash(const std::string& path);
+[[nodiscard]] bool should_skip_mesh_import_hash(const MeshImportDesc& desc);
+[[nodiscard]] bool should_skip_texture_import_hash(const TextureImportDesc& desc);
+[[nodiscard]] bool should_skip_audio_import_hash(const AudioImportDesc& desc);
+[[nodiscard]] bool should_skip_manifest_entry_hash(const CookManifestEntry& entry);
+[[nodiscard]] bool should_skip_upstream_dependencies_hash(
+    const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
+[[nodiscard]] bool should_skip_cook_cache_key(u64 source_hash, u64 upstream_hash);
+[[nodiscard]] bool should_skip_fnv1a64_bytes(const u8* data, usize size);
+[[nodiscard]] bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash);
+/// True when `content_hash` is zero — mirrors lookup/store guards (B7.9 deepen).
+[[nodiscard]] bool should_skip_cache_lookup(u64 content_hash);
+
 } // namespace fuse::project
