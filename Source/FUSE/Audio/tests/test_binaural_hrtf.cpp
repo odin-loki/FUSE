@@ -2833,3 +2833,7 @@ void testHrtfBinauralCouplingRejectReasonGuards() {
 // --- deepen additive from b7-2-hrtf-reject-reasons-72a1 ---
     fuse::audio::HrtfIrRejectReason ir_reason = fuse::audio::HrtfIrRejectReason::None;
     fuse::audio::HrtfBinauralRejectReason binaural_reason =
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-dda1 ---
+    fuse::audio::HrtfIrRejectReason optional_reason = fuse::audio::HrtfIrRejectReason::None;
+    expectTrue(optional_reason == fuse::audio::HrtfIrRejectReason::NullSamples,
