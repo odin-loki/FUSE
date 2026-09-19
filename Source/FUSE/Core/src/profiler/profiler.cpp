@@ -320,6 +320,13 @@ bool eventNameMatches(const ProfileEvent& event, const char* name) {
 
 bool isExportableFlowEvent(const ProfileEvent& event, u32 flowId) {
     return isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name);
+bool eventMatchesName(const ProfileEvent& event, const char* name) {
+    return name != nullptr && name[0] != '\0' && event.name != nullptr && event.name[0] != '\0'
+        && std::strcmp(event.name, name) == 0;
+
+bool eventMatchesFlowId(const ProfileEvent& event, u32 flowId) {
+    return (event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)
+        && event.scopeId == flowId && event.name != nullptr && event.name[0] != '\0';
 }
 
 } // namespace
@@ -1161,6 +1168,14 @@ bool isScopeNameBalancedInBuffer(const char* name) {
     return beginCount == endCount;
 }
 
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -1406,6 +1421,19 @@ bool isLastEventIndex(u32 index) {
 }
 
 u32 countEventsWithPhase(EventPhase phase) {
+u32 invalidNameEventCount() {
+    return nonExportableEventCount();
+}
+
+bool hasInvalidNameEvents() {
+    return invalidNameEventCount() > 0u;
+
+u32 nonExportableEventCount() {
+    const u32 total = eventCount();
+    const u32 exportable = exportableEventCount();
+    return total >= exportable ? total - exportable : 0u;
+
+u32 exportableEventCount() {
     u32 count = 0u;
     const u32 total = eventCount();
     for (u32 i = 0u; i < total; ++i) {
@@ -2432,6 +2460,11 @@ bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
     const u32 index = findLastEventIndexByName(name);
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
@@ -2468,6 +2501,8 @@ bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 bool tryFirstFlowEvent(u32 flowId, ProfileEvent& outEvent) {
+
+
     const u32 index = findFirstEventIndexByFlowId(flowId);
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
@@ -2492,16 +2527,17 @@ bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 bool tryLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
 
-}
 
 bool tryFindFirstEventByFlow(u32 flowId, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByFlow(flowId);
 
-    outEvent = eventAt(index);
-    return isValidProfileEvent(outEvent);
 
 bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByFlow(flowId);
+
+
+
+
 
 
 u32 firstEventIndex() {
@@ -3219,6 +3255,19 @@ bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+
+
+
+        if (eventMatchesName(eventAt(index), name)) {
+
+
+
+
+        if (eventMatchesFlowId(eventAt(index), flowId)) {
+
+
+
 
 
 u32 lastEventIndex() {

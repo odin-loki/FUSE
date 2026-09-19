@@ -235,6 +235,8 @@ struct ChromeTraceExportPreflight {
     bool hasExportBlockers() const {
         return profilerDisabled || hasUnbalancedNesting() || flowDepthDetached
             || crossThreadFlowHandoffPending || hasUnpairedAsyncFlowsInBuffer || hasInvalidNameEvents;
+    bool canExportSafely() const {
+        return canExport() && !hasUnbalancedNesting() && !flowDepthDetached && !crossThreadFlowHandoffPending;
     }
     bool canExportSafely() const {
         return canExport() && !hasExportBlockers();
@@ -1041,6 +1043,7 @@ u32 findLastEventIndexByFlow(u32 flowId);
 u32 countEventsByFlow(u32 flowId);
 u32 openFlowEventCountForId(u32 flowId);
 bool isFlowIdBalanced(u32 flowId);
+u32 nonExportableEventCount();
 const ProfileEvent& emptyProfileEvent();
 const ProfileEvent& eventAt(u32 index);
 const char* eventNameAt(u32 index);
