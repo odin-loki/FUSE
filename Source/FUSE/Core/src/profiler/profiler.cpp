@@ -41,7 +41,6 @@ std::mutex g_exportMutex;
 
 bool isRecordableName(const char* name) {
     return name != nullptr && name[0] != '\0';
-std::atomic<u32> g_droppedEventCount{0};
 std::atomic<u32> g_totalRecordedEvents{0};
 
 
@@ -67,6 +66,10 @@ bool shouldRejectEventName(const char* name) {
         noteRejectedEventName(name);
     if (name[0] == '\0') {
     if (isWhitespaceOnlyEventName(name)) {
+
+
+bool isAsyncFlowPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
 }
 
 u64 nowNanoseconds() {
@@ -1154,6 +1157,9 @@ bool isNullOrEmptyEventName(const char* name) {
             return false;
 bool isInvalidEventIndex(u32 index) {
     return index == kInvalidEventIndex;
+        if (!std::isspace(static_cast<unsigned char>(*cursor))) {
+        }
+    return true;
 
 bool isValidEventName(const char* name) {
 
@@ -2290,9 +2296,29 @@ bool tryLastExportableEvent(ProfileEvent& outEvent) {
 bool tryFirstEventByName(const char* name, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByName(name);
 
-}
 
 bool tryLastEventByName(const char* name, ProfileEvent& outEvent) {
+
+bool tryExportableLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+
+
+bool tryFindFirstEventIndexByName(const char* name, u32& outIndex) {
+        outIndex = kInvalidEventIndex;
+
+    outIndex = index;
+    return true;
+
+bool tryFindFirstEventIndexByFlowId(u32 flowId, u32& outIndex) {
+    const u32 index = findFirstEventIndexByFlowId(flowId);
+
+
+bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
+
+    outEvent = eventAt(index);
+    return isValidProfileEvent(outEvent);
+
+bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByName(name);
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
@@ -2321,6 +2347,11 @@ bool tryLastFlowFinishById(u32 flowId, ProfileEvent& outEvent) {
 
 
 bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+    outEvent = eventAt(index);
+    return isValidProfileEvent(outEvent);
+
+bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByFlowId(flowId);
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
@@ -2329,6 +2360,16 @@ bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 bool tryLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
     const u32 index = findLastEventIndexByFlowId(flowId);
+
+    }
+
+    outEvent = eventAt(index);
+    return isValidProfileEvent(outEvent);
+
+bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
 
 
 u32 firstEventIndex() {
@@ -2916,6 +2957,17 @@ bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+        if (isAsyncFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -3497,6 +3549,9 @@ NestingConsistencyPreflight preflightNestingConsistency() {
     preflight.hasActiveScope = hasActiveScope();
     preflight.hasActiveAsyncFlowNesting = hasActiveAsyncFlowNesting();
     preflight.hasUnbalancedBufferedFlowPairs = hasUnbalancedBufferedFlowPairs();
+
+
+
     return preflight;
 }
 
