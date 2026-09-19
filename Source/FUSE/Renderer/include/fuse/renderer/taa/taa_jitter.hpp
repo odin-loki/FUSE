@@ -35,6 +35,9 @@ struct TaaJitterLayout {
     /// NDC jitter for a monotonic frame counter (wraps via `frameIndexInSequence`).
     static fuse::math::Vec2 ndcOffsetForFrameIndex(u32 frameIndex, u32 width, u32 height,
                                                    u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+    /// NDC jitter for a monotonic frame counter when viewport and sequence are valid (B5.9 deepen).
+    static bool ndcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width, u32 height, fuse::math::Vec2* out,
+                                              u32 sequenceLength = kTaaDefaultJitterSequenceLength);
     /// Fills a Halton (2,3) table; returns false when `out` is null or length is invalid.
     static bool fillHaltonSequence(u32 length, fuse::math::Vec2* out);
 };
@@ -55,6 +58,10 @@ public:
     void syncToFrameIndex(u32 frameIndex);
     /// Sync only when the sequence is valid; returns false when blocked (B5.9 deepen).
     bool syncToFrameIndexIfReady(u32 frameIndex);
+    /// True when jitter is not aligned to `frameIndex` but could sync (B5.9 deepen).
+    bool needsSyncToFrameIndex(u32 frameIndex) const;
+    /// Sync only when misaligned; returns false when blocked (B5.9 deepen).
+    bool syncToFrameIndexIfMisaligned(u32 frameIndex);
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
 

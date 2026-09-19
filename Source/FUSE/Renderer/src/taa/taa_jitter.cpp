@@ -82,6 +82,15 @@ fuse::math::Vec2 TaaJitterLayout::ndcOffsetForFrameIndex(u32 frameIndex, u32 wid
     return haltonNdcOffset(slot, width, height, sequenceLength);
 }
 
+bool TaaJitterLayout::ndcOffsetForFrameIndexIfReady(u32 frameIndex, u32 width, u32 height,
+                                                    fuse::math::Vec2* out, u32 sequenceLength) {
+    if (out == nullptr || !canProduceNdcOffset(width, height, sequenceLength)) {
+        return false;
+    }
+    *out = ndcOffsetForFrameIndex(frameIndex, width, height, sequenceLength);
+    return true;
+}
+
 bool TaaJitterLayout::fillHaltonSequence(u32 length, fuse::math::Vec2* out) {
     if (out == nullptr || !validateSequenceLength(length)) {
         return false;
@@ -136,6 +145,21 @@ bool TaaJitter::isAlignedToFrameIndex(u32 frameIndex) const {
 bool TaaJitter::syncToFrameIndexIfReady(u32 frameIndex) {
     if (!canSyncToFrameIndex(frameIndex)) {
         return false;
+    }
+    syncToFrameIndex(frameIndex);
+    return true;
+}
+
+bool TaaJitter::needsSyncToFrameIndex(u32 frameIndex) const {
+    return canSyncToFrameIndex(frameIndex) && !isAlignedToFrameIndex(frameIndex);
+}
+
+bool TaaJitter::syncToFrameIndexIfMisaligned(u32 frameIndex) {
+    if (!canSyncToFrameIndex(frameIndex)) {
+        return false;
+    }
+    if (isAlignedToFrameIndex(frameIndex)) {
+        return true;
     }
     syncToFrameIndex(frameIndex);
     return true;

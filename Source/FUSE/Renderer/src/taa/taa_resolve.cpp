@@ -246,6 +246,50 @@ bool preflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistor
     return reject == TaaResolveBlendRejectReason::None;
 }
 
+u32 effectiveObservedHistoryGeneration(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    if (taaResolveBypassesHistoryGenerationGuard(desc)) {
+        return history.invalidateGeneration();
+    }
+    return desc.observed_history_generation;
+}
+
+bool preflightTaaResolveHistoryReuse(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                     TaaHistoryReuseBlockReason* reason) {
+    return preflightTaaHistoryReuse(history, effectiveObservedHistoryGeneration(desc, history), reason);
+}
+
+bool taaHistoryReuseAllowedForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return preflightTaaResolveHistoryReuse(desc, history, nullptr);
+}
+
+bool preflightTaaResolveTemporal(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                 TaaHistoryReuseBlockReason* reuseReason,
+                                 TaaResolveBlendRejectReason* blendReason) {
+    if (!preflightTaaResolveBlendWeights(desc, history, blendReason)) {
+        return false;
+    }
+    const bool firstFrame = !history.hasValidHistory();
+    if (taaHistoryBlendAllowed(firstFrame, history)) {
+        return preflightTaaResolveHistoryReuse(desc, history, reuseReason);
+    }
+    if (reuseReason != nullptr) {
+        *reuseReason = TaaHistoryReuseBlockReason::None;
+    }
+    return true;
+}
+
+bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                      TaaBlendWeights* out) {
+    if (out == nullptr) {
+        return false;
+    }
+    if (!preflightTaaResolveBlendWeights(desc, history, nullptr)) {
+        return false;
+    }
+    *out = computeTaaResolveBlendWeights(desc, history);
+    return true;
+}
+
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     if (!taaHistoryCanReuse(history)) {
         return false;
