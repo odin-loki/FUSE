@@ -1133,3 +1133,15 @@ HrtfAttenuationCouplingRejectReason hrtfBinauralNarrowingRejectReason(
 bool hrtfBinauralRejectsForReason(const HrtfBinauralPreflight& preflight,
     return hrtfBinauralRejectReason(preflight) == expected;
     preflight.reason = hrtfBinauralRejectReason(preflight);
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-54bb ---
+HrtfBinauralRejectReason resolve_hrtf_binaural_reject_reason(
+    if (pan_reason == HrtfPanPathRejectReason::HrtfDisabled) {
+    if (pan_reason == HrtfPanPathRejectReason::CoLocated) {
+    const HrtfIrRejectReason ir_reason = hrtf_ir_reject_reason(ir);
+    if (ir_reason == HrtfIrRejectReason::MalformedIr) {
+    if (ir_reason == HrtfIrRejectReason::EmptyIr) {
+        return HrtfBinauralRejectReason::EmptyIr;
+HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const HrtfIrStub& ir,
+HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const Vec3& rel_listener,
+                                      float occlusion_gain, HrtfBinauralRejectReason expected,

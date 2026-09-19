@@ -790,3 +790,8 @@ bool hrtfBinauralRejectsForReason(const HrtfBinauralPreflight& preflight,
 
 // --- deepen additive from deepen-b72-hrtf-reject-reasons-0339 ---
     bool is_bypass() const { return rejectReason != HrtfBinauralRejectReason::None; }
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-54bb ---
+HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const HrtfIrStub& ir,
+HrtfBinauralRejectReason hrtf_binaural_reject_reason(bool hrtf_enabled, const Vec3& rel_listener,
+                                      float occlusion_gain, HrtfBinauralRejectReason expected,

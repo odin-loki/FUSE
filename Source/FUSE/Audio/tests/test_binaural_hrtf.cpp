@@ -1759,3 +1759,13 @@ void testHrtfRejectReasonPreflights() {
     expectTrue(bypass_preflight.rejectReason == fuse::audio::HrtfBinauralRejectReason::HrtfDisabled,
     expectTrue(co_located_preflight.rejectReason == fuse::audio::HrtfBinauralRejectReason::CoLocated,
     expectTrue(stub_preflight.panPath.reason == fuse::audio::HrtfPanPathRejectReason::None,
+
+// --- deepen additive from deepen-b72-hrtf-reject-reasons-54bb ---
+    const fuse::audio::HrtfIrPreflight preflight = fuse::audio::preflight_hrtf_ir(malformed);
+    expectTrue(preflight.reason == fuse::audio::HrtfIrRejectReason::MalformedIr,
+                   fuse::audio::HrtfBinauralRejectReason::EmptyIr),
+    expectTrue(preflight.reason == fuse::audio::HrtfBinauralRejectReason::EmptyIr,
+    expectTrue(preflight.ir.reason == fuse::audio::HrtfIrRejectReason::EmptyIr,
+    expectTrue(preflight.panPath.reason == fuse::audio::HrtfPanPathRejectReason::None,
+                   preflight, fuse::audio::HrtfBinauralRejectReason::EmptyIr),
+    expectTrue(conv_preflight.reason == fuse::audio::HrtfBinauralRejectReason::None,
