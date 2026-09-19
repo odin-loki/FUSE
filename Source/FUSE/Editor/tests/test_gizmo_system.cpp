@@ -672,7 +672,7 @@ void testSnapStepGuards() {
     hit.screenX = 10.f;
     hit.screenY = 50.f;
     gizmo.beginDrag(hit, transform);
-    hit.screenX = 40.f;
+    hit.screenX = 20.f;
     const fuse::editor::GizmoResult update = gizmo.updateDrag(hit);
     expectTrue(update.changed, "drag update still applies when snap step invalid");
     gizmo.endDrag();
@@ -1092,6 +1092,127 @@ void testTryEndDragGuards() {
     expectTrue(result.axis == fuse::editor::GizmoAxis::X, "tryEndDrag records active axis");
 }
 
+void testBeginDragSnapDegradedPreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::BeginDragPreflight degradedPreflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(degradedPreflight.canBegin, "begin preflight still allows drag when snap step invalid");
+    expectTrue(degradedPreflight.snapDegraded, "begin preflight marks snap degraded");
+
+    snap.gridSize = 1.f;
+    const fuse::editor::BeginDragPreflight validPreflight =
+        fuse::editor::preflightBeginDrag(hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validPreflight.canBegin, "begin preflight accepts valid snap settings");
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears snapDegraded on begin");
+
+    fuse::editor::GizmoTransform transform{};
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    snap.gridSize = 0.f;
+    const fuse::editor::BeginDragPreflight rayDegradedPreflight = fuse::editor::preflightBeginDrag(
+        xRay, transform, fuse::editor::GizmoMode::Translate, fuse::editor::GizmoSpace::World,
+        fuse::editor::GizmoSystem::kAxisLength, fuse::editor::GizmoSystem::kPickRadius, snap);
+    expectTrue(rayDegradedPreflight.canBegin, "ray begin preflight still allows drag");
+    expectTrue(rayDegradedPreflight.snapDegraded, "ray begin preflight marks snap degraded");
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    const fuse::editor::BeginDragPreflight gizmoPreflight = gizmo.preflightBeginDrag(hit);
+    expectTrue(gizmoPreflight.snapDegraded, "gizmo begin preflight surfaces snap degraded");
+}
+
+void testUpdateDragScreenMissPreflight() {
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::UpdateDragPreflight deadZonePreflight = fuse::editor::preflightUpdateDrag(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate);
+    expectTrue(deadZonePreflight.canUpdate(), "update preflight accepts axis-band hit");
+
+    hit.screenX = 50.f;
+    hit.screenY = 50.f;
+    const fuse::editor::UpdateDragPreflight screenMissPreflight = fuse::editor::preflightUpdateDrag(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate);
+    expectTrue(screenMissPreflight.screenMiss, "update preflight marks translate dead zone");
+    expectTrue(!screenMissPreflight.canUpdate(), "update preflight rejects translate dead zone");
+
+    const fuse::editor::UpdateDragPreflight uniformPreflight = fuse::editor::preflightUpdateDrag(
+        hit, true, fuse::editor::GizmoAxis::Uniform, fuse::editor::GizmoMode::Scale);
+    expectTrue(uniformPreflight.canUpdate(), "scale uniform handle is not a screen miss");
+
+    fuse::editor::GizmoSystem gizmo;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+    hit.screenX = 50.f;
+    hit.screenY = 50.f;
+    const fuse::editor::UpdateDragPreflight gizmoPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(gizmoPreflight.screenMiss, "gizmo update preflight marks dead zone");
+    expectTrue(!gizmo.canUpdateDrag(hit), "gizmo canUpdateDrag rejects dead zone");
+
+    const fuse::editor::GizmoResult update = gizmo.updateDrag(hit);
+    expectTrue(!update.changed, "updateDrag ignores dead zone via screenMiss guard");
+    expectTrue(gizmo.isDragging(), "dead zone update keeps drag active");
+    gizmo.endDrag();
+}
+
+void testGizmoTrySnapDragDelta() {
+    fuse::editor::GizmoSystem gizmo;
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.5f;
+    gizmo.setSnapSettings(snap);
+
+    expectNear(gizmo.trySnapDragDelta(0.37f), 0.5f, 0.001f,
+               "gizmo trySnapDragDelta snaps when snap is valid");
+
+    snap.gridSize = 0.f;
+    gizmo.setSnapSettings(snap);
+    expectNear(gizmo.trySnapDragDelta(0.37f), 0.37f, 0.001f,
+               "gizmo trySnapDragDelta passthrough when step invalid");
+}
+
+void testGizmoUpdateDragSnapDegradedPreflight() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+
+    hit.screenX = 30.f;
+    const fuse::editor::UpdateDragPreflight degradedPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(degradedPreflight.canUpdate(), "gizmo update preflight still allows drag");
+    expectTrue(degradedPreflight.snapDegraded, "gizmo update preflight marks snap degraded");
+    expectTrue(!degradedPreflight.screenMiss, "axis-band update clears screenMiss");
+
+    snap.gridSize = 1.f;
+    gizmo.setSnapSettings(snap);
+    const fuse::editor::UpdateDragPreflight validPreflight = gizmo.preflightUpdateDrag(hit);
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears snapDegraded on gizmo update");
+    gizmo.endDrag();
+}
+
 void testDirtyFlagOnEndDrag() {
     fuse::editor::GizmoSystem gizmo;
     fuse::editor::CommandStack commandStack;
@@ -1159,6 +1280,10 @@ int main() {
     testEndDragPreflightGuards();
     testCanEndDragGuards();
     testTryEndDragGuards();
+    testBeginDragSnapDegradedPreflight();
+    testUpdateDragScreenMissPreflight();
+    testGizmoTrySnapDragDelta();
+    testGizmoUpdateDragSnapDegradedPreflight();
     testDirtyFlagOnEndDrag();
 
     if (g_failures != 0) {
