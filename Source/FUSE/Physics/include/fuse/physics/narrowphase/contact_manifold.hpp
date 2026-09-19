@@ -1464,6 +1464,8 @@ bool can_skip_normalize_contact_normal(
 /// Returns true when manifold is valid with unit normal and orthonormal friction basis (B4.6 deepen pass).
 bool is_contact_manifold_finalized(
 
+/// Finalize only when preflight reports finalize may proceed; no-op otherwise (B4.5 deepen pass).
+
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();
 }

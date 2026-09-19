@@ -1754,6 +1754,9 @@ bool can_skip_narrowphase_pair_dispatch(
 
 /// Non-mutating dispatch predicate — inverse of `can_skip_narrowphase_pair_dispatch` (B4.6 deepen pass).
 bool should_run_narrowphase_pair_dispatch(
+/// Shape dispatch with extended deepen preflight rejection (B4.5 deepen pass).
+/// Returns an invalid manifold when deepen preflight rejects the pair.
+ContactManifold detect_contacts_pair_deepen(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1775,5 +1778,7 @@ u32 count_contact_pairs_rejected_for_reason(
 
 /// Returns true when every pair in the batch matches `expected` deepen reject reason (B4.6 deepen pass).
 bool narrowphase_batch_all_reject_for_reason(
+/// Finalize friction tangents only when preflight allows; no-op when skipped (B4.5 deepen pass).
+bool compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase

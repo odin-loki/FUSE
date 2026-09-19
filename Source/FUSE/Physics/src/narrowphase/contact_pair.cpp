@@ -3465,4 +3465,28 @@ bool narrowphase_batch_all_reject_for_reason(
            static_cast<u32>(pairs.size());
 }
 
+ContactManifold detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
+}
+
+bool compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon) {
+    const FrictionBasisPreflight preflight = preflight_friction_basis_rebuild(manifold, epsilon);
+    if (preflight.reason != FrictionBasisRejectReason::None) {
+        invalidate_friction_basis(manifold);
+        return false;
+    }
+    if (preflight.can_skip_rebuild()) {
+        return manifold.hasFrictionBasis();
+    }
+
+    compute_friction_tangents(manifold);
+    return manifold.hasFrictionBasis();
+}
+
 } // namespace fuse::physics::narrowphase

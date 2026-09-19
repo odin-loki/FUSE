@@ -432,5 +432,19 @@ void runNarrowphaseIntoBufferWithDeepenGuards(
 
 /// Returns true when all pairs would be deepen-rejected before narrowphase dispatch (B4.6 deepen follow-up pass).
 bool can_skip_narrowphase_into_buffer(
+/// Const preflight for job-safe narrowphase buffer dispatch (B4.5 deepen pass).
+struct NarrowphaseIntoBufferPreflight {
+    NarrowphaseBatchPreflight batchPreflight{};
+
+    bool can_dispatch() const { return !emptyPairs; }
+    bool can_skip() const { return emptyPairs; }
+
+/// Populate narrowphase-into-buffer preflight without running shape dispatch (B4.5 deepen pass).
+NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
+
+/// Returns true when narrowphase into buffer may skip pair dispatch (empty pair list only) (B4.5 deepen pass).
+
+/// Returns true when narrowphase into buffer should run pair dispatch (B4.5 deepen pass).
+bool should_run_narrowphase_into_buffer(
 
 } // namespace fuse::physics::narrowphase

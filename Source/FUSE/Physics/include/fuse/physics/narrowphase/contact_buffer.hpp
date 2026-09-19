@@ -409,6 +409,7 @@ enum class ContactBufferWriteSlotRejectReason : u8 {
 /// Why contact-buffer write would reject (B4.3 deepen pass).
 /// Why contact-buffer slot write would reject (B4.6 deepen pass).
 /// Why contact-buffer write would reject (B4.6 narrowphase deepen pass).
+/// Why contact-buffer slot write would reject (B4.5 deepen pass).
     InvalidManifold,
     SelfPair,
 };
@@ -456,6 +457,7 @@ ContactBufferWriteSlotRejectReason contact_buffer_write_slot_reject_reason(
 
 
 /// Diagnose why write would reject; vacuously succeeds when write may proceed (B4.5 deepen pass).
+
 
 
 
@@ -897,6 +899,22 @@ bool shouldRunContactBufferCompact(const ContactBufferSoA& buffer);
 enum class ContactBufferClampRejectReason : u8 {
     WithinCapacity,
 /// Why contact-buffer max-capacity clamp would early-out (B4.6 narrowphase deepen pass).
+
+
+};
+
+    const ContactManifold& manifold);
+
+    None = 0,
+
+
+
+
+
+    bool needs_compaction() const { return reason == ContactBufferCompactionRejectReason::None; }
+
+
+
 
 const char* contact_buffer_clamp_reject_reason_name(ContactBufferClampRejectReason reason);
 
@@ -2143,5 +2161,42 @@ u32 applyMaxCapacityClampWithPreflight(ContactBufferSoA& buffer);
 
 
 u32 compactAndClampWithPreflight(ContactBufferSoA& buffer);
+
+struct ContactBufferClampPreflight {
+    bool emptyBuffer = false;
+    bool withinCapacity = false;
+
+
+ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer);
+
+
+/// Why contact-buffer friction-basis rebuild would early-out (B4.5 deepen pass).
+    EmptyBuffer,
+
+const char* contact_buffer_friction_rebuild_reject_reason_name(ContactBufferFrictionRebuildRejectReason reason);
+
+ContactBufferFrictionRebuildRejectReason contact_buffer_friction_rebuild_reject_reason(
+    const ContactBufferSoA& buffer);
+
+bool contact_buffer_friction_rebuild_rejects_for_reason(
+    ContactBufferFrictionRebuildRejectReason expected);
+
+
+    bool can_rebuild() const { return reason == ContactBufferFrictionRebuildRejectReason::None; }
+
+ContactBufferFrictionRebuildPreflight preflight_contact_buffer_friction_rebuild(
+
+bool can_skip_contact_buffer_friction_rebuild(const ContactBufferSoA& buffer);
+bool should_run_contact_buffer_friction_rebuild(const ContactBufferSoA& buffer);
+
+    NoWork,
+
+
+
+
+    bool noWork = false;
+
+
+
 
 } // namespace fuse::physics::narrowphase
