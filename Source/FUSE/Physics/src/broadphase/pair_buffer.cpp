@@ -3004,6 +3004,9 @@ bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer,
     const u32 slotCount = buffer.pairSlotCount > 0u ? buffer.pairSlotCount : buffer.activeCount;
     if (slot >= slotCount) {
 
+
+    if (slot < buffer.validFlags.size() && buffer.validFlags[slot] == 0u) {
+
 bool pairBufferInvalidateSlotRejectsForReason(
     const PairBufferSoA& buffer,
     u32 slot,
@@ -3087,6 +3090,9 @@ bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer,
 
 
         *reason = reject;
+
+
+
 
 
 
@@ -4923,6 +4929,34 @@ bool shouldRunPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
 
 bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot) {
     return canSkipPairBufferInvalidateSlot(buffer, slot);
+}
+
+bool wouldSkipPairBufferPush(const PairBufferSoA& buffer, u32 idxA, u32 idxB) {
+    return !preflightPairBufferPush(buffer, idxA, idxB).canPush();
+}
+
+bool wouldSkipPairBufferCompaction(const PairBufferSoA& buffer) {
+    return canSkipPairBufferCompaction(buffer);
+}
+
+bool wouldSkipPairBufferClamp(const PairBufferSoA& buffer) {
+    return canSkipPairBufferClamp(buffer);
+}
+
+bool wouldSkipPairBufferDedupe(const PairBufferSoA& buffer) {
+    return canSkipPairBufferDedupe(buffer);
+}
+
+bool wouldSkipPairBufferSort(const PairBufferSoA& buffer) {
+    return canSkipPairBufferSort(buffer);
+}
+
+bool wouldSkipPairBufferCompactAndClamp(const PairBufferSoA& buffer) {
+    return canSkipPairBufferCompactAndClamp(buffer);
+}
+
+bool wouldSkipPairBufferToVector(const PairBufferSoA& buffer) {
+    return canSkipPairBufferToVector(buffer);
 }
 
 } // namespace fuse::physics::broadphase

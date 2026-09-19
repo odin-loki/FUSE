@@ -1999,8 +1999,10 @@ struct PairBufferInvalidateSlotPreflight {
     const PairBufferSoA& buffer,
     u32 slot,
 
-    bool outOfRangeSlot = false;
-    bool alreadyInvalid = false;
+
+
+
+
 
 
 
@@ -2094,6 +2096,9 @@ FUSE_PHYSICS_INLINE bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& 
 
 
 /// Early-out when invalidate-slot would be rejected — same ordering as `canSkipPairBufferInvalidateSlot` (B4.2 deepen pass).
+
+
+
 
 
 
@@ -3533,12 +3538,8 @@ struct PairBufferInvalidateSlotPreflight {
 
 
 
-    const PairBufferSoA& buffer,
-    u32 slot,
 
-    bool outOfRangeSlot = false;
 
-};
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
 
@@ -3812,9 +3813,22 @@ bool wouldSkipPairBufferToVector(const PairBufferSoA& buffer);
 /// Preflight alias for write-slot skip checks (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool wouldSkipPairBufferWriteSlot(const PairBufferSoA& buffer, u32 slot, u32 idxA, u32 idxB) {
     return canSkipPairBufferWriteSlot(buffer, slot, idxA, idxB);
-}
 
 /// Preflight alias for invalidate-slot skip checks (B4.2 deepen pass).
 bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
+
+/// Non-mutating push skip alias — mirrors `!preflightPairBufferPush(...).canPush()` (B4.2 deepen pass).
+
+/// Non-mutating compaction skip alias — mirrors `canSkipPairBufferCompaction` (B4.2 deepen pass).
+
+/// Non-mutating clamp skip alias — mirrors `canSkipPairBufferClamp` (B4.2 deepen pass).
+
+/// Non-mutating dedupe skip alias — mirrors `canSkipPairBufferDedupe` (B4.2 deepen pass).
+
+/// Non-mutating sort skip alias — mirrors `canSkipPairBufferSort` (B4.2 deepen pass).
+
+/// Non-mutating compact-and-clamp skip alias — mirrors `canSkipPairBufferCompactAndClamp` (B4.2 deepen pass).
+
+/// Non-mutating toVector skip alias — mirrors `canSkipPairBufferToVector` (B4.2 deepen pass).
 
 } // namespace fuse::physics::broadphase

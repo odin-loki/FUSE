@@ -242,6 +242,13 @@ FUSE_PHYSICS_INLINE bool wouldSkipBroadphase(
     return canSkipBroadphase(bodies, shapes);
 }
 
+/// Non-mutating broadphase skip alias — mirrors `canSkipBroadphase` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool wouldSkipBroadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return canSkipBroadphase(bodies, shapes);
+}
+
 /// Why broadphase pair generation would early-out (B4.2 deepen follow-up pass).
 enum class BroadphaseRejectReason : u8 {
     None = 0,
@@ -860,6 +867,7 @@ FUSE_PHYSICS_INLINE bool canSkipCellOccupancyIteration(const CellRange2& range, 
 }
 
 /// Non-mutating cell-occupancy skip predicate — mirrors `canSkipCellOccupancyIteration` (B4.2 deepen pass).
+/// Non-mutating cell-occupancy skip alias — mirrors `canSkipCellOccupancyIteration` (B4.2 deepen pass).
 FUSE_PHYSICS_INLINE bool wouldSkipCellOccupancyIteration(const CellRange3& range, u32 maxCells) {
     return canSkipCellOccupancyIteration(range, maxCells);
 }
@@ -2848,6 +2856,14 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(
         *reason = rejectReason;
     }
     return canSkipCellSpanClamp(range, maxSpanPerAxis);
+/// Non-mutating span-clamp skip alias — mirrors `canSkipCellSpanClamp` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+
+FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(const CellRange2& range, u32 maxSpanPerAxis) {
+
+/// Non-mutating span-clamp predicate — true when per-axis span exceeds the budget (B4.2 deepen follow-up pass).
+FUSE_PHYSICS_INLINE bool shouldRunCellSpanClamp(const CellRange3& range, u32 maxSpanPerAxis) {
+    return cellSpanRejectReason(range, maxSpanPerAxis) == CellSpanRejectReason::ExceedsSpan;
 }
 
 FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(
@@ -4860,6 +4876,12 @@ bool mergeBroadphasePreflightRejectsForReason(
 /// Non-mutating merge skip predicate — inverse of `shouldRunBroadphaseMerge` (B4.2 deepen pass).
 bool canSkipBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 
+/// Non-mutating merge skip alias — mirrors `canSkipBroadphaseMerge` (B4.2 deepen pass).
+bool wouldSkipBroadphaseMerge(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    BroadphaseMergeRejectReason* reason = nullptr);
+
 /// Non-mutating merge predicate — mirrors `preflightBroadphaseMerge` (B4.2 deepen pass).
 bool shouldRunBroadphaseMerge(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 
@@ -5014,6 +5036,12 @@ bool shouldRunMergePairIntoBuffer(const CandidatePair& pair, const PairBufferSoA
 
 /// Non-mutating merge-into-buffer skip predicate — inverse of `canMerge` (B4.2 deepen pass).
 bool canSkipMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
+
+/// Non-mutating merge-into-buffer skip alias — mirrors `canSkipMergePairsIntoBuffer` (B4.2 deepen pass).
+bool wouldSkipMergePairsIntoBuffer(
+    const std::vector<CandidatePair>& pairs,
+    const PairBufferSoA& buffer,
+    MergePairsIntoBufferRejectReason* reason = nullptr);
 
 /// Non-mutating merge-into-buffer predicate — mirrors `preflightMergePairsIntoBuffer` (B4.2 deepen pass).
 bool shouldRunMergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, const PairBufferSoA& buffer);
