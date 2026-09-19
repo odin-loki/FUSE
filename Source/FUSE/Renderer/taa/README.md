@@ -144,3 +144,9 @@ Part of `fuse_rhi`. Built with `FUSE_BUILD_CORE=ON`. Tests run when `FUSE_BUILD_
 - `TaaResolveBlendPreflight` — read-only blend diagnostics (`weights`, `reject_reason`, `can_apply`, `appliesHistoryBlend()`)
 - `preflightTaaResolveBlend(desc, history)` — populate blend diagnostics without mutation
 - `TaaPass::preflightResolveBlend(desc)` — pass-level resolve blend preflight wrapper
+
+// --- deepen additive from deepen-taa-b59-guards-9bd6 ---
+- `tryPreflightTaaJitterNdc` / `shouldSkipTaaJitterSync` / `shouldSkipTaaJitterNdc` — jitter guard early-outs
+- `classifyTaaHistoryWarmupBlock` / `tryPreflightTaaHistoryWarmup` / `shouldSkipTaaHistoryWarmup` — warm-up preflight guards
+- `preflightTaaResolveFrame` / `tryPreflightTaaResolveFrame` / `shouldSkipTaaResolveFrame` — combined resolve + blend preflight
+- `TaaPass::preflightResolveFrame` / `shouldSkipResolveFrame` — pass-level composite preflight

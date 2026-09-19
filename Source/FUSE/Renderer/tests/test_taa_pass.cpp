@@ -3784,3 +3784,16 @@ void testTaaPassTemporalAndJitterPreflightWrappers() {
     expectTrue(temporalReject == fuse::renderer::TaaResolveTemporalRejectReason::HistoryReuseBlocked,
     expectTrue(pass->preflightResolveTemporalBlend(resolveDesc, &temporalReject),
     testTaaPassTemporalAndJitterPreflightWrappers();
+
+// --- deepen additive from deepen-taa-b59-guards-9bd6 ---
+               "tryPreflightTaaHistoryWarmup passes for warmed history");
+               "tryPreflightTaaHistoryWarmup reason is None after warmup");
+void testResolveFrameCompositePreflight() {
+    expectTrue(fuse::renderer::tryPreflightTaaResolveFrame(desc, history, skipReason, blendReason),
+               "tryPreflightTaaResolveFrame passes for valid unwarmed resolve");
+void testTaaPassWarmupAndCompositeGuards() {
+    expectTrue(pass->tryPreflightJitterNdc(jitterReject), "pass tryPreflightJitterNdc before init");
+    expectTrue(pass->preflightJitterNdc(), "pass preflightJitterNdc before init");
+    expectTrue(pass->tryPreflightJitterSync(0u, jitterReject), "pass tryPreflightJitterSync passes");
+    expectTrue(pass->preflightResolveFrame(resolveDesc), "pass preflightResolveFrame passes");
+    testResolveFrameCompositePreflight();
