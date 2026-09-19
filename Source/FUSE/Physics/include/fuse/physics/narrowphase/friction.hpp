@@ -161,6 +161,11 @@ FrictionBasisRejectReason friction_basis_reject_reason(
 
 /// Returns true when `friction_basis_reject_reason` matches `expected` (B4.4 deepen follow-up pass).
     FrictionBasisRejectReason expected,
+    BasisCurrent,
+
+/// Human-readable label for friction-basis reject reasons (B4.4 deepen follow-up pass).
+
+
 
 /// Const preflight for friction-basis rebuild dispatch (B4.4 deepen follow-up).
 struct FrictionBasisPreflight {
@@ -175,6 +180,7 @@ struct FrictionBasisPreflight {
         return skipped || reason != FrictionBasisRejectReason::None || canReuse;
     }
         return reason != FrictionBasisRejectReason::None;
+        return reason != FrictionBasisRejectReason::None || skipped || canReuse;
 };
 
 /// Populate friction-basis preflight without mutating the manifold (B4.4 deepen follow-up).
@@ -353,5 +359,11 @@ bool ensure_friction_basis_guarded(ContactManifold& manifold, f32 epsilon = 1e-4
 
 /// Returns true when friction-basis rebuild should be skipped entirely (B4.4 deepen pass).
 bool should_skip_friction_basis_preflight(const ContactManifold& manifold);
+
+/// Rebuild friction basis only when preflight allows; no-op when skip/reuse (B4.4 deepen follow-up pass).
+bool rebuild_friction_basis_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
+
+/// Compute friction tangents only when preflight needs rebuild (B4.4 deepen follow-up pass).
+void compute_friction_tangents_with_preflight(ContactManifold& manifold, f32 epsilon = 1e-4f);
 
 } // namespace fuse::physics::narrowphase
