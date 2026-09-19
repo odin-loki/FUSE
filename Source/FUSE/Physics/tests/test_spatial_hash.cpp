@@ -2473,3 +2473,16 @@ void testEmptyCellBucketGuards() {
     testCellCapacityPreflightGuards();
     testBroadphaseInputPreflightGuards();
     testBroadphaseDedupePreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-abce ---
+    expectTrue(planePreflight.exceedsBudget, "2D preflight flags budget overflow");
+void testBroadphaseDispatchPreflightGuards() {
+    expectTrue(emptyPreflight.emptyInput, "dispatch preflight marks empty scene");
+    expectTrue(!emptyPreflight.can_dispatch(), "empty scene cannot dispatch broadphase");
+    const auto populatedPreflight =
+    expectTrue(!populatedPreflight.emptyInput, "populated scene is not empty input");
+    expectTrue(populatedPreflight.can_dispatch(), "populated scene can dispatch broadphase");
+    expectTrue(emptyPreflight.skipped, "refine preflight skips empty scene and buffer");
+    expectTrue(!validPreflight.skipped, "refine preflight does not skip valid scene");
+    expectEq(validPreflight.validPairCount, 1u, "refine preflight counts valid pairs");
+    testBroadphaseDispatchPreflightGuards();

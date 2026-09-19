@@ -1153,3 +1153,10 @@ struct PairBufferPreflight {
 PairBufferPreflight preflight_pair_buffer(const PairBufferSoA& buffer);
 struct BroadphaseDedupePreflight {
 BroadphaseDedupePreflight preflight_broadphase_dedupe(const PairBufferSoA& buffer);
+
+// --- deepen additive from deepen-b4-broadphase-guards-abce ---
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflight_cell_occupancy(const CellRange3& range, u32 maxCells = 0u) {
+FUSE_PHYSICS_INLINE CellOccupancyPreflight preflight_cell_occupancy(const CellRange2& range, u32 maxCells = 0u) {
+struct BroadphaseDispatchPreflight {
+FUSE_PHYSICS_INLINE BroadphaseDispatchPreflight preflight_broadphase_dispatch(
+    BroadphaseDispatchPreflight preflight{};
