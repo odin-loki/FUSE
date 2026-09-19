@@ -845,3 +845,7 @@ bool CookCache::preflight_store(const CookCacheEntry& entry, StoreRejectReason* 
 // --- deepen additive from deepen-b79-cooker-hash-preflight-633e ---
 CookCacheEntryPreflight preflight_cache_entry(const CookCacheEntry& entry) {
     CookCacheEntryPreflight result;
+
+// --- deepen additive from b79-hash-preflight-probes-15d5 ---
+bool CookCache::probe_would_invalidate_output(const std::string& output_path) const {
+bool CookCache::probe_would_invalidate_stale_content(const std::string& source_path,

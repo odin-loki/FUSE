@@ -924,3 +924,9 @@ void testCookCacheEntryPreflight() {
     const fuse::project::CookCacheEntryPreflight fresh_preflight =
     const fuse::project::CookCacheEntryPreflight stale_preflight =
     testCookCacheEntryPreflight();
+
+// --- deepen additive from b79-hash-preflight-probes-15d5 ---
+    expectTrue(cooker.cache().probe_would_invalidate_output(desc.output_path),
+    expectTrue(!cooker.cache().probe_would_invalidate_output(""),
+    expectTrue(!cooker.cache().probe_would_invalidate_stale_content(source, seeded.content_hash),
+    expectTrue(cooker.cache().probe_would_invalidate_stale_content(source, seeded.content_hash + 1u),
