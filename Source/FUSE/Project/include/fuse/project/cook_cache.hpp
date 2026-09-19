@@ -525,6 +525,8 @@ public:
         const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
     /// True when `invalidate_stale_content_for_source` would remove at least one entry (B7.9 deepen).
     /// True when `invalidate_stale_upstream_hashes` would remove at least one entry (B7.9 deepen).
+    /// Read-only mirror of `invalidate_source` — true when at least one entry matches (B7.9 deepen).
+    /// Read-only mirror of `invalidate_output` — true when at least one entry matches (B7.9 deepen).
     [[nodiscard]] u32 count_by_source(const std::string& source_path) const;
     [[nodiscard]] u32 count_by_output(const std::string& output_path) const;
     [[nodiscard]] u32 count_stale_content_for_source(const std::string& source_path,
@@ -583,7 +585,6 @@ public:
     /// Deduplicated stale-upstream sources — one push per matching source path (B7.9 deepen).
     /// Deduplicated source paths with stale upstream hashes — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_source_paths(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     /// Deduplicated stale-upstream source probe — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
     /// True when `invalidate_stale_content_for_source` would remove entries — guarded like the mutator (B7.9 deepen).
     [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
@@ -598,6 +599,9 @@ public:
     [[nodiscard]] u32 count_reconcile_overlap_entries(
     /// True when any entry for `source_path` has a stale on-disk content key (B7.9 deepen).
     [[nodiscard]] bool probe_stale_content_for_source(const std::string& source_path) const;
+    /// Deduplicated source paths that `invalidate_stale_upstream_hashes` would touch (B7.9 deepen).
+    /// Deduplicated count of `probe_stale_upstream_sources` (B7.9 deepen).
+    [[nodiscard]] u32 count_stale_upstream_sources(
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;

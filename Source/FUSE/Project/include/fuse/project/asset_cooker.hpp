@@ -28,6 +28,7 @@ struct CookCacheReconcileEstimate {
     u32 upstream_invalidation_entries = 0;
     /// Entries counted in more than one bucket above (B7.9 deepen).
     u32 overlapping_entries = 0;
+    /// Populated when `changed_source` is non-empty — mirrors `count_upstream_invalidation` (B7.9 deepen).
 
     [[nodiscard]] u32 total() const {
         return stale_dependency_entries + prune_invalid_entries + prune_stale_entries +
@@ -228,6 +229,7 @@ public:
     /// Read-only prune reconcile probe — mirrors `CookCache::estimate_prune_removals` (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_reconcile() const;
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
+    /// When `changed_source` is non-empty, includes `upstream_invalidation_entries`.
     [[nodiscard]] CookCacheReconcileEstimate estimate_reconcile_invalidation(
         const CookManifest& manifest) const;
     /// Upstream invalidation breakdown for `changed_source` — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
@@ -373,7 +375,6 @@ public:
     [[nodiscard]] bool would_upstream_invalidate(const CookManifest& manifest,
     /// Deduplicated sources with stale upstream dependency hashes (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_dependency_sources(
-        const CookManifest& manifest) const;
     /// True when `count_upstream_invalidation(manifest, changed_source)` is non-zero (B7.9 deepen).
     /// True when `estimate_reconcile_invalidation` would remove at least one entry (B7.9 deepen).
     /// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
@@ -422,6 +423,7 @@ public:
     /// True when `invalidate_stale_dependency_hashes` would be a no-op (B7.9 deepen).
     [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
     /// True when combined reconcile invalidation would be a no-op (B7.9 deepen).
+        const CookManifest& manifest, const std::string& changed_source = "") const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
