@@ -35,6 +35,10 @@ TaaJitterAdvanceBlockReason classifyTaaJitterAdvanceBlock(u32 width, u32 height,
 TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 frameIndex, u32 sequenceLength);
 /// True when jitter may align to `frameIndex` for the given sequence (B5.9 deepen).
 bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncRejectReason* reason = nullptr);
+/// Why jitter sync/advance would be blocked (B5.9 deepen).
+
+/// Classify why jitter sync to a monotonic frame counter would be blocked (B5.9 deepen).
+TaaJitterSyncRejectReason classifyTaaJitterSyncReject(u32 sequenceLength);
 
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
@@ -365,5 +369,10 @@ bool preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex,
 bool taaJitterNeedsResyncToFrameIndex(const TaaJitter& jitter, u32 frameIndex);
 /// True when jitter monotonic counter and slot match `expectedFrameIndex` (B5.9 deepen).
 bool preflightTaaJitterAlignment(u32 expectedFrameIndex, const TaaJitter& jitter);
+/// True when jitter is not aligned to `frameIndex` and sync would change state (B5.9 deepen).
+bool wouldResyncJitterToFrameIndex(const TaaJitter& jitter, u32 frameIndex);
+bool jitterNeedsResyncToFrameIndex(const TaaJitter& jitter, u32 frameIndex);
+/// Diagnose jitter sync preflight; false when sync would be blocked (B5.9 deepen).
+bool trySyncJitterToFrameIndexIfReady(TaaJitter& jitter, u32 frameIndex, TaaJitterSyncRejectReason& outReason);
 
 } // namespace fuse::renderer

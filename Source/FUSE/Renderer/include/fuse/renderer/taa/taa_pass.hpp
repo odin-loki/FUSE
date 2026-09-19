@@ -309,6 +309,20 @@ public:
     /// Expected blend weights when preflight passes; returns false on reject (B5.9 deepen).
     bool tryExpectedResolveBlendWeights(const TaaResolveDesc& desc, TaaBlendWeights& outWeights,
                                         TaaResolveBlendRejectReason* reason = nullptr) const;
+    /// True when pass jitter is not aligned to `frameIndex` (B5.9 deepen).
+    /// Diagnose pass jitter sync preflight; false when sync would be blocked (B5.9 deepen).
+    bool trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncRejectReason& outReason);
+    /// True when pass history temporal reuse would be skipped (B5.9 deepen).
+    bool shouldSkipHistoryReuse(u32 observedGeneration) const;
+    /// True when resolve may sample warmed pass history this frame (B5.9 deepen).
+    bool canSampleHistoryForResolve(const TaaResolveDesc& desc) const;
+    /// Diagnose resolve-context pass history reuse; false when sampling would be blocked (B5.9 deepen).
+    bool tryPreflightHistoryReuseForResolve(const TaaResolveDesc& desc,
+                                            TaaHistoryReuseBlockReason& outReason) const;
+    /// True when resolve would skip history blend on the next frame (B5.9 deepen).
+    bool shouldSkipHistoryBlendAtResolve(const TaaResolveDesc& desc) const;
+    /// True when resolve may apply a non-zero history blend weight (B5.9 deepen).
+    bool canApplyHistoryBlendAtResolve(const TaaResolveDesc& desc) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

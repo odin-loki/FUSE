@@ -588,6 +588,24 @@ struct TaaResolveFramePreflight {
     TaaResolveBlendRejectReason blend_reason = TaaResolveBlendRejectReason::None;
 /// True when resolve would proceed past skip and blend-weight guards (B5.9 deepen).
                               TaaResolveFramePreflight* out = nullptr);
+/// True when history temporal reuse would be skipped for the observed invalidate epoch (B5.9 deepen).
+bool shouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// Diagnose history reuse preflight; false when reuse would be blocked (B5.9 deepen).
+bool tryPreflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                                 TaaHistoryReuseBlockReason& outReason);
+/// True when resolve may sample warmed history this frame (B5.9 deepen).
+bool canSampleHistoryForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Diagnose resolve-context history reuse; false when sampling would be blocked (B5.9 deepen).
+bool tryPreflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+/// True when `observedGeneration` differs from the current invalidate epoch (B5.9 deepen).
+bool wouldInvalidateHistoryIfStale(const TaaHistoryBuffer& history, u32 observedGeneration);
+/// True when history warm-up is complete (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
+/// True when resolve would skip history blend this frame (B5.9 deepen).
+bool shouldSkipHistoryBlendAtResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Diagnose resolve blend-weight preflight; false when weights would be rejected (B5.9 deepen).
+/// True when resolve may apply a non-zero history blend weight (B5.9 deepen).
+bool canApplyHistoryBlendAtResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {

@@ -466,6 +466,46 @@ bool tryPreflightTaaHistoryWarmup(const TaaHistoryBuffer& history, TaaHistoryWar
     return outReason == TaaHistoryWarmupBlockReason::None;
 }
 
+bool shouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return classifyTaaHistoryReuseBlock(history, observedGeneration) != TaaHistoryReuseBlockReason::None;
+}
+
+bool tryPreflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                                 TaaHistoryReuseBlockReason& outReason) {
+    outReason = classifyTaaHistoryReuseBlock(history, observedGeneration);
+    return outReason == TaaHistoryReuseBlockReason::None;
+}
+
+bool canSampleHistoryForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    return taaHistoryReadyForResolve(history) && taaResolveCanReuseHistory(desc, history);
+}
+
+bool tryPreflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                           TaaHistoryReuseBlockReason& outReason) {
+    if (!taaHistoryReadyForResolve(history)) {
+        outReason = TaaHistoryReuseBlockReason::NotReady;
+        return false;
+    }
+    if (taaResolveHistoryGenerationIsStale(desc, history)) {
+        outReason = TaaHistoryReuseBlockReason::StaleGeneration;
+        return false;
+    }
+    if (!history.hasValidHistory()) {
+        outReason = TaaHistoryReuseBlockReason::NotWarm;
+        return false;
+    }
+    outReason = TaaHistoryReuseBlockReason::None;
+    return true;
+}
+
+bool wouldInvalidateHistoryIfStale(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return history.isHistoryStale(observedGeneration);
+}
+
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history) {
+    return !taaHistoryNeedsWarmup(history);
+}
+
 bool TaaHistoryBuffer::canReuseHistory() const {
     return taaHistoryCanReuse(*this);
 }
