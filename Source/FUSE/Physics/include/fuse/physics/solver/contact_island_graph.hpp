@@ -126,3 +126,6 @@ FUSE_PHYSICS_INLINE IslandBuildRejectReason distanceBuildRejectReason(
 struct IslandBuildPreflight {
 IslandBuildPreflight preflight_island_build(u32 bodyCount,
 bool should_skip_island_build(u32 bodyCount,
+
+// --- deepen additive from pbd-island-sleep-build-preflights-cb2c ---
+bool should_skip_island_build(u32 bodyCount);

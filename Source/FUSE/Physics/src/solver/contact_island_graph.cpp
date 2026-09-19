@@ -293,3 +293,7 @@ IslandBuildPreflight preflight_island_build(u32 bodyCount,
         const IslandBuildRejectReason reason = contactBuildRejectReason(contact, bodyCount);
         const IslandBuildRejectReason reason = distanceBuildRejectReason(constraint, bodyCount);
 bool should_skip_island_build(u32 bodyCount,
+
+// --- deepen additive from pbd-island-sleep-build-preflights-cb2c ---
+    const IslandBuildPreflight preflight = preflight_island_build(bodyCount, contacts, distanceConstraints);
+bool should_skip_island_build(u32 bodyCount) {

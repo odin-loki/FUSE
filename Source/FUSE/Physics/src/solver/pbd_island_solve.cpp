@@ -2036,3 +2036,27 @@ IslandDispatchJobBatchPreflight preflight_dispatchable_island_jobs(const Contact
     IslandDispatchJobBatchPreflight preflight{};
 bool should_skip_dispatchable_island_jobs(const std::vector<IslandSolveJob>& jobs, f32 dt) {
     if (should_skip_dispatchable_island_jobs(jobs, dt)) {
+
+// --- deepen additive from pbd-island-sleep-build-preflights-cb2c ---
+IslandSleepPreflight preflight_island_sleep(const RigidBodySoA& bodies,
+IslandSleepPreflight preflight_island_sleep_by_index(const RigidBodySoA& bodies,
+IslandWakePreflight preflight_island_wake(const RigidBodySoA& bodies,
+IslandWakePreflight preflight_island_wake_by_index(const RigidBodySoA& bodies,
+        const IslandSleepPreflight sleepPreflight = preflight_island_sleep(bodies, island);
+        if (sleepPreflight.can_skip_solve()) {
+bool should_skip_island_solve_for_sleep(const RigidBodySoA& bodies,
+bool should_skip_island_solve_for_sleep_index(const RigidBodySoA& bodies,
+    return should_skip_island_solve_for_sleep(bodies, graph.island(islandIndex));
+bool should_skip_island_solve_job_for_sleep(const RigidBodySoA& bodies, const IslandSolveJob& job) {
+    return should_skip_island_solve_for_sleep(bodies, *job.island);
+IslandConstraintSolvePreflight preflight_island_constraint_solve_by_index(
+IslandSolveSleepPreflight preflight_island_solve_sleep(const RigidBodySoA& bodies,
+    IslandSolveSleepPreflight preflight{};
+IslandSolveSleepPreflight preflight_island_solve_sleep_by_index(const RigidBodySoA& bodies,
+IslandDispatchSleepPreflight preflight_island_dispatch_sleep(const RigidBodySoA& bodies,
+    IslandDispatchSleepPreflight preflight{};
+        if (should_skip_island_solve_for_sleep(bodies, *job.island)) {
+bool should_skip_island_dispatch_sleep(const RigidBodySoA& bodies,
+    const IslandSolveSleepPreflight preflight = preflight_island_solve_sleep_by_index(
+    const IslandDispatchSleepPreflight preflight = preflight_island_dispatch_sleep(bodies, graph, dt);
+        } else if (should_skip_island_solve_for_sleep_index(bodies, graph, islandIndex)) {

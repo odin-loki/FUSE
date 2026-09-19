@@ -3386,3 +3386,57 @@ void testPreflightDispatchableIslandJobs() {
                "should_skip_warm_start_combined_island_index on invalid dt");
                "should_skip false for combined graph with valid dt");
     testPreflightDispatchableIslandJobs();
+
+// --- deepen additive from pbd-island-sleep-build-preflights-cb2c ---
+    expectTrue(should_skip_island_build(0u), "should_skip_island_build on zero bodies");
+    expectTrue(!should_skip_island_build(3u), "should_skip false for non-zero body count");
+    const IslandBuildPreflight zeroPreflight = preflight_island_build(0u, contacts, constraints);
+    expectTrue(zeroPreflight.zeroBodies, "build preflight marks zero body count");
+    expectTrue(zeroPreflight.skipped, "build preflight skips zero body count");
+    expectTrue(!zeroPreflight.can_build(), "build preflight cannot build with zero bodies");
+    const IslandBuildPreflight validPreflight = preflight_island_build(3u, contacts, constraints);
+    expectTrue(!validPreflight.skipped, "build preflight does not skip valid body count");
+    expectTrue(validPreflight.can_build(), "build preflight can build with valid body count");
+    expectTrue(validPreflight.validContactCount == 1u, "build preflight counts valid contacts");
+    expectTrue(validPreflight.invalidContactCount == 1u, "build preflight counts invalid contacts");
+    expectTrue(validPreflight.validDistanceCount == 1u, "build preflight counts valid distance constraints");
+    expectTrue(validPreflight.invalidDistanceCount == 1u,
+void testPreflightIslandConstraintSolveGuards() {
+    const IslandConstraintSolvePreflight validPreflight =
+    expectTrue(!validPreflight.skipped, "constraint preflight does not skip constrained island");
+    expectTrue(!validPreflight.invalidDt, "constraint preflight accepts valid dt");
+    expectTrue(validPreflight.resolvableConstraintCount == 3u,
+    expectTrue(validPreflight.can_solve(), "constrained island can solve");
+    const IslandConstraintSolvePreflight invalidDtPreflight =
+    expectTrue(invalidDtPreflight.invalidDt, "constraint preflight rejects zero dt");
+    expectTrue(!invalidDtPreflight.can_solve(), "constraint preflight cannot solve with invalid dt");
+    const IslandConstraintSolvePreflight outOfRangeContactPreflight =
+    expectTrue(outOfRangeContactPreflight.outOfRangeContactCount == 1u,
+    expectTrue(outOfRangeContactPreflight.outOfRangeDistanceCount == 0u,
+    expectTrue(outOfRangeContactPreflight.resolvableConstraintCount == 2u,
+    const IslandConstraintSolvePreflight outOfRangeDistancePreflight =
+    expectTrue(outOfRangeDistancePreflight.outOfRangeDistanceCount == 1u,
+    expectTrue(outOfRangeDistancePreflight.resolvableConstraintCount == 0u,
+    const IslandConstraintSolvePreflight indexPreflight =
+    expectTrue(indexPreflight.can_solve(), "index constraint preflight can solve constrained island");
+    const IslandSleepPreflight awakeSleepPreflight =
+    expectTrue(!awakeSleepPreflight.allSleeping, "awake island is not all-sleeping");
+    expectTrue(!awakeSleepPreflight.can_skip_solve(), "awake island cannot skip solve for sleep");
+    const IslandSleepPreflight sleepingPreflight =
+    expectTrue(sleepingPreflight.allSleeping, "all-sleeping island flagged");
+    expectTrue(sleepingPreflight.can_skip_solve(), "all-sleeping island can skip solve");
+    expectTrue(should_skip_island_solve_for_sleep(bodies, graph.island(sleepingIsland)),
+               "should_skip_island_solve_for_sleep on all-sleeping island");
+    const IslandWakePreflight awakeWakePreflight =
+    expectTrue(awakeWakePreflight.should_wake(), "awake constrained island should wake");
+    expectTrue(awakeWakePreflight.awakeDynamicCount == 2u,
+            expectTrue(!should_skip_island_solve_for_sleep(bodies, island),
+    const IslandSolveSleepPreflight solvePreflight = preflight_island_solve_sleep_by_index(
+    expectTrue(solvePreflight.can_solve(), "combined sleep preflight can solve awake island");
+    const IslandSolveSleepPreflight sleepingSolvePreflight = preflight_island_solve_sleep_by_index(
+    expectTrue(!sleepingSolvePreflight.can_solve(), "combined sleep preflight skips all-sleeping island");
+void testDispatchAllIslandsSleepGuarded() {
+    const IslandDispatchSleepPreflight preflight = preflight_island_dispatch_sleep(bodies, graph, dt);
+    expectTrue(!should_skip_island_dispatch_sleep(bodies, graph, dt),
+               "should_skip false for graph with solvable island");
+    testPreflightIslandConstraintSolveGuards();
