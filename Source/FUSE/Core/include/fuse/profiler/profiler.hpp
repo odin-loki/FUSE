@@ -410,3 +410,9 @@ bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
 // --- deepen additive from deepen-b16-profiler-guards-7793 ---
 bool wouldIgnoreOrphanAsyncFlowEnd();
 bool wouldRecordEventName(const char* name);
+
+// --- deepen additive from deepen-b16-profiler-guards-93c0 ---
+struct EventNamePreflight {
+EventNamePreflight preflightEventName(const char* name);
+AsyncFlowPreflight preflightAsyncFlowBegin(const char* name);
+AsyncFlowPreflight preflightAsyncFlowEnd(const char* name);

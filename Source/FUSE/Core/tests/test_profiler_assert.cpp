@@ -3470,3 +3470,55 @@ void testChromeTraceExportPreflightGuardFields() {
     expectTrue(detachedPreflight.needsFlowNestingCleanup,
     expectTrue(detachedPreflight.hasExportWarnings,
     testChromeTraceExportPreflightGuardFields();
+
+// --- deepen additive from deepen-b16-profiler-guards-93c0 ---
+void testEventNamePreflightGuard() {
+    const fuse::profiler::EventNamePreflight nullPreflight = fuse::profiler::preflightEventName(nullptr);
+    expectTrue(nullPreflight.nullName, "preflightEventName marks null name");
+    expectTrue(!nullPreflight.emptyName, "preflightEventName does not mark empty for null");
+    expectTrue(!nullPreflight.canRecord(), "preflightEventName blocks null name");
+    const fuse::profiler::EventNamePreflight emptyPreflight = fuse::profiler::preflightEventName("");
+    expectTrue(!emptyPreflight.nullName, "preflightEventName does not mark null for empty string");
+    expectTrue(emptyPreflight.emptyName, "preflightEventName marks empty string");
+    expectTrue(!emptyPreflight.canRecord(), "preflightEventName blocks empty string");
+    const fuse::profiler::EventNamePreflight validPreflight = fuse::profiler::preflightEventName("scope");
+    expectTrue(!validPreflight.nullName, "preflightEventName clears null flag for valid name");
+    expectTrue(!validPreflight.emptyName, "preflightEventName clears empty flag for valid name");
+    expectTrue(validPreflight.canRecord(), "preflightEventName allows valid name");
+    const fuse::profiler::EventNamePreflight disabledPreflight = fuse::profiler::preflightEventName("scope");
+    expectTrue(disabledPreflight.profilerDisabled, "preflightEventName marks disabled profiler");
+    expectTrue(!disabledPreflight.canRecord(), "preflightEventName blocks when profiler disabled");
+void testCanRecordEventGuard() {
+void testAsyncFlowPreflightGuard() {
+    const fuse::profiler::AsyncFlowPreflight nullBegin = fuse::profiler::preflightAsyncFlowBegin(nullptr);
+    expectTrue(nullBegin.nullName, "preflightAsyncFlowBegin marks null name");
+    expectTrue(!nullBegin.canBegin(), "preflightAsyncFlowBegin blocks null name");
+    const fuse::profiler::AsyncFlowPreflight emptyBegin = fuse::profiler::preflightAsyncFlowBegin("");
+    expectTrue(emptyBegin.emptyName, "preflightAsyncFlowBegin marks empty string");
+    expectTrue(!emptyBegin.canBegin(), "preflightAsyncFlowBegin blocks empty string");
+    const fuse::profiler::AsyncFlowPreflight validBegin = fuse::profiler::preflightAsyncFlowBegin("flow");
+    expectTrue(validBegin.canBegin(), "preflightAsyncFlowBegin allows valid name");
+    const fuse::profiler::AsyncFlowPreflight endWithoutBegin = fuse::profiler::preflightAsyncFlowEnd("flow");
+    expectTrue(endWithoutBegin.noOpenFlows, "preflightAsyncFlowEnd marks no open flows");
+    expectTrue(!endWithoutBegin.canEnd(), "preflightAsyncFlowEnd blocks without open flow");
+    const fuse::profiler::AsyncFlowPreflight endWithBegin = fuse::profiler::preflightAsyncFlowEnd("flow");
+    expectTrue(!endWithBegin.noOpenFlows, "preflightAsyncFlowEnd clears noOpenFlows after begin");
+    expectTrue(endWithBegin.canEnd(), "preflightAsyncFlowEnd allows end with open flow");
+void testCanBeginAndEndAsyncFlowGuard() {
+               "tryExportableEventAt true for counter event");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::Counter, "tryExportableEventAt copies counter phase");
+    expectTrue(!fuse::profiler::tryExportableEventAt(99u, outEvent),
+               "tryExportableEventAt false when out of range");
+void testCountAndFindEventsByPhaseGuard() {
+    const fuse::profiler::ChromeTraceExportPreflight resetPreflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(!resetPreflight.bufferFull, "preflight bufferFull false on reset");
+    expectTrue(!resetPreflight.hasExportWarnings(), "preflight hasExportWarnings false on reset");
+        expectTrue(activePreflight.hasExportWarnings(), "preflight warns on active unbalanced scope");
+        expectTrue(activePreflight.scopeNestingUnbalanced, "preflight marks scope unbalanced inside scope");
+    const fuse::profiler::ChromeTraceExportPreflight openFlowPreflight =
+    expectTrue(openFlowPreflight.hasExportWarnings(), "preflight warns on open async flow");
+    expectTrue(openFlowPreflight.hasOpenAsyncFlows, "preflight marks open flow for export warning");
+    expectTrue(detachedPreflight.hasExportWarnings(), "preflight warns on detached flow depth");
+    expectTrue(detachedPreflight.flowDepthDetached, "preflight marks detached flow for export warning");
+    testEventNamePreflightGuard();
+    testAsyncFlowPreflightGuard();
