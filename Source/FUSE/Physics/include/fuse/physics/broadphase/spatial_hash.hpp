@@ -1410,3 +1410,13 @@ FUSE_PHYSICS_INLINE ShapeCellInsertPreflight preflightShapeCellInsert(const Cell
 FUSE_PHYSICS_INLINE ShapeCellInsertPreflight preflightShapeCellInsert(const CellRange2& range, u32 maxCells) {
     return !preflightShapeCellInsert(range, maxCells).canInsert();
     return preflightShapeCellInsert(range, maxCells).canInsert();
+
+// --- deepen additive from deepen-b4-broadphase-guards-6a82 ---
+enum class BroadphaseCellSlotRejectReason : u8 {
+const char* broadphaseCellSlotRejectReasonName(BroadphaseCellSlotRejectReason reason);
+BroadphaseCellSlotRejectReason broadphaseCellSlotRejectReason(u32 totalCellSlots);
+bool broadphaseCellSlotRejectsForReason(u32 totalCellSlots, BroadphaseCellSlotRejectReason expected);
+struct BroadphaseCellSlotPreflight {
+    BroadphaseCellSlotRejectReason reason = BroadphaseCellSlotRejectReason::None;
+    bool canGenerate() const { return reason == BroadphaseCellSlotRejectReason::None; }
+BroadphaseCellSlotPreflight preflightBroadphaseCellSlots(u32 totalCellSlots);

@@ -1293,3 +1293,19 @@ bool mergeBroadphasePreflightRejectsForReason(
 // --- deepen additive from b4-broadphase-deepen-ed2f ---
     case ShapeCellInsertRejectReason::EmptyRange:
     case ShapeCellInsertRejectReason::ExceedsBudget:
+
+// --- deepen additive from deepen-b4-broadphase-guards-6a82 ---
+const char* broadphaseCellSlotRejectReasonName(BroadphaseCellSlotRejectReason reason) {
+    case BroadphaseCellSlotRejectReason::None:
+    case BroadphaseCellSlotRejectReason::ZeroSlots:
+BroadphaseCellSlotRejectReason broadphaseCellSlotRejectReason(u32 totalCellSlots) {
+        return BroadphaseCellSlotRejectReason::ZeroSlots;
+    return BroadphaseCellSlotRejectReason::None;
+bool broadphaseCellSlotRejectsForReason(u32 totalCellSlots, BroadphaseCellSlotRejectReason expected) {
+    return broadphaseCellSlotRejectReason(totalCellSlots) == expected;
+BroadphaseCellSlotPreflight preflightBroadphaseCellSlots(u32 totalCellSlots) {
+    BroadphaseCellSlotPreflight preflight{};
+    preflight.reason = broadphaseCellSlotRejectReason(totalCellSlots);
+    preflight.zeroSlots = preflight.reason == BroadphaseCellSlotRejectReason::ZeroSlots;
+    return !preflightBroadphaseCellSlots(totalCellSlots).canGenerate();
+    return preflightBroadphaseCellSlots(totalCellSlots).canGenerate();

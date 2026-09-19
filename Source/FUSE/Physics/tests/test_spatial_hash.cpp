@@ -3399,3 +3399,18 @@ void testShapeCellInsertPreflightGuards() {
                  fuse::physics::broadphase::shapeCellInsertRejectReason(inverted, 8u)),
              static_cast<fuse::u32>(fuse::physics::broadphase::ShapeCellInsertRejectReason::EmptyRange),
     testShapeCellInsertPreflightGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-6a82 ---
+                   buffer, 3u, fuse::physics::broadphase::PairBufferAcceptPairsRejectReason::AtCapacity),
+void testBroadphaseCellSlotRejectReasonGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::broadphaseCellSlotRejectReason(0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseCellSlotRejectReason::ZeroSlots),
+    expectTrue(fuse::physics::broadphase::broadphaseCellSlotRejectsForReason(
+                   0u, fuse::physics::broadphase::BroadphaseCellSlotRejectReason::ZeroSlots),
+    expectTrue(std::strcmp(fuse::physics::broadphase::broadphaseCellSlotRejectReasonName(
+                               fuse::physics::broadphase::BroadphaseCellSlotRejectReason::ZeroSlots),
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::broadphaseCellSlotRejectReason(4u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::BroadphaseCellSlotRejectReason::None),
+    const fuse::physics::broadphase::BroadphaseCellSlotPreflight preflight =
+        fuse::physics::broadphase::preflightBroadphaseCellSlots(4u);
+    testBroadphaseCellSlotRejectReasonGuards();
