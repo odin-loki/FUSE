@@ -24,6 +24,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaJitter` honours `TaaJitterDesc::sequence_length` (default 8) when advancing and wrapping
 - `TaaJitter::syncToFrameIndex(frame)` — align jitter state to a wrapped monotonic frame counter
 - `TaaJitter::monotonicFrameIndex()` — monotonic frame counter incremented by `advance`, set by `syncToFrameIndex`
+- `tryPreflightTaaJitterNdc` / `shouldSkipTaaJitterSync` / `shouldSkipTaaJitterNdc` — jitter guard early-outs
+- `TaaJitter::needsResyncToFrameIndex` — detect jitter drift from expected frame counter
 
 ## History validity (B5.9 deepen)
 
@@ -52,6 +54,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaResolve::wouldSkip(desc, history, &reason)` — preflight skip check without mutating history
 - `TaaResolve::resetBookkeeping()` — clears resolve stats/message (called on `TaaPass::destroy` / `invalidateHistory`)
 - `TaaPass::invalidateHistory()` — clears history validity and resolve bookkeeping without destroying buffers
+- `classifyTaaHistoryWarmupBlock` / `tryPreflightTaaHistoryWarmup` / `shouldSkipTaaHistoryWarmup` — warm-up preflight guards
+- `taaHistoryWarmupComplete` — true when history is ready and warmed
 - `TaaPass::resize(w, h)` — resizes history targets and invalidates accumulated frames
 - `TaaPass::matchesDimensions(w, h)` — true when pass and history dimensions align
 - `TaaPass::needsHistoryWarmup()` — true until the first successful resolve
@@ -59,6 +63,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::historyInvalidateGeneration()` — current history invalidate epoch
 - `TaaPass::stampObservedHistoryGeneration(desc)` — stamp observed generation from pass history
 - `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter
+- `preflightTaaResolveFrame` / `tryPreflightTaaResolveFrame` / `shouldSkipTaaResolveFrame` — combined resolve + blend preflight
+- `TaaPass::preflightResolveFrame` / `shouldSkipResolveFrame` — pass-level composite preflight
 
 ## Pipeline (stub)
 
