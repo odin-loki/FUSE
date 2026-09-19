@@ -1242,3 +1242,17 @@ bool isEventLookupPreflightOk(u32 index) {
     if (!isEventLookupPreflightOk(index)) {
 bool isChromeExportPreflightOk() {
     return isProfilerNestingPreflightOk();
+
+// --- deepen additive from deepen-b16-profiler-preflights-3f2f ---
+NestingPreflight preflightNesting() {
+AsyncFlowPreflight preflightBeginAsyncFlow(const char* name) {
+AsyncFlowPreflight preflightEndAsyncFlow(const char* name) {
+ExportPreflight preflightExport() {
+EventLookupPreflight preflightEventAt(u32 index) {
+EventLookupPreflight preflightLastEvent() {
+    return preflightEventAt(index);
+    return preflightProfileScope(name).canEnter();
+    return preflightBeginAsyncFlow(name).canBegin();
+    return preflightEndAsyncFlow(name).canEnd();
+    return preflightExport().canExport();
+    return preflightEventAt(index).canLookup();

@@ -3098,3 +3098,82 @@ void testEmptyNameDoesNotPassProfileEventPreflight() {
     testProfilerNestingPreflightGuards();
     testChromeExportPreflightWithUnmatchedFlow();
     testEmptyNameDoesNotPassProfileEventPreflight();
+
+// --- deepen additive from deepen-b16-profiler-preflights-3f2f ---
+void testProfileScopePreflightGuard() {
+    expectTrue(nullPreflight.emptyName, "preflight marks null scope name");
+    expectTrue(!nullPreflight.canEnter(), "preflight rejects null scope name");
+    expectTrue(emptyPreflight.emptyName, "preflight marks empty scope name");
+    expectTrue(!emptyPreflight.canEnter(), "preflight rejects empty scope name");
+        fuse::profiler::preflightProfileScope("disabled_scope");
+    expectTrue(disabledPreflight.disabled, "preflight marks disabled profiler");
+    expectTrue(!disabledPreflight.canEnter(), "preflight rejects disabled profiler");
+        fuse::profiler::preflightProfileScope("enabled_scope");
+    expectTrue(validPreflight.canEnter(), "preflight accepts valid enabled scope");
+    expectTrue(!validPreflight.emptyName, "valid preflight clears emptyName");
+    expectTrue(!validPreflight.disabled, "valid preflight clears disabled");
+void testAsyncFlowPreflightGuards() {
+    const fuse::profiler::AsyncFlowPreflight orphanPreflight =
+        fuse::profiler::preflightEndAsyncFlow("orphan_flow");
+    expectTrue(orphanPreflight.orphanEnd, "preflight marks orphan flow end");
+    expectTrue(!orphanPreflight.canEnd(), "preflight rejects orphan flow end");
+    const fuse::profiler::AsyncFlowPreflight beginPreflight =
+    expectTrue(beginPreflight.canBegin(), "preflight accepts valid flow begin");
+    const fuse::profiler::AsyncFlowPreflight openEndPreflight =
+    expectTrue(!openEndPreflight.orphanEnd, "preflight clears orphanEnd with open flow");
+    expectTrue(openEndPreflight.canEnd(), "preflight accepts flow end with open flow");
+    const fuse::profiler::AsyncFlowPreflight emptyBeginPreflight =
+    expectTrue(emptyBeginPreflight.emptyName, "preflight marks empty flow begin name");
+    expectTrue(!emptyBeginPreflight.canBegin(), "preflight rejects empty flow begin");
+void testNestingPreflightGuard() {
+    const fuse::profiler::NestingPreflight resetPreflight = fuse::profiler::preflightNesting();
+    expectTrue(resetPreflight.isBalanced(), "reset nesting preflight is balanced");
+    expectTrue(resetPreflight.scopeBalanced, "reset scope nesting is balanced");
+    expectTrue(resetPreflight.flowBalanced, "reset flow nesting is balanced");
+    expectTrue(!resetPreflight.hasOpenFlows, "reset has no open flows");
+        const fuse::profiler::NestingPreflight activePreflight = fuse::profiler::preflightNesting();
+        expectTrue(!activePreflight.scopeBalanced, "active scope reports unbalanced nesting");
+        expectTrue(activePreflight.scopeDepth == 1u, "preflight reports scope depth");
+        const fuse::profiler::NestingPreflight flowPreflight = fuse::profiler::preflightNesting();
+        expectTrue(!flowPreflight.flowBalanced, "open flow reports unbalanced flow nesting");
+        expectTrue(flowPreflight.hasOpenFlows, "open flow reports hasOpenFlows");
+        expectTrue(flowPreflight.openFlowCount == 1u, "preflight reports open flow count");
+        expectTrue(flowPreflight.flowDepth == 1u, "preflight reports flow depth");
+        expectTrue(fuse::profiler::preflightNesting().flowBalanced,
+    expectTrue(fuse::profiler::preflightNesting().isBalanced(),
+void testExportPreflightGuard() {
+    const fuse::profiler::ExportPreflight emptyPreflight = fuse::profiler::preflightExport();
+    expectTrue(emptyPreflight.canExport(), "export preflight allows empty buffer export");
+    expectTrue(emptyPreflight.emptyBuffer, "export preflight marks empty buffer");
+    expectTrue(!emptyPreflight.hasExportableEvents(), "empty buffer has no exportable events");
+    expectTrue(emptyPreflight.exportableEventCount == 0u, "empty buffer exportable count is zero");
+    const fuse::profiler::ExportPreflight filledPreflight = fuse::profiler::preflightExport();
+    expectTrue(filledPreflight.hasExportableEvents(), "filled buffer has exportable events");
+    expectTrue(filledPreflight.exportableEventCount == filledPreflight.bufferedEventCount,
+    expectTrue(filledPreflight.skippedInvalidNames == 0u, "valid buffer skips no names");
+    const fuse::profiler::ExportPreflight disabledPreflight = fuse::profiler::preflightExport();
+    expectTrue(disabledPreflight.disabled, "disabled profiler marks export preflight disabled");
+    expectTrue(!disabledPreflight.canExport(), "disabled profiler rejects export");
+void testEventLookupPreflightGuard() {
+    const fuse::profiler::EventLookupPreflight emptyPreflight = fuse::profiler::preflightEventAt(0u);
+    expectTrue(emptyPreflight.emptyBuffer, "empty buffer preflight marks emptyBuffer");
+    expectTrue(emptyPreflight.indexOutOfRange, "empty buffer preflight marks indexOutOfRange");
+    expectTrue(!emptyPreflight.canLookup(), "empty buffer preflight rejects lookup");
+    const fuse::profiler::EventLookupPreflight lastEmptyPreflight = fuse::profiler::preflightLastEvent();
+    expectTrue(lastEmptyPreflight.emptyBuffer, "last-event preflight marks empty buffer");
+    expectTrue(!lastEmptyPreflight.canReadValidEvent(), "last-event preflight invalid on empty buffer");
+    const fuse::profiler::EventLookupPreflight firstPreflight = fuse::profiler::preflightEventAt(0u);
+    expectTrue(firstPreflight.canLookup(), "preflight accepts first event index");
+    expectTrue(firstPreflight.canReadValidEvent(), "preflight accepts valid first event");
+    expectTrue(!firstPreflight.invalidEvent, "valid event clears invalidEvent flag");
+    const fuse::profiler::EventLookupPreflight lastPreflight = fuse::profiler::preflightLastEvent();
+    expectTrue(lastPreflight.canReadValidEvent(), "last-event preflight accepts valid event");
+    expectTrue(lastPreflight.index == 1u, "last-event preflight points at last index");
+    const fuse::profiler::EventLookupPreflight oobPreflight = fuse::profiler::preflightEventAt(99u);
+    expectTrue(oobPreflight.indexOutOfRange, "out-of-range preflight marks indexOutOfRange");
+    expectTrue(!oobPreflight.canLookup(), "out-of-range preflight rejects lookup");
+    testProfileScopePreflightGuard();
+    testAsyncFlowPreflightGuards();
+    testNestingPreflightGuard();
+    testExportPreflightGuard();
+    testEventLookupPreflightGuard();

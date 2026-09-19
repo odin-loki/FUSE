@@ -371,3 +371,14 @@ bool tryExportChromeTraceJson(std::string& outJson);
 bool isProfilerNestingPreflightOk();
 bool isEventLookupPreflightOk(u32 index);
 bool isChromeExportPreflightOk();
+
+// --- deepen additive from deepen-b16-profiler-preflights-3f2f ---
+struct NestingPreflight {
+struct AsyncFlowPreflight {
+struct ExportPreflight {
+NestingPreflight preflightNesting();
+AsyncFlowPreflight preflightBeginAsyncFlow(const char* name);
+AsyncFlowPreflight preflightEndAsyncFlow(const char* name);
+ExportPreflight preflightExport();
+EventLookupPreflight preflightEventAt(u32 index);
+EventLookupPreflight preflightLastEvent();
