@@ -4923,3 +4923,23 @@ void testTrilinearCachePreflightDeepenGuards() {
     expectTrue(cacheSourceReason == fuse::renderer::ProbeCacheSourceRejectReason::NullCache,
     expectTrue(fuse::renderer::probeCacheSourceRejectReasonIsBlocking(cacheSourceReason),
                "zero probes_per_frame reported by tryScheduleProbeUpdatesAtRate");
+
+// --- deepen additive from deepen-ddgi-b56-guards-d9f5 ---
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeGridSource(badSpacing),
+void testTrilinearCachePreflightGuards() {
+               "classifyProbeScheduleAtRateReject none for valid rate inputs");
+               "preflightProbeScheduleAtRate succeeds for valid rate inputs");
+               "tryScheduleProbeUpdatesAtRate succeeds for valid rate inputs");
+    expectTrue(fuse::renderer::gi::tryPopulateDDGIKernelParams(params, desc, indices, 2u, reason, 7u),
+               "tryPopulateDDGIKernelParams succeeds for valid inputs");
+    expectTrue(params.probe_indices_to_update == indices, "tryPopulate sets probe indices");
+    expectTrue(params.probe_update_count == 2u, "tryPopulate sets update count");
+    expectTrue(params.frame_seed == 7u, "tryPopulate sets frame seed");
+               "tryPopulate reports no reject reason on success");
+    expectTrue(fuse::renderer::gi::preflightProbeTraceKernelLaunch(params),
+    expectTrue(fuse::renderer::gi::preflightProbeBlendKernelLaunch(params),
+    expectTrue(!fuse::renderer::gi::tryPopulateDDGIKernelParams(zeroRays, zeroRaysDesc, indices, 2u, reason),
+               "tryPopulateDDGIKernelParams rejects zero rays per probe");
+               "tryPopulate zero rays reports zero_rays_per_probe reason");
+    expectTrue(!fuse::renderer::gi::preflightProbeTraceKernelLaunch(zeroRays, &reason),
+    testTrilinearCachePreflightGuards();

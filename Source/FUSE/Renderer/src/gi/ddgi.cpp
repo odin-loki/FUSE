@@ -3427,3 +3427,7 @@ bool tryValidateProbeCache(const DDGIDesc& desc,
         outReason = ProbeCacheSourceRejectReason::CacheCountMismatch;
     ProbeCacheSourceRejectReason reason = ProbeCacheSourceRejectReason::None;
     return tryValidateProbeCache(desc, cache, cache_count, reason);
+
+// --- deepen additive from deepen-ddgi-b56-guards-d9f5 ---
+bool tryPopulateDDGIKernelParams(DDGIKernelParams& params,
+                                 ProbeKernelRejectReason& outReason,
