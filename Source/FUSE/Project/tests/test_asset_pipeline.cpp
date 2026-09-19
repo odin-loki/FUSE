@@ -1604,6 +1604,47 @@ void testCookerInvalidationCountProbes() {
     expectTrue(cooker.cache().entry_count() == 0u, "cache empty after probed upstream invalidation");
 }
 
+void testCookerReconcileEstimatorGuards() {
+    const std::string sourceA = writeTempFile("/tmp/fuse_b79_reconcile_a.obj", "# reconcile a\n");
+    const std::string sourceB = writeTempFile("/tmp/fuse_b79_reconcile_b.obj", "# reconcile b\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entryA;
+    entryA.kind = fuse::project::CookAssetKind::Mesh;
+    entryA.source_path = sourceA;
+    entryA.output_path = "/tmp/fuse_b79_reconcile_a.fusemesh";
+    manifest.assets.push_back(entryA);
+
+    fuse::project::CookManifestEntry entryB;
+    entryB.kind = fuse::project::CookAssetKind::Mesh;
+    entryB.source_path = sourceB;
+    entryB.output_path = "/tmp/fuse_b79_reconcile_b.fusemesh";
+    entryB.dependencies.push_back(entryA.output_path);
+    manifest.assets.push_back(entryB);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
+    expectTrue(cooked.ok, "manifest cook for reconcile estimators ok");
+
+    expectTrue(cooker.would_invalidate_upstream_dependency(manifest, sourceA),
+               "fresh cache would invalidate upstream chain");
+    expectTrue(!cooker.would_invalidate_upstream_dependency(manifest, ""),
+               "empty changed source upstream estimator is false");
+    expectTrue(!cooker.would_reconcile_stale_dependencies(manifest),
+               "fresh cache stale reconcile estimator is false");
+
+    writeTempFile(sourceA, "# reconcile a revised\n");
+    expectTrue(cooker.would_reconcile_stale_dependencies(manifest),
+               "upstream hash change marks reconcile estimator true");
+    expectTrue(cooker.count_stale_dependency_invalidation(manifest) >= 1u,
+               "stale reconcile count matches estimator");
+
+    const fuse::u32 removed = cooker.invalidate_stale_dependency_hashes(manifest);
+    expectTrue(removed >= 1u, "stale dependency reconcile removes probed entries");
+    expectTrue(!cooker.would_reconcile_stale_dependencies(manifest),
+               "reconcile estimator false after stale invalidation");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 
@@ -1686,6 +1727,7 @@ int main() {
     testCookCacheEmptyKeyPaths();
     testCookDirtyInvalidatesCache();
     testCookerInvalidationCountProbes();
+    testCookerReconcileEstimatorGuards();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

@@ -1,5 +1,7 @@
 #include <fuse/project/cook_content_hash.hpp>
 
+#include <fuse/project/cook_cache.hpp>
+
 #include <filesystem>
 #include <fstream>
 
@@ -298,6 +300,38 @@ CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 /*upstream_hash*
     CookHashPreflight preflight;
     if (source_hash == 0) {
         preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_fnv1a64_input(const u8* data, usize size) {
+    CookHashPreflight preflight;
+    if (!is_valid_fnv1a64_input(data, size)) {
+        preflight.reason = CookHashRejectReason::NullData;
+        return preflight;
+    }
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+    return preflight;
+}
+
+CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookHashPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
+        return preflight;
+    }
+    if (!is_valid_cook_cache_path(entry.source_path)) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (!is_valid_cook_cache_path(entry.output_path)) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
         return preflight;
     }
 

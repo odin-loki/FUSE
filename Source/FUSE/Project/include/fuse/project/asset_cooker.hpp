@@ -31,6 +31,11 @@ public:
                                                   const std::string& changed_source) const;
     /// Read-only stale dependency-hash reconcile probe (B7.9 deepen).
     [[nodiscard]] u32 count_stale_dependency_invalidation(const CookManifest& manifest) const;
+    /// True when `invalidate_upstream_dependency` would remove at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_upstream_dependency(const CookManifest& manifest,
+                                                            const std::string& changed_source) const;
+    /// True when `invalidate_stale_dependency_hashes` would reconcile at least one entry (B7.9 deepen).
+    [[nodiscard]] bool would_reconcile_stale_dependencies(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
