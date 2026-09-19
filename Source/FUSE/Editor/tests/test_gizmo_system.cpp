@@ -3089,3 +3089,24 @@ void testSnapPreflightNoChange() {
     expectTrue(!gizmo.tryEndDrag(tryEndResult), "tryEndDrag rejects inactive drag");
     expectTrue(!tryEndResult.changed, "inactive tryEndDrag leaves result unchanged");
     expectTrue(end.changed, "endDrag applies via tryEndDrag guard");
+
+// --- deepen additive from deepen-b6-gizmo-end-drag-preflight-b429 ---
+    expectTrue(!gizmo.tryEndDrag(endResult), "tryEndDrag rejects inactive drag");
+    expectTrue(!endResult.changed, "tryEndDrag leaves result unchanged on reject");
+    expectTrue(!endResult.active, "tryEndDrag leaves drag inactive on reject");
+    const fuse::editor::EndDragPreflight disabledSnapPreflight = fuse::editor::preflightEndDrag(
+    expectTrue(disabledSnapPreflight.canEnd(), "end preflight accepts active drag");
+    expectTrue(disabledSnapPreflight.snapDisabled, "end preflight marks disabled snap");
+    expectTrue(!disabledSnapPreflight.invalidSnapStep,
+    const fuse::editor::EndDragPreflight invalidStepPreflight = fuse::editor::preflightEndDrag(
+    expectTrue(invalidStepPreflight.canEnd(), "end preflight accepts active drag with invalid snap step");
+    expectTrue(invalidStepPreflight.invalidSnapStep, "end preflight marks invalid snap step");
+    expectTrue(!invalidStepPreflight.snapDisabled,
+    const fuse::editor::EndDragPreflight activePreflight = gizmo.preflightEndDrag();
+    expectTrue(activePreflight.canEnd(), "gizmo end preflight accepts active drag");
+    expectTrue(!activePreflight.snapDisabled, "gizmo end preflight clears snapDisabled");
+    expectTrue(!activePreflight.invalidSnapStep, "gizmo end preflight clears invalidSnapStep");
+    expectTrue(gizmo.tryEndDrag(endResult), "tryEndDrag accepts active drag");
+    expectTrue(!endResult.active, "tryEndDrag marks drag inactive");
+    expectTrue(endResult.changed, "tryEndDrag reports transform change");
+    expectTrue(!gizmo.endDrag().changed, "endDrag no-op after tryEndDrag");
