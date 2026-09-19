@@ -1828,3 +1828,17 @@ void testCookCacheShouldSkipStoreGuard() {
                "should_skip stale content false when hash mismatches");
                "would_invalidate stale content after disk change");
                "prune estimate should_skip matches should_skip_prune_all");
+
+// --- deepen additive from deepen-b79-cooker-hash-0d57 ---
+               "should_skip_fnv1a64_bytes allows zero-size null span");
+               "should_skip_cook_cache_key rejects zero source");
+    expectTrue(fuse::project::should_skip_manifest_entry_hash(entry),
+               "unreadable manifest dependency should_skip hash");
+    expectTrue(!fuse::project::should_skip_upstream_dependencies_hash({upstream.output_path}, manifest),
+    expectTrue(fuse::project::should_skip_upstream_dependencies_hash({"/tmp/fuse_b79_unknown_dep.fusemesh"},
+               "unknown dependency output should_skip upstream hash");
+               "empty upstream list guarded in would_invalidate_stale_upstream");
+    expectTrue(!cache.would_invalidate_stale_content_for_source("/tmp/fuse_b79_would_source.obj", 1u),
+    expectTrue(seeded.ok, "seed cook for would_invalidate probes");
+               "matching hash not stale in would_invalidate_stale_content");
+               "mismatched hash stale in would_invalidate_stale_content");

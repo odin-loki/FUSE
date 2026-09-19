@@ -2244,3 +2244,12 @@ void testCookerReconcileShouldSkipGuards() {
                "reconcile should_skip false when stale dependency entries exist");
     expectTrue(upstream_count >= 1u, "upstream count non-zero before should_skip check");
                "upstream should_skip false when entries would be removed");
+
+// --- deepen additive from deepen-b79-cooker-hash-0d57 ---
+    expectTrue(cooker.should_skip_prune_reconcile(), "fresh prune reconcile should_skip");
+               "fresh stale dependency reconcile should_skip");
+               "fresh combined reconcile should_skip");
+               "empty changed source upstream reconcile should_skip");
+    expectTrue(!upstream_plan.should_skip(), "upstream reconcile plan should not skip");
+               "stale dependency reconcile should_skip after invalidation");
+    expectTrue(!after.should_skip(), "prune stale entries keep reconcile plan active");
