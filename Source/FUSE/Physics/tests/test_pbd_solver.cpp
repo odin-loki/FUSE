@@ -4426,3 +4426,41 @@ void testIslandDeepenRejectReasonGuards() {
             IslandWakeRejectReason::OutOfRangeIndex,
     const IslandWakeDeepenPreflight wakeDeepen = preflight_island_wake_deepen(graph.island(mixedIsland), bodies);
     testIslandDeepenRejectReasonGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-bdbf ---
+void testPreflightIslandGraphIntegrityGuards() {
+    const IslandGraphIntegrityPreflight preflight =
+    expectTrue(!should_skip_island_graph_integrity(graph, 2, contacts, constraints),
+               "should_skip false for consistent graph");
+    const IslandGraphIntegrityPreflight mismatchPreflight =
+    expectTrue(!mismatchPreflight.is_consistent(), "shrunk contact slots fail integrity");
+    expectTrue(mismatchPreflight.stats.orphanedContactRefCount >= 1u,
+    const IslandGraphIntegrityPreflight bodyMismatchPreflight =
+    expectTrue(!bodyMismatchPreflight.is_consistent(), "undersized body count fails integrity");
+    expectTrue(bodyMismatchPreflight.stats.outOfRangeBodyIndexCount >= 1u,
+void testPreflightIslandConstraintBodyRefsGuards() {
+    const IslandConstraintRefsPreflight safePreflight =
+    expectTrue(!safePreflight.has_unsafe_body_refs(), "in-range contact bodies pass body-ref preflight");
+    expectTrue(safePreflight.can_solve(), "in-range island can solve with body-ref checks");
+    const IslandConstraintRefsPreflight unsafePreflight =
+    expectTrue(unsafePreflight.has_unsafe_body_refs(), "out-of-range contact body fails body-ref preflight");
+    expectTrue(!unsafePreflight.can_solve(), "unsafe body refs block solve preflight");
+    expectTrue(unsafePreflight.outOfRangeContactBodyCount == 1u,
+    expectTrue(unsafePreflight.outOfRangeDistanceBodyCount == 1u,
+void testSolveIslandJobGuardedSkipsAllSleeping() {
+void testPreflightIslandWakeAndSolveGuards() {
+    const IslandWakeAndSolvePreflight mixedPreflight = preflight_island_wake_and_solve(
+    expectTrue(!mixedPreflight.skipped, "wake-and-solve preflight does not skip mixed island");
+    expectTrue(mixedPreflight.can_solve(), "mixed island can wake-and-solve");
+    expectTrue(mixedPreflight.should_wake_first(), "mixed island should wake before solve");
+    const IslandWakeAndSolvePreflight sleepingPreflight = preflight_island_wake_and_solve(
+    expectTrue(!sleepingPreflight.can_solve(), "all-sleeping island cannot wake-and-solve");
+    expectTrue(should_skip_island_wake_and_solve(
+               "should_skip wake-and-solve on all-sleeping island");
+    const IslandWakeAndSolveGraphPreflight graphPreflight =
+    expectTrue(graphPreflight.can_dispatch(), "wake-and-solve graph preflight can dispatch mixed graph");
+    expectTrue(!should_skip_island_wake_and_solve_graph(graph, bodies, 1.f / 60.f),
+               "should_skip wake-and-solve graph false when mixed island exists");
+    testPreflightIslandGraphIntegrityGuards();
+    testPreflightIslandConstraintBodyRefsGuards();
+    testPreflightIslandWakeAndSolveGuards();

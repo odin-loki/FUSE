@@ -2421,3 +2421,17 @@ IslandWakeDeepenPreflight preflight_island_wake_deepen_by_index(const ContactIsl
         deepen.reason = IslandWakeRejectReason::OutOfRangeIndex;
 bool should_skip_island_wake_deepen(const ContactIslandGraph::Island& island, const RigidBodySoA& bodies) {
     return !should_skip_island_wake_deepen(island, bodies);
+
+// --- deepen additive from deepen-pbd-island-guards-bdbf ---
+    if (should_skip_island_sleep_solve(island, bodies)) {
+    if (should_skip_island_graph_integrity(graph, bodyCount, contacts, distanceConstraints)) {
+IslandWakeAndSolvePreflight preflight_island_wake_and_solve(
+    IslandWakeAndSolvePreflight preflight{};
+IslandWakeAndSolvePreflight preflight_island_wake_and_solve_by_index(
+bool should_skip_island_wake_and_solve(const ContactIslandGraph::Island& island,
+IslandWakeAndSolveGraphPreflight preflight_island_wake_and_solve_graph(const ContactIslandGraph& graph,
+    IslandWakeAndSolveGraphPreflight preflight{};
+bool should_skip_island_wake_and_solve_graph(const ContactIslandGraph& graph,
+        const IslandWakeAndSolvePreflight preflight =
+    const IslandWakeAndSolvePreflight preflight = preflight_island_wake_and_solve(
+    const IslandWakeAndSolveGraphPreflight preflight = preflight_island_wake_and_solve_graph(graph, bodies, dt);
