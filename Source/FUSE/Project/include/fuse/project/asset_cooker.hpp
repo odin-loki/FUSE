@@ -250,6 +250,7 @@ public:
     /// Deduplicated sources with stale upstream dependency hashes (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_dependency_sources(
         const CookManifest& manifest) const;
+    /// True when `count_upstream_invalidation(manifest, changed_source)` is non-zero (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

@@ -713,6 +713,7 @@ bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
     return count_upstream_invalidation(manifest, changed_source) != 0;
 
 bool AssetCooker::would_upstream_invalidate(const CookManifest& manifest,
+}
 
 std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
     const CookManifest& manifest, const std::string& changed_source) const {
@@ -726,6 +727,7 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
     std::vector<std::string> sources;
     append_unique_upstream_source_(sources, changed_source);
     if (m_cache.would_invalidate_source(changed_source)) {
+    if (m_cache.count_by_source(changed_source) != 0) {
         sources.push_back(changed_source);
     }
 
@@ -768,6 +770,8 @@ std::vector<std::string> AssetCooker::probe_stale_dependency_sources(const CookM
         source_upstream.emplace_back(job.source_path, hash_upstream_from_jobs(job, graph.jobs()));
 
     return m_cache.probe_stale_upstream_sources_dedup(source_upstream);
+
+
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

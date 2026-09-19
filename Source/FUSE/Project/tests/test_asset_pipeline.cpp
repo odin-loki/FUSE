@@ -3123,6 +3123,7 @@ void testCookerPruneReconcileEstimator() {
     expectTrue(pruned == 1u, "prune_all removes estimated stale entry");
     expectTrue(cooker.estimate_prune_reconcile() == 0u, "prune reconcile zero after prune_all");
 void testCookerWouldReconcileProbes() {
+void testCookerWouldReconcileAndUpstreamProbes() {
     const std::string source_a = writeTempFile("/tmp/fuse_b79_would_reconcile_a.obj", "# would reconcile a\n");
     const std::string source_b = writeTempFile("/tmp/fuse_b79_would_reconcile_b.obj", "# would reconcile b\n");
 
@@ -3157,6 +3158,20 @@ void testCookerWouldReconcileProbes() {
                "upstream change makes would_stale_dependency true");
     expectTrue(cooker.would_reconcile_invalidation(manifest),
                "upstream change makes would_reconcile true");
+    fuse::project::AssetCooker cooker;
+    expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would_reconcile is false");
+    expectTrue(!cooker.would_upstream_invalidation(manifest, ""), "empty changed source would_upstream is false");
+               "would_upstream true for seeded chain head");
+    expectTrue(cooker.probe_upstream_invalidation_sources(manifest, "").empty(),
+               "empty changed source upstream probe is empty");
+
+    const std::vector<std::string> upstream_sources = cooker.probe_upstream_invalidation_sources(manifest, source_a);
+    expectTrue(upstream_sources.size() >= 2u, "upstream probe lists head and downstream sources");
+    expectTrue(upstream_sources[0] == source_a, "upstream probe starts at changed source");
+
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "would_reconcile true after upstream change");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest).total() != 0u,
+               "estimate total non-zero when would_reconcile is true");
 
     fuse::project::CookJobGraph graph;
     graph.build_from_manifest(manifest);
@@ -3182,6 +3197,7 @@ void testCookerWouldReconcileProbes() {
         source_upstream.emplace_back(job.source_path, upstream);
     expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes(source_upstream),
                "would_invalidate_stale_upstream true after upstream content change");
+               "would_invalidate_downstream true for chain producer");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -3412,6 +3428,7 @@ int main() {
     testCookerReconcileEstimatorGuards();
     testCookerStaleDependencyReconcileProbes();
     testCookerReconcileEstimatorProbes();
+    testCookerWouldReconcileAndUpstreamProbes();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

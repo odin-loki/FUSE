@@ -175,6 +175,7 @@ struct CookCacheReconcileEstimate {
 [[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 /// Read-only cache-entry preflight — structural paths plus source readability (B7.9 deepen).
 /// Read-only cache-entry hash preflight — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
+/// Read-only cache-entry preflight — mirrors `is_valid_cook_cache_entry` guards (B7.9 deepen).
 
 /// Combined source/upstream fold is cacheable when non-zero (B7.9 deepen).
 [[nodiscard]] inline bool is_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
@@ -377,6 +378,7 @@ public:
     /// Deduplicated source paths with stale upstream hashes (B7.9 deepen).
     /// Deduplicated stale upstream sources — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources_dedup(
+    [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources_unique(
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;

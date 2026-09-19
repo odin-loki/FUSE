@@ -542,6 +542,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "unknown_dependency_output";
     case CookHashRejectReason::UnresolvedDependency:
         return "unresolved_dependency";
+    case CookHashRejectReason::MissingManifestDependency:
+        return "missing_manifest_dependency";
     case CookHashRejectReason::ZeroSourceHash:
         return "zero_source_hash";
     case CookHashRejectReason::ZeroContentHash:
@@ -563,6 +565,61 @@ CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
     CookHashPreflight preflight;
     if (!is_valid_fnv1a64_input(data, size)) {
         preflight.reason = CookHashRejectReason::NullData;
+    if (path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyPath;
+        return preflight;
+    }
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        preflight.reason = CookHashRejectReason::SourceUnreadable;
+
+    preflight.can_hash = true;
+    preflight.reason = CookHashRejectReason::None;
+
+CookHashPreflight preflight_mesh_import_hash(const MeshImportDesc& desc) {
+    CookHashPreflight preflight;
+    if (desc.input_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+    if (desc.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+    return preflight_file_content_hash(desc.input_path);
+
+CookHashPreflight preflight_texture_import_hash(const TextureImportDesc& desc) {
+
+CookHashPreflight preflight_audio_import_hash(const AudioImportDesc& desc) {
+
+CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry) {
+    if (entry.source_path.empty()) {
+    if (entry.output_path.empty()) {
+    return preflight_file_content_hash(entry.source_path);
+
+CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
+                                                     const CookManifest& manifest) {
+    bool has_non_empty = false;
+    for (const std::string& dependency_output : dependency_output_paths) {
+        if (!dependency_output.empty()) {
+            has_non_empty = true;
+            break;
+    if (!has_non_empty) {
+        preflight.reason = CookHashRejectReason::EmptyDependencyList;
+
+    const CookHashPreflight coverage = preflight_manifest_dependency_coverage(dependency_output_paths, manifest);
+    if (!coverage.can_hash) {
+        return coverage;
+
+        if (dependency_output.empty()) {
+            continue;
+        for (const CookManifestEntry& asset : manifest.assets) {
+            if (asset.output_path == dependency_output) {
+                const CookHashPreflight source_preflight = preflight_file_content_hash(asset.source_path);
+                if (!source_preflight.can_hash) {
+                    return source_preflight;
+
+
+CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 /*upstream_hash*/) {
+    if (source_hash == 0) {
+        preflight.reason = CookHashRejectReason::ZeroSourceHash;
         return preflight;
     }
 
@@ -826,6 +883,24 @@ CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
         preflight.reason = CookHashRejectReason::EmptyInputPath;
     if (entry.output_path.empty()) {
         preflight.reason = CookHashRejectReason::EmptyOutputPath;
+CookHashPreflight preflight_manifest_dependency_coverage(
+    const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest) {
+    bool has_non_empty = false;
+    for (const std::string& dependency_output : dependency_output_paths) {
+        if (dependency_output.empty()) {
+            continue;
+        has_non_empty = true;
+
+        bool found = false;
+        for (const CookManifestEntry& asset : manifest.assets) {
+            if (asset.output_path == dependency_output) {
+                found = true;
+                break;
+        if (!found) {
+            preflight.reason = CookHashRejectReason::MissingManifestDependency;
+
+    if (!has_non_empty) {
+        preflight.reason = CookHashRejectReason::EmptyDependencyList;
         return preflight;
     }
 

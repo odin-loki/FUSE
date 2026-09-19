@@ -25,6 +25,7 @@ enum class CookHashRejectReason : u8 {
     EmptyDependencyList,
     UnknownDependencyOutput,
     UnresolvedDependency,
+    MissingManifestDependency,
     ZeroSourceHash,
     ZeroContentHash,
     NonCacheableKey,
@@ -340,5 +341,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_manifest_entry_with_dependencies_hash(
     const CookManifestEntry& entry, const CookManifest& manifest);
 /// Structural cache-entry preflight — mirrors `is_valid_cook_cache_entry` without storing (B7.9 deepen).
+/// Non-empty dependency output paths must resolve to manifest entries (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_manifest_dependency_coverage(
+    const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);
 
 } // namespace fuse::project
