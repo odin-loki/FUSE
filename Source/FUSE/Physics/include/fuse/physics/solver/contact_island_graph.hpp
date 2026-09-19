@@ -154,6 +154,7 @@ ContactIslandBuildPreflight preflight_contact_island_build(
     UnsafeContactRefs,
     UnsafeDistanceRefs,
 
+
 const char* island_graph_build_reject_reason_name(IslandGraphBuildRejectReason reason);
 
 /// Diagnose why island graph build would skip; vacuously succeeds when build may proceed.
