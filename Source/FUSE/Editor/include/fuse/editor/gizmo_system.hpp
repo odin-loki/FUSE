@@ -1080,3 +1080,8 @@ struct DragUpdateFramePreflight {
     UpdateDragPreflight update;
 DragUpdateFramePreflight preflightDragUpdateFrame(const GizmoHitTest& hit, bool dragging,
     [[nodiscard]] DragUpdateFramePreflight preflightDragUpdateFrame(const GizmoHitTest& hit) const;
+
+// --- deepen additive from deepen-b6-gizmo-interaction-preflights-c853 ---
+PickSnapPreflight preflightPickSnap(GizmoMode mode, const GizmoSnapSettings& settings);
+    EndDragPreflight drag{};
+BeginInteractionPreflight preflightBeginInteraction(const GizmoRay& ray,

@@ -2487,3 +2487,12 @@ DragUpdateFramePreflight preflightDragUpdateFrame(const GizmoHitTest& hit, bool 
     frame.snap = preflightSnap(mode, settings);
 DragUpdateFramePreflight GizmoSystem::preflightDragUpdateFrame(const GizmoHitTest& hit) const {
     return fuse::editor::preflightDragUpdateFrame(hit, m_dragging, m_activeAxis, m_mode, m_snap);
+
+// --- deepen additive from deepen-b6-gizmo-interaction-preflights-c853 ---
+PickSnapPreflight preflightPickSnap(GizmoMode mode, const GizmoSnapSettings& settings) {
+    PickSnapPreflight preflight = preflightPickSnap(mode, settings);
+    preflight.drag = preflightEndDrag(dragging, activeAxis, mode, settings);
+BeginInteractionPreflight preflightBeginInteraction(const GizmoRay& ray,
+    preflight.begin = preflightBeginDrag(hit, mode, alreadyDragging, settings);
+    return preflightBeginDrag(ray, transform, mode, space, axisLength, pickRadius, false, settings)
+    return preflightBeginDrag(hit, mode, false, settings).canBegin;

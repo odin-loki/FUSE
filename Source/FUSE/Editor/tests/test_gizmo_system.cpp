@@ -3443,3 +3443,25 @@ void testDragUpdateFramePreflight() {
     const fuse::editor::DragUpdateFramePreflight validFrame = fuse::editor::preflightDragUpdateFrame(
     const fuse::editor::DragUpdateFramePreflight gizmoFrame = gizmo.preflightDragUpdateFrame(hit);
     testDragUpdateFramePreflight();
+
+// --- deepen additive from deepen-b6-gizmo-interaction-preflights-c853 ---
+void testPickSnapPreflightGuards() {
+    const fuse::editor::PickSnapPreflight degradedSnap =
+        fuse::editor::preflightPickSnap(fuse::editor::GizmoMode::Translate, snap);
+    const fuse::editor::PickSnapPreflight validSnap =
+    const fuse::editor::PickSnapPreflight rayPick = fuse::editor::preflightPickSnap(
+    const fuse::editor::PickSnapPreflight screenPick =
+    expectTrue(!validPreflight.snapDegraded, "valid snap clears begin snapDegraded");
+    const fuse::editor::BeginInteractionPreflight screenInteraction =
+    const fuse::editor::BeginInteractionPreflight rayInteraction =
+    const fuse::editor::BeginInteractionPreflight gizmoInteraction = gizmo.preflightBeginInteraction(hit);
+    const fuse::editor::BeginInteractionPreflight draggingInteraction =
+        gizmo.preflightBeginInteraction(hit);
+    const fuse::editor::UpdateInteractionPreflight degradedInteraction =
+    const fuse::editor::UpdateInteractionPreflight gizmoInteraction =
+        gizmo.preflightUpdateInteraction(hit);
+    const fuse::editor::EndInteractionPreflight degradedInteraction = fuse::editor::preflightEndInteraction(
+    const fuse::editor::EndInteractionPreflight validInteraction = fuse::editor::preflightEndInteraction(
+    expectTrue(!gizmo.preflightEndInteraction().canEnd(),
+    expectTrue(gizmo.preflightEndInteraction().canEnd(), "gizmo end interaction accepts active drag");
+    testPickSnapPreflightGuards();
