@@ -196,6 +196,10 @@ bool distance_refs_in_range(u32 bodyCount, const DistanceConstraint& constraint)
 
 const char* islandGraphBuildRejectReasonName(IslandGraphBuildRejectReason reason);
 
+/// Why island graph build would early-out (B4.4 deepen pass).
+
+
+/// Diagnose why island graph build would skip; vacuously succeeds on safe in-range inputs.
 IslandGraphBuildRejectReason islandGraphBuildRejectReason(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
@@ -769,6 +773,7 @@ bool can_build_island_graph(
 
 /// Returns true when `islandGraphBuildRejectReason` matches `expected` (B4.4 deepen pass).
 bool islandGraphBuildRejectsForReason(
+bool islandGraphBuildRejectsForReason(u32 bodyCount,
 
 /// Connected-component partition of bodies/constraints for job-safe PBD iteration.
 /// Constraints in different islands may be resolved in parallel; within an island
@@ -835,6 +840,7 @@ struct ContactIslandGraph {
     /// Guarded build; clears the graph and returns false when preflight rejects inputs.
     /// Build only when `can_build_island_graph` passes; clears and returns false otherwise.
     /// Guarded build; returns false and clears when preflight rejects inputs.
+    /// Guarded build entry: skips empty inputs and out-of-range constraint refs.
 
     void clear();
 

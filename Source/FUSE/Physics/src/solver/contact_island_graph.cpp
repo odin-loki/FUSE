@@ -1854,6 +1854,60 @@ bool islandGraphBuildRejectsForReason(
     return islandGraphBuildRejectReason(bodyCount, contacts, distanceConstraints) == expected;
 }
 
+const char* islandGraphBuildRejectReasonName(IslandGraphBuildRejectReason reason) {
+    switch (reason) {
+    case IslandGraphBuildRejectReason::None:
+        return "None";
+    case IslandGraphBuildRejectReason::EmptyInput:
+        return "EmptyInput";
+    case IslandGraphBuildRejectReason::UnsafeRefs:
+        return "UnsafeRefs";
+    }
+    return "Unknown";
+}
+
+IslandGraphBuildRejectReason islandGraphBuildRejectReason(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    u32 inRangeContactCount = 0;
+    u32 inRangeDistanceCount = 0;
+    u32 outOfRangeContactBodyCount = 0;
+    u32 outOfRangeDistanceBodyCount = 0;
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        const bool inRange = contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+        if (inRange) {
+            ++inRangeContactCount;
+        } else if (contact.valid) {
+            ++outOfRangeContactBodyCount;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (constraint.bodyA < bodyCount && constraint.bodyB < bodyCount) {
+            ++inRangeDistanceCount;
+        } else {
+            ++outOfRangeDistanceBodyCount;
+        }
+    }
+
+    if (bodyCount == 0u && inRangeContactCount == 0u && inRangeDistanceCount == 0u) {
+        return IslandGraphBuildRejectReason::EmptyInput;
+    }
+    if (outOfRangeContactBodyCount > 0u || outOfRangeDistanceBodyCount > 0u) {
+        return IslandGraphBuildRejectReason::UnsafeRefs;
+    }
+    return IslandGraphBuildRejectReason::None;
+}
+
+bool islandGraphBuildRejectsForReason(u32 bodyCount,
+                                      const std::vector<narrowphase::ContactManifold>& contacts,
+                                      const std::vector<DistanceConstraint>& distanceConstraints,
+                                      IslandGraphBuildRejectReason expected) {
+    return islandGraphBuildRejectReason(bodyCount, contacts, distanceConstraints) == expected;
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     bodyToIsland_.clear();
