@@ -1267,3 +1267,16 @@ bool tryLastExportableEvent(ProfileEvent& outEvent) {
 
 // --- deepen additive from deepen-b16-profiler-guards-5e82 ---
 bool tryFindEventByName(const char* name, u32 startIndex, u32& outIndex, ProfileEvent& outEvent) {
+
+// --- deepen additive from deepen-b16-profiler-guards-1296 ---
+    return diagnoseEventNameRejectReason(name) == EventNameRejectReason::None;
+        return NestingStateRejectReason::FlowDepthDetached;
+        return ChromeTraceExportRejectReason::ProfilerDisabled;
+        return ChromeTraceExportRejectReason::NoExportableEvents;
+        return ChromeTraceExportRejectReason::FlowDepthDetached;
+    case NestingStateRejectReason::FlowDepthDetached:
+bool preflightChromeTraceNesting(ChromeTraceExportRejectReason* reason) {
+    case ChromeTraceExportRejectReason::ProfilerDisabled:
+    case ChromeTraceExportRejectReason::NoExportableEvents:
+    case ChromeTraceExportRejectReason::FlowDepthDetached:
+    if (!preflightChromeTraceNesting(reason)) {

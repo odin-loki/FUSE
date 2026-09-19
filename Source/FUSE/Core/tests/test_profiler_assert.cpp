@@ -3281,3 +3281,51 @@ void testChromeTraceExportPreflightExtendedFields() {
     expectTrue(!disabledPreflight.isExportReady(), "preflight isExportReady false when disabled");
     expectTrue(!disabledPreflight.canExport(), "preflight canExport false when disabled");
     testChromeTraceExportPreflightExtendedFields();
+
+// --- deepen additive from deepen-b16-profiler-guards-1296 ---
+void testTryValidateEventNameGuard() {
+               "tryValidateEventName rejects null");
+    expectTrue(reason == fuse::profiler::EventNameRejectReason::Null, "null name reason is Null");
+               "tryValidateEventName rejects empty string");
+    expectTrue(reason == fuse::profiler::EventNameRejectReason::Empty, "empty name reason is Empty");
+    expectTrue(fuse::profiler::tryValidateEventName("valid_scope", reason),
+               "tryValidateEventName accepts non-empty name");
+    expectTrue(reason == fuse::profiler::EventNameRejectReason::None, "valid name reason is None");
+void testTryCanLookupEventAtGuard() {
+    expectTrue(!fuse::profiler::tryCanLookupEventAt(0u, reason), "tryCanLookupEventAt false on empty buffer");
+    expectTrue(fuse::profiler::tryCanLookupEventAt(0u, reason), "tryCanLookupEventAt true for first event");
+    expectTrue(reason == fuse::profiler::EventLookupRejectReason::None, "valid lookup reason is None");
+    expectTrue(!fuse::profiler::tryCanLookupEventAt(2u, reason), "tryCanLookupEventAt false past count");
+void testPreflightProfilerStateGuard() {
+    expectTrue(fuse::profiler::preflightProfilerState(&reason), "preflightProfilerState true on reset");
+    expectTrue(reason == fuse::profiler::NestingStateRejectReason::None, "balanced state reason is None");
+                   "preflightProfilerState false inside active scope");
+    expectTrue(!fuse::profiler::preflightProfilerState(&reason), "open flow reports unbalanced state");
+    expectTrue(reason == fuse::profiler::NestingStateRejectReason::OpenAsyncFlows,
+    expectTrue(fuse::profiler::preflightProfilerState(&reason), "paired flow restores balanced state");
+void testPreflightProfilerStateDetachedFlow() {
+    expectTrue(!fuse::profiler::preflightProfilerState(&reason), "preflightProfilerState false after detach");
+    expectTrue(reason == fuse::profiler::NestingStateRejectReason::FlowDepthDetached,
+    expectTrue(std::string(fuse::profiler::nestingStateRejectReasonLabel(reason)) == "flow_depth_detached",
+void testPreflightChromeTraceNestingGuard() {
+    fuse::profiler::ChromeTraceExportRejectReason reason = fuse::profiler::ChromeTraceExportRejectReason::None;
+    expectTrue(!fuse::profiler::preflightChromeTraceNesting(&reason),
+               "preflightChromeTraceNesting false on empty buffer");
+    expectTrue(reason == fuse::profiler::ChromeTraceExportRejectReason::NoExportableEvents,
+    expectTrue(fuse::profiler::preflightChromeTraceNesting(&reason),
+               "preflightChromeTraceNesting true after balanced scope");
+               "preflightChromeTraceNesting false with open flow");
+    expectTrue(reason == fuse::profiler::ChromeTraceExportRejectReason::OpenAsyncFlows,
+void testPreflightChromeTraceNestingDisabledProfiler() {
+               "preflightChromeTraceNesting false when disabled");
+    expectTrue(reason == fuse::profiler::ChromeTraceExportRejectReason::ProfilerDisabled,
+void testTryExportChromeTraceJsonGuard() {
+               "tryExportChromeTraceJson false on empty buffer");
+    expectTrue(guardedJson.empty(), "tryExportChromeTraceJson clears output on reject");
+               "tryExportChromeTraceJson true after balanced recording");
+void testTryExportChromeTraceJsonRejectsOpenFlow() {
+               "tryExportChromeTraceJson false with open async flow");
+    testPreflightProfilerStateGuard();
+    testPreflightProfilerStateDetachedFlow();
+    testPreflightChromeTraceNestingGuard();
+    testPreflightChromeTraceNestingDisabledProfiler();
