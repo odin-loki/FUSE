@@ -17687,6 +17687,7 @@ void testHysteresisBlend() {
 }
 
 void testDdgiDeepenPassGuards() {
+void testDdgiDeepenFollowUpGuards() {
     fuse::renderer::DDGIDesc desc{};
     desc.grid_dims = {2, 2, 2};
     desc.irradiance_res = 8;
@@ -17752,7 +17753,6 @@ void testDdgiDeepenPassGuards() {
                    desc, {0.5f, 0.5f, 0.5f}, cache.data(), 8u),
                "preflightTrilinearProbeIrradiance succeeds on full cache");
     expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSample(
-                   desc, {0.5f, 0.5f, 0.5f}, cache.data(), 8u),
                "wouldSkipTrilinearProbeSample false on full cache");
     expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSampleAtCoords(desc, coords, cache.data(), 8u),
                "wouldSkipTrilinearProbeSampleAtCoords false on valid coords");
@@ -17763,11 +17763,86 @@ void testDdgiDeepenPassGuards() {
                    desc, {0.5f, 0.5f, 0.5f}, nullptr, 8u),
                "wouldSkipTrilinearDirectionalProbeSample true for null cache");
     expectTrue(fuse::renderer::ddgi_util::preflightTrilinearDirectionalProbeIrradiance(
-                   desc, {0.5f, 0.5f, 0.5f}, cache.data(), 8u),
                "preflightTrilinearDirectionalProbeIrradiance succeeds on full cache");
     expectTrue(fuse::renderer::probeTrilinearSampleRejectReasonIsBlocking(
                    fuse::renderer::ProbeTrilinearSampleRejectReason::NullCache),
                "null_cache trilinear reject reason is blocking");
+               "classifyProbeGridSourceReject none for sampleable grid");
+               "preflightProbeGridSource succeeds for sampleable grid");
+               "wouldSkipProbeGridSource false for sampleable grid");
+               "none probe-grid source reject reason is not blocking");
+
+               "classifyProbeGridSourceReject empty_grid");
+               "empty_grid probe-grid source reject reason label");
+
+               "classifyProbeGridSourceReject zero_spacing");
+                               fuse::renderer::ProbeGridSourceRejectReason::ZeroSpacing),
+                           "zero_spacing") == 0,
+               "zero_spacing probe-grid source reject reason label");
+
+               "classifyProbeGridSourceReject zero_irradiance_res");
+
+    fuse::renderer::ProbeSampleCoords built{};
+    expectTrue(fuse::renderer::ProbeGridLayout::buildProbeSampleCoords(desc, {0.5f, 0.5f, 0.5f}, built),
+               "build coords for wouldSkip sample-coord test");
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, built),
+               "wouldSkipProbeSampleCoords false for valid coords");
+
+    fuse::renderer::ProbeSampleCoords hardOob = built;
+    hardOob.x0 = 9u;
+    hardOob.x1 = 9u;
+    expectTrue(fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, hardOob),
+               "wouldSkipProbeSampleCoords true for hard OOB indices");
+
+    fuse::renderer::ProbeSampleCoords warnWeights = built;
+    warnWeights.tx = 2.f;
+    expectTrue(!fuse::renderer::ProbeGridLayout::wouldSkipProbeSampleCoords(desc, warnWeights),
+               "wouldSkipProbeSampleCoords false for clampable weights");
+
+    fuse::renderer::ProbeTrilinearSampleRejectReason trilinearReason =
+        fuse::renderer::ProbeTrilinearSampleRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryCanTrilinearSampleAtProbeCoords(
+                   desc, built, cache.data(), 8u, trilinearReason),
+               "tryCanTrilinearSampleAtProbeCoords succeeds on accessible grid");
+    expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::None,
+               "valid trilinear preflight reports no reject reason");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, built, cache.data(), 8u),
+               "wouldSkipProbeTrilinearSample false for valid coords");
+
+                   desc, warnWeights, cache.data(), 8u, trilinearReason),
+               "tryCanTrilinearSampleAtProbeCoords warns but succeeds for clampable weights");
+    expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::ClampableWeights,
+               "clampable weights report clampable_weights reason");
+    expectTrue(std::strcmp(fuse::renderer::probeTrilinearSampleRejectReasonLabel(trilinearReason),
+                           "clampable_weights") == 0,
+               "clampable_weights trilinear reject reason label");
+    expectTrue(!fuse::renderer::probeTrilinearSampleRejectReasonIsBlocking(trilinearReason),
+               "clampable_weights is not blocking for trilinear preflight");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(
+                   desc, warnWeights, cache.data(), 8u),
+               "wouldSkipProbeTrilinearSample false for clampable weights");
+
+    expectTrue(!fuse::renderer::ddgi_util::tryCanTrilinearSampleAtProbeCoords(
+                   desc, hardOob, cache.data(), 8u, trilinearReason),
+               "tryCanTrilinearSampleAtProbeCoords rejects hard OOB indices");
+    expectTrue(trilinearReason == fuse::renderer::ProbeTrilinearSampleRejectReason::InvalidSampleCoords,
+               "hard OOB indices report invalid_sample_coords reason");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeTrilinearSample(desc, hardOob, cache.data(), 8u),
+               "wouldSkipProbeTrilinearSample true for hard OOB indices");
+
+    expectTrue(fuse::renderer::ddgi_util::preflightTrilinearProbeSample(
+               "preflightTrilinearProbeSample succeeds for interior sample");
+    expectTrue(!fuse::renderer::ddgi_util::preflightTrilinearProbeSample(empty, {0.f, 0.f, 0.f}, cache.data(), 8u),
+               "preflightTrilinearProbeSample rejects empty grid");
+
+    expectTrue(fuse::renderer::ddgi_util::preflightCacheSampling(desc, cache.data(), 8u),
+               "preflightCacheSampling succeeds for full cache");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheSampling(desc, cache.data(), 8u),
+               "wouldSkipCacheSampling false for full cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheSampling(desc, nullptr, 8u),
+               "wouldSkipCacheSampling true for null cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheSampling(desc, cache.data(), 4u),
+               "wouldSkipCacheSampling true for undersized cache");
 
     fuse::u32 indices[64]{};
     fuse::u32 count = 0u;
@@ -17777,6 +17852,10 @@ void testDdgiDeepenPassGuards() {
                    0u, 2048u, 64u, indices, 64u, &count, scheduleReason),
                "tryScheduleProbeUpdatesAtRate succeeds for valid inputs");
     expectTrue(count == 64u, "tryScheduleProbeUpdatesAtRate schedules 64 probes");
+               "tryScheduleProbeUpdatesAtRate succeeds for valid rate");
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeScheduleAtRateReject(2048u, 64u, 64u, indices, &count) ==
+                   fuse::renderer::ProbeScheduleRejectReason::None,
+               "classifyProbeScheduleAtRateReject none for valid inputs");
     expectTrue(fuse::renderer::ddgi_util::preflightProbeScheduleAtRate(2048u, 64u, 64u, indices, &count),
                "preflightProbeScheduleAtRate succeeds for valid inputs");
     expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdatesAtRate(
@@ -17784,6 +17863,27 @@ void testDdgiDeepenPassGuards() {
                "tryScheduleProbeUpdatesAtRate rejects zero probes_per_frame");
     expectTrue(scheduleReason == fuse::renderer::ProbeScheduleRejectReason::ZeroProbesPerFrame,
                "zero probes_per_frame reports zero_probes_per_frame reason");
+
+    fuse::u32 kernelIndices[2] = {0u, 1u};
+    fuse::renderer::gi::DDGIKernelParams kernelParams{};
+    kernelParams.probe_indices_to_update = kernelIndices;
+    kernelParams.probe_update_count = 2u;
+    kernelParams.rays_per_probe = 256u;
+    fuse::renderer::gi::ProbeKernelRejectReason kernelReason =
+        fuse::renderer::gi::ProbeKernelRejectReason::None;
+    expectTrue(fuse::renderer::gi::tryCanLaunchProbeKernels(kernelParams, kernelReason),
+               "tryCanLaunchProbeKernels succeeds for valid params");
+    expectTrue(fuse::renderer::gi::tryLaunch_probe_kernels(kernelParams, nullptr, kernelReason),
+               "tryLaunch_probe_kernels succeeds for valid params");
+    expectTrue(kernelReason == fuse::renderer::gi::ProbeKernelRejectReason::None,
+               "successful tryLaunch_probe_kernels reports no reject reason");
+
+    fuse::renderer::gi::DDGIKernelParams zeroRays = kernelParams;
+    zeroRays.rays_per_probe = 0u;
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeKernels(zeroRays, kernelReason),
+               "tryCanLaunchProbeKernels rejects zero rays per probe");
+    expectTrue(!fuse::renderer::gi::tryLaunch_probe_kernels(zeroRays, nullptr, kernelReason),
+               "tryLaunch_probe_kernels rejects zero rays per probe");
 }
 
 void testDdgiInitUpdateSample() {
@@ -17791,6 +17891,10 @@ void testDdgiInitUpdateSample() {
     bootstrapDesc.instance.enableValidation = false;
     bootstrapDesc.createSwapchain = false;
     auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    if (bootstrap == nullptr || bootstrap->device() == nullptr) {
+        std::printf("SKIP: no Vulkan device — DDGI init/update/sample test\n");
+        return;
+    }
     expectTrue(bootstrap != nullptr, "bootstrap allocated for DDGI test");
     if (bootstrap == nullptr || bootstrap->device() == nullptr || !bootstrap->device()->isValid()) {
         return;

@@ -457,7 +457,6 @@ bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason*
 
 /// Early-out when the probe grid cannot serve as an irradiance source.
 bool wouldSkipProbeGridSource(const DDGIDesc& desc);
-/// Why probe grid source preflight rejected the request (B5.6 deepen pass).
     DescMismatch,
     InvalidHandles,
     UndersizedVolume,
@@ -489,6 +488,9 @@ bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridRejectReason* reaso
 /// Diagnose why probe-grid source preflight would reject; vacuously succeeds on sampleable grids.
 
 /// Non-mutating probe-grid source preflight — returns true when sampling would proceed.
+
+/// Why probe-grid source validation rejected the request (B5.6 deepen pass).
+
 
 
 /// Why probe sample coord validation rejected the request (B5.6 deepen).
@@ -1767,6 +1769,7 @@ bool preflightProbeGrid(const DDGIDesc& desc, ProbeGridRejectReason* reason = nu
 /// Diagnose why probe-grid source validation would reject; vacuously succeeds on valid descs.
 /// Non-mutating probe-grid source preflight — returns true when desc is a valid sampling source.
 /// Early-out when probe-grid source validation would reject.
+/// Classify why probe-grid source validation would reject — same ordering as `tryValidateProbeGridSource`.
 /// Early-out when probe irradiance lookup should be skipped for an empty or non-sampleable grid.
 bool shouldSkipProbeGrid(const DDGIDesc& desc);
 /// Early-out when the probe grid cannot serve as an irradiance sample source (B5.6 deepen pass).
@@ -1922,6 +1925,7 @@ bool tryPreflightTrilinearProbeSample(const DDGIDesc& desc,
 /// Classify why trilinear probe sampling preflight would reject — deeper than `tryCanSampleAtProbeCoords`.
 /// Diagnose why trilinear probe sample preflight would reject; soft-fails on clampable coords.
 /// Preflight guard before trilinear probe sampling; false on inaccessible grid or hard OOB coords.
+/// Preflight guard before coord-based probe trilinear sampling; soft-fails on clampable weights.
 bool canTrilinearSampleAtProbeCoords(const DDGIDesc& desc,
                                      const ProbeSampleCoords& coords,
                                      const IrradianceCacheEntry* cache,
@@ -2082,6 +2086,17 @@ bool wouldSkipProbeTrilinearSample(const ProbeGridSource& source, const ProbeSam
 bool validateProbeCacheForGrid(const DDGIDesc& desc,
 /// Non-mutating trilinear sample preflight at probe coords — returns true when sampling would proceed.
 /// Non-mutating trilinear sample preflight from a world position — returns true when sampling would proceed.
+/// Diagnose why coord-based trilinear sample preflight would reject; warns on clampable weights.
+                                        const ProbeSampleCoords& coords,
+                                        const IrradianceCacheEntry* cache,
+                                   u32 cache_count);
+bool preflightTrilinearProbeSample(const DDGIDesc& desc,
+                                   const fuse::math::Vec3& world_position,
+                                   ProbeTrilinearSampleRejectReason* reason = nullptr);
+/// Non-mutating cache sampling preflight — grid ready and cache sized for lookup.
+bool preflightCacheSampling(const DDGIDesc& desc,
+/// Early-out when cache sampling preflight would be rejected.
+bool wouldSkipCacheSampling(const DDGIDesc& desc,
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -2633,6 +2648,7 @@ ProbeScheduleRejectReason classifyProbeScheduleRejectAtRate(u32 probe_count,
 bool preflightProbeScheduleAtRate(u32 probe_count,
 /// Classify why rate-aware probe scheduling would be rejected.
 /// Classify why rate-aware probe scheduling would be rejected — same ordering as `tryCanScheduleProbeUpdatesAtRate`.
+ProbeScheduleRejectReason classifyProbeScheduleAtRateReject(u32 probe_count,
                                                             u32 probes_per_frame,
                                                             u32 max_indices,
                                                             const u32* out_indices,
