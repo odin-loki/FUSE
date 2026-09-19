@@ -711,3 +711,22 @@ ContactBufferFrictionBasesPreflight preflight_contact_buffer_friction_bases(cons
 
 // --- deepen additive from deepen-b4-narrowphase-guards-ef6e ---
 bool writeContactBufferSlotWithPreflight(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b135 ---
+const char* contactBufferFrictionRebuildRejectReasonName(ContactBufferFrictionRebuildRejectReason reason) {
+    case ContactBufferFrictionRebuildRejectReason::None:
+    case ContactBufferFrictionRebuildRejectReason::EmptyBuffer:
+    case ContactBufferFrictionRebuildRejectReason::AllOrthonormal:
+ContactBufferFrictionRebuildRejectReason contactBufferFrictionRebuildRejectReason(
+        return ContactBufferFrictionRebuildRejectReason::EmptyBuffer;
+            return ContactBufferFrictionRebuildRejectReason::None;
+    return ContactBufferFrictionRebuildRejectReason::AllOrthonormal;
+    ContactBufferFrictionRebuildRejectReason expected,
+    return contactBufferFrictionRebuildRejectReason(buffer, epsilon) == expected;
+ContactBufferFrictionRebuildPreflight preflightContactBufferFrictionRebuild(
+    ContactBufferFrictionRebuildPreflight preflight{};
+    preflight.reason = contactBufferFrictionRebuildRejectReason(buffer, epsilon);
+    preflight.emptyBuffer = preflight.reason == ContactBufferFrictionRebuildRejectReason::EmptyBuffer;
+    preflight.allOrthonormal = preflight.reason == ContactBufferFrictionRebuildRejectReason::AllOrthonormal;
+    return !preflightContactBufferFrictionRebuild(buffer, epsilon).needsRebuild();
+    return preflightContactBufferFrictionRebuild(buffer, epsilon).needsRebuild();

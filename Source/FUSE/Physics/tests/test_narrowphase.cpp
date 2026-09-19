@@ -2974,3 +2974,30 @@ void testDeepenFollowUpPreflightWrappers() {
     expectTrue(validPreflight.canWrite(), "write preflight allows valid manifold");
             buffer, 9u, valid, fuse::physics::narrowphase::ContactBufferWriteRejectReason::OutOfRangeSlot),
             fuse::physics::narrowphase::contactBufferClampRejectReasonName(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b135 ---
+        "writeSlotWithPreflight succeeds for valid manifold");
+        !buffer.writeSlotWithPreflight(1u, invalid),
+        "writeSlotWithPreflight rejects invalid manifold");
+    const auto needsPreflight = fuse::physics::narrowphase::preflightContactBufferCompaction(buffer);
+    expectTrue(needsPreflight.needsCompaction(), "compaction preflight needs work with holes");
+    const auto cleanPreflight = fuse::physics::narrowphase::preflightContactBufferCompaction(buffer);
+        withinPreflight.reason ==
+    const auto needsPreflight = fuse::physics::narrowphase::preflightContactBufferClamp(buffer);
+    expectTrue(needsPreflight.needsClamp(), "clamp preflight needs work after compact overflow");
+    const auto emptyPreflight = fuse::physics::narrowphase::preflightContactBufferCompactAndClamp(buffer);
+    const auto workPreflight = fuse::physics::narrowphase::preflightContactBufferCompactAndClamp(buffer);
+    expectTrue(workPreflight.needsCompactAndClamp(), "compact-and-clamp preflight needs work");
+    const auto emptyPreflight = fuse::physics::narrowphase::preflightContactBufferFrictionRebuild(buffer);
+            fuse::physics::narrowphase::ContactBufferFrictionRebuildRejectReason::EmptyBuffer,
+    const auto orthonormalPreflight =
+        fuse::physics::narrowphase::preflightContactBufferFrictionRebuild(buffer);
+        orthonormalPreflight.reason ==
+            fuse::physics::narrowphase::ContactBufferFrictionRebuildRejectReason::AllOrthonormal,
+    const auto stalePreflight = fuse::physics::narrowphase::preflightContactBufferFrictionRebuild(buffer);
+    expectTrue(stalePreflight.needsRebuild(), "friction rebuild preflight needs stale slot");
+void testContactPairBothPlaneDeepenRejectGuards() {
+            fuse::physics::narrowphase::ContactPairRejectReason::BothPlane,
+        fuse::physics::narrowphase::should_skip_contact_pair_deepen_dispatch({planeA, planeB}, bodies, shapes),
+                fuse::physics::narrowphase::ContactPairRejectReason::BothPlane),
+void testManifoldNormalizeContactNormalGuards() {

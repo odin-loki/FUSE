@@ -268,3 +268,13 @@ ContactBufferFrictionBasesPreflight preflight_contact_buffer_friction_bases(cons
 
 // --- deepen additive from deepen-b4-narrowphase-guards-ef6e ---
 bool writeContactBufferSlotWithPreflight(
+
+// --- deepen additive from deepen-b4-narrowphase-guards-b135 ---
+enum class ContactBufferFrictionRebuildRejectReason : u8 {
+const char* contactBufferFrictionRebuildRejectReasonName(ContactBufferFrictionRebuildRejectReason reason);
+ContactBufferFrictionRebuildRejectReason contactBufferFrictionRebuildRejectReason(
+    ContactBufferFrictionRebuildRejectReason expected,
+struct ContactBufferFrictionRebuildPreflight {
+    ContactBufferFrictionRebuildRejectReason reason = ContactBufferFrictionRebuildRejectReason::None;
+    bool needsRebuild() const { return reason == ContactBufferFrictionRebuildRejectReason::None; }
+ContactBufferFrictionRebuildPreflight preflightContactBufferFrictionRebuild(
