@@ -25,6 +25,7 @@ HrtfIrStub make_hrtf_ir_stub(const float* samples, u32 length);
 bool has_hrtf_ir(const HrtfIrStub& ir);
 
 /// Readable alias — true when IR samples are null or zero-length.
+/// True when an HRTF IR stub is null or zero-length — inverse of `has_hrtf_ir`.
 bool is_empty_hrtf_ir(const HrtfIrStub& ir);
 
 /// Alias for `has_hrtf_ir` — convolution path is available when true.
@@ -123,7 +124,6 @@ struct HrtfPanPathPreflight {
 
     /// True when the resolved path selects ILD/ITD stub (empty IR fallback).
     bool uses_ild_itd_stub() const { return path == HrtfPanPath::IldItdStub; }
-};
 
 /// Preflight HRTF pan routing from enable flag, IR stub, and listener-local offset.
 HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
@@ -174,6 +174,9 @@ bool is_co_located_hrtf_source(const Vec3& rel_listener);
 /// Early-out inverse of \c should_apply_hrtf_pan.
 bool should_skip_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
 
+
+/// Alias for `is_hrtf_pan_bypassed` — skip pan/coupling when true.
+
 /// True when HRTF pan should run (enabled and source is not co-located).
 bool should_apply_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener);
 
@@ -212,6 +215,12 @@ struct BinauralPanGains {
     float left = 1.f;
     float right = 1.f;
     float itd_seconds = 0.f;
+};
+
+/// Stereo sample pair produced by applying binaural pan gains to a mono input.
+struct BinauralStereoSample {
+    float left = 0.f;
+    float right = 0.f;
 };
 
 /// Azimuth/elevation from a listener-local offset (+Z forward, +X right).
@@ -302,6 +311,20 @@ BinauralPanGains lerp_binaural_pan_gains(const BinauralPanGains& from, const Bin
 /// Clamp per-ear gains to [0, 1].
 void clamp_binaural_pan_gains(BinauralPanGains& gains);
 
+/// Scale per-ear gains in place; ITD is preserved.
+void scale_binaural_pan_gains(BinauralPanGains& gains, float scale);
+
+/// Scale per-ear gains and return a clamped copy; ITD is preserved.
+BinauralPanGains scale_binaural_pan_gains_copy(const BinauralPanGains& gains, float scale);
+
+/// Apply mono sample through pan gains and output attenuation.
+BinauralStereoSample apply_binaural_pan_gains(float mono, const BinauralPanGains& pan,
+                                              float output_attenuation = 1.f);
+
+/// Accumulate a mono sample into stereo bus channels via pan gains and attenuation.
+void accumulate_binaural_pan(float mono, const BinauralPanGains& pan, float output_attenuation,
+                             float& left, float& right);
+
 /// Narrow or widen L/R spread — blend 1 preserves image, 0 collapses to mono centre.
 void apply_spatial_blend(BinauralPanGains& gains, float blend);
 
@@ -389,6 +412,14 @@ bool should_skip_hrtf_spatial_blend(float distance_attenuation, float occlusion_
 float compute_hrtf_spatial_blend(float distance_attenuation, float occlusion_gain,
                                  const HrtfAttenuationCoupling& coupling = {},
                                  const BinauralPanParams& params = {});
+
+/// True when spatial blend is at or above unity — coupling is a no-op.
+bool is_fully_spatial_hrtf_blend(float spatial_blend, float epsilon = 1e-5f);
+
+/// True when distance and occlusion leave the binaural image fully separated.
+bool should_skip_hrtf_attenuation_coupling(float distance_attenuation, float occlusion_gain,
+                                           const HrtfAttenuationCoupling& coupling = {},
+                                           const BinauralPanParams& params = {});
 
 /// Apply distance + occlusion coupling to narrow the binaural image toward mono centre.
 void apply_hrtf_attenuation_coupling(BinauralPanGains& gains, float distance_attenuation,
