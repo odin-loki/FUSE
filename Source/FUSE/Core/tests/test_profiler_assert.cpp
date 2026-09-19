@@ -4339,3 +4339,15 @@ void testTryFindEventByFlowGuard() {
                "tryFindLastEventByFlow true for flow finish");
                "tryFindLastEventByFlow copies flow finish phase");
 void testFlowIdBalanceAndOrphanEndGuards() {
+
+// --- deepen additive from deepen-b16-profiler-name-flow-lookup-cedf ---
+void testTryFindFirstEventByNameAndFlowIdGuard() {
+    expectTrue(!fuse::profiler::tryFindFirstEventByFlowId(42u, outEvent),
+               "tryFindFirstEventByName copies scope begin phase");
+void testIsAsyncFlowIdPairedGuard() {
+void testIsScopeNameBalancedInBufferGuard() {
+void testUnpairedAsyncFlowsInBufferGuard() {
+    expectTrue(!closedPreflight.hasUnpairedAsyncFlowsInBuffer,
+void testHasExportBlockersGuard() {
+    expectTrue(!emptyPreflight.hasExportBlockers(),
+        expectTrue(activePreflight.hasExportBlockers(),
