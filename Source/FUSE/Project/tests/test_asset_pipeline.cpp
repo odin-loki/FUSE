@@ -1662,6 +1662,7 @@ void testCookerStaleDependencyReconcileEstimator() {
 void testCookerReconcileEstimatorProbes() {
     const std::string sourceA = writeTempFile("/tmp/fuse_b79_reconcile_a.obj", "# reconcile a\n");
     const std::string sourceB = writeTempFile("/tmp/fuse_b79_reconcile_b.obj", "# reconcile b\n");
+void testCookerUpstreamInvalidationEstimateProbes() {
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entryA;
@@ -1774,7 +1775,6 @@ void testCookerUpstreamInvalidationSourceProbe() {
     manifest.assets.push_back(entryB);
 
     fuse::project::AssetCooker cooker;
-    const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
     expectTrue(cooked.ok, "manifest cook for upstream source probe ok");
 
     expectTrue(cooker.probe_upstream_invalidation_sources(manifest, "").empty(),
@@ -1832,6 +1832,38 @@ void testCookerUpstreamInvalidationSourceProbe() {
     expectTrue(stale_reconcile.would_invalidate(), "stale reconcile would invalidate");
 
     expectTrue(removed >= stale_reconcile.total(), "reconcile invalidation removes at least estimated total");
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for upstream estimate ok");
+
+    const fuse::project::CookCacheUpstreamInvalidationEstimate empty =
+        cooker.estimate_upstream_invalidation(manifest, "");
+    expectTrue(empty.total() == 0u, "empty changed source upstream estimate is zero");
+    expectTrue(!cooker.would_upstream_invalidate(manifest, ""), "empty changed source would_upstream false");
+
+    const fuse::project::CookCacheUpstreamInvalidationEstimate estimate =
+    expectTrue(estimate.direct_entries >= 1u, "upstream estimate includes direct entries");
+    expectTrue(estimate.downstream_entries >= 1u, "upstream estimate includes downstream entries");
+    expectTrue(estimate.total() == cooker.count_upstream_invalidation(manifest, sourceA),
+    expectTrue(cooker.would_upstream_invalidate(manifest, sourceA),
+               "would_upstream_invalidate true for seeded chain");
+
+void testCookerWouldReconcileInvalidationProbe() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_would_reconcile.obj", "# would reconcile v1\n");
+
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_would_reconcile.fusemesh";
+    manifest.assets.push_back(entry);
+
+    expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would_reconcile probe ok");
+    expectTrue(!cooker.would_reconcile_invalidation(manifest),
+               "fresh cache would_reconcile_invalidation is false");
+
+    writeTempFile(source, "# would reconcile v2\n");
+    expectTrue(cooker.would_reconcile_invalidation(manifest),
+               "stale content makes would_reconcile_invalidation true");
+    expectTrue(cooker.estimate_reconcile_invalidation(manifest).prune_stale_entries >= 1u,
+               "reconcile estimate prune stale matches would_reconcile");
 }
 
 void testCookerInvalidationCountProbes() {
@@ -3953,6 +3985,8 @@ int main() {
     testCookerStaleDependencyReconcileEstimatorParity();
     testCookerStaleDependencyReconcileEstimator();
     testCookerUpstreamInvalidationSourceProbe();
+    testCookerUpstreamInvalidationEstimateProbes();
+    testCookerWouldReconcileInvalidationProbe();
     testCookerInvalidationCountProbes();
     testCookerWouldInvalidateProbes();
     testCookerReconcileEstimateShouldSkip();

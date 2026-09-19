@@ -378,6 +378,7 @@ struct CookCacheInvalidationEstimate {
     return preflight_cook_cache_key(entry.content_hash, entry.upstream_hash);
 /// Structural + source-readability preflight for cache records — mirrors `CookCache::store` guards (B7.9 deepen).
 /// Read-only structural preflight for cache records — mirrors `store` guards (B7.9 deepen).
+/// Read-only store preflight — structural validity plus kind-specific source guards (B7.9 deepen).
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
