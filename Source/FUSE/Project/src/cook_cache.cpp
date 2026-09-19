@@ -503,6 +503,56 @@ u32 CookCache::count_invalid_entries() const {
     return count;
 }
 
+u32 CookCache::count_stale_entries() const {
+    if (m_entries.empty()) {
+        return 0;
+    }
+
+    u32 count = 0;
+    for (const CookCacheEntry& entry : m_entries) {
+        if (is_valid_cook_cache_entry(entry) && is_stale_cache_entry_(entry)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) > 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) > 0;
+}
+
+bool CookCache::would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                          u64 current_content_hash) const {
+    return count_stale_content_for_source(source_path, current_content_hash) > 0;
+}
+
+u32 CookCache::estimate_prune_invalid_entries() const {
+    return count_invalid_entries();
+}
+
+u32 CookCache::estimate_prune_stale_entries() const {
+    return count_stale_entries();
+}
+
+u32 CookCache::estimate_prune_all() const {
+    if (m_entries.empty() || !has_prunable_entries()) {
+        return 0;
+    }
+    return count_prunable_entries();
+}
+
+CookCacheReconcileEstimate CookCache::estimate_reconcile() const {
+    CookCacheReconcileEstimate estimate;
+    estimate.invalid_entries = estimate_prune_invalid_entries();
+    estimate.stale_entries = estimate_prune_stale_entries();
+    estimate.prunable_entries = estimate_prune_all();
+    return estimate;
+}
+
 bool CookCache::contains(u64 content_hash) const {
     if (!is_valid_cook_cache_key(content_hash) || m_entries.empty()) {
         return false;
