@@ -4857,11 +4857,7 @@ void testNestingIntrospectionSnapshot() {
 
 
 
-    {
-    }
 
-    resetState();
-    fuse::platform::registerMainThread();
 
     const fuse::profiler::NestingIntrospection resetSnapshot = fuse::profiler::nestingIntrospection();
     expectTrue(resetSnapshot.scopeDepth == 0u, "introspection scope depth zero after reset");
@@ -4871,7 +4867,6 @@ void testNestingIntrospectionSnapshot() {
     expectTrue(!resetSnapshot.hasOpenAsyncFlows, "introspection reports no open flows after reset");
 
 
-    const fuse::u32 flowId = fuse::profiler::nextFlowId();
         FUSE_PROFILE_SCOPE("intro_outer");
         const fuse::profiler::NestingIntrospection activeScope = fuse::profiler::nestingIntrospection();
         expectTrue(activeScope.scopeDepth == 1u, "introspection tracks active scope depth");
@@ -4899,7 +4894,6 @@ void testExportPreflightEmptyBuffer() {
 
 
 
-    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
     expectTrue(preflight.canExport(), "empty buffer can still export valid chrome JSON");
     expectTrue(preflight.isClean(), "empty buffer export preflight is clean");
     expectTrue(preflight.emptyBuffer, "preflight marks empty buffer");
@@ -4921,7 +4915,6 @@ void testExportPreflightWithEvents() {
 
 
 
-    const std::string json = fuse::profiler::exportChromeTraceJson();
 
 
 
@@ -5109,7 +5102,20 @@ void testRingBufferCapacityGuard() {
                "empty buffer is below capacity");
     expectTrue(!fuse::profiler::isBufferFull(), "empty buffer is not full");
 
-void testTryLastEventGuard() {
+void testEventNameValidPreflight() {
+
+    expectTrue(!fuse::profiler::isEventNameValid(nullptr), "null name fails preflight");
+    expectTrue(!fuse::profiler::isEventNameValid(""), "empty name fails preflight");
+    expectTrue(fuse::profiler::isEventNameValid("valid_scope"), "non-empty name passes preflight");
+
+    expectTrue(!fuse::profiler::isValidProfileEvent(fuse::profiler::ProfileEvent{}),
+               "default ProfileEvent fails validity check");
+               "empty-string ProfileEvent fails validity check");
+    fuse::profiler::ProfileEvent validEvent{};
+    validEvent.name = "valid";
+    expectTrue(fuse::profiler::isValidProfileEvent(validEvent),
+               "named ProfileEvent passes validity check");
+
 
     fuse::profiler::ProfileEvent outEvent{};
     expectTrue(!fuse::profiler::tryLastEvent(outEvent), "tryLastEvent false on empty buffer");
@@ -5302,6 +5308,51 @@ void testEmptyNameEndDoesNotClearOpenFlowCount() {
     expectTrue(!fuse::profiler::hasOpenAsyncFlows(), "valid end clears open flow count");
     expectTrue(fuse::profiler::isProfilerGuardStateBalanced(),
                "paired valid flow restores balanced guard state");
+    {
+        FUSE_PROFILE_SCOPE("last_scope");
+    }
+
+    expectTrue(fuse::profiler::tryLastEvent(outEvent), "tryLastEvent true after recording");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastEvent copies last end phase");
+    expectTrue(outEvent.name != nullptr && std::string(outEvent.name) == "last_scope",
+               "tryLastEvent copies last scope name");
+
+    fuse::profiler::reset();
+
+void testExportPreflightGuards() {
+    resetState();
+    fuse::platform::registerMainThread();
+
+    expectTrue(fuse::profiler::isChromeTraceExportEmpty(), "reset leaves export preflight empty");
+    expectTrue(!fuse::profiler::hasExportableEvents(), "reset leaves no exportable events");
+    expectTrue(fuse::profiler::exportChromeTraceJson().find("\"traceEvents\":[]") != std::string::npos,
+               "empty export preflight matches empty traceEvents");
+
+
+    expectTrue(fuse::profiler::hasExportableEvents(), "recorded scope yields exportable events");
+    expectTrue(!fuse::profiler::isChromeTraceExportEmpty(), "export preflight false after recording");
+    expectTrue(fuse::profiler::exportChromeTraceJson().find("\"name\":\"export_preflight_scope\"")
+                   != std::string::npos,
+               "export preflight allows named scope export");
+
+    expectTrue(fuse::profiler::isChromeTraceExportEmpty(), "reset restores empty export preflight");
+
+void testGuardStateBalancedIntrospection() {
+
+    expectTrue(fuse::profiler::isGuardStateBalanced(), "reset leaves composite guard state balanced");
+
+    const fuse::u32 flowId = fuse::profiler::nextFlowId();
+        FUSE_PROFILE_SCOPE("guard_outer");
+        expectTrue(!fuse::profiler::isGuardStateBalanced(), "active scope reports unbalanced guard state");
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN("guard_flow", flowId);
+        expectTrue(!fuse::profiler::isGuardStateBalanced(), "open flow keeps guard state unbalanced");
+        FUSE_PROFILE_ASYNC_FLOW_END("guard_flow", flowId);
+        expectTrue(!fuse::profiler::isGuardStateBalanced(), "open scope keeps guard state unbalanced");
+    expectTrue(fuse::profiler::isGuardStateBalanced(), "closed scope and flow restore balanced guard state");
+
+    FUSE_PROFILE_ASYNC_FLOW_BEGIN("unmatched_flow", flowId);
+    expectTrue(!fuse::profiler::isGuardStateBalanced(), "unmatched flow leaves guard state unbalanced");
+    expectTrue(fuse::profiler::isGuardStateBalanced(), "reset restores composite guard state balance");
 }
 
 void testVerifyMacro() {
@@ -5672,6 +5723,9 @@ int main() {
     testIsLastEventIndexValidAndTryLastEvent();
     testExportPreflights();
     testEmptyNameEndDoesNotClearOpenFlowCount();
+    testEventNameValidPreflight();
+    testExportPreflightGuards();
+    testGuardStateBalancedIntrospection();
     testFatalHandlerHook();
     testVerifyMacro();
     testIsValidEventNamePreflight();

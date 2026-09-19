@@ -414,6 +414,10 @@ bool isNestingStateClean();
 bool isProfilerGuardStateBalanced();
 
 /// Preflight for scope/async-flow/counter name strings — rejects null and empty names.
+bool isGuardStateBalanced();
+
+/// Preflight for scope/flow/counter names before recording (rejects null and empty strings).
+bool isEventNameValid(const char* name);
 
 bool hasEvents();
 bool hasExportableEvents();
@@ -687,6 +691,8 @@ ChromeTraceExportRejectReason chromeTraceExportRejectReason();
 /// Export preflights — export is always safe to invoke; these diagnose content/readiness.
 bool hasExportableEvents();
 /// Export preflights — true when chrome JSON would include at least one trace event.
+/// True when at least one buffered event has a valid name for chrome export.
+/// True when chrome export would emit zero trace events (empty buffer or no valid names).
 bool isChromeTraceExportEmpty();
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).

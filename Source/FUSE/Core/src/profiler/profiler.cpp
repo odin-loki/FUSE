@@ -572,6 +572,10 @@ bool isProfilerGuardStateBalanced() {
     return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
 }
 
+bool isGuardStateBalanced() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -676,6 +680,10 @@ u32 exportableEventCount() {
 bool isEventExportable(u32 index) {
     return isEventIndexValid(index) && isValidEventName(eventAt(index).name);
     return isRecordableName(event.name);
+}
+
+bool isEventNameValid(const char* name) {
+    return isValidEventName(name);
 }
 
 bool tryValidateEventName(const char* name, EventNameRejectReason& outReason) {
@@ -990,6 +998,30 @@ bool tryLastEvent(ProfileEvent& outEvent) {
     }
 
     return tryEventAt(index, outEvent);
+}
+
+bool tryLastEvent(ProfileEvent& outEvent) {
+    const u32 index = lastEventIndex();
+    if (index == kInvalidEventIndex) {
+        outEvent = ProfileEvent{};
+        return false;
+    }
+
+    return tryEventAt(index, outEvent);
+}
+
+bool hasExportableEvents() {
+    const u32 count = eventCount();
+    for (u32 i = 0; i < count; ++i) {
+        if (isValidProfileEvent(eventAt(i))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool isChromeTraceExportEmpty() {
+    return !hasExportableEvents();
 }
 
 u32 lastEventIndex() {
