@@ -2317,3 +2317,23 @@ bool tryValidateCacheAccess(const DDGIDesc& desc,
         outReason = ProbeScheduleRejectReason::NullOutputIndices;
         outReason = ProbeScheduleRejectReason::NullOutputCount;
     tryScheduleProbeUpdates(frame_index,
+
+// --- deepen additive from deepen-ddgi-guards-c7e8 ---
+    if (!tryValidateCacheLookup(desc, cache, cache_count, probe_index, reason)) {
+bool tryValidateCacheLookup(const DDGIDesc& desc,
+bool wouldSkipCacheIndexValidation(const DDGIDesc& desc,
+    return !tryValidateCacheLookup(desc, cache, cache_count, probe_index, reason);
+    case ProbeScheduleRejectReason::NullIndicesBuffer:
+    case ProbeScheduleRejectReason::NullCountOut:
+        outReason = ProbeScheduleRejectReason::NullIndicesBuffer;
+        outReason = ProbeScheduleRejectReason::NullCountOut;
+    if (!tryCanScheduleProbeUpdates(probe_count, probes_per_frame, out_indices, max_indices, out_count, outReason)) {
+    return tryCanScheduleProbeUpdates(probe_count, probes_per_frame, out_indices, max_indices, out_count, reason);
+    case ProbeKernelRejectReason::NullRadianceSurfaces:
+    case ProbeKernelRejectReason::NullAtlasSurfaces:
+    case ProbeKernelRejectReason::ZeroMaxRayDistance:
+    case ProbeKernelRejectReason::InvalidHysteresis:
+        outReason = ProbeKernelRejectReason::ZeroMaxRayDistance;
+        outReason = ProbeKernelRejectReason::NullRadianceSurfaces;
+        outReason = ProbeKernelRejectReason::NullAtlasSurfaces;
+        outReason = ProbeKernelRejectReason::InvalidHysteresis;

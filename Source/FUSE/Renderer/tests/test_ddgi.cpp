@@ -2483,3 +2483,64 @@ void testProbeScheduleGuards() {
                "tryCanScheduleProbeUpdates rejects zero probe count");
                "tryCanScheduleProbeUpdates rejects zero max indices");
     testCacheAccessRejectReasons();
+
+// --- deepen additive from deepen-ddgi-guards-c7e8 ---
+void testProbeSchedulePreflight() {
+    fuse::renderer::ddgi_util::ProbeScheduleRejectReason reason =
+        fuse::renderer::ddgi_util::ProbeScheduleRejectReason::None;
+    expectTrue(fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 8u, 4u, indices, 8u, &count, reason),
+               "tryScheduleProbeUpdates succeeds on valid inputs");
+    expectTrue(reason == fuse::renderer::ddgi_util::ProbeScheduleRejectReason::None,
+    expectTrue(count == 4u, "trySchedule schedules four probes");
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 0u, 4u, indices, 8u, &count, reason),
+    expectTrue(reason == fuse::renderer::ddgi_util::ProbeScheduleRejectReason::ZeroProbeCount,
+    expectTrue(std::strcmp(fuse::renderer::ddgi_util::probeScheduleRejectReasonLabel(reason), "zero_probe_count") == 0,
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 8u, 4u, nullptr, 8u, &count, reason),
+               "trySchedule rejects null indices buffer");
+    expectTrue(reason == fuse::renderer::ddgi_util::ProbeScheduleRejectReason::NullIndicesBuffer,
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 8u, 4u, indices, 8u, nullptr, reason),
+               "trySchedule rejects null count out");
+    expectTrue(reason == fuse::renderer::ddgi_util::ProbeScheduleRejectReason::NullCountOut,
+    expectTrue(!fuse::renderer::ddgi_util::tryScheduleProbeUpdates(0u, 8u, 4u, indices, 0u, &count, reason),
+               "trySchedule rejects zero max indices");
+    expectTrue(reason == fuse::renderer::ddgi_util::ProbeScheduleRejectReason::ZeroMaxIndices,
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeSchedule(0u, 4u, indices, 8u, &count),
+               "wouldSkipProbeSchedule true for zero probe count");
+    expectTrue(fuse::renderer::ddgi_util::tryValidateCacheLookup(desc, cache.data(), 8u, 3u, reason),
+               "tryValidateCacheLookup succeeds for in-range index");
+    expectTrue(reason == fuse::renderer::CacheIndexRejectReason::None, "valid cache lookup reports no reject reason");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateCacheLookup(desc, nullptr, 8u, 3u, reason),
+               "tryValidateCacheLookup rejects null cache");
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipCacheIndexValidation(desc, nullptr, 8u, 3u),
+               "wouldSkipCacheIndexValidation true for null cache");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipCacheIndexValidation(desc, cache.data(), 8u, 3u),
+               "wouldSkipCacheIndexValidation false for accessible cache");
+    expectTrue(!fuse::renderer::ddgi_util::tryValidateCacheLookup(desc, cache.data(), 4u, 3u, reason),
+               "tryValidateCacheLookup rejects undersized cache for grid");
+void testProbeSampleCoordPreflight() {
+    expectTrue(fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(desc, built, reason),
+               "tryPreflightProbeSampleCoords succeeds on valid coords");
+               "canPreflightProbeSampleCoords true on valid coords");
+    expectTrue(std::strcmp(fuse::renderer::probeSampleCoordsRejectReasonLabel(reason), "not_sampleable") == 0,
+    expectTrue(!fuse::renderer::ProbeGridLayout::tryPreflightProbeSampleCoords(badSpacing, built, reason),
+               "tryPreflightProbeSampleCoords rejects non-sampleable grid");
+void testProbeKernelBlendPreflight() {
+    expectTrue(fuse::renderer::gi::tryCanLaunchProbeBlendKernel(validParams, reason),
+               "wouldSkipProbeBlendKernel false for valid blend params");
+               "tryLaunch blend succeeds with valid params");
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeBlendKernel(nullAtlas, reason),
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::NullAtlasSurfaces,
+    expectTrue(std::strcmp(fuse::renderer::gi::probeKernelRejectReasonLabel(reason), "null_atlas_surfaces") == 0,
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeBlendKernel(nullRadiance, reason),
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::NullRadianceSurfaces,
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeBlendKernel(badHysteresis, reason),
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::InvalidHysteresis,
+    expectTrue(!fuse::renderer::gi::tryCanLaunchProbeTraceKernel(zeroDistance, reason),
+    expectTrue(reason == fuse::renderer::gi::ProbeKernelRejectReason::ZeroMaxRayDistance,
+    expectTrue(fuse::renderer::gi::wouldSkipProbeTraceKernel(zeroDistance),
+               "wouldSkipProbeTraceKernel true for zero max ray distance");
+    expectTrue(!fuse::renderer::gi::tryLaunch_probe_trace_kernel(zeroDistance, nullptr, reason),
+               "tryLaunch trace rejects zero max ray distance");
+    testProbeSchedulePreflight();
+    testProbeSampleCoordPreflight();
+    testProbeKernelBlendPreflight();

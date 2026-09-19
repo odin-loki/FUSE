@@ -781,3 +781,7 @@ bool tryScheduleProbeUpdates(u32 probe_count,
 
 // --- deepen additive from deepen-ddgi-b56-guards-7655 ---
 bool tryValidateCacheAccess(const DDGIDesc& desc,
+
+// --- deepen additive from deepen-ddgi-guards-c7e8 ---
+bool tryValidateCacheLookup(const DDGIDesc& desc,
+bool wouldSkipCacheIndexValidation(const DDGIDesc& desc,
