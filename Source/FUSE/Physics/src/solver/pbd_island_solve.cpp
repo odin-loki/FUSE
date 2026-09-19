@@ -2604,3 +2604,14 @@ bool should_skip_wake_then_solve_island(const ContactIslandGraph::Island& island
 // --- deepen additive from deepen-pbd-island-guards-c9b6 ---
     case IslandBuildRejectReason::DegenerateRefs:
         return IslandBuildRejectReason::DegenerateRefs;
+
+// --- deepen additive from deepen-pbd-island-guards-efe7 ---
+IslandSolveDispatchPreflight preflight_island_solve_dispatch(
+    IslandSolveDispatchPreflight preflight{};
+IslandSolveDispatchPreflight preflight_island_solve_dispatch_by_index(
+bool should_skip_island_solve_dispatch(const ContactIslandGraph::Island& island,
+        const IslandSolveDispatchPreflight preflight =
+IslandSleepSolveDispatchPreflight preflight_island_sleep_dispatch(const ContactIslandGraph& graph,
+    IslandSleepSolveDispatchPreflight preflight{};
+    if (should_skip_island_solve_dispatch(island, bodies, contacts, distanceConstraints)) {
+    const IslandSleepSolveDispatchPreflight preflight = preflight_island_sleep_dispatch(graph, bodies, dt);

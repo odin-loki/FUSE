@@ -4693,3 +4693,22 @@ void testOutOfRangeBodyCountInPreflights() {
 
 // --- deepen additive from deepen-pbd-island-guards-c9b6 ---
     expectTrue(preflight.reason == IslandBuildRejectReason::DegenerateRefs,
+
+// --- deepen additive from deepen-pbd-island-guards-efe7 ---
+void testContactIslandGraphBuildGuardsOorRefs() {
+void testPreflightIslandSolveDispatchGuards() {
+    const IslandSolveDispatchPreflight mixedPreflight =
+    expectTrue(!mixedPreflight.skipped, "solve-dispatch preflight does not skip mixed island");
+    expectTrue(mixedPreflight.can_dispatch(), "mixed island can dispatch constraint solve");
+    expectTrue(!should_skip_island_solve_dispatch(graph.island(mixedIsland),
+               "should_skip solve-dispatch false for mixed island");
+    const IslandSolveDispatchPreflight sleepingPreflight =
+    expectTrue(!sleepingPreflight.can_dispatch(), "all-sleeping island cannot dispatch solve");
+    expectTrue(should_skip_island_solve_dispatch(graph.island(sleepingIsland),
+               "should_skip solve-dispatch true for all-sleeping island");
+    const IslandSolveDispatchPreflight outOfRange =
+    const IslandSleepSolveDispatchPreflight sleepDispatch = preflight_island_sleep_dispatch(graph, bodies, 1.f / 60.f);
+               "should_skip sleep-dispatch false for mixed graph");
+               "should_skip sleep-dispatch true when all constrained islands sleep");
+void testDispatchSolveIslandGuarded() {
+    testPreflightIslandSolveDispatchGuards();
