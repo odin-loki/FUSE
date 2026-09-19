@@ -1445,3 +1445,6 @@ CellCapacityInsertPreflight preflightCellCapacityInsert(
     preflight.exceedsOccupancy = preflight.reason == CellCapacityInsertRejectReason::ExceedsOccupancy;
     return !preflightCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
     return preflightCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
+
+// --- deepen additive from deepen-b4-broadphase-guards-a547 ---
+        return CellPairGenRejectReason::SingletonOccupant;

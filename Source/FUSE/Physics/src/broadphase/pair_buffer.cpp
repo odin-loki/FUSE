@@ -1130,3 +1130,6 @@ PairBufferInvalidatePreflight preflightPairBufferInvalidate(const PairBufferSoA&
     preflight.alreadyInvalid = preflight.reason == PairBufferInvalidateRejectReason::AlreadyInvalid;
     return !preflightPairBufferInvalidate(buffer, slot).canInvalidate();
     return preflightPairBufferInvalidate(buffer, slot).canInvalidate();
+
+// --- deepen additive from deepen-b4-broadphase-guards-a547 ---
+    if (!preflightPairBufferSlotInvalidate(*this, slot).canInvalidate()) {

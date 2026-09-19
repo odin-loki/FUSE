@@ -3647,3 +3647,10 @@ void testCellCapacityInsertRejectReasonGuards() {
     testPairBufferWriteRejectReasonGuards();
     testPairBufferInvalidateRejectReasonGuards();
     testCellCapacityInsertRejectReasonGuards();
+
+// --- deepen additive from deepen-b4-broadphase-guards-a547 ---
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferSlotInvalidateRejectReason::None),
+        fuse::physics::broadphase::preflightPairBufferSlotInvalidate(buffer, 3u);
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellPairGenRejectReason(singleton)),
+    expectTrue(pairPreflight.canGenerate(), "cell-pair-gen preflight accepts multiple occupants");
+    expectEq(pairPreflight.estimatedPairCount, 1u, "cell-pair-gen preflight estimates one pair");
