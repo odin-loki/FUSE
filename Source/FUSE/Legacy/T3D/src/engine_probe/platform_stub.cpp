@@ -1,13 +1,26 @@
 // Minimal Torque platform symbols for FUSE_T3D_LEGACY_ENGINE_PROBE (bitmapUtils.cpp).
-// Satisfies dMem* and Float_Inf without pulling full platform/*.cpp closure.
+// Satisfies dMem* / dMalloc and Float_Inf without pulling full platform/*.cpp closure.
 
 #include "platform/types.h"
 
+#include <cstdlib>
 #include <cmath>
 #include <cstring>
 #include <limits>
 
 const F32 Float_Inf = std::numeric_limits<F32>::infinity();
+
+void* dMalloc(dsize_t size) {
+    return std::malloc(size);
+}
+
+void dFree(void* ptr) {
+    std::free(ptr);
+}
+
+void* dRealloc(void* ptr, dsize_t size) {
+    return std::realloc(ptr, size);
+}
 
 void* dMemcpy(void* dst, const void* src, dsize_t size) {
     return std::memcpy(dst, src, size);

@@ -58,9 +58,13 @@ void setFloatVariable(const char* name, float value);
 namespace engineProbe {
 /// Smoke helper — calls Engine bitmapUtils extrude (probe TU linked when cmake flag ON).
 void bitmapExtrude5551Smoke(const void* srcMip, void* mip, u32 srcHeight, u32 srcWidth);
+void bitmapConvertRGB5551Smoke(u8* rgb, u32 pixels);
+float convertHalfFloatSmoke(u16 half);
 } // namespace engineProbe
 #endif
 
 u32 stringTableEntryCount();
+u32 internString(const char* value);
+const char* lookupString(u32 id);
 
 } // namespace fuse::legacy::t3d

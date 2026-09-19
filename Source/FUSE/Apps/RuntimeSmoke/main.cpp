@@ -6,7 +6,12 @@
 #include <fuse/legacy/t2d/api.hpp>
 #include <fuse/legacy/t3d/api.hpp>
 #include <fuse/legacy/t3d/image_compress.hpp>
+#include <fuse/legacy/t3d/sim_object_bridge.hpp>
+#include <fuse/legacy/t2d/sim_object_bridge.hpp>
 #include <fuse/log/logger.hpp>
+#include <fuse/platform/thread.hpp>
+#include <fuse/world2d/scene_object_2d.hpp>
+#include <fuse/world3d/scene_object_3d.hpp>
 
 #if defined(FUSE_HAS_VULKAN_RHI)
 #include <fuse/renderer/renderer_bootstrap.hpp>
@@ -155,6 +160,61 @@ void runLegacyConSmoke() {
     check(execfArgvResult != nullptr, "t3d executefArgv returns buffer");
 }
 
+void runStringInternSmoke() {
+    char dynamicT3d[64];
+    char dynamicT2d[64];
+    std::snprintf(dynamicT3d, sizeof(dynamicT3d), "t3d_dynamic_%d", 7);
+    std::snprintf(dynamicT2d, sizeof(dynamicT2d), "t2d_dynamic_%d", 9);
+
+    const fuse::u32 t3dId = fuse::legacy::t3d::internString(dynamicT3d);
+    const fuse::u32 t2dId = fuse::legacy::t2d::internString(dynamicT2d);
+    check(t3dId != 0u, "t3d intern dynamic string");
+    check(t2dId != 0u, "t2d intern dynamic string");
+    check(std::strcmp(fuse::legacy::t3d::lookupString(t3dId), dynamicT3d) == 0,
+          "t3d lookup survives transient buffer");
+    check(std::strcmp(fuse::legacy::t2d::lookupString(t2dId), dynamicT2d) == 0,
+          "t2d lookup survives transient buffer");
+    check(fuse::legacy::t3d::internString(dynamicT3d) == t3dId, "t3d intern idempotent");
+    check(fuse::legacy::t2d::internString(dynamicT2d) == t2dId, "t2d intern idempotent");
+}
+
+void runSimObjectBridgeSmoke() {
+    fuse::platform::registerMainThread();
+
+    fuse::legacy::LegacySimObjectStub t3dLegacy{};
+    t3dLegacy.simObjectId = 101;
+    t3dLegacy.className = "StaticShape";
+    t3dLegacy.internalName = "spawnPoint1";
+    t3dLegacy.name = "Spawn";
+    t3dLegacy.x = 3.f;
+    t3dLegacy.y = 4.f;
+    t3dLegacy.z = 5.f;
+
+    fuse::SceneObject3D imported3d("placeholder");
+    check(fuse::legacy::t3d::importSimObject(t3dLegacy, imported3d), "t3d SimObject bridge import");
+    fuse::legacy::LegacySimObjectStub exported3d{};
+    check(fuse::legacy::t3d::exportSimObject(imported3d, exported3d), "t3d SimObject bridge export");
+    check(exported3d.simObjectId == 101u, "t3d SimObject bridge legacyId");
+    check(exported3d.name == "Spawn", "t3d SimObject bridge name");
+    check(exported3d.x > 2.9f && exported3d.x < 3.1f, "t3d SimObject bridge x");
+
+    fuse::legacy::LegacySimObjectStub t2dLegacy{};
+    t2dLegacy.simObjectId = 55;
+    t2dLegacy.className = "t2dSceneObject";
+    t2dLegacy.internalName = "playerSprite";
+    t2dLegacy.name = "Player";
+    t2dLegacy.x = 8.f;
+    t2dLegacy.y = 9.f;
+    t2dLegacy.layer = 2;
+
+    fuse::SceneObject2D imported2d("placeholder");
+    check(fuse::legacy::t2d::importSimObject(t2dLegacy, imported2d), "t2d SimObject bridge import");
+    fuse::legacy::LegacySimObjectStub exported2d{};
+    check(fuse::legacy::t2d::exportSimObject(imported2d, exported2d), "t2d SimObject bridge export");
+    check(exported2d.simObjectId == 55u, "t2d SimObject bridge legacyId");
+    check(exported2d.layer == 2, "t2d SimObject bridge layer");
+}
+
 void runImageCompressSmoke() {
     constexpr fuse::u32 kWidth = 8;
     constexpr fuse::u32 kHeight = 8;
@@ -216,6 +276,8 @@ int main() {
     check(fuse::legacy::t3d::stringTableEntryCount() >= 1u, "t3d string table populated");
     check(fuse::legacy::t2d::stringTableEntryCount() >= 1u, "t2d string table populated");
 
+    runStringInternSmoke();
+    runSimObjectBridgeSmoke();
     runImageCompressSmoke();
 
 #if defined(FUSE_T3D_LEGACY_ENGINE_PROBE)
@@ -224,6 +286,13 @@ int main() {
         fuse::u16 dst[1] = {};
         fuse::legacy::t3d::engineProbe::bitmapExtrude5551Smoke(src, dst, 2, 2);
         check(dst[0] != 0, "engine probe bitmapExtrude5551 produces non-zero mip");
+
+        fuse::u8 rgb[6] = {255, 0, 0, 0, 255, 0};
+        fuse::legacy::t3d::engineProbe::bitmapConvertRGB5551Smoke(rgb, 2);
+        check(rgb[0] != 255 || rgb[1] != 0, "engine probe bitmapConvertRGB_to_5551 mutates pixels");
+
+        const float halfOne = fuse::legacy::t3d::engineProbe::convertHalfFloatSmoke(0x3C00u);
+        check(halfOne > 0.9f && halfOne < 1.1f, "engine probe convertHalfToFloat near 1.0");
     }
 #endif
 

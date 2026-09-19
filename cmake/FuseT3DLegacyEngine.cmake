@@ -49,4 +49,4 @@ target_compile_definitions(fuse_t3d_legacy PRIVATE
     FUSE_T3D_LEGACY_ENGINE_PROBE=1
 )
 
-message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (bitmapUtils + platform_stub)")
+message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (bitmapUtils extrude/convert + platform_stub)")

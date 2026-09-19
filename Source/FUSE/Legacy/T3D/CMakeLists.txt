@@ -18,6 +18,7 @@ add_library(fuse_t3d_legacy STATIC
     src/string_table_shim.cpp
     src/init.cpp
     src/scene_adapter.cpp
+    src/sim_object_bridge.cpp
     src/image_compress_route.cpp
 )
 

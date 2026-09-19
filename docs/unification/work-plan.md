@@ -68,7 +68,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **MT note** | Single-threaded smoke OK; **no** parallel tick yet |
 | **Exit** | Core stub + both legacy inits in one process; documented remaining symbol conflicts trending down |
 | **Deps** | WP-01 |
-| **Status** | ✅ Done (U2 PR) — prefixed quarantine libs + smoke binary; full Engine init blocked (see [U2-SMOKE.md](./U2-SMOKE.md)) |
+| **Status** | 🚧 Incremental — Con:: **33/33** shimmed; Engine probe + SimObject bridge slice + owned StringInternTable; full Engine init blocked (see [U2-SMOKE.md](./U2-SMOKE.md)) |
 
 ---
 
@@ -316,7 +316,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U6 GPU viewport embed; U7 full T3D field extraction + production asset cooks; Track B post–WP-06f (`vkQueuePresentKHR` desktop GLFW, Editor Qt surface, `cudaImportExternalMemory`).
+**Next:** U2 incremental — expand Engine probe (gfx/platform stubs), SimObject adapter → first curated `.cpp` batch, StringTable route to FUSE core; U6 GPU viewport embed; U7 full T3D field extraction + production asset cooks; Track B post–WP-06f (`vkQueuePresentKHR` desktop GLFW, Editor Qt surface, `cudaImportExternalMemory`).
 
 ---
 

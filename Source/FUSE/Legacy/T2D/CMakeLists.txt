@@ -5,6 +5,7 @@ add_library(fuse_t2d_legacy STATIC
     src/string_table_shim.cpp
     src/init.cpp
     src/scene_adapter.cpp
+    src/sim_object_bridge.cpp
 )
 
 add_library(fuse::t2d_legacy ALIAS fuse_t2d_legacy)

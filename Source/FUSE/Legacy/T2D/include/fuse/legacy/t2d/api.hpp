@@ -55,5 +55,7 @@ void setFloatVariable(const char* name, float value);
 } // namespace Con
 
 u32 stringTableEntryCount();
+u32 internString(const char* value);
+const char* lookupString(u32 id);
 
 } // namespace fuse::legacy::t2d

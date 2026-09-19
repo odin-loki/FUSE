@@ -1,5 +1,7 @@
 add_library(fuse_legacy_common STATIC
     src/parallel_for_route.cpp
+    src/string_intern_table.cpp
+    src/sim_object_bridge.cpp
 )
 
 add_library(fuse::legacy_common ALIAS fuse_legacy_common)
